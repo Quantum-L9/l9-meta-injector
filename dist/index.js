@@ -35,4 +35,5 @@ Object.defineProperty(exports, "injectFileAsync", { enumerable: true, get: funct
 __exportStar(require("./verify"), exports);
 __exportStar(require("./retrieval"), exports);
 __exportStar(require("./pipeline"), exports);
+__exportStar(require("./inventory"), exports);
 //# sourceMappingURL=index.js.map
