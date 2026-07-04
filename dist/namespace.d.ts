@@ -19,4 +19,4 @@ export interface NamespaceConfig {
     }>;
 }
 export declare function toSnakeStem(filename: string): string;
-export declare function resolveNamespace(filePath: string, cfg: NamespaceConfig): NamespaceResolution;
+export declare function resolveNamespace(filePath: string, cfg: NamespaceConfig, typeHint?: string): NamespaceResolution;
