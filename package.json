@@ -4,6 +4,13 @@
   "description": "L9 meta-injection toolkit for prompt, skill, and kernel metadata",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "schemas",
+    "examples",
+    "README.md",
+    "CHANGELOG.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "jest --config jest.config.js --no-coverage",
