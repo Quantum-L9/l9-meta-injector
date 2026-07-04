@@ -43,7 +43,7 @@ export function extract(body: string): ExtractedFields {
     phaseModel: extractList(body, /^##\s+(Phase Model|Phases)\s*$/m),
     inputVariables: extractList(body, /^##\s+Input Variables?\s*$/m),
     outputFormat: extractScalar(body, [/^##\s+Output Format\s*\n+([^\n#]+)/m, /\*\*Output Format\*\*:?\s*([^\n]+)/]),
-    modelTarget: extractScalar(body, [/model[_-]?target:?\s*([^\n,]+)/i, /\*\*Model Target\*\*:?\s*([^\n]+)/]),
+    modelTarget: extractScalar(body, [/^##\s+Model[ _-]?Target\s*\n+([^\n#]+)/mi, /model[_-]?target:?\s*([^\n,]+)/i, /\*\*Model Target\*\*:?\s*([^\n]+)/]),
   };
 }
 

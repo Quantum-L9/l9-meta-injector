@@ -77,7 +77,7 @@ function toSnakeStem(filename) {
     return stem.replace(/([a-z])([A-Z])/g, "$1_$2").replace(/[-\s]+/g, "_")
         .replace(/[^a-z0-9_]/gi, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toLowerCase();
 }
-function resolveNamespace(filePath, cfg) {
+function resolveNamespace(filePath, cfg, typeHint) {
     const norm = filePath.replace(/\\/g, "/");
     let namespace = cfg.namespace ?? "l9";
     if (cfg.namespaceGlobs) {
@@ -89,7 +89,11 @@ function resolveNamespace(filePath, cfg) {
         }
     }
     const sharingScope = deriveSharingScope(filePath);
-    const primitiveFolder = derivePrimitiveFolder(filePath);
+    // Folder derivation wins; when the path yields no primitive folder, fall back to the
+    // resolved artifact_type so the id reads e.g. l9.source.app rather than l9.unknown.app.
+    let primitiveFolder = derivePrimitiveFolder(filePath);
+    if (primitiveFolder === "unknown" && typeHint && typeHint !== "unknown")
+        primitiveFolder = typeHint;
     const stem = toSnakeStem(path.basename(filePath));
     return { namespace, sharingScope, primitiveFolder, idStem: `${namespace}.${primitiveFolder}.${stem}` };
 }

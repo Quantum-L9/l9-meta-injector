@@ -107,6 +107,7 @@ async function main() {
       const r = injByPath.get(e.sourcePath), v = verByPath.get(e.sourcePath);
       return {
         path: rel(root, e.sourcePath),
+        id: r.meta.id,
         artifact_type: r.meta.artifact_type,
         mcp_primitive: r.meta.mcp_primitive,
         injectable: r.meta.injectable,
