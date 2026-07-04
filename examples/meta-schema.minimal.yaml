@@ -1,0 +1,18 @@
+# EXAMPLE minimal meta-schema — sidecars/manifest only, no header injection into files.
+# Useful for a first non-invasive pass over a large Dropbox tree.
+schema_id: inventory_minimal
+version: 1.0.0
+description: Minimal identity-only meta, no file mutation (sidecar + manifest)
+target: [sidecar, manifest]
+fields:
+  - name: id
+    source: artifact_id
+    required: true
+  - name: type
+    source: artifact_type
+    required: true
+  - name: path
+    source: relative_path
+    required: true
+  - name: content_hash
+    source: content_hash

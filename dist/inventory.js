@@ -33,6 +33,8 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.loadMetaSchema = loadMetaSchema;
+exports.buildDuplicateClusters = buildDuplicateClusters;
 exports.classifyInventory = classifyInventory;
 exports.buildRecord = buildRecord;
 exports.inventoryTree = inventoryTree;
@@ -47,6 +49,37 @@ const path = __importStar(require("path"));
 const extract_1 = require("./extract");
 const comment_1 = require("./comment");
 const inject_1 = require("./inject");
+const meta_schema_1 = require("./meta_schema");
+/** Load and validate a canonical meta-schema YAML file. */
+function loadMetaSchema(filePath) {
+    return (0, meta_schema_1.toMetaSchema)((0, meta_schema_1.parseCanonicalYaml)(fs.readFileSync(filePath, "utf8")));
+}
+/** Group records by content_hash to surface duplicate clusters across the whole tree. */
+function buildDuplicateClusters(records) {
+    const byHash = new Map();
+    for (const r of records) {
+        if (!r.content_hash || r.artifact_type === "folder")
+            continue;
+        const g = byHash.get(r.content_hash) ?? [];
+        g.push(r);
+        byHash.set(r.content_hash, g);
+    }
+    const clusters = [];
+    for (const [hash, group] of byHash) {
+        if (group.length < 2)
+            continue;
+        const paths = group.map((g) => g.relative_path).sort();
+        const size = group[0].size_bytes ?? 0;
+        clusters.push({
+            content_hash: hash,
+            count: group.length,
+            wasted_bytes: (group.length - 1) * size,
+            keeper: paths.slice().sort((a, b) => a.length - b.length || a.localeCompare(b))[0],
+            paths,
+        });
+    }
+    return clusters.sort((a, b) => b.wasted_bytes - a.wasted_bytes || b.count - a.count);
+}
 const CODE_EXTS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".go", ".rs", ".java", ".c", ".h", ".cpp", ".hpp", ".cc", ".cs", ".rb", ".php", ".swift", ".kt", ".kts", ".scala", ".sh", ".bash", ".zsh", ".lua", ".r", ".jl", ".pl", ".pm", ".dart", ".ex", ".exs"]);
 const CONFIG_EXTS = new Set([".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", ".properties", ".env", ".lock", ".plist", ".tf", ".tfvars"]);
 const ARCHIVE_EXTS = new Set([".zip", ".tar", ".gz", ".tgz", ".bz2", ".xz", ".7z", ".rar", ".jar", ".war"]);
@@ -199,8 +232,20 @@ function inventoryTree(config) {
     const records = [];
     const typeDistribution = {};
     let files = 0, folders = 0;
+    const schema = config.schema;
     for (const { abs, isDir } of entries) {
         const rec = buildRecord(root, abs, isDir, cfg);
+        // The meta object written to headers/sidecars: schema-driven when provided, else default.
+        let metaObj;
+        if (schema) {
+            const applied = (0, meta_schema_1.applySchema)(rec, schema);
+            if (applied.missingRequired.length)
+                rec.unknowns.push(...applied.missingRequired.map((n) => `missing_required:${n}`));
+            metaObj = applied.fields;
+        }
+        else {
+            metaObj = rec;
+        }
         records.push(rec);
         typeDistribution[rec.artifact_type] = (typeDistribution[rec.artifact_type] || 0) + 1;
         if (isDir)
@@ -210,9 +255,9 @@ function inventoryTree(config) {
         if (cfg.dryRun)
             continue;
         if (isDir) {
-            if (cfg.folderSidecars) {
+            if (cfg.folderSidecars && (0, meta_schema_1.targetIncludes)(schema, "sidecar")) {
                 try {
-                    fs.writeFileSync(path.join(abs, ".l9meta.yaml"), serializeYaml(rec), "utf8");
+                    fs.writeFileSync(path.join(abs, ".l9meta.yaml"), serializeYaml(metaObj), "utf8");
                 }
                 catch { /* unwritable dir — recorded, skip */ }
             }
@@ -222,20 +267,24 @@ function inventoryTree(config) {
         // binaries / comment-less formats get a metadata sidecar. Body is preserved.
         const raw = safeRead(abs);
         const strategy = raw === null ? "skip-binary" : (0, comment_1.resolveStrategy)(abs, raw).strategy;
-        if (cfg.injectHeaders && raw !== null && (strategy === "yaml-frontmatter" || strategy === "line-comment" || strategy === "block-comment")) {
+        const canHeader = raw !== null && (strategy === "yaml-frontmatter" || strategy === "line-comment" || strategy === "block-comment");
+        if (cfg.injectHeaders && canHeader && (0, meta_schema_1.targetIncludes)(schema, "file_header")) {
+            const headerMeta = (schema ? metaObj : recordAsMeta(rec));
             try {
-                (0, inject_1.injectFile)(abs, recordAsMeta(rec), { dryRun: false, outDir: config.outDir, verbose: false, writeInjectLog: false });
+                (0, inject_1.injectFile)(abs, headerMeta, { dryRun: false, outDir: config.outDir, verbose: false, writeInjectLog: false });
             }
             catch {
-                writeSidecar(abs, rec);
+                if ((0, meta_schema_1.targetIncludes)(schema, "sidecar"))
+                    writeSidecar(abs, metaObj);
             }
         }
-        else {
-            writeSidecar(abs, rec);
+        else if ((0, meta_schema_1.targetIncludes)(schema, "sidecar")) {
+            writeSidecar(abs, metaObj);
         }
     }
-    const manifestPaths = writeManifests(config.outDir, root, records, typeDistribution, cfg.now, cfg.dryRun);
-    return { root, total: records.length, files, folders, typeDistribution, manifestPaths, records };
+    const duplicates = buildDuplicateClusters(records);
+    const manifestPaths = writeManifests(config.outDir, root, records, typeDistribution, duplicates, cfg.now, cfg.dryRun);
+    return { root, total: records.length, files, folders, typeDistribution, manifestPaths, duplicates, records };
 }
 function safeRead(abs) {
     try {
@@ -250,9 +299,9 @@ function safeRead(abs) {
         return null;
     }
 }
-function writeSidecar(abs, rec) {
+function writeSidecar(abs, obj) {
     try {
-        fs.writeFileSync((0, comment_1.sidecarPathFor)(abs), serializeYaml(rec), "utf8");
+        fs.writeFileSync((0, comment_1.sidecarPathFor)(abs), serializeYaml(obj), "utf8");
     }
     catch { /* unwritable — recorded in manifest only */ }
 }
@@ -280,22 +329,29 @@ function recordAsMeta(rec) {
         evidence: rec.evidence_excerpt ?? "Unknown",
     };
 }
-function writeManifests(outDir, root, records, dist, now, dryRun) {
+function writeManifests(outDir, root, records, dist, duplicates, now, _dryRun) {
     fs.mkdirSync(outDir, { recursive: true });
     const jsonPath = path.join(outDir, "inventory.json");
     const csvPath = path.join(outDir, "inventory.csv");
     const mdPath = path.join(outDir, "inventory.md");
-    fs.writeFileSync(jsonPath, JSON.stringify({ generatedAt: now, root, total: records.length, typeDistribution: dist, records }, null, 2), "utf8");
+    const dupPath = path.join(outDir, "inventory-duplicates.json");
+    fs.writeFileSync(jsonPath, JSON.stringify({ generatedAt: now, root, total: records.length, typeDistribution: dist, duplicateClusters: duplicates.length, records }, null, 2), "utf8");
+    const totalWasted = duplicates.reduce((a, d) => a + d.wasted_bytes, 0);
+    fs.writeFileSync(dupPath, JSON.stringify({ generatedAt: now, root, clusters: duplicates.length, totalWastedBytes: totalWasted, duplicates }, null, 2), "utf8");
     const cols = ["relative_path", "file_name", "extension", "artifact_type", "size_bytes", "modified_at", "content_hash", "depth", "classification_confidence", "evidence_excerpt", "unknowns"];
     const rows = [cols.join(",")];
     for (const r of records)
         rows.push(cols.map((c) => csvCell(Array.isArray(r[c]) ? r[c].join("; ") : r[c])).join(","));
     fs.writeFileSync(csvPath, rows.join("\n") + "\n", "utf8");
-    const md = [`# Inventory — ${root}`, ``, `Generated: ${now}  |  Total entries: ${records.length}`, ``, `## Type distribution`, ``, ...Object.entries(dist).sort((a, b) => b[1] - a[1]).map(([k, v]) => `- **${k}**: ${v}`), ``, `## Entries`, ``, `| path | type | conf | size | evidence |`, `|---|---|---|---|---|`, ...records.slice(0, 500).map((r) => `| ${r.relative_path} | ${r.artifact_type} | ${r.classification_confidence} | ${r.size_bytes ?? ""} | ${r.evidence_excerpt ?? ""} |`)];
+    const md = [`# Inventory — ${root}`, ``, `Generated: ${now}  |  Total entries: ${records.length}  |  Duplicate clusters: ${duplicates.length}  |  Recoverable: ${totalWasted} bytes`, ``, `## Type distribution`, ``, ...Object.entries(dist).sort((a, b) => b[1] - a[1]).map(([k, v]) => `- **${k}**: ${v}`)];
+    if (duplicates.length) {
+        md.push(``, `## Duplicate clusters (consolidated dedup view)`, ``, `Files sharing a content hash across the tree. Read-only — nothing is deleted.`, ``, `| # | count | wasted bytes | keeper | other paths |`, `|---|---|---|---|---|`);
+        duplicates.slice(0, 100).forEach((d, i) => md.push(`| ${i + 1} | ${d.count} | ${d.wasted_bytes} | \`${d.keeper}\` | ${d.paths.filter((p) => p !== d.keeper).join("<br>")} |`));
+    }
+    md.push(``, `## Entries`, ``, `| path | type | conf | size | evidence |`, `|---|---|---|---|---|`, ...records.slice(0, 500).map((r) => `| ${r.relative_path} | ${r.artifact_type} | ${r.classification_confidence} | ${r.size_bytes ?? ""} | ${r.evidence_excerpt ?? ""} |`));
     if (records.length > 500)
         md.push(``, `_(${records.length - 500} more entries in inventory.json / inventory.csv)_`);
     fs.writeFileSync(mdPath, md.join("\n") + "\n", "utf8");
-    if (dryRun) { /* manifests still written; source untouched */ }
-    return { json: jsonPath, csv: csvPath, md: mdPath };
+    return { json: jsonPath, csv: csvPath, md: mdPath, duplicates: dupPath };
 }
 //# sourceMappingURL=inventory.js.map

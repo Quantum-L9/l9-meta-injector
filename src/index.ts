@@ -15,3 +15,4 @@ export * from "./verify";
 export * from "./retrieval";
 export * from "./pipeline";
 export * from "./inventory";
+export * from "./meta_schema";
