@@ -1,6 +1,6 @@
 export declare const UNKNOWN: "Unknown";
 export type Unknown = typeof UNKNOWN;
-export type ArtifactType = "skill" | "playbook" | "kernel" | "context" | "prompt" | "doctrine" | "test" | "script" | "unknown";
+export type ArtifactType = "skill" | "playbook" | "kernel" | "context" | "prompt" | "doctrine" | "test" | "script" | "source" | "unknown";
 export type McpPrimitive = "tool" | "resource" | "prompt" | "none";
 export type ArtifactFamily = "auditor" | "compiler" | "meta_kernel_forge" | "builder" | "planner" | "research" | "domain_agent" | "legal" | "Unknown";
 export type SharingScope = "private" | "shared" | "agnostic";
@@ -95,6 +95,8 @@ export interface InjectionRecord {
     postInjectionBodyHash: string;
     bodyPreserved: boolean;
     headerInjected: boolean;
+    injectionStrategy?: string;
+    sidecarPath?: string;
     dryRunDiffPath?: string;
     injectLogPath?: string;
     meta: NormalizedMeta;
