@@ -35,16 +35,19 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.injectFileAsync = injectFileAsync;
 exports.injectFile = injectFile;
-// inject.ts — Prepend YAML front matter. Five-way reconciliation. Body preserved byte-for-byte.
-// Uses reconcileFieldsAsync (LLM boolean on description/intent) when adapter.classify is wired.
-// Falls back to reconcileFields (sync heuristic) when no LLM.
-// Writes <file>.inject.log sidecar on any mutation. No silent writes.
+// inject.ts — Filetype-aware metadata injection. Five-way reconciliation.
+// Markdown/txt → YAML frontmatter. Code/config → comment-wrapped block (line or
+// block comment), placed after any shebang. Comment-less formats (JSON) and unknown
+// text → a `<file>.l9meta.yaml` sidecar (the file itself is untouched). Binary/media
+// are skipped. Body is preserved verbatim; the injected block carries sentinels so a
+// re-run replaces it instead of duplicating. Writes <file>.inject.log on any mutation.
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const normalize_meta_1 = require("./normalize_meta");
 const extract_1 = require("./extract");
 const reconcile_fields_1 = require("./reconcile_fields");
 const llm_1 = require("./llm");
+const comment_1 = require("./comment");
 function parseExistingMeta(fm) {
     if (!fm)
         return {};
@@ -84,69 +87,101 @@ function parseExistingMeta(fm) {
         result[currentKey] = currentList;
     return result;
 }
-async function injectFileAsync(filePath, meta, opts) {
-    const original = fs.readFileSync(filePath, "utf8");
-    const { frontMatter } = (0, extract_1.splitContent)(original);
-    const cleanBody = (0, extract_1.stripExistingFrontMatter)(original);
-    const originalBodyHash = (0, extract_1.contentHash)(cleanBody);
-    const existingMeta = parseExistingMeta(frontMatter);
-    const incomingMeta = Object.fromEntries(Object.entries(meta));
-    // Use LLM-assisted async reconcile if adapter.classify is available, otherwise sync
-    const { merged, diffs } = (0, llm_1.getAdapter)().classify
-        ? await (0, reconcile_fields_1.reconcileFieldsAsync)(existingMeta, incomingMeta)
-        : (0, reconcile_fields_1.reconcileFields)(existingMeta, incomingMeta);
-    const finalMeta = { ...meta, ...merged };
-    const yamlFm = (0, normalize_meta_1.serializeToYamlFrontMatter)(finalMeta);
-    const injected = yamlFm + "\n\n" + cleanBody.replace(/^\n+/, "");
-    const postBodyHash = (0, extract_1.contentHash)(injected.slice(yamlFm.length + 2).replace(/^\n+/, ""));
-    const now = new Date().toISOString();
-    let dryRunDiffPath;
-    let injectLogPath;
-    if (opts.dryRun) {
-        fs.mkdirSync(opts.outDir, { recursive: true });
-        dryRunDiffPath = path.join(opts.outDir, path.basename(filePath) + ".diff");
-        const addedLines = yamlFm.split("\n").map((l) => `+ ${l}`).join("\n");
-        fs.writeFileSync(dryRunDiffPath, `--- ${filePath}\n+++ ${filePath} (injected)\n${addedLines}\n`, "utf8");
-        if (opts.verbose)
-            process.stderr.write(`[dry-run] ${dryRunDiffPath}\n`);
+// Read the file and derive the clean body + any prior metadata, per strategy.
+function readForInjection(filePath) {
+    const raw = fs.readFileSync(filePath, "utf8");
+    const spec = (0, comment_1.resolveStrategy)(filePath, raw);
+    if (spec.strategy === "yaml-frontmatter") {
+        const { frontMatter } = (0, extract_1.splitContent)(raw);
+        const cleanBody = (0, extract_1.stripExistingFrontMatter)(raw);
+        return { raw, spec, cleanBody, originalBodyHash: (0, extract_1.contentHash)(cleanBody), existingMeta: parseExistingMeta(frontMatter) };
     }
-    else {
-        fs.writeFileSync(filePath, injected, "utf8");
-        if (opts.writeInjectLog && diffs.some((d) => d.action !== "keep")) {
-            injectLogPath = filePath + ".inject.log";
-            fs.writeFileSync(injectLogPath, (0, reconcile_fields_1.diffsToLogYaml)(filePath, diffs, now), "utf8");
-        }
-        if (opts.verbose)
-            process.stderr.write(`[inject] ${filePath}\n`);
+    if (spec.strategy === "line-comment" || spec.strategy === "block-comment") {
+        const cleanBody = (0, comment_1.stripInjectedBlock)(raw, spec);
+        const existingYaml = (0, comment_1.extractInjectedYaml)(raw, spec);
+        return { raw, spec, cleanBody, originalBodyHash: (0, extract_1.contentHash)(cleanBody), existingMeta: parseExistingMeta(existingYaml) };
     }
-    return { sourcePath: filePath, originalBodyHash, postInjectionBodyHash: postBodyHash, bodyPreserved: true, headerInjected: !opts.dryRun, dryRunDiffPath, injectLogPath, meta: finalMeta };
+    // sidecar (and skip-binary, which callers guard against): file body is untouched.
+    let existingMeta = {};
+    const sidecar = (0, comment_1.sidecarPathFor)(filePath);
+    if (fs.existsSync(sidecar))
+        existingMeta = parseExistingMeta(fs.readFileSync(sidecar, "utf8"));
+    return { raw, spec, cleanBody: raw, originalBodyHash: (0, extract_1.contentHash)(raw), existingMeta };
 }
-// Sync convenience wrapper (non-LLM paths)
-function injectFile(filePath, meta, opts) {
-    const original = fs.readFileSync(filePath, "utf8");
-    const { frontMatter } = (0, extract_1.splitContent)(original);
-    const cleanBody = (0, extract_1.stripExistingFrontMatter)(original);
-    const originalBodyHash = (0, extract_1.contentHash)(cleanBody);
-    const { merged, diffs } = (0, reconcile_fields_1.reconcileFields)(parseExistingMeta(frontMatter), Object.fromEntries(Object.entries(meta)));
-    const finalMeta = { ...meta, ...merged };
+// Build the final content for the resolved strategy.
+function buildInjection(filePath, finalMeta, ctx) {
     const yamlFm = (0, normalize_meta_1.serializeToYamlFrontMatter)(finalMeta);
-    const injected = yamlFm + "\n\n" + cleanBody.replace(/^\n+/, "");
-    const postBodyHash = (0, extract_1.contentHash)(injected.slice(yamlFm.length + 2).replace(/^\n+/, ""));
-    const now = new Date().toISOString();
-    let dryRunDiffPath;
-    let injectLogPath;
+    if (ctx.spec.strategy === "yaml-frontmatter") {
+        const newContent = yamlFm + "\n\n" + ctx.cleanBody.replace(/^\n+/, "");
+        const postBodyHash = (0, extract_1.contentHash)(newContent.slice(yamlFm.length + 2).replace(/^\n+/, ""));
+        return { targetPath: filePath, newContent, addedLines: yamlFm, postBodyHash, strategy: ctx.spec.strategy };
+    }
+    if (ctx.spec.strategy === "line-comment" || ctx.spec.strategy === "block-comment") {
+        const block = (0, comment_1.yamlToBlock)((0, comment_1.frontMatterInner)(yamlFm), ctx.spec);
+        const newContent = (0, comment_1.applyCommentInjection)(ctx.cleanBody, block);
+        const postBodyHash = (0, extract_1.contentHash)((0, comment_1.stripInjectedBlock)(newContent, ctx.spec));
+        return { targetPath: filePath, newContent, addedLines: block, postBodyHash, strategy: ctx.spec.strategy };
+    }
+    // sidecar: source file is left byte-for-byte; metadata goes to <file>.l9meta.yaml
+    const sidecar = (0, comment_1.sidecarPathFor)(filePath);
+    return {
+        targetPath: sidecar, newContent: yamlFm + "\n", addedLines: yamlFm,
+        postBodyHash: ctx.originalBodyHash, sidecarPath: sidecar, strategy: ctx.spec.strategy,
+    };
+}
+function writeInjection(filePath, built, diffs, opts) {
+    const out = {};
     if (opts.dryRun) {
         fs.mkdirSync(opts.outDir, { recursive: true });
-        dryRunDiffPath = path.join(opts.outDir, path.basename(filePath) + ".diff");
-        fs.writeFileSync(dryRunDiffPath, `--- ${filePath}\n${yamlFm.split("\n").map((l) => `+ ${l}`).join("\n")}\n`, "utf8");
+        out.dryRunDiffPath = path.join(opts.outDir, path.basename(filePath) + ".diff");
+        const added = built.addedLines.split("\n").map((l) => `+ ${l}`).join("\n");
+        const tgt = built.sidecarPath ? built.sidecarPath : filePath;
+        fs.writeFileSync(out.dryRunDiffPath, `--- ${filePath}\n+++ ${tgt} (${built.strategy})\n${added}\n`, "utf8");
+        if (opts.verbose)
+            process.stderr.write(`[dry-run] ${out.dryRunDiffPath}\n`);
     }
     else {
-        fs.writeFileSync(filePath, injected, "utf8");
+        fs.writeFileSync(built.targetPath, built.newContent, "utf8");
         if (opts.writeInjectLog && diffs.some((d) => d.action !== "keep")) {
-            injectLogPath = filePath + ".inject.log";
-            fs.writeFileSync(injectLogPath, (0, reconcile_fields_1.diffsToLogYaml)(filePath, diffs, now), "utf8");
+            out.injectLogPath = filePath + ".inject.log";
+            fs.writeFileSync(out.injectLogPath, (0, reconcile_fields_1.diffsToLogYaml)(filePath, diffs, new Date().toISOString()), "utf8");
         }
+        if (opts.verbose)
+            process.stderr.write(`[inject:${built.strategy}] ${built.targetPath}\n`);
     }
-    return { sourcePath: filePath, originalBodyHash, postInjectionBodyHash: postBodyHash, bodyPreserved: true, headerInjected: !opts.dryRun, dryRunDiffPath, injectLogPath, meta: finalMeta };
+    return out;
+}
+function record(filePath, ctx, built, finalMeta, opts, paths) {
+    return {
+        sourcePath: filePath,
+        originalBodyHash: ctx.originalBodyHash,
+        postInjectionBodyHash: built.postBodyHash,
+        bodyPreserved: built.postBodyHash === ctx.originalBodyHash,
+        headerInjected: !opts.dryRun,
+        injectionStrategy: built.strategy,
+        sidecarPath: built.sidecarPath,
+        dryRunDiffPath: paths.dryRunDiffPath,
+        injectLogPath: paths.injectLogPath,
+        meta: finalMeta,
+    };
+}
+async function injectFileAsync(filePath, meta, opts) {
+    const ctx = readForInjection(filePath);
+    const incomingMeta = Object.fromEntries(Object.entries(meta));
+    const { merged, diffs } = (0, llm_1.getAdapter)().classify
+        ? await (0, reconcile_fields_1.reconcileFieldsAsync)(ctx.existingMeta, incomingMeta)
+        : (0, reconcile_fields_1.reconcileFields)(ctx.existingMeta, incomingMeta);
+    const finalMeta = { ...meta, ...merged };
+    const built = buildInjection(filePath, finalMeta, ctx);
+    const paths = writeInjection(filePath, built, diffs, opts);
+    return record(filePath, ctx, built, finalMeta, opts, paths);
+}
+function injectFile(filePath, meta, opts) {
+    const ctx = readForInjection(filePath);
+    const { merged, diffs } = (0, reconcile_fields_1.reconcileFields)(ctx.existingMeta, Object.fromEntries(Object.entries(meta)));
+    const finalMeta = { ...meta, ...merged };
+    const built = buildInjection(filePath, finalMeta, ctx);
+    const paths = writeInjection(filePath, built, diffs, opts);
+    return record(filePath, ctx, built, finalMeta, opts, paths);
 }
 //# sourceMappingURL=inject.js.map

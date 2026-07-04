@@ -1,5 +1,6 @@
 import * as path from "path";
 import { ClassifyResult, ArtifactType, ArtifactFamily, HeaderConvention } from "./schema";
+import { FRONTMATTER_EXTS } from "./comment";
 
 const FAMILY_SIGNALS: Array<{ family: ArtifactFamily; keywords: string[] }> = [
   { family: "auditor",            keywords: ["audit", "review", "check", "validate", "lint", "scan"] },
@@ -38,6 +39,17 @@ export function classify(filePath: string, body: string, _hc: HeaderConvention):
   // Prompt-*.md
   if (/^prompt-/.test(fn)) return { artifactType: "prompt", family: detectFamily(text), signals: extractSignals(text), confidence: "high" };
 
+  // Non-prose files (code, config, markup, data) are "source" — injectable, but the
+  // prose taxonomy (skill/kernel/test/script/…) and its keyword/path heuristics only
+  // make sense for markdown/txt artifacts and must not be applied to code. (An explicit
+  // dot-convention name like `foo.skill.ts` still wins above.)
+  const ext = path.extname(filePath).toLowerCase();
+  if (!FRONTMATTER_EXTS.has(ext)) {
+    return { artifactType: "source", family: detectFamily(text), signals: extractSignals(text), confidence: "low" };
+  }
+
+  // --- markdown/txt only, below ---
+
   // Path segment
   for (const ts of TYPE_SIGNALS) {
     if (ts.pathPatterns.some((p) => norm.includes(`/${p}/`))) {
@@ -45,7 +57,7 @@ export function classify(filePath: string, body: string, _hc: HeaderConvention):
     }
   }
 
-  // Keyword scoring
+  // Keyword scoring (prose taxonomy). Unclassifiable prose stays "unknown" (not injected).
   let best: ArtifactType = "unknown";
   let bestScore = 0;
   for (const ts of TYPE_SIGNALS) {
