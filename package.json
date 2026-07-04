@@ -44,7 +44,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "tsc --noEmit -p tsconfig.json",
     "selfpack": "npm run build && node scripts/selfpack.js",
-    "selfpack:update": "npm run build && node scripts/selfpack.js --update"
+    "selfpack:update": "npm run build && node scripts/selfpack.js --update",
+    "inventory": "npm run build && node scripts/inventory.js"
   },
   "devDependencies": {
     "typescript": "^5.4.5",
