@@ -14,3 +14,4 @@ export type { InjectOptions } from "./inject";
 export * from "./verify";
 export * from "./retrieval";
 export * from "./pipeline";
+export * from "./inventory";
