@@ -1,28 +1,54 @@
 {
   "package_identity": "l9-meta-injector",
   "version": "2.1.0",
-  "generated_utc": "2026-07-04T15:06:51Z",
+  "generated_utc": "2026-07-04T15:18:17Z",
   "target_repo": "https://github.com/Quantum-L9/l9-meta-injector",
   "source_zip": "/mnt/data/l9-meta-injector-consolidation(1).zip",
-  "uploaded_manifest_observed": {
-    "artifact": "l9-meta-injection-pack-v2.1.0.zip",
-    "sha256": "78595d7c4f0b94cad9420b4e360debed7f2cf7cb73dc72b4935d958804eeee77",
-    "size_kb": 98.9,
-    "file_count": 73,
-    "includes_src": true,
-    "includes_dist": true,
-    "includes_tests": true
-  },
-  "final_file_count": 112,
+  "normalizer_skill": "repo-structure-normalizer v1.0.0",
+  "normalizer_skill_zip": "/mnt/data/l9-repo-structure-normalizer.skill.zip",
+  "manifest_self_hash_policy": "MANIFEST.json excluded from file hash index to avoid self-referential hash drift.",
+  "final_indexed_file_count_excluding_manifest": 111,
   "directories": [
-    "/mnt/data/l9-meta-injector-final/dist",
-    "/mnt/data/l9-meta-injector-final/docs",
-    "/mnt/data/l9-meta-injector-final/examples",
-    "/mnt/data/l9-meta-injector-final/schemas",
-    "/mnt/data/l9-meta-injector-final/src",
-    "/mnt/data/l9-meta-injector-final/tests",
-    "/mnt/data/l9-meta-injector-final/tools"
+    "dist",
+    "docs",
+    "docs/references",
+    "examples",
+    "schemas",
+    "src",
+    "tests",
+    "tools/consolidation",
+    "tools/consolidation/core",
+    "tools/consolidation/modes/folder_artifact",
+    "tools/consolidation/modes/repo_pack"
   ],
+  "root_required_files_preserved": [
+    "README.md",
+    "package.json",
+    "tsconfig.json",
+    "jest.config.js",
+    ".gitignore",
+    ".npmignore",
+    "LICENSE_NOTE.md",
+    "CHANGELOG.md",
+    "MANIFEST.json",
+    "VALIDATION_REPORT.md",
+    "INITIAL_COMMIT_REPORT.md"
+  ],
+  "normalizer_summary": {
+    "planner_unit_tests": "passed: 5 tests",
+    "dry_run_operations_found": 20,
+    "collisions": 0,
+    "blocked_operations": 0,
+    "applied_safe_operations": 13,
+    "rejected_operations": 7,
+    "rejected_operations_reason": "Preserved root files required by repo-prep contract and npm/package conventions."
+  },
+  "validation_summary": {
+    "npm_run_build": "exit 0",
+    "npm_test": "exit 0; 9 suites, 66 tests passed",
+    "npx_jest_runInBand": "exit 0; 9 suites, 66 tests passed",
+    "npm_pack_dry_run": "exit 0"
+  },
   "files": [
     {
       "path": ".gitignore",
@@ -41,18 +67,13 @@
     },
     {
       "path": "INITIAL_COMMIT_REPORT.md",
-      "size_bytes": 771,
-      "sha256": "a06f6acb8934673b91be257c6be3357fe0b9c5e3980340480164cae99ca19814"
+      "size_bytes": 2018,
+      "sha256": "4604301e3a14329fceb53a3a949f5790d88a540804be29436118c1df4fc0be4f"
     },
     {
       "path": "LICENSE_NOTE.md",
       "size_bytes": 159,
       "sha256": "b2a3ddf9c44bef498bd910181dc03442424e5024730b4485450d4f93d19669b8"
-    },
-    {
-      "path": "MANIFEST.json",
-      "size_bytes": 19870,
-      "sha256": "c1743422f5b95673c59ff384a5ed178121b36924e8aae61f5fe7daed36347b3d"
     },
     {
       "path": "PACK_INVENTORY.json",
@@ -61,18 +82,18 @@
     },
     {
       "path": "PACK_INVENTORY.md",
-      "size_bytes": 3785,
-      "sha256": "742efd927ed3b6d7f83c4dfee284b1c510a31a600756dc0cf1c2f09eee5c3208"
+      "size_bytes": 7906,
+      "sha256": "3a9ef35ec5e827ecf5af0d4191e7785e2f9182ed56cda2035ad1bb7e0ad0abd0"
     },
     {
       "path": "README.md",
-      "size_bytes": 1621,
-      "sha256": "9ce5eaa0a9ef641b6d0739cd2cee4bbb65ae4b010cbdffad83fe037c9d38cccb"
+      "size_bytes": 1619,
+      "sha256": "7d9828c552856f4ec6ebbe354a35be97852a702fc2ae484de15a743b39457169"
     },
     {
       "path": "VALIDATION_REPORT.md",
-      "size_bytes": 1594,
-      "sha256": "079eae60d32b4fcdc8a290d373c056c0e928b880cf406432aeb47c46e6dd4788"
+      "size_bytes": 2802,
+      "sha256": "5df6e0081627f1fd82b9180a53e0f05afe90be90d6ed9e5a13a9078605d33587"
     },
     {
       "path": "dist/assist.d.ts",
@@ -300,69 +321,69 @@
       "sha256": "b46d4f6a952dfea93e746700198d71b5c7d52822037398c713625fe54cd7a1cf"
     },
     {
-      "path": "docs/ARCHITECTURE.md",
+      "path": "docs/architecture.md",
       "size_bytes": 1842,
       "sha256": "4a50d4e587b6e908f0cb59f5ca1d5d9de4f458b342b77c233844c9e6cabc2e82"
     },
     {
-      "path": "docs/ARTIFACT_MANIFEST.yaml",
+      "path": "docs/artifact_manifest.yaml",
       "size_bytes": 3859,
       "sha256": "64a54416cb79510208920ef5ead3da002b6022f3ad8a1e156fd4e363d3b6a29e"
     },
     {
-      "path": "docs/ASSUMPTION_MAP.yaml",
+      "path": "docs/assumption_map.yaml",
       "size_bytes": 527,
       "sha256": "8b53d2f1c505b5dbf618780d649777c7afe48e5b84cf61a5bd251e23875118d9"
     },
     {
-      "path": "docs/CHANGE_SUMMARY.md",
+      "path": "docs/change_summary.md",
       "size_bytes": 610,
       "sha256": "0b51b70fefa023476c20a2a021337b5c29e31162ec11ee192a5c0a42c7273e62"
     },
     {
-      "path": "docs/CONSOLIDATION_SKILL.md",
+      "path": "docs/consolidation_skill.md",
       "size_bytes": 3148,
       "sha256": "50c756ac921d1f8f61263cbd232a5ad27775db44272f06bb428e3f95553a92c5"
     },
     {
-      "path": "docs/CONTRACTS.md",
+      "path": "docs/contracts.md",
       "size_bytes": 2302,
       "sha256": "089a1af81c55403dafa661946c1dc8c8eec3fb269cff26c13e1e085f52bfc854"
     },
     {
-      "path": "docs/DECISION_LOG.md",
+      "path": "docs/decision_log.md",
       "size_bytes": 998,
       "sha256": "7c5bec43ff95135c1738be47b6fd55a6f2ec6ddadf28f436362c5ceaeeb6d671"
     },
     {
-      "path": "docs/MANIFEST.md",
+      "path": "docs/manifest.md",
       "size_bytes": 1196,
       "sha256": "14c57f442e647c2b0fb28d8cb078fcea5f51209a0c2d443338ed367238fc04c7"
     },
     {
-      "path": "docs/TRACEABILITY_MAP.yaml",
-      "size_bytes": 816,
-      "sha256": "f0040b2744f387c1011b9e977b8669201848a4bf2c5eeb5c3c637f35cfbe1511"
-    },
-    {
-      "path": "docs/UNKNOWN_REGISTER.md",
-      "size_bytes": 410,
-      "sha256": "b969ed2d31a128548c1cd891377b956d4d427861e3902238d9267bf2797a76f0"
-    },
-    {
-      "path": "docs/VALIDATION.md",
-      "size_bytes": 1291,
-      "sha256": "23aadf4c0f1bedd9e3ac6926f9fdf4e2d88b9c1ce812bf612c42f8bba4c65a30"
-    },
-    {
-      "path": "docs/references/reasoning-link.md",
+      "path": "docs/references/reasoning_link.md",
       "size_bytes": 663,
       "sha256": "9b137e1f3f6b666d48b31c0339cda30a76bb1ab53515028e3395f5cc7a822877"
     },
     {
-      "path": "docs/references/worked-example.md",
+      "path": "docs/references/worked_example.md",
       "size_bytes": 1079,
       "sha256": "0a4b1139a6baca26a5d490e96b9684703f7781fd138a564aeca82a1893b189f9"
+    },
+    {
+      "path": "docs/traceability_map.yaml",
+      "size_bytes": 816,
+      "sha256": "f0040b2744f387c1011b9e977b8669201848a4bf2c5eeb5c3c637f35cfbe1511"
+    },
+    {
+      "path": "docs/unknown_register.md",
+      "size_bytes": 410,
+      "sha256": "b969ed2d31a128548c1cd891377b956d4d427861e3902238d9267bf2797a76f0"
+    },
+    {
+      "path": "docs/validation.md",
+      "size_bytes": 1291,
+      "sha256": "23aadf4c0f1bedd9e3ac6926f9fdf4e2d88b9c1ce812bf612c42f8bba4c65a30"
     },
     {
       "path": "examples/namespace.config.example.json",
@@ -584,36 +605,5 @@
       "size_bytes": 403,
       "sha256": "757229aba8eb6484bd87c79d13d8ecec661986b35249a8b9671307640b71c712"
     }
-  ],
-  "validation": [
-    {
-      "command_log": "npm_install.log",
-      "exit_code": "0",
-      "summary": "added 280 packages, and audited 281 packages in 3s; EXIT_CODE=0"
-    },
-    {
-      "command_log": "npm_run_build.log",
-      "exit_code": "0",
-      "summary": "EXIT_CODE=0"
-    },
-    {
-      "command_log": "npm_test.log",
-      "exit_code": "0",
-      "summary": "PASS tests/retrieval_txt.test.ts (12.293 s); PASS tests/assist.test.ts (12.218 s); PASS tests/reconcile_fields.test.ts (12.301 s); PASS tests/reconcile_fields_async.test.ts (12.302 s); PASS tests/pipeline_integration.test.ts (12.604 s); Test Suites: 9 passed, 9 total; Tests:       66 passed, 66 total; EXIT_CODE=0"
-    },
-    {
-      "command_log": "npx_jest_exact_rerun.log",
-      "exit_code": "0",
-      "summary": "PASS tests/llm.test.ts; PASS tests/reconcile_fields_async.test.ts; PASS tests/normalize_filename.test.ts; PASS tests/assist.test.ts; PASS tests/schema.test.ts; Test Suites: 9 passed, 9 total; Tests:       66 passed, 66 total; EXIT_CODE=0"
-    },
-    {
-      "command_log": "npm_pack_dry_run.log",
-      "exit_code": "0",
-      "summary": "npm notice Tarball Details; npm notice package size: 50.7 kB; npm notice total files: 71; EXIT_CODE=0"
-    }
-  ],
-  "unknowns": [
-    "No explicit LICENSE file was provided; license status is Unknown.",
-    "The uploaded manifest references l9-meta-injection-pack-v2.1.0.zip, while the provided ZIP is l9-meta-injector-consolidation(1).zip."
   ]
 }

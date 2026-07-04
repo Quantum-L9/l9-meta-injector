@@ -154,3 +154,145 @@ tools/consolidation/modes/repo_pack/__init__.py
 tools/consolidation/modes/repo_pack/injector.py
 tsconfig.json
 ```
+
+## Repo Structure Normalizer Pass - 2026-07-04
+
+Skill: `repo-structure-normalizer` v1.0.0 from `/mnt/data/l9-repo-structure-normalizer.skill.zip`.
+
+Dry-run result: 20 proposed operations, 0 collisions, 0 blocked operations.
+
+Applied: 13 safe documentation/reference normalizations under `docs/`:
+
+- Uppercase documentation filenames converted to lowercase snake_case.
+- `docs/references/reasoning-link.md` -> `docs/references/reasoning_link.md`.
+- `docs/references/worked-example.md` -> `docs/references/worked_example.md`.
+
+Rejected/skipped: 7 root-file operations because the previous repo-prep contract required these files to remain at repository root: `CHANGELOG.md`, `LICENSE_NOTE.md`, `MANIFEST.json`, `PACK_INVENTORY.md`, `PACK_INVENTORY.json`, `VALIDATION_REPORT.md`, `INITIAL_COMMIT_REPORT.md`.
+
+Validation after normalizer pass:
+
+- `npm run build`: exit 0
+- `npm test`: exit 0; 9 suites, 66 tests passed
+- `npx jest --runInBand`: exit 0; 9 suites, 66 tests passed
+- `npm pack --dry-run`: exit 0; package generated successfully in dry-run output
+
+Known warnings remain:
+
+- `ts-jest` config deprecation warning.
+- npm audit still reports one moderate dependency vulnerability after install.
+## Final Filetree After Normalizer
+
+```text
+./.gitignore
+./.npmignore
+./CHANGELOG.md
+./INITIAL_COMMIT_REPORT.md
+./LICENSE_NOTE.md
+./MANIFEST.json
+./PACK_INVENTORY.json
+./PACK_INVENTORY.md
+./README.md
+./VALIDATION_REPORT.md
+./dist/assist.d.ts
+./dist/assist.js
+./dist/assist.js.map
+./dist/classify.d.ts
+./dist/classify.js
+./dist/classify.js.map
+./dist/compiler.d.ts
+./dist/compiler.js
+./dist/compiler.js.map
+./dist/extract.d.ts
+./dist/extract.js
+./dist/extract.js.map
+./dist/index.d.ts
+./dist/index.js
+./dist/index.js.map
+./dist/inject.d.ts
+./dist/inject.js
+./dist/inject.js.map
+./dist/llm.d.ts
+./dist/llm.js
+./dist/llm.js.map
+./dist/namespace.d.ts
+./dist/namespace.js
+./dist/namespace.js.map
+./dist/normalize_filename.d.ts
+./dist/normalize_filename.js
+./dist/normalize_filename.js.map
+./dist/normalize_meta.d.ts
+./dist/normalize_meta.js
+./dist/normalize_meta.js.map
+./dist/pipeline.d.ts
+./dist/pipeline.js
+./dist/pipeline.js.map
+./dist/reconcile_fields.d.ts
+./dist/reconcile_fields.js
+./dist/reconcile_fields.js.map
+./dist/retrieval.d.ts
+./dist/retrieval.js
+./dist/retrieval.js.map
+./dist/schema.d.ts
+./dist/schema.js
+./dist/schema.js.map
+./dist/verify.d.ts
+./dist/verify.js
+./dist/verify.js.map
+./docs/architecture.md
+./docs/artifact_manifest.yaml
+./docs/assumption_map.yaml
+./docs/change_summary.md
+./docs/consolidation_skill.md
+./docs/contracts.md
+./docs/decision_log.md
+./docs/manifest.md
+./docs/references/reasoning_link.md
+./docs/references/worked_example.md
+./docs/traceability_map.yaml
+./docs/unknown_register.md
+./docs/validation.md
+./examples/namespace.config.example.json
+./jest.config.js
+./package-lock.json
+./package.json
+./schemas/l9_artifact_meta.schema.yaml
+./schemas/l9_meta.schema.yaml
+./schemas/move_map.schema.yaml
+./src/assist.ts
+./src/classify.ts
+./src/compiler.ts
+./src/extract.ts
+./src/index.ts
+./src/inject.ts
+./src/llm.ts
+./src/namespace.ts
+./src/normalize_filename.ts
+./src/normalize_meta.ts
+./src/pipeline.ts
+./src/reconcile_fields.ts
+./src/retrieval.ts
+./src/schema.ts
+./src/verify.ts
+./tests/assist.test.ts
+./tests/llm.test.ts
+./tests/namespace.test.ts
+./tests/normalize_filename.test.ts
+./tests/pipeline_integration.test.ts
+./tests/reconcile_fields.test.ts
+./tests/reconcile_fields_async.test.ts
+./tests/retrieval_txt.test.ts
+./tests/schema.test.ts
+./tools/consolidation/core/__init__.py
+./tools/consolidation/core/classifier.py
+./tools/consolidation/core/dedup_gate.py
+./tools/consolidation/core/hasher.py
+./tools/consolidation/core/ingress.py
+./tools/consolidation/core/path_planner.py
+./tools/consolidation/core/scanner.py
+./tools/consolidation/folder_artifact_consolidator.py
+./tools/consolidation/modes/folder_artifact/__init__.py
+./tools/consolidation/modes/folder_artifact/injector.py
+./tools/consolidation/modes/repo_pack/__init__.py
+./tools/consolidation/modes/repo_pack/injector.py
+./tsconfig.json
+```
