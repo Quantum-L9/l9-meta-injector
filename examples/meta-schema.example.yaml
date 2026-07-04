@@ -1,0 +1,51 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# EXAMPLE canonical meta-schema (NOT the locked default — default TBD on your OK).
+# Feed to the inventory tool:  npm run inventory -- <path> --schema this-file.yaml
+#
+# Canonical format (constrained YAML, depth <= 2 — no arbitrary YAML needed):
+#   schema_id / version / description : identity
+#   target   : which surfaces receive the meta [file_header, sidecar, manifest]
+#   fields[] : each meta field to emit, in order
+#       name      (required)  the key written into the header/sidecar
+#       source    (optional)  an inventory record field to pull the value from
+#       default   (optional)  literal fallback when source is empty/absent
+#       required  (optional)  if true and the value is still empty -> record an
+#                             `missing_required:<name>` unknown on that entry
+#
+# Available `source` fields (from each file/folder's inventory record):
+#   artifact_id, source_system, absolute_path, relative_path, file_name, extension,
+#   artifact_type, mime_type, size_bytes, modified_at, content_hash, parent_folder,
+#   depth, classification_confidence, evidence_excerpt, created_at
+# ─────────────────────────────────────────────────────────────────────────────
+schema_id: inventory_example
+version: 1.0.0
+description: Rich inventory header for capability archaeology across a Dropbox tree
+target: [file_header, sidecar, manifest]
+fields:
+  - name: id
+    source: artifact_id
+    required: true
+  - name: type
+    source: artifact_type
+    required: true
+  - name: path
+    source: relative_path
+    required: true
+  - name: size_bytes
+    source: size_bytes
+  - name: modified_at
+    source: modified_at
+  - name: content_hash
+    source: content_hash
+  - name: confidence
+    source: classification_confidence
+  - name: evidence
+    source: evidence_excerpt
+    default: Unknown
+  - name: owner
+    default: Unknown
+    required: true
+  - name: project
+    default: l9-constellation
+  - name: review_status
+    default: unreviewed

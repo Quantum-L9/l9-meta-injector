@@ -15,6 +15,8 @@
  *   --no-inject        do not append headers to text files (sidecars/manifest only)
  *   --no-folder-sidecars   do not write <folder>/.l9meta.yaml
  *   --ignore a,b,c     comma-list of directory names to skip (default: node_modules,.git)
+ *   --schema <file>    canonical meta-schema YAML: customize which meta fields are
+ *                      emitted, required, defaulted, and where each value comes from
  */
 "use strict";
 const fs = require("fs");
@@ -39,6 +41,13 @@ if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) { console.error(`i
 const outDir = path.resolve(opt("--out", path.join(root, ".l9inventory")));
 const now = new Date().toISOString();
 
+let schema;
+const schemaPath = opt("--schema", null);
+if (schemaPath) {
+  try { schema = pkg.loadMetaSchema(path.resolve(schemaPath)); console.error(`inventory: using meta-schema '${schema.schema_id}' v${schema.version} (${schema.fields.length} fields)`); }
+  catch (e) { console.error(`inventory: bad --schema (${e.message})`); process.exit(2); }
+}
+
 const config = {
   root,
   outDir,
@@ -48,13 +57,16 @@ const config = {
   folderSidecars: !flag("--no-folder-sidecars"),
   ignore: (opt("--ignore", "node_modules,.git")).split(",").map((s) => s.trim()).filter(Boolean).concat([".l9inventory"]),
   now,
+  schema,
 };
 
 console.error(`inventory: scanning ${root}${config.dryRun ? " (dry-run)" : ""} …`);
 const r = pkg.inventoryTree(config);
 console.log(`inventory: ${r.total} entries (${r.files} files, ${r.folders} folders)`);
 console.log(`  types: ${JSON.stringify(r.typeDistribution)}`);
+console.log(`  duplicate clusters: ${r.duplicates.length}`);
 console.log(`  manifest: ${path.relative(process.cwd(), r.manifestPaths.json)}`);
 console.log(`           ${path.relative(process.cwd(), r.manifestPaths.csv)}`);
 console.log(`           ${path.relative(process.cwd(), r.manifestPaths.md)}`);
+console.log(`           ${path.relative(process.cwd(), r.manifestPaths.duplicates)}`);
 if (config.dryRun) console.log("  (dry-run: no files/folders were modified; manifest only)");
