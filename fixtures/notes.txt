@@ -1,0 +1,2 @@
+Plain text notes.
+No frontmatter, treated as prose.

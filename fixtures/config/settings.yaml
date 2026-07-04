@@ -1,0 +1,3 @@
+service: injector
+retries: 3
+enabled: true
