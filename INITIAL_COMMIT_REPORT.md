@@ -1,48 +1,40 @@
-# Initial Commit Report
+# Initial Commit / Local Commit Report
 
-## Scope
-- Target: `https://github.com/Quantum-L9/l9-meta-injector`
-- Package identity: `l9-meta-injector`
-- Push performed: no
-- PR opened: no
+**Generated:** 2026-07-04  
+**Target repo:** `https://github.com/Quantum-L9/l9-meta-injector`  
+**Local path:** `/mnt/data/l9-meta-injector-final`  
+**Push performed:** no
 
-## Readiness
-- Initial commit readiness: pass
-- Reason: build, tests, direct Jest run, and npm pack dry-run all passed with exit code 0.
+## Latest Change Intent
 
-## Remaining Unknowns
-- No explicit LICENSE file was provided; license status is Unknown.
-- The uploaded manifest references l9-meta-injection-pack-v2.1.0.zip, while the provided ZIP is l9-meta-injector-consolidation(1).zip.
+Embed the generated upgrade/build plan plus the operator-approved GMP execution order into the commit pack, then record the recursive optimization pass and validation evidence.
 
-## Notes
-- This repo is treated as meta-injection only. No external graph export adapter scope was added.
-- The consolidation skill/playbook is preserved for traceability under `docs/` and `tools/consolidation/`.
+## Files Added / Updated
 
-COMMIT_HASH: recorded in final response after local commit creation
+- Added `docs/build_plan.md`
+- Added `docs/skill_runs/recursive_optimization_build_plan.md`
+- Updated `README.md`
+- Updated `MANIFEST.json`
+- Updated `PACK_INVENTORY.md`
+- Updated `PACK_INVENTORY.json`
+- Updated `VALIDATION_REPORT.md`
+- Updated this report
 
-## Repo Structure Normalizer Pass - 2026-07-04
+## Validation Evidence
 
-Skill: `repo-structure-normalizer` v1.0.0 from `/mnt/data/l9-repo-structure-normalizer.skill.zip`.
+- `npm run typecheck` passed.
+- `npm test` passed: 9 suites / 66 tests.
+- `npm pack --dry-run` passed: 75 files.
+- `npm audit --audit-level=moderate` reports the known `js-yaml` moderate advisory; scheduled as GMP-003.
 
-Dry-run result: 20 proposed operations, 0 collisions, 0 blocked operations.
+## Remaining Unknowns / Advisories
 
-Applied: 13 safe documentation/reference normalizations under `docs/`:
+- License choice remains Unknown.
+- `src/compiler.ts` public/internal decision remains Unknown.
+- Remote GitHub Actions proof remains Unknown until push.
+- Known ts-jest deprecation warning remains scheduled as GMP-002.
+- Known moderate npm audit advisory remains scheduled as GMP-003.
 
-- Uppercase documentation filenames converted to lowercase snake_case.
-- `docs/references/reasoning-link.md` -> `docs/references/reasoning_link.md`.
-- `docs/references/worked-example.md` -> `docs/references/worked_example.md`.
+## Commit
 
-Rejected/skipped: 7 root-file operations because the previous repo-prep contract required these files to remain at repository root: `CHANGELOG.md`, `LICENSE_NOTE.md`, `MANIFEST.json`, `PACK_INVENTORY.md`, `PACK_INVENTORY.json`, `VALIDATION_REPORT.md`, `INITIAL_COMMIT_REPORT.md`.
-
-Validation after normalizer pass:
-
-- `npm run build`: exit 0
-- `npm test`: exit 0; 9 suites, 66 tests passed
-- `npx jest --runInBand`: exit 0; 9 suites, 66 tests passed
-- `npm pack --dry-run`: exit 0; package generated successfully in dry-run output
-
-Known warnings remain:
-
-- `ts-jest` config deprecation warning.
-- npm audit still reports one moderate dependency vulnerability after install.
-
+Commit hash is filled by the final response after local commit.

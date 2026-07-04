@@ -1,70 +1,15 @@
 {
-  "package_identity": "l9-meta-injector",
-  "normalizer_skill": "repo-structure-normalizer v1.0.0",
-  "final_indexed_file_count_excluding_manifest": 111,
-  "applied_operations": [
-    [
-      "docs/ARCHITECTURE.md",
-      "docs/architecture.md"
-    ],
-    [
-      "docs/ARTIFACT_MANIFEST.yaml",
-      "docs/artifact_manifest.yaml"
-    ],
-    [
-      "docs/ASSUMPTION_MAP.yaml",
-      "docs/assumption_map.yaml"
-    ],
-    [
-      "docs/CHANGE_SUMMARY.md",
-      "docs/change_summary.md"
-    ],
-    [
-      "docs/CONSOLIDATION_SKILL.md",
-      "docs/consolidation_skill.md"
-    ],
-    [
-      "docs/CONTRACTS.md",
-      "docs/contracts.md"
-    ],
-    [
-      "docs/DECISION_LOG.md",
-      "docs/decision_log.md"
-    ],
-    [
-      "docs/MANIFEST.md",
-      "docs/manifest.md"
-    ],
-    [
-      "docs/TRACEABILITY_MAP.yaml",
-      "docs/traceability_map.yaml"
-    ],
-    [
-      "docs/UNKNOWN_REGISTER.md",
-      "docs/unknown_register.md"
-    ],
-    [
-      "docs/VALIDATION.md",
-      "docs/validation.md"
-    ],
-    [
-      "docs/references/reasoning-link.md",
-      "docs/references/reasoning_link.md"
-    ],
-    [
-      "docs/references/worked-example.md",
-      "docs/references/worked_example.md"
-    ]
+  "generated_utc": "2026-07-04T16:08:00Z",
+  "excluded_dirs": [
+    ".cache",
+    ".git",
+    ".index",
+    ".out",
+    ".turbo",
+    "coverage",
+    "node_modules"
   ],
-  "root_operations_rejected_to_preserve_contract": [
-    "CHANGELOG.md",
-    "LICENSE_NOTE.md",
-    "MANIFEST.json",
-    "PACK_INVENTORY.md",
-    "PACK_INVENTORY.json",
-    "VALIDATION_REPORT.md",
-    "INITIAL_COMMIT_REPORT.md"
-  ],
+  "file_count": 119,
   "files": [
     {
       "path": ".gitignore",
@@ -92,9 +37,14 @@
       "sha256": "b2a3ddf9c44bef498bd910181dc03442424e5024730b4485450d4f93d19669b8"
     },
     {
+      "path": "MANIFEST.json",
+      "size_bytes": 19620,
+      "sha256": "de77ce2221a22c91d4b41d64dbc2d177c5fa53b4e65c2b7578262eb706e1ab6f"
+    },
+    {
       "path": "PACK_INVENTORY.json",
-      "size_bytes": 40949,
-      "sha256": "04248f844461b68fea8f7e41762eb73d0be9ff2ba5f6d7253aba7dbbe309245b"
+      "size_bytes": 19408,
+      "sha256": "c5363b2ef011c88795209848287437a9f5c3b019f86752b9db9f778c2eed6aa0"
     },
     {
       "path": "PACK_INVENTORY.md",
@@ -103,8 +53,8 @@
     },
     {
       "path": "README.md",
-      "size_bytes": 1619,
-      "sha256": "7d9828c552856f4ec6ebbe354a35be97852a702fc2ae484de15a743b39457169"
+      "size_bytes": 1893,
+      "sha256": "3bc0f3a88c19836c4c84dea26b876bad1bb59d4681d01c662d00e99ed6962b1c"
     },
     {
       "path": "VALIDATION_REPORT.md",
@@ -352,6 +302,11 @@
       "sha256": "8b53d2f1c505b5dbf618780d649777c7afe48e5b84cf61a5bd251e23875118d9"
     },
     {
+      "path": "docs/build_plan.md",
+      "size_bytes": 22659,
+      "sha256": "0c13933ad4a0094d6464a587a81f89f8905bbe78cb5d76d0ba35e5c2acc0ed58"
+    },
+    {
       "path": "docs/change_summary.md",
       "size_bytes": 610,
       "sha256": "0b51b70fefa023476c20a2a021337b5c29e31162ec11ee192a5c0a42c7273e62"
@@ -385,6 +340,36 @@
       "path": "docs/references/worked_example.md",
       "size_bytes": 1079,
       "sha256": "0a4b1139a6baca26a5d490e96b9684703f7781fd138a564aeca82a1893b189f9"
+    },
+    {
+      "path": "docs/skill_runs/SKILL_RUN_SUMMARY.md",
+      "size_bytes": 1059,
+      "sha256": "7a66e6ae81d27d1bb5561ca893290bec7a169791a7ad08ddf9374f1dedae3b48"
+    },
+    {
+      "path": "docs/skill_runs/api_smoke_testing.md",
+      "size_bytes": 987,
+      "sha256": "69bbd4147627c95ef8483d9a61d406dcb77173403359ea5ff5b3e06149ab4b13"
+    },
+    {
+      "path": "docs/skill_runs/code_analysis.md",
+      "size_bytes": 3052,
+      "sha256": "ce8e302984ab770eb675aa973190a2e02ffc7ec8f1dd1adce71201d931c3088d"
+    },
+    {
+      "path": "docs/skill_runs/component_verification.md",
+      "size_bytes": 2713,
+      "sha256": "2017b9ce8308b160b232772ef7f24292a6f0b647c30c35df4bc34dc9d9999846"
+    },
+    {
+      "path": "docs/skill_runs/gap_analysis.md",
+      "size_bytes": 2054,
+      "sha256": "7d568927eb7a320280e89b2da430e6cee1cf0ad8eaae3abc9c3a1b6d532a2726"
+    },
+    {
+      "path": "docs/skill_runs/recursive_optimization_build_plan.md",
+      "size_bytes": 4876,
+      "sha256": "6a7506cb298188dc85782c0ea7eaa7923cafc848d2d3a56f16fd443ea9b35c72"
     },
     {
       "path": "docs/traceability_map.yaml",

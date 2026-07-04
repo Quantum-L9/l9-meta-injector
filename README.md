@@ -64,3 +64,8 @@ The uploaded pack also included a consolidation skill/playbook. It is preserved 
 ## Scope boundary
 
 This repository is meta injection only. It does not include or replace external graph export adapter work.
+
+## Build Plan
+
+The current GMP-chunked upgrade plan and operator-approved execution order are embedded at [`docs/build_plan.md`](docs/build_plan.md). Execute chunks locally through GMP with one validation-backed commit per chunk; do not push unless explicitly authorized.
+
