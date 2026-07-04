@@ -2,6 +2,28 @@
 import * as fs from "fs";
 import { VerifyResult, NormalizedMeta, UNKNOWN, PromptMeta } from "./schema";
 import { splitContent } from "./extract";
+import { resolveStrategy, hasInjectedBlock, sidecarPathFor } from "./comment";
+
+// A metadata header is valid if it is present in whatever form the file's strategy
+// dictates: YAML frontmatter, a comment-wrapped block, or a sidecar file.
+function metaHeaderValid(filePath: string, content: string, issues: string[]): boolean {
+  const spec = resolveStrategy(filePath, content);
+  if (spec.strategy === "yaml-frontmatter") {
+    if (splitContent(content).headerConvention === "full-yaml") return true;
+    issues.push("No full-YAML front matter detected");
+    return false;
+  }
+  if (spec.strategy === "line-comment" || spec.strategy === "block-comment") {
+    if (hasInjectedBlock(content, spec)) return true;
+    issues.push("No l9:meta comment block detected");
+    return false;
+  }
+  // sidecar
+  const sidecar = sidecarPathFor(filePath);
+  if (fs.existsSync(sidecar) && fs.readFileSync(sidecar, "utf8").trim().length > 0) return true;
+  issues.push("No l9meta sidecar file detected");
+  return false;
+}
 
 function isPromptMeta(m: NormalizedMeta): m is PromptMeta { return m.artifact_type === "prompt"; }
 
@@ -16,11 +38,7 @@ function checkSharingScope(meta: NormalizedMeta): string[] {
 export function verify(filePath: string, _origHash: string, meta: NormalizedMeta): VerifyResult {
   const issues: string[] = [];
   const content = fs.readFileSync(filePath, "utf8");
-  const { headerConvention } = splitContent(content);
-
-  const yamlValid = headerConvention === "full-yaml"
-    ? (() => { return true; })()
-    : (issues.push("No full-YAML front matter detected"), false);
+  const yamlValid = metaHeaderValid(filePath, content, issues);
 
   let taxonomyValid = true;
   if (meta.callable && meta.mcp_primitive === "none") { issues.push("callable=true but mcp_primitive=none"); taxonomyValid = false; }

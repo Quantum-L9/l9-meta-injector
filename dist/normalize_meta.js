@@ -88,7 +88,7 @@ function buildMeta(filePath, originalBody, ef, cr, nsCfg, authority, now) {
     };
     if (cr.artifactType === "doctrine")
         return { ...base, governs: schema_1.UNKNOWN, decision_drivers: schema_1.UNKNOWN, applies_to_domains: schema_1.UNKNOWN };
-    if (cr.artifactType === "test" || cr.artifactType === "script")
+    if (cr.artifactType === "test" || cr.artifactType === "script" || cr.artifactType === "source")
         return { ...base, owner: schema_1.UNKNOWN };
     const exec = {
         ...base, family: cr.family, description: schema_1.UNKNOWN,

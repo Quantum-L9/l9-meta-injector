@@ -52,7 +52,7 @@ export function buildMeta(
   };
 
   if (cr.artifactType === "doctrine") return { ...base, governs: UNKNOWN, decision_drivers: UNKNOWN, applies_to_domains: UNKNOWN } as DoctrineMeta;
-  if (cr.artifactType === "test" || cr.artifactType === "script") return { ...base, owner: UNKNOWN } as ArtifactMeta;
+  if (cr.artifactType === "test" || cr.artifactType === "script" || cr.artifactType === "source") return { ...base, owner: UNKNOWN } as ArtifactMeta;
 
   const exec: ExecutableRetrievalMeta = {
     ...base, family: cr.family, description: UNKNOWN,

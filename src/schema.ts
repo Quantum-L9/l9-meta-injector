@@ -3,7 +3,7 @@ export type Unknown = typeof UNKNOWN;
 
 export type ArtifactType =
   | "skill" | "playbook" | "kernel" | "context" | "prompt"
-  | "doctrine" | "test" | "script" | "unknown";
+  | "doctrine" | "test" | "script" | "source" | "unknown";
 
 export type McpPrimitive = "tool" | "resource" | "prompt" | "none";
 
@@ -30,6 +30,7 @@ export const PRIMITIVE_TAXONOMY: Record<string, PrimitiveTaxonomyEntry> = {
   doctrine: { type: "doctrine", meaning: "governance artifact",             callable: false, mcpPrimitive: "none",     injectable: true  },
   test:     { type: "test",     meaning: "test artifact",                   callable: false, mcpPrimitive: "none",     injectable: false },
   script:   { type: "script",   meaning: "script artifact",                 callable: false, mcpPrimitive: "none",     injectable: false },
+  source:   { type: "source",   meaning: "source or config file",           callable: false, mcpPrimitive: "resource", injectable: true  },
   unknown:  { type: "unknown",  meaning: "unclassified",                    callable: false, mcpPrimitive: "none",     injectable: false },
 };
 
@@ -127,6 +128,8 @@ export interface InjectionRecord {
   postInjectionBodyHash: string;
   bodyPreserved: boolean;
   headerInjected: boolean;
+  injectionStrategy?: string;
+  sidecarPath?: string;
   dryRunDiffPath?: string;
   injectLogPath?: string;
   meta: NormalizedMeta;
