@@ -1,0 +1,96 @@
+generated: 2026-06-20
+file_count: 31
+artifacts:
+  - path: ARCHITECTURE.md
+    bytes: 1842
+    sha256: 4a50d4e587b6e908f0cb59f5ca1d5d9de4f458b342b77c233844c9e6cabc2e82
+  - path: ASSUMPTION_MAP.yaml
+    bytes: 527
+    sha256: 8b53d2f1c505b5dbf618780d649777c7afe48e5b84cf61a5bd251e23875118d9
+  - path: CHANGE_SUMMARY.md
+    bytes: 610
+    sha256: 0b51b70fefa023476c20a2a021337b5c29e31162ec11ee192a5c0a42c7273e62
+  - path: CONTRACTS.md
+    bytes: 2302
+    sha256: 089a1af81c55403dafa661946c1dc8c8eec3fb269cff26c13e1e085f52bfc854
+  - path: DECISION_LOG.md
+    bytes: 998
+    sha256: 7c5bec43ff95135c1738be47b6fd55a6f2ec6ddadf28f436362c5ceaeeb6d671
+  - path: MANIFEST.md
+    bytes: 1196
+    sha256: 14c57f442e647c2b0fb28d8cb078fcea5f51209a0c2d443338ed367238fc04c7
+  - path: SKILL.md
+    bytes: 3148
+    sha256: 50c756ac921d1f8f61263cbd232a5ad27775db44272f06bb428e3f95553a92c5
+  - path: TRACEABILITY_MAP.yaml
+    bytes: 816
+    sha256: f0040b2744f387c1011b9e977b8669201848a4bf2c5eeb5c3c637f35cfbe1511
+  - path: UNKNOWN_REGISTER.md
+    bytes: 410
+    sha256: b969ed2d31a128548c1cd891377b956d4d427861e3902238d9267bf2797a76f0
+  - path: VALIDATION.md
+    bytes: 1291
+    sha256: 23aadf4c0f1bedd9e3ac6926f9fdf4e2d88b9c1ce812bf612c42f8bba4c65a30
+  - path: core/__init__.py
+    bytes: 0
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - path: core/classifier.py
+    bytes: 1614
+    sha256: 509ab549946235c9777e8ccef5bde1113f7ef6ff8e4126b3fd5d3875415e342b
+  - path: core/dedup_gate.py
+    bytes: 752
+    sha256: 30b6b8aab04d67644ec09ecdb1891f8c2190ccebba219c49075ef7b19b64d18f
+  - path: core/hasher.py
+    bytes: 243
+    sha256: f681d316533c4d183049f6ebb5574c9795dedbec47da45076ae7c62465767746
+  - path: core/ingress.py
+    bytes: 1925
+    sha256: 1bea0815380fc01557a7782fa22659b6633664bf5802c6f139360ec50b99f215
+  - path: core/path_planner.py
+    bytes: 357
+    sha256: 44379fe80714faa94514a287e09a39b5ea036e0655ef233255fd4d6454d38e01
+  - path: core/scanner.py
+    bytes: 749
+    sha256: 0c50ebdd376bf3b03a179a4715908aa58e8b510729321d5c19561d2f3cf0355e
+  - path: modes/folder-artifact/__init__.py
+    bytes: 0
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - path: modes/folder-artifact/injector.py
+    bytes: 5173
+    sha256: 1422720272f56e309c042ef9d957806a050db8fd3104fb10c0d7937e8fd6d26f
+  - path: modes/folder_artifact/__init__.py
+    bytes: 0
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - path: modes/folder_artifact/injector.py
+    bytes: 5190
+    sha256: 3c876fb187b5f2281cf1a07556b0e021a5e0487ebc2b27766fab8fca15f006c0
+  - path: modes/repo-pack/__init__.py
+    bytes: 0
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - path: modes/repo-pack/injector.py
+    bytes: 2384
+    sha256: f13694a873a296842528711492c9b7b06804b13ee00d2205495bc0806abdb419
+  - path: modes/repo_pack/__init__.py
+    bytes: 0
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - path: modes/repo_pack/injector.py
+    bytes: 2401
+    sha256: c6694758c6b77d92233599870dd64c753d394e7113c7548701e3fa653f95bcff
+  - path: references/reasoning-link.md
+    bytes: 663
+    sha256: 9b137e1f3f6b666d48b31c0339cda30a76bb1ab53515028e3395f5cc7a822877
+  - path: references/worked-example.md
+    bytes: 1079
+    sha256: 0a4b1139a6baca26a5d490e96b9684703f7781fd138a564aeca82a1893b189f9
+  - path: schemas/l9_artifact_meta.schema.yaml
+    bytes: 576
+    sha256: 4bb4b16a26506983a968e00c1b4e71e17749ae03c195473dd1771d6f589157f8
+  - path: schemas/l9_meta.schema.yaml
+    bytes: 357
+    sha256: ace93bbd3258e02fc32fa5a20c11575a46aca44fe7d4a9dd0dbd4ac8a6094913
+  - path: schemas/move_map.schema.yaml
+    bytes: 740
+    sha256: 91d390992624511803ba934d2ff1625235743b2aad19811bba4f7fa4a3002712
+  - path: ARTIFACT_MANIFEST.yaml
+    bytes: self
+    sha256: self

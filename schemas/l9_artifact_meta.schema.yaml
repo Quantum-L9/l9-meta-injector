@@ -1,0 +1,15 @@
+schema: L9_ARTIFACT_META
+version: 1
+mode: folder-artifact
+fields:
+  schema:                    {type: int}
+  mode:                      {const: folder_artifact_consolidation}
+  source_path:               {type: string}
+  output_path:               {type: string}
+  artifact_type:             {type: string}
+  l9_domain:                 {type: string}
+  content_hash:              {type: string}
+  classification_confidence: {type: float}
+  renamed_from:              {type: string}
+  created_at:                {type: string}
+sidecar: ".l9meta.yaml for binary/non-text files"

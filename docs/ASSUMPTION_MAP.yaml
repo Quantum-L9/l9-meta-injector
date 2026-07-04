@@ -1,0 +1,16 @@
+assumptions:
+  - id: A1
+    text: "Text files (md/txt/yaml/py/json/toml) accept comment headers"
+    confidence: 0.95
+  - id: A2
+    text: "Binary/PDF/image files require .l9meta.yaml sidecars"
+    confidence: 0.97
+  - id: A3
+    text: "Default classification confidence threshold = 0.60"
+    confidence: 0.70
+  - id: A4
+    text: "L9 domain adapter hints are optional; core is domain-neutral"
+    confidence: 0.90
+  - id: A5
+    text: "Repo-pack mode allows in-place mutation; folder-artifact never does"
+    confidence: 0.99

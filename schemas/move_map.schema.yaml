@@ -1,0 +1,13 @@
+schema: move_map
+version: 1
+columns:
+  source_path:               {type: string, required: true}
+  content_hash:              {type: string, required: true, pattern: "^[a-f0-9]{64}$"}
+  artifact_type:             {type: enum, values: [architecture,contract,node_spec,infra,template,skill,unknown]}
+  l9_domain:                 {type: string, default: generic}
+  node_name:                 {type: string, default: unknown}
+  output_path:               {type: string, required: true}
+  renamed_from:              {type: string}
+  classification_confidence: {type: float, min: 0.0, max: 1.0}
+  path_confidence:           {type: float, min: 0.0, max: 1.0}
+  dedup_status:              {type: enum, values: [unique,duplicate,collision,unknown]}

@@ -1,0 +1,24 @@
+traceability:
+  objective: "Unified consolidation — repo-pack and folder-artifact via shared core"
+  decisions: DECISION_LOG.md
+  contracts: CONTRACTS.md
+  validation: VALIDATION.md
+  shared_core: [scanner, hasher, classifier, path_planner, dedup_gate]
+  modes:
+    repo-pack:
+      pattern: catalog_delta
+      mutation: in_place
+      header: L9_META
+    folder-artifact:
+      pattern: B_then_C
+      mutation: copy_only
+      header: L9_ARTIFACT_META
+      b_output: [inventory.csv, move_map.csv, conflicts.md]
+      gate: manifest_gate
+      c_consumes: move_map.csv
+  reasoning_kernel: l9-branch-merge-reasoning (external reference, not embedded)
+  invariants:
+    - single_ingress: consolidate_request
+    - source_mutation_folder_artifact: false
+    - unknown_labeling: true
+    - no_connector_drift: true

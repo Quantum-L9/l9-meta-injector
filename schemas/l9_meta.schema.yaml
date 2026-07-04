@@ -1,0 +1,11 @@
+schema: L9_META
+version: 1
+mode: repo-pack
+fields:
+  l9_schema:  {type: int,    required: true}
+  origin:     {type: string, required: true}
+  layer:      {type: string}
+  tags:       {type: list}
+  owner:      {type: string}
+  status:     {type: enum, values: [active,deprecated,review]}
+idempotency: "skip if L9_META block already present in file header"

@@ -1,0 +1,12 @@
+{
+  "namespace": "l9",
+  "authority": "l9.doctrine.platform",
+  "namespaceGlobs": [
+    { "glob": "plastos/**", "namespace": "plastos" },
+    { "glob": "_shared/**", "namespace": "shared" }
+  ],
+  "nearDupThreshold": 0.9,
+  "hashPrefixLength": 16,
+  "outputDir": ".out",
+  "indexDir": ".index"
+}

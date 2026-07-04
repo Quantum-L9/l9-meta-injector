@@ -1,0 +1,12 @@
+node_modules/
+coverage/
+.DS_Store
+__MACOSX/
+*.log
+.env
+.env.*
+.turbo/
+.cache/
+dist/*.tsbuildinfo
+.out/
+.index/
