@@ -69,3 +69,10 @@ This repository is meta injection only. It does not include or replace external 
 
 The current GMP-chunked upgrade plan and operator-approved execution order are embedded at [`docs/build_plan.md`](docs/build_plan.md). Execute chunks locally through GMP with one validation-backed commit per chunk; do not push unless explicitly authorized.
 
+## Coding Agent Handoff
+
+This pack includes a GMP v2.0 coding-agent handoff under `docs/coding_agent_handoff/`.
+Start with `docs/coding_agent_handoff/CODING_AGENT_HANDOFF.md`, then execute one GMP chunk at a time from `docs/build_plan.md`.
+
+Recommended first chunk: **GMP-001: Add `npm run validate`**.
+

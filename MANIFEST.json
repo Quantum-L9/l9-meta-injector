@@ -1,25 +1,42 @@
 {
   "package_identity": "l9-meta-injector",
   "version": "2.1.0",
-  "generated_utc": "2026-07-04T16:08:00Z",
+  "generated_utc": "2026-07-04T16:23:00Z",
   "target_repo": "https://github.com/Quantum-L9/l9-meta-injector",
-  "current_phase": "build_plan_embedded_after_recursive_optimization",
+  "current_phase": "coding_agent_handoff_embedded",
   "push_performed": false,
   "latest_requested_execution_order": [
-    "GMP-001: Add npm run validate",
-    "GMP-002: Modernize Jest config",
-    "GMP-003: Resolve npm audit warning",
-    "GMP-004: Public API boundary decision",
-    "GMP-005: Dry-run/write-safety tests",
-    "GMP-006: Mocked LLM adapter tests",
-    "GMP-007: CI workflow",
-    "GMP-008: Package consumer fixture",
-    "GMP-009: Release checklist / publish readiness"
+    "1. GMP-001: Add `npm run validate`",
+    "2. GMP-002: Modernize Jest config",
+    "3. GMP-003: Resolve npm audit warning",
+    "4. GMP-004: Public API boundary decision",
+    "5. GMP-005: Dry-run/write-safety tests",
+    "6. GMP-006: Mocked LLM adapter tests",
+    "7. GMP-007: CI workflow",
+    "8. GMP-008: Package consumer fixture",
+    "9. GMP-009: Release checklist / publish readiness"
   ],
+  "coding_agent_handoff": {
+    "path": "docs/coding_agent_handoff/CODING_AGENT_HANDOFF.md",
+    "prompt_system_path": "docs/coding_agent_handoff/gmp_v2_prompt_system/",
+    "included_uploaded_files": [
+      "README.md",
+      "phase-0-prompt.md",
+      "phase-2-3-4-prompt.md",
+      "phase-5-prompt.md",
+      "phase-6-prompt.md",
+      "ai-to-ai-handoffs.md"
+    ],
+    "missing_declared_files": [
+      "gmp-system-prompt.md",
+      "learning-integration-prompt.md",
+      "gmp-quick-reference.md"
+    ]
+  },
   "validation_summary": {
     "npm_run_typecheck": "pass",
     "npm_test": "pass_9_suites_66_tests",
-    "npm_pack_dry_run": "pass_75_files",
+    "npm_pack_dry_run": "pass_75_files_package_size_53_2_kb",
     "npm_audit_audit_level_moderate": "fail_known_moderate_js_yaml_advisory_scheduled_as_GMP_003"
   },
   "files": [
@@ -40,8 +57,8 @@
     },
     {
       "path": "INITIAL_COMMIT_REPORT.md",
-      "size_bytes": 2018,
-      "sha256": "4604301e3a14329fceb53a3a949f5790d88a540804be29436118c1df4fc0be4f"
+      "size_bytes": 1707,
+      "sha256": "4334e2686ea3351caac4b8bc565281fabb74b06e7227fd5c61fabfcdcbcdeb1e"
     },
     {
       "path": "LICENSE_NOTE.md",
@@ -50,28 +67,28 @@
     },
     {
       "path": "MANIFEST.json",
-      "size_bytes": 19620,
-      "sha256": "de77ce2221a22c91d4b41d64dbc2d177c5fa53b4e65c2b7578262eb706e1ab6f"
+      "size_bytes": 22368,
+      "sha256": "d2778704efeb1dca9df9d052575137b04111d1aa2d0058be004d703dbb9be0b4"
     },
     {
       "path": "PACK_INVENTORY.json",
-      "size_bytes": 19408,
-      "sha256": "c5363b2ef011c88795209848287437a9f5c3b019f86752b9db9f778c2eed6aa0"
+      "size_bytes": 20946,
+      "sha256": "8b04f5587c18a28a3177a0b97dafcc93bcbcf53fb8f366b18a00ffc465ca6fa5"
     },
     {
       "path": "PACK_INVENTORY.md",
-      "size_bytes": 7906,
-      "sha256": "3a9ef35ec5e827ecf5af0d4191e7785e2f9182ed56cda2035ad1bb7e0ad0abd0"
+      "size_bytes": 5932,
+      "sha256": "b4e6beba706463c45707a5b053cb40cb07a69847e5e7fd24ee66d1c11eb8b80e"
     },
     {
       "path": "README.md",
-      "size_bytes": 1893,
-      "sha256": "3bc0f3a88c19836c4c84dea26b876bad1bb59d4681d01c662d00e99ed6962b1c"
+      "size_bytes": 2197,
+      "sha256": "f740394be50e032ec4eb7c02e8f931a9005dc90d1641754124e52b272d057734"
     },
     {
       "path": "VALIDATION_REPORT.md",
-      "size_bytes": 2802,
-      "sha256": "5df6e0081627f1fd82b9180a53e0f05afe90be90d6ed9e5a13a9078605d33587"
+      "size_bytes": 1012,
+      "sha256": "b45db6dd5f2420430f55e7a36461f1a49dab766522a54631c9528c139678b0ef"
     },
     {
       "path": "dist/assist.d.ts",
@@ -324,6 +341,41 @@
       "sha256": "0b51b70fefa023476c20a2a021337b5c29e31162ec11ee192a5c0a42c7273e62"
     },
     {
+      "path": "docs/coding_agent_handoff/CODING_AGENT_HANDOFF.md",
+      "size_bytes": 26043,
+      "sha256": "5a1994a701114dee9616237764f959822a1031c5fa894fd7bcccf9c9129596c0"
+    },
+    {
+      "path": "docs/coding_agent_handoff/gmp_v2_prompt_system/README.md",
+      "size_bytes": 11013,
+      "sha256": "a6312c41856004cbb977d4989ad3d3180bceb14a243c9dee436a1084f28655e8"
+    },
+    {
+      "path": "docs/coding_agent_handoff/gmp_v2_prompt_system/ai-to-ai-handoffs.md",
+      "size_bytes": 18157,
+      "sha256": "fb3036337aa119b7311793b233ef0b7a3082209a8b68a6932fe10ac383e502d4"
+    },
+    {
+      "path": "docs/coding_agent_handoff/gmp_v2_prompt_system/phase-0-prompt.md",
+      "size_bytes": 9498,
+      "sha256": "0437b5ba21011320f99e3eb64f00be0b142738e083d9ed4b22f69a1f1bc133e8"
+    },
+    {
+      "path": "docs/coding_agent_handoff/gmp_v2_prompt_system/phase-2-3-4-prompt.md",
+      "size_bytes": 14124,
+      "sha256": "f680c59cd24a3bcdd69405a5dd852210651508b5002bb56eec6a2644a52efd2b"
+    },
+    {
+      "path": "docs/coding_agent_handoff/gmp_v2_prompt_system/phase-5-prompt.md",
+      "size_bytes": 13671,
+      "sha256": "198deca6fd2fdf69a1c1f8b40a4c57e7352628dec86735dacb8786f2cd08620d"
+    },
+    {
+      "path": "docs/coding_agent_handoff/gmp_v2_prompt_system/phase-6-prompt.md",
+      "size_bytes": 11582,
+      "sha256": "5ce7ff1e90037bb4a5ac6928dbf8adf69d64d72ce286d5cf682999924767e009"
+    },
+    {
       "path": "docs/consolidation_skill.md",
       "size_bytes": 3148,
       "sha256": "50c756ac921d1f8f61263cbd232a5ad27775db44272f06bb428e3f95553a92c5"
@@ -377,6 +429,11 @@
       "path": "docs/skill_runs/gap_analysis.md",
       "size_bytes": 2054,
       "sha256": "7d568927eb7a320280e89b2da430e6cee1cf0ad8eaae3abc9c3a1b6d532a2726"
+    },
+    {
+      "path": "docs/skill_runs/gmp_v2_prompt_system_handoff.md",
+      "size_bytes": 3605,
+      "sha256": "e1f624badbf7c0727d7a0508cefd3135c9a6ddb2093ad4b1617e5d7870ad69bb"
     },
     {
       "path": "docs/skill_runs/recursive_optimization_build_plan.md",

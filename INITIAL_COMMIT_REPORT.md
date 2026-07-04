@@ -38,3 +38,14 @@ Embed the generated upgrade/build plan plus the operator-approved GMP execution 
 ## Commit
 
 Commit hash is filled by the final response after local commit.
+
+## Coding Agent Handoff Addition
+
+A GMP v2.0 prompt-system handoff was added for downstream coding agents.
+
+- Primary handoff: `docs/coding_agent_handoff/CODING_AGENT_HANDOFF.md`
+- Prompt materials: `docs/coding_agent_handoff/gmp_v2_prompt_system/`
+- Build plan remains canonical: `docs/build_plan.md`
+- Push performed: false
+- Next execution: GMP-001 local-only
+

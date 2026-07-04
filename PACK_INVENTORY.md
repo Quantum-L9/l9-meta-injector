@@ -1,131 +1,139 @@
-# Pack Inventory
+# PACK INVENTORY
 
-Generated: 2026-07-04T16:08:00Z
+Generated: 2026-07-04T16:23:00Z
 
-Total indexed files: 119
+## Summary
 
-Excluded: `.git/`, `node_modules/`, coverage/cache/output folders.
+- Files tracked in pack inventory: 127
+- `node_modules/`, `.git/`, `coverage/`, caches, and logs excluded.
+- Coding-agent handoff added under `docs/coding_agent_handoff/`.
 
 ## Files
 
-| Path | Size | SHA-256 |
-|---|---:|---|
-| `.gitignore` | 111 | `0a7521b7d5f17826…` |
-| `.npmignore` | 126 | `2674666def5db077…` |
-| `CHANGELOG.md` | 2410 | `6010c5439efebf67…` |
-| `INITIAL_COMMIT_REPORT.md` | 2018 | `4604301e3a14329f…` |
-| `LICENSE_NOTE.md` | 159 | `b2a3ddf9c44bef49…` |
-| `MANIFEST.json` | 19620 | `de77ce2221a22c91…` |
-| `PACK_INVENTORY.json` | 19408 | `c5363b2ef011c887…` |
-| `PACK_INVENTORY.md` | 7906 | `3a9ef35ec5e827ec…` |
-| `README.md` | 1893 | `3bc0f3a88c19836c…` |
-| `VALIDATION_REPORT.md` | 2802 | `5df6e0081627f1fd…` |
-| `dist/assist.d.ts` | 687 | `a88fb16338382d89…` |
-| `dist/assist.js` | 3787 | `0dc109cc37e1257c…` |
-| `dist/assist.js.map` | 2932 | `1a3f198855a4957f…` |
-| `dist/classify.d.ts` | 166 | `c1073bd1293c14eb…` |
-| `dist/classify.js` | 5246 | `96bc716fa068731d…` |
-| `dist/classify.js.map` | 4411 | `bbc255b9b8dcf6fe…` |
-| `dist/compiler.d.ts` | 985 | `fddfd622191f97f1…` |
-| `dist/compiler.js` | 2257 | `b5a164f5c6d819b6…` |
-| `dist/compiler.js.map` | 2680 | `f96dd993de1b86ae…` |
-| `dist/extract.d.ts` | 464 | `32ac8fd11e45b5b4…` |
-| `dist/extract.js` | 4881 | `1768640dae5bdd6e…` |
-| `dist/extract.js.map` | 3422 | `f35a58513f1ab12f…` |
-| `dist/index.d.ts` | 723 | `aaa77ca646ac1929…` |
-| `dist/index.js` | 2499 | `d993e3cb24182c3c…` |
-| `dist/index.js.map` | 440 | `5b1ea5365a3edfa6…` |
-| `dist/inject.d.ts` | 429 | `c37bd0dc547db5e6…` |
-| `dist/inject.js` | 7359 | `2171ef934236d9ac…` |
-| `dist/inject.js.map` | 5803 | `965f59e031ace8e0…` |
-| `dist/llm.d.ts` | 501 | `b64e8dc50cdd3164…` |
-| `dist/llm.js` | 1725 | `1fe80d21abd738d5…` |
-| `dist/llm.js.map` | 1652 | `564670fc294e3dc1…` |
-| `dist/namespace.d.ts` | 671 | `cbead0cd9b785ec5…` |
-| `dist/namespace.js` | 4075 | `1518e297ad40ca7d…` |
-| `dist/namespace.js.map` | 2949 | `4c0398e965d9a156…` |
-| `dist/normalize_filename.d.ts` | 654 | `f8b73297fd1e096c…` |
-| `dist/normalize_filename.js` | 3953 | `07cc2ed73273c91b…` |
-| `dist/normalize_filename.js.map` | 2386 | `6dc63e7e3b817ad8…` |
-| `dist/normalize_meta.d.ts` | 393 | `2aef94b1e80175c1…` |
-| `dist/normalize_meta.js` | 4591 | `4d6dcdecf3c8a185…` |
-| `dist/normalize_meta.js.map` | 3302 | `9ca5edc0167ba7ad…` |
-| `dist/pipeline.d.ts` | 348 | `f73cde8aa31c12d4…` |
-| `dist/pipeline.js` | 5872 | `c455a2e027f573cd…` |
-| `dist/pipeline.js.map` | 4186 | `d00e07cd3ebdab4e…` |
-| `dist/reconcile_fields.d.ts` | 704 | `1369518125d3da33…` |
-| `dist/reconcile_fields.js` | 7596 | `f7038a328f59f42a…` |
-| `dist/reconcile_fields.js.map` | 6746 | `7a7741448a024e32…` |
-| `dist/retrieval.d.ts` | 180 | `f4fb2cb94262d1b8…` |
-| `dist/retrieval.js` | 3816 | `58c9e44e6a2ba420…` |
-| `dist/retrieval.js.map` | 2332 | `dd57bbab916a8805…` |
-| `dist/schema.d.ts` | 4104 | `2891b58a49ae94f8…` |
-| `dist/schema.js` | 1338 | `e54f2612de8be6c2…` |
-| `dist/schema.js.map` | 1280 | `3fe2df040aca0227…` |
-| `dist/verify.d.ts` | 162 | `3b340cf5272f284a…` |
-| `dist/verify.js` | 3303 | `9af88201d8f93367…` |
-| `dist/verify.js.map` | 1799 | `b46d4f6a952dfea9…` |
-| `docs/architecture.md` | 1842 | `4a50d4e587b6e908…` |
-| `docs/artifact_manifest.yaml` | 3859 | `64a54416cb795102…` |
-| `docs/assumption_map.yaml` | 527 | `8b53d2f1c505b5db…` |
-| `docs/build_plan.md` | 22659 | `0c13933ad4a0094d…` |
-| `docs/change_summary.md` | 610 | `0b51b70fefa02347…` |
-| `docs/consolidation_skill.md` | 3148 | `50c756ac921d1f8f…` |
-| `docs/contracts.md` | 2302 | `089a1af81c55403d…` |
-| `docs/decision_log.md` | 998 | `7c5bec43ff95135c…` |
-| `docs/manifest.md` | 1196 | `14c57f442e647c2b…` |
-| `docs/references/reasoning_link.md` | 663 | `9b137e1f3f6b666d…` |
-| `docs/references/worked_example.md` | 1079 | `0a4b1139a6baca26…` |
-| `docs/skill_runs/SKILL_RUN_SUMMARY.md` | 1059 | `7a66e6ae81d27d1b…` |
-| `docs/skill_runs/api_smoke_testing.md` | 987 | `69bbd4147627c95e…` |
-| `docs/skill_runs/code_analysis.md` | 3052 | `ce8e302984ab770e…` |
-| `docs/skill_runs/component_verification.md` | 2713 | `2017b9ce8308b160…` |
-| `docs/skill_runs/gap_analysis.md` | 2054 | `7d568927eb7a3202…` |
-| `docs/skill_runs/recursive_optimization_build_plan.md` | 4876 | `6a7506cb298188dc…` |
-| `docs/traceability_map.yaml` | 816 | `f0040b2744f387c1…` |
-| `docs/unknown_register.md` | 410 | `b969ed2d31a12854…` |
-| `docs/validation.md` | 1291 | `23aadf4c0f1bedd9…` |
-| `examples/namespace.config.example.json` | 296 | `07bc6413d9c2462c…` |
-| `jest.config.js` | 231 | `a9a31f7f89d9b156…` |
-| `package-lock.json` | 138685 | `bec30eab05bec44d…` |
-| `package.json` | 573 | `49141d24e68a1b5d…` |
-| `schemas/l9_artifact_meta.schema.yaml` | 576 | `4bb4b16a26506983…` |
-| `schemas/l9_meta.schema.yaml` | 357 | `ace93bbd3258e02f…` |
-| `schemas/move_map.schema.yaml` | 740 | `91d3909926245118…` |
-| `src/assist.ts` | 3636 | `de717ef361148c2a…` |
-| `src/classify.ts` | 4114 | `47f4ebfb726f26b8…` |
-| `src/compiler.ts` | 2283 | `713af757f1de3314…` |
-| `src/extract.ts` | 3304 | `f8a10b5ddcd8d36d…` |
-| `src/index.ts` | 723 | `aaa77ca646ac1929…` |
-| `src/inject.ts` | 5645 | `51e08a75fdee773e…` |
-| `src/llm.ts` | 1705 | `ab8ab87535eb8a9f…` |
-| `src/namespace.ts` | 2960 | `d4f6525af8adac0b…` |
-| `src/normalize_filename.ts` | 2613 | `0f754e6a35679541…` |
-| `src/normalize_meta.ts` | 3101 | `06d00cc1cd7a42c7…` |
-| `src/pipeline.ts` | 4436 | `d87acf8694a37ef9…` |
-| `src/reconcile_fields.ts` | 7501 | `34ff3fbc2f4e66f2…` |
-| `src/retrieval.ts` | 2271 | `8bf38be7665b1d1d…` |
-| `src/schema.ts` | 5214 | `eebeccf48b0729c2…` |
-| `src/verify.ts` | 1862 | `3e638ea746cb26b3…` |
-| `tests/assist.test.ts` | 2761 | `6c0300e7fdc7dfc2…` |
-| `tests/llm.test.ts` | 891 | `18560a1a25509c9b…` |
-| `tests/namespace.test.ts` | 2259 | `498faa270c588715…` |
-| `tests/normalize_filename.test.ts` | 1889 | `6ff0aaf1d49a5543…` |
-| `tests/pipeline_integration.test.ts` | 2744 | `532714a11c70852a…` |
-| `tests/reconcile_fields.test.ts` | 3160 | `1a5b739028b8053e…` |
-| `tests/reconcile_fields_async.test.ts` | 3482 | `3f10ea68c79a2b63…` |
-| `tests/retrieval_txt.test.ts` | 2066 | `be9e8d99f45bee76…` |
-| `tests/schema.test.ts` | 508 | `276b782d3b59f6bf…` |
-| `tools/consolidation/core/__init__.py` | 0 | `e3b0c44298fc1c14…` |
-| `tools/consolidation/core/classifier.py` | 1614 | `509ab549946235c9…` |
-| `tools/consolidation/core/dedup_gate.py` | 752 | `30b6b8aab04d6764…` |
-| `tools/consolidation/core/hasher.py` | 243 | `f681d316533c4d18…` |
-| `tools/consolidation/core/ingress.py` | 1925 | `1bea0815380fc015…` |
-| `tools/consolidation/core/path_planner.py` | 357 | `44379fe80714faa9…` |
-| `tools/consolidation/core/scanner.py` | 749 | `0c50ebdd376bf3b0…` |
-| `tools/consolidation/folder_artifact_consolidator.py` | 7745 | `106b4e3e0ff9bec8…` |
-| `tools/consolidation/modes/folder_artifact/__init__.py` | 0 | `e3b0c44298fc1c14…` |
-| `tools/consolidation/modes/folder_artifact/injector.py` | 5190 | `3c876fb187b5f228…` |
-| `tools/consolidation/modes/repo_pack/__init__.py` | 0 | `e3b0c44298fc1c14…` |
-| `tools/consolidation/modes/repo_pack/injector.py` | 2401 | `c6694758c6b77d92…` |
-| `tsconfig.json` | 403 | `757229aba8eb6484…` |
+- `.gitignore` — 111 bytes
+- `.npmignore` — 126 bytes
+- `CHANGELOG.md` — 2410 bytes
+- `INITIAL_COMMIT_REPORT.md` — 1707 bytes
+- `LICENSE_NOTE.md` — 159 bytes
+- `MANIFEST.json` — 22368 bytes
+- `PACK_INVENTORY.json` — 20946 bytes
+- `PACK_INVENTORY.md` — 5932 bytes
+- `README.md` — 2197 bytes
+- `VALIDATION_REPORT.md` — 1012 bytes
+- `dist/assist.d.ts` — 687 bytes
+- `dist/assist.js` — 3787 bytes
+- `dist/assist.js.map` — 2932 bytes
+- `dist/classify.d.ts` — 166 bytes
+- `dist/classify.js` — 5246 bytes
+- `dist/classify.js.map` — 4411 bytes
+- `dist/compiler.d.ts` — 985 bytes
+- `dist/compiler.js` — 2257 bytes
+- `dist/compiler.js.map` — 2680 bytes
+- `dist/extract.d.ts` — 464 bytes
+- `dist/extract.js` — 4881 bytes
+- `dist/extract.js.map` — 3422 bytes
+- `dist/index.d.ts` — 723 bytes
+- `dist/index.js` — 2499 bytes
+- `dist/index.js.map` — 440 bytes
+- `dist/inject.d.ts` — 429 bytes
+- `dist/inject.js` — 7359 bytes
+- `dist/inject.js.map` — 5803 bytes
+- `dist/llm.d.ts` — 501 bytes
+- `dist/llm.js` — 1725 bytes
+- `dist/llm.js.map` — 1652 bytes
+- `dist/namespace.d.ts` — 671 bytes
+- `dist/namespace.js` — 4075 bytes
+- `dist/namespace.js.map` — 2949 bytes
+- `dist/normalize_filename.d.ts` — 654 bytes
+- `dist/normalize_filename.js` — 3953 bytes
+- `dist/normalize_filename.js.map` — 2386 bytes
+- `dist/normalize_meta.d.ts` — 393 bytes
+- `dist/normalize_meta.js` — 4591 bytes
+- `dist/normalize_meta.js.map` — 3302 bytes
+- `dist/pipeline.d.ts` — 348 bytes
+- `dist/pipeline.js` — 5872 bytes
+- `dist/pipeline.js.map` — 4186 bytes
+- `dist/reconcile_fields.d.ts` — 704 bytes
+- `dist/reconcile_fields.js` — 7596 bytes
+- `dist/reconcile_fields.js.map` — 6746 bytes
+- `dist/retrieval.d.ts` — 180 bytes
+- `dist/retrieval.js` — 3816 bytes
+- `dist/retrieval.js.map` — 2332 bytes
+- `dist/schema.d.ts` — 4104 bytes
+- `dist/schema.js` — 1338 bytes
+- `dist/schema.js.map` — 1280 bytes
+- `dist/verify.d.ts` — 162 bytes
+- `dist/verify.js` — 3303 bytes
+- `dist/verify.js.map` — 1799 bytes
+- `docs/architecture.md` — 1842 bytes
+- `docs/artifact_manifest.yaml` — 3859 bytes
+- `docs/assumption_map.yaml` — 527 bytes
+- `docs/build_plan.md` — 22659 bytes
+- `docs/change_summary.md` — 610 bytes
+- `docs/coding_agent_handoff/CODING_AGENT_HANDOFF.md` — 26043 bytes
+- `docs/coding_agent_handoff/gmp_v2_prompt_system/README.md` — 11013 bytes
+- `docs/coding_agent_handoff/gmp_v2_prompt_system/ai-to-ai-handoffs.md` — 18157 bytes
+- `docs/coding_agent_handoff/gmp_v2_prompt_system/phase-0-prompt.md` — 9498 bytes
+- `docs/coding_agent_handoff/gmp_v2_prompt_system/phase-2-3-4-prompt.md` — 14124 bytes
+- `docs/coding_agent_handoff/gmp_v2_prompt_system/phase-5-prompt.md` — 13671 bytes
+- `docs/coding_agent_handoff/gmp_v2_prompt_system/phase-6-prompt.md` — 11582 bytes
+- `docs/consolidation_skill.md` — 3148 bytes
+- `docs/contracts.md` — 2302 bytes
+- `docs/decision_log.md` — 998 bytes
+- `docs/manifest.md` — 1196 bytes
+- `docs/references/reasoning_link.md` — 663 bytes
+- `docs/references/worked_example.md` — 1079 bytes
+- `docs/skill_runs/SKILL_RUN_SUMMARY.md` — 1059 bytes
+- `docs/skill_runs/api_smoke_testing.md` — 987 bytes
+- `docs/skill_runs/code_analysis.md` — 3052 bytes
+- `docs/skill_runs/component_verification.md` — 2713 bytes
+- `docs/skill_runs/gap_analysis.md` — 2054 bytes
+- `docs/skill_runs/gmp_v2_prompt_system_handoff.md` — 3605 bytes
+- `docs/skill_runs/recursive_optimization_build_plan.md` — 4876 bytes
+- `docs/traceability_map.yaml` — 816 bytes
+- `docs/unknown_register.md` — 410 bytes
+- `docs/validation.md` — 1291 bytes
+- `examples/namespace.config.example.json` — 296 bytes
+- `jest.config.js` — 231 bytes
+- `package-lock.json` — 138685 bytes
+- `package.json` — 573 bytes
+- `schemas/l9_artifact_meta.schema.yaml` — 576 bytes
+- `schemas/l9_meta.schema.yaml` — 357 bytes
+- `schemas/move_map.schema.yaml` — 740 bytes
+- `src/assist.ts` — 3636 bytes
+- `src/classify.ts` — 4114 bytes
+- `src/compiler.ts` — 2283 bytes
+- `src/extract.ts` — 3304 bytes
+- `src/index.ts` — 723 bytes
+- `src/inject.ts` — 5645 bytes
+- `src/llm.ts` — 1705 bytes
+- `src/namespace.ts` — 2960 bytes
+- `src/normalize_filename.ts` — 2613 bytes
+- `src/normalize_meta.ts` — 3101 bytes
+- `src/pipeline.ts` — 4436 bytes
+- `src/reconcile_fields.ts` — 7501 bytes
+- `src/retrieval.ts` — 2271 bytes
+- `src/schema.ts` — 5214 bytes
+- `src/verify.ts` — 1862 bytes
+- `tests/assist.test.ts` — 2761 bytes
+- `tests/llm.test.ts` — 891 bytes
+- `tests/namespace.test.ts` — 2259 bytes
+- `tests/normalize_filename.test.ts` — 1889 bytes
+- `tests/pipeline_integration.test.ts` — 2744 bytes
+- `tests/reconcile_fields.test.ts` — 3160 bytes
+- `tests/reconcile_fields_async.test.ts` — 3482 bytes
+- `tests/retrieval_txt.test.ts` — 2066 bytes
+- `tests/schema.test.ts` — 508 bytes
+- `tools/consolidation/core/__init__.py` — 0 bytes
+- `tools/consolidation/core/classifier.py` — 1614 bytes
+- `tools/consolidation/core/dedup_gate.py` — 752 bytes
+- `tools/consolidation/core/hasher.py` — 243 bytes
+- `tools/consolidation/core/ingress.py` — 1925 bytes
+- `tools/consolidation/core/path_planner.py` — 357 bytes
+- `tools/consolidation/core/scanner.py` — 749 bytes
+- `tools/consolidation/folder_artifact_consolidator.py` — 7745 bytes
+- `tools/consolidation/modes/folder_artifact/__init__.py` — 0 bytes
+- `tools/consolidation/modes/folder_artifact/injector.py` — 5190 bytes
+- `tools/consolidation/modes/repo_pack/__init__.py` — 0 bytes
+- `tools/consolidation/modes/repo_pack/injector.py` — 2401 bytes
+- `tsconfig.json` — 403 bytes

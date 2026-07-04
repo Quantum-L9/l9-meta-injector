@@ -1,25 +1,32 @@
-# Validation Report
+# VALIDATION REPORT
 
-**Generated:** 2026-07-04  
-**Scope:** build plan inclusion + recursive optimization report, docs-only mutation  
-**Push performed:** no
+Generated: 2026-07-04T16:23:00Z
 
-## Commands Run
+## Scope
+
+Validation after adding GMP v2.0 coding-agent handoff materials to the commit pack.
+
+## Commands
 
 | Command | Exit | Result |
 |---|---:|---|
 | `npm run typecheck` | 0 | pass |
-| `npm test` | 0 | pass — 9 suites, 66 tests |
-| `npm pack --dry-run` | 0 | pass — 75 npm package files, 52.4 kB package |
-| `npm audit --audit-level=moderate` | 1 | known advisory — `js-yaml <3.15.0`, scheduled as GMP-003 |
+| `npm test` | 0 | pass — 9 suites / 66 tests |
+| `npm pack --dry-run` | 0 | pass — 75 package files, docs excluded by `.npmignore` |
+| `npm audit --audit-level=moderate` | 1 | known moderate `js-yaml` advisory, scheduled as GMP-003 |
 
 ## Notes
 
-- The new build-plan artifact is repo-local documentation and is intentionally excluded from `npm pack` by `.npmignore` because `docs/` is excluded from the published package.
-- Test output still includes the known ts-jest deprecation warning; it is scheduled as GMP-002.
-- No source files were changed in this pass.
-- No push was performed.
+- No source code changed.
+- Added documentation/handoff files under `docs/coding_agent_handoff/`.
+- `npm pack --dry-run` remains at 75 files because `.npmignore` excludes `docs/` from npm package payload.
+- `ts-jest` deprecation warning remains scheduled for GMP-002.
+- Moderate `js-yaml` audit advisory remains scheduled for GMP-003.
 
 ## Verdict
 
-Local repo pack is clean and commit-ready with documented advisories. The audit advisory is not introduced by this docs-only change and remains part of the planned GMP sequence.
+Commit-pack validation: **pass with known advisory**.
+
+## Next Action
+
+Execute **GMP-001: Add `npm run validate`** locally, then rerun typecheck, test, and npm pack dry-run.
