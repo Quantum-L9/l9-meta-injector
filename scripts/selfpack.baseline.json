@@ -28,7 +28,7 @@
     "verificationClean": 8
   },
   "idempotency": {
-    "rerunFilesChanged": 5
+    "rerunFilesChanged": 0
   },
   "files": [
     {
