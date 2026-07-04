@@ -76,7 +76,7 @@ function serializeToYamlFrontMatter(meta) {
 }
 function buildMeta(filePath, originalBody, ef, cr, nsCfg, authority, now) {
     const tax = schema_1.PRIMITIVE_TAXONOMY[cr.artifactType] ?? schema_1.PRIMITIVE_TAXONOMY["unknown"];
-    const { namespace, sharingScope, idStem } = (0, namespace_1.resolveNamespace)(filePath, nsCfg);
+    const { namespace, sharingScope, idStem } = (0, namespace_1.resolveNamespace)(filePath, nsCfg, cr.artifactType);
     const base = {
         id: idStem, title: slugTitle(filePath), artifact_type: cr.artifactType,
         mcp_primitive: tax.mcpPrimitive, callable: tax.callable,

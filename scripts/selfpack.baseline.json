@@ -4,7 +4,7 @@
     "scanned": 10,
     "injected": 9,
     "verified": 9,
-    "verifiedClean": 8
+    "verifiedClean": 9
   },
   "strategyDist": {
     "block-comment": 2,
@@ -25,7 +25,7 @@
     "dedupUniqueCount": 9,
     "dedupExactTwins": 0,
     "verificationEntries": 9,
-    "verificationClean": 8
+    "verificationClean": 9
   },
   "idempotency": {
     "rerunFilesChanged": 0
@@ -33,6 +33,7 @@
   "files": [
     {
       "path": "config/settings.yaml",
+      "id": "l9.source.settings",
       "artifact_type": "source",
       "mcp_primitive": "resource",
       "injectable": true,
@@ -44,6 +45,7 @@
     },
     {
       "path": "data/config.json",
+      "id": "l9.source.config",
       "artifact_type": "source",
       "mcp_primitive": "resource",
       "injectable": true,
@@ -55,6 +57,7 @@
     },
     {
       "path": "docs/overview.md",
+      "id": "l9.context.overview",
       "artifact_type": "context",
       "mcp_primitive": "resource",
       "injectable": true,
@@ -66,6 +69,7 @@
     },
     {
       "path": "prompts/Prompt-LegalAnalysis.md",
+      "id": "l9.prompt.legal_analysis",
       "artifact_type": "prompt",
       "mcp_primitive": "prompt",
       "injectable": true,
@@ -77,6 +81,7 @@
     },
     {
       "path": "scripts/run.sh",
+      "id": "l9.script.run",
       "artifact_type": "source",
       "mcp_primitive": "resource",
       "injectable": true,
@@ -88,6 +93,7 @@
     },
     {
       "path": "skills/lint_file.md",
+      "id": "l9.skill.lint_file",
       "artifact_type": "skill",
       "mcp_primitive": "tool",
       "injectable": true,
@@ -99,6 +105,7 @@
     },
     {
       "path": "src/app.ts",
+      "id": "l9.source.app",
       "artifact_type": "source",
       "mcp_primitive": "resource",
       "injectable": true,
@@ -110,6 +117,7 @@
     },
     {
       "path": "web/page.html",
+      "id": "l9.source.page",
       "artifact_type": "source",
       "mcp_primitive": "resource",
       "injectable": true,
@@ -121,6 +129,7 @@
     },
     {
       "path": "web/style.css",
+      "id": "l9.source.style",
       "artifact_type": "source",
       "mcp_primitive": "resource",
       "injectable": true,

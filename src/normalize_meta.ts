@@ -39,7 +39,7 @@ export function buildMeta(
   nsCfg: NamespaceConfig, authority: string, now: string
 ): NormalizedMeta {
   const tax = PRIMITIVE_TAXONOMY[cr.artifactType] ?? PRIMITIVE_TAXONOMY["unknown"];
-  const { namespace, sharingScope, idStem } = resolveNamespace(filePath, nsCfg);
+  const { namespace, sharingScope, idStem } = resolveNamespace(filePath, nsCfg, cr.artifactType);
 
   const base = {
     id: idStem, title: slugTitle(filePath), artifact_type: cr.artifactType,
