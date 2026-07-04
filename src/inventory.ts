@@ -10,6 +10,7 @@ import { contentHash } from "./extract";
 import { resolveStrategy, sidecarPathFor } from "./comment";
 import { injectFile } from "./inject";
 import { NormalizedMeta } from "./schema";
+import { MetaSchema, applySchema, targetIncludes, parseCanonicalYaml, toMetaSchema } from "./meta_schema";
 
 export type InventoryArtifactType =
   | "spec" | "code" | "schema" | "prompt" | "research_markdown" | "research_pdf"
@@ -47,6 +48,15 @@ export interface InventoryConfig {
   hashMaxBytes?: number;    // skip content_hash above this size (default 50 MiB)
   ignore?: string[];        // directory names to skip (default node_modules, .git)
   now?: string;             // ISO timestamp (injected for determinism)
+  schema?: MetaSchema;      // custom meta structure; when absent the built-in default is used
+}
+
+export interface DuplicateCluster {
+  content_hash: string;
+  count: number;
+  wasted_bytes: number;     // (count-1) * size — bytes recoverable if deduped
+  keeper: string;           // suggested keeper (shortest path)
+  paths: string[];
 }
 
 export interface InventoryResult {
@@ -55,8 +65,39 @@ export interface InventoryResult {
   files: number;
   folders: number;
   typeDistribution: Record<string, number>;
-  manifestPaths: { json: string; csv: string; md: string };
+  manifestPaths: { json: string; csv: string; md: string; duplicates: string };
+  duplicates: DuplicateCluster[];
   records: InventoryRecord[];
+}
+
+/** Load and validate a canonical meta-schema YAML file. */
+export function loadMetaSchema(filePath: string): MetaSchema {
+  return toMetaSchema(parseCanonicalYaml(fs.readFileSync(filePath, "utf8")));
+}
+
+/** Group records by content_hash to surface duplicate clusters across the whole tree. */
+export function buildDuplicateClusters(records: InventoryRecord[]): DuplicateCluster[] {
+  const byHash = new Map<string, InventoryRecord[]>();
+  for (const r of records) {
+    if (!r.content_hash || r.artifact_type === "folder") continue;
+    const g = byHash.get(r.content_hash) ?? [];
+    g.push(r);
+    byHash.set(r.content_hash, g);
+  }
+  const clusters: DuplicateCluster[] = [];
+  for (const [hash, group] of byHash) {
+    if (group.length < 2) continue;
+    const paths = group.map((g) => g.relative_path).sort();
+    const size = group[0].size_bytes ?? 0;
+    clusters.push({
+      content_hash: hash,
+      count: group.length,
+      wasted_bytes: (group.length - 1) * size,
+      keeper: paths.slice().sort((a, b) => a.length - b.length || a.localeCompare(b))[0],
+      paths,
+    });
+  }
+  return clusters.sort((a, b) => b.wasted_bytes - a.wasted_bytes || b.count - a.count);
 }
 
 const CODE_EXTS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".go", ".rs", ".java", ".c", ".h", ".cpp", ".hpp", ".cc", ".cs", ".rb", ".php", ".swift", ".kt", ".kts", ".scala", ".sh", ".bash", ".zsh", ".lua", ".r", ".jl", ".pl", ".pm", ".dart", ".ex", ".exs"]);
@@ -107,7 +148,7 @@ function csvCell(v: unknown): string {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-function serializeYaml(rec: InventoryRecord): string {
+function serializeYaml(rec: Record<string, unknown>): string {
   const lines = ["---"];
   for (const [k, v] of Object.entries(rec)) {
     if (Array.isArray(v)) {
@@ -197,8 +238,18 @@ export function inventoryTree(config: InventoryConfig): InventoryResult {
   const typeDistribution: Record<string, number> = {};
   let files = 0, folders = 0;
 
+  const schema = config.schema;
   for (const { abs, isDir } of entries) {
     const rec = buildRecord(root, abs, isDir, cfg);
+    // The meta object written to headers/sidecars: schema-driven when provided, else default.
+    let metaObj: Record<string, unknown>;
+    if (schema) {
+      const applied = applySchema(rec as unknown as Record<string, unknown>, schema);
+      if (applied.missingRequired.length) rec.unknowns.push(...applied.missingRequired.map((n) => `missing_required:${n}`));
+      metaObj = applied.fields;
+    } else {
+      metaObj = rec as unknown as Record<string, unknown>;
+    }
     records.push(rec);
     typeDistribution[rec.artifact_type] = (typeDistribution[rec.artifact_type] || 0) + 1;
     if (isDir) folders++; else files++;
@@ -206,8 +257,8 @@ export function inventoryTree(config: InventoryConfig): InventoryResult {
     if (cfg.dryRun) continue;
 
     if (isDir) {
-      if (cfg.folderSidecars) {
-        try { fs.writeFileSync(path.join(abs, ".l9meta.yaml"), serializeYaml(rec), "utf8"); } catch { /* unwritable dir — recorded, skip */ }
+      if (cfg.folderSidecars && targetIncludes(schema, "sidecar")) {
+        try { fs.writeFileSync(path.join(abs, ".l9meta.yaml"), serializeYaml(metaObj), "utf8"); } catch { /* unwritable dir — recorded, skip */ }
       }
       continue;
     }
@@ -216,17 +267,20 @@ export function inventoryTree(config: InventoryConfig): InventoryResult {
     // binaries / comment-less formats get a metadata sidecar. Body is preserved.
     const raw = safeRead(abs);
     const strategy = raw === null ? "skip-binary" : resolveStrategy(abs, raw).strategy;
-    if (cfg.injectHeaders && raw !== null && (strategy === "yaml-frontmatter" || strategy === "line-comment" || strategy === "block-comment")) {
+    const canHeader = raw !== null && (strategy === "yaml-frontmatter" || strategy === "line-comment" || strategy === "block-comment");
+    if (cfg.injectHeaders && canHeader && targetIncludes(schema, "file_header")) {
+      const headerMeta = (schema ? metaObj : recordAsMeta(rec)) as unknown as NormalizedMeta;
       try {
-        injectFile(abs, recordAsMeta(rec), { dryRun: false, outDir: config.outDir, verbose: false, writeInjectLog: false });
-      } catch { writeSidecar(abs, rec); }
-    } else {
-      writeSidecar(abs, rec);
+        injectFile(abs, headerMeta, { dryRun: false, outDir: config.outDir, verbose: false, writeInjectLog: false });
+      } catch { if (targetIncludes(schema, "sidecar")) writeSidecar(abs, metaObj); }
+    } else if (targetIncludes(schema, "sidecar")) {
+      writeSidecar(abs, metaObj);
     }
   }
 
-  const manifestPaths = writeManifests(config.outDir, root, records, typeDistribution, cfg.now, cfg.dryRun);
-  return { root, total: records.length, files, folders, typeDistribution, manifestPaths, records };
+  const duplicates = buildDuplicateClusters(records);
+  const manifestPaths = writeManifests(config.outDir, root, records, typeDistribution, duplicates, cfg.now, cfg.dryRun);
+  return { root, total: records.length, files, folders, typeDistribution, manifestPaths, duplicates, records };
 }
 
 function safeRead(abs: string): string | null {
@@ -238,8 +292,8 @@ function safeRead(abs: string): string | null {
   } catch { return null; }
 }
 
-function writeSidecar(abs: string, rec: InventoryRecord): void {
-  try { fs.writeFileSync(sidecarPathFor(abs), serializeYaml(rec), "utf8"); } catch { /* unwritable — recorded in manifest only */ }
+function writeSidecar(abs: string, obj: Record<string, unknown>): void {
+  try { fs.writeFileSync(sidecarPathFor(abs), serializeYaml(obj), "utf8"); } catch { /* unwritable — recorded in manifest only */ }
 }
 
 // Map an InventoryRecord onto the minimal header the injector serializes. The injector
@@ -267,23 +321,30 @@ function recordAsMeta(rec: InventoryRecord): NormalizedMeta {
   } as unknown as NormalizedMeta;
 }
 
-function writeManifests(outDir: string, root: string, records: InventoryRecord[], dist: Record<string, number>, now: string, dryRun: boolean): { json: string; csv: string; md: string } {
+function writeManifests(outDir: string, root: string, records: InventoryRecord[], dist: Record<string, number>, duplicates: DuplicateCluster[], now: string, _dryRun: boolean): { json: string; csv: string; md: string; duplicates: string } {
   fs.mkdirSync(outDir, { recursive: true });
   const jsonPath = path.join(outDir, "inventory.json");
   const csvPath = path.join(outDir, "inventory.csv");
   const mdPath = path.join(outDir, "inventory.md");
+  const dupPath = path.join(outDir, "inventory-duplicates.json");
 
-  fs.writeFileSync(jsonPath, JSON.stringify({ generatedAt: now, root, total: records.length, typeDistribution: dist, records }, null, 2), "utf8");
+  fs.writeFileSync(jsonPath, JSON.stringify({ generatedAt: now, root, total: records.length, typeDistribution: dist, duplicateClusters: duplicates.length, records }, null, 2), "utf8");
+  const totalWasted = duplicates.reduce((a, d) => a + d.wasted_bytes, 0);
+  fs.writeFileSync(dupPath, JSON.stringify({ generatedAt: now, root, clusters: duplicates.length, totalWastedBytes: totalWasted, duplicates }, null, 2), "utf8");
 
   const cols: (keyof InventoryRecord)[] = ["relative_path", "file_name", "extension", "artifact_type", "size_bytes", "modified_at", "content_hash", "depth", "classification_confidence", "evidence_excerpt", "unknowns"];
   const rows = [cols.join(",")];
   for (const r of records) rows.push(cols.map((c) => csvCell(Array.isArray(r[c]) ? (r[c] as string[]).join("; ") : r[c])).join(","));
   fs.writeFileSync(csvPath, rows.join("\n") + "\n", "utf8");
 
-  const md = [`# Inventory — ${root}`, ``, `Generated: ${now}  |  Total entries: ${records.length}`, ``, `## Type distribution`, ``, ...Object.entries(dist).sort((a, b) => b[1] - a[1]).map(([k, v]) => `- **${k}**: ${v}`), ``, `## Entries`, ``, `| path | type | conf | size | evidence |`, `|---|---|---|---|---|`, ...records.slice(0, 500).map((r) => `| ${r.relative_path} | ${r.artifact_type} | ${r.classification_confidence} | ${r.size_bytes ?? ""} | ${r.evidence_excerpt ?? ""} |`)];
+  const md = [`# Inventory — ${root}`, ``, `Generated: ${now}  |  Total entries: ${records.length}  |  Duplicate clusters: ${duplicates.length}  |  Recoverable: ${totalWasted} bytes`, ``, `## Type distribution`, ``, ...Object.entries(dist).sort((a, b) => b[1] - a[1]).map(([k, v]) => `- **${k}**: ${v}`)];
+  if (duplicates.length) {
+    md.push(``, `## Duplicate clusters (consolidated dedup view)`, ``, `Files sharing a content hash across the tree. Read-only — nothing is deleted.`, ``, `| # | count | wasted bytes | keeper | other paths |`, `|---|---|---|---|---|`);
+    duplicates.slice(0, 100).forEach((d, i) => md.push(`| ${i + 1} | ${d.count} | ${d.wasted_bytes} | \`${d.keeper}\` | ${d.paths.filter((p) => p !== d.keeper).join("<br>")} |`));
+  }
+  md.push(``, `## Entries`, ``, `| path | type | conf | size | evidence |`, `|---|---|---|---|---|`, ...records.slice(0, 500).map((r) => `| ${r.relative_path} | ${r.artifact_type} | ${r.classification_confidence} | ${r.size_bytes ?? ""} | ${r.evidence_excerpt ?? ""} |`));
   if (records.length > 500) md.push(``, `_(${records.length - 500} more entries in inventory.json / inventory.csv)_`);
   fs.writeFileSync(mdPath, md.join("\n") + "\n", "utf8");
 
-  if (dryRun) { /* manifests still written; source untouched */ }
-  return { json: jsonPath, csv: csvPath, md: mdPath };
+  return { json: jsonPath, csv: csvPath, md: mdPath, duplicates: dupPath };
 }
