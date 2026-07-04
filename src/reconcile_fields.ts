@@ -45,7 +45,7 @@ function hasExplicitDeprecation(existing: Record<string, unknown>): boolean {
   return false;
 }
 
-function unionArrays(a: unknown, b: unknown): unknown[] {
+function unionArrays(a: unknown, b: unknown): unknown {
   const toArr = (v: unknown): string[] => {
     if (v === UNKNOWN || v === null || v === undefined) return [];
     if (Array.isArray(v)) return v.map(String).filter((s) => s && s !== UNKNOWN);
@@ -53,7 +53,10 @@ function unionArrays(a: unknown, b: unknown): unknown[] {
     return [];
   };
   const merged = [...new Set([...toArr(a), ...toArr(b)])];
-  return merged.length > 0 ? merged : [UNKNOWN];
+  // Empty union → scalar UNKNOWN (as buildMeta first emits it), NOT [UNKNOWN]. Returning
+  // a one-element list here flips scalar `field: Unknown` into a `- Unknown` list on the
+  // next run, breaking idempotency. Scalar-in / scalar-out keeps re-injection byte-stable.
+  return merged.length > 0 ? merged : UNKNOWN;
 }
 
 // Sync heuristic: new is >20% larger in serialized form and passes good predicate
@@ -95,8 +98,15 @@ export async function reconcileFieldsAsync(
 
     if (LIST_UNION_FIELDS.has(field)) {
       const unioned = unionArrays(oldVal, newVal);
-      merged[field] = unioned;
-      diffs.push({ field, action: "append-union", oldValue: oldVal, newValue: unioned, reason: "list field — union, never overwrite" });
+      if (JSON.stringify(unioned) === JSON.stringify(oldVal)) {
+        // Union produced no change — record as keep, not a mutation. Emitting
+        // append-union here would rewrite the .inject.log on every no-op re-run.
+        merged[field] = oldVal;
+        diffs.push({ field, action: "keep", oldValue: oldVal, newValue: unioned, reason: "list field — union unchanged" });
+      } else {
+        merged[field] = unioned;
+        diffs.push({ field, action: "append-union", oldValue: oldVal, newValue: unioned, reason: "list field — union, never overwrite" });
+      }
       continue;
     }
 
@@ -144,8 +154,15 @@ export function reconcileFields(
 
     if (LIST_UNION_FIELDS.has(field)) {
       const unioned = unionArrays(oldVal, newVal);
-      merged[field] = unioned;
-      diffs.push({ field, action: "append-union", oldValue: oldVal, newValue: unioned, reason: "list field — union, never overwrite" });
+      if (JSON.stringify(unioned) === JSON.stringify(oldVal)) {
+        // Union produced no change — record as keep, not a mutation. Emitting
+        // append-union here would rewrite the .inject.log on every no-op re-run.
+        merged[field] = oldVal;
+        diffs.push({ field, action: "keep", oldValue: oldVal, newValue: unioned, reason: "list field — union unchanged" });
+      } else {
+        merged[field] = unioned;
+        diffs.push({ field, action: "append-union", oldValue: oldVal, newValue: unioned, reason: "list field — union, never overwrite" });
+      }
       continue;
     }
 
