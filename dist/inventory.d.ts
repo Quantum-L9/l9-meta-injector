@@ -19,6 +19,7 @@ export interface InventoryRecord {
     evidence_excerpt: string | null;
     unknowns: string[];
     created_at: string | null;
+    meta?: Record<string, unknown>;
 }
 export interface InventoryConfig {
     root: string;

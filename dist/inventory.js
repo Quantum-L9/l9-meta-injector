@@ -46,6 +46,7 @@ exports.inventoryTree = inventoryTree;
 // or deletes anything.
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const crypto = __importStar(require("crypto"));
 const extract_1 = require("./extract");
 const comment_1 = require("./comment");
 const inject_1 = require("./inject");
@@ -186,7 +187,10 @@ function buildRecord(root, abs, isDir, cfg) {
         size = isDir ? null : st.size;
         modified = st.mtime.toISOString();
         if (!isDir && size !== null && size <= cfg.hashMaxBytes) {
-            hash = (0, extract_1.contentHash)(fs.readFileSync(abs, "utf8"));
+            // Hash the raw BYTES (not a utf8-decoded string) so distinct binary payloads
+            // don't collapse into the same hash via replacement chars — keeps identity and
+            // the dedup view correct for non-UTF8 inputs.
+            hash = crypto.createHash("sha256").update(fs.readFileSync(abs)).digest("hex");
         }
         else if (!isDir && size !== null) {
             unknowns.push("content_hash_skipped:file_too_large");
@@ -224,10 +228,14 @@ function inventoryTree(config) {
         injectHeaders: config.injectHeaders ?? true,
         folderSidecars: config.folderSidecars ?? true,
         hashMaxBytes: config.hashMaxBytes ?? 50 * 1024 * 1024,
-        ignore: new Set(config.ignore ?? ["node_modules", ".git"]),
+        // Default-ignore the inventory output dir so re-runs never inventory/mutate
+        // previously generated manifests and sidecars.
+        ignore: new Set(config.ignore ?? ["node_modules", ".git", ".l9inventory"]),
         now: config.now ?? "1970-01-01T00:00:00.000Z",
     };
-    const root = config.root;
+    // Absolutize root so absolute_path is truly absolute and relative_path/manifest
+    // output are deterministic regardless of the caller's cwd.
+    const root = path.resolve(config.root);
     const entries = walk(root, cfg.ignore);
     const records = [];
     const typeDistribution = {};
@@ -242,6 +250,10 @@ function inventoryTree(config) {
             if (applied.missingRequired.length)
                 rec.unknowns.push(...applied.missingRequired.map((n) => `missing_required:${n}`));
             metaObj = applied.fields;
+            // Honor target:"manifest" — attach the schema-shaped meta to the record so it
+            // flows into inventory.json (otherwise "manifest" in target would be a no-op).
+            if ((0, meta_schema_1.targetIncludes)(schema, "manifest"))
+                rec.meta = applied.fields;
         }
         else {
             metaObj = rec;
@@ -286,17 +298,26 @@ function inventoryTree(config) {
     const manifestPaths = writeManifests(config.outDir, root, records, typeDistribution, duplicates, cfg.now, cfg.dryRun);
     return { root, total: records.length, files, folders, typeDistribution, manifestPaths, duplicates, records };
 }
+// Read only the first 8 KB — enough to decide binary-vs-text and pick a strategy,
+// without loading a whole large binary into memory. injectFile re-reads the full
+// file itself when it actually needs the body.
 function safeRead(abs) {
+    let fd = null;
     try {
-        const buf = fs.readFileSync(abs);
-        const n = Math.min(buf.length, 8192);
+        fd = fs.openSync(abs, "r");
+        const buf = Buffer.alloc(8192);
+        const n = fs.readSync(fd, buf, 0, 8192, 0);
         for (let i = 0; i < n; i++)
             if (buf[i] === 0)
                 return null; // binary
-        return buf.toString("utf8");
+        return buf.subarray(0, n).toString("utf8");
     }
     catch {
         return null;
+    }
+    finally {
+        if (fd !== null)
+            fs.closeSync(fd);
     }
 }
 function writeSidecar(abs, obj) {

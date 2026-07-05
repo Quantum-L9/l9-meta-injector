@@ -4,6 +4,38 @@ import * as path from "path";
 import { inventoryTree, classifyInventory, buildRecord } from "../src/inventory";
 
 function tmp() { return fs.mkdtempSync(path.join(os.tmpdir(), "l9-inv-")); }
+
+describe("inventory Copilot fixes (PR #5)", () => {
+  it("byte-based content_hash: two distinct binaries do NOT collapse into one hash", () => {
+    const root = tmp();
+    fs.writeFileSync(path.join(root, "a.bin"), Buffer.from([0xff, 0xfe, 0x00, 0x01]));
+    fs.writeFileSync(path.join(root, "b.bin"), Buffer.from([0xff, 0xfe, 0x00, 0x02]));
+    const out = tmp();
+    const r = inventoryTree({ root, outDir: out, dryRun: true, now: "2026-01-01T00:00:00.000Z" });
+    const a = r.records.find((x) => x.file_name === "a.bin")!;
+    const b = r.records.find((x) => x.file_name === "b.bin")!;
+    expect(a.content_hash).not.toBe(b.content_hash); // utf8 decode would have collapsed these
+    expect(r.duplicates).toHaveLength(0);
+  });
+  it("default ignore excludes the .l9inventory output dir (no self-inventory on re-run)", () => {
+    const root = tmp();
+    fs.writeFileSync(path.join(root, "x.md"), "# x\n");
+    fs.mkdirSync(path.join(root, ".l9inventory"));
+    fs.writeFileSync(path.join(root, ".l9inventory", "inventory.json"), "{}");
+    const out = path.join(root, ".l9inventory");
+    const r = inventoryTree({ root, outDir: out, dryRun: true, now: "2026-01-01T00:00:00.000Z" });
+    expect(r.records.some((x) => x.relative_path.startsWith(".l9inventory"))).toBe(false);
+  });
+  it("relative root is absolutized → absolute_path is absolute", () => {
+    const root = tmp();
+    fs.writeFileSync(path.join(root, "y.ts"), "const y=1;\n");
+    const rel = path.relative(process.cwd(), root);
+    const out = tmp();
+    const r = inventoryTree({ root: rel, outDir: out, dryRun: true, now: "2026-01-01T00:00:00.000Z" });
+    expect(r.records.every((x) => x.absolute_path === null || path.isAbsolute(x.absolute_path))).toBe(true);
+  });
+});
+
 function tree(root: string) {
   fs.mkdirSync(path.join(root, "src"), { recursive: true });
   fs.mkdirSync(path.join(root, "docs"), { recursive: true });
