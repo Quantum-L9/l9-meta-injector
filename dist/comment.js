@@ -152,12 +152,12 @@ function yamlToBlock(yamlInner, spec) {
 function blockRegex(spec) {
     if (spec.strategy === "line-comment") {
         const p = esc(spec.linePrefix);
-        return new RegExp(`${p} ${esc(START)}[\\s\\S]*?${p} ${esc(END)}\\n?`);
+        return new RegExp(`${p} ${esc(START)}[\\s\\S]*?${p} ${esc(END)}\\r?\\n?`);
     }
     if (spec.strategy === "block-comment") {
         const o = esc(spec.blockOpen);
         const c = esc(spec.blockClose);
-        return new RegExp(`${o} ${esc(BLOCK_START)}[\\s\\S]*?${esc(BLOCK_END)} ${c}\\n?`);
+        return new RegExp(`${o} ${esc(BLOCK_START)}[\\s\\S]*?${esc(BLOCK_END)} ${c}\\r?\\n?`);
     }
     return null;
 }

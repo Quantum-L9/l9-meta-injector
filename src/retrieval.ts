@@ -45,7 +45,10 @@ export function findFiles(root: string, glob: string): string[] {
         if (isGeneratedArtifact(entry.name)) continue; // skip our own .inject.log / .l9meta.yaml
         const full = path.join(dir, entry.name);
         if (extFilter) {
-          if (entry.name.toLowerCase().endsWith(extFilter)) results.push(full);
+          // Honor the filter, but still exclude known binary/media extensions so a glob
+          // like **/*.png never gets read as UTF-8 downstream (expensive + pointless —
+          // the pipeline would skip-binary it anyway).
+          if (entry.name.toLowerCase().endsWith(extFilter) && resolveStrategy(full, "").strategy !== "skip-binary") results.push(full);
           continue;
         }
         // No extension filter: include any text file. Cheap ext-based strategy check
