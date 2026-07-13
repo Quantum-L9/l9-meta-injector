@@ -1,0 +1,57 @@
+# --- L9_META ---
+# l9_schema: 1
+# origin: l9-ci-core
+# layer: [ci]
+# tags: [L9_TEMPLATE, ci, caller-workflow]
+# owner: platform
+# status: active
+# --- /L9_META ---
+name: PR Pipeline
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+    branches: [main, develop]
+
+concurrency:
+  group: pr-pipeline-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  pipeline:
+    uses: Quantum-L9/l9-ci-core/.github/workflows/pr-pipeline.yml@main
+    secrets: inherit
+
+  copilot-review:
+    name: Request Copilot Code Review
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: []
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Request Copilot Review
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const pr = context.payload.pull_request;
+            if (!pr) {
+              core.notice('Not a pull_request event — skipping Copilot review request.');
+              return;
+            }
+            try {
+              await github.rest.pulls.requestReviewers({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: pr.number,
+                reviewers: ['github-copilot[bot]']
+              });
+              core.notice(`Copilot review requested on PR #${pr.number}`);
+            } catch (e) {
+              core.warning(`Could not request Copilot review: ${e.message}`);
+            }
