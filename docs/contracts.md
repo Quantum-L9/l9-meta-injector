@@ -70,3 +70,31 @@ created_at: "<iso8601>"
 /L9_ARTIFACT_META -->
 ```
 Sidecars (.l9meta.yaml) used for binary/non-text files.
+
+## Metadata v3 — nine-plane schema
+
+v3 re-expresses the flat v1/v2 header as **nine orthogonal planes**, one per
+concern of the metadata compilation engine. It is **additive**: v3 does not
+replace v1/v2 and changes no existing behavior. Schema file:
+`schemas/l9_meta_v3.schema.yaml`; TypeScript types: `src/schema.ts`
+(`MetaV3`, `META_V3_PLANES`).
+
+| # | Plane | Owns | Key fields |
+|---|---|---|---|
+| 1 | identity | who/what the artifact is | id, title, artifact_type, content_hash, version |
+| 2 | taxonomy | classification & capability | family, mcp_primitive, callable, retrievable, injectable |
+| 3 | placement | logical/physical location | namespace, source_path, output_path, layer, sharing_scope |
+| 4 | routing | advisory route plan | advisory, activation_signals, input_contract, output_contract, targets |
+| 5 | provenance | origin & generation history | created_or_detected_at, generated_by, upstream, snapshot_hash |
+| 6 | governance | authority, ownership, lifecycle | authority, status, owner, decision_drivers |
+| 7 | economics | cost/size budgeting | token_cost_estimate, size_bytes |
+| 8 | assurance | fail-closed gates | validation_gates, stop_conditions |
+| 9 | lineage | schema chain | schema_version, supersedes, chain |
+
+Rules:
+- A v3 record carries **exactly** the nine planes — no more, no fewer.
+- `routing.advisory` is fixed `true`: the engine emits route *plans*, never live
+  routing writes.
+- `lineage.schema_version` is fixed `3`.
+- Unset optional fields carry the `Unknown` sentinel rather than being omitted.
+- Idempotent: skip if a v3 nine-plane record is already present for the artifact.
