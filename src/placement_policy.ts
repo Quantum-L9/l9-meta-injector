@@ -55,11 +55,14 @@ function joinPosix(...parts: string[]): string {
  * never escape the repo root, regardless of what a caller passes.
  */
 function sanitizeRootDir(root: string): string {
-  return root
+  const segments = root
     .replace(/\\/g, "/")
     .split("/")
-    .filter((seg) => seg && seg !== "." && seg !== "..")
-    .join("/");
+    .filter((seg) => seg && seg !== "." && seg !== "..");
+  // Drop a leading Windows drive-letter segment (e.g. "C:") so an absolute
+  // Windows path can't produce a target like "C:/..." outside the repo root.
+  if (segments.length && /^[a-zA-Z]:$/.test(segments[0])) segments.shift();
+  return segments.join("/");
 }
 
 /** Rank a confidence with a safe fallback, so an invalid key can't fail-open. */
@@ -80,7 +83,10 @@ export function compilePlacementPlan(
   // Normalize the threshold to a known confidence key. A bad value (e.g. from
   // plain JS or an unsafe cast) must not make the comparison fail-open.
   const rawThreshold = opts.quarantineAtOrBelow ?? "low";
-  const threshold: ClassConfidence = rawThreshold in CONFIDENCE_RANK ? rawThreshold : "low";
+  // Own-property check (not `in`, which also matches inherited props like
+  // "constructor"/"toString") so an invalid threshold can't slip through.
+  const threshold: ClassConfidence =
+    Object.prototype.hasOwnProperty.call(CONFIDENCE_RANK, rawThreshold) ? rawThreshold : "low";
   const rootDir = sanitizeRootDir(opts.rootDir ?? "");
 
   const { artifactClass, confidence, signals } = classifyArtifact(sourcePath, body);

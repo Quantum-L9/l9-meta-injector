@@ -81,6 +81,20 @@ test("quarantineAtOrBelow can quarantine medium-confidence artifacts", () => {
 test("high-confidence artifacts are not quarantined at the default threshold", () =>
   expect(compilePlacementPlan("tests/x.test.ts").quarantined).toBe(false));
 
+test("an invalid quarantine threshold (prototype key) does not fail open", () => {
+  // "constructor" is on Object.prototype; it must be rejected, not accepted as a threshold.
+  const p = compilePlacementPlan("tests/x.test.ts", "", {
+    quarantineAtOrBelow: "constructor" as unknown as "low",
+  });
+  expect(p.quarantined).toBe(false); // high-confidence stays un-quarantined
+});
+
+test("rootDir with a Windows drive letter cannot escape the repo root", () => {
+  const p = compilePlacementPlan("src/a.ts", "", { rootDir: "C:\\Users\\x" });
+  expect(p.targetPath.startsWith("C:")).toBe(false);
+  expect(p.targetPath).toBe("Users/x/src/a.ts");
+});
+
 test("rationale is a non-empty string array", () => {
   const r = compilePlacementPlan("src/a.ts").rationale;
   expect(Array.isArray(r)).toBe(true);
