@@ -29,6 +29,7 @@ __exportStar(require("./normalize_filename"), exports);
 __exportStar(require("./extract"), exports);
 __exportStar(require("./classify"), exports);
 __exportStar(require("./artifact_class"), exports);
+__exportStar(require("./placement_policy"), exports);
 __exportStar(require("./normalize_meta"), exports);
 var inject_1 = require("./inject");
 Object.defineProperty(exports, "injectFile", { enumerable: true, get: function () { return inject_1.injectFile; } });

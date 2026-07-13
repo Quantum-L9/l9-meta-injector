@@ -200,3 +200,45 @@ export function classifyArtifact(filePath: string, body = ""): ArtifactClassific
 export function isSemanticArtifactClass(value: string): value is SemanticArtifactClass {
   return (SEMANTIC_ARTIFACT_CLASSES as readonly string[]).includes(value);
 }
+
+// ---------------------------------------------------------------------------
+// Placement wiring — the canonical target directory / logical layer for each
+// semantic class. Consumed by the placement compiler (src/placement_policy.ts)
+// so that placement depends on classification, not the reverse.
+// ---------------------------------------------------------------------------
+
+export interface PlacementHint {
+  /** Canonical target directory (repo-relative, POSIX separators). */
+  directory: string;
+  /** Logical layer the class belongs to. */
+  layer: string;
+}
+
+/** Directory into which low-confidence / unknown artifacts are quarantined. */
+export const QUARANTINE_DIRECTORY = "99_CONFLICTS_AND_UNKNOWN";
+
+/** Canonical placement hint for every one of the 17 semantic classes. */
+export const CLASS_PLACEMENT_HINTS: Record<SemanticArtifactClass, PlacementHint> = {
+  source_module:       { directory: "src",                    layer: "implementation" },
+  type_definitions:    { directory: "src/types",              layer: "implementation" },
+  test_suite:          { directory: "tests",                  layer: "verification" },
+  schema:              { directory: "schemas",                layer: "contract" },
+  configuration:       { directory: "config",                 layer: "operations" },
+  documentation:       { directory: "docs",                   layer: "documentation" },
+  contract:            { directory: "docs/contracts",         layer: "contract" },
+  build_manifest:      { directory: ".",                      layer: "operations" },
+  build_artifact:      { directory: "dist",                   layer: "build" },
+  fixture:             { directory: "tests/fixtures",         layer: "verification" },
+  script:              { directory: "scripts",                layer: "operations" },
+  pipeline:            { directory: "src/pipeline",           layer: "implementation" },
+  prompt_template:     { directory: "prompts",                layer: "content" },
+  skill_definition:    { directory: "skills",                 layer: "content" },
+  governance_doctrine: { directory: "doctrines",              layer: "governance" },
+  changelog:           { directory: ".",                      layer: "documentation" },
+  unknown:             { directory: QUARANTINE_DIRECTORY,     layer: "quarantine" },
+};
+
+/** Placement hint for a semantic class (falls back to the quarantine hint). */
+export function placementHintFor(cls: SemanticArtifactClass): PlacementHint {
+  return CLASS_PLACEMENT_HINTS[cls] ?? CLASS_PLACEMENT_HINTS.unknown;
+}

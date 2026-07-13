@@ -39,9 +39,10 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SEMANTIC_ARTIFACT_CLASSES = void 0;
+exports.CLASS_PLACEMENT_HINTS = exports.QUARANTINE_DIRECTORY = exports.SEMANTIC_ARTIFACT_CLASSES = void 0;
 exports.classifyArtifact = classifyArtifact;
 exports.isSemanticArtifactClass = isSemanticArtifactClass;
+exports.placementHintFor = placementHintFor;
 const path = __importStar(require("path"));
 /** The 17 semantic classes, in canonical order. */
 exports.SEMANTIC_ARTIFACT_CLASSES = [
@@ -207,5 +208,31 @@ function classifyArtifact(filePath, body = "") {
 /** True if the value is one of the 17 known semantic classes. */
 function isSemanticArtifactClass(value) {
     return exports.SEMANTIC_ARTIFACT_CLASSES.includes(value);
+}
+/** Directory into which low-confidence / unknown artifacts are quarantined. */
+exports.QUARANTINE_DIRECTORY = "99_CONFLICTS_AND_UNKNOWN";
+/** Canonical placement hint for every one of the 17 semantic classes. */
+exports.CLASS_PLACEMENT_HINTS = {
+    source_module: { directory: "src", layer: "implementation" },
+    type_definitions: { directory: "src/types", layer: "implementation" },
+    test_suite: { directory: "tests", layer: "verification" },
+    schema: { directory: "schemas", layer: "contract" },
+    configuration: { directory: "config", layer: "operations" },
+    documentation: { directory: "docs", layer: "documentation" },
+    contract: { directory: "docs/contracts", layer: "contract" },
+    build_manifest: { directory: ".", layer: "operations" },
+    build_artifact: { directory: "dist", layer: "build" },
+    fixture: { directory: "tests/fixtures", layer: "verification" },
+    script: { directory: "scripts", layer: "operations" },
+    pipeline: { directory: "src/pipeline", layer: "implementation" },
+    prompt_template: { directory: "prompts", layer: "content" },
+    skill_definition: { directory: "skills", layer: "content" },
+    governance_doctrine: { directory: "doctrines", layer: "governance" },
+    changelog: { directory: ".", layer: "documentation" },
+    unknown: { directory: exports.QUARANTINE_DIRECTORY, layer: "quarantine" },
+};
+/** Placement hint for a semantic class (falls back to the quarantine hint). */
+function placementHintFor(cls) {
+    return exports.CLASS_PLACEMENT_HINTS[cls] ?? exports.CLASS_PLACEMENT_HINTS.unknown;
 }
 //# sourceMappingURL=artifact_class.js.map
