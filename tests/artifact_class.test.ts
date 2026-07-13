@@ -35,6 +35,12 @@ test.each<[string, string]>([
   expect(classifyArtifact(p).artifactClass).toBe(expected)
 );
 
+test("a 'manifest' doc is documentation, not build_manifest (order sensitivity)", () =>
+  expect(classifyArtifact("docs/manifest.md").artifactClass).toBe("documentation"));
+
+test("build_artifact signal reflects the matched segment (/build/ not /dist/)", () =>
+  expect(classifyArtifact("build/out.js").signals).toContain("/build/"));
+
 test("d.ts wins over source_module (order sensitivity)", () =>
   expect(classifyArtifact("src/types.d.ts").artifactClass).toBe("type_definitions"));
 

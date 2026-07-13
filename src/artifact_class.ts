@@ -1,7 +1,8 @@
 // artifact_class.ts — deterministic semantic artifact classifier (17 classes).
 //
 // Classifies a file into one of 17 semantic classes using only path,
-// extension, and filename signals (optionally a small body snippet). No LLM.
+// extension, and filename signals. No LLM. A body snippet may be passed but is
+// currently ignored — it is reserved for future content-based rules.
 // Additive to the coarse ArtifactType taxonomy in schema.ts.
 
 import * as path from "path";
@@ -83,17 +84,20 @@ const RULES: Rule[] = [
   {
     artifactClass: "build_manifest",
     confidence: "high",
-    test: ({ base }) =>
+    test: ({ base, ext }) =>
       base === "package.json" || base === "package-lock.json"
         ? base
-        : base.includes("manifest")
+        : base.includes("manifest") && ![".md", ".mdx", ".rst", ".txt"].includes(ext)
         ? "manifest"
         : null,
   },
   {
     artifactClass: "build_artifact",
     confidence: "high",
-    test: ({ norm }) => (/\/(dist|build|\.out)\//.test(norm) ? "/dist/" : null),
+    test: ({ norm }) => {
+      const m = norm.match(/\/(dist|build|\.out)\//);
+      return m ? `/${m[1]}/` : null;
+    },
   },
   {
     artifactClass: "prompt_template",
@@ -171,7 +175,8 @@ const RULES: Rule[] = [
 
 /**
  * Classify a file into one of 17 semantic classes. Deterministic: depends only
- * on the path (and optional body snippet). Never throws.
+ * on the path, extension, and filename. The optional `body` argument is
+ * currently ignored (reserved for future content-based rules). Never throws.
  */
 export function classifyArtifact(filePath: string, body = ""): ArtifactClassification {
   const base = path.basename(String(filePath)).toLowerCase();
