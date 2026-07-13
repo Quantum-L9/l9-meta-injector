@@ -61,6 +61,13 @@ See `examples/namespace.config.example.json`.
 
 The uploaded pack also included a consolidation skill/playbook. It is preserved under `docs/CONSOLIDATION_SKILL.md` and `tools/consolidation/` for traceability, but the npm package surface remains the TypeScript meta-injection toolkit.
 
+## Claude Code skills & agents
+
+Installed and active for Claude Code sessions in this repo (see [`.claude/README.md`](.claude/README.md)):
+
+- **Skill** `l9-pr-remediation` (`.claude/skills/l9-pr-remediation/`) — recursive PR remediation loop: CI failures + review-bot comments → batched fix → local verify → one push per cycle → reply/resolve threads → converge.
+- **Agent** `pr-review-resolver` (`.claude/agents/pr-review-resolver.md`) — autonomous PR review-comment resolver; validates each suggestion and pushes focused commits. Original prompt bundle preserved under `docs/agents/pr-review-resolver/`.
+
 ## Scope boundary
 
 This repository is meta injection only. It does not include or replace external graph export adapter work.

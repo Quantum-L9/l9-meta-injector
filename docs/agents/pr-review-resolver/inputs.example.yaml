@@ -1,0 +1,12 @@
+# PR Review Resolver — input block (inject before execution)
+repo: "OWNER/REPO"                 # or a list of "owner/repo" strings
+pr_scope: "ALL_OPEN"               # ALL_OPEN | [123,124] | LABEL:needs-fixes | AUTHOR:me
+review_agents:                     # logins treated as review sources
+  - coderabbitai
+  - github-copilot
+  - sonarcloud
+  - "*humans*"                     # include human reviewers
+branch_policy: "push_to_head"      # push_to_head | follow_up_pr
+confidence_gate: 0.75              # min confidence to auto-apply (0.0-1.0)
+test_cmd: "npm test"               # adapt to repo
+lint_cmd: "npm run lint"           # adapt to repo
