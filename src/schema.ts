@@ -288,3 +288,39 @@ export interface MetaV3 {
   assurance: AssurancePlane;
   lineage: LineagePlane;
 }
+
+// ---------------------------------------------------------------------------
+// Semantic artifact classification (17 classes)
+//
+// A finer-grained, deterministic classification layer that sits *beside* the
+// coarse ArtifactType taxonomy. It classifies a file by path/extension/name
+// signals into one of 17 semantic classes. Additive: it does not replace
+// ArtifactType or ClassifyResult, and uses no LLM.
+// ---------------------------------------------------------------------------
+
+export type SemanticArtifactClass =
+  | "source_module"
+  | "type_definitions"
+  | "test_suite"
+  | "schema"
+  | "configuration"
+  | "documentation"
+  | "contract"
+  | "build_manifest"
+  | "build_artifact"
+  | "fixture"
+  | "script"
+  | "pipeline"
+  | "prompt_template"
+  | "skill_definition"
+  | "governance_doctrine"
+  | "changelog"
+  | "unknown";
+
+export type ClassConfidence = "high" | "medium" | "low";
+
+export interface ArtifactClassification {
+  artifactClass: SemanticArtifactClass;
+  confidence: ClassConfidence;
+  signals: string[];
+}

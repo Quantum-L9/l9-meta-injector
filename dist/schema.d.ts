@@ -219,3 +219,10 @@ export interface MetaV3 {
     assurance: AssurancePlane;
     lineage: LineagePlane;
 }
+export type SemanticArtifactClass = "source_module" | "type_definitions" | "test_suite" | "schema" | "configuration" | "documentation" | "contract" | "build_manifest" | "build_artifact" | "fixture" | "script" | "pipeline" | "prompt_template" | "skill_definition" | "governance_doctrine" | "changelog" | "unknown";
+export type ClassConfidence = "high" | "medium" | "low";
+export interface ArtifactClassification {
+    artifactClass: SemanticArtifactClass;
+    confidence: ClassConfidence;
+    signals: string[];
+}
