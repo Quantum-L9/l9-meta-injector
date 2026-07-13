@@ -40,7 +40,16 @@ export interface AppliedMeta {
 const SCALAR = (raw: string): unknown => {
   const s = raw.trim();
   if (s === "" ) return "";
-  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) return s.slice(1, -1);
+  if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) {
+    // Double-quoted: unescape the standard YAML escape sequences so values like
+    // Windows paths ("C:\\tmp") or embedded \n/\" round-trip correctly.
+    return s.slice(1, -1).replace(/\\(["\\/nrt])/g, (_m, c) =>
+      c === "n" ? "\n" : c === "r" ? "\r" : c === "t" ? "\t" : c);
+  }
+  if (s.length >= 2 && s.startsWith("'") && s.endsWith("'")) {
+    // Single-quoted: the only escape is a doubled quote ('').
+    return s.slice(1, -1).replace(/''/g, "'");
+  }
   if (s === "true") return true;
   if (s === "false") return false;
   if (s === "null" || s === "~") return null;
@@ -109,11 +118,19 @@ function parseBlock(block: string[]): unknown {
   const base = Math.min(...block.map(indentOf));
   const isList = block.some((l) => l.slice(base).startsWith("- "));
   if (!isList) {
-    // nested map
+    // Single-level map only. Fail fast on deeper nesting instead of silently
+    // flattening it — the canonical subset does not support nested maps, and a
+    // silent garble is dangerous for callers that read+rewrite existing files.
     const map: Record<string, unknown> = {};
     for (const l of block) {
+      if (indentOf(l) > base) {
+        throw new Error("canonical YAML: nested maps (depth > 2) are not supported");
+      }
       const mm = l.trim().match(/^([A-Za-z_][\w-]*):\s*(.*)$/);
-      if (mm) map[mm[1]] = SCALAR(mm[2]);
+      if (mm) {
+        if (mm[2] === "") throw new Error(`canonical YAML: nested map under '${mm[1]}' is not supported`);
+        map[mm[1]] = SCALAR(mm[2]);
+      }
     }
     return map;
   }

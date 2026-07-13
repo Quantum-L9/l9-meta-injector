@@ -39,6 +39,14 @@ fields:
     expect(parseCanonicalYaml("note: 'a # b'").note).toBe("a # b");
     expect(parseCanonicalYaml("key: value # trailing comment").key).toBe("value");
   });
+  it("double-quoted escape sequences are unescaped", () => {
+    expect(parseCanonicalYaml('winpath: "C:\\\\tmp\\\\x"').winpath).toBe("C:\\tmp\\x");
+    expect(parseCanonicalYaml('multiline: "a\\nb"').multiline).toBe("a\nb");
+    expect(parseCanonicalYaml("quoted: 'it''s'").quoted).toBe("it's");
+  });
+  it("nested maps (depth > 2) fail fast instead of silently flattening", () => {
+    expect(() => parseCanonicalYaml("outer:\n  inner:\n    deep: 1")).toThrow(/nested map/i);
+  });
   it("inline list", () => expect(o.target).toEqual(["file_header", "sidecar", "manifest"]));
   it("list of maps", () => {
     expect(Array.isArray(o.fields)).toBe(true);
@@ -107,6 +115,12 @@ describe("inventory + schema + dedup integration", () => {
     expect(r.duplicates[0].count).toBe(2);
     expect(r.duplicates[0].keeper).toBe("a/g.md");
     expect(fs.existsSync(path.join(out, "inventory-duplicates.json"))).toBe(true);
+  });
+
+  it("rejects outDir === root (would re-inventory its own manifests)", () => {
+    const root = tmp();
+    fs.writeFileSync(path.join(root, "a.ts"), "const x=1;\n");
+    expect(() => inventoryTree({ root, outDir: root, now: "2026-01-01T00:00:00.000Z" })).toThrow(/outDir/i);
   });
 
   it("target=[sidecar,manifest] does NOT inject headers into files", () => {

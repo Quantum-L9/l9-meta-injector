@@ -242,6 +242,13 @@ export function inventoryTree(config: InventoryConfig): InventoryResult {
   // Absolutize root so absolute_path is truly absolute and relative_path/manifest
   // output are deterministic regardless of the caller's cwd.
   const root = path.resolve(config.root);
+  // outDir must not BE the root: its generated manifests would then sit directly in
+  // root and get re-inventoried (and possibly injected) on the next run.
+  if (path.resolve(config.outDir) === root) {
+    throw new Error(
+      "inventory: outDir must not equal the root directory (generated manifests would be re-inventoried); use a subdirectory such as <root>/.l9inventory"
+    );
+  }
   // If the chosen outDir lives inside root, ignore its top-level directory name too,
   // so a custom --out under root can't re-inventory or mutate its own generated output.
   const relOut = path.relative(root, path.resolve(config.outDir));
@@ -287,7 +294,11 @@ export function inventoryTree(config: InventoryConfig): InventoryResult {
     const strategy = raw === null ? "skip-binary" : resolveStrategy(abs, raw).strategy;
     const canHeader = raw !== null && (strategy === "yaml-frontmatter" || strategy === "line-comment" || strategy === "block-comment");
     if (cfg.injectHeaders && canHeader && targetIncludes(schema, "file_header")) {
-      const headerMeta = (schema ? metaObj : recordAsMeta(rec)) as unknown as NormalizedMeta;
+      // With a schema, the header intentionally carries only the schema's fields
+      // (tests assert built-in fields like mcp_primitive are absent), so it isn't a
+      // structural NormalizedMeta. injectFile consumes meta as a generic field bag;
+      // asInjectableMeta marks that single, deliberate boundary rather than casting inline.
+      const headerMeta = schema ? asInjectableMeta(metaObj) : recordAsMeta(rec);
       try {
         injectFile(abs, headerMeta, { dryRun: false, outDir: config.outDir, verbose: false, writeInjectLog: false });
       } catch { if (targetIncludes(schema, "sidecar")) writeSidecar(abs, metaObj); }
@@ -322,16 +333,20 @@ function writeSidecar(abs: string, obj: Record<string, unknown>): void {
 // Write a folder's .l9meta.yaml non-destructively: if one already exists (possibly
 // user-authored), merge so existing keys win and only missing keys are added,
 // rather than blindly clobbering it. Mirrors the read/merge intent of injectFile.
+// Boundary: a schema-driven header carries arbitrary schema fields, not the
+// NormalizedMeta shape. injectFile serializes meta as a generic key/value bag, so
+// this single documented cast is the one place that crosses that boundary.
+function asInjectableMeta(fields: Record<string, unknown>): NormalizedMeta {
+  return fields as unknown as NormalizedMeta;
+}
+
 function writeFolderSidecar(dir: string, metaObj: Record<string, unknown>): void {
   const p = path.join(dir, ".l9meta.yaml");
-  let toWrite = metaObj;
-  if (fs.existsSync(p)) {
-    try {
-      const existing = parseCanonicalYaml(fs.readFileSync(p, "utf8"));
-      toWrite = { ...metaObj, ...existing }; // existing (user-authored) values take precedence
-    } catch { /* unparseable existing sidecar — leave it untouched */ return; }
-  }
-  try { fs.writeFileSync(p, serializeYaml(toWrite), "utf8"); } catch { /* unwritable dir — recorded, skip */ }
+  // Non-destructive: never rewrite an existing folder sidecar. Round-tripping a
+  // user-authored file through the constrained canonical parser could corrupt it
+  // (escapes, nested maps), so leave any existing sidecar exactly as-is.
+  if (fs.existsSync(p)) return;
+  try { fs.writeFileSync(p, serializeYaml(metaObj), "utf8"); } catch { /* unwritable dir — recorded, skip */ }
 }
 
 // Map an InventoryRecord onto the minimal header the injector serializes. The injector
