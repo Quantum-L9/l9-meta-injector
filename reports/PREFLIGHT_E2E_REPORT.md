@@ -1,5 +1,12 @@
 # Preflight & E2E Report — l9-meta-injector
 
+> **⚠️ Historical snapshot.** This report records a point-in-time inspection of
+> `main` at `17a4820` (2026-07-04), *before* the changes in this PR. Several
+> conditions it describes — report files shipped in the tarball, unknown license,
+> and the deprecated ts-jest `globals` config — are **resolved by this very PR**
+> and no longer reflect the current tree. It is retained as an audit-trail
+> snapshot, not a description of current state.
+
 - **Repo:** https://github.com/Quantum-L9/l9-meta-injector
 - **Branch:** `main`
 - **HEAD SHA:** `17a4820757bc499bb8eeb90119e74e7d07eeacfc`
