@@ -1,8 +1,8 @@
 // comment.ts — Filetype-aware injection strategy.
-// The injector must annotate ANY text filetype without corrupting it. Markdown/txt
-// take YAML frontmatter; source/config take a comment-wrapped block (line or block
-// comment) placed after any shebang; comment-less formats (JSON) and unknown text
-// get a sidecar file; binary/media files are skipped. Body is preserved verbatim —
+// The injector must annotate ANY text filetype without corrupting it. Markdown
+// takes YAML frontmatter; source/config take a comment-wrapped block (line or block
+// comment) placed after any shebang; comment-less formats (JSON), .txt/.text, and
+// unknown text get a sidecar file; binary/media files are skipped. Body is preserved verbatim —
 // the injected block is delimited by sentinels so it can be detected and replaced.
 
 import * as path from "path";

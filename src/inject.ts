@@ -1,7 +1,7 @@
 // inject.ts — Filetype-aware metadata injection. Five-way reconciliation.
-// Markdown/txt → YAML frontmatter. Code/config → comment-wrapped block (line or
-// block comment), placed after any shebang. Comment-less formats (JSON) and unknown
-// text → a `<file>.l9meta.yaml` sidecar (the file itself is untouched). Binary/media
+// Markdown → YAML frontmatter. Code/config → comment-wrapped block (line or
+// block comment), placed after any shebang. Comment-less formats (JSON), .txt/.text,
+// and unknown text → a `<file>.l9meta.yaml` sidecar (the file itself is untouched). Binary/media
 // are skipped. Body is preserved verbatim; the injected block carries sentinels so a
 // re-run replaces it instead of duplicating. Writes <file>.inject.log on any mutation.
 import * as fs from "fs";

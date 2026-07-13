@@ -52,7 +52,11 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
     const cleanRaw = spec.strategy === "line-comment" || spec.strategy === "block-comment"
       ? stripInjectedBlock(raw, spec)
       : raw;
-    const { body } = splitContent(cleanRaw);
+    // Only frontmatter files carry a `--- … ---` header; for other strategies the
+    // whole cleanRaw is the body. Running splitContent unconditionally would let a
+    // leading `---` in non-markdown (e.g. YAML document separators) be mistaken for
+    // frontmatter and truncate real content, skewing extraction/classification/hash.
+    const body = spec.strategy === "yaml-frontmatter" ? splitContent(cleanRaw).body : cleanRaw;
     const ef = extract(body);
     const cls = classify(e.sourcePath, body, e.headerConvention);
     let meta = buildMeta(e.sourcePath, body, ef, cls, nsCfg, config.authority, now);
