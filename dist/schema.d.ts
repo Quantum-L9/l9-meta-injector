@@ -127,3 +127,95 @@ export interface PipelineConfig {
     llmModel?: string;
     normalizeFilenames: boolean;
 }
+export declare const META_V3_SCHEMA_VERSION: 3;
+export type MetaV3SchemaVersion = typeof META_V3_SCHEMA_VERSION;
+/** Stable status vocabulary carried on the governance plane. */
+export type LifecycleStatus = "active" | "deprecated" | "review";
+/**
+ * The nine plane names, in canonical order. Exported as a runtime tuple so that
+ * validators and tests can enumerate the planes without reflection.
+ */
+export declare const META_V3_PLANES: readonly ["identity", "taxonomy", "placement", "routing", "provenance", "governance", "economics", "assurance", "lineage"];
+export type MetaV3Plane = (typeof META_V3_PLANES)[number];
+/** Plane 1 — who/what this artifact is. */
+export interface IdentityPlane {
+    id: string;
+    title: string;
+    artifact_type: ArtifactType;
+    content_hash: string;
+    version: string | Unknown;
+}
+/** Plane 2 — how the artifact is classified and what it can do. */
+export interface TaxonomyPlane {
+    family: ArtifactFamily;
+    mcp_primitive: McpPrimitive;
+    callable: boolean;
+    retrievable: boolean;
+    injectable: boolean;
+}
+/** Plane 3 — where the artifact lives, logically and physically. */
+export interface PlacementPlane {
+    namespace: string;
+    source_path: string;
+    output_path: string | Unknown;
+    layer: string | Unknown;
+    sharing_scope: SharingScope;
+}
+/**
+ * Plane 4 — advisory route plan. Routing is advisory only: this engine owns
+ * route *plans*, never live routing writes, so `advisory` is fixed true.
+ */
+export interface RoutingPlane {
+    advisory: true;
+    activation_signals: string[] | Unknown;
+    input_contract: string | Unknown;
+    output_contract: string | Unknown;
+    targets: string[] | Unknown;
+}
+/** Plane 5 — origin and generation history (provenance snapshot). */
+export interface ProvenancePlane {
+    created_or_detected_at: string;
+    generated_by: string | Unknown;
+    upstream: string[] | Unknown;
+    snapshot_hash: string | Unknown;
+}
+/** Plane 6 — authority, ownership, and lifecycle status. */
+export interface GovernancePlane {
+    authority: string;
+    status: LifecycleStatus;
+    owner: string | Unknown;
+    decision_drivers: string[] | Unknown;
+}
+/** Plane 7 — cost/size economics used for injection budgeting. */
+export interface EconomicsPlane {
+    token_cost_estimate: number;
+    size_bytes: number | Unknown;
+}
+/** Plane 8 — validation gates and stop conditions (fail-closed assurance). */
+export interface AssurancePlane {
+    validation_gates: string[] | Unknown;
+    stop_conditions: string[] | Unknown;
+}
+/** Plane 9 — schema lineage and supersession chain. */
+export interface LineagePlane {
+    schema_version: MetaV3SchemaVersion;
+    supersedes: string | Unknown;
+    chain: string[] | Unknown;
+}
+/**
+ * A complete v3 metadata record. Declares all nine orthogonal planes; note
+ * that a TypeScript `interface` is not exact (structural typing still permits
+ * extra keys on assignable values), so this models the required plane set
+ * rather than guaranteeing exactness.
+ */
+export interface MetaV3 {
+    identity: IdentityPlane;
+    taxonomy: TaxonomyPlane;
+    placement: PlacementPlane;
+    routing: RoutingPlane;
+    provenance: ProvenancePlane;
+    governance: GovernancePlane;
+    economics: EconomicsPlane;
+    assurance: AssurancePlane;
+    lineage: LineagePlane;
+}

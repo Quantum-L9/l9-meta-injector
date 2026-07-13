@@ -1,0 +1,79 @@
+schema: L9_META_V3
+version: 3
+mode: nine-plane
+description: >
+  Metadata v3 re-expresses the flat v1/v2 header as nine orthogonal planes.
+  Additive only: v3 does not replace v1/v2 and changes no existing behavior.
+planes:
+  identity:
+    order: 1
+    meaning: who/what this artifact is
+    fields:
+      id:            {type: string, required: true}
+      title:         {type: string, required: true}
+      artifact_type: {type: enum, required: true, values: [skill,playbook,kernel,context,prompt,doctrine,test,script,unknown]}
+      content_hash:  {type: string, required: true, pattern: "^[a-f0-9]{64}$"}
+      version:       {type: string, default: Unknown}
+  taxonomy:
+    order: 2
+    meaning: classification and capability
+    fields:
+      family:        {type: enum, required: true, values: [auditor,compiler,meta_kernel_forge,builder,planner,research,domain_agent,legal,Unknown]}
+      mcp_primitive: {type: enum, required: true, values: [tool,resource,prompt,none]}
+      callable:      {type: bool, required: true}
+      retrievable:   {type: bool, required: true}
+      injectable:    {type: bool, required: true}
+  placement:
+    order: 3
+    meaning: logical and physical location
+    fields:
+      namespace:     {type: string, required: true}
+      source_path:   {type: string, required: true}
+      output_path:   {type: string, default: Unknown}
+      layer:         {type: string, default: Unknown}
+      sharing_scope: {type: enum, required: true, values: [private,shared,agnostic]}
+  routing:
+    order: 4
+    meaning: advisory route plan (never live routing writes)
+    fields:
+      advisory:           {const: true}
+      activation_signals: {type: list, default: Unknown}
+      input_contract:     {type: string, default: Unknown}
+      output_contract:    {type: string, default: Unknown}
+      targets:            {type: list, default: Unknown}
+  provenance:
+    order: 5
+    meaning: origin and generation history
+    fields:
+      created_or_detected_at: {type: string, required: true}
+      generated_by:           {type: string, default: Unknown}
+      upstream:               {type: list, default: Unknown}
+      snapshot_hash:          {type: string, default: Unknown}
+  governance:
+    order: 6
+    meaning: authority, ownership, lifecycle status
+    fields:
+      authority:        {type: string, required: true}
+      status:           {type: enum, required: true, values: [active,deprecated,review]}
+      owner:            {type: string, default: Unknown}
+      decision_drivers: {type: list, default: Unknown}
+  economics:
+    order: 7
+    meaning: cost/size economics for injection budgeting
+    fields:
+      token_cost_estimate: {type: int, required: true}
+      size_bytes:          {type: int, default: Unknown}
+  assurance:
+    order: 8
+    meaning: fail-closed validation gates and stop conditions
+    fields:
+      validation_gates: {type: list, default: Unknown}
+      stop_conditions:  {type: list, default: Unknown}
+  lineage:
+    order: 9
+    meaning: schema lineage and supersession chain
+    fields:
+      schema_version: {const: 3}
+      supersedes:     {type: string, default: Unknown}
+      chain:          {type: list, default: Unknown}
+idempotency: "skip if a v3 nine-plane record is already present for the artifact"

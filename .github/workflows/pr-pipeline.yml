@@ -9,9 +9,12 @@
 name: PR Pipeline
 
 on:
+  workflow_dispatch:
   pull_request:
     types: [opened, synchronize, ready_for_review, reopened]
-    branches: [main, develop]
+    # No base-branch filter: run on every PR, including stacked PRs whose base
+    # is another feature branch. Previously [main, develop], which left stacked
+    # PRs (e.g. base claude/**) with no Build & Test checks.
   pull_request_review:
     types: [submitted]
   pull_request_review_comment:
@@ -31,7 +34,7 @@ jobs:
     name: Build & Test (Node)
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     permissions:
       contents: read
     steps:
