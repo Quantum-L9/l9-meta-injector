@@ -20,7 +20,6 @@
  */
 "use strict";
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 
 const REPO = path.resolve(__dirname, "..");
@@ -30,7 +29,7 @@ catch (e) { console.error(`inventory: run "npm run build" first (${e.message})`)
 
 const argv = process.argv.slice(2);
 if (!argv.length || argv[0].startsWith("-")) {
-  console.error("usage: node scripts/inventory.js <root> [--out DIR] [--source NAME] [--dry-run] [--no-inject] [--no-folder-sidecars] [--ignore a,b]");
+  console.error("usage: node scripts/inventory.js <root> [--out DIR] [--source NAME] [--dry-run] [--no-inject] [--no-folder-sidecars] [--ignore a,b] [--schema FILE]");
   process.exit(2);
 }
 function flag(name) { return argv.includes(name); }

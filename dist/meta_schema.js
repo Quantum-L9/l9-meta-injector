@@ -48,7 +48,24 @@ const SCALAR = (raw) => {
     return s;
 };
 const indentOf = (line) => line.length - line.replace(/^ +/, "").length;
-const strip = (line) => line.replace(/\s+#.*$/, "").replace(/\s+$/, ""); // drop trailing comments/space
+// Drop a trailing `# comment` and surrounding space, but only when the `#` is
+// whitespace-preceded AND not inside a single/double-quoted string — so a value
+// like `description: "hello # world"` is preserved intact.
+const strip = (line) => {
+    let inSingle = false;
+    let inDouble = false;
+    for (let i = 0; i < line.length; i++) {
+        const c = line[i];
+        if (c === "'" && !inDouble)
+            inSingle = !inSingle;
+        else if (c === '"' && !inSingle)
+            inDouble = !inDouble;
+        else if (c === "#" && !inSingle && !inDouble && (i === 0 || /\s/.test(line[i - 1]))) {
+            return line.slice(0, i).replace(/\s+$/, "");
+        }
+    }
+    return line.replace(/\s+$/, "");
+};
 /**
  * Parse the constrained canonical YAML subset into a plain object.
  * Supports: top-level `key: scalar`, `key: [inline,list]`, and `key:` followed by a

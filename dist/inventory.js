@@ -236,6 +236,12 @@ function inventoryTree(config) {
     // Absolutize root so absolute_path is truly absolute and relative_path/manifest
     // output are deterministic regardless of the caller's cwd.
     const root = path.resolve(config.root);
+    // If the chosen outDir lives inside root, ignore its top-level directory name too,
+    // so a custom --out under root can't re-inventory or mutate its own generated output.
+    const relOut = path.relative(root, path.resolve(config.outDir));
+    if (relOut && !relOut.startsWith("..") && !path.isAbsolute(relOut)) {
+        cfg.ignore.add(relOut.split(path.sep)[0]);
+    }
     const entries = walk(root, cfg.ignore);
     const records = [];
     const typeDistribution = {};
@@ -268,10 +274,7 @@ function inventoryTree(config) {
             continue;
         if (isDir) {
             if (cfg.folderSidecars && (0, meta_schema_1.targetIncludes)(schema, "sidecar")) {
-                try {
-                    fs.writeFileSync(path.join(abs, ".l9meta.yaml"), serializeYaml(metaObj), "utf8");
-                }
-                catch { /* unwritable dir — recorded, skip */ }
+                writeFolderSidecar(abs, metaObj);
             }
             continue;
         }
@@ -325,6 +328,26 @@ function writeSidecar(abs, obj) {
         fs.writeFileSync((0, comment_1.sidecarPathFor)(abs), serializeYaml(obj), "utf8");
     }
     catch { /* unwritable — recorded in manifest only */ }
+}
+// Write a folder's .l9meta.yaml non-destructively: if one already exists (possibly
+// user-authored), merge so existing keys win and only missing keys are added,
+// rather than blindly clobbering it. Mirrors the read/merge intent of injectFile.
+function writeFolderSidecar(dir, metaObj) {
+    const p = path.join(dir, ".l9meta.yaml");
+    let toWrite = metaObj;
+    if (fs.existsSync(p)) {
+        try {
+            const existing = (0, meta_schema_1.parseCanonicalYaml)(fs.readFileSync(p, "utf8"));
+            toWrite = { ...metaObj, ...existing }; // existing (user-authored) values take precedence
+        }
+        catch { /* unparseable existing sidecar — leave it untouched */
+            return;
+        }
+    }
+    try {
+        fs.writeFileSync(p, serializeYaml(toWrite), "utf8");
+    }
+    catch { /* unwritable dir — recorded, skip */ }
 }
 // Map an InventoryRecord onto the minimal header the injector serializes. The injector
 // preserves the file body and reconciles fields; inventory only needs the identity block.

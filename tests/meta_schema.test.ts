@@ -34,6 +34,11 @@ fields:
     expect(o.nothing).toBeNull();
   });
   it("quoted string keeps punctuation", () => expect(o.description).toBe("a: quoted, string"));
+  it("a '#' inside a quoted string is not treated as a comment", () => {
+    expect(parseCanonicalYaml('description: "hello # world"').description).toBe("hello # world");
+    expect(parseCanonicalYaml("note: 'a # b'").note).toBe("a # b");
+    expect(parseCanonicalYaml("key: value # trailing comment").key).toBe("value");
+  });
   it("inline list", () => expect(o.target).toEqual(["file_header", "sidecar", "manifest"]));
   it("list of maps", () => {
     expect(Array.isArray(o.fields)).toBe(true);
