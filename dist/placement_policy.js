@@ -52,16 +52,35 @@ function joinPosix(...parts) {
     return joined.replace(/^\.\//, "");
 }
 /**
+ * Sanitize an optional rootDir into a safe, repo-relative prefix. Strips
+ * absolute-path roots and drops "."/".." segments so a plan's target path can
+ * never escape the repo root, regardless of what a caller passes.
+ */
+function sanitizeRootDir(root) {
+    return root
+        .replace(/\\/g, "/")
+        .split("/")
+        .filter((seg) => seg && seg !== "." && seg !== "..")
+        .join("/");
+}
+/** Rank a confidence with a safe fallback, so an invalid key can't fail-open. */
+function rank(confidence) {
+    return CONFIDENCE_RANK[confidence] ?? CONFIDENCE_RANK.low;
+}
+/**
  * Compile a single {@link PlacementPlan}. Pure: depends only on its arguments,
  * writes nothing, never throws on well-formed input.
  */
 function compilePlacementPlan(sourcePath, body = "", opts = {}) {
     const namespace = opts.namespace ?? DEFAULT_NAMESPACE;
-    const threshold = opts.quarantineAtOrBelow ?? "low";
-    const rootDir = opts.rootDir ?? "";
+    // Normalize the threshold to a known confidence key. A bad value (e.g. from
+    // plain JS or an unsafe cast) must not make the comparison fail-open.
+    const rawThreshold = opts.quarantineAtOrBelow ?? "low";
+    const threshold = rawThreshold in CONFIDENCE_RANK ? rawThreshold : "low";
+    const rootDir = sanitizeRootDir(opts.rootDir ?? "");
     const { artifactClass, confidence, signals } = (0, artifact_class_1.classifyArtifact)(sourcePath, body);
     const hint = (0, artifact_class_1.placementHintFor)(artifactClass);
-    const quarantined = artifactClass === "unknown" || CONFIDENCE_RANK[confidence] <= CONFIDENCE_RANK[threshold];
+    const quarantined = artifactClass === "unknown" || rank(confidence) <= rank(threshold);
     const baseDir = quarantined ? artifact_class_1.QUARANTINE_DIRECTORY : hint.directory;
     const targetDirectory = joinPosix(rootDir, baseDir);
     const fileName = path.posix.basename(sourcePath.replace(/\\/g, "/"));
