@@ -18,8 +18,8 @@ planes:
     order: 2
     meaning: classification and capability
     fields:
-      family:        {type: enum, values: [auditor,compiler,meta_kernel_forge,builder,planner,research,domain_agent,legal,Unknown]}
-      mcp_primitive: {type: enum, values: [tool,resource,prompt,none]}
+      family:        {type: enum, required: true, values: [auditor,compiler,meta_kernel_forge,builder,planner,research,domain_agent,legal,Unknown]}
+      mcp_primitive: {type: enum, required: true, values: [tool,resource,prompt,none]}
       callable:      {type: bool, required: true}
       retrievable:   {type: bool, required: true}
       injectable:    {type: bool, required: true}
@@ -31,7 +31,7 @@ planes:
       source_path:   {type: string, required: true}
       output_path:   {type: string, default: Unknown}
       layer:         {type: string, default: Unknown}
-      sharing_scope: {type: enum, values: [private,shared,agnostic]}
+      sharing_scope: {type: enum, required: true, values: [private,shared,agnostic]}
   routing:
     order: 4
     meaning: advisory route plan (never live routing writes)
@@ -54,7 +54,7 @@ planes:
     meaning: authority, ownership, lifecycle status
     fields:
       authority:        {type: string, required: true}
-      status:           {type: enum, values: [active,deprecated,review]}
+      status:           {type: enum, required: true, values: [active,deprecated,review]}
       owner:            {type: string, default: Unknown}
       decision_drivers: {type: list, default: Unknown}
   economics:

@@ -271,7 +271,12 @@ export interface LineagePlane {
   chain: string[] | Unknown;
 }
 
-/** A complete v3 metadata record: exactly the nine planes. */
+/**
+ * A complete v3 metadata record. Declares all nine orthogonal planes; note
+ * that a TypeScript `interface` is not exact (structural typing still permits
+ * extra keys on assignable values), so this models the required plane set
+ * rather than guaranteeing exactness.
+ */
 export interface MetaV3 {
   identity: IdentityPlane;
   taxonomy: TaxonomyPlane;
