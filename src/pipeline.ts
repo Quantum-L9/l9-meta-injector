@@ -13,6 +13,7 @@ import { assistField, DEFAULT_ASSIST_CONFIG, PROSE_ORIGIN_FIELDS } from "./assis
 import { normalizeFilenames } from "./normalize_filename";
 import { makeOpenAIAdapter, setAdapter, resetAdapter } from "./llm";
 import { NamespaceConfig } from "./namespace";
+import { resolveStrategy, stripInjectedBlock } from "./comment";
 
 function toCfg(config: PipelineConfig): NamespaceConfig {
   return { namespace: config.namespace, authority: config.authority, nearDupThreshold: config.nearDupThreshold, hashPrefixLength: config.hashPrefixLength, outputDir: config.outDir, indexDir: config.indexDir, promptGlob: "Prompt-*.md" };
@@ -44,7 +45,18 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
 
   for (const e of scanned) {
     const raw = fs.readFileSync(e.sourcePath, "utf8");
-    const { body } = splitContent(raw);
+    const spec = resolveStrategy(e.sourcePath, raw);
+    if (spec.strategy === "skip-binary") continue; // never annotate binary/media
+    // Strip any previously-injected block so re-runs classify/hash the true body only
+    // (keeps content_hash stable and prevents the injected metadata from skewing classification).
+    const cleanRaw = spec.strategy === "line-comment" || spec.strategy === "block-comment"
+      ? stripInjectedBlock(raw, spec)
+      : raw;
+    // Only frontmatter files carry a `--- … ---` header; for other strategies the
+    // whole cleanRaw is the body. Running splitContent unconditionally would let a
+    // leading `---` in non-markdown (e.g. YAML document separators) be mistaken for
+    // frontmatter and truncate real content, skewing extraction/classification/hash.
+    const body = spec.strategy === "yaml-frontmatter" ? splitContent(cleanRaw).body : cleanRaw;
     const ef = extract(body);
     const cls = classify(e.sourcePath, body, e.headerConvention);
     let meta = buildMeta(e.sourcePath, body, ef, cls, nsCfg, config.authority, now);
@@ -67,8 +79,8 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
   const injected: InjectionRecord[] = [];
 
   for (const e of scanned) {
-    const meta = metas.get(e.sourcePath)!;
-    if (!meta.injectable) continue;
+    const meta = metas.get(e.sourcePath);
+    if (!meta || !meta.injectable) continue;
     // Use async inject (LLM boolean reconcile on description/intent) when LLM is enabled
     const record = config.llmEnabled
       ? await injectFileAsync(e.sourcePath, meta, opts)

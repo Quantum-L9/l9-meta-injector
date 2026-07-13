@@ -1,0 +1,143 @@
+{
+  "fixtures": "fixtures",
+  "totals": {
+    "scanned": 10,
+    "injected": 9,
+    "verified": 9,
+    "verifiedClean": 9
+  },
+  "strategyDist": {
+    "block-comment": 2,
+    "line-comment": 3,
+    "sidecar": 1,
+    "yaml-frontmatter": 3
+  },
+  "typeDist": {
+    "context": 1,
+    "prompt": 1,
+    "skill": 1,
+    "source": 6
+  },
+  "indexes": {
+    "primitiveLibraryEntries": 8,
+    "promptLibraryEntries": 1,
+    "dedupTotalScanned": 9,
+    "dedupUniqueCount": 9,
+    "dedupExactTwins": 0,
+    "verificationEntries": 9,
+    "verificationClean": 9
+  },
+  "idempotency": {
+    "rerunFilesChanged": 0
+  },
+  "files": [
+    {
+      "path": "config/settings.yaml",
+      "id": "l9.source.settings",
+      "artifact_type": "source",
+      "mcp_primitive": "resource",
+      "injectable": true,
+      "strategy": "line-comment",
+      "hasSidecar": false,
+      "yamlValid": true,
+      "bodyPreserved": true,
+      "sharingScopeValid": true
+    },
+    {
+      "path": "data/config.json",
+      "id": "l9.source.config",
+      "artifact_type": "source",
+      "mcp_primitive": "resource",
+      "injectable": true,
+      "strategy": "sidecar",
+      "hasSidecar": true,
+      "yamlValid": true,
+      "bodyPreserved": true,
+      "sharingScopeValid": true
+    },
+    {
+      "path": "docs/overview.md",
+      "id": "l9.context.overview",
+      "artifact_type": "context",
+      "mcp_primitive": "resource",
+      "injectable": true,
+      "strategy": "yaml-frontmatter",
+      "hasSidecar": false,
+      "yamlValid": true,
+      "bodyPreserved": true,
+      "sharingScopeValid": true
+    },
+    {
+      "path": "prompts/Prompt-LegalAnalysis.md",
+      "id": "l9.prompt.legal_analysis",
+      "artifact_type": "prompt",
+      "mcp_primitive": "prompt",
+      "injectable": true,
+      "strategy": "yaml-frontmatter",
+      "hasSidecar": false,
+      "yamlValid": true,
+      "bodyPreserved": true,
+      "sharingScopeValid": true
+    },
+    {
+      "path": "scripts/run.sh",
+      "id": "l9.script.run",
+      "artifact_type": "source",
+      "mcp_primitive": "resource",
+      "injectable": true,
+      "strategy": "line-comment",
+      "hasSidecar": false,
+      "yamlValid": true,
+      "bodyPreserved": true,
+      "sharingScopeValid": true
+    },
+    {
+      "path": "skills/lint_file.md",
+      "id": "l9.skill.lint_file",
+      "artifact_type": "skill",
+      "mcp_primitive": "tool",
+      "injectable": true,
+      "strategy": "yaml-frontmatter",
+      "hasSidecar": false,
+      "yamlValid": true,
+      "bodyPreserved": true,
+      "sharingScopeValid": true
+    },
+    {
+      "path": "src/app.ts",
+      "id": "l9.source.app",
+      "artifact_type": "source",
+      "mcp_primitive": "resource",
+      "injectable": true,
+      "strategy": "line-comment",
+      "hasSidecar": false,
+      "yamlValid": true,
+      "bodyPreserved": true,
+      "sharingScopeValid": true
+    },
+    {
+      "path": "web/page.html",
+      "id": "l9.source.page",
+      "artifact_type": "source",
+      "mcp_primitive": "resource",
+      "injectable": true,
+      "strategy": "block-comment",
+      "hasSidecar": false,
+      "yamlValid": true,
+      "bodyPreserved": true,
+      "sharingScopeValid": true
+    },
+    {
+      "path": "web/style.css",
+      "id": "l9.source.style",
+      "artifact_type": "source",
+      "mcp_primitive": "resource",
+      "injectable": true,
+      "strategy": "block-comment",
+      "hasSidecar": false,
+      "yamlValid": true,
+      "bodyPreserved": true,
+      "sharingScopeValid": true
+    }
+  ]
+}

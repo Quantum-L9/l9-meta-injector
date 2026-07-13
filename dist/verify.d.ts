@@ -1,2 +1,2 @@
 import { VerifyResult, NormalizedMeta } from "./schema";
-export declare function verify(filePath: string, _origHash: string, meta: NormalizedMeta): VerifyResult;
+export declare function verify(filePath: string, origHash: string, meta: NormalizedMeta): VerifyResult;

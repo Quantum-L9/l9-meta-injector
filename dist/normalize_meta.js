@@ -76,7 +76,7 @@ function serializeToYamlFrontMatter(meta) {
 }
 function buildMeta(filePath, originalBody, ef, cr, nsCfg, authority, now) {
     const tax = schema_1.PRIMITIVE_TAXONOMY[cr.artifactType] ?? schema_1.PRIMITIVE_TAXONOMY["unknown"];
-    const { namespace, sharingScope, idStem } = (0, namespace_1.resolveNamespace)(filePath, nsCfg);
+    const { namespace, sharingScope, idStem } = (0, namespace_1.resolveNamespace)(filePath, nsCfg, cr.artifactType);
     const base = {
         id: idStem, title: slugTitle(filePath), artifact_type: cr.artifactType,
         mcp_primitive: tax.mcpPrimitive, callable: tax.callable,
@@ -88,7 +88,7 @@ function buildMeta(filePath, originalBody, ef, cr, nsCfg, authority, now) {
     };
     if (cr.artifactType === "doctrine")
         return { ...base, governs: schema_1.UNKNOWN, decision_drivers: schema_1.UNKNOWN, applies_to_domains: schema_1.UNKNOWN };
-    if (cr.artifactType === "test" || cr.artifactType === "script")
+    if (cr.artifactType === "test" || cr.artifactType === "script" || cr.artifactType === "source")
         return { ...base, owner: schema_1.UNKNOWN };
     const exec = {
         ...base, family: cr.family, description: schema_1.UNKNOWN,

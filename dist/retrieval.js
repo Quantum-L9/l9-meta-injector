@@ -35,16 +35,44 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.findFiles = findFiles;
 exports.scanFiles = scanFiles;
-// retrieval.ts — File discovery and scan. Supports .md and .txt.
-// .txt files are treated as pure prose: no frontmatter parsing, all fields via regex-seed + LLM assist.
+// retrieval.ts — File discovery and scan. Supports every text filetype in a repo.
+// A glob ending in `*.ext` filters to that extension; otherwise all text files are
+// returned (binary/media extensions excluded, and unknown extensions null-byte-sniffed).
+// Markdown/frontmatter files parse their header; everything else defers to the
+// filetype-aware injection strategy (see comment.ts).
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const extract_1 = require("./extract");
-const SUPPORTED_EXTENSIONS = new Set([".md", ".txt"]);
+const comment_1 = require("./comment");
+/** Injector-generated artifacts must never be re-discovered as inputs. */
+function isGeneratedArtifact(name) {
+    return name.endsWith(".inject.log") || name.endsWith(".l9meta.yaml");
+}
+/** Read a small prefix and report whether it looks binary (has a NUL byte). */
+function looksBinaryOnDisk(filePath) {
+    let fd = null;
+    try {
+        fd = fs.openSync(filePath, "r");
+        const buf = Buffer.alloc(8192);
+        const n = fs.readSync(fd, buf, 0, 8192, 0);
+        for (let i = 0; i < n; i++)
+            if (buf[i] === 0)
+                return true;
+        return false;
+    }
+    catch {
+        return true;
+    }
+    finally {
+        if (fd !== null)
+            fs.closeSync(fd);
+    }
+}
 function findFiles(root, glob) {
-    // Extract extension filter from glob pattern (e.g. **/*.md → .md, **/*.txt → .txt, **/* → all supported)
-    const extMatch = glob.match(/\*\.([a-z]+)$/);
-    const extFilter = extMatch ? `.${extMatch[1]}` : null;
+    // Extract extension filter from glob pattern (e.g. **/*.md → .md). No `*.ext`
+    // suffix (e.g. **/*) → every text file the injector can safely annotate.
+    const extMatch = glob.match(/\*\.([a-z0-9]+)$/i);
+    const extFilter = extMatch ? `.${extMatch[1].toLowerCase()}` : null;
     const results = [];
     function walk(dir) {
         for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -52,10 +80,24 @@ function findFiles(root, glob) {
                 walk(path.join(dir, entry.name));
             }
             else if (entry.isFile()) {
+                if (isGeneratedArtifact(entry.name))
+                    continue; // skip our own .inject.log / .l9meta.yaml
+                const full = path.join(dir, entry.name);
                 const ext = path.extname(entry.name).toLowerCase();
-                if (extFilter ? entry.name.endsWith(extFilter) : SUPPORTED_EXTENSIONS.has(ext)) {
-                    results.push(path.join(dir, entry.name));
-                }
+                if (extFilter && !entry.name.toLowerCase().endsWith(extFilter))
+                    continue; // filtered out
+                // Cheap ext-based strategy check first; only sniff the bytes when the
+                // extension is unknown (sidecar fallback). This runs for filtered globs
+                // too, so a glob like **/*.foo over binary content is still excluded.
+                const spec = (0, comment_1.resolveStrategy)(full, ""); // ext-only decision (empty content)
+                if (spec.strategy === "skip-binary")
+                    continue; // known binary/media extension
+                const knownText = comment_1.FRONTMATTER_EXTS.has(ext)
+                    || spec.strategy === "line-comment"
+                    || spec.strategy === "block-comment";
+                if (!knownText && looksBinaryOnDisk(full))
+                    continue; // unknown ext: exclude binaries
+                results.push(full);
             }
         }
     }
@@ -77,10 +119,13 @@ function scanFiles(filePaths) {
         const raw = fs.readFileSync(fp, "utf8");
         const stat = fs.statSync(fp);
         const ext = path.extname(fp).toLowerCase();
-        // .txt is always headerConvention="none" — pure prose, no frontmatter
-        const { frontMatter, headerConvention, body } = ext === ".txt"
-            ? { frontMatter: null, headerConvention: "none", body: raw }
-            : (0, extract_1.splitContent)(raw);
+        // Only markdown-family files carry YAML frontmatter. .txt and all non-prose
+        // filetypes are headerConvention="none" (their metadata rides in comment blocks
+        // or a sidecar, resolved at injection time).
+        const isFrontmatter = comment_1.FRONTMATTER_EXTS.has(ext) && ext !== ".txt" && ext !== ".text";
+        const { frontMatter, headerConvention, body } = isFrontmatter
+            ? (0, extract_1.splitContent)(raw)
+            : { frontMatter: null, headerConvention: "none", body: raw };
         return {
             sourcePath: fp, fileName: path.basename(fp), sizeBytes: stat.size,
             headerConvention: headerConvention,

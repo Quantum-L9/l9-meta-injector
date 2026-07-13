@@ -16,9 +16,14 @@
     "l9",
     "metadata",
     "meta-injection",
+    "artifact-metadata",
     "prompt",
     "skill",
+    "kernel",
+    "mcp",
     "frontmatter",
+    "code-annotation",
+    "sidecar",
     "yaml"
   ],
   "engines": {
@@ -37,7 +42,9 @@
     "build": "tsc -p tsconfig.json",
     "test": "jest --config jest.config.js --no-coverage",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "lint": "tsc --noEmit -p tsconfig.json"
+    "lint": "tsc --noEmit -p tsconfig.json",
+    "selfpack": "npm run build && node scripts/selfpack.js",
+    "selfpack:update": "npm run build && node scripts/selfpack.js --update"
   },
   "devDependencies": {
     "typescript": "^5.4.5",

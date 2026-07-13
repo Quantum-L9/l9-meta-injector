@@ -72,15 +72,15 @@ function extractScalar(body, patterns) {
 // Prose fields NOT extracted here — assist.ts handles description/activation_signals/contracts.
 function extract(body) {
     return {
-        role: extractScalar(body, [/^##\s+Role\s*\n+([^\n#]+)/m, /\*\*Role\*\*:?\s*([^\n]+)/]),
-        objective: extractScalar(body, [/^##\s+Objective\s*\n+([^\n#]+)/m, /\*\*Objective\*\*:?\s*([^\n]+)/]),
+        role: extractScalar(body, [/^##\s+Role[ \t]*\n+([^\n#]+)/m, /\*\*Role\*\*:?\s*([^\n]+)/]),
+        objective: extractScalar(body, [/^##\s+Objective[ \t]*\n+([^\n#]+)/m, /\*\*Objective\*\*:?\s*([^\n]+)/]),
         constraints: extractList(body, /^##\s+Constraints?\s*$/m),
         validationGates: extractList(body, /^##\s+Validation Gates?\s*$/m),
         stopConditions: extractList(body, /^##\s+Stop Conditions?\s*$/m),
         phaseModel: extractList(body, /^##\s+(Phase Model|Phases)\s*$/m),
         inputVariables: extractList(body, /^##\s+Input Variables?\s*$/m),
-        outputFormat: extractScalar(body, [/^##\s+Output Format\s*\n+([^\n#]+)/m, /\*\*Output Format\*\*:?\s*([^\n]+)/]),
-        modelTarget: extractScalar(body, [/model[_-]?target:?\s*([^\n,]+)/i, /\*\*Model Target\*\*:?\s*([^\n]+)/]),
+        outputFormat: extractScalar(body, [/^##\s+Output Format[ \t]*\n+([^\n#]+)/m, /\*\*Output Format\*\*:?\s*([^\n]+)/]),
+        modelTarget: extractScalar(body, [/^##\s+Model[ _-]?Target[ \t]*\n+([^\n#]+)/mi, /model[_-]?target:?\s*([^\n,]+)/i, /\*\*Model Target\*\*:?\s*([^\n]+)/]),
     };
 }
 function splitContent(raw) {
