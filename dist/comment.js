@@ -112,7 +112,9 @@ function resolveStrategy(filePath, raw) {
         return { strategy: "skip-binary" };
     if (isProbablyBinary(raw))
         return { strategy: "skip-binary" };
-    if (exports.FRONTMATTER_EXTS.has(ext))
+    // .txt/.text are text but not prose-frontmatter carriers: their metadata rides
+    // in a sidecar (matches scanFiles, which reports headerConvention="none" for them).
+    if (exports.FRONTMATTER_EXTS.has(ext) && ext !== ".txt" && ext !== ".text")
         return { strategy: "yaml-frontmatter" };
     const linePrefix = LINE_COMMENT[ext] ?? BASENAME_LINE_COMMENT[base];
     if (linePrefix)

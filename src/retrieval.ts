@@ -44,16 +44,11 @@ export function findFiles(root: string, glob: string): string[] {
       } else if (entry.isFile()) {
         if (isGeneratedArtifact(entry.name)) continue; // skip our own .inject.log / .l9meta.yaml
         const full = path.join(dir, entry.name);
-        if (extFilter) {
-          // Honor the filter, but still exclude known binary/media extensions so a glob
-          // like **/*.png never gets read as UTF-8 downstream (expensive + pointless —
-          // the pipeline would skip-binary it anyway).
-          if (entry.name.toLowerCase().endsWith(extFilter) && resolveStrategy(full, "").strategy !== "skip-binary") results.push(full);
-          continue;
-        }
-        // No extension filter: include any text file. Cheap ext-based strategy check
-        // first; only sniff the bytes when the extension is unknown (sidecar fallback).
         const ext = path.extname(entry.name).toLowerCase();
+        if (extFilter && !entry.name.toLowerCase().endsWith(extFilter)) continue; // filtered out
+        // Cheap ext-based strategy check first; only sniff the bytes when the
+        // extension is unknown (sidecar fallback). This runs for filtered globs
+        // too, so a glob like **/*.foo over binary content is still excluded.
         const spec = resolveStrategy(full, ""); // ext-only decision (empty content)
         if (spec.strategy === "skip-binary") continue; // known binary/media extension
         const knownText = FRONTMATTER_EXTS.has(ext)

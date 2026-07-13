@@ -39,6 +39,16 @@ const fs = __importStar(require("fs"));
 const schema_1 = require("./schema");
 const extract_1 = require("./extract");
 const comment_1 = require("./comment");
+// Recover the clean body from an injected file, mirroring how inject.ts derived
+// cleanBody per strategy, so the hash lines up with the recorded originalBodyHash.
+function recoverBody(content, spec) {
+    if (spec.strategy === "yaml-frontmatter")
+        return (0, extract_1.stripExistingFrontMatter)(content);
+    if (spec.strategy === "line-comment" || spec.strategy === "block-comment") {
+        return (0, comment_1.stripInjectedBlock)(content, spec);
+    }
+    return content; // sidecar: the file body is left untouched by injection
+}
 // A metadata header is valid if it is present in whatever form the file's strategy
 // dictates: YAML frontmatter, a comment-wrapped block, or a sidecar file.
 function metaHeaderValid(filePath, content, issues) {
@@ -70,10 +80,20 @@ function checkSharingScope(meta) {
     }
     return issues;
 }
-function verify(filePath, _origHash, meta) {
+function verify(filePath, origHash, meta) {
     const issues = [];
     const content = fs.readFileSync(filePath, "utf8");
+    const spec = (0, comment_1.resolveStrategy)(filePath, content);
     const yamlValid = metaHeaderValid(filePath, content, issues);
+    // Body preservation: re-derive the clean body from disk and compare its hash to
+    // the body hash captured before injection. A mismatch means injection altered
+    // the body — a hard failure, not a silent pass.
+    let bodyPreserved = true;
+    if (origHash) {
+        bodyPreserved = (0, extract_1.contentHash)(recoverBody(content, spec)) === origHash;
+        if (!bodyPreserved)
+            issues.push("Body content changed during injection (hash mismatch)");
+    }
     let taxonomyValid = true;
     if (meta.callable && meta.mcp_primitive === "none") {
         issues.push("callable=true but mcp_primitive=none");
@@ -92,6 +112,6 @@ function verify(filePath, _origHash, meta) {
             }
         }
     }
-    return { sourcePath: filePath, yamlValid, bodyPreserved: true, taxonomyValid, promptSchemaComplete, sharingScopeValid, issues };
+    return { sourcePath: filePath, yamlValid, bodyPreserved, taxonomyValid, promptSchemaComplete, sharingScopeValid, issues };
 }
 //# sourceMappingURL=verify.js.map
