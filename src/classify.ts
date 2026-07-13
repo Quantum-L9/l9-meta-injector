@@ -1,6 +1,7 @@
 import * as path from "path";
-import { ClassifyResult, ArtifactType, ArtifactFamily, HeaderConvention } from "./schema";
+import { ClassifyResult, ArtifactType, ArtifactFamily, HeaderConvention, ArtifactClassification } from "./schema";
 import { FRONTMATTER_EXTS } from "./comment";
+import { classifyArtifact } from "./artifact_class";
 
 const FAMILY_SIGNALS: Array<{ family: ArtifactFamily; keywords: string[] }> = [
   { family: "auditor",            keywords: ["audit", "review", "check", "validate", "lint", "scan"] },
@@ -66,6 +67,24 @@ export function classify(filePath: string, body: string, _hc: HeaderConvention):
   }
   const conf = bestScore >= 2 ? "medium" : "low";
   return { artifactType: best, family: detectFamily(text), signals: extractSignals(text), confidence: conf };
+}
+
+/** A ClassifyResult augmented with the 17-class semantic classification. */
+export interface ClassifyResultWithClass extends ClassifyResult {
+  semantic: ArtifactClassification;
+}
+
+/**
+ * Additive companion to {@link classify}: returns the exact same coarse
+ * classification plus the fine-grained 17-class semantic classification.
+ * `classify()` itself is left unchanged.
+ */
+export function classifyWithSemantics(
+  filePath: string,
+  body: string,
+  hc: HeaderConvention
+): ClassifyResultWithClass {
+  return { ...classify(filePath, body, hc), semantic: classifyArtifact(filePath, body) };
 }
 
 function detectFamily(text: string): ArtifactFamily {
