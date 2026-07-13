@@ -8,6 +8,8 @@ export type { ReconcileAction, FieldDiff as ReconcileFieldDiff, ReconcileResult 
 export * from "./normalize_filename";
 export * from "./extract";
 export * from "./classify";
+export * from "./artifact_class";
+export * from "./placement_policy";
 export * from "./normalize_meta";
 export { injectFile, injectFileAsync } from "./inject";
 export type { InjectOptions } from "./inject";

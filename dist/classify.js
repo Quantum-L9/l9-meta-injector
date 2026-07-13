@@ -34,8 +34,10 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.classify = classify;
+exports.classifyWithSemantics = classifyWithSemantics;
 const path = __importStar(require("path"));
 const comment_1 = require("./comment");
+const artifact_class_1 = require("./artifact_class");
 const FAMILY_SIGNALS = [
     { family: "auditor", keywords: ["audit", "review", "check", "validate", "lint", "scan"] },
     { family: "compiler", keywords: ["compile", "build", "generate", "render", "produce"] },
@@ -96,6 +98,14 @@ function classify(filePath, body, _hc) {
     }
     const conf = bestScore >= 2 ? "medium" : "low";
     return { artifactType: best, family: detectFamily(text), signals: extractSignals(text), confidence: conf };
+}
+/**
+ * Additive companion to {@link classify}: returns the exact same coarse
+ * classification plus the fine-grained 17-class semantic classification.
+ * `classify()` itself is left unchanged.
+ */
+function classifyWithSemantics(filePath, body, hc) {
+    return { ...classify(filePath, body, hc), semantic: (0, artifact_class_1.classifyArtifact)(filePath, body) };
 }
 function detectFamily(text) {
     for (const { family, keywords } of FAMILY_SIGNALS) {

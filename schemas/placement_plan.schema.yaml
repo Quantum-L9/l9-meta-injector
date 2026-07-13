@@ -1,0 +1,26 @@
+schema: placement_plan
+version: 1
+mode: advisory
+description: >
+  Output of the metadata placement compiler (src/placement_policy.ts). A plan
+  describes where an artifact should be placed. It is advisory and pure: the
+  compiler emits plans only and performs no file-system writes
+  (writesRequired is always false).
+# Field names are camelCase to match the PlacementPlan object emitted by
+# src/placement_policy.ts (validators should check the compiler's actual output).
+fields:
+  sourcePath:       {type: string, required: true, notes: "input path being placed"}
+  artifactClass:    {type: enum, required: true, values: [source_module,type_definitions,test_suite,schema,configuration,documentation,contract,build_manifest,build_artifact,fixture,script,pipeline,prompt_template,skill_definition,governance_doctrine,changelog,unknown]}
+  confidence:       {type: enum, required: true, values: [high,medium,low]}
+  layer:            {type: string, required: true, notes: "logical layer, or 'quarantine'"}
+  namespace:        {type: string, required: true, default: l9}
+  targetDirectory:  {type: string, required: true, notes: "repo-relative, POSIX separators"}
+  targetPath:       {type: string, required: true, notes: "targetDirectory joined with the source basename"}
+  quarantined:      {type: bool, required: true, notes: "true if routed to the quarantine directory"}
+  writesRequired:   {const: false, notes: "plans only; the compiler never writes"}
+  rationale:        {type: list, required: true, notes: "human-readable explanation lines"}
+rules:
+  - Pure: depends only on the source path (and optional body); writes nothing.
+  - Unknown class or confidence at/below threshold routes to 99_CONFLICTS_AND_UNKNOWN/.
+  - targetPath = targetDirectory + basename(sourcePath).
+  - writesRequired is fixed false; acting on a plan is a downstream concern.
