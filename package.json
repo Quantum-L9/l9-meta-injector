@@ -2,8 +2,37 @@
   "name": "l9-meta-injector",
   "version": "2.1.0",
   "description": "L9 meta-injection toolkit for prompt, skill, and kernel metadata",
+  "license": "MIT",
+  "author": "Quantum-L9",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Quantum-L9/l9-meta-injector.git"
+  },
+  "homepage": "https://github.com/Quantum-L9/l9-meta-injector#readme",
+  "bugs": {
+    "url": "https://github.com/Quantum-L9/l9-meta-injector/issues"
+  },
+  "keywords": [
+    "l9",
+    "metadata",
+    "meta-injection",
+    "prompt",
+    "skill",
+    "frontmatter",
+    "yaml"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "schemas",
+    "examples",
+    "README.md",
+    "CHANGELOG.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "jest --config jest.config.js --no-coverage",
