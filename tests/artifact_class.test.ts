@@ -3,6 +3,7 @@ import {
   isSemanticArtifactClass,
   SEMANTIC_ARTIFACT_CLASSES,
 } from "../src/artifact_class";
+import { SemanticArtifactClass } from "../src/schema";
 import { classifyWithSemantics } from "../src/classify";
 
 test("exactly 17 semantic classes", () => expect(SEMANTIC_ARTIFACT_CLASSES.length).toBe(17));
@@ -13,7 +14,7 @@ test("semantic classes are unique", () =>
 test("classifyArtifact never throws on a bare filename", () =>
   expect(() => classifyArtifact("a.ts")).not.toThrow());
 
-test.each<[string, string]>([
+test.each<[string, SemanticArtifactClass]>([
   ["src/inject.ts", "source_module"],
   ["dist/schema.d.ts", "type_definitions"],
   ["tests/schema.test.ts", "test_suite"],
