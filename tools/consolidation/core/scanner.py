@@ -1,8 +1,10 @@
 """Shared scanner — recursive walk, skip hidden/system files."""
+
 import os
 
-SKIP_DIRS  = {".git","__pycache__",".DS_Store","node_modules",".idea",".vscode"}
-SKIP_FILES = {".DS_Store",".gitkeep",".gitignore"}
+SKIP_DIRS = {".git", "__pycache__", ".DS_Store", "node_modules", ".idea", ".vscode"}
+SKIP_FILES = {".DS_Store", ".gitkeep", ".gitignore"}
+
 
 def scan(source):
     """Yield (rel_path, abs_path, ext) for every eligible file under source."""

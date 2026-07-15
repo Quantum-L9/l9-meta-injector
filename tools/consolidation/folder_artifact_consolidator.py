@@ -5,7 +5,14 @@ Phase B (read-only): scan -> hash -> classify -> plan_paths -> dedup -> manifest
 Manifest gate validates B output.
 Phase C (manifest-driven): copy -> inject headers / sidecars -> reports.
 """
-import argparse, csv, hashlib, os, shutil, sys, datetime
+
+import argparse
+import csv
+import hashlib
+import os
+import shutil
+import sys
+import datetime
 
 TEXT_EXT = {".md", ".txt", ".yaml", ".yml", ".py", ".json", ".toml", ".ini", ".cfg"}
 
@@ -33,10 +40,17 @@ def classify(rel, text_sample):
     low = (rel + " " + text_sample).lower()
     for key, dest in DOMAIN_HINTS.items():
         if key in low:
-            atype = ("infra" if "infrastructure" in dest else
-                     "contract" if "CONTRACT" in dest.upper() else
-                     "template" if "templates" in dest else
-                     "skill" if "skills" in dest else "architecture")
+            atype = (
+                "infra"
+                if "infrastructure" in dest
+                else "contract"
+                if "CONTRACT" in dest.upper()
+                else "template"
+                if "templates" in dest
+                else "skill"
+                if "skills" in dest
+                else "architecture"
+            )
             return atype, key, dest, 0.85
     return "unknown", "generic", "99_CONFLICTS_AND_UNKNOWN/low-confidence", 0.40
 
@@ -64,26 +78,47 @@ def phase_b(source, output, threshold):
             dedup = "duplicate" if h in seen else "unique"
             seen.setdefault(h, rel)
             out_path = os.path.join(dest, name)
-            rows.append({
-                "source_path": rel, "content_hash": h, "artifact_type": atype,
-                "l9_domain": domain, "node_name": "unknown", "output_path": out_path,
-                "renamed_from": name, "classification_confidence": f"{conf:.2f}",
-                "path_confidence": f"{conf:.2f}", "dedup_status": dedup,
-            })
+            rows.append(
+                {
+                    "source_path": rel,
+                    "content_hash": h,
+                    "artifact_type": atype,
+                    "l9_domain": domain,
+                    "node_name": "unknown",
+                    "output_path": out_path,
+                    "renamed_from": name,
+                    "classification_confidence": f"{conf:.2f}",
+                    "path_confidence": f"{conf:.2f}",
+                    "dedup_status": dedup,
+                }
+            )
     man_dir = os.path.join(output, "00_MANIFESTS")
     os.makedirs(man_dir, exist_ok=True)
-    cols = ["source_path", "content_hash", "artifact_type", "l9_domain", "node_name",
-            "output_path", "renamed_from", "classification_confidence",
-            "path_confidence", "dedup_status"]
+    cols = [
+        "source_path",
+        "content_hash",
+        "artifact_type",
+        "l9_domain",
+        "node_name",
+        "output_path",
+        "renamed_from",
+        "classification_confidence",
+        "path_confidence",
+        "dedup_status",
+    ]
     with open(os.path.join(man_dir, "move_map.csv"), "w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=cols)
         w.writeheader()
         w.writerows(rows)
     with open(os.path.join(man_dir, "inventory.csv"), "w", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=["source_path", "content_hash", "dedup_status"])
+        w = csv.DictWriter(
+            fh, fieldnames=["source_path", "content_hash", "dedup_status"]
+        )
         w.writeheader()
         for r in rows:
-            w.writerow({k: r[k] for k in ["source_path", "content_hash", "dedup_status"]})
+            w.writerow(
+                {k: r[k] for k in ["source_path", "content_hash", "dedup_status"]}
+            )
     with open(os.path.join(man_dir, "conflicts.md"), "w") as fh:
         dupes = [r for r in rows if r["dedup_status"] == "duplicate"]
         fh.write("# Conflicts\n\n## Duplicates\n")
@@ -145,7 +180,9 @@ def phase_c(source, output, move_map, copy_files, inject):
             with open(dp + ".l9meta.yaml", "w") as fh:
                 for k, v in meta.items():
                     fh.write(f"{k}: {v}\n")
-    with open(os.path.join(output, "00_MANIFESTS", "dedup_report.csv"), "w", newline="") as fh:
+    with open(
+        os.path.join(output, "00_MANIFESTS", "dedup_report.csv"), "w", newline=""
+    ) as fh:
         w = csv.writer(fh)
         w.writerow(["content_hash", "dedup_status", "source_path"])
         for r in rows:
