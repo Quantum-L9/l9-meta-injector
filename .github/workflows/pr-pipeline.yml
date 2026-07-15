@@ -12,9 +12,6 @@ on:
   workflow_dispatch:
   pull_request:
     types: [opened, synchronize, ready_for_review, reopened]
-    # No base-branch filter: run on every PR, including stacked PRs whose base
-    # is another feature branch. Previously [main, develop], which left stacked
-    # PRs (e.g. base claude/**) with no Build & Test checks.
   pull_request_review:
     types: [submitted]
   pull_request_review_comment:
@@ -29,7 +26,7 @@ permissions:
   pull-requests: write
 
 jobs:
-  # ── Node/TypeScript Build & Test ───────────────────────────────────────────
+  # ── Node/TypeScript Build & Test (smoke) ───────────────────────────────────
   build-and-test:
     name: Build & Test (Node)
     runs-on: ubuntu-latest
@@ -46,6 +43,13 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+
+  # ── L9 CI Core (validate, lint, test, security, sbom, scorecard, gate) ─────
+  l9-ci:
+    name: L9 CI Core
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    uses: Quantum-L9/l9-ci-core/.github/workflows/pr-pipeline.yml@102c9a5960c53c607216d320339e0457046948cb
+    secrets: inherit
 
   # ── Request Copilot + GitHub Code Review on PR open / push ─────────────────
   request-code-review:
@@ -69,7 +73,6 @@ jobs:
             const { owner, repo } = context.repo;
             const pull_number = context.payload.pull_request.number;
 
-            // Fetch current reviewers to avoid duplicate requests
             const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number });
             const existing = pr.requested_reviewers.map(r => r.login);
 
@@ -110,7 +113,6 @@ jobs:
             const { owner, repo } = context.repo;
             const pull_number = context.payload.pull_request.number;
 
-            // Use GraphQL to get all review threads and their resolved status
             const query = `
               query($owner: String!, $repo: String!, $pr: Int!) {
                 repository(owner: $owner, name: $repo) {
@@ -134,8 +136,6 @@ jobs:
             });
 
             const threads = result.repository.pullRequest.reviewThreads.nodes;
-
-            // Only count active (non-outdated) threads
             const activeThreads = threads.filter(t => !t.isOutdated);
             const unresolvedCount = activeThreads.filter(t => !t.isResolved).length;
             const totalActive = activeThreads.length;
@@ -147,7 +147,6 @@ jobs:
               return;
             }
 
-            // All active threads resolved — re-request Copilot review
             const bots = ['github-copilot[bot]'];
             try {
               await github.rest.pulls.requestReviewers({
