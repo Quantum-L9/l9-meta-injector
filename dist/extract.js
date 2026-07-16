@@ -101,8 +101,11 @@ function splitContent(raw) {
 function stripExistingFrontMatter(raw) {
     if (raw.startsWith("---\n") || raw.startsWith("---\r\n")) {
         const end = raw.indexOf("\n---", 4);
+        // Strip the full blank-line separator inject writes (yamlFm + "\n\n" + body),
+        // not just one newline — otherwise the recovered body keeps a spurious leading
+        // newline and its hash no longer matches the pre-injection body (round-trip break).
         if (end !== -1)
-            return raw.slice(end + 4).replace(/^\n/, "");
+            return raw.slice(end + 4).replace(/^\n+/, "");
     }
     return raw;
 }

@@ -64,7 +64,10 @@ export function splitContent(raw: string): { frontMatter: string | null; body: s
 export function stripExistingFrontMatter(raw: string): string {
   if (raw.startsWith("---\n") || raw.startsWith("---\r\n")) {
     const end = raw.indexOf("\n---", 4);
-    if (end !== -1) return raw.slice(end + 4).replace(/^\n/, "");
+    // Strip the full blank-line separator inject writes (yamlFm + "\n\n" + body),
+    // not just one newline — otherwise the recovered body keeps a spurious leading
+    // newline and its hash no longer matches the pre-injection body (round-trip break).
+    if (end !== -1) return raw.slice(end + 4).replace(/^\n+/, "");
   }
   return raw;
 }
