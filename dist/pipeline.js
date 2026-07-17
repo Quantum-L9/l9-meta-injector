@@ -51,7 +51,7 @@ const normalize_filename_1 = require("./normalize_filename");
 const llm_1 = require("./llm");
 const comment_1 = require("./comment");
 function toCfg(config) {
-    return { namespace: config.namespace, authority: config.authority, nearDupThreshold: config.nearDupThreshold, hashPrefixLength: config.hashPrefixLength, outputDir: config.outDir, indexDir: config.indexDir, promptGlob: "Prompt-*.md" };
+    return { namespace: config.namespace, authority: config.authority, nearDupThreshold: config.nearDupThreshold, hashPrefixLength: config.hashPrefixLength, outputDir: config.outDir, indexDir: config.indexDir, namespaceGlobs: config.namespaceGlobs };
 }
 async function runPipelineAsync(config) {
     const now = new Date().toISOString();

@@ -20,3 +20,7 @@ export * from "./pipeline";
 export * from "./inventory";
 export * from "./meta_schema";
 export * from "./meta_v3";
+// Reusable primitives previously reachable only internally (finding DWL-008):
+// the filetype injection-strategy engine and the dedup / library-index compiler.
+export * from "./comment";
+export * from "./compiler";

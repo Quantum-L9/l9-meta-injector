@@ -40,4 +40,8 @@ __exportStar(require("./pipeline"), exports);
 __exportStar(require("./inventory"), exports);
 __exportStar(require("./meta_schema"), exports);
 __exportStar(require("./meta_v3"), exports);
+// Reusable primitives previously reachable only internally (finding DWL-008):
+// the filetype injection-strategy engine and the dedup / library-index compiler.
+__exportStar(require("./comment"), exports);
+__exportStar(require("./compiler"), exports);
 //# sourceMappingURL=index.js.map

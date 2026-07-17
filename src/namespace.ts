@@ -19,7 +19,6 @@ export interface NamespaceConfig {
   hashPrefixLength: number;
   outputDir: string;
   indexDir: string;
-  promptGlob: string;
   namespaceGlobs?: Array<{ glob: string; namespace: string }>;
 }
 
