@@ -3,18 +3,15 @@
 // If it lives in prose, seed with regex, let LLM finish — but only when seed fails "good" predicate.
 import { UNKNOWN } from "./schema";
 import { getAdapter } from "./llm";
-import { buildMaterialityPrompt, parseMaterialityReply } from "./materiality";
 
 export interface AssistConfig {
   enabled: boolean;
   proseFields: Array<"description" | "activation_signals" | "input_contract" | "output_contract">;
-  materialityCheck: boolean;
 }
 
 export const DEFAULT_ASSIST_CONFIG: AssistConfig = {
   enabled: false,
   proseFields: ["description", "activation_signals"],
-  materialityCheck: true,
 };
 
 // "good" predicate: value is non-Unknown, non-empty, >=8 meaningful word tokens
@@ -50,18 +47,6 @@ export async function assistField(
   const result = await adapter.classify(buildFieldPrompt(fieldName, body));
   if (!result || result.trim() === "" || result.trim() === UNKNOWN) return seedValue;
   return result.trim();
-}
-
-export async function isMateriallyBetter(
-  fieldName: string, oldValue: unknown, newValue: unknown, config: AssistConfig
-): Promise<boolean> {
-  if (!config.enabled || !config.materialityCheck) return isGoodValue(newValue) && !isGoodValue(oldValue);
-  if (!isGoodValue(newValue)) return false;
-  if (!isGoodValue(oldValue)) return true;
-  const adapter = getAdapter();
-  if (!adapter.classify) return false;
-  const result = await adapter.classify(buildMaterialityPrompt(fieldName, oldValue, newValue));
-  return parseMaterialityReply(result);
 }
 
 function buildFieldPrompt(fieldName: string, body: string): string {
