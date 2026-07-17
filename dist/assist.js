@@ -9,6 +9,7 @@ exports.isMateriallyBetter = isMateriallyBetter;
 // If it lives in prose, seed with regex, let LLM finish — but only when seed fails "good" predicate.
 const schema_1 = require("./schema");
 const llm_1 = require("./llm");
+const materiality_1 = require("./materiality");
 exports.DEFAULT_ASSIST_CONFIG = {
     enabled: false,
     proseFields: ["description", "activation_signals"],
@@ -59,9 +60,8 @@ async function isMateriallyBetter(fieldName, oldValue, newValue, config) {
     const adapter = (0, llm_1.getAdapter)();
     if (!adapter.classify)
         return false;
-    const prompt = `Field: ${fieldName}\nA: ${JSON.stringify(oldValue)}\nB: ${JSON.stringify(newValue)}\nIs B materially more informative than A? Reply only: yes or no`;
-    const result = await adapter.classify(prompt);
-    return result?.trim().toLowerCase().startsWith("yes") ?? false;
+    const result = await adapter.classify((0, materiality_1.buildMaterialityPrompt)(fieldName, oldValue, newValue));
+    return (0, materiality_1.parseMaterialityReply)(result);
 }
 function buildFieldPrompt(fieldName, body) {
     const b = body.length > 1200 ? body.slice(0, 1200) + "\n[truncated]" : body;

@@ -4,7 +4,7 @@ export { resolveNamespace, toSnakeStem } from "./namespace";
 export type { NamespaceResolution, NamespaceConfig } from "./namespace";
 export * from "./assist";
 export { reconcileFields, reconcileFieldsAsync, diffsToLogYaml } from "./reconcile_fields";
-export type { ReconcileAction, FieldDiff as ReconcileFieldDiff, ReconcileResult } from "./reconcile_fields";
+export type { ReconcileResult } from "./reconcile_fields";
 export * from "./normalize_filename";
 export * from "./extract";
 export * from "./classify";
