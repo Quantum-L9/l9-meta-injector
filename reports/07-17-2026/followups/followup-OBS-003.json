@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "OBS-003",
+  "required_verified_status": "resolved",
+  "evidence_hint": "src/pipeline.ts:49 `if (spec.strategy === 'skip-binary') continue;` and src/pipeline.ts:83 `if (!meta || !meta.injectable) continue;` skip files with no record; runPipelineAsync emits no run summary.",
+  "residual_if_not_resolved": "Return/log a coverage tally (scanned, injected, skippedBinary, skippedNonInjectable, verifyFailed) with skipped source paths."
+}

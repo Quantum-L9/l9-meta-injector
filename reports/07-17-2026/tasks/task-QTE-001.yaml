@@ -1,0 +1,29 @@
+# --- Flawless-Victory task derived from finding QTE-001 ---
+task:
+  id: "QTE-001"
+  objective: "Add tests/compiler.test.ts asserting exact-twin grouping, uniqueCount arithmetic, isPromptMeta filtering, injectable filtering, and dedupReportToMarkdown shape."
+  scope_fence:
+    owner_layer: "src/compiler.ts"
+    allowed_paths:
+      - "src/compiler.ts"
+      - "tests/schema.test.ts"
+      - "pipeline.ts"
+  inspect_first:
+    - "src/compiler.ts"
+    - "tests/schema.test.ts:43"
+    - "pipeline.ts:11"
+    - "pipeline.ts:93"
+  constraint_to_satisfy: "Pass 2 coverage-vs-criticality: critical path with zero real assertion coverage | category=coverage-gap"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "Dedup detection and prompt/primitive index construction could silently return wrong groupings/twins/markdown with no failing test."
+  severity: "high"
+  blocks_release: false
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true

@@ -1,0 +1,24 @@
+# --- Flawless-Victory task derived from finding OBS-004 ---
+task:
+  id: "OBS-004"
+  objective: "Push `header_injection_failed:${msg}` onto rec.unknowns (mirroring inventory.ts:204-206) and log before falling back to sidecar."
+  scope_fence:
+    owner_layer: "src/inventory.ts"
+    allowed_paths:
+      - "src/inventory.ts"
+  inspect_first:
+    - "src/inventory.ts:302"
+  constraint_to_satisfy: "catch-that-falls-back-without-logging | CWE=CWE-390 | category=swallowed-error"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "A file whose header injection throws is silently downgraded or produces nothing, with no entry in unknowns and no log."
+  severity: "high"
+  blocks_release: false
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true

@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "QTE-004",
+  "required_verified_status": "resolved",
+  "evidence_hint": "src/inject.ts writes files (fs.writeFileSync at inject.ts:117,120,123) but no test imports ../src/inject; only transitive via pipeline_integration.test.ts. Sidecar branch (102-108), dry-run diff (112-118), sync injectFile (157-164), body-preservation path (135) have no direct assertions.",
+  "residual_if_not_resolved": "Add tests/inject.test.ts covering each strategy, dryRun (no mutation, diff written), re-run idempotency, and body-preservation (postInjectionBodyHash===originalBodyHash)."
+}

@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "QTE-003",
+  "required_verified_status": "resolved",
+  "evidence_hint": "src/normalize_meta.ts (buildMeta, serializeToYamlFrontMatter) has zero direct test imports. buildMeta (normalize_meta.ts:37-69) only exercised transitively via tests/pipeline_integration.test.ts:60 asserting `result.injected.length).toBeGreaterThan(0)`.",
+  "residual_if_not_resolved": "Add unit tests for buildMeta per artifact_type asserting emitted field set + taxonomy, plus serializeToYamlFrontMatter scalar quoting/escaping and empty-array handling."
+}

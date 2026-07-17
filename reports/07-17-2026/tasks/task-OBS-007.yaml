@@ -1,0 +1,26 @@
+# --- Flawless-Victory task derived from finding OBS-007 ---
+task:
+  id: "OBS-007"
+  objective: "On readdir catch, emit a diagnostic and record skipped dir (synthetic record or top-level skippedDirs list)."
+  scope_fence:
+    owner_layer: "src/inventory.ts"
+    allowed_paths:
+      - "src/inventory.ts"
+      - "fs.readdirSync"
+  inspect_first:
+    - "src/inventory.ts:167"
+    - "fs.readdirSync"
+  constraint_to_satisfy: "silent-subtree-omission-on-directory-error | CWE=CWE-778 | category=silent-failure"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "An unreadable directory silently drops its whole subtree; manifest totals look complete but under-count."
+  severity: "medium"
+  blocks_release: false
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true

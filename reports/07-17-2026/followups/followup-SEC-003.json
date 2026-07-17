@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "SEC-003",
+  "required_verified_status": "resolved",
+  "evidence_hint": "src/llm.ts:26-31 `fetch(`${opts.baseUrl}/chat/completions`, {headers:{Authorization:`Bearer ${opts.apiKey}`}...})`. baseUrl is an arbitrary config string with no https:/scheme validation before the bearer token is attached.",
+  "residual_if_not_resolved": "Reject non-https: baseUrl (or require explicit allow-insecure opt-in) before sending the Authorization header; optionally allowlist hosts."
+}

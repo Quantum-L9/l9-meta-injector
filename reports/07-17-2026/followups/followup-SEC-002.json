@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "SEC-002",
+  "required_verified_status": "resolved",
+  "evidence_hint": "src/namespace.ts:28-30 matchGlob: builds `pat` by replacing only `.` and `*`, then `new RegExp('(^|/)'+pat+'($|/)')`. Other metachars ([ ( + ? \\) pass through unescaped.",
+  "residual_if_not_resolved": "Escape all regex metacharacters in literal glob segments before substituting wildcard tokens (reuse comment.ts esc()), and/or wrap new RegExp in try/catch treating malformed glob as non-matching."
+}

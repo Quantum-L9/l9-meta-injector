@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "QTE-002",
+  "required_verified_status": "resolved",
+  "evidence_hint": "tests/llm.test.ts:17-20 only asserts `expect(typeof a.classify).toBe('function')`. The network logic in src/llm.ts:22-38 (fetch POST, !res.ok branch, catch swallow, AbortController timeout) runs zero assertions.",
+  "residual_if_not_resolved": "Test makeOpenAIAdapter with mocked fetch: assert URL/headers/body, non-ok\u2192null, thrown/aborted\u2192null, timer cleared, content returned for well-formed payload."
+}

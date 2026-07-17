@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "ACA-001",
+  "required_verified_status": "resolved",
+  "evidence_hint": "Two metadata-injection engines with divergent header dialects: TS src/comment.ts:25-28 sentinel `>>> l9:meta >>>`/`<<< l9:meta <<<`; Python tools/consolidation/modes/repo_pack/injector.py:11-19 HTML-comment `<!-- L9_META ... /L9_META -->`. Both classify+hash+inject+dedup the same artifact metadata.",
+  "residual_if_not_resolved": "Declare one engine authoritative (the shipped TS package) and reduce the other to calling it or explicitly out-of-scope; or define one shared header-dialect contract both read/write/strip."
+}
