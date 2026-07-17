@@ -71,11 +71,17 @@ async function runPipelineAsync(config) {
     // Clean body per file (same representation used for hashing/classification),
     // retained so the dedup compiler can compute near-duplicate similarity.
     const bodies = new Map();
+    // Coverage accounting: record why files were not injected so a run's coverage
+    // is observable instead of silently dropping skipped files (finding OBS-003).
+    const skippedBinaryPaths = [];
+    const skippedNonInjectablePaths = [];
     for (const e of scanned) {
         const raw = fs.readFileSync(e.sourcePath, "utf8");
         const spec = (0, comment_1.resolveStrategy)(e.sourcePath, raw);
-        if (spec.strategy === "skip-binary")
-            continue; // never annotate binary/media
+        if (spec.strategy === "skip-binary") {
+            skippedBinaryPaths.push(e.sourcePath);
+            continue;
+        } // never annotate binary/media
         // Strip any previously-injected block so re-runs classify/hash the true body only
         // (keeps content_hash stable and prevents the injected metadata from skewing classification).
         const cleanRaw = spec.strategy === "line-comment" || spec.strategy === "block-comment"
@@ -108,8 +114,12 @@ async function runPipelineAsync(config) {
     const injected = [];
     for (const e of scanned) {
         const meta = metas.get(e.sourcePath);
-        if (!meta || !meta.injectable)
+        if (!meta)
+            continue; // binary — already recorded in skippedBinaryPaths
+        if (!meta.injectable) {
+            skippedNonInjectablePaths.push(e.sourcePath);
             continue;
+        }
         // Use async inject (LLM boolean reconcile on description/intent) when LLM is enabled
         const record = config.llmEnabled
             ? await (0, inject_1.injectFileAsync)(e.sourcePath, meta, opts)
@@ -134,6 +144,21 @@ async function runPipelineAsync(config) {
         const preview = failures.slice(0, 5).map((f) => `  - ${f.sourcePath}: ${f.issues.join("; ")}`).join("\n");
         const more = failures.length > 5 ? `\n  … and ${failures.length - 5} more` : "";
         process.stderr.write(`[l9-meta-injector] verification FAILED for ${verification.withIssues}/${verification.total} file(s):\n${preview}${more}\n`);
+    }
+    const coverage = {
+        scanned: scanned.length,
+        injected: injected.length,
+        skippedBinary: skippedBinaryPaths.length,
+        skippedNonInjectable: skippedNonInjectablePaths.length,
+        verifyFailed: verification.withIssues,
+        skipped: { binary: skippedBinaryPaths, nonInjectable: skippedNonInjectablePaths },
+    };
+    // Surface coverage when anything was skipped or on verbose runs — otherwise the
+    // library path emits no signal about what it processed vs. dropped (OBS-003).
+    if (config.verbose || coverage.skippedBinary + coverage.skippedNonInjectable > 0) {
+        process.stderr.write(`[l9-meta-injector] coverage: scanned=${coverage.scanned} injected=${coverage.injected} ` +
+            `skipped-binary=${coverage.skippedBinary} skipped-noninjectable=${coverage.skippedNonInjectable} ` +
+            `verify-failed=${coverage.verifyFailed}\n`);
     }
     const dedupEntries = (0, compiler_1.buildDedupEntries)(injected, config.hashPrefixLength, bodies);
     const dedupReport = (0, compiler_1.buildDedupReport)(dedupEntries, config.nearDupThreshold, config.hashPrefixLength);
@@ -166,6 +191,6 @@ async function runPipelineAsync(config) {
         fs.writeFileSync(path.join(d, "placement-plan.json"), JSON.stringify(placementPlans, null, 2));
         fs.writeFileSync(path.join(d, "meta-v3-index.json"), JSON.stringify(metaV3, null, 2));
     }
-    return { scanned, injected, verified, verification, placementPlans, metaV3 };
+    return { scanned, injected, verified, verification, coverage, placementPlans, metaV3 };
 }
 //# sourceMappingURL=pipeline.js.map
