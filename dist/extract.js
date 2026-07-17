@@ -101,8 +101,13 @@ function splitContent(raw) {
 function stripExistingFrontMatter(raw) {
     if (raw.startsWith("---\n") || raw.startsWith("---\r\n")) {
         const end = raw.indexOf("\n---", 4);
+        // Strip ALL blank lines between the closing `---` and the body. buildInjection
+        // writes `frontmatter + "\n\n" + body`, so recovering the body must consume the
+        // full blank separator (not just one newline) or the round-tripped body hash
+        // drifts by a leading "\n" on first injection — reporting bodyPreserved=false
+        // for a body that was in fact preserved.
         if (end !== -1)
-            return raw.slice(end + 4).replace(/^\n/, "");
+            return raw.slice(end + 4).replace(/^\n+/, "");
     }
     return raw;
 }
