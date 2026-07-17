@@ -1,0 +1,38 @@
+name: L9 Supply Chain
+
+# Delegates the language-agnostic supply-chain gates to l9-ci-core's reusable
+# workflows. These are the only l9-ci-core workflows that fit a Node/TS repo —
+# its pr-pipeline.yml is a Python (pytest/ruff/mypy) governance pipeline and does
+# not apply here. Node build/typecheck/test/selfpack stays in ci.yml.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Least privilege: grant token scopes per job (not workflow-wide), so PR runs —
+# which only execute `sbom` — never receive scorecard's write scopes. The caller
+# must grant each called job at least the scopes it declares, or the reusable
+# call fails at startup.
+permissions:
+  contents: read
+
+jobs:
+  # OpenSSF Scorecard publishes results for the default branch, so run it on
+  # push to main — not per-PR, where publish_results has no valid target.
+  scorecard:
+    name: OpenSSF Scorecard
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+      security-events: write
+      id-token: write
+      actions: read
+    uses: Quantum-L9/l9-ci-core/.github/workflows/scorecard.yml@2a3270be5f5184099c33a101807f65b1becf4e7c
+
+  # SPDX SBOM on every push and pull request.
+  sbom:
+    name: SBOM
+    permissions:
+      contents: read
+      id-token: write
+    uses: Quantum-L9/l9-ci-core/.github/workflows/sbom.yml@2a3270be5f5184099c33a101807f65b1becf4e7c
