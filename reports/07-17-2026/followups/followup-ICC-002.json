@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "ICC-002",
+  "required_verified_status": "resolved",
+  "evidence_hint": "src/schema.ts:14 and src/namespace.ts:4 both declare SharingScope='private'|'shared'|'agnostic'. resolveNamespace returns namespace.SharingScope; normalize_meta.ts:48 re-casts `sharing_scope: sharingScope as SharingScope` (schema's type).",
+  "residual_if_not_resolved": "Define SharingScope once in schema.ts, import into namespace.ts; remove the `as SharingScope` cast so the type flows structurally."
+}

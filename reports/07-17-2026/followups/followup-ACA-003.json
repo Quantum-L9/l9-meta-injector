@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "ACA-003",
+  "required_verified_status": "resolved",
+  "evidence_hint": "src/compiler.ts:17 buildDedupReport ignores _threshold/_prefixLen and line 25 hardcodes `nearDuplicates: []`. Config promises near-dup detection (schema.ts:155 nearDupThreshold) and buildDedupEntries computes hashPrefix (compiler.ts:11) never consumed. pipeline.ts:93 passes them through.",
+  "residual_if_not_resolved": "Implement prefix/threshold near-duplicate clustering using the computed hashPrefix, or remove nearDupThreshold/hashPrefixLength from public config and report unsupported (fail-closed)."
+}

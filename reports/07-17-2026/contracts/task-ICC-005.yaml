@@ -1,0 +1,32 @@
+# --- Flawless-Victory task derived from finding ICC-005 ---
+task:
+  id: "ICC-005"
+  objective: "Type the reconcile edge on a shared metadata record type and normalize parseExistingMeta output to the exact field types buildMeta emits (numbers, booleans, arrays)."
+  scope_fence:
+    owner_layer: "src/inject.ts,src/reconcile_fields.ts"
+    allowed_paths:
+      - "inject.ts"
+      - "Object.fromEntries"
+      - "Object.entries"
+      - "reconcile_fields.ts"
+  inspect_first:
+    - "inject.ts:147"
+    - "Object.fromEntries"
+    - "Object.entries"
+    - "reconcile_fields.ts:81"
+    - "inject.ts:20"
+    - "inject.ts:36"
+  constraint_to_satisfy: "schema_disagreement (typed producer → untyped consumer edge) | category=optionality_mismatch"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "NormalizedMeta is erased to Record<string,unknown> at the reconcile boundary; typed producer and heuristic parser can disagree on runtime type (e.g. float token_cost_estimate parses to string), and isMateriallyBetterSync compares JSON.stringify lengths across mismatched types, mis-deciding keep/revise."
+  severity: "low"
+  blocks_release: false
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true

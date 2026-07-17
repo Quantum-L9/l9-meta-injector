@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "DWL-002",
+  "required_verified_status": "resolved",
+  "evidence_hint": "src/placement_policy.ts:77 compilePlacementPlan and :128 compilePlacementPlans are exported; grep finds no runtime caller \u2014 only tests/placement_policy.test.ts. pipeline.ts imports (4-16) do not include placement_policy.",
+  "residual_if_not_resolved": "Invoke compilePlacementPlans in the pipeline to populate placement metadata or emit a placement report, expose via CLI, or document as experimental/library-only."
+}

@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "ACA-004",
+  "required_verified_status": "resolved",
+  "evidence_hint": "FieldDiff declared twice: src/schema.ts:117 (action: 'add'|'revise'|'append-union'|'keep'|'replace') and src/reconcile_fields.ts:16 (action: ReconcileAction). Collision forces alias at boundary: src/index.ts:7 `FieldDiff as ReconcileFieldDiff`.",
+  "residual_if_not_resolved": "Delete the reconcile_fields.ts copy and import FieldDiff (and ReconcileAction) from schema.ts as the single source of truth."
+}

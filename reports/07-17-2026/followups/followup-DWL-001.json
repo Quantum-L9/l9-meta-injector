@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "DWL-001",
+  "required_verified_status": "resolved",
+  "evidence_hint": "src/pipeline.ts:61 `const cls = classify(e.sourcePath, body, e.headerConvention)` uses coarse classify(). src/classify.ts:82-88 classifyWithSemantics() adds .semantic via classifyArtifact(); grep shows it referenced only in tests/artifact_class.test.ts:7,68. normalize_meta.ts:37 buildMeta receives only ClassifyResult.",
+  "residual_if_not_resolved": "Wire classifyWithSemantics into pipeline.ts and thread ArtifactClassification into buildMeta (or MetaV3 taxonomy/placement planes), or remove the semantic layer if out of scope."
+}

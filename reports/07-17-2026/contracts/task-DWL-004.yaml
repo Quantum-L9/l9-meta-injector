@@ -1,0 +1,31 @@
+# --- Flawless-Victory task derived from finding DWL-004 ---
+task:
+  id: "DWL-004"
+  objective: "Remove isMateriallyBetter (and materialityCheck if unused elsewhere), or route reconcile_fields through it to consolidate materiality logic."
+  scope_fence:
+    owner_layer: "src/assist.ts"
+    allowed_paths:
+      - "src/assist.ts"
+      - "reconcile_fields.ts"
+      - "AssistConfig.materialityCheck"
+      - "assist.ts"
+  inspect_first:
+    - "src/assist.ts:54"
+    - "reconcile_fields.ts:70"
+    - "AssistConfig.materialityCheck"
+    - "assist.ts:10"
+    - "assist.ts:57"
+  constraint_to_satisfy: "inactive_component + orphaned_config_schema | CWE=CWE-561 | category=inactive_component"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "Exported dead function ships in the public API; the materialityCheck config knob has no live effect anywhere (orphaned config), misleading integrators."
+  severity: "medium"
+  blocks_release: false
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true

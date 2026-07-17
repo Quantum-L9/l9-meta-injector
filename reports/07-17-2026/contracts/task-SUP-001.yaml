@@ -1,0 +1,36 @@
+# --- Flawless-Victory task derived from finding SUP-001 ---
+task:
+  id: "SUP-001"
+  objective: "Pin devDependencies to exact versions, or codify npm ci in CI and document the lockfile as pin authority."
+  scope_fence:
+    owner_layer: "package.json"
+    allowed_paths:
+      - "package.json"
+      - "5.4.5"
+      - "20.12.12"
+      - "29.5.12"
+      - "29.7.0"
+      - "29.1.4"
+      - "package-lock.json"
+  inspect_first:
+    - "package.json:50"
+    - "5.4.5"
+    - "20.12.12"
+    - "29.5.12"
+    - "29.7.0"
+    - "29.1.4"
+    - "package-lock.json"
+  constraint_to_satisfy: "Pass 3 pin & reproducibility alignment (floating ranges) | category=pin"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "Floating ranges permit silent toolchain drift on fresh npm install (irreproducible builds), though lockfile pins npm ci. Dev-only; 0 runtime deps; npm audit reports 0 vulnerabilities; LICENSE MIT matches package.json."
+  severity: "low"
+  blocks_release: false
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true

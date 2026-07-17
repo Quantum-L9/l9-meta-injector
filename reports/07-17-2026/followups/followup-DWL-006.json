@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "DWL-006",
+  "required_verified_status": "resolved",
+  "evidence_hint": "src/namespace.ts:20 declares required promptGlob:string; pipeline.ts:19 sets promptGlob:'Prompt-*.md' (hardcoded). grep shows namespace.ts never reads cfg.promptGlob \u2014 resolveNamespace reads only cfg.namespace and cfg.namespaceGlobs.",
+  "residual_if_not_resolved": "Remove promptGlob from NamespaceConfig (and the hardcoded value in toCfg), or consume it where prompt globbing is decided."
+}

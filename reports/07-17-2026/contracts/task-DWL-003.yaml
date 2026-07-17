@@ -1,0 +1,26 @@
+# --- Flawless-Victory task derived from finding DWL-003 ---
+task:
+  id: "DWL-003"
+  objective: "Add a NormalizedMeta→MetaV3 builder wired into inject/index emission (≥1 live producer+consumer), or drop the v3 types until a consumer exists."
+  scope_fence:
+    owner_layer: "src/schema.ts"
+    allowed_paths:
+      - "src/schema.ts"
+      - "tests/schema.test.ts"
+  inspect_first:
+    - "src/schema.ts:166"
+    - "tests/schema.test.ts"
+  constraint_to_satisfy: "dormant_capability (unproduced schema) | CWE=CWE-1164 | category=dormant_capability"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "The entire v3 metadata model is dead wiring: no producer emits it, no consumer reads it; the 'single plane' design goal is unrealized. Types are carried/versioned/tested but yield zero runtime capability."
+  severity: "high"
+  blocks_release: false
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true

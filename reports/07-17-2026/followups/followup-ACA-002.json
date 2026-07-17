@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "ACA-002",
+  "required_verified_status": "resolved",
+  "evidence_hint": "docs/architecture.md:5-18 documents only a Python layering (ingress.py, core/ scanner->hasher->classifier, modes/<mode>/injector.py), but package.json main=dist/index.js ships the TS pipeline (src/pipeline.ts). No architecture doc describes the src/*.ts engine that is the actual npm package.",
+  "residual_if_not_resolved": "Add/replace architecture.md to document the TS pipeline (retrieval\u2192extract\u2192classify\u2192normalize_meta\u2192inject\u2192verify\u2192compiler) as primary; scope the Python tool as secondary."
+}

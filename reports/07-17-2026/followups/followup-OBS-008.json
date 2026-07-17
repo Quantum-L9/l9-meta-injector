@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "OBS-008",
+  "required_verified_status": "resolved",
+  "evidence_hint": "src/retrieval.ts:18-31 looksBinaryOnDisk(): `} catch { return true; }`, consumed at retrieval.ts:57 `if (!knownText && looksBinaryOnDisk(full)) continue;` \u2014 unopenable file treated as binary and excluded.",
+  "residual_if_not_resolved": "Log open/read errors distinctly from the binary decision; surface excluded-due-to-error paths."
+}

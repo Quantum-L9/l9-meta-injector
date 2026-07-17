@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "ACA-005",
+  "required_verified_status": "resolved",
+  "evidence_hint": "Two divergent hand-rolled YAML serializers: src/normalize_meta.ts:31 yamlScalar(v) (bare when safe) vs src/inventory.ts:159 `${k}: ${JSON.stringify(v)}` (always double-quoted, lists via JSON.stringify). Two parsers: src/inject.ts:20 parseExistingMeta and src/meta_schema.ts:90 parseCanonicalYaml, each with own coercion.",
+  "residual_if_not_resolved": "Consolidate on one YAML serializer and one parser shared by normalize_meta, inventory, inject, and meta_schema."
+}

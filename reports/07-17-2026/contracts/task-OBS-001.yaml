@@ -1,0 +1,28 @@
+# --- Flawless-Victory task derived from finding OBS-001 ---
+task:
+  id: "OBS-001"
+  objective: "Emit structured diagnostics on failure branches (log res.status + truncated body; log err.name/message distinguishing AbortError/timeout from network/parse) and surface per-call outcome (ok|http_error|timeout|parse_error)."
+  scope_fence:
+    owner_layer: "src/llm.ts"
+    allowed_paths:
+      - "src/llm.ts"
+      - "res.ok"
+      - "makeOpenAIAdapter.classify"
+  inspect_first:
+    - "src/llm.ts:33"
+    - "res.ok"
+    - "makeOpenAIAdapter.classify"
+  constraint_to_satisfy: "no-silent-failure-around-llm-calls | CWE=CWE-390 | category=swallowed-error"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "Every LLM failure mode (timeout, 401/429/5xx, malformed body) is indistinguishable from a legitimate 'no' answer; silent degradation to heuristic values is undiagnosable."
+  severity: "high"
+  blocks_release: false
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true

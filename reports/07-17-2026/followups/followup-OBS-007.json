@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "OBS-007",
+  "required_verified_status": "resolved",
+  "evidence_hint": "src/inventory.ts:167-169 walk(): `try { entries = fs.readdirSync(...) } catch { return; }` aborts recursion into the entire subtree with no record/log.",
+  "residual_if_not_resolved": "On readdir catch, emit a diagnostic and record skipped dir (synthetic record or top-level skippedDirs list)."
+}

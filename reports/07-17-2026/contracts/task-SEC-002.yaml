@@ -1,0 +1,24 @@
+# --- Flawless-Victory task derived from finding SEC-002 ---
+task:
+  id: "SEC-002"
+  objective: "Escape all regex metacharacters in literal glob segments before substituting wildcard tokens (reuse comment.ts esc()), and/or wrap new RegExp in try/catch treating malformed glob as non-matching."
+  scope_fence:
+    owner_layer: "src/namespace.ts"
+    allowed_paths:
+      - "src/namespace.ts"
+  inspect_first:
+    - "src/namespace.ts:28"
+  constraint_to_satisfy: "Pass 4 string-built dynamic RegExp (ReDoS / regex injection) | CWE=CWE-1333 | category=regex-injection/redos"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "A namespaceGlobs entry with `[` or `(` yields invalid pattern → new RegExp throws SyntaxError crashing resolveNamespace (DoS); wildcard expansions can backtrack quadratically (ReDoS). Operator config, so low."
+  severity: "low"
+  blocks_release: false
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true

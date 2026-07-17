@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "QTE-001",
+  "required_verified_status": "resolved",
+  "evidence_hint": "src/compiler.ts has zero test references (grep of tests/ for 'compiler' returns only tests/schema.test.ts:43 unrelated literal). Yet pipeline.ts:11 imports buildDedupReport et al and pipeline.ts:93 calls buildDedupReport every run.",
+  "residual_if_not_resolved": "Add tests/compiler.test.ts asserting exact-twin grouping, uniqueCount arithmetic, isPromptMeta filtering, injectable filtering, and dedupReportToMarkdown shape."
+}

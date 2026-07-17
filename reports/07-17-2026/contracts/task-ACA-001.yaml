@@ -1,0 +1,26 @@
+# --- Flawless-Victory task derived from finding ACA-001 ---
+task:
+  id: "ACA-001"
+  objective: "Declare one engine authoritative (the shipped TS package) and reduce the other to calling it or explicitly out-of-scope; or define one shared header-dialect contract both read/write/strip."
+  scope_fence:
+    owner_layer: "src/comment.ts,tools/consolidation/modes"
+    allowed_paths:
+      - "src/comment.ts"
+      - "tools/consolidation/modes/repo_pack/injector.py"
+  inspect_first:
+    - "src/comment.ts:25"
+    - "tools/consolidation/modes/repo_pack/injector.py:11"
+  constraint_to_satisfy: "Pass 4 file-structure / Phase 2 duplication map — flag parallel implementations | category=duplication/parallel-implementation"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "A file stamped by the Python tool vs the TS injector gets two incompatible blocks; neither strips the other's sentinels, so re-runs duplicate metadata and idempotency is lost across the toolchain boundary."
+  severity: "high"
+  blocks_release: false
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true

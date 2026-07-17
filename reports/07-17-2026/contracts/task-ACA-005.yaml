@@ -1,0 +1,33 @@
+# --- Flawless-Victory task derived from finding ACA-005 ---
+task:
+  id: "ACA-005"
+  objective: "Consolidate on one YAML serializer and one parser shared by normalize_meta, inventory, inject, and meta_schema."
+  scope_fence:
+    owner_layer: "src/normalize_meta.ts,src/inventory.ts"
+    allowed_paths:
+      - "src/normalize_meta.ts"
+      - "src/inventory.ts"
+      - "JSON.stringify"
+      - "src/inject.ts"
+      - "src/meta_schema.ts"
+  inspect_first:
+    - "src/normalize_meta.ts:31"
+    - "src/inventory.ts:159"
+    - "JSON.stringify"
+    - "JSON.stringify"
+    - "src/inject.ts:20"
+    - "src/meta_schema.ts:90"
+  constraint_to_satisfy: "Pass 4/5 — duplicated logic + config drift between copies | category=duplication/serialization-drift"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "A header written by inventory (JSON-quoted) round-trips differently than one from the pipeline (bare scalars) when re-read by parseExistingMeta, breaking byte-stable idempotency and risking value corruption."
+  severity: "medium"
+  blocks_release: false
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true

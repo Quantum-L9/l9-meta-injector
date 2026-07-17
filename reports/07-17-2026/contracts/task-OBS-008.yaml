@@ -1,0 +1,26 @@
+# --- Flawless-Victory task derived from finding OBS-008 ---
+task:
+  id: "OBS-008"
+  objective: "Log open/read errors distinctly from the binary decision; surface excluded-due-to-error paths."
+  scope_fence:
+    owner_layer: "src/retrieval.ts"
+    allowed_paths:
+      - "src/retrieval.ts"
+      - "retrieval.ts"
+  inspect_first:
+    - "src/retrieval.ts:18"
+    - "retrieval.ts:57"
+  constraint_to_satisfy: "silent-input-drop | CWE=CWE-391 | category=silent-failure"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "Unknown-extension text file that errors on open is silently dropped from the whole pipeline; missing outputs untraceable to read failure."
+  severity: "medium"
+  blocks_release: false
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true
