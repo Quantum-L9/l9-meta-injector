@@ -39,4 +39,5 @@ __exportStar(require("./retrieval"), exports);
 __exportStar(require("./pipeline"), exports);
 __exportStar(require("./inventory"), exports);
 __exportStar(require("./meta_schema"), exports);
+__exportStar(require("./meta_v3"), exports);
 //# sourceMappingURL=index.js.map

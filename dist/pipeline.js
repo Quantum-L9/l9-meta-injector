@@ -44,6 +44,8 @@ const normalize_meta_1 = require("./normalize_meta");
 const inject_1 = require("./inject");
 const verify_1 = require("./verify");
 const compiler_1 = require("./compiler");
+const placement_policy_1 = require("./placement_policy");
+const meta_v3_1 = require("./meta_v3");
 const assist_1 = require("./assist");
 const normalize_filename_1 = require("./normalize_filename");
 const llm_1 = require("./llm");
@@ -135,6 +137,24 @@ async function runPipelineAsync(config) {
     }
     const dedupEntries = (0, compiler_1.buildDedupEntries)(injected, config.hashPrefixLength, bodies);
     const dedupReport = (0, compiler_1.buildDedupReport)(dedupEntries, config.nearDupThreshold, config.hashPrefixLength);
+    // Compile advisory placement plans for the injected artifacts (placement compiler
+    // was previously unreachable outside tests — finding DWL-002).
+    const placementPlans = (0, placement_policy_1.compilePlacementPlans)(injected.map((r) => ({ sourcePath: r.sourcePath, body: bodies.get(r.sourcePath) ?? "" })), { namespace: config.namespace });
+    const planBySource = new Map(placementPlans.map((p) => [p.sourcePath, p]));
+    // Build a v3 nine-plane record per artifact, driven by the 17-class semantic
+    // classifier (DWL-001) and the placement plan (DWL-002). This is the first live
+    // producer + consumer of the MetaV3 model (DWL-003 / RAA-001).
+    const hcBySource = new Map(scanned.map((e) => [e.sourcePath, e.headerConvention]));
+    const metaV3 = injected.map((r) => {
+        const body = bodies.get(r.sourcePath) ?? "";
+        const semantic = (0, classify_1.classifyWithSemantics)(r.sourcePath, body, hcBySource.get(r.sourcePath) ?? "none").semantic;
+        return {
+            sourcePath: r.sourcePath,
+            semanticClass: semantic.artifactClass,
+            semanticConfidence: semantic.confidence,
+            metaV3: (0, meta_v3_1.buildMetaV3)({ meta: r.meta, semantic, placement: planBySource.get(r.sourcePath), sizeBytes: Buffer.byteLength(body, "utf8") }),
+        };
+    });
     if (!config.dryRun) {
         const d = config.indexDir;
         fs.mkdirSync(d, { recursive: true });
@@ -143,7 +163,9 @@ async function runPipelineAsync(config) {
         fs.writeFileSync(path.join(d, "dedup-report.json"), JSON.stringify(dedupReport, null, 2));
         fs.writeFileSync(path.join(d, "dedup-report.md"), (0, compiler_1.dedupReportToMarkdown)(dedupReport));
         fs.writeFileSync(path.join(d, "verification-report.json"), JSON.stringify(verified, null, 2));
+        fs.writeFileSync(path.join(d, "placement-plan.json"), JSON.stringify(placementPlans, null, 2));
+        fs.writeFileSync(path.join(d, "meta-v3-index.json"), JSON.stringify(metaV3, null, 2));
     }
-    return { scanned, injected, verified, verification };
+    return { scanned, injected, verified, verification, placementPlans, metaV3 };
 }
 //# sourceMappingURL=pipeline.js.map

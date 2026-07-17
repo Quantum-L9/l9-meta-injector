@@ -4,11 +4,13 @@ import * as path from "path";
 import { PipelineConfig, NormalizedMeta, InjectionRecord, VerifyResult } from "./schema";
 import { findFiles, scanFiles } from "./retrieval";
 import { extract, splitContent } from "./extract";
-import { classify } from "./classify";
+import { classify, classifyWithSemantics } from "./classify";
 import { buildMeta } from "./normalize_meta";
 import { injectFileAsync, injectFile } from "./inject";
 import { verify } from "./verify";
 import { buildDedupEntries, buildDedupReport, buildPromptLibraryIndex, buildPrimitiveLibraryIndex, dedupReportToMarkdown } from "./compiler";
+import { compilePlacementPlans, PlacementPlan } from "./placement_policy";
+import { buildMetaV3, MetaV3Record } from "./meta_v3";
 import { assistField, DEFAULT_ASSIST_CONFIG, PROSE_ORIGIN_FIELDS } from "./assist";
 import { normalizeFilenames } from "./normalize_filename";
 import { makeOpenAIAdapter, setAdapter, resetAdapter } from "./llm";
@@ -34,6 +36,10 @@ export interface PipelineResult {
   verified: VerifyResult[];
   /** Aggregated verification outcome. `passed: false` means at least one file failed verification. */
   verification: VerificationSummary;
+  /** Advisory placement plans (one per injected artifact) from the placement compiler. */
+  placementPlans: PlacementPlan[];
+  /** v3 nine-plane records (one per injected artifact), each with its semantic class. */
+  metaV3: MetaV3Record[];
 }
 
 export async function runPipelineAsync(config: PipelineConfig): Promise<PipelineResult> {
@@ -128,6 +134,29 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
   const dedupEntries = buildDedupEntries(injected, config.hashPrefixLength, bodies);
   const dedupReport = buildDedupReport(dedupEntries, config.nearDupThreshold, config.hashPrefixLength);
 
+  // Compile advisory placement plans for the injected artifacts (placement compiler
+  // was previously unreachable outside tests — finding DWL-002).
+  const placementPlans = compilePlacementPlans(
+    injected.map((r) => ({ sourcePath: r.sourcePath, body: bodies.get(r.sourcePath) ?? "" })),
+    { namespace: config.namespace },
+  );
+  const planBySource = new Map(placementPlans.map((p) => [p.sourcePath, p]));
+
+  // Build a v3 nine-plane record per artifact, driven by the 17-class semantic
+  // classifier (DWL-001) and the placement plan (DWL-002). This is the first live
+  // producer + consumer of the MetaV3 model (DWL-003 / RAA-001).
+  const hcBySource = new Map(scanned.map((e) => [e.sourcePath, e.headerConvention]));
+  const metaV3: MetaV3Record[] = injected.map((r) => {
+    const body = bodies.get(r.sourcePath) ?? "";
+    const semantic = classifyWithSemantics(r.sourcePath, body, hcBySource.get(r.sourcePath) ?? "none").semantic;
+    return {
+      sourcePath: r.sourcePath,
+      semanticClass: semantic.artifactClass,
+      semanticConfidence: semantic.confidence,
+      metaV3: buildMetaV3({ meta: r.meta, semantic, placement: planBySource.get(r.sourcePath), sizeBytes: Buffer.byteLength(body, "utf8") }),
+    };
+  });
+
   if (!config.dryRun) {
     const d = config.indexDir;
     fs.mkdirSync(d, { recursive: true });
@@ -136,7 +165,9 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
     fs.writeFileSync(path.join(d, "dedup-report.json"), JSON.stringify(dedupReport, null, 2));
     fs.writeFileSync(path.join(d, "dedup-report.md"), dedupReportToMarkdown(dedupReport));
     fs.writeFileSync(path.join(d, "verification-report.json"), JSON.stringify(verified, null, 2));
+    fs.writeFileSync(path.join(d, "placement-plan.json"), JSON.stringify(placementPlans, null, 2));
+    fs.writeFileSync(path.join(d, "meta-v3-index.json"), JSON.stringify(metaV3, null, 2));
   }
 
-  return { scanned, injected, verified, verification };
+  return { scanned, injected, verified, verification, placementPlans, metaV3 };
 }
