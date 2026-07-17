@@ -76,7 +76,7 @@ Completion status of the 43 audit findings (see `tasks/queue.json`, `contracts/`
 |---|---|
 | ✅ Merged to main | 4 findings (ACA-003, PRD-001, OBS-002, QTE-001) + 2 CI PRs + 1 follow-up |
 | 🟡 Open PR (awaiting merge) | QTE-002 (#9) + hardening (#9, #10) |
-| ⛔ Remediated, PR closed, NOT on main | 19 findings (PRs #14–#18) |
+| ⛔ Remediated, PR closed, NOT on main | 21 findings (PRs #14–#18) |
 | ⬜ Not yet addressed | 17 findings |
 
-**Action needed:** the ⛔ items (PRs #14–#18) were fully implemented and green but never landed on `main`. Reopen those PRs or re-open them against current `main` to recover ~19 findings of remediation.
+**Action needed:** the ⛔ items (PRs #14–#18) were fully implemented and green but never landed on `main`. Reopen those PRs or re-open them against current `main` to recover ~21 findings of remediation.

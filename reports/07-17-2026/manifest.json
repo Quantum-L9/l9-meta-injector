@@ -1,0 +1,896 @@
+{
+  "artifact": "l9-audit-suite/run-manifest",
+  "schema_version": "1.0.0",
+  "run_date": "2026-07-17",
+  "base_ref": "HEAD@3fba77d",
+  "derived_from": [
+    "tasks/queue.json",
+    "contracts/",
+    "followups/",
+    "REMEDIATION_CHECKLIST.md"
+  ],
+  "sources": {
+    "findings": "L9_AUDIT_SUITE_FINDINGS.json",
+    "queue": "tasks/queue.json",
+    "report": "L9_AUDIT_SUITE_REPORT.md",
+    "checklist": "REMEDIATION_CHECKLIST.md"
+  },
+  "totals": {
+    "findings": 43,
+    "contracts": 43,
+    "followups": 43
+  },
+  "remediation_summary": {
+    "merged_to_main": 4,
+    "not_addressed": 17,
+    "remediated_pr_closed_unmerged": 21,
+    "open_pr": 1
+  },
+  "notes": [
+    "No per-finding executable validator scripts exist; verification is directive-based (audit 05 + required_verified_status=resolved). Each entry's verification.validator_file is null by design.",
+    "remediation_pr_closed_unmerged entries: fixes implemented + green but PRs #14-18 were closed without merging; branches still exist and are recoverable."
+  ],
+  "missing_referenced_files": [],
+  "entries": [
+    {
+      "id": "ACA-003",
+      "rank": 1,
+      "severity": "high",
+      "blocks_release": true,
+      "source_audit": "01",
+      "category": "stub/underbuilt",
+      "leverage_score": 2.89,
+      "contract": "contracts/task-ACA-003.yaml",
+      "followup": "followups/followup-ACA-003.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "merged_to_main",
+        "pr": "#13"
+      }
+    },
+    {
+      "id": "OBS-002",
+      "rank": 2,
+      "severity": "high",
+      "blocks_release": true,
+      "source_audit": "10",
+      "category": "unconsumed_by_decision",
+      "leverage_score": 2.98,
+      "contract": "contracts/task-OBS-002.yaml",
+      "followup": "followups/followup-OBS-002.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "merged_to_main",
+        "pr": "#13"
+      }
+    },
+    {
+      "id": "ACA-001",
+      "rank": 3,
+      "severity": "high",
+      "blocks_release": false,
+      "source_audit": "01",
+      "category": "duplication/parallel-implementation",
+      "leverage_score": 3.0,
+      "contract": "contracts/task-ACA-001.yaml",
+      "followup": "followups/followup-ACA-001.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "not_addressed",
+        "pr": null
+      }
+    },
+    {
+      "id": "DWL-001",
+      "rank": 4,
+      "severity": "high",
+      "blocks_release": false,
+      "source_audit": "08",
+      "category": "dormant_capability",
+      "leverage_score": 2.93,
+      "contract": "contracts/task-DWL-001.yaml",
+      "followup": "followups/followup-DWL-001.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "remediated_pr_closed_unmerged",
+        "pr": "#14"
+      }
+    },
+    {
+      "id": "DWL-002",
+      "rank": 5,
+      "severity": "high",
+      "blocks_release": false,
+      "source_audit": "08",
+      "category": "dormant_capability",
+      "leverage_score": 3.05,
+      "contract": "contracts/task-DWL-002.yaml",
+      "followup": "followups/followup-DWL-002.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "remediated_pr_closed_unmerged",
+        "pr": "#14"
+      }
+    },
+    {
+      "id": "DWL-003",
+      "rank": 6,
+      "severity": "high",
+      "blocks_release": false,
+      "source_audit": "08",
+      "category": "dormant_capability",
+      "leverage_score": 3.48,
+      "contract": "contracts/task-DWL-003.yaml",
+      "followup": "followups/followup-DWL-003.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "remediated_pr_closed_unmerged",
+        "pr": "#14"
+      }
+    },
+    {
+      "id": "OBS-001",
+      "rank": 7,
+      "severity": "high",
+      "blocks_release": false,
+      "source_audit": "10",
+      "category": "swallowed-error",
+      "leverage_score": 2.61,
+      "contract": "contracts/task-OBS-001.yaml",
+      "followup": "followups/followup-OBS-001.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "remediated_pr_closed_unmerged",
+        "pr": "#15"
+      }
+    },
+    {
+      "id": "OBS-003",
+      "rank": 8,
+      "severity": "high",
+      "blocks_release": false,
+      "source_audit": "10",
+      "category": "missing-diagnostics",
+      "leverage_score": 2.95,
+      "contract": "contracts/task-OBS-003.yaml",
+      "followup": "followups/followup-OBS-003.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "remediated_pr_closed_unmerged",
+        "pr": "#15"
+      }
+    },
+    {
+      "id": "OBS-004",
+      "rank": 9,
+      "severity": "high",
+      "blocks_release": false,
+      "source_audit": "10",
+      "category": "swallowed-error",
+      "leverage_score": 2.07,
+      "contract": "contracts/task-OBS-004.yaml",
+      "followup": "followups/followup-OBS-004.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "remediated_pr_closed_unmerged",
+        "pr": "#17"
+      }
+    },
+    {
+      "id": "QTE-001",
+      "rank": 10,
+      "severity": "high",
+      "blocks_release": false,
+      "source_audit": "04",
+      "category": "coverage-gap",
+      "leverage_score": 2.93,
+      "contract": "contracts/task-QTE-001.yaml",
+      "followup": "followups/followup-QTE-001.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "merged_to_main",
+        "pr": "#13"
+      }
+    },
+    {
+      "id": "QTE-002",
+      "rank": 11,
+      "severity": "high",
+      "blocks_release": false,
+      "source_audit": "04",
+      "category": "missing-error-path",
+      "leverage_score": 2.55,
+      "contract": "contracts/task-QTE-002.yaml",
+      "followup": "followups/followup-QTE-002.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "open_pr",
+        "pr": "#9"
+      }
+    },
+    {
+      "id": "ACA-002",
+      "rank": 12,
+      "severity": "medium",
+      "blocks_release": false,
+      "source_audit": "01",
+      "category": "documentation-drift",
+      "leverage_score": 2.09,
+      "contract": "contracts/task-ACA-002.yaml",
+      "followup": "followups/followup-ACA-002.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "not_addressed",
+        "pr": null
+      }
+    },
+    {
+      "id": "ACA-004",
+      "rank": 13,
+      "severity": "medium",
+      "blocks_release": false,
+      "source_audit": "01",
+      "category": "schema-duplication",
+      "leverage_score": 2.14,
+      "contract": "contracts/task-ACA-004.yaml",
+      "followup": "followups/followup-ACA-004.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "remediated_pr_closed_unmerged",
+        "pr": "#16"
+      }
+    },
+    {
+      "id": "ACA-005",
+      "rank": 14,
+      "severity": "medium",
+      "blocks_release": false,
+      "source_audit": "01",
+      "category": "duplication/serialization-drift",
+      "leverage_score": 2.82,
+      "contract": "contracts/task-ACA-005.yaml",
+      "followup": "followups/followup-ACA-005.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "not_addressed",
+        "pr": null
+      }
+    },
+    {
+      "id": "DWL-004",
+      "rank": 15,
+      "severity": "medium",
+      "blocks_release": false,
+      "source_audit": "08",
+      "category": "inactive_component",
+      "leverage_score": 0.5,
+      "contract": "contracts/task-DWL-004.yaml",
+      "followup": "followups/followup-DWL-004.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "remediated_pr_closed_unmerged",
+        "pr": "#18"
+      }
+    },
+    {
+      "id": "DWL-005",
+      "rank": 16,
+      "severity": "medium",
+      "blocks_release": false,
+      "source_audit": "08",
+      "category": "broken_partial_wiring",
+      "leverage_score": 1.66,
+      "contract": "contracts/task-DWL-005.yaml",
+      "followup": "followups/followup-DWL-005.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "remediated_pr_closed_unmerged",
+        "pr": "#18"
+      }
+    },
+    {
+      "id": "ICC-001",
+      "rank": 17,
+      "severity": "medium",
+      "blocks_release": false,
+      "source_audit": "09",
+      "category": "schema_disagreement",
+      "leverage_score": 1.8,
+      "contract": "contracts/task-ICC-001.yaml",
+      "followup": "followups/followup-ICC-001.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "remediated_pr_closed_unmerged",
+        "pr": "#16"
+      }
+    },
+    {
+      "id": "ICC-002",
+      "rank": 18,
+      "severity": "medium",
+      "blocks_release": false,
+      "source_audit": "09",
+      "category": "schema_disagreement",
+      "leverage_score": 1.48,
+      "contract": "contracts/task-ICC-002.yaml",
+      "followup": "followups/followup-ICC-002.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "remediated_pr_closed_unmerged",
+        "pr": "#16"
+      }
+    },
+    {
+      "id": "ICC-004",
+      "rank": 19,
+      "severity": "medium",
+      "blocks_release": false,
+      "source_audit": "09",
+      "category": "di_wiring_mismatch",
+      "leverage_score": 1.48,
+      "contract": "contracts/task-ICC-004.yaml",
+      "followup": "followups/followup-ICC-004.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "not_addressed",
+        "pr": null
+      }
+    },
+    {
+      "id": "OBS-005",
+      "rank": 20,
+      "severity": "medium",
+      "blocks_release": false,
+      "source_audit": "10",
+      "category": "silent-failure",
+      "leverage_score": 1.36,
+      "contract": "contracts/task-OBS-005.yaml",
+      "followup": "followups/followup-OBS-005.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "remediated_pr_closed_unmerged",
+        "pr": "#17"
+      }
+    },
+    {
+      "id": "OBS-006",
+      "rank": 21,
+      "severity": "medium",
+      "blocks_release": false,
+      "source_audit": "10",
+      "category": "no-op-error-handling",
+      "leverage_score": 1.36,
+      "contract": "contracts/task-OBS-006.yaml",
+      "followup": "followups/followup-OBS-006.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "remediated_pr_closed_unmerged",
+        "pr": "#17"
+      }
+    },
+    {
+      "id": "OBS-007",
+      "rank": 22,
+      "severity": "medium",
+      "blocks_release": false,
+      "source_audit": "10",
+      "category": "silent-failure",
+      "leverage_score": 1.5,
+      "contract": "contracts/task-OBS-007.yaml",
+      "followup": "followups/followup-OBS-007.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "remediated_pr_closed_unmerged",
+        "pr": "#17"
+      }
+    },
+    {
+      "id": "OBS-008",
+      "rank": 23,
+      "severity": "medium",
+      "blocks_release": false,
+      "source_audit": "10",
+      "category": "silent-failure",
+      "leverage_score": 1.36,
+      "contract": "contracts/task-OBS-008.yaml",
+      "followup": "followups/followup-OBS-008.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "remediated_pr_closed_unmerged",
+        "pr": "#17"
+      }
+    },
+    {
+      "id": "OBS-009",
+      "rank": 24,
+      "severity": "medium",
+      "blocks_release": false,
+      "source_audit": "10",
+      "category": "uncorrelated_signal",
+      "leverage_score": 2.27,
+      "contract": "contracts/task-OBS-009.yaml",
+      "followup": "followups/followup-OBS-009.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "not_addressed",
+        "pr": null
+      }
+    },
+    {
+      "id": "PRD-001",
+      "rank": 25,
+      "severity": "medium",
+      "blocks_release": false,
+      "source_audit": "06",
+      "category": "stub",
+      "leverage_score": 2.45,
+      "contract": "contracts/task-PRD-001.yaml",
+      "followup": "followups/followup-PRD-001.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "merged_to_main",
+        "pr": "#13"
+      }
+    },
+    {
+      "id": "PRD-002",
+      "rank": 26,
+      "severity": "medium",
+      "blocks_release": false,
+      "source_audit": "06",
+      "category": "fake_validation",
+      "leverage_score": 1.77,
+      "contract": "contracts/task-PRD-002.yaml",
+      "followup": "followups/followup-PRD-002.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "remediated_pr_closed_unmerged",
+        "pr": "#17"
+      }
+    },
+    {
+      "id": "QTE-003",
+      "rank": 27,
+      "severity": "medium",
+      "blocks_release": false,
+      "source_audit": "04",
+      "category": "weak-assertion",
+      "leverage_score": 2.45,
+      "contract": "contracts/task-QTE-003.yaml",
+      "followup": "followups/followup-QTE-003.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "not_addressed",
+        "pr": null
+      }
+    },
+    {
+      "id": "QTE-004",
+      "rank": 28,
+      "severity": "medium",
+      "blocks_release": false,
+      "source_audit": "04",
+      "category": "missing-error-path",
+      "leverage_score": 2.34,
+      "contract": "contracts/task-QTE-004.yaml",
+      "followup": "followups/followup-QTE-004.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "not_addressed",
+        "pr": null
+      }
+    },
+    {
+      "id": "RAA-001",
+      "rank": 29,
+      "severity": "medium",
+      "blocks_release": false,
+      "source_audit": "07",
+      "category": "dead-contract/overbuilt",
+      "leverage_score": 2.55,
+      "contract": "contracts/task-RAA-001.yaml",
+      "followup": "followups/followup-RAA-001.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "remediated_pr_closed_unmerged",
+        "pr": "#14"
+      }
+    },
+    {
+      "id": "RAA-002",
+      "rank": 30,
+      "severity": "medium",
+      "blocks_release": false,
+      "source_audit": "07",
+      "category": "schema-duplication",
+      "leverage_score": 1.93,
+      "contract": "contracts/task-RAA-002.yaml",
+      "followup": "followups/followup-RAA-002.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "remediated_pr_closed_unmerged",
+        "pr": "#16"
+      }
+    },
+    {
+      "id": "RAA-003",
+      "rank": 31,
+      "severity": "medium",
+      "blocks_release": false,
+      "source_audit": "07",
+      "category": "authority-boundary/taxonomy-drift",
+      "leverage_score": 3.14,
+      "contract": "contracts/task-RAA-003.yaml",
+      "followup": "followups/followup-RAA-003.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "not_addressed",
+        "pr": null
+      }
+    },
+    {
+      "id": "DWL-006",
+      "rank": 32,
+      "severity": "low",
+      "blocks_release": false,
+      "source_audit": "08",
+      "category": "orphaned_config_schema",
+      "leverage_score": 0.41,
+      "contract": "contracts/task-DWL-006.yaml",
+      "followup": "followups/followup-DWL-006.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "remediated_pr_closed_unmerged",
+        "pr": "#18"
+      }
+    },
+    {
+      "id": "DWL-007",
+      "rank": 33,
+      "severity": "low",
+      "blocks_release": false,
+      "source_audit": "08",
+      "category": "dormant_capability",
+      "leverage_score": 0.75,
+      "contract": "contracts/task-DWL-007.yaml",
+      "followup": "followups/followup-DWL-007.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "not_addressed",
+        "pr": null
+      }
+    },
+    {
+      "id": "DWL-008",
+      "rank": 34,
+      "severity": "low",
+      "blocks_release": false,
+      "source_audit": "08",
+      "category": "dormant_capability",
+      "leverage_score": 2.27,
+      "contract": "contracts/task-DWL-008.yaml",
+      "followup": "followups/followup-DWL-008.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "remediated_pr_closed_unmerged",
+        "pr": "#18"
+      }
+    },
+    {
+      "id": "ICC-003",
+      "rank": 35,
+      "severity": "low",
+      "blocks_release": false,
+      "source_audit": "09",
+      "category": "event_contract_drift",
+      "leverage_score": 1.68,
+      "contract": "contracts/task-ICC-003.yaml",
+      "followup": "followups/followup-ICC-003.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "remediated_pr_closed_unmerged",
+        "pr": "#16"
+      }
+    },
+    {
+      "id": "ICC-005",
+      "rank": 36,
+      "severity": "low",
+      "blocks_release": false,
+      "source_audit": "09",
+      "category": "optionality_mismatch",
+      "leverage_score": 1.48,
+      "contract": "contracts/task-ICC-005.yaml",
+      "followup": "followups/followup-ICC-005.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "not_addressed",
+        "pr": null
+      }
+    },
+    {
+      "id": "OBS-010",
+      "rank": 37,
+      "severity": "low",
+      "blocks_release": false,
+      "source_audit": "10",
+      "category": "fleet_level_leverage_loss",
+      "leverage_score": 2.82,
+      "contract": "contracts/task-OBS-010.yaml",
+      "followup": "followups/followup-OBS-010.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "not_addressed",
+        "pr": null
+      }
+    },
+    {
+      "id": "QTE-005",
+      "rank": 38,
+      "severity": "low",
+      "blocks_release": false,
+      "source_audit": "04",
+      "category": "type-hole",
+      "leverage_score": 1.84,
+      "contract": "contracts/task-QTE-005.yaml",
+      "followup": "followups/followup-QTE-005.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "not_addressed",
+        "pr": null
+      }
+    },
+    {
+      "id": "RAA-004",
+      "rank": 39,
+      "severity": "low",
+      "blocks_release": false,
+      "source_audit": "07",
+      "category": "self-conformance/observability",
+      "leverage_score": 2.2,
+      "contract": "contracts/task-RAA-004.yaml",
+      "followup": "followups/followup-RAA-004.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "not_addressed",
+        "pr": null
+      }
+    },
+    {
+      "id": "SEC-001",
+      "rank": 40,
+      "severity": "low",
+      "blocks_release": false,
+      "source_audit": "02",
+      "category": "untrusted-deserialization",
+      "leverage_score": 2.2,
+      "contract": "contracts/task-SEC-001.yaml",
+      "followup": "followups/followup-SEC-001.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "not_addressed",
+        "pr": null
+      }
+    },
+    {
+      "id": "SEC-002",
+      "rank": 41,
+      "severity": "low",
+      "blocks_release": false,
+      "source_audit": "02",
+      "category": "regex-injection/redos",
+      "leverage_score": 1.43,
+      "contract": "contracts/task-SEC-002.yaml",
+      "followup": "followups/followup-SEC-002.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "not_addressed",
+        "pr": null
+      }
+    },
+    {
+      "id": "SEC-003",
+      "rank": 42,
+      "severity": "low",
+      "blocks_release": false,
+      "source_audit": "02",
+      "category": "cleartext-credential/egress",
+      "leverage_score": 1.23,
+      "contract": "contracts/task-SEC-003.yaml",
+      "followup": "followups/followup-SEC-003.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "not_addressed",
+        "pr": null
+      }
+    },
+    {
+      "id": "SUP-001",
+      "rank": 43,
+      "severity": "low",
+      "blocks_release": false,
+      "source_audit": "03",
+      "category": "pin",
+      "leverage_score": 1.45,
+      "contract": "contracts/task-SUP-001.yaml",
+      "followup": "followups/followup-SUP-001.json",
+      "verification": {
+        "audit": "05-followup-remediation-audit.md",
+        "required_verified_status": "resolved",
+        "validator_file": null
+      },
+      "remediation": {
+        "state": "not_addressed",
+        "pr": null
+      }
+    }
+  ]
+}
