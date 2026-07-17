@@ -19,10 +19,21 @@ function toCfg(config: PipelineConfig): NamespaceConfig {
   return { namespace: config.namespace, authority: config.authority, nearDupThreshold: config.nearDupThreshold, hashPrefixLength: config.hashPrefixLength, outputDir: config.outDir, indexDir: config.indexDir, promptGlob: "Prompt-*.md" };
 }
 
+export interface VerificationSummary {
+  total: number;
+  clean: number;
+  withIssues: number;
+  /** True iff every verified file passed with zero issues. Callers/CI should gate on this. */
+  passed: boolean;
+  failures: Array<{ sourcePath: string; issues: string[] }>;
+}
+
 export interface PipelineResult {
   scanned: ReturnType<typeof scanFiles>;
   injected: InjectionRecord[];
   verified: VerifyResult[];
+  /** Aggregated verification outcome. `passed: false` means at least one file failed verification. */
+  verification: VerificationSummary;
 }
 
 export async function runPipelineAsync(config: PipelineConfig): Promise<PipelineResult> {
@@ -42,6 +53,9 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
 
   const scanned = scanFiles(filePaths);
   const metas = new Map<string, NormalizedMeta>();
+  // Clean body per file (same representation used for hashing/classification),
+  // retained so the dedup compiler can compute near-duplicate similarity.
+  const bodies = new Map<string, string>();
 
   for (const e of scanned) {
     const raw = fs.readFileSync(e.sourcePath, "utf8");
@@ -57,6 +71,7 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
     // leading `---` in non-markdown (e.g. YAML document separators) be mistaken for
     // frontmatter and truncate real content, skewing extraction/classification/hash.
     const body = spec.strategy === "yaml-frontmatter" ? splitContent(cleanRaw).body : cleanRaw;
+    bodies.set(e.sourcePath, body);
     const ef = extract(body);
     const cls = classify(e.sourcePath, body, e.headerConvention);
     let meta = buildMeta(e.sourcePath, body, ef, cls, nsCfg, config.authority, now);
@@ -89,7 +104,28 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
   }
 
   const verified = injected.map((r) => verify(r.sourcePath, r.originalBodyHash, r.meta));
-  const dedupEntries = buildDedupEntries(injected, config.hashPrefixLength);
+  // Consume the verification signal at the decision point — a computed VerifyResult
+  // that nothing inspects is indistinguishable from no verification at all. Aggregate
+  // failures, surface them (independent of dryRun), and expose a gate flag to callers/CI.
+  const failures = verified
+    .filter((v) => v.issues.length > 0)
+    .map((v) => ({ sourcePath: v.sourcePath, issues: v.issues }));
+  const verification: VerificationSummary = {
+    total: verified.length,
+    clean: verified.length - failures.length,
+    withIssues: failures.length,
+    passed: failures.length === 0,
+    failures,
+  };
+  if (!verification.passed) {
+    const preview = failures.slice(0, 5).map((f) => `  - ${f.sourcePath}: ${f.issues.join("; ")}`).join("\n");
+    const more = failures.length > 5 ? `\n  … and ${failures.length - 5} more` : "";
+    process.stderr.write(
+      `[l9-meta-injector] verification FAILED for ${verification.withIssues}/${verification.total} file(s):\n${preview}${more}\n`,
+    );
+  }
+
+  const dedupEntries = buildDedupEntries(injected, config.hashPrefixLength, bodies);
   const dedupReport = buildDedupReport(dedupEntries, config.nearDupThreshold, config.hashPrefixLength);
 
   if (!config.dryRun) {
@@ -102,5 +138,5 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
     fs.writeFileSync(path.join(d, "verification-report.json"), JSON.stringify(verified, null, 2));
   }
 
-  return { scanned, injected, verified };
+  return { scanned, injected, verified, verification };
 }

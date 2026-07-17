@@ -66,6 +66,9 @@ async function runPipelineAsync(config) {
         (0, normalize_filename_1.normalizeFilenames)(filePaths, { dryRun: config.dryRun, verbose: config.verbose });
     const scanned = (0, retrieval_1.scanFiles)(filePaths);
     const metas = new Map();
+    // Clean body per file (same representation used for hashing/classification),
+    // retained so the dedup compiler can compute near-duplicate similarity.
+    const bodies = new Map();
     for (const e of scanned) {
         const raw = fs.readFileSync(e.sourcePath, "utf8");
         const spec = (0, comment_1.resolveStrategy)(e.sourcePath, raw);
@@ -81,6 +84,7 @@ async function runPipelineAsync(config) {
         // leading `---` in non-markdown (e.g. YAML document separators) be mistaken for
         // frontmatter and truncate real content, skewing extraction/classification/hash.
         const body = spec.strategy === "yaml-frontmatter" ? (0, extract_1.splitContent)(cleanRaw).body : cleanRaw;
+        bodies.set(e.sourcePath, body);
         const ef = (0, extract_1.extract)(body);
         const cls = (0, classify_1.classify)(e.sourcePath, body, e.headerConvention);
         let meta = (0, normalize_meta_1.buildMeta)(e.sourcePath, body, ef, cls, nsCfg, config.authority, now);
@@ -111,7 +115,25 @@ async function runPipelineAsync(config) {
         injected.push(record);
     }
     const verified = injected.map((r) => (0, verify_1.verify)(r.sourcePath, r.originalBodyHash, r.meta));
-    const dedupEntries = (0, compiler_1.buildDedupEntries)(injected, config.hashPrefixLength);
+    // Consume the verification signal at the decision point — a computed VerifyResult
+    // that nothing inspects is indistinguishable from no verification at all. Aggregate
+    // failures, surface them (independent of dryRun), and expose a gate flag to callers/CI.
+    const failures = verified
+        .filter((v) => v.issues.length > 0)
+        .map((v) => ({ sourcePath: v.sourcePath, issues: v.issues }));
+    const verification = {
+        total: verified.length,
+        clean: verified.length - failures.length,
+        withIssues: failures.length,
+        passed: failures.length === 0,
+        failures,
+    };
+    if (!verification.passed) {
+        const preview = failures.slice(0, 5).map((f) => `  - ${f.sourcePath}: ${f.issues.join("; ")}`).join("\n");
+        const more = failures.length > 5 ? `\n  … and ${failures.length - 5} more` : "";
+        process.stderr.write(`[l9-meta-injector] verification FAILED for ${verification.withIssues}/${verification.total} file(s):\n${preview}${more}\n`);
+    }
+    const dedupEntries = (0, compiler_1.buildDedupEntries)(injected, config.hashPrefixLength, bodies);
     const dedupReport = (0, compiler_1.buildDedupReport)(dedupEntries, config.nearDupThreshold, config.hashPrefixLength);
     if (!config.dryRun) {
         const d = config.indexDir;
@@ -122,6 +144,6 @@ async function runPipelineAsync(config) {
         fs.writeFileSync(path.join(d, "dedup-report.md"), (0, compiler_1.dedupReportToMarkdown)(dedupReport));
         fs.writeFileSync(path.join(d, "verification-report.json"), JSON.stringify(verified, null, 2));
     }
-    return { scanned, injected, verified };
+    return { scanned, injected, verified, verification };
 }
 //# sourceMappingURL=pipeline.js.map

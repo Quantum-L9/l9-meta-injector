@@ -1,20 +1,25 @@
 import { InjectionRecord, PromptMeta, ExecutableRetrievalMeta } from "./schema";
-export declare function buildDedupEntries(records: InjectionRecord[], prefixLen: number): {
+export declare function buildDedupEntries(records: InjectionRecord[], prefixLen: number, bodies?: Map<string, string>): {
     id: string;
     sourcePath: string;
     contentHash: string;
     hashPrefix: string;
     family: import("./schema").ArtifactFamily;
     artifactType: import("./schema").ArtifactType;
+    shingles: Set<string>;
 }[];
-export declare function buildDedupReport(entries: ReturnType<typeof buildDedupEntries>, _threshold: number, _prefixLen: number): {
+export interface NearDuplicate {
+    paths: [string, string];
+    similarity: number;
+}
+export declare function buildDedupReport(entries: ReturnType<typeof buildDedupEntries>, threshold: number, _prefixLen: number): {
     generatedAt: string;
     totalScanned: number;
     auditorTwins: {
         paths: string[];
         contentHash: string;
     }[];
-    nearDuplicates: never[];
+    nearDuplicates: NearDuplicate[];
     uniqueCount: number;
 };
 export declare function buildPromptLibraryIndex(records: InjectionRecord[]): PromptMeta[];
