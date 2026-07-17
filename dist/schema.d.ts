@@ -122,6 +122,11 @@ export interface PipelineConfig {
     nearDupThreshold: number;
     hashPrefixLength: number;
     indexDir: string;
+    /** Optional per-glob namespace overrides (e.g. `plastos/** → plastos`). */
+    namespaceGlobs?: Array<{
+        glob: string;
+        namespace: string;
+    }>;
     verbose: boolean;
     llmEnabled: boolean;
     llmBaseUrl?: string;

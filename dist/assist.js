@@ -3,17 +3,14 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.GRAMMAR_ORIGIN_FIELDS = exports.PROSE_ORIGIN_FIELDS = exports.DEFAULT_ASSIST_CONFIG = void 0;
 exports.isGoodValue = isGoodValue;
 exports.assistField = assistField;
-exports.isMateriallyBetter = isMateriallyBetter;
 // assist.ts — LLM assist for prose-origin fields only.
 // Rule: if a field has structured grammar (YAML frontmatter, heading list), parse it.
 // If it lives in prose, seed with regex, let LLM finish — but only when seed fails "good" predicate.
 const schema_1 = require("./schema");
 const llm_1 = require("./llm");
-const materiality_1 = require("./materiality");
 exports.DEFAULT_ASSIST_CONFIG = {
     enabled: false,
     proseFields: ["description", "activation_signals"],
-    materialityCheck: true,
 };
 // "good" predicate: value is non-Unknown, non-empty, >=8 meaningful word tokens
 function isGoodValue(v) {
@@ -49,19 +46,6 @@ async function assistField(fieldName, seedValue, body, config) {
     if (!result || result.trim() === "" || result.trim() === schema_1.UNKNOWN)
         return seedValue;
     return result.trim();
-}
-async function isMateriallyBetter(fieldName, oldValue, newValue, config) {
-    if (!config.enabled || !config.materialityCheck)
-        return isGoodValue(newValue) && !isGoodValue(oldValue);
-    if (!isGoodValue(newValue))
-        return false;
-    if (!isGoodValue(oldValue))
-        return true;
-    const adapter = (0, llm_1.getAdapter)();
-    if (!adapter.classify)
-        return false;
-    const result = await adapter.classify((0, materiality_1.buildMaterialityPrompt)(fieldName, oldValue, newValue));
-    return (0, materiality_1.parseMaterialityReply)(result);
 }
 function buildFieldPrompt(fieldName, body) {
     const b = body.length > 1200 ? body.slice(0, 1200) + "\n[truncated]" : body;

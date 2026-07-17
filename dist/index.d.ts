@@ -19,3 +19,5 @@ export * from "./pipeline";
 export * from "./inventory";
 export * from "./meta_schema";
 export * from "./meta_v3";
+export * from "./comment";
+export * from "./compiler";
