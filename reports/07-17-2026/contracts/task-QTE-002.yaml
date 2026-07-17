@@ -1,0 +1,30 @@
+# --- Flawless-Victory task derived from finding QTE-002 ---
+task:
+  id: "QTE-002"
+  objective: "Test makeOpenAIAdapter with mocked fetch: assert URL/headers/body, non-ok→null, thrown/aborted→null, timer cleared, content returned for well-formed payload."
+  scope_fence:
+    owner_layer: "src/llm.ts"
+    allowed_paths:
+      - "tests/llm.test.ts"
+      - "a.classify"
+      - "src/llm.ts"
+      - "res.ok"
+  inspect_first:
+    - "tests/llm.test.ts:17"
+    - "a.classify"
+    - "src/llm.ts:22"
+    - "res.ok"
+  constraint_to_satisfy: "Pass 5 error-path & Pass 3 assertion-strength: external-IO code has happy-path-only tautological coverage | CWE=CWE-1076 | category=missing-error-path"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "A regression in request shape, auth header, non-2xx handling, JSON parsing, or timeout/abort ships undetected."
+  severity: "high"
+  blocks_release: false
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true

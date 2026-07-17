@@ -1,0 +1,32 @@
+# --- Flawless-Victory task derived from finding DWL-005 ---
+task:
+  id: "DWL-005"
+  objective: "Add namespaceGlobs to PipelineConfig and pass through toCfg, or document the override as available only via direct resolveNamespace use."
+  scope_fence:
+    owner_layer: "src/namespace.ts,src/pipeline.ts"
+    allowed_paths:
+      - "src/namespace.ts"
+      - "namespace.ts"
+      - "pipeline.ts"
+      - "schema.ts"
+      - "tests/namespace.test.ts"
+  inspect_first:
+    - "src/namespace.ts:21"
+    - "namespace.ts:67"
+    - "pipeline.ts:19"
+    - "schema.ts:148"
+    - "tests/namespace.test.ts:13"
+  constraint_to_satisfy: "broken_partial_wiring (config not surfaced to entrypoint) | category=broken_partial_wiring"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "Per-glob namespace override is implemented and read but cannot be configured through the pipeline/public run path; reachable only by low-level library callers, so the feature is effectively off in production."
+  severity: "medium"
+  blocks_release: false
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true

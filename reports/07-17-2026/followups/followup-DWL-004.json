@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "DWL-004",
+  "required_verified_status": "resolved",
+  "evidence_hint": "src/assist.ts:54 `export async function isMateriallyBetter(...)` has zero callers (grep src/ + tests/). It duplicates reconcile_fields.ts:70 isMateriallyBetterLlm. Its only config gate AssistConfig.materialityCheck (assist.ts:10,16) is read solely at assist.ts:57 inside this dead function.",
+  "residual_if_not_resolved": "Remove isMateriallyBetter (and materialityCheck if unused elsewhere), or route reconcile_fields through it to consolidate materiality logic."
+}

@@ -1,0 +1,31 @@
+# --- Flawless-Victory task derived from finding RAA-003 ---
+task:
+  id: "RAA-003"
+  objective: "Designate one canonical artifact-type enum and express others as typed mappings onto it, or rename each distinctly (coarse_type vs semantic_class vs inventory_type)."
+  scope_fence:
+    owner_layer: "src/schema.ts"
+    allowed_paths:
+      - "src/schema.ts"
+      - "src/inventory.ts"
+      - "docs/contracts.md"
+      - "tools/consolidation/core/classifier.py"
+  inspect_first:
+    - "src/schema.ts:4"
+    - "src/schema.ts:301"
+    - "src/inventory.ts:16"
+    - "docs/contracts.md:28"
+    - "tools/consolidation/core/classifier.py:4"
+  constraint_to_satisfy: "Pass 4 authority-boundary — single source of truth per shared concept | category=authority-boundary/taxonomy-drift"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "'artifact_type' means four different things by module; cross-tool records can't be joined or validated against one enum, defeating a graphable metadata layer."
+  severity: "medium"
+  blocks_release: false
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true

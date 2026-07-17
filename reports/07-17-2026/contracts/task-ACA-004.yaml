@@ -1,0 +1,28 @@
+# --- Flawless-Victory task derived from finding ACA-004 ---
+task:
+  id: "ACA-004"
+  objective: "Delete the reconcile_fields.ts copy and import FieldDiff (and ReconcileAction) from schema.ts as the single source of truth."
+  scope_fence:
+    owner_layer: "src/reconcile_fields.ts"
+    allowed_paths:
+      - "src/schema.ts"
+      - "src/reconcile_fields.ts"
+      - "src/index.ts"
+  inspect_first:
+    - "src/schema.ts:117"
+    - "src/reconcile_fields.ts:16"
+    - "src/index.ts:7"
+  constraint_to_satisfy: "Pass 5 schema/interface alignment — no contract types redefined in multiple places | category=schema-duplication"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "Two separately-maintained definitions of the same contract type will drift; consumers importing from different modules get subtly different types."
+  severity: "medium"
+  blocks_release: false
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true

@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "DWL-007",
+  "required_verified_status": "resolved",
+  "evidence_hint": "src/reconcile_fields.ts:36 LLM_MATERIALITY_FIELDS=Set(['description','intent']) and assist.ts:32 PROSE_ORIGIN_FIELDS includes 'intent'. But no meta type in schema.ts declares an intent field and buildMeta (37-69) never emits one; grep 'intent' in src shows only set-membership refs.",
+  "residual_if_not_resolved": "Add intent to the metadata schema and have buildMeta populate it, or drop 'intent' from LLM_MATERIALITY_FIELDS and PROSE_ORIGIN_FIELDS."
+}

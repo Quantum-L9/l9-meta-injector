@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "OBS-001",
+  "required_verified_status": "resolved",
+  "evidence_hint": "src/llm.ts:33-37 \u2014 `if (!res.ok) return null;` then `} catch { return null; }` in makeOpenAIAdapter.classify; abort/timeout, non-2xx status+body, and JSON-parse failures all collapsed into bare `null` with zero logging.",
+  "residual_if_not_resolved": "Emit structured diagnostics on failure branches (log res.status + truncated body; log err.name/message distinguishing AbortError/timeout from network/parse) and surface per-call outcome (ok|http_error|timeout|parse_error)."
+}

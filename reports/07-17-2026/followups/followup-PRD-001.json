@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "PRD-001",
+  "required_verified_status": "resolved",
+  "evidence_hint": "src/compiler.ts:17 buildDedupReport(entries,_threshold,_prefixLen) never uses the params and line 25 hardcodes `nearDuplicates: []`. Threshold is a real knob: schema.ts:155 nearDupThreshold, threaded through pipeline.ts:93.",
+  "residual_if_not_resolved": "Implement near-duplicate detection using hashPrefix/threshold and populate nearDuplicates, or remove nearDupThreshold from the config surface and document exact-twin-only."
+}

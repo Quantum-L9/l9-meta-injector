@@ -1,0 +1,32 @@
+# --- Flawless-Victory task derived from finding RAA-002 ---
+task:
+  id: "RAA-002"
+  objective: "Remove the namespace.ts declaration and import SharingScope from schema.ts."
+  scope_fence:
+    owner_layer: "src/namespace.ts"
+    allowed_paths:
+      - "src/schema.ts"
+      - "src/namespace.ts"
+      - "namespace.ts"
+      - "normalize_meta.ts"
+      - "schema.ts"
+  inspect_first:
+    - "src/schema.ts:14"
+    - "src/namespace.ts:4"
+    - "namespace.ts"
+    - "normalize_meta.ts"
+    - "schema.ts"
+  constraint_to_satisfy: "Pass 6 schema/field alignment — no duplicated shared contract types | category=schema-duplication"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "The scope vocabulary can drift between definitions, silently splitting the contract used by namespace resolution vs header serialization."
+  severity: "medium"
+  blocks_release: false
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true

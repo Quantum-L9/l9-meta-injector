@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "ICC-005",
+  "required_verified_status": "resolved",
+  "evidence_hint": "inject.ts:147,159 pass Object.fromEntries(Object.entries(meta)) (typed NormalizedMeta) into reconcileFields, whose signature is Record<string,unknown> (reconcile_fields.ts:81-83,137-139). existingMeta comes from parseExistingMeta (inject.ts:20-42), which heuristically re-types YAML (ints only via /^\\d+$/ at inject.ts:36, else string/list).",
+  "residual_if_not_resolved": "Type the reconcile edge on a shared metadata record type and normalize parseExistingMeta output to the exact field types buildMeta emits (numbers, booleans, arrays)."
+}

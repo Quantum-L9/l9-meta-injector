@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "OBS-005",
+  "required_verified_status": "resolved",
+  "evidence_hint": "src/inventory.ts:318-326 safeRead: `} catch { return null; }` \u2014 read/open error returns same `null` used to signal 'binary file'; caller inventory.ts:294 sets strategy='skip-binary' on null.",
+  "residual_if_not_resolved": "Differentiate the catch from the binary sentinel (record `read_failed:${msg}`/log) rather than returning the same null."
+}

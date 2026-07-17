@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "PRD-002",
+  "required_verified_status": "resolved",
+  "evidence_hint": "src/inventory.ts:330 writeSidecar `catch { /* unwritable \u2014 recorded in manifest only */ }` and inventory.ts:349 writeFolderSidecar same; inventory.ts:304 swallows injectFile failure. Run returns success and manifest lists the record regardless of whether the sidecar was written.",
+  "residual_if_not_resolved": "Capture the write failure into the record/unknowns (push sidecar_write_failed:<path>:<err>) and surface a non-silent status; don't treat an unwritable target as success."
+}

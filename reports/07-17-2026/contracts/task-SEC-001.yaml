@@ -1,0 +1,32 @@
+# --- Flawless-Victory task derived from finding SEC-001 ---
+task:
+  id: "SEC-001"
+  objective: "Add a shared reserved-key guard (`if(key==='__proto__'||key==='constructor'||key==='prototype')continue;`) at each parsed-key assignment, or build maps with Object.create(null)."
+  scope_fence:
+    owner_layer: "src/meta_schema.ts,src/inject.ts"
+    allowed_paths:
+      - "src/meta_schema.ts"
+      - "f.name"
+      - "src/inject.ts"
+      - "val.replace"
+      - "src/inventory.ts"
+  inspect_first:
+    - "src/meta_schema.ts:105"
+    - "f.name"
+    - "src/inject.ts:37"
+    - "val.replace"
+    - "src/inventory.ts:77"
+  constraint_to_satisfy: "Pass 4 dangerous-primitive scan (untrusted deserialization / prototype-key sink) | CWE=CWE-1321 | category=untrusted-deserialization"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "Hand-rolled YAML/frontmatter parsers write attacker-influenced keys onto plain objects with no reserved-key filter. Global prototype pollution reachability UNKNOWN (assignments are shallow), but a defense-in-depth gap: a __proto__/constructor key mutates the target's prototype."
+  severity: "low"
+  blocks_release: false
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true

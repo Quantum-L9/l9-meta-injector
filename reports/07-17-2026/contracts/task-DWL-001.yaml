@@ -1,0 +1,34 @@
+# --- Flawless-Victory task derived from finding DWL-001 ---
+task:
+  id: "DWL-001"
+  objective: "Wire classifyWithSemantics into pipeline.ts and thread ArtifactClassification into buildMeta (or MetaV3 taxonomy/placement planes), or remove the semantic layer if out of scope."
+  scope_fence:
+    owner_layer: "src/classify.ts,src/artifact_class.ts"
+    allowed_paths:
+      - "src/pipeline.ts"
+      - "e.sourcePath"
+      - "e.headerConvention"
+      - "src/classify.ts"
+      - "tests/artifact_class.test.ts"
+      - "normalize_meta.ts"
+  inspect_first:
+    - "src/pipeline.ts:61"
+    - "e.sourcePath"
+    - "e.headerConvention"
+    - "src/classify.ts:82"
+    - "tests/artifact_class.test.ts:7"
+    - "normalize_meta.ts:37"
+  constraint_to_satisfy: "dormant_capability / broken_partial_wiring | category=dormant_capability"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "The fully implemented, tested 17-class semantic classifier never influences injected metadata; the classifyArtifact→pipeline edge is unconnected, so richer classification/placement is unreachable in production."
+  severity: "high"
+  blocks_release: false
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true

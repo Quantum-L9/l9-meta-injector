@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "ICC-004",
+  "required_verified_status": "resolved",
+  "evidence_hint": "src/namespace.ts:13-22 NamespaceConfig requires authority, nearDupThreshold, hashPrefixLength, outputDir, indexDir, promptGlob (+namespace, namespaceGlobs?). Its only consumer resolveNamespace reads only cfg.namespace and cfg.namespaceGlobs. pipeline.ts:18-20 toCfg manufactures all six unused fields from PipelineConfig.",
+  "residual_if_not_resolved": "Narrow NamespaceConfig to what resolveNamespace reads ({namespace; namespaceGlobs?}), or derive from PipelineConfig via Pick, eliminating the field duplication in toCfg."
+}

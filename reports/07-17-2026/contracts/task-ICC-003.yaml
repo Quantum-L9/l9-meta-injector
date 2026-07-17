@@ -1,0 +1,26 @@
+# --- Flawless-Victory task derived from finding ICC-003 ---
+task:
+  id: "ICC-003"
+  objective: "Extract a single materiality-judgment primitive (prompt builder + response parser) called from both assist.ts and reconcile_fields.ts."
+  scope_fence:
+    owner_layer: "src/assist.ts,src/reconcile_fields.ts"
+    allowed_paths:
+      - "src/assist.ts"
+      - "src/reconcile_fields.ts"
+  inspect_first:
+    - "src/assist.ts:62"
+    - "src/reconcile_fields.ts:75"
+  constraint_to_satisfy: "event_contract_drift (duplicated LLM prompt/response contract) | CWE=CWE-1041 | category=event_contract_drift"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "Prompt wording and yes/no parsing contract live in two places; changing phrasing/format in one silently drifts the other, so identical inputs could yield different reconcile decisions by path."
+  severity: "low"
+  blocks_release: false
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true

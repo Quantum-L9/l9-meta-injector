@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "ICC-001",
+  "required_verified_status": "resolved",
+  "evidence_hint": "src/schema.ts:117-123 FieldDiff (action union inline) and src/reconcile_fields.ts:14-22 FieldDiff (action:ReconcileAction) are two structurally identical definitions. inject.ts:13 imports FieldDiff from ./schema yet writeInjection (inject.ts:110) receives diffs from reconcileFields. index.ts:6-7 exports both (FieldDiff and ReconcileFieldDiff).",
+  "residual_if_not_resolved": "Delete reconcile_fields.FieldDiff; import canonical FieldDiff + exported action type from schema.ts in reconcile_fields.ts and inject.ts; drop the duplicate public export."
+}

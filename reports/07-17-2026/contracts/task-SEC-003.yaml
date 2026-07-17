@@ -1,0 +1,28 @@
+# --- Flawless-Victory task derived from finding SEC-003 ---
+task:
+  id: "SEC-003"
+  objective: "Reject non-https: baseUrl (or require explicit allow-insecure opt-in) before sending the Authorization header; optionally allowlist hosts."
+  scope_fence:
+    owner_layer: "src/llm.ts"
+    allowed_paths:
+      - "src/llm.ts"
+      - "opts.baseUrl"
+      - "opts.apiKey"
+  inspect_first:
+    - "src/llm.ts:26"
+    - "opts.baseUrl"
+    - "opts.apiKey"
+  constraint_to_satisfy: "Pass 7 transport/network alignment (no TLS/scheme enforcement; cleartext credential) | CWE=CWE-319 | category=cleartext-credential/egress"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "If baseUrl is http:// or attacker-influenced, the API key is sent in cleartext / exfiltrated to an arbitrary egress target — contrary to the module's 'Local default makes NO external calls' comment. Operator-configured, low."
+  severity: "low"
+  blocks_release: false
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true

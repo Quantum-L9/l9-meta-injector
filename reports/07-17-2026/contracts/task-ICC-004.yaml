@@ -1,0 +1,30 @@
+# --- Flawless-Victory task derived from finding ICC-004 ---
+task:
+  id: "ICC-004"
+  objective: "Narrow NamespaceConfig to what resolveNamespace reads ({namespace; namespaceGlobs?}), or derive from PipelineConfig via Pick, eliminating the field duplication in toCfg."
+  scope_fence:
+    owner_layer: "src/namespace.ts,src/pipeline.ts"
+    allowed_paths:
+      - "src/namespace.ts"
+      - "cfg.namespace"
+      - "cfg.namespaceGlobs"
+      - "pipeline.ts"
+  inspect_first:
+    - "src/namespace.ts:13"
+    - "cfg.namespace"
+    - "cfg.namespaceGlobs"
+    - "pipeline.ts:18"
+  constraint_to_satisfy: "di_wiring_mismatch (over-wide port / interface segregation) | category=di_wiring_mismatch"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "Consumer's required interface far wider than used; every caller/test supplies six irrelevant fields, and the duplicated set couples NamespaceConfig to PipelineConfig with no compiler-enforced link."
+  severity: "medium"
+  blocks_release: false
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true

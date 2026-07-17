@@ -1,0 +1,30 @@
+# --- Flawless-Victory task derived from finding ACA-003 ---
+task:
+  id: "ACA-003"
+  objective: "Implement prefix/threshold near-duplicate clustering using the computed hashPrefix, or remove nearDupThreshold/hashPrefixLength from public config and report unsupported (fail-closed)."
+  scope_fence:
+    owner_layer: "src/compiler.ts"
+    allowed_paths:
+      - "src/compiler.ts"
+      - "schema.ts"
+      - "compiler.ts"
+      - "pipeline.ts"
+  inspect_first:
+    - "src/compiler.ts:17"
+    - "schema.ts:155"
+    - "compiler.ts:11"
+    - "pipeline.ts:93"
+  constraint_to_satisfy: "Pass 8 leverage/simplicity — silent fallback instead of typed error; silent zero-result on a promised capability | category=stub/underbuilt"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "Callers configuring nearDupThreshold silently get no near-duplicate detection; the report always reports zero, a fail-open no-op masquerading as a working feature."
+  severity: "high"
+  blocks_release: true
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true

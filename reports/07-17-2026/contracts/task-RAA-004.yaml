@@ -1,0 +1,28 @@
+# --- Flawless-Victory task derived from finding RAA-004 ---
+task:
+  id: "RAA-004"
+  objective: "Run the injector over its own src/ as a CI step (or commit stamped headers), turning self-injection into a behavior test."
+  scope_fence:
+    owner_layer: "src/"
+    allowed_paths:
+      - "e.g"
+      - "pipeline.ts"
+      - "comment.ts/verify.ts"
+  inspect_first:
+    - "e.g"
+    - "pipeline.ts:1"
+    - "comment.ts/verify.ts"
+  constraint_to_satisfy: "Pass 5 file-structure alignment — self-conformance (dogfooding) | category=self-conformance/observability"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "The repo can't demonstrate its own metadata contract on itself, weakening confidence the injection/verify path is correct on real trees."
+  severity: "low"
+  blocks_release: false
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true

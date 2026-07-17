@@ -1,0 +1,27 @@
+# --- Flawless-Victory task derived from finding PRD-002 ---
+task:
+  id: "PRD-002"
+  objective: "Capture the write failure into the record/unknowns (push sidecar_write_failed:<path>:<err>) and surface a non-silent status; don't treat an unwritable target as success."
+  scope_fence:
+    owner_layer: "src/inventory.ts"
+    allowed_paths:
+      - "src/inventory.ts"
+      - "inventory.ts"
+  inspect_first:
+    - "src/inventory.ts:330"
+    - "inventory.ts:349"
+    - "inventory.ts:304"
+  constraint_to_satisfy: "Pass 4 fake-validation: metadata-write failures are swallowed and reported as success | CWE=CWE-390 | category=fake_validation"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "On an unwritable target, metadata is never persisted yet the run reports success and the manifest implies the sidecar exists (fail-open)."
+  severity: "medium"
+  blocks_release: false
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true

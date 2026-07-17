@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "SUP-001",
+  "required_verified_status": "resolved",
+  "evidence_hint": "package.json:50-56 devDependencies all caret-ranged (typescript ^5.4.5, @types/node ^20.12.12, @types/jest ^29.5.12, jest ^29.7.0, ts-jest ^29.1.4). Mitigation: committed package-lock.json (v3) makes npm ci reproducible.",
+  "residual_if_not_resolved": "Pin devDependencies to exact versions, or codify npm ci in CI and document the lockfile as pin authority."
+}

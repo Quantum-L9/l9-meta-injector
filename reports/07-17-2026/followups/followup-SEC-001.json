@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "SEC-001",
+  "required_verified_status": "resolved",
+  "evidence_hint": "src/meta_schema.ts:105 `root[key]=SCALAR(rest)`, :161 `map[mm[1]]=SCALAR(mm[2])`, :202 `fields[f.name]=val`; src/inject.ts:37 `result[kv[1]]=val.replace(...)`. loadMetaSchema (src/inventory.ts:77) feeds an operator schema file into these key-assignment sinks with no __proto__/constructor/prototype guard.",
+  "residual_if_not_resolved": "Add a shared reserved-key guard (`if(key==='__proto__'||key==='constructor'||key==='prototype')continue;`) at each parsed-key assignment, or build maps with Object.create(null)."
+}

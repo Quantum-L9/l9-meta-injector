@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "OBS-002",
+  "required_verified_status": "resolved",
+  "evidence_hint": "src/pipeline.ts:91-103 \u2014 verify(...) produces VerifyResult[] (incl. bodyPreserved=false) but pipeline never inspects `issues`; only writes verification-report.json gated behind `if (!config.dryRun)`; returns success regardless.",
+  "residual_if_not_resolved": "Consume verify signal: aggregate issues, log a summary, and throw or return `hadVerificationFailures` so CI can gate. Don't gate the in-memory result behind dryRun."
+}

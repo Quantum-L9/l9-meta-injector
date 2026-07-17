@@ -1,0 +1,28 @@
+# --- Flawless-Victory task derived from finding OBS-002 ---
+task:
+  id: "OBS-002"
+  objective: "Consume verify signal: aggregate issues, log a summary, and throw or return `hadVerificationFailures` so CI can gate. Don't gate the in-memory result behind dryRun."
+  scope_fence:
+    owner_layer: "src/pipeline.ts"
+    allowed_paths:
+      - "src/pipeline.ts"
+      - "verification-report.json"
+      - "config.dryRun"
+  inspect_first:
+    - "src/pipeline.ts:91"
+    - "verification-report.json"
+    - "config.dryRun"
+  constraint_to_satisfy: "signal-emitted-but-unconsumed-by-decision | CWE=CWE-390 | category=unconsumed_by_decision"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "verify.ts:60 flags body-hash-mismatch corruption but that signal reaches only a JSON file nothing reads. A run that corrupted file bodies is reported as clean success."
+  severity: "high"
+  blocks_release: true
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true

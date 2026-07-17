@@ -1,0 +1,26 @@
+# --- Flawless-Victory task derived from finding OBS-010 ---
+task:
+  id: "OBS-010"
+  objective: "Instrument adapter/pipeline with counters/timings (calls, failures, tokens, p50/p95) exported to a sink."
+  scope_fence:
+    owner_layer: "src/llm.ts,src/pipeline.ts"
+    allowed_paths:
+      - "src/llm.ts"
+      - "src/pipeline.ts"
+  inspect_first:
+    - "src/llm.ts:17"
+    - "src/pipeline.ts"
+  constraint_to_satisfy: "no-metrics-on-llm-and-io-hotpaths | category=fleet_level_leverage_loss"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "No observable signal for LLM call volume, cost, latency, or failure rate; cost/latency regressions undiagnosable."
+  severity: "low"
+  blocks_release: false
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true

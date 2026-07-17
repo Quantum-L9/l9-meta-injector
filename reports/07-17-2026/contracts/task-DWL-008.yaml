@@ -1,0 +1,30 @@
+# --- Flawless-Victory task derived from finding DWL-008 ---
+task:
+  id: "DWL-008"
+  objective: "If reuse is intended, re-export selected comment.ts/compiler.ts symbols from index.ts; if internal-by-design, document they are deliberately private."
+  scope_fence:
+    owner_layer: "src/index.ts"
+    allowed_paths:
+      - "src/index.ts"
+      - "comment.ts"
+      - "compiler.ts"
+      - "pipeline.ts"
+  inspect_first:
+    - "src/index.ts:1"
+    - "comment.ts"
+    - "compiler.ts"
+    - "pipeline.ts:11"
+  constraint_to_satisfy: "dormant_capability (reusable primitive not on public API) | category=dormant_capability"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "Two reusable primitives are hidden from consumers: the filetype injection-strategy engine (comment.ts) and the dedup/library-index compiler (compiler.ts). Consumers can't reuse strategy resolution or dedup reporting."
+  severity: "low"
+  blocks_release: false
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true

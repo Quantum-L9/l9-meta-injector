@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "RAA-001",
+  "required_verified_status": "resolved",
+  "evidence_hint": "src/schema.ts:177-290 defines the full MetaV3 nine-plane contract (META_V3_PLANES, IdentityPlane..LineagePlane, interface MetaV3 at :280), and docs/contracts.md:94-100 asserts runtime behavior ('carries exactly the nine planes', 'Idempotent: skip if a v3 record present'). No builder/serializer/validator: grep MetaV3|IdentityPlane|META_V3_PLANES src/ outside schema.ts returns nothing.",
+  "residual_if_not_resolved": "Implement the v3 compile/validate/idempotency path (buildMetaV3 + serializer + presence check), or move v3 types and the contracts.md section to 'planned, not implemented'."
+}

@@ -1,0 +1,30 @@
+# --- Flawless-Victory task derived from finding RAA-001 ---
+task:
+  id: "RAA-001"
+  objective: "Implement the v3 compile/validate/idempotency path (buildMetaV3 + serializer + presence check), or move v3 types and the contracts.md section to 'planned, not implemented'."
+  scope_fence:
+    owner_layer: "src/schema.ts"
+    allowed_paths:
+      - "src/schema.ts"
+      - "IdentityPlane..LineagePlane"
+      - "docs/contracts.md"
+      - "schema.ts"
+  inspect_first:
+    - "src/schema.ts:177"
+    - "IdentityPlane..LineagePlane"
+    - "docs/contracts.md:94"
+    - "schema.ts"
+  constraint_to_satisfy: "Pass 9 leverage — overbuilt/dead contract; behavior claimed but absent | category=dead-contract/overbuilt"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "A documented, versioned contract with idempotency guarantees has zero implementation; consumers may rely on v3 semantics nothing enforces or emits."
+  severity: "medium"
+  blocks_release: false
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true

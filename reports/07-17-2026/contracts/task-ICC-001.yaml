@@ -1,0 +1,31 @@
+# --- Flawless-Victory task derived from finding ICC-001 ---
+task:
+  id: "ICC-001"
+  objective: "Delete reconcile_fields.FieldDiff; import canonical FieldDiff + exported action type from schema.ts in reconcile_fields.ts and inject.ts; drop the duplicate public export."
+  scope_fence:
+    owner_layer: "src/reconcile_fields.ts,src/schema.ts"
+    allowed_paths:
+      - "src/schema.ts"
+      - "src/reconcile_fields.ts"
+      - "inject.ts"
+      - "index.ts"
+  inspect_first:
+    - "src/schema.ts:117"
+    - "src/reconcile_fields.ts:14"
+    - "inject.ts:13"
+    - "inject.ts:110"
+    - "index.ts:6"
+  constraint_to_satisfy: "schema_disagreement (duplicated contract) | CWE=CWE-1041 | category=schema_disagreement"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "Two sources of truth for one diff contract; type-check passes only by structural coincidence. Changing an action value on one side silently diverges the other; public API exposes two names for one concept."
+  severity: "medium"
+  blocks_release: false
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true

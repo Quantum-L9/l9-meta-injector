@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "OBS-010",
+  "required_verified_status": "resolved",
+  "evidence_hint": "src/llm.ts:17-40 makeOpenAIAdapter emits no call count/latency/token/failure metric; src/pipeline.ts loops assistField (69) and injectFileAsync (86) with no timing/accounting.",
+  "residual_if_not_resolved": "Instrument adapter/pipeline with counters/timings (calls, failures, tokens, p50/p95) exported to a sink."
+}

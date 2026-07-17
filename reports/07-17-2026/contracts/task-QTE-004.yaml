@@ -1,0 +1,30 @@
+# --- Flawless-Victory task derived from finding QTE-004 ---
+task:
+  id: "QTE-004"
+  objective: "Add tests/inject.test.ts covering each strategy, dryRun (no mutation, diff written), re-run idempotency, and body-preservation (postInjectionBodyHash===originalBodyHash)."
+  scope_fence:
+    owner_layer: "src/inject.ts"
+    allowed_paths:
+      - "src/inject.ts"
+      - "fs.writeFileSync"
+      - "inject.ts"
+      - "pipeline_integration.test.ts"
+  inspect_first:
+    - "src/inject.ts"
+    - "fs.writeFileSync"
+    - "inject.ts:117"
+    - "pipeline_integration.test.ts"
+  constraint_to_satisfy: "Pass 5 error-path & Pass 2: file-mutating module lacks dedicated unit tests for its branches | category=missing-error-path"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "A regression in strategy resolution, dry-run vs write, or re-run idempotency could corrupt/duplicate content in real files with no failing test."
+  severity: "medium"
+  blocks_release: false
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true

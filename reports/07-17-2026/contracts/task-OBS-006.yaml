@@ -1,0 +1,26 @@
+# --- Flawless-Victory task derived from finding OBS-006 ---
+task:
+  id: "OBS-006"
+  objective: "Record `sidecar_write_failed:${msg}` on unknowns and/or warn; a no-op catch on a write is a swallowed failure."
+  scope_fence:
+    owner_layer: "src/inventory.ts"
+    allowed_paths:
+      - "src/inventory.ts"
+      - "inventory.ts"
+  inspect_first:
+    - "src/inventory.ts:330"
+    - "inventory.ts:349"
+  constraint_to_satisfy: "no-op-error-handling-on-file-io | CWE=CWE-390 | category=no-op-error-handling"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "Sidecar/folder-sidecar write failures are invisible; metadata silently not persisted, contradicting the reassuring comment."
+  severity: "medium"
+  blocks_release: false
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true

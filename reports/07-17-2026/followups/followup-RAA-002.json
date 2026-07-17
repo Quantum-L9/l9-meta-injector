@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "RAA-002",
+  "required_verified_status": "resolved",
+  "evidence_hint": "SharingScope defined identically twice: src/schema.ts:14 and src/namespace.ts:4 (`'private'|'shared'|'agnostic'`). namespace.ts uses its local copy; normalize_meta.ts imports the schema.ts copy.",
+  "residual_if_not_resolved": "Remove the namespace.ts declaration and import SharingScope from schema.ts."
+}
