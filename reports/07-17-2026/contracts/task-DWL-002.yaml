@@ -1,0 +1,28 @@
+# --- Flawless-Victory task derived from finding DWL-002 ---
+task:
+  id: "DWL-002"
+  objective: "Invoke compilePlacementPlans in the pipeline to populate placement metadata or emit a placement report, expose via CLI, or document as experimental/library-only."
+  scope_fence:
+    owner_layer: "src/placement_policy.ts"
+    allowed_paths:
+      - "src/placement_policy.ts"
+      - "tests/placement_policy.test.ts"
+      - "pipeline.ts"
+  inspect_first:
+    - "src/placement_policy.ts:77"
+    - "tests/placement_policy.test.ts"
+    - "pipeline.ts"
+  constraint_to_satisfy: "inactive_component / dormant_capability | category=dormant_capability"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "The placement compiler (target dir/layer, quarantine routing) is unreachable from the pipeline and runPipelineAsync; the capability to decide where artifacts live is never exercised outside unit tests."
+  severity: "high"
+  blocks_release: false
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true

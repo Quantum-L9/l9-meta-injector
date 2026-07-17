@@ -1,0 +1,26 @@
+# --- Flawless-Victory task derived from finding OBS-005 ---
+task:
+  id: "OBS-005"
+  objective: "Differentiate the catch from the binary sentinel (record `read_failed:${msg}`/log) rather than returning the same null."
+  scope_fence:
+    owner_layer: "src/inventory.ts"
+    allowed_paths:
+      - "src/inventory.ts"
+      - "inventory.ts"
+  inspect_first:
+    - "src/inventory.ts:318"
+    - "inventory.ts:294"
+  constraint_to_satisfy: "read-failure-conflated-with-normal-condition | CWE=CWE-391 | category=silent-failure"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "Permission-denied/IO error on a text file is silently reclassified as 'binary skipped'; coverage gaps from access errors are invisible."
+  severity: "medium"
+  blocks_release: false
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true

@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "OBS-004",
+  "required_verified_status": "resolved",
+  "evidence_hint": "src/inventory.ts:302-304 \u2014 `try { injectFile(...) } catch { if (targetIncludes(schema,'sidecar')) writeSidecar(...) }` discards the injection error; if schema doesn't target sidecar, no fallback AND no record.",
+  "residual_if_not_resolved": "Push `header_injection_failed:${msg}` onto rec.unknowns (mirroring inventory.ts:204-206) and log before falling back to sidecar."
+}

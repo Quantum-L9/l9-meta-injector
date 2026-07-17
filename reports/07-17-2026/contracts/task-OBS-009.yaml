@@ -1,0 +1,30 @@
+# --- Flawless-Victory task derived from finding OBS-009 ---
+task:
+  id: "OBS-009"
+  objective: "Record actual path taken (llm_ok|llm_failed_fallback|no_adapter|heuristic) in FieldDiff reason and a run-level counter."
+  scope_fence:
+    owner_layer: "src/reconcile_fields.ts,src/assist.ts"
+    allowed_paths:
+      - "src/reconcile_fields.ts"
+      - "src/assist.ts"
+      - "adapter.classify"
+      - "reconcile_fields.ts"
+  inspect_first:
+    - "src/reconcile_fields.ts:74"
+    - "src/assist.ts:48"
+    - "adapter.classify"
+    - "reconcile_fields.ts:126"
+  constraint_to_satisfy: "degraded-mode-not-signalled | CWE=CWE-390 | category=uncorrelated_signal"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "No signal distinguishes 'LLM said no' from 'LLM failed/returned null and we fell back'; degraded runs indistinguishable from healthy ones in the audit trail."
+  severity: "medium"
+  blocks_release: false
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true

@@ -1,0 +1,28 @@
+# --- Flawless-Victory task derived from finding DWL-007 ---
+task:
+  id: "DWL-007"
+  objective: "Add intent to the metadata schema and have buildMeta populate it, or drop 'intent' from LLM_MATERIALITY_FIELDS and PROSE_ORIGIN_FIELDS."
+  scope_fence:
+    owner_layer: "src/reconcile_fields.ts,src/assist.ts"
+    allowed_paths:
+      - "src/reconcile_fields.ts"
+      - "assist.ts"
+      - "schema.ts"
+  inspect_first:
+    - "src/reconcile_fields.ts:36"
+    - "assist.ts:32"
+    - "schema.ts"
+  constraint_to_satisfy: "dormant_capability (unreachable field branch) | category=dormant_capability"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "The 'intent' prose/materiality handling is unreachable via generated metadata; only pre-existing hand-authored intent: keys could trigger it — a near-dead branch suggesting an unsupported field."
+  severity: "low"
+  blocks_release: false
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true

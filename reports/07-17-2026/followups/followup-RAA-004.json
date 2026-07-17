@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "RAA-004",
+  "required_verified_status": "resolved",
+  "evidence_hint": "The injector engine doesn't dogfood its own metadata: src/*.ts carry only plain // purpose comments (e.g. pipeline.ts:1) and none contain the injector's own `>>> l9:meta >>>` block or L9_META header. grep -l matches only comment.ts/verify.ts which merely define the sentinels.",
+  "residual_if_not_resolved": "Run the injector over its own src/ as a CI step (or commit stamped headers), turning self-injection into a behavior test."
+}

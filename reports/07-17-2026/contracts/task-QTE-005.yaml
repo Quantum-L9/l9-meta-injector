@@ -1,0 +1,29 @@
+# --- Flawless-Victory task derived from finding QTE-005 ---
+task:
+  id: "QTE-005"
+  objective: "Replace double-casts with a validated narrowing (runtime shape guard) at the meta-bag boundary, or a single typed adapter with unit tests."
+  scope_fence:
+    owner_layer: "src/inventory.ts,src/pipeline.ts,src/verify.ts"
+    allowed_paths:
+      - "inventory.ts"
+      - "pipeline.ts"
+      - "verify.ts"
+  inspect_first:
+    - "inventory.ts:340"
+    - "inventory.ts:374"
+    - "pipeline.ts:66"
+    - "verify.ts:72"
+  constraint_to_satisfy: "Pass 7 type-safety: double-cast escape hatches defeat strict structural typing | CWE=CWE-704 | category=type-hole"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "A NormalizedMeta shape drift compiles clean and surfaces only at runtime as malformed headers."
+  severity: "low"
+  blocks_release: false
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true

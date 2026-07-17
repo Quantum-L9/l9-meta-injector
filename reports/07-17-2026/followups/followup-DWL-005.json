@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "DWL-005",
+  "required_verified_status": "resolved",
+  "evidence_hint": "src/namespace.ts:21 optional namespaceGlobs is read at namespace.ts:67-69, but pipeline.ts:19 toCfg builds NamespaceConfig without it, PipelineConfig (schema.ts:148-164) has no namespaceGlobs field, and grep shows it set only in tests/namespace.test.ts:13.",
+  "residual_if_not_resolved": "Add namespaceGlobs to PipelineConfig and pass through toCfg, or document the override as available only via direct resolveNamespace use."
+}

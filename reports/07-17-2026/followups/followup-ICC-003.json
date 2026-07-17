@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "ICC-003",
+  "required_verified_status": "resolved",
+  "evidence_hint": "Identical LLM materiality prompt duplicated verbatim at src/assist.ts:62 and src/reconcile_fields.ts:75 (`Field: ...\\nA:...\\nB:...\\nIs B materially more informative than A? Reply only: yes or no`), both parsed via `.trim().toLowerCase().startsWith('yes')`.",
+  "residual_if_not_resolved": "Extract a single materiality-judgment primitive (prompt builder + response parser) called from both assist.ts and reconcile_fields.ts."
+}

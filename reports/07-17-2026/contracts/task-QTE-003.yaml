@@ -1,0 +1,30 @@
+# --- Flawless-Victory task derived from finding QTE-003 ---
+task:
+  id: "QTE-003"
+  objective: "Add unit tests for buildMeta per artifact_type asserting emitted field set + taxonomy, plus serializeToYamlFrontMatter scalar quoting/escaping and empty-array handling."
+  scope_fence:
+    owner_layer: "src/normalize_meta.ts"
+    allowed_paths:
+      - "src/normalize_meta.ts"
+      - "normalize_meta.ts"
+      - "tests/pipeline_integration.test.ts"
+      - "result.injected.length"
+  inspect_first:
+    - "src/normalize_meta.ts"
+    - "normalize_meta.ts:37"
+    - "tests/pipeline_integration.test.ts:60"
+    - "result.injected.length"
+  constraint_to_satisfy: "Pass 2 coverage-vs-criticality: central transform tested only transitively with weak assertion | category=weak-assertion"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "Wrong taxonomy mapping, sharing_scope/namespace resolution, or mis-serialized YAML scalar would not fail any test."
+  severity: "medium"
+  blocks_release: false
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true

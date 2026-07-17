@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "OBS-009",
+  "required_verified_status": "resolved",
+  "evidence_hint": "src/reconcile_fields.ts:74/77 and src/assist.ts:48-50 fall back to heuristic/seed when adapter.classify absent or returns null; recorded FieldDiff reason (reconcile_fields.ts:126-127) can read 'content-size heuristic' even when an LLM path failed.",
+  "residual_if_not_resolved": "Record actual path taken (llm_ok|llm_failed_fallback|no_adapter|heuristic) in FieldDiff reason and a run-level counter."
+}

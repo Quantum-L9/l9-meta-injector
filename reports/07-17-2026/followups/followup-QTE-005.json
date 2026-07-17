@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "QTE-005",
+  "required_verified_status": "resolved",
+  "evidence_hint": "7 `as unknown as` double-casts: inventory.ts:340 `return fields as unknown as NormalizedMeta`, inventory.ts:374,269,276, pipeline.ts:66,73, verify.ts:72. Each launders an arbitrary Record into NormalizedMeta with no runtime validation.",
+  "residual_if_not_resolved": "Replace double-casts with a validated narrowing (runtime shape guard) at the meta-bag boundary, or a single typed adapter with unit tests."
+}

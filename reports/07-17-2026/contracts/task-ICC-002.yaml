@@ -1,0 +1,30 @@
+# --- Flawless-Victory task derived from finding ICC-002 ---
+task:
+  id: "ICC-002"
+  objective: "Define SharingScope once in schema.ts, import into namespace.ts; remove the `as SharingScope` cast so the type flows structurally."
+  scope_fence:
+    owner_layer: "src/namespace.ts,src/schema.ts"
+    allowed_paths:
+      - "src/schema.ts"
+      - "src/namespace.ts"
+      - "namespace.SharingScope"
+      - "normalize_meta.ts"
+  inspect_first:
+    - "src/schema.ts:14"
+    - "src/namespace.ts:4"
+    - "namespace.SharingScope"
+    - "normalize_meta.ts:48"
+  constraint_to_satisfy: "schema_disagreement (duplicated enum type) | CWE=CWE-1041 | category=schema_disagreement"
+  base_ref: "HEAD@3fba77d"
+  regression_target: "SharingScope defined twice; a new value added to one won't propagate, and the explicit cast at the boundary masks divergence at compile time."
+  severity: "medium"
+  blocks_release: false
+  stop_if:
+    - "fix requires editing paths outside allowed_paths"
+    - "fix would weaken constraint_to_satisfy"
+    - "fix requires out-of-scope work"
+    - "validation cannot be run honestly"
+  followup_verify:
+    audit: "05-followup-remediation-audit.md"
+    require_verified_status: "resolved"
+    before_advancing_to_next_finding: true

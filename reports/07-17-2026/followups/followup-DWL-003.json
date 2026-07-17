@@ -1,0 +1,10 @@
+{
+  "target_repo": "UNKNOWN",
+  "prior_audit": "findings-combined.json",
+  "prior_base_ref": "HEAD@3fba77d",
+  "new_base_ref": "UNKNOWN",
+  "finding_to_verify": "DWL-003",
+  "required_verified_status": "resolved",
+  "evidence_hint": "src/schema.ts:166-290 defines the MetaV3 nine-plane model (META_V3_SCHEMA_VERSION, META_V3_PLANES, IdentityPlane\u2026LineagePlane, MetaV3). grep shows MetaV3/META_V3_* only in tests/schema.test.ts. No function converts NormalizedMeta\u2192MetaV3.",
+  "residual_if_not_resolved": "Add a NormalizedMeta\u2192MetaV3 builder wired into inject/index emission (\u22651 live producer+consumer), or drop the v3 types until a consumer exists."
+}
