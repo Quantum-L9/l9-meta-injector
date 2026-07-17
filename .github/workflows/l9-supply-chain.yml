@@ -9,16 +9,12 @@ on:
     branches: [main]
   pull_request:
 
-# GITHUB_TOKEN scopes the called reusable workflows require:
-#   scorecard -> security-events:write, id-token:write, actions:read, contents:read
-#   sbom      -> id-token:write, contents:read
-# The caller must grant these at least as broadly as the called jobs declare, or
-# the run fails at startup.
+# Least privilege: grant token scopes per job (not workflow-wide), so PR runs —
+# which only execute `sbom` — never receive scorecard's write scopes. The caller
+# must grant each called job at least the scopes it declares, or the reusable
+# call fails at startup.
 permissions:
   contents: read
-  security-events: write
-  id-token: write
-  actions: read
 
 jobs:
   # OpenSSF Scorecard publishes results for the default branch, so run it on
@@ -26,9 +22,17 @@ jobs:
   scorecard:
     name: OpenSSF Scorecard
     if: github.event_name == 'push'
+    permissions:
+      contents: read
+      security-events: write
+      id-token: write
+      actions: read
     uses: Quantum-L9/l9-ci-core/.github/workflows/scorecard.yml@2a3270be5f5184099c33a101807f65b1becf4e7c
 
   # SPDX SBOM on every push and pull request.
   sbom:
     name: SBOM
+    permissions:
+      contents: read
+      id-token: write
     uses: Quantum-L9/l9-ci-core/.github/workflows/sbom.yml@2a3270be5f5184099c33a101807f65b1becf4e7c
