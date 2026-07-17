@@ -3,6 +3,7 @@
 // If it lives in prose, seed with regex, let LLM finish — but only when seed fails "good" predicate.
 import { UNKNOWN } from "./schema";
 import { getAdapter } from "./llm";
+import { buildMaterialityPrompt, parseMaterialityReply } from "./materiality";
 
 export interface AssistConfig {
   enabled: boolean;
@@ -59,9 +60,8 @@ export async function isMateriallyBetter(
   if (!isGoodValue(oldValue)) return true;
   const adapter = getAdapter();
   if (!adapter.classify) return false;
-  const prompt = `Field: ${fieldName}\nA: ${JSON.stringify(oldValue)}\nB: ${JSON.stringify(newValue)}\nIs B materially more informative than A? Reply only: yes or no`;
-  const result = await adapter.classify(prompt);
-  return result?.trim().toLowerCase().startsWith("yes") ?? false;
+  const result = await adapter.classify(buildMaterialityPrompt(fieldName, oldValue, newValue));
+  return parseMaterialityReply(result);
 }
 
 function buildFieldPrompt(fieldName: string, body: string): string {

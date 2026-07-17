@@ -1,7 +1,9 @@
 // namespace.ts — Deterministic path → namespace + sharing_scope + primitive_folder
 import * as path from "path";
+import { SharingScope } from "./schema";
 
-export type SharingScope = "private" | "shared" | "agnostic";
+// SharingScope is single-sourced in schema.ts (finding ICC-002 / RAA-002).
+export type { SharingScope } from "./schema";
 
 export interface NamespaceResolution {
   namespace: string;

@@ -114,9 +114,12 @@ export interface ArtifactMeta extends BaseHeader {
 
 export type NormalizedMeta = ExecutableRetrievalMeta | PromptMeta | DoctrineMeta | ArtifactMeta;
 
+/** The five reconciliation actions. Canonical home for the field-diff contract. */
+export type ReconcileAction = "add" | "revise" | "append-union" | "keep" | "replace";
+
 export interface FieldDiff {
   field: string;
-  action: "add" | "revise" | "append-union" | "keep" | "replace";
+  action: ReconcileAction;
   oldValue: unknown;
   newValue: unknown;
   reason: string;
