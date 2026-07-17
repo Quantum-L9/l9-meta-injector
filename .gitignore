@@ -10,3 +10,8 @@ __MACOSX/
 dist/*.tsbuildinfo
 .out/
 .index/
+
+# Python bytecode caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
