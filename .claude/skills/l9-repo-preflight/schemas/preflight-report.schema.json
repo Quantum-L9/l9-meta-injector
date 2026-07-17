@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quantum-l9.github.io/l9-ci-core/schemas/preflight-report.schema.json",
+  "title": "L9 Preflight Evaluate Report (fail-open)",
+  "description": "The output of scripts/evaluate_preflight.py: a per-gate verdict over the eight gates plus, for fixable gates, the exact safe autofix plan, plus the genuine-blocker list. The run always completes (run_completed:true); nothing halts. remediate.py consumes autofix_plans to drive the loop.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["generated_from", "repo", "run_completed", "gates", "autofix_plans", "genuine_blockers", "blocker_count", "ready_after_remediation"],
+  "properties": {
+    "generated_from": { "type": "string" },
+    "repo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["root", "branch", "head"],
+      "properties": {
+        "root": { "type": "string" },
+        "branch": { "type": "string" },
+        "head": { "type": "string" }
+      }
+    },
+    "run_completed": { "const": true },
+    "gates": {
+      "type": "array",
+      "minItems": 14,
+      "maxItems": 14,
+      "items": { "$ref": "#/$defs/gate" }
+    },
+    "autofix_plans": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/plan" }
+    },
+    "genuine_blockers": { "type": "array", "items": { "type": "object" } },
+    "semantic_findings": { "type": "array", "items": { "type": "object" } },
+    "blocker_count": { "type": "integer", "minimum": 0 },
+    "ready_after_remediation": { "type": "boolean" }
+  },
+  "$defs": {
+    "gate": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "name", "question", "verdict"],
+      "properties": {
+        "id": { "type": "integer", "minimum": 1, "maximum": 14 },
+        "name": { "type": "string" },
+        "question": { "type": "string" },
+        "verdict": {
+          "enum": ["clear", "autofixable", "adapt", "blocker"],
+          "description": "clear = satisfied. autofixable = a safe reversible fix resolves it. adapt = the blueprint is wrong for this repo (fix a copy of the plan). blocker = cannot be safely auto-resolved; reported for downstream."
+        },
+        "taxonomy": { "type": "string" },
+        "evidence": { "type": "object" },
+        "autofix_plan": { "$ref": "#/$defs/plan" }
+      }
+    },
+    "plan": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["action", "command", "reversible"],
+      "properties": {
+        "gate": { "type": "integer" },
+        "gate_name": { "type": "string" },
+        "action": {
+          "enum": ["clean_generated", "git_switch_branch", "adapt_blueprint", "pip_install",
+                   "editable_install", "npm_install", "ruff_fix", "eslint_fix", "uv_lock", "npm_ci"]
+        },
+        "command": { "type": "string" },
+        "description": { "type": "string" },
+        "reversible": { "type": "boolean", "const": true },
+        "targets": { "type": "array" }
+      }
+    }
+  }
+}

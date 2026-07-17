@@ -1,0 +1,5 @@
+name: monorepo
+signals:
+  - multiple manifests
+required_capabilities:
+  - workspace_validation

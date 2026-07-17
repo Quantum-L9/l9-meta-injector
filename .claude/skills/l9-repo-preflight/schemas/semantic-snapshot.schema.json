@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quantum-l9.dev/schemas/semantic-snapshot-1.1.json",
+  "type": "object",
+  "required": ["engine", "repository_snapshot", "coverage_ledger", "facts", "summary"],
+  "properties": {
+    "engine": {"const": "hybrid_semantic_index"},
+    "repository_snapshot": {
+      "type": "object",
+      "required": ["repository_snapshot_id", "source_revision", "source_digest", "index_schema_version", "extractor_bundle_version", "created_at"],
+      "properties": {
+        "repository_snapshot_id": {"type": "string", "pattern": "^rss_[a-f0-9]{32}$"},
+        "parent_snapshot_id": {"type": ["string", "null"]},
+        "source_revision": {"type": "string"},
+        "source_digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "index_schema_version": {"type": "string"},
+        "extractor_bundle_version": {"type": "string"},
+        "created_at": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "coverage_ledger": {
+      "type": "object",
+      "required": ["eligible_files", "parsed_files", "unsupported_files", "failed_files", "generated_files_excluded", "coverage_by_language", "known_blind_spots", "complete"],
+      "properties": {
+        "eligible_files": {"type": "integer", "minimum": 0},
+        "parsed_files": {"type": "integer", "minimum": 0},
+        "unsupported_files": {"type": "integer", "minimum": 0},
+        "failed_files": {"type": "integer", "minimum": 0},
+        "generated_files_excluded": {"type": "integer", "minimum": 0},
+        "coverage_by_language": {"type": "object"},
+        "known_blind_spots": {"type": "array", "items": {"type": "string"}},
+        "complete": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "facts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["fact_id", "kind", "name", "language", "path", "range", "authority", "confidence_class", "extractor", "limitations"],
+        "properties": {
+          "fact_id": {"type": "string", "pattern": "^sf_[a-f0-9]{32}$"},
+          "kind": {"type": "string"},
+          "name": {"type": "string"},
+          "qualified_name": {"type": ["string", "null"]},
+          "language": {"type": "string"},
+          "path": {"type": "string"},
+          "range": {"type": "object"},
+          "authority": {
+            "type": "object",
+            "required": ["syntax", "resolution"],
+            "properties": {"syntax": {"type": "string"}, "resolution": {"type": "string"}},
+            "additionalProperties": false
+          },
+          "confidence_class": {"enum": ["observed", "inferred", "heuristic"]},
+          "extractor": {"type": "object"},
+          "limitations": {"type": "array", "items": {"type": "string"}}
+        },
+        "additionalProperties": true
+      }
+    },
+    "summary": {"type": "object"}
+  },
+  "additionalProperties": true
+}

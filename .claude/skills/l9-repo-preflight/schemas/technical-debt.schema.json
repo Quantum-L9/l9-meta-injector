@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quantum-l9.github.io/l9-ci-core/schemas/technical-debt.schema.json",
+  "title": "L9 Preflight Technical-Debt Findings",
+  "description": "Evidence-based technical-debt findings (docs/preflight/technical-debt.yaml). Every finding points at a path (and line where available); deduplicated; blocking distinguished from non-blocking. Never invented.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["findings"],
+  "properties": {
+    "run_id": {"type": "string"}, "timestamp": {"type": "string"},
+    "source_commit": {"type": "string"}, "tool_version": {"type": "string"},
+    "count": {"type": "integer", "minimum": 0},
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["category", "path", "evidence", "blocking"],
+        "properties": {
+          "category": {"enum": ["TODO_FIXME_HACK_markers", "deprecated_dependencies",
+            "stale_or_duplicate_workflows", "skipped_or_disabled_tests", "missing_validation",
+            "unpinned_actions", "dead_configuration", "undocumented_manual_steps",
+            "known_open_issues", "inconsistent_contracts"]},
+          "path": {"type": "string"},
+          "line": {"type": "integer", "minimum": 1},
+          "evidence": {"type": "string"},
+          "blocking": {"type": "boolean"}
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,85 @@
+# L9_META
+# l9_schema: 1
+# parent: l9-repo-preflight
+# layer: reference
+# role: expertise_model
+# tags: [preflight, fail-open, autofix, remediation, blockers, ecosystem-neutral, exemplary]
+# owner: igor_beylin
+# status: active
+# version: 2.1.0
+# updated: 2026-07-16
+# Purpose: Compressed judgment extracted from the 10X Repository Preflight Decision
+# Tree, re-cast as a FAIL-OPEN remediation engine (never halt; maximum safe autofix;
+# report only genuine blockers). Consumed by scripts/validate_exemplary_skill.py.
+
+expertise_model:
+  experts:
+    - repo-forensics (identity, remotes, divergence; detect the ecosystem from evidence)
+    - worktree-hygiene (tracked vs generated vs unknown; safe remove/ignore; keep dependency dirs)
+    - toolchain-conformance (python + node; runtime present; install declared/pinned tools)
+    - build-and-install (editable install / npm ci; importability / node_modules)
+    - baseline-remediator (lint/format auto-fix; existing-vs-new failure classification)
+
+  doctrine:
+    - Never halt; every run walks all eight gates to completion and emits a report (fail-open).
+    - Apply every fix on the safe+reversible allow-list automatically (maximum autofix).
+    - Report ONLY what cannot be safely auto-resolved, in machine-readable detail, for downstream.
+    - Verified repository evidence outranks the blueprint; a foreign expectation is adapt, not failure.
+    - Auto-detect the ecosystem; never bake in a language or package name; a missing tool is skipped.
+    - Removing is for throwaway artifacts; dependency dirs (node_modules) are kept and only ignored.
+    - Format/lint autofix runs only on a clean tree; its output is tool-owned and git-reversible.
+    - Adapt a wrong blueprint by writing a NEW contract file; never overwrite the user's input.
+    - Classify baseline failures: lint/format autofixable, existing recorded, only new ones blocker.
+    - Every applied action is logged and reversible; nothing off the allow-list is ever auto-applied.
+
+  invariants:
+    - the run never halts; run_completed is always true
+    - an unknown-provenance untracked file is a genuine blocker, never auto-deleted
+    - user tracked/staged edits are genuine blockers, never auto-reverted
+    - only safe, reversible actions on the allow-list are auto-applied
+    - node_modules and other dependency dirs are kept (ignored), never removed
+    - format/lint autofix runs only when the tree has no pre-existing user tracked edits
+    - an adapted blueprint is written to a new file; the input is never overwritten
+    - a missing ecosystem runtime or a new type/test failure is a genuine blocker
+    - every genuine blocker carries class, severity, evidence, why-not-autofixable, and remediation
+    - the loop terminates at a fixpoint (no new autofix) or the max-iteration cap
+
+  authority_hierarchy:
+    - security_safety_legal > verified_evidence
+    - verified_evidence > explicit_expected_contract
+    - explicit_expected_contract > blueprint_assumptions
+    - blueprint_assumptions > convenience_speed
+    - unknown > fabrication (report as a blocker; never invent)
+
+  activation_signals:
+    - user asks to preflight, auto-remediate, or clean a repo before starting work
+    - user wants a machine-readable list of genuine blockers for downstream remediation
+    - user references the preflight decision tree, the probe, or the eight gates
+    - user wants maximum autofixing that never stops the run
+    - user asks whether a checkout (python or node) is safe to build on, with fixes applied
+
+  reject_signals:
+    - user asks to implement a feature or change product code (preflight only gates + auto-hygiene)
+    - no repository/checkout is available to probe
+    - user wants a hard fail-closed gate that stops on the first problem (this engine never halts)
+    - user wants unsafe mutations (delete unknown files, revert their edits) done automatically
+    - user wants human prose advice only, not a machine-evaluated, auto-remediated result
+
+  adapters:
+    - "python repo -> ruff/mypy/pytest, pip install, editable install, importability checks."
+    - "node/typescript repo -> eslint/tsc/prettier, npm ci, node_modules; no Python import is attempted."
+    - "polyglot / unknown repo -> run only the tools that exist; skip the rest; never a false failure."
+
+  failure_modes:
+    - "false-blocker: reporting an autofixable condition as a blocker -> classify against the allow-list."
+    - "unsafe-autofix: auto-applying a non-reversible change -> allow-list only; unknown/code are blockers."
+    - "dep-dir-deleted: removing node_modules as if a cache -> keep dependency dirs; ignore, don't remove."
+    - "wrong-ecosystem: probing a Node repo for a Python import -> auto-detect; empty packages on non-Python."
+    - "non-termination: the loop never converges -> fixpoint detection + max-iteration cap."
+
+  leverage_points:
+    - Fail-open loop: every run finishes with an actionable report; no dead ends.
+    - Safe+reversible allow-list: aggressive autofix without ever risking user work.
+    - Ecosystem auto-detection: one skill preflights python and node with no per-repo config.
+    - Genuine-blockers-only output: downstream sees the short, real list, not noise.
+    - Reversible autofix log: every mutation is auditable and undoable.

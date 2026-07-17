@@ -1,0 +1,5 @@
+name: node-package
+signals:
+  - package.json
+required_capabilities:
+  - node_package

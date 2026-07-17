@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quantum-l9.github.io/l9-ci-core/schemas/expected-contract.schema.json",
+  "title": "L9 Preflight Expected Contract (blueprint)",
+  "description": "The optional expected-repo blueprint passed to evaluate_preflight.py via --expected. It supplies Gate 2 identity, Gate 4 foundations, Gate 5 toolchain, and Gate 6 packages. It is AUTHORITY LEVEL 3 — below verified evidence: where the contract and the probe disagree, evidence wins and the gate returns `adapt` (fix the blueprint), never `blocked` (fail the repo).",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "repo": {
+      "type": "string",
+      "description": "Expected repo identifier (matched as a substring of the origin URL / root)."
+    },
+    "branch": { "type": "string", "description": "Expected branch name (exact)." },
+    "commit": { "type": "string", "description": "Expected HEAD commit (prefix match)." },
+    "foundations": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Paths Gate 4 expects to resolve. Missing core (pyproject.toml, tests) -> blocked; missing non-core with an alternate layout -> adapt."
+    },
+    "packages": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Importable packages Gate 6 expects. A package absent from the repo -> adapt (foreign package)."
+    },
+    "toolchain": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "python": { "type": "string", "description": "Expected interpreter, e.g. 3.12." },
+        "package_manager": { "type": "string", "description": "e.g. pip, uv, poetry." },
+        "test_tools": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Tools Gate 5 requires, e.g. [pytest, ruff, mypy]. A required tool the repo does not define, when the repo defines its own -> adapt."
+        }
+      }
+    }
+  }
+}

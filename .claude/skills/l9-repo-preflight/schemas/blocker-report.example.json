@@ -1,0 +1,202 @@
+{
+  "generated_from": "2026-07-15T21:53:37Z",
+  "repo": {
+    "root": "/path/to/your-repo",
+    "branch": "master",
+    "head": "d7bf47ebe041"
+  },
+  "run_completed": true,
+  "gates": [
+    {
+      "id": 1,
+      "name": "probe-completed",
+      "question": "did the probe complete successfully?",
+      "verdict": "clear",
+      "evidence": {
+        "sections": 25,
+        "command_failures": 2
+      }
+    },
+    {
+      "id": 2,
+      "name": "correct-identity",
+      "question": "correct repository / branch / commit?",
+      "verdict": "clear",
+      "evidence": {
+        "root": "/tmp/claude-0/-home-user-l9-ci-core/91551842-153d-5bab-9549-3a2b4be299a0/scratchpad/fx-py",
+        "branch": "master",
+        "head": "d7bf47ebe041",
+        "note": "no expected contract; identity accepted as observed"
+      }
+    },
+    {
+      "id": 3,
+      "name": "worktree-clean",
+      "question": "worktree clean?",
+      "verdict": "clear",
+      "taxonomy": "auto-formatted",
+      "evidence": {
+        "tracked_modified": [],
+        "staged": [],
+        "unknown": [],
+        "generated": [],
+        "auto_formatted": [
+          ".gitignore",
+          "pkg/__init__.py",
+          "pkg/util.py"
+        ]
+      },
+      "note": "auto-formatted files are uncommitted; review and commit them"
+    },
+    {
+      "id": 4,
+      "name": "foundations-present",
+      "question": "required foundations present?",
+      "verdict": "clear",
+      "evidence": {
+        "expected": [
+          "pyproject.toml",
+          "tests"
+        ],
+        "missing": []
+      }
+    },
+    {
+      "id": 5,
+      "name": "toolchain-matches",
+      "question": "toolchain matches execution contract?",
+      "verdict": "clear",
+      "evidence": {
+        "ecosystems": [
+          "python"
+        ],
+        "repo_tools": [
+          "black",
+          "eslint",
+          "mypy",
+          "node",
+          "npm",
+          "npx",
+          "pnpm",
+          "prettier",
+          "pyright",
+          "pytest",
+          "ruff",
+          "tsc",
+          "yarn"
+        ],
+        "installed": [
+          "black",
+          "eslint",
+          "mypy",
+          "node",
+          "npm",
+          "npx",
+          "pnpm",
+          "prettier",
+          "pyright",
+          "pytest",
+          "ruff",
+          "tsc",
+          "yarn"
+        ],
+        "wanted": [],
+        "note": "no contract; repo tools accepted as the toolchain"
+      }
+    },
+    {
+      "id": 6,
+      "name": "install-succeeded",
+      "question": "installation succeeded?",
+      "verdict": "clear",
+      "evidence": {
+        "packages": {
+          "pkg": "/tmp/claude-0/-home-user-l9-ci-core/91551842-153d-5bab-9549-3a2b4be299a0/scratchpad/fx-py/pkg/__init__.py"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "name": "baseline-reproduces",
+      "question": "baseline validation reproduces?",
+      "verdict": "clear",
+      "evidence": {
+        "results": {
+          "ruff": {
+            "failed": 0
+          },
+          "ruff_format": {
+            "failed": 0
+          },
+          "mypy": {
+            "failed": 0
+          },
+          "pytest": {
+            "failed": 0
+          }
+        },
+        "note": "failures (if any) are the existing baseline"
+      }
+    },
+    {
+      "id": 8,
+      "name": "implementation-ready",
+      "question": "implementation ready after remediation?",
+      "verdict": "clear",
+      "evidence": {
+        "genuine_blockers": 0,
+        "pending_autofixes": 0
+      }
+    }
+  ],
+  "autofix_plans": [],
+  "genuine_blockers": [],
+  "blocker_count": 0,
+  "ready_after_remediation": true,
+  "mode": "applied",
+  "iterations": 2,
+  "autofixed": [
+    {
+      "gate": 3,
+      "action": "clean_generated",
+      "target": "pkg/__pycache__/util.cpython-311.pyc",
+      "command": "rm -rf pkg/__pycache__/util.cpython-311.pyc",
+      "result": "ok",
+      "reversible": true,
+      "note": "regenerable"
+    },
+    {
+      "gate": 3,
+      "action": "clean_generated",
+      "target": "repo-preflight-20260715T215335Z.log",
+      "command": "rm -rf repo-preflight-20260715T215335Z.log",
+      "result": "ok",
+      "reversible": true,
+      "note": "regenerable"
+    },
+    {
+      "gate": 3,
+      "action": "clean_generated",
+      "target": [
+        "__pycache__/",
+        "repo-preflight-*.log"
+      ],
+      "command": "gitignore += generated globs",
+      "result": "ok",
+      "reversible": true,
+      "note": ""
+    },
+    {
+      "gate": 7,
+      "action": "ruff_fix",
+      "target": [
+        "pkg/__init__.py",
+        "pkg/util.py"
+      ],
+      "command": "ruff check --fix . && ruff format .",
+      "result": "ok",
+      "reversible": true,
+      "note": "2 file(s) formatted"
+    }
+  ]
+}

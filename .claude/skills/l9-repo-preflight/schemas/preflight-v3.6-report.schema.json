@@ -1,0 +1,21 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://quantum-l9.example/schemas/preflight-v3.6-report.schema.json",
+  "type":"object",
+  "required":["version","versions","execution_context","repository_profile","gates","extended_gate_results","findings","full_preflight","evidence_completeness"],
+  "properties":{
+    "version":{"const":"3.6"},
+    "versions":{"type":"object","required":["skill","evaluator","schema","provider","ast"],"properties":{"skill":{"const":"3.6"},"evaluator":{"const":"3.6"},"schema":{"const":"3.6"},"provider":{"type":"string"},"ast":{"const":"python.ast"}},"additionalProperties":false},
+    "execution_context":{"type":"object"},
+    "repository_profile":{"type":"object"},
+    "gates":{"type":"array"},
+    "extended_gate_results":{"type":"array","items":{"type":"object","required":["gate_id","name","status","applicable","findings","evidence_requirements","execution_requirements"]}},
+    "findings":{"type":"array","items":{"type":"object"}},
+    "tool_capabilities":{"type":"object"},
+    "ast_evidence":{"type":"object"},
+    "forensic_audit":{"type":"object"},
+    "evidence_completeness":{"type":"object","required":["status","incomplete_gates","full_preflight"]},
+    "full_preflight":{"type":"boolean"}
+  },
+  "additionalProperties":true
+}

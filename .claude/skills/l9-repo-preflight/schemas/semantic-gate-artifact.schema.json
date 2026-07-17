@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quantum-l9.github.io/l9-repo-preflight/schemas/semantic-gate-artifact.schema.json",
+  "title": "L9 Semantic Gate Finding",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["id", "gate", "gate_name", "class", "severity", "confidence", "evidence", "remediation"],
+  "properties": {
+    "id": {"type": "string"},
+    "gate": {"type": "integer", "minimum": 9, "maximum": 14},
+    "gate_name": {"type": "string"},
+    "class": {"type": "string"},
+    "subclass": {"type": "string"},
+    "severity": {"enum": ["critical", "high", "medium", "low"]},
+    "confidence": {"enum": ["high", "medium", "low"]},
+    "authority_action": {"enum": ["blocker", "technical_debt", null]},
+    "why_not_autofixable": {"type": ["string", "null"]},
+    "evidence": {"type": "object"},
+    "remediation": {"type": "object"},
+    "autofix_plan": {"type": ["object", "null"]}
+  }
+}

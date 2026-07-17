@@ -1,0 +1,174 @@
+{
+  "generated_from": "2026-07-15T21:53:37Z",
+  "repo": {
+    "root": "/path/to/your-repo",
+    "branch": "master",
+    "head": "d7bf47ebe041"
+  },
+  "run_completed": true,
+  "gates": [
+    {
+      "id": 1,
+      "name": "probe-completed",
+      "question": "did the probe complete successfully?",
+      "verdict": "clear",
+      "evidence": {
+        "sections": 25,
+        "command_failures": 2
+      }
+    },
+    {
+      "id": 2,
+      "name": "correct-identity",
+      "question": "correct repository / branch / commit?",
+      "verdict": "clear",
+      "evidence": {
+        "root": "/tmp/claude-0/-home-user-l9-ci-core/91551842-153d-5bab-9549-3a2b4be299a0/scratchpad/fx-py",
+        "branch": "master",
+        "head": "d7bf47ebe041",
+        "note": "no expected contract; identity accepted as observed"
+      }
+    },
+    {
+      "id": 3,
+      "name": "worktree-clean",
+      "question": "worktree clean?",
+      "verdict": "blocker",
+      "taxonomy": "unknown-files",
+      "evidence": {
+        "tracked_modified": [
+          "pkg/__init__.py",
+          "pkg/util.py"
+        ],
+        "staged": [],
+        "unknown": [
+          ".gitignore"
+        ],
+        "generated": [],
+        "auto_formatted": []
+      }
+    },
+    {
+      "id": 4,
+      "name": "foundations-present",
+      "question": "required foundations present?",
+      "verdict": "clear",
+      "evidence": {
+        "expected": [
+          "pyproject.toml",
+          "tests"
+        ],
+        "missing": []
+      }
+    },
+    {
+      "id": 5,
+      "name": "toolchain-matches",
+      "question": "toolchain matches execution contract?",
+      "verdict": "clear",
+      "evidence": {
+        "ecosystems": [
+          "python"
+        ],
+        "repo_tools": [
+          "black",
+          "eslint",
+          "mypy",
+          "node",
+          "npm",
+          "npx",
+          "pnpm",
+          "prettier",
+          "pyright",
+          "pytest",
+          "ruff",
+          "tsc",
+          "yarn"
+        ],
+        "installed": [
+          "black",
+          "eslint",
+          "mypy",
+          "node",
+          "npm",
+          "npx",
+          "pnpm",
+          "prettier",
+          "pyright",
+          "pytest",
+          "ruff",
+          "tsc",
+          "yarn"
+        ],
+        "wanted": [],
+        "note": "no contract; repo tools accepted as the toolchain"
+      }
+    },
+    {
+      "id": 6,
+      "name": "install-succeeded",
+      "question": "installation succeeded?",
+      "verdict": "clear",
+      "evidence": {
+        "packages": {
+          "pkg": "/tmp/claude-0/-home-user-l9-ci-core/91551842-153d-5bab-9549-3a2b4be299a0/scratchpad/fx-py/pkg/__init__.py"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "name": "baseline-reproduces",
+      "question": "baseline validation reproduces?",
+      "verdict": "clear",
+      "evidence": {
+        "note": "baseline not yet measured; remediate will run it"
+      }
+    },
+    {
+      "id": 8,
+      "name": "implementation-ready",
+      "question": "implementation ready after remediation?",
+      "verdict": "blocker",
+      "evidence": {
+        "genuine_blockers": 1,
+        "pending_autofixes": 0
+      }
+    }
+  ],
+  "autofix_plans": [],
+  "genuine_blockers": [
+    {
+      "id": "BLK-3-unknown-files",
+      "gate": 3,
+      "gate_name": "worktree-clean",
+      "class": "unknown-files",
+      "severity": "high",
+      "why_not_autofixable": "unknown provenance: unsafe to delete, ignore, or commit automatically",
+      "evidence": {
+        "tracked_modified": [
+          "pkg/__init__.py",
+          "pkg/util.py"
+        ],
+        "staged": [],
+        "unknown": [
+          ".gitignore"
+        ],
+        "generated": [],
+        "auto_formatted": []
+      },
+      "remediation": {
+        "owner": "human",
+        "steps": [
+          "inspect each file (contents, timestamps, recent commands)",
+          "if intended: git add / update the plan; if not: remove or revert"
+        ],
+        "commands": [
+          "ls -la .gitignore"
+        ],
+        "auto_option": "quarantine to .preflight/quarantine/ (reversible)"
+      }
+    }
+  ],
+  "blocker_count": 1,
+  "ready_after_remediation": false
+}

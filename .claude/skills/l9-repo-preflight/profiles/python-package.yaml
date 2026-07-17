@@ -1,0 +1,7 @@
+name: python-package
+signals:
+  - pyproject.toml
+  - setup.py
+  - setup.cfg
+required_capabilities:
+  - installable_python_package

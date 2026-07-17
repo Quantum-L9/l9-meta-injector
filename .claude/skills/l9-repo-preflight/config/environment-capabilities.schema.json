@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quantum-l9.example/config/environment-capabilities.schema.json",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "generated_at",
+    "environment_fingerprint",
+    "execution_environment",
+    "capability_limitations",
+    "provenance",
+    "redaction_status",
+    "detection_errors"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "environment_fingerprint": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "execution_environment": {
+      "type": "object",
+      "required": [
+        "python",
+        "filesystem",
+        "git",
+        "mcp_bridge",
+        "github_provider",
+        "reasoning_provider",
+        "parsers",
+        "network",
+        "archives",
+        "host_agent",
+        "platform"
+      ],
+      "properties": {
+        "python": {
+          "type": "object",
+          "required": [
+            "available",
+            "version",
+            "minimum_supported_version",
+            "runtime_dependencies",
+            "development_dependencies",
+            "optional_dependencies"
+          ]
+        },
+        "filesystem": {
+          "type": "object",
+          "required": [
+            "recursive_read",
+            "file_metadata",
+            "write_observable",
+            "write_authorized",
+            "temporary_directory",
+            "create_archive",
+            "detection_errors"
+          ]
+        },
+        "git": {
+          "type": "object",
+          "required": [
+            "available",
+            "version",
+            "repository_detected",
+            "worktree_access",
+            "dirty_tree_observable",
+            "diff_observable",
+            "write_authorized"
+          ]
+        },
+        "mcp_bridge": {
+          "type": "object"
+        },
+        "github_provider": {
+          "type": "object"
+        },
+        "reasoning_provider": {
+          "type": "object"
+        },
+        "parsers": {
+          "type": "object"
+        },
+        "network": {
+          "type": "object"
+        },
+        "archives": {
+          "type": "object"
+        },
+        "host_agent": {
+          "type": "object"
+        },
+        "platform": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false
+    },
+    "capability_limitations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "provenance": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "redaction_status": {
+      "type": "object",
+      "required": [
+        "secrets_included",
+        "credential_values_probed"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "secrets_included": {
+          "type": "boolean"
+        },
+        "credential_values_probed": {
+          "type": "boolean"
+        }
+      }
+    },
+    "detection_errors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,16 @@
+file: 03_mode_router_kernel.yaml
+version: 3.2.2
+ring: R1
+category: core
+kernel_id: mode_router_kernel.v1
+description: Routes session mode based on kernel ring activation.
+hard_bans:
+- MUST NOT violate mode_router_kernel.v1 contract.
+fail_closed: true
+convergence_footer:
+  status: converged
+  threshold: '0.95'
+  pass_count: 3
+  final_ratio: 0.97
+  artifact_type: kernel_yaml
+  naming_compliance: PASS

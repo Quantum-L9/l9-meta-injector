@@ -1,0 +1,268 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quantum-l9.example/schemas/preflight-v4-report.schema.json",
+  "type": "object",
+  "required": [
+    "version",
+    "versions",
+    "environment_capability_report",
+    "gate_capability_contracts",
+    "forensic_audit",
+    "preflight_result",
+    "findings",
+    "full_preflight",
+    "semantic_index",
+    "execution_mode",
+    "kernel_runtime",
+    "convergence"
+  ],
+  "properties": {
+    "version": {
+      "const": "4.0"
+    },
+    "versions": {
+      "type": "object",
+      "required": [
+        "skill",
+        "evaluator",
+        "schema",
+        "provider",
+        "semantic_index",
+        "tree_sitter",
+        "environment",
+        "gate20",
+        "kernel_runtime"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "skill": {
+          "const": "4.0"
+        },
+        "evaluator": {
+          "const": "4.0"
+        },
+        "schema": {
+          "const": "4.0"
+        },
+        "provider": {
+          "const": "3.8"
+        },
+        "semantic_index": {
+          "const": "1.0"
+        },
+        "tree_sitter": {
+          "type": "string"
+        },
+        "environment": {
+          "const": "1.3"
+        },
+        "gate20": {
+          "const": "2.1"
+        },
+        "kernel_runtime": {
+          "const": "1.0"
+        }
+      }
+    },
+    "environment_capability_report": {
+      "$ref": "../config/environment-capabilities.schema.json"
+    },
+    "gate_capability_contracts": {
+      "type": "object",
+      "minProperties": 20
+    },
+    "forensic_audit": {
+      "type": "object",
+      "required": [
+        "static",
+        "reasoning",
+        "pr_context",
+        "provider_resolution",
+        "audit_depth",
+        "limitations",
+        "confidence",
+        "evidence_digest"
+      ]
+    },
+    "preflight_result": {
+      "type": "object",
+      "required": [
+        "status",
+        "execution_depth",
+        "audit_depth",
+        "environment_capability_report_ref",
+        "limitations",
+        "deterministic_status",
+        "reasoning_assessment",
+        "final_status",
+        "confidence"
+      ]
+    },
+    "findings": {
+      "type": "array"
+    },
+    "full_preflight": {
+      "type": "boolean"
+    },
+    "semantic_index": {
+      "type": "object",
+      "required": [
+        "engine",
+        "tree_sitter",
+        "summary",
+        "files_scanned",
+        "parse_error_count",
+        "artifact_ref"
+      ],
+      "properties": {
+        "engine": {
+          "const": "hybrid_semantic_index"
+        },
+        "tree_sitter": {
+          "type": "object"
+        },
+        "summary": {
+          "type": "object"
+        },
+        "files_scanned": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "parse_error_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "artifact_ref": {
+          "const": "semantic-index.json"
+        }
+      },
+      "additionalProperties": true
+    },
+    "execution_mode": {
+      "type": "object",
+      "required": [
+        "requested_mode",
+        "resolved_mode",
+        "evidence_source",
+        "interactive",
+        "autonomous",
+        "remediation_allowed",
+        "packaging_requested",
+        "audit_mode",
+        "reasons"
+      ],
+      "properties": {
+        "requested_mode": {
+          "enum": [
+            "filesystem",
+            "connector"
+          ]
+        },
+        "resolved_mode": {
+          "enum": [
+            "filesystem",
+            "connector"
+          ]
+        },
+        "evidence_source": {
+          "enum": [
+            "filesystem",
+            "connector"
+          ]
+        },
+        "interactive": {
+          "type": "boolean"
+        },
+        "autonomous": {
+          "type": "boolean"
+        },
+        "remediation_allowed": {
+          "type": "boolean"
+        },
+        "packaging_requested": {
+          "type": "boolean"
+        },
+        "audit_mode": {
+          "type": "string"
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "kernel_runtime": {
+      "type": "object",
+      "required": [
+        "contracts",
+        "validation_issues",
+        "activation_order"
+      ],
+      "properties": {
+        "contracts": {
+          "type": "object",
+          "minProperties": 4
+        },
+        "validation_issues": {
+          "type": "array"
+        },
+        "activation_order": {
+          "type": "array",
+          "minItems": 4,
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "convergence": {
+      "type": "object",
+      "required": [
+        "status",
+        "threshold",
+        "passes_run",
+        "fixed_point_reached",
+        "final_ratio",
+        "digests"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "converged",
+            "blocked"
+          ]
+        },
+        "threshold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "passes_run": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fixed_point_reached": {
+          "type": "boolean"
+        },
+        "final_ratio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "digests": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true
+}

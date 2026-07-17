@@ -1,0 +1,7 @@
+{
+  "repository": "Quantum-L9/l9-ci-core",
+  "ref": "2a3270be5f5184099c33a101807f65b1becf4e7c",
+  "source": "github_mcp",
+  "complete_tree": false,
+  "observed_absences": ["pyproject.toml", "setup.py", "setup.cfg"]
+}

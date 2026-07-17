@@ -1,0 +1,6 @@
+name: schemas-contracts
+signals:
+  - schemas/
+  - $schema
+required_capabilities:
+  - schema_contracts

@@ -1,0 +1,8 @@
+name: Nightly Regression Gate
+on:
+  workflow_call:
+jobs:
+  regression:
+    steps:
+      - run: python -m pip uninstall -y l9-ci || true
+      - run: pip install -e .

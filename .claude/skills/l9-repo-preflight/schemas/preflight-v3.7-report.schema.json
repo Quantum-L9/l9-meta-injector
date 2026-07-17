@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "version",
+    "versions",
+    "environment_capability_report",
+    "gate_capability_contracts",
+    "forensic_audit",
+    "preflight_result",
+    "findings",
+    "full_preflight"
+  ],
+  "properties": {
+    "version": {
+      "const": "3.7"
+    },
+    "versions": {
+      "type": "object"
+    },
+    "environment_capability_report": {
+      "$ref": "../config/environment-capabilities.schema.json"
+    },
+    "gate_capability_contracts": {
+      "type": "object"
+    },
+    "forensic_audit": {
+      "type": "object",
+      "required": [
+        "static",
+        "reasoning",
+        "pr_context",
+        "provider_resolution",
+        "audit_depth",
+        "limitations"
+      ]
+    },
+    "preflight_result": {
+      "type": "object",
+      "required": [
+        "status",
+        "execution_depth",
+        "audit_depth",
+        "environment_capability_report_ref",
+        "limitations",
+        "deterministic_status",
+        "reasoning_assessment",
+        "final_status",
+        "confidence"
+      ]
+    },
+    "findings": {
+      "type": "array"
+    },
+    "full_preflight": {
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": true
+}

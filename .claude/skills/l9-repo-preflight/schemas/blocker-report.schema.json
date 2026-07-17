@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quantum-l9.github.io/l9-ci-core/schemas/blocker-report.schema.json",
+  "title": "L9 Preflight Blocker Report (fail-open)",
+  "description": "The output of scripts/remediate.py: the machine-readable deliverable for downstream remediation. The run ALWAYS completes (run_completed:true). `autofixed` lists every safe, reversible fix applied; `genuine_blockers` lists ONLY what could not be safely auto-resolved, each in detail. `ready_after_remediation` is true iff blocker_count == 0.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["run_completed", "genuine_blockers", "blocker_count", "ready_after_remediation"],
+  "properties": {
+    "generated_from": { "type": "string", "description": "The probe log's TIMESTAMP (evidence provenance)." },
+    "repo": {
+      "type": "object",
+      "properties": {
+        "root": { "type": "string" },
+        "branch": { "type": "string" },
+        "head": { "type": "string" }
+      }
+    },
+    "run_completed": { "const": true, "description": "Fail-open invariant: the run never halts." },
+    "mode": { "enum": ["applied", "dry-run"], "description": "Whether autofixes were applied or only planned." },
+    "iterations": { "type": "integer", "minimum": 1, "description": "Probe→autofix loop iterations to a fixpoint." },
+    "autofixed": {
+      "type": "array",
+      "description": "Every safe, reversible action taken (audit trail; also in autofix-log.json).",
+      "items": { "$ref": "#/$defs/action" }
+    },
+    "genuine_blockers": {
+      "type": "array",
+      "description": "ONLY the conditions that could not be safely auto-resolved.",
+      "items": { "$ref": "#/$defs/blocker" }
+    },
+    "blocker_count": { "type": "integer", "minimum": 0 },
+    "ready_after_remediation": { "type": "boolean" }
+  },
+  "$defs": {
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gate", "action", "command", "result", "reversible"],
+      "properties": {
+        "gate": { "type": "integer", "minimum": 1, "maximum": 14 },
+        "action": {
+          "enum": ["clean_generated", "git_switch_branch", "adapt_blueprint", "pip_install",
+                   "editable_install", "npm_install", "ruff_fix", "eslint_fix", "uv_lock", "npm_ci"]
+        },
+        "target": {},
+        "command": { "type": "string" },
+        "result": { "type": "string", "description": "ok, or rc=<n> when skipped/failed." },
+        "reversible": { "type": "boolean", "const": true },
+        "note": { "type": "string" }
+      }
+    },
+    "blocker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "gate", "gate_name", "class", "severity", "why_not_autofixable", "remediation"],
+      "properties": {
+        "id": { "type": "string", "description": "Stable id, e.g. BLK-3-unknown-files." },
+        "gate": { "type": "integer", "minimum": 1, "maximum": 14 },
+        "gate_name": { "type": "string" },
+        "class": { "type": "string", "description": "Failure taxonomy class." },
+        "severity": { "enum": ["critical", "high", "medium"] },
+        "why_not_autofixable": { "type": "string" },
+        "evidence": { "type": "object" },
+        "remediation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["owner", "steps"],
+          "properties": {
+            "owner": { "enum": ["human", "downstream-agent"] },
+            "steps": { "type": "array", "items": { "type": "string" } },
+            "commands": { "type": "array", "items": { "type": "string" } },
+            "auto_option": { "type": ["string", "null"], "description": "A safe, reversible option the operator may opt into (e.g. quarantine, stash)." }
+          }
+        }
+      }
+    }
+  }
+}

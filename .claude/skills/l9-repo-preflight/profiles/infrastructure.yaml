@@ -1,0 +1,7 @@
+name: infrastructure
+signals:
+  - terraform
+  - helm
+  - cloudformation
+required_capabilities:
+  - infrastructure_validation

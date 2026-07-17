@@ -1,0 +1,6 @@
+name: policy-governance
+signals:
+  - governance
+  - policy
+required_capabilities:
+  - policy_validation

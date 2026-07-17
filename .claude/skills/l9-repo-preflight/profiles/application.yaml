@@ -1,0 +1,6 @@
+name: application
+signals:
+  - application entrypoint
+  - runtime deployment
+required_capabilities:
+  - runtime_validation

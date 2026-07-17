@@ -1,0 +1,18 @@
+file: dependency_audit_kernel.yaml
+version: 3.2.2
+ring: R5
+category: developer_support
+kernel_id: dependency_audit_kernel.v1
+description: Audits project dependencies for security and compatibility.
+requires:
+- ci_gate_kernel.v1
+hard_bans:
+- MUST NOT violate dependency_audit_kernel.v1 contract.
+fail_closed: true
+convergence_footer:
+  status: converged
+  threshold: '0.95'
+  pass_count: 3
+  final_ratio: 0.97
+  artifact_type: kernel_yaml
+  naming_compliance: PASS

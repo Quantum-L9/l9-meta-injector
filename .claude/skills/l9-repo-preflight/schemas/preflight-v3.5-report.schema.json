@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Preflight v3.5 capability report",
+  "type": "object",
+  "required": [
+    "version",
+    "versions",
+    "execution_context",
+    "repository_profile",
+    "capability_model",
+    "contradictions",
+    "gates",
+    "semantic_analysis",
+    "full_preflight",
+    "findings"
+  ],
+  "properties": {
+    "version": {
+      "const": "3.5"
+    },
+    "full_preflight": {
+      "type": "boolean"
+    },
+    "execution_context": {
+      "type": "object"
+    },
+    "repository_profile": {
+      "type": "object"
+    },
+    "capability_model": {
+      "type": "object"
+    },
+    "contradictions": {
+      "type": "array"
+    },
+    "gates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "status",
+          "evidence_requirements",
+          "evidence"
+        ],
+        "properties": {
+          "status": {
+            "enum": [
+              "clear",
+              "warning",
+              "blocker",
+              "not_applicable",
+              "unknown",
+              "not_observed",
+              "contradicted",
+              "requires_human_review"
+            ]
+          },
+          "evidence_requirements": {
+            "type": "array"
+          }
+        }
+      }
+    },
+    "semantic_analysis": {
+      "type": "object"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "claim",
+          "severity",
+          "status",
+          "confidence",
+          "evidence",
+          "inference_type",
+          "false_positive_risk",
+          "remediation_id_or_recommended_change"
+        ]
+      }
+    },
+    "versions": {
+      "type": "object",
+      "required": [
+        "skill",
+        "evaluator",
+        "schema",
+        "provider"
+      ],
+      "properties": {
+        "skill": {
+          "const": "3.5"
+        },
+        "evaluator": {
+          "const": "3.5"
+        },
+        "schema": {
+          "const": "3.5"
+        },
+        "provider": {
+          "const": "3.3"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

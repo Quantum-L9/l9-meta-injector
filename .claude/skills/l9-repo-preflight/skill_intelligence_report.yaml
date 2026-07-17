@@ -1,0 +1,158 @@
+# L9_META
+# l9_schema: 1
+# parent: l9-repo-preflight
+# layer: reference
+# role: skill_intelligence_report
+# tags: [preflight, fail-open, autofix, blockers, ecosystem-neutral, exemplary]
+# owner: igor_beylin
+# status: active
+# version: 2.1.0
+# updated: 2026-07-16
+# Purpose: Measured activation + authority + gate evidence proving exemplary tier.
+# Validated by scripts/validate_exemplary_skill.py.
+
+skill_intelligence_report:
+  activation_model:
+    strong_signals:
+      - "preflight and auto-remediate this repo before I start"
+      - "give me a machine-readable list of the genuine blockers"
+      - "clean up / autofix the checkout, don't stop on problems"
+      - "is this repo (python or node) safe to build on, with fixes applied?"
+    weak_signals:
+      - "'check the repo' — could be review, search, or preflight; confirm intent"
+      - "'set up the environment' — may be install-only, not the full loop"
+    reject_signals:
+      - "implement / change product code (preflight only gates + safe hygiene)"
+      - "no checkout available to probe"
+      - "a hard fail-closed gate that halts on the first problem (this engine never halts)"
+      - "auto-delete unknown files or auto-revert my edits (those are blockers, never auto-applied)"
+    false_positive_risks:
+      - "a generic 'check the repo' that means code review, not preflight"
+      - "'bootstrap' here means supply-chain gates, not env preflight; disambiguate"
+    specificity_score: 5      # measured: >=4 required; 4 strong signals naming preflight/autofix/blockers
+    false_positive_risk_score: 1   # measured: <=1 required; two risks, both disambiguated by reject_signals
+
+  authority_model:
+    order:
+      - security_safety_legal
+      - verified_evidence
+      - explicit_expected_contract
+      - blueprint_assumptions
+      - convenience_speed
+      - unknown_reported_never_invented
+    conflict_rules:
+      - blueprint claims src/ but evidence shows none -> evidence wins; adapt the plan (gate 4 = adapt)
+      - contract names a tool the repo does not define -> follow the repo (gate 5 = adapt)
+      - probe defaults name a Python package on a Node repo -> auto-detect; empty packages, no false fail
+
+  expert_heuristics:
+    - condition: an untracked file matches no known-generated pattern and no tool created it
+      judgment: unknown provenance is unsafe to delete/ignore automatically
+      action: report it as a genuine blocker with a quarantine auto_option; never auto-remove
+    - condition: baseline shows lint/format failures on a clean tree
+      judgment: these are mechanically, reversibly fixable
+      action: run ruff/eslint --fix (tool-owned output); do NOT run it if user edits are present
+    - condition: node_modules is untracked
+      judgment: it is a needed dependency dir, not a throwaway cache
+      action: gitignore it, never delete it
+    - condition: a required foundation/package/tool is absent but only the blueprint expected it
+      judgment: the blueprint is wrong for this repo
+      action: adapt a NEW contract file to the evidence; never fail the repo, never overwrite input
+
+  doctrine:
+    - never halt; always complete and emit a report
+    - maximum autofix on a safe+reversible allow-list
+    - report only genuine (non-autofixable) blockers, in detail, for downstream
+    - verified evidence outranks the blueprint (adapt, don't fail)
+    - auto-detect the ecosystem; skip absent tools; never bake in a language
+    - remove throwaway artifacts; keep dependency dirs (ignore only)
+    - format/lint autofix on a clean tree only; output is tool-owned + reversible
+    - classify baseline: lint autofixable, existing recorded, new = blocker
+    - every action logged + reversible
+    - fixpoint or max-iters terminates the loop
+
+  invariants:
+    - run_completed always true (fail-open)
+    - unknown files + user edits are blockers, never auto-applied
+    - only allow-list actions auto-applied
+    - node_modules kept, never removed
+    - lint autofix only on a clean tree
+    - adapted blueprint -> new file, input untouched
+    - missing runtime / new failure = blocker
+    - every blocker carries evidence + remediation
+    - loop terminates
+    - no fabrication; unknown is reported
+
+  adapter_map:
+    core_default: "fail-open loop over auto-detected evidence; safe autofix; genuine-blockers-only report"
+    adapters:
+      - "python -> ruff/mypy/pytest, pip, editable install, importability"
+      - "node/typescript -> eslint/tsc/prettier, npm ci, node_modules; no Python import attempted"
+      - "polyglot/unknown -> run only the tools that exist; skip the rest"
+    adapter_rule: "select from probe evidence (PROBE_ECOSYSTEM + config files), never from blueprint claims"
+
+  failure_modes:
+    - "false-blocker: an autofixable condition reported as a blocker -> classify vs the allow-list."
+    - "unsafe-autofix: a non-reversible change auto-applied -> allow-list only."
+    - "dep-dir-deleted: node_modules removed as a cache -> keep + ignore, never delete."
+    - "wrong-ecosystem: Node repo probed for a Python import -> auto-detect; empty packages."
+    - "non-termination: loop never converges -> fixpoint + max-iters cap."
+
+  leverage_points:
+    - "fail-open loop: no dead ends; always an actionable report"
+    - "safe+reversible allow-list: aggressive autofix, zero risk to user work"
+    - "ecosystem auto-detection: one skill for python and node, no config"
+    - "genuine-blockers-only: the short real list, not noise"
+    - "reversible autofix log: every mutation auditable and undoable"
+
+  evidence_hierarchy:
+    - probe output (resolved paths, tool versions, git status, PROBE_ECOSYSTEM) — highest
+    - deterministic checks over the probe log (presence, counts, markers)
+    - the explicit expected contract
+    - the blueprint's assumptions
+    - unlabeled inference — lowest; reported, never invented
+
+  leverage_model:
+    scoring_dimensions: [reuse_frequency, risk_removed, coverage, velocity_gain]
+    scored_points:
+      - point: "fail-open loop (no dead ends)"
+        score: 5
+      - point: "safe+reversible autofix allow-list"
+        score: 5
+      - point: "ecosystem auto-detection (python + node)"
+        score: 5
+      - point: "genuine-blockers-only machine output"
+        score: 5
+      - point: "reversible autofix audit log"
+        score: 4
+    exemplary_threshold: 4
+    threshold_met: true
+
+  self_improvement_hook:
+    capture_when: "user reports a bad result or asks to iterate"
+    signals: [false_blocker, unsafe_autofix, missed_ecosystem, non_termination]
+    feedback_targets:
+      - scripts/remediate.py (the safe autofix allow-list)
+      - scripts/evaluate_preflight.py (gate + blocker classification)
+
+  exemplary_gate_results:
+    activation_precision: pass
+    adapter_architecture: pass
+    evidence_hierarchy: pass
+    doctrine_extraction: pass
+    expert_heuristics: pass
+    failure_modes: pass
+    leverage_model: pass
+    self_improvement_hook: pass
+    compiler_enforcement_gates: pass
+    skill_intelligence_report: pass
+
+  tier_decision:
+    tier: exemplary
+    rationale: >
+      Measured activation (specificity 5, false-positive-risk 1) with disambiguated
+      reject signals; evidence-over-blueprint authority; four expert heuristics encoding
+      the fail-open + safe-autofix doctrine; a bounded failure taxonomy; a scored
+      leverage model above threshold; a self-improvement hook; and full Python + Node
+      ecosystem coverage. All ten exemplary gates pass and
+      scripts/validate_exemplary_skill.py certifies the pack.

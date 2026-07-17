@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quantum-l9.github.io/l9-ci-core/schemas/machine-summary.schema.json",
+  "title": "L9 Preflight Machine Summary",
+  "description": "Compact machine-readable run summary (docs/preflight/machine-summary.json) for downstream tooling.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["run_id", "timestamp", "source_commit", "tool_version", "overall_status", "blocker_count"],
+  "properties": {
+    "run_id": {"type": "string"},
+    "timestamp": {"type": "string"},
+    "source_commit": {"type": "string"},
+    "tool_version": {"type": "string"},
+    "overall_status": {"enum": ["ready", "blocked"]},
+    "blocker_count": {"type": "integer", "minimum": 0},
+    "resolved_count": {"type": "integer", "minimum": 0},
+    "not_applicable_count": {"type": "integer", "minimum": 0},
+    "technical_debt_count": {"type": "integer", "minimum": 0},
+    "reports": {"type": "array", "items": {"type": "string"}},
+    "side_effect_receipts": {"type": "array"}
+  }
+}

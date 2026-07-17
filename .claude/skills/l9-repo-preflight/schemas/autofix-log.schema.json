@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quantum-l9.github.io/l9-ci-core/schemas/autofix-log.schema.json",
+  "title": "L9 Preflight Autofix Log",
+  "description": "The audit trail written by scripts/remediate.py alongside the blocker report: every safe, reversible action the fail-open loop applied (or skipped), across all iterations. Each action names its gate, the exact command, the result, and asserts reversibility.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["iterations", "actions"],
+  "properties": {
+    "iterations": { "type": "integer", "minimum": 0 },
+    "actions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["gate", "action", "command", "result", "reversible"],
+        "properties": {
+          "gate": { "type": "integer", "minimum": 0, "maximum": 8 },
+          "action": {
+            "enum": ["clean_generated", "git_switch_branch", "adapt_blueprint", "pip_install",
+                     "editable_install", "npm_install", "ruff_fix", "eslint_fix"]
+          },
+          "target": {},
+          "command": { "type": "string" },
+          "result": { "type": "string" },
+          "reversible": { "type": "boolean", "const": true },
+          "note": { "type": "string" }
+        }
+      }
+    }
+  }
+}

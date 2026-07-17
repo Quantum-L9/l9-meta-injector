@@ -1,0 +1,13 @@
+version: "1.0"
+gates:
+  "15": {enabled: true, mandatory: true}
+  "16": {enabled: true, mandatory: false}
+  "17": {enabled: true, mandatory: true}
+  "18": {enabled: true, mandatory: false}
+  "19": {enabled: true, mandatory: false}
+  "20":
+    enabled: true
+    mandatory: false
+    static_enabled: true
+    full_enabled: true
+    pr_mode_enabled: true

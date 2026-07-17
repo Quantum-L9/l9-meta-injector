@@ -1,0 +1,6 @@
+name: documentation
+signals:
+  - README.md
+  - docs/
+required_capabilities:
+  - documentation

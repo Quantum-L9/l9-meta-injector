@@ -1,0 +1,6 @@
+name: reusable-workflows
+signals:
+  - .github/workflows
+  - workflow_call
+required_capabilities:
+  - reusable_github_workflows

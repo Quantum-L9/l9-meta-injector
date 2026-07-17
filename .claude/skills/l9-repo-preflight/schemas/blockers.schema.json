@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quantum-l9.github.io/l9-ci-core/schemas/blockers.schema.json",
+  "title": "L9 Preflight Blockers (persisted)",
+  "description": "The persisted unresolved-blocker set (docs/preflight/blockers.yaml). Deterministically ordered by id; secrets redacted. Each blocker mirrors blocker-report.schema.json's blocker shape.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["blocker_count", "blockers"],
+  "properties": {
+    "run_id": {"type": "string"}, "timestamp": {"type": "string"},
+    "source_commit": {"type": "string"}, "tool_version": {"type": "string"},
+    "blocker_count": {"type": "integer", "minimum": 0},
+    "blockers": {"type": "array", "items": {"type": "object", "required": ["id", "class", "severity"]}}
+  }
+}

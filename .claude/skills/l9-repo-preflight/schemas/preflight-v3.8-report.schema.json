@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quantum-l9.example/schemas/preflight-v3.8-report.schema.json",
+  "type": "object",
+  "required": [
+    "version",
+    "versions",
+    "environment_capability_report",
+    "gate_capability_contracts",
+    "forensic_audit",
+    "preflight_result",
+    "findings",
+    "full_preflight"
+  ],
+  "properties": {
+    "version": {
+      "const": "3.8"
+    },
+    "versions": {
+      "type": "object",
+      "required": [
+        "skill",
+        "evaluator",
+        "schema",
+        "provider",
+        "ast",
+        "environment",
+        "gate20"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "skill": {
+          "const": "3.8"
+        },
+        "evaluator": {
+          "const": "3.8"
+        },
+        "schema": {
+          "const": "3.8"
+        },
+        "provider": {
+          "const": "3.8"
+        },
+        "ast": {
+          "type": "string"
+        },
+        "environment": {
+          "const": "1.1"
+        },
+        "gate20": {
+          "const": "2.1"
+        }
+      }
+    },
+    "environment_capability_report": {
+      "$ref": "../config/environment-capabilities.schema.json"
+    },
+    "gate_capability_contracts": {
+      "type": "object",
+      "minProperties": 20
+    },
+    "forensic_audit": {
+      "type": "object",
+      "required": [
+        "static",
+        "reasoning",
+        "pr_context",
+        "provider_resolution",
+        "audit_depth",
+        "limitations",
+        "confidence",
+        "evidence_digest"
+      ]
+    },
+    "preflight_result": {
+      "type": "object",
+      "required": [
+        "status",
+        "execution_depth",
+        "audit_depth",
+        "environment_capability_report_ref",
+        "limitations",
+        "deterministic_status",
+        "reasoning_assessment",
+        "final_status",
+        "confidence"
+      ]
+    },
+    "findings": {
+      "type": "array"
+    },
+    "full_preflight": {
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": true
+}

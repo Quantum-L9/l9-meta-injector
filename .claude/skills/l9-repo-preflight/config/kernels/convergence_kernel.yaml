@@ -1,0 +1,16 @@
+file: 06_convergence_kernel.yaml
+version: 3.2.2
+ring: R2
+category: core
+kernel_id: convergence_kernel.v1
+description: Enforces convergence loop termination and fixed-point detection.
+hard_bans:
+- MUST NOT violate convergence_kernel.v1 contract.
+fail_closed: true
+convergence_footer:
+  status: converged
+  threshold: '0.95'
+  pass_count: 3
+  final_ratio: 0.97
+  artifact_type: kernel_yaml
+  naming_compliance: PASS
