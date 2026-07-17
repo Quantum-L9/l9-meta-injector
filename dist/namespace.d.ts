@@ -1,4 +1,5 @@
-export type SharingScope = "private" | "shared" | "agnostic";
+import { SharingScope } from "./schema";
+export type { SharingScope } from "./schema";
 export interface NamespaceResolution {
     namespace: string;
     sharingScope: SharingScope;

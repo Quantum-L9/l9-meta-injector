@@ -14,6 +14,7 @@ exports.diffsToLogYaml = diffsToLogYaml;
 const schema_1 = require("./schema");
 const assist_1 = require("./assist");
 const llm_1 = require("./llm");
+const materiality_1 = require("./materiality");
 // List fields: always union + dedup, never overwrite — covers triggers, anti_triggers, entity_types
 const LIST_UNION_FIELDS = new Set([
     "activation_signals", "triggers", "anti_triggers", "entity_types",
@@ -66,9 +67,8 @@ async function isMateriallyBetterLlm(field, old, next) {
     const adapter = (0, llm_1.getAdapter)();
     if (!adapter.classify)
         return isMateriallyBetterSync(old, next); // no LLM — fall back to sync
-    const prompt = `Field: ${field}\nA: ${JSON.stringify(old)}\nB: ${JSON.stringify(next)}\nIs B materially more informative than A? Reply only: yes or no`;
-    const result = await adapter.classify(prompt);
-    return result?.trim().toLowerCase().startsWith("yes") ?? isMateriallyBetterSync(old, next);
+    const result = await adapter.classify((0, materiality_1.buildMaterialityPrompt)(field, old, next));
+    return result === null || result === undefined ? isMateriallyBetterSync(old, next) : (0, materiality_1.parseMaterialityReply)(result);
 }
 // Async reconcile: used by pipeline (llmEnabled path) — LLM boolean on prose scalar fields
 async function reconcileFieldsAsync(existing, incoming) {
