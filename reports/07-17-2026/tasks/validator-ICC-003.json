@@ -1,0 +1,14 @@
+{
+  "schema_version": "l9.validator.v1",
+  "finding_id": "ICC-003",
+  "gate": "typecheck+test",
+  "commands": [
+    "npm run typecheck",
+    "npm test"
+  ],
+  "bundle_requires": [
+    "reports/07-17-2026/contracts/task-ICC-003.yaml",
+    "reports/07-17-2026/followups/followup-ICC-003.json"
+  ],
+  "fail_closed": true
+}

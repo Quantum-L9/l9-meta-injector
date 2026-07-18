@@ -1,0 +1,14 @@
+{
+  "schema_version": "l9.validator.v1",
+  "finding_id": "QTE-002",
+  "gate": "typecheck+test",
+  "commands": [
+    "npm run typecheck",
+    "npm test"
+  ],
+  "bundle_requires": [
+    "reports/07-17-2026/contracts/task-QTE-002.yaml",
+    "reports/07-17-2026/followups/followup-QTE-002.json"
+  ],
+  "fail_closed": true
+}
