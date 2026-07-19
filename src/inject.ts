@@ -12,33 +12,25 @@ import { contentHash, splitContent, stripExistingFrontMatter } from "./extract";
 import { reconcileFields, reconcileFieldsAsync, diffsToLogYaml } from "./reconcile_fields";
 import { FieldDiff } from "./schema";
 import { getAdapter } from "./llm";
+import { parseCanonicalYaml } from "./meta_schema";
 import {
   resolveStrategy, StrategySpec, frontMatterInner, yamlToBlock, stripInjectedBlock,
   extractInjectedYaml, applyCommentInjection, sidecarPathFor,
 } from "./comment";
 
+// Parse the inner YAML of an existing injected header into a plain object.
+// Delegates to the canonical parser (meta_schema.ts) so all parsing rules —
+// quoted-string escaping, inline lists, depth guards — are applied consistently.
+// Returns {} on malformed input rather than throwing, to keep injection safe.
 function parseExistingMeta(fm: string | null): Record<string, unknown> {
   if (!fm) return {};
-  const result: Record<string, unknown> = {};
-  const lines = fm.replace(/^---\s*\n/, "").replace(/\n?---\s*$/, "").split("\n");
-  let currentKey: string | null = null;
-  let currentList: string[] = [];
-  for (const line of lines) {
-    const li = line.match(/^\s{2}-\s+(.+)/);
-    if (li && currentKey) { currentList.push(li[1].replace(/^["']|["']$/g, "")); continue; }
-    if (currentKey && currentList.length > 0) { result[currentKey] = currentList; currentList = []; currentKey = null; }
-    const kv = line.match(/^([a-zA-Z_][a-zA-Z0-9_]*):\s*(.*)/);
-    if (kv) {
-      const val = kv[2].trim();
-      if (val === "") { currentKey = kv[1]; currentList = []; }
-      else if (val === "true") result[kv[1]] = true;
-      else if (val === "false") result[kv[1]] = false;
-      else if (/^\d+$/.test(val)) result[kv[1]] = parseInt(val, 10);
-      else result[kv[1]] = val.replace(/^["']|["']$/g, "");
-    }
+  const inner = fm.replace(/^---\s*\n/, "").replace(/\n?---\s*$/, "");
+  try {
+    const obj = parseCanonicalYaml(inner);
+    return typeof obj === "object" && obj !== null ? (obj as Record<string, unknown>) : {};
+  } catch {
+    return {};
   }
-  if (currentKey && currentList.length > 0) result[currentKey] = currentList;
-  return result;
 }
 
 export interface InjectOptions { dryRun: boolean; outDir: string; verbose: boolean; writeInjectLog: boolean; }

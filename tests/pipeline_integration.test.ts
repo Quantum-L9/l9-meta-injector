@@ -86,3 +86,52 @@ test("dry-run does not write to source files", async () => {
   await runPipelineAsync(cfg);
   expect(fs.readFileSync(fp, "utf8")).toBe(before);
 }, 10000);
+
+test("dry-run writes .diff artifact to outDir", async () => {
+  const root = tmpDir();
+  const out = tmpDir();
+  const skillsDir = path.join(root, "skills");
+  fs.mkdirSync(skillsDir);
+  const fp = path.join(skillsDir, "test_skill.md");
+  fs.writeFileSync(fp, SKILL_MD);
+
+  const cfg: PipelineConfig = {
+    root, glob: "**/*.md", dryRun: true, outDir: out, namespace: "l9",
+    authority: "l9.doctrine.platform", nearDupThreshold: 0.9, hashPrefixLength: 16,
+    indexDir: out, verbose: false, llmEnabled: false, normalizeFilenames: false,
+  };
+
+  await runPipelineAsync(cfg);
+
+  expect(fs.readFileSync(fp, "utf8")).toBe(SKILL_MD);
+  const diffFile = path.join(out, "test_skill.md.diff");
+  expect(fs.existsSync(diffFile)).toBe(true);
+  const diffContent = fs.readFileSync(diffFile, "utf8");
+  expect(diffContent).toContain("+++");
+  expect(diffContent).toContain("---");
+}, 10000);
+
+test("pipeline is idempotent — second run is byte-identical with no inject.log", async () => {
+  const root = tmpDir();
+  const out = tmpDir();
+  const skillsDir = path.join(root, "skills");
+  fs.mkdirSync(skillsDir);
+  fs.writeFileSync(path.join(skillsDir, "lint_file.md"), SKILL_MD);
+
+  const cfg: PipelineConfig = {
+    root, glob: "**/*.md", dryRun: false, outDir: out, namespace: "l9",
+    authority: "l9.doctrine.platform", nearDupThreshold: 0.9, hashPrefixLength: 16,
+    indexDir: out, verbose: false, llmEnabled: false, normalizeFilenames: false,
+  };
+
+  const run1 = await runPipelineAsync(cfg);
+  const contentAfterRun1 = fs.readFileSync(path.join(skillsDir, "lint_file.md"), "utf8");
+
+  const run2 = await runPipelineAsync(cfg);
+  const contentAfterRun2 = fs.readFileSync(path.join(skillsDir, "lint_file.md"), "utf8");
+
+  expect(contentAfterRun2).toBe(contentAfterRun1);
+  run1.injected.forEach((r) => expect(r.bodyPreserved).toBe(true));
+  run2.injected.forEach((r) => expect(r.bodyPreserved).toBe(true));
+  expect(run2.injected.every((r) => r.injectLogPath === undefined)).toBe(true);
+}, 25000);

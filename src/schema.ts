@@ -165,25 +165,13 @@ export interface PipelineConfig {
 
 // ---------------------------------------------------------------------------
 // Metadata v3 — nine-plane schema
-//
-// v3 re-expresses the flat v1/v2 header (BaseHeader and its extensions) as nine
-// orthogonal metadata planes. Each plane isolates one concern of the L9
-// metadata compilation engine (identity, placement, routing, provenance, ...),
-// so that downstream compilers can reason about a single plane without
-// materializing the whole header. v3 is additive: it does not replace v1/v2 and
-// changes no existing behavior.
 // ---------------------------------------------------------------------------
 
 export const META_V3_SCHEMA_VERSION = 3 as const;
 export type MetaV3SchemaVersion = typeof META_V3_SCHEMA_VERSION;
 
-/** Stable status vocabulary carried on the governance plane. */
 export type LifecycleStatus = "active" | "deprecated" | "review";
 
-/**
- * The nine plane names, in canonical order. Exported as a runtime tuple so that
- * validators and tests can enumerate the planes without reflection.
- */
 export const META_V3_PLANES = [
   "identity",
   "taxonomy",
@@ -197,7 +185,6 @@ export const META_V3_PLANES = [
 ] as const;
 export type MetaV3Plane = (typeof META_V3_PLANES)[number];
 
-/** Plane 1 — who/what this artifact is. */
 export interface IdentityPlane {
   id: string;
   title: string;
@@ -206,7 +193,6 @@ export interface IdentityPlane {
   version: string | Unknown;
 }
 
-/** Plane 2 — how the artifact is classified and what it can do. */
 export interface TaxonomyPlane {
   family: ArtifactFamily;
   mcp_primitive: McpPrimitive;
@@ -215,7 +201,6 @@ export interface TaxonomyPlane {
   injectable: boolean;
 }
 
-/** Plane 3 — where the artifact lives, logically and physically. */
 export interface PlacementPlane {
   namespace: string;
   source_path: string;
@@ -224,10 +209,6 @@ export interface PlacementPlane {
   sharing_scope: SharingScope;
 }
 
-/**
- * Plane 4 — advisory route plan. Routing is advisory only: this engine owns
- * route *plans*, never live routing writes, so `advisory` is fixed true.
- */
 export interface RoutingPlane {
   advisory: true;
   activation_signals: string[] | Unknown;
@@ -236,7 +217,6 @@ export interface RoutingPlane {
   targets: string[] | Unknown;
 }
 
-/** Plane 5 — origin and generation history (provenance snapshot). */
 export interface ProvenancePlane {
   created_or_detected_at: string;
   generated_by: string | Unknown;
@@ -244,7 +224,6 @@ export interface ProvenancePlane {
   snapshot_hash: string | Unknown;
 }
 
-/** Plane 6 — authority, ownership, and lifecycle status. */
 export interface GovernancePlane {
   authority: string;
   status: LifecycleStatus;
@@ -252,31 +231,22 @@ export interface GovernancePlane {
   decision_drivers: string[] | Unknown;
 }
 
-/** Plane 7 — cost/size economics used for injection budgeting. */
 export interface EconomicsPlane {
   token_cost_estimate: number;
   size_bytes: number | Unknown;
 }
 
-/** Plane 8 — validation gates and stop conditions (fail-closed assurance). */
 export interface AssurancePlane {
   validation_gates: string[] | Unknown;
   stop_conditions: string[] | Unknown;
 }
 
-/** Plane 9 — schema lineage and supersession chain. */
 export interface LineagePlane {
   schema_version: MetaV3SchemaVersion;
   supersedes: string | Unknown;
   chain: string[] | Unknown;
 }
 
-/**
- * A complete v3 metadata record. Declares all nine orthogonal planes; note
- * that a TypeScript `interface` is not exact (structural typing still permits
- * extra keys on assignable values), so this models the required plane set
- * rather than guaranteeing exactness.
- */
 export interface MetaV3 {
   identity: IdentityPlane;
   taxonomy: TaxonomyPlane;
@@ -291,11 +261,6 @@ export interface MetaV3 {
 
 // ---------------------------------------------------------------------------
 // Semantic artifact classification (17 classes)
-//
-// A finer-grained, deterministic classification layer that sits *beside* the
-// coarse ArtifactType taxonomy. It classifies a file by path/extension/name
-// signals into one of 17 semantic classes. Additive: it does not replace
-// ArtifactType or ClassifyResult, and uses no LLM.
 // ---------------------------------------------------------------------------
 
 export type SemanticArtifactClass =
@@ -323,4 +288,14 @@ export interface ArtifactClassification {
   artifactClass: SemanticArtifactClass;
   confidence: ClassConfidence;
   signals: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Canonical type guard — single authoritative isPromptMeta.
+// Import this wherever artifact_type === "prompt" must be narrowed;
+// do NOT redefine locally in compiler.ts, pipeline.ts, or verify.ts.
+// ---------------------------------------------------------------------------
+export function isPromptMeta(m: NormalizedMeta | unknown): m is PromptMeta {
+  return typeof m === "object" && m !== null &&
+    (m as { artifact_type?: string }).artifact_type === "prompt";
 }
