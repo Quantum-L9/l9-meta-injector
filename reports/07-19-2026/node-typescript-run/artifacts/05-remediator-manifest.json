@@ -1,0 +1,70 @@
+{
+  "base_ref": "5359d6f41d3c19382fcd92fca5f37c579b332447",
+  "contracts": [
+    {
+      "allowed_paths": [
+        "tests/pipeline_wiring.test.ts"
+      ],
+      "finding_id": "CFD-F3BB94DB67A513224551",
+      "followup_file": "/tmp/claude-0/-home-user-l9-meta-injector/8c8d2161-f0da-542c-b43e-da9b20de4362/scratchpad/pipeline2/remediator-plan/artifacts/followup-TASK-d783847ebd8c5bbde2eddb8c.json",
+      "status": "ready",
+      "task_file": "/tmp/claude-0/-home-user-l9-meta-injector/8c8d2161-f0da-542c-b43e-da9b20de4362/scratchpad/pipeline2/remediator-plan/artifacts/task-TASK-d783847ebd8c5bbde2eddb8c.json",
+      "task_id": "TASK-d783847ebd8c5bbde2eddb8c",
+      "validator_file": "/tmp/claude-0/-home-user-l9-meta-injector/8c8d2161-f0da-542c-b43e-da9b20de4362/scratchpad/pipeline2/remediator-plan/artifacts/validator-TASK-d783847ebd8c5bbde2eddb8c.sh",
+      "validator_manifest": "/tmp/claude-0/-home-user-l9-meta-injector/8c8d2161-f0da-542c-b43e-da9b20de4362/scratchpad/pipeline2/remediator-plan/artifacts/validator-manifest-TASK-d783847ebd8c5bbde2eddb8c.json"
+    },
+    {
+      "allowed_paths": [
+        "scripts/selfpack.js"
+      ],
+      "finding_id": "CFD-F69A7B7680C431B49F0D",
+      "followup_file": "/tmp/claude-0/-home-user-l9-meta-injector/8c8d2161-f0da-542c-b43e-da9b20de4362/scratchpad/pipeline2/remediator-plan/artifacts/followup-TASK-3c5ead42cd4d6cf934a346e2.json",
+      "status": "ready",
+      "task_file": "/tmp/claude-0/-home-user-l9-meta-injector/8c8d2161-f0da-542c-b43e-da9b20de4362/scratchpad/pipeline2/remediator-plan/artifacts/task-TASK-3c5ead42cd4d6cf934a346e2.json",
+      "task_id": "TASK-3c5ead42cd4d6cf934a346e2",
+      "validator_file": "/tmp/claude-0/-home-user-l9-meta-injector/8c8d2161-f0da-542c-b43e-da9b20de4362/scratchpad/pipeline2/remediator-plan/artifacts/validator-TASK-3c5ead42cd4d6cf934a346e2.sh",
+      "validator_manifest": "/tmp/claude-0/-home-user-l9-meta-injector/8c8d2161-f0da-542c-b43e-da9b20de4362/scratchpad/pipeline2/remediator-plan/artifacts/validator-manifest-TASK-3c5ead42cd4d6cf934a346e2.json"
+    },
+    {
+      "allowed_paths": [
+        "scripts/inventory.js"
+      ],
+      "finding_id": "CFD-C72988B675FF131BD86B",
+      "followup_file": "/tmp/claude-0/-home-user-l9-meta-injector/8c8d2161-f0da-542c-b43e-da9b20de4362/scratchpad/pipeline2/remediator-plan/artifacts/followup-TASK-a6de92f928d0b4487c0f34b1.json",
+      "status": "ready",
+      "task_file": "/tmp/claude-0/-home-user-l9-meta-injector/8c8d2161-f0da-542c-b43e-da9b20de4362/scratchpad/pipeline2/remediator-plan/artifacts/task-TASK-a6de92f928d0b4487c0f34b1.json",
+      "task_id": "TASK-a6de92f928d0b4487c0f34b1",
+      "validator_file": "/tmp/claude-0/-home-user-l9-meta-injector/8c8d2161-f0da-542c-b43e-da9b20de4362/scratchpad/pipeline2/remediator-plan/artifacts/validator-TASK-a6de92f928d0b4487c0f34b1.sh",
+      "validator_manifest": "/tmp/claude-0/-home-user-l9-meta-injector/8c8d2161-f0da-542c-b43e-da9b20de4362/scratchpad/pipeline2/remediator-plan/artifacts/validator-manifest-TASK-a6de92f928d0b4487c0f34b1.json"
+    },
+    {
+      "allowed_paths": [
+        "tests/pipeline_verification.test.ts"
+      ],
+      "finding_id": "CFD-0BA2DC51F56D3100E1AB",
+      "followup_file": "/tmp/claude-0/-home-user-l9-meta-injector/8c8d2161-f0da-542c-b43e-da9b20de4362/scratchpad/pipeline2/remediator-plan/artifacts/followup-TASK-00f2825596b1d2875ad2c69e.json",
+      "status": "ready",
+      "task_file": "/tmp/claude-0/-home-user-l9-meta-injector/8c8d2161-f0da-542c-b43e-da9b20de4362/scratchpad/pipeline2/remediator-plan/artifacts/task-TASK-00f2825596b1d2875ad2c69e.json",
+      "task_id": "TASK-00f2825596b1d2875ad2c69e",
+      "validator_file": "/tmp/claude-0/-home-user-l9-meta-injector/8c8d2161-f0da-542c-b43e-da9b20de4362/scratchpad/pipeline2/remediator-plan/artifacts/validator-TASK-00f2825596b1d2875ad2c69e.sh",
+      "validator_manifest": "/tmp/claude-0/-home-user-l9-meta-injector/8c8d2161-f0da-542c-b43e-da9b20de4362/scratchpad/pipeline2/remediator-plan/artifacts/validator-manifest-TASK-00f2825596b1d2875ad2c69e.json"
+    },
+    {
+      "allowed_paths": [
+        "tests/pipeline_coverage.test.ts"
+      ],
+      "finding_id": "CFD-C554863E4861ECD57439",
+      "followup_file": "/tmp/claude-0/-home-user-l9-meta-injector/8c8d2161-f0da-542c-b43e-da9b20de4362/scratchpad/pipeline2/remediator-plan/artifacts/followup-TASK-cd7d1720b5380e4fbe315edc.json",
+      "status": "ready",
+      "task_file": "/tmp/claude-0/-home-user-l9-meta-injector/8c8d2161-f0da-542c-b43e-da9b20de4362/scratchpad/pipeline2/remediator-plan/artifacts/task-TASK-cd7d1720b5380e4fbe315edc.json",
+      "task_id": "TASK-cd7d1720b5380e4fbe315edc",
+      "validator_file": "/tmp/claude-0/-home-user-l9-meta-injector/8c8d2161-f0da-542c-b43e-da9b20de4362/scratchpad/pipeline2/remediator-plan/artifacts/validator-TASK-cd7d1720b5380e4fbe315edc.sh",
+      "validator_manifest": "/tmp/claude-0/-home-user-l9-meta-injector/8c8d2161-f0da-542c-b43e-da9b20de4362/scratchpad/pipeline2/remediator-plan/artifacts/validator-manifest-TASK-cd7d1720b5380e4fbe315edc.json"
+    }
+  ],
+  "manifest_id": "MAN-f685a1bcbaf1b51f21b61871",
+  "repository_id": "l9-meta-injector",
+  "schema_version": "l9.remediation_manifest.v1",
+  "source_manifest_schema": "l9.remediation-manifest.v4",
+  "source_manifest_sha256": "23e3add8ce516eaf8f5bd13effae85b55432c3c369cfb43405e74647c7d949b5"
+}

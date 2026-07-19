@@ -1,0 +1,40 @@
+{
+  "commands": [
+    {
+      "arguments": [
+        "run",
+        "typecheck"
+      ],
+      "executable": "npm"
+    },
+    {
+      "arguments": [
+        "run",
+        "lint"
+      ],
+      "executable": "npm"
+    },
+    {
+      "arguments": [
+        "run",
+        "test"
+      ],
+      "executable": "npm"
+    },
+    {
+      "arguments": [
+        "run",
+        "build"
+      ],
+      "executable": "npm"
+    }
+  ],
+  "ecosystem": "node",
+  "environment": {
+    "CI": "true",
+    "NODE_ENV": "test"
+  },
+  "package_manager": "npm",
+  "schema_version": "l9.validator-plan.v1",
+  "working_directory": "."
+}

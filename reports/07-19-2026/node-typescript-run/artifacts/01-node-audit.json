@@ -1,0 +1,546 @@
+{
+  "audit_fingerprint": "0adee702605cc5af85ff8e5ede8cacd6465cf2e3a10a2d6295f702f2ced014c2",
+  "base_ref": "5359d6f41d3c19382fcd92fca5f37c579b332447",
+  "ecosystems": [
+    "node"
+  ],
+  "file_classification": {
+    "ignored": 157,
+    "oversized": 0,
+    "supported_binary": 0,
+    "supported_text": 240,
+    "unreadable": 0
+  },
+  "findings": [
+    {
+      "authorized_paths": [
+        "scripts/inventory.js"
+      ],
+      "blocks_release": false,
+      "category": "resilience",
+      "confidence": 0.82,
+      "correction": "propagate a typed error to the process boundary",
+      "evidence": "scripts/inventory.js:28",
+      "evidence_detail": {
+        "matched_text": "process.exit("
+      },
+      "id": "OBS-C72988B675FF131BD86B",
+      "impact": "library or request-path failures can terminate unrelated work",
+      "leverage_score": 3.4,
+      "owner_layer": "sdk",
+      "provider_id": "typescript.source",
+      "rule_broken": "application source terminates the entire Node.js process directly",
+      "rule_id": "process-exit-library-code",
+      "severity": "medium",
+      "source_observation_id": "OBS-C72988B675FF131BD86B"
+    },
+    {
+      "authorized_paths": [
+        "scripts/inventory.js"
+      ],
+      "blocks_release": false,
+      "category": "resilience",
+      "confidence": 0.82,
+      "correction": "propagate a typed error to the process boundary",
+      "evidence": "scripts/inventory.js:33",
+      "evidence_detail": {
+        "matched_text": "process.exit("
+      },
+      "id": "OBS-C0C0E460E294A955E29F",
+      "impact": "library or request-path failures can terminate unrelated work",
+      "leverage_score": 3.4,
+      "owner_layer": "sdk",
+      "provider_id": "typescript.source",
+      "rule_broken": "application source terminates the entire Node.js process directly",
+      "rule_id": "process-exit-library-code",
+      "severity": "medium",
+      "source_observation_id": "OBS-C0C0E460E294A955E29F"
+    },
+    {
+      "authorized_paths": [
+        "scripts/inventory.js"
+      ],
+      "blocks_release": false,
+      "category": "resilience",
+      "confidence": 0.82,
+      "correction": "propagate a typed error to the process boundary",
+      "evidence": "scripts/inventory.js:39",
+      "evidence_detail": {
+        "matched_text": "process.exit("
+      },
+      "id": "OBS-FABC93CFDD2DEB7D94B7",
+      "impact": "library or request-path failures can terminate unrelated work",
+      "leverage_score": 3.4,
+      "owner_layer": "sdk",
+      "provider_id": "typescript.source",
+      "rule_broken": "application source terminates the entire Node.js process directly",
+      "rule_id": "process-exit-library-code",
+      "severity": "medium",
+      "source_observation_id": "OBS-FABC93CFDD2DEB7D94B7"
+    },
+    {
+      "authorized_paths": [
+        "scripts/inventory.js"
+      ],
+      "blocks_release": false,
+      "category": "resilience",
+      "confidence": 0.82,
+      "correction": "propagate a typed error to the process boundary",
+      "evidence": "scripts/inventory.js:47",
+      "evidence_detail": {
+        "matched_text": "process.exit("
+      },
+      "id": "OBS-7DC5F0A4F2C571B142AE",
+      "impact": "library or request-path failures can terminate unrelated work",
+      "leverage_score": 3.4,
+      "owner_layer": "sdk",
+      "provider_id": "typescript.source",
+      "rule_broken": "application source terminates the entire Node.js process directly",
+      "rule_id": "process-exit-library-code",
+      "severity": "medium",
+      "source_observation_id": "OBS-7DC5F0A4F2C571B142AE"
+    },
+    {
+      "authorized_paths": [
+        "scripts/selfpack.js"
+      ],
+      "blocks_release": false,
+      "category": "resilience",
+      "confidence": 0.82,
+      "correction": "propagate a typed error to the process boundary",
+      "evidence": "scripts/selfpack.js:35",
+      "evidence_detail": {
+        "matched_text": "process.exit("
+      },
+      "id": "OBS-F69A7B7680C431B49F0D",
+      "impact": "library or request-path failures can terminate unrelated work",
+      "leverage_score": 3.4,
+      "owner_layer": "sdk",
+      "provider_id": "typescript.source",
+      "rule_broken": "application source terminates the entire Node.js process directly",
+      "rule_id": "process-exit-library-code",
+      "severity": "medium",
+      "source_observation_id": "OBS-F69A7B7680C431B49F0D"
+    },
+    {
+      "authorized_paths": [
+        "scripts/selfpack.js"
+      ],
+      "blocks_release": false,
+      "category": "resilience",
+      "confidence": 0.82,
+      "correction": "propagate a typed error to the process boundary",
+      "evidence": "scripts/selfpack.js:168",
+      "evidence_detail": {
+        "matched_text": "process.exit("
+      },
+      "id": "OBS-8E774F250270DC5E6DA0",
+      "impact": "library or request-path failures can terminate unrelated work",
+      "leverage_score": 3.4,
+      "owner_layer": "sdk",
+      "provider_id": "typescript.source",
+      "rule_broken": "application source terminates the entire Node.js process directly",
+      "rule_id": "process-exit-library-code",
+      "severity": "medium",
+      "source_observation_id": "OBS-8E774F250270DC5E6DA0"
+    },
+    {
+      "authorized_paths": [
+        "tests/pipeline_coverage.test.ts"
+      ],
+      "blocks_release": false,
+      "category": "security",
+      "confidence": 0.75,
+      "correction": "use crypto.randomUUID or secure random bytes for security-sensitive values",
+      "evidence": "tests/pipeline_coverage.test.ts:7",
+      "evidence_detail": {
+        "matched_text": "Math.random()"
+      },
+      "id": "OBS-C554863E4861ECD57439",
+      "impact": "identifiers or tokens derived from it are predictable",
+      "leverage_score": 3.0,
+      "owner_layer": "sdk",
+      "provider_id": "typescript.source",
+      "rule_broken": "Math.random() is used in application source",
+      "rule_id": "weak-security-randomness",
+      "severity": "medium",
+      "source_observation_id": "OBS-C554863E4861ECD57439"
+    },
+    {
+      "authorized_paths": [
+        "tests/pipeline_verification.test.ts"
+      ],
+      "blocks_release": false,
+      "category": "security",
+      "confidence": 0.75,
+      "correction": "use crypto.randomUUID or secure random bytes for security-sensitive values",
+      "evidence": "tests/pipeline_verification.test.ts:7",
+      "evidence_detail": {
+        "matched_text": "Math.random()"
+      },
+      "id": "OBS-0BA2DC51F56D3100E1AB",
+      "impact": "identifiers or tokens derived from it are predictable",
+      "leverage_score": 3.0,
+      "owner_layer": "sdk",
+      "provider_id": "typescript.source",
+      "rule_broken": "Math.random() is used in application source",
+      "rule_id": "weak-security-randomness",
+      "severity": "medium",
+      "source_observation_id": "OBS-0BA2DC51F56D3100E1AB"
+    },
+    {
+      "authorized_paths": [
+        "tests/pipeline_wiring.test.ts"
+      ],
+      "blocks_release": false,
+      "category": "security",
+      "confidence": 0.75,
+      "correction": "use crypto.randomUUID or secure random bytes for security-sensitive values",
+      "evidence": "tests/pipeline_wiring.test.ts:8",
+      "evidence_detail": {
+        "matched_text": "Math.random()"
+      },
+      "id": "OBS-F3BB94DB67A513224551",
+      "impact": "identifiers or tokens derived from it are predictable",
+      "leverage_score": 3.0,
+      "owner_layer": "sdk",
+      "provider_id": "typescript.source",
+      "rule_broken": "Math.random() is used in application source",
+      "rule_id": "weak-security-randomness",
+      "severity": "medium",
+      "source_observation_id": "OBS-F3BB94DB67A513224551"
+    }
+  ],
+  "languages": [
+    "javascript",
+    "typescript"
+  ],
+  "observation_count": 9,
+  "observations": [
+    {
+      "blocks_release": false,
+      "category": "resilience",
+      "confidence": 0.82,
+      "correction": "propagate a typed error to the process boundary",
+      "evidence": {
+        "matched_text": "process.exit("
+      },
+      "impact": "library or request-path failures can terminate unrelated work",
+      "leverage_score": 3.4,
+      "location": {
+        "end_column": 96,
+        "end_line": 28,
+        "start_column": 83,
+        "start_line": 28
+      },
+      "message": "application source terminates the entire Node.js process directly",
+      "observation_id": "OBS-C72988B675FF131BD86B",
+      "owner_layer": "sdk",
+      "provider_id": "typescript.source",
+      "remediation_hint": {
+        "authorized_paths": [
+          "scripts/inventory.js"
+        ],
+        "summary": "propagate a typed error to the process boundary"
+      },
+      "repository_path": "scripts/inventory.js",
+      "rule_id": "process-exit-library-code",
+      "schema_version": "l9.observation.v1",
+      "severity": "medium"
+    },
+    {
+      "blocks_release": false,
+      "category": "resilience",
+      "confidence": 0.82,
+      "correction": "propagate a typed error to the process boundary",
+      "evidence": {
+        "matched_text": "process.exit("
+      },
+      "impact": "library or request-path failures can terminate unrelated work",
+      "leverage_score": 3.4,
+      "location": {
+        "end_column": 16,
+        "end_line": 33,
+        "start_column": 3,
+        "start_line": 33
+      },
+      "message": "application source terminates the entire Node.js process directly",
+      "observation_id": "OBS-C0C0E460E294A955E29F",
+      "owner_layer": "sdk",
+      "provider_id": "typescript.source",
+      "remediation_hint": {
+        "authorized_paths": [
+          "scripts/inventory.js"
+        ],
+        "summary": "propagate a typed error to the process boundary"
+      },
+      "repository_path": "scripts/inventory.js",
+      "rule_id": "process-exit-library-code",
+      "schema_version": "l9.observation.v1",
+      "severity": "medium"
+    },
+    {
+      "blocks_release": false,
+      "category": "resilience",
+      "confidence": 0.82,
+      "correction": "propagate a typed error to the process boundary",
+      "evidence": {
+        "matched_text": "process.exit("
+      },
+      "impact": "library or request-path failures can terminate unrelated work",
+      "leverage_score": 3.4,
+      "location": {
+        "end_column": 132,
+        "end_line": 39,
+        "start_column": 119,
+        "start_line": 39
+      },
+      "message": "application source terminates the entire Node.js process directly",
+      "observation_id": "OBS-FABC93CFDD2DEB7D94B7",
+      "owner_layer": "sdk",
+      "provider_id": "typescript.source",
+      "remediation_hint": {
+        "authorized_paths": [
+          "scripts/inventory.js"
+        ],
+        "summary": "propagate a typed error to the process boundary"
+      },
+      "repository_path": "scripts/inventory.js",
+      "rule_id": "process-exit-library-code",
+      "schema_version": "l9.observation.v1",
+      "severity": "medium"
+    },
+    {
+      "blocks_release": false,
+      "category": "resilience",
+      "confidence": 0.82,
+      "correction": "propagate a typed error to the process boundary",
+      "evidence": {
+        "matched_text": "process.exit("
+      },
+      "impact": "library or request-path failures can terminate unrelated work",
+      "leverage_score": 3.4,
+      "location": {
+        "end_column": 85,
+        "end_line": 47,
+        "start_column": 72,
+        "start_line": 47
+      },
+      "message": "application source terminates the entire Node.js process directly",
+      "observation_id": "OBS-7DC5F0A4F2C571B142AE",
+      "owner_layer": "sdk",
+      "provider_id": "typescript.source",
+      "remediation_hint": {
+        "authorized_paths": [
+          "scripts/inventory.js"
+        ],
+        "summary": "propagate a typed error to the process boundary"
+      },
+      "repository_path": "scripts/inventory.js",
+      "rule_id": "process-exit-library-code",
+      "schema_version": "l9.observation.v1",
+      "severity": "medium"
+    },
+    {
+      "blocks_release": false,
+      "category": "resilience",
+      "confidence": 0.82,
+      "correction": "propagate a typed error to the process boundary",
+      "evidence": {
+        "matched_text": "process.exit("
+      },
+      "impact": "library or request-path failures can terminate unrelated work",
+      "leverage_score": 3.4,
+      "location": {
+        "end_column": 70,
+        "end_line": 35,
+        "start_column": 57,
+        "start_line": 35
+      },
+      "message": "application source terminates the entire Node.js process directly",
+      "observation_id": "OBS-F69A7B7680C431B49F0D",
+      "owner_layer": "sdk",
+      "provider_id": "typescript.source",
+      "remediation_hint": {
+        "authorized_paths": [
+          "scripts/selfpack.js"
+        ],
+        "summary": "propagate a typed error to the process boundary"
+      },
+      "repository_path": "scripts/selfpack.js",
+      "rule_id": "process-exit-library-code",
+      "schema_version": "l9.observation.v1",
+      "severity": "medium"
+    },
+    {
+      "blocks_release": false,
+      "category": "resilience",
+      "confidence": 0.82,
+      "correction": "propagate a typed error to the process boundary",
+      "evidence": {
+        "matched_text": "process.exit("
+      },
+      "impact": "library or request-path failures can terminate unrelated work",
+      "leverage_score": 3.4,
+      "location": {
+        "end_column": 16,
+        "end_line": 168,
+        "start_column": 3,
+        "start_line": 168
+      },
+      "message": "application source terminates the entire Node.js process directly",
+      "observation_id": "OBS-8E774F250270DC5E6DA0",
+      "owner_layer": "sdk",
+      "provider_id": "typescript.source",
+      "remediation_hint": {
+        "authorized_paths": [
+          "scripts/selfpack.js"
+        ],
+        "summary": "propagate a typed error to the process boundary"
+      },
+      "repository_path": "scripts/selfpack.js",
+      "rule_id": "process-exit-library-code",
+      "schema_version": "l9.observation.v1",
+      "severity": "medium"
+    },
+    {
+      "blocks_release": false,
+      "category": "security",
+      "confidence": 0.75,
+      "correction": "use crypto.randomUUID or secure random bytes for security-sensitive values",
+      "evidence": {
+        "matched_text": "Math.random()"
+      },
+      "impact": "identifiers or tokens derived from it are predictable",
+      "leverage_score": 3.0,
+      "location": {
+        "end_column": 91,
+        "end_line": 7,
+        "start_column": 78,
+        "start_line": 7
+      },
+      "message": "Math.random() is used in application source",
+      "observation_id": "OBS-C554863E4861ECD57439",
+      "owner_layer": "sdk",
+      "provider_id": "typescript.source",
+      "remediation_hint": {
+        "authorized_paths": [
+          "tests/pipeline_coverage.test.ts"
+        ],
+        "summary": "use crypto.randomUUID or secure random bytes for security-sensitive values"
+      },
+      "repository_path": "tests/pipeline_coverage.test.ts",
+      "rule_id": "weak-security-randomness",
+      "schema_version": "l9.observation.v1",
+      "severity": "medium"
+    },
+    {
+      "blocks_release": false,
+      "category": "security",
+      "confidence": 0.75,
+      "correction": "use crypto.randomUUID or secure random bytes for security-sensitive values",
+      "evidence": {
+        "matched_text": "Math.random()"
+      },
+      "impact": "identifiers or tokens derived from it are predictable",
+      "leverage_score": 3.0,
+      "location": {
+        "end_column": 94,
+        "end_line": 7,
+        "start_column": 81,
+        "start_line": 7
+      },
+      "message": "Math.random() is used in application source",
+      "observation_id": "OBS-0BA2DC51F56D3100E1AB",
+      "owner_layer": "sdk",
+      "provider_id": "typescript.source",
+      "remediation_hint": {
+        "authorized_paths": [
+          "tests/pipeline_verification.test.ts"
+        ],
+        "summary": "use crypto.randomUUID or secure random bytes for security-sensitive values"
+      },
+      "repository_path": "tests/pipeline_verification.test.ts",
+      "rule_id": "weak-security-randomness",
+      "schema_version": "l9.observation.v1",
+      "severity": "medium"
+    },
+    {
+      "blocks_release": false,
+      "category": "security",
+      "confidence": 0.75,
+      "correction": "use crypto.randomUUID or secure random bytes for security-sensitive values",
+      "evidence": {
+        "matched_text": "Math.random()"
+      },
+      "impact": "identifiers or tokens derived from it are predictable",
+      "leverage_score": 3.0,
+      "location": {
+        "end_column": 92,
+        "end_line": 8,
+        "start_column": 79,
+        "start_line": 8
+      },
+      "message": "Math.random() is used in application source",
+      "observation_id": "OBS-F3BB94DB67A513224551",
+      "owner_layer": "sdk",
+      "provider_id": "typescript.source",
+      "remediation_hint": {
+        "authorized_paths": [
+          "tests/pipeline_wiring.test.ts"
+        ],
+        "summary": "use crypto.randomUUID or secure random bytes for security-sensitive values"
+      },
+      "repository_path": "tests/pipeline_wiring.test.ts",
+      "rule_id": "weak-security-randomness",
+      "schema_version": "l9.observation.v1",
+      "severity": "medium"
+    }
+  ],
+  "outcome": "complete",
+  "provider_failures": [],
+  "providers_executed": [
+    "node.repository-profile",
+    "node.package-json",
+    "typescript.config",
+    "typescript.source"
+  ],
+  "qualification_policy": {
+    "enabled_provider_families": [
+      "node",
+      "typescript"
+    ],
+    "minimum_confidence": 0.6,
+    "minimum_severity": "low",
+    "suppressed_rules": []
+  },
+  "qualified_finding_count": 9,
+  "repository_profile": {
+    "ecosystem": "node",
+    "fingerprint": "99ab03f6228d068ec770039a37715abe76a9f8045cd0eb572e03982cf7424d5a",
+    "languages": [
+      "javascript",
+      "typescript"
+    ],
+    "lockfiles": [
+      "package-lock.json"
+    ],
+    "module_system": "commonjs",
+    "monorepo": false,
+    "package_json_paths": [
+      "package.json"
+    ],
+    "package_manager": "npm",
+    "package_manager_source": "lockfile",
+    "package_manager_version": null,
+    "profile_warnings": [],
+    "schema_version": "l9.repository-profile.v1",
+    "source_file_count": 62,
+    "tsconfig_paths": [
+      "tsconfig.json"
+    ],
+    "typescript": true,
+    "workspace": false
+  },
+  "schema_version": "l9.node-typescript-audit.v1"
+}
