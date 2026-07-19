@@ -21,14 +21,12 @@
     "followups": 43
   },
   "remediation_summary": {
-    "merged_to_main": 4,
-    "not_addressed": 17,
-    "remediated_pr_closed_unmerged": 21,
-    "open_pr": 1
+    "merged_to_main": 26,
+    "not_addressed": 17
   },
   "notes": [
-    "No per-finding executable validator scripts exist; verification is directive-based (audit 05 + required_verified_status=resolved). Each entry's verification.validator_file is null by design.",
-    "remediation_pr_closed_unmerged entries: fixes implemented + green but PRs #14-18 were closed without merging; branches still exist and are recoverable."
+    "No per-finding executable validator scripts exist; verification is directive-based (audit 05 + required_verified_status=resolved). verification.validator_file is null by design.",
+    "PRs #14-18 (21 findings) were recovered and merged to main via PR #22 after being closed unmerged."
   ],
   "missing_referenced_files": [],
   "entries": [
@@ -49,7 +47,8 @@
       },
       "remediation": {
         "state": "merged_to_main",
-        "pr": "#13"
+        "pr": "#13",
+        "recovered_via": null
       }
     },
     {
@@ -69,7 +68,8 @@
       },
       "remediation": {
         "state": "merged_to_main",
-        "pr": "#13"
+        "pr": "#13",
+        "recovered_via": null
       }
     },
     {
@@ -108,8 +108,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "remediated_pr_closed_unmerged",
-        "pr": "#14"
+        "state": "merged_to_main",
+        "pr": "#22",
+        "recovered_via": "#22"
       }
     },
     {
@@ -128,8 +129,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "remediated_pr_closed_unmerged",
-        "pr": "#14"
+        "state": "merged_to_main",
+        "pr": "#22",
+        "recovered_via": "#22"
       }
     },
     {
@@ -148,8 +150,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "remediated_pr_closed_unmerged",
-        "pr": "#14"
+        "state": "merged_to_main",
+        "pr": "#22",
+        "recovered_via": "#22"
       }
     },
     {
@@ -168,8 +171,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "remediated_pr_closed_unmerged",
-        "pr": "#15"
+        "state": "merged_to_main",
+        "pr": "#22",
+        "recovered_via": "#22"
       }
     },
     {
@@ -188,8 +192,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "remediated_pr_closed_unmerged",
-        "pr": "#15"
+        "state": "merged_to_main",
+        "pr": "#22",
+        "recovered_via": "#22"
       }
     },
     {
@@ -208,8 +213,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "remediated_pr_closed_unmerged",
-        "pr": "#17"
+        "state": "merged_to_main",
+        "pr": "#22",
+        "recovered_via": "#22"
       }
     },
     {
@@ -229,7 +235,8 @@
       },
       "remediation": {
         "state": "merged_to_main",
-        "pr": "#13"
+        "pr": "#13",
+        "recovered_via": null
       }
     },
     {
@@ -248,8 +255,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "open_pr",
-        "pr": "#9"
+        "state": "merged_to_main",
+        "pr": "#9",
+        "recovered_via": null
       }
     },
     {
@@ -288,8 +296,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "remediated_pr_closed_unmerged",
-        "pr": "#16"
+        "state": "merged_to_main",
+        "pr": "#22",
+        "recovered_via": "#22"
       }
     },
     {
@@ -328,8 +337,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "remediated_pr_closed_unmerged",
-        "pr": "#18"
+        "state": "merged_to_main",
+        "pr": "#22",
+        "recovered_via": "#22"
       }
     },
     {
@@ -348,8 +358,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "remediated_pr_closed_unmerged",
-        "pr": "#18"
+        "state": "merged_to_main",
+        "pr": "#22",
+        "recovered_via": "#22"
       }
     },
     {
@@ -368,8 +379,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "remediated_pr_closed_unmerged",
-        "pr": "#16"
+        "state": "merged_to_main",
+        "pr": "#22",
+        "recovered_via": "#22"
       }
     },
     {
@@ -388,8 +400,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "remediated_pr_closed_unmerged",
-        "pr": "#16"
+        "state": "merged_to_main",
+        "pr": "#22",
+        "recovered_via": "#22"
       }
     },
     {
@@ -428,8 +441,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "remediated_pr_closed_unmerged",
-        "pr": "#17"
+        "state": "merged_to_main",
+        "pr": "#22",
+        "recovered_via": "#22"
       }
     },
     {
@@ -448,8 +462,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "remediated_pr_closed_unmerged",
-        "pr": "#17"
+        "state": "merged_to_main",
+        "pr": "#22",
+        "recovered_via": "#22"
       }
     },
     {
@@ -468,8 +483,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "remediated_pr_closed_unmerged",
-        "pr": "#17"
+        "state": "merged_to_main",
+        "pr": "#22",
+        "recovered_via": "#22"
       }
     },
     {
@@ -488,8 +504,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "remediated_pr_closed_unmerged",
-        "pr": "#17"
+        "state": "merged_to_main",
+        "pr": "#22",
+        "recovered_via": "#22"
       }
     },
     {
@@ -529,7 +546,8 @@
       },
       "remediation": {
         "state": "merged_to_main",
-        "pr": "#13"
+        "pr": "#13",
+        "recovered_via": null
       }
     },
     {
@@ -548,8 +566,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "remediated_pr_closed_unmerged",
-        "pr": "#17"
+        "state": "merged_to_main",
+        "pr": "#22",
+        "recovered_via": "#22"
       }
     },
     {
@@ -608,8 +627,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "remediated_pr_closed_unmerged",
-        "pr": "#14"
+        "state": "merged_to_main",
+        "pr": "#22",
+        "recovered_via": "#22"
       }
     },
     {
@@ -628,8 +648,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "remediated_pr_closed_unmerged",
-        "pr": "#16"
+        "state": "merged_to_main",
+        "pr": "#22",
+        "recovered_via": "#22"
       }
     },
     {
@@ -668,8 +689,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "remediated_pr_closed_unmerged",
-        "pr": "#18"
+        "state": "merged_to_main",
+        "pr": "#22",
+        "recovered_via": "#22"
       }
     },
     {
@@ -708,8 +730,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "remediated_pr_closed_unmerged",
-        "pr": "#18"
+        "state": "merged_to_main",
+        "pr": "#22",
+        "recovered_via": "#22"
       }
     },
     {
@@ -728,8 +751,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "remediated_pr_closed_unmerged",
-        "pr": "#16"
+        "state": "merged_to_main",
+        "pr": "#22",
+        "recovered_via": "#22"
       }
     },
     {
