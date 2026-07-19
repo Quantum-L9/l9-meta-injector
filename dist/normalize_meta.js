@@ -33,6 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.yamlScalar = void 0;
 exports.serializeToYamlFrontMatter = serializeToYamlFrontMatter;
 exports.buildMeta = buildMeta;
 // normalize_meta.ts — Build NormalizedMeta header (pure, no IO)
@@ -40,39 +41,13 @@ const path = __importStar(require("path"));
 const schema_1 = require("./schema");
 const extract_1 = require("./extract");
 const namespace_1 = require("./namespace");
+const yaml_serialize_1 = require("./yaml_serialize");
+Object.defineProperty(exports, "yamlScalar", { enumerable: true, get: function () { return yaml_serialize_1.yamlScalar; } });
 function slugTitle(fp) {
     return path.basename(fp, path.extname(fp)).replace(/[-_.]/g, " ").replace(/^Prompt /i, "").trim();
 }
-function yamlScalar(v) {
-    if (v === null || v === undefined)
-        return '""';
-    if (typeof v === "boolean")
-        return v ? "true" : "false";
-    if (typeof v === "number")
-        return String(v);
-    const s = String(v);
-    if (s === "")
-        return '""';
-    if (/[:#{}\[\],&*?|<>=!%@`\n'"\\]/.test(s) || s.trim() !== s || s === "true" || s === "false")
-        return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
-    return s;
-}
 function serializeToYamlFrontMatter(meta) {
-    const lines = ["---"];
-    for (const [k, v] of Object.entries(meta)) {
-        if (Array.isArray(v)) {
-            if (v.length === 0)
-                lines.push(`${k}: []`);
-            else {
-                lines.push(`${k}:`);
-                v.forEach((i) => lines.push(`  - ${yamlScalar(i)}`));
-            }
-        }
-        else
-            lines.push(`${k}: ${yamlScalar(v)}`);
-    }
-    lines.push("---");
-    return lines.join("\n");
+    return (0, yaml_serialize_1.serializeYamlObject)(meta);
 }
 function buildMeta(filePath, originalBody, ef, cr, nsCfg, authority, now) {
     const tax = schema_1.PRIMITIVE_TAXONOMY[cr.artifactType] ?? schema_1.PRIMITIVE_TAXONOMY["unknown"];

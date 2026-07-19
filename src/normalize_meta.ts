@@ -6,32 +6,18 @@ import {
 } from "./schema";
 import { contentHash, estimateTokens } from "./extract";
 import { resolveNamespace, NamespaceConfig } from "./namespace";
+import { serializeYamlObject, yamlScalar } from "./yaml_serialize";
 
 function slugTitle(fp: string): string {
   return path.basename(fp, path.extname(fp)).replace(/[-_.]/g, " ").replace(/^Prompt /i, "").trim();
 }
 
-function yamlScalar(v: unknown): string {
-  if (v === null || v === undefined) return '""';
-  if (typeof v === "boolean") return v ? "true" : "false";
-  if (typeof v === "number") return String(v);
-  const s = String(v);
-  if (s === "") return '""';
-  if (/[:#{}\[\],&*?|<>=!%@`\n'"\\]/.test(s) || s.trim() !== s || s === "true" || s === "false")
-    return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
-  return s;
-}
+// Re-export the canonical scalar serializer for callers that historically imported
+// it from here; the implementation now lives in yaml_serialize.ts (ACA-005).
+export { yamlScalar };
 
 export function serializeToYamlFrontMatter(meta: NormalizedMeta): string {
-  const lines = ["---"];
-  for (const [k, v] of Object.entries(meta)) {
-    if (Array.isArray(v)) {
-      if (v.length === 0) lines.push(`${k}: []`);
-      else { lines.push(`${k}:`); v.forEach((i) => lines.push(`  - ${yamlScalar(i)}`)); }
-    } else lines.push(`${k}: ${yamlScalar(v)}`);
-  }
-  lines.push("---");
-  return lines.join("\n");
+  return serializeYamlObject(meta as unknown as Record<string, unknown>);
 }
 
 export function buildMeta(
