@@ -1,0 +1,117 @@
+{
+  "approvals": {
+    "approval_count": 0,
+    "approval_registry_file": "APPROVAL_REGISTRY.json",
+    "approval_registry_id": "APRREG-b348086b66a3cf9f9a7060c9",
+    "approval_registry_sha256": "b348086b66a3cf9f9a7060c96c8125693ce3d17722b7239105d4a5938455bb96"
+  },
+  "artifacts": {
+    "approval_registry_file": "APPROVAL_REGISTRY.json",
+    "artifact_inventory_file": "ARTIFACT_INVENTORY.json",
+    "attestation_file": "ATTESTATION.json",
+    "eligibility_report_file": "ELIGIBILITY.json",
+    "execution_lanes_file": "EXECUTION_LANES.json",
+    "execution_readiness_file": "EXECUTION_READINESS.json",
+    "governance_file": "GOVERNANCE.json",
+    "graph_file": "GRAPH.json",
+    "impact_file": "IMPACT_ANALYSIS.json",
+    "plan_diff_file": "PLAN_DIFF.json",
+    "planning_input_copy": "INPUT.json",
+    "policy_copy": "POLICY.json",
+    "selection_report_file": "SELECTION.json",
+    "supersession_authorization_file": null,
+    "traceability_file": "TRACEABILITY.json",
+    "validation_coverage_file": "VALIDATION_COVERAGE.json"
+  },
+  "contracts": [],
+  "execution": {
+    "execution_lanes_file": "EXECUTION_LANES.json",
+    "execution_lanes_sha256": "c6bef1e0e55671e9b6d82b8ee7be41c290e38218ee72a877a6104c7e6255c766",
+    "lane_count": 0,
+    "maximum_parallel_tasks_per_wave": 4
+  },
+  "generated_at": "2026-07-19T00:00:00Z",
+  "generated_by": {
+    "name": "l9-agent-a-planner",
+    "version": "1.3.0"
+  },
+  "governance": {
+    "governance_file": "GOVERNANCE.json",
+    "governance_sha256": "0f9c31256c116d581f5aebcb6e0c37ae5d88264d841db36922d34af8a96d0c57",
+    "passed": true
+  },
+  "graph": {
+    "graph_file": "GRAPH.json",
+    "graph_sha256": "95dd52ad1f34db15610f46a49badb788e692543946d9342ba89548c69b5c73bf",
+    "maximum_execution_wave": 0,
+    "node_count": 0,
+    "topological_order": []
+  },
+  "impact": {
+    "impact_file": "IMPACT_ANALYSIS.json",
+    "impact_sha256": "3badf373b80f6a4a7048165ef01e73a990aa2435b72a7e01a1bc32eb46eae346",
+    "total_authorized_paths": 0
+  },
+  "lineage": {
+    "plan_diff_file": "PLAN_DIFF.json",
+    "plan_diff_sha256": "8324a0b129510ebab9e1980bf1ec67b5d43dbdf04dbf8dce6b469058d863f205",
+    "supersedes_manifest_id": null,
+    "supersedes_manifest_sha256": null,
+    "supersession_authorization_id": null,
+    "supersession_authorization_sha256": null,
+    "supersession_reason": null
+  },
+  "manifest_id": "MAN-27c3de18184098cb89d26853",
+  "manifest_sha256": "83c77644488a1708dd380bb1010f83c0186a789e1b37ad6803811ce87a47a2e7",
+  "planner_boundaries": {
+    "approval_artifacts_modified": false,
+    "auditor_internals_imported": false,
+    "branches_created": false,
+    "execution_performed": false,
+    "existing_manifest_modified": false,
+    "git_invoked": false,
+    "policy_snapshot_modified": false,
+    "pull_requests_created": false,
+    "push_performed": false,
+    "remediator_imported": false,
+    "runtime_replanning_allowed": false,
+    "source_modification_performed": false,
+    "source_scanning_performed": false,
+    "validators_executed": false
+  },
+  "policy": {
+    "policy_id": "default-remediation",
+    "policy_sha256": "a2c959959b3b3acafc2bdeff44ae944de73ea3190f39066d2dd862589b394bf9",
+    "policy_snapshot_file": "POLICY.json",
+    "policy_version": "1.3.0"
+  },
+  "readiness": {
+    "readiness_file": "EXECUTION_READINESS.json",
+    "readiness_sha256": "5bf65d39ada65c9e05c70e2e0db54926e60a3f09563eef49dd1d49a7f6e4cf81",
+    "ready_for_remediator": true
+  },
+  "schema_version": "l9.remediation-manifest.v4",
+  "selection": {
+    "canonical_candidate_count": 0,
+    "eligible_candidate_count": 0,
+    "input_candidate_count": 0,
+    "requested_effort_capacity": null,
+    "requested_top_n": null,
+    "selected_count": 0,
+    "selected_effort_points": 0,
+    "selection_algorithm": "dependency-conflict-capacity-v1"
+  },
+  "source": {
+    "base_ref": "a1dfdab7643493e25ce8b9ca15da280c73343c8e",
+    "federated_audit_sha256": "69706c2badfaac144e0b7019e4ac1d0a48c53ca809d8b4c466189b6880ddf0e9",
+    "planning_input_id": "PIN-l9-meta-injector-69706c2badfa",
+    "planning_input_sha256": "6cfb3777bf6d6e57601083ea2c206b36e9baaa4f1063d9cc961dd7a5b09cd505",
+    "repository_id": "l9-meta-injector",
+    "repository_snapshot_id": "sha256:df69123345cac27abf3b150c4951a9a69b9ba70256303f5f9660af93e7aea755"
+  },
+  "validation": {
+    "coverage_file": "VALIDATION_COVERAGE.json",
+    "coverage_sha256": "6bb671953837b26a556d40ea2b6ee0457e459ded514c17e1aa6fee1955ef8283",
+    "passed": true
+  }
+}

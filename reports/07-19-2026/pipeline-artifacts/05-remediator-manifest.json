@@ -1,0 +1,10 @@
+{
+  "base_ref": "a1dfdab7643493e25ce8b9ca15da280c73343c8e",
+  "contracts": [],
+  "manifest_id": "MAN-27c3de18184098cb89d26853",
+  "repository_id": "l9-meta-injector",
+  "repository_snapshot_id": "sha256:df69123345cac27abf3b150c4951a9a69b9ba70256303f5f9660af93e7aea755",
+  "schema_version": "l9.remediation_manifest.v1",
+  "source_manifest_schema": "l9.remediation-manifest.v4",
+  "source_manifest_sha256": "83c77644488a1708dd380bb1010f83c0186a789e1b37ad6803811ce87a47a2e7"
+}
