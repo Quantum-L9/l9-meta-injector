@@ -21,12 +21,13 @@
     "followups": 43
   },
   "remediation_summary": {
-    "merged_to_main": 26,
-    "not_addressed": 17
+    "merged_to_main": 43,
+    "not_addressed": 0
   },
   "notes": [
     "No per-finding executable validator scripts exist; verification is directive-based (audit 05 + required_verified_status=resolved). verification.validator_file is null by design.",
-    "PRs #14-18 (21 findings) were recovered and merged to main via PR #22 after being closed unmerged."
+    "PRs #14-18 (21 findings) were recovered and merged to main via PR #22 after being closed unmerged.",
+    "Remediation complete: all 43 findings merged. The final 17 were resolved across five stacked waves \u2014 PR #25 (SEC-001/002/003, SUP-001), #26 (DWL-007, ICC-004, QTE-005), #27 (QTE-003/004, ICC-005, OBS-009/010), #28 (ACA-005, RAA-003, RAA-004), #29 (ACA-001, ACA-002)."
   ],
   "missing_referenced_files": [],
   "entries": [
@@ -88,8 +89,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "not_addressed",
-        "pr": null
+        "state": "merged_to_main",
+        "pr": "#29",
+        "recovered_via": null
       }
     },
     {
@@ -276,8 +278,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "not_addressed",
-        "pr": null
+        "state": "merged_to_main",
+        "pr": "#29",
+        "recovered_via": null
       }
     },
     {
@@ -317,8 +320,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "not_addressed",
-        "pr": null
+        "state": "merged_to_main",
+        "pr": "#28",
+        "recovered_via": null
       }
     },
     {
@@ -421,8 +425,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "not_addressed",
-        "pr": null
+        "state": "merged_to_main",
+        "pr": "#26",
+        "recovered_via": null
       }
     },
     {
@@ -525,8 +530,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "not_addressed",
-        "pr": null
+        "state": "merged_to_main",
+        "pr": "#27",
+        "recovered_via": null
       }
     },
     {
@@ -587,8 +593,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "not_addressed",
-        "pr": null
+        "state": "merged_to_main",
+        "pr": "#27",
+        "recovered_via": null
       }
     },
     {
@@ -607,8 +614,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "not_addressed",
-        "pr": null
+        "state": "merged_to_main",
+        "pr": "#27",
+        "recovered_via": null
       }
     },
     {
@@ -669,8 +677,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "not_addressed",
-        "pr": null
+        "state": "merged_to_main",
+        "pr": "#28",
+        "recovered_via": null
       }
     },
     {
@@ -710,8 +719,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "not_addressed",
-        "pr": null
+        "state": "merged_to_main",
+        "pr": "#26",
+        "recovered_via": null
       }
     },
     {
@@ -772,8 +782,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "not_addressed",
-        "pr": null
+        "state": "merged_to_main",
+        "pr": "#27",
+        "recovered_via": null
       }
     },
     {
@@ -792,8 +803,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "not_addressed",
-        "pr": null
+        "state": "merged_to_main",
+        "pr": "#27",
+        "recovered_via": null
       }
     },
     {
@@ -812,8 +824,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "not_addressed",
-        "pr": null
+        "state": "merged_to_main",
+        "pr": "#26",
+        "recovered_via": null
       }
     },
     {
@@ -832,8 +845,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "not_addressed",
-        "pr": null
+        "state": "merged_to_main",
+        "pr": "#28",
+        "recovered_via": null
       }
     },
     {
@@ -852,8 +866,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "not_addressed",
-        "pr": null
+        "state": "merged_to_main",
+        "pr": "#25",
+        "recovered_via": null
       }
     },
     {
@@ -872,8 +887,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "not_addressed",
-        "pr": null
+        "state": "merged_to_main",
+        "pr": "#25",
+        "recovered_via": null
       }
     },
     {
@@ -892,8 +908,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "not_addressed",
-        "pr": null
+        "state": "merged_to_main",
+        "pr": "#25",
+        "recovered_via": null
       }
     },
     {
@@ -912,8 +929,9 @@
         "validator_file": null
       },
       "remediation": {
-        "state": "not_addressed",
-        "pr": null
+        "state": "merged_to_main",
+        "pr": "#25",
+        "recovered_via": null
       }
     }
   ]

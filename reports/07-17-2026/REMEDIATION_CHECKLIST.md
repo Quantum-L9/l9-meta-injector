@@ -6,7 +6,7 @@ Completion status of the 43 audit findings (see `tasks/queue.json`, `contracts/`
 - ✅ **Merged to `main`**
 - ⬜ **Not yet addressed**
 
-**Final tally: 26 of 43 findings merged to `main`; 17 not yet addressed.**
+**Final tally: 43 of 43 findings merged to `main`. Remediation complete.**
 
 ---
 
@@ -50,24 +50,32 @@ Completion status of the 43 audit findings (see `tasks/queue.json`, `contracts/`
 - [x] **(test)** — `verify.test.ts` regression + `ruff` formatting of `tools/consolidation` — PR #10
 - [x] **CI** — removed redundant `pr-pipeline.yml` (#19); added Scorecard + SBOM gates (#20); autonomous-mode config (#23)
 
-## ⬜ Not yet addressed
-- [ ] **ACA-001** — parallel TS/Python injection engines (deferred — needs authoritative-engine decision)
-- [ ] **ACA-002** — `architecture.md` documents Python, not the shipped TS pipeline
-- [ ] **ACA-005** — two hand-rolled YAML serializers/parsers (partially eased by PR #9)
-- [ ] **RAA-003** — four competing `artifact_type` vocabularies
-- [ ] **RAA-004** — engine does not dogfood its own metadata (self-conformance)
-- [ ] **QTE-003** — `normalize_meta` tested only transitively
-- [ ] **QTE-004** — `inject.ts` lacks dedicated unit tests
-- [ ] **QTE-005** — `as unknown as` double-casts at the meta boundary
-- [ ] **ICC-004** — over-wide `NamespaceConfig` port
-- [ ] **ICC-005** — typed→untyped reconcile edge
-- [ ] **OBS-009** — LLM degraded-mode not signalled
-- [ ] **OBS-010** — no metrics on LLM/IO hot paths
-- [ ] **DWL-007** — unreachable `intent` field branch
-- [ ] **SEC-001** — prototype-key guard on parsed YAML
-- [ ] **SEC-002** — glob→RegExp ReDoS / injection in `namespace.ts`
-- [ ] **SEC-003** — cleartext credential when `baseUrl` is `http:`
-- [ ] **SUP-001** — floating devDependency ranges
+### Wave 1 — security + supply chain (PR #25)
+- [x] **SEC-001** — prototype-key guard on parsed YAML (`Object.create(null)`) — PR #25
+- [x] **SEC-002** — glob→RegExp ReDoS / injection hardened in `namespace.ts` — PR #25
+- [x] **SEC-003** — refuse cleartext credential when `baseUrl` is `http:` — PR #25
+- [x] **SUP-001** — pin exact devDependency versions to the lockfile — PR #25
+
+### Wave 2 — type interface (PR #26)
+- [x] **DWL-007** — remove unreachable `intent` field (not in schema vocabulary) — PR #26
+- [x] **ICC-004** — narrow `resolveNamespace` port to `NamespaceInput` (`Pick<>`) — PR #26
+- [x] **QTE-005** — validated `coerceNormalizedMeta` + `asRecord` replace `as unknown as` casts — PR #26
+
+### Wave 3 — code quality (PR #27)
+- [x] **QTE-003** — direct `buildMeta` / `serializeToYamlFrontMatter` unit tests — PR #27
+- [x] **QTE-004** — `tests/inject.test.ts` (strategies, dry-run, idempotency, body preservation) — PR #27
+- [x] **ICC-005** — shared `MetaRecord` reconcile edge + `normalizeMetaRecord` coercion — PR #27
+- [x] **OBS-009** — record true LLM decision path in `FieldDiff.reason` + counter — PR #27
+- [x] **OBS-010** — `MetricsCollector` (calls/failures/p50/p95) on LLM/IO hotpaths — PR #27
+
+### Wave 4 — taxonomy + serialization (PR #28)
+- [x] **ACA-005** — single canonical YAML serializer (`yaml_serialize.ts`) — PR #28
+- [x] **RAA-003** — `ArtifactType` canonical + total typed mappings (`taxonomy.ts`) — PR #28
+- [x] **RAA-004** — self-conformance dogfood test over own `src/` — PR #28
+
+### Wave 5 — architecture docs (PR #29)
+- [x] **ACA-001** — engine-authority decision: TS authoritative, Python secondary — PR #29
+- [x] **ACA-002** — `architecture.md` rewritten to document the shipped TS pipeline — PR #29
 
 ---
 
@@ -75,7 +83,9 @@ Completion status of the 43 audit findings (see `tasks/queue.json`, `contracts/`
 
 | Status | Findings |
 |---|---|
-| ✅ Merged to `main` | **26** |
-| ⬜ Not yet addressed | **17** |
+| ✅ Merged to `main` | **43** |
+| ⬜ Not yet addressed | **0** |
 
-The 21 findings from PRs #14–#18 (closed unmerged during a stacked-branch cascade) were recovered and merged via **PR #22**.
+All 43 audit findings are remediated. The 21 findings from PRs #14–#18 (closed unmerged
+during a stacked-branch cascade) were recovered via **PR #22**; the final 17 were
+resolved across five stacked waves, **PRs #25–#29**.
