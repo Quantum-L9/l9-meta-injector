@@ -36,4 +36,15 @@ describe("verify — bodyPreserved reflects the actual body hash", () => {
     expect(result.bodyPreserved).toBe(false);
     expect(result.issues.some((i) => /body content changed/i.test(i))).toBe(true);
   });
+
+  // Regression: inject writes `yamlFm + "\n\n" + body`, i.e. a BLANK-LINE separator
+  // after the closing fence. Recovery must strip the full separator so the body hash
+  // round-trips; stripping only one newline left a spurious leading "\n" (bodyPreserved=false).
+  it("bodyPreserved=true across the blank-line separator inject actually writes", () => {
+    const body = "# Project Overview\n\nSome prose.\n";
+    const origHash = contentHash(body); // fresh file has no frontmatter: body == whole file
+    const fp = tmpFile("---\nid: x\n---\n\n" + body); // note the blank line after ---
+    expect(stripExistingFrontMatter("---\nid: x\n---\n\n" + body)).toBe(body);
+    expect(verify(fp, origHash, meta).bodyPreserved).toBe(true);
+  });
 });

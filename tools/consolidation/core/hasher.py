@@ -1,5 +1,7 @@
 """Shared hasher — SHA-256 per file."""
+
 import hashlib
+
 
 def sha256(path):
     h = hashlib.sha256()
