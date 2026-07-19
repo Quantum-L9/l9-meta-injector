@@ -37,6 +37,7 @@ exports.runPipelineAsync = runPipelineAsync;
 // pipeline.ts — Full pipeline: scan → extract → assist → inject (async reconcile) → verify → index
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const schema_1 = require("./schema");
 const retrieval_1 = require("./retrieval");
 const extract_1 = require("./extract");
 const classify_1 = require("./classify");
@@ -98,7 +99,7 @@ async function runPipelineAsync(config) {
         let meta = (0, normalize_meta_1.buildMeta)(e.sourcePath, body, ef, cls, nsCfg, config.authority, now);
         // assist: LLM fills prose-origin fields only when seed fails "good" predicate
         if (config.llmEnabled) {
-            const rec = meta;
+            const rec = (0, schema_1.asRecord)(meta);
             for (const field of assistCfg.proseFields) {
                 if (assist_1.PROSE_ORIGIN_FIELDS.has(field)) {
                     const improved = await (0, assist_1.assistField)(field, rec[field], body, assistCfg);
@@ -106,7 +107,9 @@ async function runPipelineAsync(config) {
                         rec[field] = improved;
                 }
             }
-            meta = rec;
+            // assist only touches prose fields; the identity block is intact — coerce
+            // (not blind-cast) so any drift is caught at this boundary (QTE-005).
+            meta = (0, schema_1.coerceNormalizedMeta)(rec);
         }
         metas.set(e.sourcePath, meta);
     }

@@ -10,7 +10,7 @@ import * as crypto from "crypto";
 import { contentHash } from "./extract";
 import { resolveStrategy, sidecarPathFor } from "./comment";
 import { injectFile } from "./inject";
-import { NormalizedMeta } from "./schema";
+import { NormalizedMeta, asRecord, coerceNormalizedMeta } from "./schema";
 import { MetaSchema, applySchema, targetIncludes, parseCanonicalYaml, toMetaSchema } from "./meta_schema";
 
 export type InventoryArtifactType =
@@ -272,14 +272,14 @@ export function inventoryTree(config: InventoryConfig): InventoryResult {
     // The meta object written to headers/sidecars: schema-driven when provided, else default.
     let metaObj: Record<string, unknown>;
     if (schema) {
-      const applied = applySchema(rec as unknown as Record<string, unknown>, schema);
+      const applied = applySchema(asRecord(rec), schema);
       if (applied.missingRequired.length) rec.unknowns.push(...applied.missingRequired.map((n) => `missing_required:${n}`));
       metaObj = applied.fields;
       // Honor target:"manifest" — attach the schema-shaped meta to the record so it
       // flows into inventory.json (otherwise "manifest" in target would be a no-op).
       if (targetIncludes(schema, "manifest")) rec.meta = applied.fields;
     } else {
-      metaObj = rec as unknown as Record<string, unknown>;
+      metaObj = asRecord(rec);
     }
     records.push(rec);
     typeDistribution[rec.artifact_type] = (typeDistribution[rec.artifact_type] || 0) + 1;
@@ -356,9 +356,12 @@ function writeSidecar(abs: string, obj: Record<string, unknown>, unknowns?: stri
 // Write a folder's .l9meta.yaml non-destructively: if one already exists (possibly
 // user-authored), merge so existing keys win and only missing keys are added,
 // rather than blindly clobbering it. Mirrors the read/merge intent of injectFile.
-// Boundary: a schema-driven header carries arbitrary schema fields, not the
-// NormalizedMeta shape. injectFile serializes meta as a generic key/value bag, so
-// this single documented cast is the one place that crosses that boundary.
+// Boundary: a schema-driven header carries arbitrary operator-defined fields, not
+// the NormalizedMeta identity block. injectFile serializes meta as a generic
+// key/value bag, so this single documented cast is the one place that deliberately
+// crosses that boundary WITHOUT the coerceNormalizedMeta guard — a custom schema
+// may legitimately omit id/title/etc, so validating here would reject valid input
+// (finding QTE-005: the one adapter that stays an unchecked cast, by design).
 function asInjectableMeta(fields: Record<string, unknown>): NormalizedMeta {
   return fields as unknown as NormalizedMeta;
 }
@@ -376,7 +379,7 @@ function writeFolderSidecar(dir: string, metaObj: Record<string, unknown>, unkno
 // Map an InventoryRecord onto the minimal header the injector serializes. The injector
 // preserves the file body and reconciles fields; inventory only needs the identity block.
 function recordAsMeta(rec: InventoryRecord): NormalizedMeta {
-  return {
+  return coerceNormalizedMeta({
     id: rec.artifact_id,
     title: rec.file_name,
     artifact_type: "source",
@@ -395,7 +398,9 @@ function recordAsMeta(rec: InventoryRecord): NormalizedMeta {
     inventory_type: rec.artifact_type,
     classification_confidence: rec.classification_confidence,
     evidence: rec.evidence_excerpt ?? "Unknown",
-  } as unknown as NormalizedMeta;
+    // Validated narrowing (QTE-005): this literal carries the full identity block,
+    // so coerce rather than blind-cast — drift throws at the boundary.
+  });
 }
 
 function writeManifests(outDir: string, root: string, records: InventoryRecord[], dist: Record<string, number>, duplicates: DuplicateCluster[], now: string, _dryRun: boolean): { json: string; csv: string; md: string; duplicates: string } {

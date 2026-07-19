@@ -24,9 +24,10 @@ function isGoodValue(v) {
         return v.length > 0 && v.every((i) => i !== schema_1.UNKNOWN && String(i).trim() !== "");
     return false;
 }
-// Fields that live in prose → seed with regex, LLM finishes
+// Fields that live in prose → seed with regex, LLM finishes.
+// "intent" dropped (DWL-007): not a schema field, so it was never reachable here.
 exports.PROSE_ORIGIN_FIELDS = new Set([
-    "description", "intent", "activation_signals", "input_contract", "output_contract",
+    "description", "activation_signals", "input_contract", "output_contract",
 ]);
 // Fields that live in structured grammar → parse only, never LLM
 exports.GRAMMAR_ORIGIN_FIELDS = new Set([

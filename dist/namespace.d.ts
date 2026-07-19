@@ -18,5 +18,6 @@ export interface NamespaceConfig {
         namespace: string;
     }>;
 }
+export type NamespaceInput = Pick<NamespaceConfig, "namespace" | "namespaceGlobs">;
 export declare function toSnakeStem(filename: string): string;
-export declare function resolveNamespace(filePath: string, cfg: NamespaceConfig, typeHint?: string): NamespaceResolution;
+export declare function resolveNamespace(filePath: string, cfg: NamespaceInput, typeHint?: string): NamespaceResolution;

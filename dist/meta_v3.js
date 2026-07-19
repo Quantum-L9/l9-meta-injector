@@ -15,7 +15,7 @@ const schema_1 = require("./schema");
 // NormalizedMeta is a union; these fields exist only on some members. Read them
 // defensively so the builder works for every artifact type without narrowing.
 function opt(meta, key) {
-    const v = meta[key];
+    const v = (0, schema_1.asRecord)(meta)[key];
     return v === undefined ? schema_1.UNKNOWN : v;
 }
 /** Compose a complete nine-plane {@link MetaV3} from existing metadata. Pure. */

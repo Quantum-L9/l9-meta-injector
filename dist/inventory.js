@@ -50,6 +50,7 @@ const crypto = __importStar(require("crypto"));
 const extract_1 = require("./extract");
 const comment_1 = require("./comment");
 const inject_1 = require("./inject");
+const schema_1 = require("./schema");
 const meta_schema_1 = require("./meta_schema");
 /** Load and validate a canonical meta-schema YAML file. */
 function loadMetaSchema(filePath) {
@@ -261,7 +262,7 @@ function inventoryTree(config) {
         // The meta object written to headers/sidecars: schema-driven when provided, else default.
         let metaObj;
         if (schema) {
-            const applied = (0, meta_schema_1.applySchema)(rec, schema);
+            const applied = (0, meta_schema_1.applySchema)((0, schema_1.asRecord)(rec), schema);
             if (applied.missingRequired.length)
                 rec.unknowns.push(...applied.missingRequired.map((n) => `missing_required:${n}`));
             metaObj = applied.fields;
@@ -271,7 +272,7 @@ function inventoryTree(config) {
                 rec.meta = applied.fields;
         }
         else {
-            metaObj = rec;
+            metaObj = (0, schema_1.asRecord)(rec);
         }
         records.push(rec);
         typeDistribution[rec.artifact_type] = (typeDistribution[rec.artifact_type] || 0) + 1;
@@ -361,9 +362,12 @@ function writeSidecar(abs, obj, unknowns) {
 // Write a folder's .l9meta.yaml non-destructively: if one already exists (possibly
 // user-authored), merge so existing keys win and only missing keys are added,
 // rather than blindly clobbering it. Mirrors the read/merge intent of injectFile.
-// Boundary: a schema-driven header carries arbitrary schema fields, not the
-// NormalizedMeta shape. injectFile serializes meta as a generic key/value bag, so
-// this single documented cast is the one place that crosses that boundary.
+// Boundary: a schema-driven header carries arbitrary operator-defined fields, not
+// the NormalizedMeta identity block. injectFile serializes meta as a generic
+// key/value bag, so this single documented cast is the one place that deliberately
+// crosses that boundary WITHOUT the coerceNormalizedMeta guard — a custom schema
+// may legitimately omit id/title/etc, so validating here would reject valid input
+// (finding QTE-005: the one adapter that stays an unchecked cast, by design).
 function asInjectableMeta(fields) {
     return fields;
 }
@@ -384,7 +388,7 @@ function writeFolderSidecar(dir, metaObj, unknowns) {
 // Map an InventoryRecord onto the minimal header the injector serializes. The injector
 // preserves the file body and reconciles fields; inventory only needs the identity block.
 function recordAsMeta(rec) {
-    return {
+    return (0, schema_1.coerceNormalizedMeta)({
         id: rec.artifact_id,
         title: rec.file_name,
         artifact_type: "source",
@@ -403,7 +407,9 @@ function recordAsMeta(rec) {
         inventory_type: rec.artifact_type,
         classification_confidence: rec.classification_confidence,
         evidence: rec.evidence_excerpt ?? "Unknown",
-    };
+        // Validated narrowing (QTE-005): this literal carries the full identity block,
+        // so coerce rather than blind-cast — drift throws at the boundary.
+    });
 }
 function writeManifests(outDir, root, records, dist, duplicates, now, _dryRun) {
     fs.mkdirSync(outDir, { recursive: true });

@@ -10,14 +10,14 @@
 
 import {
   MetaV3, NormalizedMeta, ArtifactClassification, UNKNOWN, Unknown,
-  META_V3_SCHEMA_VERSION, META_V3_PLANES, ArtifactFamily,
+  META_V3_SCHEMA_VERSION, META_V3_PLANES, ArtifactFamily, asRecord,
 } from "./schema";
 import { PlacementPlan } from "./placement_policy";
 
 // NormalizedMeta is a union; these fields exist only on some members. Read them
 // defensively so the builder works for every artifact type without narrowing.
 function opt<T>(meta: NormalizedMeta, key: string): T | Unknown {
-  const v = (meta as unknown as Record<string, unknown>)[key];
+  const v = asRecord(meta)[key];
   return v === undefined ? UNKNOWN : (v as T);
 }
 

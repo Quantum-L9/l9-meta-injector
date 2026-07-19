@@ -82,6 +82,27 @@ export interface ArtifactMeta extends BaseHeader {
     owner: string | Unknown;
 }
 export type NormalizedMeta = ExecutableRetrievalMeta | PromptMeta | DoctrineMeta | ArtifactMeta;
+/**
+ * Widen a known object type to a generic key/value bag. Centralizes the one
+ * `as unknown as Record` escape hatch so read-paths that only need to index a
+ * field by name don't each hand-roll a double-cast (finding QTE-005 / CWE-704).
+ */
+export declare function asRecord(value: object): Record<string, unknown>;
+/**
+ * Narrow a generic key/value bag into a NormalizedMeta, validating the shared
+ * BaseHeader identity block FIRST. Replaces the blind `bag as unknown as
+ * NormalizedMeta` double-casts (finding QTE-005 / CWE-704): a bag whose identity
+ * fields have drifted (missing, or the wrong runtime type) throws here at the
+ * boundary instead of silently compiling and surfacing as a malformed header
+ * downstream. Extra keys (schema-specific / inventory-specific) ride along
+ * untouched — the injector serializes meta as a generic bag.
+ *
+ * Use this only where the bag is meant to be a full artifact header. The
+ * schema-driven inventory path deliberately emits operator-defined field sets
+ * that need not include the identity block, so it keeps its own documented
+ * boundary adapter rather than routing through this guard.
+ */
+export declare function coerceNormalizedMeta(bag: Record<string, unknown>): NormalizedMeta;
 /** The five reconciliation actions. Canonical home for the field-diff contract. */
 export type ReconcileAction = "add" | "revise" | "append-union" | "keep" | "replace";
 export interface FieldDiff {
