@@ -104,7 +104,7 @@ function verify(filePath, origHash, meta) {
     const sharingScopeValid = scopeIssues.length === 0;
     let promptSchemaComplete = true;
     if (isPromptMeta(meta)) {
-        const pm = meta;
+        const pm = (0, schema_1.asRecord)(meta);
         for (const f of ["role", "objective", "input_variables", "output_format", "model_target"]) {
             if (pm[f] === schema_1.UNKNOWN) {
                 issues.push(`Prompt schema '${f}' is Unknown`);

@@ -1,6 +1,6 @@
 // verify.ts — Validate injected files; enforce sharing_scope invariants; fail on violation.
 import * as fs from "fs";
-import { VerifyResult, NormalizedMeta, UNKNOWN, PromptMeta } from "./schema";
+import { VerifyResult, NormalizedMeta, UNKNOWN, PromptMeta, asRecord } from "./schema";
 import { splitContent, contentHash, stripExistingFrontMatter } from "./extract";
 import { StrategySpec, resolveStrategy, hasInjectedBlock, stripInjectedBlock, sidecarPathFor } from "./comment";
 
@@ -69,7 +69,7 @@ export function verify(filePath: string, origHash: string, meta: NormalizedMeta)
 
   let promptSchemaComplete = true;
   if (isPromptMeta(meta)) {
-    const pm = meta as unknown as Record<string, unknown>;
+    const pm = asRecord(meta);
     for (const f of ["role", "objective", "input_variables", "output_format", "model_target"]) {
       if (pm[f] === UNKNOWN) { issues.push(`Prompt schema '${f}' is Unknown`); promptSchemaComplete = false; }
     }

@@ -25,9 +25,10 @@ export function isGoodValue(v: unknown): boolean {
   return false;
 }
 
-// Fields that live in prose → seed with regex, LLM finishes
+// Fields that live in prose → seed with regex, LLM finishes.
+// "intent" dropped (DWL-007): not a schema field, so it was never reachable here.
 export const PROSE_ORIGIN_FIELDS = new Set([
-  "description", "intent", "activation_signals", "input_contract", "output_contract",
+  "description", "activation_signals", "input_contract", "output_contract",
 ]);
 
 // Fields that live in structured grammar → parse only, never LLM

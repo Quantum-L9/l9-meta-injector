@@ -114,6 +114,53 @@ export interface ArtifactMeta extends BaseHeader {
 
 export type NormalizedMeta = ExecutableRetrievalMeta | PromptMeta | DoctrineMeta | ArtifactMeta;
 
+// The identity block every NormalizedMeta variant shares, with the runtime type
+// each field must carry. Single-sourced here so coerceNormalizedMeta and the
+// interfaces above cannot drift apart.
+const BASE_HEADER_TYPES: ReadonlyArray<[keyof BaseHeader, "string" | "boolean" | "number"]> = [
+  ["id", "string"], ["title", "string"], ["artifact_type", "string"],
+  ["mcp_primitive", "string"], ["callable", "boolean"], ["retrievable", "boolean"],
+  ["injectable", "boolean"], ["namespace", "string"], ["sharing_scope", "string"],
+  ["source_path", "string"], ["content_hash", "string"],
+  ["token_cost_estimate", "number"], ["authority", "string"],
+  ["created_or_detected_at", "string"],
+];
+
+/**
+ * Widen a known object type to a generic key/value bag. Centralizes the one
+ * `as unknown as Record` escape hatch so read-paths that only need to index a
+ * field by name don't each hand-roll a double-cast (finding QTE-005 / CWE-704).
+ */
+export function asRecord(value: object): Record<string, unknown> {
+  return value as unknown as Record<string, unknown>;
+}
+
+/**
+ * Narrow a generic key/value bag into a NormalizedMeta, validating the shared
+ * BaseHeader identity block FIRST. Replaces the blind `bag as unknown as
+ * NormalizedMeta` double-casts (finding QTE-005 / CWE-704): a bag whose identity
+ * fields have drifted (missing, or the wrong runtime type) throws here at the
+ * boundary instead of silently compiling and surfacing as a malformed header
+ * downstream. Extra keys (schema-specific / inventory-specific) ride along
+ * untouched — the injector serializes meta as a generic bag.
+ *
+ * Use this only where the bag is meant to be a full artifact header. The
+ * schema-driven inventory path deliberately emits operator-defined field sets
+ * that need not include the identity block, so it keeps its own documented
+ * boundary adapter rather than routing through this guard.
+ */
+export function coerceNormalizedMeta(bag: Record<string, unknown>): NormalizedMeta {
+  for (const [key, expected] of BASE_HEADER_TYPES) {
+    const actual = typeof bag[key];
+    if (actual !== expected) {
+      throw new Error(
+        `coerceNormalizedMeta: identity field '${key}' must be ${expected}, got ${bag[key] === undefined ? "undefined" : actual}`
+      );
+    }
+  }
+  return bag as unknown as NormalizedMeta;
+}
+
 /** The five reconciliation actions. Canonical home for the field-diff contract. */
 export type ReconcileAction = "add" | "revise" | "append-union" | "keep" | "replace";
 

@@ -22,6 +22,11 @@ export interface NamespaceConfig {
   namespaceGlobs?: Array<{ glob: string; namespace: string }>;
 }
 
+// The only slice of NamespaceConfig that namespace resolution actually reads.
+// Declaring the narrow port (ICC-004) keeps resolveNamespace honest about its
+// inputs and lets callers pass a minimal object without the IO/threshold fields.
+export type NamespaceInput = Pick<NamespaceConfig, "namespace" | "namespaceGlobs">;
+
 const SHARED_SIGNALS = ["_shared", "shared", "core", "common", "universal"];
 const PRIVATE_SIGNALS = ["l9", "plastos", "legal", "ops", "private"];
 
@@ -73,7 +78,7 @@ export function toSnakeStem(filename: string): string {
     .replace(/[^a-z0-9_]/gi, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toLowerCase();
 }
 
-export function resolveNamespace(filePath: string, cfg: NamespaceConfig, typeHint?: string): NamespaceResolution {
+export function resolveNamespace(filePath: string, cfg: NamespaceInput, typeHint?: string): NamespaceResolution {
   const norm = filePath.replace(/\\/g, "/");
   let namespace = cfg.namespace ?? "l9";
   if (cfg.namespaceGlobs) {

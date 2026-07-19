@@ -2,7 +2,7 @@
 // reconcile_fields.ts — Five-way field reconciliation: add/revise/append-union/keep/replace
 //
 // Materiality rule (spec-exact):
-//   Scalar prose fields (description, intent): LLM boolean call if adapter.classify is wired.
+//   Scalar prose fields (description): LLM boolean call if adapter.classify is wired.
 //   All others: sync 20%-content-size heuristic.
 //   List fields: always union, never overwrite.
 //   replace: explicit deprecation marker only (deprecated:true | superseded_by | status:deprecated).
@@ -20,8 +20,11 @@ const LIST_UNION_FIELDS = new Set([
     "activation_signals", "triggers", "anti_triggers", "entity_types",
     "constraints", "validation_gates", "stop_conditions", "phase_model", "input_variables",
 ]);
-// Prose scalar fields where LLM boolean judgment earns its keep (~20 tokens)
-const LLM_MATERIALITY_FIELDS = new Set(["description", "intent"]);
+// Prose scalar fields where LLM boolean judgment earns its keep (~20 tokens).
+// "intent" was removed (DWL-007): it is not a field in the schema vocabulary
+// (schema.ts emits description/activation_signals/input_contract/output_contract,
+// never intent), so the entry was dead and could never match a reconciled field.
+const LLM_MATERIALITY_FIELDS = new Set(["description"]);
 function hasExplicitDeprecation(existing) {
     if (existing["deprecated"] === true || existing["deprecated"] === "true")
         return true;
@@ -102,7 +105,7 @@ async function reconcileFieldsAsync(existing, incoming) {
             diffs.push({ field, action: "replace", oldValue: oldVal, newValue: newVal, reason: "explicit deprecation/superseded_by marker present" });
             continue;
         }
-        // LLM boolean for prose scalar fields (description, intent); sync heuristic for everything else
+        // LLM boolean for prose scalar fields (description); sync heuristic for everything else
         const better = LLM_MATERIALITY_FIELDS.has(field)
             ? await isMateriallyBetterLlm(field, oldVal, newVal)
             : isMateriallyBetterSync(oldVal, newVal);
