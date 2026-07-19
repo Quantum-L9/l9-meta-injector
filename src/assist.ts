@@ -3,6 +3,7 @@
 // If it lives in prose, seed with regex, let LLM finish — but only when seed fails "good" predicate.
 import { UNKNOWN } from "./schema";
 import { getAdapter } from "./llm";
+import { MetricsCollector } from "./metrics";
 
 export interface AssistConfig {
   enabled: boolean;
@@ -39,14 +40,19 @@ export const GRAMMAR_ORIGIN_FIELDS = new Set([
 ]);
 
 export async function assistField(
-  fieldName: string, seedValue: unknown, body: string, config: AssistConfig
+  fieldName: string, seedValue: unknown, body: string, config: AssistConfig, metrics?: MetricsCollector
 ): Promise<unknown> {
   if (!config.enabled) return seedValue;
-  if (isGoodValue(seedValue)) return seedValue;
+  // Seed already good → no LLM needed; record the non-LLM path (OBS-009).
+  if (isGoodValue(seedValue)) { metrics?.recordDecision("heuristic"); return seedValue; }
   const adapter = getAdapter();
-  if (!adapter.classify) return seedValue;
+  if (!adapter.classify) { metrics?.recordDecision("no_adapter"); return seedValue; }
   const result = await adapter.classify(buildFieldPrompt(fieldName, body));
-  if (!result || result.trim() === "" || result.trim() === UNKNOWN) return seedValue;
+  if (!result || result.trim() === "" || result.trim() === UNKNOWN) {
+    metrics?.recordDecision("llm_failed_fallback"); // LLM consulted, no usable answer → keep seed
+    return seedValue;
+  }
+  metrics?.recordDecision("llm_ok");
   return result.trim();
 }
 

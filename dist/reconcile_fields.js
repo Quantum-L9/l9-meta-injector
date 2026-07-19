@@ -15,6 +15,7 @@ const schema_1 = require("./schema");
 const assist_1 = require("./assist");
 const llm_1 = require("./llm");
 const materiality_1 = require("./materiality");
+const metrics_1 = require("./metrics");
 // List fields: always union + dedup, never overwrite — covers triggers, anti_triggers, entity_types
 const LIST_UNION_FIELDS = new Set([
     "activation_signals", "triggers", "anti_triggers", "entity_types",
@@ -61,20 +62,26 @@ function isMateriallyBetterSync(old, next) {
         return true;
     return JSON.stringify(next).length > JSON.stringify(old).length * 1.2;
 }
-// Async LLM boolean: "Is B materially more informative than A?" — ~20 tokens
+// Async LLM boolean: "Is B materially more informative than A?" — ~20 tokens.
+// Reports which path decided so a null/absent LLM never masquerades as an LLM call.
 async function isMateriallyBetterLlm(field, old, next) {
+    // Trivial guards decide without consulting the LLM or the size heuristic.
     if (!(0, assist_1.isGoodValue)(next))
-        return false;
+        return { better: false, path: "heuristic" };
     if (!(0, assist_1.isGoodValue)(old))
-        return true;
+        return { better: true, path: "heuristic" };
     const adapter = (0, llm_1.getAdapter)();
     if (!adapter.classify)
-        return isMateriallyBetterSync(old, next); // no LLM — fall back to sync
+        return { better: isMateriallyBetterSync(old, next), path: "no_adapter" };
     const result = await adapter.classify((0, materiality_1.buildMaterialityPrompt)(field, old, next));
-    return result === null || result === undefined ? isMateriallyBetterSync(old, next) : (0, materiality_1.parseMaterialityReply)(result);
+    if (result === null || result === undefined) {
+        // LLM was consulted but yielded nothing usable — the heuristic decided.
+        return { better: isMateriallyBetterSync(old, next), path: "llm_failed_fallback" };
+    }
+    return { better: (0, materiality_1.parseMaterialityReply)(result), path: "llm_ok" };
 }
 // Async reconcile: used by pipeline (llmEnabled path) — LLM boolean on prose scalar fields
-async function reconcileFieldsAsync(existing, incoming) {
+async function reconcileFieldsAsync(existing, incoming, metrics) {
     const merged = { ...existing };
     const diffs = [];
     const deprecated = hasExplicitDeprecation(existing);
@@ -105,17 +112,27 @@ async function reconcileFieldsAsync(existing, incoming) {
             diffs.push({ field, action: "replace", oldValue: oldVal, newValue: newVal, reason: "explicit deprecation/superseded_by marker present" });
             continue;
         }
-        // LLM boolean for prose scalar fields (description); sync heuristic for everything else
-        const better = LLM_MATERIALITY_FIELDS.has(field)
-            ? await isMateriallyBetterLlm(field, oldVal, newVal)
-            : isMateriallyBetterSync(oldVal, newVal);
-        if (better) {
-            merged[field] = newVal;
-            const method = LLM_MATERIALITY_FIELDS.has(field) && (0, llm_1.getAdapter)().classify ? "LLM boolean judgment" : "content-size heuristic (>20%)";
-            diffs.push({ field, action: "revise", oldValue: oldVal, newValue: newVal, reason: `new value materially better — ${method}` });
+        // LLM boolean for prose scalar fields (description); sync heuristic for everything
+        // else. Capture the path actually taken (OBS-009) so the recorded reason and the
+        // run-level counter reflect reality, not adapter presence.
+        let better;
+        let path;
+        if (LLM_MATERIALITY_FIELDS.has(field)) {
+            const decision = await isMateriallyBetterLlm(field, oldVal, newVal);
+            better = decision.better;
+            path = decision.path;
         }
         else {
-            diffs.push({ field, action: "keep", oldValue: oldVal, newValue: newVal, reason: "old value passes 'good' predicate; no material improvement" });
+            better = isMateriallyBetterSync(oldVal, newVal);
+            path = "heuristic";
+        }
+        metrics?.recordDecision(path);
+        if (better) {
+            merged[field] = newVal;
+            diffs.push({ field, action: "revise", oldValue: oldVal, newValue: newVal, reason: `new value materially better — ${(0, metrics_1.decisionPathLabel)(path)}` });
+        }
+        else {
+            diffs.push({ field, action: "keep", oldValue: oldVal, newValue: newVal, reason: `old value retained via ${(0, metrics_1.decisionPathLabel)(path)}; no material improvement` });
         }
     }
     return { merged, diffs };

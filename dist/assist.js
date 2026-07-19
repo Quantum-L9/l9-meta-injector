@@ -35,17 +35,25 @@ exports.GRAMMAR_ORIGIN_FIELDS = new Set([
     "phase_model", "input_variables", "output_format", "model_target",
     "id", "title", "artifact_type", "mcp_primitive", "callable", "namespace", "sharing_scope",
 ]);
-async function assistField(fieldName, seedValue, body, config) {
+async function assistField(fieldName, seedValue, body, config, metrics) {
     if (!config.enabled)
         return seedValue;
-    if (isGoodValue(seedValue))
+    // Seed already good → no LLM needed; record the non-LLM path (OBS-009).
+    if (isGoodValue(seedValue)) {
+        metrics?.recordDecision("heuristic");
         return seedValue;
+    }
     const adapter = (0, llm_1.getAdapter)();
-    if (!adapter.classify)
+    if (!adapter.classify) {
+        metrics?.recordDecision("no_adapter");
         return seedValue;
+    }
     const result = await adapter.classify(buildFieldPrompt(fieldName, body));
-    if (!result || result.trim() === "" || result.trim() === schema_1.UNKNOWN)
+    if (!result || result.trim() === "" || result.trim() === schema_1.UNKNOWN) {
+        metrics?.recordDecision("llm_failed_fallback"); // LLM consulted, no usable answer → keep seed
         return seedValue;
+    }
+    metrics?.recordDecision("llm_ok");
     return result.trim();
 }
 function buildFieldPrompt(fieldName, body) {

@@ -7,10 +7,11 @@
 //   replace: explicit deprecation marker only (deprecated:true | superseded_by | status:deprecated).
 //   Every mutation is recorded in FieldDiff[]. No silent writes.
 
-import { UNKNOWN, FieldDiff } from "./schema";
+import { UNKNOWN, FieldDiff, MetaRecord } from "./schema";
 import { isGoodValue } from "./assist";
 import { getAdapter } from "./llm";
 import { buildMaterialityPrompt, parseMaterialityReply } from "./materiality";
+import { MetricsCollector, DecisionPath, decisionPathLabel } from "./metrics";
 
 // FieldDiff and ReconcileAction are single-sourced in schema.ts (finding ICC-001 /
 // ACA-004). Re-export the type so existing `import { FieldDiff } from "./reconcile_fields"`
@@ -18,7 +19,7 @@ import { buildMaterialityPrompt, parseMaterialityReply } from "./materiality";
 export type { FieldDiff, ReconcileAction } from "./schema";
 
 export interface ReconcileResult {
-  merged: Record<string, unknown>;
+  merged: MetaRecord;
   diffs: FieldDiff[];
 }
 
@@ -34,7 +35,7 @@ const LIST_UNION_FIELDS = new Set([
 // never intent), so the entry was dead and could never match a reconciled field.
 const LLM_MATERIALITY_FIELDS = new Set(["description"]);
 
-function hasExplicitDeprecation(existing: Record<string, unknown>): boolean {
+function hasExplicitDeprecation(existing: MetaRecord): boolean {
   if (existing["deprecated"] === true || existing["deprecated"] === "true") return true;
   if (existing["superseded_by"] && existing["superseded_by"] !== UNKNOWN) return true;
   if (typeof existing["status"] === "string") {
@@ -65,22 +66,33 @@ function isMateriallyBetterSync(old: unknown, next: unknown): boolean {
   return JSON.stringify(next).length > JSON.stringify(old).length * 1.2;
 }
 
-// Async LLM boolean: "Is B materially more informative than A?" — ~20 tokens
-async function isMateriallyBetterLlm(field: string, old: unknown, next: unknown): Promise<boolean> {
-  if (!isGoodValue(next)) return false;
-  if (!isGoodValue(old)) return true;
+// The materiality verdict plus the path that produced it, so the caller records the
+// TRUE decision path (OBS-009) rather than re-deriving it from adapter presence.
+interface MaterialityDecision { better: boolean; path: DecisionPath; }
+
+// Async LLM boolean: "Is B materially more informative than A?" — ~20 tokens.
+// Reports which path decided so a null/absent LLM never masquerades as an LLM call.
+async function isMateriallyBetterLlm(field: string, old: unknown, next: unknown): Promise<MaterialityDecision> {
+  // Trivial guards decide without consulting the LLM or the size heuristic.
+  if (!isGoodValue(next)) return { better: false, path: "heuristic" };
+  if (!isGoodValue(old)) return { better: true, path: "heuristic" };
   const adapter = getAdapter();
-  if (!adapter.classify) return isMateriallyBetterSync(old, next); // no LLM — fall back to sync
+  if (!adapter.classify) return { better: isMateriallyBetterSync(old, next), path: "no_adapter" };
   const result = await adapter.classify(buildMaterialityPrompt(field, old, next));
-  return result === null || result === undefined ? isMateriallyBetterSync(old, next) : parseMaterialityReply(result);
+  if (result === null || result === undefined) {
+    // LLM was consulted but yielded nothing usable — the heuristic decided.
+    return { better: isMateriallyBetterSync(old, next), path: "llm_failed_fallback" };
+  }
+  return { better: parseMaterialityReply(result), path: "llm_ok" };
 }
 
 // Async reconcile: used by pipeline (llmEnabled path) — LLM boolean on prose scalar fields
 export async function reconcileFieldsAsync(
-  existing: Record<string, unknown>,
-  incoming: Record<string, unknown>
+  existing: MetaRecord,
+  incoming: MetaRecord,
+  metrics?: MetricsCollector
 ): Promise<ReconcileResult> {
-  const merged: Record<string, unknown> = { ...existing };
+  const merged: MetaRecord = { ...existing };
   const diffs: FieldDiff[] = [];
   const deprecated = hasExplicitDeprecation(existing);
 
@@ -114,17 +126,26 @@ export async function reconcileFieldsAsync(
       continue;
     }
 
-    // LLM boolean for prose scalar fields (description); sync heuristic for everything else
-    const better = LLM_MATERIALITY_FIELDS.has(field)
-      ? await isMateriallyBetterLlm(field, oldVal, newVal)
-      : isMateriallyBetterSync(oldVal, newVal);
+    // LLM boolean for prose scalar fields (description); sync heuristic for everything
+    // else. Capture the path actually taken (OBS-009) so the recorded reason and the
+    // run-level counter reflect reality, not adapter presence.
+    let better: boolean;
+    let path: DecisionPath;
+    if (LLM_MATERIALITY_FIELDS.has(field)) {
+      const decision = await isMateriallyBetterLlm(field, oldVal, newVal);
+      better = decision.better;
+      path = decision.path;
+    } else {
+      better = isMateriallyBetterSync(oldVal, newVal);
+      path = "heuristic";
+    }
+    metrics?.recordDecision(path);
 
     if (better) {
       merged[field] = newVal;
-      const method = LLM_MATERIALITY_FIELDS.has(field) && getAdapter().classify ? "LLM boolean judgment" : "content-size heuristic (>20%)";
-      diffs.push({ field, action: "revise", oldValue: oldVal, newValue: newVal, reason: `new value materially better — ${method}` });
+      diffs.push({ field, action: "revise", oldValue: oldVal, newValue: newVal, reason: `new value materially better — ${decisionPathLabel(path)}` });
     } else {
-      diffs.push({ field, action: "keep", oldValue: oldVal, newValue: newVal, reason: "old value passes 'good' predicate; no material improvement" });
+      diffs.push({ field, action: "keep", oldValue: oldVal, newValue: newVal, reason: `old value retained via ${decisionPathLabel(path)}; no material improvement` });
     }
   }
 
@@ -133,10 +154,10 @@ export async function reconcileFieldsAsync(
 
 // Sync reconcile: used by non-LLM paths (inject.ts default, CLI without --llm)
 export function reconcileFields(
-  existing: Record<string, unknown>,
-  incoming: Record<string, unknown>
+  existing: MetaRecord,
+  incoming: MetaRecord
 ): ReconcileResult {
-  const merged: Record<string, unknown> = { ...existing };
+  const merged: MetaRecord = { ...existing };
   const diffs: FieldDiff[] = [];
   const deprecated = hasExplicitDeprecation(existing);
 

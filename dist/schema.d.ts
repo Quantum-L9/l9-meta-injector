@@ -83,11 +83,24 @@ export interface ArtifactMeta extends BaseHeader {
 }
 export type NormalizedMeta = ExecutableRetrievalMeta | PromptMeta | DoctrineMeta | ArtifactMeta;
 /**
+ * The metadata-record shape exchanged across the reconcile edge: a typed producer
+ * (buildMeta → NormalizedMeta) and the untyped consumer (reconcileFields) now name
+ * the same contract instead of each side spelling `Record<string, unknown>` inline
+ * (finding ICC-005). Widening a NormalizedMeta to a MetaRecord is lossless.
+ */
+export type MetaRecord = Record<string, unknown>;
+/**
  * Widen a known object type to a generic key/value bag. Centralizes the one
  * `as unknown as Record` escape hatch so read-paths that only need to index a
  * field by name don't each hand-roll a double-cast (finding QTE-005 / CWE-704).
  */
-export declare function asRecord(value: object): Record<string, unknown>;
+export declare function asRecord(value: object): MetaRecord;
+/**
+ * Coerce the well-known typed BaseHeader fields of a parsed existing-meta record to
+ * the exact runtime types buildMeta emits (numbers, booleans), leaving every other
+ * key untouched. Returns a new record; never throws.
+ */
+export declare function normalizeMetaRecord(rec: MetaRecord): MetaRecord;
 /**
  * Narrow a generic key/value bag into a NormalizedMeta, validating the shared
  * BaseHeader identity block FIRST. Replaces the blind `bag as unknown as

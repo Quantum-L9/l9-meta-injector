@@ -6,12 +6,13 @@
 // re-run replaces it instead of duplicating. Writes <file>.inject.log on any mutation.
 import * as fs from "fs";
 import * as path from "path";
-import { NormalizedMeta, InjectionRecord } from "./schema";
+import { NormalizedMeta, InjectionRecord, MetaRecord, asRecord, normalizeMetaRecord } from "./schema";
 import { serializeToYamlFrontMatter } from "./normalize_meta";
 import { contentHash, splitContent, stripExistingFrontMatter } from "./extract";
 import { reconcileFields, reconcileFieldsAsync, diffsToLogYaml } from "./reconcile_fields";
 import { FieldDiff } from "./schema";
 import { getAdapter } from "./llm";
+import { MetricsCollector } from "./metrics";
 import { parseCanonicalYaml } from "./meta_schema";
 import {
   resolveStrategy, StrategySpec, frontMatterInner, yamlToBlock, stripInjectedBlock,
@@ -22,12 +23,14 @@ import {
 // Delegates to the canonical parser (meta_schema.ts) so all parsing rules —
 // quoted-string escaping, inline lists, depth guards — are applied consistently.
 // Returns {} on malformed input rather than throwing, to keep injection safe.
-function parseExistingMeta(fm: string | null): Record<string, unknown> {
+function parseExistingMeta(fm: string | null): MetaRecord {
   if (!fm) return {};
   const inner = fm.replace(/^---\s*\n/, "").replace(/\n?---\s*$/, "");
   try {
     const obj = parseCanonicalYaml(inner);
-    return typeof obj === "object" && obj !== null ? (obj as Record<string, unknown>) : {};
+    // Normalize the typed BaseHeader fields (numbers/booleans) so the reconcile edge
+    // compares against buildMeta's output like-for-like, not string-vs-number (ICC-005).
+    return typeof obj === "object" && obj !== null ? normalizeMetaRecord(obj as MetaRecord) : {};
   } catch {
     return {};
   }
@@ -40,7 +43,7 @@ interface ReadCtx {
   spec: StrategySpec;
   cleanBody: string;
   originalBodyHash: string;
-  existingMeta: Record<string, unknown>;
+  existingMeta: MetaRecord;
 }
 
 // Read the file and derive the clean body + any prior metadata, per strategy.
@@ -59,7 +62,7 @@ function readForInjection(filePath: string): ReadCtx {
     return { raw, spec, cleanBody, originalBodyHash: contentHash(cleanBody), existingMeta: parseExistingMeta(existingYaml) };
   }
   // sidecar (and skip-binary, which callers guard against): file body is untouched.
-  let existingMeta: Record<string, unknown> = {};
+  let existingMeta: MetaRecord = {};
   const sidecar = sidecarPathFor(filePath);
   if (fs.existsSync(sidecar)) existingMeta = parseExistingMeta(fs.readFileSync(sidecar, "utf8"));
   return { raw, spec, cleanBody: raw, originalBodyHash: contentHash(raw), existingMeta };
@@ -134,11 +137,14 @@ function record(filePath: string, ctx: ReadCtx, built: Built, finalMeta: Normali
   };
 }
 
-export async function injectFileAsync(filePath: string, meta: NormalizedMeta, opts: InjectOptions): Promise<InjectionRecord> {
+export async function injectFileAsync(filePath: string, meta: NormalizedMeta, opts: InjectOptions, metrics?: MetricsCollector): Promise<InjectionRecord> {
   const ctx = readForInjection(filePath);
-  const incomingMeta = Object.fromEntries(Object.entries(meta));
+  // Widen the typed producer (NormalizedMeta) onto the shared reconcile-edge record
+  // type instead of the untyped Object.fromEntries clone (ICC-005). reconcile reads
+  // incoming without mutating it, so an alias is safe.
+  const incomingMeta: MetaRecord = asRecord(meta);
   const { merged, diffs } = getAdapter().classify
-    ? await reconcileFieldsAsync(ctx.existingMeta, incomingMeta)
+    ? await reconcileFieldsAsync(ctx.existingMeta, incomingMeta, metrics)
     : reconcileFields(ctx.existingMeta, incomingMeta);
   const finalMeta = { ...meta, ...merged } as NormalizedMeta;
   const built = buildInjection(filePath, finalMeta, ctx);
@@ -148,7 +154,7 @@ export async function injectFileAsync(filePath: string, meta: NormalizedMeta, op
 
 export function injectFile(filePath: string, meta: NormalizedMeta, opts: InjectOptions): InjectionRecord {
   const ctx = readForInjection(filePath);
-  const { merged, diffs } = reconcileFields(ctx.existingMeta, Object.fromEntries(Object.entries(meta)));
+  const { merged, diffs } = reconcileFields(ctx.existingMeta, asRecord(meta));
   const finalMeta = { ...meta, ...merged } as NormalizedMeta;
   const built = buildInjection(filePath, finalMeta, ctx);
   const paths = writeInjection(filePath, built, diffs, opts);

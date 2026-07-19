@@ -2,6 +2,7 @@ import { PipelineConfig, InjectionRecord, VerifyResult } from "./schema";
 import { scanFiles } from "./retrieval";
 import { PlacementPlan } from "./placement_policy";
 import { MetaV3Record } from "./meta_v3";
+import { MetricsSnapshot } from "./metrics";
 export interface VerificationSummary {
     total: number;
     clean: number;
@@ -37,5 +38,7 @@ export interface PipelineResult {
     placementPlans: PlacementPlan[];
     /** v3 nine-plane records (one per injected artifact), each with its semantic class. */
     metaV3: MetaV3Record[];
+    /** LLM/IO hotpath metrics for this run: call counts, failures, p50/p95, decision paths. */
+    metrics: MetricsSnapshot;
 }
 export declare function runPipelineAsync(config: PipelineConfig): Promise<PipelineResult>;
