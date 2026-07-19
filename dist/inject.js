@@ -47,45 +47,23 @@ const normalize_meta_1 = require("./normalize_meta");
 const extract_1 = require("./extract");
 const reconcile_fields_1 = require("./reconcile_fields");
 const llm_1 = require("./llm");
+const meta_schema_1 = require("./meta_schema");
 const comment_1 = require("./comment");
+// Parse the inner YAML of an existing injected header into a plain object.
+// Delegates to the canonical parser (meta_schema.ts) so all parsing rules —
+// quoted-string escaping, inline lists, depth guards — are applied consistently.
+// Returns {} on malformed input rather than throwing, to keep injection safe.
 function parseExistingMeta(fm) {
     if (!fm)
         return {};
-    const result = {};
-    const lines = fm.replace(/^---\s*\n/, "").replace(/\n?---\s*$/, "").split("\n");
-    let currentKey = null;
-    let currentList = [];
-    for (const line of lines) {
-        const li = line.match(/^\s{2}-\s+(.+)/);
-        if (li && currentKey) {
-            currentList.push(li[1].replace(/^["']|["']$/g, ""));
-            continue;
-        }
-        if (currentKey && currentList.length > 0) {
-            result[currentKey] = currentList;
-            currentList = [];
-            currentKey = null;
-        }
-        const kv = line.match(/^([a-zA-Z_][a-zA-Z0-9_]*):\s*(.*)/);
-        if (kv) {
-            const val = kv[2].trim();
-            if (val === "") {
-                currentKey = kv[1];
-                currentList = [];
-            }
-            else if (val === "true")
-                result[kv[1]] = true;
-            else if (val === "false")
-                result[kv[1]] = false;
-            else if (/^\d+$/.test(val))
-                result[kv[1]] = parseInt(val, 10);
-            else
-                result[kv[1]] = val.replace(/^["']|["']$/g, "");
-        }
+    const inner = fm.replace(/^---\s*\n/, "").replace(/\n?---\s*$/, "");
+    try {
+        const obj = (0, meta_schema_1.parseCanonicalYaml)(inner);
+        return typeof obj === "object" && obj !== null ? obj : {};
     }
-    if (currentKey && currentList.length > 0)
-        result[currentKey] = currentList;
-    return result;
+    catch {
+        return {};
+    }
 }
 // Read the file and derive the clean body + any prior metadata, per strategy.
 function readForInjection(filePath) {

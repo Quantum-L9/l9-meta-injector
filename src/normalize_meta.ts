@@ -2,7 +2,7 @@
 import * as path from "path";
 import {
   ClassifyResult, ExtractedFields, ExecutableRetrievalMeta, PromptMeta, DoctrineMeta,
-  ArtifactMeta, NormalizedMeta, UNKNOWN, PRIMITIVE_TAXONOMY, McpPrimitive, SharingScope,
+  ArtifactMeta, NormalizedMeta, UNKNOWN, PRIMITIVE_TAXONOMY, McpPrimitive,
 } from "./schema";
 import { contentHash, estimateTokens } from "./extract";
 import { resolveNamespace, NamespaceConfig } from "./namespace";
@@ -45,7 +45,7 @@ export function buildMeta(
     id: idStem, title: slugTitle(filePath), artifact_type: cr.artifactType,
     mcp_primitive: tax.mcpPrimitive as McpPrimitive, callable: tax.callable,
     retrievable: tax.injectable, injectable: tax.injectable,
-    namespace, sharing_scope: sharingScope as SharingScope,
+    namespace, sharing_scope: sharingScope,
     source_path: filePath, content_hash: contentHash(originalBody),
     token_cost_estimate: estimateTokens(originalBody), authority,
     created_or_detected_at: now,

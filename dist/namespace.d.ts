@@ -1,4 +1,5 @@
-export type SharingScope = "private" | "shared" | "agnostic";
+import { SharingScope } from "./schema";
+export type { SharingScope } from "./schema";
 export interface NamespaceResolution {
     namespace: string;
     sharingScope: SharingScope;
@@ -12,7 +13,6 @@ export interface NamespaceConfig {
     hashPrefixLength: number;
     outputDir: string;
     indexDir: string;
-    promptGlob: string;
     namespaceGlobs?: Array<{
         glob: string;
         namespace: string;

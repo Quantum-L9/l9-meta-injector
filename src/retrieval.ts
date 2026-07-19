@@ -14,7 +14,12 @@ function isGeneratedArtifact(name: string): boolean {
   return name.endsWith(".inject.log") || name.endsWith(".l9meta.yaml");
 }
 
-/** Read a small prefix and report whether it looks binary (has a NUL byte). */
+/**
+ * Read a small prefix and report whether it looks binary (has a NUL byte). A file
+ * that cannot be opened is excluded (returns true) but — unlike before — the read
+ * error is surfaced to stderr rather than silently conflated with a real binary
+ * (finding OBS-008), so a dropped input is traceable to its access error.
+ */
 function looksBinaryOnDisk(filePath: string): boolean {
   let fd: number | null = null;
   try {
@@ -23,7 +28,8 @@ function looksBinaryOnDisk(filePath: string): boolean {
     const n = fs.readSync(fd, buf, 0, 8192, 0);
     for (let i = 0; i < n; i++) if (buf[i] === 0) return true;
     return false;
-  } catch {
+  } catch (err) {
+    process.stderr.write(`[l9-meta-injector] retrieval: excluded unreadable file ${filePath}: ${(err as Error).message}\n`);
     return true;
   } finally {
     if (fd !== null) fs.closeSync(fd);

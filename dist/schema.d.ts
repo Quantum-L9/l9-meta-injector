@@ -82,9 +82,11 @@ export interface ArtifactMeta extends BaseHeader {
     owner: string | Unknown;
 }
 export type NormalizedMeta = ExecutableRetrievalMeta | PromptMeta | DoctrineMeta | ArtifactMeta;
+/** The five reconciliation actions. Canonical home for the field-diff contract. */
+export type ReconcileAction = "add" | "revise" | "append-union" | "keep" | "replace";
 export interface FieldDiff {
     field: string;
-    action: "add" | "revise" | "append-union" | "keep" | "replace";
+    action: ReconcileAction;
     oldValue: unknown;
     newValue: unknown;
     reason: string;
@@ -120,6 +122,11 @@ export interface PipelineConfig {
     nearDupThreshold: number;
     hashPrefixLength: number;
     indexDir: string;
+    /** Optional per-glob namespace overrides (e.g. `plastos/** → plastos`). */
+    namespaceGlobs?: Array<{
+        glob: string;
+        namespace: string;
+    }>;
     verbose: boolean;
     llmEnabled: boolean;
     llmBaseUrl?: string;
@@ -129,15 +136,9 @@ export interface PipelineConfig {
 }
 export declare const META_V3_SCHEMA_VERSION: 3;
 export type MetaV3SchemaVersion = typeof META_V3_SCHEMA_VERSION;
-/** Stable status vocabulary carried on the governance plane. */
 export type LifecycleStatus = "active" | "deprecated" | "review";
-/**
- * The nine plane names, in canonical order. Exported as a runtime tuple so that
- * validators and tests can enumerate the planes without reflection.
- */
 export declare const META_V3_PLANES: readonly ["identity", "taxonomy", "placement", "routing", "provenance", "governance", "economics", "assurance", "lineage"];
 export type MetaV3Plane = (typeof META_V3_PLANES)[number];
-/** Plane 1 — who/what this artifact is. */
 export interface IdentityPlane {
     id: string;
     title: string;
@@ -145,7 +146,6 @@ export interface IdentityPlane {
     content_hash: string;
     version: string | Unknown;
 }
-/** Plane 2 — how the artifact is classified and what it can do. */
 export interface TaxonomyPlane {
     family: ArtifactFamily;
     mcp_primitive: McpPrimitive;
@@ -153,7 +153,6 @@ export interface TaxonomyPlane {
     retrievable: boolean;
     injectable: boolean;
 }
-/** Plane 3 — where the artifact lives, logically and physically. */
 export interface PlacementPlane {
     namespace: string;
     source_path: string;
@@ -161,10 +160,6 @@ export interface PlacementPlane {
     layer: string | Unknown;
     sharing_scope: SharingScope;
 }
-/**
- * Plane 4 — advisory route plan. Routing is advisory only: this engine owns
- * route *plans*, never live routing writes, so `advisory` is fixed true.
- */
 export interface RoutingPlane {
     advisory: true;
     activation_signals: string[] | Unknown;
@@ -172,42 +167,31 @@ export interface RoutingPlane {
     output_contract: string | Unknown;
     targets: string[] | Unknown;
 }
-/** Plane 5 — origin and generation history (provenance snapshot). */
 export interface ProvenancePlane {
     created_or_detected_at: string;
     generated_by: string | Unknown;
     upstream: string[] | Unknown;
     snapshot_hash: string | Unknown;
 }
-/** Plane 6 — authority, ownership, and lifecycle status. */
 export interface GovernancePlane {
     authority: string;
     status: LifecycleStatus;
     owner: string | Unknown;
     decision_drivers: string[] | Unknown;
 }
-/** Plane 7 — cost/size economics used for injection budgeting. */
 export interface EconomicsPlane {
     token_cost_estimate: number;
     size_bytes: number | Unknown;
 }
-/** Plane 8 — validation gates and stop conditions (fail-closed assurance). */
 export interface AssurancePlane {
     validation_gates: string[] | Unknown;
     stop_conditions: string[] | Unknown;
 }
-/** Plane 9 — schema lineage and supersession chain. */
 export interface LineagePlane {
     schema_version: MetaV3SchemaVersion;
     supersedes: string | Unknown;
     chain: string[] | Unknown;
 }
-/**
- * A complete v3 metadata record. Declares all nine orthogonal planes; note
- * that a TypeScript `interface` is not exact (structural typing still permits
- * extra keys on assignable values), so this models the required plane set
- * rather than guaranteeing exactness.
- */
 export interface MetaV3 {
     identity: IdentityPlane;
     taxonomy: TaxonomyPlane;
@@ -226,3 +210,4 @@ export interface ArtifactClassification {
     confidence: ClassConfidence;
     signals: string[];
 }
+export declare function isPromptMeta(m: NormalizedMeta | unknown): m is PromptMeta;

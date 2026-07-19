@@ -1,5 +1,7 @@
 import { PipelineConfig, InjectionRecord, VerifyResult } from "./schema";
 import { scanFiles } from "./retrieval";
+import { PlacementPlan } from "./placement_policy";
+import { MetaV3Record } from "./meta_v3";
 export interface VerificationSummary {
     total: number;
     clean: number;
@@ -11,11 +13,29 @@ export interface VerificationSummary {
         issues: string[];
     }>;
 }
+export interface CoverageSummary {
+    scanned: number;
+    injected: number;
+    skippedBinary: number;
+    skippedNonInjectable: number;
+    verifyFailed: number;
+    /** Source paths skipped, by reason — so coverage gaps are correlatable to inputs. */
+    skipped: {
+        binary: string[];
+        nonInjectable: string[];
+    };
+}
 export interface PipelineResult {
     scanned: ReturnType<typeof scanFiles>;
     injected: InjectionRecord[];
     verified: VerifyResult[];
     /** Aggregated verification outcome. `passed: false` means at least one file failed verification. */
     verification: VerificationSummary;
+    /** What the run did vs. skipped (scanned/injected/skipped/verify-failed). */
+    coverage: CoverageSummary;
+    /** Advisory placement plans (one per injected artifact) from the placement compiler. */
+    placementPlans: PlacementPlan[];
+    /** v3 nine-plane records (one per injected artifact), each with its semantic class. */
+    metaV3: MetaV3Record[];
 }
 export declare function runPipelineAsync(config: PipelineConfig): Promise<PipelineResult>;

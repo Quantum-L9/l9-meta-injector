@@ -149,14 +149,17 @@ function serializeYaml(rec) {
     lines.push("---");
     return lines.join("\n") + "\n";
 }
-function walk(root, ignore) {
+function walk(root, ignore, skippedDirs) {
     const out = [];
     function rec(dir) {
         let entries;
+        // An unreadable directory must not silently drop its whole subtree from the
+        // inventory (finding OBS-007): record it so the coverage gap is observable.
         try {
             entries = fs.readdirSync(dir, { withFileTypes: true });
         }
-        catch {
+        catch (err) {
+            skippedDirs.push(`${dir}: ${err.message}`);
             return;
         }
         for (const e of entries) {
@@ -247,7 +250,8 @@ function inventoryTree(config) {
     if (relOut && !relOut.startsWith("..") && !path.isAbsolute(relOut)) {
         cfg.ignore.add(relOut.split(path.sep)[0]);
     }
-    const entries = walk(root, cfg.ignore);
+    const skippedDirs = [];
+    const entries = walk(root, cfg.ignore, skippedDirs);
     const records = [];
     const typeDistribution = {};
     let files = 0, folders = 0;
@@ -279,13 +283,16 @@ function inventoryTree(config) {
             continue;
         if (isDir) {
             if (cfg.folderSidecars && (0, meta_schema_1.targetIncludes)(schema, "sidecar")) {
-                writeFolderSidecar(abs, metaObj);
+                writeFolderSidecar(abs, metaObj, rec.unknowns);
             }
             continue;
         }
         // Files: text files get an inline header via the filetype-aware injector;
         // binaries / comment-less formats get a metadata sidecar. Body is preserved.
-        const raw = safeRead(abs);
+        const read = safeRead(abs);
+        if (read.error)
+            rec.unknowns.push(`read_failed:${read.error}`);
+        const raw = read.text;
         const strategy = raw === null ? "skip-binary" : (0, comment_1.resolveStrategy)(abs, raw).strategy;
         const canHeader = raw !== null && (strategy === "yaml-frontmatter" || strategy === "line-comment" || strategy === "block-comment");
         if (cfg.injectHeaders && canHeader && (0, meta_schema_1.targetIncludes)(schema, "file_header")) {
@@ -297,22 +304,31 @@ function inventoryTree(config) {
             try {
                 (0, inject_1.injectFile)(abs, headerMeta, { dryRun: false, outDir: config.outDir, verbose: false, writeInjectLog: false });
             }
-            catch {
+            catch (err) {
+                // Don't discard the injection error (finding OBS-004): record it, then fall
+                // back to a sidecar if the schema allows one.
+                rec.unknowns.push(`header_injection_failed:${err.message}`);
                 if ((0, meta_schema_1.targetIncludes)(schema, "sidecar"))
-                    writeSidecar(abs, metaObj);
+                    writeSidecar(abs, metaObj, rec.unknowns);
             }
         }
         else if ((0, meta_schema_1.targetIncludes)(schema, "sidecar")) {
-            writeSidecar(abs, metaObj);
+            writeSidecar(abs, metaObj, rec.unknowns);
         }
+    }
+    if (skippedDirs.length) {
+        process.stderr.write(`[l9-meta-injector] inventory: ${skippedDirs.length} unreadable director(ies) skipped:\n${skippedDirs.map((d) => `  - ${d}`).join("\n")}\n`);
     }
     const duplicates = buildDuplicateClusters(records);
     const manifestPaths = writeManifests(config.outDir, root, records, typeDistribution, duplicates, cfg.now, cfg.dryRun);
-    return { root, total: records.length, files, folders, typeDistribution, manifestPaths, duplicates, records };
+    return { root, total: records.length, files, folders, typeDistribution, manifestPaths, duplicates, records, skippedDirs };
 }
 // Read only the first 8 KB — enough to decide binary-vs-text and pick a strategy,
 // without loading a whole large binary into memory. injectFile re-reads the full
 // file itself when it actually needs the body.
+// text=null with no error → binary; error set → the file could not be read. Keeping
+// the two distinct means a permission/IO error is no longer silently reclassified as
+// "binary, skipped" (finding OBS-005).
 function safeRead(abs) {
     let fd = null;
     try {
@@ -321,22 +337,26 @@ function safeRead(abs) {
         const n = fs.readSync(fd, buf, 0, 8192, 0);
         for (let i = 0; i < n; i++)
             if (buf[i] === 0)
-                return null; // binary
-        return buf.subarray(0, n).toString("utf8");
+                return { text: null }; // binary
+        return { text: buf.subarray(0, n).toString("utf8") };
     }
-    catch {
-        return null;
+    catch (err) {
+        return { text: null, error: err.message };
     }
     finally {
         if (fd !== null)
             fs.closeSync(fd);
     }
 }
-function writeSidecar(abs, obj) {
+function writeSidecar(abs, obj, unknowns) {
+    // A no-op catch here silently drops the metadata AND contradicts the old comment
+    // that claimed it was "recorded in manifest" (findings OBS-006 / PRD-002). Record it.
     try {
         fs.writeFileSync((0, comment_1.sidecarPathFor)(abs), serializeYaml(obj), "utf8");
     }
-    catch { /* unwritable — recorded in manifest only */ }
+    catch (err) {
+        unknowns?.push(`sidecar_write_failed:${err.message}`);
+    }
 }
 // Write a folder's .l9meta.yaml non-destructively: if one already exists (possibly
 // user-authored), merge so existing keys win and only missing keys are added,
@@ -347,7 +367,7 @@ function writeSidecar(abs, obj) {
 function asInjectableMeta(fields) {
     return fields;
 }
-function writeFolderSidecar(dir, metaObj) {
+function writeFolderSidecar(dir, metaObj, unknowns) {
     const p = path.join(dir, ".l9meta.yaml");
     // Non-destructive: never rewrite an existing folder sidecar. Round-tripping a
     // user-authored file through the constrained canonical parser could corrupt it
@@ -357,7 +377,9 @@ function writeFolderSidecar(dir, metaObj) {
     try {
         fs.writeFileSync(p, serializeYaml(metaObj), "utf8");
     }
-    catch { /* unwritable dir — recorded, skip */ }
+    catch (err) {
+        unknowns?.push(`sidecar_write_failed:${err.message}`);
+    }
 }
 // Map an InventoryRecord onto the minimal header the injector serializes. The injector
 // preserves the file body and reconciles fields; inventory only needs the identity block.

@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.META_V3_PLANES = exports.META_V3_SCHEMA_VERSION = exports.PRIMITIVE_TAXONOMY = exports.UNKNOWN = void 0;
+exports.isPromptMeta = isPromptMeta;
 exports.UNKNOWN = "Unknown";
 exports.PRIMITIVE_TAXONOMY = {
     skill: { type: "skill", meaning: "atomic capability", callable: true, mcpPrimitive: "tool", injectable: true },
@@ -16,19 +17,8 @@ exports.PRIMITIVE_TAXONOMY = {
 };
 // ---------------------------------------------------------------------------
 // Metadata v3 — nine-plane schema
-//
-// v3 re-expresses the flat v1/v2 header (BaseHeader and its extensions) as nine
-// orthogonal metadata planes. Each plane isolates one concern of the L9
-// metadata compilation engine (identity, placement, routing, provenance, ...),
-// so that downstream compilers can reason about a single plane without
-// materializing the whole header. v3 is additive: it does not replace v1/v2 and
-// changes no existing behavior.
 // ---------------------------------------------------------------------------
 exports.META_V3_SCHEMA_VERSION = 3;
-/**
- * The nine plane names, in canonical order. Exported as a runtime tuple so that
- * validators and tests can enumerate the planes without reflection.
- */
 exports.META_V3_PLANES = [
     "identity",
     "taxonomy",
@@ -40,4 +30,13 @@ exports.META_V3_PLANES = [
     "assurance",
     "lineage",
 ];
+// ---------------------------------------------------------------------------
+// Canonical type guard — single authoritative isPromptMeta.
+// Import this wherever artifact_type === "prompt" must be narrowed;
+// do NOT redefine locally in compiler.ts, pipeline.ts, or verify.ts.
+// ---------------------------------------------------------------------------
+function isPromptMeta(m) {
+    return typeof m === "object" && m !== null &&
+        m.artifact_type === "prompt";
+}
 //# sourceMappingURL=schema.js.map
