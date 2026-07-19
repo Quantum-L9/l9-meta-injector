@@ -39,6 +39,11 @@ function makeOpenAIAdapter(opts) {
             const timer = setTimeout(() => ctrl.abort(), opts.timeout ?? 15000);
             const emit = (d) => reportDiagnostic(opts.onDiagnostic, d);
             try {
+                // Never transmit the Authorization bearer over cleartext (SEC-003 / CWE-319).
+                if (!/^https:/i.test(opts.baseUrl) && !opts.allowInsecure) {
+                    emit({ outcome: "network_error", detail: "refusing to send credential to non-https baseUrl", durationMs: Date.now() - started });
+                    return null;
+                }
                 const res = await fetch(`${opts.baseUrl}/chat/completions`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json", Authorization: `Bearer ${opts.apiKey}` },

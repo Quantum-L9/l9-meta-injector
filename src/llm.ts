@@ -41,6 +41,8 @@ function reportDiagnostic(cb: ((d: LlmDiagnostic) => void) | undefined, d: LlmDi
 export function makeOpenAIAdapter(opts: {
   baseUrl: string; apiKey: string; model: string; maxTokens?: number; timeout?: number;
   onDiagnostic?: (d: LlmDiagnostic) => void;
+  /** Opt-in to send the bearer token over a non-https baseUrl (default: refuse). */
+  allowInsecure?: boolean;
 }): LlmAdapter {
   return {
     estimateTokens(text: string): number { return Math.max(1, Math.ceil(text.length / 4)); },
@@ -50,6 +52,11 @@ export function makeOpenAIAdapter(opts: {
       const timer = setTimeout(() => ctrl.abort(), opts.timeout ?? 15000);
       const emit = (d: LlmDiagnostic) => reportDiagnostic(opts.onDiagnostic, d);
       try {
+        // Never transmit the Authorization bearer over cleartext (SEC-003 / CWE-319).
+        if (!/^https:/i.test(opts.baseUrl) && !opts.allowInsecure) {
+          emit({ outcome: "network_error", detail: "refusing to send credential to non-https baseUrl", durationMs: Date.now() - started });
+          return null;
+        }
         const res = await fetch(`${opts.baseUrl}/chat/completions`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${opts.apiKey}` },

@@ -91,7 +91,10 @@ export function parseCanonicalYaml(text: string): Record<string, unknown> {
   const lines = text.split("\n")
     .map(strip)
     .filter((l) => l.trim() !== "" && !/^\s*#/.test(l));
-  const root: Record<string, unknown> = {};
+  // Object.create(null): parsed keys come from operator-supplied YAML, so a
+  // `__proto__:`/`constructor:` key must not reach Object.prototype (SEC-001 /
+  // CWE-1321). A null-prototype bag makes such keys ordinary own properties.
+  const root: Record<string, unknown> = Object.create(null);
   let i = 0;
 
   while (i < lines.length) {
@@ -121,7 +124,7 @@ function parseBlock(block: string[]): unknown {
     // Single-level map only. Fail fast on deeper nesting instead of silently
     // flattening it — the canonical subset does not support nested maps, and a
     // silent garble is dangerous for callers that read+rewrite existing files.
-    const map: Record<string, unknown> = {};
+    const map: Record<string, unknown> = Object.create(null); // null proto — see SEC-001 note above
     for (const l of block) {
       if (indentOf(l) > base) {
         throw new Error("canonical YAML: nested maps (depth > 2) are not supported");

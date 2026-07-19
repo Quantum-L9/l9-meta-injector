@@ -41,8 +41,20 @@ const SHARED_SIGNALS = ["_shared", "shared", "core", "common", "universal"];
 const PRIVATE_SIGNALS = ["l9", "plastos", "legal", "ops", "private"];
 function matchGlob(filePath, glob) {
     const norm = filePath.replace(/\\/g, "/");
-    const pat = glob.replace(/\./g, "\\.").replace(/\*\*/g, "DSTAR").replace(/\*/g, "[^/]*").replace(/DSTAR/g, ".*");
-    return new RegExp(`(^|/)${pat}($|/)`).test(norm);
+    // Escape EVERY regex metacharacter first, then re-introduce glob wildcards.
+    // Previously only "." was escaped, so a glob containing "[", "(", "+", "\\", …
+    // reached RegExp and could throw (DoS) or backtrack (ReDoS) — finding SEC-002.
+    const pat = glob
+        .replace(/[.*+?^${}()|[\]\\]/g, "\\$&") // escape all metachars (including the "*" re-added next)
+        .replace(/\\\*\\\*/g, "DSTAR") // "**" (now "\*\*") → cross-segment placeholder
+        .replace(/\\\*/g, "[^/]*") // "*"  (now "\*")   → single-segment wildcard
+        .replace(/DSTAR/g, ".*");
+    try {
+        return new RegExp(`(^|/)${pat}($|/)`).test(norm);
+    }
+    catch {
+        return false; // a malformed glob never matches, rather than throwing
+    }
 }
 function deriveSharingScope(filePath) {
     const parts = filePath.replace(/\\/g, "/").toLowerCase().split("/");

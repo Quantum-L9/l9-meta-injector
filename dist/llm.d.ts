@@ -20,4 +20,6 @@ export declare function makeOpenAIAdapter(opts: {
     maxTokens?: number;
     timeout?: number;
     onDiagnostic?: (d: LlmDiagnostic) => void;
+    /** Opt-in to send the bearer token over a non-https baseUrl (default: refuse). */
+    allowInsecure?: boolean;
 }): LlmAdapter;
