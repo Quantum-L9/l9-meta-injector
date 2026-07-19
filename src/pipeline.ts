@@ -14,6 +14,7 @@ import { buildMetaV3, MetaV3Record } from "./meta_v3";
 import { assistField, DEFAULT_ASSIST_CONFIG, PROSE_ORIGIN_FIELDS } from "./assist";
 import { normalizeFilenames } from "./normalize_filename";
 import { makeOpenAIAdapter, setAdapter, resetAdapter } from "./llm";
+import { MetricsCollector, MetricsSnapshot } from "./metrics";
 import { NamespaceConfig } from "./namespace";
 import { resolveStrategy, stripInjectedBlock } from "./comment";
 
@@ -52,14 +53,23 @@ export interface PipelineResult {
   placementPlans: PlacementPlan[];
   /** v3 nine-plane records (one per injected artifact), each with its semantic class. */
   metaV3: MetaV3Record[];
+  /** LLM/IO hotpath metrics for this run: call counts, failures, p50/p95, decision paths. */
+  metrics: MetricsSnapshot;
 }
 
 export async function runPipelineAsync(config: PipelineConfig): Promise<PipelineResult> {
   const now = new Date().toISOString();
   const nsCfg = toCfg(config);
 
+  // One collector per run aggregates the LLM/IO hotpath signal (OBS-009/OBS-010):
+  // decision paths, call counts, failure counts, and p50/p95 latency.
+  const metrics = new MetricsCollector();
+
   if (config.llmEnabled && config.llmBaseUrl && config.llmApiKey && config.llmModel) {
-    setAdapter(makeOpenAIAdapter({ baseUrl: config.llmBaseUrl, apiKey: config.llmApiKey, model: config.llmModel }));
+    setAdapter(makeOpenAIAdapter({
+      baseUrl: config.llmBaseUrl, apiKey: config.llmApiKey, model: config.llmModel,
+      onDiagnostic: metrics.onLlmDiagnostic,
+    }));
   } else {
     resetAdapter();
   }
@@ -103,7 +113,7 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
       const rec = asRecord(meta);
       for (const field of assistCfg.proseFields) {
         if (PROSE_ORIGIN_FIELDS.has(field)) {
-          const improved = await assistField(field, rec[field], body, assistCfg);
+          const improved = await assistField(field, rec[field], body, assistCfg, metrics);
           if (improved !== rec[field]) rec[field] = improved;
         }
       }
@@ -123,9 +133,10 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
     if (!meta.injectable) { skippedNonInjectablePaths.push(e.sourcePath); continue; }
     // Use async inject (LLM boolean reconcile on description/intent) when LLM is enabled
     const record = config.llmEnabled
-      ? await injectFileAsync(e.sourcePath, meta, opts)
+      ? await injectFileAsync(e.sourcePath, meta, opts, metrics)
       : injectFile(e.sourcePath, meta, opts);
     injected.push(record);
+    metrics.recordInject();
   }
 
   const verified = injected.map((r) => verify(r.sourcePath, r.originalBodyHash, r.meta));
@@ -167,6 +178,11 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
       `verify-failed=${coverage.verifyFailed}\n`,
     );
   }
+  // Surface the LLM/IO hotpath metrics whenever the LLM path ran or on verbose runs,
+  // so a degraded run (llm_failed_fallback / no_adapter) is visible (OBS-009/OBS-010).
+  if (config.llmEnabled || config.verbose) {
+    process.stderr.write(`[l9-meta-injector] metrics: ${metrics.formatLine()}\n`);
+  }
 
   const dedupEntries = buildDedupEntries(injected, config.hashPrefixLength, bodies);
   const dedupReport = buildDedupReport(dedupEntries, config.nearDupThreshold, config.hashPrefixLength);
@@ -206,5 +222,5 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
     fs.writeFileSync(path.join(d, "meta-v3-index.json"), JSON.stringify(metaV3, null, 2));
   }
 
-  return { scanned, injected, verified, verification, coverage, placementPlans, metaV3 };
+  return { scanned, injected, verified, verification, coverage, placementPlans, metaV3, metrics: metrics.snapshot() };
 }

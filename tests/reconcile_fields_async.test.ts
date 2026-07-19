@@ -4,7 +4,7 @@ import { setAdapter, resetAdapter } from "../src/llm";
 
 afterEach(() => resetAdapter());
 
-describe("reconcileFieldsAsync — LLM boolean for description/intent", () => {
+describe("reconcileFieldsAsync — LLM boolean for description", () => {
   it("calls LLM for description field when adapter.classify is wired", async () => {
     let calls: string[] = [];
     setAdapter({

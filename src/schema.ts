@@ -127,12 +127,47 @@ const BASE_HEADER_TYPES: ReadonlyArray<[keyof BaseHeader, "string" | "boolean" |
 ];
 
 /**
+ * The metadata-record shape exchanged across the reconcile edge: a typed producer
+ * (buildMeta → NormalizedMeta) and the untyped consumer (reconcileFields) now name
+ * the same contract instead of each side spelling `Record<string, unknown>` inline
+ * (finding ICC-005). Widening a NormalizedMeta to a MetaRecord is lossless.
+ */
+export type MetaRecord = Record<string, unknown>;
+
+/**
  * Widen a known object type to a generic key/value bag. Centralizes the one
  * `as unknown as Record` escape hatch so read-paths that only need to index a
  * field by name don't each hand-roll a double-cast (finding QTE-005 / CWE-704).
  */
-export function asRecord(value: object): Record<string, unknown> {
-  return value as unknown as Record<string, unknown>;
+export function asRecord(value: object): MetaRecord {
+  return value as unknown as MetaRecord;
+}
+
+// BaseHeader fields buildMeta emits as a non-string type. A hand-edited or quoted
+// header parses these back as strings ("12", "false"); normalizeMetaRecord coerces
+// them so the reconcile edge compares like-for-like against the typed producer
+// (finding ICC-005). Machine-written headers are already unquoted, so this is a
+// no-op on the tool's own output — idempotency is preserved.
+const NUMERIC_HEADER_FIELDS = ["token_cost_estimate"] as const;
+const BOOLEAN_HEADER_FIELDS = ["callable", "retrievable", "injectable"] as const;
+
+/**
+ * Coerce the well-known typed BaseHeader fields of a parsed existing-meta record to
+ * the exact runtime types buildMeta emits (numbers, booleans), leaving every other
+ * key untouched. Returns a new record; never throws.
+ */
+export function normalizeMetaRecord(rec: MetaRecord): MetaRecord {
+  const out: MetaRecord = { ...rec };
+  for (const f of NUMERIC_HEADER_FIELDS) {
+    const v = out[f];
+    if (typeof v === "string" && /^-?\d+$/.test(v.trim())) out[f] = parseInt(v.trim(), 10);
+  }
+  for (const f of BOOLEAN_HEADER_FIELDS) {
+    const v = out[f];
+    if (v === "true") out[f] = true;
+    else if (v === "false") out[f] = false;
+  }
+  return out;
 }
 
 /**

@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.META_V3_PLANES = exports.META_V3_SCHEMA_VERSION = exports.PRIMITIVE_TAXONOMY = exports.UNKNOWN = void 0;
 exports.asRecord = asRecord;
+exports.normalizeMetaRecord = normalizeMetaRecord;
 exports.coerceNormalizedMeta = coerceNormalizedMeta;
 exports.isPromptMeta = isPromptMeta;
 exports.UNKNOWN = "Unknown";
@@ -35,6 +36,34 @@ const BASE_HEADER_TYPES = [
  */
 function asRecord(value) {
     return value;
+}
+// BaseHeader fields buildMeta emits as a non-string type. A hand-edited or quoted
+// header parses these back as strings ("12", "false"); normalizeMetaRecord coerces
+// them so the reconcile edge compares like-for-like against the typed producer
+// (finding ICC-005). Machine-written headers are already unquoted, so this is a
+// no-op on the tool's own output — idempotency is preserved.
+const NUMERIC_HEADER_FIELDS = ["token_cost_estimate"];
+const BOOLEAN_HEADER_FIELDS = ["callable", "retrievable", "injectable"];
+/**
+ * Coerce the well-known typed BaseHeader fields of a parsed existing-meta record to
+ * the exact runtime types buildMeta emits (numbers, booleans), leaving every other
+ * key untouched. Returns a new record; never throws.
+ */
+function normalizeMetaRecord(rec) {
+    const out = { ...rec };
+    for (const f of NUMERIC_HEADER_FIELDS) {
+        const v = out[f];
+        if (typeof v === "string" && /^-?\d+$/.test(v.trim()))
+            out[f] = parseInt(v.trim(), 10);
+    }
+    for (const f of BOOLEAN_HEADER_FIELDS) {
+        const v = out[f];
+        if (v === "true")
+            out[f] = true;
+        else if (v === "false")
+            out[f] = false;
+    }
+    return out;
 }
 /**
  * Narrow a generic key/value bag into a NormalizedMeta, validating the shared

@@ -43,6 +43,7 @@ exports.injectFile = injectFile;
 // re-run replaces it instead of duplicating. Writes <file>.inject.log on any mutation.
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const schema_1 = require("./schema");
 const normalize_meta_1 = require("./normalize_meta");
 const extract_1 = require("./extract");
 const reconcile_fields_1 = require("./reconcile_fields");
@@ -59,7 +60,9 @@ function parseExistingMeta(fm) {
     const inner = fm.replace(/^---\s*\n/, "").replace(/\n?---\s*$/, "");
     try {
         const obj = (0, meta_schema_1.parseCanonicalYaml)(inner);
-        return typeof obj === "object" && obj !== null ? obj : {};
+        // Normalize the typed BaseHeader fields (numbers/booleans) so the reconcile edge
+        // compares against buildMeta's output like-for-like, not string-vs-number (ICC-005).
+        return typeof obj === "object" && obj !== null ? (0, schema_1.normalizeMetaRecord)(obj) : {};
     }
     catch {
         return {};
@@ -143,11 +146,14 @@ function record(filePath, ctx, built, finalMeta, opts, paths) {
         meta: finalMeta,
     };
 }
-async function injectFileAsync(filePath, meta, opts) {
+async function injectFileAsync(filePath, meta, opts, metrics) {
     const ctx = readForInjection(filePath);
-    const incomingMeta = Object.fromEntries(Object.entries(meta));
+    // Widen the typed producer (NormalizedMeta) onto the shared reconcile-edge record
+    // type instead of the untyped Object.fromEntries clone (ICC-005). reconcile reads
+    // incoming without mutating it, so an alias is safe.
+    const incomingMeta = (0, schema_1.asRecord)(meta);
     const { merged, diffs } = (0, llm_1.getAdapter)().classify
-        ? await (0, reconcile_fields_1.reconcileFieldsAsync)(ctx.existingMeta, incomingMeta)
+        ? await (0, reconcile_fields_1.reconcileFieldsAsync)(ctx.existingMeta, incomingMeta, metrics)
         : (0, reconcile_fields_1.reconcileFields)(ctx.existingMeta, incomingMeta);
     const finalMeta = { ...meta, ...merged };
     const built = buildInjection(filePath, finalMeta, ctx);
@@ -156,7 +162,7 @@ async function injectFileAsync(filePath, meta, opts) {
 }
 function injectFile(filePath, meta, opts) {
     const ctx = readForInjection(filePath);
-    const { merged, diffs } = (0, reconcile_fields_1.reconcileFields)(ctx.existingMeta, Object.fromEntries(Object.entries(meta)));
+    const { merged, diffs } = (0, reconcile_fields_1.reconcileFields)(ctx.existingMeta, (0, schema_1.asRecord)(meta));
     const finalMeta = { ...meta, ...merged };
     const built = buildInjection(filePath, finalMeta, ctx);
     const paths = writeInjection(filePath, built, diffs, opts);

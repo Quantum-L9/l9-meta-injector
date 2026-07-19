@@ -50,6 +50,7 @@ const meta_v3_1 = require("./meta_v3");
 const assist_1 = require("./assist");
 const normalize_filename_1 = require("./normalize_filename");
 const llm_1 = require("./llm");
+const metrics_1 = require("./metrics");
 const comment_1 = require("./comment");
 function toCfg(config) {
     return { namespace: config.namespace, authority: config.authority, nearDupThreshold: config.nearDupThreshold, hashPrefixLength: config.hashPrefixLength, outputDir: config.outDir, indexDir: config.indexDir, namespaceGlobs: config.namespaceGlobs };
@@ -57,8 +58,14 @@ function toCfg(config) {
 async function runPipelineAsync(config) {
     const now = new Date().toISOString();
     const nsCfg = toCfg(config);
+    // One collector per run aggregates the LLM/IO hotpath signal (OBS-009/OBS-010):
+    // decision paths, call counts, failure counts, and p50/p95 latency.
+    const metrics = new metrics_1.MetricsCollector();
     if (config.llmEnabled && config.llmBaseUrl && config.llmApiKey && config.llmModel) {
-        (0, llm_1.setAdapter)((0, llm_1.makeOpenAIAdapter)({ baseUrl: config.llmBaseUrl, apiKey: config.llmApiKey, model: config.llmModel }));
+        (0, llm_1.setAdapter)((0, llm_1.makeOpenAIAdapter)({
+            baseUrl: config.llmBaseUrl, apiKey: config.llmApiKey, model: config.llmModel,
+            onDiagnostic: metrics.onLlmDiagnostic,
+        }));
     }
     else {
         (0, llm_1.resetAdapter)();
@@ -102,7 +109,7 @@ async function runPipelineAsync(config) {
             const rec = (0, schema_1.asRecord)(meta);
             for (const field of assistCfg.proseFields) {
                 if (assist_1.PROSE_ORIGIN_FIELDS.has(field)) {
-                    const improved = await (0, assist_1.assistField)(field, rec[field], body, assistCfg);
+                    const improved = await (0, assist_1.assistField)(field, rec[field], body, assistCfg, metrics);
                     if (improved !== rec[field])
                         rec[field] = improved;
                 }
@@ -125,9 +132,10 @@ async function runPipelineAsync(config) {
         }
         // Use async inject (LLM boolean reconcile on description/intent) when LLM is enabled
         const record = config.llmEnabled
-            ? await (0, inject_1.injectFileAsync)(e.sourcePath, meta, opts)
+            ? await (0, inject_1.injectFileAsync)(e.sourcePath, meta, opts, metrics)
             : (0, inject_1.injectFile)(e.sourcePath, meta, opts);
         injected.push(record);
+        metrics.recordInject();
     }
     const verified = injected.map((r) => (0, verify_1.verify)(r.sourcePath, r.originalBodyHash, r.meta));
     // Consume the verification signal at the decision point — a computed VerifyResult
@@ -163,6 +171,11 @@ async function runPipelineAsync(config) {
             `skipped-binary=${coverage.skippedBinary} skipped-noninjectable=${coverage.skippedNonInjectable} ` +
             `verify-failed=${coverage.verifyFailed}\n`);
     }
+    // Surface the LLM/IO hotpath metrics whenever the LLM path ran or on verbose runs,
+    // so a degraded run (llm_failed_fallback / no_adapter) is visible (OBS-009/OBS-010).
+    if (config.llmEnabled || config.verbose) {
+        process.stderr.write(`[l9-meta-injector] metrics: ${metrics.formatLine()}\n`);
+    }
     const dedupEntries = (0, compiler_1.buildDedupEntries)(injected, config.hashPrefixLength, bodies);
     const dedupReport = (0, compiler_1.buildDedupReport)(dedupEntries, config.nearDupThreshold, config.hashPrefixLength);
     // Compile advisory placement plans for the injected artifacts (placement compiler
@@ -194,6 +207,6 @@ async function runPipelineAsync(config) {
         fs.writeFileSync(path.join(d, "placement-plan.json"), JSON.stringify(placementPlans, null, 2));
         fs.writeFileSync(path.join(d, "meta-v3-index.json"), JSON.stringify(metaV3, null, 2));
     }
-    return { scanned, injected, verified, verification, coverage, placementPlans, metaV3 };
+    return { scanned, injected, verified, verification, coverage, placementPlans, metaV3, metrics: metrics.snapshot() };
 }
 //# sourceMappingURL=pipeline.js.map
