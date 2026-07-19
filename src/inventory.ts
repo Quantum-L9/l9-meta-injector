@@ -11,6 +11,7 @@ import { contentHash } from "./extract";
 import { resolveStrategy, sidecarPathFor } from "./comment";
 import { injectFile } from "./inject";
 import { NormalizedMeta, asRecord, coerceNormalizedMeta } from "./schema";
+import { serializeYamlObject } from "./yaml_serialize";
 import { MetaSchema, applySchema, targetIncludes, parseCanonicalYaml, toMetaSchema } from "./meta_schema";
 
 export type InventoryArtifactType =
@@ -152,16 +153,11 @@ function csvCell(v: unknown): string {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
+// Sidecar serialization now delegates to the single canonical serializer (ACA-005),
+// replacing the always-JSON-quoted copy. Output is bare-when-safe and still
+// round-trips through parseCanonicalYaml; null and nested values are preserved.
 function serializeYaml(rec: Record<string, unknown>): string {
-  const lines = ["---"];
-  for (const [k, v] of Object.entries(rec)) {
-    if (Array.isArray(v)) {
-      if (v.length === 0) lines.push(`${k}: []`);
-      else { lines.push(`${k}:`); v.forEach((i) => lines.push(`  - ${JSON.stringify(i)}`)); }
-    } else lines.push(`${k}: ${v === null ? "null" : JSON.stringify(v)}`);
-  }
-  lines.push("---");
-  return lines.join("\n") + "\n";
+  return serializeYamlObject(rec, { fences: true, trailingNewline: true });
 }
 
 function walk(root: string, ignore: Set<string>, skippedDirs: string[]): Array<{ abs: string; isDir: boolean }> {

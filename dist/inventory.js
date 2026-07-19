@@ -51,6 +51,7 @@ const extract_1 = require("./extract");
 const comment_1 = require("./comment");
 const inject_1 = require("./inject");
 const schema_1 = require("./schema");
+const yaml_serialize_1 = require("./yaml_serialize");
 const meta_schema_1 = require("./meta_schema");
 /** Load and validate a canonical meta-schema YAML file. */
 function loadMetaSchema(filePath) {
@@ -133,22 +134,11 @@ function csvCell(v) {
     const s = v === null || v === undefined ? "" : String(v);
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
+// Sidecar serialization now delegates to the single canonical serializer (ACA-005),
+// replacing the always-JSON-quoted copy. Output is bare-when-safe and still
+// round-trips through parseCanonicalYaml; null and nested values are preserved.
 function serializeYaml(rec) {
-    const lines = ["---"];
-    for (const [k, v] of Object.entries(rec)) {
-        if (Array.isArray(v)) {
-            if (v.length === 0)
-                lines.push(`${k}: []`);
-            else {
-                lines.push(`${k}:`);
-                v.forEach((i) => lines.push(`  - ${JSON.stringify(i)}`));
-            }
-        }
-        else
-            lines.push(`${k}: ${v === null ? "null" : JSON.stringify(v)}`);
-    }
-    lines.push("---");
-    return lines.join("\n") + "\n";
+    return (0, yaml_serialize_1.serializeYamlObject)(rec, { fences: true, trailingNewline: true });
 }
 function walk(root, ignore, skippedDirs) {
     const out = [];
