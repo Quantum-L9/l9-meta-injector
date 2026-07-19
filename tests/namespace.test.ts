@@ -1,6 +1,6 @@
 import { resolveNamespace, toSnakeStem } from "../src/namespace";
 
-const base = { namespace: "l9", authority: "l9.doctrine.platform", nearDupThreshold: 0.9, hashPrefixLength: 16, outputDir: ".out", indexDir: ".", promptGlob: "Prompt-*.md" };
+const base = { namespace: "l9", authority: "l9.doctrine.platform", nearDupThreshold: 0.9, hashPrefixLength: 16, outputDir: ".out", indexDir: "." };
 
 describe("resolveNamespace", () => {
   it("default namespace from config", () => expect(resolveNamespace("/repos/l9/skills/foo.md", base).namespace).toBe("l9"));

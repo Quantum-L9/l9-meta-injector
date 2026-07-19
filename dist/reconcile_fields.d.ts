@@ -1,11 +1,5 @@
-export type ReconcileAction = "add" | "revise" | "append-union" | "keep" | "replace";
-export interface FieldDiff {
-    field: string;
-    action: ReconcileAction;
-    oldValue: unknown;
-    newValue: unknown;
-    reason: string;
-}
+import { FieldDiff } from "./schema";
+export type { FieldDiff, ReconcileAction } from "./schema";
 export interface ReconcileResult {
     merged: Record<string, unknown>;
     diffs: FieldDiff[];

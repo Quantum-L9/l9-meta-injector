@@ -7,13 +7,11 @@ import { getAdapter } from "./llm";
 export interface AssistConfig {
   enabled: boolean;
   proseFields: Array<"description" | "activation_signals" | "input_contract" | "output_contract">;
-  materialityCheck: boolean;
 }
 
 export const DEFAULT_ASSIST_CONFIG: AssistConfig = {
   enabled: false,
   proseFields: ["description", "activation_signals"],
-  materialityCheck: true,
 };
 
 // "good" predicate: value is non-Unknown, non-empty, >=8 meaningful word tokens
@@ -49,19 +47,6 @@ export async function assistField(
   const result = await adapter.classify(buildFieldPrompt(fieldName, body));
   if (!result || result.trim() === "" || result.trim() === UNKNOWN) return seedValue;
   return result.trim();
-}
-
-export async function isMateriallyBetter(
-  fieldName: string, oldValue: unknown, newValue: unknown, config: AssistConfig
-): Promise<boolean> {
-  if (!config.enabled || !config.materialityCheck) return isGoodValue(newValue) && !isGoodValue(oldValue);
-  if (!isGoodValue(newValue)) return false;
-  if (!isGoodValue(oldValue)) return true;
-  const adapter = getAdapter();
-  if (!adapter.classify) return false;
-  const prompt = `Field: ${fieldName}\nA: ${JSON.stringify(oldValue)}\nB: ${JSON.stringify(newValue)}\nIs B materially more informative than A? Reply only: yes or no`;
-  const result = await adapter.classify(prompt);
-  return result?.trim().toLowerCase().startsWith("yes") ?? false;
 }
 
 function buildFieldPrompt(fieldName: string, body: string): string {

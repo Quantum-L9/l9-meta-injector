@@ -7,19 +7,15 @@
 //   replace: explicit deprecation marker only (deprecated:true | superseded_by | status:deprecated).
 //   Every mutation is recorded in FieldDiff[]. No silent writes.
 
-import { UNKNOWN } from "./schema";
+import { UNKNOWN, FieldDiff } from "./schema";
 import { isGoodValue } from "./assist";
 import { getAdapter } from "./llm";
+import { buildMaterialityPrompt, parseMaterialityReply } from "./materiality";
 
-export type ReconcileAction = "add" | "revise" | "append-union" | "keep" | "replace";
-
-export interface FieldDiff {
-  field: string;
-  action: ReconcileAction;
-  oldValue: unknown;
-  newValue: unknown;
-  reason: string;
-}
+// FieldDiff and ReconcileAction are single-sourced in schema.ts (finding ICC-001 /
+// ACA-004). Re-export the type so existing `import { FieldDiff } from "./reconcile_fields"`
+// call sites keep working without a second definition to drift.
+export type { FieldDiff, ReconcileAction } from "./schema";
 
 export interface ReconcileResult {
   merged: Record<string, unknown>;
@@ -72,9 +68,8 @@ async function isMateriallyBetterLlm(field: string, old: unknown, next: unknown)
   if (!isGoodValue(old)) return true;
   const adapter = getAdapter();
   if (!adapter.classify) return isMateriallyBetterSync(old, next); // no LLM — fall back to sync
-  const prompt = `Field: ${field}\nA: ${JSON.stringify(old)}\nB: ${JSON.stringify(next)}\nIs B materially more informative than A? Reply only: yes or no`;
-  const result = await adapter.classify(prompt);
-  return result?.trim().toLowerCase().startsWith("yes") ?? isMateriallyBetterSync(old, next);
+  const result = await adapter.classify(buildMaterialityPrompt(field, old, next));
+  return result === null || result === undefined ? isMateriallyBetterSync(old, next) : parseMaterialityReply(result);
 }
 
 // Async reconcile: used by pipeline (llmEnabled path) — LLM boolean on prose scalar fields

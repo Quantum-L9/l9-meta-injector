@@ -54,6 +54,8 @@ export interface InventoryResult {
     };
     duplicates: DuplicateCluster[];
     records: InventoryRecord[];
+    /** Directories that could not be read (path: error). Their subtrees are absent from `records`. */
+    skippedDirs: string[];
 }
 /** Load and validate a canonical meta-schema YAML file. */
 export declare function loadMetaSchema(filePath: string): MetaSchema;

@@ -13,7 +13,7 @@ function tmp() { return fs.mkdtempSync(path.join(os.tmpdir(), "l9-bodyp-")); }
 
 const NS: NamespaceConfig = {
   namespace: "l9", authority: "l9.doctrine.platform", nearDupThreshold: 0.9,
-  hashPrefixLength: 16, outputDir: ".out", indexDir: ".", promptGlob: "Prompt-*.md",
+  hashPrefixLength: 16, outputDir: ".out", indexDir: ".",
 };
 
 const BODY = `## Role

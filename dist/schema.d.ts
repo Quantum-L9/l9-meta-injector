@@ -82,9 +82,11 @@ export interface ArtifactMeta extends BaseHeader {
     owner: string | Unknown;
 }
 export type NormalizedMeta = ExecutableRetrievalMeta | PromptMeta | DoctrineMeta | ArtifactMeta;
+/** The five reconciliation actions. Canonical home for the field-diff contract. */
+export type ReconcileAction = "add" | "revise" | "append-union" | "keep" | "replace";
 export interface FieldDiff {
     field: string;
-    action: "add" | "revise" | "append-union" | "keep" | "replace";
+    action: ReconcileAction;
     oldValue: unknown;
     newValue: unknown;
     reason: string;
@@ -120,6 +122,11 @@ export interface PipelineConfig {
     nearDupThreshold: number;
     hashPrefixLength: number;
     indexDir: string;
+    /** Optional per-glob namespace overrides (e.g. `plastos/** → plastos`). */
+    namespaceGlobs?: Array<{
+        glob: string;
+        namespace: string;
+    }>;
     verbose: boolean;
     llmEnabled: boolean;
     llmBaseUrl?: string;

@@ -4,11 +4,13 @@ import * as path from "path";
 import { PipelineConfig, NormalizedMeta, InjectionRecord, VerifyResult } from "./schema";
 import { findFiles, scanFiles } from "./retrieval";
 import { extract, splitContent } from "./extract";
-import { classify } from "./classify";
+import { classify, classifyWithSemantics } from "./classify";
 import { buildMeta } from "./normalize_meta";
 import { injectFileAsync, injectFile } from "./inject";
 import { verify } from "./verify";
 import { buildDedupEntries, buildDedupReport, buildPromptLibraryIndex, buildPrimitiveLibraryIndex, dedupReportToMarkdown } from "./compiler";
+import { compilePlacementPlans, PlacementPlan } from "./placement_policy";
+import { buildMetaV3, MetaV3Record } from "./meta_v3";
 import { assistField, DEFAULT_ASSIST_CONFIG, PROSE_ORIGIN_FIELDS } from "./assist";
 import { normalizeFilenames } from "./normalize_filename";
 import { makeOpenAIAdapter, setAdapter, resetAdapter } from "./llm";
@@ -16,7 +18,7 @@ import { NamespaceConfig } from "./namespace";
 import { resolveStrategy, stripInjectedBlock } from "./comment";
 
 function toCfg(config: PipelineConfig): NamespaceConfig {
-  return { namespace: config.namespace, authority: config.authority, nearDupThreshold: config.nearDupThreshold, hashPrefixLength: config.hashPrefixLength, outputDir: config.outDir, indexDir: config.indexDir, promptGlob: "Prompt-*.md" };
+  return { namespace: config.namespace, authority: config.authority, nearDupThreshold: config.nearDupThreshold, hashPrefixLength: config.hashPrefixLength, outputDir: config.outDir, indexDir: config.indexDir, namespaceGlobs: config.namespaceGlobs };
 }
 
 export interface VerificationSummary {
@@ -28,12 +30,28 @@ export interface VerificationSummary {
   failures: Array<{ sourcePath: string; issues: string[] }>;
 }
 
+export interface CoverageSummary {
+  scanned: number;
+  injected: number;
+  skippedBinary: number;
+  skippedNonInjectable: number;
+  verifyFailed: number;
+  /** Source paths skipped, by reason — so coverage gaps are correlatable to inputs. */
+  skipped: { binary: string[]; nonInjectable: string[] };
+}
+
 export interface PipelineResult {
   scanned: ReturnType<typeof scanFiles>;
   injected: InjectionRecord[];
   verified: VerifyResult[];
   /** Aggregated verification outcome. `passed: false` means at least one file failed verification. */
   verification: VerificationSummary;
+  /** What the run did vs. skipped (scanned/injected/skipped/verify-failed). */
+  coverage: CoverageSummary;
+  /** Advisory placement plans (one per injected artifact) from the placement compiler. */
+  placementPlans: PlacementPlan[];
+  /** v3 nine-plane records (one per injected artifact), each with its semantic class. */
+  metaV3: MetaV3Record[];
 }
 
 export async function runPipelineAsync(config: PipelineConfig): Promise<PipelineResult> {
@@ -56,11 +74,15 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
   // Clean body per file (same representation used for hashing/classification),
   // retained so the dedup compiler can compute near-duplicate similarity.
   const bodies = new Map<string, string>();
+  // Coverage accounting: record why files were not injected so a run's coverage
+  // is observable instead of silently dropping skipped files (finding OBS-003).
+  const skippedBinaryPaths: string[] = [];
+  const skippedNonInjectablePaths: string[] = [];
 
   for (const e of scanned) {
     const raw = fs.readFileSync(e.sourcePath, "utf8");
     const spec = resolveStrategy(e.sourcePath, raw);
-    if (spec.strategy === "skip-binary") continue; // never annotate binary/media
+    if (spec.strategy === "skip-binary") { skippedBinaryPaths.push(e.sourcePath); continue; } // never annotate binary/media
     // Strip any previously-injected block so re-runs classify/hash the true body only
     // (keeps content_hash stable and prevents the injected metadata from skewing classification).
     const cleanRaw = spec.strategy === "line-comment" || spec.strategy === "block-comment"
@@ -95,7 +117,8 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
 
   for (const e of scanned) {
     const meta = metas.get(e.sourcePath);
-    if (!meta || !meta.injectable) continue;
+    if (!meta) continue; // binary — already recorded in skippedBinaryPaths
+    if (!meta.injectable) { skippedNonInjectablePaths.push(e.sourcePath); continue; }
     // Use async inject (LLM boolean reconcile on description/intent) when LLM is enabled
     const record = config.llmEnabled
       ? await injectFileAsync(e.sourcePath, meta, opts)
@@ -125,8 +148,49 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
     );
   }
 
+  const coverage: CoverageSummary = {
+    scanned: scanned.length,
+    injected: injected.length,
+    skippedBinary: skippedBinaryPaths.length,
+    skippedNonInjectable: skippedNonInjectablePaths.length,
+    verifyFailed: verification.withIssues,
+    skipped: { binary: skippedBinaryPaths, nonInjectable: skippedNonInjectablePaths },
+  };
+  // Surface coverage when anything was skipped or on verbose runs — otherwise the
+  // library path emits no signal about what it processed vs. dropped (OBS-003).
+  if (config.verbose || coverage.skippedBinary + coverage.skippedNonInjectable > 0) {
+    process.stderr.write(
+      `[l9-meta-injector] coverage: scanned=${coverage.scanned} injected=${coverage.injected} ` +
+      `skipped-binary=${coverage.skippedBinary} skipped-noninjectable=${coverage.skippedNonInjectable} ` +
+      `verify-failed=${coverage.verifyFailed}\n`,
+    );
+  }
+
   const dedupEntries = buildDedupEntries(injected, config.hashPrefixLength, bodies);
   const dedupReport = buildDedupReport(dedupEntries, config.nearDupThreshold, config.hashPrefixLength);
+
+  // Compile advisory placement plans for the injected artifacts (placement compiler
+  // was previously unreachable outside tests — finding DWL-002).
+  const placementPlans = compilePlacementPlans(
+    injected.map((r) => ({ sourcePath: r.sourcePath, body: bodies.get(r.sourcePath) ?? "" })),
+    { namespace: config.namespace },
+  );
+  const planBySource = new Map(placementPlans.map((p) => [p.sourcePath, p]));
+
+  // Build a v3 nine-plane record per artifact, driven by the 17-class semantic
+  // classifier (DWL-001) and the placement plan (DWL-002). This is the first live
+  // producer + consumer of the MetaV3 model (DWL-003 / RAA-001).
+  const hcBySource = new Map(scanned.map((e) => [e.sourcePath, e.headerConvention]));
+  const metaV3: MetaV3Record[] = injected.map((r) => {
+    const body = bodies.get(r.sourcePath) ?? "";
+    const semantic = classifyWithSemantics(r.sourcePath, body, hcBySource.get(r.sourcePath) ?? "none").semantic;
+    return {
+      sourcePath: r.sourcePath,
+      semanticClass: semantic.artifactClass,
+      semanticConfidence: semantic.confidence,
+      metaV3: buildMetaV3({ meta: r.meta, semantic, placement: planBySource.get(r.sourcePath), sizeBytes: Buffer.byteLength(body, "utf8") }),
+    };
+  });
 
   if (!config.dryRun) {
     const d = config.indexDir;
@@ -136,7 +200,9 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
     fs.writeFileSync(path.join(d, "dedup-report.json"), JSON.stringify(dedupReport, null, 2));
     fs.writeFileSync(path.join(d, "dedup-report.md"), dedupReportToMarkdown(dedupReport));
     fs.writeFileSync(path.join(d, "verification-report.json"), JSON.stringify(verified, null, 2));
+    fs.writeFileSync(path.join(d, "placement-plan.json"), JSON.stringify(placementPlans, null, 2));
+    fs.writeFileSync(path.join(d, "meta-v3-index.json"), JSON.stringify(metaV3, null, 2));
   }
 
-  return { scanned, injected, verified, verification };
+  return { scanned, injected, verified, verification, coverage, placementPlans, metaV3 };
 }
