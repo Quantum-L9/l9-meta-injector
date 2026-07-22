@@ -45,7 +45,10 @@
     "lint": "eslint .",
     "selfpack": "npm run build && node scripts/selfpack.js",
     "selfpack:update": "npm run build && node scripts/selfpack.js --update",
-    "inventory": "npm run build && node scripts/inventory.js"
+    "inventory": "npm run build && node scripts/inventory.js",
+    "check:authority": "node scripts/check-architecture-authority.js",
+    "check:manifest": "node scripts/generate-architecture-manifest.js --check",
+    "manifest:update": "node scripts/generate-architecture-manifest.js"
   },
   "devDependencies": {
     "typescript": "5.9.3",

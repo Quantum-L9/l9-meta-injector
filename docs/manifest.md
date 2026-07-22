@@ -1,37 +1,47 @@
-# Pack Manifest — l9-consolidation v1.0.0
+# Repository Manifest - l9-meta-injector
 
-## Root
-- SKILL.md             entrypoint, mode routing, resource map
-- ARCHITECTURE.md      data flow, shared core, mode differences, B->C
-- CONTRACTS.md         ingress, move_map, header schemas
-- VALIDATION.md        all gates, stop conditions
-- DECISION_LOG.md      all decisions with rationale
-- UNKNOWN_REGISTER.md  unknowns, resolution paths
-- TRACEABILITY_MAP.yaml
-- ASSUMPTION_MAP.yaml
-- ARTIFACT_MANIFEST.yaml
-- CHANGE_SUMMARY.md
-- MANIFEST.md
+## Active package
 
-## schemas/
-- move_map.schema.yaml
-- l9_meta.schema.yaml
-- l9_artifact_meta.schema.yaml
+- Runtime authority: `src/pipeline.ts#runPipelineAsync`
+- Contract authority: `src/schema.ts`
+- Package entrypoint: `dist/index.js`
+- Type entrypoint: `dist/index.d.ts`
+- Architecture authority: `docs/architecture-authority.json`
+- Active contracts: `docs/contracts.md`
+- Active decisions: `docs/decision_log.md`
+- Public API policy: `docs/public-api.md`
+- Traceability: `docs/traceability-map.json`
+- Integrity manifest: `docs/architecture-manifest.json`
 
-## core/ (shared, mode-neutral)
-- ingress.py        single entry, validate + route
-- scanner.py        recursive file walk
-- hasher.py         sha256
-- classifier.py     domain hints, artifact_type, confidence
-- path_planner.py   proposed output paths
-- dedup_gate.py     duplicate/collision detection
+## Active subsystems
 
-## modes/repo-pack/
-- injector.py       L9_META in-place stamp (idempotent)
+- retrieval
+- extraction
+- classification
+- metadata normalization
+- optional LLM assistance
+- file-aware injection
+- reconciliation
+- persisted-result verification
+- coverage accounting
+- deduplication
+- placement compilation
+- additive MetaV3 indexing
+- inventory mode
 
-## modes/folder-artifact/
-- injector.py       copy-only, B->C, L9_ARTIFACT_META + sidecars
+## Generated and published artifacts
 
-## references/
-- reasoning-link.md   pointer to l9-branch-merge-reasoning (external)
-- worked-example.md   CLI examples for both modes
+- committed `dist/` JavaScript, declarations, and source maps;
+- active schemas under `schemas/`;
+- examples;
+- `README.md`;
+- `CHANGELOG.md`.
+
+Distribution parity and installed-tarball proof remain pending RAA-006.
+
+## Historical implementation
+
+- Documentation archive: `docs/legacy/consolidation-v1/`
+- Runtime reference: `tools/consolidation/`
+- Historical schemas: `tools/consolidation/schemas/`
+- Status: reference-only and excluded from active package authority

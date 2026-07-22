@@ -1,0 +1,128 @@
+{
+  "schema": "l9.architecture-manifest/v1",
+  "repository": "Quantum-L9/l9-meta-injector",
+  "authority": "docs/architecture-authority.json",
+  "note": "The manifest excludes itself to avoid a self-referential digest. Git blob identities are content-bound and verified from the working tree.",
+  "entries": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "git_blob_sha1": "380137f40562d4ad309beaccdba0977462be8411"
+    },
+    {
+      "path": "README.md",
+      "git_blob_sha1": "3f898789665cf6e55bbfe4fa7fa868f6faf32bfd"
+    },
+    {
+      "path": "docs/architecture-authority.json",
+      "git_blob_sha1": "dc5823c51ed668b0b0d2c070778212576b2143a2"
+    },
+    {
+      "path": "docs/architecture.md",
+      "git_blob_sha1": "f9c969b884150c64550f65a5f04f7e8153ea8b08"
+    },
+    {
+      "path": "docs/contracts.md",
+      "git_blob_sha1": "06d81a14217e9744edcfe43a585a715773d73cd1"
+    },
+    {
+      "path": "docs/decision_log.md",
+      "git_blob_sha1": "442d0d5eb2a6351be66a1ed2ac2438afef5efe4b"
+    },
+    {
+      "path": "docs/legacy/consolidation-v1/README.md",
+      "git_blob_sha1": "143ea62070091845688a982623e0dfaa8cfae79f"
+    },
+    {
+      "path": "docs/legacy/consolidation-v1/artifact_manifest.yaml",
+      "git_blob_sha1": "3f589985403aef6c8d6015ef8e49d88ed1a39b9d"
+    },
+    {
+      "path": "docs/legacy/consolidation-v1/contracts.md",
+      "git_blob_sha1": "0fb15ff79f7357e426bfcb25644d52919c96d744"
+    },
+    {
+      "path": "docs/legacy/consolidation-v1/decision_log.md",
+      "git_blob_sha1": "3377f9bb4236a7957b7b45e28a01a6268d2258a3"
+    },
+    {
+      "path": "docs/legacy/consolidation-v1/manifest.md",
+      "git_blob_sha1": "18c97ba760c15117821af0222bcd1e9fcdd9f56c"
+    },
+    {
+      "path": "docs/legacy/consolidation-v1/traceability_map.yaml",
+      "git_blob_sha1": "836ec8b5efca02c016bfd74bace3ecd40196aa52"
+    },
+    {
+      "path": "docs/manifest.md",
+      "git_blob_sha1": "b0637e2628eaf57b056609e87de982d8b9eccb36"
+    },
+    {
+      "path": "docs/public-api.md",
+      "git_blob_sha1": "7627b42af99ce2cbd79febe907f1c83648a2c046"
+    },
+    {
+      "path": "docs/schemas/architecture-authority.schema.json",
+      "git_blob_sha1": "21d9a9ea7023a5cc385be1ce959b6087fd16ba61"
+    },
+    {
+      "path": "docs/traceability-map.json",
+      "git_blob_sha1": "82e7398a3de807dbd66c93ae6d312bcdcb4ec54f"
+    },
+    {
+      "path": "package.json",
+      "git_blob_sha1": "ea157d02af005278e870ca9b89794d300d4f5984"
+    },
+    {
+      "path": "scripts/check-architecture-authority.js",
+      "git_blob_sha1": "643128be5c411d0203ccadaa43da4592cb248fa4"
+    },
+    {
+      "path": "scripts/generate-architecture-manifest.js",
+      "git_blob_sha1": "642925f1810ede80d8dd8ea7b0daa536646dc090"
+    },
+    {
+      "path": "scripts/lib/architecture-authority.js",
+      "git_blob_sha1": "521d273a57625d1b4030b4918584d3528f4a8760"
+    },
+    {
+      "path": "scripts/selfpack.js",
+      "git_blob_sha1": "9a9ab86701013d2bb6dc06cbe5306954b390ef47"
+    },
+    {
+      "path": "src/index.ts",
+      "git_blob_sha1": "c23ff2162ecb798768bad8d162194d54dd0d23c2"
+    },
+    {
+      "path": "src/meta_v3.ts",
+      "git_blob_sha1": "9c483ba1dfb3fcea929d53e4d55a0cc1a1c1d797"
+    },
+    {
+      "path": "src/pipeline.ts",
+      "git_blob_sha1": "a109f0f041a5c9cbbb5f513c0b1bd2135225a431"
+    },
+    {
+      "path": "src/schema.ts",
+      "git_blob_sha1": "147a9d98877f4ef073bd98869e15c8f52954261b"
+    },
+    {
+      "path": "tests/architecture_authority.test.ts",
+      "git_blob_sha1": "cfdc98d5213775c1c246fe6cac471d277cffb05f"
+    },
+    {
+      "path": "tools/consolidation/README.md",
+      "git_blob_sha1": "2df48dce7e6b92f63eb7280e80935e81ca4cdf7e"
+    },
+    {
+      "path": "tools/consolidation/schemas/l9_artifact_meta.schema.yaml",
+      "git_blob_sha1": "1ea74752496d2398209ba53e86c30587861b8401"
+    },
+    {
+      "path": "tools/consolidation/schemas/l9_meta.schema.yaml",
+      "git_blob_sha1": "5c7ee8791008c27d12bdf5f8246f8771a5266583"
+    },
+    {
+      "path": "tools/consolidation/schemas/move_map.schema.yaml",
+      "git_blob_sha1": "3a2d2b60d40d4b7f1e1f6cd0f6dd3fab8462a983"
+    }
+  ]
+}

@@ -1,14 +1,12 @@
-# Decision Log
+# Active Decision Log
 
-| # | Decision | Rationale |
-|---|---|---|
-| 1 | Merge repo-pack + folder-artifact into one playbook | ~80% shared core; two packs = two drifting scanners/dedup engines. Max leverage = shared core + adapters |
-| 2 | Single ingress routes to mode | Normalize/validate/trace once; no module bypass |
-| 3 | B -> C sequential, not rival branches | B unlocks C (catalog/delta precedent); pruning B destroys leverage. Gate 3 dependency check |
-| 4 | Manifest gate between phases | C only acts on validated rows; makes C deterministic |
-| 5 | Copy-only for folder-artifact | User constraint: source never mutated |
-| 6 | In-place idempotent for repo-pack | Catalog/delta: re-run skips stamped files |
-| 7 | Reasoning kernel stays separate | Execution pack != reasoning layer; merging them recreates layer-mixing |
-| 8 | Sidecars for binary/non-text | Cannot inject comment headers into non-text formats |
-| 9 | Unknown bucket for low confidence | No invented domain facts; label Unknown |
-| 10 | TypeScript pipeline is the single authoritative engine; Python `tools/consolidation/` is secondary/out-of-scope | Two injection engines with divergent header dialects (finding ACA-001) invite drift. The TS pipeline is what `package.json` ships (`main: dist/index.js`), what CI gates (`ci.yml` → `smoke`), and what the tests + selfpack exercise; the Python tool is wired into none of these. Declaring one authoritative — rather than maintaining both in lockstep — removes the drift surface. New work and the header-dialect contract target TS; the Python tool is retained for reference only. See `architecture.md` → Engine authority and `tools/consolidation/README.md`. |
+| # | Decision | Rationale | Status |
+|---|---|---|---|
+| 10 | The TypeScript pipeline is the sole authoritative engine; `tools/consolidation/` is reference-only | The npm package, tests, selfpack, CI, source contracts, and generated output all target the TypeScript implementation. One authority prevents dialect and workflow drift. | active |
+| 11 | Maintain one active architecture corpus and archive superseded consolidation material | Active-looking historical contracts caused agents and maintainers to follow a coherent but non-authoritative system. Archived material remains available without governing new work. | active |
+| 12 | Retain committed `dist/` and require deterministic source-to-package proof | The package already loads committed JavaScript and declarations. RAA-006 will add parity and packed-consumer gates rather than silently changing distribution models. | pending RAA-006 validation |
+| 13 | Make the package root orchestration-first and version additional supported entrypoints explicitly | The current barrel exposes broad low-level capabilities. RAA-007 will define stability tiers and an explicit export map before narrowing the surface. | pending RAA-007 implementation |
+
+## Historical decisions
+
+Decisions 1 through 9 governed the superseded consolidation architecture and are preserved at `docs/legacy/consolidation-v1/decision_log.md`.

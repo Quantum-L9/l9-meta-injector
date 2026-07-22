@@ -1,0 +1,170 @@
+{
+  "schema": "l9.traceability-map/v1",
+  "repository": "Quantum-L9/l9-meta-injector",
+  "authority": "docs/architecture-authority.json",
+  "capabilities": [
+    {
+      "capability": "pipeline_orchestration",
+      "source": "src/pipeline.ts#runPipelineAsync",
+      "public_entrypoint": "l9-meta-injector#runPipelineAsync",
+      "tests": [
+        "tests/pipeline_integration.test.ts",
+        "tests/self_conformance.test.ts"
+      ],
+      "validators": [
+        "npm test",
+        "npm run selfpack"
+      ],
+      "stability": "stable"
+    },
+    {
+      "capability": "metadata_contracts",
+      "source": "src/schema.ts",
+      "public_entrypoint": "l9-meta-injector root barrel (transitional)",
+      "tests": [
+        "tests/schema.test.ts",
+        "tests/taxonomy.test.ts"
+      ],
+      "validators": [
+        "npm run typecheck",
+        "npm test"
+      ],
+      "stability": "pending_RAA-007"
+    },
+    {
+      "capability": "metadata_normalization",
+      "source": "src/normalize_meta.ts",
+      "public_entrypoint": "l9-meta-injector root barrel (transitional)",
+      "tests": [
+        "tests/normalize_meta.test.ts"
+      ],
+      "validators": [
+        "npm test"
+      ],
+      "stability": "pending_RAA-007"
+    },
+    {
+      "capability": "file_injection",
+      "source": "src/inject.ts",
+      "public_entrypoint": "l9-meta-injector root barrel (transitional)",
+      "tests": [
+        "tests/inject.test.ts",
+        "tests/pipeline_integration.test.ts"
+      ],
+      "validators": [
+        "npm test",
+        "npm run selfpack"
+      ],
+      "stability": "pending_RAA-007"
+    },
+    {
+      "capability": "persisted_verification",
+      "source": "src/verify.ts",
+      "public_entrypoint": "pipeline result plus root barrel",
+      "tests": [
+        "tests/verify.test.ts"
+      ],
+      "validators": [
+        "npm test",
+        "npm run selfpack"
+      ],
+      "stability": "stable through pipeline"
+    },
+    {
+      "capability": "deduplication",
+      "source": "src/compiler.ts",
+      "public_entrypoint": "pipeline indexes plus root barrel (transitional)",
+      "tests": [
+        "tests/compiler.test.ts"
+      ],
+      "validators": [
+        "npm test",
+        "npm run selfpack"
+      ],
+      "persisted_outputs": [
+        "dedup-report.json",
+        "dedup-report.md"
+      ],
+      "stability": "pending_RAA-007"
+    },
+    {
+      "capability": "placement_compilation",
+      "source": "src/placement_policy.ts",
+      "public_entrypoint": "PipelineResult.placementPlans",
+      "tests": [
+        "tests/placement_policy.test.ts"
+      ],
+      "validators": [
+        "npm test"
+      ],
+      "persisted_outputs": [
+        "placement-plan.json"
+      ],
+      "stability": "stable through pipeline"
+    },
+    {
+      "capability": "meta_v3_generation",
+      "source": "src/meta_v3.ts",
+      "public_entrypoint": "PipelineResult.metaV3",
+      "tests": [
+        "tests/meta_v3.test.ts"
+      ],
+      "validators": [
+        "npm test"
+      ],
+      "persisted_outputs": [
+        "meta-v3-index.json"
+      ],
+      "stability": "stable through pipeline"
+    },
+    {
+      "capability": "inventory_mode",
+      "source": "src/inventory.ts",
+      "public_entrypoint": "l9-meta-injector root barrel (transitional)",
+      "tests": [
+        "tests/inventory.test.ts",
+        "tests/meta_schema.test.ts"
+      ],
+      "validators": [
+        "npm test"
+      ],
+      "stability": "pending_RAA-007"
+    },
+    {
+      "capability": "llm_assistance",
+      "source": "src/assist.ts and src/llm.ts",
+      "public_entrypoint": "pipeline configuration plus root barrel (transitional)",
+      "tests": [
+        "tests/assist.test.ts",
+        "tests/llm.test.ts"
+      ],
+      "validators": [
+        "npm test"
+      ],
+      "stability": "pending_RAA-007"
+    },
+    {
+      "capability": "package_distribution",
+      "source": "package.json and dist/",
+      "public_entrypoint": "dist/index.js",
+      "tests": [],
+      "validators": [
+        "pending RAA-006"
+      ],
+      "stability": "unverified"
+    },
+    {
+      "capability": "architecture_authority",
+      "source": "docs/architecture-authority.json",
+      "public_entrypoint": null,
+      "tests": [
+        "tests/architecture_authority.test.ts"
+      ],
+      "validators": [
+        "npm run check:authority",
+        "npm run check:manifest"
+      ],
+      "stability": "stable"
+    }
+  ]
+}
