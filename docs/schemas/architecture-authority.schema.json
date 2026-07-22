@@ -94,7 +94,10 @@
         "model",
         "source_root",
         "generated_root",
-        "compliance_state"
+        "compliance_state",
+        "source_parity_command",
+        "packed_consumer_command",
+        "package_contract"
       ],
       "properties": {
         "model": {
@@ -107,7 +110,16 @@
           "const": "dist"
         },
         "compliance_state": {
-          "const": "pending_RAA-006"
+          "const": "enforced_RAA-006"
+        },
+        "source_parity_command": {
+          "const": "npm run check:dist"
+        },
+        "packed_consumer_command": {
+          "const": "npm run test:packed"
+        },
+        "package_contract": {
+          "const": "docs/package-contract.json"
         }
       }
     },
@@ -154,6 +166,9 @@
       "required": [
         "authority",
         "manifest",
+        "dist",
+        "packed_consumer",
+        "canonical",
         "ci_workflow",
         "selfpack"
       ],
@@ -163,6 +178,15 @@
         },
         "manifest": {
           "const": "npm run check:manifest"
+        },
+        "dist": {
+          "const": "npm run check:dist"
+        },
+        "packed_consumer": {
+          "const": "npm run test:packed"
+        },
+        "canonical": {
+          "const": "npm run validate"
         },
         "ci_workflow": {
           "const": ".github/workflows/ci.yml"

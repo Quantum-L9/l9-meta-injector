@@ -145,13 +145,19 @@
     },
     {
       "capability": "package_distribution",
-      "source": "package.json and dist/",
-      "public_entrypoint": "dist/index.js",
-      "tests": [],
-      "validators": [
-        "pending RAA-006"
+      "source": "package.json and tsconfig.json and dist/ and docs/package-contract.json",
+      "public_entrypoint": "dist/index.js and dist/index.d.ts",
+      "tests": [
+        "tests/dist_integrity.test.ts",
+        "fixtures/package-consumer/runtime.cjs",
+        "fixtures/package-consumer/types.ts"
       ],
-      "stability": "unverified"
+      "validators": [
+        "npm run check:dist",
+        "npm run test:packed",
+        "npm run validate"
+      ],
+      "stability": "enforced_RAA-006"
     },
     {
       "capability": "architecture_authority",
@@ -162,7 +168,8 @@
       ],
       "validators": [
         "npm run check:authority",
-        "npm run check:manifest"
+        "npm run check:manifest",
+        "npm run validate"
       ],
       "stability": "stable"
     }

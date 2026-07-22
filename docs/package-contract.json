@@ -1,0 +1,48 @@
+{
+  "schema": "l9.package-contract/v1",
+  "repository": "Quantum-L9/l9-meta-injector",
+  "package_name": "l9-meta-injector",
+  "entrypoints": {
+    "runtime": "dist/index.js",
+    "types": "dist/index.d.ts"
+  },
+  "required_files": [
+    "package.json",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "dist/index.js",
+    "dist/index.d.ts"
+  ],
+  "allowed_top_level": [
+    "package.json",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "dist",
+    "schemas",
+    "examples"
+  ],
+  "forbidden_paths": [
+    "schemas/l9_meta.schema.yaml",
+    "schemas/l9_artifact_meta.schema.yaml",
+    "schemas/move_map.schema.yaml"
+  ],
+  "forbidden_prefixes": [
+    ".github/",
+    "docs/",
+    "fixtures/",
+    "reports/",
+    "scripts/",
+    "src/",
+    "tests/",
+    "tools/"
+  ],
+  "dist_policy": "The packed dist file set and bytes must exactly match the committed repository dist tree.",
+  "public_schema_policy": "Files under schemas/ are permitted package data. Their semantic correctness is governed by dedicated schema audits; RAA-006 proves only package inclusion and exclusion boundaries.",
+  "consumer_tests": {
+    "runtime": "fixtures/package-consumer/runtime.cjs",
+    "types": "fixtures/package-consumer/types.ts",
+    "tsconfig": "fixtures/package-consumer/tsconfig.json"
+  }
+}

@@ -32,4 +32,18 @@ describe("RAA-005 architecture authority", () => {
   test("legacy archive and moved schemas retain audited blob identities", () => {
     expect(lib.verifyLegacyArchive(REPO)).toEqual([]);
   });
+  test("distribution authority names executable parity and packed-consumer gates", () => {
+    const authority = JSON.parse(fs.readFileSync(path.join(REPO, "docs/architecture-authority.json"), "utf8"));
+    expect(authority.distribution.compliance_state).toBe("enforced_RAA-006");
+    expect(authority.distribution.source_parity_command).toBe("npm run check:dist");
+    expect(authority.distribution.packed_consumer_command).toBe("npm run test:packed");
+  });
+  test("package contract is machine-readable and aligned to package entrypoints", () => {
+    const contract = JSON.parse(fs.readFileSync(path.join(REPO, "docs/package-contract.json"), "utf8"));
+    const pkg = JSON.parse(fs.readFileSync(path.join(REPO, "package.json"), "utf8"));
+    const dist = require(path.join(REPO, "scripts/lib/dist-integrity.js"));
+    expect(dist.validatePackageContract(contract)).toEqual([]);
+    expect(contract.entrypoints.runtime).toBe(pkg.main);
+    expect(contract.entrypoints.types).toBe(pkg.types);
+  });
 });

@@ -8,10 +8,12 @@
 - Type entrypoint: `dist/index.d.ts`
 - Architecture authority: `docs/architecture-authority.json`
 - Active contracts: `docs/contracts.md`
+- Package contract: `docs/package-contract.json`
 - Active decisions: `docs/decision_log.md`
 - Public API policy: `docs/public-api.md`
 - Traceability: `docs/traceability-map.json`
 - Integrity manifest: `docs/architecture-manifest.json`
+- Release checklist: `docs/release-checklist.md`
 
 ## Active subsystems
 
@@ -35,9 +37,10 @@
 - active schemas under `schemas/`;
 - examples;
 - `README.md`;
-- `CHANGELOG.md`.
+- `CHANGELOG.md`;
+- `LICENSE` and `package.json` as npm standard inclusions.
 
-Distribution parity and installed-tarball proof remain pending RAA-006.
+Distribution integrity is enforced by `npm run check:dist`, `npm run test:packed`, `prepack`, `prepublishOnly`, and the canonical `npm run validate` gate.
 
 ## Historical implementation
 

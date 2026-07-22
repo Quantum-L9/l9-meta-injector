@@ -7,20 +7,27 @@ const {
   validateAuthorityDocument, validateAuthoritySchemaDocument,
   validateTraceabilityDocument, verifyLegacyArchive,
 } = require("./lib/architecture-authority");
+const { validatePackageContract } = require("./lib/dist-integrity");
 const errors = [];
 const required = (cond, msg) => { if (!cond) errors.push(msg); };
 const authority = readJson(path.join(REPO, "docs/architecture-authority.json"));
 const authoritySchema = readJson(path.join(REPO, "docs/schemas/architecture-authority.schema.json"));
 const traceability = readJson(path.join(REPO, "docs/traceability-map.json"));
 const pkg = readJson(path.join(REPO, "package.json"));
+const packageContract = readJson(path.join(REPO, "docs/package-contract.json"));
 
 errors.push(...validateAuthorityDocument(authority));
 errors.push(...validateAuthoritySchemaDocument(authoritySchema));
 errors.push(...validateTraceabilityDocument(traceability));
 errors.push(...verifyLegacyArchive(REPO));
+errors.push(...validatePackageContract(packageContract));
 
 required(authority.engine.package_entrypoint === pkg.main, "package entrypoint disagrees with package.json");
 required(authority.engine.types_entrypoint === pkg.types, "types entrypoint disagrees with package.json");
+required(authority.distribution.package_contract === "docs/package-contract.json", "authority package-contract reference is invalid");
+required(packageContract.package_name === pkg.name, "package contract name disagrees with package.json");
+required(packageContract.entrypoints.runtime === pkg.main, "package contract runtime entrypoint disagrees with package.json");
+required(packageContract.entrypoints.types === pkg.types, "package contract type entrypoint disagrees with package.json");
 for (const rel of Object.values(authority.contracts)) required(isRegularFile(REPO, rel), `missing or unsafe authority contract: ${rel}`);
 for (const rel of [authority.legacy.documentation, authority.legacy.runtime, authority.legacy.schemas]) required(isDirectory(REPO, rel), `missing or unsafe legacy boundary: ${rel}`);
 
@@ -51,6 +58,11 @@ for (const n of [10, 11, 12, 13]) required(new RegExp(`^\\|\\s*${n}\\s*\\|`, "m"
 
 required(pkg.scripts?.["check:authority"] === "node scripts/check-architecture-authority.js", "package script check:authority missing or changed");
 required(pkg.scripts?.["check:manifest"] === "node scripts/generate-architecture-manifest.js --check", "package script check:manifest missing or changed");
+required(pkg.scripts?.["check:dist"] === "node scripts/check-dist-sync.js", "package script check:dist missing or changed");
+required(pkg.scripts?.["test:packed"] === "node scripts/test-packed-consumer.js", "package script test:packed missing or changed");
+required(pkg.scripts?.validate === "npm run typecheck && npm test && npm run check:authority && npm run check:manifest && npm run check:dist && npm run selfpack && npm run test:packed", "canonical validate script missing or changed");
+required(pkg.scripts?.prepack === "npm run check:authority && npm run check:manifest && npm run check:dist", "prepack gate missing or changed");
+required(pkg.scripts?.prepublishOnly === "npm run validate", "prepublishOnly gate missing or changed");
 required(Array.isArray(pkg.files), "package files allowlist missing");
 if (Array.isArray(pkg.files)) {
   required(!pkg.files.some((p) => p === "tools" || p.startsWith("tools/") || p === "docs" || p.startsWith("docs/legacy")), "package files allowlist exposes legacy implementation material");
@@ -62,7 +74,8 @@ required(/actions\/setup-node@[a-f0-9]{40}/.test(workflow), "PR #9 setup-node SH
 required(/persist-credentials:\s*false/.test(workflow), "PR #9 credential hardening was not preserved");
 required(/permissions:\s*\n\s+contents:\s*read/.test(workflow), "PR #9 read-only contents permission was not preserved");
 required(/timeout-minutes:\s*15/.test(workflow), "PR #9 timeout was not preserved");
-required(/npm run check:authority/.test(workflow) && /npm run check:manifest/.test(workflow), "authority gates are not wired into CI");
+required(/npm run validate/.test(workflow), "canonical validation gate is not wired into CI");
+required(/git status --porcelain --untracked-files=all/.test(workflow), "CI does not assert a clean checkout after validation");
 
 for (const capability of traceability.capabilities) {
   const sourceRefs = capability.source.split(/\s+and\s+/).map((x) => x.split("#", 1)[0]);

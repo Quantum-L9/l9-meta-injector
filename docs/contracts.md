@@ -8,7 +8,8 @@ The shipped `l9-meta-injector` npm package is governed by:
 - `docs/architecture.md` for the as-built system description;
 - `src/schema.ts` for shared TypeScript contract types;
 - `src/pipeline.ts#runPipelineAsync` for full-pipeline orchestration;
-- `package.json` for distribution entrypoints;
+- `package.json` for lifecycle commands and distribution entrypoints;
+- `docs/package-contract.json` for tarball inclusion and exclusion rules;
 - `.github/workflows/ci.yml` and `scripts/selfpack.js` for release validation.
 
 Historical consolidation material is reference-only under `docs/legacy/consolidation-v1/` and `tools/consolidation/`.
@@ -31,16 +32,7 @@ JavaScript callers are responsible for providing the complete runtime shape even
 
 ## Pipeline result
 
-The orchestration boundary returns `PipelineResult`, including:
-
-- scanned entries;
-- injection records;
-- per-file verification records;
-- an aggregated verification decision;
-- coverage and skipped-input accounting;
-- placement plans;
-- additive MetaV3 records;
-- run-level metrics.
+The orchestration boundary returns `PipelineResult`, including scanned entries, injection records, per-file verification records, an aggregated verification decision, coverage, placement plans, additive MetaV3 records, and run-level metrics.
 
 A caller must not claim success when `verification.passed` is false.
 
@@ -80,20 +72,38 @@ Each output is owned by the TypeScript pipeline or its called TypeScript compile
 
 ## Distribution contract
 
-The package currently ships committed JavaScript and declarations under `dist/`. Source-to-package parity is not considered proven until RAA-006 adds a deterministic distribution gate and packed-consumer test.
+The package uses a committed-distribution model:
+
+1. `src/` and `tsconfig.json` are copied into an isolated temporary build root.
+2. The repository-pinned compiler emits a fresh temporary `dist/` tree.
+3. The temporary tree and committed `dist/` must have the same regular-file set and byte digests.
+4. Dirty, untracked, missing, extra, changed, or symlinked `dist/` entries fail closed.
+5. `npm pack` writes outside the checkout and is validated against `docs/package-contract.json`.
+6. The tarball's `dist/` tree must exactly match committed `dist/`.
+7. The tarball must install into a clean consumer, execute through its packaged runtime entrypoint, preserve dry-run input bytes, and compile through its packaged declarations.
+
+`prepack` enforces authority, manifest, and dist parity. `prepublishOnly` runs the complete `npm run validate` gate.
+
+## Package inclusion contract
+
+Required package files, allowed top-level paths, and forbidden legacy/source/tooling paths are machine-readable in `docs/package-contract.json`.
+
+Schemas under `schemas/` are allowed package data. RAA-006 does not certify their semantics; schema conformance remains the responsibility of dedicated schema and interface audits.
 
 ## Public API contract
 
-`runPipelineAsync` is the primary supported orchestration entrypoint. The current root barrel exposes additional low-level modules as a transitional state. Their final stability and subpath boundaries remain pending RAA-007. PR-1 does not narrow or expand runtime exports.
+`runPipelineAsync` is the primary supported orchestration entrypoint. The current root barrel exposes additional low-level modules as a transitional state. RAA-006 proves the packed root artifact only. Final stability, runtime export inventories, declaration inventories, and subpath boundaries remain pending RAA-007.
 
 ## Release blockers
 
 Release is blocked when:
 
-- active architecture documents disagree about the authoritative engine;
-- an authority-index reference is missing;
-- a historical contract appears in the active authority corpus;
-- the architecture manifest is stale;
+- authority or architecture-manifest validation fails;
 - verification fails;
-- committed package artifacts are proven stale;
+- committed `dist/` differs from an isolated source build;
+- the checkout contains dirty or untracked distribution files;
+- the tarball violates the package contract;
+- the installed runtime smoke test fails;
+- the packaged declarations fail consumer compilation;
+- canonical validation leaves the checkout dirty;
 - a claimed public boundary is not testable from the packed artifact.

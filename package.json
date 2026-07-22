@@ -48,7 +48,12 @@
     "inventory": "npm run build && node scripts/inventory.js",
     "check:authority": "node scripts/check-architecture-authority.js",
     "check:manifest": "node scripts/generate-architecture-manifest.js --check",
-    "manifest:update": "node scripts/generate-architecture-manifest.js"
+    "manifest:update": "node scripts/generate-architecture-manifest.js",
+    "check:dist": "node scripts/check-dist-sync.js",
+    "test:packed": "node scripts/test-packed-consumer.js",
+    "validate": "npm run typecheck && npm test && npm run check:authority && npm run check:manifest && npm run check:dist && npm run selfpack && npm run test:packed",
+    "prepack": "npm run check:authority && npm run check:manifest && npm run check:dist",
+    "prepublishOnly": "npm run validate"
   },
   "devDependencies": {
     "typescript": "5.9.3",

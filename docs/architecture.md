@@ -2,7 +2,7 @@
 
 ## Authority
 
-This document describes the as-built TypeScript metadata-injection package. The machine-readable authority index is `docs/architecture-authority.json`; active contracts, decisions, traceability, and repository structure are defined by the adjacent active corpus.
+This document describes the as-built TypeScript metadata-injection package. The machine-readable authority index is `docs/architecture-authority.json`; active contracts, decisions, traceability, package rules, and repository structure are defined by the adjacent active corpus.
 
 The shipped package loads `dist/index.js`, whose source is the TypeScript implementation under `src/`. The full orchestration entrypoint is `runPipelineAsync` in `src/pipeline.ts`.
 
@@ -47,25 +47,30 @@ retrieval -> extract -> classify -> normalize_meta
 - LLM and IO hot paths expose correlated diagnostics and run-level metrics.
 - Persisted indexes are produced by the TypeScript pipeline.
 
+## Committed distribution model
+
+The repository retains compiled JavaScript, declarations, and source maps under `dist/`.
+
+`npm run check:dist` copies `src/` and `tsconfig.json` into an isolated build sandbox, uses the repository-pinned TypeScript compiler, and compares the generated tree to committed `dist/` by file set and SHA-256. It also rejects a pre-dirty or symlinked `dist/` tree.
+
+`npm run test:packed` creates the npm tarball outside the checkout, validates it against `docs/package-contract.json`, installs it into a clean temporary consumer, executes a dry-run pipeline smoke test, and compiles against the packaged declarations.
+
 ## Validation
 
-The current CI gate runs installation, build, typecheck, tests, selfpack, authority validation, and architecture-manifest validation.
+The canonical local and CI gate is:
 
 ```bash
 npm ci
-npm run build
-npm run typecheck
-npm test
-npm run selfpack
-npm run check:authority
-npm run check:manifest
+npm run validate
 ```
 
-Committed package-mirror parity and installed-tarball testing remain pending RAA-006.
+`npm run validate` performs type checking, Jest, authority validation, deterministic architecture-manifest validation, committed-dist parity, selfpack, and packed-consumer runtime and declaration tests. CI then verifies that validation left the immutable checkout clean.
+
+`prepack` runs authority, manifest, and dist-parity gates. `prepublishOnly` runs the full validation command.
 
 ## Public package boundary
 
-`runPipelineAsync` is the primary stable orchestration entrypoint. The current broad root barrel is transitional and remains unchanged in PR-1. Its final stability tiers and explicit subpaths are pending RAA-007; see `docs/public-api.md`.
+`runPipelineAsync` is the primary stable orchestration entrypoint. The current broad root barrel remains transitional. RAA-006 proves the root artifact can be packed, installed, executed, and typechecked; it does not assign stability to every low-level export. Explicit subpaths and separate runtime/declaration inventories remain pending RAA-007.
 
 ## Historical implementation
 
