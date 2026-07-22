@@ -1,6 +1,6 @@
 {
   "name": "l9-meta-injector",
-  "version": "2.1.0",
+  "version": "3.0.0",
   "description": "L9 meta-injection toolkit for prompt, skill, and kernel metadata",
   "license": "MIT",
   "author": "Quantum-L9",
@@ -46,14 +46,16 @@
     "selfpack": "npm run build && node scripts/selfpack.js",
     "selfpack:update": "npm run build && node scripts/selfpack.js --update",
     "inventory": "npm run build && node scripts/inventory.js",
+    "check:api": "node scripts/check-public-api.js",
     "check:authority": "node scripts/check-architecture-authority.js",
     "check:manifest": "node scripts/generate-architecture-manifest.js --check",
     "manifest:update": "node scripts/generate-architecture-manifest.js",
     "check:dist": "node scripts/check-dist-sync.js",
     "test:packed": "node scripts/test-packed-consumer.js",
-    "validate": "npm run typecheck && npm test && npm run check:authority && npm run check:manifest && npm run check:dist && npm run selfpack && npm run test:packed",
-    "prepack": "npm run check:authority && npm run check:manifest && npm run check:dist",
-    "prepublishOnly": "npm run validate"
+    "check:publication": "node scripts/check-publication-readiness.js",
+    "validate": "npm run typecheck && npm test && npm run check:api && npm run check:authority && npm run check:manifest && npm run check:dist && npm run selfpack && npm run test:packed",
+    "prepack": "npm run check:api && npm run check:authority && npm run check:manifest && npm run check:dist",
+    "prepublishOnly": "npm run validate && npm run check:publication"
   },
   "devDependencies": {
     "typescript": "5.9.3",
@@ -61,5 +63,49 @@
     "eslint": "^9.39.5",
     "typescript-eslint": "^8.65.0",
     "vitest": "^3.2.7"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./inventory": {
+      "types": "./dist/public/inventory.d.ts",
+      "require": "./dist/public/inventory.js",
+      "default": "./dist/public/inventory.js"
+    },
+    "./schema": {
+      "types": "./dist/public/schema.d.ts",
+      "require": "./dist/public/schema.js",
+      "default": "./dist/public/schema.js"
+    },
+    "./advanced": {
+      "types": "./dist/public/advanced.d.ts",
+      "require": "./dist/public/advanced.js",
+      "default": "./dist/public/advanced.js"
+    },
+    "./advanced/llm": {
+      "types": "./dist/public/llm.d.ts",
+      "require": "./dist/public/llm.js",
+      "default": "./dist/public/llm.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "typesVersions": {
+    "*": {
+      "inventory": [
+        "dist/public/inventory.d.ts"
+      ],
+      "schema": [
+        "dist/public/schema.d.ts"
+      ],
+      "advanced": [
+        "dist/public/advanced.d.ts"
+      ],
+      "advanced/llm": [
+        "dist/public/llm.d.ts"
+      ]
+    }
   }
 }

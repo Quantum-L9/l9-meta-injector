@@ -1,85 +1,45 @@
 # l9-meta-injector
 
-L9 meta-injection toolkit for classifying, extracting, normalizing, injecting, verifying, and indexing metadata for L9 prompt, skill, kernel, and repository artifacts.
+L9 metadata injection for classifying, normalizing, injecting, verifying, inventorying, and indexing prompt, skill, kernel, source, and repository artifacts.
 
-## Package
+## Package identity
 
-- npm package: `l9-meta-injector`
-- version: `2.1.0`
-- runtime entrypoint: `dist/index.js`
-- type entrypoint: `dist/index.d.ts`
-- full orchestration entrypoint: `runPipelineAsync`
+- Package: `l9-meta-injector`
+- API generation: 3
+- Runtime authority: TypeScript under `src/`
+- Distribution: committed `dist/`, proven by `npm run check:dist`
+- Package proof: installed tarball tested by `npm run test:packed`
 
-## Architecture authority
+## Supported imports
 
-The TypeScript package is the sole active runtime authority.
-
-- Machine-readable authority: `docs/architecture-authority.json`
-- Architecture: `docs/architecture.md`
-- Contracts: `docs/contracts.md`
-- Decisions: `docs/decision_log.md`
-- Public API policy: `docs/public-api.md`
-- Package contract: `docs/package-contract.json`
-- Traceability: `docs/traceability-map.json`
-- Repository manifest: `docs/manifest.md`
-
-The earlier Python consolidation engine and its documents are retained only under `tools/consolidation/` and `docs/legacy/consolidation-v1/`.
-
-## Pipeline
-
-```text
-classify -> extract -> assist -> inject -> verify -> index
+```ts
+import { runPipelineAsync } from "l9-meta-injector";
+import { inventoryTree } from "l9-meta-injector/inventory";
+import { buildMetaV3 } from "l9-meta-injector/schema";
+import { compilePlacementPlans } from "l9-meta-injector/advanced";
+import { makeOpenAIAdapter } from "l9-meta-injector/advanced/llm";
 ```
 
-## Install
+The root is the stable orchestration boundary. `inventory` and `schema` are stable subpaths. `advanced` and `advanced/llm` are explicit experimental surfaces. Imports not listed in `package.json#exports` are unsupported and rejected.
 
-```bash
-npm install
-```
-
-## Validate
+## Validation
 
 ```bash
 npm ci
 npm run validate
 ```
 
-The canonical gate includes type checking, Jest, architecture authority, deterministic manifest verification, isolated `src` to committed-`dist` parity, selfpack, and installed-tarball runtime and declaration tests.
+The canonical gate covers typing, tests, the exact API contract, architecture authority, deterministic manifest, committed distribution parity, selfpack, and an installed-tarball consumer.
 
-Individual distribution checks are also available:
+`prepack` enforces package integrity. `prepublishOnly` additionally runs `check:publication`; publication remains blocked until the external distribution history and constellation-consumer inventory are resolved in `docs/package-publication-decision.json`.
 
-```bash
-npm run check:dist
-npm run test:packed
-```
+## Architecture and contracts
 
-`prepack` refuses to create a tarball when authority, manifest, or committed `dist/` parity fails. `prepublishOnly` runs the complete validation gate.
+- `docs/architecture-authority.json`
+- `docs/public-api-contract.json`
+- `docs/public-api.md`
+- `docs/package-contract.json`
+- `docs/contracts.md`
+- `docs/traceability-map.json`
 
-## Programmatic usage
-
-```ts
-import { runPipelineAsync } from "l9-meta-injector";
-
-await runPipelineAsync({
-  root: "./skills",
-  glob: "**/*.md",
-  namespace: "l9",
-  authority: "l9.doctrine.platform",
-  nearDupThreshold: 0.9,
-  hashPrefixLength: 16,
-  outDir: ".out",
-  indexDir: ".index",
-  dryRun: true,
-  verbose: true,
-  llmEnabled: false,
-  normalizeFilenames: false,
-});
-```
-
-## Public API status
-
-The packed-consumer test proves that the current root package executes and its declarations compile. It does not convert every reachable low-level export into a stability promise. `runPipelineAsync` remains the primary supported orchestration interface; RAA-007 will define explicit runtime and declaration inventories and supported subpaths.
-
-## Scope boundary
-
-This repository owns metadata injection and its package contracts. It does not include or replace external graph-export adapter work.
+The historical Python consolidation engine remains reference-only under `tools/consolidation/` and `docs/legacy/consolidation-v1/`.

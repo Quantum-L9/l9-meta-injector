@@ -1,31 +1,63 @@
 {
-  "schema": "l9.package-contract/v1",
+  "schema": "l9.package-contract/v2",
   "repository": "Quantum-L9/l9-meta-injector",
   "package_name": "l9-meta-injector",
+  "package_version": "3.0.0",
   "entrypoints": {
-    "runtime": "dist/index.js",
-    "types": "dist/index.d.ts"
+    ".": {
+      "runtime": "dist/index.js",
+      "types": "dist/index.d.ts",
+      "stability": "stable"
+    },
+    "./inventory": {
+      "runtime": "dist/public/inventory.js",
+      "types": "dist/public/inventory.d.ts",
+      "stability": "stable"
+    },
+    "./schema": {
+      "runtime": "dist/public/schema.js",
+      "types": "dist/public/schema.d.ts",
+      "stability": "stable"
+    },
+    "./advanced": {
+      "runtime": "dist/public/advanced.js",
+      "types": "dist/public/advanced.d.ts",
+      "stability": "experimental"
+    },
+    "./advanced/llm": {
+      "runtime": "dist/public/llm.js",
+      "types": "dist/public/llm.d.ts",
+      "stability": "experimental"
+    }
   },
   "required_files": [
-    "package.json",
-    "README.md",
     "CHANGELOG.md",
     "LICENSE",
+    "README.md",
+    "dist/index.d.ts",
     "dist/index.js",
-    "dist/index.d.ts"
+    "dist/public/advanced.d.ts",
+    "dist/public/advanced.js",
+    "dist/public/inventory.d.ts",
+    "dist/public/inventory.js",
+    "dist/public/llm.d.ts",
+    "dist/public/llm.js",
+    "dist/public/schema.d.ts",
+    "dist/public/schema.js",
+    "package.json"
   ],
   "allowed_top_level": [
-    "package.json",
-    "README.md",
     "CHANGELOG.md",
     "LICENSE",
+    "README.md",
     "dist",
-    "schemas",
-    "examples"
+    "examples",
+    "package.json",
+    "schemas"
   ],
   "forbidden_paths": [
-    "schemas/l9_meta.schema.yaml",
     "schemas/l9_artifact_meta.schema.yaml",
+    "schemas/l9_meta.schema.yaml",
     "schemas/move_map.schema.yaml"
   ],
   "forbidden_prefixes": [
@@ -39,10 +71,12 @@
     "tools/"
   ],
   "dist_policy": "The packed dist file set and bytes must exactly match the committed repository dist tree.",
-  "public_schema_policy": "Files under schemas/ are permitted package data. Their semantic correctness is governed by dedicated schema audits; RAA-006 proves only package inclusion and exclusion boundaries.",
+  "public_schema_policy": "Only intentional TypeScript package schemas may ship; archived Python schemas are forbidden.",
   "consumer_tests": {
     "runtime": "fixtures/package-consumer/runtime.cjs",
     "types": "fixtures/package-consumer/types.ts",
-    "tsconfig": "fixtures/package-consumer/tsconfig.json"
-  }
+    "tsconfig": "fixtures/package-consumer/tsconfig.json",
+    "deep_imports": "fixtures/package-consumer/deep-import.cjs"
+  },
+  "api_contract": "docs/public-api-contract.json"
 }

@@ -128,25 +128,38 @@ function exactKeys(value, keys, label, errors) {
   for (const key of keys) if (!(key in value)) errors.push(`${label}.${key} is required`);
   for (const key of Object.keys(value)) if (!expected.has(key)) errors.push(`${label}.${key} is not allowed`);
 }
-function stringArray(value, label, errors) {
-  if (!Array.isArray(value) || value.length === 0 || value.some((x) => typeof x !== "string" || !x)) errors.push(`${label} must be a non-empty string array`);
-  else if (new Set(value).size !== value.length) errors.push(`${label} contains duplicates`);
+function stringArray(value, label, errors, allowEmpty = false) {
+  if (!Array.isArray(value) || (!allowEmpty && value.length === 0) || value.some((x) => typeof x !== "string" || !x)) {
+    errors.push(`${label} must be ${allowEmpty ? "a" : "a non-empty"} string array`);
+  } else if (new Set(value).size !== value.length) errors.push(`${label} contains duplicates`);
 }
+const ALLOWED_ENTRYPOINT_STABILITY = new Set(["stable", "experimental"]);
 function validatePackageContract(contract) {
   const errors = [];
-  exactKeys(contract, ["schema","repository","package_name","entrypoints","required_files","allowed_top_level","forbidden_paths","forbidden_prefixes","dist_policy","public_schema_policy","consumer_tests"], "packageContract", errors);
+  exactKeys(contract, ["schema","repository","package_name","package_version","api_contract","entrypoints","required_files","allowed_top_level","forbidden_paths","forbidden_prefixes","dist_policy","public_schema_policy","consumer_tests"], "packageContract", errors);
   if (!isPlainObject(contract)) return errors;
-  if (contract.schema !== "l9.package-contract/v1") errors.push("packageContract.schema is invalid");
+  if (contract.schema !== "l9.package-contract/v2") errors.push("packageContract.schema is invalid");
   if (contract.repository !== "Quantum-L9/l9-meta-injector") errors.push("packageContract.repository is invalid");
   if (contract.package_name !== "l9-meta-injector") errors.push("packageContract.package_name is invalid");
-  exactKeys(contract.entrypoints, ["runtime","types"], "packageContract.entrypoints", errors);
-  exactKeys(contract.consumer_tests, ["runtime","types","tsconfig"], "packageContract.consumer_tests", errors);
-  for (const [obj, label] of [[contract.entrypoints,"entrypoints"],[contract.consumer_tests,"consumer_tests"]]) {
-    if (isPlainObject(obj)) for (const [key, value] of Object.entries(obj)) if (typeof value !== "string" || !value) errors.push(`packageContract.${label}.${key} must be a non-empty string`);
+  if (contract.package_version !== "3.0.0") errors.push("packageContract.package_version is invalid");
+  if (contract.api_contract !== "docs/public-api-contract.json") errors.push("packageContract.api_contract is invalid");
+  if (!isPlainObject(contract.entrypoints) || Object.keys(contract.entrypoints).length === 0) {
+    errors.push("packageContract.entrypoints must be a non-empty object");
+  } else {
+    for (const [subpath, entry] of Object.entries(contract.entrypoints)) {
+      if (!isPlainObject(entry) || typeof entry.runtime !== "string" || !entry.runtime || typeof entry.types !== "string" || !entry.types || !ALLOWED_ENTRYPOINT_STABILITY.has(entry.stability)) {
+        errors.push(`packageContract.entrypoints.${subpath} is invalid`);
+      }
+    }
   }
-  for (const key of ["required_files","allowed_top_level","forbidden_paths","forbidden_prefixes"]) stringArray(contract[key], `packageContract.${key}`, errors);
+  for (const key of ["required_files","allowed_top_level"]) stringArray(contract[key], `packageContract.${key}`, errors);
+  for (const key of ["forbidden_paths","forbidden_prefixes"]) stringArray(contract[key], `packageContract.${key}`, errors, true);
   for (const key of ["dist_policy","public_schema_policy"]) if (typeof contract[key] !== "string" || !contract[key]) errors.push(`packageContract.${key} must be a non-empty string`);
   if (Array.isArray(contract.forbidden_prefixes) && contract.forbidden_prefixes.some((p) => !p.endsWith("/"))) errors.push("packageContract.forbidden_prefixes entries must end with /");
+  exactKeys(contract.consumer_tests, ["runtime","types","tsconfig","deep_imports"], "packageContract.consumer_tests", errors);
+  if (isPlainObject(contract.consumer_tests)) {
+    for (const [key, value] of Object.entries(contract.consumer_tests)) if (typeof value !== "string" || !value) errors.push(`packageContract.consumer_tests.${key} must be a non-empty string`);
+  }
   return errors;
 }
 function validatePackedFiles(packedPaths, contract, repositoryDistPaths) {
@@ -167,6 +180,12 @@ function validatePackedFiles(packedPaths, contract, repositoryDistPaths) {
   const expectedSet = new Set(expectedDist), actualSet = new Set(actualDist);
   for (const rel of expectedDist) if (!actualSet.has(rel)) errors.push(`packed dist file missing: ${rel}`);
   for (const rel of actualDist) if (!expectedSet.has(rel)) errors.push(`packed dist contains unexpected file: ${rel}`);
+  for (const [subpath, entry] of Object.entries(contract.entrypoints || {})) {
+    if (isPlainObject(entry)) {
+      if (!set.has(entry.runtime)) errors.push(`entrypoint runtime missing for ${subpath}: ${entry.runtime}`);
+      if (!set.has(entry.types)) errors.push(`entrypoint declarations missing for ${subpath}: ${entry.types}`);
+    }
+  }
   return [...new Set(errors)];
 }
 function parseNpmPackJson(output) {

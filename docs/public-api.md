@@ -1,36 +1,41 @@
-# Public API Policy
+# Public API
 
-## Current state
+`docs/public-api-contract.json` is the machine-readable authority for package entrypoints, runtime values, declaration-only names, stability, and deep-import policy.
 
-`runPipelineAsync` is the primary documented orchestration entrypoint.
+## Stability
 
-The package root currently re-exports additional low-level modules. That broad barrel is a transitional compatibility state, not a final stability declaration. RAA-006 intentionally leaves runtime and declaration exports unchanged.
+- **Stable**: semver-governed. Breaking changes require a major version.
+- **Experimental**: intentionally public but may change at the next major version.
+- **Internal**: not present in `package.json#exports` and not supported.
 
-## Stability labels
+## Entrypoints
 
-- **stable**: semver-governed and supported for external consumers.
-- **experimental**: intentionally reachable but may change in a future major release.
-- **internal**: repository implementation detail and not a supported package entrypoint.
+| Import | Tier | Responsibility |
+|---|---|---|
+| `l9-meta-injector` | stable | Full pipeline orchestration and shared result contracts |
+| `l9-meta-injector/inventory` | stable | Standalone inventory and duplicate analysis |
+| `l9-meta-injector/schema` | stable | Metadata constants, guards, coercion, and MetaV3 construction |
+| `l9-meta-injector/advanced` | experimental | Low-level deterministic composition primitives |
+| `l9-meta-injector/advanced/llm` | experimental | Process-global LLM adapter controls |
 
-## Current commitment
+## Root contract
 
-Until RAA-007 is implemented:
+The root exposes `runPipelineAsync` plus shared constants and types needed to configure and consume a run. It does not expose injection primitives, parsers, compiler internals, or adapter mutation.
 
-- `runPipelineAsync` is stable;
-- the root barrel remains reachable for compatibility;
-- low-level exports gain no new stability promise solely because they are reachable;
-- direct stage composition transfers orchestration obligations to the caller.
+## Advanced caller obligations
 
-## Packed artifact proof
+A caller composing low-level primitives must own orchestration order, body-preservation verification, coverage accounting, skipped-input handling, reconciliation logs, error propagation, metrics, output sequencing, and persisted-report completeness. The advanced surface does not silently recreate the pipeline.
 
-RAA-006 validates that the current root package can be packed outside the checkout, installed into a clean temporary consumer, required through `dist/index.js`, exercised through a dry-run pipeline call, and compiled through `dist/index.d.ts`.
+The LLM adapter is process-global. Multi-tenant or concurrent callers must isolate processes or serialize adapter changes.
 
-That proof covers artifact integrity. It does not define the final public surface. Runtime values and erased TypeScript declarations remain separate contracts for RAA-007.
+## Runtime and declarations
 
-## Caller obligations when bypassing orchestration
+TypeScript types are erased at runtime. Runtime exports are verified with module-key inventories. Declaration exports are verified by compiling a clean consumer against the installed tarball. These contracts are deliberately separate.
 
-A caller composing low-level stages must independently preserve normalization order, body-preservation checks, verification aggregation, coverage, skipped-input accounting, metrics, output ordering, error propagation, and reconciliation logging.
+## Deep imports
 
-## Pending boundary decision
+Only paths listed in `package.json#exports` are supported. Imports such as `l9-meta-injector/dist/schema` are rejected with `ERR_PACKAGE_PATH_NOT_EXPORTED`.
 
-RAA-007 will separate runtime and declaration inventories, publish explicit subpaths, test every supported path from the installed tarball, and document migration and stability rules. No export should be removed before that work lands with a compatible versioning decision.
+## Migration
+
+See `docs/migrations/v2-to-v3.md` for mappings from the former broad root barrel.

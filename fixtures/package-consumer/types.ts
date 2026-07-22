@@ -1,24 +1,17 @@
-import { runPipelineAsync } from "l9-meta-injector";
-import type { PipelineConfig, PipelineResult, NormalizedMeta, MetaV3Record } from "l9-meta-injector";
-
-const config: PipelineConfig = {
-  root: "./input",
-  glob: "**/*.md",
-  dryRun: true,
-  outDir: "./out",
-  namespace: "consumer",
-  authority: "consumer.types",
-  nearDupThreshold: 0.9,
-  hashPrefixLength: 16,
-  indexDir: "./index",
-  verbose: false,
-  llmEnabled: false,
-  normalizeFilenames: false,
-};
-
-const execute = async (): Promise<PipelineResult> => runPipelineAsync(config);
-const metaId = (value: NormalizedMeta): string => value.id;
-const v3Source = (value: MetaV3Record): string => value.sourcePath;
-void execute;
-void metaId;
-void v3Source;
+import { runPipelineAsync, UNKNOWN, type PipelineConfig, type PipelineResult, type NormalizedMeta, type MetaV3Record } from "l9-meta-injector";
+import { inventoryTree, type InventoryConfig, type InventoryResult } from "l9-meta-injector/inventory";
+import { buildMetaV3, type MetaV3, type ArtifactType } from "l9-meta-injector/schema";
+import { compilePlacementPlans, parseCanonicalYaml, type PlacementPlan, type MetaSchema } from "l9-meta-injector/advanced";
+import { makeOpenAIAdapter, type LlmAdapter, type LlmDiagnostic } from "l9-meta-injector/advanced/llm";
+const config: PipelineConfig = { root:".",glob:"**/*.md",dryRun:true,outDir:".out",namespace:"l9",authority:"l9.doctrine.platform",nearDupThreshold:0.9,hashPrefixLength:16,indexDir:".index",verbose:false,llmEnabled:false,normalizeFilenames:false };
+const pipelinePromise: Promise<PipelineResult> = runPipelineAsync(config);
+const inventoryConfig: InventoryConfig = { root:".",outDir:".inventory",dryRun:true };
+const inventoryResult: InventoryResult = inventoryTree(inventoryConfig);
+const typeName: ArtifactType = "skill";
+const plans: PlacementPlan[] = compilePlacementPlans([{sourcePath:"README.md",body:"docs"}]);
+const parsed: Record<string,unknown> = parseCanonicalYaml("id: example\n");
+const adapter: LlmAdapter = makeOpenAIAdapter({baseUrl:"https://example.invalid",apiKey:"test-only",model:"test"});
+const diagnostic: LlmDiagnostic = {outcome:"ok",durationMs:0};
+let normalized!: NormalizedMeta; const meta: MetaV3 = buildMetaV3({meta:normalized,semantic:{artifactClass:"unknown",confidence:"low",signals:[]}}); let record!: MetaV3Record;
+void [pipelinePromise,inventoryResult,typeName,plans,parsed,adapter,diagnostic,meta,record,UNKNOWN];
+let schema!: MetaSchema; void schema;

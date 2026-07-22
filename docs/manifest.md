@@ -1,50 +1,36 @@
-# Repository Manifest - l9-meta-injector
+# Repository Manifest
 
-## Active package
+## Active authority
 
-- Runtime authority: `src/pipeline.ts#runPipelineAsync`
-- Contract authority: `src/schema.ts`
-- Package entrypoint: `dist/index.js`
-- Type entrypoint: `dist/index.d.ts`
-- Architecture authority: `docs/architecture-authority.json`
-- Active contracts: `docs/contracts.md`
-- Package contract: `docs/package-contract.json`
-- Active decisions: `docs/decision_log.md`
-- Public API policy: `docs/public-api.md`
+- Runtime: `src/pipeline.ts#runPipelineAsync`
+- Metadata: `src/schema.ts`
+- Public API: `docs/public-api-contract.json`
+- Package: `docs/package-contract.json`
+- Architecture: `docs/architecture-authority.json`
 - Traceability: `docs/traceability-map.json`
-- Integrity manifest: `docs/architecture-manifest.json`
-- Release checklist: `docs/release-checklist.md`
 
-## Active subsystems
+## Public source entrypoints
 
-- retrieval
-- extraction
-- classification
-- metadata normalization
-- optional LLM assistance
-- file-aware injection
-- reconciliation
-- persisted-result verification
-- coverage accounting
-- deduplication
-- placement compilation
-- additive MetaV3 indexing
-- inventory mode
+- `src/index.ts`
+- `src/public/inventory.ts`
+- `src/public/schema.ts`
+- `src/public/advanced.ts`
+- `src/public/llm.ts`
 
-## Generated and published artifacts
+## Validation
 
-- committed `dist/` JavaScript, declarations, and source maps;
-- active schemas under `schemas/`;
-- examples;
-- `README.md`;
-- `CHANGELOG.md`;
-- `LICENSE` and `package.json` as npm standard inclusions.
+- `npm run check:api`
+- `npm run check:authority`
+- `npm run check:manifest`
+- `npm run check:dist`
+- `npm run selfpack`
+- `npm run test:packed`
+- `npm run validate`
 
-Distribution integrity is enforced by `npm run check:dist`, `npm run test:packed`, `prepack`, `prepublishOnly`, and the canonical `npm run validate` gate.
+## Publication
 
-## Historical implementation
+`npm run check:publication` is intentionally outside `validate` and inside `prepublishOnly`. Implementation and packaging can converge while publication remains blocked on external evidence.
 
-- Documentation archive: `docs/legacy/consolidation-v1/`
-- Runtime reference: `tools/consolidation/`
-- Historical schemas: `tools/consolidation/schemas/`
-- Status: reference-only and excluded from active package authority
+## Historical boundary
+
+Legacy consolidation documentation and Python schemas remain under `docs/legacy/consolidation-v1/` and `tools/consolidation/`. They are not public package contracts.
