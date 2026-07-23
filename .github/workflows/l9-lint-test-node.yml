@@ -54,7 +54,8 @@ jobs:
           elif [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
             npm ci --ignore-scripts
           else
-            npm install --ignore-scripts --no-save
+            echo "::error::No lockfile found (package-lock.json, npm-shrinkwrap.json, pnpm-lock.yaml, or yarn.lock). Refusing to install unpinned dependencies." >&2
+            exit 1
           fi
       - name: ESLint
         run: npx --no-install eslint .
@@ -95,7 +96,8 @@ jobs:
           elif [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
             npm ci --ignore-scripts
           else
-            npm install --ignore-scripts --no-save
+            echo "::error::No lockfile found (package-lock.json, npm-shrinkwrap.json, pnpm-lock.yaml, or yarn.lock). Refusing to install unpinned dependencies." >&2
+            exit 1
           fi
       - name: Type-check (tsc --noEmit)
         run: npx --no-install tsc --noEmit
@@ -136,7 +138,8 @@ jobs:
           elif [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
             npm ci --ignore-scripts
           else
-            npm install --ignore-scripts --no-save
+            echo "::error::No lockfile found (package-lock.json, npm-shrinkwrap.json, pnpm-lock.yaml, or yarn.lock). Refusing to install unpinned dependencies." >&2
+            exit 1
           fi
       - name: Vitest (one-shot, non-interactive)
         env:
