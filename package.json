@@ -2,7 +2,7 @@
   "name": "l9-meta-injector",
   "version": "3.0.0",
   "description": "L9 meta-injection toolkit for prompt, skill, and kernel metadata",
-  "license": "MIT",
+  "license": "UNLICENSED",
   "author": "Quantum-L9",
   "repository": {
     "type": "git",
