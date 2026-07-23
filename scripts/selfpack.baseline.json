@@ -1,14 +1,14 @@
 {
   "fixtures": "fixtures",
   "totals": {
-    "scanned": 14,
-    "injected": 13,
-    "verified": 13,
-    "verifiedClean": 13
+    "scanned": 15,
+    "injected": 14,
+    "verified": 14,
+    "verifiedClean": 14
   },
   "strategyDist": {
     "block-comment": 2,
-    "line-comment": 5,
+    "line-comment": 6,
     "sidecar": 3,
     "yaml-frontmatter": 3
   },
@@ -16,16 +16,16 @@
     "context": 1,
     "prompt": 1,
     "skill": 1,
-    "source": 10
+    "source": 11
   },
   "indexes": {
-    "primitiveLibraryEntries": 12,
+    "primitiveLibraryEntries": 13,
     "promptLibraryEntries": 1,
-    "dedupTotalScanned": 13,
-    "dedupUniqueCount": 13,
+    "dedupTotalScanned": 14,
+    "dedupUniqueCount": 14,
     "dedupExactTwins": 0,
-    "verificationEntries": 13,
-    "verificationClean": 13
+    "verificationEntries": 14,
+    "verificationClean": 14
   },
   "idempotency": {
     "rerunFilesChanged": 0
@@ -62,6 +62,18 @@
       "mcp_primitive": "resource",
       "injectable": true,
       "strategy": "yaml-frontmatter",
+      "hasSidecar": false,
+      "yamlValid": true,
+      "bodyPreserved": true,
+      "sharingScopeValid": true
+    },
+    {
+      "path": "package-consumer/deep-import.cjs",
+      "id": "l9.source.deep_import",
+      "artifact_type": "source",
+      "mcp_primitive": "resource",
+      "injectable": true,
+      "strategy": "line-comment",
       "hasSidecar": false,
       "yamlValid": true,
       "bodyPreserved": true,
