@@ -48,16 +48,16 @@ jobs:
           set -euo pipefail
           corepack enable || true
           if [ -f pnpm-lock.yaml ]; then
-            corepack prepare pnpm@latest --activate && pnpm install --frozen-lockfile
+            corepack prepare pnpm@latest --activate && pnpm install --frozen-lockfile --ignore-scripts
           elif [ -f yarn.lock ]; then
-            corepack prepare yarn@stable --activate && yarn install --immutable
+            corepack prepare yarn@stable --activate && YARN_ENABLE_SCRIPTS=false yarn install --immutable
           elif [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
-            npm ci
+            npm ci --ignore-scripts
           else
-            npm install
+            npm install --ignore-scripts --no-save
           fi
       - name: ESLint
-        run: npx --no-install eslint . || npx eslint .
+        run: npx --no-install eslint .
 
   typecheck:
     name: tsc --noEmit
@@ -89,16 +89,16 @@ jobs:
           set -euo pipefail
           corepack enable || true
           if [ -f pnpm-lock.yaml ]; then
-            corepack prepare pnpm@latest --activate && pnpm install --frozen-lockfile
+            corepack prepare pnpm@latest --activate && pnpm install --frozen-lockfile --ignore-scripts
           elif [ -f yarn.lock ]; then
-            corepack prepare yarn@stable --activate && yarn install --immutable
+            corepack prepare yarn@stable --activate && YARN_ENABLE_SCRIPTS=false yarn install --immutable
           elif [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
-            npm ci
+            npm ci --ignore-scripts
           else
-            npm install
+            npm install --ignore-scripts --no-save
           fi
       - name: Type-check (tsc --noEmit)
-        run: npx --no-install tsc --noEmit || npx tsc --noEmit
+        run: npx --no-install tsc --noEmit
 
   test:
     name: Vitest
@@ -130,15 +130,15 @@ jobs:
           set -euo pipefail
           corepack enable || true
           if [ -f pnpm-lock.yaml ]; then
-            corepack prepare pnpm@latest --activate && pnpm install --frozen-lockfile
+            corepack prepare pnpm@latest --activate && pnpm install --frozen-lockfile --ignore-scripts
           elif [ -f yarn.lock ]; then
-            corepack prepare yarn@stable --activate && yarn install --immutable
+            corepack prepare yarn@stable --activate && YARN_ENABLE_SCRIPTS=false yarn install --immutable
           elif [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
-            npm ci
+            npm ci --ignore-scripts
           else
-            npm install
+            npm install --ignore-scripts --no-save
           fi
       - name: Vitest (one-shot, non-interactive)
         env:
           CI: "true"
-        run: npx --no-install vitest run || npx vitest run
+        run: npx --no-install vitest run
