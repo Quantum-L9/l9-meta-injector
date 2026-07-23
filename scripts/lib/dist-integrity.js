@@ -31,7 +31,7 @@ function listRegularFiles(root) {
     }
   }
   walk(base);
-  return files.sort();
+  return files.sort((a, b) => a.localeCompare(b));
 }
 function compareDirectories(committedDir, generatedDir) {
   const committed = listRegularFiles(committedDir);
@@ -162,8 +162,8 @@ function validatePackedFiles(packedPaths, contract, repositoryDistPaths) {
     const top = rel.includes("/") ? rel.split("/", 1)[0] : rel;
     if (!allowed.has(top) && !allowed.has(rel)) errors.push(`packed top-level path is not allowed: ${rel}`);
   }
-  const expectedDist = repositoryDistPaths.map((p) => p.startsWith("dist/") ? p : `dist/${p}`).sort();
-  const actualDist = paths.filter((p) => p.startsWith("dist/")).sort();
+  const expectedDist = repositoryDistPaths.map((p) => p.startsWith("dist/") ? p : `dist/${p}`).sort((a, b) => a.localeCompare(b));
+  const actualDist = paths.filter((p) => p.startsWith("dist/")).sort((a, b) => a.localeCompare(b));
   const expectedSet = new Set(expectedDist), actualSet = new Set(actualDist);
   for (const rel of expectedDist) if (!actualSet.has(rel)) errors.push(`packed dist file missing: ${rel}`);
   for (const rel of actualDist) if (!expectedSet.has(rel)) errors.push(`packed dist contains unexpected file: ${rel}`);
