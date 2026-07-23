@@ -1,31 +1,31 @@
 {
   "fixtures": "fixtures",
   "totals": {
-    "scanned": 10,
-    "injected": 9,
-    "verified": 9,
-    "verifiedClean": 9
+    "scanned": 14,
+    "injected": 13,
+    "verified": 13,
+    "verifiedClean": 13
   },
   "strategyDist": {
     "block-comment": 2,
-    "line-comment": 3,
-    "sidecar": 1,
+    "line-comment": 5,
+    "sidecar": 3,
     "yaml-frontmatter": 3
   },
   "typeDist": {
     "context": 1,
     "prompt": 1,
     "skill": 1,
-    "source": 6
+    "source": 10
   },
   "indexes": {
-    "primitiveLibraryEntries": 8,
+    "primitiveLibraryEntries": 12,
     "promptLibraryEntries": 1,
-    "dedupTotalScanned": 9,
-    "dedupUniqueCount": 9,
+    "dedupTotalScanned": 13,
+    "dedupUniqueCount": 13,
     "dedupExactTwins": 0,
-    "verificationEntries": 9,
-    "verificationClean": 9
+    "verificationEntries": 13,
+    "verificationClean": 13
   },
   "idempotency": {
     "rerunFilesChanged": 0
@@ -62,6 +62,54 @@
       "mcp_primitive": "resource",
       "injectable": true,
       "strategy": "yaml-frontmatter",
+      "hasSidecar": false,
+      "yamlValid": true,
+      "bodyPreserved": true,
+      "sharingScopeValid": true
+    },
+    {
+      "path": "package-consumer/package.json",
+      "id": "l9.source.package",
+      "artifact_type": "source",
+      "mcp_primitive": "resource",
+      "injectable": true,
+      "strategy": "sidecar",
+      "hasSidecar": true,
+      "yamlValid": true,
+      "bodyPreserved": true,
+      "sharingScopeValid": true
+    },
+    {
+      "path": "package-consumer/runtime.cjs",
+      "id": "l9.source.runtime",
+      "artifact_type": "source",
+      "mcp_primitive": "resource",
+      "injectable": true,
+      "strategy": "line-comment",
+      "hasSidecar": false,
+      "yamlValid": true,
+      "bodyPreserved": true,
+      "sharingScopeValid": true
+    },
+    {
+      "path": "package-consumer/tsconfig.json",
+      "id": "l9.source.tsconfig",
+      "artifact_type": "source",
+      "mcp_primitive": "resource",
+      "injectable": true,
+      "strategy": "sidecar",
+      "hasSidecar": true,
+      "yamlValid": true,
+      "bodyPreserved": true,
+      "sharingScopeValid": true
+    },
+    {
+      "path": "package-consumer/types.ts",
+      "id": "l9.source.types",
+      "artifact_type": "source",
+      "mcp_primitive": "resource",
+      "injectable": true,
+      "strategy": "line-comment",
       "hasSidecar": false,
       "yamlValid": true,
       "bodyPreserved": true,

@@ -19,6 +19,7 @@ The TypeScript package is the sole active runtime authority.
 - Contracts: `docs/contracts.md`
 - Decisions: `docs/decision_log.md`
 - Public API policy: `docs/public-api.md`
+- Package contract: `docs/package-contract.json`
 - Traceability: `docs/traceability-map.json`
 - Repository manifest: `docs/manifest.md`
 
@@ -39,16 +40,20 @@ npm install
 ## Validate
 
 ```bash
-npm run build
-npm run typecheck
-npm test
-npm run selfpack
-npm run check:authority
-npm run check:manifest
-npm pack --dry-run
+npm ci
+npm run validate
 ```
 
-Distribution parity and installed-tarball validation are scheduled separately under RAA-006.
+The canonical gate includes type checking, Jest, architecture authority, deterministic manifest verification, isolated `src` to committed-`dist` parity, selfpack, and installed-tarball runtime and declaration tests.
+
+Individual distribution checks are also available:
+
+```bash
+npm run check:dist
+npm run test:packed
+```
+
+`prepack` refuses to create a tarball when authority, manifest, or committed `dist/` parity fails. `prepublishOnly` runs the complete validation gate.
 
 ## Programmatic usage
 
@@ -73,7 +78,7 @@ await runPipelineAsync({
 
 ## Public API status
 
-`runPipelineAsync` is the primary supported orchestration interface. The broad root barrel remains transitional until RAA-007 defines explicit stability tiers and subpath exports. See `docs/public-api.md`.
+The packed-consumer test proves that the current root package executes and its declarations compile. It does not convert every reachable low-level export into a stability promise. `runPipelineAsync` remains the primary supported orchestration interface; RAA-007 will define explicit runtime and declaration inventories and supported subpaths.
 
 ## Scope boundary
 

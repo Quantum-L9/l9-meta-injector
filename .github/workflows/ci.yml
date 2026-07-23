@@ -28,11 +28,13 @@ jobs:
           node-version: "20"
           cache: npm
       - run: npm ci
-      - run: npm run build
-      - run: npm run typecheck
-      - run: npm test
-      # Smoke test: run the pipeline over ./fixtures and assert the output matches
-      # scripts/selfpack.baseline.json. A drift fails CI until the baseline is updated.
-      - run: node scripts/selfpack.js
-      - run: npm run check:authority
-      - run: npm run check:manifest
+      - run: npm run validate
+      - name: Verify validation left the checkout clean
+        shell: bash
+        run: |
+          status="$(git status --porcelain --untracked-files=all)"
+          if [[ -n "$status" ]]; then
+            printf '%s\n' "$status"
+            echo "validation changed the immutable checkout" >&2
+            exit 1
+          fi

@@ -21,7 +21,10 @@
     "model": "committed_dist_mirror",
     "source_root": "src",
     "generated_root": "dist",
-    "compliance_state": "pending_RAA-006"
+    "compliance_state": "enforced_RAA-006",
+    "source_parity_command": "npm run check:dist",
+    "packed_consumer_command": "npm run test:packed",
+    "package_contract": "docs/package-contract.json"
   },
   "public_api": {
     "model": "transitional_root_barrel",
@@ -40,6 +43,9 @@
   "validation": {
     "authority": "npm run check:authority",
     "manifest": "npm run check:manifest",
+    "dist": "npm run check:dist",
+    "packed_consumer": "npm run test:packed",
+    "canonical": "npm run validate",
     "ci_workflow": ".github/workflows/ci.yml",
     "selfpack": "scripts/selfpack.js"
   },
