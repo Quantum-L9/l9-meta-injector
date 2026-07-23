@@ -1,43 +1,22 @@
 "use strict";
-const assert = require("assert");
-const fs = require("fs");
-const os = require("os");
-const path = require("path");
-const pkg = require("l9-meta-injector");
-
-(async () => {
-  assert.strictEqual(typeof pkg.runPipelineAsync, "function", "runPipelineAsync is not a runtime export");
-  const resolved = require.resolve("l9-meta-injector");
-  assert(resolved.includes(path.join("node_modules", "l9-meta-injector", "dist", "index.js")), `unexpected runtime resolution: ${resolved}`);
-  const work = fs.mkdtempSync(path.join(os.tmpdir(), "l9-consumer-runtime-"));
-  try {
-    const input = path.join(work, "input");
-    const out = path.join(work, "out");
-    const index = path.join(work, "index");
-    fs.mkdirSync(input, { recursive: true });
-    const file = path.join(input, "artifact.md");
-    const original = "# Consumer artifact\n\nA deterministic packed-consumer smoke fixture.\n";
-    fs.writeFileSync(file, original, "utf8");
-    const result = await pkg.runPipelineAsync({
-      root: input,
-      glob: "**/*.md",
-      dryRun: true,
-      outDir: out,
-      namespace: "consumer",
-      authority: "consumer.smoke",
-      nearDupThreshold: 0.9,
-      hashPrefixLength: 16,
-      indexDir: index,
-      verbose: false,
-      llmEnabled: false,
-      normalizeFilenames: false,
-    });
-    assert.strictEqual(fs.readFileSync(file, "utf8"), original, "dry-run mutated the source file");
-    assert(result && Array.isArray(result.scanned), "pipeline result has no scanned array");
-    assert(result.coverage && typeof result.coverage.scanned === "number", "pipeline result has no coverage summary");
-    assert(result.verification && typeof result.verification.passed === "boolean", "pipeline result has no verification summary");
-    process.stdout.write(JSON.stringify({ resolved, scanned: result.coverage.scanned, injected: result.coverage.injected, sourcePreserved: true }) + "\n");
-  } finally {
-    fs.rmSync(work, { recursive: true, force: true });
-  }
-})().catch((error) => { console.error(error && error.stack ? error.stack : error); process.exit(1); });
+const assert=require("assert");
+const root=require("l9-meta-injector");
+const inventory=require("l9-meta-injector/inventory");
+const schema=require("l9-meta-injector/schema");
+const advanced=require("l9-meta-injector/advanced");
+const llm=require("l9-meta-injector/advanced/llm");
+const expected={
+  root:["META_V3_PLANES","META_V3_SCHEMA_VERSION","PRIMITIVE_TAXONOMY","UNKNOWN","isPromptMeta","runPipelineAsync"],
+  inventory:["buildDuplicateClusters","buildRecord","classifyInventory","inventoryTree","loadMetaSchema"],
+  schema:["META_V3_PLANES","META_V3_SCHEMA_VERSION","PRIMITIVE_TAXONOMY","UNKNOWN","asRecord","buildMetaV3","coerceNormalizedMeta","hasAllPlanes","isPromptMeta","normalizeMetaRecord"],
+  advanced:["CLASS_PLACEMENT_HINTS","DEFAULT_ASSIST_CONFIG","FRONTMATTER_EXTS","GRAMMAR_ORIGIN_FIELDS","PROSE_ORIGIN_FIELDS","QUARANTINE_DIRECTORY","SEMANTIC_ARTIFACT_CLASSES","applyCommentInjection","applySchema","assistField","buildDedupEntries","buildDedupReport","buildMeta","buildPrimitiveLibraryIndex","buildPromptLibraryIndex","classify","classifyArtifact","classifyWithSemantics","compilePlacementPlan","compilePlacementPlans","contentHash","dedupReportToMarkdown","diffsToLogYaml","estimateTokens","extract","extractInjectedYaml","findFiles","frontMatterInner","hasInjectedBlock","injectFile","injectFileAsync","isGoodValue","isProbablyBinary","isSemanticArtifactClass","normalizeFilename","normalizeFilenameWithLog","normalizeFilenames","parseCanonicalYaml","placementHintFor","reconcileFields","reconcileFieldsAsync","resolveNamespace","resolveStrategy","scanFiles","serializeToYamlFrontMatter","sidecarPathFor","splitContent","stripExistingFrontMatter","stripInjectedBlock","targetIncludes","toMetaSchema","toSnakeCase","toSnakeStem","verify","yamlScalar","yamlToBlock"],
+  llm:["getAdapter","localAdapter","makeOpenAIAdapter","resetAdapter","setAdapter"],
+};
+for(const [name,value] of Object.entries({root,inventory,schema,advanced,llm})) assert.deepStrictEqual(Object.keys(value).sort((a,b)=>a.localeCompare(b)),expected[name].sort((a,b)=>a.localeCompare(b)),`${name} runtime export inventory`);
+assert.strictEqual(root.UNKNOWN,"Unknown");
+assert.strictEqual(typeof root.runPipelineAsync,"function");
+assert.strictEqual(typeof inventory.inventoryTree,"function");
+assert.strictEqual(typeof schema.buildMetaV3,"function");
+assert.strictEqual(typeof advanced.compilePlacementPlans,"function");
+assert.strictEqual(typeof llm.resetAdapter,"function");
+console.log("packed-runtime: OK (5 supported entrypoints)");

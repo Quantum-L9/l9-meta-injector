@@ -1,0 +1,35 @@
+export { resolveNamespace, toSnakeStem } from "../namespace";
+export type { NamespaceResolution, NamespaceConfig, NamespaceInput, SharingScope } from "../namespace";
+export { DEFAULT_ASSIST_CONFIG, isGoodValue, PROSE_ORIGIN_FIELDS, GRAMMAR_ORIGIN_FIELDS, assistField } from "../assist";
+export type { AssistConfig } from "../assist";
+export { reconcileFields, reconcileFieldsAsync, diffsToLogYaml } from "../reconcile_fields";
+export type { FieldDiff, ReconcileAction, ReconcileResult } from "../reconcile_fields";
+export { toSnakeCase, normalizeFilename, normalizeFilenameWithLog, normalizeFilenames } from "../normalize_filename";
+export type { NormalizeFilenameResult, NormalizeFilenameOptions } from "../normalize_filename";
+export { contentHash, estimateTokens, extract, splitContent, stripExistingFrontMatter } from "../extract";
+export { classify, classifyWithSemantics } from "../classify";
+export type { ClassifyResultWithClass } from "../classify";
+export {
+  SEMANTIC_ARTIFACT_CLASSES, classifyArtifact, isSemanticArtifactClass, QUARANTINE_DIRECTORY,
+  CLASS_PLACEMENT_HINTS, placementHintFor,
+} from "../artifact_class";
+export type { PlacementHint } from "../artifact_class";
+export { compilePlacementPlan, compilePlacementPlans } from "../placement_policy";
+export type { PlacementOptions, PlacementPlan } from "../placement_policy";
+export { yamlScalar, serializeToYamlFrontMatter, buildMeta } from "../normalize_meta";
+export { injectFileAsync, injectFile } from "../inject";
+export type { InjectOptions } from "../inject";
+export { verify } from "../verify";
+export { findFiles, scanFiles } from "../retrieval";
+export { parseCanonicalYaml, toMetaSchema, applySchema, targetIncludes } from "../meta_schema";
+export type { MetaFieldDef, MetaSchema, AppliedMeta } from "../meta_schema";
+export {
+  FRONTMATTER_EXTS, isProbablyBinary, resolveStrategy, sidecarPathFor, frontMatterInner,
+  yamlToBlock, stripInjectedBlock, hasInjectedBlock, extractInjectedYaml, applyCommentInjection,
+} from "../comment";
+export type { InjectionStrategy, StrategySpec } from "../comment";
+export {
+  buildDedupEntries, buildDedupReport, buildPromptLibraryIndex, buildPrimitiveLibraryIndex,
+  dedupReportToMarkdown,
+} from "../compiler";
+export type { NearDuplicate } from "../compiler";

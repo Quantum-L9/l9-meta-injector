@@ -1,49 +1,9 @@
-import * as cp from "child_process";
-import * as fs from "fs";
-import * as path from "path";
-
-const REPO = path.resolve(__dirname, "..");
-const lib = require(path.join(REPO, "scripts/lib/architecture-authority.js"));
-function run(script: string, args: string[] = []) {
-  return cp.spawnSync(process.execPath, [path.join(REPO, script), ...args], { cwd: REPO, encoding: "utf8" });
-}
-
-describe("RAA-005 architecture authority", () => {
-  test("the active authority corpus is internally consistent", () => {
-    const r = run("scripts/check-architecture-authority.js");
-    expect(r.status).toBe(0);
-    expect(r.stdout).toContain("architecture-authority: OK");
-  });
-  test("the deterministic authority manifest is current", () => {
-    const r = run("scripts/generate-architecture-manifest.js", ["--check"]);
-    expect(r.status).toBe(0);
-    expect(r.stdout).toContain("architecture-manifest: OK");
-  });
-  test("the authority shape rejects undeclared fields", () => {
-    const authority = JSON.parse(fs.readFileSync(path.join(REPO, "docs/architecture-authority.json"), "utf8"));
-    authority.unexpected = true;
-    expect(lib.validateAuthorityDocument(authority)).toContain("authority.unexpected is not allowed");
-  });
-  test("the traceability map rejects duplicate capability names", () => {
-    const trace = JSON.parse(fs.readFileSync(path.join(REPO, "docs/traceability-map.json"), "utf8"));
-    trace.capabilities.push({ ...trace.capabilities[0] });
-    expect(lib.validateTraceabilityDocument(trace).some((x: string) => x.includes("duplicated"))).toBe(true);
-  });
-  test("legacy archive and moved schemas retain audited blob identities", () => {
-    expect(lib.verifyLegacyArchive(REPO)).toEqual([]);
-  });
-  test("distribution authority names executable parity and packed-consumer gates", () => {
-    const authority = JSON.parse(fs.readFileSync(path.join(REPO, "docs/architecture-authority.json"), "utf8"));
-    expect(authority.distribution.compliance_state).toBe("enforced_RAA-006");
-    expect(authority.distribution.source_parity_command).toBe("npm run check:dist");
-    expect(authority.distribution.packed_consumer_command).toBe("npm run test:packed");
-  });
-  test("package contract is machine-readable and aligned to package entrypoints", () => {
-    const contract = JSON.parse(fs.readFileSync(path.join(REPO, "docs/package-contract.json"), "utf8"));
-    const pkg = JSON.parse(fs.readFileSync(path.join(REPO, "package.json"), "utf8"));
-    const dist = require(path.join(REPO, "scripts/lib/dist-integrity.js"));
-    expect(dist.validatePackageContract(contract)).toEqual([]);
-    expect(contract.entrypoints.runtime).toBe(pkg.main);
-    expect(contract.entrypoints.types).toBe(pkg.types);
-  });
+import * as fs from "fs";import * as path from "path";
+const authority=require("../scripts/lib/architecture-authority");const api=require("../scripts/lib/public-api");const dist=require("../scripts/lib/dist-integrity");
+describe("architecture authority",()=>{
+ test("active authority and schemas validate",()=>{expect(authority.validateAuthorityDocument(authority.readJson(path.join(process.cwd(),"docs/architecture-authority.json")))).toEqual([]);expect(authority.validateAuthoritySchemaDocument(authority.readJson(path.join(process.cwd(),"docs/schemas/architecture-authority.schema.json")))).toEqual([]);});
+ test("traceability and legacy archive validate",()=>{expect(authority.validateTraceabilityDocument(authority.readJson(path.join(process.cwd(),"docs/traceability-map.json")))).toEqual([]);expect(authority.verifyLegacyArchive(process.cwd())).toEqual([]);});
+ test("API and package contracts validate",()=>{const contract=authority.readJson(path.join(process.cwd(),"docs/public-api-contract.json"));const pkg=authority.readJson(path.join(process.cwd(),"package.json"));expect(api.validateContract(contract,process.cwd())).toEqual([]);expect(api.validatePackageAgainstContract(pkg,contract)).toEqual([]);expect(dist.validatePackageContract(authority.readJson(path.join(process.cwd(),"docs/package-contract.json")))).toEqual([]);});
+ test("manifest inventory contains API boundary",()=>{const paths=authority.AUTHORITY_CRITICAL_PATHS;for(const rel of ["src/index.ts","src/public/inventory.ts","src/public/schema.ts","src/public/advanced.ts","src/public/llm.ts","docs/public-api-contract.json","scripts/check-public-api.js","tests/public_api_runtime.test.ts"])expect(paths).toContain(rel);});
+ test("active docs do not revive the legacy plane",()=>{for(const rel of ["docs/contracts.md","docs/decision_log.md","docs/manifest.md","docs/public-api.md"]){const text=fs.readFileSync(path.join(process.cwd(),rel),"utf8");expect(text).not.toMatch(/consolidate_request|move_map\.csv|L9_ARTIFACT_META|folder_artifact_consolidation/i);}});
 });

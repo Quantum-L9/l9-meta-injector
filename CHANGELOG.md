@@ -1,41 +1,24 @@
-# l9-meta-injection-pack CHANGELOG
+# l9-meta-injector CHANGELOG
 
-## v2.1.0 — 2026-06-19
+## 3.0.0 - 2026-07-22
 
-### New modules
-- `assist.ts` — LLM assist layer for prose-origin fields only
-  - `isGoodValue()` predicate (≥8 word tokens, non-Unknown, non-empty)
-  - `assistField()` — seeds with regex, calls LLM only when seed fails predicate
-  - `isMateriallyBetter()` — ~20-token boolean LLM judgment for scalar fields
-  - `PROSE_ORIGIN_FIELDS` / `GRAMMAR_ORIGIN_FIELDS` sets — explicit classification
-- `reconcile_fields.ts` — Five-way field reconciliation engine
-  - Actions: `add` / `revise` / `append-union` / `keep` / `replace`
-  - List fields (`activation_signals`, `triggers`, `anti_triggers`, `entity_types`, etc.) always union-merge, never overwrite
-  - `replace` only on explicit deprecation marker (`deprecated: true`, `superseded_by:`, `status: deprecated`)
-  - `diffsToLogYaml()` — sidecar audit log writer
-- `namespace.ts` — Deterministic path → namespace + sharing_scope + primitive_folder
-  - `resolveNamespace()` — reads `namespaceGlobs` from `namespace.config.json`
-  - `toSnakeStem()` — camelCase/hyphen/space → snake_case
-  - `idStem` format: `<namespace>.<primitive_folder>.<snake_stem>`
-- `normalize_filename.ts` — snake_case filename normalizer
-  - Preserves dot-convention prefix (`ns.primitive.Stem.md`) and `Prompt-` prefix
-  - Dry-run: writes sidecar `.normalize.log.yaml` only, never renames
-  - Live: sidecar written, rename is a separate explicit pass
+### Breaking
 
-### Modified modules
-- `llm.ts` — Full async `classify?` method; `makeOpenAIAdapter()` factory (OpenAI + Ollama compatible)
-- `schema.ts` — Added `SharingScope`, `namespace`/`sharing_scope` to `BaseHeader`; `FieldDiff` type
-- `inject.ts` — Five-way reconciliation on every inject; `.inject.log` sidecar on mutations
-- `verify.ts` — `sharing_scope` cross-reference invariant check
-- `pipeline.ts` — Wires assist pass, filename normalization, LLM adapter flags
-- `normalize_meta.ts` — Uses `resolveNamespace()` for `id`, `namespace`, `sharing_scope`
+- Replaced the broad root barrel with an orchestration-first stable root.
+- Added stable `./inventory` and `./schema` entrypoints.
+- Added experimental `./advanced` and `./advanced/llm` entrypoints.
+- Denied unlisted deep imports through an explicit package export map.
 
-### Key invariants
-- Default mode: zero LLM calls (local adapter only)
-- `--llm` flag enables prose-field assist (OpenAI-compatible or Ollama)
-- Body is ALWAYS preserved byte-for-byte
-- No silent field mutations — every change is in `.inject.log`
-- `sharing_scope=shared` requires `namespace=shared|core` — enforced by verify
+### Assurance
 
-### Test coverage
-- 56 tests across 7 suites (0 failures)
+- Added separate runtime and declaration export inventories.
+- Added source, package-map, installed-tarball, declaration, and deep-import validation.
+- Added a publication decision gate so unresolved package history blocks publishing without blocking implementation or CI.
+
+### Migration
+
+- Added `docs/migrations/v2-to-v3.md` with import mappings.
+
+## 2.1.0 - 2026-06-19
+
+Introduced the TypeScript metadata injection pipeline, LLM-assisted prose reconciliation, namespace handling, filename normalization, and body-preserving verification.

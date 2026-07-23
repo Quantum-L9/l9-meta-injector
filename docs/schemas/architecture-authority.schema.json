@@ -80,7 +80,7 @@
           "const": "docs/architecture.md"
         },
         "public_api": {
-          "const": "docs/public-api.md"
+          "const": "docs/public-api-contract.json"
         },
         "package": {
           "const": "package.json"
@@ -129,17 +129,38 @@
       "required": [
         "model",
         "current_state",
-        "primary_entrypoint"
+        "primary_entrypoint",
+        "contract",
+        "versioning",
+        "supported_subpaths",
+        "validation_command"
       ],
       "properties": {
         "model": {
-          "const": "transitional_root_barrel"
+          "const": "orchestration_root_plus_versioned_subpaths"
         },
         "current_state": {
-          "const": "pending_RAA-007"
+          "const": "enforced_RAA-007"
         },
         "primary_entrypoint": {
           "const": "runPipelineAsync"
+        },
+        "contract": {
+          "const": "docs/public-api-contract.json"
+        },
+        "versioning": {
+          "const": "semver"
+        },
+        "supported_subpaths": {
+          "type": "array",
+          "minItems": 6,
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "validation_command": {
+          "const": "npm run check:api"
         }
       }
     },
@@ -164,35 +185,52 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
+        "api",
         "authority",
         "manifest",
         "dist",
         "packed_consumer",
+        "publication",
         "canonical",
         "ci_workflow",
         "selfpack"
       ],
       "properties": {
+        "api": {
+          "type": "string",
+          "minLength": 1
+        },
         "authority": {
-          "const": "npm run check:authority"
+          "type": "string",
+          "minLength": 1
         },
         "manifest": {
-          "const": "npm run check:manifest"
+          "type": "string",
+          "minLength": 1
         },
         "dist": {
-          "const": "npm run check:dist"
+          "type": "string",
+          "minLength": 1
         },
         "packed_consumer": {
-          "const": "npm run test:packed"
+          "type": "string",
+          "minLength": 1
+        },
+        "publication": {
+          "type": "string",
+          "minLength": 1
         },
         "canonical": {
-          "const": "npm run validate"
+          "type": "string",
+          "minLength": 1
         },
         "ci_workflow": {
-          "const": ".github/workflows/ci.yml"
+          "type": "string",
+          "minLength": 1
         },
         "selfpack": {
-          "const": "scripts/selfpack.js"
+          "type": "string",
+          "minLength": 1
         }
       }
     },

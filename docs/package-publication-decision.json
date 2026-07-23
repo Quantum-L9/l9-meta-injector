@@ -1,0 +1,28 @@
+{
+  "schema": "l9.package-publication-decision/v1",
+  "package_name": "l9-meta-injector",
+  "package_version": "3.0.0",
+  "status": "blocked_pending_history_check",
+  "publication_command": "npm publish",
+  "evidence": [
+    {
+      "id": "npm_registry_history",
+      "status": "unknown",
+      "result": "Registry query has not been executed in a network-enabled authenticated environment."
+    },
+    {
+      "id": "constellation_consumer_inventory",
+      "status": "unknown",
+      "result": "Cross-repository import and tarball inventory has not been completed."
+    },
+    {
+      "id": "distribution_owner_approval",
+      "status": "unknown",
+      "result": "No publication approval is recorded for version 3.0.0."
+    }
+  ],
+  "resolution": {
+    "approve_when": "Every evidence item is verified or not_applicable_with_reason and status is changed to approved.",
+    "implementation_effect": "No effect on build, tests, npm pack, or CI. Only npm publish is blocked."
+  }
+}

@@ -14,7 +14,7 @@
     "metadata": "src/schema.ts",
     "pipeline": "src/pipeline.ts",
     "architecture": "docs/architecture.md",
-    "public_api": "docs/public-api.md",
+    "public_api": "docs/public-api-contract.json",
     "package": "package.json"
   },
   "distribution": {
@@ -27,9 +27,20 @@
     "package_contract": "docs/package-contract.json"
   },
   "public_api": {
-    "model": "transitional_root_barrel",
-    "current_state": "pending_RAA-007",
-    "primary_entrypoint": "runPipelineAsync"
+    "model": "orchestration_root_plus_versioned_subpaths",
+    "current_state": "enforced_RAA-007",
+    "primary_entrypoint": "runPipelineAsync",
+    "contract": "docs/public-api-contract.json",
+    "versioning": "semver",
+    "supported_subpaths": [
+      ".",
+      "./inventory",
+      "./schema",
+      "./advanced",
+      "./advanced/llm",
+      "./package.json"
+    ],
+    "validation_command": "npm run check:api"
   },
   "persisted_outputs": [
     "primitive-library-index.json",
@@ -41,10 +52,12 @@
     "meta-v3-index.json"
   ],
   "validation": {
+    "api": "npm run check:api",
     "authority": "npm run check:authority",
     "manifest": "npm run check:manifest",
     "dist": "npm run check:dist",
     "packed_consumer": "npm run test:packed",
+    "publication": "npm run check:publication",
     "canonical": "npm run validate",
     "ci_workflow": ".github/workflows/ci.yml",
     "selfpack": "scripts/selfpack.js"

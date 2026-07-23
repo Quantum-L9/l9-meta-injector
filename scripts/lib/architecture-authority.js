@@ -17,34 +17,64 @@ const EXPECTED_PERSISTED_OUTPUTS = [
 const AUTHORITY_CRITICAL_PATHS = [
   ".github/workflows/ci.yml",
   "README.md",
+  "CHANGELOG.md",
   "package.json",
   "package-lock.json",
   "tsconfig.json",
   "fixtures/package-consumer/package.json",
   "fixtures/package-consumer/runtime.cjs",
+  "fixtures/package-consumer/deep-import.cjs",
   "fixtures/package-consumer/tsconfig.json",
   "fixtures/package-consumer/types.ts",
   "src/index.ts",
   "src/pipeline.ts",
   "src/schema.ts",
   "src/meta_v3.ts",
+  "src/public/inventory.ts",
+  "src/public/schema.ts",
+  "src/public/advanced.ts",
+  "src/public/llm.ts",
+  "dist/index.js",
+  "dist/index.d.ts",
+  "dist/index.js.map",
+  "dist/public/inventory.js",
+  "dist/public/inventory.d.ts",
+  "dist/public/inventory.js.map",
+  "dist/public/schema.js",
+  "dist/public/schema.d.ts",
+  "dist/public/schema.js.map",
+  "dist/public/advanced.js",
+  "dist/public/advanced.d.ts",
+  "dist/public/advanced.js.map",
+  "dist/public/llm.js",
+  "dist/public/llm.d.ts",
+  "dist/public/llm.js.map",
   "scripts/selfpack.js",
+  "scripts/check-public-api.js",
+  "scripts/check-publication-readiness.js",
   "scripts/check-architecture-authority.js",
   "scripts/check-dist-sync.js",
   "scripts/generate-architecture-manifest.js",
   "scripts/test-packed-consumer.js",
+  "scripts/lib/public-api.js",
   "scripts/lib/architecture-authority.js",
   "scripts/lib/dist-integrity.js",
+  "tests/public_api_runtime.test.ts",
+  "tests/public_api_types.test.ts",
+  "tests/publication_readiness.test.ts",
   "tests/architecture_authority.test.ts",
   "tests/dist_integrity.test.ts",
   "docs/architecture.md",
   "docs/architecture-authority.json",
   "docs/contracts.md",
+  "docs/public-api-contract.json",
   "docs/package-contract.json",
+  "docs/package-publication-decision.json",
   "docs/release-checklist.md",
   "docs/decision_log.md",
   "docs/manifest.md",
   "docs/public-api.md",
+  "docs/migrations/v2-to-v3.md",
   "docs/traceability-map.json",
   "docs/schemas/architecture-authority.schema.json",
   "docs/legacy/consolidation-v1/README.md",
@@ -124,18 +154,22 @@ function validateAuthorityDocument(authority) {
     if (authority.distribution.packed_consumer_command !== "npm run test:packed") errors.push("authority.distribution.packed_consumer_command is invalid");
     if (authority.distribution.package_contract !== "docs/package-contract.json") errors.push("authority.distribution.package_contract is invalid");
   }
-  exactKeys(authority.public_api, ["model","current_state","primary_entrypoint"], [], "authority.public_api", errors);
+  exactKeys(authority.public_api, ["model","current_state","primary_entrypoint","contract","versioning","supported_subpaths","validation_command"], [], "authority.public_api", errors);
   if (isPlainObject(authority.public_api)) {
-    if (authority.public_api.model !== "transitional_root_barrel") errors.push("authority.public_api.model is invalid");
-    if (authority.public_api.current_state !== "pending_RAA-007") errors.push("authority.public_api.current_state must remain pending_RAA-007");
+    if (authority.public_api.model !== "orchestration_root_plus_versioned_subpaths") errors.push("authority.public_api.model is invalid");
+    if (authority.public_api.current_state !== "enforced_RAA-007") errors.push("authority.public_api.current_state must be enforced_RAA-007");
     requireString(authority.public_api.primary_entrypoint, "authority.public_api.primary_entrypoint", errors);
+    if (authority.public_api.contract !== "docs/public-api-contract.json") errors.push("authority.public_api.contract is invalid");
+    requireString(authority.public_api.versioning, "authority.public_api.versioning", errors);
+    requireStringArray(authority.public_api.supported_subpaths, "authority.public_api.supported_subpaths", errors);
+    if (authority.public_api.validation_command !== "npm run check:api") errors.push("authority.public_api.validation_command is invalid");
   }
   requireStringArray(authority.persisted_outputs, "authority.persisted_outputs", errors);
   if (Array.isArray(authority.persisted_outputs)) {
     const actual = [...authority.persisted_outputs].sort((a, b) => a.localeCompare(b));
     if (JSON.stringify(actual) !== JSON.stringify(EXPECTED_PERSISTED_OUTPUTS)) errors.push("authority.persisted_outputs does not match the live pipeline outputs");
   }
-  exactKeys(authority.validation, ["authority","manifest","dist","packed_consumer","canonical","ci_workflow","selfpack"], [], "authority.validation", errors);
+  exactKeys(authority.validation, ["api","authority","manifest","dist","packed_consumer","publication","canonical","ci_workflow","selfpack"], [], "authority.validation", errors);
   if (isPlainObject(authority.validation)) for (const key of Object.keys(authority.validation)) requireString(authority.validation[key], `authority.validation.${key}`, errors);
   exactKeys(authority.legacy, ["status","documentation","runtime","schemas"], [], "authority.legacy", errors);
   if (isPlainObject(authority.legacy)) {

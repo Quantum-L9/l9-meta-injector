@@ -19,134 +19,64 @@
     },
     {
       "capability": "metadata_contracts",
-      "source": "src/schema.ts",
-      "public_entrypoint": "l9-meta-injector root barrel (transitional)",
+      "source": "src/schema.ts and src/public/schema.ts",
+      "public_entrypoint": "l9-meta-injector/schema",
       "tests": [
         "tests/schema.test.ts",
-        "tests/taxonomy.test.ts"
+        "tests/public_api_types.test.ts"
       ],
       "validators": [
         "npm run typecheck",
-        "npm test"
+        "npm run check:api"
       ],
-      "stability": "pending_RAA-007"
-    },
-    {
-      "capability": "metadata_normalization",
-      "source": "src/normalize_meta.ts",
-      "public_entrypoint": "l9-meta-injector root barrel (transitional)",
-      "tests": [
-        "tests/normalize_meta.test.ts"
-      ],
-      "validators": [
-        "npm test"
-      ],
-      "stability": "pending_RAA-007"
-    },
-    {
-      "capability": "file_injection",
-      "source": "src/inject.ts",
-      "public_entrypoint": "l9-meta-injector root barrel (transitional)",
-      "tests": [
-        "tests/inject.test.ts",
-        "tests/pipeline_integration.test.ts"
-      ],
-      "validators": [
-        "npm test",
-        "npm run selfpack"
-      ],
-      "stability": "pending_RAA-007"
-    },
-    {
-      "capability": "persisted_verification",
-      "source": "src/verify.ts",
-      "public_entrypoint": "pipeline result plus root barrel",
-      "tests": [
-        "tests/verify.test.ts"
-      ],
-      "validators": [
-        "npm test",
-        "npm run selfpack"
-      ],
-      "stability": "stable through pipeline"
-    },
-    {
-      "capability": "deduplication",
-      "source": "src/compiler.ts",
-      "public_entrypoint": "pipeline indexes plus root barrel (transitional)",
-      "tests": [
-        "tests/compiler.test.ts"
-      ],
-      "validators": [
-        "npm test",
-        "npm run selfpack"
-      ],
-      "persisted_outputs": [
-        "dedup-report.json",
-        "dedup-report.md"
-      ],
-      "stability": "pending_RAA-007"
-    },
-    {
-      "capability": "placement_compilation",
-      "source": "src/placement_policy.ts",
-      "public_entrypoint": "PipelineResult.placementPlans",
-      "tests": [
-        "tests/placement_policy.test.ts"
-      ],
-      "validators": [
-        "npm test"
-      ],
-      "persisted_outputs": [
-        "placement-plan.json"
-      ],
-      "stability": "stable through pipeline"
-    },
-    {
-      "capability": "meta_v3_generation",
-      "source": "src/meta_v3.ts",
-      "public_entrypoint": "PipelineResult.metaV3",
-      "tests": [
-        "tests/meta_v3.test.ts"
-      ],
-      "validators": [
-        "npm test"
-      ],
-      "persisted_outputs": [
-        "meta-v3-index.json"
-      ],
-      "stability": "stable through pipeline"
+      "stability": "stable"
     },
     {
       "capability": "inventory_mode",
-      "source": "src/inventory.ts",
-      "public_entrypoint": "l9-meta-injector root barrel (transitional)",
+      "source": "src/inventory.ts and src/public/inventory.ts",
+      "public_entrypoint": "l9-meta-injector/inventory",
       "tests": [
         "tests/inventory.test.ts",
-        "tests/meta_schema.test.ts"
+        "tests/public_api_runtime.test.ts"
       ],
       "validators": [
-        "npm test"
+        "npm test",
+        "npm run test:packed"
       ],
-      "stability": "pending_RAA-007"
+      "stability": "stable"
     },
     {
-      "capability": "llm_assistance",
-      "source": "src/assist.ts and src/llm.ts",
-      "public_entrypoint": "pipeline configuration plus root barrel (transitional)",
+      "capability": "advanced_composition",
+      "source": "src/public/advanced.ts",
+      "public_entrypoint": "l9-meta-injector/advanced",
       "tests": [
-        "tests/assist.test.ts",
-        "tests/llm.test.ts"
+        "tests/public_api_runtime.test.ts",
+        "tests/public_api_types.test.ts"
       ],
       "validators": [
-        "npm test"
+        "npm run check:api",
+        "npm run test:packed"
       ],
-      "stability": "pending_RAA-007"
+      "stability": "experimental"
+    },
+    {
+      "capability": "llm_adapter_controls",
+      "source": "src/public/llm.ts",
+      "public_entrypoint": "l9-meta-injector/advanced/llm",
+      "tests": [
+        "tests/llm.test.ts",
+        "tests/public_api_runtime.test.ts"
+      ],
+      "validators": [
+        "npm test",
+        "npm run test:packed"
+      ],
+      "stability": "experimental"
     },
     {
       "capability": "package_distribution",
-      "source": "package.json and tsconfig.json and dist/ and docs/package-contract.json",
-      "public_entrypoint": "dist/index.js and dist/index.d.ts",
+      "source": "package.json and dist/ and docs/package-contract.json",
+      "public_entrypoint": "package export map",
       "tests": [
         "tests/dist_integrity.test.ts",
         "fixtures/package-consumer/runtime.cjs",
@@ -160,6 +90,21 @@
       "stability": "enforced_RAA-006"
     },
     {
+      "capability": "public_api_boundary",
+      "source": "docs/public-api-contract.json and src/index.ts and src/public",
+      "public_entrypoint": "five explicit package entrypoints",
+      "tests": [
+        "tests/public_api_runtime.test.ts",
+        "tests/public_api_types.test.ts",
+        "fixtures/package-consumer/deep-import.cjs"
+      ],
+      "validators": [
+        "npm run check:api",
+        "npm run test:packed"
+      ],
+      "stability": "enforced_RAA-007"
+    },
+    {
       "capability": "architecture_authority",
       "source": "docs/architecture-authority.json",
       "public_entrypoint": null,
@@ -168,10 +113,21 @@
       ],
       "validators": [
         "npm run check:authority",
-        "npm run check:manifest",
-        "npm run validate"
+        "npm run check:manifest"
       ],
       "stability": "stable"
+    },
+    {
+      "capability": "publication_safety",
+      "source": "docs/package-publication-decision.json",
+      "public_entrypoint": null,
+      "tests": [
+        "tests/publication_readiness.test.ts"
+      ],
+      "validators": [
+        "npm run check:publication"
+      ],
+      "stability": "blocked_pending_history_check"
     }
   ]
 }
