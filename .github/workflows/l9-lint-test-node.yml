@@ -1,0 +1,144 @@
+# L9 consumer lint + test workflow for Node.js / TypeScript.
+# Three independent required-check contexts: ESLint, tsc --noEmit, Vitest.
+
+name: L9 Lint and Test (Node)
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: l9-lint-test-node-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: ESLint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout immutable event revision
+        env:
+          REPOSITORY: ${{ github.repository }}
+          REVISION: ${{ github.sha }}
+          TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin \
+            "https://x-access-token:${TOKEN}@github.com/${REPOSITORY}.git"
+          git -c protocol.version=2 fetch --depth=1 origin "${REVISION}"
+          git checkout --detach FETCH_HEAD
+          git remote set-url origin "https://github.com/${REPOSITORY}.git"
+      - name: Set up Node from package.json
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: package.json
+          cache: npm
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          corepack enable || true
+          if [ -f pnpm-lock.yaml ]; then
+            corepack prepare pnpm@latest --activate && pnpm install --frozen-lockfile
+          elif [ -f yarn.lock ]; then
+            corepack prepare yarn@stable --activate && yarn install --immutable
+          elif [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+      - name: ESLint
+        run: npx --no-install eslint . || npx eslint .
+
+  typecheck:
+    name: tsc --noEmit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout immutable event revision
+        env:
+          REPOSITORY: ${{ github.repository }}
+          REVISION: ${{ github.sha }}
+          TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin \
+            "https://x-access-token:${TOKEN}@github.com/${REPOSITORY}.git"
+          git -c protocol.version=2 fetch --depth=1 origin "${REVISION}"
+          git checkout --detach FETCH_HEAD
+          git remote set-url origin "https://github.com/${REPOSITORY}.git"
+      - name: Set up Node from package.json
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: package.json
+          cache: npm
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          corepack enable || true
+          if [ -f pnpm-lock.yaml ]; then
+            corepack prepare pnpm@latest --activate && pnpm install --frozen-lockfile
+          elif [ -f yarn.lock ]; then
+            corepack prepare yarn@stable --activate && yarn install --immutable
+          elif [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+      - name: Type-check (tsc --noEmit)
+        run: npx --no-install tsc --noEmit || npx tsc --noEmit
+
+  test:
+    name: Vitest
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout immutable event revision
+        env:
+          REPOSITORY: ${{ github.repository }}
+          REVISION: ${{ github.sha }}
+          TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin \
+            "https://x-access-token:${TOKEN}@github.com/${REPOSITORY}.git"
+          git -c protocol.version=2 fetch --depth=1 origin "${REVISION}"
+          git checkout --detach FETCH_HEAD
+          git remote set-url origin "https://github.com/${REPOSITORY}.git"
+      - name: Set up Node from package.json
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: package.json
+          cache: npm
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          corepack enable || true
+          if [ -f pnpm-lock.yaml ]; then
+            corepack prepare pnpm@latest --activate && pnpm install --frozen-lockfile
+          elif [ -f yarn.lock ]; then
+            corepack prepare yarn@stable --activate && yarn install --immutable
+          elif [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+      - name: Vitest (one-shot, non-interactive)
+        env:
+          CI: "true"
+        run: npx --no-install vitest run || npx vitest run
