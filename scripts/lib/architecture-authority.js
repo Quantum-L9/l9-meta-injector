@@ -12,7 +12,7 @@ const EXPECTED_PERSISTED_OUTPUTS = [
   "primitive-library-index.json",
   "prompt-library-index.json",
   "verification-report.json",
-].sort();
+].sort((a, b) => a.localeCompare(b));
 
 const AUTHORITY_CRITICAL_PATHS = [
   ".github/workflows/ci.yml",
@@ -45,7 +45,7 @@ const AUTHORITY_CRITICAL_PATHS = [
   "tools/consolidation/schemas/l9_meta.schema.yaml",
   "tools/consolidation/schemas/l9_artifact_meta.schema.yaml",
   "tools/consolidation/schemas/move_map.schema.yaml",
-].sort();
+].sort((a, b) => a.localeCompare(b));
 
 const LEGACY_ARCHIVE_BLOBS = Object.freeze({
   "docs/legacy/consolidation-v1/contracts.md": "0fb15ff79f7357e426bfcb25644d52919c96d744",
@@ -65,7 +65,9 @@ function isPlainObject(value) {
 }
 function gitBlobSha(buffer) {
   const header = Buffer.from(`blob ${buffer.length}\0`, "utf8");
-  return crypto.createHash("sha1").update(header).update(buffer).digest("hex");
+  // NOSONAR(S4790): SHA-1 here reproduces Git's blob object id for content-drift
+  // detection, not a security control. Git itself uses SHA-1 for object identity.
+  return crypto.createHash("sha1").update(header).update(buffer).digest("hex"); // NOSONAR
 }
 function exactKeys(value, requiredKeys, optionalKeys, label, errors) {
   if (!isPlainObject(value)) { errors.push(`${label} must be an object`); return; }
@@ -115,7 +117,7 @@ function validateAuthorityDocument(authority) {
   }
   requireStringArray(authority.persisted_outputs, "authority.persisted_outputs", errors);
   if (Array.isArray(authority.persisted_outputs)) {
-    const actual = [...authority.persisted_outputs].sort();
+    const actual = [...authority.persisted_outputs].sort((a, b) => a.localeCompare(b));
     if (JSON.stringify(actual) !== JSON.stringify(EXPECTED_PERSISTED_OUTPUTS)) errors.push("authority.persisted_outputs does not match the live pipeline outputs");
   }
   exactKeys(authority.validation, ["authority","manifest","ci_workflow","selfpack"], [], "authority.validation", errors);
@@ -132,8 +134,8 @@ function validateAuthoritySchemaDocument(schema) {
   if (!isPlainObject(schema)) return ["authority schema must be an object"];
   if (schema.$schema !== "https://json-schema.org/draft/2020-12/schema") errors.push("authority schema draft is invalid");
   if (schema.type !== "object" || schema.additionalProperties !== false) errors.push("authority schema root must be a closed object");
-  const required = ["schema","repository","audit_base_ref","status","engine","contracts","distribution","public_api","persisted_outputs","validation","legacy"].sort();
-  const actual = Array.isArray(schema.required) ? [...schema.required].sort() : [];
+  const required = ["schema","repository","audit_base_ref","status","engine","contracts","distribution","public_api","persisted_outputs","validation","legacy"].sort((a, b) => a.localeCompare(b));
+  const actual = Array.isArray(schema.required) ? [...schema.required].sort((a, b) => a.localeCompare(b)) : [];
   if (JSON.stringify(required) !== JSON.stringify(actual)) errors.push("authority schema required-key set is incomplete");
   for (const key of ["engine","contracts","distribution","public_api","validation","legacy"]) {
     const node = schema.properties && schema.properties[key];
