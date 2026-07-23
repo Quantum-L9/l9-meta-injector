@@ -28,7 +28,7 @@ npm install
 ```bash
 npm run build
 npm test
-npx jest --runInBand
+npx vitest run
 npm pack --dry-run
 ```
 
