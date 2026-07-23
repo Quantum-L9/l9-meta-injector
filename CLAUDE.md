@@ -18,6 +18,6 @@ with `npm run selfpack -- --update`. Keep `dist/` in sync with `src/` in the sam
 - When you'd normally ask a clarifying question on a low-stakes fork, pick the sane default, state the assumption in one line, and proceed.
 
 ## CI
-- `ci.yml` (`smoke`) is the single functional PR gate: build + typecheck + jest + selfpack.
+- `ci.yml` (`smoke`) is the single functional PR gate: build + typecheck + vitest + selfpack.
 - `l9-supply-chain.yml` runs OpenSSF Scorecard (push to `main`) + SBOM (push + PR) via `l9-ci-core` reusable workflows.
 - Copilot code review is driven by the org ruleset (run-on-push), not a workflow.

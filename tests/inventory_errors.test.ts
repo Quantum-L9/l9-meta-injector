@@ -1,3 +1,4 @@
+import { vi, describe, test, expect, beforeEach, afterEach, type MockInstance } from "vitest";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
@@ -5,9 +6,9 @@ import { inventoryTree } from "../src/inventory";
 
 function tmp() { return fs.mkdtempSync(path.join(os.tmpdir(), "l9-inverr-")); }
 
-let stderr: jest.SpyInstance;
-beforeEach(() => { stderr = jest.spyOn(process.stderr, "write").mockImplementation(() => true); });
-afterEach(() => { jest.restoreAllMocks(); });
+let stderr: MockInstance;
+beforeEach(() => { stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true); });
+afterEach(() => { vi.restoreAllMocks(); });
 
 describe("inventory surfaces swallowed errors (OBS-004/006/007, PRD-002)", () => {
   test("normal run exposes an empty skippedDirs array (OBS-007 API)", () => {
