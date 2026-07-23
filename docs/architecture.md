@@ -1,117 +1,72 @@
 # Architecture
 
-This document describes the **as-built primary artifact**: the TypeScript
-metadata-injection pipeline shipped as the `l9-meta-injector` npm package
-(`package.json` → `main: dist/index.js`). A second, older Python consolidation
-engine lives under `tools/consolidation/`; it is **secondary and out of scope**
-for the shipped package (see [Engine authority](#engine-authority) below and
-decision #10 in `decision_log.md`).
+## Authority
 
-## Primary engine — TypeScript pipeline
+This document describes the as-built TypeScript metadata-injection package. The machine-readable authority index is `docs/architecture-authority.json`; active contracts, decisions, traceability, and repository structure are defined by the adjacent active corpus.
 
-Source in `src/*.ts`, compiled output committed to `dist/`, tests in `tests/*.ts`,
-snapshot smoke test in `scripts/selfpack.js`. The library entry point is
-`runPipelineAsync` in `src/pipeline.ts`.
+The shipped package loads `dist/index.js`, whose source is the TypeScript implementation under `src/`. The full orchestration entrypoint is `runPipelineAsync` in `src/pipeline.ts`.
 
-```
-retrieval ─▶ extract ─▶ classify ─▶ normalize_meta (buildMeta)
-                                          │
-                              assist (LLM prose fill, opt-in)
-                                          │
-                                        inject  ◀─ reconcile_fields (5-way merge)
-                                          │
-                                        verify
-                                          │
-        ┌─────────────────┬───────────────┼────────────────┬───────────────┐
-     dedup            placement         meta_v3          inventory        indexes
- (near-dup report)   (compiler)     (9-plane model)   (tree walker)   (library JSON)
+## Primary engine - TypeScript pipeline
+
+```text
+retrieval -> extract -> classify -> normalize_meta
+                                   |
+                          optional assist
+                                   |
+                     inject <- reconcile_fields
+                                   |
+                                verify
+                                   |
+       dedup | placement | MetaV3 | inventory | indexes
 ```
 
 ### Stage responsibilities
 
 | Stage | Module | Responsibility |
 |---|---|---|
-| retrieval | `retrieval.ts`, `pipeline.ts` | Discover files under a root by glob; scan and read bodies. |
-| extract | `extract.ts` | Content hash, token estimate, prose-field extraction from the body. |
-| classify | `classify.ts`, `artifact_class.ts` | Infer `artifact_type` (coarse) and semantic class (fine) from path + content. |
-| normalize_meta | `normalize_meta.ts` | `buildMeta` assembles the typed `NormalizedMeta` header per artifact type. |
-| assist | `assist.ts`, `llm.ts` | Opt-in LLM fill for prose-origin fields when the regex seed fails the "good" predicate. Local default makes **no** network calls. |
-| inject | `inject.ts`, `comment.ts` | Filetype-aware injection: YAML frontmatter (markdown), comment-wrapped block (code), or `.l9meta.yaml` sidecar (comment-less/binary). Body preserved verbatim. |
-| reconcile | `reconcile_fields.ts` | Five-way field merge (add / revise / append-union / keep / replace) on re-injection; every mutation logged. |
-| verify | `verify.ts` | Post-injection checks: YAML valid, body preserved (hash), taxonomy valid, sharing-scope valid, prompt-schema complete. |
-| dedup | `pipeline.ts` | Shingle-Jaccard near-duplicate report over injected bodies. |
-| placement | `compiler.ts`, `placement_policy.ts` | Advisory placement plans (one per injected artifact). |
-| meta_v3 | `meta_v3.ts` | Nine-plane v3 metadata record, additive over v1/v2. |
-| inventory | `inventory.ts` | Standalone tree walker → inventory records + folder/file sidecars. |
-| serialization | `yaml_serialize.ts`, `meta_schema.ts` | Single canonical writer (`serializeYamlObject`) and reader (`parseCanonicalYaml`) for the constrained YAML subset. |
-| taxonomy | `taxonomy.ts`, `schema.ts` | `ArtifactType` is the canonical vocabulary; finer classifications map onto it. |
+| retrieval | `retrieval.ts`, `pipeline.ts` | Discover and scan files under the configured root. |
+| extract | `extract.ts` | Compute content identity, token estimate, and body-derived fields. |
+| classify | `classify.ts`, `artifact_class.ts` | Infer canonical artifact type and semantic class. |
+| normalize | `normalize_meta.ts` | Build the typed flat metadata record. |
+| assist | `assist.ts`, `llm.ts` | Optionally improve prose-origin fields; local default makes no network calls. |
+| inject | `inject.ts`, `comment.ts` | Select a file-aware injection strategy while preserving the source body. |
+| reconcile | `reconcile_fields.ts` | Merge prior and incoming metadata with an observable field-diff log. |
+| verify | `verify.ts` | Validate the persisted result and body-preservation invariant. |
+| dedup | `compiler.ts` | Produce exact and near-duplicate analysis. |
+| placement | `placement_policy.ts` | Compile advisory placement plans. |
+| MetaV3 | `meta_v3.ts` | Produce the additive nine-plane representation. |
+| inventory | `inventory.ts` | Walk a tree and emit inventory records and manifests. |
 
-### Cross-cutting contracts
+## Cross-cutting contracts
 
-- **Schema single-source** — `src/schema.ts` owns `NormalizedMeta`, `SharingScope`,
-  `FieldDiff`/`ReconcileAction`, the taxonomies, and the `MetaRecord` reconcile-edge
-  type. Consumers import from there rather than re-declaring.
-- **Body preservation** — injection never alters the artifact body; verification
-  asserts `postInjectionBodyHash === originalBodyHash`.
-- **Idempotency** — re-injecting a stamped file is a byte-level no-op (sentinels let a
-  re-run replace, not duplicate, the header). `selfpack` asserts `rerunFilesChanged=0`.
-- **Observability** — the LLM/IO hotpaths report a correlated decision path
-  (`llm_ok` / `llm_failed_fallback` / `no_adapter` / `heuristic`) and run-level metrics
-  (`src/metrics.ts`), surfaced on `PipelineResult.metrics`.
+- `src/schema.ts` owns shared TypeScript contract types.
+- Injection must preserve the original body bytes.
+- Reinjection must not duplicate metadata blocks.
+- Verification failures are exposed through `PipelineResult.verification`.
+- Coverage includes skipped inputs and failed verification.
+- LLM and IO hot paths expose correlated diagnostics and run-level metrics.
+- Persisted indexes are produced by the TypeScript pipeline.
 
-### Verify gate (CI parity)
+## Validation
 
-```
-npm ci && npm run build && npm run typecheck && npm test && node scripts/selfpack.js
-```
+The current CI gate runs installation, build, typecheck, tests, selfpack, authority validation, and architecture-manifest validation.
 
-This is exactly what CI (`ci.yml` → `smoke`) runs. `dist/` is kept in sync with `src/`
-in the same commit.
-
-## Engine authority
-
-Two metadata-injection engines exist in this repository with divergent header
-dialects (finding ACA-001):
-
-| | Primary | Secondary |
-|---|---|---|
-| Engine | TypeScript pipeline (`src/`, shipped as `dist/`) | Python consolidation (`tools/consolidation/`) |
-| Status | **Authoritative** — the npm package, tested + CI-gated | Out of scope for the package; retained for reference |
-| Header dialect | `>>> l9:meta >>>` sentinels / YAML frontmatter / sidecar | `L9_META` / `L9_ARTIFACT_META` stamps |
-| Consumed by | `package.json` `main`, tests, selfpack | Nothing in the shipped package |
-
-**Decision:** the TypeScript pipeline is the single authoritative engine. New feature
-work, findings remediation, and the header-dialect contract target the TS engine. The
-Python tool is not wired into CI, `dist/`, or the package `files` allowlist, and is not
-maintained in lockstep; it is documented below for historical context only. See
-`tools/consolidation/README.md` and `decision_log.md` (#10).
-
-## Secondary engine — Python consolidation (reference only)
-
-The Python tool predates the TS pipeline and implements a two-mode consolidation
-(repo-pack in-place stamping; folder-artifact copy-only). It is retained for reference
-and is **not** part of the shipped package.
-
-```
-ingress.py (single entry, validates + routes)
-         │
-    core/ (shared, mode-neutral)
-    scanner → hasher → classifier → path_planner → dedup_gate
-         │
-    manifest gate (validates move_map.csv before any write)
-         │
-    modes/<mode>/injector.py
+```bash
+npm ci
+npm run build
+npm run typecheck
+npm test
+npm run selfpack
+npm run check:authority
+npm run check:manifest
 ```
 
-| Module | Responsibility |
-|---|---|
-| `scanner.py` | Walk source, skip hidden/system, emit `(rel_path, abs_path, ext)` |
-| `hasher.py` | SHA-256 per file; basis for dedup and idempotency |
-| `classifier.py` | Infer artifact_type, domain, node_name, confidence from path+content |
-| `path_planner.py` | Map each file to a proposed `output_path` from domain hints |
-| `dedup_gate.py` | Detect duplicate hashes and output_path collisions |
+Committed package-mirror parity and installed-tarball testing remain pending RAA-006.
 
-Its `move_map.csv` artifact_type vocabulary
-(`architecture│contract│node_spec│infra│template│skill│unknown`) is distinct from the
-TS `ArtifactType` and is **not** mapped in `src/taxonomy.ts` — the TS package never
-reads it (finding RAA-003).
+## Public package boundary
+
+`runPipelineAsync` is the primary stable orchestration entrypoint. The current broad root barrel is transitional and remains unchanged in PR-1. Its final stability tiers and explicit subpaths are pending RAA-007; see `docs/public-api.md`.
+
+## Historical implementation
+
+An earlier Python consolidation engine is retained under `tools/consolidation/` for provenance. Its documentation and schemas are archived under `docs/legacy/consolidation-v1/` and `tools/consolidation/schemas/`. It is not part of the npm package, CI runtime, active contract corpus, or TypeScript taxonomy authority.

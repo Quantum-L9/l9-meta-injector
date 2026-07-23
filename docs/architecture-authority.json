@@ -1,0 +1,52 @@
+{
+  "schema": "l9.architecture-authority/v1",
+  "repository": "Quantum-L9/l9-meta-injector",
+  "audit_base_ref": "a1dfdab7643493e25ce8b9ca15da280c73343c8e",
+  "status": "active",
+  "engine": {
+    "language": "typescript",
+    "source_root": "src",
+    "runtime_entrypoint": "src/pipeline.ts#runPipelineAsync",
+    "package_entrypoint": "dist/index.js",
+    "types_entrypoint": "dist/index.d.ts"
+  },
+  "contracts": {
+    "metadata": "src/schema.ts",
+    "pipeline": "src/pipeline.ts",
+    "architecture": "docs/architecture.md",
+    "public_api": "docs/public-api.md",
+    "package": "package.json"
+  },
+  "distribution": {
+    "model": "committed_dist_mirror",
+    "source_root": "src",
+    "generated_root": "dist",
+    "compliance_state": "pending_RAA-006"
+  },
+  "public_api": {
+    "model": "transitional_root_barrel",
+    "current_state": "pending_RAA-007",
+    "primary_entrypoint": "runPipelineAsync"
+  },
+  "persisted_outputs": [
+    "primitive-library-index.json",
+    "prompt-library-index.json",
+    "dedup-report.json",
+    "dedup-report.md",
+    "verification-report.json",
+    "placement-plan.json",
+    "meta-v3-index.json"
+  ],
+  "validation": {
+    "authority": "npm run check:authority",
+    "manifest": "npm run check:manifest",
+    "ci_workflow": ".github/workflows/ci.yml",
+    "selfpack": "scripts/selfpack.js"
+  },
+  "legacy": {
+    "status": "reference_only",
+    "documentation": "docs/legacy/consolidation-v1",
+    "runtime": "tools/consolidation",
+    "schemas": "tools/consolidation/schemas"
+  }
+}

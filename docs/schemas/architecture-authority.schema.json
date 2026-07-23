@@ -1,0 +1,200 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quantum-l9.github.io/schemas/architecture-authority-v1.json",
+  "title": "L9 Architecture Authority",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "repository",
+    "audit_base_ref",
+    "status",
+    "engine",
+    "contracts",
+    "distribution",
+    "public_api",
+    "persisted_outputs",
+    "validation",
+    "legacy"
+  ],
+  "properties": {
+    "schema": {
+      "const": "l9.architecture-authority/v1"
+    },
+    "repository": {
+      "const": "Quantum-L9/l9-meta-injector"
+    },
+    "audit_base_ref": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "status": {
+      "const": "active"
+    },
+    "engine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "language",
+        "source_root",
+        "runtime_entrypoint",
+        "package_entrypoint",
+        "types_entrypoint"
+      ],
+      "properties": {
+        "language": {
+          "const": "typescript"
+        },
+        "source_root": {
+          "const": "src"
+        },
+        "runtime_entrypoint": {
+          "const": "src/pipeline.ts#runPipelineAsync"
+        },
+        "package_entrypoint": {
+          "const": "dist/index.js"
+        },
+        "types_entrypoint": {
+          "const": "dist/index.d.ts"
+        }
+      }
+    },
+    "contracts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "metadata",
+        "pipeline",
+        "architecture",
+        "public_api",
+        "package"
+      ],
+      "properties": {
+        "metadata": {
+          "const": "src/schema.ts"
+        },
+        "pipeline": {
+          "const": "src/pipeline.ts"
+        },
+        "architecture": {
+          "const": "docs/architecture.md"
+        },
+        "public_api": {
+          "const": "docs/public-api.md"
+        },
+        "package": {
+          "const": "package.json"
+        }
+      }
+    },
+    "distribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "source_root",
+        "generated_root",
+        "compliance_state"
+      ],
+      "properties": {
+        "model": {
+          "const": "committed_dist_mirror"
+        },
+        "source_root": {
+          "const": "src"
+        },
+        "generated_root": {
+          "const": "dist"
+        },
+        "compliance_state": {
+          "const": "pending_RAA-006"
+        }
+      }
+    },
+    "public_api": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "current_state",
+        "primary_entrypoint"
+      ],
+      "properties": {
+        "model": {
+          "const": "transitional_root_barrel"
+        },
+        "current_state": {
+          "const": "pending_RAA-007"
+        },
+        "primary_entrypoint": {
+          "const": "runPipelineAsync"
+        }
+      }
+    },
+    "persisted_outputs": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "primitive-library-index.json",
+          "prompt-library-index.json",
+          "dedup-report.json",
+          "dedup-report.md",
+          "verification-report.json",
+          "placement-plan.json",
+          "meta-v3-index.json"
+        ]
+      }
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authority",
+        "manifest",
+        "ci_workflow",
+        "selfpack"
+      ],
+      "properties": {
+        "authority": {
+          "const": "npm run check:authority"
+        },
+        "manifest": {
+          "const": "npm run check:manifest"
+        },
+        "ci_workflow": {
+          "const": ".github/workflows/ci.yml"
+        },
+        "selfpack": {
+          "const": "scripts/selfpack.js"
+        }
+      }
+    },
+    "legacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "documentation",
+        "runtime",
+        "schemas"
+      ],
+      "properties": {
+        "status": {
+          "const": "reference_only"
+        },
+        "documentation": {
+          "const": "docs/legacy/consolidation-v1"
+        },
+        "runtime": {
+          "const": "tools/consolidation"
+        },
+        "schemas": {
+          "const": "tools/consolidation/schemas"
+        }
+      }
+    }
+  }
+}

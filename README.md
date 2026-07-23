@@ -1,15 +1,28 @@
 # l9-meta-injector
 
-L9 meta-injection toolkit for classifying, extracting, normalizing, injecting, verifying, and indexing metadata for L9 prompt/skill/kernel artifacts.
-
-This package is the repo-ready consolidation of the uploaded `l9-meta-injection-pack-v2.1.0` artifact. It preserves the TypeScript source, compiled `dist/`, tests, schemas, examples, and consolidation documentation needed for the initial commit.
+L9 meta-injection toolkit for classifying, extracting, normalizing, injecting, verifying, and indexing metadata for L9 prompt, skill, kernel, and repository artifacts.
 
 ## Package
 
-- npm package name: `l9-meta-injector`
+- npm package: `l9-meta-injector`
 - version: `2.1.0`
-- main entrypoint: `dist/index.js`
-- types entrypoint: `dist/index.d.ts`
+- runtime entrypoint: `dist/index.js`
+- type entrypoint: `dist/index.d.ts`
+- full orchestration entrypoint: `runPipelineAsync`
+
+## Architecture authority
+
+The TypeScript package is the sole active runtime authority.
+
+- Machine-readable authority: `docs/architecture-authority.json`
+- Architecture: `docs/architecture.md`
+- Contracts: `docs/contracts.md`
+- Decisions: `docs/decision_log.md`
+- Public API policy: `docs/public-api.md`
+- Traceability: `docs/traceability-map.json`
+- Repository manifest: `docs/manifest.md`
+
+The earlier Python consolidation engine and its documents are retained only under `tools/consolidation/` and `docs/legacy/consolidation-v1/`.
 
 ## Pipeline
 
@@ -27,10 +40,15 @@ npm install
 
 ```bash
 npm run build
+npm run typecheck
 npm test
-npx vitest run
+npm run selfpack
+npm run check:authority
+npm run check:manifest
 npm pack --dry-run
 ```
+
+Distribution parity and installed-tarball validation are scheduled separately under RAA-006.
 
 ## Programmatic usage
 
@@ -49,30 +67,14 @@ await runPipelineAsync({
   dryRun: true,
   verbose: true,
   llmEnabled: false,
-  normalizeFilenames: false
+  normalizeFilenames: false,
 });
 ```
 
-## Namespace config example
+## Public API status
 
-See `examples/namespace.config.example.json`.
-
-## Consolidation notes
-
-The uploaded pack also included a consolidation skill/playbook. It is preserved under `docs/CONSOLIDATION_SKILL.md` and `tools/consolidation/` for traceability, but the npm package surface remains the TypeScript meta-injection toolkit.
+`runPipelineAsync` is the primary supported orchestration interface. The broad root barrel remains transitional until RAA-007 defines explicit stability tiers and subpath exports. See `docs/public-api.md`.
 
 ## Scope boundary
 
-This repository is meta injection only. It does not include or replace external graph export adapter work.
-
-## Build Plan
-
-The current GMP-chunked upgrade plan and operator-approved execution order are embedded at [`docs/build_plan.md`](docs/build_plan.md). Execute chunks locally through GMP with one validation-backed commit per chunk; do not push unless explicitly authorized.
-
-## Coding Agent Handoff
-
-This pack includes a GMP v2.0 coding-agent handoff under `docs/coding_agent_handoff/`.
-Start with `docs/coding_agent_handoff/CODING_AGENT_HANDOFF.md`, then execute one GMP chunk at a time from `docs/build_plan.md`.
-
-Recommended first chunk: **GMP-001: Add `npm run validate`**.
-
+This repository owns metadata injection and its package contracts. It does not include or replace external graph-export adapter work.
