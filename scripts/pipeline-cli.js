@@ -18,8 +18,8 @@
  *   --near-dup <0..1>      near-duplicate similarity threshold        (default: 0.9)
  */
 "use strict";
-const fs = require("fs");
-const path = require("path");
+const fs = require("node:fs");
+const path = require("node:path");
 
 const REPO = path.resolve(__dirname, "..");
 let pkg;
@@ -73,6 +73,6 @@ pkg.runPipelineAsync(config).then((result) => {
     process.exit(1);
   }
 }).catch((e) => {
-  console.error(`pipeline-cli: pipeline threw: ${e && e.stack ? e.stack : e}`);
+  console.error(`pipeline-cli: pipeline threw: ${e?.stack ?? e}`);
   process.exit(2);
 });
