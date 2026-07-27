@@ -19,20 +19,14 @@
  */
 "use strict";
 const path = require("node:path");
-const { flag: hasFlag, opt: getOpt, resolveRootDir } = require("./lib/cli-args");
+const { requireBuilt, parseCli } = require("./lib/cli-args");
 
 const REPO = path.resolve(__dirname, "..");
-let pkg;
 // runPipelineAsync is the root orchestration entrypoint (docs/public-api-contract.json).
-try { pkg = require(path.join(REPO, "dist", "index.js")); }
-catch (e) { console.error(`pipeline-cli: run "npm run build" first (${e.message})`); process.exit(2); }
+const pkg = requireBuilt(path.join(REPO, "dist", "index.js"), "pipeline-cli");
 
-const argv = process.argv.slice(2);
 const usage = "usage: node scripts/pipeline-cli.js <root> [--glob PATTERN] [--out DIR] [--namespace NAME] [--authority ID] [--dry-run] [--fail-on-issues|--no-fail-on-issues] [--near-dup 0..1]";
-const flag = (name) => hasFlag(argv, name);
-const opt = (name, def) => getOpt(argv, name, def);
-
-const root = resolveRootDir(argv, "pipeline-cli", usage);
+const { root, flag, opt } = parseCli("pipeline-cli", usage);
 const outDir = path.resolve(opt("--out", path.join(root, ".l9out")));
 const failOnIssues = !flag("--no-fail-on-issues");
 

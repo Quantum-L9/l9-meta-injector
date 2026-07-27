@@ -20,19 +20,13 @@
  */
 "use strict";
 const path = require("node:path");
-const { flag: hasFlag, opt: getOpt, resolveRootDir } = require("./lib/cli-args");
+const { requireBuilt, parseCli } = require("./lib/cli-args");
 
 const REPO = path.resolve(__dirname, "..");
-let pkg;
-try { pkg = require(path.join(REPO, "dist", "index.js")); }
-catch (e) { console.error(`inventory: run "npm run build" first (${e.message})`); process.exit(2); }
+const pkg = requireBuilt(path.join(REPO, "dist", "index.js"), "inventory");
 
-const argv = process.argv.slice(2);
 const usage = "usage: node scripts/inventory.js <root> [--out DIR] [--source NAME] [--dry-run] [--no-inject] [--no-folder-sidecars] [--ignore a,b] [--schema FILE]";
-const flag = (name) => hasFlag(argv, name);
-const opt = (name, def) => getOpt(argv, name, def);
-
-const root = resolveRootDir(argv, "inventory", usage);
+const { root, flag, opt } = parseCli("inventory", usage);
 const outDir = path.resolve(opt("--out", path.join(root, ".l9inventory")));
 const now = new Date().toISOString();
 

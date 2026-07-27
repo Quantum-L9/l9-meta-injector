@@ -31,4 +31,30 @@ function resolveRootDir(argv, label, usage) {
   return root;
 }
 
-module.exports = { flag, opt, resolveRootDir };
+/** require() a compiled dist module, or exit(2) with a "run npm run build first" hint. */
+function requireBuilt(modulePath, label) {
+  try {
+    return require(modulePath);
+  } catch (e) {
+    console.error(`${label}: run "npm run build" first (${e.message})`);
+    process.exit(2);
+  }
+}
+
+/**
+ * Parse `process.argv` for the <root> [options] shape shared by every
+ * l9-meta-injector CLI wrapper: resolves and validates the positional root
+ * directory, and returns bound flag()/opt() readers over the remaining argv.
+ */
+function parseCli(label, usage) {
+  const argv = process.argv.slice(2);
+  const root = resolveRootDir(argv, label, usage);
+  return {
+    argv,
+    root,
+    flag: (name) => flag(argv, name),
+    opt: (name, def) => opt(argv, name, def),
+  };
+}
+
+module.exports = { flag, opt, resolveRootDir, requireBuilt, parseCli };
