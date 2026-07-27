@@ -46,6 +46,7 @@
     "selfpack": "npm run build && node scripts/selfpack.js",
     "selfpack:update": "npm run build && node scripts/selfpack.js --update",
     "inventory": "npm run build && node scripts/inventory.js",
+    "pipeline": "npm run build && node scripts/pipeline-cli.js",
     "check:api": "node scripts/check-public-api.js",
     "check:authority": "node scripts/check-architecture-authority.js",
     "check:manifest": "node scripts/generate-architecture-manifest.js --check",

@@ -19,24 +19,14 @@
  *                      emitted, required, defaulted, and where each value comes from
  */
 "use strict";
-const fs = require("fs");
-const path = require("path");
+const path = require("node:path");
+const { requireBuilt, parseCli } = require("./lib/cli-args");
 
 const REPO = path.resolve(__dirname, "..");
-let pkg;
-try { pkg = require(path.join(REPO, "dist", "index.js")); }
-catch (e) { console.error(`inventory: run "npm run build" first (${e.message})`); process.exit(2); }
+const pkg = requireBuilt(path.join(REPO, "dist", "index.js"), "inventory");
 
-const argv = process.argv.slice(2);
-if (!argv.length || argv[0].startsWith("-")) {
-  console.error("usage: node scripts/inventory.js <root> [--out DIR] [--source NAME] [--dry-run] [--no-inject] [--no-folder-sidecars] [--ignore a,b] [--schema FILE]");
-  process.exit(2);
-}
-function flag(name) { return argv.includes(name); }
-function opt(name, def) { const i = argv.indexOf(name); return i >= 0 && argv[i + 1] ? argv[i + 1] : def; }
-
-const root = path.resolve(argv[0]);
-if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) { console.error(`inventory: not a directory: ${root}`); process.exit(2); }
+const usage = "usage: node scripts/inventory.js <root> [--out DIR] [--source NAME] [--dry-run] [--no-inject] [--no-folder-sidecars] [--ignore a,b] [--schema FILE]";
+const { root, flag, opt } = parseCli("inventory", usage);
 const outDir = path.resolve(opt("--out", path.join(root, ".l9inventory")));
 const now = new Date().toISOString();
 
