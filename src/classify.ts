@@ -18,7 +18,13 @@ const TYPE_SIGNALS: Array<{ type: ArtifactType; keywords: string[]; pathPatterns
   { type: "playbook",  keywords: ["playbook", "workflow", "process", "procedure", "protocol"], pathPatterns: ["playbooks", "playbook"] },
   { type: "kernel",    keywords: ["kernel", "runtime", "executor", "sandbox", "engine"],       pathPatterns: ["kernels", "kernel"] },
   { type: "context",   keywords: ["context", "knowledge", "documentation", "reference"],       pathPatterns: ["contexts", "context"] },
-  { type: "doctrine",  keywords: ["doctrine", "governance", "policy", "principle", "standard"],pathPatterns: ["doctrines", "doctrine"] },
+  // "decisions"/"adr" covers the standard Architecture Decision Record convention
+  // (docs/decisions/NNN-title.md) — a governance artifact by structure, independent of
+  // prose content. Without the path signal, ADRs fall through to keyword-bag scoring,
+  // which is fragile: ADRs share the same template (Status/Date/Context/Decision/
+  // Consequences), so a single incidental word (e.g. "test", "engine") can tip an ADR
+  // into an unrelated, inconsistent type across a semantically-identical document set.
+  { type: "doctrine",  keywords: ["doctrine", "governance", "policy", "principle", "standard"],pathPatterns: ["doctrines", "doctrine", "decisions", "decision", "adr"] },
   { type: "test",      keywords: ["test", "spec", "fixture", "mock"],                          pathPatterns: ["tests", "test", "__tests__"] },
   { type: "script",    keywords: ["script", "utility", "helper", "tool"],                      pathPatterns: ["scripts", "script"] },
   { type: "prompt",    keywords: [],                                                             pathPatterns: ["prompts", "prompt"] },

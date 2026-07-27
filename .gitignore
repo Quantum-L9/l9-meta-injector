@@ -10,3 +10,7 @@ __MACOSX/
 dist/*.tsbuildinfo
 .out/
 .index/
+
+# Cursor governance wiring (regenerated per clone via setup_workspace_symlinks.sh)
+.cursor-commands
+.cursor/
