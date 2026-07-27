@@ -1,0 +1,140 @@
+name: "L9 Meta Injector"
+description: >-
+  Classify every file in a repo and inject/verify L9 metadata headers
+  (id, artifact_type, content_hash, sharing_scope, …). Ships as a composite
+  action so any repo can drop it into CI without needing this package
+  published to npm — it runs directly against this repo's checked-out,
+  pre-built dist/.
+author: "Quantum-L9"
+branding:
+  icon: "tag"
+  color: "purple"
+
+inputs:
+  mode:
+    description: >-
+      "inventory" = read-only classification + manifest report, safe default
+      for any repo (never mutates files unless you set dry-run: false).
+      "pipeline" = full scan → extract → assist → inject → verify → index
+      orchestration; this is the real CI gate (verifies injected metadata,
+      e.g. sharing_scope, matches the given namespace).
+    required: false
+    default: "inventory"
+  root:
+    description: "Directory to scan, relative to the calling repo's checkout."
+    required: false
+    default: "."
+  namespace:
+    description: "Namespace stamped into placement/verification (pipeline mode only)."
+    required: false
+    default: ""
+  authority:
+    description: "Authority id stamped into injected metadata (pipeline mode only)."
+    required: false
+    default: "l9.doctrine.platform"
+  dry-run:
+    description: >-
+      inventory mode: defaults to "true" (report only, no mutation).
+      pipeline mode: defaults to "false" (verification requires real
+      injected frontmatter to check — a dry-run pipeline pass will always
+      fail verification on prose files, since nothing was written).
+    required: false
+    default: ""
+  fail-on-issues:
+    description: "pipeline mode only: exit non-zero if verification.passed is false."
+    required: false
+    default: "true"
+  out:
+    description: "Output directory for the manifest/index, relative to root."
+    required: false
+    default: ".l9-meta-injector-out"
+  node-version:
+    description: "Node.js version to run the injector with."
+    required: false
+    default: "20"
+  upload-artifact:
+    description: "Upload the manifest/report output as a workflow artifact."
+    required: false
+    default: "true"
+
+outputs:
+  scanned:
+    description: "Number of files scanned."
+    value: ${{ steps.run.outputs.scanned }}
+  injected:
+    description: "pipeline mode only: number of files that had metadata injected."
+    value: ${{ steps.run.outputs.injected }}
+  verification-passed:
+    description: "pipeline mode only: \"true\"/\"false\"/\"n-a\"."
+    value: ${{ steps.run.outputs.verification_passed }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Run l9-meta-injector
+      id: run
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: |
+        set -uo pipefail
+        TARGET_ROOT="${GITHUB_WORKSPACE}/${{ inputs.root }}"
+        OUT_DIR="${TARGET_ROOT}/${{ inputs.out }}"
+        LOG="$(mktemp)"
+
+        if [ "${{ inputs.mode }}" = "pipeline" ]; then
+          DRY_RUN="${{ inputs.dry-run }}"
+          [ -z "$DRY_RUN" ] && DRY_RUN="false"
+          NAMESPACE="${{ inputs.namespace }}"
+          [ -z "$NAMESPACE" ] && NAMESPACE="$(basename "$GITHUB_REPOSITORY")"
+
+          ARGS=(node scripts/pipeline-cli.js "$TARGET_ROOT" --namespace "$NAMESPACE" --authority "${{ inputs.authority }}" --out "$OUT_DIR")
+          [ "$DRY_RUN" = "true" ] && ARGS+=(--dry-run)
+          [ "${{ inputs.fail-on-issues }}" = "false" ] && ARGS+=(--no-fail-on-issues)
+
+          echo "::group::l9-meta-injector (pipeline mode: ${ARGS[*]})"
+          "${ARGS[@]}" 2>&1 | tee "$LOG"
+          STATUS=${PIPESTATUS[0]}
+          echo "::endgroup::"
+
+          SCANNED=$(grep -oE 'scanned=[0-9]+' "$LOG" | tail -1 | cut -d= -f2)
+          INJECTED=$(grep -oE 'injected=[0-9]+' "$LOG" | tail -1 | cut -d= -f2)
+          PASSED=$(grep -oE 'passed=(true|false)' "$LOG" | tail -1 | cut -d= -f2)
+
+          echo "scanned=${SCANNED:-0}" >> "$GITHUB_OUTPUT"
+          echo "injected=${INJECTED:-0}" >> "$GITHUB_OUTPUT"
+          echo "verification_passed=${PASSED:-n-a}" >> "$GITHUB_OUTPUT"
+          rm -f "$LOG"
+          exit "$STATUS"
+        else
+          DRY_RUN="${{ inputs.dry-run }}"
+          [ -z "$DRY_RUN" ] && DRY_RUN="true"
+
+          ARGS=(node scripts/inventory.js "$TARGET_ROOT" --source github --out "$OUT_DIR")
+          [ "$DRY_RUN" = "true" ] && ARGS+=(--dry-run)
+
+          echo "::group::l9-meta-injector (inventory mode: ${ARGS[*]})"
+          "${ARGS[@]}" 2>&1 | tee "$LOG"
+          STATUS=${PIPESTATUS[0]}
+          echo "::endgroup::"
+
+          SCANNED=$(grep -oE '^inventory: [0-9]+ entries' "$LOG" | tail -1 | grep -oE '[0-9]+')
+
+          echo "scanned=${SCANNED:-0}" >> "$GITHUB_OUTPUT"
+          echo "injected=" >> "$GITHUB_OUTPUT"
+          echo "verification_passed=n-a" >> "$GITHUB_OUTPUT"
+          rm -f "$LOG"
+          exit "$STATUS"
+        fi
+
+    - name: Upload manifest/report artifact
+      if: always() && inputs.upload-artifact == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: l9-meta-injector-report
+        path: ${{ github.workspace }}/${{ inputs.root }}/${{ inputs.out }}
+        if-no-files-found: ignore

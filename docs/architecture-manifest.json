@@ -78,7 +78,7 @@
     },
     {
       "path": "docs/architecture.md",
-      "git_blob_sha1": "fe8d88fba711137025e3d1ff7dfe611a5cfd67d5"
+      "git_blob_sha1": "e0e63c834514b4e8a38123b13c1f1c3f93908855"
     },
     {
       "path": "docs/contracts.md",
@@ -86,7 +86,7 @@
     },
     {
       "path": "docs/decision_log.md",
-      "git_blob_sha1": "71dcc64e4da193da1f5df2930a5f8fef20f4bbb3"
+      "git_blob_sha1": "3af7df496e6e8a54bcf44c3163b270c760a4945a"
     },
     {
       "path": "docs/legacy/consolidation-v1/artifact_manifest.yaml",
@@ -174,11 +174,11 @@
     },
     {
       "path": "package.json",
-      "git_blob_sha1": "6575cc9f6dd49667cc54933b1b078455c3449ba8"
+      "git_blob_sha1": "b53afdc8d76f35a04f6a1e4091ca18a59bf7da2c"
     },
     {
       "path": "README.md",
-      "git_blob_sha1": "d31bdf0d56380c0ec15d6003b7ebba8a1796d6b6"
+      "git_blob_sha1": "50a2a49d8addacfae547b270a0618dc9b2acfb05"
     },
     {
       "path": "scripts/check-architecture-authority.js",
