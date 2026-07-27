@@ -23,7 +23,10 @@ const path = require("node:path");
 const { requireBuilt, parseCli } = require("./lib/cli-args");
 
 const REPO = path.resolve(__dirname, "..");
-const pkg = requireBuilt(path.join(REPO, "dist", "index.js"), "inventory");
+// inventoryTree/loadMetaSchema live on the "./inventory" subpath (docs/public-api-contract.json),
+// not the root orchestration entrypoint — require the subpath's compiled output directly so this
+// CLI stays correct if the root's re-exports ever change.
+const pkg = requireBuilt(path.join(REPO, "dist", "public", "inventory.js"), "inventory");
 
 const usage = "usage: node scripts/inventory.js <root> [--out DIR] [--source NAME] [--dry-run] [--no-inject] [--no-folder-sidecars] [--ignore a,b] [--schema FILE]";
 const { root, flag, opt } = parseCli("inventory", usage);

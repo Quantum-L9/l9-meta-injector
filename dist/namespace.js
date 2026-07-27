@@ -37,6 +37,7 @@ exports.toSnakeStem = toSnakeStem;
 exports.resolveNamespace = resolveNamespace;
 // namespace.ts — Deterministic path → namespace + sharing_scope + primitive_folder
 const path = __importStar(require("path"));
+const comment_1 = require("./comment");
 const SHARED_SIGNALS = ["_shared", "shared", "core", "common", "universal"];
 const PRIVATE_SIGNALS = ["l9", "plastos", "legal", "ops", "private"];
 function matchGlob(filePath, glob) {
@@ -57,6 +58,16 @@ function matchGlob(filePath, glob) {
     }
 }
 function deriveSharingScope(filePath) {
+    // Shared/private-scope signal words are a *prose taxonomy* convention (a namespace-wide
+    // "this primitive is shared" folder like `_shared/` or `l9/`) — the exact same restriction
+    // classify.ts already applies to its own path-pattern taxonomy heuristics (see the comment
+    // at classify.ts's FRONTMATTER_EXTS check): they must not be applied to code/config files.
+    // Without this guard, a generic English word like "core" or "common" used as an internal
+    // implementation-detail folder name (e.g. a legacy tool's own `core/` module, unrelated to
+    // any namespace-sharing convention) silently flips sharing_scope for arbitrary source files,
+    // which the assurance gate (verify.ts checkSharingScope) then reports as a false violation.
+    if (!comment_1.FRONTMATTER_EXTS.has(path.extname(filePath).toLowerCase()))
+        return "agnostic";
     const parts = filePath.replace(/\\/g, "/").toLowerCase().split("/");
     if (SHARED_SIGNALS.some((s) => parts.includes(s)))
         return "shared";
