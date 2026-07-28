@@ -9,7 +9,9 @@
  *   npm run inventory -- <root> [options]
  *
  * Options:
- *   --out <dir>        where to write inventory.{json,csv,md}   (default: <root>/.l9inventory)
+ *   --out <dir>        where to write inventory.{json,csv,md}   (default: sibling <root>.l9inventory,
+ *                      kept OUTSIDE the scanned root so re-runs never inventory/mutate their own
+ *                      previously generated manifests)
  *   --source <name>    source_system: dropbox|github|local|upload|unknown  (default: local)
  *   --dry-run          classify + manifest only; do NOT touch any file/folder
  *   --no-inject        do not append headers to text files (sidecars/manifest only)
@@ -30,7 +32,9 @@ const pkg = requireBuilt(path.join(REPO, "dist", "public", "inventory.js"), "inv
 
 const usage = "usage: node scripts/inventory.js <root> [--out DIR] [--source NAME] [--dry-run] [--no-inject] [--no-folder-sidecars] [--ignore a,b] [--schema FILE]";
 const { root, flag, opt } = parseCli("inventory", usage);
-const outDir = path.resolve(opt("--out", path.join(root, ".l9inventory")));
+// Default output dir is a SIBLING of root (<root>.l9inventory), not nested inside it, so scanning
+// never leaves manifest noise in the folder being inventoried. Pass --out to override.
+const outDir = path.resolve(opt("--out", `${root}.l9inventory`));
 const now = new Date().toISOString();
 
 let schema;

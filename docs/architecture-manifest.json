@@ -178,7 +178,7 @@
     },
     {
       "path": "README.md",
-      "git_blob_sha1": "50a2a49d8addacfae547b270a0618dc9b2acfb05"
+      "git_blob_sha1": "9c307c7f413549fa63960be7a4eaf306f94ccf90"
     },
     {
       "path": "scripts/check-architecture-authority.js",
@@ -230,7 +230,7 @@
     },
     {
       "path": "src/pipeline.ts",
-      "git_blob_sha1": "a109f0f041a5c9cbbb5f513c0b1bd2135225a431"
+      "git_blob_sha1": "b04d94a1cd6eea69d81cbf76708548b8992f59b6"
     },
     {
       "path": "src/public/advanced.ts",
@@ -250,7 +250,7 @@
     },
     {
       "path": "src/schema.ts",
-      "git_blob_sha1": "147a9d98877f4ef073bd98869e15c8f52954261b"
+      "git_blob_sha1": "206329d23c442699db28e04e514ef19b01eba137"
     },
     {
       "path": "tests/architecture_authority.test.ts",

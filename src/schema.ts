@@ -1,3 +1,5 @@
+import type { MetaSchema } from "./meta_schema";
+
 export const UNKNOWN = "Unknown" as const;
 export type Unknown = typeof UNKNOWN;
 
@@ -248,6 +250,22 @@ export interface PipelineConfig {
   llmApiKey?: string;
   llmModel?: string;
   normalizeFilenames: boolean;
+  /** Write a `<file>.inject.log` next to each mutated source file on real (non-dry-run) injection
+   *  with field-level changes. Defaults to `true` for backward compatibility with existing callers;
+   *  CLI wrappers default this to `false` to avoid littering scanned trees with per-file logs. */
+  writeInjectLog?: boolean;
+  /** Opt-in to send the LLM bearer token over a non-https `llmBaseUrl` (e.g. a local
+   *  Ollama/LM Studio OpenAI-compatible server on `http://localhost:...`). Default: refuse
+   *  (matches `makeOpenAIAdapter`'s SEC-003 guard). Only meaningful when `llmEnabled` is true. */
+  llmAllowInsecure?: boolean;
+  /** Optional custom meta-schema (see `./meta_schema` / `loadMetaSchema`), the same
+   *  canonical-YAML mechanism `inventoryTree`'s `--schema` already uses. When set and its
+   *  `target` includes `"file_header"`, the schema's resolved fields are MERGED on top of
+   *  (not replacing) the engine's own classified `NormalizedMeta` identity block before
+   *  injection — so verify/dedup/placement/MetaV3, which all read the canonical identity
+   *  fields, are unaffected, while the injected header additionally carries whatever
+   *  operator-defined fields the schema declares. */
+  metaSchema?: MetaSchema;
 }
 
 // ---------------------------------------------------------------------------

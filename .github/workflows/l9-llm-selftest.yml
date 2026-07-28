@@ -1,0 +1,41 @@
+# Manual-trigger proof that the composite action (action.yml) actually works with a
+# real LLM key sourced from a GitHub *organization* secret, as documented in
+# README.md's "GitHub Action" section. Runs the action against an isolated fixture
+# directory (never the repo's own source) so a run never mutates tracked source files.
+#
+# Cost note: workflow_dispatch only — this never runs on push/PR, so it never spends
+# OpenAI credit unless a human explicitly triggers it from the Actions tab.
+name: L9 Meta Injector — LLM self-test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  llm-selftest:
+    name: Pipeline mode with llm:true against org OPENAI_API_KEY
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Run l9-meta-injector (pipeline, llm-assisted) against isolated fixtures
+        uses: ./
+        with:
+          mode: pipeline
+          root: .github/l9-llm-selftest-fixtures
+          namespace: l9-llm-selftest
+          fail-on-issues: "true"
+          upload-artifact: "true"
+          llm: "true"
+          llm-base-url: "https://api.openai.com/v1"
+          # Cheapest OpenAI model as of 2026-07 ($0.05/M input, $0.40/M output) and explicitly
+          # positioned by OpenAI for high-throughput classification/extraction, i.e. exactly this
+          # job. Estimated cost: fractions of a cent per file. See TODO.md re: LLM-Router.
+          llm-model: "gpt-5-nano"
+          llm-api-key: ${{ secrets.OPENAI_API_KEY }}
