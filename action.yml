@@ -80,9 +80,13 @@ inputs:
   llm-api-key:
     description: >-
       Bearer token for llm-base-url. Pass this from the CALLING workflow's own
-      secret, e.g. `llm-api-key: ${{ secrets.OPENAI_API_KEY }}` — composite actions
-      cannot read the secrets context directly, only inputs explicitly passed in.
-      Never hardcode a key here.
+      secret (see README.md "GitHub Action" section for the exact syntax) —
+      composite actions cannot read the secrets context directly, only inputs
+      explicitly passed in. Never hardcode a key here. NOTE: never write a
+      literal double-curly-brace secrets expression anywhere in this file,
+      including in description text — the action-manifest parser evaluates
+      every such expression in the whole file, and "secrets" is not a valid
+      named-value in that parsing context (only inputs/github/steps/env are).
     required: false
     default: ""
   llm-allow-insecure:
