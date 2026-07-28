@@ -17,6 +17,16 @@ function opt(argv, name, def) {
   return i >= 0 && argv[i + 1] ? argv[i + 1] : def;
 }
 
+/** Like opt(), but collects every occurrence of a repeatable flag (e.g. multiple
+ * `--namespace-glob a=b --namespace-glob c=d`) instead of only the first. */
+function optAll(argv, name) {
+  const out = [];
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === name && argv[i + 1]) out.push(argv[i + 1]);
+  }
+  return out;
+}
+
 /** Resolve argv[0] to an absolute directory, or print `usage` and exit(2). */
 function resolveRootDir(argv, label, usage) {
   if (!argv.length || argv[0].startsWith("-")) {
@@ -54,7 +64,8 @@ function parseCli(label, usage) {
     root,
     flag: (name) => flag(argv, name),
     opt: (name, def) => opt(argv, name, def),
+    optAll: (name) => optAll(argv, name),
   };
 }
 
-module.exports = { flag, opt, resolveRootDir, requireBuilt, parseCli };
+module.exports = { flag, opt, optAll, resolveRootDir, requireBuilt, parseCli };

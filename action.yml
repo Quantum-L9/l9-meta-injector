@@ -56,6 +56,41 @@ inputs:
     description: "Upload the manifest/report output as a workflow artifact."
     required: false
     default: "true"
+  llm:
+    description: >-
+      pipeline mode only: enable LLM-assisted semantic classification/field-assist
+      (src/llm.ts). Requires llm-base-url, llm-model, and llm-api-key. When any of
+      those are missing this falls back to local (no-op) classification — it never
+      fails the run just because LLM inputs are absent.
+    required: false
+    default: "false"
+  llm-base-url:
+    description: >-
+      OpenAI-chat-completions-compatible base URL, e.g. "https://api.openai.com/v1"
+      or a self-hosted/local endpoint.
+    required: false
+    default: ""
+  llm-model:
+    description: >-
+      Model name sent in the LLM request body, e.g. "gpt-5-nano" — OpenAI's cheapest
+      current model, purpose-built for classification/extraction, costing fractions
+      of a cent per file for this task's short prose-field-assist calls.
+    required: false
+    default: ""
+  llm-api-key:
+    description: >-
+      Bearer token for llm-base-url. Pass this from the CALLING workflow's own
+      secret, e.g. `llm-api-key: ${{ secrets.OPENAI_API_KEY }}` — composite actions
+      cannot read the secrets context directly, only inputs explicitly passed in.
+      Never hardcode a key here.
+    required: false
+    default: ""
+  llm-allow-insecure:
+    description: >-
+      Allow sending the bearer token over a non-https llm-base-url (e.g. a
+      self-hosted runner reaching a local model server). Refused by default.
+    required: false
+    default: "false"
 
 outputs:
   scanned:
@@ -95,9 +130,15 @@ runs:
           ARGS=(node scripts/pipeline-cli.js "$TARGET_ROOT" --namespace "$NAMESPACE" --authority "${{ inputs.authority }}" --out "$OUT_DIR")
           [ "$DRY_RUN" = "true" ] && ARGS+=(--dry-run)
           [ "${{ inputs.fail-on-issues }}" = "false" ] && ARGS+=(--no-fail-on-issues)
+          if [ "${{ inputs.llm }}" = "true" ]; then
+            ARGS+=(--llm --llm-base-url "${{ inputs.llm-base-url }}" --llm-model "${{ inputs.llm-model }}")
+            [ "${{ inputs.llm-allow-insecure }}" = "true" ] && ARGS+=(--llm-allow-insecure)
+          fi
 
           echo "::group::l9-meta-injector (pipeline mode: ${ARGS[*]})"
-          "${ARGS[@]}" 2>&1 | tee "$LOG"
+          # LLM_API_KEY is read from the environment by pipeline-cli.js (never placed on the
+          # command line, so it never appears in this step's echoed argv or process listing).
+          LLM_API_KEY="${{ inputs.llm-api-key }}" "${ARGS[@]}" 2>&1 | tee "$LOG"
           STATUS=${PIPESTATUS[0]}
           echo "::endgroup::"
 

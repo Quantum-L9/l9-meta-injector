@@ -50,8 +50,14 @@ const meta_v3_1 = require("./meta_v3");
 const assist_1 = require("./assist");
 const normalize_filename_1 = require("./normalize_filename");
 const llm_1 = require("./llm");
+const meta_schema_1 = require("./meta_schema");
 const metrics_1 = require("./metrics");
 const comment_1 = require("./comment");
+// classify()'s coarse "high"/"medium"/"low" confidence, numerically scaled to line up
+// with inventoryTree's InventoryRecord.classification_confidence (a 0..1 float), so a
+// meta-schema's `source: classification_confidence` resolves consistently in both modes.
+const CONFIDENCE_NUMERIC = { high: 0.9, medium: 0.6, low: 0.3 };
+const UNKNOWN_EXCERPT = "Unknown";
 function toCfg(config) {
     return { namespace: config.namespace, authority: config.authority, nearDupThreshold: config.nearDupThreshold, hashPrefixLength: config.hashPrefixLength, outputDir: config.outDir, indexDir: config.indexDir, namespaceGlobs: config.namespaceGlobs };
 }
@@ -65,6 +71,7 @@ async function runPipelineAsync(config) {
         (0, llm_1.setAdapter)((0, llm_1.makeOpenAIAdapter)({
             baseUrl: config.llmBaseUrl, apiKey: config.llmApiKey, model: config.llmModel,
             onDiagnostic: metrics.onLlmDiagnostic,
+            allowInsecure: config.llmAllowInsecure,
         }));
     }
     else {
@@ -118,9 +125,36 @@ async function runPipelineAsync(config) {
             // (not blind-cast) so any drift is caught at this boundary (QTE-005).
             meta = (0, schema_1.coerceNormalizedMeta)(rec);
         }
+        // Optional custom meta-schema (the same canonical-YAML mechanism inventoryTree's
+        // --schema uses): MERGE the schema's resolved fields on top of the canonical
+        // NormalizedMeta identity block, so verify/dedup/placement/MetaV3 below (which all
+        // read known identity-field names) stay correct while the header additionally
+        // carries whatever operator-defined fields the schema declares. Only applies when
+        // the schema actually targets "file_header" — a schema scoped to sidecar/manifest
+        // only must not affect what gets injected here.
+        if (config.metaSchema && (0, meta_schema_1.targetIncludes)(config.metaSchema, "file_header")) {
+            const sourceRecord = {
+                ...(0, schema_1.asRecord)(meta),
+                // Aliases matching the InventoryRecord field names inventory --schema files
+                // already use (examples/meta-schema.example.yaml), so the same schema file is
+                // reusable across `inventory` and `pipeline` modes without rewriting `source:`.
+                artifact_id: meta.id,
+                relative_path: path.relative(config.root, e.sourcePath),
+                evidence_excerpt: cls.signals.join(", ") || UNKNOWN_EXCERPT,
+                classification_confidence: CONFIDENCE_NUMERIC[cls.confidence],
+                created_at: meta.created_or_detected_at,
+            };
+            const applied = (0, meta_schema_1.applySchema)(sourceRecord, config.metaSchema);
+            if (applied.missingRequired.length) {
+                process.stderr.write(`[l9-meta-injector] schema '${config.metaSchema.schema_id}': ${e.sourcePath} missing required field(s): ${applied.missingRequired.join(", ")}\n`);
+            }
+            // Merge, not replace: schema fields win on name collision, canonical identity
+            // fields survive untouched otherwise (coerce re-validates the identity block).
+            meta = (0, schema_1.coerceNormalizedMeta)({ ...(0, schema_1.asRecord)(meta), ...applied.fields });
+        }
         metas.set(e.sourcePath, meta);
     }
-    const opts = { dryRun: config.dryRun, outDir: config.outDir, verbose: config.verbose, writeInjectLog: true };
+    const opts = { dryRun: config.dryRun, outDir: config.outDir, verbose: config.verbose, writeInjectLog: config.writeInjectLog ?? true };
     const injected = [];
     for (const e of scanned) {
         const meta = metas.get(e.sourcePath);
