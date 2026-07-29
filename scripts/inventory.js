@@ -17,6 +17,8 @@
  *   --no-inject        do not append headers to text files (sidecars/manifest only)
  *   --no-folder-sidecars   do not write <folder>/.l9meta.yaml
  *   --ignore a,b,c     comma-list of directory names to skip (default: node_modules,.git)
+ *   --hash-max-bytes <n>   skip content_hash for files larger than n bytes (default: 50 MiB);
+ *                      large files are still inventoried, just without a content hash
  *   --schema <file>    canonical meta-schema YAML: customize which meta fields are
  *                      emitted, required, defaulted, and where each value comes from
  */
@@ -30,8 +32,12 @@ const REPO = path.resolve(__dirname, "..");
 // CLI stays correct if the root's re-exports ever change.
 const pkg = requireBuilt(path.join(REPO, "dist", "public", "inventory.js"), "inventory");
 
-const usage = "usage: node scripts/inventory.js <root> [--out DIR] [--source NAME] [--dry-run] [--no-inject] [--no-folder-sidecars] [--ignore a,b] [--schema FILE]";
-const { root, flag, opt } = parseCli("inventory", usage);
+const usage = "usage: node scripts/inventory.js <root> [--out DIR] [--source NAME] [--dry-run] [--no-inject] [--no-folder-sidecars] [--ignore a,b] [--hash-max-bytes N] [--schema FILE] [-h|--help]";
+const KNOWN = {
+  flags: ["--dry-run", "--no-inject", "--no-folder-sidecars"],
+  opts: ["--out", "--source", "--ignore", "--hash-max-bytes", "--schema"],
+};
+const { root, flag, opt } = parseCli("inventory", usage, KNOWN);
 // Default output dir is a SIBLING of root (<root>.l9inventory), not nested inside it, so scanning
 // never leaves manifest noise in the folder being inventoried. Pass --out to override.
 const outDir = path.resolve(opt("--out", `${root}.l9inventory`));
@@ -44,6 +50,19 @@ if (schemaPath) {
   catch (e) { console.error(`inventory: bad --schema (${e.message})`); process.exit(2); }
 }
 
+// --hash-max-bytes: cap the file size above which content_hash is skipped (engine
+// default 50 MiB). Only pass it through when supplied and valid; a bad value fails
+// loudly rather than silently degrading to the default.
+let hashMaxBytes;
+const hashMaxBytesRaw = opt("--hash-max-bytes", null);
+if (hashMaxBytesRaw !== null) {
+  hashMaxBytes = Number(hashMaxBytesRaw);
+  if (!Number.isInteger(hashMaxBytes) || hashMaxBytes < 0) {
+    console.error(`inventory: bad --hash-max-bytes "${hashMaxBytesRaw}" (expected a non-negative integer number of bytes)`);
+    process.exit(2);
+  }
+}
+
 const config = {
   root,
   outDir,
@@ -52,6 +71,7 @@ const config = {
   injectHeaders: !flag("--no-inject"),
   folderSidecars: !flag("--no-folder-sidecars"),
   ignore: (opt("--ignore", "node_modules,.git")).split(",").map((s) => s.trim()).filter(Boolean).concat([".l9inventory"]),
+  hashMaxBytes,
   now,
   schema,
 };

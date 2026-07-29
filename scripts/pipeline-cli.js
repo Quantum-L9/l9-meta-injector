@@ -55,8 +55,14 @@ const pkg = requireBuilt(path.join(REPO, "dist", "index.js"), "pipeline-cli");
 // compiled output directly (same approach scripts/inventory.js already uses for it).
 const inventoryPkg = requireBuilt(path.join(REPO, "dist", "public", "inventory.js"), "pipeline-cli");
 
-const usage = "usage: node scripts/pipeline-cli.js <root> [--glob PATTERN] [--out DIR] [--index-dir DIR] [--namespace NAME] [--namespace-glob glob=ns] [--authority ID] [--dry-run] [--fail-on-issues|--no-fail-on-issues] [--near-dup 0..1] [--hash-prefix-length N] [--normalize-filenames] [--write-inject-log] [--verbose] [--schema FILE] [--llm] [--llm-base-url URL] [--llm-api-key KEY] [--llm-model NAME] [--llm-allow-insecure]";
-const { root, flag, opt, optAll } = parseCli("pipeline-cli", usage);
+const usage = "usage: node scripts/pipeline-cli.js <root> [--glob PATTERN] [--out DIR] [--index-dir DIR] [--namespace NAME] [--namespace-glob glob=ns] [--authority ID] [--dry-run] [--fail-on-issues|--no-fail-on-issues] [--near-dup 0..1] [--hash-prefix-length N] [--normalize-filenames] [--write-inject-log] [--verbose] [--schema FILE] [--llm] [--llm-base-url URL] [--llm-api-key KEY] [--llm-model NAME] [--llm-allow-insecure] [-h|--help]";
+// Declaring the known surface lets parseCli reject a mistyped flag (e.g. `--dryrun`)
+// instead of silently ignoring it and injecting for real, and serve `-h`/`--help`.
+const KNOWN = {
+  flags: ["--dry-run", "--fail-on-issues", "--no-fail-on-issues", "--normalize-filenames", "--write-inject-log", "--verbose", "--llm", "--llm-allow-insecure"],
+  opts: ["--glob", "--out", "--index-dir", "--namespace", "--namespace-glob", "--authority", "--near-dup", "--hash-prefix-length", "--schema", "--llm-base-url", "--llm-api-key", "--llm-model"],
+};
+const { root, flag, opt, optAll } = parseCli("pipeline-cli", usage, KNOWN);
 // Default output dir is a SIBLING of root (<root>.l9out), not nested inside it, so running the
 // pipeline never leaves diff/report/index noise in the folder being scanned, and a re-run never
 // re-scans or re-injects its own previous output. Pass --out to override.
