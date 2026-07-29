@@ -72,13 +72,16 @@ function parseExistingMeta(fm) {
 function readForInjection(filePath) {
     const raw = fs.readFileSync(filePath, "utf8");
     const spec = (0, comment_1.resolveStrategy)(filePath, raw);
+    // Overwrite-only: after removing OUR header (frontmatter / v3 sentinel block) we also
+    // strip any leading legacy L9_META/L9_ARTIFACT_META header so the fresh block replaces
+    // it rather than stacking above a preserved copy (ADR-016). Genuine body is untouched.
     if (spec.strategy === "yaml-frontmatter") {
         const { frontMatter } = (0, extract_1.splitContent)(raw);
-        const cleanBody = (0, extract_1.stripExistingFrontMatter)(raw);
+        const cleanBody = (0, comment_1.stripLeadingLegacyMetaBlock)((0, extract_1.stripExistingFrontMatter)(raw));
         return { raw, spec, cleanBody, originalBodyHash: (0, extract_1.contentHash)(cleanBody), existingMeta: parseExistingMeta(frontMatter) };
     }
     if (spec.strategy === "line-comment" || spec.strategy === "block-comment") {
-        const cleanBody = (0, comment_1.stripInjectedBlock)(raw, spec);
+        const cleanBody = (0, comment_1.stripLeadingLegacyMetaBlock)((0, comment_1.stripInjectedBlock)(raw, spec));
         const existingYaml = (0, comment_1.extractInjectedYaml)(raw, spec);
         return { raw, spec, cleanBody, originalBodyHash: (0, extract_1.contentHash)(cleanBody), existingMeta: parseExistingMeta(existingYaml) };
     }

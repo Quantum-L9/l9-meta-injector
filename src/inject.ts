@@ -16,7 +16,7 @@ import { MetricsCollector } from "./metrics";
 import { parseCanonicalYaml } from "./meta_schema";
 import {
   resolveStrategy, StrategySpec, frontMatterInner, yamlToBlock, stripInjectedBlock,
-  extractInjectedYaml, applyCommentInjection, sidecarPathFor,
+  extractInjectedYaml, applyCommentInjection, sidecarPathFor, stripLeadingLegacyMetaBlock,
 } from "./comment";
 
 // Parse the inner YAML of an existing injected header into a plain object.
@@ -51,13 +51,16 @@ function readForInjection(filePath: string): ReadCtx {
   const raw = fs.readFileSync(filePath, "utf8");
   const spec = resolveStrategy(filePath, raw);
 
+  // Overwrite-only: after removing OUR header (frontmatter / v3 sentinel block) we also
+  // strip any leading legacy L9_META/L9_ARTIFACT_META header so the fresh block replaces
+  // it rather than stacking above a preserved copy (ADR-016). Genuine body is untouched.
   if (spec.strategy === "yaml-frontmatter") {
     const { frontMatter } = splitContent(raw);
-    const cleanBody = stripExistingFrontMatter(raw);
+    const cleanBody = stripLeadingLegacyMetaBlock(stripExistingFrontMatter(raw));
     return { raw, spec, cleanBody, originalBodyHash: contentHash(cleanBody), existingMeta: parseExistingMeta(frontMatter) };
   }
   if (spec.strategy === "line-comment" || spec.strategy === "block-comment") {
-    const cleanBody = stripInjectedBlock(raw, spec);
+    const cleanBody = stripLeadingLegacyMetaBlock(stripInjectedBlock(raw, spec));
     const existingYaml = extractInjectedYaml(raw, spec);
     return { raw, spec, cleanBody, originalBodyHash: contentHash(cleanBody), existingMeta: parseExistingMeta(existingYaml) };
   }

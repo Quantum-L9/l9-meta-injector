@@ -18,6 +18,7 @@ export declare function yamlToBlock(yamlInner: string, spec: StrategySpec): stri
 export declare function stripInjectedBlock(raw: string, spec: StrategySpec): string;
 /** Detect whether a comment-injected block is present. */
 export declare function hasInjectedBlock(raw: string, spec: StrategySpec): boolean;
+export declare function stripLeadingLegacyMetaBlock(body: string): string;
 /** Extract the inner YAML from an existing comment block (comment prefixes removed), or null. */
 export declare function extractInjectedYaml(raw: string, spec: StrategySpec): string | null;
 /**

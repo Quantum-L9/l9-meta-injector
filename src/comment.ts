@@ -159,6 +159,37 @@ export function hasInjectedBlock(raw: string, spec: StrategySpec): boolean {
   return re ? re.test(raw) : false;
 }
 
+// Legacy consolidation-v1 metadata headers (`L9_META` / `L9_ARTIFACT_META`) predate the
+// v3 sentinel block and are written in every comment style (`# --- L9_META --- … # --- /L9_META ---`,
+// `<!-- L9_META … /L9_META -->`, etc.). They are NOT recognized by stripInjectedBlock or
+// stripExistingFrontMatter, so without this they survive in the clean body and stack
+// beneath a freshly injected header. Injection is overwrite-only: an injected file must
+// carry exactly ONE header, so any such legacy block at the head of the body is removed
+// (see ADR-016). Only the leading region — after an optional shebang — is scanned, so
+// mid-file prose that merely mentions the token (e.g. documentation examples) is never
+// touched. Stacked legacy blocks are all removed.
+const LEGACY_META_OPEN = /\bL9(?:_ARTIFACT)?_META\b/;
+const LEGACY_META_CLOSE = /\/L9(?:_ARTIFACT)?_META\b/;
+
+export function stripLeadingLegacyMetaBlock(body: string): string {
+  const lines = body.split("\n");
+  const head = lines[0]?.startsWith("#!") ? 1 : 0; // keep a shebang on line 1
+  for (;;) {
+    let i = head;
+    while (i < lines.length && lines[i].trim() === "") i++; // skip leading blank lines
+    // An opener bears the token but is not itself the closing sentinel.
+    if (i >= lines.length || !LEGACY_META_OPEN.test(lines[i]) || LEGACY_META_CLOSE.test(lines[i])) break;
+    let j = i + 1;
+    while (j < lines.length && !LEGACY_META_CLOSE.test(lines[j])) j++;
+    if (j >= lines.length) break; // no closing sentinel → not a delimited block; leave verbatim
+    let end = j + 1;
+    if (end < lines.length && lines[end].trim() === "") end++; // consume one trailing blank
+    lines.splice(i, end - i);
+    // loop: a second legacy block may have been stacked directly beneath the first
+  }
+  return lines.join("\n");
+}
+
 /** Extract the inner YAML from an existing comment block (comment prefixes removed), or null. */
 export function extractInjectedYaml(raw: string, spec: StrategySpec): string | null {
   const re = blockRegex(spec);
