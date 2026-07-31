@@ -31,6 +31,7 @@ Accepted ADRs are not deleted. A replacement ADR links back to the decision it s
 | [ADR-015](015-fail-closed-publication.md) | Keep npm publication fail-closed pending external evidence | Accepted |
 | [ADR-016](016-local-files-archive-expansion.md) | Local-files mode expands zip archives before injection | Accepted |
 | [ADR-017](017-omit-skill-protect-skills-mode.md) | Omit layer, SKILL.md protect, and Cursor-native skills mode | Accepted |
+| [ADR-018](018-classification-injectability-coverage.md) | Classification injectability gate and coverage report persistence | Accepted |
 
 ## Authority boundary
 

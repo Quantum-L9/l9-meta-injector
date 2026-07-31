@@ -41,4 +41,5 @@ We choose **Option C**. `PipelineConfig.localFiles` (CLI: `--local-files`) runs 
 - Local-files mode depends on the system `unzip` binary; absence fails closed with an explicit error.
 - `--dry-run` still suppresses metadata writes (headers and archive sidecars) but extraction still occurs so member dry-run diffs can be produced against real extracted files.
 - Coverage reports `archivesExpanded`; `archives-expanded.json` is written to the index dir on non-dry runs.
+- The shared omit layer (ADR-017) applies to archive discovery and member extraction: omitted archives are not expanded, and omitted members (including protected `SKILL.md`) are not written onto disk.
 - Further archive formats (`.tar.gz`, etc.) remain out of scope until a follow-up ADR.

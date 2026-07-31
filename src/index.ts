@@ -6,7 +6,7 @@ export type {
   BaseHeader, ExecutableRetrievalMeta, PromptMeta, DoctrineMeta, ArtifactMeta, NormalizedMeta,
   InjectionRecord, VerifyResult, PipelineConfig, MetaV3SchemaVersion, MetaV3Plane, MetaV3,
 } from "./schema";
-export type { PipelineResult, VerificationSummary, CoverageSummary } from "./pipeline";
+export type { PipelineResult, VerificationSummary, CoverageSummary, NonInjectableSkipDetail } from "./pipeline";
 export type { SkillsPipelineConfig, SkillsPipelineResult, SkillsFileResult } from "./skills_pipeline";
 export type { MetaV3Record } from "./meta_v3";
 export type { ArchiveRecord } from "./archives";

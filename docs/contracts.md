@@ -2,7 +2,9 @@
 
 ## Pipeline
 
-`src/pipeline.ts#runPipelineAsync` is the stable orchestration contract. It accepts `PipelineConfig` and returns `PipelineResult`, including verification, coverage, placement plans, MetaV3 records, and metrics.
+`src/pipeline.ts#runPipelineAsync` is the stable orchestration contract. It accepts `PipelineConfig` and returns `PipelineResult`, including verification, coverage, placement plans, MetaV3 records, and metrics. Optional `localFiles` (ADR-016) expands `.zip` archives before scan for disposable local trees; default mode never extracts.
+
+`skipped-noninjectable` means taxonomy `injectable: false` after classify (typically path-pattern `test`/`script`, or remaining `unknown`). Incidental prose substrings must not produce those skips (ADR-018). Every run — including dry-run — writes `coverage-report.json` under `outDir` with `skipped.binary`, `skipped.nonInjectable`, and `skipped.nonInjectableDetails` (`reason`, `artifactType`, `confidence`). The absolute report path is `coverage.reportPath`.
 
 ## Metadata
 

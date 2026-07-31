@@ -43,13 +43,15 @@
     "validation_command": "npm run check:api"
   },
   "persisted_outputs": [
-    "primitive-library-index.json",
-    "prompt-library-index.json",
+    "archives-expanded.json",
+    "coverage-report.json",
     "dedup-report.json",
     "dedup-report.md",
-    "verification-report.json",
+    "meta-v3-index.json",
     "placement-plan.json",
-    "meta-v3-index.json"
+    "primitive-library-index.json",
+    "prompt-library-index.json",
+    "verification-report.json"
   ],
   "validation": {
     "api": "npm run check:api",

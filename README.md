@@ -98,6 +98,8 @@ Local CLI (not the GitHub Action): `npm run pipeline -- <root> --local-files` ex
 
 `npm run skills -- <root> --llm …` runs Cursor-native skill mode (ADR-017).
 
+Pipeline coverage: every run (including dry-run) writes `coverage-report.json` under `--out-dir` with skipped binary/non-injectable paths and classification details (ADR-018). `skipped-noninjectable` is taxonomy-gated; weak keyword false positives are demoted so in-scope prose injects.
+
 Outputs: `scanned`, `injected` (`pipeline`/`skills`), `verification-passed` (`pipeline` mode: `true`/`false`/`n-a`).
 
 ## Validation

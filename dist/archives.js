@@ -47,6 +47,10 @@ exports.expandArchivesUnderRoot = expandArchivesUnderRoot;
 // inventory-style sidecar (<zip>.l9meta.yaml). Nested zips are expanded up to
 // maxDepth. Extraction uses the system `unzip` binary (macOS/Linux); missing
 // unzip fails closed with an explicit error.
+//
+// Omit (ADR-017): when an OmitMatcher is supplied, omitted archives are not
+// expanded / sidecared, omitted directories are not walked, and omitted zip
+// members (e.g. SKILL.md, *.log, __pycache__) are not extracted onto disk.
 const crypto = __importStar(require("crypto"));
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
@@ -59,6 +63,14 @@ exports.EXTRACTED_DIR_SUFFIX = ".l9extracted";
 exports.EXPANDABLE_ARCHIVE_EXTS = new Set([".zip"]);
 function isExpandableArchive(filePath) {
     return exports.EXPANDABLE_ARCHIVE_EXTS.has(path.extname(filePath).toLowerCase());
+}
+function relPosix(root, abs) {
+    return path.relative(root, abs).split(path.sep).join("/");
+}
+function isOmitted(omit, rel) {
+    if (!omit)
+        return false;
+    return omit.shouldOmit(rel) || omit.shouldOmit(rel.endsWith("/") ? rel : `${rel}/`);
 }
 /** Sibling extract directory for a zip: `Archive.zip` → `Archive.l9extracted`. */
 function extractDirFor(zipPath) {
@@ -89,21 +101,28 @@ function listZipMembers(zipPath) {
     return members;
 }
 /**
- * Remove and recreate extractDir, then unzip into it.
- * Returns the number of non-directory member paths listed by unzip.
+ * Remove and recreate extractDir, then unzip allowed members into it.
+ * When `allowedMembers` is set, only those paths are extracted (omit filter).
+ * Returns the number of non-directory members actually extracted.
  */
-function extractZip(zipPath, extractDir) {
+function extractZip(zipPath, extractDir, allowedMembers) {
     requireUnzip();
     const members = listZipMembers(zipPath);
+    const files = members.filter((m) => !m.endsWith("/"));
+    const toExtract = allowedMembers
+        ? files.filter((m) => allowedMembers.includes(m))
+        : files;
     if (fs.existsSync(extractDir))
         fs.rmSync(extractDir, { recursive: true, force: true });
     fs.mkdirSync(extractDir, { recursive: true });
-    (0, child_process_1.execFileSync)("unzip", ["-q", "-o", "-d", extractDir, zipPath], {
+    if (toExtract.length === 0)
+        return 0;
+    // Pass member names explicitly so omitted paths (SKILL.md, *.log, …) never land on disk.
+    (0, child_process_1.execFileSync)("unzip", ["-q", "-o", "-d", extractDir, zipPath, ...toExtract], {
         encoding: "utf8",
         maxBuffer: 32 * 1024 * 1024,
     });
-    // Count files (not directory markers that end with /)
-    return members.filter((m) => !m.endsWith("/")).length;
+    return toExtract.length;
 }
 function walkFiles(dir, out) {
     if (!fs.existsSync(dir))
@@ -121,26 +140,43 @@ function walkFiles(dir, out) {
     }
 }
 /** Discover expandable archives under root (does not enter existing *.l9extracted dirs). */
-function findArchives(root) {
-    const all = [];
+function findArchives(root, omit) {
+    const absRoot = path.resolve(root);
+    const archives = [];
+    const omitted = [];
     function walk(dir) {
-        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        let entries;
+        try {
+            entries = fs.readdirSync(dir, { withFileTypes: true });
+        }
+        catch {
+            return;
+        }
+        for (const entry of entries) {
             const full = path.join(dir, entry.name);
+            const rel = relPosix(absRoot, full);
             if (entry.isDirectory()) {
                 if (entry.name.startsWith(".") || entry.name === "node_modules")
                     continue;
                 if (entry.name.endsWith(exports.EXTRACTED_DIR_SUFFIX))
                     continue; // don't re-discover from prior extract trees as roots
+                if (isOmitted(omit, rel))
+                    continue;
                 walk(full);
             }
             else if (entry.isFile() && isExpandableArchive(full)) {
-                all.push(full);
+                if (isOmitted(omit, rel))
+                    omitted.push(rel);
+                else
+                    archives.push(full);
             }
         }
     }
-    if (fs.existsSync(root))
-        walk(root);
-    return all.sort();
+    if (fs.existsSync(absRoot))
+        walk(absRoot);
+    archives.sort();
+    omitted.sort();
+    return { archives, omitted };
 }
 function contentHashFile(filePath) {
     const hash = crypto.createHash("sha256");
@@ -168,14 +204,19 @@ function writeArchiveSidecar(zipPath, extractDir, memberCount, extras = {}) {
 }
 /**
  * Expand all zips under root (and nested zips inside freshly extracted trees)
- * up to maxDepth. Writes archive sidecars unless dryRun.
+ * up to maxDepth. Writes archive sidecars unless dryRun. Honors `opts.omit`.
  */
 function expandArchivesUnderRoot(root, opts) {
+    const absRoot = path.resolve(root);
     const maxDepth = opts.maxDepth ?? 3;
     const archives = [];
     const extractedRoots = [];
+    const omittedArchives = [];
+    const omit = opts.omit;
     // Queue of { zip, depth }. Start with archives found outside any extract tree.
-    const queue = findArchives(root).map((zipPath) => ({
+    const found = findArchives(absRoot, omit);
+    omittedArchives.push(...found.omitted);
+    const queue = found.archives.map((zipPath) => ({
         zipPath,
         depth: 0,
     }));
@@ -186,33 +227,59 @@ function expandArchivesUnderRoot(root, opts) {
         if (seen.has(key))
             continue;
         seen.add(key);
-        const extractDir = extractDirFor(zipPath);
-        if (opts.verbose) {
-            process.stderr.write(`[l9-meta-injector] local-files: extracting ${zipPath} → ${extractDir} (depth=${depth})\n`);
+        const zipRel = relPosix(absRoot, zipPath);
+        if (isOmitted(omit, zipRel)) {
+            omittedArchives.push(zipRel);
+            if (opts.verbose) {
+                process.stderr.write(`[l9-meta-injector] local-files: omit archive ${zipRel}\n`);
+            }
+            continue;
         }
-        const memberCount = extractZip(zipPath, extractDir);
+        const extractDir = extractDirFor(zipPath);
+        const members = listZipMembers(zipPath).filter((m) => !m.endsWith("/"));
+        const allowed = omit
+            ? members.filter((m) => {
+                const memberAbs = path.join(extractDir, m);
+                const memberRel = relPosix(absRoot, memberAbs);
+                return !isOmitted(omit, memberRel);
+            })
+            : members;
+        if (opts.verbose) {
+            process.stderr.write(`[l9-meta-injector] local-files: extracting ${zipPath} → ${extractDir} ` +
+                `(depth=${depth}, members=${allowed.length}/${members.length})\n`);
+        }
+        const memberCount = extractZip(zipPath, extractDir, omit ? allowed : undefined);
         extractedRoots.push(extractDir);
         let sidecarPath;
         if (!opts.dryRun) {
             sidecarPath = writeArchiveSidecar(zipPath, extractDir, memberCount, {
                 nested_depth: depth,
                 expanded_at: new Date().toISOString(),
+                members_omitted: members.length - allowed.length,
             });
         }
         archives.push({ zipPath, extractDir, memberCount, sidecarPath, nestedDepth: depth });
         if (depth >= maxDepth)
             continue;
-        // Nested zips inside this extract tree
+        // Nested zips inside this extract tree (omit still applies to their relative paths)
         const nested = [];
         walkFiles(extractDir, nested);
         for (const f of nested) {
-            if (isExpandableArchive(f))
-                queue.push({ zipPath: f, depth: depth + 1 });
+            if (!isExpandableArchive(f))
+                continue;
+            const nestedRel = relPosix(absRoot, f);
+            if (isOmitted(omit, nestedRel)) {
+                omittedArchives.push(nestedRel);
+                continue;
+            }
+            queue.push({ zipPath: f, depth: depth + 1 });
         }
     }
-    if (opts.verbose || archives.length > 0) {
-        process.stderr.write(`[l9-meta-injector] local-files: expanded ${archives.length} archive(s) under ${root}\n`);
+    if (opts.verbose || archives.length > 0 || omittedArchives.length > 0) {
+        process.stderr.write(`[l9-meta-injector] local-files: expanded ${archives.length} archive(s)` +
+            (omittedArchives.length ? `, omitted ${omittedArchives.length}` : "") +
+            ` under ${absRoot}\n`);
     }
-    return { archives, extractedRoots };
+    return { archives, extractedRoots, omittedArchives };
 }
 //# sourceMappingURL=archives.js.map

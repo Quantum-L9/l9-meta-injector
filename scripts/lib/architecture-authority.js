@@ -5,6 +5,8 @@ const crypto = require("crypto");
 
 const REPO = path.resolve(__dirname, "../..");
 const EXPECTED_PERSISTED_OUTPUTS = [
+  "archives-expanded.json",
+  "coverage-report.json",
   "dedup-report.json",
   "dedup-report.md",
   "meta-v3-index.json",

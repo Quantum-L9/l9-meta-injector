@@ -33,6 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.keywordHit = keywordHit;
 exports.classify = classify;
 exports.classifyWithSemantics = classifyWithSemantics;
 const path = __importStar(require("path"));
@@ -64,6 +65,53 @@ const TYPE_SIGNALS = [
     { type: "prompt", keywords: [], pathPatterns: ["prompts", "prompt"] },
     { type: "skill", keywords: ["skill", "capability", "function", "action", "operation"], pathPatterns: ["skills", "skill"] },
 ];
+/** Types that block pipeline injection — keyword-only assignment needs a high bar (ADR-018). */
+const NON_INJECTABLE_TYPES = new Set(["test", "script"]);
+/**
+ * Strong companions for keyword-only `test`/`script`. Ambiguous tokens alone
+ * (`test`/`spec`/`tool`/`script` in ordinary prose or filenames like "Tool Search")
+ * are not enough at score 2 — need a strong hit or score ≥ 3 (ADR-018).
+ */
+const STRONG_NON_INJECTABLE_KEYWORDS = {
+    test: new Set(["fixture", "mock"]),
+    script: new Set(["utility", "helper"]),
+};
+/** Word-boundary match for ASCII taxonomy tokens on already-lowercased text. */
+function keywordHit(text, keyword) {
+    const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(?:^|[^a-z0-9_])${escaped}(?:[^a-z0-9_]|$)`).test(text);
+}
+function scoreType(text, keywords) {
+    const hits = keywords.filter((k) => keywordHit(text, k));
+    return { score: hits.length, hits };
+}
+/**
+ * Keyword-only test/script is accepted only when score ≥ 2 and either a strong
+ * companion keyword hit or score ≥ 3 (avoids medium false positives like
+ * filename "tool" + incidental "script").
+ */
+function acceptKeywordNonInjectable(type, score, hits) {
+    if (score < 2)
+        return false;
+    if (score >= 3)
+        return true;
+    const strong = STRONG_NON_INJECTABLE_KEYWORDS[type];
+    return hits.some((h) => strong.has(h));
+}
+function scoreBest(text, types) {
+    let best = "context";
+    let bestScore = 0;
+    let hits = [];
+    for (const ts of types) {
+        const scored = scoreType(text, ts.keywords);
+        if (scored.score > bestScore) {
+            best = ts.type;
+            bestScore = scored.score;
+            hits = scored.hits;
+        }
+    }
+    return { best, bestScore, hits };
+}
 function classify(filePath, body, _hc) {
     const fn = path.basename(filePath).toLowerCase();
     const norm = filePath.replace(/\\/g, "/").toLowerCase();
@@ -92,17 +140,24 @@ function classify(filePath, body, _hc) {
             return { artifactType: ts.type, family: detectFamily(text), signals: extractSignals(text), confidence: "high" };
         }
     }
-    // Keyword scoring (prose taxonomy). Unclassifiable prose stays "unknown" (not injected).
-    let best = "unknown";
-    let bestScore = 0;
-    for (const ts of TYPE_SIGNALS) {
-        const score = ts.keywords.filter((k) => text.includes(k)).length;
-        if (score > bestScore) {
-            best = ts.type;
-            bestScore = score;
+    // Keyword scoring (prose taxonomy). Scanned markdown with no strong type signal
+    // defaults to injectable "context" (ADR-018) — not "unknown".
+    const { best: rawBest, bestScore, hits } = scoreBest(text, TYPE_SIGNALS);
+    let best = rawBest;
+    let score = bestScore;
+    if (NON_INJECTABLE_TYPES.has(best) && (best === "test" || best === "script")) {
+        if (!acceptKeywordNonInjectable(best, score, hits)) {
+            // Demote weak/ambiguous non-injectable wins to the best injectable type, or context.
+            const injectableTypes = TYPE_SIGNALS.filter((ts) => !NON_INJECTABLE_TYPES.has(ts.type));
+            const next = scoreBest(text, injectableTypes);
+            best = next.bestScore > 0 ? next.best : "context";
+            score = next.bestScore > 0 ? next.bestScore : 0;
         }
     }
-    const conf = bestScore >= 2 ? "medium" : "low";
+    if (score === 0) {
+        best = "context";
+    }
+    const conf = score >= 2 ? "medium" : "low";
     return { artifactType: best, family: detectFamily(text), signals: extractSignals(text), confidence: conf };
 }
 /**
@@ -115,7 +170,7 @@ function classifyWithSemantics(filePath, body, hc) {
 }
 function detectFamily(text) {
     for (const { family, keywords } of FAMILY_SIGNALS) {
-        if (keywords.some((k) => text.includes(k)))
+        if (keywords.some((k) => keywordHit(text, k)))
             return family;
     }
     return "Unknown";
@@ -124,7 +179,7 @@ function extractSignals(text) {
     const signals = [];
     for (const { keywords } of FAMILY_SIGNALS) {
         for (const k of keywords) {
-            if (text.includes(k) && !signals.includes(k))
+            if (keywordHit(text, k) && !signals.includes(k))
                 signals.push(k);
         }
     }

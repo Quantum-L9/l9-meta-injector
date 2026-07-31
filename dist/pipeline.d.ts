@@ -15,6 +15,13 @@ export interface VerificationSummary {
         issues: string[];
     }>;
 }
+/** Per-path detail for a non-injectable skip (OBS-003 / ADR-018). */
+export interface NonInjectableSkipDetail {
+    path: string;
+    reason: "taxonomy_non_injectable";
+    artifactType: string;
+    confidence: "high" | "medium" | "low";
+}
 export interface CoverageSummary {
     scanned: number;
     injected: number;
@@ -27,7 +34,11 @@ export interface CoverageSummary {
     skipped: {
         binary: string[];
         nonInjectable: string[];
+        /** Classification detail for each non-injectable skip (same order as `nonInjectable`). */
+        nonInjectableDetails: NonInjectableSkipDetail[];
     };
+    /** Absolute path of the written coverage-report.json (always set when the run finishes). */
+    reportPath: string;
 }
 export interface PipelineResult {
     scanned: ReturnType<typeof scanFiles>;

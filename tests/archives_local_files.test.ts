@@ -151,6 +151,41 @@ z.close()
     expect(fs.existsSync(path.join(outerExtract, "outer.md"))).toBe(true);
     expect(fs.existsSync(nestedMd)).toBe(true);
   });
+
+  test("omit skips protected SKILL.md members and omitted archives", async () => {
+    const { buildOmitMatcher } = await import("../src/omit");
+    const root = tmp();
+    const zipPath = path.join(root, "pack.zip");
+    makeZip(zipPath, path.join(root, "_stage"), {
+      "SKILL.md": "---\nname: secret\ndescription: Do not touch.\n---\n\n# Skill\n",
+      "notes.md": "# Notes skill capability function action\n",
+      "noise.log": "log line\n",
+    });
+    const omittedZip = path.join(root, "secret-pack.zip");
+    makeZip(omittedZip, path.join(root, "_stage2"), {
+      "hidden.md": "# Hidden skill capability function action\n",
+    });
+
+    const omit = buildOmitMatcher({
+      root,
+      patterns: ["**/secret-pack.zip"],
+      protectSkillMd: true,
+    });
+    const result = expandArchivesUnderRoot(root, { dryRun: false, verbose: false, omit });
+    expect(result.omittedArchives.some((p) => p.endsWith("secret-pack.zip"))).toBe(true);
+    expect(result.archives.every((a) => !a.zipPath.endsWith("secret-pack.zip"))).toBe(true);
+
+    const extractDir = extractDirFor(zipPath);
+    expect(fs.existsSync(path.join(extractDir, "notes.md"))).toBe(true);
+    expect(fs.existsSync(path.join(extractDir, "SKILL.md"))).toBe(false);
+    expect(fs.existsSync(path.join(extractDir, "noise.log"))).toBe(false);
+    expect(fs.existsSync(extractDirFor(omittedZip))).toBe(false);
+
+    const out = tmp();
+    const pipe = await runPipelineAsync({ ...cfg(root, out, true) });
+    expect(pipe.injected.every((r) => !r.sourcePath.toLowerCase().endsWith("skill.md"))).toBe(true);
+    expect(pipe.injected.some((r) => r.sourcePath.endsWith("notes.md"))).toBe(true);
+  });
 });
 
 describe("writeArchiveSidecar", () => {
