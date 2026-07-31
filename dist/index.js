@@ -1,8 +1,10 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.isPromptMeta = exports.META_V3_PLANES = exports.META_V3_SCHEMA_VERSION = exports.PRIMITIVE_TAXONOMY = exports.UNKNOWN = exports.runPipelineAsync = void 0;
+exports.isPromptMeta = exports.META_V3_PLANES = exports.META_V3_SCHEMA_VERSION = exports.PRIMITIVE_TAXONOMY = exports.UNKNOWN = exports.runSkillsPipelineAsync = exports.runPipelineAsync = void 0;
 var pipeline_1 = require("./pipeline");
 Object.defineProperty(exports, "runPipelineAsync", { enumerable: true, get: function () { return pipeline_1.runPipelineAsync; } });
+var skills_pipeline_1 = require("./skills_pipeline");
+Object.defineProperty(exports, "runSkillsPipelineAsync", { enumerable: true, get: function () { return skills_pipeline_1.runSkillsPipelineAsync; } });
 var schema_1 = require("./schema");
 Object.defineProperty(exports, "UNKNOWN", { enumerable: true, get: function () { return schema_1.UNKNOWN; } });
 Object.defineProperty(exports, "PRIMITIVE_TAXONOMY", { enumerable: true, get: function () { return schema_1.PRIMITIVE_TAXONOMY; } });

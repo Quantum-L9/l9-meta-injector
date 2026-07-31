@@ -25,6 +25,12 @@
  *   --write-inject-log     also write a <file>.inject.log next to each mutated file (default: off;
  *                          this CLI keeps scanned trees clean — pass this flag to restore the
  *                          library's per-file change-log default)
+ *   --local-files          expand .zip archives under root into sibling *.l9extracted/
+ *                          dirs, write <zip>.l9meta.yaml sidecars, and inject metadata into
+ *                          extracted members (ADR-016). Default repo mode never extracts.
+ *                          Requires the system `unzip` binary. Archive extraction mutates the
+ *                          tree even when --dry-run is set; dry-run only suppresses metadata
+ *                          injection (headers/sidecars).
  *   --verbose              emit coverage/metrics diagnostics to stderr on every run
  *   --schema <file>        canonical meta-schema YAML (same mechanism as inventory.js --schema):
  *                          MERGE the schema's resolved fields on top of the engine's classified
@@ -40,9 +46,12 @@
  *   --llm-allow-insecure               allow sending the bearer token over a non-https base URL
  *                                      (needed for a local endpoint, e.g. Ollama's OpenAI-compat
  *                                      server at http://localhost:11434/v1 — refused by default)
+ *   --omit <pattern>                   gitignore-style omit (repeatable); built-ins protect SKILL.md
+ *   --omit-file <path>                 load additional omit patterns from a file
  *
  * The LLM API key may also be supplied via the LLM_API_KEY environment variable instead of
  * --llm-api-key, so it never appears in shell history or process listings.
+ * SKILL.md is never mutated in pipeline mode — use `npm run skills` for Cursor-native skill edits.
  */
 "use strict";
 const path = require("node:path");
@@ -55,7 +64,7 @@ const pkg = requireBuilt(path.join(REPO, "dist", "index.js"), "pipeline-cli");
 // compiled output directly (same approach scripts/inventory.js already uses for it).
 const inventoryPkg = requireBuilt(path.join(REPO, "dist", "public", "inventory.js"), "pipeline-cli");
 
-const usage = "usage: node scripts/pipeline-cli.js <root> [--glob PATTERN] [--out DIR] [--index-dir DIR] [--namespace NAME] [--namespace-glob glob=ns] [--authority ID] [--dry-run] [--fail-on-issues|--no-fail-on-issues] [--near-dup 0..1] [--hash-prefix-length N] [--normalize-filenames] [--write-inject-log] [--verbose] [--schema FILE] [--llm] [--llm-base-url URL] [--llm-api-key KEY] [--llm-model NAME] [--llm-allow-insecure]";
+const usage = "usage: node scripts/pipeline-cli.js <root> [--glob PATTERN] [--out DIR] [--index-dir DIR] [--namespace NAME] [--namespace-glob glob=ns] [--authority ID] [--dry-run] [--fail-on-issues|--no-fail-on-issues] [--near-dup 0..1] [--hash-prefix-length N] [--normalize-filenames] [--write-inject-log] [--local-files] [--verbose] [--schema FILE] [--omit PATTERN] [--omit-file PATH] [--llm] [--llm-base-url URL] [--llm-api-key KEY] [--llm-model NAME] [--llm-allow-insecure]";
 const { root, flag, opt, optAll } = parseCli("pipeline-cli", usage);
 // Default output dir is a SIBLING of root (<root>.l9out), not nested inside it, so running the
 // pipeline never leaves diff/report/index noise in the folder being scanned, and a re-run never
@@ -105,6 +114,9 @@ const config = {
   llmAllowInsecure: flag("--llm-allow-insecure"),
   normalizeFilenames: flag("--normalize-filenames"),
   writeInjectLog: flag("--write-inject-log"),
+  localFiles: flag("--local-files"),
+  omitPatterns: optAll("--omit"),
+  omitFile: opt("--omit-file", undefined),
   metaSchema,
 };
 
@@ -112,7 +124,7 @@ if (llmEnabled && !(config.llmBaseUrl && config.llmApiKey && config.llmModel)) {
   console.error("pipeline-cli: --llm requires --llm-base-url, --llm-model, and an API key (--llm-api-key or LLM_API_KEY env var); falling back to local (no-op) classification.");
 }
 
-console.error(`pipeline-cli: running pipeline over ${root} (namespace=${config.namespace}${config.dryRun ? ", dry-run" : ""}${llmEnabled ? ", llm-assisted" : ""}) …`);
+console.error(`pipeline-cli: running pipeline over ${root} (namespace=${config.namespace}${config.dryRun ? ", dry-run" : ""}${config.localFiles ? ", local-files" : ""}${llmEnabled ? ", llm-assisted" : ""}) …`);
 
 pkg.runPipelineAsync(config).then((result) => {
   const { coverage, verification } = result;

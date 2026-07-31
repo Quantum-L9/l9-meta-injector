@@ -26,10 +26,15 @@ l9-meta-injector/advanced/llm   experimental process-global adapter controls
 ## Runtime path
 
 ```text
+[optional local-files archive expansion]
 retrieval -> extraction -> classification -> normalization
           -> optional assist -> injection -> verification
           -> deduplication -> placement -> MetaV3 -> indexes
 ```
+
+When `PipelineConfig.localFiles` is set (ADR-016), archive expansion runs before retrieval: `.zip` files become sibling `*.l9extracted/` trees plus `<zip>.l9meta.yaml` sidecars, then members follow the normal path. Default mode never extracts.
+
+Inventory and pipeline apply a shared omit layer (ADR-017): built-in protect for `SKILL.md`, noise skips for bytecode/logs, optional `.l9metaignore` / `--omit`. Cursor-native skill edits go through `runSkillsPipelineAsync` only.
 
 The stable root keeps callers on the full path. Low-level primitives remain available only through an explicitly experimental subpath whose caller obligations are documented.
 

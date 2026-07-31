@@ -18,6 +18,7 @@ import { applySchema, targetIncludes } from "./meta_schema";
 import { MetricsCollector, MetricsSnapshot } from "./metrics";
 import { NamespaceConfig } from "./namespace";
 import { resolveStrategy, stripInjectedBlock } from "./comment";
+import { expandArchivesUnderRoot, ArchiveRecord } from "./archives";
 
 // classify()'s coarse "high"/"medium"/"low" confidence, numerically scaled to line up
 // with inventoryTree's InventoryRecord.classification_confidence (a 0..1 float), so a
@@ -44,6 +45,8 @@ export interface CoverageSummary {
   skippedBinary: number;
   skippedNonInjectable: number;
   verifyFailed: number;
+  /** Archives expanded when `localFiles` is on (0 otherwise). */
+  archivesExpanded: number;
   /** Source paths skipped, by reason — so coverage gaps are correlatable to inputs. */
   skipped: { binary: string[]; nonInjectable: string[] };
 }
@@ -62,6 +65,8 @@ export interface PipelineResult {
   metaV3: MetaV3Record[];
   /** LLM/IO hotpath metrics for this run: call counts, failures, p50/p95, decision paths. */
   metrics: MetricsSnapshot;
+  /** Archives expanded in local-files mode (empty when `localFiles` is off). */
+  archives: ArchiveRecord[];
 }
 
 export async function runPipelineAsync(config: PipelineConfig): Promise<PipelineResult> {
@@ -83,7 +88,23 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
   }
 
   const assistCfg = { ...DEFAULT_ASSIST_CONFIG, enabled: config.llmEnabled };
-  const filePaths = findFiles(config.root, config.glob);
+
+  // Local-files mode (ADR-016): expand archives before discovery so members are
+  // ordinary text inject targets. Default repo mode never extracts.
+  let archives: ArchiveRecord[] = [];
+  if (config.localFiles) {
+    const expanded = expandArchivesUnderRoot(config.root, {
+      dryRun: config.dryRun,
+      verbose: config.verbose,
+    });
+    archives = expanded.archives;
+  }
+
+  const filePaths = findFiles(config.root, config.glob, {
+    omitPatterns: config.omitPatterns,
+    omitFile: config.omitFile,
+    protectSkillMd: true,
+  });
 
   if (config.normalizeFilenames) normalizeFilenames(filePaths, { dryRun: config.dryRun, verbose: config.verbose });
 
@@ -206,14 +227,16 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
     skippedBinary: skippedBinaryPaths.length,
     skippedNonInjectable: skippedNonInjectablePaths.length,
     verifyFailed: verification.withIssues,
+    archivesExpanded: archives.length,
     skipped: { binary: skippedBinaryPaths, nonInjectable: skippedNonInjectablePaths },
   };
   // Surface coverage when anything was skipped or on verbose runs — otherwise the
   // library path emits no signal about what it processed vs. dropped (OBS-003).
-  if (config.verbose || coverage.skippedBinary + coverage.skippedNonInjectable > 0) {
+  if (config.verbose || coverage.skippedBinary + coverage.skippedNonInjectable > 0 || coverage.archivesExpanded > 0) {
     process.stderr.write(
       `[l9-meta-injector] coverage: scanned=${coverage.scanned} injected=${coverage.injected} ` +
       `skipped-binary=${coverage.skippedBinary} skipped-noninjectable=${coverage.skippedNonInjectable} ` +
+      `archives-expanded=${coverage.archivesExpanded} ` +
       `verify-failed=${coverage.verifyFailed}\n`,
     );
   }
@@ -259,7 +282,8 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
     fs.writeFileSync(path.join(d, "verification-report.json"), JSON.stringify(verified, null, 2));
     fs.writeFileSync(path.join(d, "placement-plan.json"), JSON.stringify(placementPlans, null, 2));
     fs.writeFileSync(path.join(d, "meta-v3-index.json"), JSON.stringify(metaV3, null, 2));
+    fs.writeFileSync(path.join(d, "archives-expanded.json"), JSON.stringify(archives, null, 2));
   }
 
-  return { scanned, injected, verified, verification, coverage, placementPlans, metaV3, metrics: metrics.snapshot() };
+  return { scanned, injected, verified, verification, coverage, placementPlans, metaV3, metrics: metrics.snapshot(), archives };
 }

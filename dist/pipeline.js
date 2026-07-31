@@ -53,6 +53,7 @@ const llm_1 = require("./llm");
 const meta_schema_1 = require("./meta_schema");
 const metrics_1 = require("./metrics");
 const comment_1 = require("./comment");
+const archives_1 = require("./archives");
 // classify()'s coarse "high"/"medium"/"low" confidence, numerically scaled to line up
 // with inventoryTree's InventoryRecord.classification_confidence (a 0..1 float), so a
 // meta-schema's `source: classification_confidence` resolves consistently in both modes.
@@ -78,7 +79,21 @@ async function runPipelineAsync(config) {
         (0, llm_1.resetAdapter)();
     }
     const assistCfg = { ...assist_1.DEFAULT_ASSIST_CONFIG, enabled: config.llmEnabled };
-    const filePaths = (0, retrieval_1.findFiles)(config.root, config.glob);
+    // Local-files mode (ADR-016): expand archives before discovery so members are
+    // ordinary text inject targets. Default repo mode never extracts.
+    let archives = [];
+    if (config.localFiles) {
+        const expanded = (0, archives_1.expandArchivesUnderRoot)(config.root, {
+            dryRun: config.dryRun,
+            verbose: config.verbose,
+        });
+        archives = expanded.archives;
+    }
+    const filePaths = (0, retrieval_1.findFiles)(config.root, config.glob, {
+        omitPatterns: config.omitPatterns,
+        omitFile: config.omitFile,
+        protectSkillMd: true,
+    });
     if (config.normalizeFilenames)
         (0, normalize_filename_1.normalizeFilenames)(filePaths, { dryRun: config.dryRun, verbose: config.verbose });
     const scanned = (0, retrieval_1.scanFiles)(filePaths);
@@ -196,13 +211,15 @@ async function runPipelineAsync(config) {
         skippedBinary: skippedBinaryPaths.length,
         skippedNonInjectable: skippedNonInjectablePaths.length,
         verifyFailed: verification.withIssues,
+        archivesExpanded: archives.length,
         skipped: { binary: skippedBinaryPaths, nonInjectable: skippedNonInjectablePaths },
     };
     // Surface coverage when anything was skipped or on verbose runs — otherwise the
     // library path emits no signal about what it processed vs. dropped (OBS-003).
-    if (config.verbose || coverage.skippedBinary + coverage.skippedNonInjectable > 0) {
+    if (config.verbose || coverage.skippedBinary + coverage.skippedNonInjectable > 0 || coverage.archivesExpanded > 0) {
         process.stderr.write(`[l9-meta-injector] coverage: scanned=${coverage.scanned} injected=${coverage.injected} ` +
             `skipped-binary=${coverage.skippedBinary} skipped-noninjectable=${coverage.skippedNonInjectable} ` +
+            `archives-expanded=${coverage.archivesExpanded} ` +
             `verify-failed=${coverage.verifyFailed}\n`);
     }
     // Surface the LLM/IO hotpath metrics whenever the LLM path ran or on verbose runs,
@@ -240,7 +257,8 @@ async function runPipelineAsync(config) {
         fs.writeFileSync(path.join(d, "verification-report.json"), JSON.stringify(verified, null, 2));
         fs.writeFileSync(path.join(d, "placement-plan.json"), JSON.stringify(placementPlans, null, 2));
         fs.writeFileSync(path.join(d, "meta-v3-index.json"), JSON.stringify(metaV3, null, 2));
+        fs.writeFileSync(path.join(d, "archives-expanded.json"), JSON.stringify(archives, null, 2));
     }
-    return { scanned, injected, verified, verification, coverage, placementPlans, metaV3, metrics: metrics.snapshot() };
+    return { scanned, injected, verified, verification, coverage, placementPlans, metaV3, metrics: metrics.snapshot(), archives };
 }
 //# sourceMappingURL=pipeline.js.map

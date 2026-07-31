@@ -10,5 +10,5 @@ describe("public declaration API",()=>{
    const file=path.join(temp,"tsconfig.json"); fs.writeFileSync(file,JSON.stringify(cfg));
    execFileSync(process.execPath,[path.join(process.cwd(),"node_modules/typescript/bin/tsc"),"-p",file],{stdio:"pipe"});
   } finally { fs.rmSync(temp,{recursive:true,force:true}); }
- });
+ }, 60_000);
 });

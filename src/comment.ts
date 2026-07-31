@@ -40,6 +40,7 @@ const LINE_COMMENT: Record<string, string> = {
   ".toml": "#", ".ini": "#", ".cfg": "#", ".conf": "#", ".properties": "#",
   ".tf": "#", ".tfvars": "#", ".env": "#", ".mk": "#", ".ps1": "#", ".psm1": "#",
   ".nim": "#", ".ex": "#", ".exs": "#", ".gd": "#", ".coffee": "#", ".dockerfile": "#",
+  ".ql": "#", ".qls": "#",
   ".sql": "--", ".lua": "--", ".hs": "--", ".elm": "--", ".adb": "--", ".ads": "--",
   ".lisp": ";", ".clj": ";", ".cljs": ";", ".cljc": ";", ".el": ";", ".scm": ";",
   ".asm": ";", ".s": ";",
@@ -52,6 +53,7 @@ const BASENAME_LINE_COMMENT: Record<string, string> = {
   "gemfile": "#", "vagrantfile": "#", "brewfile": "#", "procfile": "#",
   ".gitignore": "#", ".npmignore": "#", ".dockerignore": "#", ".gitattributes": "#",
   ".env": "#", ".bashrc": "#", ".zshrc": "#", ".profile": "#", ".editorconfig": "#",
+  "codeowners": "#",
 };
 
 const BLOCK_COMMENT: Record<string, { open: string; close: string }> = {
@@ -73,6 +75,8 @@ const BINARY_EXTS = new Set([
   ".zip", ".gz", ".bz2", ".xz", ".tar", ".7z", ".rar",
   ".woff", ".woff2", ".ttf", ".eot", ".otf",
   ".exe", ".dll", ".so", ".dylib", ".class", ".o", ".a", ".lib", ".wasm", ".bin", ".dat",
+  // Bytecode / ephemeral noise — skip entirely (no sidecar, no inventory inject).
+  ".pyc", ".pyo", ".pyd", ".log",
 ]);
 
 /** Heuristic: a NUL byte in the first 8 KB means the file is not UTF-8 text. */

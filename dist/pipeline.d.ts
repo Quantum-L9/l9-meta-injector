@@ -3,6 +3,7 @@ import { scanFiles } from "./retrieval";
 import { PlacementPlan } from "./placement_policy";
 import { MetaV3Record } from "./meta_v3";
 import { MetricsSnapshot } from "./metrics";
+import { ArchiveRecord } from "./archives";
 export interface VerificationSummary {
     total: number;
     clean: number;
@@ -20,6 +21,8 @@ export interface CoverageSummary {
     skippedBinary: number;
     skippedNonInjectable: number;
     verifyFailed: number;
+    /** Archives expanded when `localFiles` is on (0 otherwise). */
+    archivesExpanded: number;
     /** Source paths skipped, by reason — so coverage gaps are correlatable to inputs. */
     skipped: {
         binary: string[];
@@ -40,5 +43,7 @@ export interface PipelineResult {
     metaV3: MetaV3Record[];
     /** LLM/IO hotpath metrics for this run: call counts, failures, p50/p95, decision paths. */
     metrics: MetricsSnapshot;
+    /** Archives expanded in local-files mode (empty when `localFiles` is off). */
+    archives: ArchiveRecord[];
 }
 export declare function runPipelineAsync(config: PipelineConfig): Promise<PipelineResult>;

@@ -13,11 +13,9 @@ branding:
 inputs:
   mode:
     description: >-
-      "inventory" = read-only classification + manifest report, safe default
-      for any repo (never mutates files unless you set dry-run: false).
-      "pipeline" = full scan → extract → assist → inject → verify → index
-      orchestration; this is the real CI gate (verifies injected metadata,
-      e.g. sharing_scope, matches the given namespace).
+      "inventory" = classification + manifest (SKILL.md never mutated).
+      "pipeline" = full scan → inject → verify → index (SKILL.md never mutated).
+      "skills" = Cursor-native skill mode: material-improve description only.
     required: false
     default: "inventory"
   root:
@@ -35,9 +33,8 @@ inputs:
   dry-run:
     description: >-
       inventory mode: defaults to "true" (report only, no mutation).
-      pipeline mode: defaults to "false" (verification requires real
-      injected frontmatter to check — a dry-run pipeline pass will always
-      fail verification on prose files, since nothing was written).
+      pipeline mode: defaults to "false".
+      skills mode: defaults to "false".
     required: false
     default: ""
   fail-on-issues:
@@ -48,6 +45,12 @@ inputs:
     description: "Output directory for the manifest/index, relative to root."
     required: false
     default: ".l9-meta-injector-out"
+  omit:
+    description: >-
+      Comma-separated gitignore-style omit patterns (in addition to built-ins
+      that protect SKILL.md and skip bytecode/log noise).
+    required: false
+    default: ""
   node-version:
     description: "Node.js version to run the injector with."
     required: false
@@ -58,10 +61,8 @@ inputs:
     default: "true"
   llm:
     description: >-
-      pipeline mode only: enable LLM-assisted semantic classification/field-assist
-      (src/llm.ts). Requires llm-base-url, llm-model, and llm-api-key. When any of
-      those are missing this falls back to local (no-op) classification — it never
-      fails the run just because LLM inputs are absent.
+      pipeline/skills mode: enable LLM-assisted field assist (src/llm.ts).
+      Requires llm-base-url, llm-model, and llm-api-key.
     required: false
     default: "false"
   llm-base-url:
@@ -72,36 +73,29 @@ inputs:
     default: ""
   llm-model:
     description: >-
-      Model name sent in the LLM request body, e.g. "gpt-5-nano" — OpenAI's cheapest
-      current model, purpose-built for classification/extraction, costing fractions
-      of a cent per file for this task's short prose-field-assist calls.
+      Model name sent in the LLM request body, e.g. "gpt-5-nano".
     required: false
     default: ""
   llm-api-key:
     description: >-
       Bearer token for llm-base-url. Pass this from the CALLING workflow's own
-      secret (see README.md "GitHub Action" section for the exact syntax) —
-      composite actions cannot read the secrets context directly, only inputs
-      explicitly passed in. Never hardcode a key here. NOTE: never write a
-      literal double-curly-brace secrets expression anywhere in this file,
-      including in description text — the action-manifest parser evaluates
-      every such expression in the whole file, and "secrets" is not a valid
-      named-value in that parsing context (only inputs/github/steps/env are).
+      secret — composite actions cannot read the secrets context directly.
+      Never hardcode a key here. NOTE: never write a literal double-curly-brace
+      secrets expression anywhere in this file.
     required: false
     default: ""
   llm-allow-insecure:
     description: >-
-      Allow sending the bearer token over a non-https llm-base-url (e.g. a
-      self-hosted runner reaching a local model server). Refused by default.
+      Allow sending the bearer token over a non-https llm-base-url.
     required: false
     default: "false"
 
 outputs:
   scanned:
-    description: "Number of files scanned."
+    description: "Number of files scanned / skill files considered."
     value: ${{ steps.run.outputs.scanned }}
   injected:
-    description: "pipeline mode only: number of files that had metadata injected."
+    description: "pipeline/skills: number of files changed."
     value: ${{ steps.run.outputs.injected }}
   verification-passed:
     description: "pipeline mode only: \"true\"/\"false\"/\"n-a\"."
@@ -124,6 +118,18 @@ runs:
         TARGET_ROOT="${GITHUB_WORKSPACE}/${{ inputs.root }}"
         OUT_DIR="${TARGET_ROOT}/${{ inputs.out }}"
         LOG="$(mktemp)"
+        OMIT_RAW="${{ inputs.omit }}"
+
+        append_omit() {
+          local -n arr=$1
+          if [ -n "$OMIT_RAW" ]; then
+            IFS=',' read -ra PATS <<< "$OMIT_RAW"
+            for p in "${PATS[@]}"; do
+              p="$(echo "$p" | xargs)"
+              [ -n "$p" ] && arr+=(--omit "$p")
+            done
+          fi
+        }
 
         if [ "${{ inputs.mode }}" = "pipeline" ]; then
           DRY_RUN="${{ inputs.dry-run }}"
@@ -132,6 +138,7 @@ runs:
           [ -z "$NAMESPACE" ] && NAMESPACE="$(basename "$GITHUB_REPOSITORY")"
 
           ARGS=(node scripts/pipeline-cli.js "$TARGET_ROOT" --namespace "$NAMESPACE" --authority "${{ inputs.authority }}" --out "$OUT_DIR")
+          append_omit ARGS
           [ "$DRY_RUN" = "true" ] && ARGS+=(--dry-run)
           [ "${{ inputs.fail-on-issues }}" = "false" ] && ARGS+=(--no-fail-on-issues)
           if [ "${{ inputs.llm }}" = "true" ]; then
@@ -140,8 +147,6 @@ runs:
           fi
 
           echo "::group::l9-meta-injector (pipeline mode: ${ARGS[*]})"
-          # LLM_API_KEY is read from the environment by pipeline-cli.js (never placed on the
-          # command line, so it never appears in this step's echoed argv or process listing).
           LLM_API_KEY="${{ inputs.llm-api-key }}" "${ARGS[@]}" 2>&1 | tee "$LOG"
           STATUS=${PIPESTATUS[0]}
           echo "::endgroup::"
@@ -155,11 +160,37 @@ runs:
           echo "verification_passed=${PASSED:-n-a}" >> "$GITHUB_OUTPUT"
           rm -f "$LOG"
           exit "$STATUS"
+        elif [ "${{ inputs.mode }}" = "skills" ]; then
+          DRY_RUN="${{ inputs.dry-run }}"
+          [ -z "$DRY_RUN" ] && DRY_RUN="false"
+
+          ARGS=(node scripts/skills-cli.js "$TARGET_ROOT" --out "$OUT_DIR")
+          append_omit ARGS
+          [ "$DRY_RUN" = "true" ] && ARGS+=(--dry-run)
+          if [ "${{ inputs.llm }}" = "true" ]; then
+            ARGS+=(--llm --llm-base-url "${{ inputs.llm-base-url }}" --llm-model "${{ inputs.llm-model }}")
+            [ "${{ inputs.llm-allow-insecure }}" = "true" ] && ARGS+=(--llm-allow-insecure)
+          fi
+
+          echo "::group::l9-meta-injector (skills mode: ${ARGS[*]})"
+          LLM_API_KEY="${{ inputs.llm-api-key }}" "${ARGS[@]}" 2>&1 | tee "$LOG"
+          STATUS=${PIPESTATUS[0]}
+          echo "::endgroup::"
+
+          CONSIDERED=$(grep -oE 'considered=[0-9]+' "$LOG" | tail -1 | cut -d= -f2)
+          CHANGED=$(grep -oE 'changed=[0-9]+' "$LOG" | tail -1 | cut -d= -f2)
+
+          echo "scanned=${CONSIDERED:-0}" >> "$GITHUB_OUTPUT"
+          echo "injected=${CHANGED:-0}" >> "$GITHUB_OUTPUT"
+          echo "verification_passed=n-a" >> "$GITHUB_OUTPUT"
+          rm -f "$LOG"
+          exit "$STATUS"
         else
           DRY_RUN="${{ inputs.dry-run }}"
           [ -z "$DRY_RUN" ] && DRY_RUN="true"
 
           ARGS=(node scripts/inventory.js "$TARGET_ROOT" --source github --out "$OUT_DIR")
+          append_omit ARGS
           [ "$DRY_RUN" = "true" ] && ARGS+=(--dry-run)
 
           echo "::group::l9-meta-injector (inventory mode: ${ARGS[*]})"

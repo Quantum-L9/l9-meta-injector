@@ -9,31 +9,25 @@
  *   npm run inventory -- <root> [options]
  *
  * Options:
- *   --out <dir>        where to write inventory.{json,csv,md}   (default: sibling <root>.l9inventory,
- *                      kept OUTSIDE the scanned root so re-runs never inventory/mutate their own
- *                      previously generated manifests)
+ *   --out <dir>        where to write inventory.{json,csv,md}   (default: sibling <root>.l9inventory)
  *   --source <name>    source_system: dropbox|github|local|upload|unknown  (default: local)
  *   --dry-run          classify + manifest only; do NOT touch any file/folder
  *   --no-inject        do not append headers to text files (sidecars/manifest only)
  *   --no-folder-sidecars   do not write <folder>/.l9meta.yaml
  *   --ignore a,b,c     comma-list of directory names to skip (default: node_modules,.git)
- *   --schema <file>    canonical meta-schema YAML: customize which meta fields are
- *                      emitted, required, defaulted, and where each value comes from
+ *   --omit PATTERN     gitignore-style omit pattern (repeatable); built-ins protect SKILL.md + noise
+ *   --omit-file PATH   load additional omit patterns from a file
+ *   --schema <file>    canonical meta-schema YAML
  */
 "use strict";
 const path = require("node:path");
 const { requireBuilt, parseCli } = require("./lib/cli-args");
 
 const REPO = path.resolve(__dirname, "..");
-// inventoryTree/loadMetaSchema live on the "./inventory" subpath (docs/public-api-contract.json),
-// not the root orchestration entrypoint — require the subpath's compiled output directly so this
-// CLI stays correct if the root's re-exports ever change.
 const pkg = requireBuilt(path.join(REPO, "dist", "public", "inventory.js"), "inventory");
 
-const usage = "usage: node scripts/inventory.js <root> [--out DIR] [--source NAME] [--dry-run] [--no-inject] [--no-folder-sidecars] [--ignore a,b] [--schema FILE]";
-const { root, flag, opt } = parseCli("inventory", usage);
-// Default output dir is a SIBLING of root (<root>.l9inventory), not nested inside it, so scanning
-// never leaves manifest noise in the folder being inventoried. Pass --out to override.
+const usage = "usage: node scripts/inventory.js <root> [--out DIR] [--source NAME] [--dry-run] [--no-inject] [--no-folder-sidecars] [--ignore a,b] [--omit PATTERN] [--omit-file PATH] [--schema FILE]";
+const { root, flag, opt, optAll } = parseCli("inventory", usage);
 const outDir = path.resolve(opt("--out", `${root}.l9inventory`));
 const now = new Date().toISOString();
 
@@ -52,6 +46,8 @@ const config = {
   injectHeaders: !flag("--no-inject"),
   folderSidecars: !flag("--no-folder-sidecars"),
   ignore: (opt("--ignore", "node_modules,.git")).split(",").map((s) => s.trim()).filter(Boolean).concat([".l9inventory"]),
+  omitPatterns: optAll("--omit"),
+  omitFile: opt("--omit-file", undefined),
   now,
   schema,
 };
@@ -59,6 +55,7 @@ const config = {
 console.error(`inventory: scanning ${root}${config.dryRun ? " (dry-run)" : ""} …`);
 const r = pkg.inventoryTree(config);
 console.log(`inventory: ${r.total} entries (${r.files} files, ${r.folders} folders)`);
+console.log(`  omitted: ${r.omittedPaths.length}`);
 console.log(`  types: ${JSON.stringify(r.typeDistribution)}`);
 console.log(`  duplicate clusters: ${r.duplicates.length}`);
 console.log(`  manifest: ${path.relative(process.cwd(), r.manifestPaths.json)}`);

@@ -53,6 +53,7 @@ const inject_1 = require("./inject");
 const schema_1 = require("./schema");
 const yaml_serialize_1 = require("./yaml_serialize");
 const meta_schema_1 = require("./meta_schema");
+const omit_1 = require("./omit");
 /** Load and validate a canonical meta-schema YAML file. */
 function loadMetaSchema(filePath) {
     return (0, meta_schema_1.toMetaSchema)((0, meta_schema_1.parseCanonicalYaml)(fs.readFileSync(filePath, "utf8")));
@@ -83,10 +84,25 @@ function buildDuplicateClusters(records) {
     }
     return clusters.sort((a, b) => b.wasted_bytes - a.wasted_bytes || b.count - a.count);
 }
-const CODE_EXTS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".go", ".rs", ".java", ".c", ".h", ".cpp", ".hpp", ".cc", ".cs", ".rb", ".php", ".swift", ".kt", ".kts", ".scala", ".sh", ".bash", ".zsh", ".lua", ".r", ".jl", ".pl", ".pm", ".dart", ".ex", ".exs"]);
-const CONFIG_EXTS = new Set([".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", ".properties", ".env", ".lock", ".plist", ".tf", ".tfvars"]);
+const CODE_EXTS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".go", ".rs", ".java", ".c", ".h", ".cpp", ".hpp", ".cc", ".cs", ".rb", ".php", ".swift", ".kt", ".kts", ".scala", ".sh", ".bash", ".zsh", ".lua", ".r", ".jl", ".pl", ".pm", ".dart", ".ex", ".exs", ".ql", ".qls"]);
+const CONFIG_EXTS = new Set([".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", ".properties", ".env", ".lock", ".plist", ".tf", ".tfvars", ".sha256", ".sha1", ".md5"]);
 const ARCHIVE_EXTS = new Set([".zip", ".tar", ".gz", ".tgz", ".bz2", ".xz", ".7z", ".rar", ".jar", ".war"]);
 const DOC_EXTS = new Set([".txt", ".rst", ".doc", ".docx", ".rtf", ".odt", ".pages"]);
+/** Extensionless / special basenames → inventory taxonomy (case-insensitive). */
+const BASENAME_TYPES = {
+    ".gitignore": { type: "config", confidence: 0.85, evidence: "git ignore file" },
+    ".gitattributes": { type: "config", confidence: 0.85, evidence: "git attributes file" },
+    ".editorconfig": { type: "config", confidence: 0.85, evidence: "editorconfig file" },
+    ".npmignore": { type: "config", confidence: 0.85, evidence: "npm ignore file" },
+    ".dockerignore": { type: "config", confidence: 0.85, evidence: "docker ignore file" },
+    "codeowners": { type: "config", confidence: 0.85, evidence: "CODEOWNERS file" },
+    "license": { type: "documentation", confidence: 0.8, evidence: "license file" },
+    "license.md": { type: "documentation", confidence: 0.8, evidence: "license file" },
+    "license.txt": { type: "documentation", confidence: 0.8, evidence: "license file" },
+    "notice": { type: "documentation", confidence: 0.75, evidence: "notice file" },
+    "copying": { type: "documentation", confidence: 0.75, evidence: "copying/license file" },
+    "manifest.sha256": { type: "config", confidence: 0.85, evidence: "checksum manifest" },
+};
 const MIME = {
     ".md": "text/markdown", ".txt": "text/plain", ".pdf": "application/pdf",
     ".json": "application/json", ".yaml": "application/yaml", ".yml": "application/yaml",
@@ -125,6 +141,12 @@ function classifyInventory(relPath, fileName, ext, isDir) {
     }
     if (DOC_EXTS.has(e))
         return { type: "documentation", confidence: 0.7, evidence: `document extension ${e}`, unknowns: [] };
+    const baseHit = BASENAME_TYPES[fn];
+    if (baseHit)
+        return { type: baseHit.type, confidence: baseHit.confidence, evidence: baseHit.evidence, unknowns: [] };
+    // LICENSE.* (e.g. LICENSE-MIT, LICENSE.Apache-2.0)
+    if (/^license([.\-_]|$)/i.test(fn))
+        return { type: "documentation", confidence: 0.8, evidence: "license file", unknowns: [] };
     return { type: "unknown", confidence: 0.2, evidence: "no recognized signal", unknowns: [e ? `unrecognized_extension:${e}` : "no_extension"] };
 }
 function idFor(relPath) {
@@ -140,7 +162,7 @@ function csvCell(v) {
 function serializeYaml(rec) {
     return (0, yaml_serialize_1.serializeYamlObject)(rec, { fences: true, trailingNewline: true });
 }
-function walk(root, ignore, skippedDirs) {
+function walk(root, omit, skippedDirs, omittedPaths) {
     const out = [];
     function rec(dir) {
         let entries;
@@ -155,9 +177,12 @@ function walk(root, ignore, skippedDirs) {
         }
         for (const e of entries) {
             const abs = path.join(dir, e.name);
+            const rel = path.relative(root, abs).split(path.sep).join("/");
+            if (omit.shouldOmit(rel)) {
+                omittedPaths.push(rel);
+                continue;
+            }
             if (e.isDirectory()) {
-                if (ignore.has(e.name))
-                    continue;
                 out.push({ abs, isDir: true });
                 rec(abs);
             }
@@ -216,15 +241,13 @@ function buildRecord(root, abs, isDir, cfg) {
 }
 /** Run a non-destructive inventory over a filesystem root. */
 function inventoryTree(config) {
+    const ignoreDirs = config.ignore ?? ["node_modules", ".git", ".l9inventory"];
     const cfg = {
         sourceSystem: config.sourceSystem ?? "local",
         dryRun: config.dryRun ?? false,
         injectHeaders: config.injectHeaders ?? true,
         folderSidecars: config.folderSidecars ?? true,
         hashMaxBytes: config.hashMaxBytes ?? 50 * 1024 * 1024,
-        // Default-ignore the inventory output dir so re-runs never inventory/mutate
-        // previously generated manifests and sidecars.
-        ignore: new Set(config.ignore ?? ["node_modules", ".git", ".l9inventory"]),
         now: config.now ?? "1970-01-01T00:00:00.000Z",
     };
     // Absolutize root so absolute_path is truly absolute and relative_path/manifest
@@ -237,12 +260,21 @@ function inventoryTree(config) {
     }
     // If the chosen outDir lives inside root, ignore its top-level directory name too,
     // so a custom --out under root can't re-inventory or mutate its own generated output.
+    const ignoreDirNames = [...ignoreDirs];
     const relOut = path.relative(root, path.resolve(config.outDir));
     if (relOut && !relOut.startsWith("..") && !path.isAbsolute(relOut)) {
-        cfg.ignore.add(relOut.split(path.sep)[0]);
+        ignoreDirNames.push(relOut.split(path.sep)[0]);
     }
+    const omit = (0, omit_1.buildOmitMatcher)({
+        root,
+        patterns: config.omitPatterns,
+        omitFile: config.omitFile,
+        protectSkillMd: true,
+        ignoreDirNames,
+    });
     const skippedDirs = [];
-    const entries = walk(root, cfg.ignore, skippedDirs);
+    const omittedPaths = [];
+    const entries = walk(root, omit, skippedDirs, omittedPaths);
     const records = [];
     const typeDistribution = {};
     let files = 0, folders = 0;
@@ -279,7 +311,8 @@ function inventoryTree(config) {
             continue;
         }
         // Files: text files get an inline header via the filetype-aware injector;
-        // binaries / comment-less formats get a metadata sidecar. Body is preserved.
+        // comment-less text formats get a metadata sidecar. Binary / skip-binary
+        // never gets a sidecar (ADR-017 / edge-filetype policy).
         const read = safeRead(abs);
         if (read.error)
             rec.unknowns.push(`read_failed:${read.error}`);
@@ -303,7 +336,9 @@ function inventoryTree(config) {
                     writeSidecar(abs, metaObj, rec.unknowns);
             }
         }
-        else if ((0, meta_schema_1.targetIncludes)(schema, "sidecar")) {
+        else if (strategy !== "skip-binary" && (0, meta_schema_1.targetIncludes)(schema, "sidecar")) {
+            // Sidecar when the strategy is sidecar, OR when headers were skipped (e.g. schema
+            // targets sidecar only). Never for skip-binary / unreadable binaries (ADR-017).
             writeSidecar(abs, metaObj, rec.unknowns);
         }
     }
@@ -312,7 +347,7 @@ function inventoryTree(config) {
     }
     const duplicates = buildDuplicateClusters(records);
     const manifestPaths = writeManifests(config.outDir, root, records, typeDistribution, duplicates, cfg.now, cfg.dryRun);
-    return { root, total: records.length, files, folders, typeDistribution, manifestPaths, duplicates, records, skippedDirs };
+    return { root, total: records.length, files, folders, typeDistribution, manifestPaths, duplicates, records, skippedDirs, omittedPaths };
 }
 // Read only the first 8 KB — enough to decide binary-vs-text and pick a strategy,
 // without loading a whole large binary into memory. injectFile re-reads the full

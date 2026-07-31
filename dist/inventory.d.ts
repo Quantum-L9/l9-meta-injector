@@ -30,6 +30,10 @@ export interface InventoryConfig {
     folderSidecars?: boolean;
     hashMaxBytes?: number;
     ignore?: string[];
+    /** Extra gitignore-style omit patterns (in addition to built-ins + `.l9metaignore`). */
+    omitPatterns?: string[];
+    /** Optional path to an omit-file (gitignore syntax). */
+    omitFile?: string;
     now?: string;
     schema?: MetaSchema;
 }
@@ -56,6 +60,8 @@ export interface InventoryResult {
     records: InventoryRecord[];
     /** Directories that could not be read (path: error). Their subtrees are absent from `records`. */
     skippedDirs: string[];
+    /** Relative paths skipped by the omit matcher (noise / SKILL.md / `.l9metaignore` / `--omit`). */
+    omittedPaths: string[];
 }
 /** Load and validate a canonical meta-schema YAML file. */
 export declare function loadMetaSchema(filePath: string): MetaSchema;
