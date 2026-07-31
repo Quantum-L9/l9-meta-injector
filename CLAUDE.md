@@ -90,3 +90,20 @@ No repository pre-commit framework is configured. CI commands are the authority.
 ## Publication
 
 `prepublishOnly` runs `npm run validate` and `npm run check:publication`. Publication remains fail-closed until registry history, constellation consumers, and distribution-owner approval are resolved in `docs/package-publication-decision.json`.
+
+<!-- BEGIN L9 FORMATTER OWNERSHIP (generated — do not edit) -->
+
+## Formatter ownership
+
+Workspace class: `eslint_owned` — Workspaces where ESLint/Prettier config in the repo is authoritative for JS/TS. Python is still Ruff-owned.
+
+Exactly one formatter owns each language. Do not reformat a file with a tool other than its owner, and do not add config for a competing formatter: the result is a diff that churns on every save.
+
+| Languages | Owner | Note |
+|---|---|---|
+| `javascript`, `javascriptreact`, `typescript`, `typescriptreact`, `json`, `jsonc` | eslint (this repo's own config) | do not add a competing formatter config |
+| `python` | **ruff** | bound by the governed IDE profile |
+
+Generated from `environment/ide/policy.json` in the governance clone by `ops/scripts/adapters/agentdocs.sh`. Edit the policy, not this block.
+
+<!-- END L9 FORMATTER OWNERSHIP -->

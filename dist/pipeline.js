@@ -53,6 +53,8 @@ const llm_1 = require("./llm");
 const meta_schema_1 = require("./meta_schema");
 const metrics_1 = require("./metrics");
 const comment_1 = require("./comment");
+const archives_1 = require("./archives");
+const omit_1 = require("./omit");
 // classify()'s coarse "high"/"medium"/"low" confidence, numerically scaled to line up
 // with inventoryTree's InventoryRecord.classification_confidence (a 0..1 float), so a
 // meta-schema's `source: classification_confidence` resolves consistently in both modes.
@@ -78,7 +80,28 @@ async function runPipelineAsync(config) {
         (0, llm_1.resetAdapter)();
     }
     const assistCfg = { ...assist_1.DEFAULT_ASSIST_CONFIG, enabled: config.llmEnabled };
-    const filePaths = (0, retrieval_1.findFiles)(config.root, config.glob);
+    // Shared omit matcher for archive expansion + discovery (ADR-017). Pipeline
+    // always protects SKILL.md; noise / .l9metaignore / --omit apply everywhere.
+    const omit = (0, omit_1.buildOmitMatcher)({
+        root: config.root,
+        patterns: config.omitPatterns,
+        omitFile: config.omitFile,
+        protectSkillMd: true,
+        ignoreDirNames: ["node_modules"],
+    });
+    // Local-files mode (ADR-016): expand archives before discovery so members are
+    // ordinary text inject targets. Default repo mode never extracts. Omit applies
+    // to archives and members the same way findFiles does.
+    let archives = [];
+    if (config.localFiles) {
+        const expanded = (0, archives_1.expandArchivesUnderRoot)(config.root, {
+            dryRun: config.dryRun,
+            verbose: config.verbose,
+            omit,
+        });
+        archives = expanded.archives;
+    }
+    const filePaths = (0, retrieval_1.findFiles)(config.root, config.glob, { omit, protectSkillMd: true });
     if (config.normalizeFilenames)
         (0, normalize_filename_1.normalizeFilenames)(filePaths, { dryRun: config.dryRun, verbose: config.verbose });
     const scanned = (0, retrieval_1.scanFiles)(filePaths);
@@ -90,6 +113,9 @@ async function runPipelineAsync(config) {
     // is observable instead of silently dropping skipped files (finding OBS-003).
     const skippedBinaryPaths = [];
     const skippedNonInjectablePaths = [];
+    const skippedNonInjectableDetails = [];
+    // Coarse classify result retained so non-injectable skips can report type/confidence.
+    const classifications = new Map();
     for (const e of scanned) {
         const raw = fs.readFileSync(e.sourcePath, "utf8");
         const spec = (0, comment_1.resolveStrategy)(e.sourcePath, raw);
@@ -110,6 +136,7 @@ async function runPipelineAsync(config) {
         bodies.set(e.sourcePath, body);
         const ef = (0, extract_1.extract)(body);
         const cls = (0, classify_1.classify)(e.sourcePath, body, e.headerConvention);
+        classifications.set(e.sourcePath, cls);
         let meta = (0, normalize_meta_1.buildMeta)(e.sourcePath, body, ef, cls, nsCfg, config.authority, now);
         // assist: LLM fills prose-origin fields only when seed fails "good" predicate
         if (config.llmEnabled) {
@@ -162,6 +189,13 @@ async function runPipelineAsync(config) {
             continue; // binary — already recorded in skippedBinaryPaths
         if (!meta.injectable) {
             skippedNonInjectablePaths.push(e.sourcePath);
+            const cls = classifications.get(e.sourcePath);
+            skippedNonInjectableDetails.push({
+                path: e.sourcePath,
+                reason: "taxonomy_non_injectable",
+                artifactType: cls?.artifactType ?? meta.artifact_type,
+                confidence: cls?.confidence ?? "low",
+            });
             continue;
         }
         // Use async inject (LLM boolean reconcile on description/intent) when LLM is enabled
@@ -190,20 +224,32 @@ async function runPipelineAsync(config) {
         const more = failures.length > 5 ? `\n  … and ${failures.length - 5} more` : "";
         process.stderr.write(`[l9-meta-injector] verification FAILED for ${verification.withIssues}/${verification.total} file(s):\n${preview}${more}\n`);
     }
+    // Persist coverage even on dry-run so skipped paths are inspectable after the fact (ADR-018).
+    const coverageReportDir = config.outDir || config.indexDir;
+    fs.mkdirSync(coverageReportDir, { recursive: true });
+    const coverageReportPath = path.join(coverageReportDir, "coverage-report.json");
     const coverage = {
         scanned: scanned.length,
         injected: injected.length,
         skippedBinary: skippedBinaryPaths.length,
         skippedNonInjectable: skippedNonInjectablePaths.length,
         verifyFailed: verification.withIssues,
-        skipped: { binary: skippedBinaryPaths, nonInjectable: skippedNonInjectablePaths },
+        archivesExpanded: archives.length,
+        skipped: {
+            binary: skippedBinaryPaths,
+            nonInjectable: skippedNonInjectablePaths,
+            nonInjectableDetails: skippedNonInjectableDetails,
+        },
+        reportPath: coverageReportPath,
     };
+    fs.writeFileSync(coverageReportPath, JSON.stringify(coverage, null, 2));
     // Surface coverage when anything was skipped or on verbose runs — otherwise the
     // library path emits no signal about what it processed vs. dropped (OBS-003).
-    if (config.verbose || coverage.skippedBinary + coverage.skippedNonInjectable > 0) {
+    if (config.verbose || coverage.skippedBinary + coverage.skippedNonInjectable > 0 || coverage.archivesExpanded > 0) {
         process.stderr.write(`[l9-meta-injector] coverage: scanned=${coverage.scanned} injected=${coverage.injected} ` +
             `skipped-binary=${coverage.skippedBinary} skipped-noninjectable=${coverage.skippedNonInjectable} ` +
-            `verify-failed=${coverage.verifyFailed}\n`);
+            `archives-expanded=${coverage.archivesExpanded} ` +
+            `verify-failed=${coverage.verifyFailed} report=${coverageReportPath}\n`);
     }
     // Surface the LLM/IO hotpath metrics whenever the LLM path ran or on verbose runs,
     // so a degraded run (llm_failed_fallback / no_adapter) is visible (OBS-009/OBS-010).
@@ -240,7 +286,8 @@ async function runPipelineAsync(config) {
         fs.writeFileSync(path.join(d, "verification-report.json"), JSON.stringify(verified, null, 2));
         fs.writeFileSync(path.join(d, "placement-plan.json"), JSON.stringify(placementPlans, null, 2));
         fs.writeFileSync(path.join(d, "meta-v3-index.json"), JSON.stringify(metaV3, null, 2));
+        fs.writeFileSync(path.join(d, "archives-expanded.json"), JSON.stringify(archives, null, 2));
     }
-    return { scanned, injected, verified, verification, coverage, placementPlans, metaV3, metrics: metrics.snapshot() };
+    return { scanned, injected, verified, verification, coverage, placementPlans, metaV3, metrics: metrics.snapshot(), archives };
 }
 //# sourceMappingURL=pipeline.js.map

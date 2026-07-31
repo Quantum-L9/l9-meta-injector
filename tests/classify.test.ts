@@ -8,8 +8,9 @@
 // "engine"/"runtime" → kernel, "test suite" → test) because no path-pattern signal
 // existed for the ADR convention. These tests lock the fix and cover the classifier's
 // three decision tiers (dot-convention, path-pattern, keyword-fallback) plus the
-// genuine "unknown" floor.
-import { classify } from "../src/classify";
+// injectable "context" floor for unscored prose (ADR-018).
+import { classify, keywordHit } from "../src/classify";
+import { PRIMITIVE_TAXONOMY } from "../src/schema";
 
 describe("classify — dot-convention (highest priority, high confidence)", () => {
   it("l9.skill.foo.md → skill", () => {
@@ -62,6 +63,12 @@ describe("classify — path-pattern signals (high confidence, prose files only)"
   it("a generic /adr/ folder convention also classifies as doctrine", () => {
     expect(classify("/repo/adr/0001-example.md", "irrelevant", "none").artifactType).toBe("doctrine");
   });
+
+  it("path /tests/ stays non-injectable test even when body has no keywords", () => {
+    const r = classify("/repo/tests/foo.md", "plain body", "none");
+    expect(r.artifactType).toBe("test");
+    expect(PRIMITIVE_TAXONOMY.test.injectable).toBe(false);
+  });
 });
 
 describe("classify — keyword-bag fallback (no path pattern match)", () => {
@@ -75,9 +82,68 @@ describe("classify — keyword-bag fallback (no path pattern match)", () => {
     expect(r.artifactType).toBe("context");
     expect(r.confidence).toBe("low");
   });
-  it("stays unknown when zero taxonomy keywords are present anywhere", () => {
+  it("defaults to injectable context when zero taxonomy keywords are present", () => {
     const r = classify("/repo/docs/notes.md", "Lorem ipsum dolor sit amet, consectetur adipiscing elit.", "none");
-    expect(r.artifactType).toBe("unknown");
+    expect(r.artifactType).toBe("context");
     expect(r.confidence).toBe("low");
+    expect(PRIMITIVE_TAXONOMY.context.injectable).toBe(true);
+  });
+});
+
+describe("classify — ADR-018 word-boundary and non-injectable demotion", () => {
+  it("keywordHit rejects substrings inside longer words", () => {
+    expect(keywordHit("phases of testing validation", "test")).toBe(false);
+    expect(keywordHit("comprehensive specification document", "spec")).toBe(false);
+    expect(keywordHit("specific tooling ownership", "spec")).toBe(false);
+    expect(keywordHit("specific tooling ownership", "tool")).toBe(false);
+    expect(keywordHit("a test suite follows", "test")).toBe(true);
+    expect(keywordHit("anthropic tool search", "tool")).toBe(true);
+  });
+
+  it("testing / specification / specific do not classify as test", () => {
+    expect(classify("/repo/docs/evidence-report.md", "phases 3-6 (testing, validation, deployment)", "none").artifactType).not.toBe("test");
+    expect(classify("/repo/docs/system.md", "create a comprehensive specification document that maps", "none").artifactType).not.toBe("test");
+    expect(classify("/repo/docs/blueprint.md", "each with specific tooling, ownership", "none").artifactType).not.toBe("test");
+  });
+
+  it("tooling / Tool Search.md alone do not become script at score 1", () => {
+    expect(classify("/repo/docs/notes.md", "layered tooling ownership", "none").artifactType).not.toBe("script");
+    expect(classify("/repo/Tool Search/Anthropic Tool Search vs L9 Discovery.md", "comparison of discovery approaches", "none").artifactType).not.toBe("script");
+  });
+
+  it("ambiguous tool+script medium hit demotes away from non-injectable script", () => {
+    const r = classify(
+      "/repo/Tool Search/Anthropic Tool Search vs L9 Discovery.md",
+      "Describe the tool with a natural language description of what it needs. Use a script when wiring packages.",
+      "none",
+    );
+    expect(r.artifactType).not.toBe("script");
+    expect(r.artifactType).not.toBe("test");
+    expect(PRIMITIVE_TAXONOMY[r.artifactType]?.injectable).toBe(true);
+  });
+
+  it("single script mention demotes to injectable type", () => {
+    const r = classify("/repo/docs/TEMPLATE.md", "write the final research prompt using a script instead of manually", "none");
+    expect(r.artifactType).not.toBe("script");
+    expect(PRIMITIVE_TAXONOMY[r.artifactType]?.injectable).toBe(true);
+  });
+
+  it("earned medium+ word-boundary test/script still classify when strong companions hit", () => {
+    const testHit = classify("/repo/docs/notes.md", "This test fixture uses a mock for isolation.", "none");
+    expect(testHit.artifactType).toBe("test");
+    expect(testHit.confidence).toBe("medium");
+
+    const scriptHit = classify("/repo/docs/notes.md", "A small utility helper script for operators.", "none");
+    expect(scriptHit.artifactType).toBe("script");
+    expect(scriptHit.confidence).toBe("medium");
+  });
+
+  it("test+spec alone (no strong companion) demotes; test+spec+fixture earns test", () => {
+    expect(
+      classify("/repo/docs/notes.md", "Cover the test and the spec carefully.", "none").artifactType,
+    ).not.toBe("test");
+    expect(
+      classify("/repo/docs/notes.md", "Run the test with the spec and the fixture harness.", "none").artifactType,
+    ).toBe("test");
   });
 });

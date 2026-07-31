@@ -1,5 +1,11 @@
 # l9-meta-injector CHANGELOG
 
+## Unreleased
+
+### Added
+
+- `--local-files` / `PipelineConfig.localFiles` expands `.zip` archives into sibling `*.l9extracted/` dirs, writes `<zip>.l9meta.yaml` sidecars, and injects extracted members (ADR-016). Default repo mode still skips archives. Archive expansion honors the shared omit layer (ADR-017): protected `SKILL.md`, noise patterns, `.l9metaignore`, and `--omit` skip archives and members.
+
 ## 3.0.0 - 2026-07-22
 
 ### Breaking

@@ -20,7 +20,7 @@
 
 ## Root contract
 
-The root exposes `runPipelineAsync` plus shared constants and types needed to configure and consume a run. It does not expose injection primitives, parsers, compiler internals, or adapter mutation.
+The root exposes `runPipelineAsync` and `runSkillsPipelineAsync` plus shared constants and types needed to configure and consume a run. It does not expose injection primitives, parsers, compiler internals, or adapter mutation. Inventory and pipeline never mutate `SKILL.md`; skills mode is the Cursor-native path (ADR-017).
 
 ## Advanced caller obligations
 

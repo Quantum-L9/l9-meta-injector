@@ -8,6 +8,7 @@ import * as path from "path";
 import { ScanEntry, HeaderConvention, BodyStructure } from "./schema";
 import { splitContent } from "./extract";
 import { FRONTMATTER_EXTS, resolveStrategy } from "./comment";
+import { buildOmitMatcher, OmitMatcher } from "./omit";
 
 /** Injector-generated artifacts must never be re-discovered as inputs. */
 function isGeneratedArtifact(name: string): boolean {
@@ -36,20 +37,52 @@ function looksBinaryOnDisk(filePath: string): boolean {
   }
 }
 
-export function findFiles(root: string, glob: string): string[] {
+export interface FindFilesOptions {
+  /** Extra omit patterns (gitignore-style). */
+  omitPatterns?: string[];
+  /** Optional omit-file path. */
+  omitFile?: string;
+  /**
+   * When true (default), built-in SKILL.md protect applies.
+   * Skills mode sets false so skill entrypoints are discoverable.
+   */
+  protectSkillMd?: boolean;
+  /** Pre-built matcher; when set, other omit fields are ignored. */
+  omit?: OmitMatcher;
+}
+
+export function findFiles(root: string, glob: string, opts: FindFilesOptions = {}): string[] {
   // Extract extension filter from glob pattern (e.g. **/*.md → .md). No `*.ext`
   // suffix (e.g. **/*) → every text file the injector can safely annotate.
   const extMatch = glob.match(/\*\.([a-z0-9]+)$/i);
   const extFilter: string | null = extMatch ? `.${extMatch[1].toLowerCase()}` : null;
 
+  const absRoot = path.resolve(root);
+  const omit = opts.omit ?? buildOmitMatcher({
+    root: absRoot,
+    patterns: opts.omitPatterns,
+    omitFile: opts.omitFile,
+    protectSkillMd: opts.protectSkillMd !== false,
+    ignoreDirNames: ["node_modules"],
+  });
+
   const results: string[] = [];
   function walk(dir: string) {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (entry.isDirectory() && !entry.name.startsWith(".") && entry.name !== "node_modules") {
-        walk(path.join(dir, entry.name));
+    let entries: fs.Dirent[];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); }
+    catch { return; }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      const rel = path.relative(absRoot, full).split(path.sep).join("/");
+
+      if (entry.isDirectory()) {
+        // Keep prior behavior: skip hidden dirs (except we still omit via matcher for __pycache__).
+        if (entry.name.startsWith(".") && entry.name !== ".") continue;
+        if (omit.shouldOmit(rel) || omit.shouldOmit(rel + "/")) continue;
+        walk(full);
       } else if (entry.isFile()) {
         if (isGeneratedArtifact(entry.name)) continue; // skip our own .inject.log / .l9meta.yaml
-        const full = path.join(dir, entry.name);
+        if (omit.shouldOmit(rel)) continue;
         const ext = path.extname(entry.name).toLowerCase();
         if (extFilter && !entry.name.toLowerCase().endsWith(extFilter)) continue; // filtered out
         // Cheap ext-based strategy check first; only sniff the bytes when the
@@ -65,7 +98,7 @@ export function findFiles(root: string, glob: string): string[] {
       }
     }
   }
-  if (fs.existsSync(root)) walk(root);
+  if (fs.existsSync(absRoot)) walk(absRoot);
   return results;
 }
 

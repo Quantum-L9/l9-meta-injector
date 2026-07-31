@@ -44,6 +44,7 @@ const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const extract_1 = require("./extract");
 const comment_1 = require("./comment");
+const omit_1 = require("./omit");
 /** Injector-generated artifacts must never be re-discovered as inputs. */
 function isGeneratedArtifact(name) {
     return name.endsWith(".inject.log") || name.endsWith(".l9meta.yaml");
@@ -74,21 +75,44 @@ function looksBinaryOnDisk(filePath) {
             fs.closeSync(fd);
     }
 }
-function findFiles(root, glob) {
+function findFiles(root, glob, opts = {}) {
     // Extract extension filter from glob pattern (e.g. **/*.md → .md). No `*.ext`
     // suffix (e.g. **/*) → every text file the injector can safely annotate.
     const extMatch = glob.match(/\*\.([a-z0-9]+)$/i);
     const extFilter = extMatch ? `.${extMatch[1].toLowerCase()}` : null;
+    const absRoot = path.resolve(root);
+    const omit = opts.omit ?? (0, omit_1.buildOmitMatcher)({
+        root: absRoot,
+        patterns: opts.omitPatterns,
+        omitFile: opts.omitFile,
+        protectSkillMd: opts.protectSkillMd !== false,
+        ignoreDirNames: ["node_modules"],
+    });
     const results = [];
     function walk(dir) {
-        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-            if (entry.isDirectory() && !entry.name.startsWith(".") && entry.name !== "node_modules") {
-                walk(path.join(dir, entry.name));
+        let entries;
+        try {
+            entries = fs.readdirSync(dir, { withFileTypes: true });
+        }
+        catch {
+            return;
+        }
+        for (const entry of entries) {
+            const full = path.join(dir, entry.name);
+            const rel = path.relative(absRoot, full).split(path.sep).join("/");
+            if (entry.isDirectory()) {
+                // Keep prior behavior: skip hidden dirs (except we still omit via matcher for __pycache__).
+                if (entry.name.startsWith(".") && entry.name !== ".")
+                    continue;
+                if (omit.shouldOmit(rel) || omit.shouldOmit(rel + "/"))
+                    continue;
+                walk(full);
             }
             else if (entry.isFile()) {
                 if (isGeneratedArtifact(entry.name))
                     continue; // skip our own .inject.log / .l9meta.yaml
-                const full = path.join(dir, entry.name);
+                if (omit.shouldOmit(rel))
+                    continue;
                 const ext = path.extname(entry.name).toLowerCase();
                 if (extFilter && !entry.name.toLowerCase().endsWith(extFilter))
                     continue; // filtered out
@@ -107,8 +131,8 @@ function findFiles(root, glob) {
             }
         }
     }
-    if (fs.existsSync(root))
-        walk(root);
+    if (fs.existsSync(absRoot))
+        walk(absRoot);
     return results;
 }
 function detectBodyStructure(body) {

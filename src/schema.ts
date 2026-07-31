@@ -266,6 +266,18 @@ export interface PipelineConfig {
    *  fields, are unaffected, while the injected header additionally carries whatever
    *  operator-defined fields the schema declares. */
   metaSchema?: MetaSchema;
+  /**
+   * Local-files mode (non-repo trees): before scan, expand `.zip` archives under `root`
+   * into sibling `*.l9extracted/` directories, write `<zip>.l9meta.yaml` sidecars (unless
+   * `dryRun`), and let the normal inject path annotate extracted members. Default repo
+   * mode leaves archives untouched (`skip-binary`). Requires the system `unzip` binary.
+   * See ADR-016.
+   */
+  localFiles?: boolean;
+  /** Extra gitignore-style omit patterns (built-ins + `.l9metaignore` always apply). */
+  omitPatterns?: string[];
+  /** Optional path to an omit-file (gitignore syntax). */
+  omitFile?: string;
 }
 
 // ---------------------------------------------------------------------------

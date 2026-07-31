@@ -3,6 +3,7 @@ import { scanFiles } from "./retrieval";
 import { PlacementPlan } from "./placement_policy";
 import { MetaV3Record } from "./meta_v3";
 import { MetricsSnapshot } from "./metrics";
+import { ArchiveRecord } from "./archives";
 export interface VerificationSummary {
     total: number;
     clean: number;
@@ -14,17 +15,30 @@ export interface VerificationSummary {
         issues: string[];
     }>;
 }
+/** Per-path detail for a non-injectable skip (OBS-003 / ADR-018). */
+export interface NonInjectableSkipDetail {
+    path: string;
+    reason: "taxonomy_non_injectable";
+    artifactType: string;
+    confidence: "high" | "medium" | "low";
+}
 export interface CoverageSummary {
     scanned: number;
     injected: number;
     skippedBinary: number;
     skippedNonInjectable: number;
     verifyFailed: number;
+    /** Archives expanded when `localFiles` is on (0 otherwise). */
+    archivesExpanded: number;
     /** Source paths skipped, by reason — so coverage gaps are correlatable to inputs. */
     skipped: {
         binary: string[];
         nonInjectable: string[];
+        /** Classification detail for each non-injectable skip (same order as `nonInjectable`). */
+        nonInjectableDetails: NonInjectableSkipDetail[];
     };
+    /** Absolute path of the written coverage-report.json (always set when the run finishes). */
+    reportPath: string;
 }
 export interface PipelineResult {
     scanned: ReturnType<typeof scanFiles>;
@@ -40,5 +54,7 @@ export interface PipelineResult {
     metaV3: MetaV3Record[];
     /** LLM/IO hotpath metrics for this run: call counts, failures, p50/p95, decision paths. */
     metrics: MetricsSnapshot;
+    /** Archives expanded in local-files mode (empty when `localFiles` is off). */
+    archives: ArchiveRecord[];
 }
 export declare function runPipelineAsync(config: PipelineConfig): Promise<PipelineResult>;

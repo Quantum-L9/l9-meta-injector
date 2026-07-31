@@ -18,6 +18,8 @@ import { applySchema, targetIncludes } from "./meta_schema";
 import { MetricsCollector, MetricsSnapshot } from "./metrics";
 import { NamespaceConfig } from "./namespace";
 import { resolveStrategy, stripInjectedBlock } from "./comment";
+import { expandArchivesUnderRoot, ArchiveRecord } from "./archives";
+import { buildOmitMatcher } from "./omit";
 
 // classify()'s coarse "high"/"medium"/"low" confidence, numerically scaled to line up
 // with inventoryTree's InventoryRecord.classification_confidence (a 0..1 float), so a
@@ -38,14 +40,31 @@ export interface VerificationSummary {
   failures: Array<{ sourcePath: string; issues: string[] }>;
 }
 
+/** Per-path detail for a non-injectable skip (OBS-003 / ADR-018). */
+export interface NonInjectableSkipDetail {
+  path: string;
+  reason: "taxonomy_non_injectable";
+  artifactType: string;
+  confidence: "high" | "medium" | "low";
+}
+
 export interface CoverageSummary {
   scanned: number;
   injected: number;
   skippedBinary: number;
   skippedNonInjectable: number;
   verifyFailed: number;
+  /** Archives expanded when `localFiles` is on (0 otherwise). */
+  archivesExpanded: number;
   /** Source paths skipped, by reason — so coverage gaps are correlatable to inputs. */
-  skipped: { binary: string[]; nonInjectable: string[] };
+  skipped: {
+    binary: string[];
+    nonInjectable: string[];
+    /** Classification detail for each non-injectable skip (same order as `nonInjectable`). */
+    nonInjectableDetails: NonInjectableSkipDetail[];
+  };
+  /** Absolute path of the written coverage-report.json (always set when the run finishes). */
+  reportPath: string;
 }
 
 export interface PipelineResult {
@@ -62,6 +81,8 @@ export interface PipelineResult {
   metaV3: MetaV3Record[];
   /** LLM/IO hotpath metrics for this run: call counts, failures, p50/p95, decision paths. */
   metrics: MetricsSnapshot;
+  /** Archives expanded in local-files mode (empty when `localFiles` is off). */
+  archives: ArchiveRecord[];
 }
 
 export async function runPipelineAsync(config: PipelineConfig): Promise<PipelineResult> {
@@ -83,7 +104,31 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
   }
 
   const assistCfg = { ...DEFAULT_ASSIST_CONFIG, enabled: config.llmEnabled };
-  const filePaths = findFiles(config.root, config.glob);
+
+  // Shared omit matcher for archive expansion + discovery (ADR-017). Pipeline
+  // always protects SKILL.md; noise / .l9metaignore / --omit apply everywhere.
+  const omit = buildOmitMatcher({
+    root: config.root,
+    patterns: config.omitPatterns,
+    omitFile: config.omitFile,
+    protectSkillMd: true,
+    ignoreDirNames: ["node_modules"],
+  });
+
+  // Local-files mode (ADR-016): expand archives before discovery so members are
+  // ordinary text inject targets. Default repo mode never extracts. Omit applies
+  // to archives and members the same way findFiles does.
+  let archives: ArchiveRecord[] = [];
+  if (config.localFiles) {
+    const expanded = expandArchivesUnderRoot(config.root, {
+      dryRun: config.dryRun,
+      verbose: config.verbose,
+      omit,
+    });
+    archives = expanded.archives;
+  }
+
+  const filePaths = findFiles(config.root, config.glob, { omit, protectSkillMd: true });
 
   if (config.normalizeFilenames) normalizeFilenames(filePaths, { dryRun: config.dryRun, verbose: config.verbose });
 
@@ -96,6 +141,9 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
   // is observable instead of silently dropping skipped files (finding OBS-003).
   const skippedBinaryPaths: string[] = [];
   const skippedNonInjectablePaths: string[] = [];
+  const skippedNonInjectableDetails: NonInjectableSkipDetail[] = [];
+  // Coarse classify result retained so non-injectable skips can report type/confidence.
+  const classifications = new Map<string, ReturnType<typeof classify>>();
 
   for (const e of scanned) {
     const raw = fs.readFileSync(e.sourcePath, "utf8");
@@ -114,6 +162,7 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
     bodies.set(e.sourcePath, body);
     const ef = extract(body);
     const cls = classify(e.sourcePath, body, e.headerConvention);
+    classifications.set(e.sourcePath, cls);
     let meta = buildMeta(e.sourcePath, body, ef, cls, nsCfg, config.authority, now);
 
     // assist: LLM fills prose-origin fields only when seed fails "good" predicate
@@ -169,7 +218,17 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
   for (const e of scanned) {
     const meta = metas.get(e.sourcePath);
     if (!meta) continue; // binary — already recorded in skippedBinaryPaths
-    if (!meta.injectable) { skippedNonInjectablePaths.push(e.sourcePath); continue; }
+    if (!meta.injectable) {
+      skippedNonInjectablePaths.push(e.sourcePath);
+      const cls = classifications.get(e.sourcePath);
+      skippedNonInjectableDetails.push({
+        path: e.sourcePath,
+        reason: "taxonomy_non_injectable",
+        artifactType: cls?.artifactType ?? meta.artifact_type,
+        confidence: cls?.confidence ?? "low",
+      });
+      continue;
+    }
     // Use async inject (LLM boolean reconcile on description/intent) when LLM is enabled
     const record = config.llmEnabled
       ? await injectFileAsync(e.sourcePath, meta, opts, metrics)
@@ -200,21 +259,35 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
     );
   }
 
+  // Persist coverage even on dry-run so skipped paths are inspectable after the fact (ADR-018).
+  const coverageReportDir = config.outDir || config.indexDir;
+  fs.mkdirSync(coverageReportDir, { recursive: true });
+  const coverageReportPath = path.join(coverageReportDir, "coverage-report.json");
+
   const coverage: CoverageSummary = {
     scanned: scanned.length,
     injected: injected.length,
     skippedBinary: skippedBinaryPaths.length,
     skippedNonInjectable: skippedNonInjectablePaths.length,
     verifyFailed: verification.withIssues,
-    skipped: { binary: skippedBinaryPaths, nonInjectable: skippedNonInjectablePaths },
+    archivesExpanded: archives.length,
+    skipped: {
+      binary: skippedBinaryPaths,
+      nonInjectable: skippedNonInjectablePaths,
+      nonInjectableDetails: skippedNonInjectableDetails,
+    },
+    reportPath: coverageReportPath,
   };
+  fs.writeFileSync(coverageReportPath, JSON.stringify(coverage, null, 2));
+
   // Surface coverage when anything was skipped or on verbose runs — otherwise the
   // library path emits no signal about what it processed vs. dropped (OBS-003).
-  if (config.verbose || coverage.skippedBinary + coverage.skippedNonInjectable > 0) {
+  if (config.verbose || coverage.skippedBinary + coverage.skippedNonInjectable > 0 || coverage.archivesExpanded > 0) {
     process.stderr.write(
       `[l9-meta-injector] coverage: scanned=${coverage.scanned} injected=${coverage.injected} ` +
       `skipped-binary=${coverage.skippedBinary} skipped-noninjectable=${coverage.skippedNonInjectable} ` +
-      `verify-failed=${coverage.verifyFailed}\n`,
+      `archives-expanded=${coverage.archivesExpanded} ` +
+      `verify-failed=${coverage.verifyFailed} report=${coverageReportPath}\n`,
     );
   }
   // Surface the LLM/IO hotpath metrics whenever the LLM path ran or on verbose runs,
@@ -259,7 +332,8 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
     fs.writeFileSync(path.join(d, "verification-report.json"), JSON.stringify(verified, null, 2));
     fs.writeFileSync(path.join(d, "placement-plan.json"), JSON.stringify(placementPlans, null, 2));
     fs.writeFileSync(path.join(d, "meta-v3-index.json"), JSON.stringify(metaV3, null, 2));
+    fs.writeFileSync(path.join(d, "archives-expanded.json"), JSON.stringify(archives, null, 2));
   }
 
-  return { scanned, injected, verified, verification, coverage, placementPlans, metaV3, metrics: metrics.snapshot() };
+  return { scanned, injected, verified, verification, coverage, placementPlans, metaV3, metrics: metrics.snapshot(), archives };
 }

@@ -1,4 +1,6 @@
 import { ClassifyResult, HeaderConvention, ArtifactClassification } from "./schema";
+/** Word-boundary match for ASCII taxonomy tokens on already-lowercased text. */
+export declare function keywordHit(text: string, keyword: string): boolean;
 export declare function classify(filePath: string, body: string, _hc: HeaderConvention): ClassifyResult;
 /** A ClassifyResult augmented with the 17-class semantic classification. */
 export interface ClassifyResultWithClass extends ClassifyResult {

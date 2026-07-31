@@ -5,6 +5,7 @@ __MACOSX/
 *.log
 .env
 .env.*
+!.env.example
 .turbo/
 .cache/
 dist/*.tsbuildinfo
@@ -14,3 +15,4 @@ dist/*.tsbuildinfo
 # Cursor governance wiring (regenerated per clone via setup_workspace_symlinks.sh)
 .cursor-commands
 .cursor/
+.vscode/
