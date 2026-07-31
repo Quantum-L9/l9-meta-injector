@@ -2,30 +2,30 @@
   "fixtures": "fixtures",
   "totals": {
     "scanned": 15,
-    "injected": 14,
-    "verified": 14,
-    "verifiedClean": 14
+    "injected": 15,
+    "verified": 15,
+    "verifiedClean": 15
   },
   "strategyDist": {
     "block-comment": 2,
     "line-comment": 6,
-    "sidecar": 3,
+    "sidecar": 4,
     "yaml-frontmatter": 3
   },
   "typeDist": {
-    "context": 1,
+    "context": 2,
     "prompt": 1,
     "skill": 1,
     "source": 11
   },
   "indexes": {
-    "primitiveLibraryEntries": 13,
+    "primitiveLibraryEntries": 14,
     "promptLibraryEntries": 1,
-    "dedupTotalScanned": 14,
-    "dedupUniqueCount": 14,
+    "dedupTotalScanned": 15,
+    "dedupUniqueCount": 15,
     "dedupExactTwins": 0,
-    "verificationEntries": 14,
-    "verificationClean": 14
+    "verificationEntries": 15,
+    "verificationClean": 15
   },
   "idempotency": {
     "rerunFilesChanged": 0
@@ -63,6 +63,18 @@
       "injectable": true,
       "strategy": "yaml-frontmatter",
       "hasSidecar": false,
+      "yamlValid": true,
+      "bodyPreserved": true,
+      "sharingScopeValid": true
+    },
+    {
+      "path": "notes.txt",
+      "id": "l9.context.notes",
+      "artifact_type": "context",
+      "mcp_primitive": "resource",
+      "injectable": true,
+      "strategy": "sidecar",
+      "hasSidecar": true,
       "yamlValid": true,
       "bodyPreserved": true,
       "sharingScopeValid": true
