@@ -26,16 +26,28 @@ export interface LlmDiagnostic {
   durationMs: number;
 }
 
-// Default sink: warn to stderr on any non-ok outcome so silent LLM degradation is
-// visible. A caller-supplied `onDiagnostic` receives every outcome (incl. "ok") for
+// Warn to stderr on any non-ok outcome so silent LLM degradation is never
+// invisible — this fires regardless of whether a caller-supplied `onDiagnostic`
+// is also present, because a metrics collector aggregates counts but does not
+// itself surface the failure reason (status/detail) anywhere a human can see it.
+// The caller-supplied callback still receives every outcome (incl. "ok") for
 // metering. Never throws — diagnostics must not break the call path.
 function reportDiagnostic(cb: ((d: LlmDiagnostic) => void) | undefined, d: LlmDiagnostic): void {
-  if (cb) { try { cb(d); } catch { /* diagnostics must never break the caller */ } return; }
+  if (cb) { try { cb(d); } catch { /* diagnostics must never break the caller */ } }
   if (d.outcome !== "ok") {
     const status = d.status !== undefined ? ` (status ${d.status})` : "";
     const detail = d.detail ? `: ${d.detail}` : "";
     process.stderr.write(`[l9-meta-injector] llm ${d.outcome}${status}${detail} [${d.durationMs}ms]\n`);
   }
+}
+
+// OpenAI's GPT-5 / o-series ("reasoning") models reject the legacy `max_tokens`
+// and custom `temperature` chat-completions fields with a 400 unsupported_parameter
+// error and require `max_completion_tokens` instead (temperature is fixed at 1).
+// See: https://platform.openai.com/docs/guides/reasoning — detected by model-name
+// prefix since the API does not expose a capability flag for this.
+function isReasoningModel(model: string): boolean {
+  return /^(gpt-5|o1|o3|o4)/i.test(model);
 }
 
 export function makeOpenAIAdapter(opts: {
@@ -57,11 +69,18 @@ export function makeOpenAIAdapter(opts: {
           emit({ outcome: "network_error", detail: "refusing to send credential to non-https baseUrl", durationMs: Date.now() - started });
           return null;
         }
+        const tokenLimit = opts.maxTokens ?? 80;
+        const body: Record<string, unknown> = { model: opts.model, messages: [{ role: "user", content: prompt }] };
+        if (isReasoningModel(opts.model)) {
+          body.max_completion_tokens = tokenLimit;
+        } else {
+          body.max_tokens = tokenLimit;
+          body.temperature = 0;
+        }
         const res = await fetch(`${opts.baseUrl}/chat/completions`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${opts.apiKey}` },
-          body: JSON.stringify({ model: opts.model, messages: [{ role: "user", content: prompt }],
-            max_tokens: opts.maxTokens ?? 80, temperature: 0 }),
+          body: JSON.stringify(body),
           signal: ctrl.signal,
         });
         if (!res.ok) {
