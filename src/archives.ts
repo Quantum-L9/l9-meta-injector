@@ -3,16 +3,16 @@
 // .zip archives under the scan root are expanded into sibling *.l9extracted/
 // directories, members become ordinary inject targets, and each archive gets an
 // inventory-style sidecar (<zip>.l9meta.yaml). Nested zips are expanded up to
-// maxDepth. Extraction uses the system `unzip` binary (macOS/Linux); missing
-// unzip fails closed with an explicit error.
+// maxDepth. Extraction uses a fixed-path system `unzip` binary (macOS/Linux);
+// missing unzip fails closed with an explicit error.
 //
 // Omit (ADR-017): when an OmitMatcher is supplied, omitted archives are not
 // expanded / sidecared, omitted directories are not walked, and omitted zip
 // members (e.g. SKILL.md, *.log, __pycache__) are not extracted onto disk.
-import * as crypto from "crypto";
-import * as fs from "fs";
-import * as path from "path";
-import { execFileSync } from "child_process";
+import * as crypto from "node:crypto";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { execFileSync } from "node:child_process";
 import { sidecarPathFor } from "./comment";
 import { serializeYamlObject } from "./yaml_serialize";
 import type { OmitMatcher } from "./omit";
@@ -22,6 +22,9 @@ export const EXTRACTED_DIR_SUFFIX = ".l9extracted";
 
 /** Archive extensions expanded in local-files mode (v1: zip only). */
 export const EXPANDABLE_ARCHIVE_EXTS = new Set([".zip"]);
+
+/** Fixed absolute unzip paths — avoid PATH lookup (Sonar S4036). */
+const UNZIP_CANDIDATES = ["/usr/bin/unzip", "/bin/unzip"] as const;
 
 export interface ArchiveRecord {
   zipPath: string;
@@ -65,6 +68,10 @@ function isOmitted(omit: OmitMatcher | undefined, rel: string): boolean {
   return omit.shouldOmit(rel) || omit.shouldOmit(rel.endsWith("/") ? rel : `${rel}/`);
 }
 
+function sortPaths(paths: string[]): string[] {
+  return paths.sort((a, b) => a.localeCompare(b));
+}
+
 /** Sibling extract directory for a zip: `Archive.zip` → `Archive.l9extracted`. */
 export function extractDirFor(zipPath: string): string {
   const dir = path.dirname(zipPath);
@@ -72,28 +79,38 @@ export function extractDirFor(zipPath: string): string {
   return path.join(dir, base + EXTRACTED_DIR_SUFFIX);
 }
 
-function requireUnzip(): string {
-  try {
-    return execFileSync("which", ["unzip"], { encoding: "utf8" }).trim();
-  } catch {
-    throw new Error(
-      "local-files mode requires the `unzip` binary on PATH (macOS/Linux). " +
-        "Install unzip or run without --local-files / localFiles.",
-    );
+/** Resolve a fixed-path unzip binary; never consult $PATH. */
+export function resolveUnzipBinary(): string {
+  for (const candidate of UNZIP_CANDIDATES) {
+    try {
+      if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) return candidate;
+    } catch {
+      // try next candidate
+    }
+  }
+  throw new Error(
+    "local-files mode requires unzip at /usr/bin/unzip or /bin/unzip (macOS/Linux). " +
+      "Install unzip or run without --local-files / localFiles.",
+  );
+}
+
+function runUnzip(args: string[]): string {
+  const unzip = resolveUnzipBinary();
+  return execFileSync(unzip, args, { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
+}
+
+function assertSafeZipMember(zipPath: string, name: string): void {
+  const normalized = name.replace(/\\/g, "/");
+  if (normalized.startsWith("/") || normalized.split("/").includes("..")) {
+    throw new Error(`refusing to extract unsafe zip member path from ${zipPath}: ${name}`);
   }
 }
 
 /** List member paths inside a zip; reject Zip-Slip (`..` / absolute) names. */
 export function listZipMembers(zipPath: string): string[] {
-  requireUnzip();
-  const out = execFileSync("unzip", ["-Z1", zipPath], { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
-  const members = out.split(/\r?\n/).map((s: string) => s.trim()).filter(Boolean);
-  for (const name of members) {
-    const normalized = name.replace(/\\/g, "/");
-    if (normalized.startsWith("/") || normalized.split("/").includes("..")) {
-      throw new Error(`refusing to extract unsafe zip member path from ${zipPath}: ${name}`);
-    }
-  }
+  const out = runUnzip(["-Z1", zipPath]);
+  const members = out.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+  for (const name of members) assertSafeZipMember(zipPath, name);
   return members;
 }
 
@@ -107,7 +124,6 @@ export function extractZip(
   extractDir: string,
   allowedMembers?: string[],
 ): number {
-  requireUnzip();
   const members = listZipMembers(zipPath);
   const files = members.filter((m) => !m.endsWith("/"));
   const toExtract = allowedMembers
@@ -120,10 +136,7 @@ export function extractZip(
   if (toExtract.length === 0) return 0;
 
   // Pass member names explicitly so omitted paths (SKILL.md, *.log, …) never land on disk.
-  execFileSync("unzip", ["-q", "-o", "-d", extractDir, zipPath, ...toExtract], {
-    encoding: "utf8",
-    maxBuffer: 32 * 1024 * 1024,
-  });
+  runUnzip(["-q", "-o", "-d", extractDir, zipPath, ...toExtract]);
   return toExtract.length;
 }
 
@@ -140,6 +153,12 @@ function walkFiles(dir: string, out: string[]): void {
   }
 }
 
+function shouldSkipArchiveDir(name: string, omit: OmitMatcher | undefined, rel: string): boolean {
+  if (name.startsWith(".") || name === "node_modules") return true;
+  if (name.endsWith(EXTRACTED_DIR_SUFFIX)) return true;
+  return isOmitted(omit, rel);
+}
+
 /** Discover expandable archives under root (does not enter existing *.l9extracted dirs). */
 export function findArchives(
   root: string,
@@ -148,7 +167,8 @@ export function findArchives(
   const absRoot = path.resolve(root);
   const archives: string[] = [];
   const omitted: string[] = [];
-  function walk(dir: string) {
+
+  function walk(dir: string): void {
     let entries: fs.Dirent[];
     try { entries = fs.readdirSync(dir, { withFileTypes: true }); }
     catch { return; }
@@ -156,20 +176,18 @@ export function findArchives(
       const full = path.join(dir, entry.name);
       const rel = relPosix(absRoot, full);
       if (entry.isDirectory()) {
-        if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
-        if (entry.name.endsWith(EXTRACTED_DIR_SUFFIX)) continue; // don't re-discover from prior extract trees as roots
-        if (isOmitted(omit, rel)) continue;
+        if (shouldSkipArchiveDir(entry.name, omit, rel)) continue;
         walk(full);
-      } else if (entry.isFile() && isExpandableArchive(full)) {
-        if (isOmitted(omit, rel)) omitted.push(rel);
-        else archives.push(full);
+        continue;
       }
+      if (!entry.isFile() || !isExpandableArchive(full)) continue;
+      if (isOmitted(omit, rel)) omitted.push(rel);
+      else archives.push(full);
     }
   }
+
   if (fs.existsSync(absRoot)) walk(absRoot);
-  archives.sort();
-  omitted.sort();
-  return { archives, omitted };
+  return { archives: sortPaths(archives), omitted: sortPaths(omitted) };
 }
 
 function contentHashFile(filePath: string): string {
@@ -207,6 +225,69 @@ export function writeArchiveSidecar(
   return sidecar;
 }
 
+function filterAllowedMembers(
+  absRoot: string,
+  extractDir: string,
+  members: string[],
+  omit: OmitMatcher | undefined,
+): string[] {
+  if (!omit) return members;
+  return members.filter((m) => !isOmitted(omit, relPosix(absRoot, path.join(extractDir, m))));
+}
+
+function enqueueNestedZips(
+  absRoot: string,
+  extractDir: string,
+  depth: number,
+  maxDepth: number,
+  omit: OmitMatcher | undefined,
+  queue: Array<{ zipPath: string; depth: number }>,
+  omittedArchives: string[],
+): void {
+  if (depth >= maxDepth) return;
+  const nested: string[] = [];
+  walkFiles(extractDir, nested);
+  for (const f of nested) {
+    if (!isExpandableArchive(f)) continue;
+    const nestedRel = relPosix(absRoot, f);
+    if (isOmitted(omit, nestedRel)) {
+      omittedArchives.push(nestedRel);
+      continue;
+    }
+    queue.push({ zipPath: f, depth: depth + 1 });
+  }
+}
+
+function expandOneArchive(
+  absRoot: string,
+  zipPath: string,
+  depth: number,
+  opts: ExpandArchivesOptions,
+  omit: OmitMatcher | undefined,
+): ArchiveRecord {
+  const extractDir = extractDirFor(zipPath);
+  const members = listZipMembers(zipPath).filter((m) => !m.endsWith("/"));
+  const allowed = filterAllowedMembers(absRoot, extractDir, members, omit);
+
+  if (opts.verbose) {
+    process.stderr.write(
+      `[l9-meta-injector] local-files: extracting ${zipPath} → ${extractDir} ` +
+        `(depth=${depth}, members=${allowed.length}/${members.length})\n`,
+    );
+  }
+
+  const memberCount = extractZip(zipPath, extractDir, omit ? allowed : undefined);
+  let sidecarPath: string | undefined;
+  if (!opts.dryRun) {
+    sidecarPath = writeArchiveSidecar(zipPath, extractDir, memberCount, {
+      nested_depth: depth,
+      expanded_at: new Date().toISOString(),
+      members_omitted: members.length - allowed.length,
+    });
+  }
+  return { zipPath, extractDir, memberCount, sidecarPath, nestedDepth: depth };
+}
+
 /**
  * Expand all zips under root (and nested zips inside freshly extracted trees)
  * up to maxDepth. Writes archive sidecars unless dryRun. Honors `opts.omit`.
@@ -219,7 +300,6 @@ export function expandArchivesUnderRoot(root: string, opts: ExpandArchivesOption
   const omittedArchives: string[] = [];
   const omit = opts.omit;
 
-  // Queue of { zip, depth }. Start with archives found outside any extract tree.
   const found = findArchives(absRoot, omit);
   omittedArchives.push(...found.omitted);
   const queue: Array<{ zipPath: string; depth: number }> = found.archives.map((zipPath) => ({
@@ -243,50 +323,10 @@ export function expandArchivesUnderRoot(root: string, opts: ExpandArchivesOption
       continue;
     }
 
-    const extractDir = extractDirFor(zipPath);
-    const members = listZipMembers(zipPath).filter((m) => !m.endsWith("/"));
-    const allowed = omit
-      ? members.filter((m) => {
-          const memberAbs = path.join(extractDir, m);
-          const memberRel = relPosix(absRoot, memberAbs);
-          return !isOmitted(omit, memberRel);
-        })
-      : members;
-
-    if (opts.verbose) {
-      process.stderr.write(
-        `[l9-meta-injector] local-files: extracting ${zipPath} → ${extractDir} ` +
-          `(depth=${depth}, members=${allowed.length}/${members.length})\n`,
-      );
-    }
-    const memberCount = extractZip(zipPath, extractDir, omit ? allowed : undefined);
-    extractedRoots.push(extractDir);
-
-    let sidecarPath: string | undefined;
-    if (!opts.dryRun) {
-      sidecarPath = writeArchiveSidecar(zipPath, extractDir, memberCount, {
-        nested_depth: depth,
-        expanded_at: new Date().toISOString(),
-        members_omitted: members.length - allowed.length,
-      });
-    }
-
-    archives.push({ zipPath, extractDir, memberCount, sidecarPath, nestedDepth: depth });
-
-    if (depth >= maxDepth) continue;
-
-    // Nested zips inside this extract tree (omit still applies to their relative paths)
-    const nested: string[] = [];
-    walkFiles(extractDir, nested);
-    for (const f of nested) {
-      if (!isExpandableArchive(f)) continue;
-      const nestedRel = relPosix(absRoot, f);
-      if (isOmitted(omit, nestedRel)) {
-        omittedArchives.push(nestedRel);
-        continue;
-      }
-      queue.push({ zipPath: f, depth: depth + 1 });
-    }
+    const record = expandOneArchive(absRoot, zipPath, depth, opts, omit);
+    extractedRoots.push(record.extractDir);
+    archives.push(record);
+    enqueueNestedZips(absRoot, record.extractDir, depth, maxDepth, omit, queue, omittedArchives);
   }
 
   if (opts.verbose || archives.length > 0 || omittedArchives.length > 0) {

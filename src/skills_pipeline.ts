@@ -6,20 +6,19 @@
 //   - Never invent a Cursor `triggers:` key or stamp L9 identity headers
 // Write only when there is at least one material field diff.
 
-import * as fs from "fs";
-import * as path from "path";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { findFiles } from "./retrieval";
 import { splitContent } from "./extract";
 import { parseCanonicalYaml } from "./meta_schema";
 import { serializeYamlObject } from "./yaml_serialize";
-import { MetaRecord, UNKNOWN } from "./schema";
+import { MetaRecord, UNKNOWN, FieldDiff } from "./schema";
 import { assistField, isGoodValue, hasUseWhenSignal, DEFAULT_ASSIST_CONFIG } from "./assist";
 import type { AssistConfig } from "./assist";
 import { buildMaterialityPrompt, parseMaterialityReply } from "./materiality";
 import { getAdapter, makeOpenAIAdapter, setAdapter, resetAdapter } from "./llm";
 import { isSkillArtifactPath, buildOmitMatcher } from "./omit";
 import { MetricsCollector, MetricsSnapshot } from "./metrics";
-import { FieldDiff } from "./schema";
 
 export interface SkillsPipelineConfig {
   root: string;
@@ -101,6 +100,110 @@ function writeFrontMatter(meta: MetaRecord, body: string): string {
   return `${fm}\n\n${cleanBody}`;
 }
 
+async function improveDescription(
+  existing: MetaRecord,
+  body: string,
+  assistCfg: AssistConfig,
+  metrics: MetricsCollector,
+): Promise<FieldDiff | null> {
+  const seedDesc = typeof existing.description === "string" ? existing.description : "";
+  const proposedDesc = await assistField("description", seedDesc || UNKNOWN, body, assistCfg, metrics);
+  const descStr = typeof proposedDesc === "string" ? proposedDesc : "";
+  if (!isGoodValue(descStr)) return null;
+
+  const missingOrWeak = !("description" in existing)
+    || !isGoodValue(existing.description)
+    || !hasUseWhenSignal(existing.description);
+
+  if (missingOrWeak) {
+    const usable = hasUseWhenSignal(descStr) || !isGoodValue(existing.description);
+    if (!usable) return null;
+    const better = !("description" in existing) || !isGoodValue(existing.description)
+      || await isMateriallyBetter("description", existing.description, descStr);
+    if (!better || descStr === existing.description) return null;
+    return {
+      field: "description",
+      action: ("description" in existing) ? "revise" : "add",
+      oldValue: existing.description,
+      newValue: descStr.slice(0, 1024),
+      reason: "Cursor-native description material improvement",
+    };
+  }
+
+  if (descStr === existing.description) return null;
+  if (!(await isMateriallyBetter("description", existing.description, descStr))) return null;
+  return {
+    field: "description",
+    action: "revise",
+    oldValue: existing.description,
+    newValue: descStr.slice(0, 1024),
+    reason: "Cursor-native description material improvement",
+  };
+}
+
+async function fillActivationSignals(
+  existing: MetaRecord,
+  body: string,
+  assistCfg: AssistConfig,
+  metrics: MetricsCollector,
+): Promise<FieldDiff | null> {
+  if (parseSignalList(existing.activation_signals).length > 0) return null;
+  const proposed = await assistField("activation_signals", UNKNOWN, body, assistCfg, metrics);
+  const list = parseSignalList(proposed);
+  if (list.length === 0) return null;
+  return {
+    field: "activation_signals",
+    action: "add",
+    oldValue: existing.activation_signals,
+    newValue: list,
+    reason: "optional L9 activation_signals filled (missing/empty)",
+  };
+}
+
+async function processSkillFile(
+  abs: string,
+  root: string,
+  config: SkillsPipelineConfig,
+  assistCfg: AssistConfig,
+  metrics: MetricsCollector,
+): Promise<SkillsFileResult> {
+  const rel = path.relative(root, abs).split(path.sep).join("/");
+  const raw = fs.readFileSync(abs, "utf8");
+  const { meta: existing, body, hadFrontMatter } = parseExistingFrontMatter(raw);
+  const next: MetaRecord = { ...existing };
+  const diffs: FieldDiff[] = [];
+
+  const descDiff = await improveDescription(existing, body, assistCfg, metrics);
+  if (descDiff) {
+    next.description = descDiff.newValue;
+    diffs.push(descDiff);
+  }
+
+  const signalDiff = await fillActivationSignals(existing, body, assistCfg, metrics);
+  if (signalDiff) {
+    next.activation_signals = signalDiff.newValue;
+    diffs.push(signalDiff);
+  }
+
+  if (typeof existing.name === "string" && existing.name.trim()) {
+    next.name = existing.name;
+  }
+
+  const didChange = diffs.some((d) => d.action === "add" || d.action === "revise");
+  if (!didChange) return { sourcePath: abs, relativePath: rel, changed: false, diffs };
+
+  if (!config.dryRun) {
+    if (!hadFrontMatter && !next.description) {
+      return { sourcePath: abs, relativePath: rel, changed: false, diffs: [] };
+    }
+    fs.writeFileSync(abs, writeFrontMatter(next, body), "utf8");
+  }
+  if (config.verbose) {
+    process.stderr.write(`[l9-meta-injector] skills: ${rel} → ${diffs.map((d) => d.field).join(",")}\n`);
+  }
+  return { sourcePath: abs, relativePath: rel, changed: true, diffs };
+}
+
 export async function runSkillsPipelineAsync(config: SkillsPipelineConfig): Promise<SkillsPipelineResult> {
   const metrics = new MetricsCollector();
   if (config.llmEnabled && config.llmBaseUrl && config.llmApiKey && config.llmModel) {
@@ -112,12 +215,10 @@ export async function runSkillsPipelineAsync(config: SkillsPipelineConfig): Prom
   } else if (!config.llmEnabled) {
     resetAdapter();
   }
-  // llmEnabled with incomplete credentials: keep any pre-set adapter (tests / local wiring).
 
   const root = path.resolve(config.root);
   fs.mkdirSync(config.outDir, { recursive: true });
 
-  // Discover text files without SKILL.md protect; noise omit still applies.
   const omit = buildOmitMatcher({
     root,
     patterns: config.omitPatterns,
@@ -125,8 +226,8 @@ export async function runSkillsPipelineAsync(config: SkillsPipelineConfig): Prom
     protectSkillMd: false,
     ignoreDirNames: ["node_modules"],
   });
-  const all = findFiles(root, "**/*", { omit, protectSkillMd: false });
-  const skillPaths = all.filter((p) => isSkillArtifactPath(p));
+  const skillPaths = findFiles(root, "**/*", { omit, protectSkillMd: false })
+    .filter((p) => isSkillArtifactPath(p));
 
   const assistCfg = {
     ...DEFAULT_ASSIST_CONFIG,
@@ -136,93 +237,10 @@ export async function runSkillsPipelineAsync(config: SkillsPipelineConfig): Prom
   };
 
   const files: SkillsFileResult[] = [];
-  let changed = 0;
-
   for (const abs of skillPaths) {
-    const rel = path.relative(root, abs).split(path.sep).join("/");
-    const raw = fs.readFileSync(abs, "utf8");
-    const { meta: existing, body, hadFrontMatter } = parseExistingFrontMatter(raw);
-
-    // Never invent L9 identity stamps. Start from existing Cursor keys only.
-    const next: MetaRecord = { ...existing };
-    const diffs: FieldDiff[] = [];
-
-    const seedDesc = typeof existing.description === "string" ? existing.description : "";
-    const proposedDesc = await assistField("description", seedDesc || UNKNOWN, body, assistCfg, metrics);
-    const descStr = typeof proposedDesc === "string" ? proposedDesc : "";
-
-    if (!("description" in existing) || !isGoodValue(existing.description) || !hasUseWhenSignal(existing.description)) {
-      if (isGoodValue(descStr) && (hasUseWhenSignal(descStr) || !isGoodValue(existing.description))) {
-        const better = !("description" in existing) || !isGoodValue(existing.description)
-          || await isMateriallyBetter("description", existing.description, descStr);
-        if (better && descStr !== existing.description) {
-          next.description = descStr.slice(0, 1024);
-          diffs.push({
-            field: "description",
-            action: ("description" in existing) ? "revise" : "add",
-            oldValue: existing.description,
-            newValue: next.description,
-            reason: "Cursor-native description material improvement",
-          });
-        }
-      }
-    } else if (isGoodValue(descStr) && descStr !== existing.description) {
-      if (await isMateriallyBetter("description", existing.description, descStr)) {
-        next.description = descStr.slice(0, 1024);
-        diffs.push({
-          field: "description",
-          action: "revise",
-          oldValue: existing.description,
-          newValue: next.description,
-          reason: "Cursor-native description material improvement",
-        });
-      }
-    }
-
-    // Optional L9 activation_signals — only when missing/empty.
-    const existingSignals = parseSignalList(existing.activation_signals);
-    if (existingSignals.length === 0) {
-      const proposed = await assistField("activation_signals", UNKNOWN, body, assistCfg, metrics);
-      const list = parseSignalList(proposed);
-      if (list.length > 0) {
-        next.activation_signals = list;
-        diffs.push({
-          field: "activation_signals",
-          action: "add",
-          oldValue: existing.activation_signals,
-          newValue: list,
-          reason: "optional L9 activation_signals filled (missing/empty)",
-        });
-      }
-    }
-
-    // Preserve name; never invent a conflicting rename.
-    if (typeof existing.name === "string" && existing.name.trim()) {
-      next.name = existing.name;
-    }
-
-    const didChange = diffs.some((d) => d.action === "add" || d.action === "revise");
-    if (didChange && !config.dryRun) {
-      // If the file had no frontmatter and we only add optional signals without a
-      // description, still require a description before writing Cursor frontmatter.
-      if (!hadFrontMatter && !next.description) {
-        files.push({ sourcePath: abs, relativePath: rel, changed: false, diffs: [] });
-        continue;
-      }
-      fs.writeFileSync(abs, writeFrontMatter(next, body), "utf8");
-      changed++;
-      files.push({ sourcePath: abs, relativePath: rel, changed: true, diffs });
-    } else if (didChange && config.dryRun) {
-      changed++;
-      files.push({ sourcePath: abs, relativePath: rel, changed: true, diffs });
-    } else {
-      files.push({ sourcePath: abs, relativePath: rel, changed: false, diffs });
-    }
-
-    if (config.verbose && didChange) {
-      process.stderr.write(`[l9-meta-injector] skills: ${rel} → ${diffs.map((d) => d.field).join(",")}\n`);
-    }
+    files.push(await processSkillFile(abs, root, config, assistCfg, metrics));
   }
+  const changed = files.filter((f) => f.changed).length;
 
   const report = {
     generatedAt: new Date().toISOString(),

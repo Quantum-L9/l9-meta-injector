@@ -166,7 +166,7 @@
     },
     {
       "path": "fixtures/package-consumer/types.ts",
-      "git_blob_sha1": "987e93605adea496b68c3e7aa0efdd2dd0692fff"
+      "git_blob_sha1": "b3e438eb1c284abaf6a8b154dd06cbf5c6715005"
     },
     {
       "path": "package-lock.json",

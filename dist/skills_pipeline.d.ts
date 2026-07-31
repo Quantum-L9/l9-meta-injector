@@ -1,5 +1,5 @@
-import { MetricsSnapshot } from "./metrics";
 import { FieldDiff } from "./schema";
+import { MetricsSnapshot } from "./metrics";
 export interface SkillsPipelineConfig {
     root: string;
     dryRun: boolean;

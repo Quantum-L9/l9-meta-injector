@@ -15,5 +15,6 @@ const parsed: Record<string,unknown> = parseCanonicalYaml("id: example\n");
 const adapter: LlmAdapter = makeOpenAIAdapter({baseUrl:"https://example.invalid",apiKey:"test-only",model:"test"});
 const diagnostic: LlmDiagnostic = {outcome:"ok",durationMs:0};
 let normalized!: NormalizedMeta; const meta: MetaV3 = buildMetaV3({meta:normalized,semantic:{artifactClass:"unknown",confidence:"low",signals:[]}}); let record!: MetaV3Record;
-void [pipelinePromise,skillsPromise,inventoryResult,typeName,plans,parsed,adapter,diagnostic,meta,record,UNKNOWN];
-let schema!: MetaSchema; void schema;
+const _keepAlive: unknown[] = [pipelinePromise,skillsPromise,inventoryResult,typeName,plans,parsed,adapter,diagnostic,meta,record,UNKNOWN];
+let schema!: MetaSchema; const _schemaKeep: unknown = schema;
+export type _ConsumerFixtureKeepAlive = typeof _keepAlive | typeof _schemaKeep;

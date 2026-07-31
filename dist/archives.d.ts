@@ -31,6 +31,8 @@ export interface ExpandArchivesResult {
 }
 /** Sibling extract directory for a zip: `Archive.zip` → `Archive.l9extracted`. */
 export declare function extractDirFor(zipPath: string): string;
+/** Resolve a fixed-path unzip binary; never consult $PATH. */
+export declare function resolveUnzipBinary(): string;
 /** List member paths inside a zip; reject Zip-Slip (`..` / absolute) names. */
 export declare function listZipMembers(zipPath: string): string[];
 /**

@@ -46,7 +46,7 @@ const STRONG_NON_INJECTABLE_KEYWORDS: Record<"test" | "script", ReadonlySet<stri
 
 /** Word-boundary match for ASCII taxonomy tokens on already-lowercased text. */
 export function keywordHit(text: string, keyword: string): boolean {
-  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
   return new RegExp(`(?:^|[^a-z0-9_])${escaped}(?:[^a-z0-9_]|$)`).test(text);
 }
 
@@ -120,23 +120,16 @@ export function classify(filePath: string, body: string, _hc: HeaderConvention):
 
   // Keyword scoring (prose taxonomy). Scanned markdown with no strong type signal
   // defaults to injectable "context" (ADR-018) — not "unknown".
-  const { best: rawBest, bestScore, hits } = scoreBest(text, TYPE_SIGNALS);
-  let best = rawBest;
-  let score = bestScore;
+  let { best, bestScore: score, hits } = scoreBest(text, TYPE_SIGNALS);
 
-  if (NON_INJECTABLE_TYPES.has(best) && (best === "test" || best === "script")) {
-    if (!acceptKeywordNonInjectable(best, score, hits)) {
-      // Demote weak/ambiguous non-injectable wins to the best injectable type, or context.
-      const injectableTypes = TYPE_SIGNALS.filter((ts) => !NON_INJECTABLE_TYPES.has(ts.type));
-      const next = scoreBest(text, injectableTypes);
-      best = next.bestScore > 0 ? next.best : "context";
-      score = next.bestScore > 0 ? next.bestScore : 0;
-    }
+  if ((best === "test" || best === "script") && !acceptKeywordNonInjectable(best, score, hits)) {
+    // Demote weak/ambiguous non-injectable wins to the best injectable type, or context.
+    const next = scoreBest(text, TYPE_SIGNALS.filter((ts) => !NON_INJECTABLE_TYPES.has(ts.type)));
+    best = next.bestScore > 0 ? next.best : "context";
+    score = Math.max(next.bestScore, 0);
   }
 
-  if (score === 0) {
-    best = "context";
-  }
+  if (score === 0) best = "context";
 
   const conf = score >= 2 ? "medium" : "low";
   return { artifactType: best, family: detectFamily(text), signals: extractSignals(text), confidence: conf };

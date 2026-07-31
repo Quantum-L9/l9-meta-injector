@@ -4,8 +4,8 @@
 // `--omit-file`. Skills mode deliberately does NOT apply the SKILL.md protect so
 // it can material-improve Cursor descriptions (see skills_pipeline.ts / ADR-017).
 
-import * as fs from "fs";
-import * as path from "path";
+import * as fs from "node:fs";
+import * as path from "node:path";
 
 export const L9_METAIGNORE_FILENAME = ".l9metaignore";
 
@@ -75,6 +75,18 @@ function parseOmitFile(contents: string): string[] {
   return out;
 }
 
+function appendGlobToken(re: string, pattern: string, i: number): { re: string; next: number } {
+  const c = pattern[i];
+  if (c === "*" && pattern[i + 1] === "*") {
+    if (pattern[i + 2] === "/") return { re: re + "(?:.*/)?", next: i + 2 };
+    return { re: re + ".*", next: i + 1 };
+  }
+  if (c === "*") return { re: re + "[^/]*", next: i };
+  if (c === "?") return { re: re + "[^/]", next: i };
+  if ("+|(){}^$.".includes(c)) return { re: re + "\\" + c, next: i };
+  return { re: re + c, next: i };
+}
+
 /**
  * Convert a single gitignore-style pattern into a RegExp that matches a
  * posix relative path. Supports `**`, `*`, trailing `/` (directory), and
@@ -89,33 +101,13 @@ function patternToRegExp(pattern: string): RegExp {
 
   let re = "";
   for (let i = 0; i < p.length; i++) {
-    const c = p[i];
-    if (c === "*" && p[i + 1] === "*") {
-      // `/**/` or leading/trailing `**`
-      if (p[i + 2] === "/") {
-        re += "(?:.*/)?";
-        i += 2;
-      } else {
-        re += ".*";
-        i += 1;
-      }
-    } else if (c === "*") {
-      re += "[^/]*";
-    } else if (c === "?") {
-      re += "[^/]";
-    } else if ("+|(){}^$.".includes(c)) {
-      re += "\\" + c;
-    } else {
-      re += c;
-    }
+    const step = appendGlobToken(re, p, i);
+    re = step.re;
+    i = step.next;
   }
 
-  if (dirOnly) {
-    // Match the directory itself or anything under it.
-    re = `(?:${re}|${re}/.*)`;
-  }
+  if (dirOnly) re = `(?:${re}|${re}/.*)`;
   if (anchored) return new RegExp(`^${re}$`, "i");
-  // Unanchored: match at any path segment boundary.
   return new RegExp(`(?:^|/)${re}$`, "i");
 }
 
