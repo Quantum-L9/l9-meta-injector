@@ -2,9 +2,33 @@
 
 ## Unreleased
 
-### Added
+## 4.0.0 - 2026-08-01
 
-- `--local-files` / `PipelineConfig.localFiles` expands `.zip` archives into sibling `*.l9extracted/` dirs, writes `<zip>.l9meta.yaml` sidecars, and injects extracted members (ADR-016). Default repo mode still skips archives. Archive expansion honors the shared omit layer (ADR-017): protected `SKILL.md`, noise patterns, `.l9metaignore`, and `--omit` skip archives and members.
+### Breaking
+
+- Replaced syntax-selected metadata writes with explicit `hard_skip`, `inventory_only`, `central_manifest`, and `inline_managed` carrier authority.
+- Made `.l9/metadata-index.jsonl` the canonical deterministic metadata store for non-inline subjects.
+- Unified check and apply through one carrier plan and removed legacy adjacent-sidecar dispatch.
+- Made apply a journaled whole-run transaction with compare-and-swap, rollback, and interrupted-run recovery.
+- Replaced whole-header YAML serialization with byte-preserving managed-field frontmatter patching.
+
+### Security and assurance
+
+- Added fail-closed hidden control-surface authority scanning, strict operation modes, immutable Action pins, path containment, deterministic discovery, and exact repository-relative identity.
+- Restricted ordinary inline YAML to plain Markdown and made ambiguous or complex frontmatter non-mutating.
+
+### Distribution
+
+- Added the `l9-meta-injector` executable to the packed artifact and included the runtime scripts needed for immutable Git-SHA consumption.
+- Corrected the stale package-lock identity and added a release-candidate gate.
+
+### Migration
+
+- Added `docs/migrations/v3-to-v4.md`. Consumers must declare `.l9/meta-authority.yaml`, pin a 40-character release commit, and remove competing metadata writers.
+
+### Carried forward
+
+- `--local-files` archive expansion and the ADR-016 through ADR-018 omit/skills behavior introduced after 3.0.0 are included in this release.
 
 ## 3.0.0 - 2026-07-22
 

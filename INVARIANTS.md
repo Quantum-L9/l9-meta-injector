@@ -220,3 +220,10 @@ Accepted ADRs remain in the repository. A changed decision receives a new sequen
 | INV-020 | Shared carrier-plan, no-sidecar dispatch, authorized-inline, and exact SKILL.md tests |
 | INV-021 | Multi-file transaction, rollback, concurrent-drift, validation-failure, and recovery tests |
 | INV-022 | Frontmatter byte-preservation, idempotency, unsafe-YAML refusal, and carrier-extension tests |
+| INV-023 | Release identity, immutable-ref, packed-CLI, and consumer single-writer migration tests |
+
+### INV-023: Releases and consumer migrations use immutable identity
+
+Package, lockfile, changelog, release plan, and packed executable must agree on one semantic version. Consumer automation pins the final 40-character release commit and removes every competing writer before canonical apply. npm publication is a separate authorization and may remain blocked without blocking GitHub commit consumption.
+
+**Enforced by:** `scripts/check-release-candidate.js`, release contract tests, the PR-5 exact-checkout runner, and the l9-deploy migration installer.
