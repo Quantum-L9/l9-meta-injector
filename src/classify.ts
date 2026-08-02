@@ -1,6 +1,6 @@
 import * as path from "path";
 import { ClassifyResult, ArtifactType, ArtifactFamily, HeaderConvention, ArtifactClassification } from "./schema";
-import { FRONTMATTER_EXTS } from "./comment";
+import { PROSE_EXTS } from "./comment";
 import { classifyArtifact } from "./artifact_class";
 
 const FAMILY_SIGNALS: Array<{ family: ArtifactFamily; keywords: string[] }> = [
@@ -105,7 +105,7 @@ export function classify(filePath: string, body: string, _hc: HeaderConvention):
   // make sense for markdown/txt artifacts and must not be applied to code. (An explicit
   // dot-convention name like `foo.skill.ts` still wins above.)
   const ext = path.extname(filePath).toLowerCase();
-  if (!FRONTMATTER_EXTS.has(ext)) {
+  if (!PROSE_EXTS.has(ext)) {
     return { artifactType: "source", family: detectFamily(text), signals: extractSignals(text), confidence: "low" };
   }
 

@@ -48,7 +48,8 @@ export interface InventoryConfig {
   sourceSystem?: SourceSystem;
   dryRun?: boolean;         // classify + manifest only; no header/sidecar writes
   injectHeaders?: boolean;  // append headers to text files (default true)
-  folderSidecars?: boolean; // write <folder>/.l9meta.yaml (default true)
+  folderSidecars?: boolean; // write <folder>/.l9meta.yaml when sidecars are enabled (default true)
+  writeSidecars?: boolean;  // permit any adjacent .l9meta.yaml writes (default true)
   hashMaxBytes?: number;    // skip content_hash above this size (default 50 MiB)
   ignore?: string[];        // directory names to skip (default node_modules, .git)
   /** Extra gitignore-style omit patterns (in addition to built-ins + `.l9metaignore`). */
@@ -273,6 +274,7 @@ export function inventoryTree(config: InventoryConfig): InventoryResult {
     dryRun: config.dryRun ?? false,
     injectHeaders: config.injectHeaders ?? true,
     folderSidecars: config.folderSidecars ?? true,
+    writeSidecars: config.writeSidecars ?? true,
     hashMaxBytes: config.hashMaxBytes ?? 50 * 1024 * 1024,
     now: config.now ?? "1970-01-01T00:00:00.000Z",
   };
@@ -331,7 +333,7 @@ export function inventoryTree(config: InventoryConfig): InventoryResult {
     if (cfg.dryRun) continue;
 
     if (isDir) {
-      if (cfg.folderSidecars && targetIncludes(schema, "sidecar")) {
+      if (cfg.writeSidecars && cfg.folderSidecars && targetIncludes(schema, "sidecar")) {
         writeFolderSidecar(abs, metaObj, rec.unknowns);
       }
       continue;
@@ -357,9 +359,9 @@ export function inventoryTree(config: InventoryConfig): InventoryResult {
         // Don't discard the injection error (finding OBS-004): record it, then fall
         // back to a sidecar if the schema allows one.
         rec.unknowns.push(`header_injection_failed:${(err as Error).message}`);
-        if (targetIncludes(schema, "sidecar")) writeSidecar(abs, metaObj, rec.unknowns);
+        if (cfg.writeSidecars && targetIncludes(schema, "sidecar")) writeSidecar(abs, metaObj, rec.unknowns);
       }
-    } else if (strategy !== "skip-binary" && targetIncludes(schema, "sidecar")) {
+    } else if (cfg.writeSidecars && strategy !== "skip-binary" && targetIncludes(schema, "sidecar")) {
       // Sidecar when the strategy is sidecar, OR when headers were skipped (e.g. schema
       // targets sidecar only). Never for skip-binary / unreadable binaries (ADR-017).
       writeSidecar(abs, metaObj, rec.unknowns);

@@ -28,6 +28,7 @@ export interface InventoryConfig {
     dryRun?: boolean;
     injectHeaders?: boolean;
     folderSidecars?: boolean;
+    writeSidecars?: boolean;
     hashMaxBytes?: number;
     ignore?: string[];
     /** Extra gitignore-style omit patterns (in addition to built-ins + `.l9metaignore`). */

@@ -44,9 +44,7 @@ exports.runSkillsPipelineAsync = runSkillsPipelineAsync;
 const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
 const retrieval_1 = require("./retrieval");
-const extract_1 = require("./extract");
-const meta_schema_1 = require("./meta_schema");
-const yaml_serialize_1 = require("./yaml_serialize");
+const frontmatter_patch_1 = require("./frontmatter_patch");
 const schema_1 = require("./schema");
 const assist_1 = require("./assist");
 const materiality_1 = require("./materiality");
@@ -81,20 +79,16 @@ async function isMateriallyBetter(field, old, next) {
     return (0, materiality_1.parseMaterialityReply)(reply);
 }
 function parseExistingFrontMatter(raw) {
-    const { frontMatter, body } = (0, extract_1.splitContent)(raw);
-    if (!frontMatter)
-        return { meta: {}, body: raw, hadFrontMatter: false };
-    const inner = frontMatter.replace(/^---\r?\n/, "").replace(/\r?\n---\s*$/, "");
-    try {
-        const obj = (0, meta_schema_1.parseCanonicalYaml)(inner);
-        if (typeof obj === "object" && obj !== null && !Array.isArray(obj)) {
-            return { meta: obj, body, hadFrontMatter: true };
-        }
+    const inspected = (0, frontmatter_patch_1.inspectFrontMatterDocument)(raw);
+    if (!inspected.safe) {
+        return {
+            meta: {},
+            body: raw,
+            hadFrontMatter: false,
+            issue: `${inspected.issue?.code ?? "FRONTMATTER_UNSAFE"}: ${inspected.issue?.message ?? "unsafe header"}`,
+        };
     }
-    catch {
-        // Malformed frontmatter: treat as no meta so we do not clobber the file.
-    }
-    return { meta: {}, body: raw, hadFrontMatter: false };
+    return { meta: inspected.meta, body: inspected.body, hadFrontMatter: inspected.hadFrontMatter };
 }
 function parseSignalList(v) {
     if (v === schema_1.UNKNOWN || v === null || v === undefined)
@@ -105,11 +99,6 @@ function parseSignalList(v) {
         return v.split(/[,;\n]/).map((s) => s.trim()).filter(Boolean);
     }
     return [];
-}
-function writeFrontMatter(meta, body) {
-    const fm = (0, yaml_serialize_1.serializeYamlObject)(meta, { fences: true, trailingNewline: false });
-    const cleanBody = body.replace(/^\n+/, "");
-    return `${fm}\n\n${cleanBody}`;
 }
 async function improveDescription(existing, body, assistCfg, metrics) {
     const seedDesc = typeof existing.description === "string" ? existing.description : "";
@@ -166,7 +155,13 @@ async function fillActivationSignals(existing, body, assistCfg, metrics) {
 async function processSkillFile(abs, root, config, assistCfg, metrics) {
     const rel = path.relative(root, abs).split(path.sep).join("/");
     const raw = fs.readFileSync(abs, "utf8");
-    const { meta: existing, body, hadFrontMatter } = parseExistingFrontMatter(raw);
+    const parsed = parseExistingFrontMatter(raw);
+    if (parsed.issue) {
+        if (config.verbose)
+            process.stderr.write(`[l9-meta-injector] skills: ${rel} skipped: ${parsed.issue}\n`);
+        return { sourcePath: abs, relativePath: rel, changed: false, diffs: [], skippedReason: parsed.issue };
+    }
+    const { meta: existing, body, hadFrontMatter } = parsed;
     const next = { ...existing };
     const diffs = [];
     const descDiff = await improveDescription(existing, body, assistCfg, metrics);
@@ -189,7 +184,17 @@ async function processSkillFile(abs, root, config, assistCfg, metrics) {
         if (!hadFrontMatter && !next.description) {
             return { sourcePath: abs, relativePath: rel, changed: false, diffs: [] };
         }
-        fs.writeFileSync(abs, writeFrontMatter(next, body), "utf8");
+        const managed = {};
+        for (const diff of diffs)
+            managed[diff.field] = diff.newValue;
+        const patched = (0, frontmatter_patch_1.patchManagedFrontMatter)(raw, managed);
+        if (!patched.safe) {
+            const skippedReason = `${patched.issue?.code ?? "FRONTMATTER_UNSAFE"}: ${patched.issue?.message ?? "unsafe header"}`;
+            if (config.verbose)
+                process.stderr.write(`[l9-meta-injector] skills: ${rel} skipped: ${skippedReason}\n`);
+            return { sourcePath: abs, relativePath: rel, changed: false, diffs: [], skippedReason };
+        }
+        fs.writeFileSync(abs, patched.content, "utf8");
     }
     if (config.verbose) {
         process.stderr.write(`[l9-meta-injector] skills: ${rel} → ${diffs.map((d) => d.field).join(",")}\n`);
@@ -240,6 +245,7 @@ async function runSkillsPipelineAsync(config) {
             relativePath: f.relativePath,
             changed: f.changed,
             diffs: f.diffs,
+            skippedReason: f.skippedReason,
         })),
     };
     fs.writeFileSync(path.join(config.outDir, "skills-report.json"), JSON.stringify(report, null, 2), "utf8");

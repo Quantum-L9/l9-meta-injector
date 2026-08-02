@@ -35,6 +35,25 @@ export {
 } from "../omit";
 export type { OmitOptions, OmitMatcher } from "../omit";
 export {
+  CARRIER_PRECEDENCE, INLINE_MANAGED_ARTIFACT_TYPES,
+  resolveCarrierDecision, resolveCarrierDecisions, assertCarrierDecisionCoverage,
+} from "../mutation_policy";
+export type { CarrierSubject, CarrierPolicyInput, CarrierInjectionStrategy } from "../mutation_policy";
+export {
+  METADATA_INDEX_SCHEMA, METADATA_INDEX_RELATIVE_PATH,
+  compileMetadataIndex, serializeMetadataIndex, parseMetadataIndex, writeMetadataIndex,
+} from "../metadata_index";
+export type {
+  ManagedMetadataSubject, MetadataIndexRecord, MetadataIndexCompilation,
+  CompileMetadataIndexInput, WriteMetadataIndexOptions, WriteMetadataIndexResult,
+} from "../metadata_index";
+export { buildCarrierOperationPlan, planCarrierOperationAsync, metadataIndexDrift, inlinePlanDrift } from "../carrier_operation";
+export type { CarrierOperationPlan, PlanCarrierOperationInput, GovernedCarrierMode } from "../carrier_operation";
+export { executeFileTransaction, recoverPendingTransactions, FILE_TRANSACTION_SCHEMA, TRANSACTION_DIRECTORY } from "../file_transaction";
+export type { FileMutationIntent, ExecuteFileTransactionOptions, FileTransactionResult, RecoveryResult, TransactionFaultContext, TransactionFaultStage } from "../file_transaction";
+export { inspectFrontMatterDocument, patchManagedFrontMatter, FRONTMATTER_PATCH_SCHEMA } from "../frontmatter_patch";
+export type { FrontMatterIssueCode, FrontMatterIssue, FrontMatterField, FrontMatterInspection, FrontMatterPatchResult } from "../frontmatter_patch";
+export {
   buildDedupEntries, buildDedupReport, buildPromptLibraryIndex, buildPrimitiveLibraryIndex,
   dedupReportToMarkdown,
 } from "../compiler";

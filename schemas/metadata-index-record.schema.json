@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quantum-l9.github.io/l9-meta-injector/schemas/metadata-index-record.schema.json",
+  "title": "L9 Metadata Index Record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "path", "carrier", "artifact_type", "content_hash", "metadata"],
+  "properties": {
+    "schema": { "const": "l9.metadata-index/v1" },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^(?![/.])(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)(?!.*//)[^\\u0000-\\u001F\\u007F]+$"
+    },
+    "carrier": {
+      "enum": ["inventory_only", "central_manifest", "inline_managed"]
+    },
+    "artifact_type": {
+      "enum": ["skill", "playbook", "kernel", "context", "prompt", "doctrine", "test", "script", "source", "unknown"]
+    },
+    "content_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "metadata": {
+      "type": "object"
+    }
+  }
+}

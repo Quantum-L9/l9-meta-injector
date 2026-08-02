@@ -130,7 +130,7 @@ function classify(filePath, body, _hc) {
     // make sense for markdown/txt artifacts and must not be applied to code. (An explicit
     // dot-convention name like `foo.skill.ts` still wins above.)
     const ext = path.extname(filePath).toLowerCase();
-    if (!comment_1.FRONTMATTER_EXTS.has(ext)) {
+    if (!comment_1.PROSE_EXTS.has(ext)) {
         return { artifactType: "source", family: detectFamily(text), signals: extractSignals(text), confidence: "low" };
     }
     // --- markdown/txt only, below ---

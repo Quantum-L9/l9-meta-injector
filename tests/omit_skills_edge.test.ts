@@ -134,8 +134,10 @@ describe("skills mode — Cursor-native description", () => {
   afterEach(() => resetAdapter());
 
   it("isSkillArtifactPath detects skill entrypoints", () => {
+    // Canonical skill entrypoint detection is the SKILL.md basename only
+    // (see skills_exact_entrypoint.test.ts); a `.skill.md` suffix is not one.
     expect(isSkillArtifactPath("skills/x/SKILL.md")).toBe(true);
-    expect(isSkillArtifactPath("foo.skill.md")).toBe(true);
+    expect(isSkillArtifactPath("foo.skill.md")).toBe(false);
     expect(isSkillArtifactPath("README.md")).toBe(false);
   });
 

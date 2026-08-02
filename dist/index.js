@@ -1,8 +1,18 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.isPromptMeta = exports.META_V3_PLANES = exports.META_V3_SCHEMA_VERSION = exports.PRIMITIVE_TAXONOMY = exports.UNKNOWN = exports.runSkillsPipelineAsync = exports.runPipelineAsync = void 0;
+exports.resolveOperationMode = exports.operationRequiresAuthority = exports.isSupportedAuthoritySchema = exports.isAuthorityConfig = exports.assertAuthorityForOperation = exports.OPERATION_MODES = exports.META_AUTHORITY_SCHEMA = exports.LEGACY_OPERATION_ALIASES = exports.isPromptMeta = exports.META_V3_PLANES = exports.META_V3_SCHEMA_VERSION = exports.PRIMITIVE_TAXONOMY = exports.UNKNOWN = exports.runSkillsPipelineAsync = exports.inlinePlanDrift = exports.metadataIndexDrift = exports.planCarrierOperationAsync = exports.buildCarrierOperationPlan = exports.runApplyAsync = exports.CANONICAL_METADATA_WRITER = exports.runCheckAsync = exports.runPipelineAsync = void 0;
 var pipeline_1 = require("./pipeline");
 Object.defineProperty(exports, "runPipelineAsync", { enumerable: true, get: function () { return pipeline_1.runPipelineAsync; } });
+var check_1 = require("./check");
+Object.defineProperty(exports, "runCheckAsync", { enumerable: true, get: function () { return check_1.runCheckAsync; } });
+Object.defineProperty(exports, "CANONICAL_METADATA_WRITER", { enumerable: true, get: function () { return check_1.CANONICAL_METADATA_WRITER; } });
+var apply_1 = require("./apply");
+Object.defineProperty(exports, "runApplyAsync", { enumerable: true, get: function () { return apply_1.runApplyAsync; } });
+var carrier_operation_1 = require("./carrier_operation");
+Object.defineProperty(exports, "buildCarrierOperationPlan", { enumerable: true, get: function () { return carrier_operation_1.buildCarrierOperationPlan; } });
+Object.defineProperty(exports, "planCarrierOperationAsync", { enumerable: true, get: function () { return carrier_operation_1.planCarrierOperationAsync; } });
+Object.defineProperty(exports, "metadataIndexDrift", { enumerable: true, get: function () { return carrier_operation_1.metadataIndexDrift; } });
+Object.defineProperty(exports, "inlinePlanDrift", { enumerable: true, get: function () { return carrier_operation_1.inlinePlanDrift; } });
 var skills_pipeline_1 = require("./skills_pipeline");
 Object.defineProperty(exports, "runSkillsPipelineAsync", { enumerable: true, get: function () { return skills_pipeline_1.runSkillsPipelineAsync; } });
 var schema_1 = require("./schema");
@@ -11,4 +21,12 @@ Object.defineProperty(exports, "PRIMITIVE_TAXONOMY", { enumerable: true, get: fu
 Object.defineProperty(exports, "META_V3_SCHEMA_VERSION", { enumerable: true, get: function () { return schema_1.META_V3_SCHEMA_VERSION; } });
 Object.defineProperty(exports, "META_V3_PLANES", { enumerable: true, get: function () { return schema_1.META_V3_PLANES; } });
 Object.defineProperty(exports, "isPromptMeta", { enumerable: true, get: function () { return schema_1.isPromptMeta; } });
+Object.defineProperty(exports, "LEGACY_OPERATION_ALIASES", { enumerable: true, get: function () { return schema_1.LEGACY_OPERATION_ALIASES; } });
+Object.defineProperty(exports, "META_AUTHORITY_SCHEMA", { enumerable: true, get: function () { return schema_1.META_AUTHORITY_SCHEMA; } });
+Object.defineProperty(exports, "OPERATION_MODES", { enumerable: true, get: function () { return schema_1.OPERATION_MODES; } });
+Object.defineProperty(exports, "assertAuthorityForOperation", { enumerable: true, get: function () { return schema_1.assertAuthorityForOperation; } });
+Object.defineProperty(exports, "isAuthorityConfig", { enumerable: true, get: function () { return schema_1.isAuthorityConfig; } });
+Object.defineProperty(exports, "isSupportedAuthoritySchema", { enumerable: true, get: function () { return schema_1.isSupportedAuthoritySchema; } });
+Object.defineProperty(exports, "operationRequiresAuthority", { enumerable: true, get: function () { return schema_1.operationRequiresAuthority; } });
+Object.defineProperty(exports, "resolveOperationMode", { enumerable: true, get: function () { return schema_1.resolveOperationMode; } });
 //# sourceMappingURL=index.js.map

@@ -153,7 +153,7 @@
     },
     {
       "path": "scripts/run.sh",
-      "id": "l9.script.run",
+      "id": "l9.source.run",
       "artifact_type": "source",
       "mcp_primitive": "resource",
       "injectable": true,

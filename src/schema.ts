@@ -211,6 +211,16 @@ export interface FieldDiff {
 
 export interface InjectionRecord {
   sourcePath: string;
+  /** Planned write target (the source file or its metadata sidecar). */
+  targetPath?: string;
+  /** Whether the planned target existed when the operation was evaluated. */
+  targetExists?: boolean;
+  /** True when the canonical expected bytes differ from the current target bytes. */
+  wouldChange?: boolean;
+  /** Hash of the canonical expected target bytes. */
+  expectedContentHash?: string;
+  /** Hash of the current target bytes when the target exists. */
+  actualContentHash?: string;
   originalBodyHash: string;
   postInjectionBodyHash: string;
   bodyPreserved: boolean;
@@ -251,8 +261,7 @@ export interface PipelineConfig {
   llmModel?: string;
   normalizeFilenames: boolean;
   /** Write a `<file>.inject.log` next to each mutated source file on real (non-dry-run) injection
-   *  with field-level changes. Defaults to `true` for backward compatibility with existing callers;
-   *  CLI wrappers default this to `false` to avoid littering scanned trees with per-file logs. */
+   *  with field-level changes. Defaults to `false`; callers must explicitly opt in. */
   writeInjectLog?: boolean;
   /** Opt-in to send the LLM bearer token over a non-https `llmBaseUrl` (e.g. a local
    *  Ollama/LM Studio OpenAI-compatible server on `http://localhost:...`). Default: refuse
@@ -278,6 +287,10 @@ export interface PipelineConfig {
   omitPatterns?: string[];
   /** Optional path to an omit-file (gitignore syntax). */
   omitFile?: string;
+  /** Stable timestamp for persisted per-file metadata. Defaults to Unknown. */
+  metadataTimestamp?: string;
+  /** Disable all pipeline diff/report/index persistence. Used by read-only check. */
+  persistOutputs?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -416,3 +429,15 @@ export function isPromptMeta(m: NormalizedMeta | unknown): m is PromptMeta {
   return typeof m === "object" && m !== null &&
     (m as { artifact_type?: string }).artifact_type === "prompt";
 }
+
+export {
+  LEGACY_OPERATION_ALIASES, META_AUTHORITY_SCHEMA, OPERATION_MODES,
+  assertAuthorityForOperation, isAuthorityConfig, isSupportedAuthoritySchema,
+  operationRequiresAuthority, resolveOperationMode,
+} from "./operation_contracts";
+export type {
+  AuthorityConfig, AuthorityConflict, AuthorityConflictCode, AuthorityLegacyPolicy,
+  AuthorityWriter, CarrierDecision, CheckDrift, CheckDriftKind, CheckResult,
+  LegacyOperationMode, MetaAuthoritySchema, MetadataCarrier, OperationMode,
+  OperationModeResolution, OperationResult, ApplyResult, ApplyTransactionSummary,
+} from "./operation_contracts";

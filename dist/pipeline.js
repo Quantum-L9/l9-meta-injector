@@ -60,11 +60,22 @@ const omit_1 = require("./omit");
 // meta-schema's `source: classification_confidence` resolves consistently in both modes.
 const CONFIDENCE_NUMERIC = { high: 0.9, medium: 0.6, low: 0.3 };
 const UNKNOWN_EXCERPT = "Unknown";
+function relativeSourcePath(root, filePath) {
+    const relative = path.relative(root, filePath);
+    if (relative === "")
+        return ".";
+    if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+        throw new Error(`persisted path escapes repository root: ${filePath}`);
+    }
+    return relative.split(path.sep).join("/");
+}
 function toCfg(config) {
     return { namespace: config.namespace, authority: config.authority, nearDupThreshold: config.nearDupThreshold, hashPrefixLength: config.hashPrefixLength, outputDir: config.outDir, indexDir: config.indexDir, namespaceGlobs: config.namespaceGlobs };
 }
 async function runPipelineAsync(config) {
-    const now = new Date().toISOString();
+    const runStartedAt = new Date().toISOString();
+    const root = path.resolve(config.root);
+    const metadataTimestamp = config.metadataTimestamp?.trim() || schema_1.UNKNOWN;
     const nsCfg = toCfg(config);
     // One collector per run aggregates the LLM/IO hotpath signal (OBS-009/OBS-010):
     // decision paths, call counts, failure counts, and p50/p95 latency.
@@ -83,7 +94,7 @@ async function runPipelineAsync(config) {
     // Shared omit matcher for archive expansion + discovery (ADR-017). Pipeline
     // always protects SKILL.md; noise / .l9metaignore / --omit apply everywhere.
     const omit = (0, omit_1.buildOmitMatcher)({
-        root: config.root,
+        root,
         patterns: config.omitPatterns,
         omitFile: config.omitFile,
         protectSkillMd: true,
@@ -94,14 +105,23 @@ async function runPipelineAsync(config) {
     // to archives and members the same way findFiles does.
     let archives = [];
     if (config.localFiles) {
-        const expanded = (0, archives_1.expandArchivesUnderRoot)(config.root, {
+        const expanded = (0, archives_1.expandArchivesUnderRoot)(root, {
             dryRun: config.dryRun,
             verbose: config.verbose,
             omit,
         });
         archives = expanded.archives;
     }
-    const filePaths = (0, retrieval_1.findFiles)(config.root, config.glob, { omit, protectSkillMd: true });
+    const discovery = (0, retrieval_1.discoverFiles)(root, config.glob, { omit, protectSkillMd: true });
+    if (!config.dryRun && discovery.summary.blocking > 0) {
+        const preview = discovery.summary.entries
+            .filter((entry) => entry.disposition === "unreadable" || entry.disposition === "symlink" || entry.disposition === "unsupported_entry")
+            .slice(0, 10)
+            .map((entry) => `${entry.path}: ${entry.disposition}`)
+            .join(", ");
+        throw new Error(`DISCOVERY_INCOMPLETE: apply refused because ${discovery.summary.blocking} path(s) could not be safely governed: ${preview}`);
+    }
+    const filePaths = discovery.files;
     if (config.normalizeFilenames)
         (0, normalize_filename_1.normalizeFilenames)(filePaths, { dryRun: config.dryRun, verbose: config.verbose });
     const scanned = (0, retrieval_1.scanFiles)(filePaths);
@@ -116,6 +136,7 @@ async function runPipelineAsync(config) {
     const skippedNonInjectableDetails = [];
     // Coarse classify result retained so non-injectable skips can report type/confidence.
     const classifications = new Map();
+    const metadataSubjects = [];
     for (const e of scanned) {
         const raw = fs.readFileSync(e.sourcePath, "utf8");
         const spec = (0, comment_1.resolveStrategy)(e.sourcePath, raw);
@@ -137,7 +158,7 @@ async function runPipelineAsync(config) {
         const ef = (0, extract_1.extract)(body);
         const cls = (0, classify_1.classify)(e.sourcePath, body, e.headerConvention);
         classifications.set(e.sourcePath, cls);
-        let meta = (0, normalize_meta_1.buildMeta)(e.sourcePath, body, ef, cls, nsCfg, config.authority, now);
+        let meta = (0, normalize_meta_1.buildMeta)(e.sourcePath, body, ef, cls, nsCfg, config.authority, metadataTimestamp, root);
         // assist: LLM fills prose-origin fields only when seed fails "good" predicate
         if (config.llmEnabled) {
             const rec = (0, schema_1.asRecord)(meta);
@@ -166,7 +187,7 @@ async function runPipelineAsync(config) {
                 // already use (examples/meta-schema.example.yaml), so the same schema file is
                 // reusable across `inventory` and `pipeline` modes without rewriting `source:`.
                 artifact_id: meta.id,
-                relative_path: path.relative(config.root, e.sourcePath),
+                relative_path: relativeSourcePath(root, e.sourcePath),
                 evidence_excerpt: cls.signals.join(", ") || UNKNOWN_EXCERPT,
                 classification_confidence: CONFIDENCE_NUMERIC[cls.confidence],
                 created_at: meta.created_or_detected_at,
@@ -180,8 +201,21 @@ async function runPipelineAsync(config) {
             meta = (0, schema_1.coerceNormalizedMeta)({ ...(0, schema_1.asRecord)(meta), ...applied.fields });
         }
         metas.set(e.sourcePath, meta);
+        metadataSubjects.push({
+            path: relativeSourcePath(root, e.sourcePath),
+            artifactType: meta.artifact_type,
+            strategy: spec.strategy,
+            contentHash: meta.content_hash,
+            metadata: (0, schema_1.asRecord)(meta),
+        });
     }
-    const opts = { dryRun: config.dryRun, outDir: config.outDir, verbose: config.verbose, writeInjectLog: config.writeInjectLog ?? true };
+    const opts = {
+        dryRun: config.dryRun,
+        outDir: config.outDir,
+        verbose: config.verbose,
+        writeInjectLog: config.writeInjectLog ?? false,
+        writeDryRunDiff: config.persistOutputs !== false,
+    };
     const injected = [];
     for (const e of scanned) {
         const meta = metas.get(e.sourcePath);
@@ -226,8 +260,12 @@ async function runPipelineAsync(config) {
     }
     // Persist coverage even on dry-run so skipped paths are inspectable after the fact (ADR-018).
     const coverageReportDir = config.outDir || config.indexDir;
-    fs.mkdirSync(coverageReportDir, { recursive: true });
-    const coverageReportPath = path.join(coverageReportDir, "coverage-report.json");
+    const coverageReportPath = config.persistOutputs === false
+        ? ""
+        : path.join(coverageReportDir, "coverage-report.json");
+    if (config.persistOutputs !== false) {
+        fs.mkdirSync(coverageReportDir, { recursive: true });
+    }
     const coverage = {
         scanned: scanned.length,
         injected: injected.length,
@@ -241,8 +279,12 @@ async function runPipelineAsync(config) {
             nonInjectableDetails: skippedNonInjectableDetails,
         },
         reportPath: coverageReportPath,
+        discovery: discovery.summary,
     };
-    fs.writeFileSync(coverageReportPath, JSON.stringify(coverage, null, 2));
+    if (config.persistOutputs !== false) {
+        const persistedCoverage = { ...coverage, reportPath: path.basename(coverageReportPath) };
+        fs.writeFileSync(coverageReportPath, JSON.stringify(persistedCoverage, null, 2));
+    }
     // Surface coverage when anything was skipped or on verbose runs — otherwise the
     // library path emits no signal about what it processed vs. dropped (OBS-003).
     if (config.verbose || coverage.skippedBinary + coverage.skippedNonInjectable > 0 || coverage.archivesExpanded > 0) {
@@ -276,7 +318,7 @@ async function runPipelineAsync(config) {
             metaV3: (0, meta_v3_1.buildMetaV3)({ meta: r.meta, semantic, placement: planBySource.get(r.sourcePath), sizeBytes: Buffer.byteLength(body, "utf8") }),
         };
     });
-    if (!config.dryRun) {
+    if (!config.dryRun && config.persistOutputs !== false) {
         const d = config.indexDir;
         fs.mkdirSync(d, { recursive: true });
         fs.writeFileSync(path.join(d, "primitive-library-index.json"), JSON.stringify((0, compiler_1.buildPrimitiveLibraryIndex)(injected), null, 2));
@@ -288,6 +330,6 @@ async function runPipelineAsync(config) {
         fs.writeFileSync(path.join(d, "meta-v3-index.json"), JSON.stringify(metaV3, null, 2));
         fs.writeFileSync(path.join(d, "archives-expanded.json"), JSON.stringify(archives, null, 2));
     }
-    return { scanned, injected, verified, verification, coverage, placementPlans, metaV3, metrics: metrics.snapshot(), archives };
+    return { runStartedAt, scanned, metadataSubjects, injected, verified, verification, coverage, placementPlans, metaV3, metrics: metrics.snapshot(), archives };
 }
 //# sourceMappingURL=pipeline.js.map

@@ -38,6 +38,7 @@ describe("DWL-005 — namespaceGlobs on PipelineConfig reaches injected metadata
 
     // And it is actually written into the file header, not just the in-memory record.
     const content = fs.readFileSync(path.join(skills, "lint_file.md"), "utf8");
-    expect(content).toContain("namespace: custom_ns");
+    // Managed frontmatter renders scalars quoted (byte-preserving patcher).
+    expect(content).toContain('namespace: "custom_ns"');
   }, 15000);
 });
