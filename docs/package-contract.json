@@ -2,7 +2,7 @@
   "schema": "l9.package-contract/v2",
   "repository": "Quantum-L9/l9-meta-injector",
   "package_name": "l9-meta-injector",
-  "package_version": "3.0.0",
+  "package_version": "4.0.0",
   "entrypoints": {
     ".": {
       "runtime": "dist/index.js",
@@ -43,7 +43,8 @@
     "dist",
     "examples",
     "package.json",
-    "schemas"
+    "schemas",
+    "scripts"
   ],
   "forbidden_paths": [
     "schemas/l9_artifact_meta.schema.yaml",
@@ -55,7 +56,6 @@
     "docs/",
     "fixtures/",
     "reports/",
-    "scripts/",
     "src/",
     "tests/",
     "tools/"

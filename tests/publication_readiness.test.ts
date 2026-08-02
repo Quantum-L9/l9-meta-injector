@@ -8,7 +8,7 @@ describe("publication decision", () => {
     );
     expect(doc.schema).toBe("l9.package-publication-decision/v1");
     expect(doc.package_name).toBe("l9-meta-injector");
-    expect(doc.package_version).toBe("3.0.0");
+    expect(doc.package_version).toBe("4.0.0");
     expect(doc.publication_command).toBe("npm publish");
     expect(Array.isArray(doc.evidence)).toBe(true);
     expect(doc.evidence.length).toBeGreaterThan(0);

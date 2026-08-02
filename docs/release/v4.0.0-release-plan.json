@@ -1,0 +1,39 @@
+{
+  "schema": "l9.meta-injector-release-plan/v1",
+  "release_version": "4.0.0",
+  "tag": "v4.0.0",
+  "release_date": "2026-08-01",
+  "github_release": {
+    "status": "blocked_pending_exact_checkout_and_authorization",
+    "required_ref": "final 40-character commit SHA",
+    "mutable_refs_forbidden": true
+  },
+  "npm_publication": {
+    "status": "blocked_pending_history_and_owner_approval",
+    "required": false
+  },
+  "consumer_migration": {
+    "repository": "Quantum-L9/l9-deploy",
+    "base_revision": "51d4cdb33b6b1196cc250898fd0735299bf0cf4e",
+    "status": "blocked_pending_final_release_sha_and_exact_checkout"
+  },
+  "required_gates": [
+    "npm ci",
+    "npm run build",
+    "npm run manifest:update",
+    "npm run validate",
+    "npm run lint",
+    "npm pack and packed CLI smoke",
+    "composite Action smoke",
+    "l9-deploy migration apply/check",
+    "l9-deploy make validate",
+    "l9-deploy release-prepare"
+  ],
+  "publication_authority": {
+    "commit": false,
+    "push": false,
+    "tag": false,
+    "release": false,
+    "npm_publish": false
+  }
+}

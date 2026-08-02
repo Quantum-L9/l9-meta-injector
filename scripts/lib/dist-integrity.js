@@ -141,7 +141,7 @@ function validatePackageContract(contract) {
   if (contract.schema !== "l9.package-contract/v2") errors.push("packageContract.schema is invalid");
   if (contract.repository !== "Quantum-L9/l9-meta-injector") errors.push("packageContract.repository is invalid");
   if (contract.package_name !== "l9-meta-injector") errors.push("packageContract.package_name is invalid");
-  if (contract.package_version !== "3.0.0") errors.push("packageContract.package_version is invalid");
+  if (contract.package_version !== "4.0.0") errors.push("packageContract.package_version is invalid");
   if (contract.api_contract !== "docs/public-api-contract.json") errors.push("packageContract.api_contract is invalid");
   if (!isPlainObject(contract.entrypoints) || Object.keys(contract.entrypoints).length === 0) {
     errors.push("packageContract.entrypoints must be a non-empty object");

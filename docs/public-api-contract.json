@@ -2,7 +2,7 @@
   "schema": "l9.public-api-contract/v1",
   "repository": "Quantum-L9/l9-meta-injector",
   "package_name": "l9-meta-injector",
-  "package_version": "3.0.0",
+  "package_version": "4.0.0",
   "policy": {
     "root_model": "orchestration_first",
     "versioning": "semver",
