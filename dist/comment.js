@@ -39,7 +39,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.FRONTMATTER_EXTS = void 0;
+exports.FRONTMATTER_EXTS = exports.PROSE_EXTS = void 0;
 exports.isProbablyBinary = isProbablyBinary;
 exports.resolveStrategy = resolveStrategy;
 exports.sidecarPathFor = sidecarPathFor;
@@ -55,7 +55,8 @@ const START = ">>> l9:meta >>>";
 const END = "<<< l9:meta <<<";
 const BLOCK_START = "l9:meta:start";
 const BLOCK_END = "l9:meta:end";
-exports.FRONTMATTER_EXTS = new Set([".md", ".markdown", ".mdx", ".txt", ".text", ".rst"]);
+exports.PROSE_EXTS = new Set([".md", ".markdown", ".mdx", ".txt", ".text", ".rst"]);
+exports.FRONTMATTER_EXTS = new Set([".md", ".markdown"]);
 const LINE_COMMENT = {
     ".ts": "//", ".tsx": "//", ".js": "//", ".jsx": "//", ".mjs": "//", ".cjs": "//",
     ".java": "//", ".c": "//", ".h": "//", ".cpp": "//", ".hpp": "//", ".cc": "//", ".hh": "//",
@@ -118,7 +119,7 @@ function resolveStrategy(filePath, raw) {
         return { strategy: "skip-binary" };
     // .txt/.text are text but not prose-frontmatter carriers: their metadata rides
     // in a sidecar (matches scanFiles, which reports headerConvention="none" for them).
-    if (exports.FRONTMATTER_EXTS.has(ext) && ext !== ".txt" && ext !== ".text")
+    if (exports.FRONTMATTER_EXTS.has(ext))
         return { strategy: "yaml-frontmatter" };
     const linePrefix = LINE_COMMENT[ext] ?? BASENAME_LINE_COMMENT[base];
     if (linePrefix)

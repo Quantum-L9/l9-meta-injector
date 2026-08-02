@@ -27,7 +27,8 @@ const END = "<<< l9:meta <<<";
 const BLOCK_START = "l9:meta:start";
 const BLOCK_END = "l9:meta:end";
 
-export const FRONTMATTER_EXTS = new Set([".md", ".markdown", ".mdx", ".txt", ".text", ".rst"]);
+export const PROSE_EXTS = new Set([".md", ".markdown", ".mdx", ".txt", ".text", ".rst"]);
+export const FRONTMATTER_EXTS = new Set([".md", ".markdown"]);
 
 const LINE_COMMENT: Record<string, string> = {
   ".ts": "//", ".tsx": "//", ".js": "//", ".jsx": "//", ".mjs": "//", ".cjs": "//",
@@ -95,7 +96,7 @@ export function resolveStrategy(filePath: string, raw: string): StrategySpec {
 
   // .txt/.text are text but not prose-frontmatter carriers: their metadata rides
   // in a sidecar (matches scanFiles, which reports headerConvention="none" for them).
-  if (FRONTMATTER_EXTS.has(ext) && ext !== ".txt" && ext !== ".text") return { strategy: "yaml-frontmatter" };
+  if (FRONTMATTER_EXTS.has(ext)) return { strategy: "yaml-frontmatter" };
 
   const linePrefix = LINE_COMMENT[ext] ?? BASENAME_LINE_COMMENT[base];
   if (linePrefix) return { strategy: "line-comment", linePrefix };

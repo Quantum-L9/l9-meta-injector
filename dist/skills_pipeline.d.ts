@@ -18,6 +18,7 @@ export interface SkillsFileResult {
     relativePath: string;
     changed: boolean;
     diffs: FieldDiff[];
+    skippedReason?: string;
 }
 export interface SkillsPipelineResult {
     considered: number;

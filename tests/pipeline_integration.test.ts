@@ -65,7 +65,7 @@ test("pipeline injects headers and produces indexes", async () => {
   const content = fs.readFileSync(injectedFile, "utf8");
   expect(content.startsWith("---")).toBe(true);
   expect(content).toContain("artifact_type:");
-  expect(content).toContain("namespace: l9");
+  expect(content).toContain('namespace: "l9"');
   expect(content).toContain("sharing_scope:");
   expect(content).toContain("id:");
 }, 15000);

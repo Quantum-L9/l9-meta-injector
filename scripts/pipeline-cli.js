@@ -15,7 +15,7 @@
  *   --index-dir <dir>      index files dir, if different from --out  (default: same as --out)
  *   --namespace <name>     namespace for placement/verify             (default: derived from repo dir name)
  *   --namespace-glob <glob=ns>   per-glob namespace override (repeatable, e.g. "plastos/**=plastos")
- *   --authority <id>       authority id stamped into injected meta    (default: l9.doctrine.platform)
+ *   --authority <id>       required authority id stamped into expected/applied metadata
  *   --dry-run              classify + verify only; do NOT write any injected metadata
  *   --fail-on-issues       exit 1 if verification.passed is false     (recommended for CI; default: on)
  *   --no-fail-on-issues    always exit 0 regardless of verification result
@@ -64,7 +64,7 @@ const pkg = requireBuilt(path.join(REPO, "dist", "index.js"), "pipeline-cli");
 // compiled output directly (same approach scripts/inventory.js already uses for it).
 const inventoryPkg = requireBuilt(path.join(REPO, "dist", "public", "inventory.js"), "pipeline-cli");
 
-const usage = "usage: node scripts/pipeline-cli.js <root> [--glob PATTERN] [--out DIR] [--index-dir DIR] [--namespace NAME] [--namespace-glob glob=ns] [--authority ID] [--dry-run] [--fail-on-issues|--no-fail-on-issues] [--near-dup 0..1] [--hash-prefix-length N] [--normalize-filenames] [--write-inject-log] [--local-files] [--verbose] [--schema FILE] [--omit PATTERN] [--omit-file PATH] [--llm] [--llm-base-url URL] [--llm-api-key KEY] [--llm-model NAME] [--llm-allow-insecure]";
+const usage = "usage: node scripts/pipeline-cli.js <root> [--glob PATTERN] [--out DIR] [--index-dir DIR] [--namespace NAME] [--namespace-glob glob=ns] --authority ID [--dry-run] [--fail-on-issues|--no-fail-on-issues] [--near-dup 0..1] [--hash-prefix-length N] [--normalize-filenames] [--write-inject-log] [--local-files] [--verbose] [--schema FILE] [--omit PATTERN] [--omit-file PATH] [--llm] [--llm-base-url URL] [--llm-api-key KEY] [--llm-model NAME] [--llm-allow-insecure]";
 const { root, flag, opt, optAll } = parseCli("pipeline-cli", usage);
 // Default output dir is a SIBLING of root (<root>.l9out), not nested inside it, so running the
 // pipeline never leaves diff/report/index noise in the folder being scanned, and a re-run never
@@ -94,6 +94,16 @@ const namespaceGlobs = optAll("--namespace-glob").map((pair, i) => {
   return { glob: pair.slice(0, eq), namespace: pair.slice(eq + 1) };
 });
 
+const authority = opt("--authority", null);
+if (!authority || !authority.trim()) {
+  console.error("pipeline-cli: --authority is required; no repository-generic authority is assumed");
+  process.exit(2);
+}
+if (/\u0000|\r|\n/.test(authority)) {
+  console.error("pipeline-cli: --authority contains a forbidden control character");
+  process.exit(2);
+}
+
 const llmEnabled = flag("--llm");
 const config = {
   root,
@@ -102,7 +112,7 @@ const config = {
   outDir,
   namespace: opt("--namespace", path.basename(root)),
   namespaceGlobs: namespaceGlobs.length ? namespaceGlobs : undefined,
-  authority: opt("--authority", "l9.doctrine.platform"),
+  authority: authority.trim(),
   nearDupThreshold: Number(opt("--near-dup", "0.9")),
   hashPrefixLength: Number(opt("--hash-prefix-length", "16")),
   indexDir,

@@ -247,6 +247,7 @@ function inventoryTree(config) {
         dryRun: config.dryRun ?? false,
         injectHeaders: config.injectHeaders ?? true,
         folderSidecars: config.folderSidecars ?? true,
+        writeSidecars: config.writeSidecars ?? true,
         hashMaxBytes: config.hashMaxBytes ?? 50 * 1024 * 1024,
         now: config.now ?? "1970-01-01T00:00:00.000Z",
     };
@@ -305,7 +306,7 @@ function inventoryTree(config) {
         if (cfg.dryRun)
             continue;
         if (isDir) {
-            if (cfg.folderSidecars && (0, meta_schema_1.targetIncludes)(schema, "sidecar")) {
+            if (cfg.writeSidecars && cfg.folderSidecars && (0, meta_schema_1.targetIncludes)(schema, "sidecar")) {
                 writeFolderSidecar(abs, metaObj, rec.unknowns);
             }
             continue;
@@ -332,11 +333,11 @@ function inventoryTree(config) {
                 // Don't discard the injection error (finding OBS-004): record it, then fall
                 // back to a sidecar if the schema allows one.
                 rec.unknowns.push(`header_injection_failed:${err.message}`);
-                if ((0, meta_schema_1.targetIncludes)(schema, "sidecar"))
+                if (cfg.writeSidecars && (0, meta_schema_1.targetIncludes)(schema, "sidecar"))
                     writeSidecar(abs, metaObj, rec.unknowns);
             }
         }
-        else if (strategy !== "skip-binary" && (0, meta_schema_1.targetIncludes)(schema, "sidecar")) {
+        else if (cfg.writeSidecars && strategy !== "skip-binary" && (0, meta_schema_1.targetIncludes)(schema, "sidecar")) {
             // Sidecar when the strategy is sidecar, OR when headers were skipped (e.g. schema
             // targets sidecar only). Never for skip-binary / unreadable binaries (ADR-017).
             writeSidecar(abs, metaObj, rec.unknowns);

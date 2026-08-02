@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.META_V3_PLANES = exports.META_V3_SCHEMA_VERSION = exports.PRIMITIVE_TAXONOMY = exports.UNKNOWN = void 0;
+exports.resolveOperationMode = exports.operationRequiresAuthority = exports.isSupportedAuthoritySchema = exports.isAuthorityConfig = exports.assertAuthorityForOperation = exports.OPERATION_MODES = exports.META_AUTHORITY_SCHEMA = exports.LEGACY_OPERATION_ALIASES = exports.META_V3_PLANES = exports.META_V3_SCHEMA_VERSION = exports.PRIMITIVE_TAXONOMY = exports.UNKNOWN = void 0;
 exports.asRecord = asRecord;
 exports.normalizeMetaRecord = normalizeMetaRecord;
 exports.coerceNormalizedMeta = coerceNormalizedMeta;
@@ -112,4 +112,13 @@ function isPromptMeta(m) {
     return typeof m === "object" && m !== null &&
         m.artifact_type === "prompt";
 }
+var operation_contracts_1 = require("./operation_contracts");
+Object.defineProperty(exports, "LEGACY_OPERATION_ALIASES", { enumerable: true, get: function () { return operation_contracts_1.LEGACY_OPERATION_ALIASES; } });
+Object.defineProperty(exports, "META_AUTHORITY_SCHEMA", { enumerable: true, get: function () { return operation_contracts_1.META_AUTHORITY_SCHEMA; } });
+Object.defineProperty(exports, "OPERATION_MODES", { enumerable: true, get: function () { return operation_contracts_1.OPERATION_MODES; } });
+Object.defineProperty(exports, "assertAuthorityForOperation", { enumerable: true, get: function () { return operation_contracts_1.assertAuthorityForOperation; } });
+Object.defineProperty(exports, "isAuthorityConfig", { enumerable: true, get: function () { return operation_contracts_1.isAuthorityConfig; } });
+Object.defineProperty(exports, "isSupportedAuthoritySchema", { enumerable: true, get: function () { return operation_contracts_1.isSupportedAuthoritySchema; } });
+Object.defineProperty(exports, "operationRequiresAuthority", { enumerable: true, get: function () { return operation_contracts_1.operationRequiresAuthority; } });
+Object.defineProperty(exports, "resolveOperationMode", { enumerable: true, get: function () { return operation_contracts_1.resolveOperationMode; } });
 //# sourceMappingURL=schema.js.map

@@ -1,5 +1,7 @@
-import { PipelineConfig, InjectionRecord, VerifyResult } from "./schema";
+import { PipelineConfig, NormalizedMeta, InjectionRecord, VerifyResult } from "./schema";
 import { scanFiles } from "./retrieval";
+import type { CarrierInjectionStrategy } from "./mutation_policy";
+import type { DiscoverySummary } from "./discovery_contracts";
 import { PlacementPlan } from "./placement_policy";
 import { MetaV3Record } from "./meta_v3";
 import { MetricsSnapshot } from "./metrics";
@@ -22,6 +24,13 @@ export interface NonInjectableSkipDetail {
     artifactType: string;
     confidence: "high" | "medium" | "low";
 }
+export interface PipelineMetadataSubject {
+    path: string;
+    artifactType: NormalizedMeta["artifact_type"];
+    strategy: CarrierInjectionStrategy;
+    contentHash: string;
+    metadata: Readonly<Record<string, unknown>>;
+}
 export interface CoverageSummary {
     scanned: number;
     injected: number;
@@ -37,11 +46,17 @@ export interface CoverageSummary {
         /** Classification detail for each non-injectable skip (same order as `nonInjectable`). */
         nonInjectableDetails: NonInjectableSkipDetail[];
     };
-    /** Absolute path of the written coverage-report.json (always set when the run finishes). */
+    /** Runtime path of coverage-report.json, empty when persistence is disabled. */
     reportPath: string;
+    /** Complete deterministic terminal disposition ledger for encountered paths. */
+    discovery: DiscoverySummary;
 }
 export interface PipelineResult {
+    /** Runtime envelope timestamp. It is not embedded into canonical file metadata. */
+    runStartedAt: string;
     scanned: ReturnType<typeof scanFiles>;
+    /** Canonical metadata subjects before carrier selection. */
+    metadataSubjects: PipelineMetadataSubject[];
     injected: InjectionRecord[];
     verified: VerifyResult[];
     /** Aggregated verification outcome. `passed: false` means at least one file failed verification. */

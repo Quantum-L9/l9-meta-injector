@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.hasAllPlanes = exports.buildMetaV3 = exports.isPromptMeta = exports.META_V3_PLANES = exports.META_V3_SCHEMA_VERSION = exports.coerceNormalizedMeta = exports.normalizeMetaRecord = exports.asRecord = exports.PRIMITIVE_TAXONOMY = exports.UNKNOWN = void 0;
+exports.hasAllPlanes = exports.buildMetaV3 = exports.resolveOperationMode = exports.operationRequiresAuthority = exports.isSupportedAuthoritySchema = exports.isAuthorityConfig = exports.assertAuthorityForOperation = exports.OPERATION_MODES = exports.META_AUTHORITY_SCHEMA = exports.LEGACY_OPERATION_ALIASES = exports.isPromptMeta = exports.META_V3_PLANES = exports.META_V3_SCHEMA_VERSION = exports.coerceNormalizedMeta = exports.normalizeMetaRecord = exports.asRecord = exports.PRIMITIVE_TAXONOMY = exports.UNKNOWN = void 0;
 var schema_1 = require("../schema");
 Object.defineProperty(exports, "UNKNOWN", { enumerable: true, get: function () { return schema_1.UNKNOWN; } });
 Object.defineProperty(exports, "PRIMITIVE_TAXONOMY", { enumerable: true, get: function () { return schema_1.PRIMITIVE_TAXONOMY; } });
@@ -10,6 +10,14 @@ Object.defineProperty(exports, "coerceNormalizedMeta", { enumerable: true, get: 
 Object.defineProperty(exports, "META_V3_SCHEMA_VERSION", { enumerable: true, get: function () { return schema_1.META_V3_SCHEMA_VERSION; } });
 Object.defineProperty(exports, "META_V3_PLANES", { enumerable: true, get: function () { return schema_1.META_V3_PLANES; } });
 Object.defineProperty(exports, "isPromptMeta", { enumerable: true, get: function () { return schema_1.isPromptMeta; } });
+Object.defineProperty(exports, "LEGACY_OPERATION_ALIASES", { enumerable: true, get: function () { return schema_1.LEGACY_OPERATION_ALIASES; } });
+Object.defineProperty(exports, "META_AUTHORITY_SCHEMA", { enumerable: true, get: function () { return schema_1.META_AUTHORITY_SCHEMA; } });
+Object.defineProperty(exports, "OPERATION_MODES", { enumerable: true, get: function () { return schema_1.OPERATION_MODES; } });
+Object.defineProperty(exports, "assertAuthorityForOperation", { enumerable: true, get: function () { return schema_1.assertAuthorityForOperation; } });
+Object.defineProperty(exports, "isAuthorityConfig", { enumerable: true, get: function () { return schema_1.isAuthorityConfig; } });
+Object.defineProperty(exports, "isSupportedAuthoritySchema", { enumerable: true, get: function () { return schema_1.isSupportedAuthoritySchema; } });
+Object.defineProperty(exports, "operationRequiresAuthority", { enumerable: true, get: function () { return schema_1.operationRequiresAuthority; } });
+Object.defineProperty(exports, "resolveOperationMode", { enumerable: true, get: function () { return schema_1.resolveOperationMode; } });
 var meta_v3_1 = require("../meta_v3");
 Object.defineProperty(exports, "buildMetaV3", { enumerable: true, get: function () { return meta_v3_1.buildMetaV3; } });
 Object.defineProperty(exports, "hasAllPlanes", { enumerable: true, get: function () { return meta_v3_1.hasAllPlanes; } });

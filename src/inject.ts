@@ -8,12 +8,13 @@ import * as fs from "fs";
 import * as path from "path";
 import { NormalizedMeta, InjectionRecord, MetaRecord, asRecord, normalizeMetaRecord } from "./schema";
 import { serializeToYamlFrontMatter } from "./normalize_meta";
-import { contentHash, splitContent, stripExistingFrontMatter } from "./extract";
+import { contentHash } from "./extract";
 import { reconcileFields, reconcileFieldsAsync, diffsToLogYaml } from "./reconcile_fields";
 import { FieldDiff } from "./schema";
 import { getAdapter } from "./llm";
 import { MetricsCollector } from "./metrics";
 import { parseCanonicalYaml } from "./meta_schema";
+import { inspectFrontMatterDocument, patchManagedFrontMatter } from "./frontmatter_patch";
 import {
   resolveStrategy, StrategySpec, frontMatterInner, yamlToBlock, stripInjectedBlock,
   extractInjectedYaml, applyCommentInjection, sidecarPathFor,
@@ -36,7 +37,14 @@ function parseExistingMeta(fm: string | null): MetaRecord {
   }
 }
 
-export interface InjectOptions { dryRun: boolean; outDir: string; verbose: boolean; writeInjectLog: boolean; }
+export interface InjectOptions {
+  dryRun: boolean;
+  outDir: string;
+  verbose: boolean;
+  writeInjectLog: boolean;
+  /** When false, dry-run returns an in-memory plan without creating diff files. */
+  writeDryRunDiff?: boolean;
+}
 
 interface ReadCtx {
   raw: string;
@@ -52,9 +60,17 @@ function readForInjection(filePath: string): ReadCtx {
   const spec = resolveStrategy(filePath, raw);
 
   if (spec.strategy === "yaml-frontmatter") {
-    const { frontMatter } = splitContent(raw);
-    const cleanBody = stripExistingFrontMatter(raw);
-    return { raw, spec, cleanBody, originalBodyHash: contentHash(cleanBody), existingMeta: parseExistingMeta(frontMatter) };
+    const inspected = inspectFrontMatterDocument(raw);
+    if (!inspected.safe) {
+      throw new Error(`FRONTMATTER_UNSAFE: ${filePath}: ${inspected.issue?.code ?? "unknown"}: ${inspected.issue?.message ?? "unsafe header"}`);
+    }
+    return {
+      raw,
+      spec,
+      cleanBody: inspected.body,
+      originalBodyHash: contentHash(inspected.body),
+      existingMeta: normalizeMetaRecord(inspected.meta),
+    };
   }
   if (spec.strategy === "line-comment" || spec.strategy === "block-comment") {
     const cleanBody = stripInjectedBlock(raw, spec);
@@ -82,9 +98,17 @@ function buildInjection(filePath: string, finalMeta: NormalizedMeta, ctx: ReadCt
   const yamlFm = serializeToYamlFrontMatter(finalMeta);
 
   if (ctx.spec.strategy === "yaml-frontmatter") {
-    const newContent = yamlFm + "\n\n" + ctx.cleanBody.replace(/^\n+/, "");
-    const postBodyHash = contentHash(newContent.slice(yamlFm.length + 2).replace(/^\n+/, ""));
-    return { targetPath: filePath, newContent, addedLines: yamlFm, postBodyHash, strategy: ctx.spec.strategy };
+    const patched = patchManagedFrontMatter(ctx.raw, asRecord(finalMeta));
+    if (!patched.safe) {
+      throw new Error(`FRONTMATTER_UNSAFE: ${filePath}: ${patched.issue?.code ?? "unknown"}: ${patched.issue?.message ?? "unsafe header"}`);
+    }
+    return {
+      targetPath: filePath,
+      newContent: patched.content,
+      addedLines: yamlFm,
+      postBodyHash: contentHash(patched.body),
+      strategy: ctx.spec.strategy,
+    };
   }
 
   if (ctx.spec.strategy === "line-comment" || ctx.spec.strategy === "block-comment") {
@@ -102,15 +126,39 @@ function buildInjection(filePath: string, finalMeta: NormalizedMeta, ctx: ReadCt
   };
 }
 
-function writeInjection(filePath: string, built: Built, diffs: FieldDiff[], opts: InjectOptions): { dryRunDiffPath?: string; injectLogPath?: string } {
-  const out: { dryRunDiffPath?: string; injectLogPath?: string } = {};
+interface PlannedTargetState {
+  targetExists: boolean;
+  wouldChange: boolean;
+  expectedContentHash: string;
+  actualContentHash?: string;
+}
+
+type WriteResult = PlannedTargetState & {
+  dryRunDiffPath?: string;
+  injectLogPath?: string;
+};
+
+function writeInjection(filePath: string, built: Built, diffs: FieldDiff[], opts: InjectOptions): WriteResult {
+  // Capture target state before any write. This keeps the plan truthful in both
+  // read-only check mode and future apply mode, where reading after the write
+  // would incorrectly report wouldChange=false.
+  const targetExists = fs.existsSync(built.targetPath);
+  const actualContent = targetExists ? fs.readFileSync(built.targetPath, "utf8") : undefined;
+  const out: WriteResult = {
+    targetExists,
+    wouldChange: actualContent !== built.newContent,
+    expectedContentHash: contentHash(built.newContent),
+    actualContentHash: actualContent === undefined ? undefined : contentHash(actualContent),
+  };
   if (opts.dryRun) {
-    fs.mkdirSync(opts.outDir, { recursive: true });
-    out.dryRunDiffPath = path.join(opts.outDir, path.basename(filePath) + ".diff");
-    const added = built.addedLines.split("\n").map((l) => `+ ${l}`).join("\n");
-    const tgt = built.sidecarPath ? built.sidecarPath : filePath;
-    fs.writeFileSync(out.dryRunDiffPath, `--- ${filePath}\n+++ ${tgt} (${built.strategy})\n${added}\n`, "utf8");
-    if (opts.verbose) process.stderr.write(`[dry-run] ${out.dryRunDiffPath}\n`);
+    if (opts.writeDryRunDiff !== false) {
+      fs.mkdirSync(opts.outDir, { recursive: true });
+      out.dryRunDiffPath = path.join(opts.outDir, path.basename(filePath) + ".diff");
+      const added = built.addedLines.split("\n").map((l) => `+ ${l}`).join("\n");
+      const tgt = built.sidecarPath ? built.sidecarPath : filePath;
+      fs.writeFileSync(out.dryRunDiffPath, `--- ${filePath}\n+++ ${tgt} (${built.strategy})\n${added}\n`, "utf8");
+      if (opts.verbose) process.stderr.write(`[dry-run] ${out.dryRunDiffPath}\n`);
+    }
   } else {
     fs.writeFileSync(built.targetPath, built.newContent, "utf8");
     if (opts.writeInjectLog && diffs.some((d) => d.action !== "keep")) {
@@ -122,9 +170,14 @@ function writeInjection(filePath: string, built: Built, diffs: FieldDiff[], opts
   return out;
 }
 
-function record(filePath: string, ctx: ReadCtx, built: Built, finalMeta: NormalizedMeta, opts: InjectOptions, paths: { dryRunDiffPath?: string; injectLogPath?: string }): InjectionRecord {
+function record(filePath: string, ctx: ReadCtx, built: Built, finalMeta: NormalizedMeta, opts: InjectOptions, paths: WriteResult): InjectionRecord {
   return {
     sourcePath: filePath,
+    targetPath: built.targetPath,
+    targetExists: paths.targetExists,
+    wouldChange: paths.wouldChange,
+    expectedContentHash: paths.expectedContentHash,
+    actualContentHash: paths.actualContentHash,
     originalBodyHash: ctx.originalBodyHash,
     postInjectionBodyHash: built.postBodyHash,
     bodyPreserved: built.postBodyHash === ctx.originalBodyHash,
