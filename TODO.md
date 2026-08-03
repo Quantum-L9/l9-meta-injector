@@ -16,3 +16,16 @@
     literal model name (currently `gpt-5-nano`, chosen 2026-07 as OpenAI's cheapest
     current model for this classification-shaped workload).
   - Ref: https://github.com/Quantum-L9/LLM-Router
+
+## Release
+
+- **Tag and release v4.0.0** once the repo is ready (not yet). The v4.0.0
+  candidate is merged to `main` (`651430cff4dc6760b623debd1bcefb244be7a189`) and
+  `check:release-candidate` passes, but the Git-lifecycle steps are deliberately
+  deferred. Plan: cut an annotated `v4.0.0` tag on that exact 40-char commit,
+  publish the GitHub release from `CHANGELOG.md`, then record the resolution in
+  `docs/release/v4.0.0-release-plan.json`. npm publish stays fail-closed and the
+  `l9-deploy` consumer migration is a separate follow-up.
+  - Plan: [`docs/release/v4.0.0-tag-and-release-plan.md`](docs/release/v4.0.0-tag-and-release-plan.md)
+  - Do not execute until the repo is ready (e.g. SonarCloud new-code reliability
+    remediation and any pending release readiness are resolved).
