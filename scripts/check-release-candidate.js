@@ -16,7 +16,7 @@ if (pkg.bin?.["l9-meta-injector"] !== "scripts/operation-cli.js") errors.push("p
 if (!Array.isArray(pkg.files) || !pkg.files.includes("scripts")) errors.push("runtime scripts are not packed");
 if (publication.package_version !== pkg.version) errors.push("publication decision version mismatch");
 if (plan.release_version !== pkg.version || plan.tag !== `v${pkg.version}`) errors.push("release plan identity mismatch");
-if (!dispatch.includes('actionPath: path.resolve(__dirname, ".."),')) errors.push("packed CLI action root is incorrect");
+if (!dispatch.includes('actionPath: path.resolve(__dirname, "..", ".."),')) errors.push("packed CLI action root is incorrect");
 if (!dispatch.includes("uploadArtifact: false,")) errors.push("CLI upload-artifact default is not contained");
 if (errors.length) {
   console.error("release-candidate: BLOCKED");
