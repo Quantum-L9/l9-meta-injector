@@ -55,6 +55,11 @@ function splitLines(raw, start = 0) {
         out.push({ number, start, end: start, fullEnd: start, text: "", eol: "" });
     return out;
 }
+/** Index where trailing whitespace begins, or -1 if there is none. Linear scan (avoids `/\s+$/` backtracking). */
+function trailingWhitespaceStart(text) {
+    const end = text.trimEnd().length;
+    return end === text.length ? -1 : end;
+}
 function splitInlineComment(text) {
     let single = false;
     let double = false;
@@ -81,7 +86,8 @@ function splitInlineComment(text) {
             bracketDepth -= 1;
         if (char === "#" && bracketDepth === 0 && (i === 0 || /\s/.test(text[i - 1]))) {
             const before = text.slice(0, i);
-            const valueEnd = before.search(/\s+$/) === -1 ? before.length : before.search(/\s+$/);
+            const trailing = trailingWhitespaceStart(before);
+            const valueEnd = trailing === -1 ? before.length : trailing;
             return {
                 valueText: before.slice(0, valueEnd),
                 commentSuffix: before.slice(valueEnd) + text.slice(i),
@@ -91,7 +97,7 @@ function splitInlineComment(text) {
         }
     }
     const valueOffset = text.search(/\S|$/);
-    const trimmedEnd = text.search(/\s+$/);
+    const trimmedEnd = trailingWhitespaceStart(text);
     const valueEndOffset = trimmedEnd === -1 ? text.length : trimmedEnd;
     return {
         valueText: text.slice(valueOffset, valueEndOffset),
@@ -133,14 +139,8 @@ function splitInlineList(text) {
     items.push(inner.slice(start).trim());
     return items;
 }
-function parseSafeScalar(text) {
-    const value = text.trim();
-    if (value === "")
-        return { ok: false };
-    if (value.startsWith("{") || value.endsWith("}") || /^[|>&*!?]/.test(value) || value === "---" || value === "...")
-        return { ok: false };
-    if (/^<<\s*:/.test(value) || /(^|\s)[&*][A-Za-z0-9_-]+/.test(value))
-        return { ok: false };
+/** Parse a double- or single-quoted scalar; null when `value` is not quoted. */
+function parseQuotedScalar(value) {
     if (value.startsWith('"')) {
         if (!value.endsWith('"'))
             return { ok: false };
@@ -157,6 +157,35 @@ function parseSafeScalar(text) {
             return { ok: false };
         return { ok: true, value: value.slice(1, -1).replace(/''/g, "'") };
     }
+    return null;
+}
+/** Parse a `[a, b]` inline list of scalars; null when `value` is not a list. */
+function parseInlineListScalar(value) {
+    if (!(value.startsWith("[") && value.endsWith("]")))
+        return null;
+    const parts = splitInlineList(value);
+    if (!parts)
+        return { ok: false };
+    const parsed = [];
+    for (const part of parts) {
+        const item = parseSafeScalar(part);
+        if (!item.ok || Array.isArray(item.value))
+            return { ok: false };
+        parsed.push(item.value);
+    }
+    return { ok: true, value: parsed };
+}
+function parseSafeScalar(text) {
+    const value = text.trim();
+    if (value === "")
+        return { ok: false };
+    if (value.startsWith("{") || value.endsWith("}") || /^[|>&*!?]/.test(value) || value === "---" || value === "...")
+        return { ok: false };
+    if (/^<<\s*:/.test(value) || /(^|\s)[&*][A-Za-z0-9_-]+/.test(value))
+        return { ok: false };
+    const quoted = parseQuotedScalar(value);
+    if (quoted)
+        return quoted;
     if (value === "true")
         return { ok: true, value: true };
     if (value === "false")
@@ -167,19 +196,9 @@ function parseSafeScalar(text) {
         return { ok: true, value: Number(value) };
     if (/^-?(?:0|[1-9]\d*)\.\d+$/.test(value))
         return { ok: true, value: Number(value) };
-    if (value.startsWith("[") && value.endsWith("]")) {
-        const parts = splitInlineList(value);
-        if (!parts)
-            return { ok: false };
-        const parsed = [];
-        for (const part of parts) {
-            const item = parseSafeScalar(part);
-            if (!item.ok || Array.isArray(item.value))
-                return { ok: false };
-            parsed.push(item.value);
-        }
-        return { ok: true, value: parsed };
-    }
+    const list = parseInlineListScalar(value);
+    if (list)
+        return list;
     if (/[:\[\]{}]/.test(value))
         return { ok: false };
     return { ok: true, value };

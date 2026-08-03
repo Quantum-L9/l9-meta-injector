@@ -175,6 +175,64 @@ function conflictFor(item) {
         evidence: [`${item.rule}${item.line ? ` at line ${item.line}` : ""}`, item.excerpt ?? ""].filter(Boolean),
     };
 }
+function describeError(error) {
+    return error instanceof Error ? error.message : String(error);
+}
+/** Read one control surface, returning its text or a scan gap explaining why it was skipped. */
+function readControlSurface(filePath, repositoryRoot, maxFileBytes) {
+    const relative = toPosix(path.relative(repositoryRoot, filePath));
+    let stat;
+    try {
+        stat = fs.statSync(filePath);
+    }
+    catch (error) {
+        return { relative, gap: scanGap(relative, `unable to stat control surface: ${describeError(error)}`) };
+    }
+    if (stat.size > maxFileBytes) {
+        return { relative, gap: scanGap(relative, `control surface exceeds authority-scan limit of ${maxFileBytes} bytes`) };
+    }
+    let content;
+    try {
+        content = fs.readFileSync(filePath, "utf8");
+    }
+    catch (error) {
+        return { relative, gap: scanGap(relative, `unable to read control surface: ${describeError(error)}`) };
+    }
+    if (content.includes("\u0000") || content.includes("\uFFFD")) {
+        return { relative, gap: scanGap(relative, "control surface is binary or not valid UTF-8 text") };
+    }
+    return { relative, content };
+}
+function legacyMarkerEvidence(relative, content) {
+    const found = [];
+    for (const marker of LEGACY_MARKERS) {
+        const markerIndex = content.indexOf(marker.value);
+        if (markerIndex !== -1 && marker.value !== "l9:meta:start") {
+            found.push(evidence(relative, "legacy_marker", marker.rule, content, markerIndex));
+        }
+    }
+    return found;
+}
+/** Collect every authority-relevant evidence item from one scanned control surface. */
+function collectSurfaceEvidence(relative, content) {
+    const found = [];
+    const canonicalMatch = content.match(CANONICAL_INVOCATION);
+    if (canonicalMatch?.index !== undefined) {
+        found.push(evidence(relative, "canonical_invocation", "canonical-l9-meta-injector-invocation", content, canonicalMatch.index));
+    }
+    const invocationMatch = content.match(WRITER_INVOCATION);
+    if (invocationMatch?.index !== undefined) {
+        found.push(evidence(relative, "writer_invocation", "legacy-writer-invocation", content, invocationMatch.index));
+    }
+    const writeMatch = content.match(WRITE_SIGNAL);
+    if (SUSPICIOUS_NAME.test(path.posix.basename(relative)) && writeMatch?.index !== undefined) {
+        found.push(evidence(relative, "writer_script", "suspicious-writer-filename-with-write-signal", content, writeMatch.index));
+    }
+    if (writeMatch?.index !== undefined) {
+        found.push(...legacyMarkerEvidence(relative, content));
+    }
+    return found;
+}
 function scanRepositoryAuthority(root, options = {}) {
     const repositoryRoot = path.resolve(root);
     const excluded = new Set(DEFAULT_EXCLUDED_DIRECTORIES);
@@ -187,53 +245,13 @@ function scanRepositoryAuthority(root, options = {}) {
     const found = [];
     const scanGaps = [...walked.gaps];
     for (const filePath of files) {
-        const relative = toPosix(path.relative(repositoryRoot, filePath));
-        let stat;
-        try {
-            stat = fs.statSync(filePath);
-        }
-        catch (error) {
-            scanGaps.push(scanGap(relative, `unable to stat control surface: ${error instanceof Error ? error.message : String(error)}`));
+        const surface = readControlSurface(filePath, repositoryRoot, maxFileBytes);
+        if ("gap" in surface) {
+            scanGaps.push(surface.gap);
             continue;
         }
-        if (stat.size > maxFileBytes) {
-            scanGaps.push(scanGap(relative, `control surface exceeds authority-scan limit of ${maxFileBytes} bytes`));
-            continue;
-        }
-        let content;
-        try {
-            content = fs.readFileSync(filePath, "utf8");
-        }
-        catch (error) {
-            scanGaps.push(scanGap(relative, `unable to read control surface: ${error instanceof Error ? error.message : String(error)}`));
-            continue;
-        }
-        if (content.includes("\u0000") || content.includes("\uFFFD")) {
-            scanGaps.push(scanGap(relative, "control surface is binary or not valid UTF-8 text"));
-            continue;
-        }
-        scannedPaths.push(relative);
-        const canonicalMatch = content.match(CANONICAL_INVOCATION);
-        if (canonicalMatch?.index !== undefined) {
-            found.push(evidence(relative, "canonical_invocation", "canonical-l9-meta-injector-invocation", content, canonicalMatch.index));
-        }
-        const invocationMatch = content.match(WRITER_INVOCATION);
-        if (invocationMatch?.index !== undefined) {
-            found.push(evidence(relative, "writer_invocation", "legacy-writer-invocation", content, invocationMatch.index));
-        }
-        const base = path.posix.basename(relative);
-        const writeMatch = content.match(WRITE_SIGNAL);
-        if (SUSPICIOUS_NAME.test(base) && writeMatch?.index !== undefined) {
-            found.push(evidence(relative, "writer_script", "suspicious-writer-filename-with-write-signal", content, writeMatch.index));
-        }
-        if (writeMatch?.index !== undefined) {
-            for (const marker of LEGACY_MARKERS) {
-                const markerIndex = content.indexOf(marker.value);
-                if (markerIndex !== -1 && marker.value !== "l9:meta:start") {
-                    found.push(evidence(relative, "legacy_marker", marker.rule, content, markerIndex));
-                }
-            }
-        }
+        scannedPaths.push(surface.relative);
+        found.push(...collectSurfaceEvidence(surface.relative, surface.content));
     }
     const deduped = [...new Map(found.map((item) => [`${item.path}:${item.kind}:${item.rule}`, item])).values()]
         .sort((a, b) => `${a.path}:${a.kind}`.localeCompare(`${b.path}:${b.kind}`));
@@ -241,7 +259,7 @@ function scanRepositoryAuthority(root, options = {}) {
         ...scanGaps,
         ...deduped.map(conflictFor).filter((item) => item !== null),
     ];
-    return { scannedPaths: scannedPaths.sort(), evidence: deduped, scanGaps, conflicts };
+    return { scannedPaths: scannedPaths.sort((a, b) => a.localeCompare(b)), evidence: deduped, scanGaps, conflicts };
 }
 function inspectRepositoryAuthority(root, options = {}) {
     const repositoryRoot = path.resolve(root);

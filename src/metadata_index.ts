@@ -117,7 +117,9 @@ function canonicalize(value: unknown, location: string, seen: Set<object>): unkn
   if (seen.has(value)) throw new Error(`${location} contains a cycle`);
   seen.add(value);
   const output: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
-  for (const key of Object.keys(value).sort()) {
+  // Explicit code-unit ordering: keeps the canonical JSON bytes identical to the
+  // prior default sort while satisfying the "sort needs a comparator" rule.
+  for (const key of Object.keys(value).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))) {
     if (FORBIDDEN_VOLATILE_KEYS.has(key)) {
       throw new Error(`${location}.${key} is runtime- or machine-specific and cannot be persisted`);
     }

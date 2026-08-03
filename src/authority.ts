@@ -62,10 +62,10 @@ function stripInlineComment(line: string): string {
     if (char === "'" && !double) single = !single;
     else if (char === '"' && !single) double = !double;
     else if (char === "#" && !single && !double && (i === 0 || /\s/.test(line[i - 1]))) {
-      return line.slice(0, i).replace(/\s+$/, "");
+      return line.slice(0, i).trimEnd();
     }
   }
-  return line.replace(/\s+$/, "");
+  return line.trimEnd();
 }
 
 function scalar(raw: string): string {
