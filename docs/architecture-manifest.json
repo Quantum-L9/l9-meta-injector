@@ -138,7 +138,7 @@
     },
     {
       "path": "docs/release-checklist.md",
-      "git_blob_sha1": "34751ce6dfa3e1adb6329ee37bf3642c9cb414bd"
+      "git_blob_sha1": "a2c0f79fc8df65cbbcc55c7726e9688dcdd5cb1b"
     },
     {
       "path": "docs/schemas/architecture-authority.schema.json",
