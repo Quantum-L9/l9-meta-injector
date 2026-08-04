@@ -13,6 +13,11 @@ exports.serializeYamlObject = serializeYamlObject;
 // characters or would otherwise be misread as a bool/null — the inverse of
 // parseCanonicalYaml's SCALAR reader. null/undefined → `null`; nested objects and
 // arrays-as-values are inlined as JSON (the subset has no deeper nesting).
+// Double-quote escapes for the constrained YAML subset: a literal backslash is
+// emitted as "\\" and a literal double-quote as "\"". Hoisted to constants so the
+// serializer below has no nested template literals.
+const ESCAPED_BACKSLASH = String.raw `\\`;
+const ESCAPED_QUOTE = String.raw `\"`;
 function yamlScalar(v) {
     if (v === null || v === undefined)
         return "null";
@@ -26,7 +31,7 @@ function yamlScalar(v) {
     if (s === "")
         return '""';
     if (/[:#{}\[\],&*?|<>=!%@`\n'"\\]/.test(s) || s.trim() !== s || s === "true" || s === "false" || s === "null")
-        return `"${s.replace(/\\/g, String.raw `\\`).replace(/"/g, String.raw `\"`)}"`;
+        return `"${s.replace(/\\/g, ESCAPED_BACKSLASH).replace(/"/g, ESCAPED_QUOTE)}"`;
     return s;
 }
 // Serialize a flat object into the canonical YAML body:
