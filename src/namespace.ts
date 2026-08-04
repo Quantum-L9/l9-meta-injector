@@ -1,5 +1,5 @@
 // namespace.ts — Deterministic path → namespace + sharing_scope + primitive_folder
-import * as path from "path";
+import * as path from "node:path";
 import { SharingScope } from "./schema";
 import { FRONTMATTER_EXTS } from "./comment";
 

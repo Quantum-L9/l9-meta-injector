@@ -36,7 +36,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.keywordHit = keywordHit;
 exports.classify = classify;
 exports.classifyWithSemantics = classifyWithSemantics;
-const path = __importStar(require("path"));
+const path = __importStar(require("node:path"));
 const comment_1 = require("./comment");
 const artifact_class_1 = require("./artifact_class");
 const FAMILY_SIGNALS = [
@@ -123,7 +123,7 @@ function classify(filePath, body, _hc) {
         return { artifactType: t, family: detectFamily(text), signals: extractSignals(text), confidence: "high" };
     }
     // Prompt-*.md
-    if (/^prompt-/.test(fn))
+    if (fn.startsWith("prompt-"))
         return { artifactType: "prompt", family: detectFamily(text), signals: extractSignals(text), confidence: "high" };
     // Non-prose files (code, config, markup, data) are "source" — injectable, but the
     // prose taxonomy (skill/kernel/test/script/…) and its keyword/path heuristics only

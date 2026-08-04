@@ -1,4 +1,4 @@
-import * as path from "path";
+import * as path from "node:path";
 import { ClassifyResult, ArtifactType, ArtifactFamily, HeaderConvention, ArtifactClassification } from "./schema";
 import { PROSE_EXTS } from "./comment";
 import { classifyArtifact } from "./artifact_class";
@@ -98,7 +98,7 @@ export function classify(filePath: string, body: string, _hc: HeaderConvention):
   }
 
   // Prompt-*.md
-  if (/^prompt-/.test(fn)) return { artifactType: "prompt", family: detectFamily(text), signals: extractSignals(text), confidence: "high" };
+  if (fn.startsWith("prompt-")) return { artifactType: "prompt", family: detectFamily(text), signals: extractSignals(text), confidence: "high" };
 
   // Non-prose files (code, config, markup, data) are "source" — injectable, but the
   // prose taxonomy (skill/kernel/test/script/…) and its keyword/path heuristics only

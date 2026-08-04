@@ -54,7 +54,7 @@ function normalizeMetaRecord(rec) {
     for (const f of NUMERIC_HEADER_FIELDS) {
         const v = out[f];
         if (typeof v === "string" && /^-?\d+$/.test(v.trim()))
-            out[f] = parseInt(v.trim(), 10);
+            out[f] = Number.parseInt(v.trim(), 10);
     }
     for (const f of BOOLEAN_HEADER_FIELDS) {
         const v = out[f];

@@ -6,7 +6,7 @@
 // writes and mutates nothing. Downstream executors may act on a plan; this
 // module never does.
 
-import * as path from "path";
+import * as path from "node:path";
 import {
   classifyArtifact,
   placementHintFor,

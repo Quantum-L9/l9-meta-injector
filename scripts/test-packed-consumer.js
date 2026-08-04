@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 "use strict";
-const fs=require("fs"),os=require("os"),path=require("path"),crypto=require("crypto");
+const fs=require("node:fs"),os=require("node:os"),path=require("node:path"),crypto=require("node:crypto");
 const {run,listRegularFiles,validatePackageContract,validatePackedFiles,parseNpmPackJson,resolveTsc,stableJson}=require("./lib/dist-integrity");
 const api=require("./lib/public-api");
 const REPO=path.resolve(__dirname,".."),KEEP=process.argv.includes("--keep-temp"),JSON_MODE=process.argv.includes("--json"),npm=process.platform==="win32"?"npm.cmd":"npm";

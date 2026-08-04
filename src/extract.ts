@@ -1,6 +1,6 @@
 // extract.ts — Structured-grammar extraction: AST/regex for code, frontmatter for .md
 // Rule: parse what has grammar; for prose fields return UNKNOWN (assist.ts fills those).
-import * as crypto from "crypto";
+import * as crypto from "node:crypto";
 import { ExtractedFields, UNKNOWN, Unknown, HeaderConvention } from "./schema";
 import { getAdapter } from "./llm";
 

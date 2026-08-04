@@ -55,8 +55,8 @@ const SCALAR = (raw: string): unknown => {
   if (s === "null" || s === "~") return null;
   if (s === "[]") return [];
   if (s === "{}") return {};
-  if (/^-?\d+$/.test(s)) return parseInt(s, 10);
-  if (/^-?\d*\.\d+$/.test(s)) return parseFloat(s);
+  if (/^-?\d+$/.test(s)) return Number.parseInt(s, 10);
+  if (/^-?\d*\.\d+$/.test(s)) return Number.parseFloat(s);
   if (s.startsWith("[") && s.endsWith("]")) {
     return s.slice(1, -1).split(",").map((x) => x.trim()).filter((x) => x !== "").map(SCALAR);
   }

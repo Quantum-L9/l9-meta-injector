@@ -39,8 +39,8 @@ exports.normalizeFilenameWithLog = normalizeFilenameWithLog;
 exports.normalizeFilenames = normalizeFilenames;
 // normalize_filename.ts — Normalize .md filenames to snake_case; write sidecar .normalize.log.yaml
 // --dry-run: write sidecar only, never rename. Live: sidecar + rename flag (rename is a separate pass).
-const path = __importStar(require("path"));
-const fs = __importStar(require("fs"));
+const path = __importStar(require("node:path"));
+const fs = __importStar(require("node:fs"));
 function toSnakeCase(s) {
     return s.replace(/([a-z])([A-Z])/g, "$1_$2").replace(/[-\s]+/g, "_")
         .replace(/[^a-z0-9_.]/gi, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toLowerCase();

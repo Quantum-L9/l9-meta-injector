@@ -43,7 +43,7 @@ exports.CLASS_PLACEMENT_HINTS = exports.QUARANTINE_DIRECTORY = exports.SEMANTIC_
 exports.classifyArtifact = classifyArtifact;
 exports.isSemanticArtifactClass = isSemanticArtifactClass;
 exports.placementHintFor = placementHintFor;
-const path = __importStar(require("path"));
+const path = __importStar(require("node:path"));
 /** The 17 semantic classes, in canonical order. */
 exports.SEMANTIC_ARTIFACT_CLASSES = [
     "source_module",
@@ -123,7 +123,7 @@ const RULES = [
     {
         artifactClass: "prompt_template",
         confidence: "high",
-        test: ({ base, norm }) => /^prompt-/.test(base) || base.includes(".prompt.")
+        test: ({ base, norm }) => base.startsWith("prompt-") || base.includes(".prompt.")
             ? "prompt-"
             : /\/prompts?\//.test(norm)
                 ? "/prompts/"

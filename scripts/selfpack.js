@@ -14,9 +14,9 @@
  * (missing index output / pipeline error). CI runs this as a smoke step.
  */
 "use strict";
-const fs = require("fs");
-const os = require("os");
-const path = require("path");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 
 const REPO = path.resolve(__dirname, "..");
 const FIXTURES = path.join(REPO, "fixtures");

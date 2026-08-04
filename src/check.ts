@@ -61,7 +61,7 @@ function snapshotRepository(root: string): RepositorySnapshot {
 
 function snapshotDifferences(before: RepositorySnapshot, after: RepositorySnapshot): string[] {
   return [...new Set([...before.keys(), ...after.keys()])]
-    .sort()
+    .sort((a, b) => a.localeCompare(b))
     .filter((item) => JSON.stringify(before.get(item)) !== JSON.stringify(after.get(item)));
 }
 

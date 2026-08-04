@@ -1,7 +1,7 @@
 "use strict";
-const fs = require("fs");
-const path = require("path");
-const crypto = require("crypto");
+const fs = require("node:fs");
+const path = require("node:path");
+const crypto = require("node:crypto");
 
 const REPO = path.resolve(__dirname, "../..");
 const EXPECTED_PERSISTED_OUTPUTS = [

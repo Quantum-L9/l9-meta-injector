@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 "use strict";
-const fs = require("fs");
-const path = require("path");
+const fs = require("node:fs");
+const path = require("node:path");
 const { REPO, buildManifest, stableJson } = require("./lib/architecture-authority");
 const target = path.join(REPO, "docs", "architecture-manifest.json");
 const rendered = stableJson(buildManifest(REPO));

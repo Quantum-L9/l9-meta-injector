@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 "use strict";
-const fs=require("fs"),path=require("path");
+const fs=require("node:fs"),path=require("node:path");
 const a=require("./lib/architecture-authority"),api=require("./lib/public-api"),{validatePackageContract}=require("./lib/dist-integrity");
 const errors=[],required=(cond,msg)=>{if(!cond)errors.push(msg)},authority=a.readJson(path.join(a.REPO,"docs/architecture-authority.json")),schema=a.readJson(path.join(a.REPO,"docs/schemas/architecture-authority.schema.json")),trace=a.readJson(path.join(a.REPO,"docs/traceability-map.json")),pkg=a.readJson(path.join(a.REPO,"package.json")),pack=a.readJson(path.join(a.REPO,"docs/package-contract.json")),apiContract=a.readJson(path.join(a.REPO,"docs/public-api-contract.json"));
 errors.push(...a.validateAuthorityDocument(authority),...a.validateAuthoritySchemaDocument(schema),...a.validateTraceabilityDocument(trace),...a.verifyLegacyArchive(a.REPO),...validatePackageContract(pack),...api.validateContract(apiContract,a.REPO),...api.validatePackageAgainstContract(pkg,apiContract));

@@ -5,7 +5,7 @@
 // currently ignored — it is reserved for future content-based rules.
 // Additive to the coarse ArtifactType taxonomy in schema.ts.
 
-import * as path from "path";
+import * as path from "node:path";
 import {
   SemanticArtifactClass,
   ArtifactClassification,
@@ -103,7 +103,7 @@ const RULES: Rule[] = [
     artifactClass: "prompt_template",
     confidence: "high",
     test: ({ base, norm }) =>
-      /^prompt-/.test(base) || base.includes(".prompt.")
+      base.startsWith("prompt-") || base.includes(".prompt.")
         ? "prompt-"
         : /\/prompts?\//.test(norm)
         ? "/prompts/"

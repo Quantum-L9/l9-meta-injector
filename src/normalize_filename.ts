@@ -1,7 +1,7 @@
 // normalize_filename.ts — Normalize .md filenames to snake_case; write sidecar .normalize.log.yaml
 // --dry-run: write sidecar only, never rename. Live: sidecar + rename flag (rename is a separate pass).
-import * as path from "path";
-import * as fs from "fs";
+import * as path from "node:path";
+import * as fs from "node:fs";
 
 export interface NormalizeFilenameResult {
   originalPath: string;

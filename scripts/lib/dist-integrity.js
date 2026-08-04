@@ -1,9 +1,9 @@
 "use strict";
-const fs = require("fs");
-const os = require("os");
-const path = require("path");
-const crypto = require("crypto");
-const cp = require("child_process");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const crypto = require("node:crypto");
+const cp = require("node:child_process");
 
 function fail(message) {
   const error = new Error(message);
@@ -164,7 +164,7 @@ function validatePackageContract(contract) {
 }
 function validatePackedFiles(packedPaths, contract, repositoryDistPaths) {
   const errors = [...validatePackageContract(contract)];
-  const paths = packedPaths.map((p) => p.replace(/\\/g, "/"));
+  const paths = packedPaths.map((p) => p.replaceAll("\\", "/"));
   if (new Set(paths).size !== paths.length) errors.push("packed file list contains duplicates");
   const set = new Set(paths);
   for (const rel of contract.required_files || []) if (!set.has(rel)) errors.push(`required packed file missing: ${rel}`);

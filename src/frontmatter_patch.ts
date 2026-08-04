@@ -254,7 +254,7 @@ function renderSafeScalar(value: unknown): string {
     return String(value);
   }
   if (typeof value === "string") {
-    if (/[\r\n\u0000]/.test(value)) throw new Error("managed frontmatter strings must be single-line text");
+    if (value.includes("\r") || value.includes("\n") || value.includes("\u0000")) throw new Error("managed frontmatter strings must be single-line text");
     return JSON.stringify(value);
   }
   if (Array.isArray(value)) {

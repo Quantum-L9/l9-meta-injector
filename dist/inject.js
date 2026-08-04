@@ -41,8 +41,8 @@ exports.injectFile = injectFile;
 // and unknown text → a `<file>.l9meta.yaml` sidecar (the file itself is untouched). Binary/media
 // are skipped. Body is preserved verbatim; the injected block carries sentinels so a
 // re-run replaces it instead of duplicating. Writes <file>.inject.log on any mutation.
-const fs = __importStar(require("fs"));
-const path = __importStar(require("path"));
+const fs = __importStar(require("node:fs"));
+const path = __importStar(require("node:path"));
 const schema_1 = require("./schema");
 const normalize_meta_1 = require("./normalize_meta");
 const extract_1 = require("./extract");

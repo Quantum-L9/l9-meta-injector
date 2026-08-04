@@ -5,7 +5,7 @@
 // unknown text get a sidecar file; binary/media files are skipped. Body is preserved verbatim —
 // the injected block is delimited by sentinels so it can be detected and replaced.
 
-import * as path from "path";
+import * as path from "node:path";
 
 export type InjectionStrategy =
   | "yaml-frontmatter"
@@ -83,7 +83,7 @@ const BINARY_EXTS = new Set([
 /** Heuristic: a NUL byte in the first 8 KB means the file is not UTF-8 text. */
 export function isProbablyBinary(raw: string): boolean {
   const n = Math.min(raw.length, 8192);
-  for (let i = 0; i < n; i++) if (raw.charCodeAt(i) === 0) return true;
+  for (let i = 0; i < n; i++) if (raw.codePointAt(i) === 0) return true;
   return false;
 }
 

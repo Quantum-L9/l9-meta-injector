@@ -5,7 +5,9 @@ const path = require("node:path");
 
 const OPERATION_MODES = Object.freeze(["inventory", "check", "apply", "skills"]);
 const LEGACY_OPERATION_ALIASES = Object.freeze({ pipeline: "apply" });
-const CONTROL_RE = /[\u0000\r\n]/;
+function hasControlChar(value) {
+  return value.includes("\u0000") || value.includes("\r") || value.includes("\n");
+}
 
 class ActionInputError extends Error {
   constructor(message) {
@@ -22,7 +24,7 @@ function fail(message) {
 function assertText(name, value, options = {}) {
   const { allowEmpty = false } = options;
   if (typeof value !== "string") fail(`${name} must be a string`);
-  if (CONTROL_RE.test(value)) fail(`${name} contains a forbidden control character`);
+  if (hasControlChar(value)) fail(`${name} contains a forbidden control character`);
   if (!allowEmpty && value.trim().length === 0) fail(`${name} must not be empty`);
   return value;
 }
@@ -48,7 +50,7 @@ function parseNumber(name, raw, defaultValue, predicate, expectation) {
 function resolveMode(raw) {
   const requested = String(raw ?? "").trim();
   if (OPERATION_MODES.includes(requested)) return { requested, mode: requested, warnings: [] };
-  if (Object.prototype.hasOwnProperty.call(LEGACY_OPERATION_ALIASES, requested)) {
+  if (Object.hasOwn(LEGACY_OPERATION_ALIASES, requested)) {
     const mode = LEGACY_OPERATION_ALIASES[requested];
     return {
       requested,
@@ -137,7 +139,7 @@ function resolveFutureContainedPath(parent, input, label) {
 function parseCsvPatterns(raw) {
   const value = String(raw ?? "");
   if (value === "") return [];
-  if (CONTROL_RE.test(value)) fail("omit contains a forbidden control character");
+  if (hasControlChar(value)) fail("omit contains a forbidden control character");
   return value.split(",").map((item) => item.trim()).filter(Boolean);
 }
 
@@ -255,7 +257,7 @@ function normalizeEnvironment(rawEnv) {
     llmApiKey: String(env.L9_INPUT_LLM_API_KEY ?? ""),
     llmAllowInsecure,
   };
-  if (CONTROL_RE.test(config.llmApiKey)) fail("llm-api-key contains a forbidden control character");
+  if (hasControlChar(config.llmApiKey)) fail("llm-api-key contains a forbidden control character");
   enforceModeRules(config);
   return config;
 }
@@ -401,17 +403,17 @@ function buildInvocation(config) {
 }
 
 function parseSummary(mode, text) {
-  const inventoryMatch = text.match(/(?:^|\n)inventory:\s+([0-9]+)\s+entries/m);
-  const scan = /(?:scanned|considered)=([0-9]+)/g;
+  const inventoryMatch = text.match(/(?:^|\n)inventory:\s+(\d+)\s+entries/m);
+  const scan = /(?:scanned|considered)=(\d+)/g;
   let match;
   let scanned = inventoryMatch ? inventoryMatch[1] : "0";
   while ((match = scan.exec(text)) !== null) scanned = match[1];
-  const change = /(?:injected|changed)=([0-9]+)/g;
-  let injected = mode === "inventory" || mode === "check" ? "0" : "0";
+  const change = /(?:injected|changed)=(\d+)/g;
+  let injected = "0";
   while ((match = change.exec(text)) !== null) injected = match[1];
   const passedMatches = [...text.matchAll(/passed=(true|false)/g)];
   const verificationPassed = passedMatches.length
-    ? passedMatches[passedMatches.length - 1][1]
+    ? passedMatches.at(-1)[1]
     : "n-a";
   return { scanned, injected, verificationPassed };
 }

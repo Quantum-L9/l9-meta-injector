@@ -44,9 +44,9 @@ exports.inventoryTree = inventoryTree;
 // sidecar for binaries and for folders, and emits a single inventory manifest
 // (JSON + CSV + MD) using the ArtifactInventory record shape. Never moves, renames,
 // or deletes anything.
-const fs = __importStar(require("fs"));
-const path = __importStar(require("path"));
-const crypto = __importStar(require("crypto"));
+const fs = __importStar(require("node:fs"));
+const path = __importStar(require("node:path"));
+const crypto = __importStar(require("node:crypto"));
 const extract_1 = require("./extract");
 const comment_1 = require("./comment");
 const inject_1 = require("./inject");
@@ -72,7 +72,7 @@ function buildDuplicateClusters(records) {
     for (const [hash, group] of byHash) {
         if (group.length < 2)
             continue;
-        const paths = group.map((g) => g.relative_path).sort();
+        const paths = group.map((g) => g.relative_path).sort((a, b) => a.localeCompare(b));
         const size = group[0].size_bytes ?? 0;
         clusters.push({
             content_hash: hash,

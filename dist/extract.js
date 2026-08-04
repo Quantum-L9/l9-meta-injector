@@ -40,7 +40,7 @@ exports.splitContent = splitContent;
 exports.stripExistingFrontMatter = stripExistingFrontMatter;
 // extract.ts — Structured-grammar extraction: AST/regex for code, frontmatter for .md
 // Rule: parse what has grammar; for prose fields return UNKNOWN (assist.ts fills those).
-const crypto = __importStar(require("crypto"));
+const crypto = __importStar(require("node:crypto"));
 const schema_1 = require("./schema");
 const llm_1 = require("./llm");
 function contentHash(text) {

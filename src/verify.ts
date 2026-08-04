@@ -1,5 +1,5 @@
 // verify.ts — Validate injected files; enforce sharing_scope invariants; fail on violation.
-import * as fs from "fs";
+import * as fs from "node:fs";
 import { VerifyResult, NormalizedMeta, UNKNOWN, PromptMeta, asRecord } from "./schema";
 import { splitContent, contentHash, stripExistingFrontMatter } from "./extract";
 import { StrategySpec, resolveStrategy, hasInjectedBlock, stripInjectedBlock, sidecarPathFor } from "./comment";

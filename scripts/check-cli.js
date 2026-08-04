@@ -51,7 +51,7 @@ if (!authority || !authority.trim()) {
   console.error("check-cli: --authority is required; no repository-generic authority is assumed");
   process.exit(2);
 }
-if (/\u0000|\r|\n/.test(authority)) {
+if ((authority.includes("\u0000") || authority.includes("\r") || authority.includes("\n"))) {
   console.error("check-cli: --authority contains a forbidden control character");
   process.exit(2);
 }

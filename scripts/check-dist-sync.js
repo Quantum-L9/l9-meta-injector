@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 "use strict";
-const path = require("path");
+const path = require("node:path");
 const { checkDistSync, stableJson } = require("./lib/dist-integrity");
 const repo = path.resolve(__dirname, "..");
 let report;
