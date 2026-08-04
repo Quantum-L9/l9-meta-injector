@@ -347,7 +347,7 @@ function inspectFrontMatterDocument(raw) {
             const blockLine = block[k];
             if (blockLine.text === "" || /^\s*#/.test(blockLine.text))
                 continue;
-            const itemMatch = /^(\s+)-\s+(.+)$/.exec(blockLine.text);
+            const itemMatch = blockLine.text.match(/^(\s+)-\s+(.+)$/);
             if (!itemMatch)
                 return issue(raw, "FRONTMATTER_COMPLEX_YAML", `nested map or multiline value under '${key}' is not supported`, { line: blockLine.number, key });
             if (!indent)

@@ -107,7 +107,7 @@ export function parseCanonicalYaml(text: string): Record<string, unknown> {
   while (i < lines.length) {
     const line = lines[i];
     if (indentOf(line) !== 0) { i++; continue; }
-    const m = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(line);
+    const m = line.match(/^([A-Za-z_][\w-]*):\s*(.*)$/);
     if (!m) { i++; continue; }
     const key = m[1];
     const rest = m[2];
@@ -136,7 +136,7 @@ function parseBlock(block: string[]): unknown {
       if (indentOf(l) > base) {
         throw new Error("canonical YAML: nested maps (depth > 2) are not supported");
       }
-      const mm = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(l.trim());
+      const mm = l.trim().match(/^([A-Za-z_][\w-]*):\s*(.*)$/);
       if (mm) {
         if (mm[2] === "") throw new Error(`canonical YAML: nested map under '${mm[1]}' is not supported`);
         map[mm[1]] = SCALAR(mm[2]);
@@ -162,12 +162,12 @@ function parseBlock(block: string[]): unknown {
 function parseItem(seg: string[]): unknown {
   // seg[0] is the text after "- "; if it looks like `key: val`, it's a map, else scalar
   const first = seg[0];
-  const mm = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(first);
+  const mm = first.match(/^([A-Za-z_][\w-]*):\s*(.*)$/);
   if (!mm) return SCALAR(first);
   const map: Record<string, unknown> = {};
   map[mm[1]] = SCALAR(mm[2]);
   for (let k = 1; k < seg.length; k++) {
-    const m2 = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(seg[k]);
+    const m2 = seg[k].match(/^([A-Za-z_][\w-]*):\s*(.*)$/);
     if (m2) map[m2[1]] = SCALAR(m2[2]);
   }
   return map;
