@@ -280,7 +280,8 @@ export function scanRepositoryAuthority(root: string, options: AuthorityScanOpti
     ...scanGaps,
     ...deduped.map(conflictFor).filter((item): item is AuthorityConflict => item !== null),
   ];
-  return { scannedPaths: scannedPaths.sort((a, b) => a.localeCompare(b)), evidence: deduped, scanGaps, conflicts };
+  scannedPaths.sort((a, b) => a.localeCompare(b));
+  return { scannedPaths, evidence: deduped, scanGaps, conflicts };
 }
 
 export function inspectRepositoryAuthority(

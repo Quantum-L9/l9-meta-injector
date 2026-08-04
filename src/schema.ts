@@ -1,7 +1,7 @@
 import type { MetaSchema } from "./meta_schema";
 
 export const UNKNOWN = "Unknown" as const;
-export type Unknown = typeof UNKNOWN;
+export type Unknown = "Unknown";
 
 export type ArtifactType =
   | "skill" | "playbook" | "kernel" | "context" | "prompt"

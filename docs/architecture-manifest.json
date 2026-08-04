@@ -250,7 +250,7 @@
     },
     {
       "path": "src/schema.ts",
-      "git_blob_sha1": "b6ff8019379284e251d1a2b4f790ddc714a5bbad"
+      "git_blob_sha1": "43081a974b7ef53dded812d71983ced12a831936"
     },
     {
       "path": "tests/architecture_authority.test.ts",

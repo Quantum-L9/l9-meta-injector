@@ -118,7 +118,7 @@ function canonicalize(value: unknown, location: string, seen: Set<object>): unkn
   const output: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
   // Explicit code-unit ordering: keeps the canonical JSON bytes identical to the
   // prior default sort while satisfying the "sort needs a comparator" rule.
-  for (const key of Object.keys(value).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))) {
+  for (const key of Object.keys(value).sort(byCodeUnit)) {
     if (FORBIDDEN_VOLATILE_KEYS.has(key)) {
       throw new Error(`${location}.${key} is runtime- or machine-specific and cannot be persisted`);
     }
@@ -172,8 +172,15 @@ function toRecord(
   };
 }
 
+/** Deterministic code-unit string comparison (stable canonical ordering). */
+function byCodeUnit(a: string, b: string): number {
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
+
 function comparePath(left: { path: string }, right: { path: string }): number {
-  return left.path < right.path ? -1 : left.path > right.path ? 1 : 0;
+  return byCodeUnit(left.path, right.path);
 }
 
 export function serializeMetadataIndex(records: readonly MetadataIndexRecord[]): string {

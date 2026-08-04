@@ -259,7 +259,8 @@ function scanRepositoryAuthority(root, options = {}) {
         ...scanGaps,
         ...deduped.map(conflictFor).filter((item) => item !== null),
     ];
-    return { scannedPaths: scannedPaths.sort((a, b) => a.localeCompare(b)), evidence: deduped, scanGaps, conflicts };
+    scannedPaths.sort((a, b) => a.localeCompare(b));
+    return { scannedPaths, evidence: deduped, scanGaps, conflicts };
 }
 function inspectRepositoryAuthority(root, options = {}) {
     const repositoryRoot = path.resolve(root);
