@@ -137,6 +137,7 @@ function buildCarrierOperationPlan(mode, rootInput, authority, pipeline) {
                 throw new Error(`unexpected legacy sidecar target: ${sidecar}`);
         }
     }
+    inlinePlans.sort((a, b) => relativePath(root, a.sourcePath).localeCompare(relativePath(root, b.sourcePath)));
     return {
         mode,
         root,
@@ -145,7 +146,7 @@ function buildCarrierOperationPlan(mode, rootInput, authority, pipeline) {
         subjects,
         carrierDecisions,
         metadataIndex,
-        inlinePlans: inlinePlans.sort((a, b) => relativePath(root, a.sourcePath).localeCompare(relativePath(root, b.sourcePath))),
+        inlinePlans,
     };
 }
 async function planCarrierOperationAsync(input) {

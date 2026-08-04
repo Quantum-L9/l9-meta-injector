@@ -168,7 +168,7 @@ export function hasInjectedBlock(raw: string, spec: StrategySpec): boolean {
 export function extractInjectedYaml(raw: string, spec: StrategySpec): string | null {
   const re = blockRegex(spec);
   if (!re) return null;
-  const m = raw.match(re);
+  const m = re.exec(raw);
   if (!m) return null;
   const body = m[0];
   if (spec.strategy === "line-comment") {

@@ -37,14 +37,21 @@ export interface AppliedMeta {
   missingRequired: string[];
 }
 
+/** Resolve a standard YAML backslash escape inside a double-quoted scalar. */
+function unescapeDoubleQuotedChar(c: string): string {
+  if (c === "n") return "\n";
+  if (c === "r") return "\r";
+  if (c === "t") return "\t";
+  return c;
+}
+
 const SCALAR = (raw: string): unknown => {
   const s = raw.trim();
   if (s === "" ) return "";
   if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) {
     // Double-quoted: unescape the standard YAML escape sequences so values like
     // Windows paths ("C:\\tmp") or embedded \n/\" round-trip correctly.
-    return s.slice(1, -1).replace(/\\(["\\/nrt])/g, (_m, c) =>
-      c === "n" ? "\n" : c === "r" ? "\r" : c === "t" ? "\t" : c);
+    return s.slice(1, -1).replace(/\\(["\\/nrt])/g, (_m, c) => unescapeDoubleQuotedChar(c));
   }
   if (s.length >= 2 && s.startsWith("'") && s.endsWith("'")) {
     // Single-quoted: the only escape is a doubled quote ('').
@@ -100,7 +107,7 @@ export function parseCanonicalYaml(text: string): Record<string, unknown> {
   while (i < lines.length) {
     const line = lines[i];
     if (indentOf(line) !== 0) { i++; continue; }
-    const m = line.match(/^([A-Za-z_][\w-]*):\s*(.*)$/);
+    const m = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(line);
     if (!m) { i++; continue; }
     const key = m[1];
     const rest = m[2];
@@ -129,7 +136,7 @@ function parseBlock(block: string[]): unknown {
       if (indentOf(l) > base) {
         throw new Error("canonical YAML: nested maps (depth > 2) are not supported");
       }
-      const mm = l.trim().match(/^([A-Za-z_][\w-]*):\s*(.*)$/);
+      const mm = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(l.trim());
       if (mm) {
         if (mm[2] === "") throw new Error(`canonical YAML: nested map under '${mm[1]}' is not supported`);
         map[mm[1]] = SCALAR(mm[2]);
@@ -155,12 +162,12 @@ function parseBlock(block: string[]): unknown {
 function parseItem(seg: string[]): unknown {
   // seg[0] is the text after "- "; if it looks like `key: val`, it's a map, else scalar
   const first = seg[0];
-  const mm = first.match(/^([A-Za-z_][\w-]*):\s*(.*)$/);
+  const mm = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(first);
   if (!mm) return SCALAR(first);
   const map: Record<string, unknown> = {};
   map[mm[1]] = SCALAR(mm[2]);
   for (let k = 1; k < seg.length; k++) {
-    const m2 = seg[k].match(/^([A-Za-z_][\w-]*):\s*(.*)$/);
+    const m2 = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(seg[k]);
     if (m2) map[m2[1]] = SCALAR(m2[2]);
   }
   return map;
@@ -202,7 +209,8 @@ export function applySchema(record: Record<string, unknown>, schema: MetaSchema)
     if (empty && f.default !== undefined) val = f.default;
     const stillEmpty = val === undefined || val === null || val === "";
     if (stillEmpty && f.required) missingRequired.push(f.name);
-    fields[f.name] = val === undefined ? (f.default !== undefined ? f.default : null) : val;
+    if (val !== undefined) fields[f.name] = val;
+    else fields[f.name] = f.default !== undefined ? f.default : null;
   }
   return { fields, missingRequired };
 }

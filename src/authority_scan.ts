@@ -173,19 +173,24 @@ function walkFiles(root: string, excluded: Set<string>): WalkResult {
     }
   };
   walk(root);
-  return { files: files.sort((a, b) => a.localeCompare(b)), gaps };
+  files.sort((a, b) => a.localeCompare(b));
+  return { files, gaps };
 }
 
 function conflictFor(item: AuthorityEvidence): AuthorityConflict | null {
   if (item.kind === "canonical_invocation") return null;
   const code = item.kind === "legacy_marker" ? "META_LEGACY_METADATA_PRESENT" : "META_AUTHORITY_CONFLICT";
+  let message: string;
+  if (item.kind === "writer_invocation") {
+    message = "active control surface invokes a competing metadata writer";
+  } else if (item.kind === "writer_script") {
+    message = "competing metadata writer script detected";
+  } else {
+    message = "legacy metadata marker participates in an active writer";
+  }
   return {
     code,
-    message: item.kind === "writer_invocation"
-      ? "active control surface invokes a competing metadata writer"
-      : item.kind === "writer_script"
-        ? "competing metadata writer script detected"
-        : "legacy metadata marker participates in an active writer",
+    message,
     path: item.path,
     evidence: [`${item.rule}${item.line ? ` at line ${item.line}` : ""}`, item.excerpt ?? ""].filter(Boolean),
   };
@@ -235,15 +240,15 @@ function legacyMarkerEvidence(relative: string, content: string): AuthorityEvide
 /** Collect every authority-relevant evidence item from one scanned control surface. */
 function collectSurfaceEvidence(relative: string, content: string): AuthorityEvidence[] {
   const found: AuthorityEvidence[] = [];
-  const canonicalMatch = content.match(CANONICAL_INVOCATION);
+  const canonicalMatch = CANONICAL_INVOCATION.exec(content);
   if (canonicalMatch?.index !== undefined) {
     found.push(evidence(relative, "canonical_invocation", "canonical-l9-meta-injector-invocation", content, canonicalMatch.index));
   }
-  const invocationMatch = content.match(WRITER_INVOCATION);
+  const invocationMatch = WRITER_INVOCATION.exec(content);
   if (invocationMatch?.index !== undefined) {
     found.push(evidence(relative, "writer_invocation", "legacy-writer-invocation", content, invocationMatch.index));
   }
-  const writeMatch = content.match(WRITE_SIGNAL);
+  const writeMatch = WRITE_SIGNAL.exec(content);
   if (SUSPICIOUS_NAME.test(path.posix.basename(relative)) && writeMatch?.index !== undefined) {
     found.push(evidence(relative, "writer_script", "suspicious-writer-filename-with-write-signal", content, writeMatch.index));
   }

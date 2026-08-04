@@ -66,7 +66,7 @@ function deriveSharingScope(filePath: string): SharingScope {
 
 function derivePrimitiveFolder(filePath: string): string {
   const base = path.basename(filePath).toLowerCase();
-  const dot = base.match(/\.(skill|playbook|kernel|context|prompt|doctrine|test|script)\./);
+  const dot = /\.(skill|playbook|kernel|context|prompt|doctrine|test|script)\./.exec(base);
   if (dot) return dot[1];
   const norm = filePath.replace(/\\/g, "/").toLowerCase();
   const segMap: Record<string, string> = {

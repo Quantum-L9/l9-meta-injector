@@ -13,11 +13,11 @@ export function estimateTokens(text: string): number {
 }
 
 function extractList(body: string, heading: RegExp): string[] | Unknown {
-  const m = body.match(heading);
+  const m = heading.exec(body);
   if (m?.index === undefined) return UNKNOWN;
   const start = m.index + m[0].length;
   const nextHeading = /\n## /;
-  const nextMatch = body.slice(start).match(nextHeading);
+  const nextMatch = nextHeading.exec(body.slice(start));
   const section = nextMatch ? body.slice(start, start + (nextMatch.index ?? body.length)) : body.slice(start);
   const items = section.match(/^[-*]\s+.+/gm)?.map((l) => l.replace(/^[-*]\s+/, "").trim()) ?? [];
   return items.length > 0 ? items : UNKNOWN;
@@ -25,7 +25,7 @@ function extractList(body: string, heading: RegExp): string[] | Unknown {
 
 function extractScalar(body: string, patterns: RegExp[]): string | Unknown {
   for (const p of patterns) {
-    const m = body.match(p);
+    const m = p.exec(body);
     if (m?.[1]?.trim()) return m[1].trim();
   }
   return UNKNOWN;

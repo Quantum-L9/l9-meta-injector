@@ -50,19 +50,19 @@ function estimateTokens(text) {
     return (0, llm_1.getAdapter)().estimateTokens(text);
 }
 function extractList(body, heading) {
-    const m = body.match(heading);
+    const m = heading.exec(body);
     if (m?.index === undefined)
         return schema_1.UNKNOWN;
     const start = m.index + m[0].length;
     const nextHeading = /\n## /;
-    const nextMatch = body.slice(start).match(nextHeading);
+    const nextMatch = nextHeading.exec(body.slice(start));
     const section = nextMatch ? body.slice(start, start + (nextMatch.index ?? body.length)) : body.slice(start);
     const items = section.match(/^[-*]\s+.+/gm)?.map((l) => l.replace(/^[-*]\s+/, "").trim()) ?? [];
     return items.length > 0 ? items : schema_1.UNKNOWN;
 }
 function extractScalar(body, patterns) {
     for (const p of patterns) {
-        const m = body.match(p);
+        const m = p.exec(body);
         if (m?.[1]?.trim())
             return m[1].trim();
     }

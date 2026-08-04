@@ -117,7 +117,7 @@ function classify(filePath, body, _hc) {
     const norm = filePath.replace(/\\/g, "/").toLowerCase();
     const text = (fn + " " + body.slice(0, 800)).toLowerCase();
     // Dot-convention: l9.skill.foo.md → skill
-    const dotMatch = fn.match(/\.(skill|playbook|kernel|context|prompt|doctrine|test|script)\./);
+    const dotMatch = /\.(skill|playbook|kernel|context|prompt|doctrine|test|script)\./.exec(fn);
     if (dotMatch) {
         const t = dotMatch[1];
         return { artifactType: t, family: detectFamily(text), signals: extractSignals(text), confidence: "high" };

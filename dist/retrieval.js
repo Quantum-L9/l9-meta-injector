@@ -97,7 +97,7 @@ function record(ledger, pathName, kind, disposition, reason, sizeBytes) {
     ledger.push({ path: pathName, kind, disposition, reason, ...(sizeBytes === undefined ? {} : { sizeBytes }) });
 }
 function discoverFiles(root, glob, opts = {}) {
-    const extMatch = glob.match(/\*\.([a-z0-9]+)$/i);
+    const extMatch = /\*\.([a-z0-9]+)$/i.exec(glob);
     const extFilter = extMatch ? `.${extMatch[1].toLowerCase()}` : null;
     const absRoot = path.resolve(root);
     let rootStat;
@@ -130,7 +130,8 @@ function discoverFiles(root, glob, opts = {}) {
             record(ledger, rel, "directory", "unreadable", `directory enumeration failed: ${error instanceof Error ? error.message : String(error)}`);
             return;
         }
-        for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+        entries.sort((a, b) => a.name.localeCompare(b.name));
+        for (const entry of entries) {
             const full = path.join(directory, entry.name);
             const rel = toPosix(path.relative(absRoot, full));
             let stat;

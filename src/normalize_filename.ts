@@ -23,7 +23,7 @@ export function normalizeFilename(filePath: string): NormalizeFilenameResult {
   const stem = base.slice(0, base.length - ext.length);
 
   // Preserve dot-convention prefix: ns.primitive.Stem.md → ns.primitive.snake_stem.md
-  const dotMatch = stem.match(/^([a-z_]+\.[a-z_]+\.)(.+)$/i);
+  const dotMatch = /^([a-z_]+\.[a-z_]+\.)(.+)$/i.exec(stem);
   let normalizedStem: string;
   if (dotMatch) {
     normalizedStem = dotMatch[1].toLowerCase() + toSnakeCase(dotMatch[2]);

@@ -171,7 +171,7 @@ function parseAuthorityYaml(text) {
         if (assertIndent(line) !== 0) {
             fail("META_AUTHORITY_CONFIG_INVALID", `unexpected indentation at line ${index + 1}`);
         }
-        const match = line.match(/^([A-Za-z_][\w-]*):\s*(.*)$/);
+        const match = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(line);
         if (!match)
             fail("META_AUTHORITY_CONFIG_INVALID", `invalid mapping at line ${index + 1}`);
         const key = match[1];
@@ -189,7 +189,7 @@ function parseAuthorityYaml(text) {
                 if (assertIndent(child) !== 2) {
                     fail("META_AUTHORITY_CONFIG_INVALID", `writer entries must use two spaces at line ${index + 1}`);
                 }
-                const childMatch = child.trim().match(/^([A-Za-z_][\w-]*):\s*(.+)$/);
+                const childMatch = /^([A-Za-z_][\w-]*):\s*(.+)$/.exec(child.trim());
                 if (!childMatch)
                     fail("META_AUTHORITY_CONFIG_INVALID", `invalid writer entry at line ${index + 1}`);
                 const childKey = childMatch[1];

@@ -329,7 +329,7 @@ export function inspectFrontMatterDocument(raw: string): FrontMatterInspection {
     if (line.text === "" || /^\s*#/.test(line.text)) { i += 1; continue; }
     if (/^\s/.test(line.text)) return issue(raw, "FRONTMATTER_COMPLEX_YAML", "unexpected indentation outside a supported scalar sequence", { line: line.number });
     if (/^(?:%|\.\.\.|\?|!|&|\*|\{|\}|<<:)/.test(line.text)) return issue(raw, "FRONTMATTER_COMPLEX_YAML", "unsupported YAML directive, tag, anchor, alias, explicit key, or map", { line: line.number });
-    const match = line.text.match(/^([A-Za-z_][A-Za-z0-9_-]*):(.*)$/);
+    const match = /^([A-Za-z_][A-Za-z0-9_-]*):(.*)$/.exec(line.text);
     if (!match) return issue(raw, "FRONTMATTER_INVALID_KEY", "frontmatter must contain simple top-level key/value fields", { line: line.number });
     const key = match[1];
     if (seen.has(key)) return issue(raw, "FRONTMATTER_DUPLICATE_KEY", `duplicate frontmatter key '${key}'`, { line: line.number, key });
@@ -371,7 +371,7 @@ export function inspectFrontMatterDocument(raw: string): FrontMatterInspection {
     for (let k = 0; k < block.length; k++) {
       const blockLine = block[k];
       if (blockLine.text === "" || /^\s*#/.test(blockLine.text)) continue;
-      const itemMatch = blockLine.text.match(/^(\s+)-\s+(.+)$/);
+      const itemMatch = /^(\s+)-\s+(.+)$/.exec(blockLine.text);
       if (!itemMatch) return issue(raw, "FRONTMATTER_COMPLEX_YAML", `nested map or multiline value under '${key}' is not supported`, { line: blockLine.number, key });
       if (!indent) indent = itemMatch[1];
       if (itemMatch[1] !== indent) return issue(raw, "FRONTMATTER_COMPLEX_YAML", `inconsistent sequence indentation under '${key}'`, { line: blockLine.number, key });
@@ -486,7 +486,8 @@ export function patchManagedFrontMatter(raw: string, managed: Record<string, unk
   }
 
   let content = raw;
-  for (const edit of edits.sort((a, b) => b.start - a.start || b.end - a.end)) {
+  edits.sort((a, b) => b.start - a.start || b.end - a.end);
+  for (const edit of edits) {
     content = content.slice(0, edit.start) + edit.text + content.slice(edit.end);
   }
   const next = inspectFrontMatterDocument(content);

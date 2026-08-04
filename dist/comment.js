@@ -185,7 +185,7 @@ function extractInjectedYaml(raw, spec) {
     const re = blockRegex(spec);
     if (!re)
         return null;
-    const m = raw.match(re);
+    const m = re.exec(raw);
     if (!m)
         return null;
     const body = m[0];

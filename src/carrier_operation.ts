@@ -127,6 +127,7 @@ export function buildCarrierOperationPlan(
     }
   }
 
+  inlinePlans.sort((a, b) => relativePath(root, a.sourcePath).localeCompare(relativePath(root, b.sourcePath)));
   return {
     mode,
     root,
@@ -135,7 +136,7 @@ export function buildCarrierOperationPlan(
     subjects,
     carrierDecisions,
     metadataIndex,
-    inlinePlans: inlinePlans.sort((a, b) => relativePath(root, a.sourcePath).localeCompare(relativePath(root, b.sourcePath))),
+    inlinePlans,
   };
 }
 
