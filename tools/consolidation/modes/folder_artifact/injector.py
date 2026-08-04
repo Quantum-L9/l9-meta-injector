@@ -86,7 +86,7 @@ def phase_b(source, output, threshold):
                 "dedup_status": "unknown",
             }
         )
-    rows, collisions = check(rows)
+    rows, _ = check(rows)
     cols = [
         "source_path",
         "content_hash",
@@ -125,7 +125,7 @@ def phase_b(source, output, threshold):
 
 def phase_c(source, output, move_map_path, copy_files, inject):
     rows = _manifest_gate(move_map_path)
-    now = datetime.datetime.utcnow().isoformat()
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     copied = 0
     for r in rows:
         sp = os.path.join(source, r["source_path"])

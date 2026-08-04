@@ -96,17 +96,22 @@ function canonicalize(value, location, seen) {
             throw new Error(`${location} contains a non-finite number`);
         return Object.is(value, -0) ? 0 : value;
     }
-    if (Array.isArray(value)) {
-        if (seen.has(value))
-            throw new Error(`${location} contains a cycle`);
-        seen.add(value);
-        const output = value.map((item, index) => canonicalize(item, `${location}[${index}]`, seen));
-        seen.delete(value);
-        return output;
-    }
+    if (Array.isArray(value))
+        return canonicalizeArray(value, location, seen);
     if (!isPlainObject(value)) {
         throw new Error(`${location} contains an unsupported value of type ${typeof value}`);
     }
+    return canonicalizeObject(value, location, seen);
+}
+function canonicalizeArray(value, location, seen) {
+    if (seen.has(value))
+        throw new Error(`${location} contains a cycle`);
+    seen.add(value);
+    const output = value.map((item, index) => canonicalize(item, `${location}[${index}]`, seen));
+    seen.delete(value);
+    return output;
+}
+function canonicalizeObject(value, location, seen) {
     if (seen.has(value))
         throw new Error(`${location} contains a cycle`);
     seen.add(value);

@@ -120,7 +120,7 @@ export function frontMatterInner(yamlFrontMatter: string): string {
 }
 
 function esc(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return s.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 }
 
 /** Wrap inner YAML in the comment style for this spec. Returns the block (no trailing newline). */
@@ -141,12 +141,12 @@ export function yamlToBlock(yamlInner: string, spec: StrategySpec): string {
 function blockRegex(spec: StrategySpec): RegExp | null {
   if (spec.strategy === "line-comment") {
     const p = esc(spec.linePrefix!);
-    return new RegExp(`${p} ${esc(START)}[\\s\\S]*?${p} ${esc(END)}\\r?\\n?`);
+    return new RegExp(String.raw`${p} ${esc(START)}[\s\S]*?${p} ${esc(END)}\r?\n?`);
   }
   if (spec.strategy === "block-comment") {
     const o = esc(spec.blockOpen!);
     const c = esc(spec.blockClose!);
-    return new RegExp(`${o} ${esc(BLOCK_START)}[\\s\\S]*?${esc(BLOCK_END)} ${c}\\r?\\n?`);
+    return new RegExp(String.raw`${o} ${esc(BLOCK_START)}[\s\S]*?${esc(BLOCK_END)} ${c}\r?\n?`);
   }
   return null;
 }
@@ -175,7 +175,7 @@ export function extractInjectedYaml(raw: string, spec: StrategySpec): string | n
     const p = spec.linePrefix!;
     return body.split("\n")
       .filter((l) => !l.includes(START) && !l.includes(END) && l.trimStart().startsWith(p))
-      .map((l) => l.replace(new RegExp(`^\\s*${esc(p)} ?`), ""))
+      .map((l) => l.replace(new RegExp(String.raw`^\s*${esc(p)} ?`), ""))
       .join("\n").trim();
   }
   // block-comment

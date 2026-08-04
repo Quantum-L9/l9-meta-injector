@@ -45,7 +45,7 @@ def main():
     if a.mode == "repo-pack":
         from modes.repo_pack.injector import run as rp_run
 
-        rp_run(a.source, a.dry_run.lower() == "true", a.threshold)
+        rp_run(a.source, a.dry_run.lower() == "true")
     else:
         from modes.folder_artifact.injector import run as fa_run
 
