@@ -12,11 +12,11 @@ const { root, flag, opt, optAll } = parseCli("apply-cli", usage);
 const targetRoot = path.resolve(root);
 const outDir = path.resolve(opt("--out", `${targetRoot}.l9out`));
 const authority = opt("--authority", null);
-if (!authority || !authority.trim()) {
+if (!authority?.trim()) {
   console.error("apply-cli: --authority is required");
   process.exit(2);
 }
-if (/\u0000|\r|\n/.test(authority)) {
+if ((authority.includes("\u0000") || authority.includes("\r") || authority.includes("\n"))) {
   console.error("apply-cli: --authority contains a forbidden control character");
   process.exit(2);
 }

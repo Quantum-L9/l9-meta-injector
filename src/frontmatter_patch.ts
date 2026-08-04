@@ -123,6 +123,12 @@ function splitLines(raw: string, start = 0): Line[] {
   return out;
 }
 
+/** Index where trailing whitespace begins, or -1 if there is none. Linear scan (avoids `/\s+$/` backtracking). */
+function trailingWhitespaceStart(text: string): number {
+  const end = text.trimEnd().length;
+  return end === text.length ? -1 : end;
+}
+
 function splitInlineComment(text: string): ScalarToken {
   let single = false;
   let double = false;
@@ -143,7 +149,8 @@ function splitInlineComment(text: string): ScalarToken {
     if (char === "]") bracketDepth -= 1;
     if (char === "#" && bracketDepth === 0 && (i === 0 || /\s/.test(text[i - 1]))) {
       const before = text.slice(0, i);
-      const valueEnd = before.search(/\s+$/) === -1 ? before.length : before.search(/\s+$/);
+      const trailing = trailingWhitespaceStart(before);
+      const valueEnd = trailing === -1 ? before.length : trailing;
       return {
         valueText: before.slice(0, valueEnd),
         commentSuffix: before.slice(valueEnd) + text.slice(i),
@@ -153,7 +160,7 @@ function splitInlineComment(text: string): ScalarToken {
     }
   }
   const valueOffset = text.search(/\S|$/);
-  const trimmedEnd = text.search(/\s+$/);
+  const trimmedEnd = trailingWhitespaceStart(text);
   const valueEndOffset = trimmedEnd === -1 ? text.length : trimmedEnd;
   return {
     valueText: text.slice(valueOffset, valueEndOffset),
@@ -189,11 +196,10 @@ function splitInlineList(text: string): string[] | null {
   return items;
 }
 
-function parseSafeScalar(text: string): { ok: true; value: unknown } | { ok: false } {
-  const value = text.trim();
-  if (value === "") return { ok: false };
-  if (value.startsWith("{") || value.endsWith("}") || /^[|>&*!?]/.test(value) || value === "---" || value === "...") return { ok: false };
-  if (/^<<\s*:/.test(value) || /(^|\s)[&*][A-Za-z0-9_-]+/.test(value)) return { ok: false };
+type ScalarParse = { ok: true; value: unknown } | { ok: false };
+
+/** Parse a double- or single-quoted scalar; null when `value` is not quoted. */
+function parseQuotedScalar(value: string): ScalarParse | null {
   if (value.startsWith('"')) {
     if (!value.endsWith('"')) return { ok: false };
     try {
@@ -205,22 +211,37 @@ function parseSafeScalar(text: string): { ok: true; value: unknown } | { ok: fal
     if (!value.endsWith("'")) return { ok: false };
     return { ok: true, value: value.slice(1, -1).replace(/''/g, "'") };
   }
+  return null;
+}
+
+/** Parse a `[a, b]` inline list of scalars; null when `value` is not a list. */
+function parseInlineListScalar(value: string): ScalarParse | null {
+  if (!(value.startsWith("[") && value.endsWith("]"))) return null;
+  const parts = splitInlineList(value);
+  if (!parts) return { ok: false };
+  const parsed: unknown[] = [];
+  for (const part of parts) {
+    const item = parseSafeScalar(part);
+    if (!item.ok || Array.isArray(item.value)) return { ok: false };
+    parsed.push(item.value);
+  }
+  return { ok: true, value: parsed };
+}
+
+function parseSafeScalar(text: string): ScalarParse {
+  const value = text.trim();
+  if (value === "") return { ok: false };
+  if (value.startsWith("{") || value.endsWith("}") || /^[|>&*!?]/.test(value) || value === "---" || value === "...") return { ok: false };
+  if (/^<<\s*:/.test(value) || /(^|\s)[&*][A-Za-z0-9_-]+/.test(value)) return { ok: false };
+  const quoted = parseQuotedScalar(value);
+  if (quoted) return quoted;
   if (value === "true") return { ok: true, value: true };
   if (value === "false") return { ok: true, value: false };
   if (value === "null" || value === "~") return { ok: true, value: null };
   if (/^-?(?:0|[1-9]\d*)$/.test(value)) return { ok: true, value: Number(value) };
   if (/^-?(?:0|[1-9]\d*)\.\d+$/.test(value)) return { ok: true, value: Number(value) };
-  if (value.startsWith("[") && value.endsWith("]")) {
-    const parts = splitInlineList(value);
-    if (!parts) return { ok: false };
-    const parsed: unknown[] = [];
-    for (const part of parts) {
-      const item = parseSafeScalar(part);
-      if (!item.ok || Array.isArray(item.value)) return { ok: false };
-      parsed.push(item.value);
-    }
-    return { ok: true, value: parsed };
-  }
+  const list = parseInlineListScalar(value);
+  if (list) return list;
   if (/[:\[\]{}]/.test(value)) return { ok: false };
   return { ok: true, value };
 }
@@ -233,7 +254,7 @@ function renderSafeScalar(value: unknown): string {
     return String(value);
   }
   if (typeof value === "string") {
-    if (/[\r\n\u0000]/.test(value)) throw new Error("managed frontmatter strings must be single-line text");
+    if (value.includes("\r") || value.includes("\n") || value.includes("\u0000")) throw new Error("managed frontmatter strings must be single-line text");
     return JSON.stringify(value);
   }
   if (Array.isArray(value)) {
@@ -308,7 +329,7 @@ export function inspectFrontMatterDocument(raw: string): FrontMatterInspection {
     if (line.text === "" || /^\s*#/.test(line.text)) { i += 1; continue; }
     if (/^\s/.test(line.text)) return issue(raw, "FRONTMATTER_COMPLEX_YAML", "unexpected indentation outside a supported scalar sequence", { line: line.number });
     if (/^(?:%|\.\.\.|\?|!|&|\*|\{|\}|<<:)/.test(line.text)) return issue(raw, "FRONTMATTER_COMPLEX_YAML", "unsupported YAML directive, tag, anchor, alias, explicit key, or map", { line: line.number });
-    const match = line.text.match(/^([A-Za-z_][A-Za-z0-9_-]*):(.*)$/);
+    const match = /^([A-Za-z_][A-Za-z0-9_-]*):(.*)$/.exec(line.text);
     if (!match) return issue(raw, "FRONTMATTER_INVALID_KEY", "frontmatter must contain simple top-level key/value fields", { line: line.number });
     const key = match[1];
     if (seen.has(key)) return issue(raw, "FRONTMATTER_DUPLICATE_KEY", `duplicate frontmatter key '${key}'`, { line: line.number, key });
@@ -465,7 +486,8 @@ export function patchManagedFrontMatter(raw: string, managed: Record<string, unk
   }
 
   let content = raw;
-  for (const edit of edits.sort((a, b) => b.start - a.start || b.end - a.end)) {
+  edits.sort((a, b) => b.start - a.start || b.end - a.end);
+  for (const edit of edits) {
     content = content.slice(0, edit.start) + edit.text + content.slice(edit.end);
   }
   const next = inspectFrontMatterDocument(content);

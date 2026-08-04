@@ -16,13 +16,15 @@
 - [ ] `npm run check:manifest` passed.
 - [ ] `npm run check:dist` proved source-to-committed parity.
 - [ ] `npm run test:packed` proved installed runtime and declarations.
+- [ ] `npm run check:release-candidate` passed (release identity + packed CLI containment).
+- [ ] The packed `l9-meta-injector` CLI dispatches each mode from the package root (not just the file list).
 - [ ] Tarball SHA-256 recorded.
 - [ ] Checkout remained clean after `npm run validate`.
 
 ## Version and migration
 
-- [ ] `package.json`, lockfile, API contract, package contract, and changelog all report `3.0.0`.
-- [ ] `docs/migrations/v2-to-v3.md` covers former root imports.
+- [ ] `package.json`, lockfile, API contract, package contract, and changelog all report `4.0.0`.
+- [ ] `docs/migrations/v3-to-v4.md` covers the breaking v4 operation/carrier/frontmatter changes.
 
 ## Publication
 

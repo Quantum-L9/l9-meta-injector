@@ -278,6 +278,56 @@ function journalEntry(entry) {
         state: entry.state,
     };
 }
+/** Stage every intent into its temp file, verifying bytes and journaling progress. */
+function stageEntries(ctx, entries, intents, createdDirectories) {
+    for (const [index, entry] of entries.entries()) {
+        ensureDirectory(path.dirname(entry.target), createdDirectories);
+        if (fs.existsSync(entry.temp) || fs.existsSync(entry.backup))
+            throw new Error(`transaction staging collision for ${entry.path}`);
+        const mode = entry.originalMode ?? intents.find((item) => normalizeRelativePath(item.path) === entry.path)?.mode ?? 0o644;
+        const fd = fs.openSync(entry.temp, "wx", mode);
+        try {
+            fs.writeFileSync(fd, entry.bytes);
+            fs.fsyncSync(fd);
+        }
+        finally {
+            fs.closeSync(fd);
+        }
+        if (hashBytes(fs.readFileSync(entry.temp)) !== entry.newHash)
+            throw new Error(`transaction staged bytes failed verification for ${entry.path}`);
+        entry.state = "staged";
+        ctx.journal.entries[index] = journalEntry(entry);
+        writeJournal(ctx.journalPath, ctx.journal);
+        ctx.options.faultInjector?.({ stage: "target_staged", transactionId: ctx.id, path: entry.path, index });
+    }
+}
+/** Back up originals and rename staged temps into place, journaling each commit. */
+function commitEntries(ctx, entries) {
+    for (const [index, entry] of entries.entries()) {
+        if (entry.originalExists) {
+            fs.renameSync(entry.target, entry.backup);
+            fsyncDirectory(path.dirname(entry.target));
+            entry.state = "backed_up";
+            ctx.journal.entries[index] = journalEntry(entry);
+            writeJournal(ctx.journalPath, ctx.journal);
+            ctx.options.faultInjector?.({ stage: "original_backed_up", transactionId: ctx.id, path: entry.path, index });
+        }
+        fs.renameSync(entry.temp, entry.target);
+        fsyncDirectory(path.dirname(entry.target));
+        entry.state = "committed";
+        ctx.journal.entries[index] = journalEntry(entry);
+        writeJournal(ctx.journalPath, ctx.journal);
+        ctx.options.faultInjector?.({ stage: "target_committed", transactionId: ctx.id, path: entry.path, index });
+    }
+}
+/** Confirm every committed target exists with the expected content hash. */
+function assertPostconditions(entries) {
+    for (const entry of entries) {
+        const state = readState(entry.target);
+        if (!state.exists || state.hash !== entry.newHash)
+            throw new Error(`TRANSACTION_POSTCONDITION_FAILED: ${entry.path}`);
+    }
+}
 function executeFileTransaction(rootInput, intents, options = {}) {
     const root = ensureRoot(rootInput);
     const id = (options.transactionId ?? (0, node_crypto_1.randomUUID)().replace(/-/g, "")).toLowerCase();
@@ -300,29 +350,11 @@ function executeFileTransaction(rootInput, intents, options = {}) {
         state: "preparing",
         entries: entries.map(journalEntry),
     };
+    const ctx = { id, journal, journalPath, options };
     try {
         writeJournal(journalPath, journal);
         options.faultInjector?.({ stage: "journal_created", transactionId: id });
-        for (const [index, entry] of entries.entries()) {
-            ensureDirectory(path.dirname(entry.target), createdDirectories);
-            if (fs.existsSync(entry.temp) || fs.existsSync(entry.backup))
-                throw new Error(`transaction staging collision for ${entry.path}`);
-            const mode = entry.originalMode ?? intents.find((item) => normalizeRelativePath(item.path) === entry.path)?.mode ?? 0o644;
-            const fd = fs.openSync(entry.temp, "wx", mode);
-            try {
-                fs.writeFileSync(fd, entry.bytes);
-                fs.fsyncSync(fd);
-            }
-            finally {
-                fs.closeSync(fd);
-            }
-            if (hashBytes(fs.readFileSync(entry.temp)) !== entry.newHash)
-                throw new Error(`transaction staged bytes failed verification for ${entry.path}`);
-            entry.state = "staged";
-            journal.entries[index] = journalEntry(entry);
-            writeJournal(journalPath, journal);
-            options.faultInjector?.({ stage: "target_staged", transactionId: id, path: entry.path, index });
-        }
+        stageEntries(ctx, entries, intents, createdDirectories);
         journal.state = "staged";
         writeJournal(journalPath, journal);
         options.faultInjector?.({ stage: "before_commit", transactionId: id });
@@ -330,27 +362,8 @@ function executeFileTransaction(rootInput, intents, options = {}) {
             assertExpected(entry);
         journal.state = "committing";
         writeJournal(journalPath, journal);
-        for (const [index, entry] of entries.entries()) {
-            if (entry.originalExists) {
-                fs.renameSync(entry.target, entry.backup);
-                fsyncDirectory(path.dirname(entry.target));
-                entry.state = "backed_up";
-                journal.entries[index] = journalEntry(entry);
-                writeJournal(journalPath, journal);
-                options.faultInjector?.({ stage: "original_backed_up", transactionId: id, path: entry.path, index });
-            }
-            fs.renameSync(entry.temp, entry.target);
-            fsyncDirectory(path.dirname(entry.target));
-            entry.state = "committed";
-            journal.entries[index] = journalEntry(entry);
-            writeJournal(journalPath, journal);
-            options.faultInjector?.({ stage: "target_committed", transactionId: id, path: entry.path, index });
-        }
-        for (const entry of entries) {
-            const state = readState(entry.target);
-            if (!state.exists || state.hash !== entry.newHash)
-                throw new Error(`TRANSACTION_POSTCONDITION_FAILED: ${entry.path}`);
-        }
+        commitEntries(ctx, entries);
+        assertPostconditions(entries);
         journal.state = "validating";
         writeJournal(journalPath, journal);
         options.faultInjector?.({ stage: "before_validation", transactionId: id });
@@ -434,7 +447,7 @@ function recoverPendingTransactions(rootInput) {
         throw new Error(`transaction journal directory is unsafe: ${directory}`);
     const recovered = [];
     const finalized = [];
-    const journals = fs.readdirSync(directory).filter((name) => name.endsWith(".json")).sort();
+    const journals = fs.readdirSync(directory).filter((name) => name.endsWith(".json")).sort((a, b) => a.localeCompare(b));
     for (const name of journals) {
         const journalPath = path.join(directory, name);
         const parsed = JSON.parse(fs.readFileSync(journalPath, "utf8"));

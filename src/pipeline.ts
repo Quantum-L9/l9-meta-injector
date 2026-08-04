@@ -1,6 +1,6 @@
 // pipeline.ts — Full pipeline: scan → extract → assist → inject (async reconcile) → verify → index
-import * as fs from "fs";
-import * as path from "path";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { PipelineConfig, NormalizedMeta, InjectionRecord, VerifyResult, UNKNOWN, asRecord, coerceNormalizedMeta } from "./schema";
 import { discoverFiles, scanFiles } from "./retrieval";
 import type { CarrierInjectionStrategy } from "./mutation_policy";

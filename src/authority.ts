@@ -62,10 +62,10 @@ function stripInlineComment(line: string): string {
     if (char === "'" && !double) single = !single;
     else if (char === '"' && !single) double = !double;
     else if (char === "#" && !single && !double && (i === 0 || /\s/.test(line[i - 1]))) {
-      return line.slice(0, i).replace(/\s+$/, "");
+      return line.slice(0, i).trimEnd();
     }
   }
-  return line.replace(/\s+$/, "");
+  return line.trimEnd();
 }
 
 function scalar(raw: string): string {
@@ -154,7 +154,7 @@ export function parseAuthorityYaml(text: string): AuthorityConfig {
     if (assertIndent(line) !== 0) {
       fail("META_AUTHORITY_CONFIG_INVALID", `unexpected indentation at line ${index + 1}`);
     }
-    const match = line.match(/^([A-Za-z_][\w-]*):\s*(.*)$/);
+    const match = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(line);
     if (!match) fail("META_AUTHORITY_CONFIG_INVALID", `invalid mapping at line ${index + 1}`);
     const key = match[1];
     const rest = match[2];
@@ -170,7 +170,7 @@ export function parseAuthorityYaml(text: string): AuthorityConfig {
         if (assertIndent(child) !== 2) {
           fail("META_AUTHORITY_CONFIG_INVALID", `writer entries must use two spaces at line ${index + 1}`);
         }
-        const childMatch = child.trim().match(/^([A-Za-z_][\w-]*):\s*(.+)$/);
+        const childMatch = /^([A-Za-z_][\w-]*):\s*(.+)$/.exec(child.trim());
         if (!childMatch) fail("META_AUTHORITY_CONFIG_INVALID", `invalid writer entry at line ${index + 1}`);
         const childKey = childMatch[1];
         if (childKey !== "repository" && childKey !== "ref") {

@@ -4,9 +4,9 @@
 // sidecar for binaries and for folders, and emits a single inventory manifest
 // (JSON + CSV + MD) using the ArtifactInventory record shape. Never moves, renames,
 // or deletes anything.
-import * as fs from "fs";
-import * as path from "path";
-import * as crypto from "crypto";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import * as crypto from "node:crypto";
 import { contentHash } from "./extract";
 import { resolveStrategy, sidecarPathFor } from "./comment";
 import { injectFile } from "./inject";
@@ -100,7 +100,7 @@ export function buildDuplicateClusters(records: InventoryRecord[]): DuplicateClu
   const clusters: DuplicateCluster[] = [];
   for (const [hash, group] of byHash) {
     if (group.length < 2) continue;
-    const paths = group.map((g) => g.relative_path).sort();
+    const paths = group.map((g) => g.relative_path).sort((a, b) => a.localeCompare(b));
     const size = group[0].size_bytes ?? 0;
     clusters.push({
       content_hash: hash,

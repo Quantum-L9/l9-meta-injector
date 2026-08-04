@@ -96,7 +96,7 @@ function record(
 }
 
 export function discoverFiles(root: string, glob: string, opts: FindFilesOptions = {}): DiscoveryResult {
-  const extMatch = glob.match(/\*\.([a-z0-9]+)$/i);
+  const extMatch = /\*\.([a-z0-9]+)$/i.exec(glob);
   const extFilter: string | null = extMatch ? `.${extMatch[1].toLowerCase()}` : null;
   const absRoot = path.resolve(root);
   let rootStat: fs.Stats;
@@ -129,7 +129,8 @@ export function discoverFiles(root: string, glob: string, opts: FindFilesOptions
       return;
     }
 
-    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    entries.sort((a, b) => a.name.localeCompare(b.name));
+    for (const entry of entries) {
       const full = path.join(directory, entry.name);
       const rel = toPosix(path.relative(absRoot, full));
       let stat: fs.Stats;

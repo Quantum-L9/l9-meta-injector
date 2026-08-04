@@ -173,22 +173,89 @@ function walkFiles(root: string, excluded: Set<string>): WalkResult {
     }
   };
   walk(root);
-  return { files: files.sort((a, b) => a.localeCompare(b)), gaps };
+  files.sort((a, b) => a.localeCompare(b));
+  return { files, gaps };
 }
 
 function conflictFor(item: AuthorityEvidence): AuthorityConflict | null {
   if (item.kind === "canonical_invocation") return null;
   const code = item.kind === "legacy_marker" ? "META_LEGACY_METADATA_PRESENT" : "META_AUTHORITY_CONFLICT";
+  let message: string;
+  if (item.kind === "writer_invocation") {
+    message = "active control surface invokes a competing metadata writer";
+  } else if (item.kind === "writer_script") {
+    message = "competing metadata writer script detected";
+  } else {
+    message = "legacy metadata marker participates in an active writer";
+  }
   return {
     code,
-    message: item.kind === "writer_invocation"
-      ? "active control surface invokes a competing metadata writer"
-      : item.kind === "writer_script"
-        ? "competing metadata writer script detected"
-        : "legacy metadata marker participates in an active writer",
+    message,
     path: item.path,
     evidence: [`${item.rule}${item.line ? ` at line ${item.line}` : ""}`, item.excerpt ?? ""].filter(Boolean),
   };
+}
+
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+type ControlSurfaceRead = { relative: string; content: string } | { relative: string; gap: AuthorityConflict };
+
+/** Read one control surface, returning its text or a scan gap explaining why it was skipped. */
+function readControlSurface(filePath: string, repositoryRoot: string, maxFileBytes: number): ControlSurfaceRead {
+  const relative = toPosix(path.relative(repositoryRoot, filePath));
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(filePath);
+  } catch (error) {
+    return { relative, gap: scanGap(relative, `unable to stat control surface: ${describeError(error)}`) };
+  }
+  if (stat.size > maxFileBytes) {
+    return { relative, gap: scanGap(relative, `control surface exceeds authority-scan limit of ${maxFileBytes} bytes`) };
+  }
+  let content: string;
+  try {
+    content = fs.readFileSync(filePath, "utf8");
+  } catch (error) {
+    return { relative, gap: scanGap(relative, `unable to read control surface: ${describeError(error)}`) };
+  }
+  if (content.includes("\u0000") || content.includes("\uFFFD")) {
+    return { relative, gap: scanGap(relative, "control surface is binary or not valid UTF-8 text") };
+  }
+  return { relative, content };
+}
+
+function legacyMarkerEvidence(relative: string, content: string): AuthorityEvidence[] {
+  const found: AuthorityEvidence[] = [];
+  for (const marker of LEGACY_MARKERS) {
+    const markerIndex = content.indexOf(marker.value);
+    if (markerIndex !== -1 && marker.value !== "l9:meta:start") {
+      found.push(evidence(relative, "legacy_marker", marker.rule, content, markerIndex));
+    }
+  }
+  return found;
+}
+
+/** Collect every authority-relevant evidence item from one scanned control surface. */
+function collectSurfaceEvidence(relative: string, content: string): AuthorityEvidence[] {
+  const found: AuthorityEvidence[] = [];
+  const canonicalMatch = CANONICAL_INVOCATION.exec(content);
+  if (canonicalMatch?.index !== undefined) {
+    found.push(evidence(relative, "canonical_invocation", "canonical-l9-meta-injector-invocation", content, canonicalMatch.index));
+  }
+  const invocationMatch = WRITER_INVOCATION.exec(content);
+  if (invocationMatch?.index !== undefined) {
+    found.push(evidence(relative, "writer_invocation", "legacy-writer-invocation", content, invocationMatch.index));
+  }
+  const writeMatch = WRITE_SIGNAL.exec(content);
+  if (SUSPICIOUS_NAME.test(path.posix.basename(relative)) && writeMatch?.index !== undefined) {
+    found.push(evidence(relative, "writer_script", "suspicious-writer-filename-with-write-signal", content, writeMatch.index));
+  }
+  if (writeMatch?.index !== undefined) {
+    found.push(...legacyMarkerEvidence(relative, content));
+  }
+  return found;
 }
 
 export function scanRepositoryAuthority(root: string, options: AuthorityScanOptions = {}): AuthorityScanResult {
@@ -203,55 +270,13 @@ export function scanRepositoryAuthority(root: string, options: AuthorityScanOpti
   const scanGaps: AuthorityConflict[] = [...walked.gaps];
 
   for (const filePath of files) {
-    const relative = toPosix(path.relative(repositoryRoot, filePath));
-    let stat: fs.Stats;
-    try {
-      stat = fs.statSync(filePath);
-    } catch (error) {
-      scanGaps.push(scanGap(relative, `unable to stat control surface: ${error instanceof Error ? error.message : String(error)}`));
+    const surface = readControlSurface(filePath, repositoryRoot, maxFileBytes);
+    if ("gap" in surface) {
+      scanGaps.push(surface.gap);
       continue;
     }
-    if (stat.size > maxFileBytes) {
-      scanGaps.push(scanGap(relative, `control surface exceeds authority-scan limit of ${maxFileBytes} bytes`));
-      continue;
-    }
-    let content: string;
-    try {
-      content = fs.readFileSync(filePath, "utf8");
-    } catch (error) {
-      scanGaps.push(scanGap(relative, `unable to read control surface: ${error instanceof Error ? error.message : String(error)}`));
-      continue;
-    }
-    if (content.includes("\u0000") || content.includes("\uFFFD")) {
-      scanGaps.push(scanGap(relative, "control surface is binary or not valid UTF-8 text"));
-      continue;
-    }
-    scannedPaths.push(relative);
-
-    const canonicalMatch = content.match(CANONICAL_INVOCATION);
-    if (canonicalMatch?.index !== undefined) {
-      found.push(evidence(relative, "canonical_invocation", "canonical-l9-meta-injector-invocation", content, canonicalMatch.index));
-    }
-
-    const invocationMatch = content.match(WRITER_INVOCATION);
-    if (invocationMatch?.index !== undefined) {
-      found.push(evidence(relative, "writer_invocation", "legacy-writer-invocation", content, invocationMatch.index));
-    }
-
-    const base = path.posix.basename(relative);
-    const writeMatch = content.match(WRITE_SIGNAL);
-    if (SUSPICIOUS_NAME.test(base) && writeMatch?.index !== undefined) {
-      found.push(evidence(relative, "writer_script", "suspicious-writer-filename-with-write-signal", content, writeMatch.index));
-    }
-
-    if (writeMatch?.index !== undefined) {
-      for (const marker of LEGACY_MARKERS) {
-        const markerIndex = content.indexOf(marker.value);
-        if (markerIndex !== -1 && marker.value !== "l9:meta:start") {
-          found.push(evidence(relative, "legacy_marker", marker.rule, content, markerIndex));
-        }
-      }
-    }
+    scannedPaths.push(surface.relative);
+    found.push(...collectSurfaceEvidence(surface.relative, surface.content));
   }
 
   const deduped = [...new Map(found.map((item) => [`${item.path}:${item.kind}:${item.rule}`, item])).values()]
@@ -260,7 +285,8 @@ export function scanRepositoryAuthority(root: string, options: AuthorityScanOpti
     ...scanGaps,
     ...deduped.map(conflictFor).filter((item): item is AuthorityConflict => item !== null),
   ];
-  return { scannedPaths: scannedPaths.sort(), evidence: deduped, scanGaps, conflicts };
+  scannedPaths.sort((a, b) => a.localeCompare(b));
+  return { scannedPaths, evidence: deduped, scanGaps, conflicts };
 }
 
 export function inspectRepositoryAuthority(

@@ -79,7 +79,7 @@ function snapshotRepository(root) {
 }
 function snapshotDifferences(before, after) {
     return [...new Set([...before.keys(), ...after.keys()])]
-        .sort()
+        .sort((a, b) => a.localeCompare(b))
         .filter((item) => JSON.stringify(before.get(item)) !== JSON.stringify(after.get(item)));
 }
 function inspectArchivesWithoutExtraction(root) {

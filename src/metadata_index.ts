@@ -11,13 +11,12 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { createHash } from "node:crypto";
 import type { ArtifactType } from "./schema";
-import type { CarrierDecision, MetadataCarrier, OperationMode } from "./operation_contracts";
+import type { AuthorityConfig, CarrierDecision, MetadataCarrier, OperationMode } from "./operation_contracts";
 import {
   assertCarrierDecisionCoverage,
   resolveCarrierDecisions,
   type CarrierSubject,
 } from "./mutation_policy";
-import type { AuthorityConfig } from "./operation_contracts";
 
 export const METADATA_INDEX_SCHEMA = "l9.metadata-index/v1" as const;
 export const METADATA_INDEX_RELATIVE_PATH = ".l9/metadata-index.jsonl" as const;
@@ -117,7 +116,9 @@ function canonicalize(value: unknown, location: string, seen: Set<object>): unkn
   if (seen.has(value)) throw new Error(`${location} contains a cycle`);
   seen.add(value);
   const output: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
-  for (const key of Object.keys(value).sort()) {
+  // Explicit code-unit ordering: keeps the canonical JSON bytes identical to the
+  // prior default sort while satisfying the "sort needs a comparator" rule.
+  for (const key of Object.keys(value).sort(byCodeUnit)) {
     if (FORBIDDEN_VOLATILE_KEYS.has(key)) {
       throw new Error(`${location}.${key} is runtime- or machine-specific and cannot be persisted`);
     }
@@ -171,8 +172,15 @@ function toRecord(
   };
 }
 
+/** Deterministic code-unit string comparison (stable canonical ordering). */
+function byCodeUnit(a: string, b: string): number {
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
+
 function comparePath(left: { path: string }, right: { path: string }): number {
-  return left.path < right.path ? -1 : left.path > right.path ? 1 : 0;
+  return byCodeUnit(left.path, right.path);
 }
 
 export function serializeMetadataIndex(records: readonly MetadataIndexRecord[]): string {

@@ -36,7 +36,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.toSnakeStem = toSnakeStem;
 exports.resolveNamespace = resolveNamespace;
 // namespace.ts — Deterministic path → namespace + sharing_scope + primitive_folder
-const path = __importStar(require("path"));
+const path = __importStar(require("node:path"));
 const comment_1 = require("./comment");
 const SHARED_SIGNALS = ["_shared", "shared", "core", "common", "universal"];
 const PRIVATE_SIGNALS = ["l9", "plastos", "legal", "ops", "private"];
@@ -77,7 +77,7 @@ function deriveSharingScope(filePath) {
 }
 function derivePrimitiveFolder(filePath) {
     const base = path.basename(filePath).toLowerCase();
-    const dot = base.match(/\.(skill|playbook|kernel|context|prompt|doctrine|test|script)\./);
+    const dot = /\.(skill|playbook|kernel|context|prompt|doctrine|test|script)\./.exec(base);
     if (dot)
         return dot[1];
     const norm = filePath.replace(/\\/g, "/").toLowerCase();

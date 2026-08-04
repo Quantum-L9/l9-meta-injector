@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 "use strict";
-const path = require("path");
+const path = require("node:path");
 const { checkDistSync, stableJson } = require("./lib/dist-integrity");
 const repo = path.resolve(__dirname, "..");
 let report;
 try { report = checkDistSync(repo); }
 catch (error) {
-  report = { schema: "l9.dist-integrity-report/v1", status: "failed", reason: error && error.message ? error.message : String(error) };
+  report = { schema: "l9.dist-integrity-report/v1", status: "failed", reason: error?.message ? error.message : String(error) };
 }
 if (process.argv.includes("--json")) process.stdout.write(stableJson(report));
 if (report.status !== "passed") {

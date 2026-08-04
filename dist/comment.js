@@ -49,7 +49,7 @@ exports.stripInjectedBlock = stripInjectedBlock;
 exports.hasInjectedBlock = hasInjectedBlock;
 exports.extractInjectedYaml = extractInjectedYaml;
 exports.applyCommentInjection = applyCommentInjection;
-const path = __importStar(require("path"));
+const path = __importStar(require("node:path"));
 // Sentinels used to locate a previously-injected block for idempotent re-injection.
 const START = ">>> l9:meta >>>";
 const END = "<<< l9:meta <<<";
@@ -106,7 +106,7 @@ const BINARY_EXTS = new Set([
 function isProbablyBinary(raw) {
     const n = Math.min(raw.length, 8192);
     for (let i = 0; i < n; i++)
-        if (raw.charCodeAt(i) === 0)
+        if (raw.codePointAt(i) === 0)
             return true;
     return false;
 }
@@ -185,7 +185,7 @@ function extractInjectedYaml(raw, spec) {
     const re = blockRegex(spec);
     if (!re)
         return null;
-    const m = raw.match(re);
+    const m = re.exec(raw);
     if (!m)
         return null;
     const body = m[0];

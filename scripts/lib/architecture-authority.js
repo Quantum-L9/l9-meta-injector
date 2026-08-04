@@ -1,7 +1,7 @@
 "use strict";
-const fs = require("fs");
-const path = require("path");
-const crypto = require("crypto");
+const fs = require("node:fs");
+const path = require("node:path");
+const crypto = require("node:crypto");
 
 const REPO = path.resolve(__dirname, "../..");
 const EXPECTED_PERSISTED_OUTPUTS = [
@@ -189,7 +189,7 @@ function validateAuthoritySchemaDocument(schema) {
   const actual = Array.isArray(schema.required) ? [...schema.required].sort((a, b) => a.localeCompare(b)) : [];
   if (JSON.stringify(required) !== JSON.stringify(actual)) errors.push("authority schema required-key set is incomplete");
   for (const key of ["engine","contracts","distribution","public_api","validation","legacy"]) {
-    const node = schema.properties && schema.properties[key];
+    const node = schema.properties?.[key];
     if (!isPlainObject(node) || node.type !== "object" || node.additionalProperties !== false || !Array.isArray(node.required)) {
       errors.push(`authority schema ${key} must be a closed required object`);
     }

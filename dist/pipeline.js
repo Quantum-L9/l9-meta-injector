@@ -35,8 +35,8 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.runPipelineAsync = runPipelineAsync;
 // pipeline.ts — Full pipeline: scan → extract → assist → inject (async reconcile) → verify → index
-const fs = __importStar(require("fs"));
-const path = __importStar(require("path"));
+const fs = __importStar(require("node:fs"));
+const path = __importStar(require("node:path"));
 const schema_1 = require("./schema");
 const retrieval_1 = require("./retrieval");
 const extract_1 = require("./extract");

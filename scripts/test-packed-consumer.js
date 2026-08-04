@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 "use strict";
-const fs=require("fs"),os=require("os"),path=require("path"),crypto=require("crypto");
+const fs=require("node:fs"),os=require("node:os"),path=require("node:path"),crypto=require("node:crypto");
 const {run,listRegularFiles,validatePackageContract,validatePackedFiles,parseNpmPackJson,resolveTsc,stableJson}=require("./lib/dist-integrity");
 const api=require("./lib/public-api");
 const REPO=path.resolve(__dirname,".."),KEEP=process.argv.includes("--keep-temp"),JSON_MODE=process.argv.includes("--json"),npm=process.platform==="win32"?"npm.cmd":"npm";
@@ -20,4 +20,4 @@ try{
  const tsc=resolveTsc(REPO),typeRoots=path.join(REPO,"node_modules","@types"),typecheck=command(tsc,["-p","tsconfig.json","--typeRoots",typeRoots],consumer);report.declarations={command:`${tsc} -p tsconfig.json`,exitCode:typecheck.status};
  const installed=JSON.parse(fs.readFileSync(path.join(consumer,"node_modules",pkg.name,"package.json"),"utf8"));if(installed.version!==pkg.version)die("installed package version differs");if(JSON.stringify(installed.exports)!==JSON.stringify(pkg.exports))die("installed export map differs");
  report.status="passed";if(JSON_MODE)process.stdout.write(stableJson(report));else console.log(`packed-consumer: OK (${report.tarball}, sha256=${report.tarballSha256}, entrypoints=${apiContract.entrypoints.length})`);
-}catch(error){if(JSON_MODE){report.reason=error&&error.message?error.message:String(error);report.details=error&&error.details?error.details:null;process.stdout.write(stableJson(report));}else{console.error(`packed-consumer: FAILED: ${error&&error.message?error.message:error}`);if(error&&error.details)console.error(JSON.stringify(error.details,null,2));if(KEEP)console.error(`temporary directory retained: ${temp}`);}process.exitCode=1;}finally{if(!KEEP)fs.rmSync(temp,{recursive:true,force:true});}
+}catch(error){if(JSON_MODE){report.reason=error?.message?error.message:String(error);report.details=error?.details?error.details:null;process.stdout.write(stableJson(report));}else{console.error(`packed-consumer: FAILED: ${error?.message?error.message:error}`);if(error?.details)console.error(JSON.stringify(error.details,null,2));if(KEEP)console.error(`temporary directory retained: ${temp}`);}process.exitCode=1;}finally{if(!KEEP)fs.rmSync(temp,{recursive:true,force:true});}

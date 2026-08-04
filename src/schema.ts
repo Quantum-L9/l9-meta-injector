@@ -1,7 +1,7 @@
 import type { MetaSchema } from "./meta_schema";
 
 export const UNKNOWN = "Unknown" as const;
-export type Unknown = typeof UNKNOWN;
+export type Unknown = "Unknown";
 
 export type ArtifactType =
   | "skill" | "playbook" | "kernel" | "context" | "prompt"
@@ -162,7 +162,7 @@ export function normalizeMetaRecord(rec: MetaRecord): MetaRecord {
   const out: MetaRecord = { ...rec };
   for (const f of NUMERIC_HEADER_FIELDS) {
     const v = out[f];
-    if (typeof v === "string" && /^-?\d+$/.test(v.trim())) out[f] = parseInt(v.trim(), 10);
+    if (typeof v === "string" && /^-?\d+$/.test(v.trim())) out[f] = Number.parseInt(v.trim(), 10);
   }
   for (const f of BOOLEAN_HEADER_FIELDS) {
     const v = out[f];

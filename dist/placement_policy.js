@@ -42,7 +42,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.compilePlacementPlan = compilePlacementPlan;
 exports.compilePlacementPlans = compilePlacementPlans;
-const path = __importStar(require("path"));
+const path = __importStar(require("node:path"));
 const artifact_class_1 = require("./artifact_class");
 const CONFIDENCE_RANK = { low: 0, medium: 1, high: 2 };
 const DEFAULT_NAMESPACE = "l9";

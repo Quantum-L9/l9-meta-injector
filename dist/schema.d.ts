@@ -1,6 +1,6 @@
 import type { MetaSchema } from "./meta_schema";
 export declare const UNKNOWN: "Unknown";
-export type Unknown = typeof UNKNOWN;
+export type Unknown = "Unknown";
 export type ArtifactType = "skill" | "playbook" | "kernel" | "context" | "prompt" | "doctrine" | "test" | "script" | "source" | "unknown";
 export type McpPrimitive = "tool" | "resource" | "prompt" | "none";
 export type ArtifactFamily = "auditor" | "compiler" | "meta_kernel_forge" | "builder" | "planner" | "research" | "domain_agent" | "legal" | "Unknown";

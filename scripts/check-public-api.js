@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 "use strict";
-const path = require("path");
+const path = require("node:path");
 const api = require("./lib/public-api");
 function main() {
   const errors=api.validateRepository(api.REPO);
