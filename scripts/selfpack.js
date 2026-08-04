@@ -77,7 +77,7 @@ async function measureIdempotency() {
   await pkg.runPipelineAsync(pipelineConfig(root, out));
   const after = walk(root);
   let changed = 0;
-  for (const f of after) { const b = before.get(f); if (!b || !b.equals(fs.readFileSync(f))) changed++; }
+  for (const f of after) { const b = before.get(f); if (!b?.equals(fs.readFileSync(f))) changed++; }
   return changed;
 }
 
@@ -185,4 +185,4 @@ function printLineDiff(a, b) {
   }
 }
 
-main().catch((e) => fail(e && e.stack || String(e)));
+main().catch((e) => fail(e?.stack || String(e)));

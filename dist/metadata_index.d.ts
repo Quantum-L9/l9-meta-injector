@@ -7,9 +7,8 @@
  * This module never creates adjacent sidecars or inject logs.
  */
 import type { ArtifactType } from "./schema";
-import type { CarrierDecision, MetadataCarrier, OperationMode } from "./operation_contracts";
+import type { AuthorityConfig, CarrierDecision, MetadataCarrier, OperationMode } from "./operation_contracts";
 import { type CarrierSubject } from "./mutation_policy";
-import type { AuthorityConfig } from "./operation_contracts";
 export declare const METADATA_INDEX_SCHEMA: "l9.metadata-index/v1";
 export declare const METADATA_INDEX_RELATIVE_PATH: ".l9/metadata-index.jsonl";
 export type MaterializedMetadataCarrier = Exclude<MetadataCarrier, "hard_skip">;

@@ -51,7 +51,7 @@ function estimateTokens(text) {
 }
 function extractList(body, heading) {
     const m = body.match(heading);
-    if (!m || m.index === undefined)
+    if (m?.index === undefined)
         return schema_1.UNKNOWN;
     const start = m.index + m[0].length;
     const nextHeading = /\n## /;

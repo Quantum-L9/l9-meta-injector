@@ -95,7 +95,7 @@ const namespaceGlobs = optAll("--namespace-glob").map((pair, i) => {
 });
 
 const authority = opt("--authority", null);
-if (!authority || !authority.trim()) {
+if (!authority?.trim()) {
   console.error("pipeline-cli: --authority is required; no repository-generic authority is assumed");
   process.exit(2);
 }

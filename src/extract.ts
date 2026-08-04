@@ -14,7 +14,7 @@ export function estimateTokens(text: string): number {
 
 function extractList(body: string, heading: RegExp): string[] | Unknown {
   const m = body.match(heading);
-  if (!m || m.index === undefined) return UNKNOWN;
+  if (m?.index === undefined) return UNKNOWN;
   const start = m.index + m[0].length;
   const nextHeading = /\n## /;
   const nextMatch = body.slice(start).match(nextHeading);

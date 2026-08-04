@@ -186,7 +186,7 @@
     },
     {
       "path": "scripts/check-dist-sync.js",
-      "git_blob_sha1": "47b20cf5442ec319feda88b296e6eeee94c22f9a"
+      "git_blob_sha1": "30050ecbf194685069c26efd1a1a062ad404546a"
     },
     {
       "path": "scripts/check-public-api.js",
@@ -202,7 +202,7 @@
     },
     {
       "path": "scripts/lib/architecture-authority.js",
-      "git_blob_sha1": "e3ba279a70a23aa44b809b740ae79cbcdc74b792"
+      "git_blob_sha1": "dbba10537e905675a18a22c849435662d22e3884"
     },
     {
       "path": "scripts/lib/dist-integrity.js",
@@ -214,11 +214,11 @@
     },
     {
       "path": "scripts/selfpack.js",
-      "git_blob_sha1": "32edd075f98a90ddf05e8c63177c66ceb7408671"
+      "git_blob_sha1": "e529f7b0784af4f300af53df8873c161afd8a04e"
     },
     {
       "path": "scripts/test-packed-consumer.js",
-      "git_blob_sha1": "e24e821a2683b98a182c172f55c77a59505418eb"
+      "git_blob_sha1": "c60f31430746d59044fa3fd858db3420c144c308"
     },
     {
       "path": "src/index.ts",

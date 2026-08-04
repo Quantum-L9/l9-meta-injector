@@ -11,13 +11,12 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { createHash } from "node:crypto";
 import type { ArtifactType } from "./schema";
-import type { CarrierDecision, MetadataCarrier, OperationMode } from "./operation_contracts";
+import type { AuthorityConfig, CarrierDecision, MetadataCarrier, OperationMode } from "./operation_contracts";
 import {
   assertCarrierDecisionCoverage,
   resolveCarrierDecisions,
   type CarrierSubject,
 } from "./mutation_policy";
-import type { AuthorityConfig } from "./operation_contracts";
 
 export const METADATA_INDEX_SCHEMA = "l9.metadata-index/v1" as const;
 export const METADATA_INDEX_RELATIVE_PATH = ".l9/metadata-index.jsonl" as const;

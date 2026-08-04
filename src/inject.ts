@@ -6,11 +6,10 @@
 // re-run replaces it instead of duplicating. Writes <file>.inject.log on any mutation.
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { NormalizedMeta, InjectionRecord, MetaRecord, asRecord, normalizeMetaRecord } from "./schema";
+import { NormalizedMeta, InjectionRecord, MetaRecord, asRecord, normalizeMetaRecord, FieldDiff } from "./schema";
 import { serializeToYamlFrontMatter } from "./normalize_meta";
 import { contentHash } from "./extract";
 import { reconcileFields, reconcileFieldsAsync, diffsToLogYaml } from "./reconcile_fields";
-import { FieldDiff } from "./schema";
 import { getAdapter } from "./llm";
 import { MetricsCollector } from "./metrics";
 import { parseCanonicalYaml } from "./meta_schema";
