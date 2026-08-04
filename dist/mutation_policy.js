@@ -192,11 +192,8 @@ function startsWithAny(relativePath, prefixes) {
 function decision(pathName, carrier, reason, authorityRule) {
     return { path: pathName, carrier, reason, authorityRule };
 }
-function resolveCarrierDecision(subject, authority, mode) {
-    const relativePath = normalizeRelativePath(subject.path);
-    const lowerPath = relativePath.toLowerCase();
-    const basename = posixBasename(lowerPath);
-    const extension = posixExtname(lowerPath);
+/** Protected/generated/binary surfaces that carry no metadata at all. */
+function hardSkipDecision(relativePath, lowerPath, subject) {
     const hardPrefix = startsWithAny(lowerPath, HARD_SKIP_PREFIXES);
     if (hardPrefix) {
         return decision(relativePath, "hard_skip", "protected internal, dependency, or generated namespace", hardPrefix);
@@ -208,6 +205,10 @@ function resolveCarrierDecision(subject, authority, mode) {
     if (subject.strategy === "skip-binary") {
         return decision(relativePath, "hard_skip", "binary or media content has no metadata carrier", "strategy:skip-binary");
     }
+    return null;
+}
+/** Generated/vendored surfaces that are inventoried but never annotated. */
+function inventoryOnlyDecision(relativePath, lowerPath, basename) {
     const inventoryPrefix = startsWithAny(lowerPath, INVENTORY_ONLY_PREFIXES);
     if (inventoryPrefix) {
         return decision(relativePath, "inventory_only", "generated, vendored, or environment-managed content", inventoryPrefix);
@@ -218,6 +219,10 @@ function resolveCarrierDecision(subject, authority, mode) {
     if (basename.endsWith(".min.js") || basename.endsWith(".min.css") || basename.endsWith(".map")) {
         return decision(relativePath, "inventory_only", "generated distribution artifact", "generated-distribution-suffix");
     }
+    return null;
+}
+/** Structured/executable/non-prose surfaces routed through the central manifest. */
+function centralManifestDecision(relativePath, lowerPath, basename, extension, subject) {
     const centralPrefix = startsWithAny(lowerPath, CENTRAL_MANIFEST_PREFIXES);
     if (centralPrefix) {
         return decision(relativePath, "central_manifest", "source, test, automation, or infrastructure surface", centralPrefix);
@@ -231,6 +236,10 @@ function resolveCarrierDecision(subject, authority, mode) {
     if (subject.strategy === "line-comment" || subject.strategy === "block-comment" || subject.strategy === "sidecar") {
         return decision(relativePath, "central_manifest", "non-prose formats use the central manifest by default", `strategy:${subject.strategy}`);
     }
+    return null;
+}
+/** Final tier: inline_allow eligibility, else the repository default carrier. */
+function inlineOrDefaultDecision(relativePath, basename, subject, authority, mode) {
     const inlinePattern = matchesInlineAllow(relativePath, authority.inline_allow);
     const inlineEligible = exports.INLINE_MANAGED_ARTIFACT_TYPES.has(subject.artifactType);
     if (inlinePattern && inlineEligible) {
@@ -244,6 +253,17 @@ function resolveCarrierDecision(subject, authority, mode) {
     return decision(relativePath, "central_manifest", authority.default_carrier === "inline_managed"
         ? "inline_managed requires an explicit safe inline_allow match"
         : "repository default carrier is central_manifest", `default_carrier:${authority.default_carrier}`);
+}
+function resolveCarrierDecision(subject, authority, mode) {
+    const relativePath = normalizeRelativePath(subject.path);
+    const lowerPath = relativePath.toLowerCase();
+    const basename = posixBasename(lowerPath);
+    const extension = posixExtname(lowerPath);
+    // Ordered decision tiers — first non-null wins (order is load-bearing).
+    return (hardSkipDecision(relativePath, lowerPath, subject) ??
+        inventoryOnlyDecision(relativePath, lowerPath, basename) ??
+        centralManifestDecision(relativePath, lowerPath, basename, extension, subject) ??
+        inlineOrDefaultDecision(relativePath, basename, subject, authority, mode));
 }
 function resolveCarrierDecisions(input) {
     const seen = new Set();

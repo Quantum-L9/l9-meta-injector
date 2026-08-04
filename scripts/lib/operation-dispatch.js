@@ -163,7 +163,7 @@ function sanitizeSegment(value, fallback) {
   return clean || fallback;
 }
 
-function enforceModeRules(config) {
+function assertModeShape(config) {
   const { mode } = config;
   if ((mode === "check" || mode === "apply") && config.authority.length === 0) {
     fail(`${mode} requires an explicit authority input; no repository-generic authority is assumed`);
@@ -179,20 +179,28 @@ function enforceModeRules(config) {
   if ((mode === "inventory" || mode === "skills") && config.failOnIssues === false) {
     fail(`fail-on-issues is not supported for ${mode}`);
   }
+}
+
+function assertLlmConfig(config) {
+  const { mode } = config;
   if (config.llmEnabled && mode !== "apply" && mode !== "skills") {
     fail(`LLM assistance is not supported for ${mode}`);
   }
-  if (config.llmEnabled) {
-    if (!config.llmBaseUrl || !config.llmModel || !config.llmApiKey) {
-      fail("llm=true requires llm-base-url, llm-model, and llm-api-key");
-    }
-    let url;
-    try { url = new URL(config.llmBaseUrl); }
-    catch { fail("llm-base-url must be an absolute URL"); }
-    if (url.protocol !== "https:" && !config.llmAllowInsecure) {
-      fail("non-https llm-base-url requires llm-allow-insecure=true");
-    }
+  if (!config.llmEnabled) return;
+  if (!config.llmBaseUrl || !config.llmModel || !config.llmApiKey) {
+    fail("llm=true requires llm-base-url, llm-model, and llm-api-key");
   }
+  let url;
+  try { url = new URL(config.llmBaseUrl); }
+  catch { fail("llm-base-url must be an absolute URL"); }
+  if (url.protocol !== "https:" && !config.llmAllowInsecure) {
+    fail("non-https llm-base-url requires llm-allow-insecure=true");
+  }
+}
+
+function enforceModeRules(config) {
+  assertModeShape(config);
+  assertLlmConfig(config);
 }
 
 function normalizeEnvironment(rawEnv) {
@@ -262,13 +270,7 @@ function normalizeEnvironment(rawEnv) {
   return config;
 }
 
-function parseCommandLine(argv, env = process.env) {
-  const args = [...argv];
-  if (args.length < 2) {
-    fail("usage: operation-cli.js <inventory|check|apply|skills|pipeline> <root> [options]");
-  }
-  const requestedMode = args.shift();
-  const rootInput = args.shift();
+function parseArgOptions(args) {
   const values = new Map();
   const repeated = new Map();
   const booleans = new Set(["--dry-run", "--fail-on-issues", "--llm", "--llm-allow-insecure"]);
@@ -279,21 +281,31 @@ function parseCommandLine(argv, env = process.env) {
   ]);
   while (args.length) {
     const option = args.shift();
-    if (booleans.has(option) || valueOptions.has(option) || repeatable.has(option)) {
-      if (!args.length) fail(`${option} requires a value`);
-      const value = args.shift();
-      if (repeatable.has(option)) {
-        const list = repeated.get(option) ?? [];
-        list.push(value);
-        repeated.set(option, list);
-      } else {
-        if (values.has(option)) fail(`${option} may be specified only once`);
-        values.set(option, value);
-      }
-      continue;
+    if (!(booleans.has(option) || valueOptions.has(option) || repeatable.has(option))) {
+      fail(`unknown option '${option}'`);
     }
-    fail(`unknown option '${option}'`);
+    if (!args.length) fail(`${option} requires a value`);
+    const value = args.shift();
+    if (repeatable.has(option)) {
+      const list = repeated.get(option) ?? [];
+      list.push(value);
+      repeated.set(option, list);
+    } else {
+      if (values.has(option)) fail(`${option} may be specified only once`);
+      values.set(option, value);
+    }
   }
+  return { values, repeated };
+}
+
+function parseCommandLine(argv, env = process.env) {
+  const args = [...argv];
+  if (args.length < 2) {
+    fail("usage: operation-cli.js <inventory|check|apply|skills|pipeline> <root> [options]");
+  }
+  const requestedMode = args.shift();
+  const rootInput = args.shift();
+  const { values, repeated } = parseArgOptions(args);
 
   const workspace = realDirectory("working directory", process.cwd());
   const targetRoot = resolveExistingContainedDirectory(workspace, String(rootInput), "root");
@@ -361,37 +373,45 @@ function llmArgs(config) {
   return args;
 }
 
-function buildInvocation(config) {
-  const scripts = path.join(config.actionPath, "scripts");
-  let script;
-  let args;
+function resolveScriptAndArgs(config, scripts) {
   if (config.mode === "inventory") {
-    script = path.join(scripts, "inventory.js");
-    args = [config.targetRoot, "--source", "github", "--out", config.outDir];
+    const args = [config.targetRoot, "--source", "github", "--out", config.outDir];
     for (const pattern of config.omitPatterns) args.push("--omit", pattern);
     if (config.dryRun) args.push("--dry-run");
-  } else if (config.mode === "check") {
-    script = path.join(scripts, "check-cli.js");
-    args = [...commonArgs(config), "--authority", config.authority, "--report", config.reportPath,
+    return { script: path.join(scripts, "inventory.js"), args };
+  }
+  if (config.mode === "check") {
+    const args = [...commonArgs(config), "--authority", config.authority, "--report", config.reportPath,
       "--near-dup", String(config.nearDupThreshold), "--hash-prefix-length", String(config.hashPrefixLength)];
-  } else if (config.mode === "apply") {
-    script = path.join(scripts, "apply-cli.js");
-    args = [...commonArgs(config), "--authority", config.authority, "--out", config.outDir,
+    return { script: path.join(scripts, "check-cli.js"), args };
+  }
+  if (config.mode === "apply") {
+    const args = [...commonArgs(config), "--authority", config.authority, "--out", config.outDir,
       "--near-dup", String(config.nearDupThreshold), "--hash-prefix-length", String(config.hashPrefixLength),
       ...llmArgs(config)];
     if (!config.failOnIssues) args.push("--no-fail-on-issues");
-  } else {
-    script = path.join(scripts, "skills-cli.js");
-    args = [config.targetRoot, "--out", config.outDir, ...llmArgs(config)];
-    for (const pattern of config.omitPatterns) args.push("--omit", pattern);
-    if (config.dryRun) args.push("--dry-run");
+    return { script: path.join(scripts, "apply-cli.js"), args };
   }
+  const args = [config.targetRoot, "--out", config.outDir, ...llmArgs(config)];
+  for (const pattern of config.omitPatterns) args.push("--omit", pattern);
+  if (config.dryRun) args.push("--dry-run");
+  return { script: path.join(scripts, "skills-cli.js"), args };
+}
+
+function buildChildEnv(config) {
   const childEnv = { ...process.env };
   for (const key of Object.keys(childEnv)) {
     if (key.startsWith("L9_INPUT_")) delete childEnv[key];
   }
   if (config.llmApiKey) childEnv.LLM_API_KEY = config.llmApiKey;
   else delete childEnv.LLM_API_KEY;
+  return childEnv;
+}
+
+function buildInvocation(config) {
+  const scripts = path.join(config.actionPath, "scripts");
+  const { script, args } = resolveScriptAndArgs(config, scripts);
+  const childEnv = buildChildEnv(config);
   return {
     command: process.execPath,
     args: [script, ...args],

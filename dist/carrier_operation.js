@@ -90,18 +90,8 @@ function assertInlinePlan(root, record, decision) {
         throw new Error(`inline_managed plan is incomplete for ${source}`);
     }
 }
-function buildCarrierOperationPlan(mode, rootInput, authority, pipeline) {
-    const root = path.resolve(rootInput);
-    const subjects = [...pipeline.metadataSubjects].sort((a, b) => a.path.localeCompare(b.path));
-    const carrierSubjects = subjects.map(({ path: subjectPath, artifactType, strategy }) => ({
-        path: subjectPath,
-        artifactType,
-        strategy,
-    }));
-    const carrierDecisions = (0, mutation_policy_1.resolveCarrierDecisions)({ authority, mode, subjects: carrierSubjects });
-    (0, mutation_policy_1.assertCarrierDecisionCoverage)(carrierSubjects, carrierDecisions);
-    const byPath = decisionMap(carrierDecisions);
-    const metadataIndex = (0, metadata_index_1.compileMetadataIndex)({ authority, mode, subjects });
+/** Fail if the metadata index and carrier operation disagree on decisions. */
+function assertMetadataIndexParity(metadataIndex, carrierDecisions) {
     if (metadataIndex.carrierDecisions.length !== carrierDecisions.length) {
         throw new Error("metadata index and carrier operation decision counts diverged");
     }
@@ -110,14 +100,21 @@ function buildCarrierOperationPlan(mode, rootInput, authority, pipeline) {
             throw new Error(`metadata index and carrier operation decisions diverged at ${carrierDecisions[index].path}`);
         }
     }
-    const inlinePlans = [];
+}
+/** Index canonical injection plans by their repository-relative source path. */
+function indexInjectionPlansBySource(root, injected) {
     const planBySource = new Map();
-    for (const record of pipeline.injected) {
+    for (const record of injected) {
         const source = relativePath(root, record.sourcePath);
         if (planBySource.has(source))
             throw new Error(`duplicate pipeline injection plan for ${source}`);
         planBySource.set(source, record);
     }
+    return planBySource;
+}
+/** Resolve the sorted inline-managed injection plans, validating each subject's decision. */
+function collectInlinePlans(root, subjects, byPath, planBySource) {
+    const inlinePlans = [];
     for (const subject of subjects) {
         const decision = byPath.get(subject.path);
         if (!decision)
@@ -138,6 +135,23 @@ function buildCarrierOperationPlan(mode, rootInput, authority, pipeline) {
         }
     }
     inlinePlans.sort((a, b) => relativePath(root, a.sourcePath).localeCompare(relativePath(root, b.sourcePath)));
+    return inlinePlans;
+}
+function buildCarrierOperationPlan(mode, rootInput, authority, pipeline) {
+    const root = path.resolve(rootInput);
+    const subjects = [...pipeline.metadataSubjects].sort((a, b) => a.path.localeCompare(b.path));
+    const carrierSubjects = subjects.map(({ path: subjectPath, artifactType, strategy }) => ({
+        path: subjectPath,
+        artifactType,
+        strategy,
+    }));
+    const carrierDecisions = (0, mutation_policy_1.resolveCarrierDecisions)({ authority, mode, subjects: carrierSubjects });
+    (0, mutation_policy_1.assertCarrierDecisionCoverage)(carrierSubjects, carrierDecisions);
+    const byPath = decisionMap(carrierDecisions);
+    const metadataIndex = (0, metadata_index_1.compileMetadataIndex)({ authority, mode, subjects });
+    assertMetadataIndexParity(metadataIndex, carrierDecisions);
+    const planBySource = indexInjectionPlansBySource(root, pipeline.injected);
+    const inlinePlans = collectInlinePlans(root, subjects, byPath, planBySource);
     return {
         mode,
         root,

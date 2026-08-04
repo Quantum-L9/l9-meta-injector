@@ -76,6 +76,62 @@ function assertInlinePlan(root: string, record: InjectionRecord, decision: Carri
   }
 }
 
+/** Fail if the metadata index and carrier operation disagree on decisions. */
+function assertMetadataIndexParity(
+  metadataIndex: MetadataIndexCompilation,
+  carrierDecisions: readonly CarrierDecision[],
+): void {
+  if (metadataIndex.carrierDecisions.length !== carrierDecisions.length) {
+    throw new Error("metadata index and carrier operation decision counts diverged");
+  }
+  for (let index = 0; index < carrierDecisions.length; index++) {
+    if (JSON.stringify(metadataIndex.carrierDecisions[index]) !== JSON.stringify(carrierDecisions[index])) {
+      throw new Error(`metadata index and carrier operation decisions diverged at ${carrierDecisions[index].path}`);
+    }
+  }
+}
+
+/** Index canonical injection plans by their repository-relative source path. */
+function indexInjectionPlansBySource(
+  root: string,
+  injected: readonly InjectionRecord[],
+): Map<string, InjectionRecord> {
+  const planBySource = new Map<string, InjectionRecord>();
+  for (const record of injected) {
+    const source = relativePath(root, record.sourcePath);
+    if (planBySource.has(source)) throw new Error(`duplicate pipeline injection plan for ${source}`);
+    planBySource.set(source, record);
+  }
+  return planBySource;
+}
+
+/** Resolve the sorted inline-managed injection plans, validating each subject's decision. */
+function collectInlinePlans(
+  root: string,
+  subjects: readonly PipelineMetadataSubject[],
+  byPath: Map<string, CarrierDecision>,
+  planBySource: Map<string, InjectionRecord>,
+): InjectionRecord[] {
+  const inlinePlans: InjectionRecord[] = [];
+  for (const subject of subjects) {
+    const decision = byPath.get(subject.path);
+    if (!decision) throw new Error(`missing carrier decision for ${subject.path}`);
+    const record = planBySource.get(subject.path);
+    if (decision.carrier === "inline_managed") {
+      if (!record) throw new Error(`inline_managed subject lacks canonical injection plan: ${subject.path}`);
+      assertInlinePlan(root, record, decision);
+      inlinePlans.push(record);
+    } else if (record?.sidecarPath) {
+      // The historical syntax planner may have proposed a sidecar. Carrier policy
+      // owns the final destination, so that sidecar proposal is deliberately ignored.
+      const sidecar = relativePath(root, record.sidecarPath);
+      if (!sidecar.endsWith(".l9meta.yaml")) throw new Error(`unexpected legacy sidecar target: ${sidecar}`);
+    }
+  }
+  inlinePlans.sort((a, b) => relativePath(root, a.sourcePath).localeCompare(relativePath(root, b.sourcePath)));
+  return inlinePlans;
+}
+
 export function buildCarrierOperationPlan(
   mode: GovernedCarrierMode,
   rootInput: string,
@@ -94,40 +150,11 @@ export function buildCarrierOperationPlan(
   const byPath = decisionMap(carrierDecisions);
 
   const metadataIndex = compileMetadataIndex({ authority, mode, subjects });
-  if (metadataIndex.carrierDecisions.length !== carrierDecisions.length) {
-    throw new Error("metadata index and carrier operation decision counts diverged");
-  }
-  for (let index = 0; index < carrierDecisions.length; index++) {
-    if (JSON.stringify(metadataIndex.carrierDecisions[index]) !== JSON.stringify(carrierDecisions[index])) {
-      throw new Error(`metadata index and carrier operation decisions diverged at ${carrierDecisions[index].path}`);
-    }
-  }
+  assertMetadataIndexParity(metadataIndex, carrierDecisions);
 
-  const inlinePlans: InjectionRecord[] = [];
-  const planBySource = new Map<string, InjectionRecord>();
-  for (const record of pipeline.injected) {
-    const source = relativePath(root, record.sourcePath);
-    if (planBySource.has(source)) throw new Error(`duplicate pipeline injection plan for ${source}`);
-    planBySource.set(source, record);
-  }
+  const planBySource = indexInjectionPlansBySource(root, pipeline.injected);
+  const inlinePlans = collectInlinePlans(root, subjects, byPath, planBySource);
 
-  for (const subject of subjects) {
-    const decision = byPath.get(subject.path);
-    if (!decision) throw new Error(`missing carrier decision for ${subject.path}`);
-    const record = planBySource.get(subject.path);
-    if (decision.carrier === "inline_managed") {
-      if (!record) throw new Error(`inline_managed subject lacks canonical injection plan: ${subject.path}`);
-      assertInlinePlan(root, record, decision);
-      inlinePlans.push(record);
-    } else if (record?.sidecarPath) {
-      // The historical syntax planner may have proposed a sidecar. Carrier policy
-      // owns the final destination, so that sidecar proposal is deliberately ignored.
-      const sidecar = relativePath(root, record.sidecarPath);
-      if (!sidecar.endsWith(".l9meta.yaml")) throw new Error(`unexpected legacy sidecar target: ${sidecar}`);
-    }
-  }
-
-  inlinePlans.sort((a, b) => relativePath(root, a.sourcePath).localeCompare(relativePath(root, b.sourcePath)));
   return {
     mode,
     root,
