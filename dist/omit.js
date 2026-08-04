@@ -127,7 +127,7 @@ function appendGlobToken(re, pattern, i) {
         return { re: re + "[^/]*", next: i };
     if (c === "?")
         return { re: re + "[^/]", next: i };
-    if ("+|(){}^$.[\\]".includes(c))
+    if (String.raw `+|(){}^$.[\]`.includes(c))
         return { re: re + "\\" + c, next: i };
     return { re: re + c, next: i };
 }

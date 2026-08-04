@@ -174,7 +174,7 @@ function globToRegExp(pattern) {
             source += "[^/]";
             continue;
         }
-        source += char.replace(/[|\\{}()[\]^$+?.]/g, "\\$&");
+        source += char.replace(/[|\\{}()[\]^$+?.]/g, String.raw `\$&`);
     }
     source += "$";
     return new RegExp(source);

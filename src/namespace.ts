@@ -37,7 +37,7 @@ function matchGlob(filePath: string, glob: string): boolean {
   // Previously only "." was escaped, so a glob containing "[", "(", "+", "\\", …
   // reached RegExp and could throw (DoS) or backtrack (ReDoS) — finding SEC-002.
   const pat = glob
-    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&") // escape all metachars (including the "*" re-added next)
+    .replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`) // escape all metachars (including the "*" re-added next)
     .replace(/\\\*\\\*/g, "DSTAR")          // "**" (now "\*\*") → cross-segment placeholder
     .replace(/\\\*/g, "[^/]*")              // "*"  (now "\*")   → single-segment wildcard
     .replace(/DSTAR/g, ".*");

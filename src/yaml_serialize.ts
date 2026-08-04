@@ -18,7 +18,7 @@ export function yamlScalar(v: unknown): string {
   const s = String(v);
   if (s === "") return '""';
   if (/[:#{}\[\],&*?|<>=!%@`\n'"\\]/.test(s) || s.trim() !== s || s === "true" || s === "false" || s === "null")
-    return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+    return `"${s.replace(/\\/g, String.raw`\\`).replace(/"/g, String.raw`\"`)}"`;
   return s;
 }
 
