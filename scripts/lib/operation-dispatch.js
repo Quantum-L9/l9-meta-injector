@@ -334,7 +334,7 @@ function parseCommandLine(argv, env = process.env) {
     mode: modeResolution.mode,
     warnings: modeResolution.warnings,
     workspace,
-    actionPath: path.resolve(__dirname, ".."),
+    actionPath: path.resolve(__dirname, "..", ".."),
     targetRoot,
     outDir,
     reportPath,
