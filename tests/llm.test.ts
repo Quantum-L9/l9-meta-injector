@@ -1,3 +1,4 @@
+import { vi } from "vitest";
 import { getAdapter, setAdapter, resetAdapter, localAdapter, makeOpenAIAdapter } from "../src/llm";
 
 afterEach(() => resetAdapter());
@@ -113,5 +114,70 @@ test("makeOpenAIAdapter.classify returns null when response has no choices", asy
     expect(await a.classify!("test prompt")).toBeNull();
   } finally {
     globalThis.fetch = originalFetch;
+  }
+});
+
+// QTE-002 regression: the request target and credential header are part of the
+// adapter's external contract. These assert the *actual* fetch arguments (URL
+// string and headers object) rather than reconstructing them from opts, so a
+// change to the path or a dropped/malformed Authorization header fails here.
+test("makeOpenAIAdapter.classify posts to <baseUrl>/chat/completions with a Bearer auth header (QTE-002)", async () => {
+  const originalFetch = globalThis.fetch;
+  let capturedUrl: unknown;
+  let capturedInit: RequestInit | undefined;
+  globalThis.fetch = async (url, init) => {
+    capturedUrl = url;
+    capturedInit = init as RequestInit;
+    return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: "ok" } }] }) } as unknown as Response;
+  };
+  try {
+    const a = makeOpenAIAdapter({ baseUrl: "https://api.example.com/v1", apiKey: "secret-key", model: "gpt-4o-mini" });
+    await a.classify!("test prompt");
+    expect(capturedUrl).toBe("https://api.example.com/v1/chat/completions");
+    const headers = capturedInit?.headers as Record<string, string>;
+    expect(headers.Authorization).toBe("Bearer secret-key");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+// QTE-002 regression: the abort timeout must always be cleared so a completed
+// request leaves no dangling timer. We assert the exact handle returned by
+// setTimeout is the one passed to clearTimeout — on both the success and the
+// failure/rejection paths (the adapter clears it in a `finally`).
+test("makeOpenAIAdapter.classify clears the abort timeout after a successful request (QTE-002)", async () => {
+  const originalFetch = globalThis.fetch;
+  const setSpy = vi.spyOn(globalThis, "setTimeout");
+  const clearSpy = vi.spyOn(globalThis, "clearTimeout");
+  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: "ok" } }] }) } as unknown as Response);
+  try {
+    const a = makeOpenAIAdapter({ baseUrl: "https://localhost", apiKey: "k", model: "m" });
+    await a.classify!("test prompt");
+    expect(setSpy).toHaveBeenCalled();
+    const timerHandle = setSpy.mock.results[0]!.value;
+    expect(clearSpy).toHaveBeenCalledWith(timerHandle);
+  } finally {
+    globalThis.fetch = originalFetch;
+    setSpy.mockRestore();
+    clearSpy.mockRestore();
+  }
+});
+
+test("makeOpenAIAdapter.classify clears the abort timeout after a failed request (QTE-002)", async () => {
+  const originalFetch = globalThis.fetch;
+  const setSpy = vi.spyOn(globalThis, "setTimeout");
+  const clearSpy = vi.spyOn(globalThis, "clearTimeout");
+  globalThis.fetch = async () => { throw new Error("network error"); };
+  try {
+    const a = makeOpenAIAdapter({ baseUrl: "https://localhost", apiKey: "k", model: "m" });
+    const result = await a.classify!("test prompt");
+    expect(result).toBeNull();
+    expect(setSpy).toHaveBeenCalled();
+    const timerHandle = setSpy.mock.results[0]!.value;
+    expect(clearSpy).toHaveBeenCalledWith(timerHandle);
+  } finally {
+    globalThis.fetch = originalFetch;
+    setSpy.mockRestore();
+    clearSpy.mockRestore();
   }
 });
