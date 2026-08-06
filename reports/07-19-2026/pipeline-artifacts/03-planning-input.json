@@ -1,0 +1,20 @@
+{
+  "audit": {
+    "auditor_version": "3.3.0",
+    "federated_envelope_sha256": "69706c2badfaac144e0b7019e4ac1d0a48c53ca809d8b4c466189b6880ddf0e9",
+    "outcome": "partial",
+    "provider_count": 1
+  },
+  "candidate_findings": [],
+  "planning_input_id": "PIN-l9-meta-injector-69706c2badfa",
+  "policy": {
+    "policy_id": "default-remediation",
+    "policy_version": "1.3.0"
+  },
+  "repository": {
+    "base_ref": "a1dfdab7643493e25ce8b9ca15da280c73343c8e",
+    "repository_id": "l9-meta-injector",
+    "snapshot_id": "sha256:df69123345cac27abf3b150c4951a9a69b9ba70256303f5f9660af93e7aea755"
+  },
+  "schema_version": "l9.planning-input.v1"
+}

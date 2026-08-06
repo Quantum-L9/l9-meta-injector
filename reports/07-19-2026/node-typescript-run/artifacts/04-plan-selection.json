@@ -1,0 +1,70 @@
+{
+  "decisions": [
+    {
+      "candidate_finding_id": "CFD-0BA2DC51F56D3100E1AB",
+      "reasons": [
+        "selected"
+      ],
+      "selected": true
+    },
+    {
+      "candidate_finding_id": "CFD-7DC5F0A4F2C571B142AE",
+      "reasons": [
+        "selection conflicts with already selected candidates: CFD-7DC5F0A4F2C571B142AE:CFD-C72988B675FF131BD86B"
+      ],
+      "selected": false
+    },
+    {
+      "candidate_finding_id": "CFD-8E774F250270DC5E6DA0",
+      "reasons": [
+        "selection conflicts with already selected candidates: CFD-8E774F250270DC5E6DA0:CFD-F69A7B7680C431B49F0D"
+      ],
+      "selected": false
+    },
+    {
+      "candidate_finding_id": "CFD-C0C0E460E294A955E29F",
+      "reasons": [
+        "selection conflicts with already selected candidates: CFD-C0C0E460E294A955E29F:CFD-C72988B675FF131BD86B"
+      ],
+      "selected": false
+    },
+    {
+      "candidate_finding_id": "CFD-C554863E4861ECD57439",
+      "reasons": [
+        "selected"
+      ],
+      "selected": true
+    },
+    {
+      "candidate_finding_id": "CFD-C72988B675FF131BD86B",
+      "reasons": [
+        "selected"
+      ],
+      "selected": true
+    },
+    {
+      "candidate_finding_id": "CFD-F3BB94DB67A513224551",
+      "reasons": [
+        "selected"
+      ],
+      "selected": true
+    },
+    {
+      "candidate_finding_id": "CFD-F69A7B7680C431B49F0D",
+      "reasons": [
+        "selected"
+      ],
+      "selected": true
+    },
+    {
+      "candidate_finding_id": "CFD-FABC93CFDD2DEB7D94B7",
+      "reasons": [
+        "selection conflicts with already selected candidates: CFD-C72988B675FF131BD86B:CFD-FABC93CFDD2DEB7D94B7"
+      ],
+      "selected": false
+    }
+  ],
+  "planning_input_id": "PIN-l9-meta-injector-cbae15b1d0bd",
+  "schema_version": "l9.planner-selection-report.v3",
+  "selected_effort_points": 10
+}

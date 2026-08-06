@@ -1,0 +1,117 @@
+{
+  "coverage": {
+    "bytes_analyzed": 897819,
+    "capabilities_exercised": {
+      "contextual": 1,
+      "lexical": 2,
+      "manifest_query": 1,
+      "repository_inventory": 1
+    },
+    "files_analyzed": 231,
+    "files_considered": 232,
+    "files_skipped": 1,
+    "limitations": [
+      "A zero-observation result means no enabled deterministic rule matched within declared coverage; it does not prove the repository is defect-free.",
+      "P1 supports lexical, bounded contextual, file predicate, structured manifest query, and registered repository inventory capabilities.",
+      "The auditor rejects rule capabilities requiring AST, control-flow, dataflow, taint, call-graph, ownership, or temporal reasoning.",
+      "Repository inventory checks are conservative signals and may require human qualification."
+    ],
+    "rulepacks_disabled": [
+      {
+        "pack_id": "org.l9.experimental.duplicate-basename",
+        "reason": "disabled_by_policy",
+        "trust_zone": "experimental",
+        "version": "0.1.0"
+      },
+      {
+        "pack_id": "org.l9.integration.example-framework",
+        "reason": "disabled_by_policy",
+        "trust_zone": "integration",
+        "version": "1.0.0"
+      }
+    ],
+    "rulepacks_loaded": [
+      {
+        "pack_id": "org.l9.core-packaging",
+        "sha256": "969ffb7f6eca6b800cf1aac7419695a3cbd174738efdf5641270bc144ea583c3",
+        "trust_zone": "core",
+        "version": "1.0.0"
+      },
+      {
+        "pack_id": "org.l9.core-security",
+        "sha256": "faa642fc937930fb090dc3c33fe059dc5b6ab3065294608c2d29b4b55df4c8c5",
+        "trust_zone": "core",
+        "version": "2.0.0"
+      }
+    ],
+    "rules_enabled": 5,
+    "rules_executed": 5,
+    "schema_version": "l9.audit-coverage.v1",
+    "skip_records": [
+      {
+        "path": "tests/multifiletype.test.ts",
+        "reason": "binary_content"
+      }
+    ],
+    "skipped_by_reason": {
+      "binary_content": 1
+    },
+    "status": "partial",
+    "trust_zones_enabled": {
+      "core": 2
+    },
+    "unsupported_analysis": [
+      "ast_semantics",
+      "authorization_ownership",
+      "call_graph_reasoning",
+      "control_flow",
+      "cross_run_state",
+      "interprocedural_dataflow",
+      "resource_growth",
+      "taint_analysis",
+      "temporal_semantics"
+    ]
+  },
+  "engine": {
+    "git_required": "false",
+    "name": "l9-deterministic-auditor",
+    "network_used": "false",
+    "version": "3.3.0"
+  },
+  "errors": [],
+  "limitations": [
+    "A zero-observation result means no enabled deterministic rule matched within declared coverage; it does not prove the repository is defect-free.",
+    "P1 supports lexical, bounded contextual, file predicate, structured manifest query, and registered repository inventory capabilities.",
+    "The auditor rejects rule capabilities requiring AST, control-flow, dataflow, taint, call-graph, ownership, or temporal reasoning.",
+    "Repository inventory checks are conservative signals and may require human qualification."
+  ],
+  "observations": [],
+  "outcome": "partial",
+  "quality_summary": {
+    "observation_counts_by_rule": {},
+    "rule_lifecycle_counts": {
+      "review-required": 3,
+      "shadow": 2
+    },
+    "rule_owner_counts": {
+      "developer-platform": 2,
+      "security-platform": 3
+    }
+  },
+  "schema_version": "l9.audit-envelope.v1",
+  "snapshot": {
+    "file_count": 231,
+    "manifest_sha256": "df69123345cac27abf3b150c4951a9a69b9ba70256303f5f9660af93e7aea755",
+    "root_name": "l9-meta-injector",
+    "snapshot_id": "sha256:df69123345cac27abf3b150c4951a9a69b9ba70256303f5f9660af93e7aea755"
+  },
+  "suppression_summary": {
+    "active_observation_count": 0,
+    "enabled": false,
+    "expired_suppressions": [],
+    "source": null,
+    "suppressed_observation_count": 0,
+    "unused_suppressions": [],
+    "used_suppression_ids": []
+  }
+}

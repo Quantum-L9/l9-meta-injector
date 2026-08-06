@@ -1,0 +1,471 @@
+{
+  "audit": {
+    "auditor_version": "1.0.0",
+    "federated_envelope_sha256": "cbae15b1d0bd0d57b0a88db7409a40e65e34a05d3ebdefd8fa8bbdd947992cfd",
+    "outcome": "complete",
+    "provider_count": 4
+  },
+  "candidate_findings": [
+    {
+      "allowed_paths": [
+        "scripts/inventory.js"
+      ],
+      "blocks_release": false,
+      "candidate_finding_id": "CFD-C72988B675FF131BD86B",
+      "canonical_rule_id": "process-exit-library-code",
+      "category": "resilience",
+      "claim": "library or request-path failures can terminate unrelated work",
+      "cluster_id": "CLU-process-exit-library-code-131BD86B",
+      "confidence": 0.82,
+      "contradictions": [],
+      "disposition": "promoted",
+      "estimated_effort": "small",
+      "location": {
+        "end_line": 28,
+        "path": "scripts/inventory.js",
+        "start_line": 28
+      },
+      "observation_ids": [
+        "OBS-C72988B675FF131BD86B"
+      ],
+      "potential_severity": "medium",
+      "provider_ids": [
+        "typescript.source"
+      ],
+      "title": "application source terminates the entire Node.js process directly",
+      "validation_commands": [
+        [
+          "npm",
+          "run",
+          "typecheck"
+        ],
+        [
+          "npm",
+          "run",
+          "lint"
+        ],
+        [
+          "npm",
+          "run",
+          "test"
+        ],
+        [
+          "npm",
+          "run",
+          "build"
+        ]
+      ]
+    },
+    {
+      "allowed_paths": [
+        "scripts/inventory.js"
+      ],
+      "blocks_release": false,
+      "candidate_finding_id": "CFD-C0C0E460E294A955E29F",
+      "canonical_rule_id": "process-exit-library-code",
+      "category": "resilience",
+      "claim": "library or request-path failures can terminate unrelated work",
+      "cluster_id": "CLU-process-exit-library-code-A955E29F",
+      "confidence": 0.82,
+      "contradictions": [],
+      "disposition": "promoted",
+      "estimated_effort": "small",
+      "location": {
+        "end_line": 33,
+        "path": "scripts/inventory.js",
+        "start_line": 33
+      },
+      "observation_ids": [
+        "OBS-C0C0E460E294A955E29F"
+      ],
+      "potential_severity": "medium",
+      "provider_ids": [
+        "typescript.source"
+      ],
+      "title": "application source terminates the entire Node.js process directly",
+      "validation_commands": [
+        [
+          "npm",
+          "run",
+          "typecheck"
+        ],
+        [
+          "npm",
+          "run",
+          "lint"
+        ],
+        [
+          "npm",
+          "run",
+          "test"
+        ],
+        [
+          "npm",
+          "run",
+          "build"
+        ]
+      ]
+    },
+    {
+      "allowed_paths": [
+        "scripts/inventory.js"
+      ],
+      "blocks_release": false,
+      "candidate_finding_id": "CFD-FABC93CFDD2DEB7D94B7",
+      "canonical_rule_id": "process-exit-library-code",
+      "category": "resilience",
+      "claim": "library or request-path failures can terminate unrelated work",
+      "cluster_id": "CLU-process-exit-library-code-EB7D94B7",
+      "confidence": 0.82,
+      "contradictions": [],
+      "disposition": "promoted",
+      "estimated_effort": "small",
+      "location": {
+        "end_line": 39,
+        "path": "scripts/inventory.js",
+        "start_line": 39
+      },
+      "observation_ids": [
+        "OBS-FABC93CFDD2DEB7D94B7"
+      ],
+      "potential_severity": "medium",
+      "provider_ids": [
+        "typescript.source"
+      ],
+      "title": "application source terminates the entire Node.js process directly",
+      "validation_commands": [
+        [
+          "npm",
+          "run",
+          "typecheck"
+        ],
+        [
+          "npm",
+          "run",
+          "lint"
+        ],
+        [
+          "npm",
+          "run",
+          "test"
+        ],
+        [
+          "npm",
+          "run",
+          "build"
+        ]
+      ]
+    },
+    {
+      "allowed_paths": [
+        "scripts/inventory.js"
+      ],
+      "blocks_release": false,
+      "candidate_finding_id": "CFD-7DC5F0A4F2C571B142AE",
+      "canonical_rule_id": "process-exit-library-code",
+      "category": "resilience",
+      "claim": "library or request-path failures can terminate unrelated work",
+      "cluster_id": "CLU-process-exit-library-code-71B142AE",
+      "confidence": 0.82,
+      "contradictions": [],
+      "disposition": "promoted",
+      "estimated_effort": "small",
+      "location": {
+        "end_line": 47,
+        "path": "scripts/inventory.js",
+        "start_line": 47
+      },
+      "observation_ids": [
+        "OBS-7DC5F0A4F2C571B142AE"
+      ],
+      "potential_severity": "medium",
+      "provider_ids": [
+        "typescript.source"
+      ],
+      "title": "application source terminates the entire Node.js process directly",
+      "validation_commands": [
+        [
+          "npm",
+          "run",
+          "typecheck"
+        ],
+        [
+          "npm",
+          "run",
+          "lint"
+        ],
+        [
+          "npm",
+          "run",
+          "test"
+        ],
+        [
+          "npm",
+          "run",
+          "build"
+        ]
+      ]
+    },
+    {
+      "allowed_paths": [
+        "scripts/selfpack.js"
+      ],
+      "blocks_release": false,
+      "candidate_finding_id": "CFD-F69A7B7680C431B49F0D",
+      "canonical_rule_id": "process-exit-library-code",
+      "category": "resilience",
+      "claim": "library or request-path failures can terminate unrelated work",
+      "cluster_id": "CLU-process-exit-library-code-31B49F0D",
+      "confidence": 0.82,
+      "contradictions": [],
+      "disposition": "promoted",
+      "estimated_effort": "small",
+      "location": {
+        "end_line": 35,
+        "path": "scripts/selfpack.js",
+        "start_line": 35
+      },
+      "observation_ids": [
+        "OBS-F69A7B7680C431B49F0D"
+      ],
+      "potential_severity": "medium",
+      "provider_ids": [
+        "typescript.source"
+      ],
+      "title": "application source terminates the entire Node.js process directly",
+      "validation_commands": [
+        [
+          "npm",
+          "run",
+          "typecheck"
+        ],
+        [
+          "npm",
+          "run",
+          "lint"
+        ],
+        [
+          "npm",
+          "run",
+          "test"
+        ],
+        [
+          "npm",
+          "run",
+          "build"
+        ]
+      ]
+    },
+    {
+      "allowed_paths": [
+        "scripts/selfpack.js"
+      ],
+      "blocks_release": false,
+      "candidate_finding_id": "CFD-8E774F250270DC5E6DA0",
+      "canonical_rule_id": "process-exit-library-code",
+      "category": "resilience",
+      "claim": "library or request-path failures can terminate unrelated work",
+      "cluster_id": "CLU-process-exit-library-code-DC5E6DA0",
+      "confidence": 0.82,
+      "contradictions": [],
+      "disposition": "promoted",
+      "estimated_effort": "small",
+      "location": {
+        "end_line": 168,
+        "path": "scripts/selfpack.js",
+        "start_line": 168
+      },
+      "observation_ids": [
+        "OBS-8E774F250270DC5E6DA0"
+      ],
+      "potential_severity": "medium",
+      "provider_ids": [
+        "typescript.source"
+      ],
+      "title": "application source terminates the entire Node.js process directly",
+      "validation_commands": [
+        [
+          "npm",
+          "run",
+          "typecheck"
+        ],
+        [
+          "npm",
+          "run",
+          "lint"
+        ],
+        [
+          "npm",
+          "run",
+          "test"
+        ],
+        [
+          "npm",
+          "run",
+          "build"
+        ]
+      ]
+    },
+    {
+      "allowed_paths": [
+        "tests/pipeline_coverage.test.ts"
+      ],
+      "blocks_release": false,
+      "candidate_finding_id": "CFD-C554863E4861ECD57439",
+      "canonical_rule_id": "weak-security-randomness",
+      "category": "security",
+      "claim": "identifiers or tokens derived from it are predictable",
+      "cluster_id": "CLU-weak-security-randomness-ECD57439",
+      "confidence": 0.75,
+      "contradictions": [],
+      "disposition": "promoted",
+      "estimated_effort": "small",
+      "location": {
+        "end_line": 7,
+        "path": "tests/pipeline_coverage.test.ts",
+        "start_line": 7
+      },
+      "observation_ids": [
+        "OBS-C554863E4861ECD57439"
+      ],
+      "potential_severity": "medium",
+      "provider_ids": [
+        "typescript.source"
+      ],
+      "title": "Math.random() is used in application source",
+      "validation_commands": [
+        [
+          "npm",
+          "run",
+          "typecheck"
+        ],
+        [
+          "npm",
+          "run",
+          "lint"
+        ],
+        [
+          "npm",
+          "run",
+          "test"
+        ],
+        [
+          "npm",
+          "run",
+          "build"
+        ]
+      ]
+    },
+    {
+      "allowed_paths": [
+        "tests/pipeline_verification.test.ts"
+      ],
+      "blocks_release": false,
+      "candidate_finding_id": "CFD-0BA2DC51F56D3100E1AB",
+      "canonical_rule_id": "weak-security-randomness",
+      "category": "security",
+      "claim": "identifiers or tokens derived from it are predictable",
+      "cluster_id": "CLU-weak-security-randomness-3100E1AB",
+      "confidence": 0.75,
+      "contradictions": [],
+      "disposition": "promoted",
+      "estimated_effort": "small",
+      "location": {
+        "end_line": 7,
+        "path": "tests/pipeline_verification.test.ts",
+        "start_line": 7
+      },
+      "observation_ids": [
+        "OBS-0BA2DC51F56D3100E1AB"
+      ],
+      "potential_severity": "medium",
+      "provider_ids": [
+        "typescript.source"
+      ],
+      "title": "Math.random() is used in application source",
+      "validation_commands": [
+        [
+          "npm",
+          "run",
+          "typecheck"
+        ],
+        [
+          "npm",
+          "run",
+          "lint"
+        ],
+        [
+          "npm",
+          "run",
+          "test"
+        ],
+        [
+          "npm",
+          "run",
+          "build"
+        ]
+      ]
+    },
+    {
+      "allowed_paths": [
+        "tests/pipeline_wiring.test.ts"
+      ],
+      "blocks_release": false,
+      "candidate_finding_id": "CFD-F3BB94DB67A513224551",
+      "canonical_rule_id": "weak-security-randomness",
+      "category": "security",
+      "claim": "identifiers or tokens derived from it are predictable",
+      "cluster_id": "CLU-weak-security-randomness-13224551",
+      "confidence": 0.75,
+      "contradictions": [],
+      "disposition": "promoted",
+      "estimated_effort": "small",
+      "location": {
+        "end_line": 8,
+        "path": "tests/pipeline_wiring.test.ts",
+        "start_line": 8
+      },
+      "observation_ids": [
+        "OBS-F3BB94DB67A513224551"
+      ],
+      "potential_severity": "medium",
+      "provider_ids": [
+        "typescript.source"
+      ],
+      "title": "Math.random() is used in application source",
+      "validation_commands": [
+        [
+          "npm",
+          "run",
+          "typecheck"
+        ],
+        [
+          "npm",
+          "run",
+          "lint"
+        ],
+        [
+          "npm",
+          "run",
+          "test"
+        ],
+        [
+          "npm",
+          "run",
+          "build"
+        ]
+      ]
+    }
+  ],
+  "planning_input_id": "PIN-l9-meta-injector-cbae15b1d0bd",
+  "policy": {
+    "policy_id": "default-remediation",
+    "policy_version": "1.3.0"
+  },
+  "repository": {
+    "base_ref": "5359d6f41d3c19382fcd92fca5f37c579b332447",
+    "repository_id": "l9-meta-injector",
+    "snapshot_id": "sha256:0adee702605cc5af85ff8e5ede8cacd6465cf2e3a10a2d6295f702f2ced014c2"
+  },
+  "schema_version": "l9.planning-input.v1"
+}

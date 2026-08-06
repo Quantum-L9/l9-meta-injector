@@ -1,0 +1,377 @@
+{
+  "events": [
+    {
+      "event_sequence": 1,
+      "event_sha256": "7356e15db53f69ebe5e7f83441d501ddfb4a2ef57f7aa9c2c6cbf6285c464128",
+      "evidence": {
+        "artifact_hashes": {
+          "followup_sha256": "def198526697aecb90086c894377d58bf9da7a743342262382f548f655bad0a5",
+          "task_sha256": "6229f0b7cff457f5c2503698ef55413ab889f3511ec9fa242be1b0de2f498ea6",
+          "validator_manifest_sha256": "b1008992ac79c3616930548dc6faa090b232cce30a468f0b3e9a2bdb179a526c",
+          "validator_sha256": "9c07507eb63a49a6dd293e46d7cd71170241dbf02489e9d189a89ea0d2900813"
+        },
+        "authorized_paths": [
+          "tests/pipeline_wiring.test.ts"
+        ],
+        "manifest_sha256": "cbc88ee684887604bfc1e2e638d112f2ce0ae0d9dac5f448282bf0d28fe2f36e"
+      },
+      "finding_id": "CFD-F3BB94DB67A513224551",
+      "from_state": null,
+      "occurred_at": "2026-07-19T19:49:10.888189+00:00",
+      "previous_event_sha256": null,
+      "run_id": "RUN-03cecd7eaea012927935a00a",
+      "to_state": "verified"
+    },
+    {
+      "event_sequence": 2,
+      "event_sha256": "2a49754e30c1fc7a053429e9767cf9a609874f9311f4eed038c7410a7bc27b0c",
+      "evidence": {
+        "argv": [
+          "true"
+        ],
+        "timeout_seconds": 1800
+      },
+      "finding_id": "CFD-F3BB94DB67A513224551",
+      "from_state": "verified",
+      "occurred_at": "2026-07-19T19:49:10.890832+00:00",
+      "previous_event_sha256": "7356e15db53f69ebe5e7f83441d501ddfb4a2ef57f7aa9c2c6cbf6285c464128",
+      "run_id": "RUN-03cecd7eaea012927935a00a",
+      "to_state": "remediation_started"
+    },
+    {
+      "event_sequence": 3,
+      "event_sha256": "c780da7082c8a2ab23f73f8e5189b3086afaefcac36da7d807213c0b4fdea093",
+      "evidence": {
+        "argv": [
+          "true"
+        ],
+        "completed_at": "2026-07-19T19:49:10.895271+00:00",
+        "returncode": 0,
+        "started_at": "2026-07-19T19:49:10.893360+00:00",
+        "stderr": "",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stdout": "",
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "timed_out": false
+      },
+      "finding_id": "CFD-F3BB94DB67A513224551",
+      "from_state": "remediation_started",
+      "occurred_at": "2026-07-19T19:49:10.895358+00:00",
+      "previous_event_sha256": "2a49754e30c1fc7a053429e9767cf9a609874f9311f4eed038c7410a7bc27b0c",
+      "run_id": "RUN-03cecd7eaea012927935a00a",
+      "to_state": "remediation_completed"
+    },
+    {
+      "event_sequence": 4,
+      "event_sha256": "b907aaca4a957ddb4671bc61a5234993a8c0f3d8369c0c7464aad8a17a09f9b0",
+      "evidence": {
+        "reason": "remediation command completed but produced no repository changes"
+      },
+      "finding_id": "CFD-F3BB94DB67A513224551",
+      "from_state": "remediation_completed",
+      "occurred_at": "2026-07-19T19:49:10.900231+00:00",
+      "previous_event_sha256": "c780da7082c8a2ab23f73f8e5189b3086afaefcac36da7d807213c0b4fdea093",
+      "run_id": "RUN-03cecd7eaea012927935a00a",
+      "to_state": "execution_failed"
+    },
+    {
+      "event_sequence": 5,
+      "event_sha256": "170e673a9c869a08f53e2db6f07221a13504e45d3663c6d576052316759daf87",
+      "evidence": {
+        "artifact_hashes": {
+          "followup_sha256": "5f1cd3f861b6afcc5a0d38bcf0356356cd197320f2dc0aba1d8a52446de4ef1c",
+          "task_sha256": "50263a774d47f1bccc9a94e61c69b1726db614df419df4e3725faf4b5973516e",
+          "validator_manifest_sha256": "17a6d1de77bc9d4e32bc0534367a62b8cf1e820c0a88f7c36af5d58418d663bb",
+          "validator_sha256": "9c07507eb63a49a6dd293e46d7cd71170241dbf02489e9d189a89ea0d2900813"
+        },
+        "authorized_paths": [
+          "scripts/selfpack.js"
+        ],
+        "manifest_sha256": "cbc88ee684887604bfc1e2e638d112f2ce0ae0d9dac5f448282bf0d28fe2f36e"
+      },
+      "finding_id": "CFD-F69A7B7680C431B49F0D",
+      "from_state": null,
+      "occurred_at": "2026-07-19T19:49:10.905445+00:00",
+      "previous_event_sha256": "b907aaca4a957ddb4671bc61a5234993a8c0f3d8369c0c7464aad8a17a09f9b0",
+      "run_id": "RUN-03cecd7eaea012927935a00a",
+      "to_state": "verified"
+    },
+    {
+      "event_sequence": 6,
+      "event_sha256": "407eada68f9be17305f5133337967db0d9d5f1167bbee567990802d4fbcca35c",
+      "evidence": {
+        "argv": [
+          "true"
+        ],
+        "timeout_seconds": 1800
+      },
+      "finding_id": "CFD-F69A7B7680C431B49F0D",
+      "from_state": "verified",
+      "occurred_at": "2026-07-19T19:49:10.908191+00:00",
+      "previous_event_sha256": "170e673a9c869a08f53e2db6f07221a13504e45d3663c6d576052316759daf87",
+      "run_id": "RUN-03cecd7eaea012927935a00a",
+      "to_state": "remediation_started"
+    },
+    {
+      "event_sequence": 7,
+      "event_sha256": "d8cbb3d2b01251ad1d1c456e5279f16d5172e93c824aec0f54b633ee3460925f",
+      "evidence": {
+        "argv": [
+          "true"
+        ],
+        "completed_at": "2026-07-19T19:49:10.911635+00:00",
+        "returncode": 0,
+        "started_at": "2026-07-19T19:49:10.910551+00:00",
+        "stderr": "",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stdout": "",
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "timed_out": false
+      },
+      "finding_id": "CFD-F69A7B7680C431B49F0D",
+      "from_state": "remediation_started",
+      "occurred_at": "2026-07-19T19:49:10.911729+00:00",
+      "previous_event_sha256": "407eada68f9be17305f5133337967db0d9d5f1167bbee567990802d4fbcca35c",
+      "run_id": "RUN-03cecd7eaea012927935a00a",
+      "to_state": "remediation_completed"
+    },
+    {
+      "event_sequence": 8,
+      "event_sha256": "999bfc270452f077ad3844c46d1791dd245656d833145db54c050355a2f22715",
+      "evidence": {
+        "reason": "remediation command completed but produced no repository changes"
+      },
+      "finding_id": "CFD-F69A7B7680C431B49F0D",
+      "from_state": "remediation_completed",
+      "occurred_at": "2026-07-19T19:49:10.916909+00:00",
+      "previous_event_sha256": "d8cbb3d2b01251ad1d1c456e5279f16d5172e93c824aec0f54b633ee3460925f",
+      "run_id": "RUN-03cecd7eaea012927935a00a",
+      "to_state": "execution_failed"
+    },
+    {
+      "event_sequence": 9,
+      "event_sha256": "69d5a3638884b24d6b11a2dec25231d504a299fa2dd02e1fe1d9f7e6eccc34cd",
+      "evidence": {
+        "artifact_hashes": {
+          "followup_sha256": "9274168544eb927f1238957f918074c81f45c73ef6d81e946e575eabcde986b0",
+          "task_sha256": "447debd19edcc6bb2762b80f057f15f823cf0d77c4bb0bc1aadafac4c2dcfee0",
+          "validator_manifest_sha256": "b11732bc850e55dc7d08426ee78db7a425d6b19b5341e39a53140477c13b8a26",
+          "validator_sha256": "9c07507eb63a49a6dd293e46d7cd71170241dbf02489e9d189a89ea0d2900813"
+        },
+        "authorized_paths": [
+          "scripts/inventory.js"
+        ],
+        "manifest_sha256": "cbc88ee684887604bfc1e2e638d112f2ce0ae0d9dac5f448282bf0d28fe2f36e"
+      },
+      "finding_id": "CFD-C72988B675FF131BD86B",
+      "from_state": null,
+      "occurred_at": "2026-07-19T19:49:10.923558+00:00",
+      "previous_event_sha256": "999bfc270452f077ad3844c46d1791dd245656d833145db54c050355a2f22715",
+      "run_id": "RUN-03cecd7eaea012927935a00a",
+      "to_state": "verified"
+    },
+    {
+      "event_sequence": 10,
+      "event_sha256": "83cb2200b3d3a071bceed5ef24d2681c73ff2f1a600cf580a592cd803371206b",
+      "evidence": {
+        "argv": [
+          "true"
+        ],
+        "timeout_seconds": 1800
+      },
+      "finding_id": "CFD-C72988B675FF131BD86B",
+      "from_state": "verified",
+      "occurred_at": "2026-07-19T19:49:10.926227+00:00",
+      "previous_event_sha256": "69d5a3638884b24d6b11a2dec25231d504a299fa2dd02e1fe1d9f7e6eccc34cd",
+      "run_id": "RUN-03cecd7eaea012927935a00a",
+      "to_state": "remediation_started"
+    },
+    {
+      "event_sequence": 11,
+      "event_sha256": "09f48a1adc1fdbddca6e06fd6050eb51a93787b2ef9f63e8f7f8ce7ff4836956",
+      "evidence": {
+        "argv": [
+          "true"
+        ],
+        "completed_at": "2026-07-19T19:49:10.929508+00:00",
+        "returncode": 0,
+        "started_at": "2026-07-19T19:49:10.928307+00:00",
+        "stderr": "",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stdout": "",
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "timed_out": false
+      },
+      "finding_id": "CFD-C72988B675FF131BD86B",
+      "from_state": "remediation_started",
+      "occurred_at": "2026-07-19T19:49:10.929606+00:00",
+      "previous_event_sha256": "83cb2200b3d3a071bceed5ef24d2681c73ff2f1a600cf580a592cd803371206b",
+      "run_id": "RUN-03cecd7eaea012927935a00a",
+      "to_state": "remediation_completed"
+    },
+    {
+      "event_sequence": 12,
+      "event_sha256": "32aea4e1719ce2e55e84ac3b90eb21796d713026e1eaf8fbbf4768c6b105cc32",
+      "evidence": {
+        "reason": "remediation command completed but produced no repository changes"
+      },
+      "finding_id": "CFD-C72988B675FF131BD86B",
+      "from_state": "remediation_completed",
+      "occurred_at": "2026-07-19T19:49:10.934972+00:00",
+      "previous_event_sha256": "09f48a1adc1fdbddca6e06fd6050eb51a93787b2ef9f63e8f7f8ce7ff4836956",
+      "run_id": "RUN-03cecd7eaea012927935a00a",
+      "to_state": "execution_failed"
+    },
+    {
+      "event_sequence": 13,
+      "event_sha256": "0c9f4e5b48275eff02ea4a18c3d41316b927facdcd000afad2f274800d888377",
+      "evidence": {
+        "artifact_hashes": {
+          "followup_sha256": "e8e1f604db3be020787c78b9d697ab1cf7e0aee8e1a5b38c49d06438cb549b7f",
+          "task_sha256": "6d584336a6f090c35db4dbeadd705b114fa4bcdfbfd40ce03886cee4d29362b1",
+          "validator_manifest_sha256": "db0465ae822b35989b62a4d622f8879e7762978e92b9e86af106740f13591c6b",
+          "validator_sha256": "9c07507eb63a49a6dd293e46d7cd71170241dbf02489e9d189a89ea0d2900813"
+        },
+        "authorized_paths": [
+          "tests/pipeline_verification.test.ts"
+        ],
+        "manifest_sha256": "cbc88ee684887604bfc1e2e638d112f2ce0ae0d9dac5f448282bf0d28fe2f36e"
+      },
+      "finding_id": "CFD-0BA2DC51F56D3100E1AB",
+      "from_state": null,
+      "occurred_at": "2026-07-19T19:49:10.940629+00:00",
+      "previous_event_sha256": "32aea4e1719ce2e55e84ac3b90eb21796d713026e1eaf8fbbf4768c6b105cc32",
+      "run_id": "RUN-03cecd7eaea012927935a00a",
+      "to_state": "verified"
+    },
+    {
+      "event_sequence": 14,
+      "event_sha256": "1c8b69501aeeb3a61626e07ef930179f777e7fa88443cea0d3885322cf3d6bda",
+      "evidence": {
+        "argv": [
+          "true"
+        ],
+        "timeout_seconds": 1800
+      },
+      "finding_id": "CFD-0BA2DC51F56D3100E1AB",
+      "from_state": "verified",
+      "occurred_at": "2026-07-19T19:49:10.943495+00:00",
+      "previous_event_sha256": "0c9f4e5b48275eff02ea4a18c3d41316b927facdcd000afad2f274800d888377",
+      "run_id": "RUN-03cecd7eaea012927935a00a",
+      "to_state": "remediation_started"
+    },
+    {
+      "event_sequence": 15,
+      "event_sha256": "9891cc7c40750284589ab2b275e9693877c3c141b9942b32e5e447dea427010c",
+      "evidence": {
+        "argv": [
+          "true"
+        ],
+        "completed_at": "2026-07-19T19:49:10.947685+00:00",
+        "returncode": 0,
+        "started_at": "2026-07-19T19:49:10.946530+00:00",
+        "stderr": "",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stdout": "",
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "timed_out": false
+      },
+      "finding_id": "CFD-0BA2DC51F56D3100E1AB",
+      "from_state": "remediation_started",
+      "occurred_at": "2026-07-19T19:49:10.947820+00:00",
+      "previous_event_sha256": "1c8b69501aeeb3a61626e07ef930179f777e7fa88443cea0d3885322cf3d6bda",
+      "run_id": "RUN-03cecd7eaea012927935a00a",
+      "to_state": "remediation_completed"
+    },
+    {
+      "event_sequence": 16,
+      "event_sha256": "203ce1726a0eed4754e975c34dff0bb94196000bd7669ab0c74a50c61936b250",
+      "evidence": {
+        "reason": "remediation command completed but produced no repository changes"
+      },
+      "finding_id": "CFD-0BA2DC51F56D3100E1AB",
+      "from_state": "remediation_completed",
+      "occurred_at": "2026-07-19T19:49:10.952913+00:00",
+      "previous_event_sha256": "9891cc7c40750284589ab2b275e9693877c3c141b9942b32e5e447dea427010c",
+      "run_id": "RUN-03cecd7eaea012927935a00a",
+      "to_state": "execution_failed"
+    },
+    {
+      "event_sequence": 17,
+      "event_sha256": "8afefbb033363c73c5eec72fe29b0791a4a6374c12d8b81de3263a93e0877904",
+      "evidence": {
+        "artifact_hashes": {
+          "followup_sha256": "7a36377d9e0fb25ddb04e9f7de23ddd2196899d44d149686adcc87283eb120b0",
+          "task_sha256": "22ce3aacd3831b40e2a9a3710365241433ba0cf55446b40f0bddaf370989b52a",
+          "validator_manifest_sha256": "4dfa34e5ec5e05c7447bfafc7e8e7bec4f08a3f5fe1568a15d4b154c06f667dc",
+          "validator_sha256": "9c07507eb63a49a6dd293e46d7cd71170241dbf02489e9d189a89ea0d2900813"
+        },
+        "authorized_paths": [
+          "tests/pipeline_coverage.test.ts"
+        ],
+        "manifest_sha256": "cbc88ee684887604bfc1e2e638d112f2ce0ae0d9dac5f448282bf0d28fe2f36e"
+      },
+      "finding_id": "CFD-C554863E4861ECD57439",
+      "from_state": null,
+      "occurred_at": "2026-07-19T19:49:10.958420+00:00",
+      "previous_event_sha256": "203ce1726a0eed4754e975c34dff0bb94196000bd7669ab0c74a50c61936b250",
+      "run_id": "RUN-03cecd7eaea012927935a00a",
+      "to_state": "verified"
+    },
+    {
+      "event_sequence": 18,
+      "event_sha256": "939560a8f4bc14190a6304723273600ddc0d3983efb3d9658731669e6fd960bf",
+      "evidence": {
+        "argv": [
+          "true"
+        ],
+        "timeout_seconds": 1800
+      },
+      "finding_id": "CFD-C554863E4861ECD57439",
+      "from_state": "verified",
+      "occurred_at": "2026-07-19T19:49:10.961316+00:00",
+      "previous_event_sha256": "8afefbb033363c73c5eec72fe29b0791a4a6374c12d8b81de3263a93e0877904",
+      "run_id": "RUN-03cecd7eaea012927935a00a",
+      "to_state": "remediation_started"
+    },
+    {
+      "event_sequence": 19,
+      "event_sha256": "9fb5f223d78b4b48d91b0ffe73160a24ef1efd912933ef4547ede953581ad9ea",
+      "evidence": {
+        "argv": [
+          "true"
+        ],
+        "completed_at": "2026-07-19T19:49:10.965234+00:00",
+        "returncode": 0,
+        "started_at": "2026-07-19T19:49:10.964175+00:00",
+        "stderr": "",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stdout": "",
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "timed_out": false
+      },
+      "finding_id": "CFD-C554863E4861ECD57439",
+      "from_state": "remediation_started",
+      "occurred_at": "2026-07-19T19:49:10.965349+00:00",
+      "previous_event_sha256": "939560a8f4bc14190a6304723273600ddc0d3983efb3d9658731669e6fd960bf",
+      "run_id": "RUN-03cecd7eaea012927935a00a",
+      "to_state": "remediation_completed"
+    },
+    {
+      "event_sequence": 20,
+      "event_sha256": "339730baf592565052fa2970ac4950eb263c8530d3128a91bb6bd872d8a9eb5d",
+      "evidence": {
+        "reason": "remediation command completed but produced no repository changes"
+      },
+      "finding_id": "CFD-C554863E4861ECD57439",
+      "from_state": "remediation_completed",
+      "occurred_at": "2026-07-19T19:49:10.970601+00:00",
+      "previous_event_sha256": "9fb5f223d78b4b48d91b0ffe73160a24ef1efd912933ef4547ede953581ad9ea",
+      "run_id": "RUN-03cecd7eaea012927935a00a",
+      "to_state": "execution_failed"
+    }
+  ],
+  "manifest_sha256": "cbc88ee684887604bfc1e2e638d112f2ce0ae0d9dac5f448282bf0d28fe2f36e",
+  "run_id": "RUN-03cecd7eaea012927935a00a",
+  "schema_version": "l9.execution-ledger.v1"
+}
