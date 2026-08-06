@@ -1,13 +1,29 @@
 from __future__ import annotations
-import subprocess
 from pathlib import Path
 from .model import stable_digest
 from .profile import PRUNE_DIRECTORIES,profile_repository
 from .qualification import QualificationPolicy,qualify
 from .registry import run_providers
 BINARY_EXTENSIONS={'.png','.jpg','.jpeg','.gif','.pdf','.zip','.gz','.woff','.woff2','.ttf','.otf','.wasm','.bin','.exe','.dll','.so'}
+def _read_git_text(path):
+ try:return path.read_text(encoding='utf-8').strip()
+ except OSError:return None
 def git_head(root):
- p=subprocess.run(['git','-C',str(root),'rev-parse','HEAD'],capture_output=True,text=True,check=False);return p.stdout.strip() if p.returncode==0 else 'UNKNOWN'
+ git_dir=Path(root)/'.git'
+ head=_read_git_text(git_dir/'HEAD')
+ if head is None:return 'UNKNOWN'
+ if not head.startswith('ref:'):return head or 'UNKNOWN'
+ ref=head[4:].strip()
+ direct=_read_git_text(git_dir/ref)
+ if direct:return direct
+ packed=_read_git_text(git_dir/'packed-refs')
+ if packed:
+  for line in packed.splitlines():
+   line=line.strip()
+   if not line or line[0] in '#^':continue
+   parts=line.split(' ',1)
+   if len(parts)==2 and parts[1]==ref:return parts[0]
+ return 'UNKNOWN'
 def classify_files(root):
  c={'supported_text':0,'supported_binary':0,'ignored':0,'unreadable':0,'oversized':0}
  for p in sorted(root.rglob('*')):

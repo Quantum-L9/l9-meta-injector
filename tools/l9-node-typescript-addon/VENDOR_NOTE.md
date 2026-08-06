@@ -6,11 +6,26 @@ project. It is standalone, standard-library-only Python (>= 3.10) and is **not**
 published npm package (`tools/` is excluded by `.npmignore`, and `package.json` `files` is an
 allowlist).
 
-## Local modification vs. upstream
+## Local modifications vs. upstream
 
-The only change from the upstream addon is a **per-rule path exclusion** in
-`l9_node_ts/providers/source.py`, mirroring how the suite's Python `core-security` rulepack uses
-per-rule `exclude_globs` (e.g. `["**/tests/**"]`).
+Two changes from the upstream addon:
+
+### 1. `git_head` reads `.git/HEAD` directly (no subprocess) — `l9_node_ts/audit.py`
+
+Upstream resolved the repository `base_ref` by shelling out to `git rev-parse HEAD` via
+`subprocess.run(['git', ...])`. Invoking a partial executable path (`git`, resolved through
+`PATH`) is an uncontrolled-search-path issue (CWE-78; SonarCloud `python:S4036`) that dropped the
+project's Security Rating on New Code to C. It is replaced with a dependency-free reader that
+parses `.git/HEAD` (resolving symbolic refs and falling back to `.git/packed-refs`), which returns
+the identical HEAD SHA, removes the `subprocess` import entirely, and aligns with the suite's
+"no Git commands" principle. Bandit drops from 10 findings to 1 (a non-security
+try/except/continue smell); the addon test suite is unaffected (its fixtures are non-git temp
+dirs, where `git_head` correctly returns `UNKNOWN`).
+
+### 2. Per-rule path exclusion — `l9_node_ts/providers/source.py`
+
+Mirrors how the suite's Python `core-security` rulepack uses per-rule `exclude_globs`
+(e.g. `["**/tests/**"]`).
 
 A new `exclude_dirs` field was added to the `Rule` dataclass and applied in
 `TypeScriptSourceProvider.analyze()` via the addon's existing directory-segment-membership idiom
