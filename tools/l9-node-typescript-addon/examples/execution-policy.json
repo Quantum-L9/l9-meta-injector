@@ -1,0 +1,10 @@
+{
+  "schema_version": "l9.node-typescript-policy.v1",
+  "minimum_confidence": 0.8,
+  "minimum_severity": "medium",
+  "enabled_provider_families": [
+    "node",
+    "typescript"
+  ],
+  "suppressed_rules": []
+}
