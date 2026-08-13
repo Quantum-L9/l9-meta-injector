@@ -77,10 +77,13 @@ of comment syntax. Protected internals and binaries are `hard_skip`; generated,
 vendored, and lock-state artifacts are `inventory_only`; source, configuration,
 tests, workflows, infrastructure, and structured data are `central_manifest`;
 `inline_managed` requires both an approved L9 prose artifact type and an explicit
-safe `inline_allow` match. Skills mode does not bypass repository authority.
+safe `inline_allow` match. Skills mode does not bypass repository authority
+(ADR-030): it fails closed without resolved authority and commits `SKILL.md`
+changes through the governed transaction, never a direct write.
 
-**Enforced by:** `src/mutation_policy.ts`, strict authority-pattern validation,
-carrier matrix tests, precedence tests, and complete decision-ledger checks.
+**Enforced by:** `src/mutation_policy.ts`, `src/skills_pipeline.ts`, strict
+authority-pattern validation, carrier matrix tests, precedence tests,
+`tests/skills_authority.test.ts`, and complete decision-ledger checks.
 
 ### INV-019: Central metadata index bytes are canonical and self-excluding
 

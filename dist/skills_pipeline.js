@@ -43,6 +43,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.runSkillsPipelineAsync = runSkillsPipelineAsync;
 const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
+const node_crypto_1 = require("node:crypto");
 const retrieval_1 = require("./retrieval");
 const frontmatter_patch_1 = require("./frontmatter_patch");
 const schema_1 = require("./schema");
@@ -51,6 +52,25 @@ const materiality_1 = require("./materiality");
 const llm_1 = require("./llm");
 const omit_1 = require("./omit");
 const metrics_1 = require("./metrics");
+const authority_scan_1 = require("./authority_scan");
+const carrier_operation_1 = require("./carrier_operation");
+const file_transaction_1 = require("./file_transaction");
+function sha256(bytes) {
+    return (0, node_crypto_1.createHash)("sha256").update(bytes).digest("hex");
+}
+/**
+ * Postcondition for the governed skills transaction: each committed SKILL.md must
+ * match its planned bytes exactly. A mismatch throws inside the transaction's backup
+ * window and rolls the whole run back. Mirrors apply's validateCommittedPlan.
+ */
+function validateSkillsCommit(root, intents) {
+    for (const intent of intents) {
+        const target = path.join(root, ...intent.path.split("/"));
+        if (sha256(fs.readFileSync(target)) !== sha256(intent.bytes)) {
+            throw new Error(`SKILLS_POSTCONDITION_FAILED: ${intent.path} committed bytes differ from plan`);
+        }
+    }
+}
 function isMateriallyBetterSync(old, next) {
     if (!(0, assist_1.isGoodValue)(next))
         return false;
@@ -154,12 +174,13 @@ async function fillActivationSignals(existing, body, assistCfg, metrics) {
 }
 async function processSkillFile(abs, root, config, assistCfg, metrics) {
     const rel = path.relative(root, abs).split(path.sep).join("/");
-    const raw = fs.readFileSync(abs, "utf8");
+    const rawBuffer = fs.readFileSync(abs);
+    const raw = rawBuffer.toString("utf8");
     const parsed = parseExistingFrontMatter(raw);
     if (parsed.issue) {
         if (config.verbose)
             process.stderr.write(`[l9-meta-injector] skills: ${rel} skipped: ${parsed.issue}\n`);
-        return { sourcePath: abs, relativePath: rel, changed: false, diffs: [], skippedReason: parsed.issue };
+        return { result: { sourcePath: abs, relativePath: rel, changed: false, diffs: [], skippedReason: parsed.issue } };
     }
     const { meta: existing, body, hadFrontMatter } = parsed;
     const next = { ...existing };
@@ -179,27 +200,41 @@ async function processSkillFile(abs, root, config, assistCfg, metrics) {
     }
     const didChange = diffs.some((d) => d.action === "add" || d.action === "revise");
     if (!didChange)
-        return { sourcePath: abs, relativePath: rel, changed: false, diffs };
-    if (!config.dryRun) {
-        if (!hadFrontMatter && !next.description) {
-            return { sourcePath: abs, relativePath: rel, changed: false, diffs: [] };
+        return { result: { sourcePath: abs, relativePath: rel, changed: false, diffs } };
+    // dry-run is a read-only preview: report the intended change, plan no mutation.
+    if (config.dryRun) {
+        if (config.verbose) {
+            process.stderr.write(`[l9-meta-injector] skills: ${rel} → ${diffs.map((d) => d.field).join(",")}\n`);
         }
-        const managed = {};
-        for (const diff of diffs)
-            managed[diff.field] = diff.newValue;
-        const patched = (0, frontmatter_patch_1.patchManagedFrontMatter)(raw, managed);
-        if (!patched.safe) {
-            const skippedReason = `${patched.issue?.code ?? "FRONTMATTER_UNSAFE"}: ${patched.issue?.message ?? "unsafe header"}`;
-            if (config.verbose)
-                process.stderr.write(`[l9-meta-injector] skills: ${rel} skipped: ${skippedReason}\n`);
-            return { sourcePath: abs, relativePath: rel, changed: false, diffs: [], skippedReason };
-        }
-        fs.writeFileSync(abs, patched.content, "utf8");
+        return { result: { sourcePath: abs, relativePath: rel, changed: true, diffs } };
+    }
+    if (!hadFrontMatter && !next.description) {
+        return { result: { sourcePath: abs, relativePath: rel, changed: false, diffs: [] } };
+    }
+    const managed = {};
+    for (const diff of diffs)
+        managed[diff.field] = diff.newValue;
+    const patched = (0, frontmatter_patch_1.patchManagedFrontMatter)(raw, managed);
+    if (!patched.safe) {
+        const skippedReason = `${patched.issue?.code ?? "FRONTMATTER_UNSAFE"}: ${patched.issue?.message ?? "unsafe header"}`;
+        if (config.verbose)
+            process.stderr.write(`[l9-meta-injector] skills: ${rel} skipped: ${skippedReason}\n`);
+        return { result: { sourcePath: abs, relativePath: rel, changed: false, diffs: [], skippedReason } };
     }
     if (config.verbose) {
         process.stderr.write(`[l9-meta-injector] skills: ${rel} → ${diffs.map((d) => d.field).join(",")}\n`);
     }
-    return { sourcePath: abs, relativePath: rel, changed: true, diffs };
+    // Route the protected write through the governed transaction rather than a direct
+    // fs.writeFileSync. CAS fields come from the exact bytes observed at plan time.
+    return {
+        result: { sourcePath: abs, relativePath: rel, changed: true, diffs },
+        intent: {
+            path: rel,
+            expectedExists: true,
+            expectedHash: sha256(rawBuffer),
+            bytes: patched.content,
+        },
+    };
 }
 async function runSkillsPipelineAsync(config) {
     const metrics = new metrics_1.MetricsCollector();
@@ -215,6 +250,20 @@ async function runSkillsPipelineAsync(config) {
     }
     const root = path.resolve(config.root);
     fs.mkdirSync(config.outDir, { recursive: true });
+    // Repository authority is mandatory before any protected SKILL.md mutation
+    // (INV-018 / ADR-030). Recovery precedes inspection so interrupted-transaction
+    // artifacts cannot poison the authority scan. dry-run is a read-only preview and
+    // keeps its historical semantics: it never mutates, so it is not authority-gated.
+    let authorityResolved = true;
+    let authorityConflicts = [];
+    if (!config.dryRun) {
+        (0, file_transaction_1.recoverPendingTransactions)(root);
+        const inspection = (0, authority_scan_1.inspectRepositoryAuthority)(root, {
+            expectedWriter: { repository: carrier_operation_1.CANONICAL_METADATA_WRITER },
+        });
+        authorityConflicts = inspection.conflicts;
+        authorityResolved = inspection.conflicts.length === 0 && inspection.authority !== undefined;
+    }
     const omit = (0, omit_1.buildOmitMatcher)({
         root,
         patterns: config.omitPatterns,
@@ -222,8 +271,10 @@ async function runSkillsPipelineAsync(config) {
         protectSkillMd: false,
         ignoreDirNames: ["node_modules"],
     });
-    const skillPaths = (0, retrieval_1.findFiles)(root, "**/*", { omit, protectSkillMd: false })
-        .filter((p) => (0, omit_1.isSkillArtifactPath)(p));
+    // Fail closed: without resolved authority we neither discover nor mutate skills.
+    const skillPaths = authorityResolved
+        ? (0, retrieval_1.findFiles)(root, "**/*", { omit, protectSkillMd: false }).filter((p) => (0, omit_1.isSkillArtifactPath)(p))
+        : [];
     const assistCfg = {
         ...assist_1.DEFAULT_ASSIST_CONFIG,
         enabled: config.llmEnabled,
@@ -231,13 +282,27 @@ async function runSkillsPipelineAsync(config) {
         proseFields: ["description", "activation_signals"],
     };
     const files = [];
+    const intents = [];
     for (const abs of skillPaths) {
-        files.push(await processSkillFile(abs, root, config, assistCfg, metrics));
+        const planned = await processSkillFile(abs, root, config, assistCfg, metrics);
+        files.push(planned.result);
+        if (planned.intent)
+            intents.push(planned.intent);
+    }
+    let repositoryMutated = false;
+    if (!config.dryRun && intents.length > 0) {
+        const ordered = [...intents].sort((left, right) => left.path.localeCompare(right.path));
+        const transaction = (0, file_transaction_1.executeFileTransaction)(root, ordered, {
+            validate: () => validateSkillsCommit(root, ordered),
+        });
+        repositoryMutated = transaction.changedPaths.length > 0;
     }
     const changed = files.filter((f) => f.changed).length;
     const report = {
         generatedAt: new Date().toISOString(),
         root,
+        authorityResolved,
+        repositoryMutated,
         considered: skillPaths.length,
         changed,
         unchanged: skillPaths.length - changed,
@@ -255,6 +320,9 @@ async function runSkillsPipelineAsync(config) {
         unchanged: skillPaths.length - changed,
         files,
         metrics: metrics.snapshot(),
+        authorityResolved,
+        repositoryMutated,
+        authorityConflicts,
     };
 }
 //# sourceMappingURL=skills_pipeline.js.map
