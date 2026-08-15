@@ -52,6 +52,8 @@
     "check": "npm run build && node scripts/check-cli.js",
     "apply": "npm run build && node scripts/apply-cli.js",
     "skills": "npm run build && node scripts/skills-cli.js",
+    "repository-model": "npm run build && node scripts/repository-model-cli.js",
+    "topology:conformance": "node scripts/topology-conformance.js",
     "check:api": "node scripts/check-public-api.js",
     "check:authority": "node scripts/check-architecture-authority.js",
     "check:manifest": "node scripts/generate-architecture-manifest.js --check",
@@ -97,6 +99,11 @@
       "require": "./dist/public/llm.js",
       "default": "./dist/public/llm.js"
     },
+    "./repository-model": {
+      "types": "./dist/public/repository_model.d.ts",
+      "require": "./dist/public/repository_model.js",
+      "default": "./dist/public/repository_model.js"
+    },
     "./package.json": "./package.json"
   },
   "typesVersions": {
@@ -112,6 +119,9 @@
       ],
       "advanced/llm": [
         "dist/public/llm.d.ts"
+      ],
+      "repository-model": [
+        "dist/public/repository_model.d.ts"
       ]
     }
   },

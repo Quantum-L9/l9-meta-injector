@@ -128,6 +128,20 @@
         "npm run check:publication"
       ],
       "stability": "blocked_pending_history_check"
+    },
+    {
+      "capability": "repository_model_egress",
+      "source": "src/repository_model.ts and src/public/repository_model.ts",
+      "public_entrypoint": "l9-meta-injector/repository-model",
+      "tests": [
+        "tests/repository_model.test.ts"
+      ],
+      "validators": [
+        "npm run check:api",
+        "npm run check:authority",
+        "npm run topology:conformance"
+      ],
+      "stability": "stable"
     }
   ]
 }

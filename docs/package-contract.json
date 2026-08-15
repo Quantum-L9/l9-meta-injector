@@ -28,6 +28,11 @@
       "runtime": "dist/public/llm.js",
       "types": "dist/public/llm.d.ts",
       "stability": "experimental"
+    },
+    "./repository-model": {
+      "runtime": "dist/public/repository_model.js",
+      "types": "dist/public/repository_model.d.ts",
+      "stability": "stable"
     }
   },
   "required_files": [
