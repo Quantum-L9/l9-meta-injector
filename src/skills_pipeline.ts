@@ -281,7 +281,7 @@ export async function runSkillsPipelineAsync(config: SkillsPipelineConfig): Prom
   fs.mkdirSync(config.outDir, { recursive: true });
 
   // Repository authority is mandatory before any protected SKILL.md mutation
-  // (INV-018 / ADR-030). Recovery precedes inspection so interrupted-transaction
+  // (INV-018 / ADR-031). Recovery precedes inspection so interrupted-transaction
   // artifacts cannot poison the authority scan. dry-run is a read-only preview and
   // keeps its historical semantics: it never mutates, so it is not authority-gated.
   let authorityResolved = true;

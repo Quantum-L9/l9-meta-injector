@@ -4,7 +4,7 @@
  * Selects skill artifacts only; material-improves description (Use when …);
  * optionally fills activation_signals; never invents a triggers: key;
  * writes only when material diffs exist. Skills mode requires repository
- * authority and commits through the governed transaction (ADR-030 / INV-018).
+ * authority and commits through the governed transaction (ADR-031 / INV-018).
  *
  *   node scripts/skills-cli.js <root> --authority ID [options]
  *   npm run skills -- <root> --authority ID [options]

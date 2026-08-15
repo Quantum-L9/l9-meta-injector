@@ -1,4 +1,4 @@
-# ADR-030: Skills mode requires repository authority and commits transactionally
+# ADR-031: Skills mode requires repository authority and commits transactionally
 
 ## Status
 

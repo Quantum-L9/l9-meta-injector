@@ -49,6 +49,7 @@
       "./schema",
       "./advanced",
       "./advanced/llm",
+      "./repository-model",
       "./package.json"
     ],
     "validation_command": "npm run check:api"
