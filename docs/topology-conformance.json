@@ -44,5 +44,5 @@
       "diagnostics": 6
     }
   },
-  "verification_command": "node scripts/topology-conformance.js --topology <l9-constellation-topology checkout>"
+  "verification_command": "L9_TOPOLOGY_CHECKOUT=<l9-constellation-topology checkout> npm run topology:conformance"
 }

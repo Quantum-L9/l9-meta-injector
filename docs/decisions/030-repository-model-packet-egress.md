@@ -71,6 +71,11 @@ revision by `scripts/topology-conformance.js`, which feeds the committed golden 
 `load_repository_model_bundle` and `RepositoryModelV1Adapter.adapt`. The result is recorded
 in `docs/topology-conformance.json`.
 
+The checkout and Python interpreter are read from `L9_TOPOLOGY_CHECKOUT` and `L9_PYTHON`
+rather than from argv, matching the existing `L9_TSC` convention. Nothing taken from the
+command line reaches the spawned process, its working directory, or its environment, and
+the script fails closed unless the checkout actually contains `l9_constellation_topology`.
+
 ## Consequences
 
 - `npm run validate` stays runnable without a second repository or a Python toolchain, so

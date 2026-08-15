@@ -10,7 +10,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "git_blob_sha1": "4b35ccf3ac5e16151511054f1f8e31b64a0a342f"
+      "git_blob_sha1": "2cc61d9055629ed985978a7e6f1828ae92fe063d"
     },
     {
       "path": "dist/index.d.ts",
@@ -102,7 +102,7 @@
     },
     {
       "path": "docs/architecture.md",
-      "git_blob_sha1": "e43350ce68e27c1cd7f97857bf9ef108a3d7eb33"
+      "git_blob_sha1": "919ed8506b5e83ce945527832dae730748c15673"
     },
     {
       "path": "docs/contracts.md",
@@ -170,7 +170,7 @@
     },
     {
       "path": "docs/topology-conformance.json",
-      "git_blob_sha1": "be58a64866089596f1fbce99f2bfeab54290fd7e"
+      "git_blob_sha1": "803f60d840805b2b59d7a6ec825999b3ed9b65a6"
     },
     {
       "path": "docs/traceability-map.json",
@@ -266,7 +266,7 @@
     },
     {
       "path": "scripts/topology-conformance.js",
-      "git_blob_sha1": "b774b6671d2a26becfa70cde59a91dc7748b34da"
+      "git_blob_sha1": "f1e525304c34e5cfdfcd50093b5220571528969c"
     },
     {
       "path": "src/index.ts",

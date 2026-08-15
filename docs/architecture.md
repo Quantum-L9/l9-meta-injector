@@ -56,7 +56,7 @@ only: unsupported domains stay empty and are reported as diagnostics.
 
 This repository holds no runtime dependency on topology. Conformance is proven by feeding
 the committed golden bundle to the real consumer from an ephemeral read-only checkout
-(`npm run topology:conformance -- --topology <checkout>`); the bound revision and result are
+(`L9_TOPOLOGY_CHECKOUT=<checkout> npm run topology:conformance`); the bound revision and result are
 recorded in `docs/topology-conformance.json`.
 
 ## Distribution

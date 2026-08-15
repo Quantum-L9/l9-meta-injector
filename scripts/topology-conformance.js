@@ -2,11 +2,16 @@
 "use strict";
 // Cross-repository conformance proof for the Repository Model Packet.
 //
-//   node scripts/topology-conformance.js --topology <checkout> [--python <bin>] [--update]
+//   L9_TOPOLOGY_CHECKOUT=<checkout> [L9_PYTHON=<bin>] \
+//     node scripts/topology-conformance.js [--update]
 //
 // Feeds the committed golden bundle to the ACTUAL l9-constellation-topology consumer
 // boundary (`load_repository_model_bundle` + `RepositoryModelV1Adapter`) and requires
 // acceptance with no translation shim.
+//
+// The checkout and interpreter are read from the environment rather than argv, matching
+// the existing `L9_TSC` convention in scripts/lib/dist-integrity.js. Nothing taken from
+// the command line reaches the spawned process, its working directory, or its environment.
 //
 // The topology checkout is read-only and ephemeral: this repository never acquires a
 // runtime dependency on it. This script is deliberately NOT part of `npm run validate`,
@@ -50,12 +55,6 @@ print(json.dumps({
 }))
 `;
 
-function opt(name, fallback) {
-  const argv = process.argv.slice(2);
-  const index = argv.indexOf(name);
-  return index >= 0 && argv[index + 1] ? argv[index + 1] : fallback;
-}
-
 function fail(message) {
   console.error(`${LABEL}: FAILED: ${message}`);
   process.exit(1);
@@ -72,14 +71,19 @@ function sha256(file) {
 }
 
 function main() {
-  const topology = opt("--topology", "");
-  const python = opt("--python", "python3");
+  const topology = process.env.L9_TOPOLOGY_CHECKOUT || "";
+  const python = process.env.L9_PYTHON || "python3";
   const update = process.argv.includes("--update");
-  if (!topology) fail("--topology <checkout> is required");
+  if (!topology) fail("L9_TOPOLOGY_CHECKOUT=<checkout> is required");
 
   const checkout = path.resolve(topology);
   const sourceRoot = path.join(checkout, "src");
   if (!fs.existsSync(sourceRoot)) fail(`not a topology checkout: ${checkout}`);
+  // Fail closed unless this really is the consumer package, so the probe cannot be
+  // pointed at an unrelated tree.
+  if (!fs.existsSync(path.join(sourceRoot, "l9_constellation_topology"))) {
+    fail(`checkout does not contain l9_constellation_topology: ${checkout}`);
+  }
   if (!fs.existsSync(GOLDEN)) fail(`golden bundle missing: ${GOLDEN}`);
 
   const packet = JSON.parse(fs.readFileSync(path.join(GOLDEN, "packet.json"), "utf8"));
@@ -134,7 +138,7 @@ function main() {
       translation_shim_required: false,
       normalized_counts: observed.counts,
     },
-    verification_command: "node scripts/topology-conformance.js --topology <l9-constellation-topology checkout>",
+    verification_command: "L9_TOPOLOGY_CHECKOUT=<l9-constellation-topology checkout> npm run topology:conformance",
   };
 
   if (update) {
