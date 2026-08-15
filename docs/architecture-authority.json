@@ -1,0 +1,171 @@
+{
+  "schema": "l9.architecture-authority/v1",
+  "repository": "Quantum-L9/l9-meta-injector",
+  "audit_base_ref": "a1dfdab7643493e25ce8b9ca15da280c73343c8e",
+  "status": "active",
+  "engine": {
+    "language": "typescript",
+    "source_root": "src",
+    "runtime_entrypoint": "src/pipeline.ts#runPipelineAsync",
+    "package_entrypoint": "dist/index.js",
+    "types_entrypoint": "dist/index.d.ts"
+  },
+  "contracts": {
+    "metadata": "src/schema.ts",
+    "pipeline": "src/pipeline.ts",
+    "architecture": "docs/architecture.md",
+    "public_api": "docs/public-api-contract.json",
+    "package": "package.json",
+    "operations": "src/operation_contracts.ts",
+    "repository_authority": "schemas/meta-authority.schema.json",
+    "authority_scan": "src/authority_scan.ts",
+    "check": "src/check.ts",
+    "operation_dispatch": "scripts/operation-cli.js",
+    "discovery": "src/discovery_contracts.ts",
+    "carrier_policy": "src/mutation_policy.ts",
+    "metadata_index": "src/metadata_index.ts",
+    "carrier_operation": "src/carrier_operation.ts",
+    "file_transaction": "src/file_transaction.ts",
+    "frontmatter_patch": "src/frontmatter_patch.ts"
+  },
+  "distribution": {
+    "model": "committed_dist_mirror",
+    "source_root": "src",
+    "generated_root": "dist",
+    "compliance_state": "enforced_RAA-006",
+    "source_parity_command": "npm run check:dist",
+    "packed_consumer_command": "npm run test:packed",
+    "package_contract": "docs/package-contract.json"
+  },
+  "public_api": {
+    "model": "orchestration_root_plus_versioned_subpaths",
+    "current_state": "enforced_RAA-007",
+    "primary_entrypoint": "runPipelineAsync",
+    "contract": "docs/public-api-contract.json",
+    "versioning": "semver",
+    "supported_subpaths": [
+      ".",
+      "./inventory",
+      "./schema",
+      "./advanced",
+      "./advanced/llm",
+      "./repository-model",
+      "./package.json"
+    ],
+    "validation_command": "npm run check:api"
+  },
+  "persisted_outputs": [
+    "archives-expanded.json",
+    "coverage-report.json",
+    "dedup-report.json",
+    "dedup-report.md",
+    "meta-v3-index.json",
+    "placement-plan.json",
+    "primitive-library-index.json",
+    "prompt-library-index.json",
+    "verification-report.json"
+  ],
+  "validation": {
+    "api": "npm run check:api",
+    "authority": "npm run check:authority",
+    "manifest": "npm run check:manifest",
+    "dist": "npm run check:dist",
+    "packed_consumer": "npm run test:packed",
+    "publication": "npm run check:publication",
+    "canonical": "npm run validate",
+    "ci_workflow": ".github/workflows/ci.yml",
+    "selfpack": "scripts/selfpack.js"
+  },
+  "legacy": {
+    "status": "reference_only",
+    "documentation": "docs/legacy/consolidation-v1",
+    "runtime": "tools/consolidation",
+    "schemas": "tools/consolidation/schemas"
+  },
+  "operation_contract": {
+    "canonical_modes": [
+      "inventory",
+      "check",
+      "apply",
+      "skills"
+    ],
+    "deprecated_aliases": {
+      "pipeline": "apply"
+    },
+    "authority_required_for": [
+      "check",
+      "apply"
+    ],
+    "authority_schema": "l9.meta-authority/v1",
+    "check_entrypoint": "src/check.ts#runCheckAsync",
+    "check_persists_target_outputs": false,
+    "apply_entrypoint": "src/apply.ts#runApplyAsync",
+    "shared_carrier_plan": "src/carrier_operation.ts#planCarrierOperationAsync",
+    "legacy_adjacent_sidecar_dispatch": false,
+    "apply_transaction": "src/file_transaction.ts#executeFileTransaction",
+    "interrupted_apply_recovery": "src/file_transaction.ts#recoverPendingTransactions",
+    "partial_apply_state_allowed": false
+  },
+  "invocation_boundary": {
+    "mode_contract": "src/operation_contracts.ts",
+    "dispatcher": "scripts/operation-cli.js",
+    "action_manifest": "action.yml",
+    "caller_inputs_enter_through_environment": true,
+    "child_process_shell": false,
+    "root_contained_to_workspace": true,
+    "output_contained_to_target": true,
+    "check_reports_under_runner_temp": true,
+    "external_actions_immutable": true,
+    "setup_node_ref": "49933ea5288caeca8642d1e84afbd3f7d6820020",
+    "upload_artifact_ref": "ea165f8d65b6e75b540449e92b4886f43607fa02"
+  },
+  "deterministic_identity": {
+    "source_paths": "repository-relative POSIX",
+    "default_file_timestamp": "Unknown",
+    "explicit_timestamp_config": "PipelineConfig.metadataTimestamp",
+    "runtime_timestamp": "PipelineResult.runStartedAt",
+    "coverage_ledger": "CoverageSummary.discovery",
+    "omit_files_fail_closed": true,
+    "apply_blocks_incomplete_discovery": true
+  },
+  "carrier_policy": {
+    "classes": [
+      "hard_skip",
+      "inventory_only",
+      "central_manifest",
+      "inline_managed"
+    ],
+    "precedence": "safety-first",
+    "inline_requires_explicit_allow": true,
+    "source_and_config_default": "central_manifest",
+    "coverage_required": true
+  },
+  "metadata_index": {
+    "path": ".l9/metadata-index.jsonl",
+    "schema": "l9.metadata-index/v1",
+    "encoding": "canonical JSONL",
+    "ordering": "repository-relative POSIX path",
+    "excludes_hard_skip": true,
+    "sidecars_default": false,
+    "inject_logs_default": false,
+    "idempotent_no_rewrite": true
+  },
+  "frontmatter_safety": {
+    "carrier_extensions": [
+      ".md",
+      ".markdown"
+    ],
+    "excluded_inline_extensions": [
+      ".mdx",
+      ".rst",
+      ".txt",
+      ".text"
+    ],
+    "exact_fences": true,
+    "body_byte_preservation": true,
+    "bom_and_newline_preservation": true,
+    "unrelated_field_preservation": true,
+    "complex_yaml_policy": "fail_closed",
+    "skills_patch_scope": "materially_changed_fields_only"
+  }
+}

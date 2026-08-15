@@ -4,15 +4,16 @@
 // sidecar for binaries and for folders, and emits a single inventory manifest
 // (JSON + CSV + MD) using the ArtifactInventory record shape. Never moves, renames,
 // or deletes anything.
-import * as fs from "fs";
-import * as path from "path";
-import * as crypto from "crypto";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import * as crypto from "node:crypto";
 import { contentHash } from "./extract";
 import { resolveStrategy, sidecarPathFor } from "./comment";
 import { injectFile } from "./inject";
 import { NormalizedMeta, asRecord, coerceNormalizedMeta } from "./schema";
 import { serializeYamlObject } from "./yaml_serialize";
 import { MetaSchema, applySchema, targetIncludes, parseCanonicalYaml, toMetaSchema } from "./meta_schema";
+import { buildOmitMatcher, OmitMatcher } from "./omit";
 
 export type InventoryArtifactType =
   | "spec" | "code" | "schema" | "prompt" | "research_markdown" | "research_pdf"
@@ -47,9 +48,14 @@ export interface InventoryConfig {
   sourceSystem?: SourceSystem;
   dryRun?: boolean;         // classify + manifest only; no header/sidecar writes
   injectHeaders?: boolean;  // append headers to text files (default true)
-  folderSidecars?: boolean; // write <folder>/.l9meta.yaml (default true)
+  folderSidecars?: boolean; // write <folder>/.l9meta.yaml when sidecars are enabled (default true)
+  writeSidecars?: boolean;  // permit any adjacent .l9meta.yaml writes (default true)
   hashMaxBytes?: number;    // skip content_hash above this size (default 50 MiB)
   ignore?: string[];        // directory names to skip (default node_modules, .git)
+  /** Extra gitignore-style omit patterns (in addition to built-ins + `.l9metaignore`). */
+  omitPatterns?: string[];
+  /** Optional path to an omit-file (gitignore syntax). */
+  omitFile?: string;
   now?: string;             // ISO timestamp (injected for determinism)
   schema?: MetaSchema;      // custom meta structure; when absent the built-in default is used
 }
@@ -73,6 +79,8 @@ export interface InventoryResult {
   records: InventoryRecord[];
   /** Directories that could not be read (path: error). Their subtrees are absent from `records`. */
   skippedDirs: string[];
+  /** Relative paths skipped by the omit matcher (noise / SKILL.md / `.l9metaignore` / `--omit`). */
+  omittedPaths: string[];
 }
 
 /** Load and validate a canonical meta-schema YAML file. */
@@ -92,7 +100,7 @@ export function buildDuplicateClusters(records: InventoryRecord[]): DuplicateClu
   const clusters: DuplicateCluster[] = [];
   for (const [hash, group] of byHash) {
     if (group.length < 2) continue;
-    const paths = group.map((g) => g.relative_path).sort();
+    const paths = group.map((g) => g.relative_path).sort((a, b) => a.localeCompare(b));
     const size = group[0].size_bytes ?? 0;
     clusters.push({
       content_hash: hash,
@@ -105,10 +113,26 @@ export function buildDuplicateClusters(records: InventoryRecord[]): DuplicateClu
   return clusters.sort((a, b) => b.wasted_bytes - a.wasted_bytes || b.count - a.count);
 }
 
-const CODE_EXTS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".go", ".rs", ".java", ".c", ".h", ".cpp", ".hpp", ".cc", ".cs", ".rb", ".php", ".swift", ".kt", ".kts", ".scala", ".sh", ".bash", ".zsh", ".lua", ".r", ".jl", ".pl", ".pm", ".dart", ".ex", ".exs"]);
-const CONFIG_EXTS = new Set([".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", ".properties", ".env", ".lock", ".plist", ".tf", ".tfvars"]);
+const CODE_EXTS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".go", ".rs", ".java", ".c", ".h", ".cpp", ".hpp", ".cc", ".cs", ".rb", ".php", ".swift", ".kt", ".kts", ".scala", ".sh", ".bash", ".zsh", ".lua", ".r", ".jl", ".pl", ".pm", ".dart", ".ex", ".exs", ".ql", ".qls"]);
+const CONFIG_EXTS = new Set([".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", ".properties", ".env", ".lock", ".plist", ".tf", ".tfvars", ".sha256", ".sha1", ".md5"]);
 const ARCHIVE_EXTS = new Set([".zip", ".tar", ".gz", ".tgz", ".bz2", ".xz", ".7z", ".rar", ".jar", ".war"]);
 const DOC_EXTS = new Set([".txt", ".rst", ".doc", ".docx", ".rtf", ".odt", ".pages"]);
+
+/** Extensionless / special basenames → inventory taxonomy (case-insensitive). */
+const BASENAME_TYPES: Record<string, { type: InventoryArtifactType; confidence: number; evidence: string }> = {
+  ".gitignore": { type: "config", confidence: 0.85, evidence: "git ignore file" },
+  ".gitattributes": { type: "config", confidence: 0.85, evidence: "git attributes file" },
+  ".editorconfig": { type: "config", confidence: 0.85, evidence: "editorconfig file" },
+  ".npmignore": { type: "config", confidence: 0.85, evidence: "npm ignore file" },
+  ".dockerignore": { type: "config", confidence: 0.85, evidence: "docker ignore file" },
+  "codeowners": { type: "config", confidence: 0.85, evidence: "CODEOWNERS file" },
+  "license": { type: "documentation", confidence: 0.8, evidence: "license file" },
+  "license.md": { type: "documentation", confidence: 0.8, evidence: "license file" },
+  "license.txt": { type: "documentation", confidence: 0.8, evidence: "license file" },
+  "notice": { type: "documentation", confidence: 0.75, evidence: "notice file" },
+  "copying": { type: "documentation", confidence: 0.75, evidence: "copying/license file" },
+  "manifest.sha256": { type: "config", confidence: 0.85, evidence: "checksum manifest" },
+};
 
 const MIME: Record<string, string> = {
   ".md": "text/markdown", ".txt": "text/plain", ".pdf": "application/pdf",
@@ -141,6 +165,12 @@ export function classifyInventory(relPath: string, fileName: string, ext: string
     return { type: "documentation", confidence: 0.6, evidence: "markdown document", unknowns: [] };
   }
   if (DOC_EXTS.has(e)) return { type: "documentation", confidence: 0.7, evidence: `document extension ${e}`, unknowns: [] };
+
+  const baseHit = BASENAME_TYPES[fn];
+  if (baseHit) return { type: baseHit.type, confidence: baseHit.confidence, evidence: baseHit.evidence, unknowns: [] };
+  // LICENSE.* (e.g. LICENSE-MIT, LICENSE.Apache-2.0)
+  if (/^license([.\-_]|$)/i.test(fn)) return { type: "documentation", confidence: 0.8, evidence: "license file", unknowns: [] };
+
   return { type: "unknown", confidence: 0.2, evidence: "no recognized signal", unknowns: [e ? `unrecognized_extension:${e}` : "no_extension"] };
 }
 
@@ -160,7 +190,12 @@ function serializeYaml(rec: Record<string, unknown>): string {
   return serializeYamlObject(rec, { fences: true, trailingNewline: true });
 }
 
-function walk(root: string, ignore: Set<string>, skippedDirs: string[]): Array<{ abs: string; isDir: boolean }> {
+function walk(
+  root: string,
+  omit: OmitMatcher,
+  skippedDirs: string[],
+  omittedPaths: string[],
+): Array<{ abs: string; isDir: boolean }> {
   const out: Array<{ abs: string; isDir: boolean }> = [];
   function rec(dir: string) {
     let entries: fs.Dirent[];
@@ -170,8 +205,12 @@ function walk(root: string, ignore: Set<string>, skippedDirs: string[]): Array<{
     catch (err) { skippedDirs.push(`${dir}: ${(err as Error).message}`); return; }
     for (const e of entries) {
       const abs = path.join(dir, e.name);
+      const rel = path.relative(root, abs).split(path.sep).join("/");
+      if (omit.shouldOmit(rel)) {
+        omittedPaths.push(rel);
+        continue;
+      }
       if (e.isDirectory()) {
-        if (ignore.has(e.name)) continue;
         out.push({ abs, isDir: true });
         rec(abs);
       } else if (e.isFile()) {
@@ -229,15 +268,14 @@ export function buildRecord(root: string, abs: string, isDir: boolean, cfg: Requ
 
 /** Run a non-destructive inventory over a filesystem root. */
 export function inventoryTree(config: InventoryConfig): InventoryResult {
+  const ignoreDirs = config.ignore ?? ["node_modules", ".git", ".l9inventory"];
   const cfg = {
     sourceSystem: config.sourceSystem ?? "local",
     dryRun: config.dryRun ?? false,
     injectHeaders: config.injectHeaders ?? true,
     folderSidecars: config.folderSidecars ?? true,
+    writeSidecars: config.writeSidecars ?? true,
     hashMaxBytes: config.hashMaxBytes ?? 50 * 1024 * 1024,
-    // Default-ignore the inventory output dir so re-runs never inventory/mutate
-    // previously generated manifests and sidecars.
-    ignore: new Set(config.ignore ?? ["node_modules", ".git", ".l9inventory"]),
     now: config.now ?? "1970-01-01T00:00:00.000Z",
   };
   // Absolutize root so absolute_path is truly absolute and relative_path/manifest
@@ -252,12 +290,23 @@ export function inventoryTree(config: InventoryConfig): InventoryResult {
   }
   // If the chosen outDir lives inside root, ignore its top-level directory name too,
   // so a custom --out under root can't re-inventory or mutate its own generated output.
+  const ignoreDirNames = [...ignoreDirs];
   const relOut = path.relative(root, path.resolve(config.outDir));
   if (relOut && !relOut.startsWith("..") && !path.isAbsolute(relOut)) {
-    cfg.ignore.add(relOut.split(path.sep)[0]);
+    ignoreDirNames.push(relOut.split(path.sep)[0]);
   }
+
+  const omit = buildOmitMatcher({
+    root,
+    patterns: config.omitPatterns,
+    omitFile: config.omitFile,
+    protectSkillMd: true,
+    ignoreDirNames,
+  });
+
   const skippedDirs: string[] = [];
-  const entries = walk(root, cfg.ignore, skippedDirs);
+  const omittedPaths: string[] = [];
+  const entries = walk(root, omit, skippedDirs, omittedPaths);
   const records: InventoryRecord[] = [];
   const typeDistribution: Record<string, number> = {};
   let files = 0, folders = 0;
@@ -284,14 +333,15 @@ export function inventoryTree(config: InventoryConfig): InventoryResult {
     if (cfg.dryRun) continue;
 
     if (isDir) {
-      if (cfg.folderSidecars && targetIncludes(schema, "sidecar")) {
+      if (cfg.writeSidecars && cfg.folderSidecars && targetIncludes(schema, "sidecar")) {
         writeFolderSidecar(abs, metaObj, rec.unknowns);
       }
       continue;
     }
 
     // Files: text files get an inline header via the filetype-aware injector;
-    // binaries / comment-less formats get a metadata sidecar. Body is preserved.
+    // comment-less text formats get a metadata sidecar. Binary / skip-binary
+    // never gets a sidecar (ADR-017 / edge-filetype policy).
     const read = safeRead(abs);
     if (read.error) rec.unknowns.push(`read_failed:${read.error}`);
     const raw = read.text;
@@ -309,9 +359,11 @@ export function inventoryTree(config: InventoryConfig): InventoryResult {
         // Don't discard the injection error (finding OBS-004): record it, then fall
         // back to a sidecar if the schema allows one.
         rec.unknowns.push(`header_injection_failed:${(err as Error).message}`);
-        if (targetIncludes(schema, "sidecar")) writeSidecar(abs, metaObj, rec.unknowns);
+        if (cfg.writeSidecars && targetIncludes(schema, "sidecar")) writeSidecar(abs, metaObj, rec.unknowns);
       }
-    } else if (targetIncludes(schema, "sidecar")) {
+    } else if (cfg.writeSidecars && strategy !== "skip-binary" && targetIncludes(schema, "sidecar")) {
+      // Sidecar when the strategy is sidecar, OR when headers were skipped (e.g. schema
+      // targets sidecar only). Never for skip-binary / unreadable binaries (ADR-017).
       writeSidecar(abs, metaObj, rec.unknowns);
     }
   }
@@ -321,7 +373,7 @@ export function inventoryTree(config: InventoryConfig): InventoryResult {
   }
   const duplicates = buildDuplicateClusters(records);
   const manifestPaths = writeManifests(config.outDir, root, records, typeDistribution, duplicates, cfg.now, cfg.dryRun);
-  return { root, total: records.length, files, folders, typeDistribution, manifestPaths, duplicates, records, skippedDirs };
+  return { root, total: records.length, files, folders, typeDistribution, manifestPaths, duplicates, records, skippedDirs, omittedPaths };
 }
 
 // Read only the first 8 KB — enough to decide binary-vs-text and pick a strategy,

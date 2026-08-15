@@ -62,6 +62,9 @@ describe("classifyInventory — ArtifactInventory taxonomy", () => {
   it("config", () => expect(C("config.json")).toBe("config"));
   it("documentation", () => expect(C("docs/guide.md")).toBe("documentation"));
   it("unknown for unrecognized", () => expect(C("data.csv")).toBe("unknown"));
+  it("CODEOWNERS config", () => expect(C("CODEOWNERS")).toBe("config"));
+  it("LICENSE documentation", () => expect(C("LICENSE")).toBe("documentation"));
+  it("ql code", () => expect(C("rules.ql")).toBe("code"));
 });
 
 describe("inventoryTree — non-destructive filesystem inventory", () => {
@@ -89,7 +92,7 @@ describe("inventoryTree — non-destructive filesystem inventory", () => {
     expect(Array.isArray(rec.unknowns)).toBe(true);
   });
 
-  it("live run: headers into text, sidecars for binaries, folder sidecars; no rename/delete", () => {
+  it("live run: headers into text, sidecars for comment-less text, skip-binary untouched; folder sidecars; no rename/delete", () => {
     const root = tmp(); tree(root);
     const namesBefore = fs.readdirSync(root).sort();
     const out = tmp();
@@ -101,9 +104,10 @@ describe("inventoryTree — non-destructive filesystem inventory", () => {
     expect(fs.readFileSync(path.join(root, "src", "app.ts"), "utf8")).toContain("// >>> l9:meta >>>");
     // body preserved
     expect(fs.readFileSync(path.join(root, "src", "app.ts"), "utf8").trimEnd().endsWith("export const x = 1;")).toBe(true);
-    // binary + pdf get sidecars, not header injection
-    expect(fs.existsSync(path.join(root, "blob.bin.l9meta.yaml"))).toBe(true);
-    expect(fs.existsSync(path.join(root, "paper.pdf.l9meta.yaml"))).toBe(true);
+    // JSON (sidecar strategy) gets a sidecar; binaries/pdf are skip-binary — no sidecar (ADR-017)
+    expect(fs.existsSync(path.join(root, "config.json.l9meta.yaml"))).toBe(true);
+    expect(fs.existsSync(path.join(root, "blob.bin.l9meta.yaml"))).toBe(false);
+    expect(fs.existsSync(path.join(root, "paper.pdf.l9meta.yaml"))).toBe(false);
     expect(fs.readFileSync(path.join(root, "blob.bin"))).toEqual(Buffer.from([0, 1, 2, 0, 3])); // untouched bytes
     // folder metadata sidecars
     expect(fs.existsSync(path.join(root, "src", ".l9meta.yaml"))).toBe(true);

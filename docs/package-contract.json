@@ -1,0 +1,77 @@
+{
+  "schema": "l9.package-contract/v2",
+  "repository": "Quantum-L9/l9-meta-injector",
+  "package_name": "l9-meta-injector",
+  "package_version": "4.0.0",
+  "entrypoints": {
+    ".": {
+      "runtime": "dist/index.js",
+      "types": "dist/index.d.ts",
+      "stability": "stable"
+    },
+    "./inventory": {
+      "runtime": "dist/public/inventory.js",
+      "types": "dist/public/inventory.d.ts",
+      "stability": "stable"
+    },
+    "./schema": {
+      "runtime": "dist/public/schema.js",
+      "types": "dist/public/schema.d.ts",
+      "stability": "stable"
+    },
+    "./advanced": {
+      "runtime": "dist/public/advanced.js",
+      "types": "dist/public/advanced.d.ts",
+      "stability": "experimental"
+    },
+    "./advanced/llm": {
+      "runtime": "dist/public/llm.js",
+      "types": "dist/public/llm.d.ts",
+      "stability": "experimental"
+    },
+    "./repository-model": {
+      "runtime": "dist/public/repository_model.js",
+      "types": "dist/public/repository_model.d.ts",
+      "stability": "stable"
+    }
+  },
+  "required_files": [
+    "CHANGELOG.md",
+    "LICENSE",
+    "README.md",
+    "package.json"
+  ],
+  "allowed_top_level": [
+    "CHANGELOG.md",
+    "LICENSE",
+    "README.md",
+    "dist",
+    "examples",
+    "package.json",
+    "schemas",
+    "scripts"
+  ],
+  "forbidden_paths": [
+    "schemas/l9_artifact_meta.schema.yaml",
+    "schemas/l9_meta.schema.yaml",
+    "schemas/move_map.schema.yaml"
+  ],
+  "forbidden_prefixes": [
+    ".github/",
+    "docs/",
+    "fixtures/",
+    "reports/",
+    "src/",
+    "tests/",
+    "tools/"
+  ],
+  "dist_policy": "The packed dist file set and bytes must exactly match the committed repository dist tree.",
+  "public_schema_policy": "Only intentional TypeScript package schemas may ship; archived Python schemas are forbidden.",
+  "consumer_tests": {
+    "runtime": "fixtures/package-consumer/runtime.cjs",
+    "types": "fixtures/package-consumer/types.ts",
+    "tsconfig": "fixtures/package-consumer/tsconfig.json",
+    "deep_imports": "fixtures/package-consumer/deep-import.cjs"
+  },
+  "api_contract": "docs/public-api-contract.json"
+}

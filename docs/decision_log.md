@@ -1,14 +1,27 @@
-# Decision Log
+# Active Decision Log
 
-| # | Decision | Rationale |
-|---|---|---|
-| 1 | Merge repo-pack + folder-artifact into one playbook | ~80% shared core; two packs = two drifting scanners/dedup engines. Max leverage = shared core + adapters |
-| 2 | Single ingress routes to mode | Normalize/validate/trace once; no module bypass |
-| 3 | B -> C sequential, not rival branches | B unlocks C (catalog/delta precedent); pruning B destroys leverage. Gate 3 dependency check |
-| 4 | Manifest gate between phases | C only acts on validated rows; makes C deterministic |
-| 5 | Copy-only for folder-artifact | User constraint: source never mutated |
-| 6 | In-place idempotent for repo-pack | Catalog/delta: re-run skips stamped files |
-| 7 | Reasoning kernel stays separate | Execution pack != reasoning layer; merging them recreates layer-mixing |
-| 8 | Sidecars for binary/non-text | Cannot inject comment headers into non-text formats |
-| 9 | Unknown bucket for low confidence | No invented domain facts; label Unknown |
-| 10 | TypeScript pipeline is the single authoritative engine; Python `tools/consolidation/` is secondary/out-of-scope | Two injection engines with divergent header dialects (finding ACA-001) invite drift. The TS pipeline is what `package.json` ships (`main: dist/index.js`), what CI gates (`ci.yml` → `smoke`), and what the tests + selfpack exercise; the Python tool is wired into none of these. Declaring one authoritative — rather than maintaining both in lockstep — removes the drift surface. New work and the header-dialect contract target TS; the Python tool is retained for reference only. See `architecture.md` → Engine authority and `tools/consolidation/README.md`. |
+The active decision sequence continues after the historical decisions 1 through 9 under `docs/legacy/consolidation-v1/decision_log.md`. Full rationale and alternatives are recorded in `docs/decisions/`.
+
+| # | Decision | ADR | Rationale |
+|---|---|---|---|
+| 10 | The TypeScript pipeline is the sole active engine | [ADR-010](decisions/010-typescript-pipeline-sole-active-engine.md) | It is the shipped package, tested runtime, and CI-gated implementation. |
+| 11 | One active architecture corpus governs the repository | [ADR-011](decisions/011-one-active-architecture-corpus.md) | Archived consolidation material remains traceable without competing with current contracts. |
+| 12 | Committed `dist/` is retained and must pass source and tarball parity | [ADR-012](decisions/012-committed-dist-with-parity-proof.md) | Consumers execute generated JavaScript and declarations, so both reviewed source parity and installed-package behavior require proof. |
+| 13 | Version 3 uses an orchestration-first root plus explicit stable and experimental subpaths | [ADR-013](decisions/013-orchestration-first-public-api.md) | This prevents an accidental root barrel while preserving deliberate lower-level access. |
+| 14 | CI uses a canonical aggregate gate plus independent lint, type, test, analysis, and supply-chain contexts | [ADR-014](decisions/014-layered-ci-gates.md) | Integrated package proof and fast failure isolation are both required. |
+| 15 | npm publication remains fail-closed until external evidence and owner approval are recorded | [ADR-015](decisions/015-fail-closed-publication.md) | Technical readiness does not itself authorize external distribution. |
+| 16 | Local-files mode expands zip archives before injection | [ADR-016](decisions/016-local-files-archive-expansion.md) | Default repo mode must keep skipping binaries; disposable local trees need explicit archive expansion. |
+| 17 | Omit layer, SKILL.md protect, and Cursor-native skills mode | [ADR-017](decisions/017-omit-skill-protect-skills-mode.md) | Inventory/pipeline must not corrupt agent skills; skills mode improves Cursor `description` under materiality. |
+| 18 | Classification injectability gate and coverage report persistence | [ADR-018](decisions/018-classification-injectability-coverage.md) | Word-boundary classify + demote weak test/script; default prose to context; always write coverage-report.json. |
+| 19 | Canonical operation and repository-authority contracts | [ADR-019](decisions/019-canonical-operation-and-authority-contracts.md) | Exhaustive modes and explicit authority remove fallback mutation intent without creating a second engine. |
+| 20 | Fail-closed repository metadata-authority scan | [ADR-020](decisions/020-fail-closed-repository-authority-scan.md) | Hidden control surfaces are scanned read-only and competing writers block governed operations. |
+| 21 | Check is a non-persisting expected-versus-actual operation | [ADR-021](decisions/021-read-only-check-operation.md) | CI judges canonical drift without repairing or otherwise changing the target repository. |
+| 22 | Action and CLI dispatch are exhaustive, contained, and shell-independent | [ADR-022](decisions/022-contained-action-and-cli-dispatch.md) | Inputs remain data, paths cannot escape their roots, and external Actions are immutable. |
+| 23 | Persisted identity is deterministic and discovery has terminal accounting | [ADR-023](decisions/023-deterministic-identity-and-discovery-ledger.md) | Relative paths, stable file metadata, strict omit files, and complete dispositions make coverage reproducible and fail closed. |
+| 24 | Metadata carriers are explicit, ordered policy decisions | [ADR-024](decisions/024-explicit-metadata-carrier-policy.md) | Safety classes override preferences; inline mutation requires an approved L9 artifact type and explicit path authority. |
+| 25 | Central metadata is one deterministic canonical JSONL index | [ADR-025](decisions/025-deterministic-central-metadata-index.md) | Non-hard-skip records are path-sorted, machine-independent, idempotent, and isolated under .l9. |
+| 26 | Check and apply consume one carrier-aware plan | [ADR-026](decisions/026-unified-carrier-aware-operation-dispatch.md) | Policy, index materialization, and authorized inline targets cannot diverge between planning and mutation. |
+| 27 | Apply commits its complete carrier set transactionally | [ADR-027](decisions/027-whole-run-transactional-apply.md) | Same-directory staging, durable journaling, post-commit validation, and reverse rollback prevent mixed repository state. |
+| 28 | Inline YAML updates patch managed fields without reserializing user headers | [ADR-028](decisions/028-byte-preserving-frontmatter-safety.md) | Exact fences, byte-preserved bodies, and fail-closed complex YAML prevent collateral header damage. |
+| 29 | Release 4.0.0 by immutable commit before consumer migration | [ADR-029](decisions/029-v4-release-and-consumer-migration.md) | GitHub commit consumption is sufficient; npm publication and consumer rollout retain separate fail-closed gates. |
+| 30 | Repository Model Packet egress is produced from inventory evidence and proven against the bound topology consumer | [ADR-030](decisions/030-repository-model-packet-egress.md) | Contract accuracy is proven by the real consumer, not asserted, and no runtime dependency on topology is created. |

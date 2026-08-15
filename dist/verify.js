@@ -35,7 +35,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.verify = verify;
 // verify.ts — Validate injected files; enforce sharing_scope invariants; fail on violation.
-const fs = __importStar(require("fs"));
+const fs = __importStar(require("node:fs"));
 const schema_1 = require("./schema");
 const extract_1 = require("./extract");
 const comment_1 = require("./comment");

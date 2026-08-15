@@ -37,14 +37,21 @@ export interface AppliedMeta {
   missingRequired: string[];
 }
 
+/** Resolve a standard YAML backslash escape inside a double-quoted scalar. */
+function unescapeDoubleQuotedChar(c: string): string {
+  if (c === "n") return "\n";
+  if (c === "r") return "\r";
+  if (c === "t") return "\t";
+  return c;
+}
+
 const SCALAR = (raw: string): unknown => {
   const s = raw.trim();
   if (s === "" ) return "";
   if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) {
     // Double-quoted: unescape the standard YAML escape sequences so values like
     // Windows paths ("C:\\tmp") or embedded \n/\" round-trip correctly.
-    return s.slice(1, -1).replace(/\\(["\\/nrt])/g, (_m, c) =>
-      c === "n" ? "\n" : c === "r" ? "\r" : c === "t" ? "\t" : c);
+    return s.slice(1, -1).replace(/\\(["\\/nrt])/g, (_m, c) => unescapeDoubleQuotedChar(c));
   }
   if (s.length >= 2 && s.startsWith("'") && s.endsWith("'")) {
     // Single-quoted: the only escape is a doubled quote ('').
@@ -55,8 +62,8 @@ const SCALAR = (raw: string): unknown => {
   if (s === "null" || s === "~") return null;
   if (s === "[]") return [];
   if (s === "{}") return {};
-  if (/^-?\d+$/.test(s)) return parseInt(s, 10);
-  if (/^-?\d*\.\d+$/.test(s)) return parseFloat(s);
+  if (/^-?\d+$/.test(s)) return Number.parseInt(s, 10);
+  if (/^-?\d*\.\d+$/.test(s)) return Number.parseFloat(s);
   if (s.startsWith("[") && s.endsWith("]")) {
     return s.slice(1, -1).split(",").map((x) => x.trim()).filter((x) => x !== "").map(SCALAR);
   }
@@ -202,7 +209,8 @@ export function applySchema(record: Record<string, unknown>, schema: MetaSchema)
     if (empty && f.default !== undefined) val = f.default;
     const stillEmpty = val === undefined || val === null || val === "";
     if (stillEmpty && f.required) missingRequired.push(f.name);
-    fields[f.name] = val === undefined ? (f.default !== undefined ? f.default : null) : val;
+    if (val !== undefined) fields[f.name] = val;
+    else fields[f.name] = f.default !== undefined ? f.default : null;
   }
   return { fields, missingRequired };
 }

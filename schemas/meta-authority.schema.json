@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.quantum-l9.example/l9/meta-authority/v1",
+  "title": "L9 metadata authority",
+  "description": "Declares the sole metadata writer and permitted carriers for one repository.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "writer",
+    "default_carrier",
+    "legacy_writers",
+    "inline_allow"
+  ],
+  "properties": {
+    "schema": {
+      "const": "l9.meta-authority/v1"
+    },
+    "writer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "ref"],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "pattern": "^[^/\\s]+/[^/\\s]+$"
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "default_carrier": {
+      "enum": ["central_manifest", "inline_managed"]
+    },
+    "legacy_writers": {
+      "enum": ["forbidden", "migration_only"]
+    },
+    "inline_allow": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512,
+        "pattern": "^(?![!/.])(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)(?!.*//)[^\\u0000-\\u001F\\u007F]+$"
+      },
+      "uniqueItems": true
+    },
+    "validation_commands": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    }
+  }
+}

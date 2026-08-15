@@ -1,31 +1,32 @@
 {
   "fixtures": "fixtures",
   "totals": {
-    "scanned": 10,
-    "injected": 9,
-    "verified": 9,
-    "verifiedClean": 9
+    "scanned": 24,
+    "injected": 24,
+    "verified": 24,
+    "verifiedClean": 24
   },
   "strategyDist": {
     "block-comment": 2,
-    "line-comment": 3,
-    "sidecar": 1,
-    "yaml-frontmatter": 3
+    "line-comment": 9,
+    "sidecar": 8,
+    "yaml-frontmatter": 5
   },
   "typeDist": {
-    "context": 1,
+    "context": 3,
+    "doctrine": 1,
     "prompt": 1,
     "skill": 1,
-    "source": 6
+    "source": 18
   },
   "indexes": {
-    "primitiveLibraryEntries": 8,
+    "primitiveLibraryEntries": 23,
     "promptLibraryEntries": 1,
-    "dedupTotalScanned": 9,
-    "dedupUniqueCount": 9,
+    "dedupTotalScanned": 24,
+    "dedupUniqueCount": 24,
     "dedupExactTwins": 0,
-    "verificationEntries": 9,
-    "verificationClean": 9
+    "verificationEntries": 24,
+    "verificationClean": 24
   },
   "idempotency": {
     "rerunFilesChanged": 0
@@ -68,6 +69,78 @@
       "sharingScopeValid": true
     },
     {
+      "path": "notes.txt",
+      "id": "l9.context.notes",
+      "artifact_type": "context",
+      "mcp_primitive": "resource",
+      "injectable": true,
+      "strategy": "sidecar",
+      "hasSidecar": true,
+      "yamlValid": true,
+      "bodyPreserved": true,
+      "sharingScopeValid": true
+    },
+    {
+      "path": "package-consumer/deep-import.cjs",
+      "id": "l9.source.deep_import",
+      "artifact_type": "source",
+      "mcp_primitive": "resource",
+      "injectable": true,
+      "strategy": "line-comment",
+      "hasSidecar": false,
+      "yamlValid": true,
+      "bodyPreserved": true,
+      "sharingScopeValid": true
+    },
+    {
+      "path": "package-consumer/package.json",
+      "id": "l9.source.package",
+      "artifact_type": "source",
+      "mcp_primitive": "resource",
+      "injectable": true,
+      "strategy": "sidecar",
+      "hasSidecar": true,
+      "yamlValid": true,
+      "bodyPreserved": true,
+      "sharingScopeValid": true
+    },
+    {
+      "path": "package-consumer/runtime.cjs",
+      "id": "l9.source.runtime",
+      "artifact_type": "source",
+      "mcp_primitive": "resource",
+      "injectable": true,
+      "strategy": "line-comment",
+      "hasSidecar": false,
+      "yamlValid": true,
+      "bodyPreserved": true,
+      "sharingScopeValid": true
+    },
+    {
+      "path": "package-consumer/tsconfig.json",
+      "id": "l9.source.tsconfig",
+      "artifact_type": "source",
+      "mcp_primitive": "resource",
+      "injectable": true,
+      "strategy": "sidecar",
+      "hasSidecar": true,
+      "yamlValid": true,
+      "bodyPreserved": true,
+      "sharingScopeValid": true
+    },
+    {
+      "path": "package-consumer/types.ts",
+      "id": "l9.source.types",
+      "artifact_type": "source",
+      "mcp_primitive": "resource",
+      "injectable": true,
+      "strategy": "line-comment",
+      "hasSidecar": false,
+      "yamlValid": true,
+      "bodyPreserved": true,
+      "sharingScopeValid": true
+    },
+    {
       "path": "prompts/Prompt-LegalAnalysis.md",
       "id": "l9.prompt.legal_analysis",
       "artifact_type": "prompt",
@@ -80,8 +153,116 @@
       "sharingScopeValid": true
     },
     {
+      "path": "repository-model/expected-bundle/manifest.json",
+      "id": "l9.source.manifest",
+      "artifact_type": "source",
+      "mcp_primitive": "resource",
+      "injectable": true,
+      "strategy": "sidecar",
+      "hasSidecar": true,
+      "yamlValid": true,
+      "bodyPreserved": true,
+      "sharingScopeValid": true
+    },
+    {
+      "path": "repository-model/expected-bundle/packet.json",
+      "id": "l9.source.packet",
+      "artifact_type": "source",
+      "mcp_primitive": "resource",
+      "injectable": true,
+      "strategy": "sidecar",
+      "hasSidecar": true,
+      "yamlValid": true,
+      "bodyPreserved": true,
+      "sharingScopeValid": true
+    },
+    {
+      "path": "repository-model/expected-bundle/receipts/validation-receipt.json",
+      "id": "l9.source.validation_receipt",
+      "artifact_type": "source",
+      "mcp_primitive": "resource",
+      "injectable": true,
+      "strategy": "sidecar",
+      "hasSidecar": true,
+      "yamlValid": true,
+      "bodyPreserved": true,
+      "sharingScopeValid": true
+    },
+    {
+      "path": "repository-model/sample-repo/CODEOWNERS",
+      "id": "l9.source.codeowners",
+      "artifact_type": "source",
+      "mcp_primitive": "resource",
+      "injectable": true,
+      "strategy": "line-comment",
+      "hasSidecar": false,
+      "yamlValid": true,
+      "bodyPreserved": true,
+      "sharingScopeValid": true
+    },
+    {
+      "path": "repository-model/sample-repo/docs/decisions/adr-001-example.md",
+      "id": "l9.doctrine.adr_001_example",
+      "artifact_type": "doctrine",
+      "mcp_primitive": "none",
+      "injectable": true,
+      "strategy": "yaml-frontmatter",
+      "hasSidecar": false,
+      "yamlValid": true,
+      "bodyPreserved": true,
+      "sharingScopeValid": true
+    },
+    {
+      "path": "repository-model/sample-repo/package.json",
+      "id": "l9.source.package",
+      "artifact_type": "source",
+      "mcp_primitive": "resource",
+      "injectable": true,
+      "strategy": "sidecar",
+      "hasSidecar": true,
+      "yamlValid": true,
+      "bodyPreserved": true,
+      "sharingScopeValid": true
+    },
+    {
+      "path": "repository-model/sample-repo/README.md",
+      "id": "l9.context.readme",
+      "artifact_type": "context",
+      "mcp_primitive": "resource",
+      "injectable": true,
+      "strategy": "yaml-frontmatter",
+      "hasSidecar": false,
+      "yamlValid": true,
+      "bodyPreserved": true,
+      "sharingScopeValid": true
+    },
+    {
+      "path": "repository-model/sample-repo/src/index.ts",
+      "id": "l9.source.index",
+      "artifact_type": "source",
+      "mcp_primitive": "resource",
+      "injectable": true,
+      "strategy": "line-comment",
+      "hasSidecar": false,
+      "yamlValid": true,
+      "bodyPreserved": true,
+      "sharingScopeValid": true
+    },
+    {
+      "path": "repository-model/sample-repo/src/util.py",
+      "id": "l9.source.util",
+      "artifact_type": "source",
+      "mcp_primitive": "resource",
+      "injectable": true,
+      "strategy": "line-comment",
+      "hasSidecar": false,
+      "yamlValid": true,
+      "bodyPreserved": true,
+      "sharingScopeValid": true
+    },
+    {
       "path": "scripts/run.sh",
-      "id": "l9.script.run",
+      "id": "l9.source.run",
       "artifact_type": "source",
       "mcp_primitive": "resource",
       "injectable": true,

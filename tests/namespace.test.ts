@@ -9,6 +9,15 @@ describe("resolveNamespace", () => {
   it("shared scope from _shared/ path", () => expect(resolveNamespace("/repos/_shared/kernels/foo.md", base).sharingScope).toBe("shared"));
   it("private scope from l9/ path", () => expect(resolveNamespace("/repos/l9/kernels/foo.md", base).sharingScope).toBe("private"));
   it("agnostic scope for unknown path", () => expect(resolveNamespace("/tmp/foo.md", base).sharingScope).toBe("agnostic"));
+  // A "core"/"shared"/"common" folder segment in a non-prose file is a code-organization
+  // detail (e.g. a tool's own `core/` module), not a namespace-sharing convention — applying
+  // the shared/private signal there produced a false sharing_scope=shared for legacy Python
+  // files under tools/consolidation/core/**, which verify.ts's checkSharingScope then flagged
+  // as a spurious violation against the run's namespace. Regression guard for that drift.
+  it("code files under a core/ or shared/ folder stay agnostic (not a namespace-sharing signal)", () => {
+    expect(resolveNamespace("/repo/tools/consolidation/core/__init__.py", base).sharingScope).toBe("agnostic");
+    expect(resolveNamespace("/repo/shared/utils.ts", base).sharingScope).toBe("agnostic");
+  });
   it("namespaceGlob override", () => {
     const cfg = { ...base, namespaceGlobs: [{ glob: "plastos/**", namespace: "plastos" }] };
     expect(resolveNamespace("/repos/plastos/skills/foo.md", cfg).namespace).toBe("plastos");

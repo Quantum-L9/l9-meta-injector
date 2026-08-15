@@ -35,9 +35,63 @@ test("coverage tally accounts for injected and skipped-non-injectable files (OBS
   expect(result.coverage.injected).toBeGreaterThan(0);
   expect(result.coverage.skippedNonInjectable).toBe(1);
   expect(result.coverage.skipped.nonInjectable).toContain(skippedPath);
+  expect(result.coverage.skipped.nonInjectableDetails).toEqual([
+    expect.objectContaining({
+      path: skippedPath,
+      reason: "taxonomy_non_injectable",
+      artifactType: "test",
+      confidence: "high",
+    }),
+  ]);
   expect(result.coverage.verifyFailed).toBe(result.verification.withIssues);
+  expect(fs.existsSync(result.coverage.reportPath)).toBe(true);
 
   // Internal consistency: every scanned file is either injected or skipped.
   const accounted = result.coverage.injected + result.coverage.skippedBinary + result.coverage.skippedNonInjectable;
   expect(accounted).toBe(result.coverage.scanned);
+}, 15000);
+
+test("dry-run writes coverage-report.json with skip details (ADR-018)", async () => {
+  const root = tmpDir(); const out = tmpDir();
+  const testsDir = path.join(root, "tests"); fs.mkdirSync(testsDir);
+  const skippedPath = path.join(testsDir, "example_spec.md");
+  fs.writeFileSync(skippedPath, "## Spec\nContent.\n");
+
+  const cfg: PipelineConfig = {
+    root, glob: "**/*.md", dryRun: true, outDir: out, namespace: "l9",
+    authority: "l9.doctrine.platform", nearDupThreshold: 0.9, hashPrefixLength: 16,
+    indexDir: out, verbose: false, llmEnabled: false, normalizeFilenames: false,
+  };
+
+  const result = await runPipelineAsync(cfg);
+  expect(result.coverage.skippedNonInjectable).toBe(1);
+  expect(result.coverage.reportPath).toBe(path.join(out, "coverage-report.json"));
+  const report = JSON.parse(fs.readFileSync(result.coverage.reportPath, "utf8")) as typeof result.coverage;
+  expect(report.skipped.nonInjectable).toContain(skippedPath);
+  expect(report.skipped.nonInjectableDetails[0]).toMatchObject({
+    path: skippedPath,
+    artifactType: "test",
+    reason: "taxonomy_non_injectable",
+  });
+}, 15000);
+
+test("false-positive prose (testing/specification) is injected, not skipped (ADR-018)", async () => {
+  const root = tmpDir(); const out = tmpDir();
+  const prosePath = path.join(root, "evidence-report.md");
+  fs.writeFileSync(
+    prosePath,
+    "## Report\nphases 3-6 (testing, validation, deployment)\ncomprehensive specification follows.\n",
+  );
+
+  const cfg: PipelineConfig = {
+    root, glob: "**/*.md", dryRun: true, outDir: out, namespace: "l9",
+    authority: "l9.doctrine.platform", nearDupThreshold: 0.9, hashPrefixLength: 16,
+    indexDir: out, verbose: false, llmEnabled: false, normalizeFilenames: false,
+  };
+
+  const result = await runPipelineAsync(cfg);
+  expect(result.coverage.scanned).toBe(1);
+  expect(result.coverage.skippedNonInjectable).toBe(0);
+  expect(result.coverage.injected).toBe(1);
+  expect(result.injected[0].sourcePath).toBe(prosePath);
 }, 15000);

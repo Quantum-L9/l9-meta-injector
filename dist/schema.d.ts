@@ -1,5 +1,6 @@
+import type { MetaSchema } from "./meta_schema";
 export declare const UNKNOWN: "Unknown";
-export type Unknown = typeof UNKNOWN;
+export type Unknown = "Unknown";
 export type ArtifactType = "skill" | "playbook" | "kernel" | "context" | "prompt" | "doctrine" | "test" | "script" | "source" | "unknown";
 export type McpPrimitive = "tool" | "resource" | "prompt" | "none";
 export type ArtifactFamily = "auditor" | "compiler" | "meta_kernel_forge" | "builder" | "planner" | "research" | "domain_agent" | "legal" | "Unknown";
@@ -127,6 +128,16 @@ export interface FieldDiff {
 }
 export interface InjectionRecord {
     sourcePath: string;
+    /** Planned write target (the source file or its metadata sidecar). */
+    targetPath?: string;
+    /** Whether the planned target existed when the operation was evaluated. */
+    targetExists?: boolean;
+    /** True when the canonical expected bytes differ from the current target bytes. */
+    wouldChange?: boolean;
+    /** Hash of the canonical expected target bytes. */
+    expectedContentHash?: string;
+    /** Hash of the current target bytes when the target exists. */
+    actualContentHash?: string;
     originalBodyHash: string;
     postInjectionBodyHash: string;
     bodyPreserved: boolean;
@@ -167,6 +178,37 @@ export interface PipelineConfig {
     llmApiKey?: string;
     llmModel?: string;
     normalizeFilenames: boolean;
+    /** Write a `<file>.inject.log` next to each mutated source file on real (non-dry-run) injection
+     *  with field-level changes. Defaults to `false`; callers must explicitly opt in. */
+    writeInjectLog?: boolean;
+    /** Opt-in to send the LLM bearer token over a non-https `llmBaseUrl` (e.g. a local
+     *  Ollama/LM Studio OpenAI-compatible server on `http://localhost:...`). Default: refuse
+     *  (matches `makeOpenAIAdapter`'s SEC-003 guard). Only meaningful when `llmEnabled` is true. */
+    llmAllowInsecure?: boolean;
+    /** Optional custom meta-schema (see `./meta_schema` / `loadMetaSchema`), the same
+     *  canonical-YAML mechanism `inventoryTree`'s `--schema` already uses. When set and its
+     *  `target` includes `"file_header"`, the schema's resolved fields are MERGED on top of
+     *  (not replacing) the engine's own classified `NormalizedMeta` identity block before
+     *  injection — so verify/dedup/placement/MetaV3, which all read the canonical identity
+     *  fields, are unaffected, while the injected header additionally carries whatever
+     *  operator-defined fields the schema declares. */
+    metaSchema?: MetaSchema;
+    /**
+     * Local-files mode (non-repo trees): before scan, expand `.zip` archives under `root`
+     * into sibling `*.l9extracted/` directories, write `<zip>.l9meta.yaml` sidecars (unless
+     * `dryRun`), and let the normal inject path annotate extracted members. Default repo
+     * mode leaves archives untouched (`skip-binary`). Requires the system `unzip` binary.
+     * See ADR-016.
+     */
+    localFiles?: boolean;
+    /** Extra gitignore-style omit patterns (built-ins + `.l9metaignore` always apply). */
+    omitPatterns?: string[];
+    /** Optional path to an omit-file (gitignore syntax). */
+    omitFile?: string;
+    /** Stable timestamp for persisted per-file metadata. Defaults to Unknown. */
+    metadataTimestamp?: string;
+    /** Disable all pipeline diff/report/index persistence. Used by read-only check. */
+    persistOutputs?: boolean;
 }
 export declare const META_V3_SCHEMA_VERSION: 3;
 export type MetaV3SchemaVersion = typeof META_V3_SCHEMA_VERSION;
@@ -245,3 +287,5 @@ export interface ArtifactClassification {
     signals: string[];
 }
 export declare function isPromptMeta(m: NormalizedMeta | unknown): m is PromptMeta;
+export { LEGACY_OPERATION_ALIASES, META_AUTHORITY_SCHEMA, OPERATION_MODES, assertAuthorityForOperation, isAuthorityConfig, isSupportedAuthoritySchema, operationRequiresAuthority, resolveOperationMode, } from "./operation_contracts";
+export type { AuthorityConfig, AuthorityConflict, AuthorityConflictCode, AuthorityLegacyPolicy, AuthorityWriter, CarrierDecision, CheckDrift, CheckDriftKind, CheckResult, LegacyOperationMode, MetaAuthoritySchema, MetadataCarrier, OperationMode, OperationModeResolution, OperationResult, ApplyResult, ApplyTransactionSummary, } from "./operation_contracts";

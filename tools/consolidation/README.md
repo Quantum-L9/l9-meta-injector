@@ -1,35 +1,20 @@
-# tools/consolidation — secondary engine (reference only)
+# tools/consolidation - secondary engine (reference only)
 
-> **Status: out of scope for the shipped package.** This Python consolidation tool is
-> **not** the authoritative metadata-injection engine. The authoritative engine is the
-> TypeScript pipeline in `src/` (shipped as `dist/`, `package.json` → `main`). See the
-> [Engine authority](../../docs/architecture.md#engine-authority) decision (ACA-001,
-> `decision_log.md` #10).
+> **Status: out of scope for the shipped package.** This Python consolidation tool is not the authoritative metadata-injection engine. The authoritative engine is the TypeScript pipeline under `src/`, shipped through `dist/`.
 
-## What this is
+## Historical context
 
-An earlier two-mode consolidation engine (repo-pack: in-place `L9_META` stamping;
-folder-artifact: copy-only with `L9_ARTIFACT_META` or sidecar). It predates the
-TypeScript pipeline and uses a **different header dialect** and a **different
-`artifact_type` vocabulary** (`architecture│contract│node_spec│infra│template│skill│
-unknown`).
+This directory contains an earlier two-mode consolidation engine. Its active-era contracts, decisions, traceability map, and manifest are archived at `docs/legacy/consolidation-v1/`.
 
-## Why it is out of scope
+Its historical schemas now live beside the implementation under `tools/consolidation/schemas/`. They are not public TypeScript package schemas and are excluded from the npm package allowlist.
 
-| | This Python tool | Authoritative TS pipeline |
+## Why it is reference-only
+
+| | Python reference tool | Authoritative TypeScript package |
 |---|---|---|
-| Shipped in the npm package | No | Yes (`dist/`, `files` allowlist) |
-| Run by CI (`ci.yml` → `smoke`) | No | Yes |
-| Covered by tests / selfpack | No | Yes |
-| Header dialect | `L9_META` / `L9_ARTIFACT_META` | `>>> l9:meta >>>` / frontmatter / sidecar |
+| Shipped by npm | No | Yes |
+| Run by CI | No | Yes |
+| Covered by selfpack | No | Yes |
+| Owns current package contracts | No | Yes |
 
-Because it is wired into none of the package's build, test, or CI surfaces, it is not
-maintained in lockstep with the TS engine and must not be treated as a source of truth.
-
-## If you need consolidation behavior
-
-Use the TypeScript pipeline (`runPipelineAsync` in `src/pipeline.ts`) — see
-[`docs/architecture.md`](../../docs/architecture.md). New feature work and findings
-remediation target the TS engine, not this tool. This directory is retained for
-historical reference and is intentionally excluded from the taxonomy mapping in
-`src/taxonomy.ts` (finding RAA-003): the TS package never reads its vocabulary.
+New feature work, remediation, schemas, and release gates target the TypeScript package. This directory may be inspected for provenance but must not be used as an active source of truth.

@@ -14,9 +14,9 @@
  * (missing index output / pipeline error). CI runs this as a smoke step.
  */
 "use strict";
-const fs = require("fs");
-const os = require("os");
-const path = require("path");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 
 const REPO = path.resolve(__dirname, "..");
 const FIXTURES = path.join(REPO, "fixtures");
@@ -77,7 +77,7 @@ async function measureIdempotency() {
   await pkg.runPipelineAsync(pipelineConfig(root, out));
   const after = walk(root);
   let changed = 0;
-  for (const f of after) { const b = before.get(f); if (!b || !b.equals(fs.readFileSync(f))) changed++; }
+  for (const f of after) { const b = before.get(f); if (!b?.equals(fs.readFileSync(f))) changed++; }
   return changed;
 }
 
@@ -185,4 +185,4 @@ function printLineDiff(a, b) {
   }
 }
 
-main().catch((e) => fail(e && e.stack || String(e)));
+main().catch((e) => fail(e?.stack || String(e)));

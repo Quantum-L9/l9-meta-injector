@@ -5,6 +5,8 @@ export interface InjectOptions {
     outDir: string;
     verbose: boolean;
     writeInjectLog: boolean;
+    /** When false, dry-run returns an in-memory plan without creating diff files. */
+    writeDryRunDiff?: boolean;
 }
 export declare function injectFileAsync(filePath: string, meta: NormalizedMeta, opts: InjectOptions, metrics?: MetricsCollector): Promise<InjectionRecord>;
 export declare function injectFile(filePath: string, meta: NormalizedMeta, opts: InjectOptions): InjectionRecord;

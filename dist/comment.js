@@ -39,7 +39,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.FRONTMATTER_EXTS = void 0;
+exports.FRONTMATTER_EXTS = exports.PROSE_EXTS = void 0;
 exports.isProbablyBinary = isProbablyBinary;
 exports.resolveStrategy = resolveStrategy;
 exports.sidecarPathFor = sidecarPathFor;
@@ -49,13 +49,14 @@ exports.stripInjectedBlock = stripInjectedBlock;
 exports.hasInjectedBlock = hasInjectedBlock;
 exports.extractInjectedYaml = extractInjectedYaml;
 exports.applyCommentInjection = applyCommentInjection;
-const path = __importStar(require("path"));
+const path = __importStar(require("node:path"));
 // Sentinels used to locate a previously-injected block for idempotent re-injection.
 const START = ">>> l9:meta >>>";
 const END = "<<< l9:meta <<<";
 const BLOCK_START = "l9:meta:start";
 const BLOCK_END = "l9:meta:end";
-exports.FRONTMATTER_EXTS = new Set([".md", ".markdown", ".mdx", ".txt", ".text", ".rst"]);
+exports.PROSE_EXTS = new Set([".md", ".markdown", ".mdx", ".txt", ".text", ".rst"]);
+exports.FRONTMATTER_EXTS = new Set([".md", ".markdown"]);
 const LINE_COMMENT = {
     ".ts": "//", ".tsx": "//", ".js": "//", ".jsx": "//", ".mjs": "//", ".cjs": "//",
     ".java": "//", ".c": "//", ".h": "//", ".cpp": "//", ".hpp": "//", ".cc": "//", ".hh": "//",
@@ -67,6 +68,7 @@ const LINE_COMMENT = {
     ".toml": "#", ".ini": "#", ".cfg": "#", ".conf": "#", ".properties": "#",
     ".tf": "#", ".tfvars": "#", ".env": "#", ".mk": "#", ".ps1": "#", ".psm1": "#",
     ".nim": "#", ".ex": "#", ".exs": "#", ".gd": "#", ".coffee": "#", ".dockerfile": "#",
+    ".ql": "#", ".qls": "#",
     ".sql": "--", ".lua": "--", ".hs": "--", ".elm": "--", ".adb": "--", ".ads": "--",
     ".lisp": ";", ".clj": ";", ".cljs": ";", ".cljc": ";", ".el": ";", ".scm": ";",
     ".asm": ";", ".s": ";",
@@ -78,6 +80,7 @@ const BASENAME_LINE_COMMENT = {
     "gemfile": "#", "vagrantfile": "#", "brewfile": "#", "procfile": "#",
     ".gitignore": "#", ".npmignore": "#", ".dockerignore": "#", ".gitattributes": "#",
     ".env": "#", ".bashrc": "#", ".zshrc": "#", ".profile": "#", ".editorconfig": "#",
+    "codeowners": "#",
 };
 const BLOCK_COMMENT = {
     ".html": { open: "<!--", close: "-->" }, ".htm": { open: "<!--", close: "-->" },
@@ -96,12 +99,14 @@ const BINARY_EXTS = new Set([
     ".zip", ".gz", ".bz2", ".xz", ".tar", ".7z", ".rar",
     ".woff", ".woff2", ".ttf", ".eot", ".otf",
     ".exe", ".dll", ".so", ".dylib", ".class", ".o", ".a", ".lib", ".wasm", ".bin", ".dat",
+    // Bytecode / ephemeral noise — skip entirely (no sidecar, no inventory inject).
+    ".pyc", ".pyo", ".pyd", ".log",
 ]);
 /** Heuristic: a NUL byte in the first 8 KB means the file is not UTF-8 text. */
 function isProbablyBinary(raw) {
     const n = Math.min(raw.length, 8192);
     for (let i = 0; i < n; i++)
-        if (raw.charCodeAt(i) === 0)
+        if (raw.codePointAt(i) === 0)
             return true;
     return false;
 }
@@ -114,7 +119,7 @@ function resolveStrategy(filePath, raw) {
         return { strategy: "skip-binary" };
     // .txt/.text are text but not prose-frontmatter carriers: their metadata rides
     // in a sidecar (matches scanFiles, which reports headerConvention="none" for them).
-    if (exports.FRONTMATTER_EXTS.has(ext) && ext !== ".txt" && ext !== ".text")
+    if (exports.FRONTMATTER_EXTS.has(ext))
         return { strategy: "yaml-frontmatter" };
     const linePrefix = LINE_COMMENT[ext] ?? BASENAME_LINE_COMMENT[base];
     if (linePrefix)
@@ -135,7 +140,7 @@ function frontMatterInner(yamlFrontMatter) {
     return yamlFrontMatter.replace(/^---\r?\n/, "").replace(/\r?\n---\s*$/, "");
 }
 function esc(s) {
-    return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return s.replace(/[.*+?^${}()|[\]\\]/g, String.raw `\$&`);
 }
 /** Wrap inner YAML in the comment style for this spec. Returns the block (no trailing newline). */
 function yamlToBlock(yamlInner, spec) {
@@ -154,12 +159,12 @@ function yamlToBlock(yamlInner, spec) {
 function blockRegex(spec) {
     if (spec.strategy === "line-comment") {
         const p = esc(spec.linePrefix);
-        return new RegExp(`${p} ${esc(START)}[\\s\\S]*?${p} ${esc(END)}\\r?\\n?`);
+        return new RegExp(String.raw `${p} ${esc(START)}[\s\S]*?${p} ${esc(END)}\r?\n?`);
     }
     if (spec.strategy === "block-comment") {
         const o = esc(spec.blockOpen);
         const c = esc(spec.blockClose);
-        return new RegExp(`${o} ${esc(BLOCK_START)}[\\s\\S]*?${esc(BLOCK_END)} ${c}\\r?\\n?`);
+        return new RegExp(String.raw `${o} ${esc(BLOCK_START)}[\s\S]*?${esc(BLOCK_END)} ${c}\r?\n?`);
     }
     return null;
 }
@@ -180,7 +185,7 @@ function extractInjectedYaml(raw, spec) {
     const re = blockRegex(spec);
     if (!re)
         return null;
-    const m = raw.match(re);
+    const m = re.exec(raw);
     if (!m)
         return null;
     const body = m[0];
@@ -188,7 +193,7 @@ function extractInjectedYaml(raw, spec) {
         const p = spec.linePrefix;
         return body.split("\n")
             .filter((l) => !l.includes(START) && !l.includes(END) && l.trimStart().startsWith(p))
-            .map((l) => l.replace(new RegExp(`^\\s*${esc(p)} ?`), ""))
+            .map((l) => l.replace(new RegExp(String.raw `^\s*${esc(p)} ?`), ""))
             .join("\n").trim();
     }
     // block-comment

@@ -36,22 +36,23 @@ def sha256(path):
     return h.hexdigest()
 
 
+def _atype_for_dest(dest):
+    if "infrastructure" in dest:
+        return "infra"
+    if "CONTRACT" in dest.upper():
+        return "contract"
+    if "templates" in dest:
+        return "template"
+    if "skills" in dest:
+        return "skill"
+    return "architecture"
+
+
 def classify(rel, text_sample):
     low = (rel + " " + text_sample).lower()
     for key, dest in DOMAIN_HINTS.items():
         if key in low:
-            atype = (
-                "infra"
-                if "infrastructure" in dest
-                else "contract"
-                if "CONTRACT" in dest.upper()
-                else "template"
-                if "templates" in dest
-                else "skill"
-                if "skills" in dest
-                else "architecture"
-            )
-            return atype, key, dest, 0.85
+            return _atype_for_dest(dest), key, dest, 0.85
     return "unknown", "generic", "99_CONFLICTS_AND_UNKNOWN/low-confidence", 0.40
 
 
@@ -157,13 +158,26 @@ created_at: "{created_at}"
 """
 
 
+def _contained(root, rel):
+    """Resolve *rel* under *root*, aborting if it escapes the root boundary.
+
+    move_map.csv is operator-supplied; a crafted ``../`` source_path/output_path
+    must not let a copy read or write outside the declared source/output roots.
+    """
+    root_abs = os.path.realpath(root)
+    full = os.path.realpath(os.path.join(root_abs, rel))
+    if full != root_abs and not full.startswith(root_abs + os.sep):
+        sys.exit(f"[GATE] FAIL: path escapes boundary: {rel}")
+    return full
+
+
 def phase_c(source, output, move_map, copy_files, inject):
     rows = manifest_gate(move_map)
-    now = datetime.datetime.utcnow().isoformat()
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     copied = 0
     for r in rows:
-        sp = os.path.join(source, r["source_path"])
-        dp = os.path.join(output, r["output_path"])
+        sp = _contained(source, r["source_path"])
+        dp = _contained(output, r["output_path"])
         os.makedirs(os.path.dirname(dp), exist_ok=True)
         if not copy_files:
             continue

@@ -1,117 +1,119 @@
 # Architecture
 
-This document describes the **as-built primary artifact**: the TypeScript
-metadata-injection pipeline shipped as the `l9-meta-injector` npm package
-(`package.json` → `main: dist/index.js`). A second, older Python consolidation
-engine lives under `tools/consolidation/`; it is **secondary and out of scope**
-for the shipped package (see [Engine authority](#engine-authority) below and
-decision #10 in `decision_log.md`).
+**As-built package generation:** 3  
+**Package version:** 3.0.0
 
-## Primary engine — TypeScript pipeline
+## Authority
 
-Source in `src/*.ts`, compiled output committed to `dist/`, tests in `tests/*.ts`,
-snapshot smoke test in `scripts/selfpack.js`. The library entry point is
-`runPipelineAsync` in `src/pipeline.ts`.
+The TypeScript pipeline under `src/` is the sole active engine. `runPipelineAsync` owns the complete classify, extract, assist, inject, verify, report, placement, MetaV3, and indexing sequence. The Python consolidation engine under `tools/consolidation/` is historical reference material and is neither shipped nor CI-gated.
 
-```
-retrieval ─▶ extract ─▶ classify ─▶ normalize_meta (buildMeta)
-                                          │
-                              assist (LLM prose fill, opt-in)
-                                          │
-                                        inject  ◀─ reconcile_fields (5-way merge)
-                                          │
-                                        verify
-                                          │
-        ┌─────────────────┬───────────────┼────────────────┬───────────────┐
-     dedup            placement         meta_v3          inventory        indexes
- (near-dup report)   (compiler)     (9-plane model)   (tree walker)   (library JSON)
+`docs/architecture-authority.json` is the machine-readable authority index. Authority-critical file identities are recorded in `docs/architecture-manifest.json`.
+
+## Package boundary
+
+The package exposes six code entrypoints:
+
+```text
+l9-meta-injector                  stable orchestration root
+l9-meta-injector/inventory        stable standalone inventory
+l9-meta-injector/schema           stable metadata contracts
+l9-meta-injector/advanced         experimental composition primitives
+l9-meta-injector/advanced/llm     experimental process-global adapter controls
+l9-meta-injector/repository-model stable repository model packet egress
 ```
 
-### Stage responsibilities
+`docs/public-api-contract.json` defines exact runtime and declaration inventories. `package.json#exports` derives from that contract. Unlisted deep imports are denied.
 
-| Stage | Module | Responsibility |
-|---|---|---|
-| retrieval | `retrieval.ts`, `pipeline.ts` | Discover files under a root by glob; scan and read bodies. |
-| extract | `extract.ts` | Content hash, token estimate, prose-field extraction from the body. |
-| classify | `classify.ts`, `artifact_class.ts` | Infer `artifact_type` (coarse) and semantic class (fine) from path + content. |
-| normalize_meta | `normalize_meta.ts` | `buildMeta` assembles the typed `NormalizedMeta` header per artifact type. |
-| assist | `assist.ts`, `llm.ts` | Opt-in LLM fill for prose-origin fields when the regex seed fails the "good" predicate. Local default makes **no** network calls. |
-| inject | `inject.ts`, `comment.ts` | Filetype-aware injection: YAML frontmatter (markdown), comment-wrapped block (code), or `.l9meta.yaml` sidecar (comment-less/binary). Body preserved verbatim. |
-| reconcile | `reconcile_fields.ts` | Five-way field merge (add / revise / append-union / keep / replace) on re-injection; every mutation logged. |
-| verify | `verify.ts` | Post-injection checks: YAML valid, body preserved (hash), taxonomy valid, sharing-scope valid, prompt-schema complete. |
-| dedup | `pipeline.ts` | Shingle-Jaccard near-duplicate report over injected bodies. |
-| placement | `compiler.ts`, `placement_policy.ts` | Advisory placement plans (one per injected artifact). |
-| meta_v3 | `meta_v3.ts` | Nine-plane v3 metadata record, additive over v1/v2. |
-| inventory | `inventory.ts` | Standalone tree walker → inventory records + folder/file sidecars. |
-| serialization | `yaml_serialize.ts`, `meta_schema.ts` | Single canonical writer (`serializeYamlObject`) and reader (`parseCanonicalYaml`) for the constrained YAML subset. |
-| taxonomy | `taxonomy.ts`, `schema.ts` | `ArtifactType` is the canonical vocabulary; finer classifications map onto it. |
+## Runtime path
 
-### Cross-cutting contracts
-
-- **Schema single-source** — `src/schema.ts` owns `NormalizedMeta`, `SharingScope`,
-  `FieldDiff`/`ReconcileAction`, the taxonomies, and the `MetaRecord` reconcile-edge
-  type. Consumers import from there rather than re-declaring.
-- **Body preservation** — injection never alters the artifact body; verification
-  asserts `postInjectionBodyHash === originalBodyHash`.
-- **Idempotency** — re-injecting a stamped file is a byte-level no-op (sentinels let a
-  re-run replace, not duplicate, the header). `selfpack` asserts `rerunFilesChanged=0`.
-- **Observability** — the LLM/IO hotpaths report a correlated decision path
-  (`llm_ok` / `llm_failed_fallback` / `no_adapter` / `heuristic`) and run-level metrics
-  (`src/metrics.ts`), surfaced on `PipelineResult.metrics`.
-
-### Verify gate (CI parity)
-
-```
-npm ci && npm run build && npm run typecheck && npm test && node scripts/selfpack.js
+```text
+[optional local-files archive expansion]
+retrieval -> extraction -> classification -> normalization
+          -> optional assist -> injection -> verification
+          -> deduplication -> placement -> MetaV3 -> indexes
 ```
 
-This is exactly what CI (`ci.yml` → `smoke`) runs. `dist/` is kept in sync with `src/`
-in the same commit.
+When `PipelineConfig.localFiles` is set (ADR-016), archive expansion runs before retrieval: `.zip` files become sibling `*.l9extracted/` trees plus `<zip>.l9meta.yaml` sidecars, then members follow the normal path. Default mode never extracts.
 
-## Engine authority
+Inventory and pipeline apply a shared omit layer (ADR-017): built-in protect for `SKILL.md`, noise skips for bytecode/logs, optional `.l9metaignore` / `--omit`. Cursor-native skill edits go through `runSkillsPipelineAsync` only.
 
-Two metadata-injection engines exist in this repository with divergent header
-dialects (finding ACA-001):
+The stable root keeps callers on the full path. Low-level primitives remain available only through an explicitly experimental subpath whose caller obligations are documented.
 
-| | Primary | Secondary |
-|---|---|---|
-| Engine | TypeScript pipeline (`src/`, shipped as `dist/`) | Python consolidation (`tools/consolidation/`) |
-| Status | **Authoritative** — the npm package, tested + CI-gated | Out of scope for the package; retained for reference |
-| Header dialect | `>>> l9:meta >>>` sentinels / YAML frontmatter / sidecar | `L9_META` / `L9_ARTIFACT_META` stamps |
-| Consumed by | `package.json` `main`, tests, selfpack | Nothing in the shipped package |
+## Repository model egress
 
-**Decision:** the TypeScript pipeline is the single authoritative engine. New feature
-work, findings remediation, and the header-dialect contract target the TS engine. The
-Python tool is not wired into CI, `dist/`, or the package `files` allowlist, and is not
-maintained in lockstep; it is documented below for historical context only. See
-`tools/consolidation/README.md` and `decision_log.md` (#10).
+`src/repository_model.ts` converts an inventory observation into an `l9.repository-model`
+packet bundle for the `l9-constellation-topology` consumer (ADR-030).
 
-## Secondary engine — Python consolidation (reference only)
-
-The Python tool predates the TS pipeline and implements a two-mode consolidation
-(repo-pack in-place stamping; folder-artifact copy-only). It is retained for reference
-and is **not** part of the shipped package.
-
-```
-ingress.py (single entry, validates + routes)
-         │
-    core/ (shared, mode-neutral)
-    scanner → hasher → classifier → path_planner → dedup_gate
-         │
-    manifest gate (validates move_map.csv before any write)
-         │
-    modes/<mode>/injector.py
+```text
+inventoryTree (dry run) -> evidence + diagnostics -> packet build
+                        -> producer validation -> canonical bundle emission
 ```
 
-| Module | Responsibility |
-|---|---|
-| `scanner.py` | Walk source, skip hidden/system, emit `(rel_path, abs_path, ext)` |
-| `hasher.py` | SHA-256 per file; basis for dedup and idempotency |
-| `classifier.py` | Infer artifact_type, domain, node_name, confidence from path+content |
-| `path_planner.py` | Map each file to a proposed `output_path` from domain hints |
-| `dedup_gate.py` | Detect duplicate hashes and output_path collisions |
+The emitted bundle is `packet.json`, `receipts/validation-receipt.json`, and a hash-bound
+`manifest.json`, each written as canonical JSON with a single trailing newline. Semantic
+identity is reproducible, checkout-path independent, and derived from repository evidence
+only: unsupported domains stay empty and are reported as diagnostics.
 
-Its `move_map.csv` artifact_type vocabulary
-(`architecture│contract│node_spec│infra│template│skill│unknown`) is distinct from the
-TS `ArtifactType` and is **not** mapped in `src/taxonomy.ts` — the TS package never
-reads it (finding RAA-003).
+This repository holds no runtime dependency on topology. Conformance is proven by feeding
+the committed golden bundle to the real consumer from an ephemeral read-only checkout
+(`L9_TOPOLOGY_CHECKOUT=<checkout> npm run topology:conformance`); the bound revision and result are
+recorded in `docs/topology-conformance.json`.
+
+## Distribution
+
+Source compiles to committed `dist/`. `check:dist` rebuilds in isolation and compares every JavaScript file, declaration, and source map. It rejects missing, extra, changed, untracked, or symlinked distribution files.
+
+`test:packed` creates the npm tarball, enforces the package contract, installs it in a clean consumer, executes every supported runtime entrypoint, compiles every declaration entrypoint, and confirms deep imports fail.
+
+## CI/CD architecture
+
+The repository has four active workflows:
+
+| Workflow | Jobs | Events | Role |
+|---|---|---|---|
+| `CI` | `smoke` | Pull requests; push to `main` | Canonical aggregate validation and clean-checkout proof |
+| `L9 Lint and Test (Node)` | `ESLint`, `tsc --noEmit`, `Vitest` | Pull requests; push to `main`; manual | Independent first-party Node/TypeScript checks |
+| `L9 Analysis` | `Analyze (semgrep -> SDK)`, `Publish analysis (Core)` | Pull requests; manual | Governed Semgrep capture, normalization, canonical bundle validation, and check publication |
+| `L9 Supply Chain` | `OpenSSF Scorecard`, `SBOM` | Scorecard on push to `main`; SBOM on pull request and push | Reusable supply-chain evidence from pinned L9 Core workflows |
+
+No workflow job uses `continue-on-error: true`.
+
+The Semgrep provider command intentionally uses `|| true` only at raw report production. This preserves provider output for SDK normalization and policy evaluation; it does not make normalized findings advisory by itself.
+
+Workflow presence does not prove branch-protection required contexts. Required-check settings are external repository configuration and must be inspected separately.
+
+## Lint and type boundaries
+
+The flat ESLint configuration targets `src/**/*.ts` and `tests/**/*.ts`. It excludes `dist`, dependencies, coverage, fixtures, examples, scripts, and JavaScript-family files. The current ruleset establishes the lint surface and treats unused variables as warnings, except names intentionally prefixed with `_`.
+
+The TypeScript build is strict, enables `noUnusedLocals` and `noImplicitReturns`, and compiles `src/**/*`. Vitest owns test execution.
+
+No repository pre-commit framework is configured at this revision.
+
+## Architecture decisions
+
+`docs/decision_log.md` indexes the active decision sequence. Full context, alternatives, rationale, and consequences live under `docs/decisions/`. ADRs preserve human-readable decision history; `docs/architecture-authority.json`, package contracts, and executable validators remain the machine enforcement authority.
+
+Accepted ADRs are never deleted. A replacement uses the next number and links to the superseded record.
+
+## Validation
+
+```bash
+npm ci
+npm run lint
+npm run validate
+git status --porcelain --untracked-files=all
+```
+
+The canonical aggregate command checks source types, Vitest, the exact API contract, architecture authority, deterministic architecture manifest, committed distribution parity, selfpack, and installed-tarball consumption. ESLint is an additive independent gate. Validation must leave the checkout clean.
+
+Any change to this document requires:
+
+```bash
+npm run manifest:update
+npm run validate
+```
+
+## Publication boundary
+
+`npm publish` is separately fail-closed through `check:publication`. Successful implementation, packaging, and CI do not authorize publication. Registry history, constellation-consumer inventory, and distribution-owner approval must be recorded before the publication decision can become `approved`.

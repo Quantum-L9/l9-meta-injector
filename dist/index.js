@@ -1,47 +1,32 @@
 "use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __exportStar = (this && this.__exportStar) || function(m, exports) {
-    for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
-};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.injectFileAsync = exports.injectFile = exports.diffsToLogYaml = exports.reconcileFieldsAsync = exports.reconcileFields = exports.toSnakeStem = exports.resolveNamespace = void 0;
-__exportStar(require("./schema"), exports);
-__exportStar(require("./llm"), exports);
-var namespace_1 = require("./namespace");
-Object.defineProperty(exports, "resolveNamespace", { enumerable: true, get: function () { return namespace_1.resolveNamespace; } });
-Object.defineProperty(exports, "toSnakeStem", { enumerable: true, get: function () { return namespace_1.toSnakeStem; } });
-__exportStar(require("./assist"), exports);
-var reconcile_fields_1 = require("./reconcile_fields");
-Object.defineProperty(exports, "reconcileFields", { enumerable: true, get: function () { return reconcile_fields_1.reconcileFields; } });
-Object.defineProperty(exports, "reconcileFieldsAsync", { enumerable: true, get: function () { return reconcile_fields_1.reconcileFieldsAsync; } });
-Object.defineProperty(exports, "diffsToLogYaml", { enumerable: true, get: function () { return reconcile_fields_1.diffsToLogYaml; } });
-__exportStar(require("./normalize_filename"), exports);
-__exportStar(require("./extract"), exports);
-__exportStar(require("./classify"), exports);
-__exportStar(require("./artifact_class"), exports);
-__exportStar(require("./placement_policy"), exports);
-__exportStar(require("./normalize_meta"), exports);
-var inject_1 = require("./inject");
-Object.defineProperty(exports, "injectFile", { enumerable: true, get: function () { return inject_1.injectFile; } });
-Object.defineProperty(exports, "injectFileAsync", { enumerable: true, get: function () { return inject_1.injectFileAsync; } });
-__exportStar(require("./verify"), exports);
-__exportStar(require("./retrieval"), exports);
-__exportStar(require("./pipeline"), exports);
-__exportStar(require("./inventory"), exports);
-__exportStar(require("./meta_schema"), exports);
-__exportStar(require("./meta_v3"), exports);
-// Reusable primitives previously reachable only internally (finding DWL-008):
-// the filetype injection-strategy engine and the dedup / library-index compiler.
-__exportStar(require("./comment"), exports);
-__exportStar(require("./compiler"), exports);
+exports.resolveOperationMode = exports.operationRequiresAuthority = exports.isSupportedAuthoritySchema = exports.isAuthorityConfig = exports.assertAuthorityForOperation = exports.OPERATION_MODES = exports.META_AUTHORITY_SCHEMA = exports.LEGACY_OPERATION_ALIASES = exports.isPromptMeta = exports.META_V3_PLANES = exports.META_V3_SCHEMA_VERSION = exports.PRIMITIVE_TAXONOMY = exports.UNKNOWN = exports.runSkillsPipelineAsync = exports.inlinePlanDrift = exports.metadataIndexDrift = exports.planCarrierOperationAsync = exports.buildCarrierOperationPlan = exports.runApplyAsync = exports.CANONICAL_METADATA_WRITER = exports.runCheckAsync = exports.runPipelineAsync = void 0;
+var pipeline_1 = require("./pipeline");
+Object.defineProperty(exports, "runPipelineAsync", { enumerable: true, get: function () { return pipeline_1.runPipelineAsync; } });
+var check_1 = require("./check");
+Object.defineProperty(exports, "runCheckAsync", { enumerable: true, get: function () { return check_1.runCheckAsync; } });
+Object.defineProperty(exports, "CANONICAL_METADATA_WRITER", { enumerable: true, get: function () { return check_1.CANONICAL_METADATA_WRITER; } });
+var apply_1 = require("./apply");
+Object.defineProperty(exports, "runApplyAsync", { enumerable: true, get: function () { return apply_1.runApplyAsync; } });
+var carrier_operation_1 = require("./carrier_operation");
+Object.defineProperty(exports, "buildCarrierOperationPlan", { enumerable: true, get: function () { return carrier_operation_1.buildCarrierOperationPlan; } });
+Object.defineProperty(exports, "planCarrierOperationAsync", { enumerable: true, get: function () { return carrier_operation_1.planCarrierOperationAsync; } });
+Object.defineProperty(exports, "metadataIndexDrift", { enumerable: true, get: function () { return carrier_operation_1.metadataIndexDrift; } });
+Object.defineProperty(exports, "inlinePlanDrift", { enumerable: true, get: function () { return carrier_operation_1.inlinePlanDrift; } });
+var skills_pipeline_1 = require("./skills_pipeline");
+Object.defineProperty(exports, "runSkillsPipelineAsync", { enumerable: true, get: function () { return skills_pipeline_1.runSkillsPipelineAsync; } });
+var schema_1 = require("./schema");
+Object.defineProperty(exports, "UNKNOWN", { enumerable: true, get: function () { return schema_1.UNKNOWN; } });
+Object.defineProperty(exports, "PRIMITIVE_TAXONOMY", { enumerable: true, get: function () { return schema_1.PRIMITIVE_TAXONOMY; } });
+Object.defineProperty(exports, "META_V3_SCHEMA_VERSION", { enumerable: true, get: function () { return schema_1.META_V3_SCHEMA_VERSION; } });
+Object.defineProperty(exports, "META_V3_PLANES", { enumerable: true, get: function () { return schema_1.META_V3_PLANES; } });
+Object.defineProperty(exports, "isPromptMeta", { enumerable: true, get: function () { return schema_1.isPromptMeta; } });
+Object.defineProperty(exports, "LEGACY_OPERATION_ALIASES", { enumerable: true, get: function () { return schema_1.LEGACY_OPERATION_ALIASES; } });
+Object.defineProperty(exports, "META_AUTHORITY_SCHEMA", { enumerable: true, get: function () { return schema_1.META_AUTHORITY_SCHEMA; } });
+Object.defineProperty(exports, "OPERATION_MODES", { enumerable: true, get: function () { return schema_1.OPERATION_MODES; } });
+Object.defineProperty(exports, "assertAuthorityForOperation", { enumerable: true, get: function () { return schema_1.assertAuthorityForOperation; } });
+Object.defineProperty(exports, "isAuthorityConfig", { enumerable: true, get: function () { return schema_1.isAuthorityConfig; } });
+Object.defineProperty(exports, "isSupportedAuthoritySchema", { enumerable: true, get: function () { return schema_1.isSupportedAuthoritySchema; } });
+Object.defineProperty(exports, "operationRequiresAuthority", { enumerable: true, get: function () { return schema_1.operationRequiresAuthority; } });
+Object.defineProperty(exports, "resolveOperationMode", { enumerable: true, get: function () { return schema_1.resolveOperationMode; } });
 //# sourceMappingURL=index.js.map

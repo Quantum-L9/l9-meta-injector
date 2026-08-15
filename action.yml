@@ -1,0 +1,143 @@
+name: "L9 Meta Injector"
+description: >-
+  Classify repository artifacts, check canonical metadata drift, apply governed
+  metadata locally, or improve SKILL.md descriptions through an exhaustive,
+  fail-closed operation dispatcher.
+author: "Quantum-L9"
+branding:
+  icon: "tag"
+  color: "purple"
+
+inputs:
+  mode:
+    description: >-
+      Canonical modes: "inventory", "check", "apply", or "skills".
+      Legacy "pipeline" is accepted temporarily as a deprecated alias for "apply".
+      Unknown and empty modes fail before repository inspection.
+    required: false
+    default: "inventory"
+  root:
+    description: >-
+      Existing directory to inspect, relative to the calling repository workspace.
+      Absolute paths, traversal, and symlink escapes are rejected.
+    required: false
+    default: "."
+  namespace:
+    description: "Metadata namespace. Defaults to the target repository directory name."
+    required: false
+    default: ""
+  authority:
+    description: >-
+      Explicit metadata authority stamped into check/apply expectations.
+      Required for check and apply; no platform authority is assumed for arbitrary repositories.
+    required: false
+    default: ""
+  dry-run:
+    description: >-
+      Exact boolean. Inventory/check default true; apply/skills default false.
+      check rejects false and apply rejects true. Use check for read-only drift evaluation.
+    required: false
+    default: ""
+  fail-on-issues:
+    description: >-
+      Exact boolean. check always fails on drift; apply may set false for advisory
+      verification. Unsupported combinations fail closed.
+    required: false
+    default: "true"
+  out:
+    description: >-
+      Output directory relative to root for inventory/apply/skills. Traversal,
+      absolute paths, and symlink escapes are rejected. Check reports use RUNNER_TEMP.
+    required: false
+    default: ".l9-meta-injector-out"
+  omit:
+    description: "Comma-separated gitignore-style omit patterns. Newlines and NUL bytes are rejected."
+    required: false
+    default: ""
+  node-version:
+    description: "Node.js version supplied to the pinned setup-node Action."
+    required: false
+    default: "20"
+  upload-artifact:
+    description: "Exact boolean controlling upload of the generated report/output."
+    required: false
+    default: "true"
+  llm:
+    description: "Exact boolean. LLM assistance is allowed only for apply and skills."
+    required: false
+    default: "false"
+  llm-base-url:
+    description: "OpenAI-chat-completions-compatible URL used only when llm=true."
+    required: false
+    default: ""
+  llm-model:
+    description: "Model name used only when llm=true."
+    required: false
+    default: ""
+  llm-api-key:
+    description: >-
+      Bearer token passed through the child environment only. Supply from the
+      caller's secret store; never hardcode it.
+    required: false
+    default: ""
+  llm-allow-insecure:
+    description: "Exact boolean allowing a non-HTTPS LLM endpoint. Defaults false."
+    required: false
+    default: "false"
+
+outputs:
+  scanned:
+    description: "Number of files scanned or skill files considered."
+    value: ${{ steps.run.outputs.scanned }}
+  injected:
+    description: "Number of files changed by apply/skills; zero for inventory/check."
+    value: ${{ steps.run.outputs.injected }}
+  verification-passed:
+    description: "check/apply verification result; n-a for other modes."
+    value: ${{ steps.run.outputs.verification_passed }}
+  artifact-path:
+    description: "Contained report or output path supplied to upload-artifact."
+    value: ${{ steps.run.outputs.artifact_path }}
+  resolved-mode:
+    description: "Canonical resolved mode after deprecated-alias handling."
+    value: ${{ steps.run.outputs.resolved_mode }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Node.js
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Run l9-meta-injector
+      id: run
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      env:
+        GITHUB_ACTION_PATH: ${{ github.action_path }}
+        GITHUB_WORKSPACE: ${{ github.workspace }}
+        RUNNER_TEMP: ${{ runner.temp }}
+        L9_INPUT_MODE: ${{ inputs.mode }}
+        L9_INPUT_ROOT: ${{ inputs.root }}
+        L9_INPUT_NAMESPACE: ${{ inputs.namespace }}
+        L9_INPUT_AUTHORITY: ${{ inputs.authority }}
+        L9_INPUT_DRY_RUN: ${{ inputs.dry-run }}
+        L9_INPUT_FAIL_ON_ISSUES: ${{ inputs.fail-on-issues }}
+        L9_INPUT_OUT: ${{ inputs.out }}
+        L9_INPUT_OMIT: ${{ inputs.omit }}
+        L9_INPUT_UPLOAD_ARTIFACT: ${{ inputs.upload-artifact }}
+        L9_INPUT_LLM: ${{ inputs.llm }}
+        L9_INPUT_LLM_BASE_URL: ${{ inputs.llm-base-url }}
+        L9_INPUT_LLM_MODEL: ${{ inputs.llm-model }}
+        L9_INPUT_LLM_API_KEY: ${{ inputs.llm-api-key }}
+        L9_INPUT_LLM_ALLOW_INSECURE: ${{ inputs.llm-allow-insecure }}
+      run: node scripts/operation-cli.js --action-env
+
+    - name: Upload manifest/report artifact
+      if: always() && steps.run.outputs.upload_artifact == 'true' && steps.run.outputs.artifact_path != ''
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      with:
+        name: l9-meta-injector-${{ steps.run.outputs.resolved_mode }}
+        path: ${{ steps.run.outputs.artifact_path }}
+        if-no-files-found: ignore

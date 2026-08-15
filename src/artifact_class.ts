@@ -5,7 +5,7 @@
 // currently ignored — it is reserved for future content-based rules.
 // Additive to the coarse ArtifactType taxonomy in schema.ts.
 
-import * as path from "path";
+import * as path from "node:path";
 import {
   SemanticArtifactClass,
   ArtifactClassification,
@@ -49,22 +49,20 @@ const RULES: Rule[] = [
   {
     artifactClass: "test_suite",
     confidence: "high",
-    test: ({ base, norm }) =>
-      /\.(test|spec)\.[cm]?[jt]sx?$/.test(base)
-        ? "*.test/spec.*"
-        : /\/(tests?|__tests__)\//.test(norm)
-        ? "/tests/"
-        : null,
+    test: ({ base, norm }) => {
+      if (/\.(test|spec)\.[cm]?[jt]sx?$/.test(base)) return "*.test/spec.*";
+      if (/\/(tests?|__tests__)\//.test(norm)) return "/tests/";
+      return null;
+    },
   },
   {
     artifactClass: "schema",
     confidence: "high",
-    test: ({ base, norm }) =>
-      base.includes(".schema.") || base === "schema.ts" || base.endsWith("_schema.ts")
-        ? ".schema."
-        : /\/schemas?\//.test(norm)
-        ? "/schemas/"
-        : null,
+    test: ({ base, norm }) => {
+      if (base.includes(".schema.") || base === "schema.ts" || base.endsWith("_schema.ts")) return ".schema.";
+      if (/\/schemas?\//.test(norm)) return "/schemas/";
+      return null;
+    },
   },
   {
     artifactClass: "changelog",
@@ -74,56 +72,55 @@ const RULES: Rule[] = [
   {
     artifactClass: "contract",
     confidence: "high",
-    test: ({ base, norm }) =>
-      base.includes(".contract.") || base.includes("contract")
-        ? "contract"
-        : /\/contracts?\//.test(norm)
-        ? "/contracts/"
-        : null,
+    test: ({ base, norm }) => {
+      if (base.includes(".contract.") || base.includes("contract")) return "contract";
+      if (/\/contracts?\//.test(norm)) return "/contracts/";
+      return null;
+    },
   },
   {
     artifactClass: "build_manifest",
     confidence: "high",
-    test: ({ base, ext }) =>
-      base === "package.json" || base === "package-lock.json"
-        ? base
-        : base.includes("manifest") && ![".md", ".mdx", ".rst", ".txt"].includes(ext)
-        ? "manifest"
-        : null,
+    test: ({ base, ext }) => {
+      if (base === "package.json" || base === "package-lock.json") return base;
+      if (base.includes("manifest") && ![".md", ".mdx", ".rst", ".txt"].includes(ext)) return "manifest";
+      return null;
+    },
   },
   {
     artifactClass: "build_artifact",
     confidence: "high",
     test: ({ norm }) => {
-      const m = norm.match(/\/(dist|build|\.out)\//);
+      const m = /\/(dist|build|\.out)\//.exec(norm);
       return m ? `/${m[1]}/` : null;
     },
   },
   {
     artifactClass: "prompt_template",
     confidence: "high",
-    test: ({ base, norm }) =>
-      /^prompt-/.test(base) || base.includes(".prompt.")
-        ? "prompt-"
-        : /\/prompts?\//.test(norm)
-        ? "/prompts/"
-        : null,
+    test: ({ base, norm }) => {
+      if (base.startsWith("prompt-") || base.includes(".prompt.")) return "prompt-";
+      if (/\/prompts?\//.test(norm)) return "/prompts/";
+      return null;
+    },
   },
   {
     artifactClass: "skill_definition",
     confidence: "high",
-    test: ({ base, norm }) =>
-      base.includes(".skill.") ? ".skill." : /\/skills?\//.test(norm) ? "/skills/" : null,
+    test: ({ base, norm }) => {
+      if (base.includes(".skill.")) return ".skill.";
+      if (/\/skills?\//.test(norm)) return "/skills/";
+      return null;
+    },
   },
   {
     artifactClass: "governance_doctrine",
     confidence: "high",
-    test: ({ base, norm }) =>
-      base.includes(".doctrine.") || base.includes("doctrine") || base.includes("policy")
-        ? "doctrine"
-        : /\/doctrines?\//.test(norm)
-        ? "/doctrines/"
-        : null,
+    test: ({ base, norm }) => {
+      if (base.includes(".doctrine.") || base.includes("doctrine") || base.includes("policy")) return "doctrine";
+      if (/\/doctrines?\//.test(norm)) return "/doctrines/";
+      return null;
+    },
   },
   {
     artifactClass: "pipeline",
@@ -142,28 +139,31 @@ const RULES: Rule[] = [
   {
     artifactClass: "script",
     confidence: "high",
-    test: ({ ext, norm }) =>
-      [".sh", ".bash", ".zsh", ".py"].includes(ext)
-        ? ext
-        : /\/scripts?\//.test(norm)
-        ? "/scripts/"
-        : null,
+    test: ({ ext, norm }) => {
+      if ([".sh", ".bash", ".zsh", ".py"].includes(ext)) return ext;
+      if (/\/scripts?\//.test(norm)) return "/scripts/";
+      return null;
+    },
   },
   {
     artifactClass: "configuration",
     confidence: "high",
-    test: ({ base, ext }) =>
-      /\.config\.[cm]?[jt]s$/.test(base) || /^tsconfig.*\.json$/.test(base) || /^\..*rc(\..+)?$/.test(base)
-        ? "config"
-        : [".json", ".yaml", ".yml", ".toml", ".ini"].includes(ext)
-        ? ext
-        : null,
+    test: ({ base, ext }) => {
+      if (/\.config\.[cm]?[jt]s$/.test(base) || /^tsconfig.*\.json$/.test(base) || /^\..*rc(\..+)?$/.test(base)) {
+        return "config";
+      }
+      if ([".json", ".yaml", ".yml", ".toml", ".ini"].includes(ext)) return ext;
+      return null;
+    },
   },
   {
     artifactClass: "documentation",
     confidence: "high",
-    test: ({ ext, norm }) =>
-      [".md", ".mdx", ".rst", ".txt"].includes(ext) ? ext : /\/docs?\//.test(norm) ? "/docs/" : null,
+    test: ({ ext, norm }) => {
+      if ([".md", ".mdx", ".rst", ".txt"].includes(ext)) return ext;
+      if (/\/docs?\//.test(norm)) return "/docs/";
+      return null;
+    },
   },
   {
     artifactClass: "source_module",

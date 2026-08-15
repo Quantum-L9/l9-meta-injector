@@ -5,6 +5,7 @@ export interface StrategySpec {
     blockOpen?: string;
     blockClose?: string;
 }
+export declare const PROSE_EXTS: Set<string>;
 export declare const FRONTMATTER_EXTS: Set<string>;
 /** Heuristic: a NUL byte in the first 8 KB means the file is not UTF-8 text. */
 export declare function isProbablyBinary(raw: string): boolean;

@@ -42,7 +42,7 @@ def already_stamped(path):
         return False
 
 
-def run(source, dry_run, threshold):
+def run(source, dry_run):
     rows = []
     for rel, abs_path, ext in scan(source):
         h = sha256(abs_path)

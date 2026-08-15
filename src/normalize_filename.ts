@@ -1,7 +1,7 @@
 // normalize_filename.ts — Normalize .md filenames to snake_case; write sidecar .normalize.log.yaml
 // --dry-run: write sidecar only, never rename. Live: sidecar + rename flag (rename is a separate pass).
-import * as path from "path";
-import * as fs from "fs";
+import * as path from "node:path";
+import * as fs from "node:fs";
 
 export interface NormalizeFilenameResult {
   originalPath: string;
@@ -23,7 +23,7 @@ export function normalizeFilename(filePath: string): NormalizeFilenameResult {
   const stem = base.slice(0, base.length - ext.length);
 
   // Preserve dot-convention prefix: ns.primitive.Stem.md → ns.primitive.snake_stem.md
-  const dotMatch = stem.match(/^([a-z_]+\.[a-z_]+\.)(.+)$/i);
+  const dotMatch = /^([a-z_]+\.[a-z_]+\.)(.+)$/i.exec(stem);
   let normalizedStem: string;
   if (dotMatch) {
     normalizedStem = dotMatch[1].toLowerCase() + toSnakeCase(dotMatch[2]);

@@ -1,3 +1,4 @@
+import { vi, describe, test, expect, beforeEach, afterEach, type MockInstance } from "vitest";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
@@ -5,9 +6,9 @@ import { inventoryTree } from "../src/inventory";
 
 function tmp() { return fs.mkdtempSync(path.join(os.tmpdir(), "l9-inverr-")); }
 
-let stderr: jest.SpyInstance;
-beforeEach(() => { stderr = jest.spyOn(process.stderr, "write").mockImplementation(() => true); });
-afterEach(() => { jest.restoreAllMocks(); });
+let stderr: MockInstance;
+beforeEach(() => { stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true); });
+afterEach(() => { vi.restoreAllMocks(); });
 
 describe("inventory surfaces swallowed errors (OBS-004/006/007, PRD-002)", () => {
   test("normal run exposes an empty skippedDirs array (OBS-007 API)", () => {
@@ -31,13 +32,13 @@ describe("inventory surfaces swallowed errors (OBS-004/006/007, PRD-002)", () =>
 
   test("an unwritable sidecar is recorded as sidecar_write_failed (OBS-006 / PRD-002)", () => {
     const root = tmp();
-    // A binary file gets a sidecar by default. Pre-create a DIRECTORY where the
-    // sidecar file must go so the write throws EISDIR — no permissions needed.
-    const binPath = path.join(root, "blob.bin");
-    fs.writeFileSync(binPath, Buffer.from([0, 1, 2, 0, 3]));
-    fs.mkdirSync(binPath + ".l9meta.yaml");
+    // JSON uses sidecar strategy. Pre-create a DIRECTORY where the sidecar file
+    // must go so the write throws EISDIR — no permissions needed.
+    const jsonPath = path.join(root, "data.json");
+    fs.writeFileSync(jsonPath, "{\"a\":1}\n");
+    fs.mkdirSync(jsonPath + ".l9meta.yaml");
     const r = inventoryTree({ root, outDir: tmp(), dryRun: false, now: "2026-01-01T00:00:00.000Z" });
-    const rec = r.records.find((x) => x.file_name === "blob.bin")!;
+    const rec = r.records.find((x) => x.file_name === "data.json")!;
     expect(rec.unknowns.some((u) => u.startsWith("sidecar_write_failed:"))).toBe(true);
   });
 });

@@ -1,8 +1,8 @@
 {
   "name": "l9-meta-injector",
-  "version": "2.1.0",
+  "version": "4.0.0",
   "description": "L9 meta-injection toolkit for prompt, skill, and kernel metadata",
-  "license": "MIT",
+  "license": "UNLICENSED",
   "author": "Quantum-L9",
   "repository": {
     "type": "git",
@@ -35,23 +35,97 @@
     "dist",
     "schemas",
     "examples",
+    "scripts",
     "README.md",
     "CHANGELOG.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "jest --config jest.config.js --no-coverage",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "lint": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint .",
     "selfpack": "npm run build && node scripts/selfpack.js",
     "selfpack:update": "npm run build && node scripts/selfpack.js --update",
-    "inventory": "npm run build && node scripts/inventory.js"
+    "inventory": "npm run build && node scripts/inventory.js",
+    "operate": "npm run build && node scripts/operation-cli.js",
+    "pipeline": "npm run build && node scripts/pipeline-cli.js",
+    "check": "npm run build && node scripts/check-cli.js",
+    "apply": "npm run build && node scripts/apply-cli.js",
+    "skills": "npm run build && node scripts/skills-cli.js",
+    "repository-model": "npm run build && node scripts/repository-model-cli.js",
+    "topology:conformance": "node scripts/topology-conformance.js",
+    "check:api": "node scripts/check-public-api.js",
+    "check:authority": "node scripts/check-architecture-authority.js",
+    "check:manifest": "node scripts/generate-architecture-manifest.js --check",
+    "manifest:update": "node scripts/generate-architecture-manifest.js",
+    "check:dist": "node scripts/check-dist-sync.js",
+    "test:packed": "node scripts/test-packed-consumer.js",
+    "check:publication": "node scripts/check-publication-readiness.js",
+    "validate": "npm run typecheck && npm test && npm run check:api && npm run check:authority && npm run check:manifest && npm run check:dist && npm run selfpack && npm run test:packed && npm run check:release-candidate",
+    "prepack": "npm run check:api && npm run check:authority && npm run check:manifest && npm run check:dist && npm run check:release-candidate",
+    "prepublishOnly": "npm run validate && npm run check:publication",
+    "check:release-candidate": "node scripts/check-release-candidate.js"
   },
   "devDependencies": {
     "typescript": "5.9.3",
     "@types/node": "20.19.43",
-    "@types/jest": "29.5.14",
-    "jest": "29.7.0",
-    "ts-jest": "29.4.11"
+    "eslint": "^9.39.5",
+    "typescript-eslint": "^8.65.0",
+    "vitest": "^3.2.7"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./inventory": {
+      "types": "./dist/public/inventory.d.ts",
+      "require": "./dist/public/inventory.js",
+      "default": "./dist/public/inventory.js"
+    },
+    "./schema": {
+      "types": "./dist/public/schema.d.ts",
+      "require": "./dist/public/schema.js",
+      "default": "./dist/public/schema.js"
+    },
+    "./advanced": {
+      "types": "./dist/public/advanced.d.ts",
+      "require": "./dist/public/advanced.js",
+      "default": "./dist/public/advanced.js"
+    },
+    "./advanced/llm": {
+      "types": "./dist/public/llm.d.ts",
+      "require": "./dist/public/llm.js",
+      "default": "./dist/public/llm.js"
+    },
+    "./repository-model": {
+      "types": "./dist/public/repository_model.d.ts",
+      "require": "./dist/public/repository_model.js",
+      "default": "./dist/public/repository_model.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "typesVersions": {
+    "*": {
+      "inventory": [
+        "dist/public/inventory.d.ts"
+      ],
+      "schema": [
+        "dist/public/schema.d.ts"
+      ],
+      "advanced": [
+        "dist/public/advanced.d.ts"
+      ],
+      "advanced/llm": [
+        "dist/public/llm.d.ts"
+      ],
+      "repository-model": [
+        "dist/public/repository_model.d.ts"
+      ]
+    }
+  },
+  "bin": {
+    "l9-meta-injector": "scripts/operation-cli.js"
   }
 }

@@ -1,25 +1,15 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import * as api from "../src/index";
 import * as assist from "../src/assist";
 import { runPipelineAsync } from "../src/pipeline";
 import { PipelineConfig } from "../src/schema";
 
 function tmp() { return fs.mkdtempSync(path.join(os.tmpdir(), "l9-api-")); }
 
-describe("DWL-008 — reusable primitives are exported from the package index", () => {
-  test("comment.ts strategy engine is public", () => {
-    expect(typeof api.resolveStrategy).toBe("function");
-    expect(typeof api.sidecarPathFor).toBe("function");
-    expect(api.FRONTMATTER_EXTS instanceof Set).toBe(true);
-  });
-  test("compiler.ts dedup/index engine is public", () => {
-    expect(typeof api.buildDedupReport).toBe("function");
-    expect(typeof api.buildDedupEntries).toBe("function");
-    expect(typeof api.dedupReportToMarkdown).toBe("function");
-  });
-});
+// DWL-008 coverage (root vs. ./advanced export boundaries) now lives in
+// tests/public_api_runtime.test.ts, which asserts these primitives are public
+// via the ./advanced subpath and intentionally excluded from the root entrypoint.
 
 describe("DWL-004 — dead isMateriallyBetter and orphaned materialityCheck are gone", () => {
   test("isMateriallyBetter is no longer exported", () => {
@@ -48,6 +38,7 @@ describe("DWL-005 — namespaceGlobs on PipelineConfig reaches injected metadata
 
     // And it is actually written into the file header, not just the in-memory record.
     const content = fs.readFileSync(path.join(skills, "lint_file.md"), "utf8");
-    expect(content).toContain("namespace: custom_ns");
+    // Managed frontmatter renders scalars quoted (byte-preserving patcher).
+    expect(content).toContain('namespace: "custom_ns"');
   }, 15000);
 });

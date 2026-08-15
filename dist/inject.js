@@ -41,14 +41,15 @@ exports.injectFile = injectFile;
 // and unknown text → a `<file>.l9meta.yaml` sidecar (the file itself is untouched). Binary/media
 // are skipped. Body is preserved verbatim; the injected block carries sentinels so a
 // re-run replaces it instead of duplicating. Writes <file>.inject.log on any mutation.
-const fs = __importStar(require("fs"));
-const path = __importStar(require("path"));
+const fs = __importStar(require("node:fs"));
+const path = __importStar(require("node:path"));
 const schema_1 = require("./schema");
 const normalize_meta_1 = require("./normalize_meta");
 const extract_1 = require("./extract");
 const reconcile_fields_1 = require("./reconcile_fields");
 const llm_1 = require("./llm");
 const meta_schema_1 = require("./meta_schema");
+const frontmatter_patch_1 = require("./frontmatter_patch");
 const comment_1 = require("./comment");
 // Parse the inner YAML of an existing injected header into a plain object.
 // Delegates to the canonical parser (meta_schema.ts) so all parsing rules —
@@ -73,9 +74,17 @@ function readForInjection(filePath) {
     const raw = fs.readFileSync(filePath, "utf8");
     const spec = (0, comment_1.resolveStrategy)(filePath, raw);
     if (spec.strategy === "yaml-frontmatter") {
-        const { frontMatter } = (0, extract_1.splitContent)(raw);
-        const cleanBody = (0, extract_1.stripExistingFrontMatter)(raw);
-        return { raw, spec, cleanBody, originalBodyHash: (0, extract_1.contentHash)(cleanBody), existingMeta: parseExistingMeta(frontMatter) };
+        const inspected = (0, frontmatter_patch_1.inspectFrontMatterDocument)(raw);
+        if (!inspected.safe) {
+            throw new Error(`FRONTMATTER_UNSAFE: ${filePath}: ${inspected.issue?.code ?? "unknown"}: ${inspected.issue?.message ?? "unsafe header"}`);
+        }
+        return {
+            raw,
+            spec,
+            cleanBody: inspected.body,
+            originalBodyHash: (0, extract_1.contentHash)(inspected.body),
+            existingMeta: (0, schema_1.normalizeMetaRecord)(inspected.meta),
+        };
     }
     if (spec.strategy === "line-comment" || spec.strategy === "block-comment") {
         const cleanBody = (0, comment_1.stripInjectedBlock)(raw, spec);
@@ -93,9 +102,17 @@ function readForInjection(filePath) {
 function buildInjection(filePath, finalMeta, ctx) {
     const yamlFm = (0, normalize_meta_1.serializeToYamlFrontMatter)(finalMeta);
     if (ctx.spec.strategy === "yaml-frontmatter") {
-        const newContent = yamlFm + "\n\n" + ctx.cleanBody.replace(/^\n+/, "");
-        const postBodyHash = (0, extract_1.contentHash)(newContent.slice(yamlFm.length + 2).replace(/^\n+/, ""));
-        return { targetPath: filePath, newContent, addedLines: yamlFm, postBodyHash, strategy: ctx.spec.strategy };
+        const patched = (0, frontmatter_patch_1.patchManagedFrontMatter)(ctx.raw, (0, schema_1.asRecord)(finalMeta));
+        if (!patched.safe) {
+            throw new Error(`FRONTMATTER_UNSAFE: ${filePath}: ${patched.issue?.code ?? "unknown"}: ${patched.issue?.message ?? "unsafe header"}`);
+        }
+        return {
+            targetPath: filePath,
+            newContent: patched.content,
+            addedLines: yamlFm,
+            postBodyHash: (0, extract_1.contentHash)(patched.body),
+            strategy: ctx.spec.strategy,
+        };
     }
     if (ctx.spec.strategy === "line-comment" || ctx.spec.strategy === "block-comment") {
         const block = (0, comment_1.yamlToBlock)((0, comment_1.frontMatterInner)(yamlFm), ctx.spec);
@@ -111,15 +128,27 @@ function buildInjection(filePath, finalMeta, ctx) {
     };
 }
 function writeInjection(filePath, built, diffs, opts) {
-    const out = {};
+    // Capture target state before any write. This keeps the plan truthful in both
+    // read-only check mode and future apply mode, where reading after the write
+    // would incorrectly report wouldChange=false.
+    const targetExists = fs.existsSync(built.targetPath);
+    const actualContent = targetExists ? fs.readFileSync(built.targetPath, "utf8") : undefined;
+    const out = {
+        targetExists,
+        wouldChange: actualContent !== built.newContent,
+        expectedContentHash: (0, extract_1.contentHash)(built.newContent),
+        actualContentHash: actualContent === undefined ? undefined : (0, extract_1.contentHash)(actualContent),
+    };
     if (opts.dryRun) {
-        fs.mkdirSync(opts.outDir, { recursive: true });
-        out.dryRunDiffPath = path.join(opts.outDir, path.basename(filePath) + ".diff");
-        const added = built.addedLines.split("\n").map((l) => `+ ${l}`).join("\n");
-        const tgt = built.sidecarPath ? built.sidecarPath : filePath;
-        fs.writeFileSync(out.dryRunDiffPath, `--- ${filePath}\n+++ ${tgt} (${built.strategy})\n${added}\n`, "utf8");
-        if (opts.verbose)
-            process.stderr.write(`[dry-run] ${out.dryRunDiffPath}\n`);
+        if (opts.writeDryRunDiff !== false) {
+            fs.mkdirSync(opts.outDir, { recursive: true });
+            out.dryRunDiffPath = path.join(opts.outDir, path.basename(filePath) + ".diff");
+            const added = built.addedLines.split("\n").map((l) => `+ ${l}`).join("\n");
+            const tgt = built.sidecarPath ? built.sidecarPath : filePath;
+            fs.writeFileSync(out.dryRunDiffPath, `--- ${filePath}\n+++ ${tgt} (${built.strategy})\n${added}\n`, "utf8");
+            if (opts.verbose)
+                process.stderr.write(`[dry-run] ${out.dryRunDiffPath}\n`);
+        }
     }
     else {
         fs.writeFileSync(built.targetPath, built.newContent, "utf8");
@@ -135,6 +164,11 @@ function writeInjection(filePath, built, diffs, opts) {
 function record(filePath, ctx, built, finalMeta, opts, paths) {
     return {
         sourcePath: filePath,
+        targetPath: built.targetPath,
+        targetExists: paths.targetExists,
+        wouldChange: paths.wouldChange,
+        expectedContentHash: paths.expectedContentHash,
+        actualContentHash: paths.actualContentHash,
         originalBodyHash: ctx.originalBodyHash,
         postInjectionBodyHash: built.postBodyHash,
         bodyPreserved: built.postBodyHash === ctx.originalBodyHash,

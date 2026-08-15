@@ -1,37 +1,36 @@
-# Pack Manifest — l9-consolidation v1.0.0
+# Repository Manifest
 
-## Root
-- SKILL.md             entrypoint, mode routing, resource map
-- ARCHITECTURE.md      data flow, shared core, mode differences, B->C
-- CONTRACTS.md         ingress, move_map, header schemas
-- VALIDATION.md        all gates, stop conditions
-- DECISION_LOG.md      all decisions with rationale
-- UNKNOWN_REGISTER.md  unknowns, resolution paths
-- TRACEABILITY_MAP.yaml
-- ASSUMPTION_MAP.yaml
-- ARTIFACT_MANIFEST.yaml
-- CHANGE_SUMMARY.md
-- MANIFEST.md
+## Active authority
 
-## schemas/
-- move_map.schema.yaml
-- l9_meta.schema.yaml
-- l9_artifact_meta.schema.yaml
+- Runtime: `src/pipeline.ts#runPipelineAsync`
+- Metadata: `src/schema.ts`
+- Public API: `docs/public-api-contract.json`
+- Package: `docs/package-contract.json`
+- Architecture: `docs/architecture-authority.json`
+- Traceability: `docs/traceability-map.json`
 
-## core/ (shared, mode-neutral)
-- ingress.py        single entry, validate + route
-- scanner.py        recursive file walk
-- hasher.py         sha256
-- classifier.py     domain hints, artifact_type, confidence
-- path_planner.py   proposed output paths
-- dedup_gate.py     duplicate/collision detection
+## Public source entrypoints
 
-## modes/repo-pack/
-- injector.py       L9_META in-place stamp (idempotent)
+- `src/index.ts`
+- `src/public/inventory.ts`
+- `src/public/schema.ts`
+- `src/public/advanced.ts`
+- `src/public/llm.ts`
 
-## modes/folder-artifact/
-- injector.py       copy-only, B->C, L9_ARTIFACT_META + sidecars
+## Validation
 
-## references/
-- reasoning-link.md   pointer to l9-branch-merge-reasoning (external)
-- worked-example.md   CLI examples for both modes
+- `npm run check:api`
+- `npm run check:authority`
+- `npm run check:manifest`
+- `npm run check:dist`
+- `npm run selfpack`
+- `npm run test:packed`
+- `npm run validate`
+
+## Publication
+
+`npm run check:publication` is intentionally outside `validate` and inside `prepublishOnly`. Implementation and packaging can converge while publication remains blocked on external evidence.
+
+## Historical boundary
+
+Legacy consolidation documentation and Python schemas remain under `docs/legacy/consolidation-v1/` and `tools/consolidation/`. They are not public package contracts.

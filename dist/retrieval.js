@@ -1,4 +1,7 @@
 "use strict";
+// retrieval.ts - deterministic file discovery and scan.
+// Every encountered filesystem entry receives one terminal disposition. Only
+// eligible UTF-8 regular files are returned to the classifier and injector.
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     var desc = Object.getOwnPropertyDescriptor(m, k);
@@ -33,83 +36,209 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.discoverFiles = discoverFiles;
 exports.findFiles = findFiles;
 exports.scanFiles = scanFiles;
-// retrieval.ts — File discovery and scan. Supports every text filetype in a repo.
-// A glob ending in `*.ext` filters to that extension; otherwise all text files are
-// returned (binary/media extensions excluded, and unknown extensions null-byte-sniffed).
-// Markdown/frontmatter files parse their header; everything else defers to the
-// filetype-aware injection strategy (see comment.ts).
-const fs = __importStar(require("fs"));
-const path = __importStar(require("path"));
+const fs = __importStar(require("node:fs"));
+const path = __importStar(require("node:path"));
 const extract_1 = require("./extract");
 const comment_1 = require("./comment");
-/** Injector-generated artifacts must never be re-discovered as inputs. */
+const omit_1 = require("./omit");
+const discovery_contracts_1 = require("./discovery_contracts");
+/** Injector-generated adjacent artifacts must never be rediscovered as inputs. */
 function isGeneratedArtifact(name) {
     return name.endsWith(".inject.log") || name.endsWith(".l9meta.yaml");
 }
-/**
- * Read a small prefix and report whether it looks binary (has a NUL byte). A file
- * that cannot be opened is excluded (returns true) but — unlike before — the read
- * error is surfaced to stderr rather than silently conflated with a real binary
- * (finding OBS-008), so a dropped input is traceable to its access error.
- */
-function looksBinaryOnDisk(filePath) {
+function toPosix(value) {
+    return value.split(path.sep).join("/");
+}
+function isL9InternalPath(relPath) {
+    return relPath === ".l9" || relPath.startsWith(".l9/");
+}
+function isHiddenControlPath(relPath) {
+    return relPath.split("/").some((segment) => segment.startsWith(".") && segment !== ".");
+}
+function probeTextFile(filePath) {
     let fd = null;
     try {
+        const stat = fs.statSync(filePath);
         fd = fs.openSync(filePath, "r");
-        const buf = Buffer.alloc(8192);
-        const n = fs.readSync(fd, buf, 0, 8192, 0);
-        for (let i = 0; i < n; i++)
-            if (buf[i] === 0)
-                return true;
-        return false;
+        const buffer = Buffer.alloc(Math.min(8192, Math.max(1, stat.size)));
+        const count = fs.readSync(fd, buffer, 0, buffer.length, 0);
+        const prefix = buffer.subarray(0, count);
+        for (let i = 0; i < prefix.length; i++) {
+            if (prefix[i] === 0)
+                return { status: "binary", reason: "NUL byte detected", sizeBytes: stat.size };
+        }
+        try {
+            new TextDecoder("utf-8", { fatal: true }).decode(prefix, { stream: count < stat.size });
+        }
+        catch (error) {
+            return {
+                status: "unsupported_encoding",
+                reason: `invalid UTF-8 prefix: ${error instanceof Error ? error.message : String(error)}`,
+                sizeBytes: stat.size,
+            };
+        }
+        return { status: "text", reason: "regular UTF-8 text file", sizeBytes: stat.size };
     }
-    catch (err) {
-        process.stderr.write(`[l9-meta-injector] retrieval: excluded unreadable file ${filePath}: ${err.message}\n`);
-        return true;
+    catch (error) {
+        return {
+            status: "unreadable",
+            reason: error instanceof Error ? error.message : String(error),
+        };
     }
     finally {
         if (fd !== null)
             fs.closeSync(fd);
     }
 }
-function findFiles(root, glob) {
-    // Extract extension filter from glob pattern (e.g. **/*.md → .md). No `*.ext`
-    // suffix (e.g. **/*) → every text file the injector can safely annotate.
-    const extMatch = glob.match(/\*\.([a-z0-9]+)$/i);
+function record(ledger, pathName, kind, disposition, reason, sizeBytes) {
+    ledger.push({ path: pathName, kind, disposition, reason, ...(sizeBytes === undefined ? {} : { sizeBytes }) });
+}
+function discoverFiles(root, glob, opts = {}) {
+    const extMatch = /\*\.([a-z0-9]+)$/i.exec(glob);
     const extFilter = extMatch ? `.${extMatch[1].toLowerCase()}` : null;
-    const results = [];
-    function walk(dir) {
-        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-            if (entry.isDirectory() && !entry.name.startsWith(".") && entry.name !== "node_modules") {
-                walk(path.join(dir, entry.name));
-            }
-            else if (entry.isFile()) {
-                if (isGeneratedArtifact(entry.name))
-                    continue; // skip our own .inject.log / .l9meta.yaml
-                const full = path.join(dir, entry.name);
-                const ext = path.extname(entry.name).toLowerCase();
-                if (extFilter && !entry.name.toLowerCase().endsWith(extFilter))
-                    continue; // filtered out
-                // Cheap ext-based strategy check first; only sniff the bytes when the
-                // extension is unknown (sidecar fallback). This runs for filtered globs
-                // too, so a glob like **/*.foo over binary content is still excluded.
-                const spec = (0, comment_1.resolveStrategy)(full, ""); // ext-only decision (empty content)
-                if (spec.strategy === "skip-binary")
-                    continue; // known binary/media extension
-                const knownText = comment_1.FRONTMATTER_EXTS.has(ext)
-                    || spec.strategy === "line-comment"
-                    || spec.strategy === "block-comment";
-                if (!knownText && looksBinaryOnDisk(full))
-                    continue; // unknown ext: exclude binaries
-                results.push(full);
-            }
-        }
+    const absRoot = path.resolve(root);
+    let rootStat;
+    try {
+        rootStat = fs.lstatSync(absRoot);
     }
-    if (fs.existsSync(root))
-        walk(root);
-    return results;
+    catch (error) {
+        throw new Error(`discovery root cannot be inspected: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    if (rootStat.isSymbolicLink())
+        throw new Error(`discovery root must not be a symbolic link: ${absRoot}`);
+    if (!rootStat.isDirectory())
+        throw new Error(`discovery root must be a directory: ${absRoot}`);
+    const omit = opts.omit ?? (0, omit_1.buildOmitMatcher)({
+        root: absRoot,
+        patterns: opts.omitPatterns,
+        omitFile: opts.omitFile,
+        protectSkillMd: opts.protectSkillMd !== false,
+        ignoreDirNames: ["node_modules"],
+    });
+    const files = [];
+    const ledger = [];
+    const walk = (directory) => {
+        let entries;
+        try {
+            entries = fs.readdirSync(directory, { withFileTypes: true });
+        }
+        catch (error) {
+            const rel = toPosix(path.relative(absRoot, directory)) || ".";
+            record(ledger, rel, "directory", "unreadable", `directory enumeration failed: ${error instanceof Error ? error.message : String(error)}`);
+            return;
+        }
+        entries.sort((a, b) => a.name.localeCompare(b.name));
+        for (const entry of entries) {
+            const full = path.join(directory, entry.name);
+            const rel = toPosix(path.relative(absRoot, full));
+            let stat;
+            try {
+                stat = fs.lstatSync(full);
+            }
+            catch (error) {
+                record(ledger, rel, "other", "unreadable", `lstat failed: ${error instanceof Error ? error.message : String(error)}`);
+                continue;
+            }
+            if (stat.isSymbolicLink()) {
+                let target = "unknown target";
+                try {
+                    target = fs.readlinkSync(full);
+                }
+                catch { /* retained as unknown */ }
+                record(ledger, rel, "symlink", "symlink", `symbolic link is not traversed or mutated: ${target}`);
+                continue;
+            }
+            if (stat.isDirectory()) {
+                if (isL9InternalPath(rel)) {
+                    record(ledger, rel, "directory", "generated_artifact", ".l9 is reserved for authority and generated metadata state");
+                    continue;
+                }
+                if (omit.shouldOmit(rel) || omit.shouldOmit(`${rel}/`)) {
+                    record(ledger, rel, "directory", "omitted", "directory matched omit policy");
+                    continue;
+                }
+                if (isHiddenControlPath(rel)) {
+                    record(ledger, rel, "directory", "hidden_control", "hidden control directory is reserved for authority scanning");
+                    continue;
+                }
+                record(ledger, rel, "directory", "traversed_directory", "directory traversed for candidate discovery");
+                walk(full);
+                continue;
+            }
+            if (!stat.isFile()) {
+                record(ledger, rel, "other", "unsupported_entry", "filesystem entry is not a regular file, directory, or symlink", stat.size);
+                continue;
+            }
+            if (isL9InternalPath(rel)) {
+                record(ledger, rel, "file", "generated_artifact", ".l9 is reserved for authority and generated metadata state", stat.size);
+                continue;
+            }
+            // Adjacent injector output is identified before omit policy so a generated
+            // artifact is never reclassified as merely omitted by a noise pattern
+            // (e.g. the built-in `*.log` rule matching `*.inject.log`).
+            if (isGeneratedArtifact(entry.name)) {
+                record(ledger, rel, "file", "generated_artifact", "adjacent injector output is not an input", stat.size);
+                continue;
+            }
+            if (omit.shouldOmit(rel)) {
+                record(ledger, rel, "file", "omitted", "file matched omit policy", stat.size);
+                continue;
+            }
+            if (isHiddenControlPath(rel)) {
+                record(ledger, rel, "file", "hidden_control", "hidden control file is reserved for authority scanning", stat.size);
+                continue;
+            }
+            if (extFilter && !entry.name.toLowerCase().endsWith(extFilter)) {
+                record(ledger, rel, "file", "extension_filtered", `file does not match requested ${extFilter} filter`, stat.size);
+                continue;
+            }
+            const strategy = (0, comment_1.resolveStrategy)(full, "");
+            if (strategy.strategy === "skip-binary") {
+                record(ledger, rel, "file", "known_binary", "file extension resolves to skip-binary", stat.size);
+                continue;
+            }
+            // Known-text extensions are eligible on their extension alone; only unknown
+            // extensions are sniffed on disk. This keeps a readable known-text file
+            // eligible even when the byte probe would fail (OBS-008).
+            const ext = path.extname(entry.name).toLowerCase();
+            const knownText = comment_1.FRONTMATTER_EXTS.has(ext) ||
+                strategy.strategy === "line-comment" ||
+                strategy.strategy === "block-comment";
+            if (knownText) {
+                record(ledger, rel, "file", "eligible", "known text extension", stat.size);
+                files.push(full);
+                continue;
+            }
+            const probe = probeTextFile(full);
+            if (probe.status === "binary") {
+                record(ledger, rel, "file", "binary_detected", probe.reason, probe.sizeBytes);
+                continue;
+            }
+            if (probe.status === "unsupported_encoding") {
+                record(ledger, rel, "file", "unsupported_encoding", probe.reason, probe.sizeBytes);
+                continue;
+            }
+            if (probe.status === "unreadable") {
+                // Surface the access error to stderr rather than silently conflating it
+                // with a real binary, so a dropped input is traceable (OBS-008).
+                process.stderr.write(`[l9-meta-injector] retrieval: excluded unreadable file ${full}: ${probe.reason}\n`);
+                record(ledger, rel, "file", "unreadable", probe.reason);
+                continue;
+            }
+            record(ledger, rel, "file", "eligible", probe.reason, probe.sizeBytes);
+            files.push(full);
+        }
+    };
+    walk(absRoot);
+    files.sort((a, b) => a.localeCompare(b));
+    return { files, summary: (0, discovery_contracts_1.summarizeDiscovery)(ledger) };
+}
+/** Backward-compatible file-only discovery wrapper. */
+function findFiles(root, glob, opts = {}) {
+    return discoverFiles(root, glob, opts).files;
 }
 function detectBodyStructure(body) {
     if (/^##\s+/m.test(body))
@@ -121,19 +250,18 @@ function detectBodyStructure(body) {
     return "unknown";
 }
 function scanFiles(filePaths) {
-    return filePaths.map((fp) => {
-        const raw = fs.readFileSync(fp, "utf8");
-        const stat = fs.statSync(fp);
-        const ext = path.extname(fp).toLowerCase();
-        // Only markdown-family files carry YAML frontmatter. .txt and all non-prose
-        // filetypes are headerConvention="none" (their metadata rides in comment blocks
-        // or a sidecar, resolved at injection time).
+    return filePaths.map((filePath) => {
+        const raw = fs.readFileSync(filePath, "utf8");
+        const stat = fs.statSync(filePath);
+        const ext = path.extname(filePath).toLowerCase();
         const isFrontmatter = comment_1.FRONTMATTER_EXTS.has(ext) && ext !== ".txt" && ext !== ".text";
         const { frontMatter, headerConvention, body } = isFrontmatter
             ? (0, extract_1.splitContent)(raw)
             : { frontMatter: null, headerConvention: "none", body: raw };
         return {
-            sourcePath: fp, fileName: path.basename(fp), sizeBytes: stat.size,
+            sourcePath: filePath,
+            fileName: path.basename(filePath),
+            sizeBytes: stat.size,
             headerConvention: headerConvention,
             bodyStructure: detectBodyStructure(body),
             hasExistingFrontMatter: frontMatter !== null,

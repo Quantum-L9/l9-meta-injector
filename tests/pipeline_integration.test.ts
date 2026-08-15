@@ -4,7 +4,9 @@ import * as path from "path";
 import { runPipelineAsync } from "../src/pipeline";
 import { PipelineConfig } from "../src/schema";
 
-function tmpDir() { const d = path.join(os.tmpdir(), `l9-test-${Date.now()}`); fs.mkdirSync(d, { recursive: true }); return d; }
+function tmpDir() {
+  return fs.mkdtempSync(path.join(os.tmpdir(), "l9-test-"));
+}
 
 const SKILL_MD = `## Role
 Senior auditor agent reviewing code for lint violations.
@@ -63,7 +65,7 @@ test("pipeline injects headers and produces indexes", async () => {
   const content = fs.readFileSync(injectedFile, "utf8");
   expect(content.startsWith("---")).toBe(true);
   expect(content).toContain("artifact_type:");
-  expect(content).toContain("namespace: l9");
+  expect(content).toContain('namespace: "l9"');
   expect(content).toContain("sharing_scope:");
   expect(content).toContain("id:");
 }, 15000);
@@ -133,5 +135,11 @@ test("pipeline is idempotent — second run is byte-identical with no inject.log
   expect(contentAfterRun2).toBe(contentAfterRun1);
   run1.injected.forEach((r) => expect(r.bodyPreserved).toBe(true));
   run2.injected.forEach((r) => expect(r.bodyPreserved).toBe(true));
+  const bad = run2.injected.filter((r) => r.injectLogPath !== undefined);
+  if (bad.length) {
+    console.error('BAD', bad.map((r) => ({ path: r.sourcePath, log: r.injectLogPath, type: r.meta.artifact_type })));
+    console.error('root listing', fs.readdirSync(root, { recursive: true }));
+    console.error('out listing', fs.readdirSync(out, { recursive: true }));
+  }
   expect(run2.injected.every((r) => r.injectLogPath === undefined)).toBe(true);
 }, 25000);

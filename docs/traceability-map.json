@@ -1,0 +1,147 @@
+{
+  "schema": "l9.traceability-map/v1",
+  "repository": "Quantum-L9/l9-meta-injector",
+  "authority": "docs/architecture-authority.json",
+  "capabilities": [
+    {
+      "capability": "pipeline_orchestration",
+      "source": "src/pipeline.ts#runPipelineAsync",
+      "public_entrypoint": "l9-meta-injector#runPipelineAsync",
+      "tests": [
+        "tests/pipeline_integration.test.ts",
+        "tests/self_conformance.test.ts"
+      ],
+      "validators": [
+        "npm test",
+        "npm run selfpack"
+      ],
+      "stability": "stable"
+    },
+    {
+      "capability": "metadata_contracts",
+      "source": "src/schema.ts and src/public/schema.ts",
+      "public_entrypoint": "l9-meta-injector/schema",
+      "tests": [
+        "tests/schema.test.ts",
+        "tests/public_api_types.test.ts"
+      ],
+      "validators": [
+        "npm run typecheck",
+        "npm run check:api"
+      ],
+      "stability": "stable"
+    },
+    {
+      "capability": "inventory_mode",
+      "source": "src/inventory.ts and src/public/inventory.ts",
+      "public_entrypoint": "l9-meta-injector/inventory",
+      "tests": [
+        "tests/inventory.test.ts",
+        "tests/public_api_runtime.test.ts"
+      ],
+      "validators": [
+        "npm test",
+        "npm run test:packed"
+      ],
+      "stability": "stable"
+    },
+    {
+      "capability": "advanced_composition",
+      "source": "src/public/advanced.ts",
+      "public_entrypoint": "l9-meta-injector/advanced",
+      "tests": [
+        "tests/public_api_runtime.test.ts",
+        "tests/public_api_types.test.ts"
+      ],
+      "validators": [
+        "npm run check:api",
+        "npm run test:packed"
+      ],
+      "stability": "experimental"
+    },
+    {
+      "capability": "llm_adapter_controls",
+      "source": "src/public/llm.ts",
+      "public_entrypoint": "l9-meta-injector/advanced/llm",
+      "tests": [
+        "tests/llm.test.ts",
+        "tests/public_api_runtime.test.ts"
+      ],
+      "validators": [
+        "npm test",
+        "npm run test:packed"
+      ],
+      "stability": "experimental"
+    },
+    {
+      "capability": "package_distribution",
+      "source": "package.json and dist/ and docs/package-contract.json",
+      "public_entrypoint": "package export map",
+      "tests": [
+        "tests/dist_integrity.test.ts",
+        "fixtures/package-consumer/runtime.cjs",
+        "fixtures/package-consumer/types.ts"
+      ],
+      "validators": [
+        "npm run check:dist",
+        "npm run test:packed",
+        "npm run validate"
+      ],
+      "stability": "enforced_RAA-006"
+    },
+    {
+      "capability": "public_api_boundary",
+      "source": "docs/public-api-contract.json and src/index.ts and src/public",
+      "public_entrypoint": "five explicit package entrypoints",
+      "tests": [
+        "tests/public_api_runtime.test.ts",
+        "tests/public_api_types.test.ts",
+        "fixtures/package-consumer/deep-import.cjs"
+      ],
+      "validators": [
+        "npm run check:api",
+        "npm run test:packed"
+      ],
+      "stability": "enforced_RAA-007"
+    },
+    {
+      "capability": "architecture_authority",
+      "source": "docs/architecture-authority.json",
+      "public_entrypoint": null,
+      "tests": [
+        "tests/architecture_authority.test.ts"
+      ],
+      "validators": [
+        "npm run check:authority",
+        "npm run check:manifest"
+      ],
+      "stability": "stable"
+    },
+    {
+      "capability": "publication_safety",
+      "source": "docs/package-publication-decision.json",
+      "public_entrypoint": null,
+      "tests": [
+        "tests/publication_readiness.test.ts"
+      ],
+      "validators": [
+        "npm run check:publication"
+      ],
+      "stability": "blocked_pending_history_check"
+    },
+    {
+      "capability": "repository_model_egress",
+      "source": "src/repository_model.ts and src/public/repository_model.ts",
+      "public_entrypoint": "l9-meta-injector/repository-model",
+      "tests": [
+        "tests/repository_model.test.ts"
+      ],
+      "validators": [
+        "npm run check:api",
+        "npm run check:authority",
+        "npm run topology:conformance"
+      ],
+      "stability": "stable"
+    }
+  ]
+}
