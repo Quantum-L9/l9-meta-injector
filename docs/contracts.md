@@ -22,6 +22,16 @@
 
 Runtime values and erased TypeScript declarations are validated independently. The root is orchestration-first. Stable subpaths are semver-governed. Experimental subpaths remain explicit rather than accidental. Unlisted paths are internal.
 
+## Repository model
+
+`src/repository_model.ts` is normative for `l9.repository-model` egress. The packet shell,
+payload domains, canonical serialization, and semantic-hash rules mirror the bound
+`l9-constellation-topology` consumer revision recorded in `docs/topology-conformance.json`.
+
+Source revision is explicit and never inferred. Capabilities and relationships require
+evidence; unsupported domains stay empty and are reported as diagnostics. Producer-side
+validation must pass before a bundle is written.
+
 ## Distribution
 
 `docs/package-contract.json` governs the npm tarball. Committed `dist/` must equal an isolated build. The packed `dist/` set must equal committed `dist/`. Runtime, declarations, and deep-import rejection are tested from the installed tarball.

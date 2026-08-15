@@ -362,6 +362,50 @@
         "LlmCallOutcome",
         "LlmDiagnostic"
       ]
+    },
+    {
+      "subpath": "./repository-model",
+      "stability": "stable",
+      "source": "src/public/repository_model.ts",
+      "runtime": "dist/public/repository_model.js",
+      "types": "dist/public/repository_model.d.ts",
+      "runtime_exports": [
+        "buildRepositoryModelPacket",
+        "emitRepositoryModelBundle",
+        "observeRepositoryModel",
+        "REPOSITORY_MODEL_PACKET_TYPE",
+        "REPOSITORY_MODEL_PACKET_VERSION",
+        "REPOSITORY_MODEL_PRODUCER_NAME",
+        "validateRepositoryModelPacket"
+      ],
+      "declaration_exports": [
+        "CanonicalValue",
+        "RepositoryModelArtifactRecord",
+        "RepositoryModelAuthority",
+        "RepositoryModelBuildInput",
+        "RepositoryModelCapabilityRecord",
+        "RepositoryModelCompleteness",
+        "RepositoryModelConfidence",
+        "RepositoryModelConfidenceLevel",
+        "RepositoryModelConflictStatus",
+        "RepositoryModelDerivationMethod",
+        "RepositoryModelDiagnostic",
+        "RepositoryModelEdgeRecord",
+        "RepositoryModelEdgeType",
+        "RepositoryModelEmitResult",
+        "RepositoryModelEvidenceClass",
+        "RepositoryModelEvidenceRecord",
+        "RepositoryModelEvidenceSourceType",
+        "RepositoryModelEvidenceStrength",
+        "RepositoryModelObservationInput",
+        "RepositoryModelPacket",
+        "RepositoryModelPayload",
+        "RepositoryModelRepositoryRecord",
+        "RepositoryModelSourceRef",
+        "RepositoryModelValidationCheck",
+        "RepositoryModelValidationReceipt",
+        "RepositoryModelValidationResult"
+      ]
     }
   ],
   "package_metadata_subpath": "./package.json",

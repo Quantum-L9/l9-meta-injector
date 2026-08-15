@@ -11,14 +11,15 @@ The TypeScript pipeline under `src/` is the sole active engine. `runPipelineAsyn
 
 ## Package boundary
 
-Version 3 exposes five code entrypoints:
+The package exposes six code entrypoints:
 
 ```text
-l9-meta-injector                stable orchestration root
-l9-meta-injector/inventory      stable standalone inventory
-l9-meta-injector/schema         stable metadata contracts
-l9-meta-injector/advanced       experimental composition primitives
-l9-meta-injector/advanced/llm   experimental process-global adapter controls
+l9-meta-injector                  stable orchestration root
+l9-meta-injector/inventory        stable standalone inventory
+l9-meta-injector/schema           stable metadata contracts
+l9-meta-injector/advanced         experimental composition primitives
+l9-meta-injector/advanced/llm     experimental process-global adapter controls
+l9-meta-injector/repository-model stable repository model packet egress
 ```
 
 `docs/public-api-contract.json` defines exact runtime and declaration inventories. `package.json#exports` derives from that contract. Unlisted deep imports are denied.
@@ -37,6 +38,26 @@ When `PipelineConfig.localFiles` is set (ADR-016), archive expansion runs before
 Inventory and pipeline apply a shared omit layer (ADR-017): built-in protect for `SKILL.md`, noise skips for bytecode/logs, optional `.l9metaignore` / `--omit`. Cursor-native skill edits go through `runSkillsPipelineAsync` only.
 
 The stable root keeps callers on the full path. Low-level primitives remain available only through an explicitly experimental subpath whose caller obligations are documented.
+
+## Repository model egress
+
+`src/repository_model.ts` converts an inventory observation into an `l9.repository-model`
+packet bundle for the `l9-constellation-topology` consumer (ADR-030).
+
+```text
+inventoryTree (dry run) -> evidence + diagnostics -> packet build
+                        -> producer validation -> canonical bundle emission
+```
+
+The emitted bundle is `packet.json`, `receipts/validation-receipt.json`, and a hash-bound
+`manifest.json`, each written as canonical JSON with a single trailing newline. Semantic
+identity is reproducible, checkout-path independent, and derived from repository evidence
+only: unsupported domains stay empty and are reported as diagnostics.
+
+This repository holds no runtime dependency on topology. Conformance is proven by feeding
+the committed golden bundle to the real consumer from an ephemeral read-only checkout
+(`L9_TOPOLOGY_CHECKOUT=<checkout> npm run topology:conformance`); the bound revision and result are
+recorded in `docs/topology-conformance.json`.
 
 ## Distribution
 
