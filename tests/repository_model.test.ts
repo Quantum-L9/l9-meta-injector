@@ -176,6 +176,38 @@ describe("repository model evidence discipline", () => {
     expect(repository.governance_refs).toEqual(["CODEOWNERS"]);
   });
 
+  it("does not resolve a shared manifest filename to a guessed package manager", () => {
+    const root = path.join(scratch("ambiguous-manifest"), "repo");
+    fs.mkdirSync(root, { recursive: true });
+    fs.writeFileSync(path.join(root, "pyproject.toml"), '[tool.poetry]\nname = "svc"\n');
+
+    const packet = observeSample(root);
+    const repository = packet.payload.repositories[0];
+    expect(repository.package_managers).toEqual([]);
+    expect(packet.payload.diagnostics.some(
+      (d) => d.code === "unsupported-by-evidence"
+        && d.details?.field === "package_managers"
+        && d.details?.source_path === "pyproject.toml",
+    )).toBe(true);
+    expect(validateRepositoryModelPacket(packet).status).toBe("passed");
+  });
+
+  it("resolves a package manager from a lockfile, which does identify one", () => {
+    const root = path.join(scratch("lockfiles"), "repo");
+    fs.mkdirSync(root, { recursive: true });
+    fs.writeFileSync(path.join(root, "pyproject.toml"), '[tool.poetry]\nname = "svc"\n');
+    fs.writeFileSync(path.join(root, "poetry.lock"), "# generated\n");
+
+    expect(observeSample(root).payload.repositories[0].package_managers).toEqual(["poetry"]);
+
+    const uvRoot = path.join(scratch("uv-lock"), "repo");
+    fs.mkdirSync(uvRoot, { recursive: true });
+    fs.writeFileSync(path.join(uvRoot, "pyproject.toml"), "[project]\nname = \"svc\"\n");
+    fs.writeFileSync(path.join(uvRoot, "uv.lock"), "version = 1\n");
+
+    expect(observeSample(uvRoot).payload.repositories[0].package_managers).toEqual(["uv"]);
+  });
+
   it("resolves every evidence reference it emits", () => {
     const { payload } = observeSample();
     const ids = new Set(payload.evidence.map((e) => e.evidence_id));
