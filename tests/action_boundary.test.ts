@@ -102,7 +102,9 @@ describe("workspace containment", () => {
     });
     const config = dispatch.normalizeEnvironment(env) as { reportPath: string; targetRoot: string };
     expect(path.relative(config.targetRoot, config.reportPath).startsWith("..")).toBe(true);
-    expect(config.reportPath.startsWith(String(env.RUNNER_TEMP))).toBe(true);
+    const runnerTemp = fs.realpathSync(String(env.RUNNER_TEMP));
+    expect(path.relative(runnerTemp, config.reportPath).startsWith("..")).toBe(false);
+    expect(path.isAbsolute(path.relative(runnerTemp, config.reportPath))).toBe(false);
   });
 });
 

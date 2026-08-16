@@ -78,7 +78,7 @@ vendored, and lock-state artifacts are `inventory_only`; source, configuration,
 tests, workflows, infrastructure, and structured data are `central_manifest`;
 `inline_managed` requires both an approved L9 prose artifact type and an explicit
 safe `inline_allow` match. Skills mode does not bypass repository authority
-(ADR-031): it fails closed without resolved authority and commits `SKILL.md`
+(ADR-033): it fails closed without resolved authority and commits `SKILL.md`
 changes through the governed transaction, never a direct write.
 
 **Enforced by:** `src/mutation_policy.ts`, `src/skills_pipeline.ts`, strict

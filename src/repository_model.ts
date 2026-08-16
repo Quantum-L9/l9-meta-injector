@@ -17,10 +17,12 @@ import * as os from "node:os";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
 import { InventoryRecord, InventoryResult, inventoryTree } from "./inventory";
+import { InterpretationResult, interpretRepository } from "./interpretation";
+import { defaultExtractors } from "./extractors";
 import { UNKNOWN } from "./schema";
 
 export const REPOSITORY_MODEL_PACKET_TYPE = "l9.repository-model";
-export const REPOSITORY_MODEL_PACKET_VERSION = "1.0.0";
+export const REPOSITORY_MODEL_PACKET_VERSION = "1.1.0";
 export const REPOSITORY_MODEL_PRODUCER_NAME = "l9-meta-injector.repository-model";
 
 /** Profile identity for the observation policy this producer applies. */
@@ -57,7 +59,7 @@ const VOLATILE_KEYS: ReadonlySet<string> = new Set([
 ]);
 
 /** Code-point ordering. Never locale-aware: ordering must not vary by environment. */
-function compareCodePoints(a: string, b: string): number {
+export function compareCodePoints(a: string, b: string): number {
   const left = [...a], right = [...b];
   const shared = Math.min(left.length, right.length);
   for (let i = 0; i < shared; i++) {
@@ -104,7 +106,7 @@ function render(value: CanonicalValue): string {
 }
 
 /** Canonical JSON text for any packet-shaped value. */
-function canonicalJson(value: unknown): string {
+export function canonicalJson(value: unknown): string {
   return render(canonicalize(value));
 }
 
@@ -125,17 +127,22 @@ function sha256Prefixed(content: Buffer): string {
   return SHA_PREFIX + crypto.createHash("sha256").update(content).digest("hex");
 }
 
+/** Content identity of exact text, used by interpretation evidence. */
+export function sha256TextPrefixed(value: string): string {
+  return sha256Prefixed(Buffer.from(value, "utf8"));
+}
+
 /** Content identity of exact bytes. */
 function artifactHash(content: Buffer): string {
   return sha256Prefixed(content);
 }
 
 /** Semantic identity: volatile fields removed, then canonical bytes hashed. */
-function semanticHash(value: unknown): string {
+export function semanticHash(value: unknown): string {
   return sha256Prefixed(Buffer.from(render(stripVolatile(canonicalize(value))), "utf8"));
 }
 
-function stableId(prefix: string, value: unknown): string {
+export function stableId(prefix: string, value: unknown): string {
   return `${prefix}:${semanticHash(value).slice(SHA_PREFIX.length)}`;
 }
 
@@ -261,6 +268,33 @@ export interface RepositoryModelDiagnostic {
   details?: Record<string, CanonicalValue>;
 }
 
+/**
+ * A semantic claim the repository makes about itself, carried across the packet
+ * boundary as first-class typed data.
+ *
+ * Assertions are deliberately not folded into `diagnostics`: a diagnostic
+ * reports something about the observation run, while an assertion is repository
+ * truth a consumer reconciles. Encoding one as the other to avoid extending the
+ * contract would make semantic content unreadable without string parsing.
+ *
+ * Every field is required. An assertion that cannot cite an exact span in a
+ * hashed source file is not emitted at all.
+ */
+export interface RepositoryModelAssertionRecord {
+  assertion_id: string;
+  subject_id: string;
+  predicate: string;
+  object: string;
+  source_path: string;
+  source_range: { start_line: number; end_line: number };
+  evidence_excerpt: string;
+  source_content_hash: string;
+  extractor_id: string;
+  evidence_class: "declared" | "observed";
+  authority: RepositoryModelAuthority;
+  confidence: RepositoryModelConfidenceLevel;
+}
+
 export interface RepositoryModelPayload {
   repositories: RepositoryModelRepositoryRecord[];
   artifacts: RepositoryModelArtifactRecord[];
@@ -268,6 +302,16 @@ export interface RepositoryModelPayload {
   relationships: RepositoryModelEdgeRecord[];
   evidence: RepositoryModelEvidenceRecord[];
   diagnostics: RepositoryModelDiagnostic[];
+  /** Semantic claims from the interpretation pass; empty when it did not run. */
+  assertions: RepositoryModelAssertionRecord[];
+}
+
+/** Identity of the interpretation profile, present only when it ran. */
+export interface RepositoryModelInterpretationProfile {
+  profile_id: string;
+  profile_version: string;
+  profile_hash: string;
+  extractor_versions: Record<string, string>;
 }
 
 export interface RepositoryModelPacket {
@@ -284,6 +328,8 @@ export interface RepositoryModelPacket {
   artifact_hash?: string;
   payload_refs: Record<string, string>;
   payload: RepositoryModelPayload;
+  /** Present only when the interpretation pass ran, so it binds identity only then. */
+  interpretation_profile?: RepositoryModelInterpretationProfile;
 }
 
 export interface RepositoryModelValidationCheck {
@@ -329,6 +375,12 @@ export interface RepositoryModelBuildInput {
   producerVersion: string;
   /** Emission timestamp; excluded from semantic identity. */
   generatedAt?: string;
+  /**
+   * Result of the deterministic interpretation pass. Optional: a packet built
+   * without it carries an empty assertion domain and no interpretation profile,
+   * which is exactly how packets behaved before the domain existed.
+   */
+  interpretation?: InterpretationResult;
 }
 
 export interface RepositoryModelObservationInput {
@@ -338,6 +390,13 @@ export interface RepositoryModelObservationInput {
   sourceRevision: string;
   producerVersion: string;
   generatedAt?: string;
+  /**
+   * Run the deterministic interpretation pass and carry its assertions into the
+   * packet. Defaults to true: observation that reads a repository and discards
+   * what it declares is the behavior this seam exists to correct. Set false to
+   * emit an inventory-only packet.
+   */
+  interpret?: boolean;
   ignore?: string[];
   omitPatterns?: string[];
   omitFile?: string;
@@ -405,11 +464,19 @@ const LANGUAGE_BY_EXTENSION: Readonly<Record<string, string>> = {
 const PACKAGE_MANAGER_BY_FILENAME: Readonly<Record<string, string>> = {
   "package.json": "npm", "package-lock.json": "npm", "npm-shrinkwrap.json": "npm",
   "pnpm-lock.yaml": "pnpm", "yarn.lock": "yarn",
-  "pyproject.toml": "uv/pip", "requirements.txt": "pip", "poetry.lock": "poetry", "Pipfile": "pipenv",
+  "requirements.txt": "pip", "poetry.lock": "poetry", "uv.lock": "uv", "Pipfile": "pipenv",
   "Cargo.toml": "cargo", "go.mod": "go", "Gemfile": "bundler",
   "pom.xml": "maven", "build.gradle": "gradle", "build.gradle.kts": "gradle",
   "composer.json": "composer",
 };
+
+/**
+ * Manifests whose filename alone does not determine a package manager. `pyproject.toml` is
+ * shared by Poetry, uv, PDM, Hatch and setuptools; the discriminator (`[tool.poetry]`,
+ * `build-backend`, `[tool.uv]`) lives in the file body, which inventory observation does not
+ * read. These are recorded as an explicit coverage gap rather than resolved to a guess.
+ */
+const AMBIGUOUS_PACKAGE_MANIFESTS: ReadonlySet<string> = new Set(["pyproject.toml"]);
 
 const GOVERNANCE_FILENAMES: ReadonlySet<string> = new Set([
   "CODEOWNERS", "AGENTS.md", "CLAUDE.md", "GOVERNANCE.md", "SECURITY.md",
@@ -459,7 +526,11 @@ const SCHEMA_HASH = semanticHash({
     "packet_type", "packet_version", "packet_id", "subject", "source_snapshot", "validation",
     "producer", "profile", "schema_hash", "semantic_hash", "artifact_hash", "payload_refs", "payload",
   ],
-  payload_domains: ["repositories", "artifacts", "capabilities", "relationships", "evidence", "diagnostics"],
+  payload_domains: [
+    "repositories", "artifacts", "capabilities", "relationships", "evidence", "diagnostics",
+    // 1.1.0 adds semantic assertions as a first-class domain.
+    "assertions",
+  ],
 });
 
 /** Profile hash — binds the observation policy that produced the packet. */
@@ -550,6 +621,7 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
 
   const languages = new Map<string, string>();       // language -> first evidencing path
   const packageManagers = new Map<string, string>();
+  const ambiguousManifests = new Map<string, string>(); // manifest filename -> first evidencing path
   const workflows: string[] = [];
   const adrRefs: string[] = [];
   const governanceRefs: string[] = [];
@@ -629,6 +701,9 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
     if (language !== undefined && !languages.has(language)) languages.set(language, relativePath);
     const manager = PACKAGE_MANAGER_BY_FILENAME[record.file_name];
     if (manager !== undefined && !packageManagers.has(manager)) packageManagers.set(manager, relativePath);
+    if (AMBIGUOUS_PACKAGE_MANIFESTS.has(record.file_name) && !ambiguousManifests.has(record.file_name)) {
+      ambiguousManifests.set(record.file_name, relativePath);
+    }
     if (isWorkflowPath(relativePath)) workflows.push(relativePath);
     if (isAdrPath(relativePath)) adrRefs.push(relativePath);
     if (GOVERNANCE_FILENAMES.has(record.file_name)) governanceRefs.push(relativePath);
@@ -699,6 +774,19 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
       details: { field },
     });
   }
+  // A shared manifest filename is observable; the manager behind it is not.
+  for (const fileName of sortStrings(ambiguousManifests.keys())) {
+    const sourcePath = ambiguousManifests.get(fileName) as string;
+    diagnostics.push({
+      code: "unsupported-by-evidence",
+      severity: "info",
+      message: `${sourcePath} does not identify a package manager by filename alone; manifest interpretation is required.`,
+      stage: OBSERVATION_STAGE,
+      category: "coverage",
+      subject_id: repositoryId,
+      details: { field: "package_managers", source_path: sourcePath },
+    });
+  }
   if (folderCount > 0) {
     diagnostics.push({
       code: "folders-not-emitted",
@@ -754,6 +842,16 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
       compareCodePoints(a.code, b.code)
       || compareCodePoints(a.subject_id ?? "", b.subject_id ?? "")
       || compareCodePoints(a.message, b.message)),
+    // Already ordered by the interpretation pass; re-sorted here so the packet's
+    // ordering guarantee does not depend on the producer of the input.
+    assertions: [...(input.interpretation?.assertions ?? [])]
+      .map((assertion) => ({ ...assertion, subject_id: repositoryId }))
+      .sort((a, b) =>
+        compareCodePoints(a.source_path, b.source_path)
+        || a.source_range.start_line - b.source_range.start_line
+        || compareCodePoints(a.predicate, b.predicate)
+        || compareCodePoints(a.object, b.object)
+        || compareCodePoints(a.extractor_id, b.extractor_id)),
   };
 
   const shell = {
@@ -766,6 +864,18 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
     schema_hash: SCHEMA_HASH,
     payload_refs: {},
     payload,
+    // Bound into semantic identity only when interpretation ran, so a packet
+    // built without it keeps the identity it had before the profile existed.
+    ...(input.interpretation
+      ? {
+          interpretation_profile: {
+            profile_id: input.interpretation.profile.profile_id,
+            profile_version: input.interpretation.profile.profile_version,
+            profile_hash: input.interpretation.profile.profile_hash,
+            extractor_versions: input.interpretation.profile.extractor_versions,
+          },
+        }
+      : {}),
   };
   // The consumer's semantic view is exactly these fields; `validation` and the
   // identity/volatile fields are excluded on both sides.
@@ -828,6 +938,12 @@ export function validateRepositoryModelPacket(packet: RepositoryModelPacket): Re
     schema_hash: packet.schema_hash,
     payload_refs: packet.payload_refs,
     payload,
+    // Mirrors the producer: the interpretation profile participates in identity
+    // exactly when it is present, and an absent one is omitted rather than
+    // hashed as null, so an inventory-only packet keeps its prior identity.
+    ...(packet.interpretation_profile
+      ? { interpretation_profile: packet.interpretation_profile }
+      : {}),
   });
   checks.push(check("semantic-hash", "invariant", "semantic_hash_is_reproducible",
     recomputed === packet.semantic_hash,
@@ -849,6 +965,28 @@ export function validateRepositoryModelPacket(packet: RepositoryModelPacket): Re
   checks.push(check("stable-ordering", "invariant", "ordering_is_explicit_and_stable",
     orderedArtifacts,
     "artifacts are ordered by repository-relative path"));
+
+  // An assertion without a resolvable, hashed span is not evidence of anything,
+  // so the producer refuses to emit one rather than letting it reach a consumer.
+  const unsupportedAssertions = payload.assertions.filter((assertion) =>
+    !assertion.source_path
+    || !/^sha256:[a-f0-9]{64}$/.test(assertion.source_content_hash)
+    || assertion.source_range.start_line < 1
+    || assertion.source_range.end_line < assertion.source_range.start_line
+    || assertion.evidence_excerpt.length === 0
+    || !assertion.extractor_id);
+  checks.push(check("assertion-evidence", "evidence", "assertions_cite_exact_sources",
+    unsupportedAssertions.length === 0,
+    "every assertion cites an exact source span and a hashed source file",
+    { unsupported_count: unsupportedAssertions.length }));
+
+  const assertionSubjects = payload.repositories.map((r) => r.repository_id);
+  const orphanAssertions = payload.assertions.filter(
+    (assertion) => !assertionSubjects.includes(assertion.subject_id));
+  checks.push(check("assertion-subject", "cross-reference", "assertions_resolve_to_a_subject",
+    orphanAssertions.length === 0,
+    "every assertion attaches to a repository in this packet",
+    { orphan_count: orphanAssertions.length }));
 
   const evidenceIds = new Set(payload.evidence.map((e) => e.evidence_id));
   const danglingEvidence: string[] = [];
@@ -1017,8 +1155,18 @@ export function observeRepositoryModel(input: RepositoryModelObservationInput): 
       ...(input.omitFile !== undefined ? { omitFile: input.omitFile } : {}),
       ...(input.hashMaxBytes !== undefined ? { hashMaxBytes: input.hashMaxBytes } : {}),
     });
+    const interpretation =
+      input.interpret === false
+        ? undefined
+        : interpretRepository({
+            root: input.root,
+            subjectId: `repo:${input.repositoryName}`,
+            inventory,
+            extractors: defaultExtractors(),
+          });
     return buildRepositoryModelPacket({
       inventory,
+      ...(interpretation ? { interpretation } : {}),
       repositoryName: input.repositoryName,
       sourceRevision: input.sourceRevision,
       producerVersion: input.producerVersion,

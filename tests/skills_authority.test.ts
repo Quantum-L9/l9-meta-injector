@@ -1,4 +1,4 @@
-// skills_authority.test.ts — REA-001 remediation (ADR-031 / INV-018).
+// skills_authority.test.ts — REA-001 remediation (ADR-033 / INV-018).
 // Proves the governed skills entrypoint fails closed without repository authority
 // and, when authorized, commits SKILL.md changes only through the transaction
 // boundary. The direct package API is exercised because callers can reach
