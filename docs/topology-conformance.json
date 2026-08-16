@@ -4,31 +4,31 @@
   "statement": "The golden Repository Model Packet bundle was accepted by the bound l9-constellation-topology consumer without a translation shim.",
   "consumer": {
     "repository": "Quantum-L9/l9-constellation-topology",
-    "revision": "bb374e099e22e0cc61c1c120a80f2cc78093bf3b",
+    "revision": "70dce61f6f92fbee47c4913d464af4820ca04ceb",
     "entrypoints": [
       "l9_constellation_topology.packets.loader.load_repository_model_bundle",
       "l9_constellation_topology.packets.adapters.repository_model_v1.RepositoryModelV1Adapter.adapt"
     ],
-    "adapter_packet_version": "1.0.0"
+    "adapter_packet_version": "1.1.0"
   },
   "subject": {
     "bundle": "fixtures/repository-model/expected-bundle",
-    "packet_id": "packet:9ca1fac23c0b4c4351b644931995007db3ab82f80c783fa190452aa9c8d9c225",
-    "semantic_hash": "sha256:9ca1fac23c0b4c4351b644931995007db3ab82f80c783fa190452aa9c8d9c225",
+    "packet_id": "packet:44436ba8f4860a0867bca8e6cfd5ba901aec695182ac78ebb97275e1c67b38d3",
+    "semantic_hash": "sha256:44436ba8f4860a0867bca8e6cfd5ba901aec695182ac78ebb97275e1c67b38d3",
     "packet_type": "l9.repository-model",
-    "packet_version": "1.0.0",
+    "packet_version": "1.1.0",
     "files": [
       {
         "path": "manifest.json",
-        "content_hash": "sha256:f6d440227f187996a7ef164cd7c56645c6b854fbc6cab06d838c9277ef26f23d"
+        "content_hash": "sha256:320cdb2b218a0de41b7f93270707f7b0d13439c4bbcab1844e5643f46fe0ad1e"
       },
       {
         "path": "packet.json",
-        "content_hash": "sha256:553968a2b42f12a454575f4cbc0ce10133276c8ef149fd78a298a3effdbc17b2"
+        "content_hash": "sha256:b518b4e9371fc07cf886a95f6529a5a9cf67a06e292328e49bb1c29257e5c1b3"
       },
       {
         "path": "receipts/validation-receipt.json",
-        "content_hash": "sha256:e3944ed03f830f1cf7ddedcd4eadfa79cf375f23748ec32cedf6ad6f0a94daea"
+        "content_hash": "sha256:ffaff5660115a8fcea855f97ccdc797b94de664ce994847d322761acaa67f13a"
       }
     ]
   },

@@ -3,6 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import {
   buildRepositoryModelPacket,
+  canonicalJson,
   emitRepositoryModelBundle,
   observeRepositoryModel,
   validateRepositoryModelPacket,
@@ -320,8 +321,10 @@ describe("repository model bundle shape", () => {
       // and object keys serialized in ascending order at every depth.
       expect(text.endsWith("\n")).toBe(true);
       expect(text.slice(0, -1)).not.toContain("\n");
-      expect(text).not.toContain(": ");
-      expect(text).not.toContain(", ");
+      // Re-render the parsed document and require an exact match. A substring
+      // check for ": " / ", " cannot express this: an evidence excerpt may
+      // legitimately contain either sequence inside a string value.
+      expect(text.slice(0, -1)).toBe(canonicalJson(JSON.parse(text)));
       expectSortedKeys(JSON.parse(text), rel);
     }
 

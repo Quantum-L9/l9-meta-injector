@@ -86,15 +86,15 @@
     },
     {
       "path": "dist/repository_model.d.ts",
-      "git_blob_sha1": "018537e0bb40529723112129ca14266e93c8091b"
+      "git_blob_sha1": "f4a11561195962a07a9f166a6dd9ec6f62cf8ade"
     },
     {
       "path": "dist/repository_model.js",
-      "git_blob_sha1": "97d8faa3128d4dab1d56f15b688778ad0463d763"
+      "git_blob_sha1": "97d2ecdbf68faa71cea37097927f2c7be069f6c8"
     },
     {
       "path": "dist/repository_model.js.map",
-      "git_blob_sha1": "08cd526cb44987f80176737136ae83db42306c38"
+      "git_blob_sha1": "b394b8fd35e1e43352e5a800aa4b73d20ce7e944"
     },
     {
       "path": "docs/architecture-authority.json",
@@ -110,7 +110,7 @@
     },
     {
       "path": "docs/decision_log.md",
-      "git_blob_sha1": "1763be322f4f9a83a5b6a26e7b41fb0389565d8e"
+      "git_blob_sha1": "b5d1b0639652e1734dc889783b460d4b8af30e3b"
     },
     {
       "path": "docs/legacy/consolidation-v1/artifact_manifest.yaml",
@@ -170,7 +170,7 @@
     },
     {
       "path": "docs/topology-conformance.json",
-      "git_blob_sha1": "803f60d840805b2b59d7a6ec825999b3ed9b65a6"
+      "git_blob_sha1": "fe7ee2701bb879ffebb8fdc267a6aa5fa45c1a4b"
     },
     {
       "path": "docs/traceability-map.json",
@@ -198,15 +198,15 @@
     },
     {
       "path": "fixtures/repository-model/expected-bundle/manifest.json",
-      "git_blob_sha1": "2e25b62589a93e7053528ad017933d4d55719ec7"
+      "git_blob_sha1": "88be74ee9edff74b02b9c3aca484a8ba3931b7f7"
     },
     {
       "path": "fixtures/repository-model/expected-bundle/packet.json",
-      "git_blob_sha1": "5fee1ae20e05e609d202b12c31424c7284dda812"
+      "git_blob_sha1": "707d17782a6e63071aa6e5888e3b925fcacb74b3"
     },
     {
       "path": "fixtures/repository-model/expected-bundle/receipts/validation-receipt.json",
-      "git_blob_sha1": "8e5676f9fdd82c1f68d73b610a928aafdb655fb7"
+      "git_blob_sha1": "ac4f721b081155f1e612c03294734b772e472305"
     },
     {
       "path": "package-lock.json",
@@ -302,7 +302,7 @@
     },
     {
       "path": "src/repository_model.ts",
-      "git_blob_sha1": "28e4c3a3ec9b28ccf9446f0e476d69cc73b5355e"
+      "git_blob_sha1": "3e16590def319448a618725fd9b129a9b19e2b8a"
     },
     {
       "path": "src/schema.ts",
@@ -330,7 +330,7 @@
     },
     {
       "path": "tests/repository_model.test.ts",
-      "git_blob_sha1": "bac87b86a13ee7d8fffaa3a77386e6a7a4b0caaa"
+      "git_blob_sha1": "fa548d3043a2a5508a0724bdeb1064c68290268d"
     },
     {
       "path": "tools/consolidation/README.md",
