@@ -210,11 +210,18 @@ const LANGUAGE_BY_EXTENSION = {
 const PACKAGE_MANAGER_BY_FILENAME = {
     "package.json": "npm", "package-lock.json": "npm", "npm-shrinkwrap.json": "npm",
     "pnpm-lock.yaml": "pnpm", "yarn.lock": "yarn",
-    "pyproject.toml": "uv/pip", "requirements.txt": "pip", "poetry.lock": "poetry", "Pipfile": "pipenv",
+    "requirements.txt": "pip", "poetry.lock": "poetry", "uv.lock": "uv", "Pipfile": "pipenv",
     "Cargo.toml": "cargo", "go.mod": "go", "Gemfile": "bundler",
     "pom.xml": "maven", "build.gradle": "gradle", "build.gradle.kts": "gradle",
     "composer.json": "composer",
 };
+/**
+ * Manifests whose filename alone does not determine a package manager. `pyproject.toml` is
+ * shared by Poetry, uv, PDM, Hatch and setuptools; the discriminator (`[tool.poetry]`,
+ * `build-backend`, `[tool.uv]`) lives in the file body, which inventory observation does not
+ * read. These are recorded as an explicit coverage gap rather than resolved to a guess.
+ */
+const AMBIGUOUS_PACKAGE_MANIFESTS = new Set(["pyproject.toml"]);
 const GOVERNANCE_FILENAMES = new Set([
     "CODEOWNERS", "AGENTS.md", "CLAUDE.md", "GOVERNANCE.md", "SECURITY.md",
     "CONTRIBUTING.md", "LICENSE", "INVARIANTS.md", "CODE_OF_CONDUCT.md",
@@ -332,6 +339,7 @@ function buildRepositoryModelPacket(input) {
     const diagnostics = [];
     const languages = new Map(); // language -> first evidencing path
     const packageManagers = new Map();
+    const ambiguousManifests = new Map(); // manifest filename -> first evidencing path
     const workflows = [];
     const adrRefs = [];
     const governanceRefs = [];
@@ -409,6 +417,9 @@ function buildRepositoryModelPacket(input) {
         const manager = PACKAGE_MANAGER_BY_FILENAME[record.file_name];
         if (manager !== undefined && !packageManagers.has(manager))
             packageManagers.set(manager, relativePath);
+        if (AMBIGUOUS_PACKAGE_MANIFESTS.has(record.file_name) && !ambiguousManifests.has(record.file_name)) {
+            ambiguousManifests.set(record.file_name, relativePath);
+        }
         if (isWorkflowPath(relativePath))
             workflows.push(relativePath);
         if (isAdrPath(relativePath))
@@ -482,6 +493,19 @@ function buildRepositoryModelPacket(input) {
             category: "coverage",
             subject_id: repositoryId,
             details: { field },
+        });
+    }
+    // A shared manifest filename is observable; the manager behind it is not.
+    for (const fileName of sortStrings(ambiguousManifests.keys())) {
+        const sourcePath = ambiguousManifests.get(fileName);
+        diagnostics.push({
+            code: "unsupported-by-evidence",
+            severity: "info",
+            message: `${sourcePath} does not identify a package manager by filename alone; manifest interpretation is required.`,
+            stage: OBSERVATION_STAGE,
+            category: "coverage",
+            subject_id: repositoryId,
+            details: { field: "package_managers", source_path: sourcePath },
         });
     }
     if (folderCount > 0) {
