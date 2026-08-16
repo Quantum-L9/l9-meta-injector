@@ -53,6 +53,7 @@ const llm_1 = require("./llm");
 const meta_schema_1 = require("./meta_schema");
 const metrics_1 = require("./metrics");
 const comment_1 = require("./comment");
+const frontmatter_patch_1 = require("./frontmatter_patch");
 const archives_1 = require("./archives");
 const omit_1 = require("./omit");
 // classify()'s coarse "high"/"medium"/"low" confidence, numerically scaled to line up
@@ -68,6 +69,14 @@ function relativeSourcePath(root, filePath) {
         throw new Error(`persisted path escapes repository root: ${filePath}`);
     }
     return relative.split(path.sep).join("/");
+}
+/** Inspect a markdown document once and describe why it cannot be inline-patched, if so. */
+function inlineCarrierBlockFor(raw) {
+    const inspected = (0, frontmatter_patch_1.inspectFrontMatterDocument)(raw);
+    if (inspected.safe || !inspected.issue)
+        return undefined;
+    const { code, message, line } = inspected.issue;
+    return { code, message, malformed: !(0, frontmatter_patch_1.isPatcherLimitation)(code), ...(line !== undefined ? { line } : {}) };
 }
 function toCfg(config) {
     return { namespace: config.namespace, authority: config.authority, nearDupThreshold: config.nearDupThreshold, hashPrefixLength: config.hashPrefixLength, outputDir: config.outDir, indexDir: config.indexDir, namespaceGlobs: config.namespaceGlobs };
@@ -137,6 +146,9 @@ async function runPipelineAsync(config) {
     // Coarse classify result retained so non-injectable skips can report type/confidence.
     const classifications = new Map();
     const metadataSubjects = [];
+    // Files that cannot carry their own inline metadata. They are governed and indexed,
+    // but never inline-patched, and their bytes are never touched.
+    const inlineCarrierBlocks = new Map();
     for (const e of scanned) {
         const raw = fs.readFileSync(e.sourcePath, "utf8");
         const spec = (0, comment_1.resolveStrategy)(e.sourcePath, raw);
@@ -155,6 +167,16 @@ async function runPipelineAsync(config) {
         // frontmatter and truncate real content, skewing extraction/classification/hash.
         const body = spec.strategy === "yaml-frontmatter" ? (0, extract_1.splitContent)(cleanRaw).body : cleanRaw;
         bodies.set(e.sourcePath, body);
+        // Classify inline-carrier eligibility here, before any mutation planning. A file whose
+        // existing frontmatter is outside the patchable subset is still a governed subject —
+        // it simply cannot carry its own metadata, so the carrier policy routes it to the
+        // central manifest. Throwing here instead would abort the whole repository operation
+        // over one file the injector was never going to be able to rewrite safely.
+        const inlineCarrierBlock = spec.strategy === "yaml-frontmatter"
+            ? inlineCarrierBlockFor(raw)
+            : undefined;
+        if (inlineCarrierBlock)
+            inlineCarrierBlocks.set(e.sourcePath, inlineCarrierBlock);
         const ef = (0, extract_1.extract)(body);
         const cls = (0, classify_1.classify)(e.sourcePath, body, e.headerConvention);
         classifications.set(e.sourcePath, cls);
@@ -207,6 +229,7 @@ async function runPipelineAsync(config) {
             strategy: spec.strategy,
             contentHash: meta.content_hash,
             metadata: (0, schema_1.asRecord)(meta),
+            ...(inlineCarrierBlock ? { inlineCarrierBlock } : {}),
         });
     }
     const opts = {
@@ -232,6 +255,10 @@ async function runPipelineAsync(config) {
             });
             continue;
         }
+        // The file is governed, but it cannot rewrite itself: leave its bytes alone and let
+        // the carrier policy place its metadata in the central manifest.
+        if (inlineCarrierBlocks.has(e.sourcePath))
+            continue;
         // Use async inject (LLM boolean reconcile on description/intent) when LLM is enabled
         const record = config.llmEnabled
             ? await (0, inject_1.injectFileAsync)(e.sourcePath, meta, opts, metrics)
@@ -253,7 +280,12 @@ async function runPipelineAsync(config) {
         passed: failures.length === 0,
         failures,
     };
-    if (!verification.passed) {
+    // Only report verification when there is a written file to verify. In plan mode nothing
+    // has been written, so `verify` necessarily reads the pre-injection bytes and reports a
+    // missing header for every file that is *about* to receive one. Printing that as
+    // "verification FAILED" during a successful governed check or apply is a phantom
+    // failure, and phantom failures make the real ones unreadable.
+    if (!verification.passed && !config.dryRun) {
         const preview = failures.slice(0, 5).map((f) => `  - ${f.sourcePath}: ${f.issues.join("; ")}`).join("\n");
         const more = failures.length > 5 ? `\n  … and ${failures.length - 5} more` : "";
         process.stderr.write(`[l9-meta-injector] verification FAILED for ${verification.withIssues}/${verification.total} file(s):\n${preview}${more}\n`);

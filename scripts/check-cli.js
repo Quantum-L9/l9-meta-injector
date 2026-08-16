@@ -12,6 +12,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { requireBuilt, parseCli } = require("./lib/cli-args");
+const { renderCheck, renderThrow } = require("./lib/operation-report");
 
 const REPO = path.resolve(__dirname, "..");
 const pkg = requireBuilt(path.join(REPO, "dist", "index.js"), "check-cli");
@@ -98,13 +99,12 @@ pkg.runCheckAsync(config).then((operation) => {
     `check-cli: scanned=${check.scanned} planned=${check.planned} drift=${check.drift.length} ` +
     `authorityConflicts=${check.authorityConflicts.length} passed=${check.passed}`,
   );
-  for (const item of check.drift) {
-    console.log(`  - ${item.kind}: ${item.path}: ${item.message}`);
-  }
-  for (const warning of operation.warnings) console.error(`check-cli: warning: ${warning}`);
+  // Drift kind, path, message, and every authority conflict code — deterministically
+  // ordered, so a failing gate is diagnosable from its output alone.
+  for (const line of renderCheck("check-cli", check, operation.warnings)) console.log(line);
   console.log(`check-cli: report=${reportPath}`);
   process.exit(check.passed ? 0 : 1);
 }).catch((error) => {
-  console.error(`check-cli: check threw: ${error?.stack ?? error}`);
+  for (const line of renderThrow("check-cli", error)) console.error(line);
   process.exit(2);
 });

@@ -143,11 +143,24 @@ export type CarrierInjectionStrategy =
   | "sidecar"
   | "skip-binary";
 
+/**
+ * Why a subject cannot act as its own inline carrier.
+ *
+ * Structural mirror of `PipelineMetadataSubject.inlineCarrierBlock`, declared here so the
+ * carrier policy stays independent of the pipeline module.
+ */
+export interface CarrierInlineBlock {
+  code: string;
+  malformed: boolean;
+}
+
 export interface CarrierSubject {
   /** Repository-relative path. Absolute or traversal paths are rejected. */
   path: string;
   artifactType: ArtifactType;
   strategy: CarrierInjectionStrategy;
+  /** Set when the file's existing frontmatter is outside the inline-patchable subset. */
+  inlineCarrierBlock?: CarrierInlineBlock;
 }
 
 export interface CarrierPolicyInput {
@@ -299,6 +312,23 @@ function inlineOrDefaultDecision(
 ): CarrierDecision {
   const inlinePattern = matchesInlineAllow(relativePath, authority.inline_allow);
   const inlineEligible = INLINE_MANAGED_ARTIFACT_TYPES.has(subject.artifactType);
+  // A file whose existing frontmatter cannot be rewritten byte-safely is never an inline
+  // carrier, no matter how eligible it otherwise is. Its bytes are preserved and its
+  // metadata is carried centrally. The reason travels with the decision so an operator
+  // can see exactly which file, and which frontmatter limitation, caused the fallback.
+  const block = subject.inlineCarrierBlock;
+  if (block) {
+    const decided = decision(
+      relativePath,
+      "central_manifest",
+      `existing frontmatter is outside the inline-patchable subset (${block.code}); source bytes are preserved`,
+      `frontmatter_unsupported:${block.code}`,
+    );
+    // A malformed header that an explicit inline_allow authorization asked us to rewrite
+    // is the one case the repository's own policy cannot be satisfied safely.
+    if (block.malformed && inlinePattern && inlineEligible) decided.unsatisfiedInlineAuthorization = true;
+    return decided;
+  }
   if (inlinePattern && inlineEligible) {
     return decision(
       relativePath,

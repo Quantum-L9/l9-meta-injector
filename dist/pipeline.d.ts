@@ -5,6 +5,7 @@ import type { DiscoverySummary } from "./discovery_contracts";
 import { PlacementPlan } from "./placement_policy";
 import { MetaV3Record } from "./meta_v3";
 import { MetricsSnapshot } from "./metrics";
+import { type FrontMatterIssueCode } from "./frontmatter_patch";
 import { ArchiveRecord } from "./archives";
 export interface VerificationSummary {
     total: number;
@@ -16,6 +17,20 @@ export interface VerificationSummary {
         sourcePath: string;
         issues: string[];
     }>;
+}
+/**
+ * Why a discovered markdown file cannot act as its own inline metadata carrier.
+ *
+ * Valid-but-unsupported frontmatter (`malformed: false`) is a limitation of the
+ * byte-preserving patcher, not a defect in the file. Either way the source bytes are left
+ * untouched and the file is carried by the central manifest instead; the run continues.
+ */
+export interface InlineCarrierBlock {
+    code: FrontMatterIssueCode;
+    message: string;
+    line?: number;
+    /** True when the header is structurally broken rather than merely unsupported. */
+    malformed: boolean;
 }
 /** Per-path detail for a non-injectable skip (OBS-003 / ADR-018). */
 export interface NonInjectableSkipDetail {
@@ -30,6 +45,8 @@ export interface PipelineMetadataSubject {
     strategy: CarrierInjectionStrategy;
     contentHash: string;
     metadata: Readonly<Record<string, unknown>>;
+    /** Present when this file's existing frontmatter cannot be safely inline-patched. */
+    inlineCarrierBlock?: InlineCarrierBlock;
 }
 export interface CoverageSummary {
     scanned: number;

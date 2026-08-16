@@ -3,9 +3,26 @@
  * Read-only scan for competing repository metadata authorities.
  *
  * This scanner intentionally includes hidden control surfaces that normal artifact
- * discovery omits. It does not make those paths mutation candidates. It looks for
- * executable writer scripts and invocations, while treating marker text in docs,
- * tests, fixtures, and reports as inert evidence rather than an active conflict.
+ * discovery omits. It does not make those paths mutation candidates.
+ *
+ * Three distinct things are separated here, because collapsing them is what made a
+ * mature repository un-adoptable without source surgery:
+ *
+ *   historical marker        legacy L9 metadata *text*, with nothing showing that the
+ *                            containing surface writes L9 metadata. Always inert.
+ *   dormant writer artifact  a control surface whose own evidence specifically claims to
+ *                            write/inject/verify/generate/sync L9 metadata, but which
+ *                            nothing invokes. Blocking under `forbidden`; a recorded
+ *                            migration notice under `migration_only`.
+ *   active invocation        a live control surface that calls a competing writer.
+ *                            Blocking under every policy.
+ *
+ * A generic `writeFileSync` / `json.dump` / `yaml.safe_dump` / `open(..., "w")` is never
+ * sufficient on its own. The write has to be tied to the L9 metadata surface, either on
+ * the same line or by a filename that names it.
+ *
+ * The repository's declared `legacy_writers` policy is an input to this decision, not a
+ * separate validation pass: there is exactly one authority scanner.
  */
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -41,6 +58,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.dispositionForEvidence = dispositionForEvidence;
 exports.scanRepositoryAuthority = scanRepositoryAuthority;
 exports.inspectRepositoryAuthority = inspectRepositoryAuthority;
 exports.assertRepositoryAuthorityForOperation = assertRepositoryAuthorityForOperation;
@@ -90,6 +108,16 @@ const LEGACY_MARKERS = [
 const WRITE_SIGNAL = /(?:writeFileSync|writeFile\s*\(|write_text\s*\(|write_bytes\s*\(|fs\.write|yaml\.safe_dump|json\.dump|open\s*\([^)]*["']w|>\s*["']?[^\n]*meta)/i;
 const WRITER_INVOCATION = /(?:^|[\s"'`])(?:python(?:3)?\s+|node\s+|bash\s+|sh\s+)?(?:\.\/)?[^\s"'`]*(?:inject|verify)[-_]?l9[-_]?meta[^\s"'`]*/im;
 const CANONICAL_INVOCATION = /Quantum-L9\/l9-meta-injector@[0-9a-f]{40}|(?:^|[\s"'`])l9-meta-injector(?:[\s"'`/:]|$)/im;
+/**
+ * Names of the L9 metadata surface itself.
+ *
+ * A write becomes an L9-metadata write only when it is tied to one of these. This is the
+ * discriminator that separates "this file happens to call json.dump" from "this file
+ * writes competing L9 metadata".
+ */
+const L9_METADATA_TOKEN = /L9_ARTIFACT_META|x-l9-meta|L9_META|l9:meta:start|l9meta|l9[-_]meta|\.l9\/metadata-index/i;
+/** A filename that itself claims to be an L9 metadata writer. */
+const L9_METADATA_FILENAME = /l9[-_.]?meta/i;
 function toPosix(value) {
     return value.split(path.sep).join("/");
 }
@@ -161,26 +189,61 @@ function walkFiles(root, excluded) {
     files.sort((a, b) => a.localeCompare(b));
     return { files, gaps };
 }
-function conflictFor(item) {
-    if (item.kind === "canonical_invocation")
+/**
+ * Apply the repository's declared legacy-writer policy to one piece of evidence.
+ *
+ * An absent policy means the authority did not resolve; the scan then fails closed and
+ * treats every legacy writer signal as a conflict.
+ */
+function dispositionForEvidence(kind, policy) {
+    // The canonical writer is this package. Seeing it is the desired state, not a conflict.
+    if (kind === "canonical_invocation")
+        return "inert";
+    // Historical marker text never blocks: it is evidence about the past, and no repository
+    // should have to rewrite its own history to adopt the canonical writer.
+    if (kind === "legacy_marker")
+        return "inert";
+    // A live invocation of a competing writer is a conflict under every policy.
+    if (kind === "writer_invocation")
+        return "conflict";
+    // Dormant writer artifact: `migration_only` records it, `forbidden` blocks on it.
+    return policy === "migration_only" ? "migration" : "conflict";
+}
+function evidenceDetail(item) {
+    return [`${item.rule}${item.line ? ` at line ${item.line}` : ""}`, item.excerpt ?? ""].filter(Boolean);
+}
+function conflictFor(item, policy) {
+    if (dispositionForEvidence(item.kind, policy) !== "conflict")
         return null;
-    const code = item.kind === "legacy_marker" ? "META_LEGACY_METADATA_PRESENT" : "META_AUTHORITY_CONFLICT";
-    let message;
-    if (item.kind === "writer_invocation") {
-        message = "active control surface invokes a competing metadata writer";
-    }
-    else if (item.kind === "writer_script") {
-        message = "competing metadata writer script detected";
-    }
-    else {
-        message = "legacy metadata marker participates in an active writer";
-    }
+    const message = item.kind === "writer_invocation"
+        ? "active control surface invokes a competing metadata writer"
+        : `competing metadata writer artifact detected under legacy_writers: ${policy ?? "unresolved"}`;
     return {
-        code,
+        code: "META_AUTHORITY_CONFLICT",
         message,
         path: item.path,
-        evidence: [`${item.rule}${item.line ? ` at line ${item.line}` : ""}`, item.excerpt ?? ""].filter(Boolean),
+        evidence: evidenceDetail(item),
     };
+}
+function noticeFor(item, policy) {
+    const disposition = dispositionForEvidence(item.kind, policy);
+    if (disposition === "migration") {
+        return {
+            code: "META_LEGACY_WRITER_MIGRATION",
+            message: "dormant competing metadata writer artifact retained under legacy_writers: migration_only",
+            path: item.path,
+            evidence: evidenceDetail(item),
+        };
+    }
+    if (item.kind === "legacy_marker") {
+        return {
+            code: "META_LEGACY_METADATA_PRESENT",
+            message: "historical L9 metadata marker present; no evidence that this surface writes L9 metadata",
+            path: item.path,
+            evidence: evidenceDetail(item),
+        };
+    }
+    return null;
 }
 function describeError(error) {
     return error instanceof Error ? error.message : String(error);
@@ -210,15 +273,60 @@ function readControlSurface(filePath, repositoryRoot, maxFileBytes) {
     }
     return { relative, content };
 }
+/**
+ * Every legacy marker occurrence in the surface, unconditionally.
+ *
+ * This deliberately does NOT depend on a write signal. Historical marker text is evidence
+ * in its own right and is preserved whether or not it turns out to be blocking.
+ */
 function legacyMarkerEvidence(relative, content) {
     const found = [];
     for (const marker of LEGACY_MARKERS) {
+        if (marker.value === "l9:meta:start")
+            continue; // the canonical block marker, not a legacy one
         const markerIndex = content.indexOf(marker.value);
-        if (markerIndex !== -1 && marker.value !== "l9:meta:start") {
+        if (markerIndex !== -1)
             found.push(evidence(relative, "legacy_marker", marker.rule, content, markerIndex));
-        }
     }
     return found;
+}
+function lineAt(content, index) {
+    const start = content.lastIndexOf("\n", index) + 1;
+    const endAt = content.indexOf("\n", index);
+    return content.slice(start, endAt === -1 ? content.length : endAt);
+}
+/** Every write-signal position in the surface, so each can be judged in its own context. */
+function writeSignalIndexes(content) {
+    const scanner = new RegExp(WRITE_SIGNAL.source, "gi");
+    const found = [];
+    let match;
+    while ((match = scanner.exec(content)) !== null) {
+        found.push(match.index);
+        if (scanner.lastIndex === match.index)
+            scanner.lastIndex += 1;
+    }
+    return found;
+}
+/**
+ * Locate a write that is specifically an L9 *metadata* write.
+ *
+ * Qualifying evidence is either a write on a line that also names the L9 metadata surface,
+ * or — for a file whose own name claims to inject/verify/generate/sync L9 metadata — any
+ * write at all. A generic write with an unrelated L9 marker elsewhere in the file does not
+ * qualify, which is exactly the historical-marker false positive this repairs.
+ */
+function findMetadataWriteIndex(relative, content) {
+    const indexes = writeSignalIndexes(content);
+    if (indexes.length === 0)
+        return null;
+    for (const index of indexes) {
+        if (L9_METADATA_TOKEN.test(lineAt(content, index)))
+            return index;
+    }
+    const basename = path.posix.basename(relative);
+    if (SUSPICIOUS_NAME.test(basename) && L9_METADATA_FILENAME.test(basename))
+        return indexes[0];
+    return null;
 }
 /** Collect every authority-relevant evidence item from one scanned control surface. */
 function collectSurfaceEvidence(relative, content) {
@@ -228,16 +336,16 @@ function collectSurfaceEvidence(relative, content) {
         found.push(evidence(relative, "canonical_invocation", "canonical-l9-meta-injector-invocation", content, canonicalMatch.index));
     }
     const invocationMatch = WRITER_INVOCATION.exec(content);
-    if (invocationMatch?.index !== undefined) {
+    // A canonical `l9-meta-injector` reference on the same line is this package, not a
+    // competitor, so it must never be reported as a competing invocation.
+    if (invocationMatch?.index !== undefined && !CANONICAL_INVOCATION.test(lineAt(content, invocationMatch.index))) {
         found.push(evidence(relative, "writer_invocation", "legacy-writer-invocation", content, invocationMatch.index));
     }
-    const writeMatch = WRITE_SIGNAL.exec(content);
-    if (SUSPICIOUS_NAME.test(path.posix.basename(relative)) && writeMatch?.index !== undefined) {
-        found.push(evidence(relative, "writer_script", "suspicious-writer-filename-with-write-signal", content, writeMatch.index));
+    const metadataWriteIndex = findMetadataWriteIndex(relative, content);
+    if (metadataWriteIndex !== null) {
+        found.push(evidence(relative, "writer_script", "l9-metadata-write-signal", content, metadataWriteIndex));
     }
-    if (writeMatch?.index !== undefined) {
-        found.push(...legacyMarkerEvidence(relative, content));
-    }
+    found.push(...legacyMarkerEvidence(relative, content));
     return found;
 }
 function scanRepositoryAuthority(root, options = {}) {
@@ -261,28 +369,38 @@ function scanRepositoryAuthority(root, options = {}) {
         found.push(...collectSurfaceEvidence(surface.relative, surface.content));
     }
     const deduped = [...new Map(found.map((item) => [`${item.path}:${item.kind}:${item.rule}`, item])).values()]
-        .sort((a, b) => `${a.path}:${a.kind}`.localeCompare(`${b.path}:${b.kind}`));
+        .sort((a, b) => `${a.path}:${a.kind}:${a.rule}`.localeCompare(`${b.path}:${b.kind}:${b.rule}`));
+    const policy = options.legacyPolicy;
     const conflicts = [
         ...scanGaps,
-        ...deduped.map(conflictFor).filter((item) => item !== null),
+        ...deduped.map((item) => conflictFor(item, policy)).filter((item) => item !== null),
     ];
+    const notices = deduped
+        .map((item) => noticeFor(item, policy))
+        .filter((item) => item !== null);
     scannedPaths.sort((a, b) => a.localeCompare(b));
-    return { scannedPaths, evidence: deduped, scanGaps, conflicts };
+    return { scannedPaths, evidence: deduped, scanGaps, conflicts, notices };
 }
 function inspectRepositoryAuthority(root, options = {}) {
     const repositoryRoot = path.resolve(root);
     const loaded = (0, authority_1.loadRepositoryAuthority)(repositoryRoot, options);
-    const scanned = scanRepositoryAuthority(repositoryRoot, options);
+    // The declared policy is an input to the one scanner, so legacy evidence is judged by
+    // the repository's own contract rather than by a second, independent rule set. An
+    // unresolved authority leaves the policy undefined and the scan fails closed.
+    const legacyPolicy = loaded.authority?.legacy_writers ?? options.legacyPolicy;
+    const scanned = scanRepositoryAuthority(repositoryRoot, { ...options, ...(legacyPolicy !== undefined ? { legacyPolicy } : {}) });
     const conflicts = [...loaded.conflicts, ...scanned.conflicts];
     return {
         root: repositoryRoot,
         authorityPath: loaded.path,
         authority: loaded.authority,
         authorityResolved: loaded.authority !== undefined && conflicts.length === 0,
+        ...(legacyPolicy !== undefined ? { legacyPolicy } : {}),
         scannedPaths: scanned.scannedPaths,
         evidence: scanned.evidence,
         scanGaps: scanned.scanGaps,
         conflicts,
+        notices: scanned.notices,
     };
 }
 function assertRepositoryAuthorityForOperation(mode, inspection) {

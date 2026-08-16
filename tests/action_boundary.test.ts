@@ -19,6 +19,19 @@ function tempDir(prefix: string): string {
   return root;
 }
 
+/**
+ * Canonicalize a path the way the dispatcher's own containment checks do.
+ *
+ * `normalizeEnvironment` resolves every directory input through `fs.realpathSync`, so a
+ * test that compares its output against a raw `os.tmpdir()` path is comparing two
+ * different spellings of the same directory on any platform where the temp directory is
+ * a symlink (macOS: `/var/...` → `/private/var/...`). Using the production canonical
+ * form keeps the assertion about containment rather than about spelling.
+ */
+function canonical(target: string): string {
+  return fs.realpathSync(target);
+}
+
 function actionEnv(workspace: string, actionPath: string, overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
   return {
     GITHUB_WORKSPACE: workspace,
@@ -102,7 +115,32 @@ describe("workspace containment", () => {
     });
     const config = dispatch.normalizeEnvironment(env) as { reportPath: string; targetRoot: string };
     expect(path.relative(config.targetRoot, config.reportPath).startsWith("..")).toBe(true);
-    expect(config.reportPath.startsWith(String(env.RUNNER_TEMP))).toBe(true);
+    const runnerTemp = canonical(String(env.RUNNER_TEMP));
+    expect(path.relative(runnerTemp, config.reportPath).startsWith("..")).toBe(false);
+    expect(path.isAbsolute(path.relative(runnerTemp, config.reportPath))).toBe(false);
+  });
+
+  test("a symlinked RUNNER_TEMP still contains the report once canonicalized", () => {
+    // Reproduces the macOS temp-directory shape (`/var` → `/private/var`) on every
+    // platform: RUNNER_TEMP is handed in as a symlink, and the dispatcher resolves it.
+    const workspace = tempDir("l9-workspace-");
+    const actionPath = tempDir("l9-action-");
+    const realTemp = tempDir("l9-runner-real-");
+    const linkHome = tempDir("l9-runner-link-");
+    const linkedTemp = path.join(linkHome, "runner-temp");
+    fs.symlinkSync(realTemp, linkedTemp, "dir");
+
+    const env = actionEnv(workspace, actionPath, {
+      L9_INPUT_MODE: "check",
+      L9_INPUT_AUTHORITY: "repo.owner",
+      RUNNER_TEMP: linkedTemp,
+    });
+    const config = dispatch.normalizeEnvironment(env) as { reportPath: string; targetRoot: string };
+
+    // The raw spelling no longer prefixes the resolved report path — that is exactly the
+    // divergence the platform-portability finding is about — but containment holds.
+    expect(path.relative(canonical(linkedTemp), config.reportPath).startsWith("..")).toBe(false);
+    expect(path.relative(config.targetRoot, config.reportPath).startsWith("..")).toBe(true);
   });
 });
 

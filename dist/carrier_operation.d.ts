@@ -29,4 +29,11 @@ export interface PlanCarrierOperationInput {
 export declare function buildCarrierOperationPlan(mode: GovernedCarrierMode, rootInput: string, authority: AuthorityConfig, pipeline: PipelineResult): CarrierOperationPlan;
 export declare function planCarrierOperationAsync(input: PlanCarrierOperationInput): Promise<CarrierOperationPlan>;
 export declare function metadataIndexDrift(plan: CarrierOperationPlan): CheckDrift | null;
+/**
+ * Drift for decisions the repository's own authority asked for but cannot receive.
+ *
+ * A malformed header under an explicit `inline_allow` authorization is reported here, not
+ * repaired: preserving the file's bytes outranks satisfying the authorization.
+ */
+export declare function unsatisfiedAuthorizationDrift(plan: CarrierOperationPlan): CheckDrift[];
 export declare function inlinePlanDrift(plan: CarrierOperationPlan): CheckDrift[];

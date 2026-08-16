@@ -356,11 +356,25 @@ describe("topology conformance evidence", () => {
     expect(evidence.result.translation_shim_required).toBe(false);
   });
 
-  it("stays bound to the golden bundle it describes", () => {
-    const packet = JSON.parse(fs.readFileSync(path.join(GOLDEN, "packet.json"), "utf8"));
-    expect(evidence.subject.packet_id).toBe(packet.packet_id);
-    expect(evidence.subject.semantic_hash).toBe(packet.semantic_hash);
-    expect(evidence.subject.packet_type).toBe(REPOSITORY_MODEL_PACKET_TYPE);
-    expect(evidence.subject.packet_version).toBe(REPOSITORY_MODEL_PACKET_VERSION);
+  it("stays bound to every golden bundle it describes", () => {
+    expect(Array.isArray(evidence.subjects)).toBe(true);
+    expect(evidence.subjects.map((item: { id: string }) => item.id)).toEqual(["inventory", "interpreted"]);
+    for (const subject of evidence.subjects as Array<Record<string, string>>) {
+      const bundleRoot = path.join(REPO, subject.bundle);
+      const packet = JSON.parse(fs.readFileSync(path.join(bundleRoot, "packet.json"), "utf8"));
+      expect(subject.packet_id).toBe(packet.packet_id);
+      expect(subject.semantic_hash).toBe(packet.semantic_hash);
+      expect(subject.packet_type).toBe(REPOSITORY_MODEL_PACKET_TYPE);
+      expect(subject.packet_version).toBe(REPOSITORY_MODEL_PACKET_VERSION);
+    }
+  });
+
+  // The interpreted bundle is the reason this matters: an inventory-only packet proves
+  // the shell is accepted, not that capabilities and interpretation-derived edges are.
+  it("covers the structurally interpreted packet, not only the inventory-only one", () => {
+    const interpreted = (evidence.subjects as Array<{ id: string; normalized_counts: Record<string, number> }>)
+      .find((item) => item.id === "interpreted");
+    expect(interpreted?.normalized_counts.capabilities).toBeGreaterThan(0);
+    expect(interpreted?.normalized_counts.relationships).toBeGreaterThan(0);
   });
 });

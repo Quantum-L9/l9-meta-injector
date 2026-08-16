@@ -1,4 +1,5 @@
 import { InventoryResult } from "./inventory";
+import { type InterpretationResult } from "./repository_interpretation";
 export declare const REPOSITORY_MODEL_PACKET_TYPE = "l9.repository-model";
 export declare const REPOSITORY_MODEL_PACKET_VERSION = "1.0.0";
 export declare const REPOSITORY_MODEL_PRODUCER_NAME = "l9-meta-injector.repository-model";
@@ -182,6 +183,13 @@ export interface RepositoryModelValidationResult {
 export interface RepositoryModelBuildInput {
     /** Inventory observation of the repository. Produced by `inventoryTree`. */
     inventory: InventoryResult;
+    /**
+     * Deterministic structured interpretation of the same observation. Optional: without it
+     * the packet carries inventory evidence only, exactly as before. Its profile identity
+     * participates in the packet's profile identity, so changing extraction policy changes
+     * the packet's semantic hash even when the repository bytes are unchanged.
+     */
+    interpretations?: InterpretationResult;
     /** Canonical repository name, e.g. `l9-meta-injector`. */
     repositoryName: string;
     /** Explicit source revision, e.g. `git:<40-hex>`. Never inferred. */
@@ -202,6 +210,8 @@ export interface RepositoryModelObservationInput {
     omitPatterns?: string[];
     omitFile?: string;
     hashMaxBytes?: number;
+    /** Set false to emit an inventory-only packet with no structured interpretation. */
+    interpret?: boolean;
 }
 export interface RepositoryModelEmitResult {
     bundleRoot: string;

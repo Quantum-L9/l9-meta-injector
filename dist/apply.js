@@ -56,7 +56,7 @@ function relativePath(root, target) {
     }
     return rel.split(path.sep).join("/");
 }
-function authorityFailure(conflicts, warnings = []) {
+function authorityFailure(conflicts, notices, warnings = []) {
     const apply = {
         passed: false,
         repositoryMutated: false,
@@ -66,6 +66,7 @@ function authorityFailure(conflicts, warnings = []) {
         inlineChanged: [],
         metadataIndexChanged: false,
         authorityConflicts: conflicts,
+        authorityNotices: notices,
         carrierDecisions: [],
         discovery: (0, discovery_contracts_1.emptyDiscoverySummary)(),
         transaction: {
@@ -193,8 +194,9 @@ async function runApplyAsync(config) {
     const inspection = (0, authority_scan_1.inspectRepositoryAuthority)(root, {
         expectedWriter: { repository: carrier_operation_1.CANONICAL_METADATA_WRITER },
     });
-    if (inspection.conflicts.length > 0 || !inspection.authority)
-        return authorityFailure(inspection.conflicts, warnings);
+    if (inspection.conflicts.length > 0 || !inspection.authority) {
+        return authorityFailure(inspection.conflicts, inspection.notices, warnings);
+    }
     if (config.localFiles)
         throw new Error("apply does not expand archives; local-files requires a separate import workflow");
     if (config.normalizeFilenames)
@@ -215,6 +217,16 @@ async function runApplyAsync(config) {
     if (plan.pipeline.coverage.discovery.blocking > 0) {
         throw new Error(`DISCOVERY_INCOMPLETE: apply refused with ${plan.pipeline.coverage.discovery.blocking} blocking path(s)`);
     }
+    const unsatisfied = (0, carrier_operation_1.unsatisfiedAuthorizationDrift)(plan);
+    if (unsatisfied.length > 0) {
+        // The repository authorized inline metadata for a file whose header cannot be
+        // rewritten byte-safely. Preserving those bytes wins; apply holds and names the files.
+        return authorityFailure(unsatisfied.map((item) => ({
+            code: "META_AUTHORITY_CONFLICT",
+            message: item.message,
+            path: item.path,
+        })), inspection.notices, warnings);
+    }
     const intents = buildMutationIntents(root, plan, config.outDir);
     const transaction = (0, file_transaction_1.executeFileTransaction)(root, intents, {
         validate: () => validateCommittedPlan(root, plan),
@@ -231,6 +243,7 @@ async function runApplyAsync(config) {
         inlineChanged,
         metadataIndexChanged,
         authorityConflicts: [],
+        authorityNotices: inspection.notices,
         carrierDecisions: plan.carrierDecisions,
         discovery: plan.pipeline.coverage.discovery,
         transaction: {

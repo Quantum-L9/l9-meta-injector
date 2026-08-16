@@ -270,23 +270,62 @@ function normalizeEnvironment(rawEnv) {
   return config;
 }
 
+const BOOLEAN_OPTIONS = Object.freeze(["--dry-run", "--fail-on-issues", "--llm", "--llm-allow-insecure"]);
+const REPEATABLE_OPTIONS = Object.freeze(["--omit", "--namespace-glob"]);
+const VALUE_OPTIONS = Object.freeze([
+  "--out", "--glob", "--namespace", "--authority", "--near-dup", "--hash-prefix-length",
+  "--llm-base-url", "--llm-model", "--llm-api-key",
+]);
+
+const BOOLEAN_OPTION_SET = new Set(BOOLEAN_OPTIONS);
+const REPEATABLE_OPTION_SET = new Set(REPEATABLE_OPTIONS);
+const VALUE_OPTION_SET = new Set(VALUE_OPTIONS);
+/** `--no-dry-run` → `--dry-run`. The negation is the only way to express `false` on argv. */
+const NEGATED_BOOLEAN_OPTIONS = new Map(
+  BOOLEAN_OPTIONS.map((option) => [`--no-${option.slice(2)}`, option]),
+);
+
+function isKnownOptionToken(token) {
+  return BOOLEAN_OPTION_SET.has(token)
+    || REPEATABLE_OPTION_SET.has(token)
+    || VALUE_OPTION_SET.has(token)
+    || NEGATED_BOOLEAN_OPTIONS.has(token);
+}
+
+/**
+ * Parse `--flag` / `--opt value` argv into option readers.
+ *
+ * Boolean options are bare presence flags: `--dry-run` means true and consumes no
+ * following argv element, so `--dry-run --out reports` keeps `--out` an option rather
+ * than swallowing it as the boolean's value. `--no-<flag>` is the explicit false form.
+ * A value option whose value is itself a known option token is rejected loudly instead
+ * of being mis-parsed into a plausible-looking configuration.
+ */
 function parseArgOptions(args) {
   const values = new Map();
   const repeated = new Map();
-  const booleans = new Set(["--dry-run", "--fail-on-issues", "--llm", "--llm-allow-insecure"]);
-  const repeatable = new Set(["--omit", "--namespace-glob"]);
-  const valueOptions = new Set([
-    "--out", "--glob", "--namespace", "--authority", "--near-dup", "--hash-prefix-length",
-    "--llm-base-url", "--llm-model", "--llm-api-key",
-  ]);
   while (args.length) {
     const option = args.shift();
-    if (!(booleans.has(option) || valueOptions.has(option) || repeatable.has(option))) {
+
+    if (BOOLEAN_OPTION_SET.has(option)) {
+      if (values.has(option)) fail(`${option} may be specified only once`);
+      values.set(option, "true");
+      continue;
+    }
+    const negated = NEGATED_BOOLEAN_OPTIONS.get(option);
+    if (negated !== undefined) {
+      if (values.has(negated)) fail(`${negated} may be specified only once`);
+      values.set(negated, "false");
+      continue;
+    }
+
+    if (!(VALUE_OPTION_SET.has(option) || REPEATABLE_OPTION_SET.has(option))) {
       fail(`unknown option '${option}'`);
     }
     if (!args.length) fail(`${option} requires a value`);
+    if (isKnownOptionToken(args[0])) fail(`${option} requires a value, got option '${args[0]}'`);
     const value = args.shift();
-    if (repeatable.has(option)) {
+    if (REPEATABLE_OPTION_SET.has(option)) {
       const list = repeated.get(option) ?? [];
       list.push(value);
       repeated.set(option, list);
@@ -440,9 +479,13 @@ function parseSummary(mode, text) {
 
 module.exports = {
   ActionInputError,
+  BOOLEAN_OPTIONS,
   LEGACY_OPERATION_ALIASES,
   OPERATION_MODES,
+  REPEATABLE_OPTIONS,
+  VALUE_OPTIONS,
   buildInvocation,
+  parseArgOptions,
   isWithin,
   normalizeEnvironment,
   parseBoolean,

@@ -3,6 +3,7 @@
 "use strict";
 const path = require("node:path");
 const { requireBuilt, parseCli } = require("./lib/cli-args");
+const { renderApply, renderThrow } = require("./lib/operation-report");
 
 const REPO = path.resolve(__dirname, "..");
 const pkg = requireBuilt(path.join(REPO, "dist", "index.js"), "apply-cli");
@@ -69,8 +70,11 @@ pkg.runApplyAsync(config).then((operation) => {
   if (!apply) throw new Error("apply operation returned no ApplyResult");
   console.log(`apply-cli: scanned=${apply.scanned} planned=${apply.planned} changed=${apply.changed} inlineChanged=${apply.inlineChanged.length} metadataIndexChanged=${apply.metadataIndexChanged} passed=${apply.passed}`);
   console.log(`apply-cli: transaction=${apply.transaction.transactionId ?? "none"} plannedWrites=${apply.transaction.plannedWrites} committedWrites=${apply.transaction.committedWrites} recovered=${apply.transaction.recoveredTransactions.length} finalized=${apply.transaction.finalizedTransactions.length}`);
+  // A refused apply must name the conflict, its path, and its reason. Exiting 1 with only
+  // `passed=false` tells an operator nothing they can act on.
+  for (const line of renderApply("apply-cli", apply, operation.warnings)) console.error(line);
   process.exit(apply.passed ? 0 : 1);
 }).catch((error) => {
-  console.error(`apply-cli: apply threw: ${error?.stack ?? error}`);
+  for (const line of renderThrow("apply-cli", error)) console.error(line);
   process.exit(2);
 });

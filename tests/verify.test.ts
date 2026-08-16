@@ -3,6 +3,7 @@ import * as os from "os";
 import * as path from "path";
 import { verify } from "../src/verify";
 import { contentHash, stripExistingFrontMatter } from "../src/extract";
+import { inspectFrontMatterDocument, patchManagedFrontMatter } from "../src/frontmatter_patch";
 import { NormalizedMeta } from "../src/schema";
 
 // verify() only reads these fields off the meta; a minimal cast is sufficient.
@@ -37,14 +38,33 @@ describe("verify — bodyPreserved reflects the actual body hash", () => {
     expect(result.issues.some((i) => /body content changed/i.test(i))).toBe(true);
   });
 
-  // Regression: inject writes `yamlFm + "\n\n" + body`, i.e. a BLANK-LINE separator
-  // after the closing fence. Recovery must strip the full separator so the body hash
-  // round-trips; stripping only one newline left a spurious leading "\n" (bodyPreserved=false).
-  it("bodyPreserved=true across the blank-line separator inject actually writes", () => {
+  // Regression: recovery must round-trip the exact bytes the patcher writes, so the
+  // fixture is derived from the patcher instead of being hand-written. A hand-written
+  // separator assumption is what previously drifted from the implementation.
+  it("bodyPreserved=true for a fresh file the patcher gave frontmatter to", () => {
     const body = "# Project Overview\n\nSome prose.\n";
-    const origHash = contentHash(body); // fresh file has no frontmatter: body == whole file
-    const fp = tmpFile("---\nid: x\n---\n\n" + body); // note the blank line after ---
+    const inspected = inspectFrontMatterDocument(body);
+    const origHash = contentHash(inspected.body); // fresh file: body == whole file
+    const patched = patchManagedFrontMatter(body, { id: "x" });
+    expect(patched.safe).toBe(true);
+    expect(verify(tmpFile(patched.content), origHash, meta).bodyPreserved).toBe(true);
+  });
+
+  // Regression: a file that ALREADY carried frontmatter, with a blank line before the
+  // body. The lossy recovery collapsed that blank line and reported a corrupted body for
+  // a file whose bytes after the fence were never touched — which aborted governed apply
+  // on any repository whose markdown was already annotated.
+  it("bodyPreserved=true when the file already had frontmatter and a blank separator", () => {
+    const original = "---\ntitle: Runbook\nowner: platform\n---\n\n# Runbook\n\nBody.\n";
+    const origHash = contentHash(inspectFrontMatterDocument(original).body);
+    const patched = patchManagedFrontMatter(original, { id: "x" });
+    expect(patched.safe).toBe(true);
+    expect(patched.content).toContain("\n---\n\n# Runbook");
+    expect(verify(tmpFile(patched.content), origHash, meta).bodyPreserved).toBe(true);
+  });
+
+  it("stripExistingFrontMatter still collapses the separator it was written for", () => {
+    const body = "# Project Overview\n\nSome prose.\n";
     expect(stripExistingFrontMatter("---\nid: x\n---\n\n" + body)).toBe(body);
-    expect(verify(fp, origHash, meta).bodyPreserved).toBe(true);
   });
 });

@@ -1,0 +1,16 @@
+[tool.poetry]
+name = "example-service"
+version = "0.2.0"
+description = "Fixture service used to exercise deterministic manifest interpretation"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = ">=0.135.1,<0.137.0"
+uvicorn = {extras = ["standard"], version = ">=0.32,<0.47"}
+
+[tool.poetry.group.dev.dependencies]
+pytest = ">=8.3,<10.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
