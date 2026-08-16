@@ -165,7 +165,7 @@ function sanitizeSegment(value, fallback) {
 
 function assertModeShape(config) {
   const { mode } = config;
-  if ((mode === "check" || mode === "apply") && config.authority.length === 0) {
+  if ((mode === "check" || mode === "apply" || mode === "skills") && config.authority.length === 0) {
     fail(`${mode} requires an explicit authority input; no repository-generic authority is assumed`);
   }
   if (mode === "check") {
@@ -431,7 +431,7 @@ function resolveScriptAndArgs(config, scripts) {
     if (!config.failOnIssues) args.push("--no-fail-on-issues");
     return { script: path.join(scripts, "apply-cli.js"), args };
   }
-  const args = [config.targetRoot, "--out", config.outDir, ...llmArgs(config)];
+  const args = [config.targetRoot, "--authority", config.authority, "--out", config.outDir, ...llmArgs(config)];
   for (const pattern of config.omitPatterns) args.push("--omit", pattern);
   if (config.dryRun) args.push("--dry-run");
   return { script: path.join(scripts, "skills-cli.js"), args };

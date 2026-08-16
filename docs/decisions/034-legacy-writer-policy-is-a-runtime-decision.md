@@ -1,4 +1,4 @@
-# ADR-033: The declared legacy-writer policy decides, and marker text alone never blocks
+# ADR-034: The declared legacy-writer policy decides, and marker text alone never blocks
 
 ## Status
 

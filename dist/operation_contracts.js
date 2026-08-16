@@ -36,7 +36,7 @@ function resolveOperationMode(input) {
     throw new Error(`unsupported operation mode '${requested || "<empty>"}'; expected one of ${exports.OPERATION_MODES.join(", ")}`);
 }
 function operationRequiresAuthority(mode) {
-    return mode === "check" || mode === "apply";
+    return mode === "check" || mode === "apply" || mode === "skills";
 }
 function isSupportedAuthoritySchema(schema) {
     return schema === exports.META_AUTHORITY_SCHEMA;

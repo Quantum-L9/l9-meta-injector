@@ -1,4 +1,4 @@
-# ADR-034: A file that cannot carry its own metadata falls back instead of aborting
+# ADR-035: A file that cannot carry its own metadata falls back instead of aborting
 
 ## Status
 

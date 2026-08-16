@@ -10,7 +10,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "git_blob_sha1": "cf3ccc46199c5b862b346d0bb97289b4cb4e740c"
+      "git_blob_sha1": "6eee518cafce4bd756b1396db0f9187540bd874d"
     },
     {
       "path": "dist/index.d.ts",
@@ -110,7 +110,7 @@
     },
     {
       "path": "docs/decision_log.md",
-      "git_blob_sha1": "4a6edf618905e0cf236dcce8918dfe40751401e8"
+      "git_blob_sha1": "7c8fd1062f110c41c1b9e94ac4047099753e9aeb"
     },
     {
       "path": "docs/legacy/consolidation-v1/artifact_manifest.yaml",
@@ -198,7 +198,7 @@
     },
     {
       "path": "fixtures/package-consumer/types.ts",
-      "git_blob_sha1": "587a0e9d67d939bc38275e68b168bda10b900fd7"
+      "git_blob_sha1": "687178a08604a61bc472f0209b1993d33f46fb84"
     },
     {
       "path": "fixtures/repository-model/expected-bundle/manifest.json",

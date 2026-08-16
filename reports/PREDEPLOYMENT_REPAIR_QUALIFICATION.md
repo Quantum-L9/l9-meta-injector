@@ -16,7 +16,7 @@ real-repository E2E qualification exposed.
 >
 > **Every F-T1 measurement below therefore describes an implementation that is no longer
 > part of this branch, and is retained only as a record of what was measured at the time.**
-> Every other finding in this report — F-1 through F-7, ADR-033 and ADR-034 — is unaffected
+> Every other finding in this report — F-1 through F-7, ADR-034 and ADR-035 — is unaffected
 > and still carried here.
 
 - **Repository:** `Quantum-L9/l9-meta-injector`
@@ -37,10 +37,10 @@ source was modified: `Quantum-L9/L9-Ops-MCP` was adopted on a disposable clone, 
 |---|---|---|
 | F-1 | CLI parser defect | **Closed.** Boolean flags consume no following argv element; `--no-<flag>` is the explicit false form; a value option is never satisfied by a known option token. |
 | F-2 | Output contract mismatch | **Closed.** `docs/output-placement-contract.md` is the single source of truth; the two defaults are documented as intentional and bound by `tests/output_placement_contract.test.ts` and `invocation_boundary.output_placement`. |
-| F-3 | Legacy policy not implemented | **Closed.** `legacy_writers` is passed into the one authority scanner and decides disposition (ADR-033). |
+| F-3 | Legacy policy not implemented | **Closed.** `legacy_writers` is passed into the one authority scanner and decides disposition (ADR-034). |
 | F-4 | Legacy false positive | **Closed.** A write is an L9-metadata write only when tied to the L9 metadata surface. Historical marker text is inert evidence under both policies. |
 | F-5 | Failure observability | **Closed.** `scripts/lib/operation-report.js` renders code, path, message and evidence in a deterministic order, with credential-shaped values redacted. |
-| F-6 | Frontmatter adoption blocker | **Closed.** Unsupported frontmatter routes to the central manifest with a diagnostic and the run continues; opaque single-line scalars are preserved verbatim (ADR-034). |
+| F-6 | Frontmatter adoption blocker | **Closed.** Unsupported frontmatter routes to the central manifest with a diagnostic and the run continues; opaque single-line scalars are preserved verbatim (ADR-035). |
 | F-7 | Platform portability | **Closed on the evidence available.** See *macOS* below. |
 | F-I1 | Conformance evidence drift | **Closed.** Evidence regenerated through `npm run topology:conformance -- --update` against the exact tested consumer revision. |
 | F-T1 | Producer semantic coverage | **Closed.** Separate deterministic interpretation stage (ADR-032). |
