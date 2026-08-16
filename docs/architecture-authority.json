@@ -76,7 +76,8 @@
     "publication": "npm run check:publication",
     "canonical": "npm run validate",
     "ci_workflow": ".github/workflows/ci.yml",
-    "selfpack": "scripts/selfpack.js"
+    "selfpack": "scripts/selfpack.js",
+    "publish_path": "make pr"
   },
   "legacy": {
     "status": "reference_only",

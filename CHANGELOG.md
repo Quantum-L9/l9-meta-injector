@@ -12,6 +12,7 @@
 - Added `fixtures/repository-model/expected-interpreted-bundle`, a second committed golden bundle carrying capabilities and interpretation-derived relationships; `npm run topology:conformance` now proves the bound consumer accepts both bundles.
 - Added `AuthorityNotice` and `CheckResult`/`ApplyResult.authorityNotices` for non-blocking authority findings, including the `migration_only` allowance (ADR-033).
 - Added `docs/output-placement-contract.md` as the single documented source of truth for where every entrypoint writes.
+- Added a `Makefile` with `pr-check` and `pr`. `make pr` is the sanctioned publish path: it runs `npm run lint` and `npm run validate`, refuses a dirty tree, then pushes and opens the pull request, so a push is never separable from the gate it claims to have passed. The Makefile is not part of the packed artifact.
 
 ### Fixed
 

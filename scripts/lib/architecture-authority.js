@@ -21,6 +21,7 @@ const AUTHORITY_CRITICAL_PATHS = [
   "README.md",
   "CHANGELOG.md",
   "package.json",
+  "Makefile",
   "package-lock.json",
   "tsconfig.json",
   "fixtures/package-consumer/package.json",
@@ -195,7 +196,7 @@ function validateAuthorityDocument(authority) {
     const actual = [...authority.persisted_outputs].sort((a, b) => a.localeCompare(b));
     if (JSON.stringify(actual) !== JSON.stringify(EXPECTED_PERSISTED_OUTPUTS)) errors.push("authority.persisted_outputs does not match the live pipeline outputs");
   }
-  exactKeys(authority.validation, ["api","authority","manifest","dist","packed_consumer","publication","canonical","ci_workflow","selfpack"], [], "authority.validation", errors);
+  exactKeys(authority.validation, ["api","authority","manifest","dist","packed_consumer","publication","canonical","ci_workflow","selfpack","publish_path"], [], "authority.validation", errors);
   if (isPlainObject(authority.validation)) for (const key of Object.keys(authority.validation)) requireString(authority.validation[key], `authority.validation.${key}`, errors);
   exactKeys(authority.legacy, ["status","documentation","runtime","schemas"], [], "authority.legacy", errors);
   if (isPlainObject(authority.legacy)) {

@@ -10,7 +10,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "git_blob_sha1": "869979d3a14b726ee4e0713e7f25b61a7bd8e6a0"
+      "git_blob_sha1": "dfd4113e291a11323fd882eb7d22d6ba04d01fb4"
     },
     {
       "path": "dist/index.d.ts",
@@ -110,7 +110,7 @@
     },
     {
       "path": "docs/architecture-authority.json",
-      "git_blob_sha1": "385938bdff2e34defe963af27f9c01e8fe08f62e"
+      "git_blob_sha1": "2945311a8de86b05fa7597776f5ff70e13db28f3"
     },
     {
       "path": "docs/architecture.md",
@@ -237,6 +237,10 @@
       "git_blob_sha1": "f6ef7bd54f596dae22ee5b478c2dec60bbd3c073"
     },
     {
+      "path": "Makefile",
+      "git_blob_sha1": "276123e728eab5474ec251f2feb9c00dce2f7f23"
+    },
+    {
       "path": "package-lock.json",
       "git_blob_sha1": "ec6d05c22d1cc1a4a2a52def8c08a67c9f00c0dc"
     },
@@ -270,7 +274,7 @@
     },
     {
       "path": "scripts/lib/architecture-authority.js",
-      "git_blob_sha1": "68f568f5202a990efb64308a24a2dce7118f2994"
+      "git_blob_sha1": "d3aee1d2c23b7d30139c23e2a28245f496a47ce9"
     },
     {
       "path": "scripts/lib/dist-integrity.js",
