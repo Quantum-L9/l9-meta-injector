@@ -102,11 +102,11 @@
     },
     {
       "path": "dist/repository_model.js",
-      "git_blob_sha1": "9141a1529c4cfa17cce9a94b638333cd16c4462d"
+      "git_blob_sha1": "d336a969eaf62ad27d1bd2e48773c21f6d073507"
     },
     {
       "path": "dist/repository_model.js.map",
-      "git_blob_sha1": "1cde2ba356fb70091ef3c0ee575a6f42a717b291"
+      "git_blob_sha1": "825429fefa432fcafd13bdf8fa5c8f76f635469e"
     },
     {
       "path": "docs/architecture-authority.json",
@@ -186,7 +186,7 @@
     },
     {
       "path": "docs/topology-conformance.json",
-      "git_blob_sha1": "b7a2f05373ce3a2e9f4af9362dcf75e427878dde"
+      "git_blob_sha1": "7c7d5644e6d8be2f4062c679da75cf961557cfce"
     },
     {
       "path": "docs/traceability-map.json",
@@ -334,7 +334,7 @@
     },
     {
       "path": "src/repository_model.ts",
-      "git_blob_sha1": "bee89d310824e961100a81937e438fe885de0f5b"
+      "git_blob_sha1": "345f6387eb82f4b27c173d2ba33ceac1cad82c7f"
     },
     {
       "path": "src/schema.ts",

@@ -412,6 +412,20 @@ function applyInterpretation(input) {
                 confidence: interpretationConfidence(fact),
             });
         }
+        if (fact.kind === "declared_action" && capabilityByName.has(fact.value)) {
+            // The same action name declared by two specs is a repository-level ambiguity. One
+            // capability record is kept; the second declaration is reported rather than dropped.
+            out.diagnostics.push({
+                code: "duplicate-declared-action",
+                severity: "warning",
+                message: `action '${fact.value}' is declared more than once; ${fact.sourceRef.sourcePath} did not create a second capability record`,
+                stage: OBSERVATION_STAGE,
+                category: "observation",
+                subject_id: repositoryId,
+                evidence_refs: [record.evidence_id],
+                details: { source_path: fact.sourceRef.sourcePath, action: fact.value },
+            });
+        }
         if (fact.kind === "declared_action" && capabilityId !== undefined && !capabilityByName.has(fact.value)) {
             const capability = {
                 capability_id: capabilityId,

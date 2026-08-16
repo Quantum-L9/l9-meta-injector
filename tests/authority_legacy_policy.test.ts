@@ -186,6 +186,17 @@ describe("the canonical writer is never a competitor", () => {
       expect(inspection.authorityResolved).toBe(true);
     }
   });
+
+  test("redirecting the canonical writer's own output is not a competing write", () => {
+    // `l9-meta-injector` contains an L9 metadata token by construction, and a shell
+    // redirect is a write signal. Together they must not make this package a competitor.
+    const root = governedRepo("forbidden");
+    write(root, "scripts/sync-metadata.sh", "#!/bin/sh\nnpx l9-meta-injector apply . > build/meta.log\n");
+    const inspection = inspect(root);
+    expect(inspection.evidence.some((item) => item.kind === "writer_script")).toBe(false);
+    expect(inspection.conflicts).toEqual([]);
+    expect(inspection.authorityResolved).toBe(true);
+  });
 });
 
 describe("policy disposition is a single explicit table", () => {

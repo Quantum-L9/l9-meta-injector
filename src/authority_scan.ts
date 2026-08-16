@@ -355,7 +355,12 @@ function findMetadataWriteIndex(relative: string, content: string): number | nul
   const indexes = writeSignalIndexes(content);
   if (indexes.length === 0) return null;
   for (const index of indexes) {
-    if (L9_METADATA_TOKEN.test(lineAt(content, index))) return index;
+    const line = lineAt(content, index);
+    // `l9-meta-injector` itself contains an L9 metadata token. A line that invokes the
+    // canonical writer and redirects its output is this package doing its job, not a
+    // competitor, and must never be reported as one.
+    if (CANONICAL_INVOCATION.test(line)) continue;
+    if (L9_METADATA_TOKEN.test(line)) return index;
   }
   const basename = path.posix.basename(relative);
   if (SUSPICIOUS_NAME.test(basename) && L9_METADATA_FILENAME.test(basename)) return indexes[0];

@@ -1,7 +1,7 @@
 {
   "schema": "l9.topology-conformance/v1",
   "repository": "Quantum-L9/l9-meta-injector",
-  "statement": "The golden Repository Model Packet bundle was accepted by the bound l9-constellation-topology consumer without a translation shim.",
+  "statement": "Every committed Repository Model Packet bundle — inventory-only and structurally interpreted — was accepted by the bound l9-constellation-topology consumer without a translation shim.",
   "consumer": {
     "repository": "Quantum-L9/l9-constellation-topology",
     "revision": "06ad4d9d30114ec6b26d8644dbab821b98fddaaf",
