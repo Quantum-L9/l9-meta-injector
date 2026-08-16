@@ -103,6 +103,17 @@ const BASENAME_TYPES = {
     "copying": { type: "documentation", confidence: 0.75, evidence: "copying/license file" },
     "manifest.sha256": { type: "config", confidence: 0.85, evidence: "checksum manifest" },
 };
+/**
+ * Well-known filenames whose meaning is fixed by the name rather than the extension.
+ * Consulted before the extension defaults, so `requirements.txt` is a dependency manifest
+ * rather than a `.txt` document and `Dockerfile` is a build definition rather than an unknown.
+ */
+const BASENAME_PATTERNS = [
+    { pattern: /^dockerfile([.\-_]|$)/, type: "config", confidence: 0.85, evidence: "container build definition" },
+    { pattern: /^makefile([.\-_]|$)/, type: "config", confidence: 0.85, evidence: "make build definition" },
+    { pattern: /^requirements([.\-_][a-z0-9]+)*\.txt$/, type: "config", confidence: 0.85, evidence: "dependency manifest" },
+    { pattern: /^\.env([.\-_]|$)/, type: "config", confidence: 0.85, evidence: "environment variable template" },
+];
 const MIME = {
     ".md": "text/markdown", ".txt": "text/plain", ".pdf": "application/pdf",
     ".json": "application/json", ".yaml": "application/yaml", ".yml": "application/yaml",
@@ -132,6 +143,14 @@ function classifyInventory(relPath, fileName, ext, isDir) {
         return { type: "code", confidence: 0.9, evidence: `code extension ${e}`, unknowns: [] };
     if (/(^|\/|[-_])spec([-_.]|s?\/)/.test(norm) && (e === ".md" || e === ".markdown" || e === ".yaml" || e === ".yml"))
         return { type: "spec", confidence: 0.7, evidence: "spec naming", unknowns: [] };
+    // Filename-first: an exact well-known name outranks whatever its extension would default to.
+    const baseHit = BASENAME_TYPES[fn];
+    if (baseHit)
+        return { type: baseHit.type, confidence: baseHit.confidence, evidence: baseHit.evidence, unknowns: [] };
+    for (const rule of BASENAME_PATTERNS) {
+        if (rule.pattern.test(fn))
+            return { type: rule.type, confidence: rule.confidence, evidence: rule.evidence, unknowns: [] };
+    }
     if (CONFIG_EXTS.has(e))
         return { type: "config", confidence: 0.8, evidence: `config extension ${e}`, unknowns: [] };
     if (e === ".md" || e === ".markdown" || e === ".mdx") {
@@ -141,9 +160,6 @@ function classifyInventory(relPath, fileName, ext, isDir) {
     }
     if (DOC_EXTS.has(e))
         return { type: "documentation", confidence: 0.7, evidence: `document extension ${e}`, unknowns: [] };
-    const baseHit = BASENAME_TYPES[fn];
-    if (baseHit)
-        return { type: baseHit.type, confidence: baseHit.confidence, evidence: baseHit.evidence, unknowns: [] };
     // LICENSE.* (e.g. LICENSE-MIT, LICENSE.Apache-2.0)
     if (/^license([.\-_]|$)/i.test(fn))
         return { type: "documentation", confidence: 0.8, evidence: "license file", unknowns: [] };

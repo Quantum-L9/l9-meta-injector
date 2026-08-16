@@ -4,6 +4,21 @@ Requalification of the producer against real repositories and the actual
 `l9-constellation-topology` consumer, after repairing the defects the earlier
 real-repository E2E qualification exposed.
 
+> **Amendment (conflict resolution against a moved `main`).** This report was written
+> against base `051bc9c`. Before it could merge, `main` landed its own interpretation seam
+> (ADR-032, `032-deterministic-repository-interpretation-seam.md`, PR #59). Rather than ship
+> a second interpretation engine — which `CLAUDE.md` forbids — this branch's
+> `src/repository_interpretation.ts`, its tests and fixtures, and its ADR-032 were removed
+> during the merge, and `main`'s interpretation was kept. `main`'s pass is the broader of
+> the two: it additionally extracts README status and replacement, the `AGENTS.md` canonical
+> contract declarations, and the packet-envelope invariants, none of which this branch's
+> three extractors covered.
+>
+> **Every F-T1 measurement below therefore describes an implementation that is no longer
+> part of this branch, and is retained only as a record of what was measured at the time.**
+> Every other finding in this report — F-1 through F-7, ADR-033 and ADR-034 — is unaffected
+> and still carried here.
+
 - **Repository:** `Quantum-L9/l9-meta-injector`
 - **Bound base revision:** `051bc9c675d713d1a3316e86e4ee8ba5f7ec4ab1` (`main`)
 - **Branch:** `claude/l9-meta-injector-repair-ysbw8h`

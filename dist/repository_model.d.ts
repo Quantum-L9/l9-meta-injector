@@ -1,11 +1,20 @@
 import { InventoryResult } from "./inventory";
-import { type InterpretationResult } from "./repository_interpretation";
+import { InterpretationResult } from "./interpretation";
 export declare const REPOSITORY_MODEL_PACKET_TYPE = "l9.repository-model";
-export declare const REPOSITORY_MODEL_PACKET_VERSION = "1.0.0";
+export declare const REPOSITORY_MODEL_PACKET_VERSION = "1.1.0";
 export declare const REPOSITORY_MODEL_PRODUCER_NAME = "l9-meta-injector.repository-model";
 export type CanonicalValue = string | number | boolean | null | CanonicalValue[] | {
     [key: string]: CanonicalValue;
 };
+/** Code-point ordering. Never locale-aware: ordering must not vary by environment. */
+export declare function compareCodePoints(a: string, b: string): number;
+/** Canonical JSON text for any packet-shaped value. */
+export declare function canonicalJson(value: unknown): string;
+/** Content identity of exact text, used by interpretation evidence. */
+export declare function sha256TextPrefixed(value: string): string;
+/** Semantic identity: volatile fields removed, then canonical bytes hashed. */
+export declare function semanticHash(value: unknown): string;
+export declare function stableId(prefix: string, value: unknown): string;
 export type RepositoryModelConfidenceLevel = "low" | "medium" | "high";
 export type RepositoryModelEvidenceStrength = "none" | "weak" | "corroborated" | "direct";
 export type RepositoryModelDerivationMethod = "declared" | "deterministic" | "cross-record" | "heuristic" | "model-assisted" | "unknown";
@@ -110,6 +119,35 @@ export interface RepositoryModelDiagnostic {
     evidence_refs?: string[];
     details?: Record<string, CanonicalValue>;
 }
+/**
+ * A semantic claim the repository makes about itself, carried across the packet
+ * boundary as first-class typed data.
+ *
+ * Assertions are deliberately not folded into `diagnostics`: a diagnostic
+ * reports something about the observation run, while an assertion is repository
+ * truth a consumer reconciles. Encoding one as the other to avoid extending the
+ * contract would make semantic content unreadable without string parsing.
+ *
+ * Every field is required. An assertion that cannot cite an exact span in a
+ * hashed source file is not emitted at all.
+ */
+export interface RepositoryModelAssertionRecord {
+    assertion_id: string;
+    subject_id: string;
+    predicate: string;
+    object: string;
+    source_path: string;
+    source_range: {
+        start_line: number;
+        end_line: number;
+    };
+    evidence_excerpt: string;
+    source_content_hash: string;
+    extractor_id: string;
+    evidence_class: "declared" | "observed";
+    authority: RepositoryModelAuthority;
+    confidence: RepositoryModelConfidenceLevel;
+}
 export interface RepositoryModelPayload {
     repositories: RepositoryModelRepositoryRecord[];
     artifacts: RepositoryModelArtifactRecord[];
@@ -117,6 +155,15 @@ export interface RepositoryModelPayload {
     relationships: RepositoryModelEdgeRecord[];
     evidence: RepositoryModelEvidenceRecord[];
     diagnostics: RepositoryModelDiagnostic[];
+    /** Semantic claims from the interpretation pass; empty when it did not run. */
+    assertions: RepositoryModelAssertionRecord[];
+}
+/** Identity of the interpretation profile, present only when it ran. */
+export interface RepositoryModelInterpretationProfile {
+    profile_id: string;
+    profile_version: string;
+    profile_hash: string;
+    extractor_versions: Record<string, string>;
 }
 export interface RepositoryModelPacket {
     packet_type: string;
@@ -147,6 +194,8 @@ export interface RepositoryModelPacket {
     artifact_hash?: string;
     payload_refs: Record<string, string>;
     payload: RepositoryModelPayload;
+    /** Present only when the interpretation pass ran, so it binds identity only then. */
+    interpretation_profile?: RepositoryModelInterpretationProfile;
 }
 export interface RepositoryModelValidationCheck {
     check_id: string;
@@ -183,13 +232,6 @@ export interface RepositoryModelValidationResult {
 export interface RepositoryModelBuildInput {
     /** Inventory observation of the repository. Produced by `inventoryTree`. */
     inventory: InventoryResult;
-    /**
-     * Deterministic structured interpretation of the same observation. Optional: without it
-     * the packet carries inventory evidence only, exactly as before. Its profile identity
-     * participates in the packet's profile identity, so changing extraction policy changes
-     * the packet's semantic hash even when the repository bytes are unchanged.
-     */
-    interpretations?: InterpretationResult;
     /** Canonical repository name, e.g. `l9-meta-injector`. */
     repositoryName: string;
     /** Explicit source revision, e.g. `git:<40-hex>`. Never inferred. */
@@ -198,6 +240,12 @@ export interface RepositoryModelBuildInput {
     producerVersion: string;
     /** Emission timestamp; excluded from semantic identity. */
     generatedAt?: string;
+    /**
+     * Result of the deterministic interpretation pass. Optional: a packet built
+     * without it carries an empty assertion domain and no interpretation profile,
+     * which is exactly how packets behaved before the domain existed.
+     */
+    interpretation?: InterpretationResult;
 }
 export interface RepositoryModelObservationInput {
     /** Repository root to observe. */
@@ -206,12 +254,17 @@ export interface RepositoryModelObservationInput {
     sourceRevision: string;
     producerVersion: string;
     generatedAt?: string;
+    /**
+     * Run the deterministic interpretation pass and carry its assertions into the
+     * packet. Defaults to true: observation that reads a repository and discards
+     * what it declares is the behavior this seam exists to correct. Set false to
+     * emit an inventory-only packet.
+     */
+    interpret?: boolean;
     ignore?: string[];
     omitPatterns?: string[];
     omitFile?: string;
     hashMaxBytes?: number;
-    /** Set false to emit an inventory-only packet with no structured interpretation. */
-    interpret?: boolean;
 }
 export interface RepositoryModelEmitResult {
     bundleRoot: string;

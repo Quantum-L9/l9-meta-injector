@@ -34,6 +34,11 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.REPOSITORY_MODEL_PRODUCER_NAME = exports.REPOSITORY_MODEL_PACKET_VERSION = exports.REPOSITORY_MODEL_PACKET_TYPE = void 0;
+exports.compareCodePoints = compareCodePoints;
+exports.canonicalJson = canonicalJson;
+exports.sha256TextPrefixed = sha256TextPrefixed;
+exports.semanticHash = semanticHash;
+exports.stableId = stableId;
 exports.buildRepositoryModelPacket = buildRepositoryModelPacket;
 exports.validateRepositoryModelPacket = validateRepositoryModelPacket;
 exports.emitRepositoryModelBundle = emitRepositoryModelBundle;
@@ -57,10 +62,11 @@ const os = __importStar(require("node:os"));
 const path = __importStar(require("node:path"));
 const crypto = __importStar(require("node:crypto"));
 const inventory_1 = require("./inventory");
-const repository_interpretation_1 = require("./repository_interpretation");
+const interpretation_1 = require("./interpretation");
+const extractors_1 = require("./extractors");
 const schema_1 = require("./schema");
 exports.REPOSITORY_MODEL_PACKET_TYPE = "l9.repository-model";
-exports.REPOSITORY_MODEL_PACKET_VERSION = "1.0.0";
+exports.REPOSITORY_MODEL_PACKET_VERSION = "1.1.0";
 exports.REPOSITORY_MODEL_PRODUCER_NAME = "l9-meta-injector.repository-model";
 /** Profile identity for the observation policy this producer applies. */
 const PROFILE_ID = "meta-injector-inventory-observation";
@@ -159,6 +165,10 @@ function stripVolatile(value) {
 }
 function sha256Prefixed(content) {
     return SHA_PREFIX + crypto.createHash("sha256").update(content).digest("hex");
+}
+/** Content identity of exact text, used by interpretation evidence. */
+function sha256TextPrefixed(value) {
+    return sha256Prefixed(Buffer.from(value, "utf8"));
 }
 /** Content identity of exact bytes. */
 function artifactHash(content) {
@@ -265,9 +275,14 @@ const SCHEMA_HASH = semanticHash({
         "packet_type", "packet_version", "packet_id", "subject", "source_snapshot", "validation",
         "producer", "profile", "schema_hash", "semantic_hash", "artifact_hash", "payload_refs", "payload",
     ],
-    payload_domains: ["repositories", "artifacts", "capabilities", "relationships", "evidence", "diagnostics"],
+    payload_domains: [
+        "repositories", "artifacts", "capabilities", "relationships", "evidence", "diagnostics",
+        // 1.1.0 adds semantic assertions as a first-class domain.
+        "assertions",
+    ],
 });
-const OBSERVATION_PROFILE = {
+/** Profile hash — binds the observation policy that produced the packet. */
+const PROFILE_HASH = semanticHash({
     id: PROFILE_ID,
     version: PROFILE_VERSION,
     evidence_source: "l9-meta-injector.inventory",
@@ -277,248 +292,7 @@ const OBSERVATION_PROFILE = {
     capabilities_require_evidence: true,
     relationships_require_evidence: true,
     absolute_paths_in_identity: false,
-};
-/**
- * Profile hash — binds the policy that produced the packet.
- *
- * Both stages participate: the observation policy, and the interpretation policy when one
- * was applied. Changing how facts are extracted must change the packet's identity even if
- * not one repository byte moved, so a consumer can never confuse two different readings of
- * the same source for the same packet.
- */
-function profileHashFor(interpretations) {
-    return semanticHash({
-        observation: OBSERVATION_PROFILE,
-        interpretation: interpretations === undefined ? null : {
-            id: interpretations.profile.id,
-            version: interpretations.profile.version,
-            hash: interpretations.profile.hash,
-            extractor_versions: interpretations.profile.extractorVersions,
-        },
-    });
-}
-// ───────────────────────────── interpretation mapping ─────────────────────────────
-/**
- * Confidence per interpretation fact kind.
- *
- * `declared` facts come from the repository's own manifest or spec, so their authority is
- * `source`. Observed route decorators are deliberately capped: the decorator is real, but
- * whether the route is implemented, mounted, or reachable is not established here, so
- * completeness stays `partial` and the level never reaches `high`.
- */
-function interpretationConfidence(fact) {
-    if (fact.evidenceClass === "declared") {
-        return confidence("high", "direct", "declared", "source", "sufficient");
-    }
-    return confidence("medium", "direct", "deterministic", "validated-machine", "partial");
-}
-/** Which record a fact is evidence *about*, and which field of it. */
-const EVIDENCE_FIELD_BY_KIND = Object.freeze({
-    package_manager: "package_managers",
-    package_identity: "package_identity",
-    runtime_constraint: "runtime_constraint",
-    declared_dependency: "dependencies",
-    service_identity: "service_identity",
-    declared_action: "name",
-    declared_route: "entrypoints",
-    implementation_marker: "implementation_marker",
 });
-/**
- * Facts the v1 consumer contract has no dedicated field for.
- *
- * They are preserved as first-class evidence and reported here, rather than being dropped
- * or smuggled into an unrelated field. Extending the wire schema is out of scope for a
- * repository-only repair.
- */
-const FIELDS_WITHOUT_CONTRACT_SLOT = new Set(["package_identity", "runtime_constraint", "service_identity", "implementation_marker"]);
-function emptyContribution() {
-    return {
-        evidence: [], capabilities: [], relationships: [], diagnostics: [],
-        packageManagers: [], entrypoints: [], dependenciesByArtifact: new Map(),
-        unresolvedDependencies: [], repositoryEvidenceRefs: [], interpretedPackageManagerPaths: new Set(),
-    };
-}
-/** Translate deterministic interpretation facts into the existing v1 payload domains. */
-function applyInterpretation(input) {
-    const out = emptyContribution();
-    const { repositoryId, producerVersion, generatedAt } = input;
-    const capabilityByName = new Map();
-    const packageManagers = new Set();
-    const entrypoints = new Set();
-    const unresolved = new Set();
-    const missingContractSlot = new Set();
-    for (const fact of input.interpretations.facts) {
-        const artifactId = input.artifactIdByPath.get(fact.sourceRef.sourcePath);
-        if (artifactId === undefined) {
-            // The fact's source is not an emitted artifact (omitted, or a directory). A fact
-            // with no resolvable subject is reported, never attached to a plausible neighbour.
-            out.diagnostics.push({
-                code: "interpretation-subject-unresolved",
-                severity: "warning",
-                message: `an interpretation fact references ${fact.sourceRef.sourcePath}, which is not an emitted artifact; the fact is not attached to this packet's graph`,
-                stage: OBSERVATION_STAGE,
-                category: "coverage",
-                subject_id: repositoryId,
-                details: { source_path: fact.sourceRef.sourcePath, extractor_id: fact.extractorId, value: fact.value },
-            });
-            continue;
-        }
-        const capabilityId = fact.kind === "declared_action"
-            ? stableId("capability", { repository_id: repositoryId, name: fact.value })
-            : undefined;
-        const subjectId = fact.kind === "declared_action" ? capabilityId
-            : fact.kind === "declared_dependency" || fact.kind === "implementation_marker" ? artifactId
-                : repositoryId;
-        const record = makeEvidence({
-            subjectId,
-            field: EVIDENCE_FIELD_BY_KIND[fact.kind],
-            evidenceClass: fact.evidenceClass,
-            sourceRef: {
-                source_path: fact.sourceRef.sourcePath,
-                source_revision: input.sourceRevision,
-                ...(fact.sourceRef.lineNumber !== undefined ? { line_number: fact.sourceRef.lineNumber } : {}),
-                ...(fact.sourceRef.contentHash !== undefined ? { content_hash: fact.sourceRef.contentHash } : {}),
-            },
-            value: { value: fact.value, extractor_id: fact.extractorId, extractor_version: fact.extractorVersion, ...fact.detail },
-            confidence: interpretationConfidence(fact),
-        }, producerVersion, generatedAt);
-        out.evidence.push(record);
-        if (subjectId === repositoryId)
-            out.repositoryEvidenceRefs.push(record.evidence_id);
-        if (FIELDS_WITHOUT_CONTRACT_SLOT.has(fact.kind))
-            missingContractSlot.add(fact.kind);
-        if (fact.kind === "package_manager") {
-            packageManagers.add(fact.value);
-            out.interpretedPackageManagerPaths.add(fact.sourceRef.sourcePath);
-        }
-        if (fact.kind === "declared_dependency") {
-            unresolved.add(fact.value);
-            const list = out.dependenciesByArtifact.get(artifactId) ?? [];
-            if (!list.includes(fact.value))
-                list.push(fact.value);
-            out.dependenciesByArtifact.set(artifactId, list);
-        }
-        if (fact.kind === "declared_route") {
-            entrypoints.add(fact.value);
-            const edgeIdentity = { source_id: repositoryId, target_id: artifactId, edge_type: "ROUTES_TO", route: fact.value };
-            out.relationships.push({
-                edge_id: stableId("edge", edgeIdentity),
-                source_id: repositoryId,
-                target_id: artifactId,
-                edge_type: "ROUTES_TO",
-                direction: "outbound",
-                properties: { route: fact.value, ...fact.detail },
-                evidence_refs: [record.evidence_id],
-                confidence: interpretationConfidence(fact),
-            });
-        }
-        if (fact.kind === "declared_action" && capabilityByName.has(fact.value)) {
-            // The same action name declared by two specs is a repository-level ambiguity. One
-            // capability record is kept; the second declaration is reported rather than dropped.
-            out.diagnostics.push({
-                code: "duplicate-declared-action",
-                severity: "warning",
-                message: `action '${fact.value}' is declared more than once; ${fact.sourceRef.sourcePath} did not create a second capability record`,
-                stage: OBSERVATION_STAGE,
-                category: "observation",
-                subject_id: repositoryId,
-                evidence_refs: [record.evidence_id],
-                details: { source_path: fact.sourceRef.sourcePath, action: fact.value },
-            });
-        }
-        if (fact.kind === "declared_action" && capabilityId !== undefined && !capabilityByName.has(fact.value)) {
-            const capability = {
-                capability_id: capabilityId,
-                name: fact.value,
-                description: fact.detail.description ?? schema_1.UNKNOWN,
-                // Which artifact implements, exposes, validates, or governs this action is not
-                // established by a declaration. Absent stays absent.
-                implemented_by: [],
-                exposed_by: [],
-                validated_by: [],
-                governed_by: [],
-                evidence_refs: [record.evidence_id],
-                confidence: confidence("high", "direct", "declared", "source", "partial"),
-            };
-            capabilityByName.set(fact.value, capability);
-            out.capabilities.push(capability);
-            const edgeIdentity = { source_id: capabilityId, target_id: artifactId, edge_type: "DOCUMENTED_BY" };
-            out.relationships.push({
-                edge_id: stableId("edge", edgeIdentity),
-                source_id: capabilityId,
-                target_id: artifactId,
-                edge_type: "DOCUMENTED_BY",
-                direction: "outbound",
-                properties: {},
-                evidence_refs: [record.evidence_id],
-                confidence: confidence("high", "direct", "declared", "source", "sufficient"),
-            });
-        }
-        if (fact.kind === "implementation_marker") {
-            out.diagnostics.push({
-                code: "implementation-marker-observed",
-                severity: "info",
-                message: `${fact.sourceRef.sourcePath} contains a ${fact.value} marker inside the handler for ${fact.detail.route ?? schema_1.UNKNOWN}; the route decorator is observed, its implementation status is not established`,
-                stage: OBSERVATION_STAGE,
-                category: "observation",
-                subject_id: artifactId,
-                evidence_refs: [record.evidence_id],
-                details: { source_path: fact.sourceRef.sourcePath, marker: fact.value, ...fact.detail },
-            });
-        }
-    }
-    for (const diagnostic of input.interpretations.diagnostics) {
-        out.diagnostics.push({
-            code: `interpretation-${diagnostic.code}`,
-            severity: diagnostic.severity,
-            message: diagnostic.message,
-            stage: OBSERVATION_STAGE,
-            category: "coverage",
-            subject_id: repositoryId,
-            details: {
-                ...(diagnostic.sourcePath !== undefined ? { source_path: diagnostic.sourcePath } : {}),
-                ...(diagnostic.extractorId !== undefined ? { extractor_id: diagnostic.extractorId } : {}),
-            },
-        });
-    }
-    for (const kind of sortStrings(missingContractSlot)) {
-        out.diagnostics.push({
-            code: "contract-field-unavailable",
-            severity: "info",
-            message: `l9.repository-model ${exports.REPOSITORY_MODEL_PACKET_VERSION} has no dedicated field for '${kind}'; it is preserved as evidence rather than mapped into an unrelated field`,
-            stage: OBSERVATION_STAGE,
-            category: "coverage",
-            subject_id: repositoryId,
-            details: { field: kind },
-        });
-    }
-    if (out.capabilities.length > 0) {
-        out.diagnostics.push({
-            code: "unsupported-by-evidence",
-            severity: "info",
-            message: "declared capabilities carry no implementation, exposure, validation, or governance links; a declaration does not establish which artifact realizes it.",
-            stage: OBSERVATION_STAGE,
-            category: "coverage",
-            subject_id: repositoryId,
-            details: { field: "capability_links" },
-        });
-    }
-    if (entrypoints.size > 0) {
-        out.diagnostics.push({
-            code: "unsupported-by-evidence",
-            severity: "info",
-            message: "observed route decorators establish that a route is declared at a path and line; they do not establish that the handler is implemented, mounted, reachable, or deployed.",
-            stage: OBSERVATION_STAGE,
-            category: "coverage",
-            subject_id: repositoryId,
-            details: { field: "entrypoints" },
-        });
-    }
-    out.packageManagers = sortStrings(packageManagers);
-    out.entrypoints = sortStrings(entrypoints);
-    out.unresolvedDependencies = sortStrings(unresolved);
-    return out;
-}
 function makeEvidence(draft, producerVersion, generatedAt) {
     // Identity mirrors the consumer's make_evidence_record: confidence and created_at
     // are deliberately excluded so an identical observation keeps an identical id.
@@ -578,8 +352,6 @@ function buildRepositoryModelPacket(input) {
     const artifacts = [];
     const relationships = [];
     const diagnostics = [];
-    const artifactIdByPath = new Map();
-    const artifactById = new Map();
     const languages = new Map(); // language -> first evidencing path
     const packageManagers = new Map();
     const ambiguousManifests = new Map(); // manifest filename -> first evidencing path
@@ -627,8 +399,6 @@ function buildRepositoryModelPacket(input) {
         if (family !== undefined)
             artifact.family = family;
         artifacts.push(artifact);
-        artifactIdByPath.set(relativePath, artifactId);
-        artifactById.set(artifactId, artifact);
         // CONTAINS is the one relationship the inventory directly observed: this repository
         // contains this file. Nothing beyond that is asserted.
         const edgeIdentity = { source_id: repositoryId, target_id: artifactId, edge_type: "CONTAINS" };
@@ -672,27 +442,8 @@ function buildRepositoryModelPacket(input) {
         if (GOVERNANCE_FILENAMES.has(record.file_name))
             governanceRefs.push(relativePath);
     }
-    // Structured interpretation of the same observation, mapped into the existing v1 domains.
-    const interpreted = input.interpretations === undefined
-        ? emptyContribution()
-        : applyInterpretation({
-            interpretations: input.interpretations,
-            repositoryId,
-            sourceRevision: input.sourceRevision,
-            producerVersion,
-            generatedAt,
-            artifactIdByPath,
-        });
-    for (const [artifactId, dependencies] of interpreted.dependenciesByArtifact) {
-        const artifact = artifactById.get(artifactId);
-        if (artifact)
-            artifact.dependencies = sortStrings(dependencies);
-    }
-    evidence.push(...interpreted.evidence);
-    relationships.push(...interpreted.relationships);
-    diagnostics.push(...interpreted.diagnostics);
     // Repository-level facts derived from observed paths, each with its own evidence.
-    const repositoryEvidenceRefs = [...interpreted.repositoryEvidenceRefs];
+    const repositoryEvidenceRefs = [];
     const addDerived = (field, value, sourcePath) => {
         const record = makeEvidence({
             subjectId: repositoryId,
@@ -726,38 +477,27 @@ function buildRepositoryModelPacket(input) {
         primary_role: "unknown",
         secondary_roles: [],
         languages: sortStrings(languages.keys()),
-        package_managers: sortStrings([...packageManagers.keys(), ...interpreted.packageManagers]),
-        entrypoints: interpreted.entrypoints,
+        package_managers: sortStrings(packageManagers.keys()),
+        entrypoints: [],
         workflows: sortStrings(workflows),
         adr_refs: sortStrings(adrRefs),
         governance_refs: sortStrings(governanceRefs),
-        capability_ids: sortStrings(interpreted.capabilities.map((item) => item.capability_id)),
+        capability_ids: [],
         artifact_ids: artifactIds,
         upstream_repository_ids: [],
         downstream_repository_ids: [],
-        // Declared manifest dependencies are external distributions. They are real, and they
-        // are deliberately not resolved to repositories: cross-repository resolution is the
-        // consumer's job, not this producer's guess.
-        unresolved_dependencies: interpreted.unresolvedDependencies,
+        unresolved_dependencies: [],
         owner_ids: [],
         evidence_refs: repositoryEvidenceRefs,
         confidence: REPOSITORY_CONFIDENCE,
     };
-    // Report — rather than invent — everything the observation could not establish. Each
-    // entry is conditional: once interpretation supplies real evidence for a field, claiming
-    // it is unavailable would itself be a false statement.
+    // Report — rather than invent — everything the inventory could not establish.
     const unsupported = [
-        ["primary_role", "Repository role is not derivable from the available evidence; primary_role stays 'unknown'."],
-        ...(interpreted.capabilities.length === 0
-            ? [["capabilities", "No capability evidence is available to this producer; capabilities is empty by policy."]]
-            : []),
-        ...(interpreted.entrypoints.length === 0
-            ? [["entrypoints", "No declared entrypoint was observed in a surface this producer interprets."]]
-            : []),
+        ["primary_role", "Repository role is not derivable from inventory evidence; primary_role stays 'unknown'."],
+        ["capabilities", "No capability evidence is available to this producer; capabilities is empty by policy."],
+        ["entrypoints", "Entrypoints require package-manifest interpretation beyond inventory observation."],
         ["owner_ids", "Ownership is not observable from inventory evidence."],
-        ...(interpreted.unresolvedDependencies.length === 0
-            ? [["dependencies", "No declared manifest dependency was observed in a surface this producer interprets."]]
-            : []),
+        ["dependencies", "Dependency edges require manifest interpretation beyond inventory observation."],
     ];
     for (const [field, message] of unsupported) {
         diagnostics.push({
@@ -770,12 +510,9 @@ function buildRepositoryModelPacket(input) {
             details: { field },
         });
     }
-    // A shared manifest filename is observable; the manager behind it is not — unless the
-    // interpretation stage read the file body and established it from a declaration.
+    // A shared manifest filename is observable; the manager behind it is not.
     for (const fileName of sortStrings(ambiguousManifests.keys())) {
         const sourcePath = ambiguousManifests.get(fileName);
-        if (interpreted.interpretedPackageManagerPaths.has(sourcePath))
-            continue;
         diagnostics.push({
             code: "unsupported-by-evidence",
             severity: "info",
@@ -833,12 +570,21 @@ function buildRepositoryModelPacket(input) {
     const payload = {
         repositories: [repository],
         artifacts,
-        capabilities: [...interpreted.capabilities].sort((a, b) => compareCodePoints(a.capability_id, b.capability_id)),
+        capabilities: [],
         relationships: relationships.sort((a, b) => compareCodePoints(a.edge_id, b.edge_id)),
         evidence: evidence.sort((a, b) => compareCodePoints(a.evidence_id, b.evidence_id)),
         diagnostics: diagnostics.sort((a, b) => compareCodePoints(a.code, b.code)
             || compareCodePoints(a.subject_id ?? "", b.subject_id ?? "")
             || compareCodePoints(a.message, b.message)),
+        // Already ordered by the interpretation pass; re-sorted here so the packet's
+        // ordering guarantee does not depend on the producer of the input.
+        assertions: [...(input.interpretation?.assertions ?? [])]
+            .map((assertion) => ({ ...assertion, subject_id: repositoryId }))
+            .sort((a, b) => compareCodePoints(a.source_path, b.source_path)
+            || a.source_range.start_line - b.source_range.start_line
+            || compareCodePoints(a.predicate, b.predicate)
+            || compareCodePoints(a.object, b.object)
+            || compareCodePoints(a.extractor_id, b.extractor_id)),
     };
     const shell = {
         packet_type: exports.REPOSITORY_MODEL_PACKET_TYPE,
@@ -846,10 +592,22 @@ function buildRepositoryModelPacket(input) {
         subject: { repository_id: repositoryId },
         source_snapshot: { revision: input.sourceRevision, semantic_hash: snapshotHash },
         producer: { name: exports.REPOSITORY_MODEL_PRODUCER_NAME, version: producerVersion },
-        profile: { id: PROFILE_ID, version: PROFILE_VERSION, hash: profileHashFor(input.interpretations) },
+        profile: { id: PROFILE_ID, version: PROFILE_VERSION, hash: PROFILE_HASH },
         schema_hash: SCHEMA_HASH,
         payload_refs: {},
         payload,
+        // Bound into semantic identity only when interpretation ran, so a packet
+        // built without it keeps the identity it had before the profile existed.
+        ...(input.interpretation
+            ? {
+                interpretation_profile: {
+                    profile_id: input.interpretation.profile.profile_id,
+                    profile_version: input.interpretation.profile.profile_version,
+                    profile_hash: input.interpretation.profile.profile_hash,
+                    extractor_versions: input.interpretation.profile.extractor_versions,
+                },
+            }
+            : {}),
     };
     // The consumer's semantic view is exactly these fields; `validation` and the
     // identity/volatile fields are excluded on both sides.
@@ -891,6 +649,12 @@ function validateRepositoryModelPacket(packet) {
         schema_hash: packet.schema_hash,
         payload_refs: packet.payload_refs,
         payload,
+        // Mirrors the producer: the interpretation profile participates in identity
+        // exactly when it is present, and an absent one is omitted rather than
+        // hashed as null, so an inventory-only packet keeps its prior identity.
+        ...(packet.interpretation_profile
+            ? { interpretation_profile: packet.interpretation_profile }
+            : {}),
     });
     checks.push(check("semantic-hash", "invariant", "semantic_hash_is_reproducible", recomputed === packet.semantic_hash, "declared semantic hash matches recomputation", { declared: packet.semantic_hash, calculated: recomputed }));
     checks.push(check("packet-id", "invariant", "packet_id_is_semantically_derived", packet.packet_id === `packet:${packet.semantic_hash.slice(SHA_PREFIX.length)}`, "packet id is derived from the semantic hash"));
@@ -898,6 +662,18 @@ function validateRepositoryModelPacket(packet) {
     checks.push(check("portable-paths", "invariant", "source_paths_are_repository_relative", absolute.length === 0, "every artifact source path is a portable repository-relative POSIX path", { offending_count: absolute.length }));
     const orderedArtifacts = payload.artifacts.every((a, i) => i === 0 || compareCodePoints(payload.artifacts[i - 1].source_path, a.source_path) < 0);
     checks.push(check("stable-ordering", "invariant", "ordering_is_explicit_and_stable", orderedArtifacts, "artifacts are ordered by repository-relative path"));
+    // An assertion without a resolvable, hashed span is not evidence of anything,
+    // so the producer refuses to emit one rather than letting it reach a consumer.
+    const unsupportedAssertions = payload.assertions.filter((assertion) => !assertion.source_path
+        || !/^sha256:[a-f0-9]{64}$/.test(assertion.source_content_hash)
+        || assertion.source_range.start_line < 1
+        || assertion.source_range.end_line < assertion.source_range.start_line
+        || assertion.evidence_excerpt.length === 0
+        || !assertion.extractor_id);
+    checks.push(check("assertion-evidence", "evidence", "assertions_cite_exact_sources", unsupportedAssertions.length === 0, "every assertion cites an exact source span and a hashed source file", { unsupported_count: unsupportedAssertions.length }));
+    const assertionSubjects = payload.repositories.map((r) => r.repository_id);
+    const orphanAssertions = payload.assertions.filter((assertion) => !assertionSubjects.includes(assertion.subject_id));
+    checks.push(check("assertion-subject", "cross-reference", "assertions_resolve_to_a_subject", orphanAssertions.length === 0, "every assertion attaches to a repository in this packet", { orphan_count: orphanAssertions.length }));
     const evidenceIds = new Set(payload.evidence.map((e) => e.evidence_id));
     const danglingEvidence = [];
     const collect = (refs) => {
@@ -921,22 +697,9 @@ function validateRepositoryModelPacket(packet) {
         .filter((id) => !artifactIds.has(id));
     checks.push(check("artifact-cross-reference", "cross-reference", "repository_artifact_ids_resolve", missingArtifacts.length === 0, "every repository artifact reference resolves", { missing_count: missingArtifacts.length }));
     const repositoryIds = new Set(payload.repositories.map((r) => r.repository_id));
-    const capabilityIds = new Set(payload.capabilities.map((c) => c.capability_id));
-    const resolves = (id) => repositoryIds.has(id) || artifactIds.has(id) || capabilityIds.has(id);
-    const danglingEdges = payload.relationships.filter((edge) => !resolves(edge.source_id) || !resolves(edge.target_id));
+    const danglingEdges = payload.relationships.filter((edge) => !(repositoryIds.has(edge.source_id) || artifactIds.has(edge.source_id))
+        || !(repositoryIds.has(edge.target_id) || artifactIds.has(edge.target_id)));
     checks.push(check("edge-cross-reference", "cross-reference", "relationship_endpoints_resolve", danglingEdges.length === 0, "every relationship endpoint resolves to an emitted record", { dangling_count: danglingEdges.length }));
-    const missingCapabilities = payload.repositories
-        .flatMap((r) => r.capability_ids)
-        .filter((id) => !capabilityIds.has(id));
-    checks.push(check("capability-cross-reference", "cross-reference", "repository_capability_ids_resolve", missingCapabilities.length === 0, "every repository capability reference resolves", { missing_count: missingCapabilities.length }));
-    // No assertion without evidence. A capability or relationship the packet states but
-    // cannot trace back to an evidence record would be exactly the kind of plausible,
-    // unfalsifiable claim this producer exists to avoid.
-    const unevidenced = [
-        ...payload.capabilities.filter((c) => c.evidence_refs.length === 0).map((c) => c.capability_id),
-        ...payload.relationships.filter((e) => e.evidence_refs.length === 0).map((e) => e.edge_id),
-    ];
-    checks.push(check("assertions-are-evidenced", "evidence", "every_assertion_cites_evidence", unevidenced.length === 0, "every capability and relationship cites at least one evidence record", { unevidenced_count: unevidenced.length }));
     const failed = checks.filter((c) => c.status !== "passed");
     return { status: failed.length === 0 ? "passed" : "failed", checks };
 }
@@ -1043,16 +806,17 @@ function observeRepositoryModel(input) {
             ...(input.omitFile !== undefined ? { omitFile: input.omitFile } : {}),
             ...(input.hashMaxBytes !== undefined ? { hashMaxBytes: input.hashMaxBytes } : {}),
         });
-        // The interpretation stage reads a bounded set of structured surfaces from the same
-        // observation. It is read-only, like the inventory pass that produced `inventory`.
-        const interpretations = input.interpret === false ? undefined : (0, repository_interpretation_1.interpretRepository)({
-            root: input.root,
-            records: inventory.records,
-            sourceRevision: input.sourceRevision,
-        });
+        const interpretation = input.interpret === false
+            ? undefined
+            : (0, interpretation_1.interpretRepository)({
+                root: input.root,
+                subjectId: `repo:${input.repositoryName}`,
+                inventory,
+                extractors: (0, extractors_1.defaultExtractors)(),
+            });
         return buildRepositoryModelPacket({
             inventory,
-            ...(interpretations !== undefined ? { interpretations } : {}),
+            ...(interpretation ? { interpretation } : {}),
             repositoryName: input.repositoryName,
             sourceRevision: input.sourceRevision,
             producerVersion: input.producerVersion,

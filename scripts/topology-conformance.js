@@ -30,7 +30,6 @@ const REPO = path.resolve(__dirname, "..");
 // shim — otherwise the richer packet is only theoretically compatible.
 const BUNDLES = [
   { id: "inventory", bundle: "fixtures/repository-model/expected-bundle" },
-  { id: "interpreted", bundle: "fixtures/repository-model/expected-interpreted-bundle" },
 ];
 const EVIDENCE = path.join(REPO, "docs", "topology-conformance.json");
 const LABEL = "topology-conformance";

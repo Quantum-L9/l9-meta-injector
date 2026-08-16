@@ -65,6 +65,26 @@ describe("classifyInventory — ArtifactInventory taxonomy", () => {
   it("CODEOWNERS config", () => expect(C("CODEOWNERS")).toBe("config"));
   it("LICENSE documentation", () => expect(C("LICENSE")).toBe("documentation"));
   it("ql code", () => expect(C("rules.ql")).toBe("code"));
+
+  // A well-known filename outranks whatever its extension would default to.
+  it("Dockerfile config", () => expect(C("Dockerfile")).toBe("config"));
+  it("Dockerfile.prod config", () => expect(C("Dockerfile.prod")).toBe("config"));
+  it("nested Dockerfile config", () => expect(C("chassis/Dockerfile.chassis")).toBe("config"));
+  it("Makefile config", () => expect(C("Makefile")).toBe("config"));
+  it("requirements.txt is a manifest, not a .txt document", () =>
+    expect(C("requirements.txt")).toBe("config"));
+  it("requirements-dev.txt config", () => expect(C("requirements-dev.txt")).toBe("config"));
+  it(".env.example config", () => expect(C(".env.example")).toBe("config"));
+  it(".env.required config", () => expect(C(".env.required")).toBe("config"));
+
+  // Names that merely start with the same letters must not be captured.
+  it("dockerfiles.md stays documentation", () => expect(C("docs/dockerfiles.md")).toBe("documentation"));
+  it("requirements.md stays documentation", () => expect(C("requirements.md")).toBe("documentation"));
+  it("environment.txt stays documentation", () => expect(C("environment.txt")).toBe("documentation"));
+
+  // Structural signals still outrank the filename table.
+  it("a Dockerfile under tests/ is still a test", () =>
+    expect(C("tests/Dockerfile")).toBe("test"));
 });
 
 describe("inventoryTree — non-destructive filesystem inventory", () => {

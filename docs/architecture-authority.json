@@ -27,8 +27,7 @@
     "carrier_operation": "src/carrier_operation.ts",
     "file_transaction": "src/file_transaction.ts",
     "frontmatter_patch": "src/frontmatter_patch.ts",
-    "output_placement": "docs/output-placement-contract.md",
-    "repository_interpretation": "src/repository_interpretation.ts"
+    "output_placement": "docs/output-placement-contract.md"
   },
   "distribution": {
     "model": "committed_dist_mirror",

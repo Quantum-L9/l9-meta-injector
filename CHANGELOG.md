@@ -8,8 +8,6 @@
 - Added `scripts/repository-model-cli.js` (`npm run repository-model`) for executable packet egress.
 - Added `scripts/topology-conformance.js` (`L9_TOPOLOGY_CHECKOUT=<checkout> npm run topology:conformance`), which proves the emitted bundle is accepted by the real `l9-constellation-topology` consumer from an ephemeral read-only checkout, and records the bound revision in `docs/topology-conformance.json`.
 
-- Added a deterministic structured interpretation stage (`src/repository_interpretation.ts`, exported from `l9-meta-injector/repository-model`) that reads package manifests, service specs, and Python route decorators into evidence-backed facts, and mapped those facts into the existing `l9.repository-model` 1.0.0 domains (ADR-032).
-- Added `fixtures/repository-model/expected-interpreted-bundle`, a second committed golden bundle carrying capabilities and interpretation-derived relationships; `npm run topology:conformance` now proves the bound consumer accepts both bundles.
 - Added `AuthorityNotice` and `CheckResult`/`ApplyResult.authorityNotices` for non-blocking authority findings, including the `migration_only` allowance (ADR-033).
 - Added `docs/output-placement-contract.md` as the single documented source of truth for where every entrypoint writes.
 - Added a `Makefile` with `pr-check` and `pr`. `make pr` is the sanctioned publish path: it runs `npm run lint` and `npm run validate`, refuses a dirty tree, then pushes and opens the pull request, so a push is never separable from the gate it claims to have passed. The Makefile is not part of the packed artifact.

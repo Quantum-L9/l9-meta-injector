@@ -34,7 +34,6 @@ const AUTHORITY_CRITICAL_PATHS = [
   "src/schema.ts",
   "src/meta_v3.ts",
   "src/repository_model.ts",
-  "src/repository_interpretation.ts",
   "src/public/inventory.ts",
   "src/public/schema.ts",
   "src/public/advanced.ts",
@@ -58,9 +57,6 @@ const AUTHORITY_CRITICAL_PATHS = [
   "dist/repository_model.js",
   "dist/repository_model.d.ts",
   "dist/repository_model.js.map",
-  "dist/repository_interpretation.js",
-  "dist/repository_interpretation.d.ts",
-  "dist/repository_interpretation.js.map",
   "dist/public/repository_model.js",
   "dist/public/repository_model.d.ts",
   "dist/public/repository_model.js.map",
@@ -82,14 +78,10 @@ const AUTHORITY_CRITICAL_PATHS = [
   "tests/architecture_authority.test.ts",
   "tests/dist_integrity.test.ts",
   "tests/repository_model.test.ts",
-  "tests/repository_interpretation.test.ts",
   "docs/topology-conformance.json",
   "fixtures/repository-model/expected-bundle/manifest.json",
   "fixtures/repository-model/expected-bundle/packet.json",
   "fixtures/repository-model/expected-bundle/receipts/validation-receipt.json",
-  "fixtures/repository-model/expected-interpreted-bundle/manifest.json",
-  "fixtures/repository-model/expected-interpreted-bundle/packet.json",
-  "fixtures/repository-model/expected-interpreted-bundle/receipts/validation-receipt.json",
   "docs/architecture.md",
   "docs/architecture-authority.json",
   "docs/output-placement-contract.md",
@@ -169,7 +161,7 @@ function validateAuthorityDocument(authority) {
     if (authority.engine.language !== "typescript") errors.push("authority.engine.language must be typescript");
     for (const key of ["source_root","runtime_entrypoint","package_entrypoint","types_entrypoint"]) requireString(authority.engine[key], `authority.engine.${key}`, errors);
   }
-  exactKeys(authority.contracts, ["metadata","pipeline","architecture","public_api","package"], ["operations","repository_authority","authority_scan","check","operation_dispatch","discovery","carrier_policy","metadata_index","carrier_operation","file_transaction","frontmatter_patch","output_placement","repository_interpretation"], "authority.contracts", errors);
+  exactKeys(authority.contracts, ["metadata","pipeline","architecture","public_api","package"], ["operations","repository_authority","authority_scan","check","operation_dispatch","discovery","carrier_policy","metadata_index","carrier_operation","file_transaction","frontmatter_patch","output_placement"], "authority.contracts", errors);
   if (isPlainObject(authority.contracts)) for (const key of Object.keys(authority.contracts)) requireString(authority.contracts[key], `authority.contracts.${key}`, errors);
   exactKeys(authority.distribution, ["model","source_root","generated_root","compliance_state","source_parity_command","packed_consumer_command","package_contract"], [], "authority.distribution", errors);
   if (isPlainObject(authority.distribution)) {
