@@ -3,7 +3,7 @@ import { inventoryTree, type InventoryConfig, type InventoryResult } from "l9-me
 import { buildMetaV3, type MetaV3, type ArtifactType } from "l9-meta-injector/schema";
 import { compilePlacementPlans, parseCanonicalYaml, type PlacementPlan, type MetaSchema } from "l9-meta-injector/advanced";
 import { makeOpenAIAdapter, type LlmAdapter, type LlmDiagnostic } from "l9-meta-injector/advanced/llm";
-import { validateRepositoryModelPacket, type RepositoryModelPacket, type RepositoryModelValidationResult } from "l9-meta-injector/repository-model";
+import { interpretationProfile, validateRepositoryModelPacket, type InterpretationProfile, type InterpretationResult, type RepositoryModelPacket, type RepositoryModelValidationResult } from "l9-meta-injector/repository-model";
 const config: PipelineConfig = { root:".",glob:"**/*.md",dryRun:true,outDir:".out",namespace:"l9",authority:"l9.doctrine.platform",nearDupThreshold:0.9,hashPrefixLength:16,indexDir:".index",verbose:false,llmEnabled:false,normalizeFilenames:false };
 const pipelinePromise: Promise<PipelineResult> = runPipelineAsync(config);
 const skillsConfig: SkillsPipelineConfig = { root:".",dryRun:true,outDir:".skills",verbose:false,llmEnabled:false };
@@ -23,6 +23,7 @@ const checkConfig: CheckConfig = {...config,dryRun:true};
 const checkPromise: Promise<OperationResult> = runCheckAsync(checkConfig);
 let operationResult!: OperationResult;
 let repositoryModelPacket!: RepositoryModelPacket; const repositoryModelValidation: RepositoryModelValidationResult = validateRepositoryModelPacket(repositoryModelPacket);
-const _keepAlive: unknown[] = [pipelinePromise,checkPromise,skillsPromise,inventoryResult,typeName,plans,parsed,adapter,diagnostic,meta,record,operationMode,authority,checkConfig,operationResult,UNKNOWN,repositoryModelValidation];
+const interpretation: InterpretationProfile = interpretationProfile(); let interpretationResult!: InterpretationResult;
+const _keepAlive: unknown[] = [pipelinePromise,checkPromise,skillsPromise,inventoryResult,typeName,plans,parsed,adapter,diagnostic,meta,record,operationMode,authority,checkConfig,operationResult,UNKNOWN,repositoryModelValidation,interpretation,interpretationResult];
 let schema!: MetaSchema; const _schemaKeep: unknown = schema;
 export type _ConsumerFixtureKeepAlive = typeof _keepAlive | typeof _schemaKeep;
