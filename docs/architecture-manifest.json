@@ -10,7 +10,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "git_blob_sha1": "2cc61d9055629ed985978a7e6f1828ae92fe063d"
+      "git_blob_sha1": "6eee518cafce4bd756b1396db0f9187540bd874d"
     },
     {
       "path": "dist/index.d.ts",
@@ -98,7 +98,7 @@
     },
     {
       "path": "docs/architecture-authority.json",
-      "git_blob_sha1": "ee23fb7b30552034093a2b59b7a4d748d728e931"
+      "git_blob_sha1": "3a2e4c764a4b66c627a6dc5ceef9d099db1999dc"
     },
     {
       "path": "docs/architecture.md",
@@ -110,7 +110,7 @@
     },
     {
       "path": "docs/decision_log.md",
-      "git_blob_sha1": "beb389689333112553932e8cffbe882a5406e4cb"
+      "git_blob_sha1": "7c8fd1062f110c41c1b9e94ac4047099753e9aeb"
     },
     {
       "path": "docs/legacy/consolidation-v1/artifact_manifest.yaml",
@@ -143,6 +143,10 @@
     {
       "path": "docs/migrations/v2-to-v3.md",
       "git_blob_sha1": "ded69fd3f32f019194194eed471ddf51b5538322"
+    },
+    {
+      "path": "docs/output-placement-contract.md",
+      "git_blob_sha1": "beebf9ef1c030c418cb151337b57f7ecba232253"
     },
     {
       "path": "docs/package-contract.json",
@@ -209,6 +213,10 @@
       "git_blob_sha1": "ac4f721b081155f1e612c03294734b772e472305"
     },
     {
+      "path": "Makefile",
+      "git_blob_sha1": "276123e728eab5474ec251f2feb9c00dce2f7f23"
+    },
+    {
       "path": "package-lock.json",
       "git_blob_sha1": "ec6d05c22d1cc1a4a2a52def8c08a67c9f00c0dc"
     },
@@ -242,7 +250,7 @@
     },
     {
       "path": "scripts/lib/architecture-authority.js",
-      "git_blob_sha1": "f907db172d3a7048f6403b0bef1858d9c5240ead"
+      "git_blob_sha1": "f7517160005a2538ad859172509f543c52e70e8c"
     },
     {
       "path": "scripts/lib/dist-integrity.js",
@@ -266,7 +274,7 @@
     },
     {
       "path": "scripts/topology-conformance.js",
-      "git_blob_sha1": "f1e525304c34e5cfdfcd50093b5220571528969c"
+      "git_blob_sha1": "4f91a4073b544eae23c1c575974d486656b4903d"
     },
     {
       "path": "src/index.ts",
@@ -278,7 +286,7 @@
     },
     {
       "path": "src/pipeline.ts",
-      "git_blob_sha1": "f08c481d1d4b7cc37f310473d3cf48edbaa6b144"
+      "git_blob_sha1": "e474ca67fc4c117664c0722f6bf5a9b1188f7f9e"
     },
     {
       "path": "src/public/advanced.ts",

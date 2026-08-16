@@ -20,6 +20,7 @@ import { applySchema, targetIncludes } from "./meta_schema";
 import { MetricsCollector, MetricsSnapshot } from "./metrics";
 import { NamespaceConfig } from "./namespace";
 import { resolveStrategy, stripInjectedBlock } from "./comment";
+import { inspectFrontMatterDocument, isPatcherLimitation, type FrontMatterIssueCode } from "./frontmatter_patch";
 import { expandArchivesUnderRoot, ArchiveRecord } from "./archives";
 import { buildOmitMatcher } from "./omit";
 
@@ -38,6 +39,14 @@ function relativeSourcePath(root: string, filePath: string): string {
   return relative.split(path.sep).join("/");
 }
 
+/** Inspect a markdown document once and describe why it cannot be inline-patched, if so. */
+function inlineCarrierBlockFor(raw: string): InlineCarrierBlock | undefined {
+  const inspected = inspectFrontMatterDocument(raw);
+  if (inspected.safe || !inspected.issue) return undefined;
+  const { code, message, line } = inspected.issue;
+  return { code, message, malformed: !isPatcherLimitation(code), ...(line !== undefined ? { line } : {}) };
+}
+
 function toCfg(config: PipelineConfig): NamespaceConfig {
   return { namespace: config.namespace, authority: config.authority, nearDupThreshold: config.nearDupThreshold, hashPrefixLength: config.hashPrefixLength, outputDir: config.outDir, indexDir: config.indexDir, namespaceGlobs: config.namespaceGlobs };
 }
@@ -49,6 +58,21 @@ export interface VerificationSummary {
   /** True iff every verified file passed with zero issues. Callers/CI should gate on this. */
   passed: boolean;
   failures: Array<{ sourcePath: string; issues: string[] }>;
+}
+
+/**
+ * Why a discovered markdown file cannot act as its own inline metadata carrier.
+ *
+ * Valid-but-unsupported frontmatter (`malformed: false`) is a limitation of the
+ * byte-preserving patcher, not a defect in the file. Either way the source bytes are left
+ * untouched and the file is carried by the central manifest instead; the run continues.
+ */
+export interface InlineCarrierBlock {
+  code: FrontMatterIssueCode;
+  message: string;
+  line?: number;
+  /** True when the header is structurally broken rather than merely unsupported. */
+  malformed: boolean;
 }
 
 /** Per-path detail for a non-injectable skip (OBS-003 / ADR-018). */
@@ -65,6 +89,8 @@ export interface PipelineMetadataSubject {
   strategy: CarrierInjectionStrategy;
   contentHash: string;
   metadata: Readonly<Record<string, unknown>>;
+  /** Present when this file's existing frontmatter cannot be safely inline-patched. */
+  inlineCarrierBlock?: InlineCarrierBlock;
 }
 
 export interface CoverageSummary {
@@ -181,6 +207,9 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
   // Coarse classify result retained so non-injectable skips can report type/confidence.
   const classifications = new Map<string, ReturnType<typeof classify>>();
   const metadataSubjects: PipelineMetadataSubject[] = [];
+  // Files that cannot carry their own inline metadata. They are governed and indexed,
+  // but never inline-patched, and their bytes are never touched.
+  const inlineCarrierBlocks = new Map<string, InlineCarrierBlock>();
 
   for (const e of scanned) {
     const raw = fs.readFileSync(e.sourcePath, "utf8");
@@ -197,6 +226,15 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
     // frontmatter and truncate real content, skewing extraction/classification/hash.
     const body = spec.strategy === "yaml-frontmatter" ? splitContent(cleanRaw).body : cleanRaw;
     bodies.set(e.sourcePath, body);
+    // Classify inline-carrier eligibility here, before any mutation planning. A file whose
+    // existing frontmatter is outside the patchable subset is still a governed subject —
+    // it simply cannot carry its own metadata, so the carrier policy routes it to the
+    // central manifest. Throwing here instead would abort the whole repository operation
+    // over one file the injector was never going to be able to rewrite safely.
+    const inlineCarrierBlock = spec.strategy === "yaml-frontmatter"
+      ? inlineCarrierBlockFor(raw)
+      : undefined;
+    if (inlineCarrierBlock) inlineCarrierBlocks.set(e.sourcePath, inlineCarrierBlock);
     const ef = extract(body);
     const cls = classify(e.sourcePath, body, e.headerConvention);
     classifications.set(e.sourcePath, cls);
@@ -253,6 +291,7 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
       strategy: spec.strategy,
       contentHash: meta.content_hash,
       metadata: asRecord(meta),
+      ...(inlineCarrierBlock ? { inlineCarrierBlock } : {}),
     });
   }
 
@@ -279,6 +318,9 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
       });
       continue;
     }
+    // The file is governed, but it cannot rewrite itself: leave its bytes alone and let
+    // the carrier policy place its metadata in the central manifest.
+    if (inlineCarrierBlocks.has(e.sourcePath)) continue;
     // Use async inject (LLM boolean reconcile on description/intent) when LLM is enabled
     const record = config.llmEnabled
       ? await injectFileAsync(e.sourcePath, meta, opts, metrics)
@@ -301,7 +343,12 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
     passed: failures.length === 0,
     failures,
   };
-  if (!verification.passed) {
+  // Only report verification when there is a written file to verify. In plan mode nothing
+  // has been written, so `verify` necessarily reads the pre-injection bytes and reports a
+  // missing header for every file that is *about* to receive one. Printing that as
+  // "verification FAILED" during a successful governed check or apply is a phantom
+  // failure, and phantom failures make the real ones unreadable.
+  if (!verification.passed && !config.dryRun) {
     const preview = failures.slice(0, 5).map((f) => `  - ${f.sourcePath}: ${f.issues.join("; ")}`).join("\n");
     const more = failures.length > 5 ? `\n  … and ${failures.length - 5} more` : "";
     process.stderr.write(

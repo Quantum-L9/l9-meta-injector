@@ -27,10 +27,34 @@ export interface FrontMatterIssue {
   key?: string;
 }
 
+/**
+ * Issue codes that describe a limit of *this patcher*, not a defect in the document.
+ *
+ * The distinction is load-bearing: a valid document the patcher cannot safely edit is
+ * routed to the central manifest and the repository operation continues, whereas a
+ * structurally malformed header is only tolerated when nothing authorized inline
+ * mutation for that path.
+ */
+const PATCHER_LIMITATION_CODES: ReadonlySet<FrontMatterIssueCode> = new Set<FrontMatterIssueCode>([
+  "FRONTMATTER_COMPLEX_YAML",
+  "FRONTMATTER_UNSUPPORTED_VALUE",
+]);
+
+export function isPatcherLimitation(code: FrontMatterIssueCode): boolean {
+  return PATCHER_LIMITATION_CODES.has(code);
+}
+
 export interface FrontMatterField {
   key: string;
+  /** Absent for `opaque` fields: the value's bytes are known, its meaning is not. */
   value: unknown;
-  kind: "scalar" | "sequence";
+  /**
+   * `opaque` is a single-line plain scalar whose text the canonical parser cannot
+   * represent — an unquoted ISO timestamp, a bare URL, a `10:30` clock value. Its byte
+   * range is known exactly, so it can be preserved verbatim when unmanaged and replaced
+   * wholesale when managed. It is never interpreted, and never enters `meta`.
+   */
+  kind: "scalar" | "sequence" | "opaque";
   start: number;
   end: number;
   valueStart?: number;
@@ -246,6 +270,26 @@ function parseSafeScalar(text: string): ScalarParse {
   return { ok: true, value };
 }
 
+/**
+ * Is `text` a single-line plain YAML scalar that the canonical parser declines to
+ * interpret, but whose bytes can be carried unchanged?
+ *
+ * This is deliberately narrow. Anything that could be a flow collection, an anchor, an
+ * alias, a merge key, a block scalar, a directive, or a partially quoted string stays
+ * unsupported: the point is to preserve values like `created: 2025-10-28T15:30:00Z`
+ * without pretending to understand them, not to widen the grammar.
+ */
+function isOpaqueScalar(text: string): boolean {
+  const value = text.trim();
+  if (value === "" || value === "---" || value === "...") return false;
+  if (/^[|>&*!?%@`{}[\]]/.test(value)) return false;
+  if (/[{}[\]]/.test(value)) return false;
+  if (/^<<\s*:/.test(value) || /(^|\s)[&*][A-Za-z0-9_-]+/.test(value)) return false;
+  if (value.includes('"') || value.includes("'")) return false;
+  // Control characters would not survive a byte-preserving round trip predictably.
+  return !/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(value);
+}
+
 function renderSafeScalar(value: unknown): string {
   if (value === null) return "null";
   if (typeof value === "boolean") return value ? "true" : "false";
@@ -338,7 +382,10 @@ export function inspectFrontMatterDocument(raw: string): FrontMatterInspection {
     const scalarToken = splitInlineComment(tail);
     if (scalarToken.valueText.trim() !== "") {
       const parsed = parseSafeScalar(scalarToken.valueText);
-      if (!parsed.ok) return issue(raw, "FRONTMATTER_COMPLEX_YAML", `unsupported value for '${key}'`, { line: line.number, key });
+      // A value the canonical parser declines is not automatically a broken document.
+      // A single-line plain scalar keeps its exact bytes and is carried as `opaque`.
+      const opaque = !parsed.ok && isOpaqueScalar(scalarToken.valueText);
+      if (!parsed.ok && !opaque) return issue(raw, "FRONTMATTER_COMPLEX_YAML", `unsupported value for '${key}'`, { line: line.number, key });
       if (i + 1 < headerLines.length && /^\s+\S/.test(headerLines[i + 1].text) && !/^\s*#/.test(headerLines[i + 1].text)) {
         return issue(raw, "FRONTMATTER_COMPLEX_YAML", `multiline or nested value under '${key}' is not supported`, { line: headerLines[i + 1].number, key });
       }
@@ -346,15 +393,16 @@ export function inspectFrontMatterDocument(raw: string): FrontMatterInspection {
       const tailStart = line.start + colon + 1;
       fields.push({
         key,
-        value: parsed.value,
-        kind: "scalar",
+        value: parsed.ok ? parsed.value : undefined,
+        kind: parsed.ok ? "scalar" : "opaque",
         start: line.start,
         end: line.fullEnd,
         valueStart: tailStart + scalarToken.valueOffset,
         valueEnd: tailStart + scalarToken.valueEndOffset,
         commentSuffix: scalarToken.commentSuffix,
       });
-      meta[key] = parsed.value;
+      // An opaque value is never interpreted, so it never enters the parsed metadata.
+      if (parsed.ok) meta[key] = parsed.value;
       i += 1;
       continue;
     }
@@ -459,7 +507,10 @@ export function patchManagedFrontMatter(raw: string, managed: Record<string, unk
     const field = byKey.get(key);
     if (!field) { missing.push(key); continue; }
     const rendered = renderSafeScalar(managed[key]);
-    if (field.kind === "scalar") {
+    // An opaque field patches exactly like a scalar: its value byte range is known, and a
+    // managed key's canonical rendering replaces it wholesale. Only *unmanaged* opaque
+    // values are preserved verbatim — they are simply never edited.
+    if (field.kind === "scalar" || field.kind === "opaque") {
       if (field.valueStart === undefined || field.valueEnd === undefined) {
         return failureFromInspection(raw, issue(raw, "FRONTMATTER_COMPLEX_YAML", `managed field '${key}' lacks a safe scalar range`, { key }), managedKeys);
       }

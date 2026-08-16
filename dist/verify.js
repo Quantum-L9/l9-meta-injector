@@ -38,12 +38,22 @@ exports.verify = verify;
 const fs = __importStar(require("node:fs"));
 const schema_1 = require("./schema");
 const extract_1 = require("./extract");
+const frontmatter_patch_1 = require("./frontmatter_patch");
 const comment_1 = require("./comment");
 // Recover the clean body from an injected file, mirroring how inject.ts derived
 // cleanBody per strategy, so the hash lines up with the recorded originalBodyHash.
+//
+// For frontmatter files that means the byte-exact definition the patcher itself uses:
+// everything after the closing fence line, blank separator included. The older
+// `stripExistingFrontMatter` collapses every newline after the fence, which silently
+// reports "body changed" for any file that already carried frontmatter followed by a
+// blank line — a false corruption report that aborts governed apply on real
+// repositories. It remains the fallback for a header this parser cannot resolve.
 function recoverBody(content, spec) {
-    if (spec.strategy === "yaml-frontmatter")
-        return (0, extract_1.stripExistingFrontMatter)(content);
+    if (spec.strategy === "yaml-frontmatter") {
+        const inspected = (0, frontmatter_patch_1.inspectFrontMatterDocument)(content);
+        return inspected.safe ? inspected.body : (0, extract_1.stripExistingFrontMatter)(content);
+    }
     if (spec.strategy === "line-comment" || spec.strategy === "block-comment") {
         return (0, comment_1.stripInjectedBlock)(content, spec);
     }

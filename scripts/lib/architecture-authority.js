@@ -21,6 +21,7 @@ const AUTHORITY_CRITICAL_PATHS = [
   "README.md",
   "CHANGELOG.md",
   "package.json",
+  "Makefile",
   "package-lock.json",
   "tsconfig.json",
   "fixtures/package-consumer/package.json",
@@ -83,6 +84,7 @@ const AUTHORITY_CRITICAL_PATHS = [
   "fixtures/repository-model/expected-bundle/receipts/validation-receipt.json",
   "docs/architecture.md",
   "docs/architecture-authority.json",
+  "docs/output-placement-contract.md",
   "docs/contracts.md",
   "docs/public-api-contract.json",
   "docs/package-contract.json",
@@ -159,7 +161,7 @@ function validateAuthorityDocument(authority) {
     if (authority.engine.language !== "typescript") errors.push("authority.engine.language must be typescript");
     for (const key of ["source_root","runtime_entrypoint","package_entrypoint","types_entrypoint"]) requireString(authority.engine[key], `authority.engine.${key}`, errors);
   }
-  exactKeys(authority.contracts, ["metadata","pipeline","architecture","public_api","package"], ["operations","repository_authority","authority_scan","check","operation_dispatch","discovery","carrier_policy","metadata_index","carrier_operation","file_transaction","frontmatter_patch"], "authority.contracts", errors);
+  exactKeys(authority.contracts, ["metadata","pipeline","architecture","public_api","package"], ["operations","repository_authority","authority_scan","check","operation_dispatch","discovery","carrier_policy","metadata_index","carrier_operation","file_transaction","frontmatter_patch","output_placement"], "authority.contracts", errors);
   if (isPlainObject(authority.contracts)) for (const key of Object.keys(authority.contracts)) requireString(authority.contracts[key], `authority.contracts.${key}`, errors);
   exactKeys(authority.distribution, ["model","source_root","generated_root","compliance_state","source_parity_command","packed_consumer_command","package_contract"], [], "authority.distribution", errors);
   if (isPlainObject(authority.distribution)) {
@@ -186,7 +188,7 @@ function validateAuthorityDocument(authority) {
     const actual = [...authority.persisted_outputs].sort((a, b) => a.localeCompare(b));
     if (JSON.stringify(actual) !== JSON.stringify(EXPECTED_PERSISTED_OUTPUTS)) errors.push("authority.persisted_outputs does not match the live pipeline outputs");
   }
-  exactKeys(authority.validation, ["api","authority","manifest","dist","packed_consumer","publication","canonical","ci_workflow","selfpack"], [], "authority.validation", errors);
+  exactKeys(authority.validation, ["api","authority","manifest","dist","packed_consumer","publication","canonical","ci_workflow","selfpack","publish_path"], [], "authority.validation", errors);
   if (isPlainObject(authority.validation)) for (const key of Object.keys(authority.validation)) requireString(authority.validation[key], `authority.validation.${key}`, errors);
   exactKeys(authority.legacy, ["status","documentation","runtime","schemas"], [], "authority.legacy", errors);
   if (isPlainObject(authority.legacy)) {

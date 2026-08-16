@@ -14,10 +14,18 @@ export interface FrontMatterIssue {
     line?: number;
     key?: string;
 }
+export declare function isPatcherLimitation(code: FrontMatterIssueCode): boolean;
 export interface FrontMatterField {
     key: string;
+    /** Absent for `opaque` fields: the value's bytes are known, its meaning is not. */
     value: unknown;
-    kind: "scalar" | "sequence";
+    /**
+     * `opaque` is a single-line plain scalar whose text the canonical parser cannot
+     * represent — an unquoted ISO timestamp, a bare URL, a `10:30` clock value. Its byte
+     * range is known exactly, so it can be preserved verbatim when unmanaged and replaced
+     * wholesale when managed. It is never interpreted, and never enters `meta`.
+     */
+    kind: "scalar" | "sequence" | "opaque";
     start: number;
     end: number;
     valueStart?: number;

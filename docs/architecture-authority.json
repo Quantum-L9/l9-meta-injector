@@ -26,7 +26,8 @@
     "metadata_index": "src/metadata_index.ts",
     "carrier_operation": "src/carrier_operation.ts",
     "file_transaction": "src/file_transaction.ts",
-    "frontmatter_patch": "src/frontmatter_patch.ts"
+    "frontmatter_patch": "src/frontmatter_patch.ts",
+    "output_placement": "docs/output-placement-contract.md"
   },
   "distribution": {
     "model": "committed_dist_mirror",
@@ -74,7 +75,8 @@
     "publication": "npm run check:publication",
     "canonical": "npm run validate",
     "ci_workflow": ".github/workflows/ci.yml",
-    "selfpack": "scripts/selfpack.js"
+    "selfpack": "scripts/selfpack.js",
+    "publish_path": "make pr"
   },
   "legacy": {
     "status": "reference_only",
@@ -115,6 +117,24 @@
     "root_contained_to_workspace": true,
     "output_contained_to_target": true,
     "check_reports_under_runner_temp": true,
+    "output_placement": {
+      "contract": "docs/output-placement-contract.md",
+      "single_shared_default": false,
+      "defaults_are_context_specific_by_design": true,
+      "dispatcher_default_out": ".l9-meta-injector-out",
+      "dispatcher_default_out_is_inside_target_root": true,
+      "dispatcher_default_reason": "the composite Action uploads one workspace-contained artifact path",
+      "direct_cli_defaults": {
+        "scripts/operation-cli.js": ".l9-meta-injector-out",
+        "scripts/inventory.js": "<root>.l9inventory",
+        "scripts/apply-cli.js": "<root>.l9out",
+        "scripts/skills-cli.js": "<root>.l9skills",
+        "scripts/check-cli.js": "<tmpdir>/l9-meta-injector-check-<pid>.json"
+      },
+      "explicit_out_is_relative_and_contained_to_target_root": true,
+      "apply_creates_no_output_directory": true,
+      "check_creates_no_output_directory": true
+    },
     "external_actions_immutable": true,
     "setup_node_ref": "49933ea5288caeca8642d1e84afbd3f7d6820020",
     "upload_artifact_ref": "ea165f8d65b6e75b540449e92b4886f43607fa02"

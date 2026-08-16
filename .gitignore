@@ -16,3 +16,8 @@ dist/*.tsbuildinfo
 .cursor-commands
 .cursor/
 .vscode/
+
+# L4 local-autonomy runtime state (machine-local; never repository content).
+# `.l9/` itself is a governed namespace — `.l9/meta-authority.yaml` and
+# `.l9/metadata-index.jsonl` are meant to be committed — so only this subtree is ignored.
+.l9/autonomy/

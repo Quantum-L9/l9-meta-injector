@@ -5,7 +5,7 @@
 //   L9_TOPOLOGY_CHECKOUT=<checkout> [L9_PYTHON=<bin>] \
 //     node scripts/topology-conformance.js [--update]
 //
-// Feeds the committed golden bundle to the ACTUAL l9-constellation-topology consumer
+// Feeds the committed golden bundles to the ACTUAL l9-constellation-topology consumer
 // boundary (`load_repository_model_bundle` + `RepositoryModelV1Adapter`) and requires
 // acceptance with no translation shim.
 //
@@ -24,7 +24,13 @@ const path = require("node:path");
 const cp = require("node:child_process");
 
 const REPO = path.resolve(__dirname, "..");
-const GOLDEN = path.join(REPO, "fixtures", "repository-model", "expected-bundle");
+// Two committed bundles: the inventory-only packet, and the packet the structured
+// interpretation stage produces (capabilities, ROUTES_TO/DOCUMENTED_BY edges, declared
+// dependencies). Both must be accepted by the same bound consumer with no translation
+// shim — otherwise the richer packet is only theoretically compatible.
+const BUNDLES = [
+  { id: "inventory", bundle: "fixtures/repository-model/expected-bundle" },
+];
 const EVIDENCE = path.join(REPO, "docs", "topology-conformance.json");
 const LABEL = "topology-conformance";
 
@@ -84,37 +90,55 @@ function main() {
   if (!fs.existsSync(path.join(sourceRoot, "l9_constellation_topology"))) {
     fail(`checkout does not contain l9_constellation_topology: ${checkout}`);
   }
-  if (!fs.existsSync(GOLDEN)) fail(`golden bundle missing: ${GOLDEN}`);
-
-  const packet = JSON.parse(fs.readFileSync(path.join(GOLDEN, "packet.json"), "utf8"));
   const revision = gitRevision(checkout);
-
-  const scriptFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "l9-topology-conformance-")), "probe.py");
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "l9-topology-conformance-"));
+  const scriptFile = path.join(scratch, "probe.py");
   fs.writeFileSync(scriptFile, PROBE, "utf8");
-  const probe = cp.spawnSync(python, [scriptFile, GOLDEN], {
-    cwd: checkout,
-    encoding: "utf8",
-    env: { ...process.env, PYTHONPATH: sourceRoot },
-  });
-  fs.rmSync(path.dirname(scriptFile), { recursive: true, force: true });
 
-  if (probe.status !== 0) {
-    process.stderr.write(probe.stdout || "");
-    process.stderr.write(probe.stderr || "");
-    fail("the bound topology consumer rejected the emitted packet");
+  const subjects = [];
+  let adapterPacketVersion = "";
+  for (const entry of BUNDLES) {
+    const bundleRoot = path.join(REPO, entry.bundle);
+    if (!fs.existsSync(bundleRoot)) fail(`golden bundle missing: ${bundleRoot}`);
+    const packet = JSON.parse(fs.readFileSync(path.join(bundleRoot, "packet.json"), "utf8"));
+
+    const probe = cp.spawnSync(python, [scriptFile, bundleRoot], {
+      cwd: checkout,
+      encoding: "utf8",
+      env: { ...process.env, PYTHONPATH: sourceRoot },
+    });
+    if (probe.status !== 0) {
+      process.stderr.write(probe.stdout || "");
+      process.stderr.write(probe.stderr || "");
+      fail(`the bound topology consumer rejected the ${entry.id} packet`);
+    }
+
+    let observed;
+    try { observed = JSON.parse(probe.stdout.trim().split(/\r?\n/).pop()); }
+    catch { fail(`could not parse the consumer probe output: ${probe.stdout}`); }
+
+    if (observed.packet_id !== packet.packet_id) fail(`consumer reported a different packet id than the ${entry.id} bundle`);
+    if (observed.semantic_hash !== packet.semantic_hash) fail(`consumer reported a different semantic hash than the ${entry.id} bundle`);
+    adapterPacketVersion = observed.adapter_packet_version;
+
+    subjects.push({
+      id: entry.id,
+      bundle: entry.bundle,
+      packet_id: packet.packet_id,
+      semantic_hash: packet.semantic_hash,
+      packet_type: packet.packet_type,
+      packet_version: packet.packet_version,
+      files: ["manifest.json", "packet.json", "receipts/validation-receipt.json"]
+        .map((rel) => ({ path: rel, content_hash: sha256(path.join(bundleRoot, rel)) })),
+      normalized_counts: observed.counts,
+    });
   }
-
-  let observed;
-  try { observed = JSON.parse(probe.stdout.trim().split(/\r?\n/).pop()); }
-  catch { fail(`could not parse the consumer probe output: ${probe.stdout}`); }
-
-  if (observed.packet_id !== packet.packet_id) fail("consumer reported a different packet id than the golden bundle");
-  if (observed.semantic_hash !== packet.semantic_hash) fail("consumer reported a different semantic hash than the golden bundle");
+  fs.rmSync(scratch, { recursive: true, force: true });
 
   const evidence = {
     schema: "l9.topology-conformance/v1",
     repository: "Quantum-L9/l9-meta-injector",
-    statement: "The golden Repository Model Packet bundle was accepted by the bound l9-constellation-topology consumer without a translation shim.",
+    statement: "Every committed Repository Model Packet bundle — inventory-only and structurally interpreted — was accepted by the bound l9-constellation-topology consumer without a translation shim.",
     consumer: {
       repository: "Quantum-L9/l9-constellation-topology",
       revision,
@@ -122,28 +146,19 @@ function main() {
         "l9_constellation_topology.packets.loader.load_repository_model_bundle",
         "l9_constellation_topology.packets.adapters.repository_model_v1.RepositoryModelV1Adapter.adapt",
       ],
-      adapter_packet_version: observed.adapter_packet_version,
+      adapter_packet_version: adapterPacketVersion,
     },
-    subject: {
-      bundle: "fixtures/repository-model/expected-bundle",
-      packet_id: packet.packet_id,
-      semantic_hash: packet.semantic_hash,
-      packet_type: packet.packet_type,
-      packet_version: packet.packet_version,
-      files: ["manifest.json", "packet.json", "receipts/validation-receipt.json"]
-        .map((rel) => ({ path: rel, content_hash: sha256(path.join(GOLDEN, rel)) })),
-    },
+    subjects,
     result: {
       status: "passed",
       translation_shim_required: false,
-      normalized_counts: observed.counts,
     },
     verification_command: "L9_TOPOLOGY_CHECKOUT=<l9-constellation-topology checkout> npm run topology:conformance",
   };
 
   if (update) {
     fs.writeFileSync(EVIDENCE, `${JSON.stringify(evidence, null, 2)}\n`, "utf8");
-    console.log(`${LABEL}: OK (evidence updated for topology ${revision})`);
+    console.log(`${LABEL}: OK (evidence updated for topology ${revision}; ${subjects.length} bundle(s))`);
     return;
   }
 
@@ -152,7 +167,7 @@ function main() {
   if (recorded !== `${JSON.stringify(evidence, null, 2)}\n`) {
     fail("recorded conformance evidence is stale; re-run with --update");
   }
-  console.log(`${LABEL}: OK (topology ${revision} accepted ${packet.packet_id})`);
+  console.log(`${LABEL}: OK (topology ${revision} accepted ${subjects.map((item) => item.id).join(", ")})`);
 }
 
 main();

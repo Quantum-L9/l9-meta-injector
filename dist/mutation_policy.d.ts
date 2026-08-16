@@ -10,11 +10,23 @@ import type { AuthorityConfig, CarrierDecision, MetadataCarrier, OperationMode }
 export declare const CARRIER_PRECEDENCE: readonly MetadataCarrier[];
 export declare const INLINE_MANAGED_ARTIFACT_TYPES: Set<ArtifactType>;
 export type CarrierInjectionStrategy = "yaml-frontmatter" | "line-comment" | "block-comment" | "sidecar" | "skip-binary";
+/**
+ * Why a subject cannot act as its own inline carrier.
+ *
+ * Structural mirror of `PipelineMetadataSubject.inlineCarrierBlock`, declared here so the
+ * carrier policy stays independent of the pipeline module.
+ */
+export interface CarrierInlineBlock {
+    code: string;
+    malformed: boolean;
+}
 export interface CarrierSubject {
     /** Repository-relative path. Absolute or traversal paths are rejected. */
     path: string;
     artifactType: ArtifactType;
     strategy: CarrierInjectionStrategy;
+    /** Set when the file's existing frontmatter is outside the inline-patchable subset. */
+    inlineCarrierBlock?: CarrierInlineBlock;
 }
 export interface CarrierPolicyInput {
     authority: AuthorityConfig;

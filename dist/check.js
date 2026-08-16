@@ -89,7 +89,7 @@ function inspectArchivesWithoutExtraction(root) {
         message: `archive inspected read-only (${(0, archives_1.listZipMembers)(archivePath).length} member(s)); governed check never extracts archives`,
     }));
 }
-function authorityFailureResult(conflicts, archiveDrift) {
+function authorityFailureResult(conflicts, notices, archiveDrift) {
     const check = {
         passed: false,
         repositoryMutated: false,
@@ -100,6 +100,7 @@ function authorityFailureResult(conflicts, archiveDrift) {
             ...conflicts.map((item) => ({ path: item.path ?? ".", kind: "conflict", message: item.message })),
         ],
         authorityConflicts: conflicts,
+        authorityNotices: notices,
         carrierDecisions: [],
         discovery: (0, discovery_contracts_1.emptyDiscoverySummary)(),
     };
@@ -112,7 +113,7 @@ async function runCheckAsync(config) {
         const inspection = (0, authority_scan_1.inspectRepositoryAuthority)(root, { expectedWriter: { repository: carrier_operation_1.CANONICAL_METADATA_WRITER } });
         const archiveDrift = config.localFiles ? inspectArchivesWithoutExtraction(root) : [];
         if (inspection.conflicts.length > 0 || !inspection.authority) {
-            return authorityFailureResult(inspection.conflicts, archiveDrift);
+            return authorityFailureResult(inspection.conflicts, inspection.notices, archiveDrift);
         }
         const warnings = [];
         const deterministicDrift = [...archiveDrift];
@@ -141,6 +142,7 @@ async function runCheckAsync(config) {
         const drift = [
             ...deterministicDrift,
             ...discoveryDrift,
+            ...(0, carrier_operation_1.unsatisfiedAuthorizationDrift)(plan),
             ...(0, carrier_operation_1.inlinePlanDrift)(plan),
             ...(indexDrift ? [indexDrift] : []),
         ].sort((a, b) => `${a.path}:${a.kind}`.localeCompare(`${b.path}:${b.kind}`));
@@ -151,6 +153,7 @@ async function runCheckAsync(config) {
             planned: plan.subjects.length,
             drift,
             authorityConflicts: [],
+            authorityNotices: inspection.notices,
             carrierDecisions: plan.carrierDecisions,
             discovery: plan.pipeline.coverage.discovery,
         };

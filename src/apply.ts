@@ -8,6 +8,7 @@ import { inspectRepositoryAuthority } from "./authority_scan";
 import {
   CANONICAL_METADATA_WRITER,
   planCarrierOperationAsync,
+  unsatisfiedAuthorizationDrift,
   type CarrierOperationPlan,
 } from "./carrier_operation";
 import { METADATA_INDEX_RELATIVE_PATH } from "./metadata_index";
@@ -38,7 +39,11 @@ function relativePath(root: string, target: string): string {
   return rel.split(path.sep).join("/");
 }
 
-function authorityFailure(conflicts: ApplyResult["authorityConflicts"], warnings: string[] = []): OperationResult {
+function authorityFailure(
+  conflicts: ApplyResult["authorityConflicts"],
+  notices: ApplyResult["authorityNotices"],
+  warnings: string[] = [],
+): OperationResult {
   const apply: ApplyResult = {
     passed: false,
     repositoryMutated: false,
@@ -48,6 +53,7 @@ function authorityFailure(conflicts: ApplyResult["authorityConflicts"], warnings
     inlineChanged: [],
     metadataIndexChanged: false,
     authorityConflicts: conflicts,
+    authorityNotices: notices,
     carrierDecisions: [],
     discovery: emptyDiscoverySummary(),
     transaction: {
@@ -174,7 +180,9 @@ export async function runApplyAsync(config: ApplyConfig): Promise<OperationResul
   const inspection = inspectRepositoryAuthority(root, {
     expectedWriter: { repository: CANONICAL_METADATA_WRITER },
   });
-  if (inspection.conflicts.length > 0 || !inspection.authority) return authorityFailure(inspection.conflicts, warnings);
+  if (inspection.conflicts.length > 0 || !inspection.authority) {
+    return authorityFailure(inspection.conflicts, inspection.notices, warnings);
+  }
   if (config.localFiles) throw new Error("apply does not expand archives; local-files requires a separate import workflow");
   if (config.normalizeFilenames) throw new Error("apply does not normalize filenames; rename work must be reviewed separately");
 
@@ -194,6 +202,20 @@ export async function runApplyAsync(config: ApplyConfig): Promise<OperationResul
   if (plan.pipeline.coverage.discovery.blocking > 0) {
     throw new Error(`DISCOVERY_INCOMPLETE: apply refused with ${plan.pipeline.coverage.discovery.blocking} blocking path(s)`);
   }
+  const unsatisfied = unsatisfiedAuthorizationDrift(plan);
+  if (unsatisfied.length > 0) {
+    // The repository authorized inline metadata for a file whose header cannot be
+    // rewritten byte-safely. Preserving those bytes wins; apply holds and names the files.
+    return authorityFailure(
+      unsatisfied.map((item) => ({
+        code: "META_AUTHORITY_CONFLICT" as const,
+        message: item.message,
+        path: item.path,
+      })),
+      inspection.notices,
+      warnings,
+    );
+  }
 
   const intents = buildMutationIntents(root, plan, config.outDir);
   const transaction = executeFileTransaction(root, intents, {
@@ -211,6 +233,7 @@ export async function runApplyAsync(config: ApplyConfig): Promise<OperationResul
     inlineChanged,
     metadataIndexChanged,
     authorityConflicts: [],
+    authorityNotices: inspection.notices,
     carrierDecisions: plan.carrierDecisions,
     discovery: plan.pipeline.coverage.discovery,
     transaction: {

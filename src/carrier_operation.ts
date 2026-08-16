@@ -140,10 +140,11 @@ export function buildCarrierOperationPlan(
 ): CarrierOperationPlan {
   const root = path.resolve(rootInput);
   const subjects = [...pipeline.metadataSubjects].sort((a, b) => a.path.localeCompare(b.path));
-  const carrierSubjects: CarrierSubject[] = subjects.map(({ path: subjectPath, artifactType, strategy }) => ({
+  const carrierSubjects: CarrierSubject[] = subjects.map(({ path: subjectPath, artifactType, strategy, inlineCarrierBlock }) => ({
     path: subjectPath,
     artifactType,
     strategy,
+    ...(inlineCarrierBlock ? { inlineCarrierBlock: { code: inlineCarrierBlock.code, malformed: inlineCarrierBlock.malformed } } : {}),
   }));
   const carrierDecisions = resolveCarrierDecisions({ authority, mode, subjects: carrierSubjects });
   assertCarrierDecisionCoverage(carrierSubjects, carrierDecisions);
@@ -210,6 +211,22 @@ export function metadataIndexDrift(plan: CarrierOperationPlan): CheckDrift | nul
     expectedHash: plan.metadataIndex.sha256,
     actualHash,
   };
+}
+
+/**
+ * Drift for decisions the repository's own authority asked for but cannot receive.
+ *
+ * A malformed header under an explicit `inline_allow` authorization is reported here, not
+ * repaired: preserving the file's bytes outranks satisfying the authorization.
+ */
+export function unsatisfiedAuthorizationDrift(plan: CarrierOperationPlan): CheckDrift[] {
+  return plan.carrierDecisions
+    .filter((decision) => decision.unsatisfiedInlineAuthorization === true)
+    .map((decision) => ({
+      path: decision.path,
+      kind: "conflict" as const,
+      message: `inline metadata is explicitly authorized (${decision.authorityRule ?? "inline_allow"}) but the existing frontmatter cannot be patched safely: ${decision.reason}`,
+    }));
 }
 
 export function inlinePlanDrift(plan: CarrierOperationPlan): CheckDrift[] {

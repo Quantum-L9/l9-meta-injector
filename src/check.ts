@@ -11,6 +11,7 @@ import {
   inlinePlanDrift,
   metadataIndexDrift,
   planCarrierOperationAsync,
+  unsatisfiedAuthorizationDrift,
 } from "./carrier_operation";
 import type { CheckDrift, CheckResult, OperationResult } from "./operation_contracts";
 import type { PipelineConfig } from "./schema";
@@ -73,7 +74,11 @@ function inspectArchivesWithoutExtraction(root: string): CheckDrift[] {
   }));
 }
 
-function authorityFailureResult(conflicts: CheckResult["authorityConflicts"], archiveDrift: CheckDrift[]): OperationResult {
+function authorityFailureResult(
+  conflicts: CheckResult["authorityConflicts"],
+  notices: CheckResult["authorityNotices"],
+  archiveDrift: CheckDrift[],
+): OperationResult {
   const check: CheckResult = {
     passed: false,
     repositoryMutated: false,
@@ -84,6 +89,7 @@ function authorityFailureResult(conflicts: CheckResult["authorityConflicts"], ar
       ...conflicts.map((item) => ({ path: item.path ?? ".", kind: "conflict" as const, message: item.message })),
     ],
     authorityConflicts: conflicts,
+    authorityNotices: notices,
     carrierDecisions: [],
     discovery: emptyDiscoverySummary(),
   };
@@ -97,7 +103,7 @@ export async function runCheckAsync(config: CheckConfig): Promise<OperationResul
     const inspection = inspectRepositoryAuthority(root, { expectedWriter: { repository: CANONICAL_METADATA_WRITER } });
     const archiveDrift = config.localFiles ? inspectArchivesWithoutExtraction(root) : [];
     if (inspection.conflicts.length > 0 || !inspection.authority) {
-      return authorityFailureResult(inspection.conflicts, archiveDrift);
+      return authorityFailureResult(inspection.conflicts, inspection.notices, archiveDrift);
     }
 
     const warnings: string[] = [];
@@ -129,6 +135,7 @@ export async function runCheckAsync(config: CheckConfig): Promise<OperationResul
     const drift = [
       ...deterministicDrift,
       ...discoveryDrift,
+      ...unsatisfiedAuthorizationDrift(plan),
       ...inlinePlanDrift(plan),
       ...(indexDrift ? [indexDrift] : []),
     ].sort((a, b) => `${a.path}:${a.kind}`.localeCompare(`${b.path}:${b.kind}`));
@@ -140,6 +147,7 @@ export async function runCheckAsync(config: CheckConfig): Promise<OperationResul
       planned: plan.subjects.length,
       drift,
       authorityConflicts: [],
+      authorityNotices: inspection.notices,
       carrierDecisions: plan.carrierDecisions,
       discovery: plan.pipeline.coverage.discovery,
     };

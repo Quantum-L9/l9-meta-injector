@@ -41,11 +41,33 @@ export interface AuthorityConflict {
     path?: string;
     evidence?: string[];
 }
+/**
+ * Non-blocking authority findings.
+ *
+ * A repository that once carried L9 metadata keeps that text in its history and in its
+ * prose. That is evidence, not a competing authority: it is reported here so adoption
+ * never depends on an operator deleting historical markers from their own sources.
+ * `META_LEGACY_WRITER_MIGRATION` is the `migration_only` allowance for a dormant legacy
+ * writer artifact — recorded, visible, and deliberately not a conflict.
+ */
+export type AuthorityNoticeCode = "META_LEGACY_METADATA_PRESENT" | "META_LEGACY_WRITER_MIGRATION";
+export interface AuthorityNotice {
+    code: AuthorityNoticeCode;
+    message: string;
+    path?: string;
+    evidence?: string[];
+}
 export interface CarrierDecision {
     path: string;
     carrier: MetadataCarrier;
     reason: string;
     authorityRule?: string;
+    /**
+     * The repository explicitly authorized inline metadata for this path, but its existing
+     * frontmatter is malformed and cannot be rewritten without destroying bytes the
+     * injector is required to preserve. The operation holds rather than guessing.
+     */
+    unsatisfiedInlineAuthorization?: boolean;
 }
 export type CheckDriftKind = "missing" | "stale" | "extra" | "conflict" | "unsupported";
 export interface CheckDrift {
@@ -62,6 +84,8 @@ export interface CheckResult {
     planned: number;
     drift: CheckDrift[];
     authorityConflicts: AuthorityConflict[];
+    /** Non-blocking authority findings, preserved so evidence is never silently dropped. */
+    authorityNotices: AuthorityNotice[];
     carrierDecisions: CarrierDecision[];
     discovery: DiscoverySummary;
 }
@@ -82,6 +106,8 @@ export interface ApplyResult {
     inlineChanged: string[];
     metadataIndexChanged: boolean;
     authorityConflicts: AuthorityConflict[];
+    /** Non-blocking authority findings, preserved so evidence is never silently dropped. */
+    authorityNotices: AuthorityNotice[];
     carrierDecisions: CarrierDecision[];
     discovery: DiscoverySummary;
     transaction: ApplyTransactionSummary;

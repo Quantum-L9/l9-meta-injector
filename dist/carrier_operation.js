@@ -44,6 +44,7 @@ exports.CANONICAL_METADATA_WRITER = void 0;
 exports.buildCarrierOperationPlan = buildCarrierOperationPlan;
 exports.planCarrierOperationAsync = planCarrierOperationAsync;
 exports.metadataIndexDrift = metadataIndexDrift;
+exports.unsatisfiedAuthorizationDrift = unsatisfiedAuthorizationDrift;
 exports.inlinePlanDrift = inlinePlanDrift;
 const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
@@ -140,10 +141,11 @@ function collectInlinePlans(root, subjects, byPath, planBySource) {
 function buildCarrierOperationPlan(mode, rootInput, authority, pipeline) {
     const root = path.resolve(rootInput);
     const subjects = [...pipeline.metadataSubjects].sort((a, b) => a.path.localeCompare(b.path));
-    const carrierSubjects = subjects.map(({ path: subjectPath, artifactType, strategy }) => ({
+    const carrierSubjects = subjects.map(({ path: subjectPath, artifactType, strategy, inlineCarrierBlock }) => ({
         path: subjectPath,
         artifactType,
         strategy,
+        ...(inlineCarrierBlock ? { inlineCarrierBlock: { code: inlineCarrierBlock.code, malformed: inlineCarrierBlock.malformed } } : {}),
     }));
     const carrierDecisions = (0, mutation_policy_1.resolveCarrierDecisions)({ authority, mode, subjects: carrierSubjects });
     (0, mutation_policy_1.assertCarrierDecisionCoverage)(carrierSubjects, carrierDecisions);
@@ -206,6 +208,21 @@ function metadataIndexDrift(plan) {
         expectedHash: plan.metadataIndex.sha256,
         actualHash,
     };
+}
+/**
+ * Drift for decisions the repository's own authority asked for but cannot receive.
+ *
+ * A malformed header under an explicit `inline_allow` authorization is reported here, not
+ * repaired: preserving the file's bytes outranks satisfying the authorization.
+ */
+function unsatisfiedAuthorizationDrift(plan) {
+    return plan.carrierDecisions
+        .filter((decision) => decision.unsatisfiedInlineAuthorization === true)
+        .map((decision) => ({
+        path: decision.path,
+        kind: "conflict",
+        message: `inline metadata is explicitly authorized (${decision.authorityRule ?? "inline_allow"}) but the existing frontmatter cannot be patched safely: ${decision.reason}`,
+    }));
 }
 function inlinePlanDrift(plan) {
     const drift = [];
