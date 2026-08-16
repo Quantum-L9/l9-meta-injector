@@ -4,7 +4,7 @@
   "statement": "The golden Repository Model Packet bundle was accepted by the bound l9-constellation-topology consumer without a translation shim.",
   "consumer": {
     "repository": "Quantum-L9/l9-constellation-topology",
-    "revision": "70dce61f6f92fbee47c4913d464af4820ca04ceb",
+    "revision": "4a0313a75eef7d3556582101918d5221bbe91d78",
     "entrypoints": [
       "l9_constellation_topology.packets.loader.load_repository_model_bundle",
       "l9_constellation_topology.packets.adapters.repository_model_v1.RepositoryModelV1Adapter.adapt"
