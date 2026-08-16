@@ -102,16 +102,31 @@ describe("workspace containment", () => {
     });
     const config = dispatch.normalizeEnvironment(env) as { reportPath: string; targetRoot: string };
     expect(path.relative(config.targetRoot, config.reportPath).startsWith("..")).toBe(true);
-    expect(config.reportPath.startsWith(String(env.RUNNER_TEMP))).toBe(true);
+    const runnerTemp = fs.realpathSync(String(env.RUNNER_TEMP));
+    expect(path.relative(runnerTemp, config.reportPath).startsWith("..")).toBe(false);
+    expect(path.isAbsolute(path.relative(runnerTemp, config.reportPath))).toBe(false);
   });
 });
 
 describe("input semantics", () => {
-  test("requires explicit authority for check and apply", () => {
+  test("requires explicit authority for check, apply, and skills", () => {
     const workspace = tempDir("l9-workspace-");
     const actionPath = tempDir("l9-action-");
     expect(() => dispatch.normalizeEnvironment(actionEnv(workspace, actionPath, { L9_INPUT_MODE: "check" }))).toThrow(/explicit authority/);
     expect(() => dispatch.normalizeEnvironment(actionEnv(workspace, actionPath, { L9_INPUT_MODE: "apply" }))).toThrow(/explicit authority/);
+    expect(() => dispatch.normalizeEnvironment(actionEnv(workspace, actionPath, { L9_INPUT_MODE: "skills" }))).toThrow(/explicit authority/);
+  });
+
+  test("forwards --authority into the skills invocation", () => {
+    const workspace = tempDir("l9-workspace-");
+    const actionPath = tempDir("l9-action-");
+    const config = dispatch.normalizeEnvironment(actionEnv(workspace, actionPath, {
+      L9_INPUT_MODE: "skills", L9_INPUT_AUTHORITY: "repo.owner",
+    }));
+    const invocation = dispatch.buildInvocation(config);
+    const authorityIndex = invocation.args.indexOf("--authority");
+    expect(authorityIndex).toBeGreaterThanOrEqual(0);
+    expect(invocation.args[authorityIndex + 1]).toBe("repo.owner");
   });
 
   test("rejects ambiguous booleans and unsafe mode combinations", () => {

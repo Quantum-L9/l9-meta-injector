@@ -147,7 +147,7 @@ export function resolveOperationMode(input: string): OperationModeResolution {
 }
 
 export function operationRequiresAuthority(mode: OperationMode): boolean {
-  return mode === "check" || mode === "apply";
+  return mode === "check" || mode === "apply" || mode === "skills";
 }
 
 export function isSupportedAuthoritySchema(schema: unknown): schema is MetaAuthoritySchema {

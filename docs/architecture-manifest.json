@@ -110,7 +110,7 @@
     },
     {
       "path": "docs/decision_log.md",
-      "git_blob_sha1": "b5d1b0639652e1734dc889783b460d4b8af30e3b"
+      "git_blob_sha1": "beb389689333112553932e8cffbe882a5406e4cb"
     },
     {
       "path": "docs/legacy/consolidation-v1/artifact_manifest.yaml",
@@ -194,7 +194,7 @@
     },
     {
       "path": "fixtures/package-consumer/types.ts",
-      "git_blob_sha1": "587a0e9d67d939bc38275e68b168bda10b900fd7"
+      "git_blob_sha1": "687178a08604a61bc472f0209b1993d33f46fb84"
     },
     {
       "path": "fixtures/repository-model/expected-bundle/manifest.json",

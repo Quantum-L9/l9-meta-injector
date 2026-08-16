@@ -41,14 +41,16 @@ describe("operation contracts", () => {
     expect(() => resolveOperationMode(" ")).toThrow("<empty>");
   });
 
-  test("requires authority only for check and apply", () => {
+  test("requires authority for check, apply, and skills (not inventory)", () => {
     expect(operationRequiresAuthority("inventory")).toBe(false);
-    expect(operationRequiresAuthority("skills")).toBe(false);
+    expect(operationRequiresAuthority("skills")).toBe(true);
     expect(operationRequiresAuthority("check")).toBe(true);
     expect(operationRequiresAuthority("apply")).toBe(true);
     expect(assertAuthorityForOperation("inventory", undefined)).toBeUndefined();
     expect(() => assertAuthorityForOperation("check", undefined)).toThrow("requires .l9/meta-authority.yaml");
+    expect(() => assertAuthorityForOperation("skills", undefined)).toThrow("requires .l9/meta-authority.yaml");
     expect(assertAuthorityForOperation("apply", authority)).toBe(authority);
+    expect(assertAuthorityForOperation("skills", authority)).toBe(authority);
   });
 
   test("validates the supported authority schema and structure", () => {

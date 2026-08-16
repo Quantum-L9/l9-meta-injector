@@ -14,6 +14,21 @@ function tmp(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "l9-edge-"));
 }
 
+/** Declare the canonical repository authority so governed skills mode may write. */
+function writeAuthority(root: string): void {
+  fs.mkdirSync(path.join(root, ".l9"), { recursive: true });
+  fs.writeFileSync(path.join(root, ".l9", "meta-authority.yaml"), [
+    "schema: l9.meta-authority/v1",
+    "writer:",
+    "  repository: Quantum-L9/l9-meta-injector",
+    "  ref: v4.0.0",
+    "default_carrier: central_manifest",
+    "legacy_writers: forbidden",
+    "inline_allow: [\"**/*.md\"]",
+    "",
+  ].join("\n"));
+}
+
 describe("omit matcher", () => {
   it("protects SKILL.md case-insensitively when protectSkillMd is on", () => {
     const root = tmp();
@@ -164,10 +179,13 @@ describe("skills mode — Cursor-native description", () => {
     fs.mkdirSync(skillDir, { recursive: true });
     const skillPath = path.join(skillDir, "SKILL.md");
     fs.writeFileSync(skillPath, "---\nname: review\ndescription: Reviews stuff\n---\n\n# Review\n\nCheck PRs carefully.\n");
+    writeAuthority(root);
     const out = tmp();
     const r = await runSkillsPipelineAsync({
-      root, outDir: out, dryRun: false, verbose: false, llmEnabled: true,
+      root, authority: "l9.doctrine.platform", outDir: out, dryRun: false, verbose: false, llmEnabled: true,
     });
+    expect(r.authorityResolved).toBe(true);
+    expect(r.repositoryMutated).toBe(true);
     expect(r.considered).toBe(1);
     expect(r.changed).toBe(1);
     const text = fs.readFileSync(skillPath, "utf8");
@@ -188,10 +206,13 @@ describe("skills mode — Cursor-native description", () => {
     const skillPath = path.join(skillDir, "SKILL.md");
     const original = "---\nname: ok\ndescription: Handles inventory omit rules carefully. Use when editing omit patterns or SKILL.md protect behavior.\nactivation_signals:\n  - omit rules\n  - skill protect\n---\n\n# Ok\n";
     fs.writeFileSync(skillPath, original);
+    writeAuthority(root);
     const out = tmp();
     const r = await runSkillsPipelineAsync({
-      root, outDir: out, dryRun: false, verbose: false, llmEnabled: true,
+      root, authority: "l9.doctrine.platform", outDir: out, dryRun: false, verbose: false, llmEnabled: true,
     });
+    expect(r.authorityResolved).toBe(true);
+    expect(r.repositoryMutated).toBe(false);
     expect(r.changed).toBe(0);
     expect(fs.readFileSync(skillPath, "utf8")).toBe(original);
   });

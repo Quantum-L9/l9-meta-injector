@@ -6,7 +6,7 @@ import { makeOpenAIAdapter, type LlmAdapter, type LlmDiagnostic } from "l9-meta-
 import { validateRepositoryModelPacket, type RepositoryModelPacket, type RepositoryModelValidationResult } from "l9-meta-injector/repository-model";
 const config: PipelineConfig = { root:".",glob:"**/*.md",dryRun:true,outDir:".out",namespace:"l9",authority:"l9.doctrine.platform",nearDupThreshold:0.9,hashPrefixLength:16,indexDir:".index",verbose:false,llmEnabled:false,normalizeFilenames:false };
 const pipelinePromise: Promise<PipelineResult> = runPipelineAsync(config);
-const skillsConfig: SkillsPipelineConfig = { root:".",dryRun:true,outDir:".skills",verbose:false,llmEnabled:false };
+const skillsConfig: SkillsPipelineConfig = { root:".",authority:"l9.doctrine.platform",dryRun:true,outDir:".skills",verbose:false,llmEnabled:false };
 const skillsPromise: Promise<SkillsPipelineResult> = runSkillsPipelineAsync(skillsConfig);
 const inventoryConfig: InventoryConfig = { root:".",outDir:".inventory",dryRun:true };
 const inventoryResult: InventoryResult = inventoryTree(inventoryConfig);
