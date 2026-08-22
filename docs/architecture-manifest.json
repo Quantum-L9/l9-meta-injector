@@ -66,11 +66,11 @@
     },
     {
       "path": "dist/extractors/work_intelligence.js",
-      "git_blob_sha1": "8584d713b343477d84419dfa6d380c22d227ce42"
+      "git_blob_sha1": "8b6f53b33d703c40a7c0a3ac7b336132c312aa5e"
     },
     {
       "path": "dist/extractors/work_intelligence.js.map",
-      "git_blob_sha1": "7c48d960523e88dfcdbe836ba8b46b9b6efb6205"
+      "git_blob_sha1": "44330e022d4d0a61d530be09c88867996a337a18"
     },
     {
       "path": "dist/index.d.ts",
@@ -466,7 +466,7 @@
     },
     {
       "path": "src/extractors/work_intelligence.ts",
-      "git_blob_sha1": "69c26048a4f584f7c919dbd76d9389ba0d3214a7"
+      "git_blob_sha1": "14ed423f6f50c7995fa5199a11886c8fe73137e1"
     },
     {
       "path": "src/index.ts",
@@ -602,7 +602,7 @@
     },
     {
       "path": "tests/work_intelligence.test.ts",
-      "git_blob_sha1": "bfd9c2cda26e7a3d8c71cd3ec7ba29d64778c33c"
+      "git_blob_sha1": "4638466d576c633eed7d053b3dd8f1d91ee4e566"
     },
     {
       "path": "tools/consolidation/README.md",

@@ -298,7 +298,11 @@ describe("hostile input", () => {
   // pattern that degrades super-linearly on a crafted line is a denial of
   // service, not a style problem. Each case below measured in seconds — or in
   // hours, extrapolated — before the patterns were rewritten to be linear.
+  // Sized so a quadratic pattern fails and a linear one passes with room to
+  // spare. The interpretation size limit is 512 KiB, so a single line of this
+  // length is well within what a document from an archive can carry.
   const BUDGET_MS = 2000;
+  const HOSTILE_LENGTH = 120000;
 
   function within(budget: number, run: () => void): number {
     const started = Date.now();
@@ -315,19 +319,43 @@ describe("hostile input", () => {
     within(BUDGET_MS, () => work("a.md", [line]));
   });
 
+  it("strips a long emphasis run without quadratic rescanning either", () => {
+    // The first version of the test above used sixty characters, which is enough
+    // to catch an exponential pattern and nowhere near enough to catch a
+    // quadratic one: `[*_]+$` replaced the exponential alternation and still cost
+    // eleven seconds at a hundred thousand characters, because `replace` retries
+    // at every start position. Two orders of magnitude is the point of this case.
+    const line = `Depends on: ${"*".repeat(HOSTILE_LENGTH)}x`;
+    within(BUDGET_MS, () => work("a.md", [line]));
+  });
+
+  it("trims a long non-alphanumeric run around a status without stalling", () => {
+    const line = `Status: ${"!".repeat(HOSTILE_LENGTH)}wip${"!".repeat(HOSTILE_LENGTH)}`;
+    within(BUDGET_MS, () => {
+      expect(objects(work("a.md", [line]), "work.status")).toEqual(["wip"]);
+    });
+  });
+
+  it("trims a long closing hash run on a heading without stalling", () => {
+    const line = `# Heading ${"#".repeat(HOSTILE_LENGTH)}`;
+    within(BUDGET_MS, () => {
+      expect(objects(structure("a.md", [line]), "document.heading")).toEqual(["H1: Heading"]);
+    });
+  });
+
   it("reads a heading whose trailing run is ambiguous without stalling", () => {
     // Measured at 26 seconds for this shape at 5,000 characters.
-    const line = `# ${" ".repeat(20000)}${"#".repeat(20)}${" ".repeat(20000)}x`;
+    const line = `# ${" ".repeat(HOSTILE_LENGTH / 2)}${"#".repeat(20)}${" ".repeat(HOSTILE_LENGTH / 2)}x`;
     within(BUDGET_MS, () => structure("a.md", [line]));
   });
 
   it("reads a title carrying a long whitespace run without stalling", () => {
-    const line = `# Roadmap${" ".repeat(40000)}tail`;
+    const line = `# Roadmap${" ".repeat(HOSTILE_LENGTH)}tail`;
     within(BUDGET_MS, () => work("a.md", [line]));
   });
 
   it("reads a frontmatter block with no colon on a long line without stalling", () => {
-    const lines = ["---", `${"a".repeat(40000)}${" ".repeat(40000)}`, "status: wip", "---", "", "body"];
+    const lines = ["---", `${"a".repeat(HOSTILE_LENGTH / 2)}${" ".repeat(HOSTILE_LENGTH / 2)}`, "status: wip", "---", "", "body"];
     within(BUDGET_MS, () => {
       expect(objects(work("a.md", lines), "work.status")).toEqual(["wip"]);
     });

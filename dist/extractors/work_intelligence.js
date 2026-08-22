@@ -93,17 +93,44 @@ function plain(value) {
     return value.replace(EMPHASIS, "").replace(/\s+/g, " ").trim();
 }
 /**
+ * Trim a run of characters from the front of a string.
+ *
+ * Scanned rather than matched, for the reason given on `trimRunEnd`.
+ */
+function trimRunStart(value, isTrimmable) {
+    let start = 0;
+    while (start < value.length && isTrimmable(value[start]))
+        start++;
+    return start === 0 ? value : value.slice(start);
+}
+/**
+ * Trim a run of characters from the end of a string.
+ *
+ * A `$`-anchored quantifier looks linear here and is not. `String.replace` retries
+ * the match at every start position, and each attempt scans to the end, so
+ * stripping a trailing run costs a quadratic number of steps: a hundred thousand
+ * asterisks measured at eleven seconds, and these strings come from documents
+ * inside archives this package does not control. Scanning inward from the end
+ * costs one step per character trimmed.
+ */
+function trimRunEnd(value, isTrimmable) {
+    let end = value.length;
+    while (end > 0 && isTrimmable(value[end - 1]))
+        end--;
+    return end === value.length ? value : value.slice(0, end);
+}
+const isEmphasis = (character) => character === "*" || character === "_";
+const ALPHANUMERIC = /[\p{L}\p{N}]/u;
+const isNotAlphanumeric = (character) => !ALPHANUMERIC.test(character);
+/**
  * Remove leading and trailing runs of markdown emphasis characters.
  *
- * Written as a character class rather than an alternation of `**`, `__`, `*` and
- * `_`. That alternation is ambiguous — a run of asterisks can be split into pairs
- * or singles in exponentially many ways — and against an anchor that ultimately
- * fails, the engine tries all of them: fifty asterisks in a `Depends on:` line
- * would hang the extractor on a document that came out of an untrusted archive.
- * A class matches the same runs in one linear pass.
+ * The alternation this replaced — `(?:\*\*|__|\*|_)+` — was ambiguous: a run of
+ * asterisks can be divided into pairs or singles in exponentially many ways, and
+ * against an anchor that ultimately fails the engine tries all of them.
  */
 function stripEmphasis(value) {
-    return value.replace(/^[*_]+/, "").replace(/[*_]+$/, "").trim();
+    return trimRunEnd(trimRunStart(value, isEmphasis), isEmphasis).trim();
 }
 /** Strip matching surrounding quotes, brackets or parentheses from a scalar. */
 function unwrap(value) {
@@ -204,10 +231,8 @@ const RELATION_PREDICATE_BY_LABEL = {
 };
 /** A declared status word, or null when the value is not one of them. */
 function statusValue(raw) {
-    const candidate = unwrap(plain(raw))
-        .replace(/^[^\p{L}\p{N}]+/u, "")
-        .replace(/[^\p{L}\p{N}]+$/u, "")
-        .toLowerCase();
+    const bare = unwrap(plain(raw));
+    const candidate = trimRunEnd(trimRunStart(bare, isNotAlphanumeric), isNotAlphanumeric).toLowerCase();
     return WORK_STATUS.has(candidate) ? candidate : null;
 }
 /** A declared kind word, or null when the value is not one of them. */
@@ -219,7 +244,7 @@ function kindValue(raw) {
 /**
  * An ATX heading, split only as far as the marker.
  *
- * The closing `#` run is stripped afterwards in code rather than matched here.
+ * The closing `#` run is trimmed afterwards by a scan rather than matched here.
  * Expressing it inline as `(.*?)\s*#*\s*$` makes the trailing whitespace
  * attributable to either of two `\s*` groups, and the engine tries every split:
  * a heading line of five thousand characters shaped `# … ### … x` measured at
@@ -227,8 +252,7 @@ function kindValue(raw) {
  * present, so it never backtracks at all.
  */
 const ATX_HEADING = /^ {0,3}(#{1,6})[ \t]+(.*)$/;
-/** A closing `#` run on a heading. One unambiguous quantifier, so linear. */
-const ATX_CLOSING = /#+$/;
+const isHash = (character) => character === "#";
 /** Every ATX heading outside frontmatter and fenced code, in document order. */
 function headings(view) {
     const out = [];
@@ -238,7 +262,7 @@ function headings(view) {
         const match = ATX_HEADING.exec(view.lines[index]);
         if (!match)
             continue;
-        const text = plain(match[2].trimEnd().replace(ATX_CLOSING, ""));
+        const text = plain(trimRunEnd(match[2].trimEnd(), isHash));
         if (text.length === 0)
             continue;
         out.push({ index, level: match[1].length, text });
