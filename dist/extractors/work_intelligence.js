@@ -40,40 +40,52 @@ const LEADING_ADMONITION_LINES = 10;
  */
 function readDocument(sourcePath, content) {
     const lines = (0, common_1.toLines)(content);
-    const markdown = isMarkdown(sourcePath);
-    let frontmatterStart = -1;
-    let frontmatterEnd = -1;
-    if (markdown && lines.length > 0 && lines[0].trim() === "---") {
-        const limit = Math.min(lines.length, MAX_FRONTMATTER_LINES);
-        for (let index = 1; index < limit; index++) {
-            const trimmed = lines[index].trim();
-            if (trimmed === "---" || trimmed === "...") {
-                frontmatterStart = 1;
-                frontmatterEnd = index - 1;
-                break;
-            }
-        }
+    if (!isMarkdown(sourcePath)) {
+        // Plain text has neither construct, so both regions are empty by definition.
+        return { lines, frontmatterStart: -1, frontmatterEnd: -1, fenced: new Array(lines.length).fill(false) };
     }
+    const [frontmatterStart, frontmatterEnd] = findFrontmatter(lines);
+    return { lines, frontmatterStart, frontmatterEnd, fenced: markFencedCode(lines, frontmatterEnd) };
+}
+/** The frontmatter body's line span, or `[-1, -1]` when the document has none. */
+function findFrontmatter(lines) {
+    if (lines.length === 0 || lines[0].trim() !== "---")
+        return [-1, -1];
+    const limit = Math.min(lines.length, MAX_FRONTMATTER_LINES);
+    for (let index = 1; index < limit; index++) {
+        const trimmed = lines[index].trim();
+        if (trimmed === "---" || trimmed === "...")
+            return [1, index - 1];
+    }
+    return [-1, -1];
+}
+const FENCE = /^\s{0,3}(`{3,}|~{3,})/;
+/**
+ * Which lines sit inside a fenced code block.
+ *
+ * A closing fence must use the same character as the one that opened it, so a
+ * ``` block containing ~~~ stays open. Frontmatter is skipped: its `---` lines
+ * are not fences, and its body is read as structured values elsewhere.
+ */
+function markFencedCode(lines, frontmatterEnd) {
     const fenced = new Array(lines.length).fill(false);
-    if (markdown) {
-        let fence = null;
-        for (let index = 0; index < lines.length; index++) {
-            if (frontmatterStart >= 0 && index <= frontmatterEnd + 1)
-                continue;
-            const match = /^\s{0,3}(`{3,}|~{3,})/.exec(lines[index]);
-            if (fence === null) {
-                if (match) {
-                    fence = match[1][0];
-                    fenced[index] = true;
-                }
-                continue;
+    let fence = null;
+    for (let index = 0; index < lines.length; index++) {
+        if (frontmatterEnd >= 0 && index <= frontmatterEnd + 1)
+            continue;
+        const match = FENCE.exec(lines[index]);
+        if (fence === null) {
+            if (match) {
+                fence = match[1][0];
+                fenced[index] = true;
             }
-            fenced[index] = true;
-            if (match?.[1].startsWith(fence))
-                fence = null;
+            continue;
         }
+        fenced[index] = true;
+        if (match?.[1].startsWith(fence))
+            fence = null;
     }
-    return { lines, frontmatterStart, frontmatterEnd, fenced };
+    return fenced;
 }
 function inFrontmatter(view, index) {
     return view.frontmatterStart >= 0 && index >= view.frontmatterStart && index <= view.frontmatterEnd;
@@ -373,7 +385,14 @@ exports.documentStructureExtractor = {
 };
 // ───────────────────────── work-intelligence/v1 ─────────────────────────
 const CHECKBOX = /^\s{0,8}(?:[-*+]|\d{1,3}[.)])\s+\[([ xX])\]\s*(.*)$/;
-const TODO_LINE = /^\s{0,8}(?:>\s?)*(?:[-*+]\s+|\d{1,3}[.)]\s+)?(?:\*\*|__)?TODO(?:\*\*|__)?\s*:\s*(.+)$/;
+/**
+ * An explicit `TODO:` line, matched after the list prefix has been stripped.
+ *
+ * The prefix used to be spelled out a second time inside this pattern, which
+ * made it the most complicated regex in the module and meant two places had to
+ * agree about what a list marker looks like.
+ */
+const TODO_LINE = /^(?:\*\*|__)?TODO(?:\*\*|__)?\s*:\s*(.+)$/;
 const BULLET = /^\s{0,3}(?:[-*+]|\d{1,3}[.)])\s+(.*)$/;
 const MILESTONE_LABEL = /^milestone(?: [a-z0-9.]{1,8})?$/;
 const BLOCKQUOTE_STATUS = /^\s{0,3}>\s*(?:\*\*|__)?\[?([A-Za-z]+)\]?(?:\*\*|__)?\s*(?::.*)?$/;
@@ -530,7 +549,7 @@ function taskSignal(line, index) {
         const predicate = checkbox[1] === " " ? "work.task.open" : "work.task.completed";
         return draft(predicate, text, index, line, "observed", "high");
     }
-    const todo = TODO_LINE.exec(line);
+    const todo = TODO_LINE.exec(line.replace(LIST_PREFIX, ""));
     if (todo === null)
         return null;
     const text = plain(todo[1]);
