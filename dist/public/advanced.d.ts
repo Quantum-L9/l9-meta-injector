@@ -47,3 +47,8 @@ export { preflightArchive, canonicalMemberPath, memberCollisionKey } from "../ar
 export type { ArchiveHold, ArchiveHoldCode, ArchivePreflightInput, ArchivePreflightResult, PreflightMember, } from "../archive_preflight";
 export { probeFileEncoding, probeBufferEncoding, readUtf8Strict, isDecodableText, ENCODING_CHUNK_BYTES } from "../encoding";
 export type { EncodingProbe, EncodingStatus } from "../encoding";
+export { compareCodePoints, canonicalPair } from "../ordering";
+export { buildCorpusIndex, buildDuplicateProjection, canonicalCorpusJson, corpusAnalysisIdentity, corpusSemanticHash, corpusStableId, indexedNearDuplicates, referenceNearDuplicates, jaccard, normalizeForSimilarity, shingleSet, tokenize, CORPUS_INDEX_SCHEMA, CORPUS_PROFILE_ID, CORPUS_PROFILE_VERSION, DEFAULT_NEAR_DUPLICATE_THRESHOLD, NEAR_DUPLICATE_METHOD, NEAR_DUPLICATE_VERSION, NEAR_DUPLICATE_MIN_TOKENS, NEAR_DUPLICATE_SHINGLE_SIZE, NEAR_DUPLICATE_MAX_BYTES, } from "../corpus_analysis";
+export type { CorpusAnalysisInput, CorpusIndex, CorpusIndexSummary, CorpusArtifactEntry, CorpusWorkSignal, CorpusDuplicateCluster, CorpusDuplicateRelation, CorpusNearDuplicateCandidate, } from "../corpus_analysis";
+export { renderCorpusReport } from "../corpus_report";
+export { documentStructureExtractor, workIntelligenceExtractor, WORK_INTELLIGENCE_PREDICATES, WORK_KIND_VOCABULARY, WORK_STATUS_VOCABULARY, } from "../extractors/work_intelligence";

@@ -69,11 +69,22 @@ const yaml_serialize_1 = require("./yaml_serialize");
 const meta_schema_1 = require("./meta_schema");
 const omit_1 = require("./omit");
 const encoding_1 = require("./encoding");
+const ordering_1 = require("./ordering");
 /** Load and validate a canonical meta-schema YAML file. */
 function loadMetaSchema(filePath) {
     return (0, meta_schema_1.toMetaSchema)((0, meta_schema_1.parseCanonicalYaml)(fs.readFileSync(filePath, "utf8")));
 }
-/** Group records by content_hash to surface duplicate clusters across the whole tree. */
+/**
+ * Group records by content_hash to surface duplicate clusters across the whole tree.
+ *
+ * Equality here is byte equality and nothing else: two records join a cluster
+ * because their content hashes match, never because their names look alike. A
+ * record with no hash cannot be known to duplicate anything and is left out.
+ *
+ * Ordering is code-point throughout. `localeCompare` would let the host's locale
+ * decide the order of a cluster's paths and therefore which one is reported
+ * first, which is not something a corpus identity may depend on.
+ */
 function buildDuplicateClusters(records) {
     const byHash = new Map();
     for (const r of records) {
@@ -87,17 +98,21 @@ function buildDuplicateClusters(records) {
     for (const [hash, group] of byHash) {
         if (group.length < 2)
             continue;
-        const paths = group.map((g) => g.relative_path).sort((a, b) => a.localeCompare(b));
+        const paths = group.map((g) => g.relative_path).sort(ordering_1.compareCodePoints);
         const size = group[0].size_bytes ?? 0;
         clusters.push({
             content_hash: hash,
             count: group.length,
             wasted_bytes: (group.length - 1) * size,
-            keeper: paths.slice().sort((a, b) => a.length - b.length || a.localeCompare(b))[0],
+            keeper: paths.slice().sort((a, b) => a.length - b.length || (0, ordering_1.compareCodePoints)(a, b))[0],
             paths,
         });
     }
-    return clusters.sort((a, b) => b.wasted_bytes - a.wasted_bytes || b.count - a.count);
+    // Largest recoverable first, then widest cluster, then the content hash so two
+    // clusters of equal size and count still have one fixed order.
+    return clusters.sort((a, b) => b.wasted_bytes - a.wasted_bytes
+        || b.count - a.count
+        || (0, ordering_1.compareCodePoints)(a.content_hash, b.content_hash));
 }
 const CODE_EXTS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".go", ".rs", ".java", ".c", ".h", ".cpp", ".hpp", ".cc", ".cs", ".rb", ".php", ".swift", ".kt", ".kts", ".scala", ".sh", ".bash", ".zsh", ".lua", ".r", ".jl", ".pl", ".pm", ".dart", ".ex", ".exs", ".ql", ".qls"]);
 const CONFIG_EXTS = new Set([".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", ".properties", ".env", ".lock", ".plist", ".tf", ".tfvars", ".sha256", ".sha1", ".md5"]);

@@ -63,7 +63,7 @@ const encoding_1 = require("./encoding");
 const repository_model_1 = require("./repository_model");
 /** Identity of the interpretation policy. Bumped when extraction rules change. */
 exports.INTERPRETATION_PROFILE_ID = "meta-injector-repository-interpretation";
-exports.INTERPRETATION_PROFILE_VERSION = "1.0.0";
+exports.INTERPRETATION_PROFILE_VERSION = "1.1.0";
 // ───────────────────────────── secret safety ─────────────────────────────
 /**
  * Files never opened for interpretation.
@@ -116,6 +116,21 @@ function boundExcerpt(value) {
         ? collapsed
         : `${collapsed.slice(0, exports.MAX_EXCERPT_LENGTH - 1)}…`;
 }
+/** Why a file the profile claimed could not be interpreted, by probe status. */
+const ENCODING_REFUSAL_CODES = {
+    binary: "interpretation.binary_detected",
+    invalid: "interpretation.unsupported_encoding",
+    unreadable: "interpretation.unreadable",
+};
+const ENCODING_REFUSAL_MESSAGES = {
+    binary: "file holds binary content and was not interpreted",
+    invalid: "file is not valid UTF-8 text and was not interpreted",
+    unreadable: "file could not be read",
+};
+/** An extractor without a declared scope speaks for the repository. */
+function subjectScopeOf(extractor) {
+    return extractor.subjectScope ?? "repository";
+}
 function profileHash(extractors) {
     return (0, repository_model_1.semanticHash)({
         id: exports.INTERPRETATION_PROFILE_ID,
@@ -125,7 +140,11 @@ function profileHash(extractors) {
         absolute_paths_in_identity: false,
         max_excerpt_length: exports.MAX_EXCERPT_LENGTH,
         extractors: extractors
-            .map((extractor) => ({ id: extractor.id, version: extractor.version }))
+            .map((extractor) => ({
+            id: extractor.id,
+            version: extractor.version,
+            subject_scope: subjectScopeOf(extractor),
+        }))
             .sort((left, right) => (0, repository_model_1.compareCodePoints)(left.id, right.id)),
     });
 }
@@ -161,6 +180,11 @@ function interpretRepository(input) {
         .sort((left, right) => (0, repository_model_1.compareCodePoints)(left.relative_path, right.relative_path));
     const observedPaths = new Set(input.inventory.records.map((record) => record.relative_path));
     const pathExists = (relativePath) => observedPaths.has(relativePath.replace(/^\.\//, ""));
+    // Artifact subjects are derived with the packet builder's own identity function,
+    // from the same relative path it will key the artifact record on. For an archive
+    // member that path is the virtual locator, so a member's assertions point at the
+    // member's artifact rather than at the archive that carried it.
+    const artifactSubjectFor = (sourcePath) => (0, repository_model_1.artifactIdFor)(input.subjectId, sourcePath);
     for (const record of records) {
         const sourcePath = record.relative_path;
         const claiming = extractors.filter((extractor) => extractor.matches(sourcePath));
@@ -191,14 +215,14 @@ function interpretRepository(input) {
         // excerpts do not match the bytes their hash claims to cite.
         const encoding = (0, encoding_1.probeFileEncoding)(absolute);
         if (encoding.status !== "utf8") {
+            // Three different reasons a file cannot be interpreted, reported as three
+            // codes. Binary content is not a broken encoding — a `.txt` holding image
+            // bytes is doing nothing wrong, it is simply not text — and collapsing the
+            // two would make an inventory of encoding problems misleading.
             diagnostics.push({
-                code: encoding.status === "unreadable"
-                    ? "interpretation.unreadable"
-                    : "interpretation.unsupported_encoding",
+                code: ENCODING_REFUSAL_CODES[encoding.status],
                 severity: "warning",
-                message: encoding.status === "unreadable"
-                    ? `file could not be read: ${encoding.reason}`
-                    : `file is not valid UTF-8 text and was not interpreted: ${encoding.reason}`,
+                message: `${ENCODING_REFUSAL_MESSAGES[encoding.status]}: ${encoding.reason}`,
                 source_path: sourcePath,
             });
             continue;
@@ -219,10 +243,13 @@ function interpretRepository(input) {
         // Hash the text actually interpreted, so evidence binds to what was parsed.
         const contentHash = (0, repository_model_1.sha256TextPrefixed)(content);
         for (const extractor of claiming) {
+            const subjectId = subjectScopeOf(extractor) === "artifact"
+                ? artifactSubjectFor(sourcePath)
+                : input.subjectId;
             let drafts;
             try {
                 drafts = extractor.extract({
-                    subjectId: input.subjectId,
+                    subjectId,
                     sourcePath,
                     content,
                     contentHash,
@@ -263,7 +290,7 @@ function interpretRepository(input) {
                     continue;
                 }
                 const identity = {
-                    subject_id: input.subjectId,
+                    subject_id: subjectId,
                     predicate: draft.predicate,
                     object: draft.object,
                     source_path: sourcePath,
@@ -272,7 +299,7 @@ function interpretRepository(input) {
                 };
                 assertions.push({
                     assertion_id: (0, repository_model_1.stableId)("assertion", identity),
-                    subject_id: input.subjectId,
+                    subject_id: subjectId,
                     predicate: draft.predicate,
                     object: draft.object,
                     source_path: sourcePath,

@@ -110,9 +110,10 @@ npm run local-source -- ~/Downloads/Bundle.zip --name Bundle --out ./out
 npm run local-source -- ~/Documents/design.md  --name design --out ./out
 ```
 
-Output is a Repository Model Packet bundle under `<out>/bundle` plus an acquisition
-manifest at `<out>/local-source-manifest.json`. The manifest is never written inside
-the observed tree.
+Output is a Repository Model Packet bundle under `<out>/bundle`, an acquisition
+manifest at `<out>/local-source-manifest.json`, and the corpus projection at
+`<out>/corpus-index.json` and `<out>/corpus-report.md`. Nothing is written inside the
+observed tree.
 
 What the observation guarantees:
 
@@ -149,6 +150,39 @@ What this trusts and refuses, and its known limits, is stated in
 [`docs/local-source-trust-boundary.md`](docs/local-source-trust-boundary.md).
 Moving off `--local-files`:
 [`docs/migrations/local-files-to-local-source.md`](docs/migrations/local-files-to-local-source.md).
+
+### Corpus intelligence: what the documents declare, and which are the same
+
+Acquisition answers *what exists*. The corpus layer (ADR-037) answers three more
+questions about the same observation, and stops there.
+
+**What each document declares about its own work.** Titles, headings, an explicit
+`Status: WIP`, a `kind: plan`, checkbox and `TODO:` tasks, milestones, and declared
+`Depends on:` / `Blocked by:` / `Supersedes:` relations — each attached to *that
+document's* artifact and citing the exact line that states it. An archive member's
+claims attach to the member, not to the archive. Nothing is inferred: no status from
+a file's age or path, no kind from the theme of the body, no task from the word
+"todo" in a sentence. A document that contradicts itself keeps both declarations.
+
+**Which files are byte-identical.** Exact duplicate clusters span physical files and
+virtual archive members together, so a file, its copy two folders over, and its copy
+inside a nested ZIP land in one cluster. Each cluster names a *representative* — a
+deterministic rendering anchor, chosen by shortest path. It is not a recommendation
+about which copy to keep.
+
+**Which pairs share wording.** Deterministic lexical similarity (exact Jaccard over
+5-token shingles, default threshold 0.85) reported as *candidates for a reader*.
+A candidate is never a claim that two documents share a topic or a project, and never
+a suggestion to merge or delete anything.
+
+```bash
+npm run local-source -- ./corpus --near-duplicate-threshold 0.7
+npm run local-source -- ./corpus --no-near-duplicates   # exact duplicates still report
+```
+
+No file is moved, deleted, or consolidated. Topic clustering, embeddings, LLM
+interpretation, prioritization and roadmap generation are explicitly not part of v1.
+Full semantics: [`docs/corpus-intelligence.md`](docs/corpus-intelligence.md).
 
 ### Legacy archive materialization
 

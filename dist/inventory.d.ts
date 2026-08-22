@@ -66,7 +66,17 @@ export interface InventoryResult {
 }
 /** Load and validate a canonical meta-schema YAML file. */
 export declare function loadMetaSchema(filePath: string): MetaSchema;
-/** Group records by content_hash to surface duplicate clusters across the whole tree. */
+/**
+ * Group records by content_hash to surface duplicate clusters across the whole tree.
+ *
+ * Equality here is byte equality and nothing else: two records join a cluster
+ * because their content hashes match, never because their names look alike. A
+ * record with no hash cannot be known to duplicate anything and is left out.
+ *
+ * Ordering is code-point throughout. `localeCompare` would let the host's locale
+ * decide the order of a cluster's paths and therefore which one is reported
+ * first, which is not something a corpus identity may depend on.
+ */
 export declare function buildDuplicateClusters(records: InventoryRecord[]): DuplicateCluster[];
 interface Classification {
     type: InventoryArtifactType;

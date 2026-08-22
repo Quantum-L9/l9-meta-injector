@@ -32,6 +32,32 @@ Source revision is explicit and never inferred. Capabilities and relationships r
 evidence; unsupported domains stay empty and are reported as diagnostics. Producer-side
 validation must pass before a bundle is written.
 
+An assertion's subject is a repository ID or an artifact ID from the same packet, and
+`src/repository_model.ts#artifactIdFor` is the only implementation of artifact identity.
+Interpretation resolves the subject from `Extractor.subjectScope`, defaulting to
+`repository`; the packet builder preserves whatever subject arrives, and validation
+rejects any subject that resolves to neither.
+
+## Corpus intelligence
+
+`src/corpus_analysis.ts` is normative for `l9.corpus-index/v1`. It is a projection: every
+value derives from the acquisition observation, the emitted packet, or the two duplicate
+analyses, and no source file is read.
+
+Three classes stay distinct and must not be conflated:
+
+| Class | Basis | May be stated as |
+|---|---|---|
+| fact | equal content hashes | "exact duplicate", "byte-identical" |
+| candidate analysis | lexical similarity at a stated threshold | "candidate", "lexical similarity" |
+| source-declared | an explicit declaration with a cited line | what the document says about itself |
+
+A near-duplicate candidate must never be rendered as a duplicate, as shared topic or
+project, as supersession or redundancy, or as a recommendation to merge or delete. A
+cluster's representative must never be described as a keeper or canonical copy.
+`DUPLICATE_OF` is a corpus-index relation and is deliberately absent from
+`RepositoryModelEdgeType`, which is a vocabulary shared with topology.
+
 ## Distribution
 
 `docs/package-contract.json` governs the npm tarball. Committed `dist/` must equal an isolated build. The packed `dist/` set must equal committed `dist/`. Runtime, declarations, and deep-import rejection are tested from the installed tarball.

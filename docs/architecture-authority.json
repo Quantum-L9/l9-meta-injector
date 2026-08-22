@@ -31,7 +31,11 @@
     "local_source": "src/local_source.ts",
     "local_archive_policy": "src/local_archive_policy.ts",
     "archive_preflight": "src/archive_preflight.ts",
-    "encoding": "src/encoding.ts"
+    "encoding": "src/encoding.ts",
+    "corpus_analysis": "src/corpus_analysis.ts",
+    "corpus_report": "src/corpus_report.ts",
+    "work_intelligence": "src/extractors/work_intelligence.ts",
+    "ordering": "src/ordering.ts"
   },
   "distribution": {
     "model": "committed_dist_mirror",
@@ -223,5 +227,37 @@
     "resource_budget_version": "1",
     "legacy_materialization": "src/archives.ts",
     "legacy_materialization_requires_ownership_evidence": true
+  },
+  "corpus_intelligence": {
+    "model": "derived analysis over an acquisition observation and the packet built from it",
+    "analysis": "src/corpus_analysis.ts#buildCorpusIndex",
+    "report": "src/corpus_report.ts#renderCorpusReport",
+    "index_schema": "l9.corpus-index/v1",
+    "corpus_profile_id": "l9-meta-injector-corpus-intelligence",
+    "corpus_profile_version": "1.0.0",
+    "reads_source_files": "no",
+    "introduces_new_facts": "no",
+    "assertion_subject_scopes": [
+      "repository",
+      "artifact"
+    ],
+    "assertion_subject_identity": "src/repository_model.ts#artifactIdFor",
+    "work_intelligence_extractors": [
+      "document-structure/v1",
+      "work-intelligence/v1"
+    ],
+    "work_intelligence_inference": "forbidden; every predicate requires an explicit declaration site and cites its exact line",
+    "exact_duplicate_basis": "equal content hashes",
+    "exact_duplicate_scope": "physical files and virtual archive members in one unified record set",
+    "duplicate_edge_in_repository_model": "no; DUPLICATE_OF is rendered in the corpus index only",
+    "representative_is_keeper_recommendation": "no",
+    "near_duplicate_method": "text-near-duplicate/v1",
+    "near_duplicate_version": "1.0.0",
+    "near_duplicate_default_threshold": 0.85,
+    "near_duplicate_epistemic_class": "candidate_analysis",
+    "near_duplicate_semantic_claim": "forbidden",
+    "source_mutation": "forbidden",
+    "file_move_or_delete": "forbidden",
+    "topic_clustering": "out_of_scope_v1"
   }
 }

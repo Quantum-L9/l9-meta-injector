@@ -1,7 +1,7 @@
 import { InventoryResult } from "./inventory";
 /** Identity of the interpretation policy. Bumped when extraction rules change. */
 export declare const INTERPRETATION_PROFILE_ID = "meta-injector-repository-interpretation";
-export declare const INTERPRETATION_PROFILE_VERSION = "1.0.0";
+export declare const INTERPRETATION_PROFILE_VERSION = "1.1.0";
 /**
  * How an assertion was evidenced.
  *
@@ -56,7 +56,11 @@ export interface InterpretationResult {
     diagnostics: InterpretationDiagnostic[];
 }
 export interface ExtractorFileInput {
-    /** Subject the assertions attach to, e.g. `repo:golden-repo`. */
+    /**
+     * Subject the assertions attach to, already resolved for this extractor's scope:
+     * the repository subject (`repo:golden-repo`) for a repository-scoped extractor,
+     * this file's artifact ID (`artifact:<hash>`) for an artifact-scoped one.
+     */
     subjectId: string;
     /** Repository-relative POSIX path. Never absolute: identity must be portable. */
     sourcePath: string;
@@ -82,9 +86,25 @@ export interface AssertionDraft {
     authority: InterpretedAuthority;
     confidence: InterpretedConfidenceLevel;
 }
+/**
+ * Whether an extractor's assertions describe the repository or one artifact.
+ *
+ * Repository scope is the default and the historical behavior: a rule that reads
+ * `README.md` to learn the repository's declared status speaks for the whole
+ * repository. Artifact scope is for rules whose claim is about the file itself —
+ * this plan is a draft, this note lists these tasks — where attaching the claim to
+ * the repository would be a category error.
+ */
+export type ExtractorSubjectScope = "repository" | "artifact";
 export interface Extractor {
     id: string;
     version: string;
+    /**
+     * Defaults to `repository`. An existing extractor keeps repository scope unless
+     * it opts in here, so widening the interpreter never silently re-points claims
+     * that were written to describe the repository.
+     */
+    subjectScope?: ExtractorSubjectScope;
     /** True when this extractor claims the file. Path-based and side-effect free. */
     matches(sourcePath: string): boolean;
     /** Parse and report. Must not throw on malformed input; return [] instead. */
@@ -100,7 +120,11 @@ export declare function boundExcerpt(value: string): string;
 export interface InterpretRepositoryInput {
     /** Repository root the inventory was taken from. */
     root: string;
-    /** Subject the assertions attach to, e.g. `repo:golden-repo`. */
+    /**
+     * The repository subject, e.g. `repo:golden-repo`. Repository-scoped extractors
+     * attach to it directly; artifact-scoped ones attach to artifact IDs derived
+     * from it, so this value must be the same repository ID the packet will carry.
+     */
     subjectId: string;
     inventory: InventoryResult;
     /**

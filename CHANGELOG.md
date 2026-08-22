@@ -16,7 +16,20 @@
 - Added `LocalArchivePolicy` (`src/local_archive_policy.ts`): conservative, documented, configurable limits on archive size, member count, per-member/per-archive/per-session expansion, compression ratio, nesting depth, path length and processing time, enforced against declared metadata and again against the bytes actually produced.
 - Added whole-file UTF-8 validation in bounded memory (`src/encoding.ts`).
 - Added a second topology conformance subject: a committed non-Git local source with a nested archive, whose golden bundle the bound `l9-constellation-topology` consumer accepts with no translation shim.
+- Added artifact-scoped assertions (ADR-037). `Extractor.subjectScope` selects `repository` (the default and previous behavior) or `artifact`; interpretation resolves the subject per extractor per file, and the packet builder no longer rewrites every assertion subject to the repository ID. Producer validation now accepts a subject resolving to a repository *or* an artifact in the same packet. `artifactIdFor` is exported as the single artifact identity function used by both packet building and interpretation.
+- Added `document-structure/v1` and `work-intelligence/v1` (`src/extractors/work_intelligence.ts`), artifact-scoped extractors that read declared titles, headings, status, kind, checkbox and `TODO:` tasks, milestones, and declared `depends_on` / `blocked_by` / `references` / `supersedes` / `superseded_by` relations from Markdown and plain text. Every predicate requires an explicit declaration site and cites its exact line; fenced code is skipped; contradictory declarations both survive.
+- Added deterministic corpus analysis (`src/corpus_analysis.ts`): exact duplicate clusters projected onto artifact identity with `DUPLICATE_OF` star relations, and `text-near-duplicate/v1` candidates — exact Jaccard over unique 5-token shingles of NFKC-normalized text, default threshold 0.85, generated through a shingle index proven equal to a bounded all-pairs reference.
+- Added `l9.corpus-index/v1` (`corpus-index.json`) and a deterministic human report (`corpus-report.md`, `src/corpus_report.ts`), both projections of the acquisition observation, the emitted packet, and the two duplicate analyses. Neither reads source files or introduces facts.
+- Added `--near-duplicate-threshold` and `--no-near-duplicates` to `npm run local-source`, which now also emits `corpus-index.json` and `corpus-report.md`.
+- Added `src/ordering.ts` as the single home of `compareCodePoints`, plus `canonicalPair` for order-independent pair identity. `repository_model` re-exports the comparator, so the published surface is unchanged.
 - Added a `Makefile` with `pr-check` and `pr`. `make pr` is the sanctioned publish path: it runs `npm run lint` and `npm run validate`, refuses a dirty tree, then pushes and opens the pull request, so a push is never separable from the gate it claims to have passed. The Makefile is not part of the packed artifact.
+
+### Changed
+
+- `local_source` runs the duplicate-cluster builder over its unified record set, so `InventoryResult.duplicates` covers physical files and virtual archive members together instead of always being empty.
+- `buildDuplicateClusters` orders paths and clusters by code point instead of `localeCompare`, breaking ties on content hash. Locale-aware ordering varies by host, which a reproducible corpus identity cannot depend on.
+- The interpretation profile is `1.1.0`. The Repository Model packet version stays `1.1.0`: no field changed shape, and the bound consumer accepts artifact-scoped subjects with no translation shim. Both golden bundles were regenerated and re-proved against `l9-constellation-topology` at `4a0313a75eef7d3556582101918d5221bbe91d78`.
+- A binary file claimed by a text extractor is reported as `interpretation.binary_detected` rather than `interpretation.unsupported_encoding`. Binary content is not a broken encoding, and one inventory should not conflate the two.
 
 ### Fixed
 

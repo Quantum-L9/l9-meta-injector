@@ -107,6 +107,41 @@ on its own.
 Trust boundary and known limits: `docs/local-source-trust-boundary.md`.
 Migration from `--local-files`: `docs/migrations/local-files-to-local-source.md`.
 
+## Corpus intelligence
+
+`src/corpus_analysis.ts` and `src/corpus_report.ts` derive analysis from an acquisition
+observation and the packet built from it (ADR-037). They read no source files of their
+own, so a projection can never disagree with the packet it cites.
+
+```text
+observation + packet -> exact duplicate projection (fact)
+                     -> near-duplicate candidates  (candidate analysis)
+                     -> l9.corpus-index/v1 -> corpus-report.md
+```
+
+Three layers, three epistemic classes, kept separate on purpose:
+
+- **Interpretation** (`src/interpretation.ts`) emits assertions scoped to a repository
+  or to a single artifact. `Extractor.subjectScope` decides which; `repository` is the
+  default, so widening the interpreter never re-points an existing rule's claims.
+  Artifact subjects come from `artifactIdFor`, the one identity function packet building
+  also uses, keyed on the same relative path — a virtual locator for an archive member.
+- **Exact duplicates** are equal content hashes and nothing else. Clustering runs over
+  the unified record set, so physical files and archive members cluster together.
+  `DUPLICATE_OF` is rendered in the corpus index only: `RepositoryModelEdgeType` is a
+  vocabulary shared with topology and does not own a duplicate edge.
+- **Near-duplicate candidates** (`text-near-duplicate/v1`) are exact Jaccard over unique
+  5-token shingles of normalized text at a stated threshold. Deterministic, and never a
+  claim of shared topic, shared project, supersession, or redundancy.
+
+A cluster's representative is a rendering anchor chosen by shortest path, never a
+recommendation about which copy to keep. No file is moved, deleted, or consolidated.
+
+The corpus index carries its own canonical serializer: the packet's is integer-only by
+wire contract, and a similarity score is fractional.
+
+Semantics and vocabulary: `docs/corpus-intelligence.md`.
+
 ## Distribution
 
 Source compiles to committed `dist/`. `check:dist` rebuilds in isolation and compares every JavaScript file, declaration, and source map. It rejects missing, extra, changed, untracked, or symlinked distribution files.

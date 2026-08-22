@@ -294,6 +294,15 @@ describe("encoding safety", () => {
       .map((d) => d.source_path)
       .sort();
     expect(refused).toEqual(["README.md", "invalid.py"]);
+
+    // A `.txt` holding image bytes is claimed by the text extractors and refused
+    // on its bytes, but it is not an encoding fault — it is simply not text, and
+    // it is reported under its own code so the two never blur together.
+    const binary = (result.interpretation?.diagnostics ?? [])
+      .filter((d) => d.code === "interpretation.binary_detected")
+      .map((d) => d.source_path);
+    expect(binary).toEqual(["binary.txt"]);
+    expect(interpretedPaths.has("binary.txt")).toBe(false);
   });
 
   test("a UTF-8 BOM file is valid and stays observable", () => {

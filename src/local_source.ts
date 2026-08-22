@@ -27,7 +27,7 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { InventoryArtifactType, InventoryRecord, InventoryResult, classifyInventory } from "./inventory";
+import { InventoryArtifactType, InventoryRecord, InventoryResult, buildDuplicateClusters, classifyInventory } from "./inventory";
 import { EncodingProbe, probeFileEncoding } from "./encoding";
 import { OmitMatcher, buildOmitMatcher } from "./omit";
 import {
@@ -1275,7 +1275,11 @@ function buildInventoryResult(
     typeDistribution,
     // Acquisition writes no manifests of its own; the CLI owns output placement.
     manifestPaths: { json: "", csv: "", md: "", duplicates: "" },
-    duplicates: [],
+    // Clustered over the unified record set — physical files and virtual archive
+    // members together — so a file that also exists inside a ZIP is recognised as
+    // the same bytes. Running this per-source would miss exactly the cross-archive
+    // duplication a mixed corpus is most likely to contain.
+    duplicates: buildDuplicateClusters(records),
     records,
     skippedDirs,
     omittedPaths: [...omittedPaths].sort(compareCodePoints),

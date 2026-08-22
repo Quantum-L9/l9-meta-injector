@@ -1,13 +1,12 @@
 import { InventoryResult } from "./inventory";
 import { InterpretationResult } from "./interpretation";
+export { compareCodePoints } from "./ordering";
 export declare const REPOSITORY_MODEL_PACKET_TYPE = "l9.repository-model";
 export declare const REPOSITORY_MODEL_PACKET_VERSION = "1.1.0";
 export declare const REPOSITORY_MODEL_PRODUCER_NAME = "l9-meta-injector.repository-model";
 export type CanonicalValue = string | number | boolean | null | CanonicalValue[] | {
     [key: string]: CanonicalValue;
 };
-/** Code-point ordering. Never locale-aware: ordering must not vary by environment. */
-export declare function compareCodePoints(a: string, b: string): number;
 /** Canonical JSON text for any packet-shaped value. */
 export declare function canonicalJson(value: unknown): string;
 /** Content identity of exact text, used by interpretation evidence. */
@@ -15,6 +14,21 @@ export declare function sha256TextPrefixed(value: string): string;
 /** Semantic identity: volatile fields removed, then canonical bytes hashed. */
 export declare function semanticHash(value: unknown): string;
 export declare function stableId(prefix: string, value: unknown): string;
+/** The repository subject a packet and its interpretation both attach to. */
+export declare function repositoryIdFor(repositoryName: string): string;
+/**
+ * The one artifact identity algorithm.
+ *
+ * Packet building and interpretation both need to name the same artifact, and a
+ * second implementation of this rule would let the two drift silently: an
+ * assertion would point at an artifact ID that no artifact record carries, and
+ * the mismatch would only surface as a validation failure far from its cause.
+ * Both callers use this function.
+ *
+ * `sourcePath` is the portable relative path — for an archive member, the
+ * virtual locator (`bundle.zip!/docs/a.md`). Absolute paths never participate.
+ */
+export declare function artifactIdFor(repositoryId: string, sourcePath: string): string;
 export type RepositoryModelConfidenceLevel = "low" | "medium" | "high";
 export type RepositoryModelEvidenceStrength = "none" | "weak" | "corroborated" | "direct";
 export type RepositoryModelDerivationMethod = "declared" | "deterministic" | "cross-record" | "heuristic" | "model-assisted" | "unknown";

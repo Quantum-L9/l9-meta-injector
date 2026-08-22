@@ -15,22 +15,22 @@
     {
       "id": "inventory",
       "bundle": "fixtures/repository-model/expected-bundle",
-      "packet_id": "packet:44436ba8f4860a0867bca8e6cfd5ba901aec695182ac78ebb97275e1c67b38d3",
-      "semantic_hash": "sha256:44436ba8f4860a0867bca8e6cfd5ba901aec695182ac78ebb97275e1c67b38d3",
+      "packet_id": "packet:dc1fcb622a0cc797aabfac0f25af199a8b026e78f3fece54eae1e4ed2c1ddf98",
+      "semantic_hash": "sha256:dc1fcb622a0cc797aabfac0f25af199a8b026e78f3fece54eae1e4ed2c1ddf98",
       "packet_type": "l9.repository-model",
       "packet_version": "1.1.0",
       "files": [
         {
           "path": "manifest.json",
-          "content_hash": "sha256:320cdb2b218a0de41b7f93270707f7b0d13439c4bbcab1844e5643f46fe0ad1e"
+          "content_hash": "sha256:adc253ed65bdc2a5cefe1a43ac6d25a831fdb3e34525c301e3cfa0a777921f1b"
         },
         {
           "path": "packet.json",
-          "content_hash": "sha256:b518b4e9371fc07cf886a95f6529a5a9cf67a06e292328e49bb1c29257e5c1b3"
+          "content_hash": "sha256:ca6a0a559cfe8b007f064ce84c084c73464ea7e3a1f25276c91e8fc2b08b60d0"
         },
         {
           "path": "receipts/validation-receipt.json",
-          "content_hash": "sha256:ffaff5660115a8fcea855f97ccdc797b94de664ce994847d322761acaa67f13a"
+          "content_hash": "sha256:0ff4e5c0c971f815fea26802d567e45157cfefdd3ab2f54b950337ad938c307c"
         }
       ],
       "normalized_counts": {
@@ -45,22 +45,22 @@
     {
       "id": "local-source",
       "bundle": "fixtures/local-source/expected-bundle",
-      "packet_id": "packet:5d05d434b85193761d090d4863ce2d0794e047971e2d008079012c2bfa79641e",
-      "semantic_hash": "sha256:5d05d434b85193761d090d4863ce2d0794e047971e2d008079012c2bfa79641e",
+      "packet_id": "packet:a21c87ca68be8baefcceaf677568498b5decdc43ab1b528b480b6e1870969e5a",
+      "semantic_hash": "sha256:a21c87ca68be8baefcceaf677568498b5decdc43ab1b528b480b6e1870969e5a",
       "packet_type": "l9.repository-model",
       "packet_version": "1.1.0",
       "files": [
         {
           "path": "manifest.json",
-          "content_hash": "sha256:3b51a35119c5cbc2ad69cb83ea8e9b42442c7b540770af6034ec633d589f6409"
+          "content_hash": "sha256:3b97d3539f370f2ba1f53f85fe12e1b9fbebc34717b8998f478c864323078986"
         },
         {
           "path": "packet.json",
-          "content_hash": "sha256:117e6f46cccf051715eced285363ae530848f0962292a3c057e904ea4043bbbb"
+          "content_hash": "sha256:2a16eeffb2e096320346649f6f6d35e04d8b4a9ef0c6f8880ebedf025e2842c1"
         },
         {
           "path": "receipts/validation-receipt.json",
-          "content_hash": "sha256:47c950faf556530ed1f5265bd69915e42537398de007656d002cce0006acce75"
+          "content_hash": "sha256:b9a242cd1e2d9cad203e4e58bce8b35e0960f4d438bcb469e5433638c4a2dada"
         }
       ],
       "normalized_counts": {

@@ -37,6 +37,10 @@ const AUTHORITY_CRITICAL_PATHS = [
   "src/local_source.ts",
   "src/local_source_model.ts",
   "src/local_archive_policy.ts",
+  "src/corpus_analysis.ts",
+  "src/corpus_report.ts",
+  "src/ordering.ts",
+  "src/extractors/work_intelligence.ts",
   "src/archive_preflight.ts",
   "src/zip_reader.ts",
   "src/encoding.ts",
@@ -189,7 +193,7 @@ function validateAuthorityDocument(authority) {
   const errors = [];
   exactKeys(authority,
     ["schema","repository","audit_base_ref","status","engine","contracts","distribution","public_api","persisted_outputs","validation","legacy"],
-    ["operation_contract","invocation_boundary","deterministic_identity","carrier_policy","metadata_index","frontmatter_safety","local_source_acquisition"], "authority", errors);
+    ["operation_contract","invocation_boundary","deterministic_identity","carrier_policy","metadata_index","frontmatter_safety","local_source_acquisition","corpus_intelligence"], "authority", errors);
   if (!isPlainObject(authority)) return errors;
   if (authority.schema !== "l9.architecture-authority/v1") errors.push("authority.schema is invalid");
   if (authority.repository !== "Quantum-L9/l9-meta-injector") errors.push("authority.repository is invalid");
@@ -201,7 +205,7 @@ function validateAuthorityDocument(authority) {
     if (authority.engine.language !== "typescript") errors.push("authority.engine.language must be typescript");
     for (const key of ["source_root","runtime_entrypoint","package_entrypoint","types_entrypoint"]) requireString(authority.engine[key], `authority.engine.${key}`, errors);
   }
-  exactKeys(authority.contracts, ["metadata","pipeline","architecture","public_api","package"], ["operations","repository_authority","authority_scan","check","operation_dispatch","discovery","carrier_policy","metadata_index","carrier_operation","file_transaction","frontmatter_patch","output_placement","local_source","local_archive_policy","archive_preflight","encoding"], "authority.contracts", errors);
+  exactKeys(authority.contracts, ["metadata","pipeline","architecture","public_api","package"], ["operations","repository_authority","authority_scan","check","operation_dispatch","discovery","carrier_policy","metadata_index","carrier_operation","file_transaction","frontmatter_patch","output_placement","local_source","local_archive_policy","archive_preflight","encoding","corpus_analysis","corpus_report","work_intelligence","ordering"], "authority.contracts", errors);
   if (isPlainObject(authority.contracts)) for (const key of Object.keys(authority.contracts)) requireString(authority.contracts[key], `authority.contracts.${key}`, errors);
   exactKeys(authority.distribution, ["model","source_root","generated_root","compliance_state","source_parity_command","packed_consumer_command","package_contract"], [], "authority.distribution", errors);
   if (isPlainObject(authority.distribution)) {
