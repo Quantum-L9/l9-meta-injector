@@ -406,7 +406,7 @@
     },
     {
       "path": "src/extractors/work_intelligence.ts",
-      "git_blob_sha1": "20191656b8c598d347c183e72b0a7cfc95c1f70d"
+      "git_blob_sha1": "ddeb8e72905084c35053bf345069058678297810"
     },
     {
       "path": "src/index.ts",

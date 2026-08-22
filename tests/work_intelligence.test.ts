@@ -43,6 +43,11 @@ describe("document structure", () => {
     expect(objectsFor(drafts, "document.title")).toEqual(["Declared Title"]);
   });
 
+  it("keeps punctuation inside a plain-text title intact", () => {
+    expect(objectsFor(structure("Title: build_pipeline_v2 notes\n", "notes.txt"), "document.title"))
+      .toEqual(["build_pipeline_v2 notes"]);
+  });
+
   it("reads a plain-text Title: field", () => {
     expect(objectsFor(structure("Title: Notes On Cutover\n", "notes.txt"), "document.title"))
       .toEqual(["Notes On Cutover"]);
@@ -194,6 +199,19 @@ describe("declared relationships", () => {
     ["Replaced by: new-plan.md", "work.superseded_by", "new-plan.md"],
   ])("reads %s", (line, predicate, object) => {
     expect(objectsFor(work(`${line}\n`), predicate)).toEqual([object]);
+  });
+
+  it("keeps punctuation inside a declared target intact", () => {
+    // Found on a real repository: stripping emphasis markers globally turned
+    // `l9_constellation_topology_nuclear_coding_contract` into an identifier
+    // that exists nowhere. Only wrapping markers may be removed.
+    expect(objectsFor(work("Supersedes: l9_constellation_topology_nuclear_coding_contract v4.0.0\n"), "work.supersedes"))
+      .toEqual(["l9_constellation_topology_nuclear_coding_contract v4.0.0"]);
+  });
+
+  it("still strips emphasis that wraps a declared target", () => {
+    expect(objectsFor(work("- **Supersedes:** [ADR-0020](0020-delegate-planning.md) in part\n"), "work.supersedes"))
+      .toEqual(["[ADR-0020](0020-delegate-planning.md) in part"]);
   });
 
   it("does not read Superseded by as a supersedes claim", () => {

@@ -46,9 +46,26 @@ function normalizeText(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
-/** Strip the emphasis markers a label may be wrapped in (`**Status:**`). */
+/**
+ * Strip emphasis markers from a closed-vocabulary value (`**wip**` -> `wip`).
+ *
+ * Global, which is safe here only because the status and kind vocabularies are
+ * short lowercase words that contain no `_` or `*` of their own.
+ */
 function stripEmphasis(value: string): string {
   return value.replace(/[*_`]+/g, "");
+}
+
+/**
+ * Strip emphasis that wraps a free-text value, leaving the inside alone.
+ *
+ * Free text is quoted back as the object, so removing markers globally would
+ * corrupt it: `Supersedes: l9_constellation_topology_contract` would be recorded
+ * as `l9constellationtopologycontract`, an identifier that appears nowhere and
+ * resolves to nothing. Observed on a real repository, which is what caught it.
+ */
+function stripWrappingEmphasis(value: string): string {
+  return value.replace(/^[*_`]+/, "").replace(/[*_`]+$/, "");
 }
 
 function draft(
@@ -195,7 +212,7 @@ export const documentStructureExtractor: Extractor = {
 
       const plain = PLAIN_TITLE.exec(line);
       if (plain) {
-        const text = normalizeText(stripEmphasis(plain[1]));
+        const text = normalizeText(stripWrappingEmphasis(plain[1]));
         if (text.length > 0) drafts.push(draft("document.title", text, index, line));
       }
     });
@@ -399,7 +416,7 @@ function relationDrafts(line: string, index: number): AssertionDraft[] {
     const pattern = new RegExp(`^\\s*(?:[-*+]\\s+)?(?:[*_]{0,2})(?:${label.source})(?:[*_]{0,2})\\s*:\\s*(.+)$`, "i");
     const match = pattern.exec(line);
     if (match) {
-      const target = normalizeText(stripEmphasis(match[1]));
+      const target = normalizeText(stripWrappingEmphasis(match[1]));
       // The whole remainder is the declared target. Splitting a list on commas
       // would invent boundaries the author did not write.
       return target ? [draft(predicate, target, index, line)] : [];
