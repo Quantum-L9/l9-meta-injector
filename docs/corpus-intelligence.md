@@ -107,6 +107,15 @@ Every assertion carries its artifact subject, exact source path, exact line span
 bounded excerpt, source content hash, extractor id, evidence class, confidence and
 authority. An assertion that cannot cite a span is not emitted.
 
+An object is a quotation, so the characters the document wrote are kept: a task
+reading `- [ ] wire up user_profile_service` is recorded with its underscores
+intact. Markdown emphasis is removed only where it wraps the whole value
+(`**Ship the release**` becomes `Ship the release`); emphasis marking up part of a
+sentence stays, because `**urgent** fix` trimmed at the edges would leave
+`urgent** fix`, a string the file does not contain. Values matched against a closed
+vocabulary — a status, a kind, a label name — are normalized more aggressively,
+which is safe because that vocabulary has no such characters in it.
+
 ## Exact duplicates
 
 Two artifacts are exact duplicates **if and only if** both carry a known content hash

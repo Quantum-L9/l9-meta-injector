@@ -135,9 +135,66 @@ function isProseLine(view: DocumentView, index: number): boolean {
 
 const EMPHASIS = /[*_`]/g;
 
-/** Strip markdown emphasis and backticks, then collapse whitespace. */
+/**
+ * Strip markdown emphasis and backticks, then collapse whitespace.
+ *
+ * Global removal, so this is only correct where the result is matched against a
+ * closed vocabulary — a label name, a status word, a kind word. Those contain no
+ * `*`, `_` or backtick of their own, so removing every one is lossless.
+ *
+ * For text that is quoted back as an assertion object, use `plainText`.
+ */
 function plain(value: string): string {
   return value.replace(EMPHASIS, "").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Normalize free text that will be emitted as an assertion object.
+ *
+ * Unlike `plain`, only wrapping emphasis is removed. An object is a quotation:
+ * the document wrote `ship_the_v2_pipeline` and the assertion has to say so.
+ * Removing every underscore turns it into `shipthev2pipeline`, an identifier
+ * that appears in no file and matches no search — the claim stops being evidence
+ * of anything while still looking like it. `normalizeTarget` already draws this
+ * line for relation targets; tasks, milestones, headings and titles are quoted
+ * the same way and need it too.
+ */
+function plainText(value: string): string {
+  return unwrapEmphasis(value.trim()).replace(/\s+/g, " ").trim();
+}
+
+/** Length of the emphasis run at the start of a value. */
+function leadingEmphasisRun(value: string): number {
+  let run = 0;
+  while (run < value.length && isEmphasis(value[run])) run++;
+  return run;
+}
+
+/** Length of the emphasis run at the end of a value. */
+function trailingEmphasisRun(value: string): number {
+  let run = 0;
+  while (run < value.length && isEmphasis(value[value.length - 1 - run])) run++;
+  return run;
+}
+
+/**
+ * Remove emphasis only where it wraps the whole value.
+ *
+ * `**Ship the release**` is a heading in bold and reads better without the
+ * markers. `**urgent** fix` is a sentence with one emphasized word, and trimming
+ * only what touches an edge would leave `urgent** fix` — a string the document
+ * does not contain and nobody wrote. Emphasis is removed when both ends carry it
+ * and left alone otherwise, so the object is always something a reader could find
+ * in the file.
+ */
+function unwrapEmphasis(value: string): string {
+  let text = value;
+  for (;;) {
+    const run = Math.min(leadingEmphasisRun(text), trailingEmphasisRun(text));
+    // A value that is nothing but emphasis characters has no inside to keep.
+    if (run === 0 || text.length <= run * 2) return text;
+    text = text.slice(run, text.length - run).trim();
+  }
 }
 
 /**
@@ -343,7 +400,7 @@ function headings(view: DocumentView): Heading[] {
     if (!isProseLine(view, index)) continue;
     const match = ATX_HEADING.exec(view.lines[index]);
     if (!match) continue;
-    const text = plain(trimRunEnd(match[2].trimEnd(), isHash));
+    const text = plainText(trimRunEnd(match[2].trimEnd(), isHash));
     if (text.length === 0) continue;
     out.push({ index, level: match[1].length, text });
   }
@@ -387,7 +444,7 @@ function titleDeclarations(view: DocumentView): { index: number; text: string }[
     if (ATX_HEADING.test(view.lines[index])) continue;
     const labelled = labelledLine(view.lines[index]);
     if (labelled?.label !== "title") continue;
-    const text = unwrap(plain(labelled.value));
+    const text = unwrap(plainText(labelled.value));
     if (text.length > 0) out.push({ index, text });
   }
   return out.sort((left, right) => left.index - right.index);
@@ -547,7 +604,7 @@ function milestoneSectionBullets(view: DocumentView, opener: number): { index: n
     }
     // A milestone written as a checklist item is still a milestone; the checkbox
     // marker is task syntax, not part of the milestone's text.
-    const text = plain(bullet[1].replace(/^\[[ xX]\]\s*/, ""));
+    const text = plainText(bullet[1].replace(/^\[[ xX]\]\s*/, ""));
     if (text.length > 0) out.push({ index, text });
   }
   return out;
@@ -601,14 +658,14 @@ function milestoneSectionSignals(view: DocumentView): AssertionDraft[] {
 function taskSignal(line: string, index: number): AssertionDraft | null {
   const checkbox = CHECKBOX.exec(line);
   if (checkbox) {
-    const text = plain(checkbox[2]);
+    const text = plainText(checkbox[2]);
     if (text.length === 0) return null;
     const predicate = checkbox[1] === " " ? "work.task.open" : "work.task.completed";
     return draft(predicate, text, index, line, "observed", "high");
   }
   const todo = TODO_LINE.exec(line.replace(LIST_PREFIX, ""));
   if (todo === null) return null;
-  const text = plain(todo[1]);
+  const text = plainText(todo[1]);
   return text.length === 0 ? null : draft("work.task.open", text, index, line, "observed", "high");
 }
 
@@ -632,7 +689,7 @@ function labelSignal(line: string, index: number): AssertionDraft | null {
     return status === null ? null : draft("work.status", status, index, line, "declared", "high");
   }
   if (MILESTONE_LABEL.test(labelled.label)) {
-    const text = plain(labelled.value);
+    const text = plainText(labelled.value);
     return text.length === 0 ? null : draft("work.milestone", text, index, line, "declared", "high");
   }
   const predicate = RELATION_PREDICATE_BY_LABEL[labelled.label];

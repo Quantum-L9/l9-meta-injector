@@ -10,7 +10,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "git_blob_sha1": "a1ac7fcb875a1fe4ab8db9988ce82fce20d84056"
+      "git_blob_sha1": "1409398de4b592761e29054d4c3fe233a7075457"
     },
     {
       "path": "dist/archive_preflight.d.ts",
@@ -66,11 +66,11 @@
     },
     {
       "path": "dist/extractors/work_intelligence.js",
-      "git_blob_sha1": "5efa5d813bc7642c43b69c03690967b5361ae83f"
+      "git_blob_sha1": "d8e3bbb6a49566d5e244f43cc3d80b6fc90c6bee"
     },
     {
       "path": "dist/extractors/work_intelligence.js.map",
-      "git_blob_sha1": "05b2d8bb6e38a56cb4434deeb2b16c2de8ee5770"
+      "git_blob_sha1": "8432dbc307d92e823f25795aa995d6279151ba49"
     },
     {
       "path": "dist/index.d.ts",
@@ -230,7 +230,7 @@
     },
     {
       "path": "docs/corpus-intelligence.md",
-      "git_blob_sha1": "4ac7c63aaa471372ce9369a41bbbf433f33506c4"
+      "git_blob_sha1": "8d9cca2984c6b298e9030f53cf8d6650ed152758"
     },
     {
       "path": "docs/decision_log.md",
@@ -466,7 +466,7 @@
     },
     {
       "path": "src/extractors/work_intelligence.ts",
-      "git_blob_sha1": "e2db3dc6973970980a4352d4c23f8558fbb18198"
+      "git_blob_sha1": "4b5ad98947c5334f5e5fbecdb70975e077108a2d"
     },
     {
       "path": "src/index.ts",
@@ -602,7 +602,7 @@
     },
     {
       "path": "tests/work_intelligence.test.ts",
-      "git_blob_sha1": "911bddb531faf6c26f2598bf6fd56dc3476f5b60"
+      "git_blob_sha1": "c6ca74a84709a5bb84ab32f0af961f87aa98903f"
     },
     {
       "path": "tools/consolidation/README.md",
