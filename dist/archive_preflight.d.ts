@@ -33,6 +33,13 @@ export interface ArchivePreflightResult {
  * Backslashes become separators first: a member named `..\escape.txt` is a
  * traversal on Windows, and treating the backslash as an ordinary filename
  * character would let it through the `..` check.
+ *
+ * `.` segments are dropped, because the canonical path decides both duplicate
+ * detection and where a member is staged. Leaving them in would let `./a.txt`
+ * and `a.txt` pass as two distinct members and then resolve to one staged file,
+ * so the second would silently overwrite the first and the first member's
+ * recorded digest would no longer describe the bytes on disk. `..` is preserved
+ * so the traversal rule still sees it.
  */
 export declare function canonicalMemberPath(name: string): string;
 /**

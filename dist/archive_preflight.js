@@ -12,9 +12,21 @@ const NUL = "\u0000";
  * Backslashes become separators first: a member named `..\escape.txt` is a
  * traversal on Windows, and treating the backslash as an ordinary filename
  * character would let it through the `..` check.
+ *
+ * `.` segments are dropped, because the canonical path decides both duplicate
+ * detection and where a member is staged. Leaving them in would let `./a.txt`
+ * and `a.txt` pass as two distinct members and then resolve to one staged file,
+ * so the second would silently overwrite the first and the first member's
+ * recorded digest would no longer describe the bytes on disk. `..` is preserved
+ * so the traversal rule still sees it.
  */
 function canonicalMemberPath(name) {
-    return name.replace(/\\/g, "/").replace(/\/+/g, "/").replace(/\/+$/, "");
+    const normalized = name.replace(/\\/g, "/");
+    const segments = normalized.split("/").filter((segment) => segment !== "" && segment !== ".");
+    const canonical = segments.join("/");
+    // A leading separator is meaningful (it makes the path absolute) and must
+    // survive normalization so the absolute-path rule can still reject it.
+    return normalized.startsWith("/") ? `/${canonical}` : canonical;
 }
 /**
  * Collision key for a member path.

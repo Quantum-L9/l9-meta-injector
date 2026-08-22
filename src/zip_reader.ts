@@ -362,6 +362,15 @@ export function streamZipMember(
   if (entry.compressionMethod !== COMPRESSION_STORED && entry.compressionMethod !== COMPRESSION_DEFLATE) {
     throw new ZipFormatError(`unsupported compression method ${entry.compressionMethod} for ${entry.name}`);
   }
+  // An exhausted allowance is a budget outcome, not a malformed archive. Checking it
+  // here keeps the stored and deflated paths reporting the same thing: zlib rejects a
+  // zero `maxOutputLength` as an out-of-range argument, which would otherwise surface
+  // as a format error and misattribute a budget refusal to the archive's contents.
+  if (limits.maxUncompressedBytes <= 0) {
+    throw new ZipBudgetExceededError(
+      `member ${entry.name} cannot be extracted: the remaining extraction allowance is exhausted`,
+    );
+  }
   const fd = fs.openSync(archivePath, "r");
   try {
     const header = readExact(fd, LOCAL_FIXED_SIZE, entry.localHeaderOffset);

@@ -6,6 +6,7 @@
 // traversal path in its return value but has already written the file has not
 // prevented anything.
 import * as fs from "node:fs";
+import { createHash } from "node:crypto";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, expect, test } from "vitest";
@@ -370,6 +371,99 @@ describe("unsupported archive formats", () => {
         .toContain("local-source.archive_expansion_disabled");
       const record = observation.inventory.records.find((r) => r.relative_path === "Bundle.zip");
       expect(record?.content_hash).toMatch(/^[a-f0-9]{64}$/);
+    } finally {
+      observation.dispose();
+    }
+  });
+});
+
+describe("audit regressions", () => {
+  test("a '.' segment cannot alias another member's staged bytes", () => {
+    // `./a.txt` and `a.txt` are distinct names that resolve to one staged file.
+    // Without canonicalizing away the `.`, both were accepted as separate members
+    // and the second overwrote the first, so the first member's recorded digest
+    // stopped describing the bytes any later read would see.
+    expect(canonicalMemberPath("./a.txt")).toBe("a.txt");
+    expect(canonicalMemberPath("docs/./b.md")).toBe("docs/b.md");
+    expect(canonicalMemberPath("/absolute.txt")).toBe("/absolute.txt");
+    expect(canonicalMemberPath("../escape.txt")).toBe("../escape.txt");
+
+    expectHeld(
+      observeArchive([
+        { name: "a.txt", content: "first" },
+        { name: "./a.txt", content: "second" },
+      ]),
+      "archive.duplicate_member",
+    );
+  });
+
+  test("a member whose bytes are staged is the member whose digest was recorded", () => {
+    const parent = tmp();
+    const root = path.join(parent, "src");
+    fs.mkdirSync(root, { recursive: true });
+    writeRawZip(path.join(root, "Case.zip"), [
+      { name: "one.txt", content: "one" },
+      { name: "docs/two.txt", content: "two" },
+    ]);
+    const observation = acquireLocalSource({ path: path.join(root, "Case.zip") });
+    try {
+      for (const member of observation.virtualArtifacts) {
+        const staged = fs.readFileSync(member.stagedPath);
+        const digest = `sha256:${createHash("sha256").update(staged).digest("hex")}`;
+        expect(digest).toBe(member.contentHash);
+        expect(staged.length).toBe(member.sizeBytes);
+      }
+    } finally {
+      observation.dispose();
+    }
+  });
+
+  test("an exhausted allowance is reported as a budget refusal, not a malformed archive", () => {
+    // Two archives with identical byte counts; the session allowance covers the
+    // first and leaves nothing for the second. The refusal must name the budget.
+    const root = tmp();
+    writeRawZip(path.join(root, "a.zip"), [{ name: "m.txt", content: "x".repeat(400) }]);
+    writeRawZip(path.join(root, "b.zip"), [{ name: "m.txt", content: "y".repeat(400) }]);
+    const before = treeSnapshot(root);
+
+    const observation = acquireLocalSource({
+      path: root,
+      archivePolicy: { maxTotalUncompressedBytesPerSession: 400, maxCompressionRatio: 100000 },
+    });
+    try {
+      const held = observation.archives.filter((archive) => !archive.expanded);
+      expect(held).toHaveLength(1);
+      const codes = held[0].holds.map((hold) => hold.code);
+      expect(codes).toContain("archive.session_budget_exceeded");
+      expect(codes).not.toContain("archive.format_unreadable");
+      expect(observation.virtualArtifacts).toHaveLength(1);
+      expect(treeSnapshot(root)).toEqual(before);
+    } finally {
+      observation.dispose();
+    }
+  });
+
+  test("two archives with identical bytes do not share staging", () => {
+    // A digest-only staging key aliased them, so discarding one held archive's
+    // partial staging deleted the other's already-extracted members.
+    const root = tmp();
+    const bytes = (() => {
+      const staging = tmp();
+      writeRawZip(path.join(staging, "x.zip"), [{ name: "m.txt", content: "shared" }]);
+      return fs.readFileSync(path.join(staging, "x.zip"));
+    })();
+    fs.writeFileSync(path.join(root, "first.zip"), bytes);
+    fs.writeFileSync(path.join(root, "second.zip"), bytes);
+
+    const observation = acquireLocalSource({ path: root });
+    try {
+      const members = observation.virtualArtifacts;
+      expect(members.map((member) => member.virtualSourcePath))
+        .toEqual(["first.zip!/m.txt", "second.zip!/m.txt"]);
+      // Same bytes, same digest, but two distinct staged files.
+      expect(members[0].contentHash).toBe(members[1].contentHash);
+      expect(members[0].stagedPath).not.toBe(members[1].stagedPath);
+      for (const member of members) expect(fs.existsSync(member.stagedPath)).toBe(true);
     } finally {
       observation.dispose();
     }

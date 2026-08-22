@@ -407,12 +407,20 @@ function holdArchive(context, task, contentHash, sizeBytes, holds) {
         sourcePath: task.sourcePath,
     });
 }
-/** Directory under scratch where one archive's members are staged. */
-function memberStagingRoot(scratchRoot, archiveHash) {
-    return path.join(scratchRoot, "members", archiveHash.replace("sha256:", ""));
+/**
+ * Directory under scratch where one archive's members are staged.
+ *
+ * Keyed by the archive's position in this run as well as its digest. Two archives
+ * in the same source can hold identical bytes, and a digest-only key would alias
+ * their staging: discarding one held archive's partial staging would then delete
+ * the other's already-extracted members, leaving records pointing at files that
+ * no longer exist.
+ */
+function memberStagingRoot(scratchRoot, archiveHash, occurrence) {
+    return path.join(scratchRoot, "members", `${occurrence}-${archiveHash.replace("sha256:", "")}`);
 }
-function extractMembers(context, task, archiveHash, preflight) {
-    const stagingRoot = memberStagingRoot(context.scratch.root, archiveHash);
+function extractMembers(context, task, archiveHash, occurrence, preflight) {
+    const stagingRoot = memberStagingRoot(context.scratch.root, archiveHash, occurrence);
     const members = [];
     let expandedBytes = 0;
     const remainingSessionBytes = context.budget.remainingBytes();
@@ -482,8 +490,8 @@ function extractMembers(context, task, archiveHash, preflight) {
     return { members, expandedBytes, failure: null };
 }
 /** Discard a held archive's partial staging so no member is left behind. */
-function discardStaging(context, archiveHash) {
-    const stagingRoot = memberStagingRoot(context.scratch.root, archiveHash);
+function discardStaging(context, archiveHash, occurrence) {
+    const stagingRoot = memberStagingRoot(context.scratch.root, archiveHash, occurrence);
     // Contained by construction: `stagingRoot` is always built from the scratch root
     // this session created, never from a path derived from the source.
     if (!stagingRoot.startsWith(context.scratch.root + path.sep))
@@ -502,11 +510,14 @@ function isZipPath(value) {
  * under the digest of bytes that are no longer there.
  */
 function acquireArchive(context, task, queue) {
+    // Position of this archive in the run. Distinguishes two archives that hold
+    // identical bytes, which share a digest but must not share staging.
+    const occurrence = context.archives.length;
     const stagedArchiveDir = path.join(context.scratch.root, "archives");
     fs.mkdirSync(stagedArchiveDir, { recursive: true });
     let sizeBytes;
     let archiveHash;
-    const stagingTarget = path.join(stagedArchiveDir, `pending-${context.archives.length}.zip`);
+    const stagingTarget = path.join(stagedArchiveDir, `pending-${occurrence}.zip`);
     try {
         // Copy and hash in one streaming pass, so the digest describes the exact bytes
         // that preflight and extraction will read.
@@ -594,11 +605,11 @@ function acquireArchive(context, task, queue) {
             }]);
         return;
     }
-    const extraction = extractMembers(context, task, archiveHash, preflight);
+    const extraction = extractMembers(context, task, archiveHash, occurrence, preflight);
     if (extraction.failure !== null) {
         // A partial expansion is never claimed: everything staged for this archive is
         // discarded so no member can be reported from a run that did not complete.
-        discardStaging(context, archiveHash);
+        discardStaging(context, archiveHash, occurrence);
         holdArchive(context, task, archiveHash, sizeBytes, [extraction.failure]);
         return;
     }
