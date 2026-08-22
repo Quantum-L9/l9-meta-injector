@@ -1,32 +1,32 @@
 {
   "fixtures": "fixtures",
   "totals": {
-    "scanned": 24,
-    "injected": 24,
-    "verified": 24,
-    "verifiedClean": 24
+    "scanned": 32,
+    "injected": 32,
+    "verified": 32,
+    "verifiedClean": 32
   },
   "strategyDist": {
     "block-comment": 2,
-    "line-comment": 9,
-    "sidecar": 8,
-    "yaml-frontmatter": 5
+    "line-comment": 10,
+    "sidecar": 13,
+    "yaml-frontmatter": 7
   },
   "typeDist": {
-    "context": 3,
+    "context": 5,
     "doctrine": 1,
     "prompt": 1,
     "skill": 1,
-    "source": 18
+    "source": 24
   },
   "indexes": {
-    "primitiveLibraryEntries": 23,
+    "primitiveLibraryEntries": 31,
     "promptLibraryEntries": 1,
-    "dedupTotalScanned": 24,
-    "dedupUniqueCount": 24,
+    "dedupTotalScanned": 32,
+    "dedupUniqueCount": 32,
     "dedupExactTwins": 0,
-    "verificationEntries": 24,
-    "verificationClean": 24
+    "verificationEntries": 32,
+    "verificationClean": 32
   },
   "idempotency": {
     "rerunFilesChanged": 0
@@ -63,6 +63,102 @@
       "mcp_primitive": "resource",
       "injectable": true,
       "strategy": "yaml-frontmatter",
+      "hasSidecar": false,
+      "yamlValid": true,
+      "bodyPreserved": true,
+      "sharingScopeValid": true
+    },
+    {
+      "path": "local-source/expected-bundle/manifest.json",
+      "id": "l9.source.manifest",
+      "artifact_type": "source",
+      "mcp_primitive": "resource",
+      "injectable": true,
+      "strategy": "sidecar",
+      "hasSidecar": true,
+      "yamlValid": true,
+      "bodyPreserved": true,
+      "sharingScopeValid": true
+    },
+    {
+      "path": "local-source/expected-bundle/packet.json",
+      "id": "l9.source.packet",
+      "artifact_type": "source",
+      "mcp_primitive": "resource",
+      "injectable": true,
+      "strategy": "sidecar",
+      "hasSidecar": true,
+      "yamlValid": true,
+      "bodyPreserved": true,
+      "sharingScopeValid": true
+    },
+    {
+      "path": "local-source/expected-bundle/receipts/validation-receipt.json",
+      "id": "l9.source.validation_receipt",
+      "artifact_type": "source",
+      "mcp_primitive": "resource",
+      "injectable": true,
+      "strategy": "sidecar",
+      "hasSidecar": true,
+      "yamlValid": true,
+      "bodyPreserved": true,
+      "sharingScopeValid": true
+    },
+    {
+      "path": "local-source/sample-source/Bundle.l9extracted/IMPORTANT_USER_DATA",
+      "id": "l9.source.important_user_data",
+      "artifact_type": "source",
+      "mcp_primitive": "resource",
+      "injectable": true,
+      "strategy": "sidecar",
+      "hasSidecar": true,
+      "yamlValid": true,
+      "bodyPreserved": true,
+      "sharingScopeValid": true
+    },
+    {
+      "path": "local-source/sample-source/docs/notes.md",
+      "id": "l9.context.notes",
+      "artifact_type": "context",
+      "mcp_primitive": "resource",
+      "injectable": true,
+      "strategy": "yaml-frontmatter",
+      "hasSidecar": false,
+      "yamlValid": true,
+      "bodyPreserved": true,
+      "sharingScopeValid": true
+    },
+    {
+      "path": "local-source/sample-source/package.json",
+      "id": "l9.source.package",
+      "artifact_type": "source",
+      "mcp_primitive": "resource",
+      "injectable": true,
+      "strategy": "sidecar",
+      "hasSidecar": true,
+      "yamlValid": true,
+      "bodyPreserved": true,
+      "sharingScopeValid": true
+    },
+    {
+      "path": "local-source/sample-source/README.md",
+      "id": "l9.context.readme",
+      "artifact_type": "context",
+      "mcp_primitive": "resource",
+      "injectable": true,
+      "strategy": "yaml-frontmatter",
+      "hasSidecar": false,
+      "yamlValid": true,
+      "bodyPreserved": true,
+      "sharingScopeValid": true
+    },
+    {
+      "path": "local-source/sample-source/src/util.py",
+      "id": "l9.source.util",
+      "artifact_type": "source",
+      "mcp_primitive": "resource",
+      "injectable": true,
+      "strategy": "line-comment",
       "hasSidecar": false,
       "yamlValid": true,
       "bodyPreserved": true,

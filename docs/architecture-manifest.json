@@ -250,11 +250,35 @@
     },
     {
       "path": "docs/topology-conformance.json",
-      "git_blob_sha1": "7a5602b6f35d900014560ad9a096fa75c17bcdf7"
+      "git_blob_sha1": "a6262e926aa5a589b5747265f6fa330324de83e5"
     },
     {
       "path": "docs/traceability-map.json",
       "git_blob_sha1": "a26b363062e871a0bff064e1e6208945e5d67fb7"
+    },
+    {
+      "path": "fixtures/local-source/expected-bundle/manifest.json",
+      "git_blob_sha1": "9448f4ebdf4769cef479fe053b651598eb74a10a"
+    },
+    {
+      "path": "fixtures/local-source/expected-bundle/packet.json",
+      "git_blob_sha1": "90c75af62a07051559dd2b1031aba9cfaf18023d"
+    },
+    {
+      "path": "fixtures/local-source/expected-bundle/receipts/validation-receipt.json",
+      "git_blob_sha1": "770591bc22b77d1155a6201c4d6005171b21f865"
+    },
+    {
+      "path": "fixtures/local-source/sample-source/Bundle.zip",
+      "git_blob_sha1": "f8fe4b685b38ae65db58fffce28748be4c528ddc"
+    },
+    {
+      "path": "fixtures/local-source/sample-source/package.json",
+      "git_blob_sha1": "312f2a5648315d2e6c0c5c2933ce08e0eccd6b1d"
+    },
+    {
+      "path": "fixtures/local-source/sample-source/README.md",
+      "git_blob_sha1": "588db45e25ef5328dd634f032839d4d38ddedec0"
     },
     {
       "path": "fixtures/package-consumer/deep-import.cjs",
@@ -326,7 +350,7 @@
     },
     {
       "path": "scripts/lib/architecture-authority.js",
-      "git_blob_sha1": "82877842c82899c0831e15ffbe2af7d2ba36abec"
+      "git_blob_sha1": "07e74211e83e7119007c5df07c23ce5b3ead78c2"
     },
     {
       "path": "scripts/lib/dist-integrity.js",
@@ -354,7 +378,7 @@
     },
     {
       "path": "scripts/topology-conformance.js",
-      "git_blob_sha1": "4f91a4073b544eae23c1c575974d486656b4903d"
+      "git_blob_sha1": "95599efbed649a244906f6840ee2bd337cced32f"
     },
     {
       "path": "src/archive_preflight.ts",
@@ -446,7 +470,7 @@
     },
     {
       "path": "tests/local_source_qualification.test.ts",
-      "git_blob_sha1": "85d3d51b5f397fba569d14c97358b07acd868fe3"
+      "git_blob_sha1": "fdb33e6b47a6c7417c3eaef895a9cd7003b945cf"
     },
     {
       "path": "tests/local_source_safety.test.ts",
@@ -466,7 +490,7 @@
     },
     {
       "path": "tests/repository_model.test.ts",
-      "git_blob_sha1": "fa548d3043a2a5508a0724bdeb1064c68290268d"
+      "git_blob_sha1": "278083ea38af44415278a4d08322a2033b96fe93"
     },
     {
       "path": "tools/consolidation/README.md",

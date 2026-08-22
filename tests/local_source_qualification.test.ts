@@ -246,3 +246,55 @@ describe("qualification — a standalone ZIP on a drive", () => {
     expect(JSON.stringify(run())).toBe(JSON.stringify(run()));
   });
 });
+
+describe("qualification — the committed golden local-source bundle", () => {
+  const REPO = path.resolve(__dirname, "..");
+  const SAMPLE = path.join(REPO, "fixtures", "local-source", "sample-source");
+  const GOLDEN = path.join(REPO, "fixtures", "local-source", "expected-bundle");
+
+  test("regenerates byte-for-byte from the committed sample source", () => {
+    const before = treeSnapshot(SAMPLE);
+
+    const packet = withLocalSourceModel(
+      { path: SAMPLE, name: "sample-local-source", producerVersion: PRODUCER_VERSION },
+      (result) => result.packet,
+    );
+
+    // Observing the committed fixture must not modify the repository.
+    expect(treeSnapshot(SAMPLE)).toEqual(before);
+
+    const emitted = path.join(tmp(), "bundle");
+    emitRepositoryModelBundle(packet, { outDir: emitted });
+    for (const relative of ["packet.json", "manifest.json", "receipts/validation-receipt.json"]) {
+      expect(fs.readFileSync(path.join(emitted, relative), "utf8"))
+        .toBe(fs.readFileSync(path.join(GOLDEN, relative), "utf8"));
+    }
+  });
+
+  test("the golden bundle carries the archive provenance the consumer was proven against", () => {
+    const packet = JSON.parse(fs.readFileSync(path.join(GOLDEN, "packet.json"), "utf8")) as RepositoryModelPacket;
+    expect(packet.source_snapshot.revision).toMatch(/^fs:sha256:[a-f0-9]{64}$/);
+    expect(packet.profile.id).toBe("meta-injector-local-source-observation");
+
+    const byId = new Map(packet.payload.artifacts.map((artifact) => [artifact.artifact_id, artifact]));
+    const chain = packet.payload.relationships
+      .filter((edge) => edge.edge_type === "DERIVED_FROM")
+      .map((edge) => [
+        byId.get(edge.source_id)?.source_path as string,
+        byId.get(edge.target_id)?.source_path as string,
+      ])
+      .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+    expect(chain).toEqual([
+      ["Bundle.zip!/README.md", "Bundle.zip"],
+      ["Bundle.zip!/inner.zip", "Bundle.zip"],
+      ["Bundle.zip!/inner.zip!/guide.md", "Bundle.zip!/inner.zip"],
+    ]);
+
+    // The user directory named like an extraction target is observed, not excluded.
+    expect(packet.payload.artifacts.map((artifact) => artifact.source_path))
+      .toContain("Bundle.l9extracted/IMPORTANT_USER_DATA");
+    // No scratch or absolute path survived into the committed bundle.
+    expect(JSON.stringify(packet)).not.toContain(os.tmpdir());
+    expect(JSON.stringify(packet)).not.toContain(REPO);
+  });
+});

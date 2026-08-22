@@ -359,11 +359,36 @@ describe("topology conformance evidence", () => {
     expect(evidence.result.translation_shim_required).toBe(false);
   });
 
-  it("stays bound to the golden bundle it describes", () => {
-    const packet = JSON.parse(fs.readFileSync(path.join(GOLDEN, "packet.json"), "utf8"));
-    expect(evidence.subject.packet_id).toBe(packet.packet_id);
-    expect(evidence.subject.semantic_hash).toBe(packet.semantic_hash);
-    expect(evidence.subject.packet_type).toBe(REPOSITORY_MODEL_PACKET_TYPE);
-    expect(evidence.subject.packet_version).toBe(REPOSITORY_MODEL_PACKET_VERSION);
+  it("stays bound to every golden bundle it describes", () => {
+    // The record carries one subject per committed bundle. Reading only the first
+    // would let a second bundle drift unnoticed, which is exactly what happened
+    // while the record still used a single `subject` object.
+    expect(Array.isArray(evidence.subjects)).toBe(true);
+    expect(evidence.subjects.length).toBeGreaterThanOrEqual(2);
+    for (const subject of evidence.subjects) {
+      const packet = JSON.parse(fs.readFileSync(path.join(REPO, subject.bundle, "packet.json"), "utf8"));
+      expect(subject.packet_id).toBe(packet.packet_id);
+      expect(subject.semantic_hash).toBe(packet.semantic_hash);
+      expect(subject.packet_type).toBe(REPOSITORY_MODEL_PACKET_TYPE);
+      expect(subject.packet_version).toBe(REPOSITORY_MODEL_PACKET_VERSION);
+    }
+    expect(evidence.subjects.map((subject: { id: string }) => subject.id).sort())
+      .toEqual(["inventory", "local-source"]);
+    expect(evidence.subjects.some((subject: { bundle: string }) => subject.bundle === path.relative(REPO, GOLDEN)))
+      .toBe(true);
+  });
+
+  it("proves the local-source packet reached the consumer with its archive provenance", () => {
+    const localSource = evidence.subjects.find((subject: { id: string }) => subject.id === "local-source");
+    expect(localSource).toBeDefined();
+    const packet = JSON.parse(fs.readFileSync(path.join(REPO, localSource.bundle, "packet.json"), "utf8"));
+    // The consumer normalizes what it accepted; these counts are the proof that
+    // archive member artifacts and DERIVED_FROM edges survived the boundary rather
+    // than being dropped on the way in.
+    expect(localSource.normalized_counts.artifacts).toBe(packet.payload.artifacts.length);
+    expect(localSource.normalized_counts.relationships).toBe(packet.payload.relationships.length);
+    expect(packet.payload.relationships.some(
+      (edge: { edge_type: string }) => edge.edge_type === "DERIVED_FROM")).toBe(true);
+    expect(packet.source_snapshot.revision).toMatch(/^fs:sha256:[a-f0-9]{64}$/);
   });
 });
