@@ -122,7 +122,7 @@ function fencedLines(lines, markdown) {
             return;
         }
         fenced.add(index);
-        if (match && match[1][0] === openFence)
+        if (match?.[1].startsWith(openFence))
             openFence = null;
     });
     return fenced;
@@ -204,8 +204,17 @@ const WORK_KIND_VALUES = [
 ];
 const STATUS_SET = new Set(WORK_STATUS_VALUES);
 const KIND_SET = new Set(WORK_KIND_VALUES);
+/**
+ * `[bullet] [emphasis] LABEL [emphasis] : value` — the shape every labelled
+ * declaration shares, written once so the four labels cannot drift apart.
+ */
+const LABEL_PRELUDE = String.raw `^[ \t]*(?:[-*+][ \t]+)?(?:[*_]{0,2})`;
+const LABEL_SUFFIX = String.raw `(?:[*_]{0,2})[ \t]*:[ \t]*(.+)`;
+function labelPattern(label, flags = "i") {
+    return new RegExp(`${LABEL_PRELUDE}(?:${label})${LABEL_SUFFIX}`, flags);
+}
 /** `Status: wip` / `**State:** blocked`. The label is what makes it a claim. */
-const STATUS_LABEL = /^[ \t]*(?:[-*+][ \t]+)?(?:[*_]{0,2})(?:Status|State)(?:[*_]{0,2})[ \t]*:[ \t]*(.+)/i;
+const STATUS_LABEL = labelPattern("Status|State");
 /** `> **WIP**` — a leading admonition whose whole text is a status token. */
 const ADMONITION = /^[ \t]{0,3}>[ \t]*(.+)/;
 /** How far into a document an admonition still reads as the document's own state. */
@@ -218,15 +227,15 @@ const TITLE_STATUS_MARKERS = [
     /\[([A-Za-z-]+)\][ \t]*$/,
     /\(([A-Za-z-]+)\)[ \t]*$/,
 ];
-const KIND_LABEL = /^[ \t]*(?:[-*+][ \t]+)?(?:[*_]{0,2})(?:Type|Kind)(?:[*_]{0,2})[ \t]*:[ \t]*(.+)/i;
+const KIND_LABEL = labelPattern("Type|Kind");
 const TASK_UNCHECKED = /^[ \t]*[-*+][ \t]+\[ \][ \t]+(.+)/;
 const TASK_CHECKED = /^[ \t]*[-*+][ \t]+\[[xX]\][ \t]+(.+)/;
 // NOSONAR(S1135): the marker below is this parser's input vocabulary, not a task
 // left for a maintainer. The rule matches the token wherever it appears.
 /** `TODO: ship it` at the start of a line. The same word mid-sentence is prose. */ // NOSONAR
-const TASK_TODO = /^[ \t]*(?:[-*+][ \t]+)?(?:[*_]{0,2})TODO(?:[*_]{0,2})[ \t]*:[ \t]*(.+)/;
+const TASK_TODO = labelPattern("TODO", "");
 /** `Milestone: beta` and `Milestone 2: GA`. */
-const MILESTONE_LABEL = /^[ \t]*(?:[-*+][ \t]+)?(?:[*_]{0,2})Milestone(?:[ \t]+\d+)?(?:[*_]{0,2})[ \t]*:[ \t]*(.+)/i;
+const MILESTONE_LABEL = labelPattern(String.raw `Milestone(?:[ \t]+\d+)?`);
 const MILESTONE_HEADING = /^milestones?$/i;
 const PLAIN_BULLET = /^[ \t]*[-*+][ \t]+(.+)/;
 /**
@@ -374,7 +383,7 @@ function taskDrafts(line, index) {
  */
 const RELATION_PATTERNS = RELATION_LABELS.map(({ predicate, label }) => ({
     predicate,
-    pattern: new RegExp(String.raw `^[ \t]*(?:[-*+][ \t]+)?(?:[*_]{0,2})(?:${label.source})(?:[*_]{0,2})[ \t]*:[ \t]*(.+)`, "i"),
+    pattern: labelPattern(label.source),
 }));
 function relationDrafts(line, index) {
     for (const { predicate, pattern } of RELATION_PATTERNS) {
