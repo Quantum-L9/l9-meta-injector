@@ -145,6 +145,11 @@ Budget flags: `--no-expand-archives`, `--max-archive-bytes`, `--max-members`,
 `--max-member-bytes`, `--max-expanded-bytes`, `--max-session-bytes`,
 `--max-compression-ratio`, `--max-archive-depth`. Run with no arguments for full usage.
 
+What this trusts and refuses, and its known limits, is stated in
+[`docs/local-source-trust-boundary.md`](docs/local-source-trust-boundary.md).
+Moving off `--local-files`:
+[`docs/migrations/local-files-to-local-source.md`](docs/migrations/local-files-to-local-source.md).
+
 ### Legacy archive materialization
 
 `npm run pipeline -- <root> --local-files` is a **mutating materialization** workflow,

@@ -10,7 +10,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "git_blob_sha1": "6eee518cafce4bd756b1396db0f9187540bd874d"
+      "git_blob_sha1": "bb3157b2ae288ff6d38e9a314e2bc317afe564e7"
     },
     {
       "path": "dist/archive_preflight.d.ts",
@@ -174,7 +174,7 @@
     },
     {
       "path": "docs/architecture.md",
-      "git_blob_sha1": "41af066f0e40c8cd3ebae4105a4957e784fc8304"
+      "git_blob_sha1": "4a8e41dda468dd13c0f1d0cd34c0c4fc3b06f544"
     },
     {
       "path": "docs/contracts.md",
@@ -213,8 +213,16 @@
       "git_blob_sha1": "836ec8b5efca02c016bfd74bace3ecd40196aa52"
     },
     {
+      "path": "docs/local-source-trust-boundary.md",
+      "git_blob_sha1": "9c8e7754db19331bb325204e0d89afde9e669da5"
+    },
+    {
       "path": "docs/manifest.md",
       "git_blob_sha1": "27eeee05a423b46a7f1290649b10eb68638c0584"
+    },
+    {
+      "path": "docs/migrations/local-files-to-local-source.md",
+      "git_blob_sha1": "ddaa8c93f4478560f87cb22afc653dad47f6e840"
     },
     {
       "path": "docs/migrations/v2-to-v3.md",
@@ -326,7 +334,7 @@
     },
     {
       "path": "README.md",
-      "git_blob_sha1": "85b46181cfd4c292e77ef2fe17b4fba27456a73b"
+      "git_blob_sha1": "ce9af4578c3fcc646756c0cba345cd272e94f699"
     },
     {
       "path": "scripts/check-architecture-authority.js",
@@ -350,7 +358,7 @@
     },
     {
       "path": "scripts/lib/architecture-authority.js",
-      "git_blob_sha1": "07e74211e83e7119007c5df07c23ce5b3ead78c2"
+      "git_blob_sha1": "991e96a9a71afe03ef9492be038092313b6f25cb"
     },
     {
       "path": "scripts/lib/dist-integrity.js",

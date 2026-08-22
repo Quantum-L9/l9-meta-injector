@@ -104,6 +104,9 @@ disappearing. `src/encoding.ts` validates a whole file as UTF-8 in bounded memor
 before any decode or mutation, so a known-text extension no longer grants eligibility
 on its own.
 
+Trust boundary and known limits: `docs/local-source-trust-boundary.md`.
+Migration from `--local-files`: `docs/migrations/local-files-to-local-source.md`.
+
 ## Distribution
 
 Source compiles to committed `dist/`. `check:dist` rebuilds in isolation and compares every JavaScript file, declaration, and source map. It rejects missing, extra, changed, untracked, or symlinked distribution files.

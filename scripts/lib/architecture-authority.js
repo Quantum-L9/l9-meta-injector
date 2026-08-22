@@ -132,6 +132,8 @@ const AUTHORITY_CRITICAL_PATHS = [
   "docs/manifest.md",
   "docs/public-api.md",
   "docs/migrations/v2-to-v3.md",
+  "docs/migrations/local-files-to-local-source.md",
+  "docs/local-source-trust-boundary.md",
   "docs/traceability-map.json",
   "docs/schemas/architecture-authority.schema.json",
   "docs/legacy/consolidation-v1/README.md",
