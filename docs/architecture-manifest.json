@@ -78,11 +78,11 @@
     },
     {
       "path": "dist/local_source.js",
-      "git_blob_sha1": "1b065602c10a03322a34d5cef72e2318a5ced68a"
+      "git_blob_sha1": "167d38336a6fa224f0116af2b1cc8516085d0153"
     },
     {
       "path": "dist/local_source.js.map",
-      "git_blob_sha1": "7c60f8199eff68b2503c93587f2b956bb0e23399"
+      "git_blob_sha1": "03ab7477fe1503bd8d8a63379357c60505265324"
     },
     {
       "path": "dist/public/advanced.d.ts",
@@ -162,11 +162,11 @@
     },
     {
       "path": "dist/zip_reader.js",
-      "git_blob_sha1": "a5243b0ccc7bd4f540e9990521fc1901a8404399"
+      "git_blob_sha1": "05fee88142b3764ef74dc5866cd7bbd4f0ceb40f"
     },
     {
       "path": "dist/zip_reader.js.map",
-      "git_blob_sha1": "2ff20b5cab59e8121b4466aa81d18098a15ad66e"
+      "git_blob_sha1": "270101514553151c1054a5f85b15b777b618d541"
     },
     {
       "path": "docs/architecture-authority.json",
@@ -410,7 +410,7 @@
     },
     {
       "path": "src/local_source.ts",
-      "git_blob_sha1": "c96d020257201ee7b388e486c1462a6e1d704ea9"
+      "git_blob_sha1": "f7442d392675ae0234aac62eea713d74073cf3c4"
     },
     {
       "path": "src/meta_v3.ts",
@@ -450,7 +450,7 @@
     },
     {
       "path": "src/zip_reader.ts",
-      "git_blob_sha1": "271a6f72cc332868d1aab7ec2799bfe44f8ca78d"
+      "git_blob_sha1": "65fd9ef8fd77198256db039c5fa2030fb6aa523d"
     },
     {
       "path": "tests/architecture_authority.test.ts",

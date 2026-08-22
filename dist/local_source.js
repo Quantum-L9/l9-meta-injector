@@ -1099,7 +1099,7 @@ function acquireLocalSource(input) {
         inventory: buildInventoryResult(absoluteSource, records, skippedDirs, omittedPaths),
         archives: [...archives].sort((a, b) => compareCodePoints(a.sourcePath, b.sourcePath)),
         virtualArtifacts: [...members].sort((a, b) => compareCodePoints(a.virtualSourcePath, b.virtualSourcePath)),
-        diagnostics: diagnostics.sort(compareDiagnostics),
+        diagnostics: [...diagnostics].sort(compareDiagnostics),
         archivePolicy: policy,
         stable: unstableReason === null,
         scratchRoot: scratch.root,

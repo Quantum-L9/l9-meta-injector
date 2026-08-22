@@ -154,42 +154,59 @@ interface Eocd {
   zip64: boolean;
 }
 
+/** Offset of the end-of-central-directory record within the archive tail. */
+function findEocdOffset(tail: Buffer): number {
+  for (let i = tail.length - EOCD_MIN_SIZE; i >= 0; i--) {
+    if (tail.readUInt32LE(i) === EOCD_SIGNATURE) return i;
+  }
+  throw new ZipFormatError("end-of-central-directory record not found");
+}
+
+/**
+ * Read the Zip64 end-of-central-directory record the locator points at.
+ *
+ * Consulted only when the 32-bit record stored placeholder values, which is how a
+ * large archive reports counts and offsets that do not fit in the classic record.
+ */
+function readZip64Eocd(fd: number, tail: Buffer, locatorOffset: number): Eocd {
+  const recordOffset = readSafeUInt64LE(tail, locatorOffset + 8, "zip64 end-of-central-directory offset");
+  const record = readExact(fd, 56, recordOffset);
+  if (record.readUInt32LE(0) !== ZIP64_EOCD_SIGNATURE) {
+    throw new ZipFormatError("zip64 end-of-central-directory record signature is invalid");
+  }
+  return {
+    entryCount: readSafeUInt64LE(record, 32, "zip64 entry count"),
+    centralDirectorySize: readSafeUInt64LE(record, 40, "zip64 central-directory size"),
+    centralDirectoryOffset: readSafeUInt64LE(record, 48, "zip64 central-directory offset"),
+    zip64: true,
+  };
+}
+
 function locateEocd(fd: number, fileSize: number): Eocd {
   if (fileSize < EOCD_MIN_SIZE) throw new ZipFormatError("file is too small to be a ZIP archive");
   const searchLength = Math.min(fileSize, MAX_EOCD_SEARCH);
   const searchStart = fileSize - searchLength;
   const tail = readExact(fd, searchLength, searchStart);
+  const eocdOffset = findEocdOffset(tail);
 
-  let eocdOffset = -1;
-  for (let i = tail.length - EOCD_MIN_SIZE; i >= 0; i--) {
-    if (tail.readUInt32LE(i) === EOCD_SIGNATURE) { eocdOffset = i; break; }
-  }
-  if (eocdOffset < 0) throw new ZipFormatError("end-of-central-directory record not found");
+  const classic: Eocd = {
+    entryCount: tail.readUInt16LE(eocdOffset + 10),
+    centralDirectorySize: tail.readUInt32LE(eocdOffset + 12),
+    centralDirectoryOffset: tail.readUInt32LE(eocdOffset + 16),
+    zip64: false,
+  };
 
-  let entryCount = tail.readUInt16LE(eocdOffset + 10);
-  let centralDirectorySize = tail.readUInt32LE(eocdOffset + 12);
-  let centralDirectoryOffset = tail.readUInt32LE(eocdOffset + 16);
-  let zip64 = false;
-
-  const needsZip64 =
-    entryCount === U16_MAX || centralDirectorySize === U32_MAX || centralDirectoryOffset === U32_MAX;
+  const needsZip64 = classic.entryCount === U16_MAX
+    || classic.centralDirectorySize === U32_MAX
+    || classic.centralDirectoryOffset === U32_MAX;
   const locatorOffset = eocdOffset - ZIP64_LOCATOR_SIZE;
-  if (needsZip64 && locatorOffset >= 0 && tail.readUInt32LE(locatorOffset) === ZIP64_LOCATOR_SIGNATURE) {
-    const recordOffset = readSafeUInt64LE(tail, locatorOffset + 8, "zip64 end-of-central-directory offset");
-    const record = readExact(fd, 56, recordOffset);
-    if (record.readUInt32LE(0) !== ZIP64_EOCD_SIGNATURE) {
-      throw new ZipFormatError("zip64 end-of-central-directory record signature is invalid");
-    }
-    entryCount = readSafeUInt64LE(record, 32, "zip64 entry count");
-    centralDirectorySize = readSafeUInt64LE(record, 40, "zip64 central-directory size");
-    centralDirectoryOffset = readSafeUInt64LE(record, 48, "zip64 central-directory offset");
-    zip64 = true;
-  }
+  const hasLocator = locatorOffset >= 0 && tail.readUInt32LE(locatorOffset) === ZIP64_LOCATOR_SIGNATURE;
+  const resolved = needsZip64 && hasLocator ? readZip64Eocd(fd, tail, locatorOffset) : classic;
 
-  if (centralDirectoryOffset + centralDirectorySize > fileSize) {
+  if (resolved.centralDirectoryOffset + resolved.centralDirectorySize > fileSize) {
     throw new ZipFormatError("central directory extends past the end of the archive");
   }
-  return { centralDirectoryOffset, centralDirectorySize, entryCount, zip64 };
+  return resolved;
 }
 
 /** Apply the Zip64 extended-information extra field to the placeholder sizes. */
