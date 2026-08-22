@@ -60,7 +60,14 @@ function pathHolds(canonical, raw, policy) {
     const holds = [];
     const normalized = raw.replace(/\\/g, "/");
     if (raw.includes(NUL)) {
-        holds.push({ code: "archive.path_nul", memberPath: raw.replace(/\u0000/g, "?"), message: "member path contains a NUL character" });
+        // Split/join rather than a regex: a control character inside a regex literal is
+        // a readability hazard and a static-analysis finding, and the substitution is a
+        // plain one here.
+        holds.push({
+            code: "archive.path_nul",
+            memberPath: raw.split(NUL).join("?"),
+            message: "member path contains a NUL character",
+        });
     }
     if (raw.startsWith("\\\\") || normalized.startsWith("//")) {
         holds.push({ code: "archive.path_unc", memberPath: raw, message: "member path is a UNC path" });
@@ -134,17 +141,10 @@ function collisionHold(canonical, previous, rawName) {
             : `member path collides with '${previous}' under a case fold`,
     };
 }
-/**
- * Judge an archive against every path, entry-type, encryption, compression,
- * collision and resource rule. Never touches the filesystem.
- */
-function preflightArchive(input) {
+/** Archive-wide rules that do not depend on any individual entry. */
+function archiveScopeHolds(input) {
     const { directory, policy } = input;
     const holds = [];
-    const members = [];
-    const directories = [];
-    let declaredUncompressedBytes = 0;
-    let declaredCompressedBytes = 0;
     if (input.depth > policy.maxNestedDepth) {
         holds.push({
             code: "archive.nesting_depth_exceeded",
@@ -157,68 +157,84 @@ function preflightArchive(input) {
             message: `archive declares ${directory.entries.length} members, above the limit of ${policy.maxMemberCount}`,
         });
     }
-    const seenExact = new Map();
-    const seenCollision = new Map();
-    for (const entry of directory.entries) {
-        const canonical = canonicalMemberPath(entry.name);
-        holds.push(...pathHolds(canonical, entry.name, policy));
-        if (entry.encrypted) {
-            holds.push({
-                code: "archive.member_encrypted",
+    return holds;
+}
+/**
+ * Duplicate and collision rules.
+ *
+ * Applied to every entry, directories included, so a directory that shadows a file
+ * is caught as well.
+ */
+function collisionHolds(entry, canonical, accumulator) {
+    if (canonical.length === 0)
+        return [];
+    const previousExact = accumulator.seenExact.get(canonical);
+    if (previousExact !== undefined) {
+        return [{
+                code: "archive.duplicate_member",
                 memberPath: entry.name,
-                message: "member is encrypted and cannot be observed",
-            });
-        }
-        const kindHold = entryKindHold(entry);
-        if (kindHold)
-            holds.push(kindHold);
-        // Collision keys cover every entry, directories included, so a directory that
-        // shadows a file is caught too.
-        if (canonical.length > 0) {
-            const previousExact = seenExact.get(canonical);
-            if (previousExact !== undefined) {
-                holds.push({
-                    code: "archive.duplicate_member",
-                    memberPath: entry.name,
-                    message: `member path is declared more than once (also '${previousExact}')`,
-                });
-            }
-            else {
-                seenExact.set(canonical, entry.name);
-                const key = memberCollisionKey(canonical);
-                const previousCollision = seenCollision.get(key);
-                if (previousCollision !== undefined)
-                    holds.push(collisionHold(canonical, previousCollision, entry.name));
-                else
-                    seenCollision.set(key, canonical);
-            }
-        }
-        if (entry.kind === "directory") {
-            if (canonical.length > 0)
-                directories.push(canonical);
-            continue;
-        }
-        if (entry.kind !== "file")
-            continue;
-        if (entry.compressionMethod !== zip_reader_1.COMPRESSION_STORED && entry.compressionMethod !== zip_reader_1.COMPRESSION_DEFLATE) {
-            holds.push({
-                code: "archive.compression_unsupported",
-                memberPath: entry.name,
-                message: `member uses unsupported compression method ${entry.compressionMethod}`,
-            });
-        }
-        if (entry.uncompressedSize > policy.maxSingleMemberUncompressedBytes) {
-            holds.push({
-                code: "archive.member_too_large",
-                memberPath: entry.name,
-                message: `member declares ${entry.uncompressedSize} uncompressed bytes, ` +
-                    `above the per-member limit of ${policy.maxSingleMemberUncompressedBytes}`,
-            });
-        }
-        declaredUncompressedBytes += entry.uncompressedSize;
-        declaredCompressedBytes += entry.compressedSize;
-        members.push({ canonicalPath: canonical, entry });
+                message: `member path is declared more than once (also '${previousExact}')`,
+            }];
     }
+    accumulator.seenExact.set(canonical, entry.name);
+    const key = memberCollisionKey(canonical);
+    const previousCollision = accumulator.seenCollision.get(key);
+    if (previousCollision !== undefined)
+        return [collisionHold(canonical, previousCollision, entry.name)];
+    accumulator.seenCollision.set(key, canonical);
+    return [];
+}
+/** Rules that apply only to a file member: compression support and declared size. */
+function fileMemberHolds(entry, policy) {
+    const holds = [];
+    if (entry.compressionMethod !== zip_reader_1.COMPRESSION_STORED && entry.compressionMethod !== zip_reader_1.COMPRESSION_DEFLATE) {
+        holds.push({
+            code: "archive.compression_unsupported",
+            memberPath: entry.name,
+            message: `member uses unsupported compression method ${entry.compressionMethod}`,
+        });
+    }
+    if (entry.uncompressedSize > policy.maxSingleMemberUncompressedBytes) {
+        holds.push({
+            code: "archive.member_too_large",
+            memberPath: entry.name,
+            message: `member declares ${entry.uncompressedSize} uncompressed bytes, ` +
+                `above the per-member limit of ${policy.maxSingleMemberUncompressedBytes}`,
+        });
+    }
+    return holds;
+}
+/** Judge one central-directory entry and fold it into the accumulator. */
+function inspectEntry(entry, policy, accumulator) {
+    const canonical = canonicalMemberPath(entry.name);
+    accumulator.holds.push(...pathHolds(canonical, entry.name, policy));
+    if (entry.encrypted) {
+        accumulator.holds.push({
+            code: "archive.member_encrypted",
+            memberPath: entry.name,
+            message: "member is encrypted and cannot be observed",
+        });
+    }
+    const kindHold = entryKindHold(entry);
+    if (kindHold)
+        accumulator.holds.push(kindHold);
+    accumulator.holds.push(...collisionHolds(entry, canonical, accumulator));
+    if (entry.kind === "directory") {
+        if (canonical.length > 0)
+            accumulator.directories.push(canonical);
+        return;
+    }
+    if (entry.kind !== "file")
+        return;
+    accumulator.holds.push(...fileMemberHolds(entry, policy));
+    accumulator.declaredUncompressedBytes += entry.uncompressedSize;
+    accumulator.declaredCompressedBytes += entry.compressedSize;
+    accumulator.members.push({ canonicalPath: canonical, entry });
+}
+/** Expansion-total and ratio rules, judged once the whole directory is known. */
+function expansionHolds(input, declaredUncompressedBytes) {
+    const { policy } = input;
+    const holds = [];
     if (declaredUncompressedBytes > policy.maxTotalUncompressedBytesPerArchive) {
         holds.push({
             code: "archive.total_uncompressed_exceeded",
@@ -235,13 +251,32 @@ function preflightArchive(input) {
             message: `archive expands ${ratio.toFixed(1)}:1, above the limit of ${policy.maxCompressionRatio}:1`,
         });
     }
+    return holds;
+}
+/**
+ * Judge an archive against every path, entry-type, encryption, compression,
+ * collision and resource rule. Never touches the filesystem.
+ */
+function preflightArchive(input) {
+    const accumulator = {
+        holds: archiveScopeHolds(input),
+        members: [],
+        directories: [],
+        declaredUncompressedBytes: 0,
+        declaredCompressedBytes: 0,
+        seenExact: new Map(),
+        seenCollision: new Map(),
+    };
+    for (const entry of input.directory.entries)
+        inspectEntry(entry, input.policy, accumulator);
+    accumulator.holds.push(...expansionHolds(input, accumulator.declaredUncompressedBytes));
     return {
-        accepted: holds.length === 0,
-        holds,
-        members,
-        directories,
-        declaredUncompressedBytes,
-        declaredCompressedBytes,
+        accepted: accumulator.holds.length === 0,
+        holds: accumulator.holds,
+        members: accumulator.members,
+        directories: accumulator.directories,
+        declaredUncompressedBytes: accumulator.declaredUncompressedBytes,
+        declaredCompressedBytes: accumulator.declaredCompressedBytes,
     };
 }
 //# sourceMappingURL=archive_preflight.js.map

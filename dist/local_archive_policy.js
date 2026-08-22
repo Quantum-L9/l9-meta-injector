@@ -37,7 +37,7 @@ exports.DEFAULT_LOCAL_ARCHIVE_POLICY = Object.freeze({
 function resolveLocalArchivePolicy(overrides) {
     return {
         ...exports.DEFAULT_LOCAL_ARCHIVE_POLICY,
-        ...(overrides ?? {}),
+        ...overrides,
         version: overrides?.version ?? exports.LOCAL_ARCHIVE_POLICY_VERSION,
     };
 }

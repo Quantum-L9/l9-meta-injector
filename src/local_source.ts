@@ -305,7 +305,8 @@ function compareCodePoints(a: string, b: string): number {
     const l = left[i].codePointAt(0) ?? 0, r = right[i].codePointAt(0) ?? 0;
     if (l !== r) return l < r ? -1 : 1;
   }
-  return left.length === right.length ? 0 : left.length < right.length ? -1 : 1;
+  if (left.length === right.length) return 0;
+  return left.length < right.length ? -1 : 1;
 }
 
 export interface PhysicalManifestEntry {
@@ -363,6 +364,51 @@ function toPosix(value: string): string {
  * `lstat` is used throughout: a symlink is observed as a symlink, and the tree it
  * points at — which may be outside the root, or a cycle — is never walked.
  */
+/** Observe one filesystem entry with lstat, never following what it points at. */
+function observeEntry(
+  absolutePath: string,
+  relativePath: string,
+  diagnostics: LocalSourceDiagnostic[],
+): EnumeratedEntry | null {
+  let stats: fs.Stats;
+  try {
+    stats = fs.lstatSync(absolutePath);
+  } catch (error) {
+    diagnostics.push({
+      code: "local-source.entry_unreadable",
+      severity: "warning",
+      message: `filesystem entry could not be inspected: ${(error as Error).message}`,
+      sourcePath: relativePath,
+    });
+    return null;
+  }
+  const kind = entryKindFromStats(stats);
+  let linkTarget: string | null = null;
+  if (kind === "symlink") {
+    // The link's own text, never the resolved target: resolving it would read
+    // outside the observed root.
+    try {
+      linkTarget = toPosix(fs.readlinkSync(absolutePath));
+    } catch {
+      linkTarget = null;
+    }
+  }
+  return {
+    absolutePath,
+    relativePath,
+    kind,
+    sizeBytes: kind === "file" ? stats.size : null,
+    mtimeMs: kind === "directory" ? null : stats.mtimeMs,
+    linkTarget,
+  };
+}
+
+/**
+ * Enumerate a directory tree without following symlinks.
+ *
+ * `lstat` is used throughout: a symlink is observed as a symlink, and the tree it
+ * points at — which may be outside the root, or a cycle — is never walked.
+ */
 function enumerateDirectory(
   root: string,
   omit: OmitMatcher,
@@ -387,51 +433,22 @@ function enumerateDirectory(
         omittedPaths.push(relativePath);
         continue;
       }
-      let stats: fs.Stats;
-      try {
-        stats = fs.lstatSync(absolutePath);
-      } catch (error) {
+      const entry = observeEntry(absolutePath, relativePath, diagnostics);
+      if (entry === null) continue;
+      if (entry.kind === "directory" && isLegacyGeneratedExtraction(absolutePath)) {
+        omittedPaths.push(relativePath);
         diagnostics.push({
-          code: "local-source.entry_unreadable",
-          severity: "warning",
-          message: `filesystem entry could not be inspected: ${(error as Error).message}`,
+          code: "local-source.legacy_extraction_excluded",
+          severity: "info",
+          message:
+            "directory carries this tool's extraction-ownership marker beside its archive " +
+            "and is excluded as generated output",
           sourcePath: relativePath,
         });
         continue;
       }
-      const kind = entryKindFromStats(stats);
-      let linkTarget: string | null = null;
-      if (kind === "symlink") {
-        try {
-          linkTarget = toPosix(fs.readlinkSync(absolutePath));
-        } catch {
-          linkTarget = null;
-        }
-      }
-      out.push({
-        absolutePath,
-        relativePath,
-        kind,
-        sizeBytes: kind === "file" ? stats.size : null,
-        mtimeMs: kind === "directory" ? null : stats.mtimeMs,
-        linkTarget,
-      });
-      if (kind === "directory") {
-        if (isLegacyGeneratedExtraction(absolutePath)) {
-          omittedPaths.push(relativePath);
-          diagnostics.push({
-            code: "local-source.legacy_extraction_excluded",
-            severity: "info",
-            message:
-              "directory carries this tool's extraction-ownership marker beside its archive " +
-              "and is excluded as generated output",
-            sourcePath: relativePath,
-          });
-          out.pop();
-          continue;
-        }
-        visit(absolutePath);
-      }
+      out.push(entry);
+      if (entry.kind === "directory") visit(absolutePath);
     }
   };
 
@@ -686,131 +703,96 @@ function isZipPath(value: string): boolean {
  * a source file replaced between those two steps would otherwise be reported
  * under the digest of bytes that are no longer there.
  */
-function acquireArchive(context: ArchiveContext, task: ArchiveTask, queue: ArchiveTask[]): void {
-  // Position of this archive in the run. Distinguishes two archives that hold
-  // identical bytes, which share a digest but must not share staging.
-  const occurrence = context.archives.length;
+/** Outcome of copying an archive into scratch while hashing it. */
+interface StagedArchive {
+  stagedPath: string;
+  archiveHash: string;
+  sizeBytes: number;
+}
+
+/**
+ * Copy an archive into scratch and hash it in one streaming pass.
+ *
+ * One pass means the digest describes exactly the bytes preflight and extraction
+ * will read, closing the window in which a source file replaced between hashing
+ * and parsing would be reported under a digest that no longer matches it.
+ */
+function stageArchive(
+  context: ArchiveContext,
+  task: ArchiveTask,
+  occurrence: number,
+): StagedArchive {
   const stagedArchiveDir = path.join(context.scratch.root, "archives");
   fs.mkdirSync(stagedArchiveDir, { recursive: true });
-
-  let sizeBytes: number;
-  let archiveHash: string;
   const stagingTarget = path.join(stagedArchiveDir, `pending-${occurrence}.zip`);
+
+  const hash = crypto.createHash("sha256");
+  const source = fs.openSync(task.physicalPath, "r");
+  const target = fs.openSync(stagingTarget, "w");
+  let sizeBytes: number;
   try {
-    // Copy and hash in one streaming pass, so the digest describes the exact bytes
-    // that preflight and extraction will read.
-    const hash = crypto.createHash("sha256");
-    const source = fs.openSync(task.physicalPath, "r");
-    const target = fs.openSync(stagingTarget, "w");
-    try {
-      const buffer = Buffer.alloc(HASH_CHUNK_BYTES);
-      let position = 0;
-      for (;;) {
-        const count = fs.readSync(source, buffer, 0, buffer.length, position);
-        if (count === 0) break;
-        if (position + count > context.policy.maxArchiveCompressedBytes) {
-          throw new ZipBudgetExceededError(
-            `archive exceeds the ${context.policy.maxArchiveCompressedBytes}-byte staging limit`,
-          );
-        }
-        hash.update(buffer.subarray(0, count));
-        fs.writeSync(target, buffer.subarray(0, count));
-        position += count;
+    const buffer = Buffer.alloc(HASH_CHUNK_BYTES);
+    let position = 0;
+    for (;;) {
+      const count = fs.readSync(source, buffer, 0, buffer.length, position);
+      if (count === 0) break;
+      if (position + count > context.policy.maxArchiveCompressedBytes) {
+        throw new ZipBudgetExceededError(
+          `archive exceeds the ${context.policy.maxArchiveCompressedBytes}-byte staging limit`,
+        );
       }
-      sizeBytes = position;
-      archiveHash = sha256Prefixed(hash.digest("hex"));
-    } finally {
-      fs.closeSync(source);
-      fs.closeSync(target);
+      hash.update(buffer.subarray(0, count));
+      fs.writeSync(target, buffer.subarray(0, count));
+      position += count;
     }
+    sizeBytes = position;
   } catch (error) {
     fs.rmSync(stagingTarget, { force: true });
-    context.archives.push({
-      sourcePath: task.sourcePath,
-      contentHash: "Unknown",
-      sizeBytes: 0,
-      nestedDepth: task.depth,
-      parentArchiveHash: task.parentArchiveHash,
-      parentArchivePath: task.parentArchivePath,
-      expanded: false,
-      memberCount: 0,
-      omittedMemberCount: 0,
-      holds: [{
-        code: "archive.format_unreadable",
-        message: error instanceof Error ? error.message : String(error),
-      }],
-    });
-    context.diagnostics.push({
-      code: "archive.format_unreadable",
-      severity: "warning",
-      message: `archive could not be staged: ${error instanceof Error ? error.message : String(error)}`,
-      sourcePath: task.sourcePath,
-    });
-    return;
+    throw error;
+  } finally {
+    fs.closeSync(source);
+    fs.closeSync(target);
   }
 
-  const stagedArchive = path.join(stagedArchiveDir, `${archiveHash.replace("sha256:", "")}.zip`);
-  if (fs.existsSync(stagedArchive)) fs.rmSync(stagingTarget, { force: true });
-  else fs.renameSync(stagingTarget, stagedArchive);
+  const archiveHash = sha256Prefixed(hash.digest("hex"));
+  const stagedPath = path.join(stagedArchiveDir, `${archiveHash.replace("sha256:", "")}.zip`);
+  if (fs.existsSync(stagedPath)) fs.rmSync(stagingTarget, { force: true });
+  else fs.renameSync(stagingTarget, stagedPath);
+  return { stagedPath, archiveHash, sizeBytes };
+}
 
-  let preflight: ArchivePreflightResult;
-  try {
-    const directory = readZipCentralDirectory(stagedArchive);
-    preflight = preflightArchive({
-      directory,
-      policy: context.policy,
-      depth: task.depth,
-      archiveCompressedBytes: sizeBytes,
-    });
-  } catch (error) {
-    holdArchive(context, task, archiveHash, sizeBytes, [{
-      code: "archive.format_unreadable",
-      message: `central directory could not be read: ${error instanceof Error ? error.message : String(error)}`,
-    }]);
-    return;
-  }
-
-  if (!preflight.accepted) {
-    holdArchive(context, task, archiveHash, sizeBytes, preflight.holds);
-    return;
-  }
-
-  const sessionRefusal = context.budget.refuseReason(preflight.declaredUncompressedBytes);
-  if (sessionRefusal !== null) {
-    holdArchive(context, task, archiveHash, sizeBytes, [{
-      code: "archive.session_budget_exceeded",
-      message: sessionRefusal,
-    }]);
-    return;
-  }
-
-  const extraction = extractMembers(context, task, archiveHash, occurrence, preflight);
-  if (extraction.failure !== null) {
-    // A partial expansion is never claimed: everything staged for this archive is
-    // discarded so no member can be reported from a run that did not complete.
-    discardStaging(context, archiveHash, occurrence);
-    holdArchive(context, task, archiveHash, sizeBytes, [extraction.failure]);
-    return;
-  }
-
-  context.budget.recordArchive(extraction.expandedBytes);
-  const omittedMemberCount = preflight.members.length - extraction.members.length;
+/** Record an archive that could not even be staged or hashed. */
+function recordUnstageableArchive(context: ArchiveContext, task: ArchiveTask, error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
   context.archives.push({
     sourcePath: task.sourcePath,
-    contentHash: archiveHash,
-    sizeBytes,
+    contentHash: "Unknown",
+    sizeBytes: 0,
     nestedDepth: task.depth,
     parentArchiveHash: task.parentArchiveHash,
     parentArchivePath: task.parentArchivePath,
-    expanded: true,
-    memberCount: extraction.members.length,
-    omittedMemberCount,
-    holds: [],
+    expanded: false,
+    memberCount: 0,
+    omittedMemberCount: 0,
+    holds: [{ code: "archive.format_unreadable", message }],
   });
-  context.members.push(...extraction.members);
+  context.diagnostics.push({
+    code: "archive.format_unreadable",
+    severity: "warning",
+    message: `archive could not be staged: ${message}`,
+    sourcePath: task.sourcePath,
+  });
+}
 
-  for (const member of extraction.members) {
-    const extension = path.extname(member.memberPath).toLowerCase();
+/** Queue nested archives found among a freshly expanded archive's members. */
+function enqueueNestedArchives(
+  context: ArchiveContext,
+  task: ArchiveTask,
+  archiveHash: string,
+  members: LocalArchiveMemberObservation[],
+  queue: ArchiveTask[],
+): void {
+  for (const member of members) {
     if (isZipPath(member.memberPath)) {
       if (task.depth + 1 > context.policy.maxNestedDepth) {
         context.diagnostics.push({
@@ -828,7 +810,10 @@ function acquireArchive(context: ArchiveContext, task: ArchiveTask, queue: Archi
         parentArchiveHash: archiveHash,
         parentArchivePath: task.sourcePath,
       });
-    } else if (KNOWN_UNEXPANDABLE_ARCHIVE_EXTENSIONS.has(extension)) {
+      continue;
+    }
+    const extension = path.extname(member.memberPath).toLowerCase();
+    if (KNOWN_UNEXPANDABLE_ARCHIVE_EXTENSIONS.has(extension)) {
       context.diagnostics.push({
         code: "archive.format_not_expanded",
         severity: "info",
@@ -837,6 +822,91 @@ function acquireArchive(context: ArchiveContext, task: ArchiveTask, queue: Archi
       });
     }
   }
+}
+
+/** Read the staged archive's central directory and judge it, or hold it. */
+function preflightStaged(
+  context: ArchiveContext,
+  task: ArchiveTask,
+  staged: StagedArchive,
+): ArchivePreflightResult | null {
+  let preflight: ArchivePreflightResult;
+  try {
+    preflight = preflightArchive({
+      directory: readZipCentralDirectory(staged.stagedPath),
+      policy: context.policy,
+      depth: task.depth,
+      archiveCompressedBytes: staged.sizeBytes,
+    });
+  } catch (error) {
+    holdArchive(context, task, staged.archiveHash, staged.sizeBytes, [{
+      code: "archive.format_unreadable",
+      message: `central directory could not be read: ${error instanceof Error ? error.message : String(error)}`,
+    }]);
+    return null;
+  }
+  if (!preflight.accepted) {
+    holdArchive(context, task, staged.archiveHash, staged.sizeBytes, preflight.holds);
+    return null;
+  }
+  const sessionRefusal = context.budget.refuseReason(preflight.declaredUncompressedBytes);
+  if (sessionRefusal !== null) {
+    holdArchive(context, task, staged.archiveHash, staged.sizeBytes, [{
+      code: "archive.session_budget_exceeded",
+      message: sessionRefusal,
+    }]);
+    return null;
+  }
+  return preflight;
+}
+
+/**
+ * Stage, preflight and expand one archive, queueing any nested archive it holds.
+ *
+ * The archive is read from a staged immutable copy rather than from the live
+ * source file, so the digest, the preflight verdict and the extracted bytes all
+ * describe the same content.
+ */
+function acquireArchive(context: ArchiveContext, task: ArchiveTask, queue: ArchiveTask[]): void {
+  // Position of this archive in the run. Distinguishes two archives that hold
+  // identical bytes, which share a digest but must not share staging.
+  const occurrence = context.archives.length;
+
+  let staged: StagedArchive;
+  try {
+    staged = stageArchive(context, task, occurrence);
+  } catch (error) {
+    recordUnstageableArchive(context, task, error);
+    return;
+  }
+
+  const preflight = preflightStaged(context, task, staged);
+  if (preflight === null) return;
+
+  const extraction = extractMembers(context, task, staged.archiveHash, occurrence, preflight);
+  if (extraction.failure !== null) {
+    // A partial expansion is never claimed: everything staged for this archive is
+    // discarded so no member can be reported from a run that did not complete.
+    discardStaging(context, staged.archiveHash, occurrence);
+    holdArchive(context, task, staged.archiveHash, staged.sizeBytes, [extraction.failure]);
+    return;
+  }
+
+  context.budget.recordArchive(extraction.expandedBytes);
+  context.archives.push({
+    sourcePath: task.sourcePath,
+    contentHash: staged.archiveHash,
+    sizeBytes: staged.sizeBytes,
+    nestedDepth: task.depth,
+    parentArchiveHash: task.parentArchiveHash,
+    parentArchivePath: task.parentArchivePath,
+    expanded: true,
+    memberCount: extraction.members.length,
+    omittedMemberCount: preflight.members.length - extraction.members.length,
+    holds: [],
+  });
+  context.members.push(...extraction.members);
+  enqueueNestedArchives(context, task, staged.archiveHash, extraction.members, queue);
 }
 
 // ───────────────────────────── acquisition ─────────────────────────────
@@ -848,9 +918,8 @@ function resolveSourceKind(absolutePath: string, requested: RequestedSourceKind)
       `local-source: the source path is a symbolic link and is never followed: ${absolutePath}`,
     );
   }
-  const actual: LocalSourceKind = stats.isDirectory()
-    ? "directory"
-    : isZipPath(absolutePath) ? "archive" : "file";
+  const nonDirectoryKind: LocalSourceKind = isZipPath(absolutePath) ? "archive" : "file";
+  const actual: LocalSourceKind = stats.isDirectory() ? "directory" : nonDirectoryKind;
   if (requested === "auto" || requested === undefined) return actual;
   if (requested === "directory" && !stats.isDirectory()) {
     throw new Error(`local-source: --source-kind directory was requested but the path is not a directory`);
@@ -887,6 +956,94 @@ interface HashedEntry {
  * read. A file whose size or mtime moved across its own hash is re-read a bounded
  * number of times before the observation is declared unstable.
  */
+/**
+ * Hash one file, verifying it did not change underneath the read.
+ *
+ * Returns the digest, or the reason it could not be produced. `changed` marks the
+ * case that must make the whole observation unstable rather than degrade one entry:
+ * a file that moved across its own hash after a bounded retry.
+ */
+function hashStableFile(entry: EnumeratedEntry): { digest: string | null; reason: string; changed: boolean } {
+  let reason = "";
+  for (let attempt = 0; attempt <= STABILITY_RETRY_LIMIT; attempt++) {
+    let before: fs.Stats;
+    try {
+      before = fs.lstatSync(entry.absolutePath);
+    } catch (error) {
+      return { digest: null, reason: (error as Error).message, changed: false };
+    }
+    let candidate: string;
+    try {
+      candidate = hashFileStreaming(entry.absolutePath).hash;
+    } catch (error) {
+      return { digest: null, reason: (error as Error).message, changed: false };
+    }
+    const after = fs.lstatSync(entry.absolutePath);
+    if (after.size === before.size && after.mtimeMs === before.mtimeMs) {
+      return { digest: candidate, reason: "", changed: false };
+    }
+    reason = "file changed while it was being hashed";
+  }
+  return { digest: null, reason, changed: true };
+}
+
+/** Hash one entry and classify its encoding, or explain why neither happened. */
+function hashOneEntry(
+  entry: EnumeratedEntry,
+  hashMaxBytes: number | undefined,
+  diagnostics: LocalSourceDiagnostic[],
+): { hashed: HashedEntry; unstableReason: string | null } {
+  const unknowns: string[] = [];
+  if (hashMaxBytes !== undefined && (entry.sizeBytes ?? 0) > hashMaxBytes) {
+    unknowns.push("content_hash_skipped:file_exceeds_hash_budget");
+    diagnostics.push({
+      code: "local-source.hash_budget_exceeded",
+      severity: "error",
+      message: `file exceeds the ${hashMaxBytes}-byte hash budget, so its content hash is absent`,
+      sourcePath: entry.relativePath,
+    });
+    return { hashed: { entry, contentHashHex: null, encoding: null, unknowns }, unstableReason: null };
+  }
+
+  const attempt = hashStableFile(entry);
+  if (attempt.digest === null) {
+    if (attempt.changed) {
+      return {
+        hashed: { entry, contentHashHex: null, encoding: null, unknowns },
+        unstableReason: `${entry.relativePath}: ${attempt.reason}`,
+      };
+    }
+    unknowns.push(`content_hash_unavailable:${attempt.reason}`);
+    diagnostics.push({
+      code: "local-source.file_unreadable",
+      severity: "warning",
+      message: `file could not be hashed: ${attempt.reason}`,
+      sourcePath: entry.relativePath,
+    });
+    return { hashed: { entry, contentHashHex: null, encoding: null, unknowns }, unstableReason: null };
+  }
+
+  const encoding = probeFileEncoding(entry.absolutePath);
+  if (encoding.status === "invalid") {
+    unknowns.push("unsupported_encoding");
+    diagnostics.push({
+      code: "local-source.unsupported_encoding",
+      severity: "warning",
+      message: `file is not valid UTF-8 and is observed by hash only: ${encoding.reason}`,
+      sourcePath: entry.relativePath,
+    });
+  }
+  return {
+    hashed: { entry, contentHashHex: attempt.digest.replace("sha256:", ""), encoding, unknowns },
+    unstableReason: null,
+  };
+}
+
+/**
+ * Phase 2 — hash every regular file. Non-file entries pass through unhashed; a
+ * file that changed across its own hash stops the pass and makes the observation
+ * unstable, because there is no single snapshot left to describe.
+ */
 function hashEntries(
   entries: EnumeratedEntry[],
   hashMaxBytes: number | undefined,
@@ -898,72 +1055,9 @@ function hashEntries(
       hashed.push({ entry, contentHashHex: null, encoding: null, unknowns: [] });
       continue;
     }
-    const unknowns: string[] = [];
-    if (hashMaxBytes !== undefined && (entry.sizeBytes ?? 0) > hashMaxBytes) {
-      unknowns.push("content_hash_skipped:file_exceeds_hash_budget");
-      diagnostics.push({
-        code: "local-source.hash_budget_exceeded",
-        severity: "error",
-        message: `file exceeds the ${hashMaxBytes}-byte hash budget, so its content hash is absent`,
-        sourcePath: entry.relativePath,
-      });
-      hashed.push({ entry, contentHashHex: null, encoding: null, unknowns });
-      continue;
-    }
-
-    let digest: string | null = null;
-    let attempt = 0;
-    let lastReason = "";
-    while (attempt <= STABILITY_RETRY_LIMIT) {
-      let before: fs.Stats;
-      try {
-        before = fs.lstatSync(entry.absolutePath);
-      } catch (error) {
-        lastReason = (error as Error).message;
-        break;
-      }
-      let candidate: string;
-      try {
-        candidate = hashFileStreaming(entry.absolutePath).hash;
-      } catch (error) {
-        lastReason = (error as Error).message;
-        break;
-      }
-      const after = fs.lstatSync(entry.absolutePath);
-      if (after.size === before.size && after.mtimeMs === before.mtimeMs) {
-        digest = candidate;
-        break;
-      }
-      attempt++;
-      lastReason = "file changed while it was being hashed";
-    }
-
-    if (digest === null) {
-      if (lastReason === "file changed while it was being hashed") {
-        return { hashed, unstableReason: `${entry.relativePath}: ${lastReason}` };
-      }
-      unknowns.push(`content_hash_unavailable:${lastReason}`);
-      diagnostics.push({
-        code: "local-source.file_unreadable",
-        severity: "warning",
-        message: `file could not be hashed: ${lastReason}`,
-        sourcePath: entry.relativePath,
-      });
-      hashed.push({ entry, contentHashHex: null, encoding: null, unknowns });
-      continue;
-    }
-
-    const encoding = probeFileEncoding(entry.absolutePath);
-    if (encoding.status === "invalid") {
-      unknowns.push("unsupported_encoding");
-      diagnostics.push({
-        code: "local-source.unsupported_encoding",
-        severity: "warning",
-        message: `file is not valid UTF-8 and is observed by hash only: ${encoding.reason}`,
-        sourcePath: entry.relativePath,
-      });
-    }
-    hashed.push({ entry, contentHashHex: digest.replace("sha256:", ""), encoding, unknowns });
+    const result = hashOneEntry(entry, hashMaxBytes, diagnostics);
+    if (result.unstableReason !== null) return { hashed, unstableReason: result.unstableReason };
+    hashed.push(result.hashed);
   }
   return { hashed, unstableReason: null };
 }
@@ -973,6 +1067,226 @@ function revisionFor(sourceKind: LocalSourceKind, digest: string): string {
   if (sourceKind === "file") return `file:sha256:${bare}`;
   if (sourceKind === "archive") return `archive:sha256:${bare}`;
   return `fs:sha256:${bare}`;
+}
+
+/** Phase 1 — enumerate the source. A single file is its own one-entry enumeration. */
+function enumerateSource(
+  absoluteSource: string,
+  sourceKind: LocalSourceKind,
+  omit: OmitMatcher,
+  diagnostics: LocalSourceDiagnostic[],
+  omittedPaths: string[],
+  skippedDirs: string[],
+): EnumeratedEntry[] {
+  if (sourceKind === "directory") {
+    return enumerateDirectory(absoluteSource, omit, diagnostics, omittedPaths, skippedDirs);
+  }
+  const stats = fs.lstatSync(absoluteSource);
+  return [{
+    absolutePath: absoluteSource,
+    relativePath: path.basename(absoluteSource),
+    kind: "file",
+    sizeBytes: stats.size,
+    mtimeMs: stats.mtimeMs,
+    linkTarget: null,
+  }];
+}
+
+/**
+ * Phase 3 — re-enumerate and compare. Returns why the snapshot is not trustworthy,
+ * or null when the source held still for the whole observation.
+ */
+function verifySnapshotStability(
+  absoluteSource: string,
+  sourceKind: LocalSourceKind,
+  entries: EnumeratedEntry[],
+  omit: OmitMatcher,
+): string | null {
+  if (sourceKind === "directory") {
+    return enumerationDiffers(entries, enumerateDirectory(absoluteSource, omit, [], [], []));
+  }
+  const after = fs.lstatSync(absoluteSource);
+  if (after.size !== entries[0].sizeBytes || after.mtimeMs !== entries[0].mtimeMs) {
+    return `${entries[0].relativePath}: file changed while it was being observed`;
+  }
+  return null;
+}
+
+/**
+ * Derive the snapshot digest and the source revision.
+ *
+ * Archive members are semantic content, not part of the physical snapshot, so this
+ * runs before any archive work and sees only what is actually on the filesystem.
+ */
+function deriveSourceIdentity(
+  hashed: HashedEntry[],
+  sourceKind: LocalSourceKind,
+): { physicalSnapshotHash: string; sourceRevision: string } {
+  const manifestEntries: PhysicalManifestEntry[] = hashed.map(({ entry, contentHashHex }) => ({
+    path: entry.relativePath,
+    kind: entry.kind,
+    ...(contentHashHex !== null ? { contentHash: sha256Prefixed(contentHashHex) } : {}),
+    ...(entry.linkTarget !== null ? { linkTarget: entry.linkTarget } : {}),
+  }));
+  const physicalSnapshotHash = physicalManifestDigest(manifestEntries);
+  const singleFileHash = hashed.length === 1 ? hashed[0].contentHashHex : null;
+  const useFileHash = sourceKind !== "directory" && singleFileHash !== null;
+  return {
+    physicalSnapshotHash,
+    sourceRevision: revisionFor(sourceKind, useFileHash ? (singleFileHash as string) : physicalSnapshotHash),
+  };
+}
+
+/** Queue the ZIP archives to expand, reporting the formats v1 does not open. */
+function planArchiveTasks(hashed: HashedEntry[], diagnostics: LocalSourceDiagnostic[]): ArchiveTask[] {
+  const queue: ArchiveTask[] = [];
+  for (const { entry } of hashed) {
+    if (entry.kind !== "file") continue;
+    if (isZipPath(entry.relativePath)) {
+      queue.push({
+        physicalPath: entry.absolutePath,
+        sourcePath: entry.relativePath,
+        depth: 0,
+        parentArchiveHash: null,
+        parentArchivePath: null,
+      });
+      continue;
+    }
+    const extension = path.extname(entry.relativePath).toLowerCase();
+    if (KNOWN_UNEXPANDABLE_ARCHIVE_EXTENSIONS.has(extension)) {
+      diagnostics.push({
+        code: "archive.format_not_expanded",
+        severity: "info",
+        message: `${extension} is classified as an archive but v1 expands ZIP only; it is hashed and not opened`,
+        sourcePath: entry.relativePath,
+      });
+    }
+  }
+  return queue;
+}
+
+/** Report each archive left unopened because expansion was disabled. */
+function reportDisabledExpansion(hashed: HashedEntry[], diagnostics: LocalSourceDiagnostic[]): void {
+  for (const { entry } of hashed) {
+    if (entry.kind !== "file" || !isZipPath(entry.relativePath)) continue;
+    diagnostics.push({
+      code: "local-source.archive_expansion_disabled",
+      severity: "info",
+      message: "archive expansion is disabled; the archive is hashed and its members are not observed",
+      sourcePath: entry.relativePath,
+    });
+  }
+}
+
+/** Diagnose an entry that is observed but deliberately never opened. */
+function reportUnopenedEntry(entry: EnumeratedEntry, diagnostics: LocalSourceDiagnostic[]): void {
+  if (entry.kind === "symlink") {
+    diagnostics.push({
+      code: "local-source.symlink_not_traversed",
+      severity: "info",
+      message: entry.linkTarget === null
+        ? "symbolic link observed; its target was not read"
+        : `symbolic link observed; its literal target is '${entry.linkTarget}' and was not read`,
+      sourcePath: entry.relativePath,
+    });
+    return;
+  }
+  if (entry.kind === "special") {
+    diagnostics.push({
+      code: "local-source.special_entry_observed",
+      severity: "info",
+      message: "filesystem entry is a device, socket or FIFO; it is recorded but never opened",
+      sourcePath: entry.relativePath,
+    });
+  }
+}
+
+/** The record for one physical entry, including the unknowns its kind implies. */
+function physicalRecord(hashedEntry: HashedEntry): InventoryRecord {
+  const { entry, contentHashHex, encoding, unknowns } = hashedEntry;
+  const entryUnknowns = [...unknowns];
+  if (entry.kind === "symlink") entryUnknowns.push("symlink_not_traversed");
+  if (entry.kind === "special") entryUnknowns.push("special_filesystem_entry");
+  if (encoding !== null && encoding.status === "binary") entryUnknowns.push("binary_content");
+  // A link and a device were both observed without being read, so neither carries a
+  // classification derived from content.
+  const unopened = entry.kind === "symlink" || entry.kind === "special";
+  return buildLocalRecord({
+    relativePath: entry.relativePath,
+    absolutePath: entry.absolutePath,
+    kind: entry.kind,
+    sizeBytes: entry.sizeBytes,
+    contentHash: contentHashHex,
+    unknowns: entryUnknowns,
+    ...(unopened
+      ? {
+          artifactTypeOverride: "unknown" as InventoryArtifactType,
+          evidenceOverride: entry.kind === "symlink"
+            ? "symbolic link, not traversed"
+            : "special filesystem entry, not opened",
+          confidenceOverride: 1,
+        }
+      : {}),
+  });
+}
+
+/** Physical entries and virtual archive members, in one code-point-ordered set. */
+function buildRecords(
+  hashed: HashedEntry[],
+  members: LocalArchiveMemberObservation[],
+  diagnostics: LocalSourceDiagnostic[],
+): InventoryRecord[] {
+  const records: InventoryRecord[] = [];
+  for (const hashedEntry of hashed) {
+    reportUnopenedEntry(hashedEntry.entry, diagnostics);
+    records.push(physicalRecord(hashedEntry));
+  }
+  for (const member of members) {
+    records.push(buildLocalRecord({
+      relativePath: member.virtualSourcePath,
+      absolutePath: member.stagedPath,
+      kind: "archive-member",
+      sizeBytes: member.sizeBytes,
+      contentHash: member.contentHash.replace("sha256:", ""),
+      unknowns: [],
+    }));
+  }
+  return records.sort((a, b) => compareCodePoints(a.relative_path, b.relative_path));
+}
+
+/** Assemble the inventory view the packet builder and interpretation consume. */
+function buildInventoryResult(
+  root: string,
+  records: InventoryRecord[],
+  skippedDirs: string[],
+  omittedPaths: string[],
+): InventoryResult {
+  const typeDistribution: Record<string, number> = {};
+  let files = 0, folders = 0;
+  for (const record of records) {
+    typeDistribution[record.artifact_type] = (typeDistribution[record.artifact_type] ?? 0) + 1;
+    if (record.artifact_type === "folder") folders++; else files++;
+  }
+  return {
+    root,
+    total: records.length,
+    files,
+    folders,
+    typeDistribution,
+    // Acquisition writes no manifests of its own; the CLI owns output placement.
+    manifestPaths: { json: "", csv: "", md: "", duplicates: "" },
+    duplicates: [],
+    records,
+    skippedDirs,
+    omittedPaths: [...omittedPaths].sort(compareCodePoints),
+  };
+}
+
+/** Total order over diagnostics, so a packet's diagnostic list is reproducible. */
+function compareDiagnostics(a: LocalSourceDiagnostic, b: LocalSourceDiagnostic): number {
+  return compareCodePoints(a.code, b.code)
+    || compareCodePoints(a.sourcePath ?? "", b.sourcePath ?? "")
+    || compareCodePoints(a.message, b.message);
 }
 
 /**
@@ -991,9 +1305,7 @@ export function acquireLocalSource(input: LocalSourceAcquireInput): LocalSourceO
   const sourceKind = resolveSourceKind(absoluteSource, input.sourceKind ?? "auto");
   const sourceName = input.name && input.name.length > 0 ? input.name : path.basename(absoluteSource);
   const policy = resolveLocalArchivePolicy(input.archivePolicy);
-  const startedAtMs = Date.now();
-  const budget = new ArchiveSessionBudget(policy, startedAtMs, () => Date.now());
-
+  const budget = new ArchiveSessionBudget(policy, Date.now(), () => Date.now());
   const omitRoot = sourceKind === "directory" ? absoluteSource : path.dirname(absoluteSource);
   const omit = buildAcquisitionOmit(input, omitRoot);
 
@@ -1001,41 +1313,12 @@ export function acquireLocalSource(input: LocalSourceAcquireInput): LocalSourceO
   const omittedPaths: string[] = [];
   const skippedDirs: string[] = [];
 
-  // Phase 1 — enumerate.
-  let entries: EnumeratedEntry[];
-  if (sourceKind === "directory") {
-    entries = enumerateDirectory(absoluteSource, omit, diagnostics, omittedPaths, skippedDirs);
-  } else {
-    const stats = fs.lstatSync(absoluteSource);
-    entries = [{
-      absolutePath: absoluteSource,
-      relativePath: path.basename(absoluteSource),
-      kind: "file",
-      sizeBytes: stats.size,
-      mtimeMs: stats.mtimeMs,
-      linkTarget: null,
-    }];
-  }
-
-  // Phase 2 — hash.
+  // Enumerate, hash, then re-enumerate. A source that moved between the first and
+  // last read has no single snapshot to describe, and saying so is the whole point.
+  const entries = enumerateSource(absoluteSource, sourceKind, omit, diagnostics, omittedPaths, skippedDirs);
   const { hashed, unstableReason: hashUnstable } = hashEntries(entries, input.hashMaxBytes, diagnostics);
-  let unstableReason = hashUnstable;
-
-  // Phase 3 — re-enumerate and compare.
-  if (unstableReason === null && sourceKind === "directory") {
-    const after = enumerateDirectory(absoluteSource, omit, [], [], []);
-    unstableReason = enumerationDiffers(entries, after);
-  } else if (unstableReason === null) {
-    const after = fs.lstatSync(absoluteSource);
-    if (after.size !== entries[0].sizeBytes || after.mtimeMs !== entries[0].mtimeMs) {
-      unstableReason = `${entries[0].relativePath}: file changed while it was being observed`;
-    }
-  }
-
-  const scratch = createScratch(input.scratchParent ?? os.tmpdir());
-  const archives: LocalArchiveObservation[] = [];
-  const members: LocalArchiveMemberObservation[] = [];
-
+  const unstableReason = hashUnstable
+    ?? verifySnapshotStability(absoluteSource, sourceKind, entries, omit);
   if (unstableReason !== null) {
     diagnostics.push({
       code: "local-source.source_changed_during_observation",
@@ -1044,138 +1327,25 @@ export function acquireLocalSource(input: LocalSourceAcquireInput): LocalSourceO
     });
   }
 
-  // Physical manifest and revision are derived before any archive work, because
-  // archive members are semantic content, not part of the physical snapshot.
-  const manifestEntries: PhysicalManifestEntry[] = hashed.map(({ entry, contentHashHex }) => ({
-    path: entry.relativePath,
-    kind: entry.kind,
-    ...(contentHashHex !== null ? { contentHash: sha256Prefixed(contentHashHex) } : {}),
-    ...(entry.linkTarget !== null ? { linkTarget: entry.linkTarget } : {}),
-  }));
-  const physicalSnapshotHash = physicalManifestDigest(manifestEntries);
-  const singleFileHash = hashed.length === 1 ? hashed[0].contentHashHex : null;
-  const sourceRevision =
-    sourceKind === "directory" || singleFileHash === null
-      ? revisionFor(sourceKind, physicalSnapshotHash)
-      : revisionFor(sourceKind, singleFileHash);
+  const identity = deriveSourceIdentity(hashed, sourceKind);
 
-  // Archive expansion. Held archives still contribute their observation.
+  const scratch = createScratch(input.scratchParent ?? os.tmpdir());
+  const archives: LocalArchiveObservation[] = [];
+  const members: LocalArchiveMemberObservation[] = [];
+
+  // Archive expansion. A held archive still contributes its own observation.
   const expandArchives = input.expandArchives !== false;
-  if (expandArchives && unstableReason === null) {
+  if (!expandArchives) {
+    reportDisabledExpansion(hashed, diagnostics);
+  } else if (unstableReason === null) {
     const context: ArchiveContext = {
       scratch, policy, budget, omit, diagnostics, archives, members, omittedPaths,
     };
-    const queue: ArchiveTask[] = [];
-    for (const { entry } of hashed) {
-      if (entry.kind !== "file") continue;
-      const extension = path.extname(entry.relativePath).toLowerCase();
-      if (isZipPath(entry.relativePath)) {
-        queue.push({
-          physicalPath: entry.absolutePath,
-          sourcePath: entry.relativePath,
-          depth: 0,
-          parentArchiveHash: null,
-          parentArchivePath: null,
-        });
-      } else if (KNOWN_UNEXPANDABLE_ARCHIVE_EXTENSIONS.has(extension)) {
-        diagnostics.push({
-          code: "archive.format_not_expanded",
-          severity: "info",
-          message: `${extension} is classified as an archive but v1 expands ZIP only; it is hashed and not opened`,
-          sourcePath: entry.relativePath,
-        });
-      }
-    }
-    while (queue.length > 0) {
-      acquireArchive(context, queue.shift() as ArchiveTask, queue);
-    }
-  } else if (!expandArchives) {
-    for (const { entry } of hashed) {
-      if (entry.kind === "file" && isZipPath(entry.relativePath)) {
-        diagnostics.push({
-          code: "local-source.archive_expansion_disabled",
-          severity: "info",
-          message: "archive expansion is disabled; the archive is hashed and its members are not observed",
-          sourcePath: entry.relativePath,
-        });
-      }
-    }
+    const queue = planArchiveTasks(hashed, diagnostics);
+    while (queue.length > 0) acquireArchive(context, queue.shift() as ArchiveTask, queue);
   }
 
-  // Records: physical entries first, then virtual archive members.
-  const records: InventoryRecord[] = [];
-  for (const { entry, contentHashHex, encoding, unknowns } of hashed) {
-    if (entry.kind === "symlink") {
-      diagnostics.push({
-        code: "local-source.symlink_not_traversed",
-        severity: "info",
-        message: entry.linkTarget === null
-          ? "symbolic link observed; its target was not read"
-          : `symbolic link observed; its literal target is '${entry.linkTarget}' and was not read`,
-        sourcePath: entry.relativePath,
-      });
-    } else if (entry.kind === "special") {
-      diagnostics.push({
-        code: "local-source.special_entry_observed",
-        severity: "info",
-        message: "filesystem entry is a device, socket or FIFO; it is recorded but never opened",
-        sourcePath: entry.relativePath,
-      });
-    }
-    const entryUnknowns = [...unknowns];
-    if (entry.kind === "symlink") entryUnknowns.push("symlink_not_traversed");
-    if (entry.kind === "special") entryUnknowns.push("special_filesystem_entry");
-    if (encoding !== null && encoding.status === "binary") entryUnknowns.push("binary_content");
-    records.push(buildLocalRecord({
-      relativePath: entry.relativePath,
-      absolutePath: entry.absolutePath,
-      kind: entry.kind,
-      sizeBytes: entry.sizeBytes,
-      contentHash: contentHashHex,
-      unknowns: entryUnknowns,
-      ...(entry.kind === "symlink" || entry.kind === "special"
-        ? {
-            artifactTypeOverride: "unknown" as InventoryArtifactType,
-            evidenceOverride: entry.kind === "symlink"
-              ? "symbolic link, not traversed"
-              : "special filesystem entry, not opened",
-            confidenceOverride: 1,
-          }
-        : {}),
-    }));
-  }
-  for (const member of members) {
-    records.push(buildLocalRecord({
-      relativePath: member.virtualSourcePath,
-      absolutePath: member.stagedPath,
-      kind: "archive-member",
-      sizeBytes: member.sizeBytes,
-      contentHash: member.contentHash.replace("sha256:", ""),
-      unknowns: [],
-    }));
-  }
-  records.sort((a, b) => compareCodePoints(a.relative_path, b.relative_path));
-
-  const typeDistribution: Record<string, number> = {};
-  let files = 0, folders = 0;
-  for (const record of records) {
-    typeDistribution[record.artifact_type] = (typeDistribution[record.artifact_type] ?? 0) + 1;
-    if (record.artifact_type === "folder") folders++; else files++;
-  }
-
-  const inventory: InventoryResult = {
-    root: absoluteSource,
-    total: records.length,
-    files,
-    folders,
-    typeDistribution,
-    // Acquisition writes no manifests of its own; the CLI owns output placement.
-    manifestPaths: { json: "", csv: "", md: "", duplicates: "" },
-    duplicates: [],
-    records,
-    skippedDirs,
-    omittedPaths: [...omittedPaths].sort(compareCodePoints),
-  };
+  const records = buildRecords(hashed, members, diagnostics);
   for (const skipped of skippedDirs) {
     diagnostics.push({
       code: "local-source.directory_unreadable",
@@ -1184,20 +1354,15 @@ export function acquireLocalSource(input: LocalSourceAcquireInput): LocalSourceO
     });
   }
 
-  diagnostics.sort((a, b) =>
-    compareCodePoints(a.code, b.code)
-    || compareCodePoints(a.sourcePath ?? "", b.sourcePath ?? "")
-    || compareCodePoints(a.message, b.message));
-
   return {
     sourceKind,
     sourceName,
-    sourceRevision,
-    physicalSnapshotHash,
-    inventory,
+    sourceRevision: identity.sourceRevision,
+    physicalSnapshotHash: identity.physicalSnapshotHash,
+    inventory: buildInventoryResult(absoluteSource, records, skippedDirs, omittedPaths),
     archives: [...archives].sort((a, b) => compareCodePoints(a.sourcePath, b.sourcePath)),
     virtualArtifacts: [...members].sort((a, b) => compareCodePoints(a.virtualSourcePath, b.virtualSourcePath)),
-    diagnostics,
+    diagnostics: diagnostics.sort(compareDiagnostics),
     archivePolicy: policy,
     stable: unstableReason === null,
     scratchRoot: scratch.root,

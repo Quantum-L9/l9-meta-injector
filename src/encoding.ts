@@ -50,6 +50,37 @@ export function isDecodableText(probe: EncodingProbe): boolean {
  * multi-byte sequence split across a chunk boundary is not misreported, and a
  * dangling partial sequence at EOF is caught by the final flush.
  */
+/** Result of scanning one chunk: null when it is clean, else the terminal probe. */
+function inspectChunk(
+  chunk: Buffer,
+  offset: number,
+  decoder: InstanceType<typeof TextDecoder>,
+  sizeBytes: number,
+  hasBom: boolean,
+): EncodingProbe | null {
+  if (chunk.includes(0)) {
+    return { status: "binary", reason: "NUL byte detected", sizeBytes, hasBom: false };
+  }
+  try {
+    decoder.decode(chunk, { stream: true });
+  } catch (error) {
+    return {
+      status: "invalid",
+      reason: `invalid UTF-8 at byte offset ${offset}: ${error instanceof Error ? error.message : String(error)}`,
+      sizeBytes,
+      hasBom,
+    };
+  }
+  return null;
+}
+
+/**
+ * Validate a whole file as UTF-8 without loading it.
+ *
+ * Reads fixed-size chunks and feeds them to one fatal streaming decoder, so a
+ * multi-byte sequence split across a chunk boundary is not misreported, and a
+ * dangling partial sequence at EOF is caught by the final flush.
+ */
 export function probeFileEncoding(absolutePath: string, chunkBytes = ENCODING_CHUNK_BYTES): EncodingProbe {
   let fd: number | null = null;
   try {
@@ -59,30 +90,15 @@ export function probeFileEncoding(absolutePath: string, chunkBytes = ENCODING_CH
     const buffer = Buffer.alloc(Math.max(1, chunkBytes));
     let offset = 0;
     let hasBom = false;
-    let inspected = 0;
 
     for (;;) {
       const count = fs.readSync(fd, buffer, 0, buffer.length, offset);
       if (count === 0) break;
       const chunk = buffer.subarray(0, count);
-      if (inspected === 0 && count >= BOM.length && chunk.subarray(0, BOM.length).equals(BOM)) hasBom = true;
-      for (let i = 0; i < count; i++) {
-        if (chunk[i] === 0) {
-          return { status: "binary", reason: "NUL byte detected", sizeBytes: stat.size, hasBom: false };
-        }
-      }
-      try {
-        decoder.decode(chunk, { stream: true });
-      } catch (error) {
-        return {
-          status: "invalid",
-          reason: `invalid UTF-8 at byte offset ${offset}: ${error instanceof Error ? error.message : String(error)}`,
-          sizeBytes: stat.size,
-          hasBom,
-        };
-      }
+      if (offset === 0 && count >= BOM.length && chunk.subarray(0, BOM.length).equals(BOM)) hasBom = true;
+      const terminal = inspectChunk(chunk, offset, decoder, stat.size, hasBom);
+      if (terminal !== null) return terminal;
       offset += count;
-      inspected += count;
     }
 
     try {

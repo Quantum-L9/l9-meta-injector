@@ -245,8 +245,8 @@ describe("archive budgets", () => {
     try {
       const expanded = observation.archives.filter((archive) => archive.expanded);
       const held = observation.archives.filter((archive) => !archive.expanded);
-      expect(expanded.length).toBe(2);
-      expect(held.length).toBe(2);
+      expect(expanded).toHaveLength(2);
+      expect(held).toHaveLength(2);
       expect(held.every((archive) =>
         archive.holds.some((hold) => hold.code === "archive.session_budget_exceeded"))).toBe(true);
       expect(observation.virtualArtifacts).toHaveLength(2);
@@ -411,7 +411,7 @@ describe("audit regressions", () => {
         const staged = fs.readFileSync(member.stagedPath);
         const digest = `sha256:${createHash("sha256").update(staged).digest("hex")}`;
         expect(digest).toBe(member.contentHash);
-        expect(staged.length).toBe(member.sizeBytes);
+        expect(staged).toHaveLength(member.sizeBytes);
       }
     } finally {
       observation.dispose();

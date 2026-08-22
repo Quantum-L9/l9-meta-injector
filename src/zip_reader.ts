@@ -216,7 +216,6 @@ function applyZip64Extra(
       }
       if (entry.localHeaderOffset === U32_MAX && field + 8 <= dataStart + dataSize) {
         entry.localHeaderOffset = readSafeUInt64LE(extra, field, "zip64 local header offset");
-        field += 8;
       }
       break;
     }
@@ -231,62 +230,76 @@ function applyZip64Extra(
  * archive claims to contain, so preflight can run over the complete member list
  * before any extraction begins.
  */
+/** Parse one central-directory header at `cursor`, or throw if it is malformed. */
+function readCentralEntry(
+  central: Buffer,
+  cursor: number,
+  index: number,
+): { entry: ZipCentralEntry; next: number } {
+  if (central.readUInt32LE(cursor) !== CENTRAL_SIGNATURE) {
+    throw new ZipFormatError(`central-directory header signature is invalid at offset ${cursor}`);
+  }
+  const versionMadeBy = central.readUInt16LE(cursor + 4);
+  const generalPurposeFlags = central.readUInt16LE(cursor + 8);
+  const nameLength = central.readUInt16LE(cursor + 28);
+  const extraLength = central.readUInt16LE(cursor + 30);
+  const commentLength = central.readUInt16LE(cursor + 32);
+  const sizes = {
+    compressedSize: central.readUInt32LE(cursor + 20),
+    uncompressedSize: central.readUInt32LE(cursor + 24),
+    localHeaderOffset: central.readUInt32LE(cursor + 42),
+  };
+  const nameStart = cursor + CENTRAL_FIXED_SIZE;
+  const extraStart = nameStart + nameLength;
+  const commentStart = extraStart + extraLength;
+  const next = commentStart + commentLength;
+  if (next > central.length) throw new ZipFormatError("central-directory entry runs past the directory");
+
+  applyZip64Extra(central.subarray(extraStart, commentStart), sizes);
+  const decoded = decodeMemberName(central.subarray(nameStart, extraStart), generalPurposeFlags);
+  const externalAttributes = central.readUInt32LE(cursor + 38);
+  const classified = entryKindFor(versionMadeBy, externalAttributes, decoded.name);
+
+  return {
+    entry: {
+      name: decoded.name,
+      nameEncodingSuspect: decoded.suspect,
+      compressionMethod: central.readUInt16LE(cursor + 10),
+      generalPurposeFlags,
+      crc32: central.readUInt32LE(cursor + 16),
+      compressedSize: sizes.compressedSize,
+      uncompressedSize: sizes.uncompressedSize,
+      localHeaderOffset: sizes.localHeaderOffset,
+      externalAttributes,
+      versionMadeBy,
+      kind: classified.kind,
+      encrypted: (generalPurposeFlags & (FLAG_ENCRYPTED | FLAG_STRONG_ENCRYPTION)) !== 0,
+      unixMode: classified.unixMode,
+      index,
+    },
+    next,
+  };
+}
+
+/**
+ * Read an archive's central directory.
+ *
+ * The central directory — not the local headers — is the authority for what an
+ * archive claims to contain, so preflight can run over the complete member list
+ * before any extraction begins.
+ */
 export function readZipCentralDirectory(archivePath: string): ZipDirectory {
   const fd = fs.openSync(archivePath, "r");
   try {
-    const fileSize = fs.fstatSync(fd).size;
-    const eocd = locateEocd(fd, fileSize);
+    const eocd = locateEocd(fd, fs.fstatSync(fd).size);
     const central = readExact(fd, eocd.centralDirectorySize, eocd.centralDirectoryOffset);
 
     const entries: ZipCentralEntry[] = [];
     let cursor = 0;
-    let index = 0;
     while (cursor + CENTRAL_FIXED_SIZE <= central.length) {
-      if (central.readUInt32LE(cursor) !== CENTRAL_SIGNATURE) {
-        throw new ZipFormatError(`central-directory header signature is invalid at offset ${cursor}`);
-      }
-      const versionMadeBy = central.readUInt16LE(cursor + 4);
-      const generalPurposeFlags = central.readUInt16LE(cursor + 8);
-      const compressionMethod = central.readUInt16LE(cursor + 10);
-      const crc32 = central.readUInt32LE(cursor + 16);
-      const nameLength = central.readUInt16LE(cursor + 28);
-      const extraLength = central.readUInt16LE(cursor + 30);
-      const commentLength = central.readUInt16LE(cursor + 32);
-      const externalAttributes = central.readUInt32LE(cursor + 38);
-      const sizes = {
-        compressedSize: central.readUInt32LE(cursor + 20),
-        uncompressedSize: central.readUInt32LE(cursor + 24),
-        localHeaderOffset: central.readUInt32LE(cursor + 42),
-      };
-      const nameStart = cursor + CENTRAL_FIXED_SIZE;
-      const extraStart = nameStart + nameLength;
-      const commentStart = extraStart + extraLength;
-      const next = commentStart + commentLength;
-      if (next > central.length) throw new ZipFormatError("central-directory entry runs past the directory");
-
-      applyZip64Extra(central.subarray(extraStart, commentStart), sizes);
-      const rawName = central.subarray(nameStart, extraStart);
-      const decoded = decodeMemberName(rawName, generalPurposeFlags);
-      const classified = entryKindFor(versionMadeBy, externalAttributes, decoded.name);
-
-      entries.push({
-        name: decoded.name,
-        nameEncodingSuspect: decoded.suspect,
-        compressionMethod,
-        generalPurposeFlags,
-        crc32,
-        compressedSize: sizes.compressedSize,
-        uncompressedSize: sizes.uncompressedSize,
-        localHeaderOffset: sizes.localHeaderOffset,
-        externalAttributes,
-        versionMadeBy,
-        kind: classified.kind,
-        encrypted: (generalPurposeFlags & (FLAG_ENCRYPTED | FLAG_STRONG_ENCRYPTION)) !== 0,
-        unixMode: classified.unixMode,
-        index,
-      });
-      index++;
-      cursor = next;
+      const parsed = readCentralEntry(central, cursor, entries.length);
+      entries.push(parsed.entry);
+      cursor = parsed.next;
     }
     return { entries, declaredEntryCount: eocd.entryCount, zip64: eocd.zip64 };
   } finally {
@@ -311,7 +324,7 @@ export class Crc32 {
   private state = 0xffffffff;
   update(chunk: Buffer): void {
     let crc = this.state;
-    for (let i = 0; i < chunk.length; i++) crc = CRC_TABLE[(crc ^ chunk[i]) & 0xff] ^ (crc >>> 8);
+    for (const byte of chunk) crc = CRC_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
     this.state = crc;
   }
   digest(): number {
@@ -353,6 +366,77 @@ export interface ZipMemberStreamResult {
  * costs one chunk of memory. Deflated members are bounded by the same ceiling,
  * which the caller derives from the archive policy rather than from the archive.
  */
+/** Read a stored (uncompressed) member incrementally, one chunk at a time. */
+function readStoredMember(
+  fd: number,
+  entry: ZipCentralEntry,
+  dataStart: number,
+  chunkBytes: number,
+  emit: (chunk: Buffer) => void,
+): void {
+  const readBuffer = Buffer.alloc(chunkBytes);
+  let remaining = entry.compressedSize;
+  let position = dataStart;
+  while (remaining > 0) {
+    const want = Math.min(readBuffer.length, remaining);
+    const count = fs.readSync(fd, readBuffer, 0, want, position);
+    if (count === 0) throw new ZipFormatError(`unexpected end of stored member ${entry.name}`);
+    emit(Buffer.from(readBuffer.subarray(0, count)));
+    position += count;
+    remaining -= count;
+  }
+}
+
+/** Inflate a deflated member under a ceiling zlib itself enforces. */
+function readDeflatedMember(
+  fd: number,
+  entry: ZipCentralEntry,
+  dataStart: number,
+  chunkBytes: number,
+  maxUncompressedBytes: number,
+  emit: (chunk: Buffer) => void,
+): void {
+  const compressed = readExact(fd, entry.compressedSize, dataStart);
+  let inflated: Buffer;
+  try {
+    inflated = zlib.inflateRawSync(compressed, { maxOutputLength: maxUncompressedBytes });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ERR_BUFFER_TOO_LARGE") {
+      throw new ZipBudgetExceededError(
+        `member ${entry.name} exceeded the ${maxUncompressedBytes}-byte extraction ceiling`,
+      );
+    }
+    throw new ZipFormatError(
+      `member ${entry.name} could not be decompressed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  for (let offset = 0; offset < inflated.length; offset += chunkBytes) {
+    emit(inflated.subarray(offset, Math.min(offset + chunkBytes, inflated.length)));
+  }
+}
+
+/** Offset of a member's data, read from its local header. */
+function memberDataStart(fd: number, entry: ZipCentralEntry): number {
+  const header = readExact(fd, LOCAL_FIXED_SIZE, entry.localHeaderOffset);
+  if (header.readUInt32LE(0) !== LOCAL_SIGNATURE) {
+    throw new ZipFormatError(`local header signature is invalid for ${entry.name}`);
+  }
+  return entry.localHeaderOffset + LOCAL_FIXED_SIZE + header.readUInt16LE(26) + header.readUInt16LE(28);
+}
+
+/**
+ * Read one member and hand its bytes to `sink` in chunks.
+ *
+ * `maxUncompressedBytes` is enforced by the decompressor itself, not by trusting
+ * the central directory: a member that understates its uncompressed size still
+ * cannot produce more than the ceiling, because zlib aborts at the limit and the
+ * sink never sees the excess. That is the runtime accounting a declared-size
+ * check alone cannot provide.
+ *
+ * Stored members are read incrementally, so an uncompressed archive of any size
+ * costs one chunk of memory. Deflated members are bounded by the same ceiling,
+ * which the caller derives from the archive policy rather than from the archive.
+ */
 export function streamZipMember(
   archivePath: string,
   entry: ZipCentralEntry,
@@ -371,16 +455,10 @@ export function streamZipMember(
       `member ${entry.name} cannot be extracted: the remaining extraction allowance is exhausted`,
     );
   }
+
   const fd = fs.openSync(archivePath, "r");
   try {
-    const header = readExact(fd, LOCAL_FIXED_SIZE, entry.localHeaderOffset);
-    if (header.readUInt32LE(0) !== LOCAL_SIGNATURE) {
-      throw new ZipFormatError(`local header signature is invalid for ${entry.name}`);
-    }
-    const nameLength = header.readUInt16LE(26);
-    const extraLength = header.readUInt16LE(28);
-    const dataStart = entry.localHeaderOffset + LOCAL_FIXED_SIZE + nameLength + extraLength;
-
+    const dataStart = memberDataStart(fd, entry);
     const crc = new Crc32();
     let produced = 0;
     const emit = (chunk: Buffer): void => {
@@ -395,40 +473,11 @@ export function streamZipMember(
     };
 
     const chunkBytes = Math.max(1, limits.chunkBytes ?? 64 * 1024);
-
     if (entry.compressionMethod === COMPRESSION_STORED) {
-      const readBuffer = Buffer.alloc(chunkBytes);
-      let remaining = entry.compressedSize;
-      let position = dataStart;
-      while (remaining > 0) {
-        const want = Math.min(readBuffer.length, remaining);
-        const count = fs.readSync(fd, readBuffer, 0, want, position);
-        if (count === 0) throw new ZipFormatError(`unexpected end of stored member ${entry.name}`);
-        emit(Buffer.from(readBuffer.subarray(0, count)));
-        position += count;
-        remaining -= count;
-      }
+      readStoredMember(fd, entry, dataStart, chunkBytes, emit);
     } else {
-      const compressed = readExact(fd, entry.compressedSize, dataStart);
-      let inflated: Buffer;
-      try {
-        inflated = zlib.inflateRawSync(compressed, { maxOutputLength: limits.maxUncompressedBytes });
-      } catch (error) {
-        const code = (error as NodeJS.ErrnoException).code;
-        if (code === "ERR_BUFFER_TOO_LARGE") {
-          throw new ZipBudgetExceededError(
-            `member ${entry.name} exceeded the ${limits.maxUncompressedBytes}-byte extraction ceiling`,
-          );
-        }
-        throw new ZipFormatError(
-          `member ${entry.name} could not be decompressed: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
-      for (let offset = 0; offset < inflated.length; offset += chunkBytes) {
-        emit(inflated.subarray(offset, Math.min(offset + chunkBytes, inflated.length)));
-      }
+      readDeflatedMember(fd, entry, dataStart, chunkBytes, limits.maxUncompressedBytes, emit);
     }
-
     return { bytesWritten: produced, crc32: crc.digest() };
   } finally {
     fs.closeSync(fd);

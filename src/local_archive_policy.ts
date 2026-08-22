@@ -61,7 +61,7 @@ export const DEFAULT_LOCAL_ARCHIVE_POLICY: LocalArchivePolicy = Object.freeze({
 export function resolveLocalArchivePolicy(overrides?: Partial<LocalArchivePolicy>): LocalArchivePolicy {
   return {
     ...DEFAULT_LOCAL_ARCHIVE_POLICY,
-    ...(overrides ?? {}),
+    ...overrides,
     version: overrides?.version ?? LOCAL_ARCHIVE_POLICY_VERSION,
   };
 }

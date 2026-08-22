@@ -54,7 +54,7 @@ const CRC_TABLE = (() => {
 
 function crc32(buffer: Buffer): number {
   let crc = 0xffffffff;
-  for (let i = 0; i < buffer.length; i++) crc = CRC_TABLE[(crc ^ buffer[i]) & 0xff] ^ (crc >>> 8);
+  for (const byte of buffer) crc = CRC_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
   return (crc ^ 0xffffffff) >>> 0;
 }
 
@@ -72,9 +72,10 @@ interface PreparedMember {
 
 function prepare(spec: ZipMemberSpec): Omit<PreparedMember, "localHeaderOffset"> {
   const isDirectory = (spec.unixMode ?? 0) === UNIX_DIRECTORY || spec.name.endsWith("/");
-  const raw = isDirectory
-    ? Buffer.alloc(0)
-    : Buffer.isBuffer(spec.content) ? spec.content : Buffer.from(spec.content ?? "", "utf8");
+  const declared = Buffer.isBuffer(spec.content)
+    ? spec.content
+    : Buffer.from(spec.content ?? "", "utf8");
+  const raw = isDirectory ? Buffer.alloc(0) : declared;
   const stored = spec.stored === true || raw.length === 0;
   const data = stored ? raw : zlib.deflateRawSync(raw);
   const mode = spec.unixMode ?? (isDirectory ? UNIX_DIRECTORY : UNIX_REGULAR);
