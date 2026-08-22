@@ -10,7 +10,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "git_blob_sha1": "4478b77efd5c6e8b3ee326a9b2c8df737e4c457b"
+      "git_blob_sha1": "a1ac7fcb875a1fe4ab8db9988ce82fce20d84056"
     },
     {
       "path": "dist/archive_preflight.d.ts",
@@ -226,7 +226,7 @@
     },
     {
       "path": "docs/contracts.md",
-      "git_blob_sha1": "f56b172d38d42bbe3608cefc3c4750c45087eb5e"
+      "git_blob_sha1": "06423a10c908c7ce661f4781fca139aaff97b761"
     },
     {
       "path": "docs/corpus-intelligence.md",
