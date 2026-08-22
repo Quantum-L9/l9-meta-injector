@@ -370,7 +370,7 @@
     },
     {
       "path": "scripts/local-source-cli.js",
-      "git_blob_sha1": "aeb82b68644dab2a0ae488196f3d982635dab7c9"
+      "git_blob_sha1": "5e6d198b1da4a1c317f77daec60985c678c8f85a"
     },
     {
       "path": "scripts/repository-model-cli.js",
@@ -394,11 +394,11 @@
     },
     {
       "path": "src/corpus_analysis.ts",
-      "git_blob_sha1": "886ff8951d6a8c3a03fc5b67eabd51ec6432f4be"
+      "git_blob_sha1": "a7a9f59046114b79c1350263536226754d6b533d"
     },
     {
       "path": "src/corpus_report.ts",
-      "git_blob_sha1": "0757640b964f1ec2d3d0105b2cc8b3f7013db8f4"
+      "git_blob_sha1": "12fbd6d517b52ae4918cda6ceaed000432b5f712"
     },
     {
       "path": "src/encoding.ts",
@@ -406,7 +406,7 @@
     },
     {
       "path": "src/extractors/work_intelligence.ts",
-      "git_blob_sha1": "ddeb8e72905084c35053bf345069058678297810"
+      "git_blob_sha1": "f59f2119a2250568a72ead5da74251f44f5ecd26"
     },
     {
       "path": "src/index.ts",
@@ -430,7 +430,7 @@
     },
     {
       "path": "src/ordering.ts",
-      "git_blob_sha1": "84c8e0d655a71a171507d67f6c1ab6ca3ed335c0"
+      "git_blob_sha1": "325afefb2957e5f3304de2ff88aeaf8646c08716"
     },
     {
       "path": "src/pipeline.ts",

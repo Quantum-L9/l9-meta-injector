@@ -3,7 +3,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.renderCorpusReport = renderCorpusReport;
 /** Escape the characters that would break a Markdown table cell. */
 function cell(value) {
-    return value.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
+    return value
+        .replace(/\\/g, String.raw `\\`)
+        .replace(/\|/g, String.raw `\|`)
+        .replace(/\r?\n/g, " ");
 }
 function code(value) {
     return `\`${cell(value)}\``;

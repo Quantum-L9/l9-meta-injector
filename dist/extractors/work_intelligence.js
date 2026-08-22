@@ -37,7 +37,30 @@ function stripEmphasis(value) {
  * resolves to nothing. Observed on a real repository, which is what caught it.
  */
 function stripWrappingEmphasis(value) {
-    return value.replace(/^[*_`]+/, "").replace(/[*_`]+$/, "");
+    return trimEnd(trimStart(value, EMPHASIS), EMPHASIS);
+}
+const EMPHASIS = "*_`";
+const TRAILING_DOTS = ".";
+/**
+ * Character-set trimming done by index rather than by regex.
+ *
+ * `/[*_`]+$/` looks harmless and is quadratic: the engine retries the greedy
+ * run from every position in a string that does not end in one of those
+ * characters. This module parses documents from an untrusted drive or archive,
+ * so a line of ten thousand asterisks must cost ten thousand steps, not a
+ * hundred million.
+ */
+function trimStart(value, characters) {
+    let start = 0;
+    while (start < value.length && characters.includes(value[start]))
+        start++;
+    return start === 0 ? value : value.slice(start);
+}
+function trimEnd(value, characters) {
+    let end = value.length;
+    while (end > 0 && characters.includes(value[end - 1]))
+        end--;
+    return end === value.length ? value : value.slice(0, end);
 }
 function draft(predicate, object, lineIndex, line, confidence = "high") {
     return {
@@ -65,7 +88,7 @@ function readFrontmatter(lines) {
         const line = lines[index];
         if (line.trim() === "---" || line.trim() === "...")
             return { entries, bodyStart: index + 1 };
-        const match = /^([A-Za-z][A-Za-z0-9_-]*)\s*:\s*(.*)$/.exec(line);
+        const match = /^([A-Za-z][A-Za-z0-9_-]*)[ \t]*:[ \t]*(.*)/.exec(line);
         if (!match)
             continue;
         const key = match[1].toLowerCase();
@@ -90,7 +113,7 @@ function fencedLines(lines, markdown) {
         return fenced;
     let openFence = null;
     lines.forEach((line, index) => {
-        const match = /^\s{0,3}(`{3,}|~{3,})/.exec(line);
+        const match = /^[ \t]{0,3}(`{3,}|~{3,})/.exec(line);
         if (openFence === null) {
             if (match) {
                 openFence = match[1][0];
@@ -115,8 +138,14 @@ function isClaimLine(shape, index) {
     return index >= shape.bodyStart && !shape.fenced.has(index);
 }
 // ───────────────────── document-structure/v1 ─────────────────────
-const ATX_HEADING = /^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$/;
-const PLAIN_TITLE = /^\s*(?:[*_]{0,2})Title(?:[*_]{0,2})\s*:\s*(.+)$/i;
+// `(.+?)\s*#*\s*$` is the textbook quadratic shape. Capture the rest of the
+// line in one greedy step and remove the optional closing run afterwards.
+const ATX_HEADING = /^[ \t]{0,3}(#{1,6})[ \t]+(.+)/;
+/** Text of an ATX heading with its optional trailing `###` run removed. */
+function headingText(raw) {
+    return normalizeText(trimEnd(trimEnd(raw, " \t"), "#"));
+}
+const PLAIN_TITLE = /^[ \t]*(?:[*_]{0,2})Title(?:[*_]{0,2})[ \t]*:[ \t]*(.+)/i;
 /**
  * Title and heading structure, exactly as written.
  *
@@ -143,7 +172,7 @@ exports.documentStructureExtractor = {
                 const heading = ATX_HEADING.exec(line);
                 if (heading) {
                     const level = heading[1].length;
-                    const text = normalizeText(heading[2]);
+                    const text = headingText(heading[2]);
                     if (text.length > 0) {
                         drafts.push(draft("document.heading", `H${level}: ${text}`, index, line));
                         if (level === 1)
@@ -176,28 +205,30 @@ const WORK_KIND_VALUES = [
 const STATUS_SET = new Set(WORK_STATUS_VALUES);
 const KIND_SET = new Set(WORK_KIND_VALUES);
 /** `Status: wip` / `**State:** blocked`. The label is what makes it a claim. */
-const STATUS_LABEL = /^\s*(?:[-*+]\s+)?(?:[*_]{0,2})(?:Status|State)(?:[*_]{0,2})\s*:\s*(.+)$/i;
+const STATUS_LABEL = /^[ \t]*(?:[-*+][ \t]+)?(?:[*_]{0,2})(?:Status|State)(?:[*_]{0,2})[ \t]*:[ \t]*(.+)/i;
 /** `> **WIP**` — a leading admonition whose whole text is a status token. */
-const ADMONITION = /^\s{0,3}>\s*(.+)$/;
+const ADMONITION = /^[ \t]{0,3}>[ \t]*(.+)/;
 /** How far into a document an admonition still reads as the document's own state. */
 const ADMONITION_WINDOW = 10;
 /** `# [WIP] Title`, `# WIP: Title`, `# Title (DRAFT)`. */
 const TITLE_STATUS_MARKERS = [
-    /^\s*\[([A-Za-z-]+)\]\s*/,
-    /^\s*\(([A-Za-z-]+)\)\s*/,
-    /^\s*([A-Za-z-]+)\s*[:—-]\s+/,
-    /\s*\[([A-Za-z-]+)\]\s*$/,
-    /\s*\(([A-Za-z-]+)\)\s*$/,
+    /^[ \t]*\[([A-Za-z-]+)\]/,
+    /^[ \t]*\(([A-Za-z-]+)\)/,
+    /^[ \t]*([A-Za-z-]+)[ \t]*[:—-][ \t]+/,
+    /\[([A-Za-z-]+)\][ \t]*$/,
+    /\(([A-Za-z-]+)\)[ \t]*$/,
 ];
-const KIND_LABEL = /^\s*(?:[-*+]\s+)?(?:[*_]{0,2})(?:Type|Kind)(?:[*_]{0,2})\s*:\s*(.+)$/i;
-const TASK_UNCHECKED = /^\s*[-*+]\s+\[\s\]\s+(.+)$/;
-const TASK_CHECKED = /^\s*[-*+]\s+\[[xX]\]\s+(.+)$/;
-/** `TODO: ship it` at the start of a line. A `TODO` mid-sentence is prose. */
-const TASK_TODO = /^\s*(?:[-*+]\s+)?(?:[*_]{0,2})TODO(?:[*_]{0,2})\s*:\s*(.+)$/;
+const KIND_LABEL = /^[ \t]*(?:[-*+][ \t]+)?(?:[*_]{0,2})(?:Type|Kind)(?:[*_]{0,2})[ \t]*:[ \t]*(.+)/i;
+const TASK_UNCHECKED = /^[ \t]*[-*+][ \t]+\[ \][ \t]+(.+)/;
+const TASK_CHECKED = /^[ \t]*[-*+][ \t]+\[[xX]\][ \t]+(.+)/;
+// NOSONAR(S1135): the marker below is this parser's input vocabulary, not a task
+// left for a maintainer. The rule matches the token wherever it appears.
+/** `TODO: ship it` at the start of a line. The same word mid-sentence is prose. */ // NOSONAR
+const TASK_TODO = /^[ \t]*(?:[-*+][ \t]+)?(?:[*_]{0,2})TODO(?:[*_]{0,2})[ \t]*:[ \t]*(.+)/;
 /** `Milestone: beta` and `Milestone 2: GA`. */
-const MILESTONE_LABEL = /^\s*(?:[-*+]\s+)?(?:[*_]{0,2})Milestone(?:\s+\d+)?(?:[*_]{0,2})\s*:\s*(.+)$/i;
+const MILESTONE_LABEL = /^[ \t]*(?:[-*+][ \t]+)?(?:[*_]{0,2})Milestone(?:[ \t]+\d+)?(?:[*_]{0,2})[ \t]*:[ \t]*(.+)/i;
 const MILESTONE_HEADING = /^milestones?$/i;
-const PLAIN_BULLET = /^\s*[-*+]\s+(.+)$/;
+const PLAIN_BULLET = /^[ \t]*[-*+][ \t]+(.+)/;
 /**
  * Declared relationships, longest label first.
  *
@@ -219,11 +250,11 @@ const RELATION_LABELS = [
     { predicate: "work.references", label: /Related/i },
 ];
 function statusValueOf(raw) {
-    const value = normalizeText(stripEmphasis(raw)).toLowerCase().replace(/[.]+$/, "");
+    const value = trimEnd(normalizeText(stripEmphasis(raw)).toLowerCase(), TRAILING_DOTS);
     return STATUS_SET.has(value) ? value : null;
 }
 function kindValueOf(raw) {
-    const value = normalizeText(stripEmphasis(raw)).toLowerCase().replace(/[.]+$/, "");
+    const value = trimEnd(normalizeText(stripEmphasis(raw)).toLowerCase(), TRAILING_DOTS);
     return KIND_SET.has(value) ? value : null;
 }
 /** The kind a title names outright, e.g. "Deployment Roadmap" -> roadmap. */
@@ -334,9 +365,19 @@ function taskDrafts(line, index) {
     }
     return [];
 }
+/**
+ * The relation labels compiled once.
+ *
+ * Built at module load rather than per line: a document with ten thousand lines
+ * would otherwise construct a hundred and twenty thousand identical regular
+ * expressions.
+ */
+const RELATION_PATTERNS = RELATION_LABELS.map(({ predicate, label }) => ({
+    predicate,
+    pattern: new RegExp(String.raw `^[ \t]*(?:[-*+][ \t]+)?(?:[*_]{0,2})(?:${label.source})(?:[*_]{0,2})[ \t]*:[ \t]*(.+)`, "i"),
+}));
 function relationDrafts(line, index) {
-    for (const { predicate, label } of RELATION_LABELS) {
-        const pattern = new RegExp(`^\\s*(?:[-*+]\\s+)?(?:[*_]{0,2})(?:${label.source})(?:[*_]{0,2})\\s*:\\s*(.+)$`, "i");
+    for (const { predicate, pattern } of RELATION_PATTERNS) {
         const match = pattern.exec(line);
         if (match) {
             const target = normalizeText(stripWrappingEmphasis(match[1]));
@@ -365,49 +406,61 @@ exports.workIntelligenceExtractor = {
         shape.lines.forEach((line, index) => {
             if (!isClaimLine(shape, index))
                 return;
-            if (shape.markdown) {
-                const heading = ATX_HEADING.exec(line);
-                if (heading) {
-                    const text = normalizeText(heading[2]);
-                    underMilestones = MILESTONE_HEADING.test(text);
-                    if (heading[1].length === 1)
-                        drafts.push(...titleDerivedDrafts(shape, text, index));
-                    return;
-                }
-            }
-            const admonition = admonitionStatus(shape, line, index);
-            if (admonition)
-                drafts.push(admonition);
-            drafts.push(...labelledDrafts(line, index));
-            const milestone = MILESTONE_LABEL.exec(line);
-            if (milestone) {
-                const text = normalizeText(milestone[1]);
-                if (text)
-                    drafts.push(draft("work.milestone", text, index, line));
+            const heading = shape.markdown ? ATX_HEADING.exec(line) : null;
+            if (heading) {
+                // A heading both sets the section context and, at level one, names the
+                // document — so it is handled here and never falls through to the
+                // line rules below.
+                const text = headingText(heading[2]);
+                underMilestones = MILESTONE_HEADING.test(text);
+                if (heading[1].length === 1)
+                    drafts.push(...titleDerivedDrafts(shape, text, index));
                 return;
             }
-            const tasks = taskDrafts(line, index);
-            if (tasks.length > 0) {
-                drafts.push(...tasks);
-                return;
-            }
-            // A plain bullet under a Milestones heading is a milestone by position.
-            // Checkbox bullets were already claimed above as tasks, which is the more
-            // specific syntax.
-            if (underMilestones) {
-                const bullet = PLAIN_BULLET.exec(line);
-                if (bullet) {
-                    const text = normalizeText(bullet[1]);
-                    if (text)
-                        drafts.push(draft("work.milestone", text, index, line));
-                    return;
-                }
-            }
-            drafts.push(...relationDrafts(line, index));
+            drafts.push(...bodyLineDrafts(shape, line, index, underMilestones));
         });
         return drafts;
     },
 };
+/**
+ * Every claim one body line makes, in specificity order.
+ *
+ * A line is claimed by the most specific rule that matches: a milestone label
+ * before a task, a task before a bare bullet. Status and kind labels are checked
+ * unconditionally first because a line may carry one alongside anything else.
+ */
+function bodyLineDrafts(shape, line, index, underMilestones) {
+    const drafts = [];
+    const admonition = admonitionStatus(shape, line, index);
+    if (admonition)
+        drafts.push(admonition);
+    drafts.push(...labelledDrafts(line, index));
+    const milestone = MILESTONE_LABEL.exec(line);
+    if (milestone) {
+        const text = normalizeText(milestone[1]);
+        if (text)
+            drafts.push(draft("work.milestone", text, index, line));
+        return drafts;
+    }
+    const tasks = taskDrafts(line, index);
+    if (tasks.length > 0) {
+        drafts.push(...tasks);
+        return drafts;
+    }
+    // A plain bullet under a Milestones heading is a milestone by position.
+    // Checkbox bullets were already claimed above as tasks, the more specific syntax.
+    if (underMilestones) {
+        const bullet = PLAIN_BULLET.exec(line);
+        if (bullet) {
+            const text = normalizeText(bullet[1]);
+            if (text)
+                drafts.push(draft("work.milestone", text, index, line));
+            return drafts;
+        }
+    }
+    drafts.push(...relationDrafts(line, index));
+    return drafts;
+}
 /** The predicates these rules can emit. Documentation and report rendering read it. */
 exports.WORK_INTELLIGENCE_PREDICATES = [
     "document.heading",

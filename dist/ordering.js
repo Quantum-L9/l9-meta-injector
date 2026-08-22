@@ -22,7 +22,9 @@ function compareCodePoints(a, b) {
         if (l !== r)
             return l < r ? -1 : 1;
     }
-    return left.length === right.length ? 0 : left.length < right.length ? -1 : 1;
+    if (left.length === right.length)
+        return 0;
+    return left.length < right.length ? -1 : 1;
 }
 /**
  * The two members of an unordered pair, in a fixed order.

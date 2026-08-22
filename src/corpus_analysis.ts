@@ -27,7 +27,7 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import { InventoryRecord } from "./inventory";
 import { LocalSourceObservation } from "./local_source";
-import { InterpretedAssertion } from "./interpretation";
+
 import {
   RepositoryModelPacket,
   artifactIdFor,
@@ -37,7 +37,7 @@ import {
 } from "./repository_model";
 import { canonicalPair, compareCodePoints } from "./ordering";
 import { probeBufferEncoding } from "./encoding";
-import { isSecretCandidatePath } from "./interpretation";
+import { InterpretedAssertion, isSecretCandidatePath } from "./interpretation";
 
 export const CORPUS_INDEX_SCHEMA = "l9.corpus-index/v1";
 
@@ -786,11 +786,12 @@ export function canonicalCorpusJson(value: unknown): string {
     if (typeof item === "object") {
       const source = item as Record<string, unknown>;
       const keys = Object.keys(source).filter((key) => source[key] !== undefined).sort(compareCodePoints);
-      return `{${keys.map((key) => `${JSON.stringify(key)}:${render(source[key])}`).join(",")}}`;
+      const members = keys.map((key) => `${JSON.stringify(key)}:${render(source[key])}`);
+      return `{${members.join(",")}}`;
     }
     if (typeof item === "number") {
       if (!Number.isFinite(item)) {
-        throw new Error(`corpus-analysis: a non-finite number cannot be serialized, got ${String(item)}`);
+        throw new TypeError(`corpus-analysis: a non-finite number cannot be serialized, got ${String(item)}`);
       }
       return JSON.stringify(item);
     }

@@ -26,7 +26,10 @@ import {
 
 /** Escape the characters that would break a Markdown table cell. */
 function cell(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
+  return value
+    .replace(/\\/g, String.raw`\\`)
+    .replace(/\|/g, String.raw`\|`)
+    .replace(/\r?\n/g, " ");
 }
 
 function code(value: string): string {

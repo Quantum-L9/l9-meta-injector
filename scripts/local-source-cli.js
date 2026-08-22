@@ -121,6 +121,27 @@ function collectPolicy(cli) {
   return policy;
 }
 
+/** The corpus figures, phrased so a near-duplicate is never read as a duplicate. */
+function printCorpusSummary(index, skipNearDuplicates) {
+  const summary = index.summary;
+  const duplicates = `${summary.exact_duplicate_cluster_count} cluster(s), `
+    + `${summary.exact_duplicate_artifact_count} file(s), `
+    + `${summary.recoverable_duplicate_bytes} recoverable byte(s)`;
+  const threshold = index.analysis_profile.near_duplicate_threshold;
+  const candidates = skipNearDuplicates
+    ? "not analysed"
+    : `${summary.near_duplicate_candidate_count} candidate(s) at threshold ${threshold} `
+      + "(lexical similarity, not a merge recommendation)";
+
+  console.log(`  work signals     ${summary.artifacts_with_work_signals} artifact(s) declare work state`);
+  console.log(`  plans            ${summary.plan_count}`);
+  console.log(`  roadmaps         ${summary.roadmap_count}`);
+  console.log(`  WIPs             ${summary.wip_count}`);
+  console.log(`  open tasks       ${summary.open_task_count}`);
+  console.log(`  exact duplicates ${duplicates}`);
+  console.log(`  near duplicates  ${candidates}`);
+}
+
 function main() {
   const cli = parseArgs(process.argv.slice(2));
   const target = path.resolve(cli.target);
@@ -218,16 +239,7 @@ function main() {
     console.log(`  semantic_hash    ${emitted.semanticHash}`);
     console.log(`  bundle           ${emitted.bundleRoot}`);
     console.log(`  manifest         ${manifestPath}`);
-    console.log(`  work signals     ${index.summary.artifacts_with_work_signals} artifact(s) declare work state`);
-    console.log(`  plans            ${index.summary.plan_count}`);
-    console.log(`  roadmaps         ${index.summary.roadmap_count}`);
-    console.log(`  WIPs             ${index.summary.wip_count}`);
-    console.log(`  open tasks       ${index.summary.open_task_count}`);
-    console.log(`  exact duplicates ${index.summary.exact_duplicate_cluster_count} cluster(s), `
-      + `${index.summary.exact_duplicate_artifact_count} file(s), `
-      + `${index.summary.recoverable_duplicate_bytes} recoverable byte(s)`);
-    console.log(`  near duplicates  ${skipNearDuplicates ? "not analysed" : `${index.summary.near_duplicate_candidate_count} candidate(s) `
-      + `at threshold ${index.analysis_profile.near_duplicate_threshold} (lexical similarity, not a merge recommendation)`}`);
+    printCorpusSummary(index, skipNearDuplicates);
     console.log(`  corpus index     ${indexPath}`);
     console.log(`  corpus report    ${reportPath}`);
     for (const archive of held) {

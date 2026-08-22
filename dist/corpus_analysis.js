@@ -611,11 +611,12 @@ function canonicalCorpusJson(value) {
         if (typeof item === "object") {
             const source = item;
             const keys = Object.keys(source).filter((key) => source[key] !== undefined).sort(ordering_1.compareCodePoints);
-            return `{${keys.map((key) => `${JSON.stringify(key)}:${render(source[key])}`).join(",")}}`;
+            const members = keys.map((key) => `${JSON.stringify(key)}:${render(source[key])}`);
+            return `{${members.join(",")}}`;
         }
         if (typeof item === "number") {
             if (!Number.isFinite(item)) {
-                throw new Error(`corpus-analysis: a non-finite number cannot be serialized, got ${String(item)}`);
+                throw new TypeError(`corpus-analysis: a non-finite number cannot be serialized, got ${String(item)}`);
             }
             return JSON.stringify(item);
         }

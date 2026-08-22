@@ -222,6 +222,28 @@ describe("declared relationships", () => {
   });
 });
 
+describe("pathological input stays linear", () => {
+  // These extractors read documents from an untrusted drive or archive. A
+  // quadratic pattern here would be a denial-of-service path that the archive
+  // budgets cannot see, because it burns CPU on bytes that were already
+  // admitted. Each case below took milliseconds; a backtracking pattern turns
+  // them into minutes.
+  const HUGE = 50_000;
+
+  it.each([
+    ["a long emphasis run after a label", `Status: ${"*".repeat(HUGE)}x\n`],
+    ["a long run of trailing dots", `Status: wip${".".repeat(HUGE)}\n`],
+    ["a long emphasis run in a declared target", `Supersedes: ${"_".repeat(HUGE)}\n`],
+    ["a long closing run on a heading", `# heading${"#".repeat(HUGE)}\n`],
+    ["a long indent run before a bullet", `${" ".repeat(HUGE)}- [ ] task\n`],
+  ])("handles %s without catastrophic backtracking", (_name, content) => {
+    const started = Date.now();
+    work(content);
+    structure(content);
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+});
+
 describe("evidence discipline", () => {
   it("attaches source authority and declared class to every assertion", () => {
     const drafts = work("---\nstatus: wip\n---\n\n# Plan\n\n- [ ] task\n");
