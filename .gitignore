@@ -21,3 +21,14 @@ dist/*.tsbuildinfo
 # `.l9/` itself is a governed namespace — `.l9/meta-authority.yaml` and
 # `.l9/metadata-index.jsonl` are meant to be committed — so only this subtree is ignored.
 .l9/autonomy/
+
+# Claude Code agent wiring regenerated per clone by the L9 governance bootstrap.
+# Machine-local: the hooks carry absolute $HOME paths and `.claude/rules` is a
+# symlink into the governance clone, so none of it is portable to another
+# checkout. `.claude/settings.json` is hand-authored repository content and
+# stays tracked. `.claude/rules` is deliberately written without a trailing
+# slash: a trailing-slash pattern does not match a symlink.
+.claude/hooks/
+.claude/rules
+.claude/skills/
+.mcp.json
