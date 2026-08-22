@@ -469,3 +469,75 @@ describe("audit regressions", () => {
     }
   });
 });
+
+describe("zip64 central-directory records", () => {
+  test("placeholder sizes and offsets are resolved from the extra field", () => {
+    // A real producer writes 0xFFFFFFFF placeholders and carries the true values in
+    // the Zip64 extended-information field once they no longer fit in 32 bits. The
+    // reader must consume that positional list correctly or it reports a member as
+    // 4 GiB and refuses a perfectly ordinary archive.
+    const root = tmp();
+    writeRawZip(path.join(root, "big.zip"), [
+      { name: "first.txt", content: "first member", zip64: true },
+      { name: "docs/second.md", content: "# Second\n".repeat(20), zip64: true },
+    ]);
+
+    const directory = readZipCentralDirectory(path.join(root, "big.zip"));
+    expect(directory.entries.map((entry) => entry.name)).toEqual(["first.txt", "docs/second.md"]);
+    for (const entry of directory.entries) {
+      expect(entry.uncompressedSize).not.toBe(0xffffffff);
+      expect(entry.compressedSize).not.toBe(0xffffffff);
+      expect(entry.localHeaderOffset).not.toBe(0xffffffff);
+    }
+    expect(directory.entries[0].uncompressedSize).toBe("first member".length);
+    expect(directory.entries[1].uncompressedSize).toBe("# Second\n".repeat(20).length);
+  });
+
+  test("a zip64 archive round-trips through acquisition with exact member hashes", () => {
+    const root = tmp();
+    const body = "# Second\n".repeat(20);
+    writeRawZip(path.join(root, "big.zip"), [
+      { name: "first.txt", content: "first member", zip64: true },
+      { name: "docs/second.md", content: body, zip64: true },
+    ]);
+    const before = treeSnapshot(root);
+
+    const observation = acquireLocalSource({ path: path.join(root, "big.zip") });
+    try {
+      expect(observation.archives[0].expanded).toBe(true);
+      expect(observation.virtualArtifacts.map((member) => member.virtualSourcePath))
+        .toEqual(["big.zip!/docs/second.md", "big.zip!/first.txt"]);
+      const second = observation.virtualArtifacts
+        .find((member) => member.memberPath === "docs/second.md");
+      expect(second?.sizeBytes).toBe(body.length);
+      expect(second?.contentHash)
+        .toBe(`sha256:${createHash("sha256").update(body).digest("hex")}`);
+      expect(treeSnapshot(root)).toEqual(before);
+    } finally {
+      observation.dispose();
+    }
+  });
+
+  test("a truncated zip64 payload leaves the placeholder rather than reading past it", () => {
+    // The reader consumes one 64-bit value per placeholder and stops when the
+    // payload runs out, instead of reading whatever follows the extra field.
+    const root = tmp();
+    writeRawZip(path.join(root, "ok.zip"), [{ name: "a.txt", content: "plain", zip64: true }]);
+    const bytes = fs.readFileSync(path.join(root, "ok.zip"));
+    // Shrink the declared extra-field length so its payload no longer covers all
+    // three values; the record itself stays structurally parseable.
+    const eocdOffset = bytes.length - 22;
+    const centralOffset = bytes.readUInt32LE(eocdOffset + 16);
+    const extraLengthAt = centralOffset + 30;
+    expect(bytes.readUInt16LE(extraLengthAt)).toBe(4 + 24);
+    bytes.writeUInt16LE(4 + 8, extraLengthAt);
+    bytes.writeUInt16LE(8, centralOffset + 46 + bytes.readUInt16LE(centralOffset + 28) + 2);
+    fs.writeFileSync(path.join(root, "ok.zip"), bytes);
+
+    const directory = readZipCentralDirectory(path.join(root, "ok.zip"));
+    // The first placeholder resolved; the two the payload could not cover stayed put.
+    expect(directory.entries[0].uncompressedSize).toBe("plain".length);
+    expect(directory.entries[0].compressedSize).toBe(0xffffffff);
+    expect(directory.entries[0].localHeaderOffset).toBe(0xffffffff);
+  });
+});

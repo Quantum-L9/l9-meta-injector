@@ -40,6 +40,26 @@ export interface ZipMemberSpec {
   declaredUncompressedSize?: number;
   /** Omit the Unix host marker so the reader falls back to the name convention. */
   dosHost?: boolean;
+  /**
+   * Store the sizes and the local-header offset as 0xFFFFFFFF placeholders and
+   * carry the real 64-bit values in a Zip64 extended-information extra field.
+   * This is what a real producer does once a value no longer fits in 32 bits.
+   */
+  zip64?: boolean;
+}
+
+const U32_MAX = 0xffffffff;
+const ZIP64_EXTRA_ID = 0x0001;
+
+/** Build a Zip64 extended-information payload for the placeholders requested. */
+function zip64ExtraField(values: number[]): Buffer {
+  const payload = Buffer.alloc(values.length * 8);
+  values.forEach((value, index) => payload.writeBigUInt64LE(BigInt(value), index * 8));
+  const field = Buffer.alloc(4 + payload.length);
+  field.writeUInt16LE(ZIP64_EXTRA_ID, 0);
+  field.writeUInt16LE(payload.length, 2);
+  payload.copy(field, 4);
+  return field;
 }
 
 const CRC_TABLE = (() => {
@@ -60,6 +80,7 @@ function crc32(buffer: Buffer): number {
 
 interface PreparedMember {
   nameBytes: Buffer;
+  zip64: boolean;
   data: Buffer;
   crc: number;
   uncompressedSize: number;
@@ -81,6 +102,7 @@ function prepare(spec: ZipMemberSpec): Omit<PreparedMember, "localHeaderOffset">
   const mode = spec.unixMode ?? (isDirectory ? UNIX_DIRECTORY : UNIX_REGULAR);
   return {
     nameBytes: Buffer.from(spec.name, "utf8"),
+    zip64: spec.zip64 === true,
     data,
     crc: crc32(raw),
     uncompressedSize: spec.declaredUncompressedSize ?? raw.length,
@@ -120,26 +142,31 @@ export function writeRawZip(archivePath: string, specs: ZipMemberSpec[]): string
 
   const centralStart = offset;
   for (const member of prepared) {
+    // Zip64 members store placeholders here and the real values in the extra field,
+    // in the order uncompressed, compressed, local-header offset.
+    const extra = member.zip64
+      ? zip64ExtraField([member.uncompressedSize, member.data.length, member.localHeaderOffset])
+      : Buffer.alloc(0);
     const central = Buffer.alloc(46);
     central.writeUInt32LE(CENTRAL_SIGNATURE, 0);
     central.writeUInt16LE(member.versionMadeBy, 4);
-    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(member.zip64 ? 45 : 20, 6);
     central.writeUInt16LE(member.flags, 8);
     central.writeUInt16LE(member.compressionMethod, 10);
     central.writeUInt16LE(0, 12);
     central.writeUInt16LE(0, 14);
     central.writeUInt32LE(member.crc, 16);
-    central.writeUInt32LE(member.data.length, 20);
-    central.writeUInt32LE(member.uncompressedSize, 24);
+    central.writeUInt32LE(member.zip64 ? U32_MAX : member.data.length, 20);
+    central.writeUInt32LE(member.zip64 ? U32_MAX : member.uncompressedSize, 24);
     central.writeUInt16LE(member.nameBytes.length, 28);
-    central.writeUInt16LE(0, 30);
+    central.writeUInt16LE(extra.length, 30);
     central.writeUInt16LE(0, 32);
     central.writeUInt16LE(0, 34);
     central.writeUInt16LE(0, 36);
     central.writeUInt32LE(member.externalAttributes, 38);
-    central.writeUInt32LE(member.localHeaderOffset, 42);
-    chunks.push(central, member.nameBytes);
-    offset += central.length + member.nameBytes.length;
+    central.writeUInt32LE(member.zip64 ? U32_MAX : member.localHeaderOffset, 42);
+    chunks.push(central, member.nameBytes, extra);
+    offset += central.length + member.nameBytes.length + extra.length;
   }
 
   const eocd = Buffer.alloc(22);

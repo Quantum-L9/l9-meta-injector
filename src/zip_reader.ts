@@ -209,44 +209,61 @@ function locateEocd(fd: number, fileSize: number): Eocd {
   return resolved;
 }
 
-/** Apply the Zip64 extended-information extra field to the placeholder sizes. */
-function applyZip64Extra(
-  extra: Buffer,
-  entry: { uncompressedSize: number; compressedSize: number; localHeaderOffset: number },
-): void {
+/**
+ * Locate the Zip64 extended-information field's payload inside an extra-field blob.
+ *
+ * The blob is a sequence of `(id, size, data)` records from any number of
+ * producers, so finding ours is a separate concern from interpreting it.
+ */
+function findZip64ExtraPayload(extra: Buffer): Buffer | null {
   let cursor = 0;
   while (cursor + 4 <= extra.length) {
     const headerId = extra.readUInt16LE(cursor);
     const dataSize = extra.readUInt16LE(cursor + 2);
     const dataStart = cursor + 4;
-    if (dataStart + dataSize > extra.length) break;
-    if (headerId === ZIP64_EXTRA_ID) {
-      let field = dataStart;
-      // Fields appear only for the values that were stored as placeholders, in this order.
-      if (entry.uncompressedSize === U32_MAX && field + 8 <= dataStart + dataSize) {
-        entry.uncompressedSize = readSafeUInt64LE(extra, field, "zip64 uncompressed size");
-        field += 8;
-      }
-      if (entry.compressedSize === U32_MAX && field + 8 <= dataStart + dataSize) {
-        entry.compressedSize = readSafeUInt64LE(extra, field, "zip64 compressed size");
-        field += 8;
-      }
-      if (entry.localHeaderOffset === U32_MAX && field + 8 <= dataStart + dataSize) {
-        entry.localHeaderOffset = readSafeUInt64LE(extra, field, "zip64 local header offset");
-      }
-      break;
-    }
+    // A record that claims more bytes than remain is malformed; stop rather than
+    // read past the blob.
+    if (dataStart + dataSize > extra.length) return null;
+    if (headerId === ZIP64_EXTRA_ID) return extra.subarray(dataStart, dataStart + dataSize);
     cursor = dataStart + dataSize;
   }
+  return null;
 }
 
 /**
- * Read an archive's central directory.
+ * Apply the Zip64 extended-information extra field to the placeholder sizes.
  *
- * The central directory — not the local headers — is the authority for what an
- * archive claims to contain, so preflight can run over the complete member list
- * before any extraction begins.
+ * The payload is a positional list: a 64-bit value appears only for a field whose
+ * 32-bit slot held the `0xFFFFFFFF` placeholder, in a fixed order. So the reader
+ * walks the list in that order and consumes one value per placeholder it finds,
+ * leaving a placeholder in place when the payload ran out.
  */
+function applyZip64Extra(
+  extra: Buffer,
+  entry: { uncompressedSize: number; compressedSize: number; localHeaderOffset: number },
+): void {
+  const payload = findZip64ExtraPayload(extra);
+  if (payload === null) return;
+
+  let field = 0;
+  const nextValue = (label: string): number | null => {
+    if (field + 8 > payload.length) return null;
+    const value = readSafeUInt64LE(payload, field, label);
+    field += 8;
+    return value;
+  };
+
+  if (entry.uncompressedSize === U32_MAX) {
+    entry.uncompressedSize = nextValue("zip64 uncompressed size") ?? entry.uncompressedSize;
+  }
+  if (entry.compressedSize === U32_MAX) {
+    entry.compressedSize = nextValue("zip64 compressed size") ?? entry.compressedSize;
+  }
+  if (entry.localHeaderOffset === U32_MAX) {
+    entry.localHeaderOffset = nextValue("zip64 local header offset") ?? entry.localHeaderOffset;
+  }
+}
+
 /** Parse one central-directory header at `cursor`, or throw if it is malformed. */
 function readCentralEntry(
   central: Buffer,
