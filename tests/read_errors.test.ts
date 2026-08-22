@@ -29,14 +29,34 @@ test("inventory records read_failed, distinct from a binary skip (OBS-005)", () 
   expect(rec.unknowns.some((u) => u.startsWith("read_failed:"))).toBe(true);
 });
 
-test("retrieval excludes an unreadable unknown-extension file and reports it (OBS-008)", () => {
+test("retrieval keeps a readable known-text file eligible (OBS-008)", () => {
   const root = tmp();
   actual.writeFileSync(path.join(root, "data.xyz"), "plain text content\n");
   actual.writeFileSync(path.join(root, "keep.md"), "# keep\n");
-  // openSync is only reached for unknown-extension files (the binary sniff).
-  (fs.openSync as unknown as Mock).mockImplementation(() => { throw new Error("EACCES: unreadable"); });
+  // No read failure: both files are readable UTF-8, so both stay eligible. This is
+  // the half of OBS-008 that must never regress — a byte probe on a known-text
+  // extension must not start excluding perfectly readable files.
   const files = findFiles(root, "**/*");
-  expect(files.some((f) => f.endsWith("data.xyz"))).toBe(false); // excluded
-  expect(files.some((f) => f.endsWith("keep.md"))).toBe(true);   // known text, unaffected
+  expect(files.some((f) => f.endsWith("data.xyz"))).toBe(true);
+  expect(files.some((f) => f.endsWith("keep.md"))).toBe(true);
+});
+
+test("retrieval excludes an unreadable file and reports it, whatever its extension (OBS-008)", () => {
+  const root = tmp();
+  actual.writeFileSync(path.join(root, "data.xyz"), "plain text content\n");
+  actual.writeFileSync(path.join(root, "keep.md"), "# keep\n");
+  (fs.openSync as unknown as Mock).mockImplementation(() => { throw new Error("EACCES: unreadable"); });
+
+  const files = findFiles(root, "**/*");
+
+  // A known-text extension no longer exempts a file from being read before it is
+  // declared eligible: eligibility means the pipeline may decode and rewrite the
+  // file, and a file that cannot be opened cannot be either. Both are excluded,
+  // and the access error is surfaced rather than reported as "binary" (OBS-005).
+  expect(files.some((f) => f.endsWith("data.xyz"))).toBe(false);
+  expect(files.some((f) => f.endsWith("keep.md"))).toBe(false);
   expect(stderr).toHaveBeenCalled();
+  const reported = stderr.mock.calls.map((call) => String(call[0])).join("");
+  expect(reported).toContain("excluded unreadable file");
+  expect(reported).toContain("keep.md");
 });

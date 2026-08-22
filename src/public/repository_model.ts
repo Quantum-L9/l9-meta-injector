@@ -3,12 +3,14 @@ export {
   buildRepositoryModelPacket, emitRepositoryModelBundle, observeRepositoryModel, validateRepositoryModelPacket,
 } from "../repository_model";
 export type {
-  CanonicalValue, RepositoryModelArtifactRecord, RepositoryModelAuthority, RepositoryModelBuildInput,
+  CanonicalValue, RepositoryModelArchiveInput, RepositoryModelArchiveMemberInput,
+  RepositoryModelArtifactRecord, RepositoryModelAuthority, RepositoryModelBuildInput,
   RepositoryModelCapabilityRecord, RepositoryModelCompleteness, RepositoryModelConfidence,
   RepositoryModelConfidenceLevel, RepositoryModelConflictStatus, RepositoryModelDerivationMethod,
   RepositoryModelDiagnostic, RepositoryModelEdgeRecord, RepositoryModelEdgeType, RepositoryModelEmitResult,
   RepositoryModelEvidenceClass, RepositoryModelEvidenceRecord, RepositoryModelEvidenceSourceType,
-  RepositoryModelEvidenceStrength, RepositoryModelObservationInput, RepositoryModelPacket,
+  RepositoryModelEvidenceStrength, RepositoryModelLocalSourceDiagnostic,
+  RepositoryModelLocalSourceInput, RepositoryModelObservationInput, RepositoryModelPacket,
   RepositoryModelPayload, RepositoryModelRepositoryRecord, RepositoryModelSourceRef,
   RepositoryModelValidationCheck, RepositoryModelValidationReceipt, RepositoryModelValidationResult,
 } from "../repository_model";

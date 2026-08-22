@@ -33,7 +33,7 @@ retrieval -> extraction -> classification -> normalization
           -> deduplication -> placement -> MetaV3 -> indexes
 ```
 
-When `PipelineConfig.localFiles` is set (ADR-016), archive expansion runs before retrieval: `.zip` files become sibling `*.l9extracted/` trees plus `<zip>.l9meta.yaml` sidecars, then members follow the normal path. Default mode never extracts.
+When `PipelineConfig.localFiles` is set (ADR-016), archive **materialization** runs before retrieval: `.zip` files become sibling `*.l9extracted/` trees plus `<zip>.l9meta.yaml` sidecars, then members follow the normal path. Default mode never extracts. This path mutates the source by design and is not the observation path; canonical local-source observation is read-only (ADR-036, below). Since ADR-036 it refuses to replace an extraction target without ownership evidence, and its dry run performs zero source mutation.
 
 Inventory and pipeline apply a shared omit layer (ADR-017): built-in protect for `SKILL.md`, noise skips for bytecode/logs, optional `.l9metaignore` / `--omit`. Cursor-native skill edits go through `runSkillsPipelineAsync` only.
 
@@ -58,6 +58,51 @@ This repository holds no runtime dependency on topology. Conformance is proven b
 the committed golden bundle to the real consumer from an ephemeral read-only checkout
 (`L9_TOPOLOGY_CHECKOUT=<checkout> npm run topology:conformance`); the bound revision and result are
 recorded in `docs/topology-conformance.json`.
+
+## Local-source acquisition
+
+`src/local_source.ts` observes an arbitrary local source read-only (ADR-036). The
+source may be a file, an ordinary directory, an external-drive tree, a synced folder,
+or a ZIP archive; it does not have to be a Git repository.
+
+```text
+physical local source
+  -> stable snapshot (enumerate -> stream hashes -> re-enumerate)
+  -> archive staging in tool-owned scratch
+  -> central-directory preflight + two-sided resource budget
+  -> virtual members `<archive>!/<member>` + provenance graph
+  -> InventoryResult -> deterministic interpretation -> l9.repository-model
+```
+
+Nothing under the observed root is written, renamed, or removed. Archives are staged
+outside the source tree, so no sibling extraction directory and no adjacent archive
+sidecar is created; recursive deletion is confined to a scratch root this session
+created and can still prove it owns. A `*.l9extracted` directory is treated as
+generated output only when an ownership marker and an adjacent archive agree, so a
+user directory that merely shares the name is preserved.
+
+`src/zip_reader.ts` reads the central directory and streams members through Node's
+zlib under an explicit ceiling; no subprocess participates in the canonical security
+boundary and no dependency was added. `src/archive_preflight.ts` judges every member —
+path shape, entry type, encryption, compression method, exact duplicates, and case-
+and Unicode-folded collisions — before any byte is written, and one violation holds
+the whole archive rather than yielding a partial view. `src/local_archive_policy.ts`
+bounds size, member count, expansion, ratio, depth, path length and time, checked
+both against declared metadata and against the bytes actually produced.
+
+Identity is `file:sha256:…`, `archive:sha256:…`, or `fs:sha256:…` over a canonical
+manifest of repository-relative paths, entry kinds, content hashes and literal symlink
+targets. Absolute paths, inodes, timestamps, scratch locations, usernames and
+hostnames are excluded. If the source changes between the two enumerations, the
+observation is unstable and no canonical packet is emitted.
+
+Members reach the packet as ordinary artifacts at their virtual locator, plus a
+`DERIVED_FROM` relationship to their archive carrying the archive digest, member path,
+nesting depth and member identity. Nested archives preserve the whole chain. Symlinks
+are recorded but never traversed; devices, sockets and FIFOs are recorded rather than
+disappearing. `src/encoding.ts` validates a whole file as UTF-8 in bounded memory
+before any decode or mutation, so a known-text extension no longer grants eligibility
+on its own.
 
 ## Distribution
 

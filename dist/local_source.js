@@ -1,0 +1,996 @@
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.LEGACY_EXTRACTION_SUFFIX = exports.LEGACY_EXTRACTION_OWNER_FILE = exports.GENERATED_ARTIFACT_OMIT_PATTERNS = exports.SCRATCH_OWNER_ID = exports.SCRATCH_OWNER_FILE = exports.ARCHIVE_MEMBER_SEPARATOR = void 0;
+exports.removeOwnedScratch = removeOwnedScratch;
+exports.hasLegacyExtractionOwnership = hasLegacyExtractionOwnership;
+exports.isLegacyGeneratedExtraction = isLegacyGeneratedExtraction;
+exports.hashFileStreaming = hashFileStreaming;
+exports.physicalManifestDigest = physicalManifestDigest;
+exports.acquireLocalSource = acquireLocalSource;
+// local_source.ts — read-only acquisition of an arbitrary local filesystem source.
+//
+// A source here is a file, an ordinary folder, an external-drive tree, a synced
+// folder, or a ZIP archive. None of them has to be a Git repository, and none of
+// them is modified: acquisition observes, it never annotates, extracts beside, or
+// materializes into the source tree.
+//
+// The behavior this module replaces expanded `Foo.zip` into a sibling
+// `Foo.l9extracted/`, removing whatever already lived at that path first. That
+// made observation destructive and made a machine-specific extraction directory
+// part of an artifact's identity. Here an archive is staged into tool-owned
+// scratch, its members become virtual artifacts named `Foo.zip!/member`, and the
+// scratch location never reaches a packet.
+//
+// Three properties this module is responsible for:
+//
+//   - Source immutability. Nothing under the observed root is written, renamed,
+//     removed, or chmod-ed, on the success path or on any failure path.
+//   - Snapshot honesty. A directory can change while it is being read. Entries are
+//     enumerated, then hashed, then re-enumerated; if anything moved, the
+//     observation is marked unstable and a canonical packet is refused rather
+//     than assembled from a torn read.
+//   - Machine independence. Identity is derived from bytes and repository-relative
+//     POSIX paths. Absolute paths, scratch paths, inode numbers, timestamps,
+//     usernames and hostnames never participate.
+const crypto = __importStar(require("node:crypto"));
+const fs = __importStar(require("node:fs"));
+const os = __importStar(require("node:os"));
+const path = __importStar(require("node:path"));
+const inventory_1 = require("./inventory");
+const encoding_1 = require("./encoding");
+const omit_1 = require("./omit");
+const archive_preflight_1 = require("./archive_preflight");
+const local_archive_policy_1 = require("./local_archive_policy");
+const zip_reader_1 = require("./zip_reader");
+/** Separator between an archive path and a member path in a virtual locator. */
+exports.ARCHIVE_MEMBER_SEPARATOR = "!/";
+/** Ownership marker written at the root of every scratch directory this module creates. */
+exports.SCRATCH_OWNER_FILE = ".l9-scratch-owner.json";
+exports.SCRATCH_OWNER_ID = "l9-meta-injector.local-source";
+/** Chunk size for streaming file hashes. Memory never scales with file size. */
+const HASH_CHUNK_BYTES = 64 * 1024;
+/** How many times a changed file is re-read before the observation is called unstable. */
+const STABILITY_RETRY_LIMIT = 2;
+/** Extensions recognized as archives. v1 expands ZIP only. */
+const ZIP_EXTENSIONS = new Set([".zip"]);
+const KNOWN_UNEXPANDABLE_ARCHIVE_EXTENSIONS = new Set([
+    ".tar", ".tgz", ".gz", ".bz2", ".xz", ".7z", ".rar", ".jar", ".war", ".zst", ".lz4", ".cab", ".iso",
+]);
+/**
+ * Generated artifacts this package itself produces. They are excluded from
+ * canonical source observation so a second run never observes the first run's
+ * output as if it were user content.
+ */
+exports.GENERATED_ARTIFACT_OMIT_PATTERNS = [
+    "*.inject.log",
+    "*.l9meta.yaml",
+    ".l9/",
+    ".l9inventory/",
+    ".l9out/",
+    ".l9skills/",
+];
+/** Marker a tool-owned legacy extraction directory carries. */
+exports.LEGACY_EXTRACTION_OWNER_FILE = ".l9extracted-owner.json";
+exports.LEGACY_EXTRACTION_SUFFIX = ".l9extracted";
+/**
+ * Create a tool-owned scratch root outside the source tree.
+ *
+ * The ownership token is what makes cleanup safe: a recursive delete is permitted
+ * only for a path inside a root this session created and whose marker still
+ * carries this session's token. Nothing is ever removed because of its name.
+ */
+function createScratch(parent) {
+    const base = parent.length > 0 ? parent : os.tmpdir();
+    fs.mkdirSync(base, { recursive: true });
+    const root = fs.mkdtempSync(path.join(base, "l9-local-source-"));
+    const token = crypto.randomUUID();
+    fs.writeFileSync(path.join(root, exports.SCRATCH_OWNER_FILE), JSON.stringify({ owner: exports.SCRATCH_OWNER_ID, token, pid: process.pid }, null, 2), "utf8");
+    let disposed = false;
+    return {
+        root,
+        token,
+        dispose() {
+            if (disposed)
+                return;
+            disposed = true;
+            removeOwnedScratch(root, token);
+        },
+    };
+}
+/**
+ * Recursively remove a scratch root, but only after re-reading its ownership
+ * marker. Without this check a corrupted or reassigned `scratchRoot` would make
+ * `dispose()` a recursive delete of an arbitrary path.
+ */
+function removeOwnedScratch(root, token) {
+    let marker;
+    try {
+        marker = JSON.parse(fs.readFileSync(path.join(root, exports.SCRATCH_OWNER_FILE), "utf8"));
+    }
+    catch {
+        return; // No provable ownership: leave the path alone.
+    }
+    if (marker.owner !== exports.SCRATCH_OWNER_ID || marker.token !== token)
+        return;
+    fs.rmSync(root, { recursive: true, force: true });
+}
+/**
+ * True when a directory carries evidence that this tool created it.
+ *
+ * A directory is not tool-owned merely because its name ends in `.l9extracted`.
+ * Users name directories whatever they like, and treating a name as ownership is
+ * exactly how user data gets deleted.
+ */
+function hasLegacyExtractionOwnership(directory) {
+    try {
+        const marker = JSON.parse(fs.readFileSync(path.join(directory, exports.LEGACY_EXTRACTION_OWNER_FILE), "utf8"));
+        return typeof marker.owner === "string" && marker.owner.startsWith("l9-meta-injector.");
+    }
+    catch {
+        return false;
+    }
+}
+/**
+ * True when `directory` is a legacy extraction of an archive that sits beside it.
+ *
+ * Both signals must agree: the ownership marker, and an adjacent archive whose
+ * name the directory derives from. Either alone is an assumption.
+ */
+function isLegacyGeneratedExtraction(absoluteDirectory) {
+    if (!absoluteDirectory.endsWith(exports.LEGACY_EXTRACTION_SUFFIX))
+        return false;
+    if (!hasLegacyExtractionOwnership(absoluteDirectory))
+        return false;
+    const stem = absoluteDirectory.slice(0, -exports.LEGACY_EXTRACTION_SUFFIX.length);
+    return [...ZIP_EXTENSIONS].some((extension) => {
+        try {
+            return fs.lstatSync(stem + extension).isFile();
+        }
+        catch {
+            return false;
+        }
+    });
+}
+// ───────────────────────────── hashing ─────────────────────────────
+function sha256Prefixed(digestHex) {
+    return `sha256:${digestHex}`;
+}
+/** Stream a file through SHA-256. Bounded memory regardless of file size. */
+function hashFileStreaming(absolutePath) {
+    const hash = crypto.createHash("sha256");
+    const fd = fs.openSync(absolutePath, "r");
+    try {
+        const buffer = Buffer.alloc(HASH_CHUNK_BYTES);
+        let position = 0;
+        for (;;) {
+            const count = fs.readSync(fd, buffer, 0, buffer.length, position);
+            if (count === 0)
+                break;
+            hash.update(buffer.subarray(0, count));
+            position += count;
+        }
+        return { hash: sha256Prefixed(hash.digest("hex")), bytes: position };
+    }
+    finally {
+        fs.closeSync(fd);
+    }
+}
+// ───────────────────────────── canonical manifest ─────────────────────────────
+/** Code-point ordering. Locale comparison must never decide identity. */
+function compareCodePoints(a, b) {
+    const left = [...a], right = [...b];
+    const shared = Math.min(left.length, right.length);
+    for (let i = 0; i < shared; i++) {
+        const l = left[i].codePointAt(0) ?? 0, r = right[i].codePointAt(0) ?? 0;
+        if (l !== r)
+            return l < r ? -1 : 1;
+    }
+    return left.length === right.length ? 0 : left.length < right.length ? -1 : 1;
+}
+/**
+ * Digest of the physical snapshot.
+ *
+ * The manifest deliberately carries only repository-relative paths, entry kinds,
+ * file content hashes and literal symlink targets. Absolute paths, inode and
+ * device numbers, access times, observation wall clock, scratch locations,
+ * usernames and hostnames are excluded, so the same tree observed from a
+ * different mount point on a different machine yields the same digest.
+ */
+function physicalManifestDigest(entries) {
+    const ordered = [...entries].sort((a, b) => compareCodePoints(a.path, b.path));
+    const rendered = ordered
+        .map((entry) => JSON.stringify([entry.path, entry.kind, entry.contentHash ?? null, entry.linkTarget ?? null]))
+        .join("\n");
+    return sha256Prefixed(crypto.createHash("sha256").update(rendered, "utf8").digest("hex"));
+}
+function entryKindFromStats(stats) {
+    if (stats.isSymbolicLink())
+        return "symlink";
+    if (stats.isDirectory())
+        return "directory";
+    if (stats.isFile())
+        return "file";
+    return "special";
+}
+function toPosix(value) {
+    return value.split(path.sep).join("/");
+}
+/**
+ * Enumerate a directory tree without following symlinks.
+ *
+ * `lstat` is used throughout: a symlink is observed as a symlink, and the tree it
+ * points at — which may be outside the root, or a cycle — is never walked.
+ */
+function enumerateDirectory(root, omit, diagnostics, omittedPaths, skippedDirs) {
+    const out = [];
+    const visit = (directory) => {
+        let names;
+        try {
+            names = fs.readdirSync(directory);
+        }
+        catch (error) {
+            skippedDirs.push(`${toPosix(path.relative(root, directory)) || "."}: ${error.message}`);
+            return;
+        }
+        for (const name of [...names].sort(compareCodePoints)) {
+            const absolutePath = path.join(directory, name);
+            const relativePath = toPosix(path.relative(root, absolutePath));
+            if (omit.shouldOmit(relativePath)) {
+                omittedPaths.push(relativePath);
+                continue;
+            }
+            let stats;
+            try {
+                stats = fs.lstatSync(absolutePath);
+            }
+            catch (error) {
+                diagnostics.push({
+                    code: "local-source.entry_unreadable",
+                    severity: "warning",
+                    message: `filesystem entry could not be inspected: ${error.message}`,
+                    sourcePath: relativePath,
+                });
+                continue;
+            }
+            const kind = entryKindFromStats(stats);
+            let linkTarget = null;
+            if (kind === "symlink") {
+                try {
+                    linkTarget = toPosix(fs.readlinkSync(absolutePath));
+                }
+                catch {
+                    linkTarget = null;
+                }
+            }
+            out.push({
+                absolutePath,
+                relativePath,
+                kind,
+                sizeBytes: kind === "file" ? stats.size : null,
+                mtimeMs: kind === "directory" ? null : stats.mtimeMs,
+                linkTarget,
+            });
+            if (kind === "directory") {
+                if (isLegacyGeneratedExtraction(absolutePath)) {
+                    omittedPaths.push(relativePath);
+                    diagnostics.push({
+                        code: "local-source.legacy_extraction_excluded",
+                        severity: "info",
+                        message: "directory carries this tool's extraction-ownership marker beside its archive " +
+                            "and is excluded as generated output",
+                        sourcePath: relativePath,
+                    });
+                    out.pop();
+                    continue;
+                }
+                visit(absolutePath);
+            }
+        }
+    };
+    visit(root);
+    return out;
+}
+/** Compare two enumerations for the entry-set and per-entry stability checks. */
+function enumerationDiffers(before, after) {
+    if (before.length !== after.length) {
+        return `entry count changed from ${before.length} to ${after.length}`;
+    }
+    const byPath = new Map(after.map((entry) => [entry.relativePath, entry]));
+    for (const entry of before) {
+        const later = byPath.get(entry.relativePath);
+        if (later === undefined)
+            return `entry disappeared during observation: ${entry.relativePath}`;
+        if (later.kind !== entry.kind)
+            return `entry kind changed during observation: ${entry.relativePath}`;
+        if (later.sizeBytes !== entry.sizeBytes)
+            return `file size changed during observation: ${entry.relativePath}`;
+        if (later.mtimeMs !== entry.mtimeMs)
+            return `file mtime changed during observation: ${entry.relativePath}`;
+    }
+    return null;
+}
+// ───────────────────────────── record construction ─────────────────────────────
+function inventoryIdFor(relativePath) {
+    return "inv-" + crypto.createHash("sha256").update(relativePath, "utf8").digest("hex").slice(0, 16);
+}
+function buildLocalRecord(draft) {
+    const relative = draft.relativePath;
+    const fileName = relative.includes("/") ? relative.slice(relative.lastIndexOf("/") + 1) : relative;
+    const isDir = draft.kind === "directory";
+    const extension = isDir ? "" : path.extname(fileName);
+    const classified = (0, inventory_1.classifyInventory)(relative, fileName, extension, isDir);
+    const parent = relative.includes("/") ? relative.slice(0, relative.lastIndexOf("/")) : "";
+    return {
+        artifact_id: inventoryIdFor(relative),
+        source_system: "local",
+        // Absolute paths are carried for readers that must open the bytes; they are
+        // never part of identity and never reach a packet.
+        absolute_path: draft.absolutePath,
+        relative_path: relative,
+        file_name: fileName,
+        extension: extension || null,
+        artifact_type: draft.artifactTypeOverride ?? classified.type,
+        mime_type: isDir ? "inode/directory" : null,
+        size_bytes: draft.sizeBytes,
+        // Modification time is deliberately absent: it is machine state, not evidence.
+        modified_at: null,
+        content_hash: draft.contentHash,
+        parent_folder: parent === "" ? null : parent,
+        depth: relative === "." ? 0 : relative.split("/").length,
+        classification_confidence: draft.confidenceOverride ?? classified.confidence,
+        evidence_excerpt: draft.evidenceOverride ?? classified.evidence,
+        unknowns: draft.unknowns,
+        created_at: null,
+    };
+}
+function holdArchive(context, task, contentHash, sizeBytes, holds) {
+    context.archives.push({
+        sourcePath: task.sourcePath,
+        contentHash,
+        sizeBytes,
+        nestedDepth: task.depth,
+        parentArchiveHash: task.parentArchiveHash,
+        parentArchivePath: task.parentArchivePath,
+        expanded: false,
+        memberCount: 0,
+        omittedMemberCount: 0,
+        holds,
+    });
+    for (const hold of holds) {
+        context.diagnostics.push({
+            code: hold.code,
+            severity: "warning",
+            message: hold.message,
+            sourcePath: hold.memberPath
+                ? `${task.sourcePath}${exports.ARCHIVE_MEMBER_SEPARATOR}${(0, archive_preflight_1.canonicalMemberPath)(hold.memberPath)}`
+                : task.sourcePath,
+        });
+    }
+    context.diagnostics.push({
+        code: "local-source.archive_held",
+        severity: "warning",
+        message: `archive was observed and hashed but not expanded; ${holds.length} preflight or budget ` +
+            "violation(s) were recorded and no member is claimed as observed",
+        sourcePath: task.sourcePath,
+    });
+}
+/** Directory under scratch where one archive's members are staged. */
+function memberStagingRoot(scratchRoot, archiveHash) {
+    return path.join(scratchRoot, "members", archiveHash.replace("sha256:", ""));
+}
+function extractMembers(context, task, archiveHash, preflight) {
+    const stagingRoot = memberStagingRoot(context.scratch.root, archiveHash);
+    const members = [];
+    let expandedBytes = 0;
+    const remainingSessionBytes = context.budget.remainingBytes();
+    for (const member of preflight.members) {
+        const virtualPath = `${task.sourcePath}${exports.ARCHIVE_MEMBER_SEPARATOR}${member.canonicalPath}`;
+        if (context.omit.shouldOmit(virtualPath) || context.omit.shouldOmit(member.canonicalPath)) {
+            context.omittedPaths.push(virtualPath);
+            continue;
+        }
+        const stagedPath = path.join(stagingRoot, ...member.canonicalPath.split("/"));
+        fs.mkdirSync(path.dirname(stagedPath), { recursive: true });
+        const hash = crypto.createHash("sha256");
+        // The ceiling handed to the extractor is the smallest of every applicable
+        // budget, so a member that lies about its declared size still cannot exceed
+        // the per-member, per-archive, or session allowance.
+        const ceiling = Math.min(context.policy.maxSingleMemberUncompressedBytes, Math.max(0, context.policy.maxTotalUncompressedBytesPerArchive - expandedBytes), Math.max(0, remainingSessionBytes - expandedBytes));
+        let handle = null;
+        try {
+            handle = fs.openSync(stagedPath, "w");
+            const fd = handle;
+            const result = (0, zip_reader_1.streamZipMember)(task.physicalPath, member.entry, { maxUncompressedBytes: ceiling }, (chunk) => {
+                hash.update(chunk);
+                fs.writeSync(fd, chunk);
+            });
+            if (result.crc32 !== member.entry.crc32) {
+                return {
+                    members,
+                    expandedBytes,
+                    failure: {
+                        code: "archive.member_integrity_failed",
+                        memberPath: member.canonicalPath,
+                        message: "extracted member bytes do not match the CRC recorded in the central directory",
+                    },
+                };
+            }
+            expandedBytes += result.bytesWritten;
+            members.push({
+                virtualSourcePath: virtualPath,
+                memberPath: member.canonicalPath,
+                contentHash: sha256Prefixed(hash.digest("hex")),
+                sizeBytes: result.bytesWritten,
+                parentArchiveHash: archiveHash,
+                parentArchivePath: task.sourcePath,
+                nestedDepth: task.depth,
+                compressionMethod: member.entry.compressionMethod,
+                crc32: result.crc32,
+                stagedPath,
+            });
+        }
+        catch (error) {
+            const budgetFailure = error instanceof zip_reader_1.ZipBudgetExceededError;
+            return {
+                members,
+                expandedBytes,
+                failure: {
+                    code: budgetFailure ? "archive.extracted_bytes_exceeded" : "archive.format_unreadable",
+                    memberPath: member.canonicalPath,
+                    message: error instanceof Error ? error.message : String(error),
+                },
+            };
+        }
+        finally {
+            if (handle !== null)
+                fs.closeSync(handle);
+        }
+    }
+    return { members, expandedBytes, failure: null };
+}
+/** Discard a held archive's partial staging so no member is left behind. */
+function discardStaging(context, archiveHash) {
+    const stagingRoot = memberStagingRoot(context.scratch.root, archiveHash);
+    // Contained by construction: `stagingRoot` is always built from the scratch root
+    // this session created, never from a path derived from the source.
+    if (!stagingRoot.startsWith(context.scratch.root + path.sep))
+        return;
+    fs.rmSync(stagingRoot, { recursive: true, force: true });
+}
+function isZipPath(value) {
+    return ZIP_EXTENSIONS.has(path.extname(value).toLowerCase());
+}
+/**
+ * Stage, preflight and expand one archive, queueing any nested archive it holds.
+ *
+ * The archive is read from a staged immutable copy rather than from the live
+ * source file, which closes the window between hashing an archive and reading it:
+ * a source file replaced between those two steps would otherwise be reported
+ * under the digest of bytes that are no longer there.
+ */
+function acquireArchive(context, task, queue) {
+    const stagedArchiveDir = path.join(context.scratch.root, "archives");
+    fs.mkdirSync(stagedArchiveDir, { recursive: true });
+    let sizeBytes;
+    let archiveHash;
+    const stagingTarget = path.join(stagedArchiveDir, `pending-${context.archives.length}.zip`);
+    try {
+        // Copy and hash in one streaming pass, so the digest describes the exact bytes
+        // that preflight and extraction will read.
+        const hash = crypto.createHash("sha256");
+        const source = fs.openSync(task.physicalPath, "r");
+        const target = fs.openSync(stagingTarget, "w");
+        try {
+            const buffer = Buffer.alloc(HASH_CHUNK_BYTES);
+            let position = 0;
+            for (;;) {
+                const count = fs.readSync(source, buffer, 0, buffer.length, position);
+                if (count === 0)
+                    break;
+                if (position + count > context.policy.maxArchiveCompressedBytes) {
+                    throw new zip_reader_1.ZipBudgetExceededError(`archive exceeds the ${context.policy.maxArchiveCompressedBytes}-byte staging limit`);
+                }
+                hash.update(buffer.subarray(0, count));
+                fs.writeSync(target, buffer.subarray(0, count));
+                position += count;
+            }
+            sizeBytes = position;
+            archiveHash = sha256Prefixed(hash.digest("hex"));
+        }
+        finally {
+            fs.closeSync(source);
+            fs.closeSync(target);
+        }
+    }
+    catch (error) {
+        fs.rmSync(stagingTarget, { force: true });
+        context.archives.push({
+            sourcePath: task.sourcePath,
+            contentHash: "Unknown",
+            sizeBytes: 0,
+            nestedDepth: task.depth,
+            parentArchiveHash: task.parentArchiveHash,
+            parentArchivePath: task.parentArchivePath,
+            expanded: false,
+            memberCount: 0,
+            omittedMemberCount: 0,
+            holds: [{
+                    code: "archive.format_unreadable",
+                    message: error instanceof Error ? error.message : String(error),
+                }],
+        });
+        context.diagnostics.push({
+            code: "archive.format_unreadable",
+            severity: "warning",
+            message: `archive could not be staged: ${error instanceof Error ? error.message : String(error)}`,
+            sourcePath: task.sourcePath,
+        });
+        return;
+    }
+    const stagedArchive = path.join(stagedArchiveDir, `${archiveHash.replace("sha256:", "")}.zip`);
+    if (fs.existsSync(stagedArchive))
+        fs.rmSync(stagingTarget, { force: true });
+    else
+        fs.renameSync(stagingTarget, stagedArchive);
+    let preflight;
+    try {
+        const directory = (0, zip_reader_1.readZipCentralDirectory)(stagedArchive);
+        preflight = (0, archive_preflight_1.preflightArchive)({
+            directory,
+            policy: context.policy,
+            depth: task.depth,
+            archiveCompressedBytes: sizeBytes,
+        });
+    }
+    catch (error) {
+        holdArchive(context, task, archiveHash, sizeBytes, [{
+                code: "archive.format_unreadable",
+                message: `central directory could not be read: ${error instanceof Error ? error.message : String(error)}`,
+            }]);
+        return;
+    }
+    if (!preflight.accepted) {
+        holdArchive(context, task, archiveHash, sizeBytes, preflight.holds);
+        return;
+    }
+    const sessionRefusal = context.budget.refuseReason(preflight.declaredUncompressedBytes);
+    if (sessionRefusal !== null) {
+        holdArchive(context, task, archiveHash, sizeBytes, [{
+                code: "archive.session_budget_exceeded",
+                message: sessionRefusal,
+            }]);
+        return;
+    }
+    const extraction = extractMembers(context, task, archiveHash, preflight);
+    if (extraction.failure !== null) {
+        // A partial expansion is never claimed: everything staged for this archive is
+        // discarded so no member can be reported from a run that did not complete.
+        discardStaging(context, archiveHash);
+        holdArchive(context, task, archiveHash, sizeBytes, [extraction.failure]);
+        return;
+    }
+    context.budget.recordArchive(extraction.expandedBytes);
+    const omittedMemberCount = preflight.members.length - extraction.members.length;
+    context.archives.push({
+        sourcePath: task.sourcePath,
+        contentHash: archiveHash,
+        sizeBytes,
+        nestedDepth: task.depth,
+        parentArchiveHash: task.parentArchiveHash,
+        parentArchivePath: task.parentArchivePath,
+        expanded: true,
+        memberCount: extraction.members.length,
+        omittedMemberCount,
+        holds: [],
+    });
+    context.members.push(...extraction.members);
+    for (const member of extraction.members) {
+        const extension = path.extname(member.memberPath).toLowerCase();
+        if (isZipPath(member.memberPath)) {
+            if (task.depth + 1 > context.policy.maxNestedDepth) {
+                context.diagnostics.push({
+                    code: "archive.nesting_depth_exceeded",
+                    severity: "warning",
+                    message: `nested archive is deeper than the limit of ${context.policy.maxNestedDepth} and was not expanded`,
+                    sourcePath: member.virtualSourcePath,
+                });
+                continue;
+            }
+            queue.push({
+                physicalPath: member.stagedPath,
+                sourcePath: member.virtualSourcePath,
+                depth: task.depth + 1,
+                parentArchiveHash: archiveHash,
+                parentArchivePath: task.sourcePath,
+            });
+        }
+        else if (KNOWN_UNEXPANDABLE_ARCHIVE_EXTENSIONS.has(extension)) {
+            context.diagnostics.push({
+                code: "archive.format_not_expanded",
+                severity: "info",
+                message: `${extension} is classified as an archive but v1 expands ZIP only; it is hashed and not opened`,
+                sourcePath: member.virtualSourcePath,
+            });
+        }
+    }
+}
+// ───────────────────────────── acquisition ─────────────────────────────
+function resolveSourceKind(absolutePath, requested) {
+    const stats = fs.lstatSync(absolutePath);
+    if (stats.isSymbolicLink()) {
+        throw new Error(`local-source: the source path is a symbolic link and is never followed: ${absolutePath}`);
+    }
+    const actual = stats.isDirectory()
+        ? "directory"
+        : isZipPath(absolutePath) ? "archive" : "file";
+    if (requested === "auto" || requested === undefined)
+        return actual;
+    if (requested === "directory" && !stats.isDirectory()) {
+        throw new Error(`local-source: --source-kind directory was requested but the path is not a directory`);
+    }
+    if (requested !== "directory" && stats.isDirectory()) {
+        throw new Error(`local-source: --source-kind ${requested} was requested but the path is a directory`);
+    }
+    return requested;
+}
+function buildAcquisitionOmit(input, omitRoot) {
+    if (input.omit)
+        return input.omit;
+    return (0, omit_1.buildOmitMatcher)({
+        root: omitRoot,
+        patterns: [...exports.GENERATED_ARTIFACT_OMIT_PATTERNS, ...(input.omitPatterns ?? [])],
+        ...(input.omitFile !== undefined ? { omitFile: input.omitFile } : {}),
+        // SKILL.md is protected from mutation, not from observation. Acquisition never
+        // mutates anything, and hiding a skill entrypoint would make the observation
+        // silently incomplete.
+        protectSkillMd: false,
+        ignoreDirNames: [".git", "node_modules"],
+    });
+}
+/**
+ * Hash every regular file, verifying that the file did not change underneath the
+ * read. A file whose size or mtime moved across its own hash is re-read a bounded
+ * number of times before the observation is declared unstable.
+ */
+function hashEntries(entries, hashMaxBytes, diagnostics) {
+    const hashed = [];
+    for (const entry of entries) {
+        if (entry.kind !== "file") {
+            hashed.push({ entry, contentHashHex: null, encoding: null, unknowns: [] });
+            continue;
+        }
+        const unknowns = [];
+        if (hashMaxBytes !== undefined && (entry.sizeBytes ?? 0) > hashMaxBytes) {
+            unknowns.push("content_hash_skipped:file_exceeds_hash_budget");
+            diagnostics.push({
+                code: "local-source.hash_budget_exceeded",
+                severity: "error",
+                message: `file exceeds the ${hashMaxBytes}-byte hash budget, so its content hash is absent`,
+                sourcePath: entry.relativePath,
+            });
+            hashed.push({ entry, contentHashHex: null, encoding: null, unknowns });
+            continue;
+        }
+        let digest = null;
+        let attempt = 0;
+        let lastReason = "";
+        while (attempt <= STABILITY_RETRY_LIMIT) {
+            let before;
+            try {
+                before = fs.lstatSync(entry.absolutePath);
+            }
+            catch (error) {
+                lastReason = error.message;
+                break;
+            }
+            let candidate;
+            try {
+                candidate = hashFileStreaming(entry.absolutePath).hash;
+            }
+            catch (error) {
+                lastReason = error.message;
+                break;
+            }
+            const after = fs.lstatSync(entry.absolutePath);
+            if (after.size === before.size && after.mtimeMs === before.mtimeMs) {
+                digest = candidate;
+                break;
+            }
+            attempt++;
+            lastReason = "file changed while it was being hashed";
+        }
+        if (digest === null) {
+            if (lastReason === "file changed while it was being hashed") {
+                return { hashed, unstableReason: `${entry.relativePath}: ${lastReason}` };
+            }
+            unknowns.push(`content_hash_unavailable:${lastReason}`);
+            diagnostics.push({
+                code: "local-source.file_unreadable",
+                severity: "warning",
+                message: `file could not be hashed: ${lastReason}`,
+                sourcePath: entry.relativePath,
+            });
+            hashed.push({ entry, contentHashHex: null, encoding: null, unknowns });
+            continue;
+        }
+        const encoding = (0, encoding_1.probeFileEncoding)(entry.absolutePath);
+        if (encoding.status === "invalid") {
+            unknowns.push("unsupported_encoding");
+            diagnostics.push({
+                code: "local-source.unsupported_encoding",
+                severity: "warning",
+                message: `file is not valid UTF-8 and is observed by hash only: ${encoding.reason}`,
+                sourcePath: entry.relativePath,
+            });
+        }
+        hashed.push({ entry, contentHashHex: digest.replace("sha256:", ""), encoding, unknowns });
+    }
+    return { hashed, unstableReason: null };
+}
+function revisionFor(sourceKind, digest) {
+    const bare = digest.replace("sha256:", "");
+    if (sourceKind === "file")
+        return `file:sha256:${bare}`;
+    if (sourceKind === "archive")
+        return `archive:sha256:${bare}`;
+    return `fs:sha256:${bare}`;
+}
+/**
+ * Observe a local source read-only and return everything a deterministic packet
+ * needs: a stable snapshot identity, per-entry evidence, virtual archive members
+ * with exact hashes, and the provenance that binds each member to its archive.
+ *
+ * The caller owns the returned observation's lifetime and must call `dispose()`
+ * once the staged member bytes are no longer needed.
+ */
+function acquireLocalSource(input) {
+    const absoluteSource = path.resolve(input.path);
+    if (!fs.existsSync(absoluteSource)) {
+        throw new Error(`local-source: path does not exist: ${absoluteSource}`);
+    }
+    const sourceKind = resolveSourceKind(absoluteSource, input.sourceKind ?? "auto");
+    const sourceName = input.name && input.name.length > 0 ? input.name : path.basename(absoluteSource);
+    const policy = (0, local_archive_policy_1.resolveLocalArchivePolicy)(input.archivePolicy);
+    const startedAtMs = Date.now();
+    const budget = new local_archive_policy_1.ArchiveSessionBudget(policy, startedAtMs, () => Date.now());
+    const omitRoot = sourceKind === "directory" ? absoluteSource : path.dirname(absoluteSource);
+    const omit = buildAcquisitionOmit(input, omitRoot);
+    const diagnostics = [];
+    const omittedPaths = [];
+    const skippedDirs = [];
+    // Phase 1 — enumerate.
+    let entries;
+    if (sourceKind === "directory") {
+        entries = enumerateDirectory(absoluteSource, omit, diagnostics, omittedPaths, skippedDirs);
+    }
+    else {
+        const stats = fs.lstatSync(absoluteSource);
+        entries = [{
+                absolutePath: absoluteSource,
+                relativePath: path.basename(absoluteSource),
+                kind: "file",
+                sizeBytes: stats.size,
+                mtimeMs: stats.mtimeMs,
+                linkTarget: null,
+            }];
+    }
+    // Phase 2 — hash.
+    const { hashed, unstableReason: hashUnstable } = hashEntries(entries, input.hashMaxBytes, diagnostics);
+    let unstableReason = hashUnstable;
+    // Phase 3 — re-enumerate and compare.
+    if (unstableReason === null && sourceKind === "directory") {
+        const after = enumerateDirectory(absoluteSource, omit, [], [], []);
+        unstableReason = enumerationDiffers(entries, after);
+    }
+    else if (unstableReason === null) {
+        const after = fs.lstatSync(absoluteSource);
+        if (after.size !== entries[0].sizeBytes || after.mtimeMs !== entries[0].mtimeMs) {
+            unstableReason = `${entries[0].relativePath}: file changed while it was being observed`;
+        }
+    }
+    const scratch = createScratch(input.scratchParent ?? os.tmpdir());
+    const archives = [];
+    const members = [];
+    if (unstableReason !== null) {
+        diagnostics.push({
+            code: "local-source.source_changed_during_observation",
+            severity: "error",
+            message: `SOURCE_CHANGED_DURING_OBSERVATION: ${unstableReason}`,
+        });
+    }
+    // Physical manifest and revision are derived before any archive work, because
+    // archive members are semantic content, not part of the physical snapshot.
+    const manifestEntries = hashed.map(({ entry, contentHashHex }) => ({
+        path: entry.relativePath,
+        kind: entry.kind,
+        ...(contentHashHex !== null ? { contentHash: sha256Prefixed(contentHashHex) } : {}),
+        ...(entry.linkTarget !== null ? { linkTarget: entry.linkTarget } : {}),
+    }));
+    const physicalSnapshotHash = physicalManifestDigest(manifestEntries);
+    const singleFileHash = hashed.length === 1 ? hashed[0].contentHashHex : null;
+    const sourceRevision = sourceKind === "directory" || singleFileHash === null
+        ? revisionFor(sourceKind, physicalSnapshotHash)
+        : revisionFor(sourceKind, singleFileHash);
+    // Archive expansion. Held archives still contribute their observation.
+    const expandArchives = input.expandArchives !== false;
+    if (expandArchives && unstableReason === null) {
+        const context = {
+            scratch, policy, budget, omit, diagnostics, archives, members, omittedPaths,
+        };
+        const queue = [];
+        for (const { entry } of hashed) {
+            if (entry.kind !== "file")
+                continue;
+            const extension = path.extname(entry.relativePath).toLowerCase();
+            if (isZipPath(entry.relativePath)) {
+                queue.push({
+                    physicalPath: entry.absolutePath,
+                    sourcePath: entry.relativePath,
+                    depth: 0,
+                    parentArchiveHash: null,
+                    parentArchivePath: null,
+                });
+            }
+            else if (KNOWN_UNEXPANDABLE_ARCHIVE_EXTENSIONS.has(extension)) {
+                diagnostics.push({
+                    code: "archive.format_not_expanded",
+                    severity: "info",
+                    message: `${extension} is classified as an archive but v1 expands ZIP only; it is hashed and not opened`,
+                    sourcePath: entry.relativePath,
+                });
+            }
+        }
+        while (queue.length > 0) {
+            acquireArchive(context, queue.shift(), queue);
+        }
+    }
+    else if (!expandArchives) {
+        for (const { entry } of hashed) {
+            if (entry.kind === "file" && isZipPath(entry.relativePath)) {
+                diagnostics.push({
+                    code: "local-source.archive_expansion_disabled",
+                    severity: "info",
+                    message: "archive expansion is disabled; the archive is hashed and its members are not observed",
+                    sourcePath: entry.relativePath,
+                });
+            }
+        }
+    }
+    // Records: physical entries first, then virtual archive members.
+    const records = [];
+    for (const { entry, contentHashHex, encoding, unknowns } of hashed) {
+        if (entry.kind === "symlink") {
+            diagnostics.push({
+                code: "local-source.symlink_not_traversed",
+                severity: "info",
+                message: entry.linkTarget === null
+                    ? "symbolic link observed; its target was not read"
+                    : `symbolic link observed; its literal target is '${entry.linkTarget}' and was not read`,
+                sourcePath: entry.relativePath,
+            });
+        }
+        else if (entry.kind === "special") {
+            diagnostics.push({
+                code: "local-source.special_entry_observed",
+                severity: "info",
+                message: "filesystem entry is a device, socket or FIFO; it is recorded but never opened",
+                sourcePath: entry.relativePath,
+            });
+        }
+        const entryUnknowns = [...unknowns];
+        if (entry.kind === "symlink")
+            entryUnknowns.push("symlink_not_traversed");
+        if (entry.kind === "special")
+            entryUnknowns.push("special_filesystem_entry");
+        if (encoding !== null && encoding.status === "binary")
+            entryUnknowns.push("binary_content");
+        records.push(buildLocalRecord({
+            relativePath: entry.relativePath,
+            absolutePath: entry.absolutePath,
+            kind: entry.kind,
+            sizeBytes: entry.sizeBytes,
+            contentHash: contentHashHex,
+            unknowns: entryUnknowns,
+            ...(entry.kind === "symlink" || entry.kind === "special"
+                ? {
+                    artifactTypeOverride: "unknown",
+                    evidenceOverride: entry.kind === "symlink"
+                        ? "symbolic link, not traversed"
+                        : "special filesystem entry, not opened",
+                    confidenceOverride: 1,
+                }
+                : {}),
+        }));
+    }
+    for (const member of members) {
+        records.push(buildLocalRecord({
+            relativePath: member.virtualSourcePath,
+            absolutePath: member.stagedPath,
+            kind: "archive-member",
+            sizeBytes: member.sizeBytes,
+            contentHash: member.contentHash.replace("sha256:", ""),
+            unknowns: [],
+        }));
+    }
+    records.sort((a, b) => compareCodePoints(a.relative_path, b.relative_path));
+    const typeDistribution = {};
+    let files = 0, folders = 0;
+    for (const record of records) {
+        typeDistribution[record.artifact_type] = (typeDistribution[record.artifact_type] ?? 0) + 1;
+        if (record.artifact_type === "folder")
+            folders++;
+        else
+            files++;
+    }
+    const inventory = {
+        root: absoluteSource,
+        total: records.length,
+        files,
+        folders,
+        typeDistribution,
+        // Acquisition writes no manifests of its own; the CLI owns output placement.
+        manifestPaths: { json: "", csv: "", md: "", duplicates: "" },
+        duplicates: [],
+        records,
+        skippedDirs,
+        omittedPaths: [...omittedPaths].sort(compareCodePoints),
+    };
+    for (const skipped of skippedDirs) {
+        diagnostics.push({
+            code: "local-source.directory_unreadable",
+            severity: "error",
+            message: `directory could not be read; its subtree is absent from this observation: ${skipped}`,
+        });
+    }
+    diagnostics.sort((a, b) => compareCodePoints(a.code, b.code)
+        || compareCodePoints(a.sourcePath ?? "", b.sourcePath ?? "")
+        || compareCodePoints(a.message, b.message));
+    return {
+        sourceKind,
+        sourceName,
+        sourceRevision,
+        physicalSnapshotHash,
+        inventory,
+        archives: [...archives].sort((a, b) => compareCodePoints(a.sourcePath, b.sourcePath)),
+        virtualArtifacts: [...members].sort((a, b) => compareCodePoints(a.virtualSourcePath, b.virtualSourcePath)),
+        diagnostics,
+        archivePolicy: policy,
+        stable: unstableReason === null,
+        scratchRoot: scratch.root,
+        dispose: () => scratch.dispose(),
+    };
+}
+//# sourceMappingURL=local_source.js.map

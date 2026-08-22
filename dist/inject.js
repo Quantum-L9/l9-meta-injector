@@ -46,6 +46,7 @@ const path = __importStar(require("node:path"));
 const schema_1 = require("./schema");
 const normalize_meta_1 = require("./normalize_meta");
 const extract_1 = require("./extract");
+const encoding_1 = require("./encoding");
 const reconcile_fields_1 = require("./reconcile_fields");
 const llm_1 = require("./llm");
 const meta_schema_1 = require("./meta_schema");
@@ -71,6 +72,14 @@ function parseExistingMeta(fm) {
 }
 // Read the file and derive the clean body + any prior metadata, per strategy.
 function readForInjection(filePath) {
+    // Injection rewrites the whole file, so eligibility is decided over the whole
+    // file. Decoding non-UTF-8 bytes here would substitute replacement characters
+    // and then write them back, silently destroying the original encoding; a
+    // filetype that "looks textual" is not evidence that its bytes are UTF-8.
+    const encoding = (0, encoding_1.probeFileEncoding)(filePath);
+    if (encoding.status !== "utf8") {
+        throw new Error(`UNSUPPORTED_ENCODING: ${filePath}: ${encoding.reason}`);
+    }
     const raw = fs.readFileSync(filePath, "utf8");
     const spec = (0, comment_1.resolveStrategy)(filePath, raw);
     if (spec.strategy === "yaml-frontmatter") {

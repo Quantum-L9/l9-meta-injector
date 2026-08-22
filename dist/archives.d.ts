@@ -9,9 +9,15 @@ export interface ArchiveRecord {
     memberCount: number;
     sidecarPath?: string;
     nestedDepth: number;
+    /**
+     * Why this archive was observed but not expanded. Absent when it was expanded.
+     * A refusal is reported rather than thrown so one unsafe archive does not abort
+     * a whole local-files run.
+     */
+    heldReason?: string;
 }
 export interface ExpandArchivesOptions {
-    /** When true, still extract (local-files is mutative for archives) but skip sidecar writes. */
+    /** When true, nothing is extracted and no sidecar is written: zero source mutation. */
     dryRun: boolean;
     verbose: boolean;
     /** Max nested-zip depth (outer zip = 0). Default 3. */
@@ -36,9 +42,21 @@ export declare function resolveUnzipBinary(): string;
 /** List member paths inside a zip; reject Zip-Slip (`..` / absolute) names. */
 export declare function listZipMembers(zipPath: string): string[];
 /**
- * Remove and recreate extractDir, then unzip allowed members into it.
+ * Reason an existing extraction directory may not be replaced, or null when it may.
+ *
+ * Ownership must be proven, never inferred from the path. A directory named
+ * `Foo.l9extracted` next to `Foo.zip` can be a user directory: without the
+ * ownership marker this tool writes, removing it would destroy data this package
+ * never created.
+ */
+export declare function extractionRefusalReason(extractDir: string): string | null;
+/**
+ * Refresh extractDir and unzip allowed members into it.
  * When `allowedMembers` is set, only those paths are extracted (omit filter).
  * Returns the number of non-directory members actually extracted.
+ *
+ * Throws rather than deleting when the target exists and is not provably this
+ * tool's own output.
  */
 export declare function extractZip(zipPath: string, extractDir: string, allowedMembers?: string[]): number;
 /** Discover expandable archives under root (does not enter existing *.l9extracted dirs). */

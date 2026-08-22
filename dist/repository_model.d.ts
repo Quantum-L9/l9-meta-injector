@@ -229,6 +229,55 @@ export interface RepositoryModelValidationResult {
     status: "passed" | "failed";
     checks: RepositoryModelValidationCheck[];
 }
+/** One archive observed inside a local source, expanded or held. */
+export interface RepositoryModelArchiveInput {
+    /** Source-relative POSIX path, or a virtual locator when the archive is nested. */
+    sourcePath: string;
+    /** `sha256:`-prefixed digest of the exact archive bytes, or the Unknown value. */
+    contentHash: string;
+    sizeBytes: number;
+    nestedDepth: number;
+    parentArchivePath: string | null;
+    parentArchiveHash: string | null;
+    expanded: boolean;
+    memberCount: number;
+    omittedMemberCount: number;
+    /** Stable codes for the preflight or budget violations that held this archive. */
+    holdCodes: string[];
+}
+/** One archive member, carried as a virtual artifact with exact provenance. */
+export interface RepositoryModelArchiveMemberInput {
+    /** Machine-independent locator, e.g. `Bundle.zip!/docs/a.md`. */
+    virtualSourcePath: string;
+    memberPath: string;
+    contentHash: string;
+    sizeBytes: number;
+    parentArchivePath: string;
+    parentArchiveHash: string;
+    nestedDepth: number;
+}
+export interface RepositoryModelLocalSourceDiagnostic {
+    code: string;
+    severity: "info" | "warning" | "error";
+    message: string;
+    sourcePath?: string;
+}
+/**
+ * Provenance overlay for a packet built from a local filesystem source.
+ *
+ * The artifacts themselves arrive through the inventory records, exactly as
+ * repository files do. This overlay adds what inventory cannot express: which
+ * artifacts are archives, which are members of which archive, and the chain that
+ * links a member of a nested archive back to the outermost source file.
+ */
+export interface RepositoryModelLocalSourceInput {
+    sourceKind: "file" | "directory" | "archive";
+    /** Version of the archive resource budget that produced this observation. */
+    archivePolicyVersion: string;
+    archives: RepositoryModelArchiveInput[];
+    members: RepositoryModelArchiveMemberInput[];
+    diagnostics: RepositoryModelLocalSourceDiagnostic[];
+}
 export interface RepositoryModelBuildInput {
     /** Inventory observation of the repository. Produced by `inventoryTree`. */
     inventory: InventoryResult;
@@ -246,6 +295,11 @@ export interface RepositoryModelBuildInput {
      * which is exactly how packets behaved before the domain existed.
      */
     interpretation?: InterpretationResult;
+    /**
+     * Archive provenance for a packet built from a local filesystem source.
+     * Absent for an ordinary repository observation, which keeps its prior identity.
+     */
+    localSource?: RepositoryModelLocalSourceInput;
 }
 export interface RepositoryModelObservationInput {
     /** Repository root to observe. */
