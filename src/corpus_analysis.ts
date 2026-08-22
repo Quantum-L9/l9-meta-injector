@@ -314,16 +314,21 @@ export function nearDuplicateCandidates(
       else bucket.push(index);
     }
   }
-  const pairs = new Set<string>();
+  // Pairs are keyed as one number rather than a string: a corpus where many
+  // documents share a boilerplate header produces a large candidate set, and the
+  // difference between a numeric key and a parsed string key is what keeps that
+  // set affordable.
+  const pairs = new Set<number>();
   for (const bucket of postings.values()) {
     if (bucket.length < 2) continue;
     for (let i = 0; i < bucket.length; i++) {
-      for (let j = i + 1; j < bucket.length; j++) pairs.add(`${bucket[i]}:${bucket[j]}`);
+      for (let j = i + 1; j < bucket.length; j++) pairs.add(bucket[i] * documents.length + bucket[j]);
     }
   }
   const out: NearDuplicateCandidate[] = [];
   for (const key of pairs) {
-    const [left, right] = key.split(":").map(Number);
+    const left = Math.floor(key / documents.length);
+    const right = key % documents.length;
     if (pairIneligible(documents[left], documents[right])) continue;
     const measured = jaccard(documents[left].shingles, documents[right].shingles);
     if (roundScore(measured.score) < roundScore(threshold)) continue;
@@ -801,15 +806,15 @@ function countByCode(
 }
 
 function corpusProfileHash(
-  interpretation: InterpretationResult | undefined,
+  interpretationProfile: { profile_version: string; extractor_versions: Record<string, string> } | null,
   threshold: number,
   nearDuplicatesEnabled: boolean,
 ): string {
   return stableId("corpus-profile", {
     id: CORPUS_PROFILE_ID,
     version: CORPUS_PROFILE_VERSION,
-    work_extractor_versions: interpretation?.profile.extractor_versions ?? {},
-    interpretation_profile_version: interpretation?.profile.profile_version ?? null,
+    work_extractor_versions: interpretationProfile?.extractor_versions ?? {},
+    interpretation_profile_version: interpretationProfile?.profile_version ?? null,
     exact_duplicate_method: EXACT_DUPLICATE_METHOD,
     exact_duplicate_version: EXACT_DUPLICATE_METHOD_VERSION,
     near_duplicate_method: NEAR_DUPLICATE_METHOD,
@@ -959,6 +964,22 @@ export function buildCorpusIndex(input: CorpusAnalysisInput): CorpusIndex {
     }))
     .sort((left, right) => compareCodePoints(left.source_path, right.source_path));
 
+  // The interpretation result carries the profile when it was run inline; a packet
+  // built elsewhere carries it on the packet. Reading only the former would bind
+  // an empty extractor set into the corpus profile hash for a packet that plainly
+  // states which extractors produced it.
+  const interpretationProfile = input.interpretation
+    ? {
+        profile_version: input.interpretation.profile.profile_version,
+        extractor_versions: input.interpretation.profile.extractor_versions,
+      }
+    : packet.interpretation_profile
+      ? {
+          profile_version: packet.interpretation_profile.profile_version,
+          extractor_versions: packet.interpretation_profile.extractor_versions,
+        }
+      : null;
+
   const packetDiagnostics: readonly RepositoryModelDiagnostic[] = packet.payload.diagnostics;
   return {
     schema: CORPUS_INDEX_SCHEMA,
@@ -982,7 +1003,7 @@ export function buildCorpusIndex(input: CorpusAnalysisInput): CorpusIndex {
     analysis_profile: {
       corpus_profile_id: CORPUS_PROFILE_ID,
       corpus_profile_version: CORPUS_PROFILE_VERSION,
-      corpus_profile_hash: corpusProfileHash(input.interpretation, threshold, nearDuplicatesEnabled),
+      corpus_profile_hash: corpusProfileHash(interpretationProfile, threshold, nearDuplicatesEnabled),
       exact_duplicate_method: EXACT_DUPLICATE_METHOD,
       exact_duplicate_version: EXACT_DUPLICATE_METHOD_VERSION,
       near_duplicate_method: NEAR_DUPLICATE_METHOD,

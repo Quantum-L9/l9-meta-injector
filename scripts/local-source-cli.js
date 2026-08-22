@@ -220,7 +220,7 @@ function main() {
     console.log(`  manifest         ${manifestPath}`);
 
     const summary = corpus.index.summary;
-    console.log(`  work signals     ${summary.artifacts_with_work_signals} artifact(s) declare work state`);
+    console.log(`  work signals     ${summary.artifacts_with_work_signals} artifact(s) with work signals`);
     console.log(`  open tasks       ${summary.open_task_count} (${summary.completed_task_count} completed)`);
     console.log(`  declared kinds   ${summary.plan_count} plan(s), ${summary.roadmap_count} roadmap(s)`);
     console.log(`  declared status  ${summary.wip_count} WIP, ${summary.draft_count} draft, ${summary.blocked_count} blocked`);

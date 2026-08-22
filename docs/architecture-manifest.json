@@ -30,11 +30,11 @@
     },
     {
       "path": "dist/corpus_analysis.js",
-      "git_blob_sha1": "0bbf934b173bfc526d0242640ccf27eacb36fbf1"
+      "git_blob_sha1": "6111d64f9fbafa548e41c00c158406afe8d30bcc"
     },
     {
       "path": "dist/corpus_analysis.js.map",
-      "git_blob_sha1": "64aa4ba7c8497bc46ffa92eb8976d3993c81d166"
+      "git_blob_sha1": "382b9777e81592746effaf8f13b193fa9b13fc48"
     },
     {
       "path": "dist/corpus_report.d.ts",
@@ -286,7 +286,7 @@
     },
     {
       "path": "docs/output-placement-contract.md",
-      "git_blob_sha1": "beebf9ef1c030c418cb151337b57f7ecba232253"
+      "git_blob_sha1": "360a212544f66224ee3ea007e12b9750b2e56b80"
     },
     {
       "path": "docs/package-contract.json",
@@ -426,7 +426,7 @@
     },
     {
       "path": "scripts/local-source-cli.js",
-      "git_blob_sha1": "2c2629c4e817c8030e1a8018544d192453e1240c"
+      "git_blob_sha1": "ef6609f4dffab451177236d2815f7ac036c718c6"
     },
     {
       "path": "scripts/repository-model-cli.js",
@@ -450,7 +450,7 @@
     },
     {
       "path": "src/corpus_analysis.ts",
-      "git_blob_sha1": "71c9669d3194c01fbb6445c900868d00b7b0e65f"
+      "git_blob_sha1": "3fe93a3cf2a1d1417afe1b3a388235c75874ab2c"
     },
     {
       "path": "src/corpus_report.ts",

@@ -51,6 +51,7 @@ Invoked by an operator against a real working tree.
 | `scripts/apply-cli.js <root>` | `--out` | `<root>.l9out` | sibling of the target root |
 | `scripts/check-cli.js <root>` | `--report` | `<tmpdir>/l9-meta-injector-check-<pid>.json` | outside the target root |
 | `scripts/skills-cli.js <root>` | `--out` | `<root>.l9skills` | sibling of the target root |
+| `scripts/local-source-cli.js <path>` | `--out` | `<tmpdir>/l9-local-source-out` | outside the observed source, always |
 
 `scripts/operation-cli.js` is the governed dispatcher in both contexts, so it keeps one
 resolution rule — `out ⊆ targetRoot` — whether it is driven by argv or by the Action
@@ -69,6 +70,7 @@ directory is never created.
 | `skills` | yes — skills pipeline outputs | only via governed inline patches |
 | `check` | no (`persistOutputs: false`) | **never** — enforced by a before/after repository snapshot |
 | `apply` | no (`persistOutputs: false`) | only `.l9/metadata-index.jsonl` and authorized inline patches, transactionally |
+| `local-source` | yes — `bundle/`, `local-source-manifest.json`, `corpus-index.json`, `corpus-report.md` | **never** — the source is observed read-only, and each write is refused if its resolved path falls inside the observed tree |
 
 So a governed `apply` on a clean working tree adds no untracked output directory at all.
 The only path it writes outside authorized inline carriers is the canonical metadata index.
@@ -85,6 +87,13 @@ When `out` is supplied explicitly:
 These rules are identical for `L9_INPUT_OUT` and for `--out` on `scripts/operation-cli.js`.
 The single-purpose CLIs accept an already-resolved path and do not re-apply containment;
 they are local tools, not the governed boundary.
+
+`scripts/local-source-cli.js` inverts the containment rule rather than dropping it. Its
+subject is an arbitrary local source that must not be modified, so every output — the
+packet bundle, the acquisition manifest, the corpus index and the corpus report — is
+refused if its resolved path is the observed directory or lies inside it. An output
+written beside the source would mutate what was just observed, and the next run would
+then observe this run's output as if it were user content.
 
 ## Rules
 
