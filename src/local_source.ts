@@ -27,7 +27,14 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { InventoryArtifactType, InventoryRecord, InventoryResult, buildDuplicateClusters, classifyInventory } from "./inventory";
+import {
+  InventoryArtifactType,
+  InventoryRecord,
+  InventoryResult,
+  buildDuplicateClusters,
+  classifyInventory,
+} from "./inventory";
+import { compareCodePoints } from "./ordering";
 import { EncodingProbe, probeFileEncoding } from "./encoding";
 import { OmitMatcher, buildOmitMatcher } from "./omit";
 import {
@@ -296,18 +303,6 @@ export function hashFileStreaming(absolutePath: string): { hash: string; bytes: 
 }
 
 // ───────────────────────────── canonical manifest ─────────────────────────────
-
-/** Code-point ordering. Locale comparison must never decide identity. */
-function compareCodePoints(a: string, b: string): number {
-  const left = [...a], right = [...b];
-  const shared = Math.min(left.length, right.length);
-  for (let i = 0; i < shared; i++) {
-    const l = left[i].codePointAt(0) ?? 0, r = right[i].codePointAt(0) ?? 0;
-    if (l !== r) return l < r ? -1 : 1;
-  }
-  if (left.length === right.length) return 0;
-  return left.length < right.length ? -1 : 1;
-}
 
 export interface PhysicalManifestEntry {
   path: string;
@@ -1275,10 +1270,10 @@ function buildInventoryResult(
     typeDistribution,
     // Acquisition writes no manifests of its own; the CLI owns output placement.
     manifestPaths: { json: "", csv: "", md: "", duplicates: "" },
-    // Clustered over the unified record set — physical files and virtual archive
-    // members together — so a file that also exists inside a ZIP is recognised as
-    // the same bytes. Running this per-source would miss exactly the cross-archive
-    // duplication a mixed corpus is most likely to contain.
+    // Clustered over the complete record set — physical entries and virtual
+    // archive members together. Leaving this empty, as acquisition used to, meant
+    // a file and its copy inside a ZIP were never seen as the same bytes, which
+    // is the single most common shape a real corpus has.
     duplicates: buildDuplicateClusters(records),
     records,
     skippedDirs,

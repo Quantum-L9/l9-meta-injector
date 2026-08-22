@@ -1,5 +1,6 @@
 import { InventoryResult } from "./inventory";
 import { InterpretationResult } from "./interpretation";
+/** Re-exported so packet consumers keep one ordering import site. */
 export { compareCodePoints } from "./ordering";
 export declare const REPOSITORY_MODEL_PACKET_TYPE = "l9.repository-model";
 export declare const REPOSITORY_MODEL_PACKET_VERSION = "1.1.0";
@@ -14,21 +15,19 @@ export declare function sha256TextPrefixed(value: string): string;
 /** Semantic identity: volatile fields removed, then canonical bytes hashed. */
 export declare function semanticHash(value: unknown): string;
 export declare function stableId(prefix: string, value: unknown): string;
-/** The repository subject a packet and its interpretation both attach to. */
-export declare function repositoryIdFor(repositoryName: string): string;
 /**
- * The one artifact identity algorithm.
+ * Stable identity of one artifact inside a repository.
  *
- * Packet building and interpretation both need to name the same artifact, and a
- * second implementation of this rule would let the two drift silently: an
- * assertion would point at an artifact ID that no artifact record carries, and
- * the mismatch would only surface as a validation failure far from its cause.
- * Both callers use this function.
+ * Interpretation needs this to point an assertion at the exact file that made a
+ * declaration, and the packet builder needs it to emit that file's artifact
+ * record. Two implementations of the same formula would eventually disagree and
+ * strand every artifact-scoped assertion, so both call this one.
  *
- * `sourcePath` is the portable relative path — for an archive member, the
- * virtual locator (`bundle.zip!/docs/a.md`). Absolute paths never participate.
+ * `sourcePath` is the repository-relative POSIX path, or a virtual archive
+ * member locator such as `Bundle.zip!/docs/a.md`. Absolute paths never
+ * participate.
  */
-export declare function artifactIdFor(repositoryId: string, sourcePath: string): string;
+export declare function repositoryModelArtifactId(repositoryId: string, sourcePath: string): string;
 export type RepositoryModelConfidenceLevel = "low" | "medium" | "high";
 export type RepositoryModelEvidenceStrength = "none" | "weak" | "corroborated" | "direct";
 export type RepositoryModelDerivationMethod = "declared" | "deterministic" | "cross-record" | "heuristic" | "model-assisted" | "unknown";

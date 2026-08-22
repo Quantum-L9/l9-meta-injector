@@ -1,32 +1,32 @@
 {
   "fixtures": "fixtures",
   "totals": {
-    "scanned": 39,
-    "injected": 39,
-    "verified": 39,
-    "verifiedClean": 39
+    "scanned": 32,
+    "injected": 32,
+    "verified": 32,
+    "verifiedClean": 32
   },
   "strategyDist": {
     "block-comment": 2,
     "line-comment": 10,
-    "sidecar": 14,
-    "yaml-frontmatter": 13
+    "sidecar": 13,
+    "yaml-frontmatter": 7
   },
   "typeDist": {
-    "context": 12,
+    "context": 5,
     "doctrine": 1,
     "prompt": 1,
     "skill": 1,
     "source": 24
   },
   "indexes": {
-    "primitiveLibraryEntries": 38,
+    "primitiveLibraryEntries": 31,
     "promptLibraryEntries": 1,
-    "dedupTotalScanned": 39,
-    "dedupUniqueCount": 38,
-    "dedupExactTwins": 1,
-    "verificationEntries": 39,
-    "verificationClean": 39
+    "dedupTotalScanned": 32,
+    "dedupUniqueCount": 32,
+    "dedupExactTwins": 0,
+    "verificationEntries": 32,
+    "verificationClean": 32
   },
   "idempotency": {
     "rerunFilesChanged": 0
@@ -39,90 +39,6 @@
       "mcp_primitive": "resource",
       "injectable": true,
       "strategy": "line-comment",
-      "hasSidecar": false,
-      "yamlValid": true,
-      "bodyPreserved": true,
-      "sharingScopeValid": true
-    },
-    {
-      "path": "corpus/sample-corpus/exact-copy-of-plan.md",
-      "id": "l9.context.exact_copy_of_plan",
-      "artifact_type": "context",
-      "mcp_primitive": "resource",
-      "injectable": true,
-      "strategy": "yaml-frontmatter",
-      "hasSidecar": false,
-      "yamlValid": true,
-      "bodyPreserved": true,
-      "sharingScopeValid": true
-    },
-    {
-      "path": "corpus/sample-corpus/nested/blocked-work.md",
-      "id": "l9.context.blocked_work",
-      "artifact_type": "context",
-      "mcp_primitive": "resource",
-      "injectable": true,
-      "strategy": "yaml-frontmatter",
-      "hasSidecar": false,
-      "yamlValid": true,
-      "bodyPreserved": true,
-      "sharingScopeValid": true
-    },
-    {
-      "path": "corpus/sample-corpus/notes.txt",
-      "id": "l9.context.notes",
-      "artifact_type": "context",
-      "mcp_primitive": "resource",
-      "injectable": true,
-      "strategy": "sidecar",
-      "hasSidecar": true,
-      "yamlValid": true,
-      "bodyPreserved": true,
-      "sharingScopeValid": true
-    },
-    {
-      "path": "corpus/sample-corpus/plan.md",
-      "id": "l9.context.plan",
-      "artifact_type": "context",
-      "mcp_primitive": "resource",
-      "injectable": true,
-      "strategy": "yaml-frontmatter",
-      "hasSidecar": false,
-      "yamlValid": true,
-      "bodyPreserved": true,
-      "sharingScopeValid": true
-    },
-    {
-      "path": "corpus/sample-corpus/revised-plan.md",
-      "id": "l9.context.revised_plan",
-      "artifact_type": "context",
-      "mcp_primitive": "resource",
-      "injectable": true,
-      "strategy": "yaml-frontmatter",
-      "hasSidecar": false,
-      "yamlValid": true,
-      "bodyPreserved": true,
-      "sharingScopeValid": true
-    },
-    {
-      "path": "corpus/sample-corpus/roadmap.md",
-      "id": "l9.context.roadmap",
-      "artifact_type": "context",
-      "mcp_primitive": "resource",
-      "injectable": true,
-      "strategy": "yaml-frontmatter",
-      "hasSidecar": false,
-      "yamlValid": true,
-      "bodyPreserved": true,
-      "sharingScopeValid": true
-    },
-    {
-      "path": "corpus/sample-corpus/unrelated.md",
-      "id": "l9.context.unrelated",
-      "artifact_type": "context",
-      "mcp_primitive": "resource",
-      "injectable": true,
-      "strategy": "yaml-frontmatter",
       "hasSidecar": false,
       "yamlValid": true,
       "bodyPreserved": true,

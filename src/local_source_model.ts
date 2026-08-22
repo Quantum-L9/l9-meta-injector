@@ -26,6 +26,13 @@ import {
 } from "./local_source";
 import { LocalArchivePolicy } from "./local_archive_policy";
 import {
+  CorpusIndex,
+  NearDuplicateOptions,
+  buildCorpusIndex,
+  renderCorpusIndex,
+} from "./corpus_analysis";
+import { renderCorpusReport } from "./corpus_report";
+import {
   RepositoryModelLocalSourceInput,
   RepositoryModelPacket,
   buildRepositoryModelPacket,
@@ -158,6 +165,41 @@ export function withLocalSourceModel<T>(
   }
 }
 
+// ───────────────────────────── corpus intelligence ─────────────────────────────
+
+export interface LocalSourceCorpusOptions {
+  nearDuplicates?: NearDuplicateOptions;
+}
+
+export interface LocalSourceCorpusOutputs {
+  index: CorpusIndex;
+  /** Rendered `corpus-index.json` bytes. */
+  indexJson: string;
+  /** Rendered `corpus-report.md` bytes. */
+  report: string;
+}
+
+/**
+ * Derive the corpus index and its human report from an already-built model.
+ *
+ * Everything here is a projection of the observation, the packet and the two
+ * duplicate analyses. The staged archive-member bytes must still be on disk,
+ * because the similarity pass reads member text the same way it reads a physical
+ * file — so call this before `observation.dispose()`.
+ */
+export function buildLocalSourceCorpus(
+  result: LocalSourceModelResult,
+  options: LocalSourceCorpusOptions = {},
+): LocalSourceCorpusOutputs {
+  const index = buildCorpusIndex({
+    acquisition: result.observation,
+    packet: result.packet,
+    ...(result.interpretation ? { interpretation: result.interpretation } : {}),
+    ...(options.nearDuplicates ? { nearDuplicates: options.nearDuplicates } : {}),
+  });
+  return { index, indexJson: renderCorpusIndex(index), report: renderCorpusReport(index) };
+}
+
 // ───────────────────────────── acquisition manifest ─────────────────────────────
 
 export interface LocalSourceManifest {
@@ -264,16 +306,12 @@ export function buildLocalSourceManifest(
 }
 
 /**
- * Write the acquisition manifest to a tool-owned output location.
+ * Resolve an output path, refusing anything inside the observed source tree.
  *
- * Refuses to write inside the observed source tree: an adjacent manifest would
- * mutate the source and would be re-observed by the next run.
+ * An output written beside the source would mutate what was just observed, and
+ * the next run would then observe this run's output as if it were user content.
  */
-export function writeLocalSourceManifest(
-  manifest: LocalSourceManifest,
-  targetPath: string,
-  sourceRoot: string,
-): string {
+function resolveOutsideSource(targetPath: string, sourceRoot: string, what: string): string {
   const absoluteTarget = path.resolve(targetPath);
   const absoluteSource = path.resolve(sourceRoot);
   const sourceDirectory = fs.statSync(absoluteSource).isDirectory()
@@ -281,10 +319,35 @@ export function writeLocalSourceManifest(
     : path.dirname(absoluteSource);
   if (absoluteTarget === sourceDirectory || absoluteTarget.startsWith(sourceDirectory + path.sep)) {
     throw new Error(
-      `local-source: refusing to write the acquisition manifest inside the observed source tree: ${absoluteTarget}`,
+      `local-source: refusing to write ${what} inside the observed source tree: ${absoluteTarget}`,
     );
   }
+  return absoluteTarget;
+}
+
+/** Write the acquisition manifest to a tool-owned output location. */
+export function writeLocalSourceManifest(
+  manifest: LocalSourceManifest,
+  targetPath: string,
+  sourceRoot: string,
+): string {
+  const absoluteTarget = resolveOutsideSource(targetPath, sourceRoot, "the acquisition manifest");
   fs.mkdirSync(path.dirname(absoluteTarget), { recursive: true });
   fs.writeFileSync(absoluteTarget, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
   return absoluteTarget;
+}
+
+/** Write `corpus-index.json` and `corpus-report.md` outside the observed source. */
+export function writeLocalSourceCorpus(
+  outputs: LocalSourceCorpusOutputs,
+  targets: { indexPath: string; reportPath: string },
+  sourceRoot: string,
+): { indexPath: string; reportPath: string } {
+  const indexPath = resolveOutsideSource(targets.indexPath, sourceRoot, "the corpus index");
+  const reportPath = resolveOutsideSource(targets.reportPath, sourceRoot, "the corpus report");
+  fs.mkdirSync(path.dirname(indexPath), { recursive: true });
+  fs.writeFileSync(indexPath, outputs.indexJson, "utf8");
+  fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+  fs.writeFileSync(reportPath, outputs.report, "utf8");
+  return { indexPath, reportPath };
 }

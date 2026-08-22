@@ -36,11 +36,33 @@ const AUTHORITY_CRITICAL_PATHS = [
   "src/repository_model.ts",
   "src/local_source.ts",
   "src/local_source_model.ts",
-  "src/local_archive_policy.ts",
   "src/corpus_analysis.ts",
   "src/corpus_report.ts",
   "src/ordering.ts",
   "src/extractors/work_intelligence.ts",
+  "src/extractors/index.ts",
+  "src/interpretation.ts",
+  "src/inventory.ts",
+  "dist/corpus_analysis.js",
+  "dist/corpus_analysis.d.ts",
+  "dist/corpus_analysis.js.map",
+  "dist/corpus_report.js",
+  "dist/corpus_report.d.ts",
+  "dist/corpus_report.js.map",
+  "dist/ordering.js",
+  "dist/ordering.d.ts",
+  "dist/ordering.js.map",
+  "dist/extractors/work_intelligence.js",
+  "dist/extractors/work_intelligence.d.ts",
+  "dist/extractors/work_intelligence.js.map",
+  "tests/corpus_intelligence.test.ts",
+  "tests/work_intelligence.test.ts",
+  "tests/artifact_scoped_assertions.test.ts",
+  "tests/local_source_cli.test.ts",
+  "tests/helpers/corpus_fixtures.ts",
+  "docs/corpus-intelligence.md",
+  "docs/decisions/037-corpus-intelligence-artifact-scope-and-duplicate-topology.md",
+  "src/local_archive_policy.ts",
   "src/archive_preflight.ts",
   "src/zip_reader.ts",
   "src/encoding.ts",
@@ -193,7 +215,7 @@ function validateAuthorityDocument(authority) {
   const errors = [];
   exactKeys(authority,
     ["schema","repository","audit_base_ref","status","engine","contracts","distribution","public_api","persisted_outputs","validation","legacy"],
-    ["operation_contract","invocation_boundary","deterministic_identity","carrier_policy","metadata_index","frontmatter_safety","local_source_acquisition","corpus_intelligence"], "authority", errors);
+    ["operation_contract","invocation_boundary","deterministic_identity","carrier_policy","metadata_index","frontmatter_safety","local_source_acquisition"], "authority", errors);
   if (!isPlainObject(authority)) return errors;
   if (authority.schema !== "l9.architecture-authority/v1") errors.push("authority.schema is invalid");
   if (authority.repository !== "Quantum-L9/l9-meta-injector") errors.push("authority.repository is invalid");

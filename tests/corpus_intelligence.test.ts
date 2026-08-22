@@ -1,430 +1,672 @@
-// corpus_intelligence.test.ts — the corpus layer end to end over a real fixture.
+// corpus_intelligence.test.ts — duplicates, candidates, and the corpus projection.
 //
-// The fixture is a non-Git folder holding plain files, a nested archive, an exact
-// copy, and a lexical near-copy. Everything asserted here is asserted against
-// that corpus as acquired, not against hand-built inputs, so a break in
-// acquisition, interpretation, or projection surfaces here.
+// The line these tests police is the one between a fact and an estimate. Exact
+// duplicates are byte equality and are stated as such. Near-duplicate candidates
+// are a lexical score, and every assertion about them here is about what they do
+// NOT claim as much as what they do: they never become a DUPLICATE_OF edge, they
+// never absorb an exact duplicate, and the report is forbidden from describing
+// them in the vocabulary of topic, project, merging or deletion.
+import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { acquireLocalSource, type LocalSourceObservation } from "../src/local_source";
-import { observeLocalSourceModel } from "../src/local_source_model";
+import { afterAll, describe, expect, it } from "vitest";
 import {
   CORPUS_INDEX_SCHEMA,
   DEFAULT_NEAR_DUPLICATE_THRESHOLD,
-  buildCorpusIndex,
-  canonicalCorpusJson,
-  corpusAnalysisIdentity,
-  indexedNearDuplicates,
+  NEAR_DUPLICATE_METHOD,
+  analysisTokens,
   jaccard,
-  normalizeForSimilarity,
-  referenceNearDuplicates,
+  nearDuplicateCandidates,
+  nearDuplicateCandidatesExhaustive,
+  normalizeForAnalysis,
+  prepareNearDuplicateDocument,
   shingleSet,
-  tokenize,
   type CorpusIndex,
+  type NearDuplicateDocument,
 } from "../src/corpus_analysis";
 import { renderCorpusReport } from "../src/corpus_report";
-import { artifactIdFor, repositoryIdFor } from "../src/repository_model";
+import {
+  buildLocalSourceCorpus,
+  observeLocalSourceModel,
+  writeLocalSourceCorpus,
+  type LocalSourceCorpusOutputs,
+} from "../src/local_source_model";
+import { acquireLocalSource } from "../src/local_source";
+import { repositoryModelArtifactId } from "../src/repository_model";
+import { ARCHIVE_MEMBER_PATHS, writeCorpusFixture } from "./helpers/corpus_fixtures";
+import { treeSnapshot, writeRawZip } from "./helpers/zip_fixtures";
 
-const REPO = path.resolve(__dirname, "..");
-const CORPUS = path.join(REPO, "fixtures", "corpus", "sample-corpus");
-const NAME = "sample-corpus";
-const REPOSITORY_ID = repositoryIdFor(NAME);
+const PRODUCER_VERSION = "4.0.0";
 
-const disposers: (() => void)[] = [];
+const scratchDirs: string[] = [];
+function tmp(prefix = "l9-corpus-"): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  scratchDirs.push(dir);
+  return dir;
+}
 afterAll(() => {
-  for (const dispose of disposers) dispose();
+  for (const dir of scratchDirs) fs.rmSync(dir, { recursive: true, force: true });
 });
 
-function acquire(root: string = CORPUS): LocalSourceObservation {
-  const observation = acquireLocalSource({ path: root, name: NAME });
-  disposers.push(() => observation.dispose());
-  return observation;
-}
-
-interface Analysed {
-  observation: LocalSourceObservation;
+interface CorpusRun {
   index: CorpusIndex;
+  outputs: LocalSourceCorpusOutputs;
+  packetArtifactIds: Set<string>;
+  packetAssertionIds: Set<string>;
 }
 
-function analyse(root: string = CORPUS, threshold = DEFAULT_NEAR_DUPLICATE_THRESHOLD): Analysed {
-  const model = observeLocalSourceModel({
-    path: root,
-    name: NAME,
-    producerVersion: "4.0.0",
+/** Observe a source and project it, disposing the staging root afterwards. */
+function analyze(sourcePath: string, options: { name?: string; threshold?: number; nearDuplicates?: boolean } = {}): CorpusRun {
+  const result = observeLocalSourceModel({
+    path: sourcePath,
+    name: options.name ?? "corpus",
+    producerVersion: PRODUCER_VERSION,
   });
-  disposers.push(() => model.observation.dispose());
-  if (!model.packet) throw new Error(`packet was blocked: ${model.blockedReason ?? "unknown"}`);
-  return {
-    observation: model.observation,
-    index: buildCorpusIndex({
-      observation: model.observation,
-      packet: model.packet,
-      repositoryName: NAME,
-      nearDuplicateThreshold: threshold,
-    }),
-  };
+  try {
+    const outputs = buildLocalSourceCorpus(result, {
+      nearDuplicates: {
+        enabled: options.nearDuplicates !== false,
+        ...(options.threshold !== undefined ? { threshold: options.threshold } : {}),
+      },
+    });
+    return {
+      index: outputs.index,
+      outputs,
+      packetArtifactIds: new Set(result.packet.payload.artifacts.map((a) => a.artifact_id)),
+      packetAssertionIds: new Set(result.packet.payload.assertions.map((a) => a.assertion_id)),
+    };
+  } finally {
+    result.observation.dispose();
+  }
 }
 
-function pathsIn(index: CorpusIndex): string[] {
-  return index.artifacts.map((artifact) => artifact.source_path);
+/** The canonical fixture corpus, written into a fresh root. */
+function fixtureCorpus(prefix = "l9-corpus-fixture-"): string {
+  return writeCorpusFixture(path.join(tmp(prefix), "corpus"));
 }
 
-function signalObjects(index: CorpusIndex, predicate: string, sourcePath?: string): string[] {
-  return index.work_signals
-    .filter((signal) => signal.predicate === predicate
-      && (sourcePath === undefined || signal.source_path === sourcePath))
-    .map((signal) => signal.object);
+function clusterPaths(index: CorpusIndex): string[][] {
+  return index.exact_duplicate_clusters.map((cluster) => [...cluster.source_paths]);
 }
 
-describe("acquisition covers the corpus", () => {
-  it("observes physical files and virtual archive members together", () => {
-    const { index } = analyse();
-    const paths = pathsIn(index);
-    expect(paths).toContain("plan.md");
-    expect(paths).toContain("nested/blocked-work.md");
-    expect(paths).toContain("archive-a.zip!/old-plan.md");
-    expect(paths).toContain("archive-a.zip!/inner.zip!/draft.md");
+function candidatePaths(index: CorpusIndex): string[][] {
+  return index.near_duplicate_candidates.map((candidate) => [candidate.source_path_a, candidate.source_path_b]);
+}
+
+// ───────────────────────────── exact duplicates ─────────────────────────────
+
+describe("exact duplicate clusters", () => {
+  it("clusters two physical files with identical bytes", () => {
+    const root = tmp();
+    fs.writeFileSync(path.join(root, "a.md"), "identical bytes\n");
+    fs.writeFileSync(path.join(root, "b.md"), "identical bytes\n");
+    fs.writeFileSync(path.join(root, "c.md"), "different bytes\n");
+    expect(clusterPaths(analyze(root).index)).toEqual([["a.md", "b.md"]]);
   });
 
-  it("leaves the source byte-identical", () => {
-    const before = snapshot(CORPUS);
-    const observation = acquire();
-    observation.dispose();
-    expect(snapshot(CORPUS)).toEqual(before);
+  it("clusters a physical file with an archive member holding the same bytes", () => {
+    const index = analyze(fixtureCorpus()).index;
+    expect(clusterPaths(index)).toContainEqual([ARCHIVE_MEMBER_PATHS.copyOfNotes, "notes.txt"]);
   });
 
-  it("keeps scratch paths out of the index entirely", () => {
-    const { index } = analyse();
-    const serialized = canonicalCorpusJson(index);
-    expect(serialized).not.toContain(os.tmpdir());
-    expect(serialized).not.toContain("l9-local-source");
-  });
-});
-
-describe("artifact-scoped work signals", () => {
-  it("attaches a document's status to that document, not to the repository", () => {
-    const { index } = analyse();
-    const status = index.work_signals.find((signal) =>
-      signal.predicate === "work.status" && signal.source_path === "plan.md");
-    expect(status?.object).toBe("wip");
-    expect(status?.artifact_id).toBe(artifactIdFor(REPOSITORY_ID, "plan.md"));
-    expect(status?.artifact_id).not.toBe(REPOSITORY_ID);
+  it("clusters two members of one archive with each other", () => {
+    const root = tmp();
+    writeRawZip(path.join(root, "bundle.zip"), [
+      { name: "one.md", content: "shared member bytes\n", stored: true },
+      { name: "nested/two.md", content: "shared member bytes\n", stored: true },
+      { name: "three.md", content: "other bytes\n", stored: true },
+    ]);
+    expect(clusterPaths(analyze(root).index))
+      .toEqual([["bundle.zip!/nested/two.md", "bundle.zip!/one.md"]]);
   });
 
-  it("points an archive member's signals at the member's own artifact", () => {
-    const { index } = analyse();
-    const member = "archive-a.zip!/inner.zip!/draft.md";
-    const status = index.work_signals.find((signal) =>
-      signal.predicate === "work.status" && signal.source_path === member);
-    expect(status?.object).toBe("draft");
-    expect(status?.artifact_id).toBe(artifactIdFor(REPOSITORY_ID, member));
-    // Not the outer archive, and not the archive that directly contained it.
-    expect(status?.artifact_id).not.toBe(artifactIdFor(REPOSITORY_ID, "archive-a.zip"));
-    expect(status?.artifact_id).not.toBe(artifactIdFor(REPOSITORY_ID, "archive-a.zip!/inner.zip"));
+  it("clusters a nested archive member with a physical file and with another nested member", () => {
+    const root = tmp();
+    const build = tmp("l9-corpus-build-");
+    const inner = path.join(build, "inner.zip");
+    writeRawZip(inner, [
+      { name: "deep-a.md", content: "deep shared bytes\n", stored: true },
+      { name: "deep-b.md", content: "deep shared bytes\n", stored: true },
+      { name: "surface.md", content: "surface shared bytes\n", stored: true },
+    ]);
+    fs.writeFileSync(path.join(root, "surface.md"), "surface shared bytes\n");
+    writeRawZip(path.join(root, "outer.zip"), [
+      { name: "inner.zip", content: fs.readFileSync(inner), stored: true },
+    ]);
+
+    expect(clusterPaths(analyze(root).index).sort()).toEqual([
+      ["outer.zip!/inner.zip!/deep-a.md", "outer.zip!/inner.zip!/deep-b.md"],
+      ["outer.zip!/inner.zip!/surface.md", "surface.md"],
+    ].sort());
   });
 
-  it("captures the declared kinds, tasks, milestones, and relations of the corpus", () => {
-    const { index } = analyse();
-    expect(signalObjects(index, "work.kind", "plan.md")).toContain("plan");
-    expect(signalObjects(index, "work.kind", "roadmap.md")).toContain("roadmap");
-    expect(signalObjects(index, "work.status", "nested/blocked-work.md")).toEqual(["blocked"]);
-    expect(signalObjects(index, "work.blocked_by", "nested/blocked-work.md"))
-      .toEqual(["upstream schema review"]);
-    expect(signalObjects(index, "work.depends_on", "plan.md")).toEqual(["docs/packet-contract.md"]);
-    expect(signalObjects(index, "work.superseded_by", "archive-a.zip!/old-plan.md")).toEqual(["plan.md"]);
-    expect(signalObjects(index, "work.milestone", "roadmap.md").length).toBeGreaterThanOrEqual(2);
-    expect(signalObjects(index, "work.task.open", "plan.md").length).toBeGreaterThanOrEqual(2);
-    expect(signalObjects(index, "work.task.completed", "plan.md").length).toBe(1);
+  it("renders one relation per non-representative member, not every pair", () => {
+    const root = tmp();
+    for (const name of ["a.md", "bb.md", "ccc.md"]) {
+      fs.writeFileSync(path.join(root, name), "three copies\n");
+    }
+    const index = analyze(root).index;
+    expect(index.exact_duplicate_clusters).toHaveLength(1);
+    const cluster = index.exact_duplicate_clusters[0];
+    expect(cluster.count).toBe(3);
+    // A three-member cluster has three equivalent pairs; the star rendering emits
+    // two edges and carries the cluster id so the equivalence is not misread as
+    // hub-and-spoke.
+    expect(index.relations).toHaveLength(2);
+    for (const relation of index.relations) {
+      expect(relation.type).toBe("DUPLICATE_OF");
+      expect(relation.target_artifact_id).toBe(cluster.representative_artifact_id);
+      expect(relation.duplicate_cluster_id).toBe(cluster.cluster_id);
+      expect(relation.symmetric).toBe(true);
+    }
   });
 
-  it("declares no work signals for a document that declares none", () => {
-    const { index } = analyse();
-    expect(signalObjects(index, "work.status", "unrelated.md")).toEqual([]);
-    expect(signalObjects(index, "work.kind", "unrelated.md")).toEqual([]);
+  it("treats identical bytes under different names as duplicates", () => {
+    const root = tmp();
+    fs.writeFileSync(path.join(root, "plan.md"), "same content\n");
+    fs.writeFileSync(path.join(root, "totally-different-name.md"), "same content\n");
+    expect(analyze(root).index.exact_duplicate_clusters).toHaveLength(1);
   });
 
-  it("resolves every work signal to a real assertion and artifact", () => {
-    const { index } = analyse();
-    const artifactIds = new Set(index.artifacts.map((artifact) => artifact.artifact_id));
-    expect(index.work_signals.length).toBeGreaterThan(0);
-    for (const signal of index.work_signals) {
-      expect(artifactIds.has(signal.artifact_id)).toBe(true);
-      const owner = index.artifacts.find((artifact) => artifact.artifact_id === signal.artifact_id);
-      expect(owner?.assertion_ids).toContain(signal.assertion_id);
+  it("does not treat identical names with different bytes as duplicates", () => {
+    const root = tmp();
+    fs.mkdirSync(path.join(root, "one"));
+    fs.mkdirSync(path.join(root, "two"));
+    fs.writeFileSync(path.join(root, "one", "plan.md"), "first content\n");
+    fs.writeFileSync(path.join(root, "two", "plan.md"), "second content\n");
+    expect(analyze(root).index.exact_duplicate_clusters).toEqual([]);
+  });
+
+  it("chooses the representative deterministically and calls it nothing more", () => {
+    const root = tmp();
+    for (const name of ["zz.md", "a.md", "mmmm.md"]) {
+      fs.writeFileSync(path.join(root, name), "pick one\n");
+    }
+    const cluster = analyze(root).index.exact_duplicate_clusters[0];
+    // Shortest path, then code point. A rendering anchor, not a keeper.
+    expect(cluster.representative_source_path).toBe("a.md");
+    expect(Object.keys(cluster)).not.toContain("keeper");
+    expect(JSON.stringify(cluster).toLowerCase()).not.toContain("keeper");
+  });
+
+  it("keeps cluster identity content-bound across absolute roots", () => {
+    const write = (root: string): string => {
+      fs.writeFileSync(path.join(root, "a.md"), "portable bytes\n");
+      fs.writeFileSync(path.join(root, "b.md"), "portable bytes\n");
+      return root;
+    };
+    const first = analyze(write(tmp("l9-corpus-abs-a-"))).index.exact_duplicate_clusters;
+    const second = analyze(write(tmp("l9-corpus-abs-b-"))).index.exact_duplicate_clusters;
+    expect(first).toEqual(second);
+  });
+
+  it("populates acquisition duplicates whenever a hash repeats", () => {
+    const root = tmp();
+    fs.writeFileSync(path.join(root, "notes.txt"), "repeated bytes\n");
+    writeRawZip(path.join(root, "bundle.zip"), [
+      { name: "copy-of-notes.txt", content: "repeated bytes\n", stored: true },
+    ]);
+    const observation = acquireLocalSource({ path: root, name: "corpus" });
+    try {
+      // Acquisition used to hand back an empty duplicate set, which meant a file
+      // and its copy inside an archive were never seen as the same bytes.
+      expect(observation.inventory.duplicates).toHaveLength(1);
+      expect([...observation.inventory.duplicates[0].paths].sort())
+        .toEqual(["bundle.zip!/copy-of-notes.txt", "notes.txt"]);
+    } finally {
+      observation.dispose();
     }
   });
 });
 
-describe("exact duplicates", () => {
-  it("clusters a physical copy with its original", () => {
-    const { index } = analyse();
-    const cluster = index.exact_duplicate_clusters.find((c) =>
-      c.source_paths.includes("plan.md"));
-    expect(cluster?.source_paths).toEqual(["exact-copy-of-plan.md", "plan.md"]);
+// ───────────────────────────── near-duplicate algorithm ─────────────────────────────
+
+describe("near-duplicate scoring", () => {
+  function document(id: string, text: string): NearDuplicateDocument {
+    return prepareNearDuplicateDocument({
+      artifactId: `artifact:${id}`,
+      sourcePath: `${id}.md`,
+      contentHash: `sha256:${crypto.createHash("sha256").update(text).digest("hex")}`,
+      text,
+    });
+  }
+
+  const LONG = Array.from({ length: 40 }, (_, index) => `sentence ${index} about the acquisition layer`).join("\n");
+
+  it("normalizes line endings, case and whitespace, and nothing else", () => {
+    expect(normalizeForAnalysis("A\r\nB\r  C \n")).toBe("a b c");
+    expect(analysisTokens(normalizeForAnalysis("Alpha, beta_9!"))).toEqual(["alpha", "beta_9"]);
+    expect([...shingleSet(["a", "b", "c", "d", "e", "f"])]).toEqual(["a b c d e", "b c d e f"]);
   });
 
-  it("clusters an archive member with the physical file it duplicates", () => {
-    const { index } = analyse();
-    const cluster = index.exact_duplicate_clusters.find((c) =>
-      c.source_paths.includes("notes.txt"));
-    expect(cluster?.source_paths).toEqual(["archive-a.zip!/copy-of-notes.txt", "notes.txt"]);
+  it("scores an exact Jaccard over unique shingles", () => {
+    const left = new Set(["x", "y", "z"]);
+    const right = new Set(["y", "z", "w"]);
+    expect(jaccard(left, right)).toEqual({ score: 0.5, shared: 2, union: 4 });
+    expect(jaccard(new Set(), new Set())).toEqual({ score: 0, shared: 0, union: 0 });
   });
 
-  it("does not cluster same-named files with different content", () => {
-    const { index } = analyse();
-    for (const cluster of index.exact_duplicate_clusters) {
-      // revised-plan.md is a near copy of plan.md, never an exact one.
-      expect(cluster.source_paths).not.toContain("revised-plan.md");
+  it("reports whitespace-only variation as near-identical", () => {
+    const pair = [document("a", LONG), document("b", LONG.replace(/\n/g, "\n\n  "))];
+    const candidates = nearDuplicateCandidates(pair, DEFAULT_NEAR_DUPLICATE_THRESHOLD);
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].score).toBe(1);
+    expect(candidates[0].normalized_content_hash_a).toBe(candidates[0].normalized_content_hash_b);
+  });
+
+  it("excludes byte-identical documents from candidacy", () => {
+    const candidates = nearDuplicateCandidates([document("a", LONG), document("b", LONG)], 0);
+    expect(candidates).toEqual([]);
+  });
+
+  it("keeps unrelated documents below the threshold", () => {
+    const other = Array.from({ length: 40 }, (_, index) => `line ${index} regarding coffee rota logistics`).join("\n");
+    expect(nearDuplicateCandidates([document("a", LONG), document("b", other)], DEFAULT_NEAR_DUPLICATE_THRESHOLD))
+      .toEqual([]);
+  });
+
+  it("does not make a shared title alone into a candidate", () => {
+    const heading = "# Deployment Roadmap\n\n";
+    const first = `${heading}${LONG}`;
+    const second = `${heading}${Array.from({ length: 40 }, (_, i) => `unrelated remark ${i} about the kitchen`).join("\n")}`;
+    expect(nearDuplicateCandidates([document("a", first), document("b", second)], DEFAULT_NEAR_DUPLICATE_THRESHOLD))
+      .toEqual([]);
+  });
+
+  it("matches the exhaustive reference implementation", () => {
+    const documents = [
+      document("a", LONG),
+      document("b", `${LONG}\nan extra closing sentence`),
+      document("c", LONG.replace("sentence 7", "clause 7")),
+      document("d", Array.from({ length: 40 }, (_, i) => `wholly other content ${i}`).join("\n")),
+      document("e", `${LONG}\n${LONG}`),
+    ];
+    for (const threshold of [0, 0.1, 0.5, 0.85, 0.99, 1]) {
+      expect(nearDuplicateCandidates(documents, threshold), `threshold ${threshold}`)
+        .toEqual(nearDuplicateCandidatesExhaustive(documents, threshold));
     }
   });
 
-  it("renders one star relation per non-representative member", () => {
-    const { index } = analyse();
-    for (const cluster of index.exact_duplicate_clusters) {
-      const edges = index.relations.filter((r) => r.duplicate_cluster_id === cluster.cluster_id);
-      expect(edges.length).toBe(cluster.count - 1);
-      for (const edge of edges) {
-        expect(edge.target_artifact_id).toBe(cluster.representative_artifact_id);
-        expect(edge.symmetric).toBe(true);
+  it("orders candidates and their pairs deterministically", () => {
+    const documents = [
+      document("zeta", LONG),
+      document("alpha", `${LONG}\nsmall tail`),
+      document("mid", `${LONG}\nother tail`),
+    ];
+    const forward = nearDuplicateCandidates(documents, 0.5);
+    const reversed = nearDuplicateCandidates([...documents].reverse(), 0.5);
+    expect(forward).toEqual(reversed);
+    for (const candidate of forward) {
+      expect(candidate.artifact_a_id < candidate.artifact_b_id).toBe(true);
+      expect(candidate.method).toBe(NEAR_DUPLICATE_METHOD);
+    }
+  });
+});
+
+// ───────────────────────────── near-duplicates over a corpus ─────────────────────────────
+
+describe("near-duplicate candidates over the fixture corpus", () => {
+  it("finds the revised plan and reports it as a candidate, not a duplicate", () => {
+    const index = analyze(fixtureCorpus()).index;
+    expect(candidatePaths(index)).toContainEqual(["revised-plan.md", "plan.md"]);
+    // The revision is not byte-identical to anything, so it is in no cluster.
+    const revised = index.artifacts.find((a) => a.source_path === "revised-plan.md");
+    expect(revised?.exact_duplicate_cluster_id).toBeNull();
+    expect(revised?.near_duplicate_candidate_ids.length).toBeGreaterThan(0);
+    // And the unrelated document is not dragged in.
+    expect(candidatePaths(index).flat()).not.toContain("unrelated.md");
+  });
+
+  it("compares an archive member against a physical file", () => {
+    const root = tmp();
+    const body = Array.from({ length: 40 }, (_, i) => `paragraph ${i} of the shared draft`).join("\n");
+    fs.writeFileSync(path.join(root, "surface.md"), `${body}\n`);
+    writeRawZip(path.join(root, "bundle.zip"), [
+      { name: "packed.md", content: `${body}\nplus one closing line\n`, stored: true },
+    ]);
+    expect(candidatePaths(analyze(root).index)).toEqual([["bundle.zip!/packed.md", "surface.md"]]);
+  });
+
+  it("keeps candidate identity stable across absolute roots", () => {
+    const first = analyze(fixtureCorpus("l9-corpus-cand-a-")).index.near_duplicate_candidates;
+    const second = analyze(fixtureCorpus("l9-corpus-cand-b-")).index.near_duplicate_candidates;
+    expect(first).toEqual(second);
+    expect(first.length).toBeGreaterThan(0);
+  });
+
+  it("binds the threshold into the analysis profile without touching packet identity", () => {
+    const root = fixtureCorpus("l9-corpus-threshold-");
+    const strict = analyze(root, { threshold: 0.99 }).index;
+    const loose = analyze(root, { threshold: 0.5 }).index;
+
+    // The packet describes the observation; the threshold describes the analysis.
+    expect(strict.repository_model.semantic_hash).toBe(loose.repository_model.semantic_hash);
+    expect(strict.analysis_profile.corpus_profile_hash)
+      .not.toBe(loose.analysis_profile.corpus_profile_hash);
+    expect(strict.near_duplicate_candidates.length)
+      .toBeLessThan(loose.near_duplicate_candidates.length);
+  });
+
+  it("still reports exact duplicates when similarity analysis is disabled", () => {
+    const root = fixtureCorpus("l9-corpus-disabled-");
+    const index = analyze(root, { nearDuplicates: false }).index;
+    expect(index.analysis_profile.near_duplicate_enabled).toBe(false);
+    expect(index.near_duplicate_candidates).toEqual([]);
+    expect(index.exact_duplicate_clusters.length).toBeGreaterThan(0);
+    expect(index.diagnostics.near_duplicate_excluded).toEqual([{ reason: "analysis_disabled", count: 1 }]);
+  });
+
+  it("rejects a threshold outside the unit interval rather than clamping it", () => {
+    const root = tmp();
+    fs.writeFileSync(path.join(root, "a.md"), "content\n");
+    expect(() => analyze(root, { threshold: 1.5 })).toThrow(/within \[0, 1\]/);
+  });
+});
+
+// ───────────────────────────── the corpus index ─────────────────────────────
+
+describe("corpus index", () => {
+  it("declares its schema and binds the packet it projects", () => {
+    const run = analyze(fixtureCorpus());
+    expect(run.index.schema).toBe(CORPUS_INDEX_SCHEMA);
+    expect(run.index.repository_model.packet_version).toBe("1.1.0");
+    expect(run.index.repository_model.interpretation_profile?.profile_version).toBe("1.1.0");
+    expect(run.index.analysis_profile.near_duplicate_threshold).toBe(DEFAULT_NEAR_DUPLICATE_THRESHOLD);
+  });
+
+  it("resolves every reference it makes", () => {
+    const run = analyze(fixtureCorpus());
+    const artifactIds = new Set(run.index.artifacts.map((a) => a.artifact_id));
+
+    for (const artifact of run.index.artifacts) {
+      expect(run.packetArtifactIds.has(artifact.artifact_id), artifact.source_path).toBe(true);
+      for (const assertionId of artifact.assertion_ids) {
+        expect(run.packetAssertionIds.has(assertionId)).toBe(true);
       }
     }
-  });
-
-  it("resolves every relation endpoint to an artifact in the index", () => {
-    const { index } = analyse();
-    const artifactIds = new Set(index.artifacts.map((artifact) => artifact.artifact_id));
-    expect(index.relations.length).toBeGreaterThan(0);
-    for (const relation of index.relations) {
+    for (const signal of run.index.work_signals) {
+      expect(run.packetAssertionIds.has(signal.assertion_id)).toBe(true);
+      expect(artifactIds.has(signal.artifact_id)).toBe(true);
+    }
+    for (const cluster of run.index.exact_duplicate_clusters) {
+      expect(artifactIds.has(cluster.representative_artifact_id)).toBe(true);
+      for (const id of cluster.artifact_ids) expect(artifactIds.has(id)).toBe(true);
+    }
+    for (const relation of run.index.relations) {
       expect(artifactIds.has(relation.source_artifact_id)).toBe(true);
       expect(artifactIds.has(relation.target_artifact_id)).toBe(true);
     }
-  });
-
-  it("derives cluster identity from content, not from location", () => {
-    const { index } = analyse();
-    for (const cluster of index.exact_duplicate_clusters) {
-      expect(cluster.cluster_id).toBe(`duplicate-cluster:${cluster.content_hash}`);
-    }
-  });
-});
-
-describe("near-duplicate candidates", () => {
-  it("finds the revised copy as a candidate against the original", () => {
-    const { index } = analyse();
-    const pair = index.near_duplicate_candidates.find((candidate) =>
-      [candidate.source_path_a, candidate.source_path_b].includes("revised-plan.md"));
-    expect(pair).toBeDefined();
-    expect(pair?.score).toBeGreaterThanOrEqual(DEFAULT_NEAR_DUPLICATE_THRESHOLD);
-  });
-
-  it("still scores a file that happens to have an exact twin", () => {
-    // plan.md has a byte-identical copy. Dropping every clustered file from the
-    // analysis would silently lose its near-duplicate relationship to the revision.
-    const { index } = analyse();
-    const pair = index.near_duplicate_candidates.find((candidate) =>
-      [candidate.source_path_a, candidate.source_path_b].includes("plan.md"));
-    expect(pair).toBeDefined();
-  });
-
-  it("excludes exact duplicates from candidacy", () => {
-    const { index } = analyse();
-    for (const candidate of index.near_duplicate_candidates) {
-      const paths = [candidate.source_path_a, candidate.source_path_b];
-      expect(paths).not.toContain("exact-copy-of-plan.md");
+    for (const candidate of run.index.near_duplicate_candidates) {
+      expect(artifactIds.has(candidate.artifact_a_id)).toBe(true);
+      expect(artifactIds.has(candidate.artifact_b_id)).toBe(true);
     }
   });
 
-  it("leaves unrelated prose below the threshold", () => {
-    const { index } = analyse();
-    for (const candidate of index.near_duplicate_candidates) {
-      expect([candidate.source_path_a, candidate.source_path_b]).not.toContain("unrelated.md");
-    }
-  });
-
-  it("scores whitespace-only variation as near identical", () => {
-    const base = "the quick brown fox jumps over the lazy dog and then keeps running far past the fence line today";
-    const spaced = base.replace(/ /g, "   ").replace(/fox/, "fox\n");
-    const a = shingleSet(tokenize(normalizeForSimilarity(base)));
-    const b = shingleSet(tokenize(normalizeForSimilarity(spaced)));
-    expect(jaccard(a, b)).toBe(1);
-  });
-
-  it("matches the bounded all-pairs reference exactly", () => {
-    // The index build uses the shingle-indexed generator. It must return the same
-    // qualifying pairs as the quadratic definition, or the optimization changed
-    // the answer rather than the cost.
-    const model = observeLocalSourceModel({ path: CORPUS, name: NAME, producerVersion: "4.0.0" });
-    disposers.push(() => model.observation.dispose());
-    const documents = analysableDocumentsFor(model.observation);
-    for (const threshold of [0.0, 0.3, 0.6, 0.85, 0.99]) {
-      expect(indexedNearDuplicates(documents, threshold))
-        .toEqual(referenceNearDuplicates(documents, threshold));
-    }
-  });
-
-  it("changes analysis identity when the threshold changes", () => {
-    expect(corpusAnalysisIdentity(0.85)).not.toBe(corpusAnalysisIdentity(0.6));
-  });
-
-  it("can be skipped while exact duplicates still report", () => {
-    const model = observeLocalSourceModel({ path: CORPUS, name: NAME, producerVersion: "4.0.0" });
-    disposers.push(() => model.observation.dispose());
-    const index = buildCorpusIndex({
-      observation: model.observation,
-      packet: model.packet!,
-      repositoryName: NAME,
-      skipNearDuplicates: true,
+  it("counts the fixture corpus the way the fixture declares itself", () => {
+    const summary = analyze(fixtureCorpus()).index.summary;
+    expect(summary).toMatchObject({
+      archive_count: 2,
+      archive_member_count: 4,
+      exact_duplicate_cluster_count: 2,
+      exact_duplicate_artifact_count: 4,
+      near_duplicate_candidate_count: 2,
+      wip_count: 3,
+      draft_count: 1,
+      blocked_count: 1,
+      roadmap_count: 1,
     });
-    expect(index.near_duplicate_candidates).toEqual([]);
-    expect(index.analysis_profile.near_duplicate_analysed).toBe(false);
-    expect(index.exact_duplicate_clusters.length).toBeGreaterThan(0);
+    expect(summary.plan_count).toBeGreaterThanOrEqual(3);
+    expect(summary.open_task_count).toBeGreaterThanOrEqual(2);
+    expect(summary.milestone_count).toBeGreaterThanOrEqual(3);
+    expect(summary.artifacts_with_work_signals).toBeGreaterThan(0);
   });
 
-  it("rejects a threshold outside [0,1]", () => {
-    const model = observeLocalSourceModel({ path: CORPUS, name: NAME, producerVersion: "4.0.0" });
-    disposers.push(() => model.observation.dispose());
-    expect(() => buildCorpusIndex({
-      observation: model.observation,
-      packet: model.packet!,
-      repositoryName: NAME,
-      nearDuplicateThreshold: 1.5,
-    })).toThrow(/within \[0,1\]/);
+  it("carries the work state each fixture document declares", () => {
+    const index = analyze(fixtureCorpus()).index;
+    const byPath = new Map(index.artifacts.map((a) => [a.source_path, a]));
+
+    expect(byPath.get("plan.md")?.work_signal_summary).toMatchObject({
+      statuses: ["wip"],
+      kinds: ["plan"],
+      titles: ["Corpus Intelligence Plan"],
+      depends_on: ["notes.txt"],
+    });
+    expect(byPath.get("plan.md")?.work_signal_summary.open_task_count).toBeGreaterThanOrEqual(2);
+    expect(byPath.get("roadmap.md")?.work_signal_summary).toMatchObject({ kinds: ["roadmap"] });
+    expect(byPath.get("roadmap.md")?.work_signal_summary.milestone_count).toBeGreaterThanOrEqual(2);
+    expect(byPath.get("nested/blocked-work.md")?.work_signal_summary).toMatchObject({
+      statuses: ["blocked"],
+      blocked_by: ["the corpus index is not emitted yet"],
+    });
+    expect(byPath.get(ARCHIVE_MEMBER_PATHS.nestedDraft)?.work_signal_summary.statuses).toEqual(["draft"]);
+    expect(byPath.get(ARCHIVE_MEMBER_PATHS.nestedDraft)?.is_archive_member).toBe(true);
+    expect(byPath.get(ARCHIVE_MEMBER_PATHS.oldPlan)?.work_signal_summary.superseded_by).toEqual(["plan.md"]);
+    expect(byPath.get("revised-plan.md")?.work_signal_summary.supersedes).toEqual(["plan.md"]);
+  });
+
+  it("re-renders byte for byte from the same content at a different absolute root", () => {
+    const first = analyze(fixtureCorpus("l9-corpus-replay-a-")).outputs;
+    const second = analyze(fixtureCorpus("l9-corpus-replay-b-")).outputs;
+    expect(first.indexJson).toBe(second.indexJson);
+    expect(first.report).toBe(second.report);
+  });
+
+  it("serializes with code-point key ordering at every depth", () => {
+    const outputs = analyze(fixtureCorpus()).outputs;
+    const parsed = JSON.parse(outputs.indexJson) as unknown;
+    const checkKeys = (value: unknown): void => {
+      if (Array.isArray(value)) return value.forEach(checkKeys);
+      if (value === null || typeof value !== "object") return;
+      const keys = Object.keys(value as Record<string, unknown>);
+      expect(keys).toEqual([...keys].sort());
+      for (const key of keys) checkKeys((value as Record<string, unknown>)[key]);
+    };
+    checkKeys(parsed);
+    expect(outputs.indexJson.endsWith("\n")).toBe(true);
+  });
+
+  it("carries no wall clock and no machine path", () => {
+    const outputs = analyze(fixtureCorpus()).outputs;
+    for (const rendered of [outputs.indexJson, outputs.report]) {
+      expect(rendered).not.toContain(os.tmpdir());
+      expect(rendered).not.toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/);
+      expect(rendered).not.toContain(".l9-scratch-owner");
+    }
   });
 });
 
-describe("index and report are projections", () => {
-  it("declares the corpus index schema", () => {
-    expect(analyse().index.schema).toBe(CORPUS_INDEX_SCHEMA);
-  });
+// ───────────────────────────── the corpus report ─────────────────────────────
 
-  it("counts what the domains actually contain", () => {
-    const { index } = analyse();
-    expect(index.summary.artifact_count).toBe(index.artifacts.length);
-    expect(index.summary.near_duplicate_candidate_count).toBe(index.near_duplicate_candidates.length);
-    expect(index.summary.exact_duplicate_cluster_count).toBe(index.exact_duplicate_clusters.length);
-    expect(index.summary.recoverable_duplicate_bytes)
-      .toBe(index.exact_duplicate_clusters.reduce((total, c) => total + c.recoverable_bytes, 0));
-    expect(index.summary.open_task_count)
-      .toBe(index.work_signals.filter((s) => s.predicate === "work.task.open").length);
-  });
-
-  it("renders a report that never claims semantic equivalence", () => {
-    const report = renderCorpusReport(analyse().index);
-    for (const forbidden of [
-      "same topic", "same project", "merge these", "delete this", "redundant",
-      "keeper", "canonical copy",
+describe("corpus report", () => {
+  it("renders every required section", () => {
+    const report = analyze(fixtureCorpus()).outputs.report;
+    for (const heading of [
+      "## Corpus Summary",
+      "## Work Signals",
+      "### Plans and Roadmaps",
+      "### WIP and Drafts",
+      "### Blocked Work",
+      "### Open Tasks",
+      "### Completed Tasks",
+      "### Milestones",
+      "## Explicit Relationships",
+      "### Depends On",
+      "### Blocked By",
+      "### References",
+      "### Supersedes",
+      "### Superseded By",
+      "## Exact Duplicate Clusters",
+      "## Near-Duplicate Candidates",
+      "## Archives and Virtual Members",
+      "## Diagnostics and Coverage Gaps",
     ]) {
-      expect(report.toLowerCase()).not.toContain(forbidden);
+      expect(report, heading).toContain(heading);
     }
   });
 
-  it("names near-duplicates as candidates measured lexically", () => {
-    const report = renderCorpusReport(analyse().index).toLowerCase();
+  it("states exact duplicates as facts and candidates as candidates", () => {
+    const report = analyze(fixtureCorpus()).outputs.report;
+    expect(report).toContain("Byte-identical files");
     expect(report).toContain("candidate");
-    expect(report).toContain("lexical similarity");
+    expect(report.toLowerCase()).toContain("lexical similarity");
   });
 
-  it("may call exact duplicates byte-identical", () => {
-    const report = renderCorpusReport(analyse().index).toLowerCase();
-    expect(report).toContain("byte-identical");
+  it("never claims a shared topic, a shared project, or an action to take", () => {
+    const report = analyze(fixtureCorpus()).outputs.report.toLowerCase();
+    // The similarity section is the one place a reader would most naturally
+    // over-read, so the vocabulary of judgement is kept out of the whole document.
+    for (const forbidden of [
+      "same topic",
+      "same project",
+      "merge these",
+      "delete this",
+      "redundant",
+      "keeper",
+      "canonical copy",
+      "should be consolidated",
+      "build priority",
+      "abandoned",
+      "production ready",
+    ]) {
+      expect(report, forbidden).not.toContain(forbidden);
+    }
   });
 
-  it("renders the same bytes for the same index", () => {
-    const { index } = analyse();
+  it("reads the index and nothing else", () => {
+    const run = analyze(fixtureCorpus());
+    const altered: CorpusIndex = {
+      ...run.index,
+      summary: { ...run.index.summary, open_task_count: 4242 },
+      near_duplicate_candidates: [],
+      exact_duplicate_clusters: [],
+      relations: [],
+    };
+    const report = renderCorpusReport(altered);
+    // Values follow the index, so the report cannot disagree with it.
+    expect(report).toContain("| open tasks | 4242 |");
+    expect(report).toContain("No two observed artifacts are byte-identical.");
+    expect(report).toContain("No pair of eligible documents reaches the similarity threshold.");
+  });
+
+  it("re-renders identically from the same index", () => {
+    const index = analyze(fixtureCorpus()).index;
     expect(renderCorpusReport(index)).toBe(renderCorpusReport(index));
   });
 });
 
-describe("identity under replay and relocation", () => {
-  it("produces a byte-identical index on a repeated run", () => {
-    expect(canonicalCorpusJson(analyse().index)).toBe(canonicalCorpusJson(analyse().index));
+// ───────────────────────────── identity under change ─────────────────────────────
+
+describe("what changes when the corpus changes", () => {
+  /** Two corpora identical except for one edit, so every other id must hold still. */
+  function twoRuns(mutate: (root: string) => void): { before: CorpusIndex; after: CorpusIndex } {
+    const before = analyze(fixtureCorpus("l9-corpus-identity-a-")).index;
+    const mutated = fixtureCorpus("l9-corpus-identity-b-");
+    mutate(mutated);
+    return { before, after: analyze(mutated).index };
+  }
+
+  it("moves only what an edited task line touches", () => {
+    const { before, after } = twoRuns((root) => {
+      const target = path.join(root, "roadmap.md");
+      fs.writeFileSync(
+        target,
+        fs.readFileSync(target, "utf8").replace("acquisition hardening lands", "acquisition hardening ships"),
+      );
+    });
+
+    const artifact = (index: CorpusIndex, sourcePath: string) =>
+      index.artifacts.find((a) => a.source_path === sourcePath);
+    // The edited artifact's bytes, and therefore its evidence, moved.
+    expect(artifact(after, "roadmap.md")?.content_hash)
+      .not.toBe(artifact(before, "roadmap.md")?.content_hash);
+    expect(artifact(after, "roadmap.md")?.assertion_ids)
+      .not.toEqual(artifact(before, "roadmap.md")?.assertion_ids);
+    expect(after.repository_model.semantic_hash).not.toBe(before.repository_model.semantic_hash);
+
+    // Nothing else did. Duplicate clusters are content-bound and the edited file
+    // is in none of them; the candidate pair does not involve it either.
+    expect(after.exact_duplicate_clusters.map((c) => c.cluster_id))
+      .toEqual(before.exact_duplicate_clusters.map((c) => c.cluster_id));
+    expect(after.near_duplicate_candidates.map((c) => c.candidate_id))
+      .toEqual(before.near_duplicate_candidates.map((c) => c.candidate_id));
+    expect(artifact(after, "plan.md")?.assertion_ids).toEqual(artifact(before, "plan.md")?.assertion_ids);
   });
 
-  it("keeps every semantic ID stable when the corpus moves to another absolute path", () => {
-    const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), "l9-corpus-move-"));
-    disposers.push(() => fs.rmSync(elsewhere, { recursive: true, force: true }));
-    const moved = path.join(elsewhere, "sample-corpus");
-    fs.cpSync(CORPUS, moved, { recursive: true });
+  it("moves artifact identity but not cluster identity when a file is only renamed", () => {
+    const { before, after } = twoRuns((root) => {
+      fs.renameSync(path.join(root, "exact-copy-of-plan.md"), path.join(root, "second-copy-of-plan.md"));
+    });
 
-    const here = analyse(CORPUS).index;
-    const there = analyse(moved).index;
+    // The physical snapshot describes paths as well as bytes, so it moved.
+    expect(after.source.physical_snapshot_hash).not.toBe(before.source.physical_snapshot_hash);
+    expect(after.source.source_revision).not.toBe(before.source.source_revision);
+    expect(after.artifacts.map((a) => a.artifact_id)).not.toEqual(before.artifacts.map((a) => a.artifact_id));
 
-    expect(there.artifacts.map((a) => a.artifact_id)).toEqual(here.artifacts.map((a) => a.artifact_id));
-    expect(there.work_signals.map((s) => s.assertion_id)).toEqual(here.work_signals.map((s) => s.assertion_id));
-    expect(there.exact_duplicate_clusters.map((c) => c.cluster_id))
-      .toEqual(here.exact_duplicate_clusters.map((c) => c.cluster_id));
-    expect(there.near_duplicate_candidates.map((c) => c.candidate_id))
-      .toEqual(here.near_duplicate_candidates.map((c) => c.candidate_id));
-  });
-
-  it("changes only the touched document's evidence when one task line changes", () => {
-    const edited = fs.mkdtempSync(path.join(os.tmpdir(), "l9-corpus-edit-"));
-    disposers.push(() => fs.rmSync(edited, { recursive: true, force: true }));
-    const root = path.join(edited, "sample-corpus");
-    fs.cpSync(CORPUS, root, { recursive: true });
-    const target = path.join(root, "nested", "blocked-work.md");
-    fs.writeFileSync(target, fs.readFileSync(target, "utf8").replace("re-run the conformance probe", "re-run the probe"));
-
-    const before = analyse(CORPUS).index;
-    const after = analyse(root).index;
-
-    const notesCluster = (index: CorpusIndex): string | undefined =>
-      index.exact_duplicate_clusters.find((c) => c.source_paths.includes("notes.txt"))?.cluster_id;
-    // The edit is confined to one document: an unrelated duplicate cluster keeps
-    // its identity, while the edited document's task assertion does not.
-    expect(notesCluster(after)).toBe(notesCluster(before));
-
-    const taskOf = (index: CorpusIndex): string | undefined => index.work_signals.find((s) =>
-      s.predicate === "work.task.open" && s.source_path === "nested/blocked-work.md")?.assertion_id;
-    expect(taskOf(after)).not.toBe(taskOf(before));
+    // Cluster identity is byte-bound, so the same two files still form the same
+    // cluster under a different name.
+    expect(after.exact_duplicate_clusters.map((c) => c.cluster_id))
+      .toEqual(before.exact_duplicate_clusters.map((c) => c.cluster_id));
+    const renamed = after.exact_duplicate_clusters.find((c) => c.source_paths.includes("plan.md"));
+    expect(renamed?.source_paths).toEqual(["plan.md", "second-copy-of-plan.md"]);
+    // Nothing was actually deduplicated: both copies are still artifacts.
+    expect(after.summary.artifact_count).toBe(before.summary.artifact_count);
   });
 });
 
-// Rebuild the analysable document set the way the index build does, so the
-// reference comparison scores exactly the inputs the production path scores.
-function analysableDocumentsFor(observation: LocalSourceObservation) {
-  const repositoryId = repositoryIdFor(NAME);
-  // Mirror the production rule: one representative per exact-duplicate cluster.
-  const representativeByPath = new Map<string, string>();
-  for (const cluster of observation.inventory.duplicates) {
-    const representative = [...cluster.paths].sort((a, b) => a.length - b.length || (a < b ? -1 : a > b ? 1 : 0))[0];
-    for (const p of cluster.paths) representativeByPath.set(p, representative);
-  }
-  const documents: { artifactId: string; sourcePath: string; normalizedHash: string; shingles: Set<string> }[] = [];
-  for (const record of [...observation.inventory.records].sort((a, b) =>
-    a.relative_path < b.relative_path ? -1 : a.relative_path > b.relative_path ? 1 : 0)) {
-    if (record.artifact_type === "folder") continue;
-    const sourcePath = record.relative_path;
-    if (!/\.(md|markdown|txt|rst)$/i.test(sourcePath)) continue;
-    const representative = representativeByPath.get(sourcePath);
-    if (representative !== undefined && representative !== sourcePath) continue;
-    if (!record.absolute_path) continue;
-    const text = fs.readFileSync(record.absolute_path, "utf8");
-    const tokens = tokenize(normalizeForSimilarity(text));
-    if (tokens.length < 20) continue;
-    documents.push({
-      artifactId: artifactIdFor(repositoryId, sourcePath),
-      sourcePath,
-      normalizedHash: `sha256:${"0".repeat(64)}`,
-      shingles: shingleSet(tokens),
-    });
-  }
-  return documents;
-}
+// ───────────────────────────── source safety ─────────────────────────────
 
-function snapshot(root: string): Record<string, string> {
-  const crypto = require("node:crypto") as typeof import("node:crypto");
-  const out: Record<string, string> = {};
-  const walk = (directory: string): void => {
-    for (const name of fs.readdirSync(directory).sort()) {
-      const absolute = path.join(directory, name);
-      const relative = path.relative(root, absolute).split(path.sep).join("/");
-      const stats = fs.lstatSync(absolute);
-      if (stats.isDirectory()) { out[`${relative}/`] = "dir"; walk(absolute); continue; }
-      out[relative] = crypto.createHash("sha256").update(fs.readFileSync(absolute)).digest("hex");
+describe("source safety", () => {
+  it("leaves the observed corpus byte-identical", () => {
+    const root = fixtureCorpus("l9-corpus-safety-");
+    const before = treeSnapshot(root);
+    const outputs = analyze(root).outputs;
+    expect(outputs.indexJson.length).toBeGreaterThan(0);
+    expect(treeSnapshot(root)).toEqual(before);
+  });
+
+  it("refuses to write corpus outputs inside the observed source", () => {
+    const root = fixtureCorpus("l9-corpus-inside-");
+    const result = observeLocalSourceModel({ path: root, name: "corpus", producerVersion: PRODUCER_VERSION });
+    try {
+      const outputs = buildLocalSourceCorpus(result);
+      expect(() => writeLocalSourceCorpus(
+        outputs,
+        { indexPath: path.join(root, "corpus-index.json"), reportPath: path.join(root, "corpus-report.md") },
+        root,
+      )).toThrow(/refusing to write the corpus index inside the observed source tree/);
+      expect(fs.existsSync(path.join(root, "corpus-index.json"))).toBe(false);
+    } finally {
+      result.observation.dispose();
     }
-  };
-  walk(root);
-  return out;
-}
+  });
+
+  it("writes both outputs to a tool-owned directory", () => {
+    const root = fixtureCorpus("l9-corpus-write-");
+    const outDir = tmp("l9-corpus-out-");
+    const result = observeLocalSourceModel({ path: root, name: "corpus", producerVersion: PRODUCER_VERSION });
+    try {
+      const outputs = buildLocalSourceCorpus(result);
+      const written = writeLocalSourceCorpus(
+        outputs,
+        { indexPath: path.join(outDir, "corpus-index.json"), reportPath: path.join(outDir, "corpus-report.md") },
+        root,
+      );
+      expect(fs.readFileSync(written.indexPath, "utf8")).toBe(outputs.indexJson);
+      expect(fs.readFileSync(written.reportPath, "utf8")).toBe(outputs.report);
+    } finally {
+      result.observation.dispose();
+    }
+  });
+
+  it("names artifacts by their portable locator, never by their staged copy", () => {
+    const index = analyze(fixtureCorpus()).index;
+    const member = index.artifacts.find((a) => a.source_path === ARCHIVE_MEMBER_PATHS.nestedDraft);
+    expect(member).toBeDefined();
+    expect(member?.artifact_id)
+      .toBe(repositoryModelArtifactId("repo:corpus", ARCHIVE_MEMBER_PATHS.nestedDraft));
+    for (const artifact of index.artifacts) {
+      expect(path.isAbsolute(artifact.source_path)).toBe(false);
+    }
+  });
+});

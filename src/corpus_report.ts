@@ -1,299 +1,303 @@
-// corpus_report.ts — the human view of a corpus index.
+// corpus_report.ts — the human rendering of a corpus index.
 //
-// This renderer reads the index and nothing else. It opens no files, recomputes
-// no scores, and adds no findings: if a number is not in the index it does not
-// appear here.
+// This module reads the index and nothing else. It does not open a source file,
+// recompute a score, or reach for the packet: if a number is not in the index it
+// does not appear in the report, which is what keeps the two documents unable to
+// disagree.
 //
-// The wording is part of the contract, because this is the artifact a person
-// actually reads and acts on. Two distinctions must survive rendering:
-//
-//   - An exact duplicate is byte-identical. It may be described that way.
-//   - A near-duplicate is a *candidate* with a *lexical similarity* score. It is
-//     never described as the same topic, the same project, redundant, or as
-//     something to merge or delete. The report says what was measured and leaves
-//     the judgement to the reader.
-//   - A cluster's representative is a rendering anchor, never a "keeper" or a
-//     "canonical copy". Which copy to keep is not a question this analysis
-//     answers.
-//
-// Output is deterministic: fixed section order, index-supplied row order, no
-// clock. Two runs over the same index produce identical bytes.
+// The wording is part of the contract, not decoration. Exact duplicates are
+// stated as facts, because byte equality is one. Near-duplicate candidates are
+// stated as candidates and as lexical similarity, because that is all a shingle
+// score establishes — the report must never say two documents cover the same
+// topic, belong to the same project, or should be merged or deleted. And the
+// representative of a duplicate cluster is named a representative: it is a
+// rendering anchor, not advice about which copy to keep.
 import {
+  CorpusArtifact,
   CorpusIndex,
-  CorpusNearDuplicateCandidate,
   CorpusWorkSignal,
+  NearDuplicateCandidate,
 } from "./corpus_analysis";
+import { compareCodePoints } from "./ordering";
 
-/** Escape the characters that would break a Markdown table cell. */
-function cell(value: string): string {
-  return value
-    .replace(/\\/g, String.raw`\\`)
-    .replace(/\|/g, String.raw`\|`)
-    .replace(/\r?\n/g, " ");
+/** Rows shown per table before the remainder is reported as a count. */
+const MAX_ROWS = 100;
+
+function escapeCell(value: string): string {
+  return value.replace(/\|/g, String.raw`\|`).replace(/\r?\n/g, " ");
 }
 
 function code(value: string): string {
-  return `\`${cell(value)}\``;
+  return `\`${escapeCell(value)}\``;
 }
 
-function signalsWith(index: CorpusIndex, predicate: string, object?: string): CorpusWorkSignal[] {
-  return index.work_signals.filter((signal) =>
-    signal.predicate === predicate && (object === undefined || signal.object === object));
-}
-
-function location(signal: CorpusWorkSignal): string {
-  return `${signal.source_path}:${signal.source_range.start_line}`;
-}
-
-function section(title: string, body: string[]): string[] {
-  return body.length > 0 ? [`## ${title}`, "", ...body, ""] : [`## ${title}`, "", "_None observed._", ""];
-}
-
-function subsection(title: string, body: string[]): string[] {
-  return body.length > 0 ? [`### ${title}`, "", ...body, ""] : [];
-}
-
-/** A `| a | b |` table, or nothing when there are no rows. */
-function table(headers: string[], rows: string[][]): string[] {
-  if (rows.length === 0) return [];
-  return [
+/** A markdown table, or an explicit statement that there is nothing to show. */
+function table(headers: string[], rows: string[][], empty: string): string[] {
+  if (rows.length === 0) return [empty, ""];
+  const shown = rows.slice(0, MAX_ROWS);
+  const out = [
     `| ${headers.join(" | ")} |`,
-    `|${headers.map(() => "---").join("|")}|`,
-    ...rows.map((row) => `| ${row.join(" | ")} |`),
+    `| ${headers.map(() => "---").join(" | ")} |`,
+    ...shown.map((row) => `| ${row.join(" | ")} |`),
   ];
+  if (rows.length > shown.length) {
+    out.push("", `${rows.length - shown.length} further row(s) are in \`corpus-index.json\`.`);
+  }
+  out.push("");
+  return out;
 }
 
-function summarySection(index: CorpusIndex): string[] {
-  const s = index.summary;
-  return section("Corpus Summary", [
-    ...table(["measure", "value"], [
-      ["source", code(index.source.source_name)],
-      ["source revision", code(index.source.source_revision)],
-      ["artifacts", String(s.artifact_count)],
-      ["archives", String(s.archive_count)],
-      ["archive members", String(s.archive_member_count)],
-      ["artifacts with work signals", String(s.artifacts_with_work_signals)],
-      ["assertions", String(s.assertion_count)],
-      ["open tasks", String(s.open_task_count)],
-      ["completed tasks", String(s.completed_task_count)],
-      ["milestones", String(s.milestone_count)],
-      ["exact duplicate clusters", String(s.exact_duplicate_cluster_count)],
-      ["artifacts in a duplicate cluster", String(s.exact_duplicate_artifact_count)],
-      ["recoverable duplicate bytes", String(s.recoverable_duplicate_bytes)],
-      ["near-duplicate candidates", String(s.near_duplicate_candidate_count)],
-    ]),
+function byPredicate(index: CorpusIndex, predicate: string): CorpusWorkSignal[] {
+  return index.work_signals.filter((signal) => signal.predicate === predicate);
+}
+
+function signalRows(signals: CorpusWorkSignal[]): string[][] {
+  return signals.map((signal) => [
+    code(signal.source_path),
+    `${signal.source_range.start_line}`,
+    escapeCell(signal.object),
+    signal.confidence,
   ]);
 }
 
-function declarationRows(signals: CorpusWorkSignal[]): string[][] {
-  return signals.map((signal) => [code(signal.object), code(location(signal)), signal.confidence]);
+/** Artifacts carrying an explicit status, one row per artifact. */
+function statusRows(index: CorpusIndex, statuses: readonly string[]): string[][] {
+  return index.artifacts
+    .filter((artifact) => artifact.work_signal_summary.statuses.some((value) => statuses.includes(value)))
+    .map((artifact) => [
+      code(artifact.source_path),
+      artifact.work_signal_summary.statuses.join(", "),
+      artifact.work_signal_summary.kinds.join(", ") || "—",
+      `${artifact.work_signal_summary.open_task_count}`,
+    ]);
 }
 
-function workSignalsSection(index: CorpusIndex): string[] {
-  const plans = signalsWith(index, "work.kind", "plan");
-  const roadmaps = signalsWith(index, "work.kind", "roadmap");
-  const wip = signalsWith(index, "work.status", "wip");
-  const drafts = signalsWith(index, "work.status", "draft");
-  const blocked = signalsWith(index, "work.status", "blocked");
-  const open = signalsWith(index, "work.task.open");
-  const done = signalsWith(index, "work.task.completed");
-  const milestones = signalsWith(index, "work.milestone");
+function relationRows(index: CorpusIndex, predicate: string): string[][] {
+  return byPredicate(index, predicate).map((signal) => [
+    code(signal.source_path),
+    `${signal.source_range.start_line}`,
+    escapeCell(signal.object),
+  ]);
+}
 
-  const body: string[] = [
-    "Every row below is a declaration the document makes about itself, with the line",
-    "that states it. Nothing here is inferred from age, location, or task counts.",
-    "",
-    ...subsection("Plans and Roadmaps", table(
-      ["kind", "document", "declared at", "confidence"],
-      [...plans, ...roadmaps].map((signal) => [
-        signal.object, code(signal.source_path), code(location(signal)), signal.confidence,
-      ]))),
-    ...subsection("WIP and Drafts", table(
-      ["status", "document", "declared at"],
-      [...wip, ...drafts].map((signal) => [
-        signal.object, code(signal.source_path), code(location(signal)),
-      ]))),
-    ...subsection("Blocked Work", table(
-      ["document", "declared at"],
-      blocked.map((signal) => [code(signal.source_path), code(location(signal))]))),
-    ...subsection("Open Tasks", table(["task", "declared at", "confidence"], declarationRows(open))),
-    ...subsection("Completed Tasks", table(["task", "declared at", "confidence"], declarationRows(done))),
-    ...subsection("Milestones", table(["milestone", "declared at", "confidence"], declarationRows(milestones))),
+function candidateRows(candidates: readonly NearDuplicateCandidate[]): string[][] {
+  return candidates.map((candidate) => [
+    candidate.score.toFixed(4),
+    code(candidate.source_path_a),
+    code(candidate.source_path_b),
+    `${candidate.shared_shingle_count}/${candidate.union_shingle_count}`,
+  ]);
+}
+
+function planRows(index: CorpusIndex): string[][] {
+  return index.artifacts
+    .filter((artifact) => artifact.work_signal_summary.kinds.length > 0)
+    .map((artifact: CorpusArtifact) => [
+      code(artifact.source_path),
+      artifact.work_signal_summary.kinds.join(", "),
+      artifact.work_signal_summary.titles.map(escapeCell).join(" / ") || "—",
+      artifact.work_signal_summary.statuses.join(", ") || "—",
+    ]);
+}
+
+/** A heading, an optional prose lead, and a table — the shape every section has. */
+function section(heading: string, prose: string[], body: string[]): string[] {
+  return [heading, "", ...(prose.length > 0 ? [...prose, ""] : []), ...body];
+}
+
+/** The summary table's rows, which are the only place raw counts appear. */
+function summaryRows(index: CorpusIndex): string[][] {
+  const { summary, analysis_profile: profile, repository_model: model } = index;
+  const interpretation = model.interpretation_profile;
+  return [
+    ["source revision", code(index.source.source_revision)],
+    ["physical snapshot", code(index.source.physical_snapshot_hash)],
+    ["repository model packet", code(model.packet_id)],
+    ["packet semantic hash", code(model.semantic_hash)],
+    ["interpretation profile", code(
+      interpretation ? `${interpretation.profile_id}@${interpretation.profile_version}` : "not run",
+    )],
+    ["corpus profile", code(`${profile.corpus_profile_id}@${profile.corpus_profile_version}`)],
+    ["artifacts", `${summary.artifact_count}`],
+    ["archives", `${summary.archive_count}`],
+    ["archive members", `${summary.archive_member_count}`],
+    ["interpreted artifacts", `${summary.interpreted_artifact_count}`],
+    ["assertions", `${summary.assertion_count}`],
+    ["artifacts with work signals", `${summary.artifacts_with_work_signals}`],
+    ["exact duplicate clusters", `${summary.exact_duplicate_cluster_count}`],
+    ["exact duplicate artifacts", `${summary.exact_duplicate_artifact_count}`],
+    ["recoverable duplicate bytes", `${summary.recoverable_duplicate_bytes}`],
+    ["near-duplicate candidates", `${summary.near_duplicate_candidate_count}`],
+    ["open tasks", `${summary.open_task_count}`],
+    ["completed tasks", `${summary.completed_task_count}`],
+    ["milestones", `${summary.milestone_count}`],
+    ["declared plans", `${summary.plan_count}`],
+    ["declared roadmaps", `${summary.roadmap_count}`],
+    ["declared WIP", `${summary.wip_count}`],
+    ["declared drafts", `${summary.draft_count}`],
+    ["declared blocked", `${summary.blocked_count}`],
   ];
-
-  const hasAny = [plans, roadmaps, wip, drafts, blocked, open, done, milestones]
-    .some((group) => group.length > 0);
-  return hasAny ? ["## Work Signals", "", ...body] : section("Work Signals", []);
 }
 
-const RELATION_SECTIONS: { title: string; predicate: string }[] = [
-  { title: "Depends On", predicate: "work.depends_on" },
-  { title: "Blocked By", predicate: "work.blocked_by" },
-  { title: "References", predicate: "work.references" },
-  { title: "Supersedes", predicate: "work.supersedes" },
-  { title: "Superseded By", predicate: "work.superseded_by" },
+/** The work-signal subsections, each one an explicit statement documents made. */
+function workSignalSections(index: CorpusIndex): string[] {
+  const signalTable = (heading: string, column: string, predicate: string, empty: string): string[] =>
+    section(`### ${heading}`, [], table(
+      ["artifact", "line", column, "confidence"],
+      signalRows(byPredicate(index, predicate)),
+      empty,
+    ));
+  return [
+    ...section("## Work Signals", [
+      "Every row below is an explicit statement a document makes about itself, cited to the",
+      "line that makes it. Nothing here is inferred from a filename, a path, a modification",
+      "time, or the absence of a signal. Where a document states two conflicting things, both",
+      "appear.",
+    ], []),
+    ...section("### Plans and Roadmaps", [], table(
+      ["artifact", "declared kind", "declared title", "declared status"],
+      planRows(index),
+      "No artifact declares a work kind.",
+    )),
+    ...section("### WIP and Drafts", [], table(
+      ["artifact", "declared status", "declared kind", "open tasks"],
+      statusRows(index, ["wip", "draft"]),
+      "No artifact declares itself WIP or draft.",
+    )),
+    ...section("### Blocked Work", [], table(
+      ["artifact", "declared status", "declared kind", "open tasks"],
+      statusRows(index, ["blocked"]),
+      "No artifact declares itself blocked.",
+    )),
+    ...signalTable("Open Tasks", "task", "work.task.open", "No open task is declared."),
+    ...signalTable("Completed Tasks", "task", "work.task.completed", "No completed task is declared."),
+    ...signalTable("Milestones", "milestone", "work.milestone", "No milestone is declared."),
+  ];
+}
+
+/** The five declared-relation subsections, in a fixed order. */
+const RELATION_SECTIONS: readonly (readonly [string, string, string])[] = [
+  ["Depends On", "work.depends_on", "No dependency is declared."],
+  ["Blocked By", "work.blocked_by", "No blocker is declared."],
+  ["References", "work.references", "No reference is declared."],
+  ["Supersedes", "work.supersedes", "No supersession is declared."],
+  ["Superseded By", "work.superseded_by", "No document declares itself superseded."],
 ];
 
-function relationshipsSection(index: CorpusIndex): string[] {
-  const body: string[] = [];
-  for (const { title, predicate } of RELATION_SECTIONS) {
-    const signals = signalsWith(index, predicate);
-    body.push(...subsection(title, table(
-      ["document", "declared target", "declared at"],
-      signals.map((signal) => [
-        code(signal.source_path), code(signal.object), code(location(signal)),
-      ]))));
-  }
-  if (body.length === 0) return section("Explicit Relationships", []);
+function relationSections(index: CorpusIndex): string[] {
   return [
-    "## Explicit Relationships",
-    "",
-    "Targets are quoted exactly as the document wrote them. They are not resolved to",
-    "artifacts by guesswork, so a target naming a file that does not exist stays as",
-    "written.",
-    "",
-    ...body,
+    ...section("## Explicit Relationships", [
+      "Declared pointers, carried as the exact target text each document wrote. A target is",
+      "not resolved to an artifact unless the document named an observed path outright.",
+    ], []),
+    ...RELATION_SECTIONS.flatMap(([heading, predicate, empty]) => section(
+      `### ${heading}`,
+      [],
+      table(["artifact", "line", "declared target"], relationRows(index, predicate), empty),
+    )),
   ];
 }
 
-function duplicatesSection(index: CorpusIndex): string[] {
-  const clusters = index.exact_duplicate_clusters;
-  if (clusters.length === 0) return section("Exact Duplicate Clusters", []);
+function diagnosticsSections(index: CorpusIndex): string[] {
+  const counted = (rows: { code: string; severity: string; count: number }[]): string[][] =>
+    rows.map((entry) => [code(entry.code), entry.severity, `${entry.count}`]);
+  return [
+    ...section("## Diagnostics and Coverage Gaps", [
+      "What the observation could not establish, carried forward rather than rounded away.",
+    ], []),
+    ...section("### Packet diagnostics", [], table(
+      ["code", "severity", "count"],
+      counted(index.diagnostics.packet),
+      "The packet reported no diagnostics.",
+    )),
+    ...section("### Interpretation diagnostics", [], table(
+      ["code", "severity", "count"],
+      counted(index.diagnostics.interpretation),
+      "Interpretation reported no diagnostics.",
+    )),
+    ...section("### Artifacts outside the similarity analysis", [], table(
+      ["reason", "count"],
+      [...index.diagnostics.near_duplicate_excluded]
+        .sort((left, right) => compareCodePoints(left.reason, right.reason))
+        .map((entry) => [code(entry.reason), `${entry.count}`]),
+      "Every observed artifact was eligible for the similarity analysis.",
+    )),
+  ];
+}
 
-  const body: string[] = [
-    "Byte-identical artifacts, grouped by content hash. This is a fact about the",
-    "bytes: every member of a cluster has exactly the same content.",
+/**
+ * Render the report.
+ *
+ * Section order, row order and wording are fixed, so re-rendering the same index
+ * produces the same bytes. No timestamp is written: an observation instant is
+ * operational, and putting one here would make every regeneration a diff.
+ */
+export function renderCorpusReport(index: CorpusIndex): string {
+  const profile = index.analysis_profile;
+  const lines = [
+    `# Corpus report — ${index.source.source_name}`,
     "",
-    "The representative is a fixed rendering anchor, chosen by shortest path. It is",
-    "not a recommendation about which copy to keep — this analysis has no basis for",
-    "one, and no file has been moved, deleted, or changed.",
+    "Read-only observation. No file under the source was moved, deleted, rewritten, or consolidated.",
     "",
-    ...table(
-      ["cluster", "copies", "recoverable bytes", "representative", "other paths"],
-      clusters.map((cluster) => [
-        code(cluster.content_hash.slice(0, 19)),
-        String(cluster.count),
-        String(cluster.recoverable_bytes),
+    ...section("## Corpus Summary", [], table(
+      ["measure", "value"],
+      summaryRows(index),
+      "No measurements are available.",
+    )),
+    ...workSignalSections(index),
+    ...relationSections(index),
+    ...section("## Exact Duplicate Clusters", [
+      "Byte-identical files. Membership is content-hash equality, so a physical file and a",
+      "file inside an archive can share a cluster. The representative is a deterministic",
+      "rendering anchor — every member of a cluster is exactly equivalent to every other, and",
+      "naming one says nothing about which copy anything should be done with.",
+    ], table(
+      ["count", "recoverable bytes", "representative", "other members"],
+      index.exact_duplicate_clusters.map((cluster) => [
+        `${cluster.count}`,
+        `${cluster.recoverable_bytes}`,
         code(cluster.representative_source_path),
         cluster.source_paths
           .filter((sourcePath) => sourcePath !== cluster.representative_source_path)
           .map(code)
           .join("<br>"),
-      ])),
-  ];
-  return ["## Exact Duplicate Clusters", "", ...body, ""];
-}
-
-function candidateRow(candidate: CorpusNearDuplicateCandidate): string[] {
-  return [
-    candidate.score.toFixed(6),
-    code(candidate.source_path_a),
-    code(candidate.source_path_b),
-    `${candidate.shared_shingle_count}/${candidate.union_shingle_count}`,
-  ];
-}
-
-function nearDuplicatesSection(index: CorpusIndex): string[] {
-  if (!index.analysis_profile.near_duplicate_analysed) {
-    return [
-      "## Near-Duplicate Candidates",
+      ]),
+      "No two observed artifacts are byte-identical.",
+    )),
+    ...section("## Near-Duplicate Candidates", [
+      `Candidates from \`${profile.near_duplicate_method}\` at a lexical similarity threshold`,
+      `of ${profile.near_duplicate_threshold}. The score is the exact Jaccard overlap of the unique`,
+      "5-token shingles of two normalized documents.",
       "",
-      "_Similarity analysis was not run for this corpus._",
-      "",
-    ];
-  }
-  const candidates = index.near_duplicate_candidates;
-  const profile = index.analysis_profile;
-  const preamble = [
-    `Pairs whose **lexical similarity** reached the ${profile.near_duplicate_threshold} threshold under`,
-    `${code(profile.near_duplicate_method)} \`${profile.near_duplicate_version}\`: exact Jaccard over unique`,
-    "5-token shingles of normalized text.",
-    "",
-    "These are **candidates for a reader to look at**, and the score measures shared",
-    "wording only. Shared wording is not shared subject matter, shared ownership, or",
-    "supersession: two documents can score highly by reusing a template, and two",
-    "documents covering one subject can score near zero. Nothing here proposes that",
-    "either document be changed. Byte-identical pairs are reported as exact",
-    "duplicates above and are excluded from this table.",
-    "",
+      "A candidate means the two documents share wording. It does not establish that they",
+      "cover one subject, belong to one effort, supersede one another, or that anything",
+      "should be done about them. Byte-identical files are excluded here and reported as",
+      "exact duplicates above.",
+    ], table(
+      ["score", "artifact a", "artifact b", "shared/union shingles"],
+      candidateRows(index.near_duplicate_candidates),
+      profile.near_duplicate_enabled
+        ? "No pair of eligible documents reaches the similarity threshold."
+        : "Similarity analysis was disabled for this run.",
+    )),
+    ...section("## Archives and Virtual Members", [
+      "Archives are observed in place and expanded into tool-owned staging. Members are",
+      "carried as virtual artifacts named `<archive>!/<member>`; nothing is extracted beside",
+      "the source.",
+    ], table(
+      ["archive", "depth", "expanded", "members", "omitted", "holds"],
+      index.archives.map((archive) => [
+        code(archive.source_path),
+        `${archive.nested_depth}`,
+        archive.expanded ? "yes" : "no",
+        `${archive.member_count}`,
+        `${archive.omitted_member_count}`,
+        archive.hold_codes.length > 0 ? archive.hold_codes.map(code).join(", ") : "—",
+      ]),
+      "No archive was observed.",
+    )),
+    ...diagnosticsSections(index),
   ];
-  if (candidates.length === 0) {
-    return ["## Near-Duplicate Candidates", "", ...preamble, "_No pair reached the threshold._", ""];
-  }
-  return [
-    "## Near-Duplicate Candidates",
-    "",
-    ...preamble,
-    ...table(["similarity", "document A", "document B", "shared/union shingles"],
-      candidates.map(candidateRow)),
-    "",
-  ];
-}
 
-function archivesSection(index: CorpusIndex): string[] {
-  const members = index.artifacts.filter((artifact) => artifact.is_archive_member);
-  if (members.length === 0) return section("Archives and Virtual Members", []);
-  return [
-    "## Archives and Virtual Members",
-    "",
-    "Archive members are observed in place. Nothing was extracted into the source",
-    "tree; each member is named by a virtual locator.",
-    "",
-    ...table(["member", "type", "size"], members.map((member) => [
-      code(member.source_path),
-      member.artifact_type,
-      member.size_bytes === null ? "Unknown" : String(member.size_bytes),
-    ])),
-    "",
-  ];
-}
-
-function diagnosticsSection(index: CorpusIndex): string[] {
-  if (index.diagnostics.length === 0) {
-    return ["## Diagnostics and Coverage Gaps", "", "_No diagnostics were reported._", ""];
-  }
-  return [
-    "## Diagnostics and Coverage Gaps",
-    "",
-    "What acquisition could not observe. A gap here means the corpus above is",
-    "incomplete in a known, named way.",
-    "",
-    ...table(["severity", "code", "path", "message"], index.diagnostics.map((diagnostic) => [
-      diagnostic.severity,
-      code(diagnostic.code),
-      diagnostic.source_path === undefined ? "—" : code(diagnostic.source_path),
-      cell(diagnostic.message),
-    ])),
-    "",
-  ];
-}
-
-/**
- * Render a corpus index as Markdown.
- *
- * Deterministic: the same index always produces the same bytes. No timestamp is
- * emitted, because a generation time would make every run differ while nothing
- * about the corpus had changed.
- */
-export function renderCorpusReport(index: CorpusIndex): string {
-  const lines: string[] = [
-    `# Corpus Report — ${index.source.source_name}`,
-    "",
-    `Source revision: \`${index.source.source_revision}\``,
-    `Packet: \`${index.repository_model.packet_id}\``,
-    `Corpus profile: \`${index.analysis_profile.corpus_profile_id}\` \`${index.analysis_profile.corpus_profile_version}\``,
-    "",
-    "This report is a projection of the corpus index. Every figure below traces to an",
-    "observation, an assertion with a cited source span, or one of the two duplicate",
-    "analyses. No file was moved, deleted, or modified to produce it.",
-    "",
-    ...summarySection(index),
-    ...workSignalsSection(index),
-    ...relationshipsSection(index),
-    ...duplicatesSection(index),
-    ...nearDuplicatesSection(index),
-    ...archivesSection(index),
-    ...diagnosticsSection(index),
-  ];
   return `${lines.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd()}\n`;
 }

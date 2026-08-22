@@ -17,13 +17,12 @@ import * as os from "node:os";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
 import { InventoryRecord, InventoryResult, inventoryTree } from "./inventory";
+import { compareCodePoints } from "./ordering";
 import { InterpretationResult, interpretRepository } from "./interpretation";
 import { defaultExtractors } from "./extractors";
 import { UNKNOWN } from "./schema";
-import { compareCodePoints } from "./ordering";
 
-// Re-exported so the published surface keeps naming this here, while the single
-// implementation lives in the leaf module every layer can depend on.
+/** Re-exported so packet consumers keep one ordering import site. */
 export { compareCodePoints } from "./ordering";
 
 export const REPOSITORY_MODEL_PACKET_TYPE = "l9.repository-model";
@@ -141,24 +140,19 @@ export function stableId(prefix: string, value: unknown): string {
   return `${prefix}:${semanticHash(value).slice(SHA_PREFIX.length)}`;
 }
 
-/** The repository subject a packet and its interpretation both attach to. */
-export function repositoryIdFor(repositoryName: string): string {
-  return `repo:${repositoryName}`;
-}
-
 /**
- * The one artifact identity algorithm.
+ * Stable identity of one artifact inside a repository.
  *
- * Packet building and interpretation both need to name the same artifact, and a
- * second implementation of this rule would let the two drift silently: an
- * assertion would point at an artifact ID that no artifact record carries, and
- * the mismatch would only surface as a validation failure far from its cause.
- * Both callers use this function.
+ * Interpretation needs this to point an assertion at the exact file that made a
+ * declaration, and the packet builder needs it to emit that file's artifact
+ * record. Two implementations of the same formula would eventually disagree and
+ * strand every artifact-scoped assertion, so both call this one.
  *
- * `sourcePath` is the portable relative path — for an archive member, the
- * virtual locator (`bundle.zip!/docs/a.md`). Absolute paths never participate.
+ * `sourcePath` is the repository-relative POSIX path, or a virtual archive
+ * member locator such as `Bundle.zip!/docs/a.md`. Absolute paths never
+ * participate.
  */
-export function artifactIdFor(repositoryId: string, sourcePath: string): string {
+export function repositoryModelArtifactId(repositoryId: string, sourcePath: string): string {
   return stableId("artifact", { repository_id: repositoryId, source_path: sourcePath });
 }
 
@@ -712,7 +706,7 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
   if (!input.sourceRevision) throw new Error("repository-model: sourceRevision is required and is never inferred");
   if (!producerVersion) throw new Error("repository-model: producerVersion is required");
 
-  const repositoryId = repositoryIdFor(input.repositoryName);
+  const repositoryId = `repo:${input.repositoryName}`;
   // Folders carry no artifact identity of their own; they are reported as a diagnostic
   // rather than silently dropped.
   const allRecords = [...input.inventory.records].sort((a, b) => compareCodePoints(a.relative_path, b.relative_path));
@@ -740,7 +734,7 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
     const hashed = record.content_hash !== null;
     if (!hashed) unhashedCount++;
     const contentHash = hashed ? `${SHA_PREFIX}${record.content_hash}` : UNKNOWN;
-    const artifactId = artifactIdFor(repositoryId, relativePath);
+    const artifactId = repositoryModelArtifactId(repositoryId, relativePath);
     const recordConfidence = artifactConfidence(record.classification_confidence, hashed);
 
     const observation = makeEvidence({
@@ -822,7 +816,8 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
   // binds each member to the archive it came from, and each nested archive to the
   // archive that contained it, all the way back to a physical source file.
   const emittedArtifactIds = new Set(artifacts.map((artifact) => artifact.artifact_id));
-  const localArtifactId = (sourcePath: string): string => artifactIdFor(repositoryId, sourcePath);
+  const artifactIdFor = (sourcePath: string): string =>
+    repositoryModelArtifactId(repositoryId, sourcePath);
 
   if (input.localSource) {
     const local = input.localSource;
@@ -858,8 +853,8 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
           "none of its members are claimed as observed.",
         stage: OBSERVATION_STAGE,
         category: "observation",
-        subject_id: emittedArtifactIds.has(localArtifactId(archive.sourcePath))
-          ? localArtifactId(archive.sourcePath)
+        subject_id: emittedArtifactIds.has(artifactIdFor(archive.sourcePath))
+          ? artifactIdFor(archive.sourcePath)
           : repositoryId,
         details: {
           source_path: archive.sourcePath,
@@ -873,8 +868,8 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
     const orderedMembers = [...local.members].sort((a, b) =>
       compareCodePoints(a.virtualSourcePath, b.virtualSourcePath));
     for (const member of orderedMembers) {
-      const memberArtifactId = localArtifactId(member.virtualSourcePath);
-      const archiveArtifactId = localArtifactId(member.parentArchivePath);
+      const memberArtifactId = artifactIdFor(member.virtualSourcePath);
+      const archiveArtifactId = artifactIdFor(member.parentArchivePath);
       if (!emittedArtifactIds.has(memberArtifactId) || !emittedArtifactIds.has(archiveArtifactId)) {
         // An edge whose endpoints are not both emitted would not resolve, so the
         // gap is reported instead of asserted.
@@ -946,8 +941,8 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
       || compareCodePoints(a.sourcePath ?? "", b.sourcePath ?? "")
       || compareCodePoints(a.message, b.message))) {
       const subjectId = diagnostic.sourcePath !== undefined
-        && emittedArtifactIds.has(localArtifactId(diagnostic.sourcePath))
-        ? localArtifactId(diagnostic.sourcePath)
+        && emittedArtifactIds.has(artifactIdFor(diagnostic.sourcePath))
+        ? artifactIdFor(diagnostic.sourcePath)
         : repositoryId;
       diagnostics.push({
         code: diagnostic.code,
@@ -1097,19 +1092,20 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
     // Already ordered by the interpretation pass; re-sorted here so the packet's
     // ordering guarantee does not depend on the producer of the input.
     //
-    // The subject each assertion arrives with is preserved. Interpretation decides
-    // whether a rule speaks for the repository or for one artifact, and rewriting
-    // every subject to the repository here would erase that distinction — a plan's
-    // declared status would become the whole corpus's declared status. Subjects are
-    // checked against the packet's repository and artifact IDs by validation.
+    // The subject each assertion arrived with is preserved. Rewriting every
+    // subject to the repository — which this builder used to do — collapsed
+    // "this plan declares itself WIP" into "the repository declares itself WIP",
+    // which is a different and much weaker claim. Validation below refuses an
+    // assertion whose subject is neither an emitted repository nor an emitted
+    // artifact, so preserving the subject cannot strand one.
     assertions: [...(input.interpretation?.assertions ?? [])]
       .sort((a, b) =>
-        compareCodePoints(a.subject_id, b.subject_id)
-        || compareCodePoints(a.source_path, b.source_path)
+        compareCodePoints(a.source_path, b.source_path)
         || a.source_range.start_line - b.source_range.start_line
         || compareCodePoints(a.predicate, b.predicate)
         || compareCodePoints(a.object, b.object)
-        || compareCodePoints(a.extractor_id, b.extractor_id)),
+        || compareCodePoints(a.extractor_id, b.extractor_id)
+        || compareCodePoints(a.subject_id, b.subject_id)),
   };
 
   const shell = {
@@ -1240,9 +1236,9 @@ export function validateRepositoryModelPacket(packet: RepositoryModelPacket): Re
     "every assertion cites an exact source span and a hashed source file",
     { unsupported_count: unsupportedAssertions.length }));
 
-  // An assertion may speak for the whole repository or for one artifact in it.
-  // Both are subjects this packet carries; anything else is an orphan pointing at
-  // something the reader cannot resolve.
+  // An assertion may attach to the repository as a whole or to one artifact in
+  // it. Both are emitted records in this packet, and an assertion pointing at
+  // neither would be a claim about something the consumer cannot resolve.
   const assertionSubjects = new Set<string>([
     ...payload.repositories.map((r) => r.repository_id),
     ...payload.artifacts.map((a) => a.artifact_id),
@@ -1251,7 +1247,7 @@ export function validateRepositoryModelPacket(packet: RepositoryModelPacket): Re
     (assertion) => !assertionSubjects.has(assertion.subject_id));
   checks.push(check("assertion-subject", "cross-reference", "assertions_resolve_to_a_subject",
     orphanAssertions.length === 0,
-    "every assertion attaches to a repository or artifact in this packet",
+    "every assertion attaches to a repository or an artifact in this packet",
     { orphan_count: orphanAssertions.length }));
 
   const evidenceIds = new Set(payload.evidence.map((e) => e.evidence_id));

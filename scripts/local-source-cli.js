@@ -12,8 +12,8 @@
 // Output layout under --out:
 //   bundle/                        canonical Repository Model Packet bundle
 //   local-source-manifest.json     acquisition manifest (never written in-source)
-//   corpus-index.json              machine-readable corpus projection
-//   corpus-report.md               the same projection, for a person to read
+//   corpus-index.json              machine-readable corpus intelligence projection
+//   corpus-report.md               the same projection, rendered for a person
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -33,9 +33,9 @@ const USAGE = [
   "  --omit-file PATH           load additional omit patterns from a file",
   "  --hash-max-bytes N         refuse to hash files above N bytes (default: no limit)",
   "",
-  "corpus analysis:",
+  "corpus intelligence:",
   "  --near-duplicate-threshold F   lexical similarity threshold in [0,1] (default: 0.85)",
-  "  --no-near-duplicates           skip similarity analysis; exact duplicates still report",
+  "  --no-near-duplicates           skip similarity analysis; exact duplicates still reported",
   "",
   "archive budget (all optional; conservative defaults apply):",
   "  --max-archive-bytes N      largest archive file that will be staged",
@@ -48,7 +48,6 @@ const USAGE = [
   "",
   "The source is never modified. Archive members are observed as virtual",
   "artifacts named <archive>!/<member>; nothing is extracted beside the source.",
-  "No file is ever moved, deleted, or consolidated.",
 ].join("\n");
 
 function fail(message, code = 1) {
@@ -74,23 +73,23 @@ function parseArgs(argv) {
   return { argv, flag, opt, optAll, target: argv[0] };
 }
 
+/** Parse a fractional flag in [0,1], or exit with a precise message. */
+function unitIntervalOpt(cli, name) {
+  const raw = cli.opt(name, null);
+  if (raw === null) return undefined;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0 || value > 1) {
+    fail(`${name} must be a number within [0, 1], got '${raw}'`, 2);
+  }
+  return value;
+}
+
 /** Parse a positive-integer budget flag, or exit with a precise message. */
 function numericOpt(cli, name) {
   const raw = cli.opt(name, null);
   if (raw === null) return undefined;
   const value = Number(raw);
   if (!Number.isSafeInteger(value) || value < 0) fail(`${name} must be a non-negative integer, got '${raw}'`, 2);
-  return value;
-}
-
-/** Parse a [0,1] ratio flag, or exit with a precise message. */
-function ratioOpt(cli, name) {
-  const raw = cli.opt(name, null);
-  if (raw === null) return undefined;
-  const value = Number(raw);
-  if (!Number.isFinite(value) || value < 0 || value > 1) {
-    fail(`${name} must be a number within [0,1], got '${raw}'`, 2);
-  }
   return value;
 }
 
@@ -121,27 +120,6 @@ function collectPolicy(cli) {
   return policy;
 }
 
-/** The corpus figures, phrased so a near-duplicate is never read as a duplicate. */
-function printCorpusSummary(index, skipNearDuplicates) {
-  const summary = index.summary;
-  const duplicates = `${summary.exact_duplicate_cluster_count} cluster(s), `
-    + `${summary.exact_duplicate_artifact_count} file(s), `
-    + `${summary.recoverable_duplicate_bytes} recoverable byte(s)`;
-  const threshold = index.analysis_profile.near_duplicate_threshold;
-  const candidates = skipNearDuplicates
-    ? "not analysed"
-    : `${summary.near_duplicate_candidate_count} candidate(s) at threshold ${threshold} `
-      + "(lexical similarity, not a merge recommendation)";
-
-  console.log(`  work signals     ${summary.artifacts_with_work_signals} artifact(s) declare work state`);
-  console.log(`  plans            ${summary.plan_count}`);
-  console.log(`  roadmaps         ${summary.roadmap_count}`);
-  console.log(`  WIPs             ${summary.wip_count}`);
-  console.log(`  open tasks       ${summary.open_task_count}`);
-  console.log(`  exact duplicates ${duplicates}`);
-  console.log(`  near duplicates  ${candidates}`);
-}
-
 function main() {
   const cli = parseArgs(process.argv.slice(2));
   const target = path.resolve(cli.target);
@@ -151,8 +129,6 @@ function main() {
   const model = requireBuilt(path.join(repo, "dist", "local_source_model.js"));
   const { version } = require(path.join(repo, "package.json"));
   const repositoryModel = requireBuilt(path.join(repo, "dist", "public", "repository_model.js"));
-  const corpus = requireBuilt(path.join(repo, "dist", "corpus_analysis.js"));
-  const corpusReport = requireBuilt(path.join(repo, "dist", "corpus_report.js"));
 
   const outDir = path.resolve(cli.opt("--out", path.join(os.tmpdir(), "l9-local-source-out")));
   const bundleDir = path.join(outDir, "bundle");
@@ -161,8 +137,8 @@ function main() {
   const sourceKind = cli.opt("--source-kind", "auto");
   const omitPatterns = cli.optAll("--omit");
   const omitFile = cli.opt("--omit-file", undefined);
-  const nearDuplicateThreshold = ratioOpt(cli, "--near-duplicate-threshold");
-  const skipNearDuplicates = cli.flag("--no-near-duplicates");
+  const nearDuplicateThreshold = unitIntervalOpt(cli, "--near-duplicate-threshold");
+  const nearDuplicatesEnabled = !cli.flag("--no-near-duplicates");
 
   let result;
   try {
@@ -200,19 +176,22 @@ function main() {
       target,
     );
 
-    // The corpus projection reads the observation and the packet, never the
-    // source again, so the index can never disagree with the packet it cites.
-    const index = corpus.buildCorpusIndex({
-      observation,
-      packet,
-      repositoryName: observation.sourceName,
-      ...(nearDuplicateThreshold !== undefined ? { nearDuplicateThreshold } : {}),
-      ...(skipNearDuplicates ? { skipNearDuplicates: true } : {}),
+    // Built while the staged member bytes are still on disk: the similarity pass
+    // reads an archive member's text exactly as it reads a physical file's.
+    const corpus = model.buildLocalSourceCorpus(result, {
+      nearDuplicates: {
+        enabled: nearDuplicatesEnabled,
+        ...(nearDuplicateThreshold !== undefined ? { threshold: nearDuplicateThreshold } : {}),
+      },
     });
-    const indexPath = path.join(outDir, "corpus-index.json");
-    const reportPath = path.join(outDir, "corpus-report.md");
-    fs.writeFileSync(indexPath, `${corpus.canonicalCorpusJson(index)}\n`, "utf8");
-    fs.writeFileSync(reportPath, corpusReport.renderCorpusReport(index), "utf8");
+    const corpusPaths = model.writeLocalSourceCorpus(
+      corpus,
+      {
+        indexPath: path.join(outDir, "corpus-index.json"),
+        reportPath: path.join(outDir, "corpus-report.md"),
+      },
+      target,
+    );
 
     const held = observation.archives.filter((archive) => !archive.expanded);
     const unsupportedEncodings = observation.diagnostics.filter(
@@ -239,9 +218,24 @@ function main() {
     console.log(`  semantic_hash    ${emitted.semanticHash}`);
     console.log(`  bundle           ${emitted.bundleRoot}`);
     console.log(`  manifest         ${manifestPath}`);
-    printCorpusSummary(index, skipNearDuplicates);
-    console.log(`  corpus index     ${indexPath}`);
-    console.log(`  corpus report    ${reportPath}`);
+
+    const summary = corpus.index.summary;
+    console.log(`  work signals     ${summary.artifacts_with_work_signals} artifact(s) with work signals`);
+    console.log(`  open tasks       ${summary.open_task_count} (${summary.completed_task_count} completed)`);
+    console.log(`  declared kinds   ${summary.plan_count} plan(s), ${summary.roadmap_count} roadmap(s)`);
+    console.log(`  declared status  ${summary.wip_count} WIP, ${summary.draft_count} draft, ${summary.blocked_count} blocked`);
+    console.log(
+      `  exact duplicates ${summary.exact_duplicate_cluster_count} cluster(s), `
+      + `${summary.exact_duplicate_artifact_count} file(s), ${summary.recoverable_duplicate_bytes} recoverable byte(s)`,
+    );
+    console.log(
+      `  near-duplicates  ${summary.near_duplicate_candidate_count} candidate(s) at threshold `
+      + `${corpus.index.analysis_profile.near_duplicate_threshold}`
+      + `${nearDuplicatesEnabled ? "" : " (analysis disabled)"}`,
+    );
+    console.log("  near-duplicate candidates are lexical similarity only; they claim no shared topic");
+    console.log(`  corpus index     ${corpusPaths.indexPath}`);
+    console.log(`  corpus report    ${corpusPaths.reportPath}`);
     for (const archive of held) {
       console.log(`  held: ${archive.sourcePath} — ${archive.holds.map((hold) => hold.code).join(", ")}`);
     }

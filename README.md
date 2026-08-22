@@ -111,9 +111,9 @@ npm run local-source -- ~/Documents/design.md  --name design --out ./out
 ```
 
 Output is a Repository Model Packet bundle under `<out>/bundle`, an acquisition
-manifest at `<out>/local-source-manifest.json`, and the corpus projection at
-`<out>/corpus-index.json` and `<out>/corpus-report.md`. Nothing is written inside the
-observed tree.
+manifest at `<out>/local-source-manifest.json`, and the corpus intelligence projection
+described below at `<out>/corpus-index.json` and `<out>/corpus-report.md`. None of them
+is ever written inside the observed tree.
 
 What the observation guarantees:
 
@@ -151,38 +151,33 @@ What this trusts and refuses, and its known limits, is stated in
 Moving off `--local-files`:
 [`docs/migrations/local-files-to-local-source.md`](docs/migrations/local-files-to-local-source.md).
 
-### Corpus intelligence: what the documents declare, and which are the same
+### Corpus intelligence
 
-Acquisition answers *what exists*. The corpus layer (ADR-037) answers three more
-questions about the same observation, and stops there.
+The same run also answers what the corpus *says about itself* (ADR-037), in two
+deliberately separate epistemic classes.
 
-**What each document declares about its own work.** Titles, headings, an explicit
-`Status: WIP`, a `kind: plan`, checkbox and `TODO:` tasks, milestones, and declared
-`Depends on:` / `Blocked by:` / `Supersedes:` relations — each attached to *that
-document's* artifact and citing the exact line that states it. An archive member's
-claims attach to the member, not to the archive. Nothing is inferred: no status from
-a file's age or path, no kind from the theme of the body, no task from the word
-"todo" in a sentence. A document that contradicts itself keeps both declarations.
+- **Work intelligence.** Each `.md`, `.markdown`, `.txt` and `.rst` document is read for
+  the things it declares outright — its title and headings, an explicit `Status:` or
+  frontmatter `status`, a declared kind, checkbox and `TODO:` tasks, `Milestone:` lines,
+  and `Depends on:` / `Blocked by:` / `See also:` / `Supersedes:` / `Superseded by:`
+  pointers. Each claim attaches to the *artifact that made it*, including a member of a
+  nested archive, and cites the exact line. Nothing is inferred from file age, path,
+  TODO count, or the absence of a signal, and a document that contradicts itself keeps
+  both claims.
+- **Exact duplicates — a fact.** Two artifacts are duplicates when both carry a known
+  content hash and those hashes are equal. Clusters span physical files and archive
+  members freely, and are rendered as `DUPLICATE_OF` relations to a deterministic
+  cluster representative. The representative is a rendering anchor, **not** a
+  recommendation about which copy to keep.
+- **Near-duplicates — a candidate, not a conclusion.** `text-near-duplicate/v1` scores
+  the exact Jaccard overlap of unique 5-token shingles over normalized text, default
+  threshold `0.85` (`--near-duplicate-threshold F`, or `--no-near-duplicates` to skip).
+  A candidate means two documents share wording. It does **not** mean they share a
+  topic, a project or an owner, that one supersedes the other, or that anything should
+  be merged or deleted.
 
-**Which files are byte-identical.** Exact duplicate clusters span physical files and
-virtual archive members together, so a file, its copy two folders over, and its copy
-inside a nested ZIP land in one cluster. Each cluster names a *representative* — a
-deterministic rendering anchor, chosen by shortest path. It is not a recommendation
-about which copy to keep.
-
-**Which pairs share wording.** Deterministic lexical similarity (exact Jaccard over
-5-token shingles, default threshold 0.85) reported as *candidates for a reader*.
-A candidate is never a claim that two documents share a topic or a project, and never
-a suggestion to merge or delete anything.
-
-```bash
-npm run local-source -- ./corpus --near-duplicate-threshold 0.7
-npm run local-source -- ./corpus --no-near-duplicates   # exact duplicates still report
-```
-
-No file is moved, deleted, or consolidated. Topic clustering, embeddings, LLM
-interpretation, prioritization and roadmap generation are explicitly not part of v1.
-Full semantics: [`docs/corpus-intelligence.md`](docs/corpus-intelligence.md).
+Nothing is moved, deleted, rewritten, consolidated or prioritized. Full semantics:
+[`docs/corpus-intelligence.md`](docs/corpus-intelligence.md).
 
 ### Legacy archive materialization
 

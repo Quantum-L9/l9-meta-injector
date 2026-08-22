@@ -107,13 +107,14 @@ export function loadMetaSchema(filePath: string): MetaSchema {
 /**
  * Group records by content_hash to surface duplicate clusters across the whole tree.
  *
- * Equality here is byte equality and nothing else: two records join a cluster
- * because their content hashes match, never because their names look alike. A
- * record with no hash cannot be known to duplicate anything and is left out.
+ * Equivalence is byte equality and nothing else: two records belong to the same
+ * cluster when both carry a known content hash and those hashes are identical.
+ * Names, locations and sizes never decide membership, which is what lets a
+ * physical file and an archive member land in one cluster.
  *
- * Ordering is code-point throughout. `localeCompare` would let the host's locale
- * decide the order of a cluster's paths and therefore which one is reported
- * first, which is not something a corpus identity may depend on.
+ * Ordering is code-point throughout. `localeCompare` used to decide both the
+ * path order and the shortest-path tie-break, which made the emitted cluster —
+ * and anything derived from it — depend on the host's locale.
  */
 export function buildDuplicateClusters(records: InventoryRecord[]): DuplicateCluster[] {
   const byHash = new Map<string, InventoryRecord[]>();
@@ -136,8 +137,6 @@ export function buildDuplicateClusters(records: InventoryRecord[]): DuplicateClu
       paths,
     });
   }
-  // Largest recoverable first, then widest cluster, then the content hash so two
-  // clusters of equal size and count still have one fixed order.
   return clusters.sort((a, b) =>
     b.wasted_bytes - a.wasted_bytes
     || b.count - a.count

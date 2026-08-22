@@ -1,9 +1,9 @@
-/** Code-point ordering. Never locale-aware: ordering must not vary by environment. */
+/** Order two strings by Unicode code point. Never locale-aware. */
 export declare function compareCodePoints(a: string, b: string): number;
 /**
- * The two members of an unordered pair, in a fixed order.
+ * Order a pair of ids so that a symmetric relation has one canonical spelling.
  *
- * A pair's identity must not depend on which side the caller happened to iterate
- * first, or the same relationship would hash two ways.
+ * A near-duplicate candidate between two artifacts is the same candidate whichever
+ * one is read first, so its identity must not depend on iteration order.
  */
 export declare function canonicalPair(a: string, b: string): [string, string];

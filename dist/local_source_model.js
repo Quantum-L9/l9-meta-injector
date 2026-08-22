@@ -38,8 +38,10 @@ exports.toRepositoryModelLocalSource = toRepositoryModelLocalSource;
 exports.canonicalBlockReason = canonicalBlockReason;
 exports.observeLocalSourceModel = observeLocalSourceModel;
 exports.withLocalSourceModel = withLocalSourceModel;
+exports.buildLocalSourceCorpus = buildLocalSourceCorpus;
 exports.buildLocalSourceManifest = buildLocalSourceManifest;
 exports.writeLocalSourceManifest = writeLocalSourceManifest;
+exports.writeLocalSourceCorpus = writeLocalSourceCorpus;
 // local_source_model.ts — Repository Model Packet egress for a local source.
 //
 // Joins the two halves: `acquireLocalSource` produces a read-only observation of
@@ -62,6 +64,8 @@ const path = __importStar(require("node:path"));
 const interpretation_1 = require("./interpretation");
 const extractors_1 = require("./extractors");
 const local_source_1 = require("./local_source");
+const corpus_analysis_1 = require("./corpus_analysis");
+const corpus_report_1 = require("./corpus_report");
 const repository_model_1 = require("./repository_model");
 /** Schema of the acquisition manifest written beside a bundle. */
 exports.LOCAL_SOURCE_MANIFEST_SCHEMA = "l9.local-source-manifest/v1";
@@ -163,6 +167,23 @@ function withLocalSourceModel(input, body) {
     }
 }
 /**
+ * Derive the corpus index and its human report from an already-built model.
+ *
+ * Everything here is a projection of the observation, the packet and the two
+ * duplicate analyses. The staged archive-member bytes must still be on disk,
+ * because the similarity pass reads member text the same way it reads a physical
+ * file — so call this before `observation.dispose()`.
+ */
+function buildLocalSourceCorpus(result, options = {}) {
+    const index = (0, corpus_analysis_1.buildCorpusIndex)({
+        acquisition: result.observation,
+        packet: result.packet,
+        ...(result.interpretation ? { interpretation: result.interpretation } : {}),
+        ...(options.nearDuplicates ? { nearDuplicates: options.nearDuplicates } : {}),
+    });
+    return { index, indexJson: (0, corpus_analysis_1.renderCorpusIndex)(index), report: (0, corpus_report_1.renderCorpusReport)(index) };
+}
+/**
  * Replace any manifest value that resembles a credential.
  *
  * The manifest carries paths, digests and counts, never file content, so this
@@ -227,22 +248,37 @@ function buildLocalSourceManifest(observation, options) {
     return scrubSecretValues(manifest).manifest;
 }
 /**
- * Write the acquisition manifest to a tool-owned output location.
+ * Resolve an output path, refusing anything inside the observed source tree.
  *
- * Refuses to write inside the observed source tree: an adjacent manifest would
- * mutate the source and would be re-observed by the next run.
+ * An output written beside the source would mutate what was just observed, and
+ * the next run would then observe this run's output as if it were user content.
  */
-function writeLocalSourceManifest(manifest, targetPath, sourceRoot) {
+function resolveOutsideSource(targetPath, sourceRoot, what) {
     const absoluteTarget = path.resolve(targetPath);
     const absoluteSource = path.resolve(sourceRoot);
     const sourceDirectory = fs.statSync(absoluteSource).isDirectory()
         ? absoluteSource
         : path.dirname(absoluteSource);
     if (absoluteTarget === sourceDirectory || absoluteTarget.startsWith(sourceDirectory + path.sep)) {
-        throw new Error(`local-source: refusing to write the acquisition manifest inside the observed source tree: ${absoluteTarget}`);
+        throw new Error(`local-source: refusing to write ${what} inside the observed source tree: ${absoluteTarget}`);
     }
+    return absoluteTarget;
+}
+/** Write the acquisition manifest to a tool-owned output location. */
+function writeLocalSourceManifest(manifest, targetPath, sourceRoot) {
+    const absoluteTarget = resolveOutsideSource(targetPath, sourceRoot, "the acquisition manifest");
     fs.mkdirSync(path.dirname(absoluteTarget), { recursive: true });
     fs.writeFileSync(absoluteTarget, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
     return absoluteTarget;
+}
+/** Write `corpus-index.json` and `corpus-report.md` outside the observed source. */
+function writeLocalSourceCorpus(outputs, targets, sourceRoot) {
+    const indexPath = resolveOutsideSource(targets.indexPath, sourceRoot, "the corpus index");
+    const reportPath = resolveOutsideSource(targets.reportPath, sourceRoot, "the corpus report");
+    fs.mkdirSync(path.dirname(indexPath), { recursive: true });
+    fs.writeFileSync(indexPath, outputs.indexJson, "utf8");
+    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+    fs.writeFileSync(reportPath, outputs.report, "utf8");
+    return { indexPath, reportPath };
 }
 //# sourceMappingURL=local_source_model.js.map

@@ -15,7 +15,10 @@ import {
   pythonRouteObservationExtractor,
   repositoryStatusExtractor,
 } from "./prose";
-import { documentStructureExtractor, workIntelligenceExtractor } from "./work_intelligence";
+import {
+  documentStructureExtractor,
+  workIntelligenceExtractor,
+} from "./work_intelligence";
 
 export {
   contractInvariantsExtractor,
@@ -28,8 +31,11 @@ export {
   repositoryStatusExtractor,
 } from "./prose";
 export {
-  documentStructureExtractor, workIntelligenceExtractor,
-  WORK_INTELLIGENCE_PREDICATES, WORK_KIND_VOCABULARY, WORK_STATUS_VOCABULARY,
+  WORK_KIND_VOCABULARY,
+  WORK_PREDICATES,
+  WORK_STATUS_VOCABULARY,
+  documentStructureExtractor,
+  workIntelligenceExtractor,
 } from "./work_intelligence";
 
 /** Every extractor in the current interpretation profile. */

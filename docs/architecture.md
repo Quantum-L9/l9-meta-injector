@@ -109,38 +109,45 @@ Migration from `--local-files`: `docs/migrations/local-files-to-local-source.md`
 
 ## Corpus intelligence
 
-`src/corpus_analysis.ts` and `src/corpus_report.ts` derive analysis from an acquisition
-observation and the packet built from it (ADR-037). They read no source files of their
-own, so a projection can never disagree with the packet it cites.
+`src/corpus_analysis.ts` and `src/corpus_report.ts` derive a corpus view from an
+acquisition and its packet (ADR-037). Analysis is a fourth layer, not a widening of
+the three below it.
 
 ```text
-observation + packet -> exact duplicate projection (fact)
-                     -> near-duplicate candidates  (candidate analysis)
-                     -> l9.corpus-index/v1 -> corpus-report.md
+acquisition      -> what files exist and what bytes they hold
+interpretation   -> what each file declares, cited to a hashed span
+corpus analysis  -> exact duplicate clusters + near-duplicate candidates
+projection       -> corpus-index.json (machine) + corpus-report.md (human)
 ```
 
-Three layers, three epistemic classes, kept separate on purpose:
+Assertion subjects are scoped. `Extractor.subjectScope` is `repository` (the default,
+and what every pre-existing extractor keeps) or `artifact`, and
+`buildRepositoryModelPacket` preserves the subject rather than rewriting every
+assertion onto the repository. Producer validation accepts a repository id or an
+emitted artifact id and still rejects anything else. Artifact identity comes from one
+exported helper, `repositoryModelArtifactId`, shared by packet building and
+interpretation so the two cannot drift. The wire contract stays at `1.1.0`; the bound
+consumer accepts artifact subjects with no translation shim.
 
-- **Interpretation** (`src/interpretation.ts`) emits assertions scoped to a repository
-  or to a single artifact. `Extractor.subjectScope` decides which; `repository` is the
-  default, so widening the interpreter never re-points an existing rule's claims.
-  Artifact subjects come from `artifactIdFor`, the one identity function packet building
-  also uses, keyed on the same relative path — a virtual locator for an archive member.
-- **Exact duplicates** are equal content hashes and nothing else. Clustering runs over
-  the unified record set, so physical files and archive members cluster together.
-  `DUPLICATE_OF` is rendered in the corpus index only: `RepositoryModelEdgeType` is a
-  vocabulary shared with topology and does not own a duplicate edge.
-- **Near-duplicate candidates** (`text-near-duplicate/v1`) are exact Jaccard over unique
-  5-token shingles of normalized text at a stated threshold. Deterministic, and never a
-  claim of shared topic, shared project, supersession, or redundancy.
+`src/extractors/work_intelligence.ts` adds two artifact-scoped extractors over UTF-8
+`.md`, `.markdown`, `.txt` and `.rst`: `document-structure/v1` (titles, headings) and
+`work-intelligence/v1` (status, kind, tasks, milestones, declared relations). Every
+rule reads a form the author chose deliberately; none reads file age, path, TODO count
+or the absence of a signal. The interpretation profile is `1.1.0`.
 
-A cluster's representative is a rendering anchor chosen by shortest path, never a
-recommendation about which copy to keep. No file is moved, deleted, or consolidated.
+Exact duplicates are content-hash equality over the unified record set, so a physical
+file and a member of a nested archive can share a cluster. `DUPLICATE_OF` is rendered
+in the corpus index rather than in the packet, because `RepositoryModelEdgeType` is the
+consumer's vocabulary and does not own that edge. Near-duplicate candidates are
+`text-near-duplicate/v1` — exact Jaccard over unique 5-token shingles, default
+threshold `0.85` — and are never relabelled as duplicates, topics or recommendations.
 
-The corpus index carries its own canonical serializer: the packet's is integer-only by
-wire contract, and a similarity score is fractional.
+The index is a projection: every artifact, assertion, relation endpoint and candidate
+endpoint resolves against the packet, and the report reads the index and nothing else.
+Both are byte-deterministic, with code-point key ordering, no wall clock and no
+absolute or scratch path.
 
-Semantics and vocabulary: `docs/corpus-intelligence.md`.
+Semantics, vocabulary and non-goals: `docs/corpus-intelligence.md`.
 
 ## Distribution
 

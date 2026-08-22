@@ -284,25 +284,18 @@ describe("encoding safety", () => {
       .sort();
     expect(unsupported).toEqual(["README.md", "invalid.py"]);
 
-    // A known-text extension does not buy an interpretation pass: README.md and
-    // .py are both claimed by extractors, and both are refused on their bytes.
+    // A known-text extension does not buy an interpretation pass. README.md, the
+    // .py and the .txt are all claimed by extractors, and all three are refused
+    // on their bytes rather than on their names.
     const interpretedPaths = new Set(result.interpretation?.assertions.map((a) => a.source_path) ?? []);
     expect(interpretedPaths.has("README.md")).toBe(false);
     expect(interpretedPaths.has("invalid.py")).toBe(false);
+    expect(interpretedPaths.has("binary.txt")).toBe(false);
     const refused = (result.interpretation?.diagnostics ?? [])
       .filter((d) => d.code === "interpretation.unsupported_encoding")
       .map((d) => d.source_path)
       .sort();
-    expect(refused).toEqual(["README.md", "invalid.py"]);
-
-    // A `.txt` holding image bytes is claimed by the text extractors and refused
-    // on its bytes, but it is not an encoding fault — it is simply not text, and
-    // it is reported under its own code so the two never blur together.
-    const binary = (result.interpretation?.diagnostics ?? [])
-      .filter((d) => d.code === "interpretation.binary_detected")
-      .map((d) => d.source_path);
-    expect(binary).toEqual(["binary.txt"]);
-    expect(interpretedPaths.has("binary.txt")).toBe(false);
+    expect(refused).toEqual(["README.md", "binary.txt", "invalid.py"]);
   });
 
   test("a UTF-8 BOM file is valid and stays observable", () => {

@@ -189,15 +189,15 @@
     },
     {
       "capability": "artifact_scoped_assertions",
-      "source": "src/interpretation.ts",
+      "source": "src/interpretation.ts and src/repository_model.ts",
       "public_entrypoint": "l9-meta-injector/repository-model",
       "tests": [
         "tests/artifact_scoped_assertions.test.ts",
-        "tests/repository_model.test.ts",
-        "tests/corpus_intelligence.test.ts"
+        "tests/interpretation.test.ts",
+        "tests/repository_model.test.ts"
       ],
       "validators": [
-        "npm run check:authority",
+        "npm run check:api",
         "npm run validate"
       ],
       "stability": "stable"
@@ -205,42 +205,27 @@
     {
       "capability": "work_intelligence_extraction",
       "source": "src/extractors/work_intelligence.ts",
-      "public_entrypoint": "l9-meta-injector/advanced",
+      "public_entrypoint": null,
       "tests": [
-        "tests/work_intelligence.test.ts",
-        "tests/corpus_intelligence.test.ts"
+        "tests/work_intelligence.test.ts"
       ],
       "validators": [
-        "npm run check:api",
         "npm run validate"
       ],
-      "stability": "experimental"
+      "stability": "stable"
     },
     {
       "capability": "corpus_duplicate_and_candidate_analysis",
-      "source": "src/corpus_analysis.ts",
-      "public_entrypoint": "l9-meta-injector/advanced",
+      "source": "src/corpus_analysis.ts and src/corpus_report.ts and src/ordering.ts",
+      "public_entrypoint": null,
       "tests": [
-        "tests/corpus_intelligence.test.ts"
+        "tests/corpus_intelligence.test.ts",
+        "tests/local_source_cli.test.ts"
       ],
       "validators": [
-        "npm run check:api",
         "npm run validate"
       ],
-      "stability": "experimental"
-    },
-    {
-      "capability": "corpus_index_and_report_projection",
-      "source": "src/corpus_report.ts",
-      "public_entrypoint": "l9-meta-injector/advanced",
-      "tests": [
-        "tests/corpus_intelligence.test.ts"
-      ],
-      "validators": [
-        "npm run check:api",
-        "npm run validate"
-      ],
-      "stability": "experimental"
+      "stability": "stable"
     }
   ]
 }

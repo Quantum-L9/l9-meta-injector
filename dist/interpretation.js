@@ -34,6 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DEFAULT_MAX_FILE_BYTES = exports.MAX_EXCERPT_LENGTH = exports.INTERPRETATION_PROFILE_VERSION = exports.INTERPRETATION_PROFILE_ID = void 0;
+exports.extractorSubjectScope = extractorSubjectScope;
 exports.isSecretCandidatePath = isSecretCandidatePath;
 exports.looksSecret = looksSecret;
 exports.boundExcerpt = boundExcerpt;
@@ -63,7 +64,16 @@ const encoding_1 = require("./encoding");
 const repository_model_1 = require("./repository_model");
 /** Identity of the interpretation policy. Bumped when extraction rules change. */
 exports.INTERPRETATION_PROFILE_ID = "meta-injector-repository-interpretation";
+/**
+ * 1.1.0 adds artifact-scoped assertion subjects and the deterministic
+ * work-intelligence extractors. Both change what this profile observes, so the
+ * version — and through it every packet's semantic identity — moves with them.
+ */
 exports.INTERPRETATION_PROFILE_VERSION = "1.1.0";
+/** The scope an extractor declares, defaulting to the pre-scope behavior. */
+function extractorSubjectScope(extractor) {
+    return extractor.subjectScope ?? "repository";
+}
 // ───────────────────────────── secret safety ─────────────────────────────
 /**
  * Files never opened for interpretation.
@@ -116,21 +126,6 @@ function boundExcerpt(value) {
         ? collapsed
         : `${collapsed.slice(0, exports.MAX_EXCERPT_LENGTH - 1)}…`;
 }
-/** Why a file the profile claimed could not be interpreted, by probe status. */
-const ENCODING_REFUSAL_CODES = {
-    binary: "interpretation.binary_detected",
-    invalid: "interpretation.unsupported_encoding",
-    unreadable: "interpretation.unreadable",
-};
-const ENCODING_REFUSAL_MESSAGES = {
-    binary: "file holds binary content and was not interpreted",
-    invalid: "file is not valid UTF-8 text and was not interpreted",
-    unreadable: "file could not be read",
-};
-/** An extractor without a declared scope speaks for the repository. */
-function subjectScopeOf(extractor) {
-    return extractor.subjectScope ?? "repository";
-}
 function profileHash(extractors) {
     return (0, repository_model_1.semanticHash)({
         id: exports.INTERPRETATION_PROFILE_ID,
@@ -143,7 +138,10 @@ function profileHash(extractors) {
             .map((extractor) => ({
             id: extractor.id,
             version: extractor.version,
-            subject_scope: subjectScopeOf(extractor),
+            // Scope is part of what an extractor observes, not just where the claim
+            // is filed: the same predicate against a repository and against an
+            // artifact are different assertions.
+            subject_scope: extractorSubjectScope(extractor),
         }))
             .sort((left, right) => (0, repository_model_1.compareCodePoints)(left.id, right.id)),
     });
@@ -155,7 +153,8 @@ function compareAssertions(left, right) {
         left.source_range.end_line - right.source_range.end_line ||
         (0, repository_model_1.compareCodePoints)(left.predicate, right.predicate) ||
         (0, repository_model_1.compareCodePoints)(left.object, right.object) ||
-        (0, repository_model_1.compareCodePoints)(left.extractor_id, right.extractor_id));
+        (0, repository_model_1.compareCodePoints)(left.extractor_id, right.extractor_id) ||
+        (0, repository_model_1.compareCodePoints)(left.subject_id, right.subject_id));
 }
 function compareDiagnostics(left, right) {
     return ((0, repository_model_1.compareCodePoints)(left.code, right.code) ||
@@ -180,11 +179,18 @@ function interpretRepository(input) {
         .sort((left, right) => (0, repository_model_1.compareCodePoints)(left.relative_path, right.relative_path));
     const observedPaths = new Set(input.inventory.records.map((record) => record.relative_path));
     const pathExists = (relativePath) => observedPaths.has(relativePath.replace(/^\.\//, ""));
-    // Artifact subjects are derived with the packet builder's own identity function,
-    // from the same relative path it will key the artifact record on. For an archive
-    // member that path is the virtual locator, so a member's assertions point at the
-    // member's artifact rather than at the archive that carried it.
-    const artifactSubjectFor = (sourcePath) => (0, repository_model_1.artifactIdFor)(input.subjectId, sourcePath);
+    // Subject per observed path, computed once. A virtual archive member resolves
+    // to its own artifact — `Bundle.zip!/plans/a.md`, never the outer archive and
+    // never the staged scratch copy, neither of which is what declared anything.
+    const artifactSubjects = new Map();
+    const artifactSubjectFor = (sourcePath) => {
+        const known = artifactSubjects.get(sourcePath);
+        if (known !== undefined)
+            return known;
+        const subject = (0, repository_model_1.repositoryModelArtifactId)(input.subjectId, sourcePath);
+        artifactSubjects.set(sourcePath, subject);
+        return subject;
+    };
     for (const record of records) {
         const sourcePath = record.relative_path;
         const claiming = extractors.filter((extractor) => extractor.matches(sourcePath));
@@ -215,14 +221,14 @@ function interpretRepository(input) {
         // excerpts do not match the bytes their hash claims to cite.
         const encoding = (0, encoding_1.probeFileEncoding)(absolute);
         if (encoding.status !== "utf8") {
-            // Three different reasons a file cannot be interpreted, reported as three
-            // codes. Binary content is not a broken encoding — a `.txt` holding image
-            // bytes is doing nothing wrong, it is simply not text — and collapsing the
-            // two would make an inventory of encoding problems misleading.
             diagnostics.push({
-                code: ENCODING_REFUSAL_CODES[encoding.status],
+                code: encoding.status === "unreadable"
+                    ? "interpretation.unreadable"
+                    : "interpretation.unsupported_encoding",
                 severity: "warning",
-                message: `${ENCODING_REFUSAL_MESSAGES[encoding.status]}: ${encoding.reason}`,
+                message: encoding.status === "unreadable"
+                    ? `file could not be read: ${encoding.reason}`
+                    : `file is not valid UTF-8 text and was not interpreted: ${encoding.reason}`,
                 source_path: sourcePath,
             });
             continue;
@@ -243,7 +249,7 @@ function interpretRepository(input) {
         // Hash the text actually interpreted, so evidence binds to what was parsed.
         const contentHash = (0, repository_model_1.sha256TextPrefixed)(content);
         for (const extractor of claiming) {
-            const subjectId = subjectScopeOf(extractor) === "artifact"
+            const subjectId = extractorSubjectScope(extractor) === "artifact"
                 ? artifactSubjectFor(sourcePath)
                 : input.subjectId;
             let drafts;
@@ -289,6 +295,9 @@ function interpretRepository(input) {
                     });
                     continue;
                 }
+                // The subject is part of assertion identity: the same predicate about a
+                // repository and about one of its files are two different claims, and
+                // they must not collide on one id.
                 const identity = {
                     subject_id: subjectId,
                     predicate: draft.predicate,

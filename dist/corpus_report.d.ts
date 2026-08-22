@@ -1,9 +1,9 @@
 import { CorpusIndex } from "./corpus_analysis";
 /**
- * Render a corpus index as Markdown.
+ * Render the report.
  *
- * Deterministic: the same index always produces the same bytes. No timestamp is
- * emitted, because a generation time would make every run differ while nothing
- * about the corpus had changed.
+ * Section order, row order and wording are fixed, so re-rendering the same index
+ * produces the same bytes. No timestamp is written: an observation instant is
+ * operational, and putting one here would make every regeneration a diff.
  */
 export declare function renderCorpusReport(index: CorpusIndex): string;

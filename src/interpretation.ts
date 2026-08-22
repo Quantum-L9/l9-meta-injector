@@ -20,11 +20,22 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { InventoryResult } from "./inventory";
-import { EncodingStatus, probeFileEncoding } from "./encoding";
-import { artifactIdFor, compareCodePoints, semanticHash, sha256TextPrefixed, stableId } from "./repository_model";
+import { probeFileEncoding } from "./encoding";
+import {
+  compareCodePoints,
+  repositoryModelArtifactId,
+  semanticHash,
+  sha256TextPrefixed,
+  stableId,
+} from "./repository_model";
 
 /** Identity of the interpretation policy. Bumped when extraction rules change. */
 export const INTERPRETATION_PROFILE_ID = "meta-injector-repository-interpretation";
+/**
+ * 1.1.0 adds artifact-scoped assertion subjects and the deterministic
+ * work-intelligence extractors. Both change what this profile observes, so the
+ * version — and through it every packet's semantic identity — moves with them.
+ */
 export const INTERPRETATION_PROFILE_VERSION = "1.1.0";
 
 /**
@@ -97,9 +108,9 @@ export interface InterpretationResult {
 
 export interface ExtractorFileInput {
   /**
-   * Subject the assertions attach to, already resolved for this extractor's scope:
-   * the repository subject (`repo:golden-repo`) for a repository-scoped extractor,
-   * this file's artifact ID (`artifact:<hash>`) for an artifact-scoped one.
+   * Subject the assertions attach to, already resolved for the extractor's own
+   * scope: the repository id for a repository-scoped extractor, this file's
+   * artifact id for an artifact-scoped one.
    */
   subjectId: string;
   /** Repository-relative POSIX path. Never absolute: identity must be portable. */
@@ -129,13 +140,16 @@ export interface AssertionDraft {
 }
 
 /**
- * Whether an extractor's assertions describe the repository or one artifact.
+ * What an extractor's assertions are *about*.
  *
- * Repository scope is the default and the historical behavior: a rule that reads
- * `README.md` to learn the repository's declared status speaks for the whole
- * repository. Artifact scope is for rules whose claim is about the file itself —
- * this plan is a draft, this note lists these tasks — where attaching the claim to
- * the repository would be a category error.
+ * `repository` — the file evidences something about the repository as a whole
+ * (its declared status, its manifest, its canonical authority list).
+ * `artifact` — the file evidences something about *itself* (this plan is a WIP,
+ * this note lists these tasks).
+ *
+ * The distinction is not cosmetic. A corpus of a thousand documents that all
+ * report their status against one repository subject says nothing about which
+ * document is which; the same claims against artifact subjects are a work map.
  */
 export type ExtractorSubjectScope = "repository" | "artifact";
 
@@ -143,15 +157,21 @@ export interface Extractor {
   id: string;
   version: string;
   /**
-   * Defaults to `repository`. An existing extractor keeps repository scope unless
-   * it opts in here, so widening the interpreter never silently re-points claims
-   * that were written to describe the repository.
+   * Scope of this extractor's assertion subjects. Absent means `repository`,
+   * which is what every extractor written before the scope existed meant: an
+   * extractor never silently changes scope because the interpreter learned to
+   * support both.
    */
   subjectScope?: ExtractorSubjectScope;
   /** True when this extractor claims the file. Path-based and side-effect free. */
   matches(sourcePath: string): boolean;
   /** Parse and report. Must not throw on malformed input; return [] instead. */
   extract(input: ExtractorFileInput): AssertionDraft[];
+}
+
+/** The scope an extractor declares, defaulting to the pre-scope behavior. */
+export function extractorSubjectScope(extractor: Extractor): ExtractorSubjectScope {
+  return extractor.subjectScope ?? "repository";
 }
 
 // ───────────────────────────── secret safety ─────────────────────────────
@@ -219,9 +239,9 @@ export interface InterpretRepositoryInput {
   /** Repository root the inventory was taken from. */
   root: string;
   /**
-   * The repository subject, e.g. `repo:golden-repo`. Repository-scoped extractors
-   * attach to it directly; artifact-scoped ones attach to artifact IDs derived
-   * from it, so this value must be the same repository ID the packet will carry.
+   * Repository subject, e.g. `repo:golden-repo`. Repository-scoped extractors
+   * attach their assertions here; artifact-scoped ones attach to the artifact
+   * derived from this same id, so both stay inside one identity domain.
    */
   subjectId: string;
   inventory: InventoryResult;
@@ -232,24 +252,6 @@ export interface InterpretRepositoryInput {
    */
   extractors: Extractor[];
   maxFileBytes?: number;
-}
-
-/** Why a file the profile claimed could not be interpreted, by probe status. */
-const ENCODING_REFUSAL_CODES: Record<Exclude<EncodingStatus, "utf8">, string> = {
-  binary: "interpretation.binary_detected",
-  invalid: "interpretation.unsupported_encoding",
-  unreadable: "interpretation.unreadable",
-};
-
-const ENCODING_REFUSAL_MESSAGES: Record<Exclude<EncodingStatus, "utf8">, string> = {
-  binary: "file holds binary content and was not interpreted",
-  invalid: "file is not valid UTF-8 text and was not interpreted",
-  unreadable: "file could not be read",
-};
-
-/** An extractor without a declared scope speaks for the repository. */
-function subjectScopeOf(extractor: Extractor): ExtractorSubjectScope {
-  return extractor.subjectScope ?? "repository";
 }
 
 function profileHash(extractors: Extractor[]): string {
@@ -264,7 +266,10 @@ function profileHash(extractors: Extractor[]): string {
       .map((extractor) => ({
         id: extractor.id,
         version: extractor.version,
-        subject_scope: subjectScopeOf(extractor),
+        // Scope is part of what an extractor observes, not just where the claim
+        // is filed: the same predicate against a repository and against an
+        // artifact are different assertions.
+        subject_scope: extractorSubjectScope(extractor),
       }))
       .sort((left, right) => compareCodePoints(left.id, right.id)),
   });
@@ -278,7 +283,8 @@ function compareAssertions(left: InterpretedAssertion, right: InterpretedAsserti
     left.source_range.end_line - right.source_range.end_line ||
     compareCodePoints(left.predicate, right.predicate) ||
     compareCodePoints(left.object, right.object) ||
-    compareCodePoints(left.extractor_id, right.extractor_id)
+    compareCodePoints(left.extractor_id, right.extractor_id) ||
+    compareCodePoints(left.subject_id, right.subject_id)
   );
 }
 
@@ -315,13 +321,17 @@ export function interpretRepository(input: InterpretRepositoryInput): Interpreta
   const observedPaths = new Set(input.inventory.records.map((record) => record.relative_path));
   const pathExists = (relativePath: string): boolean =>
     observedPaths.has(relativePath.replace(/^\.\//, ""));
-
-  // Artifact subjects are derived with the packet builder's own identity function,
-  // from the same relative path it will key the artifact record on. For an archive
-  // member that path is the virtual locator, so a member's assertions point at the
-  // member's artifact rather than at the archive that carried it.
-  const artifactSubjectFor = (sourcePath: string): string =>
-    artifactIdFor(input.subjectId, sourcePath);
+  // Subject per observed path, computed once. A virtual archive member resolves
+  // to its own artifact — `Bundle.zip!/plans/a.md`, never the outer archive and
+  // never the staged scratch copy, neither of which is what declared anything.
+  const artifactSubjects = new Map<string, string>();
+  const artifactSubjectFor = (sourcePath: string): string => {
+    const known = artifactSubjects.get(sourcePath);
+    if (known !== undefined) return known;
+    const subject = repositoryModelArtifactId(input.subjectId, sourcePath);
+    artifactSubjects.set(sourcePath, subject);
+    return subject;
+  };
 
   for (const record of records) {
     const sourcePath = record.relative_path;
@@ -354,14 +364,14 @@ export function interpretRepository(input: InterpretRepositoryInput): Interpreta
     // excerpts do not match the bytes their hash claims to cite.
     const encoding = probeFileEncoding(absolute);
     if (encoding.status !== "utf8") {
-      // Three different reasons a file cannot be interpreted, reported as three
-      // codes. Binary content is not a broken encoding — a `.txt` holding image
-      // bytes is doing nothing wrong, it is simply not text — and collapsing the
-      // two would make an inventory of encoding problems misleading.
       diagnostics.push({
-        code: ENCODING_REFUSAL_CODES[encoding.status],
+        code: encoding.status === "unreadable"
+          ? "interpretation.unreadable"
+          : "interpretation.unsupported_encoding",
         severity: "warning",
-        message: `${ENCODING_REFUSAL_MESSAGES[encoding.status]}: ${encoding.reason}`,
+        message: encoding.status === "unreadable"
+          ? `file could not be read: ${encoding.reason}`
+          : `file is not valid UTF-8 text and was not interpreted: ${encoding.reason}`,
         source_path: sourcePath,
       });
       continue;
@@ -382,7 +392,7 @@ export function interpretRepository(input: InterpretRepositoryInput): Interpreta
     const contentHash = sha256TextPrefixed(content);
 
     for (const extractor of claiming) {
-      const subjectId = subjectScopeOf(extractor) === "artifact"
+      const subjectId = extractorSubjectScope(extractor) === "artifact"
         ? artifactSubjectFor(sourcePath)
         : input.subjectId;
       let drafts: AssertionDraft[];
@@ -428,6 +438,9 @@ export function interpretRepository(input: InterpretRepositoryInput): Interpreta
           });
           continue;
         }
+        // The subject is part of assertion identity: the same predicate about a
+        // repository and about one of its files are two different claims, and
+        // they must not collide on one id.
         const identity = {
           subject_id: subjectId,
           predicate: draft.predicate,

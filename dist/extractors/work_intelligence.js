@@ -1,477 +1,646 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.WORK_KIND_VOCABULARY = exports.WORK_STATUS_VOCABULARY = exports.WORK_INTELLIGENCE_PREDICATES = exports.workIntelligenceExtractor = exports.documentStructureExtractor = void 0;
-/** Extensions whose bytes these rules know how to read. */
-const TEXT_EXTENSIONS = [".md", ".markdown", ".txt", ".rst"];
-/** Markdown heading and fence syntax applies only to these. */
-const MARKDOWN_EXTENSIONS = [".md", ".markdown"];
-function hasExtension(sourcePath, extensions) {
-    const lower = sourcePath.toLowerCase();
-    return extensions.some((extension) => lower.endsWith(extension));
+exports.WORK_PREDICATES = exports.WORK_KIND_VOCABULARY = exports.WORK_STATUS_VOCABULARY = exports.workIntelligenceExtractor = exports.documentStructureExtractor = void 0;
+const common_1 = require("./common");
+// ───────────────────────────── file eligibility ─────────────────────────────
+/** Extensions this profile reads. v1 adds no document-format extraction. */
+const SUPPORTED_EXTENSIONS = new Set([".md", ".markdown", ".txt", ".rst"]);
+const MARKDOWN_EXTENSIONS = new Set([".md", ".markdown"]);
+/**
+ * Lowercase extension of a source path.
+ *
+ * Written by hand rather than with `path.extname` because a source path here may
+ * be a virtual archive locator (`Bundle.zip!/docs/a.md`), and the answer must not
+ * depend on the host platform's separator.
+ */
+function extensionOf(sourcePath) {
+    const slash = sourcePath.lastIndexOf("/");
+    const name = slash >= 0 ? sourcePath.slice(slash + 1) : sourcePath;
+    const dot = name.lastIndexOf(".");
+    return dot > 0 ? name.slice(dot).toLowerCase() : "";
 }
-function claimsPath(sourcePath) {
-    return hasExtension(sourcePath, TEXT_EXTENSIONS);
+function isSupportedTextDocument(sourcePath) {
+    return SUPPORTED_EXTENSIONS.has(extensionOf(sourcePath));
 }
-function toLines(content) {
-    return content.split(/\r\n|\r|\n/);
+function isMarkdown(sourcePath) {
+    return MARKDOWN_EXTENSIONS.has(extensionOf(sourcePath));
 }
-/** Whitespace-collapsed, trimmed text. Never lowercased: the object is quoted text. */
-function normalizeText(value) {
-    return value.replace(/\s+/g, " ").trim();
+// ───────────────────────────── document scaffolding ─────────────────────────────
+/** Longest frontmatter block this reader will walk before giving up. */
+const MAX_FRONTMATTER_LINES = 200;
+/** How far into a document a bare status admonition still counts as leading. */
+const LEADING_ADMONITION_LINES = 10;
+/**
+ * Split a document into the regions extraction has to tell apart.
+ *
+ * Fenced code is tracked because a shell transcript containing `# deploy` is not
+ * a heading and `- [ ] item` inside an example is not a task. Frontmatter is
+ * tracked because its fields are read as structured values, and reading them a
+ * second time as prose labels would emit every field twice.
+ */
+function readDocument(sourcePath, content) {
+    const lines = (0, common_1.toLines)(content);
+    if (!isMarkdown(sourcePath)) {
+        // Plain text has neither construct, so both regions are empty by definition.
+        return { lines, frontmatterStart: -1, frontmatterEnd: -1, fenced: new Array(lines.length).fill(false) };
+    }
+    const [frontmatterStart, frontmatterEnd] = findFrontmatter(lines);
+    return { lines, frontmatterStart, frontmatterEnd, fenced: markFencedCode(lines, frontmatterEnd) };
+}
+/** The frontmatter body's line span, or `[-1, -1]` when the document has none. */
+function findFrontmatter(lines) {
+    if (lines.length === 0 || lines[0].trim() !== "---")
+        return [-1, -1];
+    const limit = Math.min(lines.length, MAX_FRONTMATTER_LINES);
+    for (let index = 1; index < limit; index++) {
+        const trimmed = lines[index].trim();
+        if (trimmed === "---" || trimmed === "...")
+            return [1, index - 1];
+    }
+    return [-1, -1];
+}
+const FENCE = /^\s{0,3}(`{3,}|~{3,})/;
+/**
+ * Which lines sit inside a fenced code block.
+ *
+ * A closing fence must use the same character as the one that opened it, so a
+ * ``` block containing ~~~ stays open. Frontmatter is skipped: its `---` lines
+ * are not fences, and its body is read as structured values elsewhere.
+ */
+function markFencedCode(lines, frontmatterEnd) {
+    const fenced = new Array(lines.length).fill(false);
+    let fence = null;
+    for (let index = 0; index < lines.length; index++) {
+        if (frontmatterEnd >= 0 && index <= frontmatterEnd + 1)
+            continue;
+        const match = FENCE.exec(lines[index]);
+        if (fence === null) {
+            if (match) {
+                fence = match[1][0];
+                fenced[index] = true;
+            }
+            continue;
+        }
+        fenced[index] = true;
+        if (match?.[1].startsWith(fence))
+            fence = null;
+    }
+    return fenced;
+}
+function inFrontmatter(view, index) {
+    return view.frontmatterStart >= 0 && index >= view.frontmatterStart && index <= view.frontmatterEnd;
+}
+/** True for a line that carries no readable body content: frontmatter or code. */
+function isProseLine(view, index) {
+    if (inFrontmatter(view, index))
+        return false;
+    if (view.frontmatterStart >= 0 && (index === 0 || index === view.frontmatterEnd + 1))
+        return false;
+    return !view.fenced[index];
+}
+// ───────────────────────────── scalar normalization ─────────────────────────────
+const EMPHASIS = /[*_`]/g;
+/** Strip markdown emphasis and backticks, then collapse whitespace. */
+function plain(value) {
+    return value.replace(EMPHASIS, "").replace(/\s+/g, " ").trim();
 }
 /**
- * Strip emphasis markers from a closed-vocabulary value (`**wip**` -> `wip`).
+ * Trim a run of characters from the front of a string.
  *
- * Global, which is safe here only because the status and kind vocabularies are
- * short lowercase words that contain no `_` or `*` of their own.
+ * Scanned rather than matched, for the reason given on `trimRunEnd`.
  */
-function stripEmphasis(value) {
-    return value.replace(/[*_`]+/g, "");
-}
-/**
- * Strip emphasis that wraps a free-text value, leaving the inside alone.
- *
- * Free text is quoted back as the object, so removing markers globally would
- * corrupt it: `Supersedes: l9_constellation_topology_contract` would be recorded
- * as `l9constellationtopologycontract`, an identifier that appears nowhere and
- * resolves to nothing. Observed on a real repository, which is what caught it.
- */
-function stripWrappingEmphasis(value) {
-    return trimEnd(trimStart(value, EMPHASIS), EMPHASIS);
-}
-const EMPHASIS = "*_`";
-const TRAILING_DOTS = ".";
-/**
- * Character-set trimming done by index rather than by regex.
- *
- * `/[*_`]+$/` looks harmless and is quadratic: the engine retries the greedy
- * run from every position in a string that does not end in one of those
- * characters. This module parses documents from an untrusted drive or archive,
- * so a line of ten thousand asterisks must cost ten thousand steps, not a
- * hundred million.
- */
-function trimStart(value, characters) {
+function trimRunStart(value, isTrimmable) {
     let start = 0;
-    while (start < value.length && characters.includes(value[start]))
+    while (start < value.length && isTrimmable(value[start]))
         start++;
     return start === 0 ? value : value.slice(start);
 }
-function trimEnd(value, characters) {
+/**
+ * Trim a run of characters from the end of a string.
+ *
+ * A `$`-anchored quantifier looks linear here and is not. `String.replace` retries
+ * the match at every start position, and each attempt scans to the end, so
+ * stripping a trailing run costs a quadratic number of steps: a hundred thousand
+ * asterisks measured at eleven seconds, and these strings come from documents
+ * inside archives this package does not control. Scanning inward from the end
+ * costs one step per character trimmed.
+ */
+function trimRunEnd(value, isTrimmable) {
     let end = value.length;
-    while (end > 0 && characters.includes(value[end - 1]))
+    while (end > 0 && isTrimmable(value[end - 1]))
         end--;
     return end === value.length ? value : value.slice(0, end);
 }
-function draft(predicate, object, lineIndex, line, confidence = "high") {
+const isEmphasis = (character) => character === "*" || character === "_";
+const ALPHANUMERIC = /[\p{L}\p{N}]/u;
+const isNotAlphanumeric = (character) => !ALPHANUMERIC.test(character);
+/**
+ * Remove leading and trailing runs of markdown emphasis characters.
+ *
+ * The alternation this replaced — `(?:\*\*|__|\*|_)+` — was ambiguous: a run of
+ * asterisks can be divided into pairs or singles in exponentially many ways, and
+ * against an anchor that ultimately fails the engine tries all of them.
+ */
+function stripEmphasis(value) {
+    return trimRunEnd(trimRunStart(value, isEmphasis), isEmphasis).trim();
+}
+/** Wrappers a scalar may be enclosed in, opener to closer. */
+const WRAPPERS = { '"': '"', "'": "'", "[": "]", "(": ")" };
+const WHITESPACE = /\s/;
+/**
+ * Strip matching surrounding quotes, brackets or parentheses from a scalar.
+ *
+ * Walked inward from both ends rather than looped over whole-string replaces.
+ * The loop this replaced re-scanned the entire value on every layer it removed,
+ * so a deeply nested scalar cost a quadratic number of steps — 128ms at twenty
+ * thousand nested brackets, and these scalars come out of documents this package
+ * does not control. Each step here consumes at least one character.
+ */
+function unwrap(value) {
+    let start = 0;
+    let end = value.length;
+    for (;;) {
+        while (start < end && WHITESPACE.test(value[start]))
+            start++;
+        while (end > start && WHITESPACE.test(value[end - 1]))
+            end--;
+        if (end - start < 2)
+            break;
+        const closer = WRAPPERS[value[start]];
+        if (closer === undefined || value[end - 1] !== closer)
+            break;
+        start++;
+        end--;
+    }
+    return value.slice(start, end);
+}
+/**
+ * The declared target of a relation line, normalized without being interpreted.
+ *
+ * A whole-value markdown link resolves to its target because `[the plan](plan.md)`
+ * declares `plan.md` and the label is presentation. Everything else is kept as
+ * written: splitting a comma list or resolving a fuzzy filename would be this
+ * module asserting something the document did not.
+ */
+function normalizeTarget(value) {
+    const trimmed = stripEmphasis(value.trim());
+    const link = /^\[[^\]]*\]\(\s*<?([^)\s]+)>?\s*(?:"[^"]*")?\)$/.exec(trimmed);
+    if (link)
+        return link[1].trim();
+    const autolink = /^<([^>\s]+)>$/.exec(trimmed);
+    if (autolink)
+        return autolink[1].trim();
+    const code = /^`([^`]+)`$/.exec(trimmed);
+    if (code)
+        return code[1].trim();
+    return trimmed.replace(/\s+/g, " ");
+}
+const LIST_PREFIX = /^\s{0,8}(?:>\s?)*(?:[-*+]\s+|\d{1,3}[.)]\s+)?/;
+/**
+ * A label is letters, digits and spaces, starting with a letter.
+ *
+ * Restrictive on purpose: anything carrying a slash, a dot or punctuation is not
+ * a label, which is what stops a sentence containing a URL or a path from being
+ * read as a declaration. Digits are allowed for the `Milestone 3:` form.
+ */
+const LABEL_SHAPE = /^[a-z][a-z0-9 ]{0,23}$/;
+/**
+ * Read `Label: value` from a line, tolerating the markup people actually write.
+ *
+ * `**Status:** WIP`, `- Depends on: a.md`, `> Blocked by: review` all reduce to
+ * the same pair. The label shape is deliberately restrictive: anything carrying a
+ * slash, digit or punctuation is not a label, which is what keeps a sentence
+ * containing a URL from being read as a declaration.
+ */
+function labelledLine(rawLine) {
+    const body = rawLine.replace(LIST_PREFIX, "");
+    const colon = body.indexOf(":");
+    if (colon < 0)
+        return null;
+    const label = plain(body.slice(0, colon)).toLowerCase();
+    if (!LABEL_SHAPE.test(label))
+        return null;
+    const value = body.slice(colon + 1).trim().replace(/^[*_]+/, "").trim();
+    return { label, value };
+}
+// ───────────────────────────── vocabulary ─────────────────────────────
+const WORK_STATUS_VALUES = [
+    "active", "archived", "blocked", "cancelled", "complete", "done",
+    "draft", "paused", "planned", "superseded", "wip",
+];
+const WORK_STATUS = new Set(WORK_STATUS_VALUES);
+const WORK_KIND_VALUES = [
+    "checklist", "decision", "design", "notes", "plan", "proposal",
+    "research", "roadmap", "specification",
+];
+const WORK_KIND = new Set(WORK_KIND_VALUES);
+/**
+ * Status words that may be read from a title without brackets.
+ *
+ * `WIP` and `DRAFT` are markers; nobody titles a document `WIP` by accident. The
+ * rest of the vocabulary is ordinary English — "Complete Guide to Routing" is not
+ * a completed document — so those are recognized in a title only when bracketed.
+ */
+const BARE_TITLE_STATUS = new Set(["draft", "wip"]);
+const RELATION_PREDICATE_BY_LABEL = {
+    "depends on": "work.depends_on",
+    "depends upon": "work.depends_on",
+    "requires": "work.depends_on",
+    "blocked by": "work.blocked_by",
+    "reference": "work.references",
+    "references": "work.references",
+    "see also": "work.references",
+    "related": "work.references",
+    "supersedes": "work.supersedes",
+    "replaces": "work.supersedes",
+    "superseded by": "work.superseded_by",
+    "replaced by": "work.superseded_by",
+};
+/** A declared status word, or null when the value is not one of them. */
+function statusValue(raw) {
+    const bare = unwrap(plain(raw));
+    const candidate = trimRunEnd(trimRunStart(bare, isNotAlphanumeric), isNotAlphanumeric).toLowerCase();
+    return WORK_STATUS.has(candidate) ? candidate : null;
+}
+/** A declared kind word, or null when the value is not one of them. */
+function kindValue(raw) {
+    const candidate = unwrap(plain(raw)).toLowerCase();
+    return WORK_KIND.has(candidate) ? candidate : null;
+}
+// ───────────────────────────── structure reading ─────────────────────────────
+/**
+ * An ATX heading, split only as far as the marker.
+ *
+ * The closing `#` run is trimmed afterwards by a scan rather than matched here.
+ * Expressing it inline as `(.*?)\s*#*\s*$` makes the trailing whitespace
+ * attributable to either of two `\s*` groups, and the engine tries every split:
+ * a heading line of five thousand characters shaped `# … ### … x` measured at
+ * twenty-six seconds. This form always succeeds once a marker and a space are
+ * present, so it never backtracks at all.
+ */
+const ATX_HEADING = /^ {0,3}(#{1,6})[ \t]+(.*)$/;
+const isHash = (character) => character === "#";
+/** Every ATX heading outside frontmatter and fenced code, in document order. */
+function headings(view) {
+    const out = [];
+    for (let index = 0; index < view.lines.length; index++) {
+        if (!isProseLine(view, index))
+            continue;
+        const match = ATX_HEADING.exec(view.lines[index]);
+        if (!match)
+            continue;
+        const text = plain(trimRunEnd(match[2].trimEnd(), isHash));
+        if (text.length === 0)
+            continue;
+        out.push({ index, level: match[1].length, text });
+    }
+    return out;
+}
+/** A frontmatter mapping key. Anchored on both ends, so it cannot backtrack. */
+const FRONTMATTER_KEY = /^[A-Za-z][A-Za-z0-9_-]*$/;
+/** Frontmatter `key: value` scalars, in document order. */
+function frontmatterFields(view) {
+    const out = [];
+    if (view.frontmatterStart < 0)
+        return out;
+    for (let index = view.frontmatterStart; index <= view.frontmatterEnd; index++) {
+        // Split at the first colon and validate the key, rather than expressing the
+        // whole line as one pattern: `key\s*:` lets a long run of key characters and
+        // a long run of spaces be divided many ways when the colon is absent.
+        const line = view.lines[index];
+        const colon = line.indexOf(":");
+        if (colon < 0)
+            continue;
+        const key = line.slice(0, colon).trimEnd();
+        if (!FRONTMATTER_KEY.test(key))
+            continue;
+        out.push({ index, key: key.toLowerCase(), value: line.slice(colon + 1).trim() });
+    }
+    return out;
+}
+/** Every title this document declares about itself, with the line that declares it. */
+function titleDeclarations(view) {
+    const out = [];
+    for (const field of frontmatterFields(view)) {
+        if (field.key !== "title")
+            continue;
+        const text = unwrap(field.value);
+        if (text.length > 0)
+            out.push({ index: field.index, text });
+    }
+    for (const heading of headings(view)) {
+        if (heading.level === 1)
+            out.push({ index: heading.index, text: heading.text });
+    }
+    for (let index = 0; index < view.lines.length; index++) {
+        if (!isProseLine(view, index))
+            continue;
+        if (ATX_HEADING.test(view.lines[index]))
+            continue;
+        const labelled = labelledLine(view.lines[index]);
+        if (labelled?.label !== "title")
+            continue;
+        const text = unwrap(plain(labelled.value));
+        if (text.length > 0)
+            out.push({ index, text });
+    }
+    return out.sort((left, right) => left.index - right.index);
+}
+// ───────────────────────────── draft helpers ─────────────────────────────
+function draft(predicate, object, index, line, evidenceClass, confidence) {
     return {
         predicate,
         object,
-        sourceRange: { start_line: lineIndex + 1, end_line: lineIndex + 1 },
+        sourceRange: (0, common_1.lineRange)(index),
         evidenceExcerpt: line,
-        evidenceClass: "declared",
+        evidenceClass,
         authority: "source",
         confidence,
     };
 }
+// ───────────────────────── document-structure/v1 ─────────────────────────
 /**
- * Read the leading `---` block as flat `key: value` pairs.
+ * What a document says it is called and how it is organized.
  *
- * Deliberately not a YAML parser: only unindented scalar keys are read, so a
- * nested structure contributes nothing rather than being flattened into claims
- * its author did not make.
- */
-function readFrontmatter(lines) {
-    const entries = new Map();
-    if (lines.length === 0 || lines[0].trim() !== "---")
-        return { entries, bodyStart: 0 };
-    for (let index = 1; index < lines.length; index++) {
-        const line = lines[index];
-        if (line.trim() === "---" || line.trim() === "...")
-            return { entries, bodyStart: index + 1 };
-        const match = /^([A-Za-z][A-Za-z0-9_-]*)[ \t]*:[ \t]*(.*)/.exec(line);
-        if (!match)
-            continue;
-        const key = match[1].toLowerCase();
-        // First declaration wins the key slot; a repeated key is still a separate
-        // line and is reported by whichever rule reads it.
-        if (!entries.has(key)) {
-            entries.set(key, { value: normalizeText(stripQuotes(match[2])), lineIndex: index });
-        }
-    }
-    // An unterminated block is not frontmatter; treat the whole file as body.
-    return { entries: new Map(), bodyStart: 0 };
-}
-function stripQuotes(value) {
-    const trimmed = value.trim();
-    const quoted = /^(["'])(.*)\1$/.exec(trimmed);
-    return quoted ? quoted[2] : trimmed;
-}
-/** Line indexes inside ``` or ~~~ fences. */
-function fencedLines(lines, markdown) {
-    const fenced = new Set();
-    if (!markdown)
-        return fenced;
-    let openFence = null;
-    lines.forEach((line, index) => {
-        const match = /^[ \t]{0,3}(`{3,}|~{3,})/.exec(line);
-        if (openFence === null) {
-            if (match) {
-                openFence = match[1][0];
-                fenced.add(index);
-            }
-            return;
-        }
-        fenced.add(index);
-        if (match?.[1].startsWith(openFence))
-            openFence = null;
-    });
-    return fenced;
-}
-function readShape(input) {
-    const lines = toLines(input.content);
-    const markdown = hasExtension(input.sourcePath, MARKDOWN_EXTENSIONS);
-    const { entries, bodyStart } = readFrontmatter(lines);
-    return { lines, fenced: fencedLines(lines, markdown), frontmatter: entries, bodyStart, markdown };
-}
-/** True for a body line that carries claims rather than code or frontmatter. */
-function isClaimLine(shape, index) {
-    return index >= shape.bodyStart && !shape.fenced.has(index);
-}
-// ───────────────────── document-structure/v1 ─────────────────────
-// `(.+?)\s*#*\s*$` is the textbook quadratic shape. Capture the rest of the
-// line in one greedy step and remove the optional closing run afterwards.
-const ATX_HEADING = /^[ \t]{0,3}(#{1,6})[ \t]+(.+)/;
-/** Text of an ATX heading with its optional trailing `###` run removed. */
-function headingText(raw) {
-    return normalizeText(trimEnd(trimEnd(raw, " \t"), "#"));
-}
-const PLAIN_TITLE = /^[ \t]*(?:[*_]{0,2})Title(?:[*_]{0,2})[ \t]*:[ \t]*(.+)/i;
-/**
- * Title and heading structure, exactly as written.
- *
- * Every title form the document uses is emitted. Where two disagree the
- * disagreement is the finding — silently preferring frontmatter over the H1
- * would hide that the document contradicts itself.
+ * Titles are emitted from every form the document uses, even when they disagree:
+ * a frontmatter `title` and an `# H1` that differ is a fact about the document,
+ * and picking a winner here would hide it.
  */
 exports.documentStructureExtractor = {
     id: "document-structure/v1",
     version: "1.0.0",
     subjectScope: "artifact",
-    matches: claimsPath,
+    matches: isSupportedTextDocument,
     extract(input) {
-        const shape = readShape(input);
+        const view = readDocument(input.sourcePath, input.content);
         const drafts = [];
-        const frontmatterTitle = shape.frontmatter.get("title");
-        if (frontmatterTitle && frontmatterTitle.value.length > 0) {
-            drafts.push(draft("document.title", frontmatterTitle.value, frontmatterTitle.lineIndex, shape.lines[frontmatterTitle.lineIndex]));
+        for (const title of titleDeclarations(view)) {
+            drafts.push(draft("document.title", title.text, title.index, view.lines[title.index], "declared", "high"));
         }
-        shape.lines.forEach((line, index) => {
-            if (!isClaimLine(shape, index))
-                return;
-            if (shape.markdown) {
-                const heading = ATX_HEADING.exec(line);
-                if (heading) {
-                    const level = heading[1].length;
-                    const text = headingText(heading[2]);
-                    if (text.length > 0) {
-                        drafts.push(draft("document.heading", `H${level}: ${text}`, index, line));
-                        if (level === 1)
-                            drafts.push(draft("document.title", text, index, line));
-                    }
-                    return;
-                }
-            }
-            const plain = PLAIN_TITLE.exec(line);
-            if (plain) {
-                const text = normalizeText(stripWrappingEmphasis(plain[1]));
-                if (text.length > 0)
-                    drafts.push(draft("document.title", text, index, line));
-            }
-        });
+        for (const heading of headings(view)) {
+            drafts.push(draft("document.heading", `H${heading.level}: ${heading.text}`, heading.index, view.lines[heading.index], "observed", "high"));
+        }
         return drafts;
     },
 };
-// ───────────────────── work-intelligence/v1 ─────────────────────
-/** Every state a document may declare. A value outside this set is not a status. */
-const WORK_STATUS_VALUES = [
-    "wip", "draft", "planned", "blocked", "paused", "active",
-    "done", "complete", "archived", "superseded", "cancelled",
-];
-/** Every kind a document may declare. A value outside this set is not a kind. */
-const WORK_KIND_VALUES = [
-    "plan", "roadmap", "proposal", "design", "specification",
-    "notes", "checklist", "decision", "research",
-];
-const STATUS_SET = new Set(WORK_STATUS_VALUES);
-const KIND_SET = new Set(WORK_KIND_VALUES);
+// ───────────────────────── work-intelligence/v1 ─────────────────────────
+const CHECKBOX = /^\s{0,8}(?:[-*+]|\d{1,3}[.)])\s+\[([ xX])\]\s*(.*)$/;
 /**
- * `[bullet] [emphasis] LABEL [emphasis] : value` — the shape every labelled
- * declaration shares, written once so the four labels cannot drift apart.
- */
-const LABEL_PRELUDE = String.raw `^[ \t]*(?:[-*+][ \t]+)?(?:[*_]{0,2})`;
-const LABEL_SUFFIX = String.raw `(?:[*_]{0,2})[ \t]*:[ \t]*(.+)`;
-function labelPattern(label, flags = "i") {
-    return new RegExp(`${LABEL_PRELUDE}(?:${label})${LABEL_SUFFIX}`, flags);
-}
-/** `Status: wip` / `**State:** blocked`. The label is what makes it a claim. */
-const STATUS_LABEL = labelPattern("Status|State");
-/** `> **WIP**` — a leading admonition whose whole text is a status token. */
-const ADMONITION = /^[ \t]{0,3}>[ \t]*(.+)/;
-/** How far into a document an admonition still reads as the document's own state. */
-const ADMONITION_WINDOW = 10;
-/** `# [WIP] Title`, `# WIP: Title`, `# Title (DRAFT)`. */
-const TITLE_STATUS_MARKERS = [
-    /^[ \t]*\[([A-Za-z-]+)\]/,
-    /^[ \t]*\(([A-Za-z-]+)\)/,
-    /^[ \t]*([A-Za-z-]+)[ \t]*[:—-][ \t]+/,
-    /\[([A-Za-z-]+)\][ \t]*$/,
-    /\(([A-Za-z-]+)\)[ \t]*$/,
-];
-const KIND_LABEL = labelPattern("Type|Kind");
-const TASK_UNCHECKED = /^[ \t]*[-*+][ \t]+\[ \][ \t]+(.+)/;
-const TASK_CHECKED = /^[ \t]*[-*+][ \t]+\[[xX]\][ \t]+(.+)/;
-// NOSONAR(S1135): the marker below is this parser's input vocabulary, not a task
-// left for a maintainer. The rule matches the token wherever it appears.
-/** `TODO: ship it` at the start of a line. The same word mid-sentence is prose. */ // NOSONAR
-const TASK_TODO = labelPattern("TODO", "");
-/** `Milestone: beta` and `Milestone 2: GA`. */
-const MILESTONE_LABEL = labelPattern(String.raw `Milestone(?:[ \t]+\d+)?`);
-const MILESTONE_HEADING = /^milestones?$/i;
-const PLAIN_BULLET = /^[ \t]*[-*+][ \t]+(.+)/;
-/**
- * Declared relationships, longest label first.
+ * An explicit `TODO:` line, matched after the list prefix has been stripped.
  *
- * Order matters: `Superseded by:` must be tested before `Supersedes` would match
- * a prefix of it, or a supersession would be recorded backwards.
+ * The prefix used to be spelled out a second time inside this pattern, which
+ * made it the most complicated regex in the module and meant two places had to
+ * agree about what a list marker looks like.
  */
-const RELATION_LABELS = [
-    { predicate: "work.superseded_by", label: /Superseded\s+by/i },
-    { predicate: "work.superseded_by", label: /Replaced\s+by/i },
-    { predicate: "work.supersedes", label: /Supersedes/i },
-    { predicate: "work.supersedes", label: /Replaces/i },
-    { predicate: "work.blocked_by", label: /Blocked\s+by/i },
-    { predicate: "work.depends_on", label: /Depends\s+on/i },
-    { predicate: "work.depends_on", label: /Depends\s+upon/i },
-    { predicate: "work.depends_on", label: /Requires/i },
-    { predicate: "work.references", label: /References/i },
-    { predicate: "work.references", label: /Reference/i },
-    { predicate: "work.references", label: /See\s+also/i },
-    { predicate: "work.references", label: /Related/i },
-];
-function statusValueOf(raw) {
-    const value = trimEnd(normalizeText(stripEmphasis(raw)).toLowerCase(), TRAILING_DOTS);
-    return STATUS_SET.has(value) ? value : null;
-}
-function kindValueOf(raw) {
-    const value = trimEnd(normalizeText(stripEmphasis(raw)).toLowerCase(), TRAILING_DOTS);
-    return KIND_SET.has(value) ? value : null;
-}
-/** The kind a title names outright, e.g. "Deployment Roadmap" -> roadmap. */
-function kindFromTitle(title) {
-    const words = normalizeText(stripEmphasis(title)).toLowerCase().match(/[a-z]+/g) ?? [];
-    for (const kind of WORK_KIND_VALUES) {
-        // Accept the plural a heading naturally uses ("Notes", "Decisions").
-        if (words.includes(kind) || words.includes(`${kind}s`))
-            return kind;
+const TODO_LINE = /^(?:\*\*|__)?TODO(?:\*\*|__)?\s*:\s*(.+)$/;
+const BULLET = /^\s{0,3}(?:[-*+]|\d{1,3}[.)])\s+(.*)$/;
+const MILESTONE_LABEL = /^milestone(?: [a-z0-9.]{1,8})?$/;
+const BLOCKQUOTE_STATUS = /^\s{0,3}>\s*(?:\*\*|__)?\[?([A-Za-z]+)\]?(?:\*\*|__)?\s*(?::.*)?$/;
+/** Where a title stops saying what the document is and starts qualifying it. */
+const TITLE_SEGMENT = / [—–|] | - |[:(]/u;
+/** Status markers a title carries, with the reason each one counts. */
+function titleStatuses(text) {
+    const found = [];
+    for (const match of text.matchAll(/[[(]\s*([A-Za-z][A-Za-z ]{0,20}?)\s*[\])]/g)) {
+        const status = statusValue(match[1]);
+        if (status !== null)
+            found.push(status);
     }
-    return null;
+    const prefix = /^([A-Za-z]+)\s*[:\-–—]/.exec(text);
+    if (prefix) {
+        const status = statusValue(prefix[1]);
+        if (status !== null && BARE_TITLE_STATUS.has(status))
+            found.push(status);
+    }
+    const suffix = /[:\-–—]\s*([A-Za-z]+)\s*$/.exec(text);
+    if (suffix) {
+        const status = statusValue(suffix[1]);
+        if (status !== null && BARE_TITLE_STATUS.has(status))
+            found.push(status);
+    }
+    return found;
 }
-/** A status marker attached to a title, e.g. "[WIP] Rollout" or "Rollout (draft)". */
-function statusFromTitle(title) {
-    const text = normalizeText(stripEmphasis(title));
-    for (const marker of TITLE_STATUS_MARKERS) {
-        const match = marker.exec(text);
-        if (match) {
-            const value = statusValueOf(match[1]);
-            if (value)
-                return value;
+/**
+ * Kind words a title names outright, e.g. `# Deployment Roadmap` -> `roadmap`.
+ *
+ * Only the first or last word of the title's leading segment counts. A kind word
+ * loose in the middle of a name is usually part of the name rather than a
+ * statement about the document: "L9 Perplexity Research Agent" is an agent, not a
+ * piece of research, while "Implementation Roadmap — 6-Phase Rollout" and "Plan
+ * for the migration" both say what they are. This narrowing came from running the
+ * profile over a real repository and reading what it claimed.
+ */
+function titleKinds(text) {
+    // Whitespace is collapsed first, in one linear pass, so the separators below
+    // are literal. Matching ` +[—–|] +` against a title carrying a long whitespace
+    // run costs a quadratic number of steps for every split position it fails at.
+    const segment = plain(text).split(TITLE_SEGMENT)[0];
+    const words = segment.toLowerCase().split(/[^\p{L}]+/u).filter((word) => word.length > 0);
+    if (words.length === 0)
+        return [];
+    const found = [];
+    for (const word of new Set([words[0], words[words.length - 1]])) {
+        if (WORK_KIND.has(word))
+            found.push(word);
+    }
+    return found;
+}
+/** Line indexes that open an explicit milestone list. */
+function milestoneSectionOpeners(view) {
+    const openers = [];
+    for (const heading of headings(view)) {
+        if (/^milestones:?$/i.test(heading.text))
+            openers.push(heading.index);
+    }
+    for (let index = 0; index < view.lines.length; index++) {
+        if (!isProseLine(view, index))
+            continue;
+        if (ATX_HEADING.test(view.lines[index]))
+            continue;
+        if (/^\s{0,3}(?:\*\*|__)?milestones(?:\*\*|__)?\s*:\s*$/i.test(view.lines[index]))
+            openers.push(index);
+    }
+    return [...new Set(openers)].sort((left, right) => left - right);
+}
+/** Bullets belonging to one milestone section, up to the next heading or blank run. */
+function milestoneSectionBullets(view, opener) {
+    const out = [];
+    for (let index = opener + 1; index < view.lines.length; index++) {
+        if (!isProseLine(view, index))
+            break;
+        const line = view.lines[index];
+        if (ATX_HEADING.test(line))
+            break;
+        if (line.trim() === "") {
+            // A blank line inside a list is ordinary; a blank line after the list has
+            // ended is the section boundary. Stop only once bullets have been seen and
+            // the next content line is not one.
+            if (out.length === 0)
+                continue;
+            const next = view.lines[index + 1];
+            if (next === undefined || !BULLET.test(next))
+                break;
+            continue;
+        }
+        const bullet = BULLET.exec(line);
+        if (!bullet) {
+            if (out.length > 0)
+                break;
+            continue;
+        }
+        // A milestone written as a checklist item is still a milestone; the checkbox
+        // marker is task syntax, not part of the milestone's text.
+        const text = plain(bullet[1].replace(/^\[[ xX]\]\s*/, ""));
+        if (text.length > 0)
+            out.push({ index, text });
+    }
+    return out;
+}
+/** What the frontmatter block declares outright. */
+function frontmatterSignals(view) {
+    const drafts = [];
+    for (const field of frontmatterFields(view)) {
+        const line = view.lines[field.index];
+        const status = field.key === "status" || field.key === "state" ? statusValue(field.value) : null;
+        if (status !== null)
+            drafts.push(draft("work.status", status, field.index, line, "declared", "high"));
+        const kind = field.key === "type" || field.key === "kind" ? kindValue(field.value) : null;
+        if (kind !== null)
+            drafts.push(draft("work.kind", kind, field.index, line, "declared", "high"));
+    }
+    return drafts;
+}
+/**
+ * What a title marks.
+ *
+ * Weaker than a structured field, and recorded as such: a title is a name first
+ * and a statement about the document second.
+ */
+function titleSignals(view) {
+    const drafts = [];
+    for (const title of titleDeclarations(view)) {
+        const line = view.lines[title.index];
+        for (const status of titleStatuses(title.text)) {
+            drafts.push(draft("work.status", status, title.index, line, "declared", "medium"));
+        }
+        for (const kind of titleKinds(title.text)) {
+            drafts.push(draft("work.kind", kind, title.index, line, "declared", "medium"));
         }
     }
-    return null;
-}
-function frontmatterDraft(shape, key, predicate, valueOf) {
-    const entry = shape.frontmatter.get(key);
-    if (!entry)
-        return null;
-    const value = valueOf(entry.value);
-    return value ? draft(predicate, value, entry.lineIndex, shape.lines[entry.lineIndex]) : null;
-}
-/** Status and kind declared in frontmatter, and status/kind named by the title. */
-function declaredStateDrafts(shape) {
-    const drafts = [];
-    const status = frontmatterDraft(shape, "status", "work.status", statusValueOf);
-    if (status)
-        drafts.push(status);
-    for (const key of ["type", "kind"]) {
-        const kind = frontmatterDraft(shape, key, "work.kind", kindValueOf);
-        if (kind)
-            drafts.push(kind);
-    }
-    const titleEntry = shape.frontmatter.get("title");
-    if (titleEntry)
-        drafts.push(...titleDerivedDrafts(shape, titleEntry.value, titleEntry.lineIndex));
     return drafts;
 }
-/**
- * What a title says about kind and state.
- *
- * A kind read out of a title is `medium`: "Deployment Roadmap" names a roadmap,
- * but a title is a name rather than a declaration field, so it carries less
- * weight than `kind: roadmap` written down as such.
- */
-function titleDerivedDrafts(shape, title, lineIndex) {
+/** Bullets under every explicit milestone section. */
+function milestoneSectionSignals(view) {
     const drafts = [];
-    const line = shape.lines[lineIndex];
-    const kind = kindFromTitle(title);
-    if (kind)
-        drafts.push(draft("work.kind", kind, lineIndex, line, "medium"));
-    const status = statusFromTitle(title);
-    if (status)
-        drafts.push(draft("work.status", status, lineIndex, line));
-    return drafts;
-}
-/** A blockquote near the top whose entire text is a status token. */
-function admonitionStatus(shape, line, index) {
-    if (index >= shape.bodyStart + ADMONITION_WINDOW)
-        return null;
-    const match = ADMONITION.exec(line);
-    if (!match)
-        return null;
-    const value = statusValueOf(match[1].replace(/^Status\s*:\s*/i, ""));
-    return value ? draft("work.status", value, index, line) : null;
-}
-function labelledDrafts(line, index) {
-    const drafts = [];
-    const status = STATUS_LABEL.exec(line);
-    if (status) {
-        const value = statusValueOf(status[1]);
-        if (value)
-            drafts.push(draft("work.status", value, index, line));
-    }
-    const kind = KIND_LABEL.exec(line);
-    if (kind) {
-        const value = kindValueOf(kind[1]);
-        if (value)
-            drafts.push(draft("work.kind", value, index, line));
-    }
-    return drafts;
-}
-function taskDrafts(line, index) {
-    const checked = TASK_CHECKED.exec(line);
-    if (checked) {
-        const text = normalizeText(checked[1]);
-        return text ? [draft("work.task.completed", text, index, line)] : [];
-    }
-    const unchecked = TASK_UNCHECKED.exec(line);
-    if (unchecked) {
-        const text = normalizeText(unchecked[1]);
-        return text ? [draft("work.task.open", text, index, line)] : [];
-    }
-    const todo = TASK_TODO.exec(line);
-    if (todo) {
-        const text = normalizeText(todo[1]);
-        return text ? [draft("work.task.open", text, index, line)] : [];
-    }
-    return [];
-}
-/**
- * The relation labels compiled once.
- *
- * Built at module load rather than per line: a document with ten thousand lines
- * would otherwise construct a hundred and twenty thousand identical regular
- * expressions.
- */
-const RELATION_PATTERNS = RELATION_LABELS.map(({ predicate, label }) => ({
-    predicate,
-    pattern: labelPattern(label.source),
-}));
-function relationDrafts(line, index) {
-    for (const { predicate, pattern } of RELATION_PATTERNS) {
-        const match = pattern.exec(line);
-        if (match) {
-            const target = normalizeText(stripWrappingEmphasis(match[1]));
-            // The whole remainder is the declared target. Splitting a list on commas
-            // would invent boundaries the author did not write.
-            return target ? [draft(predicate, target, index, line)] : [];
+    for (const opener of milestoneSectionOpeners(view)) {
+        for (const bullet of milestoneSectionBullets(view, opener)) {
+            drafts.push(draft("work.milestone", bullet.text, bullet.index, view.lines[bullet.index], "observed", "high"));
         }
     }
-    return [];
+    return drafts;
 }
+/** A task written as list syntax: a checkbox, or a line that opens with `TODO:`. */
+function taskSignal(line, index) {
+    const checkbox = CHECKBOX.exec(line);
+    if (checkbox) {
+        const text = plain(checkbox[2]);
+        if (text.length === 0)
+            return null;
+        const predicate = checkbox[1] === " " ? "work.task.open" : "work.task.completed";
+        return draft(predicate, text, index, line, "observed", "high");
+    }
+    const todo = TODO_LINE.exec(line.replace(LIST_PREFIX, ""));
+    if (todo === null)
+        return null;
+    const text = plain(todo[1]);
+    return text.length === 0 ? null : draft("work.task.open", text, index, line, "observed", "high");
+}
+/** A bare status admonition, which only counts near the top of a document. */
+function admonitionSignal(line, index) {
+    if (index >= LEADING_ADMONITION_LINES)
+        return null;
+    const admonition = BLOCKQUOTE_STATUS.exec(line);
+    if (admonition === null)
+        return null;
+    const status = statusValue(admonition[1]);
+    return status === null ? null : draft("work.status", status, index, line, "declared", "high");
+}
+/** A `Label: value` declaration: a status, a milestone, or a declared relation. */
+function labelSignal(line, index) {
+    if (ATX_HEADING.test(line))
+        return null;
+    const labelled = labelledLine(line);
+    if (labelled === null || labelled.value.length === 0)
+        return null;
+    if (labelled.label === "status" || labelled.label === "state") {
+        const status = statusValue(labelled.value);
+        return status === null ? null : draft("work.status", status, index, line, "declared", "high");
+    }
+    if (MILESTONE_LABEL.test(labelled.label)) {
+        const text = plain(labelled.value);
+        return text.length === 0 ? null : draft("work.milestone", text, index, line, "declared", "high");
+    }
+    const predicate = RELATION_PREDICATE_BY_LABEL[labelled.label];
+    if (predicate === undefined)
+        return null;
+    const target = normalizeTarget(labelled.value);
+    return target.length === 0 ? null : draft(predicate, target, index, line, "declared", "high");
+}
+/**
+ * Line-oriented readers, in the order a line is offered to them.
+ *
+ * The order is the precedence: a checkbox is read as a task rather than as a
+ * label, and a heading is never read as a declaration. The first reader to
+ * return a draft claims the line.
+ *
+ * A reader that recognizes a line's syntax but produces nothing from it — an
+ * empty checkbox, a `TODO:` whose text is only emphasis — lets the remaining
+ * readers see the line. That is safe because the three syntaxes are mutually
+ * exclusive: a line that opens with a list marker cannot be a blockquote
+ * admonition, and a checkbox with no text has nothing after it to be a label.
+ */
+const LINE_READERS = [
+    taskSignal,
+    admonitionSignal,
+    labelSignal,
+];
 /**
  * Explicit work state: status, kind, tasks, milestones, and declared relations.
  *
- * Nothing here is inferred. Every assertion cites the line that states it, and a
- * document that declares nothing produces nothing rather than a default.
+ * Every rule here recognizes a form the document chose deliberately. Nothing is
+ * read from a path, a filename, a modification time, or the absence of a signal.
  */
 exports.workIntelligenceExtractor = {
     id: "work-intelligence/v1",
     version: "1.0.0",
     subjectScope: "artifact",
-    matches: claimsPath,
+    matches: isSupportedTextDocument,
     extract(input) {
-        const shape = readShape(input);
-        const drafts = [...declaredStateDrafts(shape)];
-        let underMilestones = false;
-        shape.lines.forEach((line, index) => {
-            if (!isClaimLine(shape, index))
-                return;
-            const heading = shape.markdown ? ATX_HEADING.exec(line) : null;
-            if (heading) {
-                // A heading both sets the section context and, at level one, names the
-                // document — so it is handled here and never falls through to the
-                // line rules below.
-                const text = headingText(heading[2]);
-                underMilestones = MILESTONE_HEADING.test(text);
-                if (heading[1].length === 1)
-                    drafts.push(...titleDerivedDrafts(shape, text, index));
-                return;
+        const view = readDocument(input.sourcePath, input.content);
+        const drafts = [
+            ...frontmatterSignals(view),
+            ...titleSignals(view),
+            ...milestoneSectionSignals(view),
+        ];
+        for (let index = 0; index < view.lines.length; index++) {
+            if (!isProseLine(view, index))
+                continue;
+            for (const read of LINE_READERS) {
+                const signal = read(view.lines[index], index);
+                if (signal !== null) {
+                    drafts.push(signal);
+                    break;
+                }
             }
-            drafts.push(...bodyLineDrafts(shape, line, index, underMilestones));
-        });
+        }
         return drafts;
     },
 };
-/**
- * Every claim one body line makes, in specificity order.
- *
- * A line is claimed by the most specific rule that matches: a milestone label
- * before a task, a task before a bare bullet. Status and kind labels are checked
- * unconditionally first because a line may carry one alongside anything else.
- */
-function bodyLineDrafts(shape, line, index, underMilestones) {
-    const drafts = [];
-    const admonition = admonitionStatus(shape, line, index);
-    if (admonition)
-        drafts.push(admonition);
-    drafts.push(...labelledDrafts(line, index));
-    const milestone = MILESTONE_LABEL.exec(line);
-    if (milestone) {
-        const text = normalizeText(milestone[1]);
-        if (text)
-            drafts.push(draft("work.milestone", text, index, line));
-        return drafts;
-    }
-    const tasks = taskDrafts(line, index);
-    if (tasks.length > 0) {
-        drafts.push(...tasks);
-        return drafts;
-    }
-    // A plain bullet under a Milestones heading is a milestone by position.
-    // Checkbox bullets were already claimed above as tasks, the more specific syntax.
-    if (underMilestones) {
-        const bullet = PLAIN_BULLET.exec(line);
-        if (bullet) {
-            const text = normalizeText(bullet[1]);
-            if (text)
-                drafts.push(draft("work.milestone", text, index, line));
-            return drafts;
-        }
-    }
-    drafts.push(...relationDrafts(line, index));
-    return drafts;
-}
-/** The predicates these rules can emit. Documentation and report rendering read it. */
-exports.WORK_INTELLIGENCE_PREDICATES = [
+/** The vocabularies this profile recognizes, for documentation and reporting. */
+exports.WORK_STATUS_VOCABULARY = WORK_STATUS_VALUES;
+exports.WORK_KIND_VOCABULARY = WORK_KIND_VALUES;
+/** Every predicate the work-intelligence profile can emit, in code-point order. */
+exports.WORK_PREDICATES = [
     "document.heading",
     "document.title",
     "work.blocked_by",
@@ -485,6 +654,4 @@ exports.WORK_INTELLIGENCE_PREDICATES = [
     "work.task.completed",
     "work.task.open",
 ];
-exports.WORK_STATUS_VOCABULARY = WORK_STATUS_VALUES;
-exports.WORK_KIND_VOCABULARY = WORK_KIND_VALUES;
 //# sourceMappingURL=work_intelligence.js.map

@@ -1,231 +1,297 @@
-// artifact_scoped_assertions.test.ts — who an assertion is about.
+// artifact_scoped_assertions.test.ts — which subject a claim attaches to.
 //
-// The risk this guards is quiet: an extractor written to describe a repository
-// keeps working after the interpreter learns artifact scope, and an artifact's
-// claim never gets promoted to the repository. Both directions are asserted, as
-// is the identity rule that keeps interpretation and packet building agreeing
-// about what an artifact is called.
+// Before this seam existed, every assertion in a packet was rewritten to the
+// repository subject on the way out. That is fine for "this repository declares
+// itself deprecated" and destroys "this plan declares itself WIP": a thousand
+// documents reporting their status against one subject is not a work map, it is
+// a contradiction. These tests hold both halves — the new artifact scope, and the
+// repository scope that every pre-existing extractor keeps.
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { afterAll, describe, expect, it } from "vitest";
+import { inventoryTree } from "../src/inventory";
+import { defaultExtractors } from "../src/extractors";
 import {
-  artifactIdFor,
+  interpretRepository,
+  type Extractor,
+  type InterpretationResult,
+} from "../src/interpretation";
+import {
   buildRepositoryModelPacket,
   observeRepositoryModel,
-  repositoryIdFor,
+  repositoryModelArtifactId,
   validateRepositoryModelPacket,
   type RepositoryModelPacket,
 } from "../src/repository_model";
-import { inventoryTree } from "../src/inventory";
-import { interpretRepository, type Extractor } from "../src/interpretation";
-import { defaultExtractors } from "../src/extractors";
+import { withLocalSourceModel } from "../src/local_source_model";
+import { writeRawZip } from "./helpers/zip_fixtures";
 
+const REPO = path.resolve(__dirname, "..");
+const SUBJECT = "repo:fixture";
 const PRODUCER_VERSION = "4.0.0";
-const REVISION = "git:0000000000000000000000000000000000000000";
 
-const roots: string[] = [];
-function tmp(): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "l9-subject-"));
-  roots.push(dir);
+const scratchDirs: string[] = [];
+function tmp(prefix = "l9-artifact-scope-"): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  scratchDirs.push(dir);
   return dir;
 }
 afterAll(() => {
-  for (const dir of roots) fs.rmSync(dir, { recursive: true, force: true });
+  for (const dir of scratchDirs) fs.rmSync(dir, { recursive: true, force: true });
 });
 
-/** A tree that triggers both a repository-scoped and an artifact-scoped rule. */
-function fixture(): string {
-  const root = tmp();
-  fs.writeFileSync(path.join(root, "README.md"), [
-    "# Sample",
-    "",
-    "> **Deprecated**",
-    "",
-    "This repository is an example.",
-    "",
-  ].join("\n"));
-  fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({
-    name: "sample", version: "1.0.0",
-  }, null, 2) + "\n");
-  fs.writeFileSync(path.join(root, "plan.md"), [
-    "---",
-    "title: Migration Plan",
-    "kind: plan",
-    "status: wip",
-    "---",
-    "",
-    "# Migration Plan",
-    "",
-    "- [ ] first step",
-    "",
-  ].join("\n"));
+function materialize(files: Record<string, string>, root = tmp()): string {
+  for (const [relative, content] of Object.entries(files)) {
+    const target = path.join(root, ...relative.split("/"));
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, content, "utf8");
+  }
   return root;
 }
 
-function observe(root: string, name = "sample"): RepositoryModelPacket {
-  return observeRepositoryModel({
-    root, repositoryName: name, sourceRevision: REVISION, producerVersion: PRODUCER_VERSION,
+function interpret(root: string, subjectId = SUBJECT, extractors?: Extractor[]): InterpretationResult {
+  const inventory = inventoryTree({
+    root,
+    outDir: path.join(tmp("l9-artifact-scope-out-"), "inventory"),
+    dryRun: true,
+    injectHeaders: false,
+    folderSidecars: false,
+    writeSidecars: false,
+  });
+  return interpretRepository({
+    root,
+    subjectId,
+    inventory,
+    extractors: extractors ?? defaultExtractors(),
   });
 }
 
-describe("subject scope", () => {
-  it("keeps an existing repository-status assertion attached to the repository", () => {
-    const packet = observe(fixture());
-    const repositoryId = repositoryIdFor("sample");
-    const status = packet.payload.assertions.filter((a) => a.predicate === "repository.status");
-    expect(status.length).toBeGreaterThan(0);
-    for (const assertion of status) expect(assertion.subject_id).toBe(repositoryId);
+function subjectsFor(result: InterpretationResult, extractorId: string): string[] {
+  return [
+    ...new Set(
+      result.assertions
+        .filter((assertion) => assertion.extractor_id === extractorId)
+        .map((assertion) => assertion.subject_id),
+    ),
+  ];
+}
+
+describe("existing extractors keep the repository scope they had", () => {
+  it("keeps repository-status assertions on the repository", () => {
+    const root = materialize({
+      "README.md": "# Fixture\n\n> **Status:** deprecated\n\nbody\n",
+    });
+    const result = interpret(root);
+    expect(subjectsFor(result, "repository-status/v1")).toEqual([SUBJECT]);
   });
 
-  it("keeps an existing manifest assertion attached to the repository", () => {
-    const packet = observe(fixture());
-    const repositoryId = repositoryIdFor("sample");
-    const manifest = packet.payload.assertions.filter((a) => a.source_path === "package.json");
+  it("keeps manifest assertions on the repository", () => {
+    const root = materialize({
+      "package.json": JSON.stringify({ name: "fixture", version: "1.2.3" }, null, 2),
+    });
+    const result = interpret(root);
+    const manifest = result.assertions.filter((a) => a.extractor_id === "manifest/v1");
     expect(manifest.length).toBeGreaterThan(0);
-    for (const assertion of manifest) expect(assertion.subject_id).toBe(repositoryId);
+    expect(subjectsFor(result, "manifest/v1")).toEqual([SUBJECT]);
   });
 
-  it("attaches an artifact-scoped assertion to that exact artifact", () => {
-    const packet = observe(fixture());
-    const expected = artifactIdFor(repositoryIdFor("sample"), "plan.md");
-    const status = packet.payload.assertions.find((a) =>
-      a.predicate === "work.status" && a.source_path === "plan.md");
-    expect(status?.subject_id).toBe(expected);
-    expect(packet.payload.artifacts.some((a) => a.artifact_id === expected)).toBe(true);
-  });
-
-  it("defaults an extractor that declares no scope to the repository", () => {
-    const root = fixture();
-    const silent: Extractor = {
-      id: "test-unscoped/v1",
+  it("treats an extractor that declares no scope as repository-scoped", () => {
+    const legacy: Extractor = {
+      id: "legacy/v1",
       version: "1.0.0",
-      matches: (sourcePath) => sourcePath === "plan.md",
+      matches: (sourcePath) => sourcePath === "anything.md",
       extract: () => [{
-        predicate: "test.claim",
+        predicate: "legacy.claim",
         object: "value",
         sourceRange: { start_line: 1, end_line: 1 },
-        evidenceExcerpt: "---",
+        evidenceExcerpt: "line",
         evidenceClass: "declared",
         authority: "source",
         confidence: "high",
       }],
     };
-    const inventory = inventoryTree({ root, outDir: path.join(tmp(), "out"), dryRun: true });
-    const result = interpretRepository({
-      root, subjectId: repositoryIdFor("sample"), inventory, extractors: [silent],
-    });
-    expect(result.assertions[0]?.subject_id).toBe(repositoryIdFor("sample"));
-  });
-
-  it("changes the assertion id when only the subject changes", () => {
-    const root = fixture();
-    const inventory = inventoryTree({ root, outDir: path.join(tmp(), "out"), dryRun: true });
-    const base = {
-      predicate: "test.claim",
-      object: "value",
-      sourceRange: { start_line: 1, end_line: 1 },
-      evidenceExcerpt: "---",
-      evidenceClass: "declared" as const,
-      authority: "source" as const,
-      confidence: "high" as const,
-    };
-    const make = (scope: "repository" | "artifact"): Extractor => ({
-      id: "test-scoped/v1",
-      version: "1.0.0",
-      subjectScope: scope,
-      matches: (sourcePath) => sourcePath === "plan.md",
-      extract: () => [base],
-    });
-    const run = (scope: "repository" | "artifact"): string =>
-      interpretRepository({
-        root, subjectId: repositoryIdFor("sample"), inventory, extractors: [make(scope)],
-      }).assertions[0].assertion_id;
-
-    // Same predicate, object, path and span: only the subject differs, and the
-    // identity must move with it or two different claims would collide.
-    expect(run("artifact")).not.toBe(run("repository"));
-  });
-
-  it("changes the interpretation profile hash when an extractor changes scope", () => {
-    const root = fixture();
-    const inventory = inventoryTree({ root, outDir: path.join(tmp(), "out"), dryRun: true });
-    const make = (scope: "repository" | "artifact"): Extractor => ({
-      id: "test-scoped/v1",
-      version: "1.0.0",
-      subjectScope: scope,
-      matches: () => false,
-      extract: () => [],
-    });
-    const hashFor = (scope: "repository" | "artifact"): string =>
-      interpretRepository({
-        root, subjectId: repositoryIdFor("sample"), inventory, extractors: [make(scope)],
-      }).profile.profile_hash;
-    expect(hashFor("artifact")).not.toBe(hashFor("repository"));
+    const root = materialize({ "anything.md": "line\n" });
+    const result = interpret(root, SUBJECT, [legacy]);
+    expect(subjectsFor(result, "legacy/v1")).toEqual([SUBJECT]);
   });
 });
 
-describe("subject validation", () => {
-  it("accepts a packet whose assertions mix repository and artifact subjects", () => {
-    const packet = observe(fixture());
-    const subjects = new Set(packet.payload.assertions.map((a) => a.subject_id));
-    expect([...subjects].some((s) => s.startsWith("repo:"))).toBe(true);
-    expect([...subjects].some((s) => s.startsWith("artifact:"))).toBe(true);
+describe("work assertions attach to the artifact that made them", () => {
+  it("points each claim at the exact file that declares it", () => {
+    const root = materialize({
+      "plan.md": "---\nstatus: wip\n---\n\n# Plan\n",
+      "notes/other.md": "---\nstatus: blocked\n---\n\n# Other\n",
+    });
+    const result = interpret(root);
+    const statuses = result.assertions.filter((a) => a.predicate === "work.status");
+    expect(statuses.map((a) => [a.source_path, a.object, a.subject_id])).toEqual([
+      ["notes/other.md", "blocked", repositoryModelArtifactId(SUBJECT, "notes/other.md")],
+      ["plan.md", "wip", repositoryModelArtifactId(SUBJECT, "plan.md")],
+    ]);
+    // Distinct files never share a subject.
+    expect(new Set(statuses.map((a) => a.subject_id)).size).toBe(2);
+  });
+
+  it("gives an assertion a different identity when its subject changes", () => {
+    const root = materialize({ "plan.md": "---\nstatus: wip\n---\n\n# Plan\n" });
+    const artifactScoped = interpret(root).assertions.find((a) => a.predicate === "work.status");
+    const repositoryScoped = interpret(root, SUBJECT, [{
+      ...(defaultExtractors().find((e) => e.id === "work-intelligence/v1") as Extractor),
+      subjectScope: "repository",
+    }]).assertions.find((a) => a.predicate === "work.status");
+
+    expect(artifactScoped?.subject_id).not.toBe(repositoryScoped?.subject_id);
+    // Identity binds the subject, so the same claim about two different subjects
+    // cannot collide on one assertion id.
+    expect(artifactScoped?.assertion_id).not.toBe(repositoryScoped?.assertion_id);
+  });
+
+  it("keeps the subject identical when the same content sits at a different absolute root", () => {
+    const files = { "plan.md": "---\nstatus: wip\n---\n\n# Plan\n" };
+    const first = interpret(materialize(files, tmp("l9-scope-a-")));
+    const second = interpret(materialize(files, tmp("l9-scope-b-")));
+    expect(first.assertions.map((a) => [a.subject_id, a.assertion_id]))
+      .toEqual(second.assertions.map((a) => [a.subject_id, a.assertion_id]));
+  });
+});
+
+describe("archive members are their own subjects", () => {
+  it("attaches a member's claims to the virtual member artifact", () => {
+    const parent = tmp("l9-scope-archive-");
+    const inner = path.join(parent, "build", "inner.zip");
+    fs.mkdirSync(path.dirname(inner), { recursive: true });
+    writeRawZip(inner, [{
+      name: "world-model.md",
+      content: "---\nstatus: draft\n---\n\n# World Model\n",
+      stored: true,
+    }]);
+    const source = path.join(parent, "source");
+    fs.mkdirSync(source, { recursive: true });
+    writeRawZip(path.join(source, "old-projects.zip"), [
+      { name: "plans/inner.zip", content: fs.readFileSync(inner), stored: true },
+    ]);
+
+    withLocalSourceModel(
+      { path: source, name: "corpus", producerVersion: PRODUCER_VERSION },
+      ({ packet, interpretation }) => {
+        const memberPath = "old-projects.zip!/plans/inner.zip!/world-model.md";
+        const status = interpretation?.assertions.find((a) => a.predicate === "work.status");
+        expect(status?.source_path).toBe(memberPath);
+        expect(status?.object).toBe("draft");
+
+        const expected = repositoryModelArtifactId("repo:corpus", memberPath);
+        expect(status?.subject_id).toBe(expected);
+        // Not the outer archive, not the inner archive, not the repository.
+        expect(status?.subject_id).not.toBe(repositoryModelArtifactId("repo:corpus", "old-projects.zip"));
+        expect(status?.subject_id)
+          .not.toBe(repositoryModelArtifactId("repo:corpus", "old-projects.zip!/plans/inner.zip"));
+        expect(status?.subject_id).not.toBe("repo:corpus");
+
+        // And the subject really is an emitted artifact of this packet.
+        const artifact = packet.payload.artifacts.find((a) => a.artifact_id === expected);
+        expect(artifact?.source_path).toBe(memberPath);
+        // No staging location leaked into the subject or the evidence.
+        expect(JSON.stringify(packet.payload.assertions)).not.toContain(os.tmpdir());
+      },
+    );
+  });
+});
+
+describe("packet-side subject handling", () => {
+  function packetFor(root: string): RepositoryModelPacket {
+    return observeRepositoryModel({
+      root,
+      repositoryName: "fixture",
+      sourceRevision: "git:0000000000000000000000000000000000000000",
+      producerVersion: PRODUCER_VERSION,
+    });
+  }
+
+  it("preserves the subject each assertion arrived with", () => {
+    const root = materialize({
+      "README.md": "# Fixture\n\n> **Status:** deprecated\n",
+      "plan.md": "---\nstatus: wip\n---\n\n# Plan\n",
+    });
+    const packet = packetFor(root);
+    const byExtractor = (id: string): string[] => [
+      ...new Set(packet.payload.assertions.filter((a) => a.extractor_id === id).map((a) => a.subject_id)),
+    ];
+    expect(byExtractor("repository-status/v1")).toEqual(["repo:fixture"]);
+    expect(byExtractor("work-intelligence/v1"))
+      .toContain(repositoryModelArtifactId("repo:fixture", "plan.md"));
     expect(validateRepositoryModelPacket(packet).status).toBe("passed");
   });
 
-  it("fails validation when an assertion names a subject the packet does not carry", () => {
-    const packet = observe(fixture());
-    const orphaned: RepositoryModelPacket = {
-      ...packet,
-      payload: {
-        ...packet.payload,
-        assertions: packet.payload.assertions.map((assertion, index) =>
-          index === 0 ? { ...assertion, subject_id: "artifact:deadbeef" } : assertion),
-      },
+  it("orders assertions deterministically even when subjects differ", () => {
+    const root = materialize({
+      "b.md": "---\nstatus: wip\n---\n\n# B\n",
+      "a.md": "---\nstatus: blocked\n---\n\n# A\n",
+    });
+    const first = packetFor(root);
+    const second = packetFor(root);
+    expect(first.payload.assertions).toEqual(second.payload.assertions);
+    expect(first.semantic_hash).toBe(second.semantic_hash);
+  });
+
+  it("fails validation when an assertion names a subject the packet does not emit", () => {
+    const root = materialize({ "plan.md": "---\nstatus: wip\n---\n\n# Plan\n" });
+    const inventory = inventoryTree({
+      root,
+      outDir: path.join(tmp("l9-orphan-out-"), "inventory"),
+      dryRun: true,
+      injectHeaders: false,
+      folderSidecars: false,
+      writeSidecars: false,
+    });
+    const interpretation = interpret(root, "repo:fixture");
+    const orphaned: InterpretationResult = {
+      ...interpretation,
+      assertions: interpretation.assertions.map((assertion) => ({
+        ...assertion,
+        subject_id: repositoryModelArtifactId("repo:fixture", "never-observed.md"),
+      })),
     };
-    const receipt = validateRepositoryModelPacket(orphaned);
-    expect(receipt.status).toBe("failed");
-    const check = receipt.checks.find((c) => c.check_id === "assertion-subject");
+    const packet = buildRepositoryModelPacket({
+      inventory,
+      interpretation: orphaned,
+      repositoryName: "fixture",
+      sourceRevision: "git:0000000000000000000000000000000000000000",
+      producerVersion: PRODUCER_VERSION,
+    });
+    const result = validateRepositoryModelPacket(packet);
+    expect(result.status).toBe("failed");
+    const check = result.checks.find((c) => c.check_id === "assertion-subject");
     expect(check?.status).toBe("failed");
-    expect(check?.details.orphan_count).toBe(1);
+    expect(check?.details.orphan_count).toBe(orphaned.assertions.length);
   });
 });
 
-describe("identity is portable", () => {
-  it("gives the same subject id for the same content under a different absolute root", () => {
-    const first = fixture();
-    const second = tmp();
-    for (const name of fs.readdirSync(first)) {
-      fs.copyFileSync(path.join(first, name), path.join(second, name));
-    }
-    const subjectsOf = (root: string): string[] =>
-      observe(root).payload.assertions.map((a) => a.subject_id);
-    expect(subjectsOf(second)).toEqual(subjectsOf(first));
-  });
+describe("the bound topology consumer", () => {
+  const evidence = JSON.parse(
+    fs.readFileSync(path.join(REPO, "docs", "topology-conformance.json"), "utf8"),
+  ) as { subjects: { id: string; bundle: string }[]; result: { translation_shim_required: boolean } };
 
-  it("derives artifact subjects with the same function the packet builder uses", () => {
-    const root = fixture();
-    const inventory = inventoryTree({ root, outDir: path.join(tmp(), "out"), dryRun: true });
-    const repositoryId = repositoryIdFor("sample");
-    const interpretation = interpretRepository({
-      root, subjectId: repositoryId, inventory, extractors: defaultExtractors(),
-    });
-    const packet = buildRepositoryModelPacket({
-      repositoryName: "sample",
-      sourceRevision: REVISION,
-      producerVersion: PRODUCER_VERSION,
-      inventory,
-      interpretation,
-    });
-    // Nothing in the packet should carry a subject the builder cannot name.
-    const known = new Set([
-      ...packet.payload.repositories.map((r) => r.repository_id),
-      ...packet.payload.artifacts.map((a) => a.artifact_id),
-    ]);
-    for (const assertion of packet.payload.assertions) {
-      expect(known.has(assertion.subject_id)).toBe(true);
-    }
-    expect(artifactIdFor(repositoryId, "plan.md"))
-      .toBe(packet.payload.artifacts.find((a) => a.source_path === "plan.md")?.artifact_id);
+  it("accepted a packet carrying artifact-scoped assertion subjects", () => {
+    const localSource = evidence.subjects.find((subject) => subject.id === "local-source");
+    expect(localSource).toBeDefined();
+    const packet = JSON.parse(
+      fs.readFileSync(path.join(REPO, (localSource as { bundle: string }).bundle, "packet.json"), "utf8"),
+    ) as RepositoryModelPacket;
+
+    const repositoryIds = new Set(packet.payload.repositories.map((r) => r.repository_id));
+    const artifactIds = new Set(packet.payload.artifacts.map((a) => a.artifact_id));
+    const artifactScoped = packet.payload.assertions.filter((a) => artifactIds.has(a.subject_id));
+    const repositoryScoped = packet.payload.assertions.filter((a) => repositoryIds.has(a.subject_id));
+
+    // The proven bundle must actually exercise both scopes, or the conformance
+    // record would only be evidence about the scope that happened to be present.
+    expect(artifactScoped.length).toBeGreaterThan(0);
+    expect(repositoryScoped.length).toBeGreaterThan(0);
+    expect(artifactScoped.length + repositoryScoped.length).toBe(packet.payload.assertions.length);
+    // Including a member of a nested archive, which is the subject most likely to
+    // be flattened by a careless producer.
+    expect(artifactScoped.some((a) => a.source_path.includes("!/"))).toBe(true);
+    expect(evidence.result.translation_shim_required).toBe(false);
   });
 });

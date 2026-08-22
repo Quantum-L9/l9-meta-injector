@@ -1,213 +1,263 @@
 # Corpus intelligence
 
-Authority: [ADR-037](decisions/037-artifact-scoped-evidence-and-corpus-intelligence.md).
-Builds on read-only acquisition, [ADR-036](decisions/036-read-only-local-source-acquisition.md).
+What this package can say about a folder full of accumulated work, and — as
+importantly — what it refuses to say.
 
-Point a corpus at a folder, a drive, or a ZIP and you get back evidence about
-each document: what it declares about its own work, which documents are the same
-file, and which pairs share enough wording to be worth a look.
+Authority: [ADR-037](decisions/037-corpus-intelligence-artifact-scope-and-duplicate-topology.md).
+Acquisition it builds on: [ADR-036](decisions/036-read-only-local-source-acquisition.md).
 
-```bash
-npm run local-source -- /Volumes/Archive/old-projects --name old-projects --out ./out
+## The four layers
+
+```text
+acquisition      local_source.ts        what files exist, what bytes they hold
+interpretation   interpretation.ts      what each file declares, with a cited span
+corpus analysis  corpus_analysis.ts     what the set implies: duplicates, candidates
+projection       corpus_report.ts       the same index, rendered for a person
 ```
 
-```
-out/
-  bundle/                      Repository Model Packet, manifest, validation receipt
-  local-source-manifest.json   acquisition manifest
-  corpus-index.json            l9.corpus-index/v1
-  corpus-report.md             the same projection, for a person
-```
+Each layer reads only the ones above it. `corpus_analysis.ts` never re-observes the
+filesystem to establish something acquisition did not, except to read the text of the
+documents it scores — and that read is itself part of the near-duplicate analysis, one
+of the index's four declared inputs. `corpus_report.ts` reads the index and nothing
+else, which is what makes the two documents unable to disagree.
 
-Nothing under the source is written, renamed, or removed. No file is moved,
-deleted, or consolidated — not by default, and not by any flag this layer has.
+## Artifact-scoped versus repository-scoped assertions
 
-## What is a fact and what is a candidate
+An assertion attaches to a **subject**. Until ADR-037 there was only one.
 
-The layer is built around one distinction, and the wording of the output
-protects it.
+| Scope | Subject | Reads |
+|---|---|---|
+| `repository` | `repo:<name>` | the repository declares something about itself |
+| `artifact` | `artifact:<stable id>` | *this file* declares something about itself |
 
-| | Basis | Epistemic class | What you may conclude |
-|---|---|---|---|
-| **Exact duplicate** | equal content hashes | fact | these files have identical bytes |
-| **Near-duplicate** | lexical similarity ≥ threshold | candidate | these two share wording; go look |
-| **Work signal** | an explicit declaration, with its line | source-declared | this document says this about itself |
+`# Deployment Roadmap` in `plans/deploy.md` is a fact about `plans/deploy.md`. Filing it
+against the repository turns a corpus of two hundred plans into two hundred
+contradictory claims about one subject.
 
-An exact duplicate can be acted on mechanically. A near-duplicate is a question
-for a reader. Reporting a 0.9 similarity score as a "duplicate" would turn a
-lexical measurement into a deletion recommendation nobody made, so the report
-never does.
+An extractor opts in with `subjectScope: "artifact"`. Absent means `repository`, so no
+extractor written before the scope existed changes behavior because the interpreter
+learned to support both. Both scopes validate: the packet's
+`assertions_resolve_to_a_subject` check accepts a repository id or an emitted artifact
+id, and rejects anything else.
 
-## Artifact-scoped vs repository-scoped assertions
+Artifact ids come from one exported helper, `repositoryModelArtifactId(repositoryId,
+sourcePath)`, used by both packet building and interpretation. `sourcePath` is the
+source-relative POSIX path or a virtual archive locator; a member of a nested archive
+is subject to its own artifact:
 
-An extractor declares whose claim it is producing:
-
-```ts
-export const workIntelligenceExtractor: Extractor = {
-  id: "work-intelligence/v1",
-  subjectScope: "artifact",   // this document's status, not the corpus's
-  // ...
-};
+```text
+old-projects.zip!/plans/world-model.md   -> artifact:<id for exactly that locator>
 ```
 
-`repository` is the default and the historical behavior. A rule that reads
-`README.md` to learn a repository's declared status speaks for the repository.
-A rule that reads a plan's `Status: WIP` speaks for that plan — attaching it to
-the repository would say the whole corpus is WIP.
+never the outer archive, never the inner archive, and never the staging directory the
+bytes were read from.
 
-For an archive member the subject is the member's own artifact:
+The wire contract stays at `l9.repository-model` `1.1.0`. `subject_id` was already an
+unconstrained string on both sides, and the bound `l9-constellation-topology` consumer
+accepts artifact subjects with no translation shim — verified against the real loader
+and adapter, recorded in [`topology-conformance.json`](topology-conformance.json).
 
-```
-archive-a.zip!/inner.zip!/draft.md   ->   artifact:<hash of that virtual path>
-```
+## Work intelligence is explicit evidence, not inference
 
-not the outer archive, not the containing archive, and not the source root.
-
-Both scopes coexist in one packet. Producer validation requires every assertion
-subject to resolve to a repository or an artifact the packet carries; anything
-else fails as an orphan. The packet version stays `1.1.0` — no field changed
-shape — and the bound topology consumer accepts both scopes with no translation
-shim.
-
-## Work intelligence is reading, never inference
-
-Every predicate requires an explicit declaration site, and every assertion cites
-the exact line.
+Two artifact-scoped extractors read UTF-8 `.md`, `.markdown`, `.txt` and `.rst`, within
+the existing interpretation size limit and behind the existing secret-path refusal.
+v1 adds no PDF, DOCX, PPTX, XLSX, OCR, notebook, embedding or model extraction.
 
 | Predicate | Read from |
 |---|---|
-| `document.title` | frontmatter `title`, Markdown H1, or a `Title:` line |
-| `document.heading` | each Markdown ATX heading, as `H<level>: <text>` |
-| `work.status` | frontmatter `status`, a `Status:`/`State:` label, a leading admonition, or a title marker like `[WIP]` |
-| `work.kind` | frontmatter `type`/`kind`, or a title that names the kind |
-| `work.task.open` | an unchecked checkbox, or a line starting `TODO:` |
-| `work.task.completed` | a checked checkbox |
-| `work.milestone` | a `Milestone:` label, or a bullet under a `Milestones` heading |
+| `document.title` | frontmatter `title`, a Markdown `# H1`, a `Title:` field |
+| `document.heading` | each ATX heading, as `H<level>: <text>` |
+| `work.status` | frontmatter `status`/`state`, a `Status:`/`State:` line, a leading blockquote admonition, a bracketed title marker |
+| `work.kind` | frontmatter `type`/`kind`, or a kind word named outright in the title |
+| `work.task.open` | an unchecked Markdown checkbox, or a line beginning `TODO:` |
+| `work.task.completed` | a checked Markdown checkbox |
+| `work.milestone` | `Milestone:` / `Milestone <n>:`, or bullets under a `Milestones` heading |
 | `work.depends_on` | `Depends on:`, `Depends upon:`, `Requires:` |
 | `work.blocked_by` | `Blocked by:` |
 | `work.references` | `Reference:`, `References:`, `See also:`, `Related:` |
 | `work.supersedes` | `Supersedes:`, `Replaces:` |
 | `work.superseded_by` | `Superseded by:`, `Replaced by:` |
 
-Status vocabulary: `wip`, `draft`, `planned`, `blocked`, `paused`, `active`,
-`done`, `complete`, `archived`, `superseded`, `cancelled`.
-Kind vocabulary: `plan`, `roadmap`, `proposal`, `design`, `specification`,
-`notes`, `checklist`, `decision`, `research`.
+Vocabularies are closed. `work.status` is one of `wip, draft, planned, blocked, paused,
+active, done, complete, archived, superseded, cancelled`; `work.kind` is one of `plan,
+roadmap, proposal, design, specification, notes, checklist, decision, research`. A value
+outside the vocabulary produces no assertion rather than a nearest match.
 
-What is never done:
+What is **never** read:
 
-- No status from a file's age, path, TODO count, or lack of open tasks.
-- No kind from the theme of the body. `# Deployment Roadmap` names a roadmap;
-  a document that merely discusses roadmaps does not.
-- No task from the word "todo" inside a sentence.
-- No reading inside fenced code, so documented syntax is not a declaration.
-- No resolution of a declared target by fuzzy filename match. The object is the
-  string the document wrote.
+- status from file age, modification time, or path;
+- abandonment from anything at all;
+- completion from the absence of open tasks;
+- a kind from the body's theme — `# Thursday` discussing a plan is not a plan;
+- a task from the word TODO inside a sentence;
+- a heading or a checkbox inside fenced code;
+- a duplicate from a filename.
 
-Contradictions survive. A document saying both `Status: WIP` and
-`Status: Complete` emits both, each citing its own line.
+A bare `WIP` or `DRAFT` counts as a title marker because those are markers. The rest of
+the vocabulary is ordinary English, so it is read from a title only when bracketed:
+`# Complete Guide to Routing` is a title, `# Routing Guide [DRAFT]` is a marked draft.
+A title marker is recorded at `medium` confidence; a structured field or an explicit
+label at `high`.
 
-Inputs are `.md`, `.markdown`, `.txt`, `.rst` that are valid UTF-8, within the
-interpretation size limit, and not on a secret-candidate path. PDF, DOCX, PPTX,
-XLSX, images, OCR, and notebooks are out of scope.
+Contradictions survive. A document declaring `Status: WIP` at the top and
+`Status: Complete` at the bottom emits both assertions, each citing its own line.
+Reconciling them needs the whole corpus in view and is not this pass's job.
+
+Every assertion carries its artifact subject, exact source path, exact line span,
+bounded excerpt, source content hash, extractor id, evidence class, confidence and
+authority. An assertion that cannot cite a span is not emitted.
 
 ## Exact duplicates
 
-Two artifacts are duplicates when both have a content hash and the hashes match.
-Clustering runs over the unified record set, so all of these land together:
+Two artifacts are exact duplicates **if and only if** both carry a known content hash
+and those hashes are identical. That is the whole definition. Names, locations, sizes
+and dates decide nothing.
 
-- two copies in different folders
-- a physical file and a member inside a ZIP
-- two members of different archives
-- a member of a nested archive and a physical file
+Because acquisition clusters over its complete unified record set — physical entries
+and virtual archive members together — a cluster can span:
 
-`corpus-index.json` renders one `DUPLICATE_OF` relation per non-representative
-member, pointing at the cluster's representative, with `duplicate_cluster_id` and
-`symmetric: true` on every edge. That is a star for rendering, not a claim of
-direction: an *n*-member cluster produces *n−1* edges instead of *n(n−1)/2*, and
-the cluster ID says the equivalence is cluster-wide.
+- two files on disk;
+- a file and a member of an archive;
+- two members of one archive;
+- a member of a nested archive and a file on disk;
+- two members of the same nested archive.
 
-**The representative is not a keeper recommendation.** It is chosen by shortest
-path, then code point, purely so rendering is deterministic. Which copy to keep
-depends on things this layer cannot see.
+Cluster identity is `duplicate-cluster:sha256:<content hash>`. It is content-bound, so
+the same corpus observed from a different mount point produces the same cluster ids.
 
-`DUPLICATE_OF` is deliberately **not** in `RepositoryModelEdgeType`. The bound
-topology contract does not own a duplicate edge yet, and repurposing
-`DERIVED_FROM` or `MEMBER_OF` to mean "duplicate" would corrupt a vocabulary two
-repositories share.
+### `DUPLICATE_OF` semantics
+
+`DUPLICATE_OF` is rendered in `corpus-index.json`, **not** in the Repository Model
+Packet. `RepositoryModelEdgeType` is the bound consumer's vocabulary and does not own a
+duplicate edge; adding one from the producer side would be a private wire variant, and
+reusing `DERIVED_FROM` or `MEMBER_OF` to mean "duplicate" would put a false statement
+into a contract another repository reads. Promoting it is a future cross-repository
+change. The predicate `artifact.duplicate_of` is reserved and deliberately unused: an
+RMP assertion needs a source span, and byte duplication — which includes binary files —
+is not a text span.
+
+A cluster of *n* members has *n(n-1)/2* equivalent pairs. Rendering them all drowns a
+graph in edges that say the same thing, so each non-representative member gets exactly
+one relation to the representative. Every relation carries `duplicate_cluster_id` and
+`symmetric: true`, so the star is readable as cluster-wide equivalence rather than as a
+hub-and-spoke claim.
+
+### The representative is not a keeper recommendation
+
+The representative is the shortest source path, then code-point order. It exists so a
+rendering has a centre to draw toward. It is **not** the original, **not** the canonical
+copy, **not** the one to keep, and **not** advice. Every member of a cluster is exactly
+equivalent to every other; that is what byte equality means.
 
 ## Near-duplicate candidates
 
-`text-near-duplicate/v1`:
+A different epistemic class, kept separate everywhere.
 
-1. Normalize: NFKC, CRLF/CR → LF, lowercase, collapse whitespace, trim.
-2. Tokenize into Unicode word tokens.
-3. Take unique 5-token shingles.
-4. Score exact Jaccard over the two shingle sets.
-5. Report pairs scoring above zero and at or above the threshold (default 0.85).
+| | Exact duplicate | Near-duplicate candidate |
+|---|---|---|
+| Class | fact | candidate analysis |
+| Basis | content-hash equality | deterministic text similarity |
+| Rendered as | `DUPLICATE_OF` | a candidate record |
+| Means | the bytes are identical | the wording overlaps |
 
-Documents under 20 tokens are skipped: a score over a handful of tokens says
-more about the corpus's boilerplate than about the documents.
+**Algorithm** — `text-near-duplicate/v1`, version `1.0.0`:
 
-```bash
-npm run local-source -- ./corpus --near-duplicate-threshold 0.7
-npm run local-source -- ./corpus --no-near-duplicates    # exact duplicates still report
-```
+1. normalize: Unicode NFKC, CRLF/CR to LF, lowercase (analysis only), collapse
+   whitespace, trim;
+2. tokenize into Unicode word tokens;
+3. take the unique 5-token shingles;
+4. score the exact Jaccard overlap of the two shingle sets;
+5. report the pair when the score reaches the threshold.
 
-The threshold participates in the analysis identity, so the same corpus scored at
-0.85 and at 0.6 is the same evidence under two different questions.
+Default threshold `0.85`, configurable in `[0, 1]`. Documents below 20 tokens are not
+scored. Byte-identical files are excluded — they are an exact duplicate, and restating a
+certainty as an estimate is a regression. Also excluded: non-UTF-8 bytes, unsupported
+extensions, credential-candidate paths, and files above the analysis size limit. Every
+exclusion is counted and reported in the index's diagnostics.
 
-**Exact duplicates never appear as candidates** — they are already the stronger
-fact. But a file that *has* an exact twin is still compared against everything
-else; one representative per cluster is analysed, so a real finding is never
-dropped and a cluster of copies does not restate the same candidate *n* times.
+Candidate generation runs through a shingle index rather than all-pairs. This is an
+exact optimization, not an approximation: a pair sharing no shingle scores exactly zero
+and cannot qualify at any positive threshold. The tests hold the indexed generator to a
+bounded all-pairs reference implementation at six thresholds.
 
-Candidate generation uses a shingle index: only pairs sharing at least one
-shingle are scored, and each surviving pair is then scored by the same exact
-function the definition uses. The suite asserts this returns exactly what a
-bounded all-pairs reference returns, at several thresholds — it skips pairs that
-cannot qualify, it does not approximate.
+Candidate identity binds the algorithm id and version, the threshold, the ordered
+artifact-id pair, and both normalized content hashes — so it is stable across absolute
+paths and changes when the analysis rules change.
 
-A candidate never means same topic, same project, supersession, redundancy, or
-that anything should be merged or deleted.
+**A candidate does not mean:** same topic, same project, same effort, one supersedes the
+other, they are redundant, they should be merged, or anything should be deleted. It
+means the wording overlaps. Two documents about entirely different subjects can share
+wording; two documents about one subject can share none.
 
-## The corpus index is a projection
+## The corpus index is a projection, not new truth
 
-`corpus-index.json` and `corpus-report.md` derive entirely from the acquisition
-observation, the emitted packet, and the two analyses above. They read no source
-files and introduce no facts, so the index cannot disagree with the packet it
-cites.
+`corpus-index.json` declares `l9.corpus-index/v1`. Every value in it is derived from:
 
-Every artifact ID resolves to a packet artifact; every work signal's assertion ID
-resolves to a packet assertion; every duplicate and candidate endpoint resolves to
-an artifact in the index. Scratch paths never appear. Serialization is canonical:
-code-point key order, no wall clock, byte-identical across runs of the same
-inputs under the same profile.
+- the acquisition observation (`LocalSourceObservation` / `InventoryResult`),
+- the emitted Repository Model Packet,
+- the deterministic exact-duplicate clustering,
+- the deterministic near-duplicate analysis.
 
-The corpus index has its own canonical serializer. The packet's is integer-only —
-the wire contract forbids floats so two runtimes cannot disagree about a decimal —
-and a similarity score is genuinely fractional, so the corpus form carries floats
-at fixed precision rather than loosening the wire rule.
+Top-level sections: `source`, `repository_model`, `analysis_profile`, `summary`,
+`artifacts`, `work_signals`, `exact_duplicate_clusters`, `relations`,
+`near_duplicate_candidates`, `archives`, `diagnostics`.
 
-## Identity
+Every artifact id resolves to a packet artifact, every work-signal assertion id resolves
+to a packet assertion, and every relation and candidate endpoint resolves to an artifact
+in the index. A reference that does not resolve is not written.
 
-| Change | Effect |
-|---|---|
-| replay, same inputs and profile | everything identical, byte for byte |
-| corpus moved to another absolute path | all semantic IDs unchanged |
-| different scratch location | all semantic IDs unchanged |
-| one task line edited | that document's content hash and assertion change; unrelated clusters and candidates unchanged |
-| a file renamed | source revision and that artifact's ID change; its content-based duplicate cluster does not |
-| threshold changed | packet semantic hash unchanged; corpus analysis identity changes; the candidate set may change |
+`analysis_profile.corpus_profile_hash` binds the work extractor versions, both duplicate
+algorithm versions, and the threshold. Two indexes can therefore be compared without
+guessing which rules produced each.
+
+Serialization is deterministic: code-point key ordering at every depth, absent fields
+omitted, no wall clock, no absolute path, no scratch path. The same corpus content
+observed from a different directory produces byte-identical outputs.
+
+`corpus-report.md` renders the same index with fixed section order, fixed row order and
+no timestamp. Its language is part of the contract: exact duplicates may be called
+byte-identical, candidates must be called candidates and lexical similarity, and the
+words *same topic*, *same project*, *merge these*, *delete this*, *redundant*, *keeper*
+and *canonical copy* appear nowhere in it.
+
+## Nothing is moved, deleted or consolidated
+
+This layer observes. It does not move a file, delete a file, rewrite a file, plan a
+reorganization, choose a keeper, prioritize work, or generate a roadmap. The CLI refuses
+to write its outputs inside the tree it observed, and the source checksum before an
+observation equals the checksum after it.
 
 ## Not in v1
 
-Topic clustering, embeddings, vector storage, LLM summarization or
-classification, `SAME_TOPIC` edges, project grouping or naming, roadmap
-generation, build prioritization, consolidation recommendations, automatic keeper
-selection, file moves, file deletion, and extraction from PDF, DOCX, PPTX, XLSX,
-images or OCR.
+Topic clustering, semantic embeddings, a vector database, LLM summarization or
+classification, `SAME_TOPIC` edges, project clustering or naming, roadmap generation,
+build prioritization, consolidation recommendations, file-move plans, file deletion,
+automatic keeper selection, PDF/DOCX/PPTX/XLSX extraction, OCR, image understanding.
 
-The point of stopping here is that the next layer — whatever groups related work
-and weighs consolidation — needs a substrate it can trust. Evidence with a cited
-line is that substrate. A guess wearing the same shape is not.
+The order is deliberate. A trustworthy artifact-level evidence substrate comes first;
+higher-order grouping and strategic judgement come after it has been run against real
+archives.
+
+## Running it
+
+```bash
+npm run local-source -- <path> --out <dir>
+```
+
+Adds to the existing output layout:
+
+```text
+<out>/
+  bundle/
+    manifest.json
+    packet.json
+    receipts/validation-receipt.json
+  local-source-manifest.json
+  corpus-index.json
+  corpus-report.md
+```
+
+| Flag | Effect |
+|---|---|
+| `--near-duplicate-threshold F` | lexical similarity threshold in `[0, 1]`, default `0.85` |
+| `--no-near-duplicates` | skip the similarity pass; exact duplicates and every other corpus output are unaffected |

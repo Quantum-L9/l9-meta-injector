@@ -1,9 +1,0 @@
-Title: Cutover Notes
-
-Status: paused
-
-TODO: confirm the archive budget defaults with the operator
-
-These notes were taken during the dry run. The observed drive held several
-copies of the same bundle, which is why duplicate clustering runs across
-physical files and archive members together rather than per source.

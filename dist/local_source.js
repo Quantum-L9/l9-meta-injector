@@ -70,6 +70,7 @@ const fs = __importStar(require("node:fs"));
 const os = __importStar(require("node:os"));
 const path = __importStar(require("node:path"));
 const inventory_1 = require("./inventory");
+const ordering_1 = require("./ordering");
 const encoding_1 = require("./encoding");
 const omit_1 = require("./omit");
 const archive_preflight_1 = require("./archive_preflight");
@@ -208,20 +209,6 @@ function hashFileStreaming(absolutePath) {
         fs.closeSync(fd);
     }
 }
-// ───────────────────────────── canonical manifest ─────────────────────────────
-/** Code-point ordering. Locale comparison must never decide identity. */
-function compareCodePoints(a, b) {
-    const left = [...a], right = [...b];
-    const shared = Math.min(left.length, right.length);
-    for (let i = 0; i < shared; i++) {
-        const l = left[i].codePointAt(0) ?? 0, r = right[i].codePointAt(0) ?? 0;
-        if (l !== r)
-            return l < r ? -1 : 1;
-    }
-    if (left.length === right.length)
-        return 0;
-    return left.length < right.length ? -1 : 1;
-}
 /**
  * Digest of the physical snapshot.
  *
@@ -232,7 +219,7 @@ function compareCodePoints(a, b) {
  * different mount point on a different machine yields the same digest.
  */
 function physicalManifestDigest(entries) {
-    const ordered = [...entries].sort((a, b) => compareCodePoints(a.path, b.path));
+    const ordered = [...entries].sort((a, b) => (0, ordering_1.compareCodePoints)(a.path, b.path));
     const rendered = ordered
         .map((entry) => JSON.stringify([entry.path, entry.kind, entry.contentHash ?? null, entry.linkTarget ?? null]))
         .join("\n");
@@ -309,7 +296,7 @@ function enumerateDirectory(root, omit, diagnostics, omittedPaths, skippedDirs) 
             skippedDirs.push(`${toPosix(path.relative(root, directory)) || "."}: ${error.message}`);
             return;
         }
-        for (const name of [...names].sort(compareCodePoints)) {
+        for (const name of [...names].sort(ordering_1.compareCodePoints)) {
             const absolutePath = path.join(directory, name);
             const relativePath = toPosix(path.relative(root, absolutePath));
             if (omit.shouldOmit(relativePath)) {
@@ -998,7 +985,7 @@ function buildRecords(hashed, members, diagnostics) {
             unknowns: [],
         }));
     }
-    return records.sort((a, b) => compareCodePoints(a.relative_path, b.relative_path));
+    return records.sort((a, b) => (0, ordering_1.compareCodePoints)(a.relative_path, b.relative_path));
 }
 /** Assemble the inventory view the packet builder and interpretation consume. */
 function buildInventoryResult(root, records, skippedDirs, omittedPaths) {
@@ -1019,21 +1006,21 @@ function buildInventoryResult(root, records, skippedDirs, omittedPaths) {
         typeDistribution,
         // Acquisition writes no manifests of its own; the CLI owns output placement.
         manifestPaths: { json: "", csv: "", md: "", duplicates: "" },
-        // Clustered over the unified record set — physical files and virtual archive
-        // members together — so a file that also exists inside a ZIP is recognised as
-        // the same bytes. Running this per-source would miss exactly the cross-archive
-        // duplication a mixed corpus is most likely to contain.
+        // Clustered over the complete record set — physical entries and virtual
+        // archive members together. Leaving this empty, as acquisition used to, meant
+        // a file and its copy inside a ZIP were never seen as the same bytes, which
+        // is the single most common shape a real corpus has.
         duplicates: (0, inventory_1.buildDuplicateClusters)(records),
         records,
         skippedDirs,
-        omittedPaths: [...omittedPaths].sort(compareCodePoints),
+        omittedPaths: [...omittedPaths].sort(ordering_1.compareCodePoints),
     };
 }
 /** Total order over diagnostics, so a packet's diagnostic list is reproducible. */
 function compareDiagnostics(a, b) {
-    return compareCodePoints(a.code, b.code)
-        || compareCodePoints(a.sourcePath ?? "", b.sourcePath ?? "")
-        || compareCodePoints(a.message, b.message);
+    return (0, ordering_1.compareCodePoints)(a.code, b.code)
+        || (0, ordering_1.compareCodePoints)(a.sourcePath ?? "", b.sourcePath ?? "")
+        || (0, ordering_1.compareCodePoints)(a.message, b.message);
 }
 /**
  * Observe a local source read-only and return everything a deterministic packet
@@ -1101,8 +1088,8 @@ function acquireLocalSource(input) {
         sourceRevision: identity.sourceRevision,
         physicalSnapshotHash: identity.physicalSnapshotHash,
         inventory: buildInventoryResult(absoluteSource, records, skippedDirs, omittedPaths),
-        archives: [...archives].sort((a, b) => compareCodePoints(a.sourcePath, b.sourcePath)),
-        virtualArtifacts: [...members].sort((a, b) => compareCodePoints(a.virtualSourcePath, b.virtualSourcePath)),
+        archives: [...archives].sort((a, b) => (0, ordering_1.compareCodePoints)(a.sourcePath, b.sourcePath)),
+        virtualArtifacts: [...members].sort((a, b) => (0, ordering_1.compareCodePoints)(a.virtualSourcePath, b.virtualSourcePath)),
         diagnostics: [...diagnostics].sort(compareDiagnostics),
         archivePolicy: policy,
         stable: unstableReason === null,

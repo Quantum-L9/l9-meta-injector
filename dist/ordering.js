@@ -1,19 +1,19 @@
 "use strict";
-// ordering.ts — the one total order used wherever output is identity-bearing.
+// ordering.ts — the one total order this package sorts identity-bearing data by.
 //
-// This lives in a leaf module because everything needs it: inventory clusters,
-// interpretation assertions, packet domains, and corpus projections all have to
-// agree on what "sorted" means, and a second implementation would let two of
-// them disagree. `repository_model` re-exports `compareCodePoints` so the
-// published surface is unchanged.
+// Every ordering that reaches a hash, a manifest, a packet or a report is
+// code-point ordering. `localeCompare` is correct for showing a list to a person
+// and wrong for anything a machine will compare across hosts: it varies with the
+// runtime's ICU data and the ambient locale, so the same observation can serialize
+// two different ways on two machines and break a byte-for-byte replay.
 //
-// Never `localeCompare`: it consults the host's locale, so the same bytes can
-// order differently on two machines and a hash taken over the result stops being
-// reproducible. Code points are a property of the string itself.
+// This lives in its own module because it is imported by both ends of the
+// dependency graph — inventory observation and packet egress — and a shared
+// helper parked in either one would make them circular.
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.compareCodePoints = compareCodePoints;
 exports.canonicalPair = canonicalPair;
-/** Code-point ordering. Never locale-aware: ordering must not vary by environment. */
+/** Order two strings by Unicode code point. Never locale-aware. */
 function compareCodePoints(a, b) {
     const left = [...a], right = [...b];
     const shared = Math.min(left.length, right.length);
@@ -27,10 +27,10 @@ function compareCodePoints(a, b) {
     return left.length < right.length ? -1 : 1;
 }
 /**
- * The two members of an unordered pair, in a fixed order.
+ * Order a pair of ids so that a symmetric relation has one canonical spelling.
  *
- * A pair's identity must not depend on which side the caller happened to iterate
- * first, or the same relationship would hash two ways.
+ * A near-duplicate candidate between two artifacts is the same candidate whichever
+ * one is read first, so its identity must not depend on iteration order.
  */
 function canonicalPair(a, b) {
     return compareCodePoints(a, b) <= 0 ? [a, b] : [b, a];

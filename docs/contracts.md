@@ -32,31 +32,38 @@ Source revision is explicit and never inferred. Capabilities and relationships r
 evidence; unsupported domains stay empty and are reported as diagnostics. Producer-side
 validation must pass before a bundle is written.
 
-An assertion's subject is a repository ID or an artifact ID from the same packet, and
-`src/repository_model.ts#artifactIdFor` is the only implementation of artifact identity.
-Interpretation resolves the subject from `Extractor.subjectScope`, defaulting to
-`repository`; the packet builder preserves whatever subject arrives, and validation
-rejects any subject that resolves to neither.
+An assertion attaches to the subject the interpretation pass gave it, and the packet
+builder preserves that subject rather than rewriting it to the repository. The subject
+must be a repository or an artifact this packet emits; an assertion naming neither fails
+producer-side validation. `Extractor.subjectScope` selects the scope and defaults to
+`repository`, so an extractor's scope changes only when the extractor says so. Artifact
+identity comes from `repositoryModelArtifactId`, which packet building and interpretation
+share so the two cannot drift apart.
 
-## Corpus intelligence
+Scope is not a wire change: `subject_id` is an unconstrained string on both sides of the
+contract, so `l9.repository-model` stays at `1.1.0`. The interpretation profile version
+moves whenever extraction rules change, and through it the semantic identity of every
+packet built with interpretation.
 
-`src/corpus_analysis.ts` is normative for `l9.corpus-index/v1`. It is a projection: every
-value derives from the acquisition observation, the emitted packet, or the two duplicate
-analyses, and no source file is read.
+## Corpus analysis
 
-Three classes stay distinct and must not be conflated:
+`src/corpus_analysis.ts` and `src/corpus_report.ts` are normative for `l9.corpus-index/v1`.
+They are a projection: every value derives from the acquisition observation, the emitted
+packet, the exact-duplicate clustering, or the near-duplicate analysis, and every artifact,
+assertion, relation endpoint and candidate endpoint must resolve against the packet.
 
-| Class | Basis | May be stated as |
-|---|---|---|
-| fact | equal content hashes | "exact duplicate", "byte-identical" |
-| candidate analysis | lexical similarity at a stated threshold | "candidate", "lexical similarity" |
-| source-declared | an explicit declaration with a cited line | what the document says about itself |
+Two epistemic classes stay apart. An exact duplicate is content-hash equality and is
+stated as a fact; `DUPLICATE_OF` is rendered here rather than in the packet, because the
+bound consumer's edge vocabulary does not own that edge and no existing edge type may be
+reused to mean it. A near-duplicate is a `text-near-duplicate/v1` score at a stated
+threshold and is a candidate: it establishes shared wording and nothing about topic,
+project, supersession, or what should be done. The cluster representative is a rendering
+anchor and never a recommendation.
 
-A near-duplicate candidate must never be rendered as a duplicate, as shared topic or
-project, as supersession or redundancy, or as a recommendation to merge or delete. A
-cluster's representative must never be described as a keeper or canonical copy.
-`DUPLICATE_OF` is a corpus-index relation and is deliberately absent from
-`RepositoryModelEdgeType`, which is a vocabulary shared with topology.
+Both outputs are byte-deterministic — code-point key ordering, no wall clock, no absolute
+or scratch path — and neither is ever written inside the observed source.
+
+Full semantics: `docs/corpus-intelligence.md`.
 
 ## Distribution
 

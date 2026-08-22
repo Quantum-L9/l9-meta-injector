@@ -1,6 +1,11 @@
 import { InventoryResult } from "./inventory";
 /** Identity of the interpretation policy. Bumped when extraction rules change. */
 export declare const INTERPRETATION_PROFILE_ID = "meta-injector-repository-interpretation";
+/**
+ * 1.1.0 adds artifact-scoped assertion subjects and the deterministic
+ * work-intelligence extractors. Both change what this profile observes, so the
+ * version — and through it every packet's semantic identity — moves with them.
+ */
 export declare const INTERPRETATION_PROFILE_VERSION = "1.1.0";
 /**
  * How an assertion was evidenced.
@@ -57,9 +62,9 @@ export interface InterpretationResult {
 }
 export interface ExtractorFileInput {
     /**
-     * Subject the assertions attach to, already resolved for this extractor's scope:
-     * the repository subject (`repo:golden-repo`) for a repository-scoped extractor,
-     * this file's artifact ID (`artifact:<hash>`) for an artifact-scoped one.
+     * Subject the assertions attach to, already resolved for the extractor's own
+     * scope: the repository id for a repository-scoped extractor, this file's
+     * artifact id for an artifact-scoped one.
      */
     subjectId: string;
     /** Repository-relative POSIX path. Never absolute: identity must be portable. */
@@ -87,22 +92,26 @@ export interface AssertionDraft {
     confidence: InterpretedConfidenceLevel;
 }
 /**
- * Whether an extractor's assertions describe the repository or one artifact.
+ * What an extractor's assertions are *about*.
  *
- * Repository scope is the default and the historical behavior: a rule that reads
- * `README.md` to learn the repository's declared status speaks for the whole
- * repository. Artifact scope is for rules whose claim is about the file itself —
- * this plan is a draft, this note lists these tasks — where attaching the claim to
- * the repository would be a category error.
+ * `repository` — the file evidences something about the repository as a whole
+ * (its declared status, its manifest, its canonical authority list).
+ * `artifact` — the file evidences something about *itself* (this plan is a WIP,
+ * this note lists these tasks).
+ *
+ * The distinction is not cosmetic. A corpus of a thousand documents that all
+ * report their status against one repository subject says nothing about which
+ * document is which; the same claims against artifact subjects are a work map.
  */
 export type ExtractorSubjectScope = "repository" | "artifact";
 export interface Extractor {
     id: string;
     version: string;
     /**
-     * Defaults to `repository`. An existing extractor keeps repository scope unless
-     * it opts in here, so widening the interpreter never silently re-points claims
-     * that were written to describe the repository.
+     * Scope of this extractor's assertion subjects. Absent means `repository`,
+     * which is what every extractor written before the scope existed meant: an
+     * extractor never silently changes scope because the interpreter learned to
+     * support both.
      */
     subjectScope?: ExtractorSubjectScope;
     /** True when this extractor claims the file. Path-based and side-effect free. */
@@ -110,6 +119,8 @@ export interface Extractor {
     /** Parse and report. Must not throw on malformed input; return [] instead. */
     extract(input: ExtractorFileInput): AssertionDraft[];
 }
+/** The scope an extractor declares, defaulting to the pre-scope behavior. */
+export declare function extractorSubjectScope(extractor: Extractor): ExtractorSubjectScope;
 export declare function isSecretCandidatePath(sourcePath: string): boolean;
 export declare function looksSecret(value: string): boolean;
 /** Excerpts are bounded so a packet can never become a file mirror. */
@@ -121,9 +132,9 @@ export interface InterpretRepositoryInput {
     /** Repository root the inventory was taken from. */
     root: string;
     /**
-     * The repository subject, e.g. `repo:golden-repo`. Repository-scoped extractors
-     * attach to it directly; artifact-scoped ones attach to artifact IDs derived
-     * from it, so this value must be the same repository ID the packet will carry.
+     * Repository subject, e.g. `repo:golden-repo`. Repository-scoped extractors
+     * attach their assertions here; artifact-scoped ones attach to the artifact
+     * derived from this same id, so both stay inside one identity domain.
      */
     subjectId: string;
     inventory: InventoryResult;
