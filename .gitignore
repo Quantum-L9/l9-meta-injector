@@ -17,6 +17,20 @@ dist/*.tsbuildinfo
 .cursor/
 .vscode/
 
+# Claude Code governance wiring, the same class as the Cursor entries above:
+# regenerated per clone by the session bootstrap, machine-local, never repository
+# content. `.claude/settings.json` is tracked and deliberately not listed here.
+.claude/hooks/
+.claude/rules
+.claude/skills/
+.mcp.json
+
+# This repository is npm-only: `package-lock.json` is the committed lockfile and
+# every workflow runs `npm ci`. A pnpm lockfile appearing in a working tree is a
+# tooling artifact, and committing one would introduce a second, unverified
+# dependency resolution. Delete this line if pnpm ever becomes a supported path.
+pnpm-lock.yaml
+
 # L4 local-autonomy runtime state (machine-local; never repository content).
 # `.l9/` itself is a governed namespace — `.l9/meta-authority.yaml` and
 # `.l9/metadata-index.jsonl` are meant to be committed — so only this subtree is ignored.
