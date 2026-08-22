@@ -266,7 +266,7 @@
     },
     {
       "path": "fixtures/package-consumer/runtime.cjs",
-      "git_blob_sha1": "9ee8c11863391190a05cd1cb614b9c1191eb53f3"
+      "git_blob_sha1": "47467667d632e032b19753369f8e7d06de67c40d"
     },
     {
       "path": "fixtures/package-consumer/tsconfig.json",
@@ -274,7 +274,7 @@
     },
     {
       "path": "fixtures/package-consumer/types.ts",
-      "git_blob_sha1": "687178a08604a61bc472f0209b1993d33f46fb84"
+      "git_blob_sha1": "e6b9e6abc62580bce14527c656391b8065da3c9c"
     },
     {
       "path": "fixtures/repository-model/expected-bundle/manifest.json",

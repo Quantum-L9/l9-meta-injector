@@ -1,7 +1,7 @@
 import { META_AUTHORITY_SCHEMA, resolveOperationMode, assertAuthorityForOperation, runCheckAsync, runPipelineAsync, runSkillsPipelineAsync, UNKNOWN, type AuthorityConfig, type CheckConfig, type OperationMode, type OperationResult, type PipelineConfig, type PipelineResult, type SkillsPipelineConfig, type SkillsPipelineResult, type NormalizedMeta, type MetaV3Record } from "l9-meta-injector";
 import { inventoryTree, type InventoryConfig, type InventoryResult } from "l9-meta-injector/inventory";
 import { buildMetaV3, type MetaV3, type ArtifactType } from "l9-meta-injector/schema";
-import { compilePlacementPlans, parseCanonicalYaml, type PlacementPlan, type MetaSchema } from "l9-meta-injector/advanced";
+import { compilePlacementPlans, parseCanonicalYaml, acquireLocalSource, observeLocalSourceModel, resolveLocalArchivePolicy, type PlacementPlan, type MetaSchema, type LocalSourceAcquireInput, type LocalSourceObservation, type LocalArchivePolicy, type LocalSourceModelResult } from "l9-meta-injector/advanced";
 import { makeOpenAIAdapter, type LlmAdapter, type LlmDiagnostic } from "l9-meta-injector/advanced/llm";
 import { validateRepositoryModelPacket, type RepositoryModelPacket, type RepositoryModelValidationResult } from "l9-meta-injector/repository-model";
 const config: PipelineConfig = { root:".",glob:"**/*.md",dryRun:true,outDir:".out",namespace:"l9",authority:"l9.doctrine.platform",nearDupThreshold:0.9,hashPrefixLength:16,indexDir:".index",verbose:false,llmEnabled:false,normalizeFilenames:false };
@@ -22,7 +22,14 @@ assertAuthorityForOperation(operationMode, authority);
 const checkConfig: CheckConfig = {...config,dryRun:true};
 const checkPromise: Promise<OperationResult> = runCheckAsync(checkConfig);
 let operationResult!: OperationResult;
+// Local-source acquisition must be nameable and callable from an installed
+// tarball, declarations included (ADR-036).
+const localSourceInput: LocalSourceAcquireInput = { path:".", expandArchives:false };
+let localSourceObservation!: LocalSourceObservation;
+const localArchivePolicy: LocalArchivePolicy = resolveLocalArchivePolicy({ maxNestedDepth: 1 });
+const localSourceAcquire: typeof acquireLocalSource = acquireLocalSource;
+const localSourceModel: (input: Parameters<typeof observeLocalSourceModel>[0]) => LocalSourceModelResult = observeLocalSourceModel;
 let repositoryModelPacket!: RepositoryModelPacket; const repositoryModelValidation: RepositoryModelValidationResult = validateRepositoryModelPacket(repositoryModelPacket);
-const _keepAlive: unknown[] = [pipelinePromise,checkPromise,skillsPromise,inventoryResult,typeName,plans,parsed,adapter,diagnostic,meta,record,operationMode,authority,checkConfig,operationResult,UNKNOWN,repositoryModelValidation];
+const _keepAlive: unknown[] = [localSourceInput,localSourceObservation,localArchivePolicy,localSourceAcquire,localSourceModel,pipelinePromise,checkPromise,skillsPromise,inventoryResult,typeName,plans,parsed,adapter,diagnostic,meta,record,operationMode,authority,checkConfig,operationResult,UNKNOWN,repositoryModelValidation];
 let schema!: MetaSchema; const _schemaKeep: unknown = schema;
 export type _ConsumerFixtureKeepAlive = typeof _keepAlive | typeof _schemaKeep;
