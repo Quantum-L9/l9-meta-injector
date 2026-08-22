@@ -188,6 +188,44 @@ describe("declared kind", () => {
   });
 });
 
+describe("quoted text keeps the characters the document wrote", () => {
+  // An assertion object is a quotation. Stripping every `*`, `_` and backtick is
+  // right for a value matched against a closed vocabulary, and wrong here: it
+  // turns `ship_the_v2_pipeline` into a string that appears in no file and
+  // matches no search, while the assertion still claims to quote the source.
+  it.each([
+    ["a checkbox task", ["- [ ] wire up user_profile_service"], "work.task.open", "wire up user_profile_service"],
+    ["a TODO task", ["TODO: rotate api_key_v2 secret"], "work.task.open", "rotate api_key_v2 secret"],
+    ["a labelled milestone", ["Milestone: ship_the_v2_pipeline"], "work.milestone", "ship_the_v2_pipeline"],
+    ["a milestone bullet", ["## Milestones", "", "- deploy_the_edge_cache"], "work.milestone", "deploy_the_edge_cache"],
+    ["a relation target", ["Supersedes: l9_topology_contract"], "work.supersedes", "l9_topology_contract"],
+  ])("preserves an identifier in %s", (_name, lines, predicate, expected) => {
+    expect(objects(work("a.md", lines as string[]), predicate as string)).toEqual([expected]);
+  });
+
+  it("preserves an identifier in a heading", () => {
+    expect(objects(structure("a.md", ["# deploy_the_v2_pipeline"]), "document.heading"))
+      .toEqual(["H1: deploy_the_v2_pipeline"]);
+  });
+
+  it("still removes emphasis that wraps the whole value", () => {
+    expect(objects(work("a.md", ["- [ ] **Do the thing**"]), "work.task.open")).toEqual(["Do the thing"]);
+    expect(objects(work("a.md", ["- [ ] ***very important***"]), "work.task.open")).toEqual(["very important"]);
+  });
+
+  it("leaves emphasis that marks up part of a sentence", () => {
+    // Trimming only what touches an edge would leave `urgent** fix`, a string
+    // the document does not contain.
+    expect(objects(work("a.md", ["- [ ] **urgent** fix"]), "work.task.open")).toEqual(["**urgent** fix"]);
+    expect(objects(work("a.md", ["- [ ] fix the **login** bug"]), "work.task.open"))
+      .toEqual(["fix the **login** bug"]);
+  });
+
+  it("leaves a value that is nothing but emphasis alone", () => {
+    expect(objects(work("a.md", ["- [ ] ****"]), "work.task.open")).toEqual(["****"]);
+  });
+});
+
 describe("tasks", () => {
   it("reads an unchecked checkbox as an open task", () => {
     expect(objects(work("a.md", ["- [ ] wire the thing"]), "work.task.open"))

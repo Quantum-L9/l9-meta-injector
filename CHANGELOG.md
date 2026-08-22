@@ -27,6 +27,8 @@
 
 ### Fixed
 
+- Assertion objects keep the characters the document wrote. Task, milestone, heading and title text was normalized with a global strip of `*`, `_` and backticks — correct for a value matched against a closed vocabulary, wrong for text quoted back as evidence. `- [ ] wire up user_profile_service` was recorded as `wire up userprofileservice`: an identifier present in no file, matching no search, while the assertion still claimed to cite its source line. Snake_case in a task or milestone is ordinary in engineering documents, so this was quietly losing real content. Emphasis is now removed only where it wraps the whole value; `normalizeTarget` already drew this line for relation targets.
+
 - Local-source acquisition no longer discards its own duplicate analysis. It assembled a unified record set of physical files and virtual archive members and then returned `duplicates: []`, so the most common shape a real corpus has — the same file on disk and inside three backup ZIPs — was invisible. Clustering now runs over the complete record set.
 - Duplicate clustering no longer uses `localeCompare` for path ordering or for the shortest-path tie-break, so cluster output stops varying with the host's ICU data and ambient locale.
 - Observing a local archive no longer destroys user data. Expanding `Foo.zip` used to remove whatever occupied the sibling `Foo.l9extracted/` path first, on the strength of the pathname alone, so a user directory that merely shared the name was lost. Extraction now refuses to replace a target that carries no ownership marker, and recursive deletion is confined to a scratch root the run created and can still prove it owns (ADR-036).
