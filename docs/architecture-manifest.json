@@ -66,11 +66,11 @@
     },
     {
       "path": "dist/extractors/work_intelligence.js",
-      "git_blob_sha1": "77bf5e0e0a0c7fb0909a55466cbf6c07cd55e6a4"
+      "git_blob_sha1": "83d2a590de4a9568c78e10942867789c076787c3"
     },
     {
       "path": "dist/extractors/work_intelligence.js.map",
-      "git_blob_sha1": "af15a324968a07891c898f6936d7c96a2421f625"
+      "git_blob_sha1": "ee30edba4841cf9a8d2f1222be50f82addc4585d"
     },
     {
       "path": "dist/index.d.ts",
@@ -314,7 +314,7 @@
     },
     {
       "path": "docs/topology-conformance.json",
-      "git_blob_sha1": "0d488bb127e0ad61b901777bf880a907d6eb3178"
+      "git_blob_sha1": "82d417dc618700c6099d217a1962e334c423e439"
     },
     {
       "path": "docs/traceability-map.json",
@@ -366,15 +366,15 @@
     },
     {
       "path": "fixtures/repository-model/expected-bundle/manifest.json",
-      "git_blob_sha1": "f95343ebb0680c365f918aabdec8c4b312629c37"
+      "git_blob_sha1": "2326530376c7cae33ac850fbec198143609573e3"
     },
     {
       "path": "fixtures/repository-model/expected-bundle/packet.json",
-      "git_blob_sha1": "7725430ff131bfe4b25f3b87f5aa2d8804f82df4"
+      "git_blob_sha1": "effc7ee50c91ca827aaa2a532f7f055ba6cda1eb"
     },
     {
       "path": "fixtures/repository-model/expected-bundle/receipts/validation-receipt.json",
-      "git_blob_sha1": "bc732cfe031c7db5f9282ebda953d092cbe44c15"
+      "git_blob_sha1": "f7dbd41e0a042dbdca0847539877859e3c9471bc"
     },
     {
       "path": "Makefile",
@@ -466,7 +466,7 @@
     },
     {
       "path": "src/extractors/work_intelligence.ts",
-      "git_blob_sha1": "5893f2b34808cf217e686cea6d444e1bef82f397"
+      "git_blob_sha1": "d6215edbc85387433b3ca8a6049ccc7159859a8f"
     },
     {
       "path": "src/index.ts",
@@ -546,7 +546,7 @@
     },
     {
       "path": "tests/corpus_intelligence.test.ts",
-      "git_blob_sha1": "a894dab7c3f9813efd7479843639e9cfe31286f5"
+      "git_blob_sha1": "35bfaa53770ba44edf6d2d35cd8488bb2d4992ca"
     },
     {
       "path": "tests/dist_integrity.test.ts",
@@ -602,7 +602,7 @@
     },
     {
       "path": "tests/work_intelligence.test.ts",
-      "git_blob_sha1": "a3b7f58fb071a7248d73be1a16d0a2a2118c9c80"
+      "git_blob_sha1": "f5447bdd74552fc89674f80b932ae4647a9a026f"
     },
     {
       "path": "tools/consolidation/README.md",

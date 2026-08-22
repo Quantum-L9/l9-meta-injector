@@ -15,22 +15,22 @@
     {
       "id": "inventory",
       "bundle": "fixtures/repository-model/expected-bundle",
-      "packet_id": "packet:6e2ea983f55f5bbfc5f7c4266fe9c24ce4f9205a8785410569533aec7a9a23a1",
-      "semantic_hash": "sha256:6e2ea983f55f5bbfc5f7c4266fe9c24ce4f9205a8785410569533aec7a9a23a1",
+      "packet_id": "packet:3c5563619df758d300d083d5a4ff217cbc161f3e77be134c23acbb70e9a759d7",
+      "semantic_hash": "sha256:3c5563619df758d300d083d5a4ff217cbc161f3e77be134c23acbb70e9a759d7",
       "packet_type": "l9.repository-model",
       "packet_version": "1.1.0",
       "files": [
         {
           "path": "manifest.json",
-          "content_hash": "sha256:d6dae1dd1f4bb3f74aa04a33f795e12b7987e66a7db2113cf571758ba6544ef7"
+          "content_hash": "sha256:8a0b6508c17c73e1d772a0a8eeba345a126709189ba98d194f6fb238acd5b696"
         },
         {
           "path": "packet.json",
-          "content_hash": "sha256:24f40721fc42492b58fae8867239097463ac20183a79c032d8216c7121f831ef"
+          "content_hash": "sha256:3bd749debe77f39a20c0e9636d435d354be4033655b67b86045fef518edd9681"
         },
         {
           "path": "receipts/validation-receipt.json",
-          "content_hash": "sha256:12468fa7f2b250317048bef34f4e1064507613210702fa45c71e4be75f6359dc"
+          "content_hash": "sha256:595e63b7134f4bddaefdb9fb6a37f75fcda4eac5b57488ce7d5ceec589e2595c"
         }
       ],
       "normalized_counts": {
@@ -38,7 +38,7 @@
         "artifacts": 7,
         "capabilities": 0,
         "relationships": 7,
-        "evidence": 20,
+        "evidence": 19,
         "diagnostics": 6
       }
     },

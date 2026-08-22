@@ -393,11 +393,23 @@ function titleStatuses(text: string): string[] {
   return found;
 }
 
-/** Kind words a title names outright, e.g. `# Deployment Roadmap` -> `roadmap`. */
+/**
+ * Kind words a title names outright, e.g. `# Deployment Roadmap` -> `roadmap`.
+ *
+ * Only the first or last word of the title's leading segment counts. A kind word
+ * loose in the middle of a name is usually part of the name rather than a
+ * statement about the document: "L9 Perplexity Research Agent" is an agent, not a
+ * piece of research, while "Implementation Roadmap — 6-Phase Rollout" and "Plan
+ * for the migration" both say what they are. This narrowing came from running the
+ * profile over a real repository and reading what it claimed.
+ */
 function titleKinds(text: string): string[] {
+  const segment = text.split(/\s+[—–|]\s+|\s+-\s+|[:(]/u)[0];
+  const words = segment.toLowerCase().split(/[^\p{L}]+/u).filter((word) => word.length > 0);
+  if (words.length === 0) return [];
   const found: string[] = [];
-  for (const token of text.toLowerCase().split(/[^\p{L}]+/u)) {
-    if (WORK_KIND.has(token)) found.push(token);
+  for (const word of [...new Set([words[0], words[words.length - 1]])]) {
+    if (WORK_KIND.has(word)) found.push(word);
   }
   return found;
 }

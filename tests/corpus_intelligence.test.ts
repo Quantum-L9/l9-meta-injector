@@ -555,6 +555,65 @@ describe("corpus report", () => {
   });
 });
 
+// ───────────────────────────── identity under change ─────────────────────────────
+
+describe("what changes when the corpus changes", () => {
+  /** Two corpora identical except for one edit, so every other id must hold still. */
+  function twoRuns(mutate: (root: string) => void): { before: CorpusIndex; after: CorpusIndex } {
+    const before = analyze(fixtureCorpus("l9-corpus-identity-a-")).index;
+    const mutated = fixtureCorpus("l9-corpus-identity-b-");
+    mutate(mutated);
+    return { before, after: analyze(mutated).index };
+  }
+
+  it("moves only what an edited task line touches", () => {
+    const { before, after } = twoRuns((root) => {
+      const target = path.join(root, "roadmap.md");
+      fs.writeFileSync(
+        target,
+        fs.readFileSync(target, "utf8").replace("acquisition hardening lands", "acquisition hardening ships"),
+      );
+    });
+
+    const artifact = (index: CorpusIndex, sourcePath: string) =>
+      index.artifacts.find((a) => a.source_path === sourcePath);
+    // The edited artifact's bytes, and therefore its evidence, moved.
+    expect(artifact(after, "roadmap.md")?.content_hash)
+      .not.toBe(artifact(before, "roadmap.md")?.content_hash);
+    expect(artifact(after, "roadmap.md")?.assertion_ids)
+      .not.toEqual(artifact(before, "roadmap.md")?.assertion_ids);
+    expect(after.repository_model.semantic_hash).not.toBe(before.repository_model.semantic_hash);
+
+    // Nothing else did. Duplicate clusters are content-bound and the edited file
+    // is in none of them; the candidate pair does not involve it either.
+    expect(after.exact_duplicate_clusters.map((c) => c.cluster_id))
+      .toEqual(before.exact_duplicate_clusters.map((c) => c.cluster_id));
+    expect(after.near_duplicate_candidates.map((c) => c.candidate_id))
+      .toEqual(before.near_duplicate_candidates.map((c) => c.candidate_id));
+    expect(artifact(after, "plan.md")?.assertion_ids).toEqual(artifact(before, "plan.md")?.assertion_ids);
+  });
+
+  it("moves artifact identity but not cluster identity when a file is only renamed", () => {
+    const { before, after } = twoRuns((root) => {
+      fs.renameSync(path.join(root, "exact-copy-of-plan.md"), path.join(root, "second-copy-of-plan.md"));
+    });
+
+    // The physical snapshot describes paths as well as bytes, so it moved.
+    expect(after.source.physical_snapshot_hash).not.toBe(before.source.physical_snapshot_hash);
+    expect(after.source.source_revision).not.toBe(before.source.source_revision);
+    expect(after.artifacts.map((a) => a.artifact_id)).not.toEqual(before.artifacts.map((a) => a.artifact_id));
+
+    // Cluster identity is byte-bound, so the same two files still form the same
+    // cluster under a different name.
+    expect(after.exact_duplicate_clusters.map((c) => c.cluster_id))
+      .toEqual(before.exact_duplicate_clusters.map((c) => c.cluster_id));
+    const renamed = after.exact_duplicate_clusters.find((c) => c.source_paths.includes("plan.md"));
+    expect(renamed?.source_paths).toEqual(["plan.md", "second-copy-of-plan.md"]);
+    // Nothing was actually deduplicated: both copies are still artifacts.
+    expect(after.summary.artifact_count).toBe(before.summary.artifact_count);
+  });
+});
+
 // ───────────────────────────── source safety ─────────────────────────────
 
 describe("source safety", () => {

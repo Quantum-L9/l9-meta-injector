@@ -172,6 +172,20 @@ describe("declared kind", () => {
     ]);
     expect(objects(drafts, "work.kind")).toEqual([]);
   });
+
+  it("reads a kind only where the title says what the document is", () => {
+    // First or last word of the leading segment: those are the positions where a
+    // kind word states what the document is rather than naming something in it.
+    expect(objects(work("a.md", ["# Implementation Roadmap — 6-Phase Rollout"]), "work.kind"))
+      .toEqual(["roadmap"]);
+    expect(objects(work("a.md", ["# Plan for the migration"]), "work.kind")).toEqual(["plan"]);
+    expect(objects(work("a.md", ["# L9 Conformance Checklist"]), "work.kind")).toEqual(["checklist"]);
+    // Observed on a real repository: a research *agent* is not a piece of research.
+    expect(objects(work("a.md", ["# L9 Perplexity Research Agent — Tech Debt Pipeline"]), "work.kind"))
+      .toEqual([]);
+    expect(objects(work("a.md", ["# The design review meeting notes template guide"]), "work.kind"))
+      .toEqual([]);
+  });
 });
 
 describe("tasks", () => {
