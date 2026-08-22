@@ -561,6 +561,29 @@ function countByCode(entries) {
     }
     return [...counts.values()].sort((left, right) => (0, ordering_1.compareCodePoints)(left.code, right.code) || (0, ordering_1.compareCodePoints)(left.severity, right.severity));
 }
+/**
+ * The interpretation profile that produced the assertions being projected.
+ *
+ * The inline result carries it when interpretation ran in this process; a packet
+ * built elsewhere carries it on the packet. Reading only the former would bind an
+ * empty extractor set into the hash that is supposed to identify exactly which
+ * extractors ran.
+ */
+function resolveInterpretationProfile(interpretation, packet) {
+    if (interpretation) {
+        return {
+            profile_version: interpretation.profile.profile_version,
+            extractor_versions: interpretation.profile.extractor_versions,
+        };
+    }
+    if (packet.interpretation_profile) {
+        return {
+            profile_version: packet.interpretation_profile.profile_version,
+            extractor_versions: packet.interpretation_profile.extractor_versions,
+        };
+    }
+    return null;
+}
 function corpusProfileHash(interpretationProfile, threshold, nearDuplicatesEnabled) {
     return (0, repository_model_1.stableId)("corpus-profile", {
         id: exports.CORPUS_PROFILE_ID,
@@ -703,21 +726,12 @@ function buildCorpusIndex(input) {
         hold_codes: archive.holds.map((hold) => hold.code).sort(ordering_1.compareCodePoints),
     }))
         .sort((left, right) => (0, ordering_1.compareCodePoints)(left.source_path, right.source_path));
-    // The interpretation result carries the profile when it was run inline; a packet
-    // built elsewhere carries it on the packet. Reading only the former would bind
-    // an empty extractor set into the corpus profile hash for a packet that plainly
-    // states which extractors produced it.
-    const interpretationProfile = input.interpretation
-        ? {
-            profile_version: input.interpretation.profile.profile_version,
-            extractor_versions: input.interpretation.profile.extractor_versions,
-        }
-        : packet.interpretation_profile
-            ? {
-                profile_version: packet.interpretation_profile.profile_version,
-                extractor_versions: packet.interpretation_profile.extractor_versions,
-            }
-            : null;
+    const interpretationProfile = resolveInterpretationProfile(input.interpretation, packet);
+    const orderedWorkSignals = [...workSignals].sort((left, right) => (0, ordering_1.compareCodePoints)(left.source_path, right.source_path)
+        || left.source_range.start_line - right.source_range.start_line
+        || (0, ordering_1.compareCodePoints)(left.predicate, right.predicate)
+        || (0, ordering_1.compareCodePoints)(left.object, right.object)
+        || (0, ordering_1.compareCodePoints)(left.assertion_id, right.assertion_id));
     const packetDiagnostics = packet.payload.diagnostics;
     return {
         schema: exports.CORPUS_INDEX_SCHEMA,
@@ -751,11 +765,7 @@ function buildCorpusIndex(input) {
         },
         summary,
         artifacts,
-        work_signals: workSignals.sort((left, right) => (0, ordering_1.compareCodePoints)(left.source_path, right.source_path)
-            || left.source_range.start_line - right.source_range.start_line
-            || (0, ordering_1.compareCodePoints)(left.predicate, right.predicate)
-            || (0, ordering_1.compareCodePoints)(left.object, right.object)
-            || (0, ordering_1.compareCodePoints)(left.assertion_id, right.assertion_id)),
+        work_signals: orderedWorkSignals,
         exact_duplicate_clusters: clusters,
         relations,
         near_duplicate_candidates: near.candidates,

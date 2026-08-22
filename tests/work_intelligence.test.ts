@@ -293,6 +293,55 @@ describe("declared relations", () => {
   });
 });
 
+describe("hostile input", () => {
+  // These documents come out of archives this package does not control, so a
+  // pattern that degrades super-linearly on a crafted line is a denial of
+  // service, not a style problem. Each case below measured in seconds — or in
+  // hours, extrapolated — before the patterns were rewritten to be linear.
+  const BUDGET_MS = 2000;
+
+  function within(budget: number, run: () => void): number {
+    const started = Date.now();
+    run();
+    const elapsed = Date.now() - started;
+    expect(elapsed).toBeLessThan(budget);
+    return elapsed;
+  }
+
+  it("strips a long emphasis run without exponential backtracking", () => {
+    // An ambiguous `(?:\*\*|__|\*|_)+` alternation doubled per character:
+    // 30 asterisks took 40ms, and 50 would have taken hours.
+    const line = `Depends on: ${"*".repeat(60)}x`;
+    within(BUDGET_MS, () => work("a.md", [line]));
+  });
+
+  it("reads a heading whose trailing run is ambiguous without stalling", () => {
+    // Measured at 26 seconds for this shape at 5,000 characters.
+    const line = `# ${" ".repeat(20000)}${"#".repeat(20)}${" ".repeat(20000)}x`;
+    within(BUDGET_MS, () => structure("a.md", [line]));
+  });
+
+  it("reads a title carrying a long whitespace run without stalling", () => {
+    const line = `# Roadmap${" ".repeat(40000)}tail`;
+    within(BUDGET_MS, () => work("a.md", [line]));
+  });
+
+  it("reads a frontmatter block with no colon on a long line without stalling", () => {
+    const lines = ["---", `${"a".repeat(40000)}${" ".repeat(40000)}`, "status: wip", "---", "", "body"];
+    within(BUDGET_MS, () => {
+      expect(objects(work("a.md", lines), "work.status")).toEqual(["wip"]);
+    });
+  });
+
+  it("still reads every construct correctly on ordinary input", () => {
+    // The rewrite is only worth anything if it did not change what is read.
+    expect(objects(structure("a.md", ["# Heading ###"]), "document.heading")).toEqual(["H1: Heading"]);
+    expect(objects(structure("a.md", ["#  Spaced  Out  "]), "document.title")).toEqual(["Spaced Out"]);
+    expect(objects(work("a.md", ["Depends on: **plan.md**"]), "work.depends_on")).toEqual(["plan.md"]);
+    expect(objects(work("a.md", ["---", "status : wip", "---", "", "x"]), "work.status")).toEqual(["wip"]);
+  });
+});
+
 describe("evidence", () => {
   it("cites the source line as the excerpt of every assertion", () => {
     const lines = ["---", "status: wip", "---", "", "# Plan", "", "- [ ] a task"];

@@ -69,7 +69,7 @@ function readDocument(sourcePath, content) {
                 continue;
             }
             fenced[index] = true;
-            if (match && match[1][0] === fence)
+            if (match?.[1].startsWith(fence))
                 fence = null;
         }
     }
@@ -91,6 +91,19 @@ const EMPHASIS = /[*_`]/g;
 /** Strip markdown emphasis and backticks, then collapse whitespace. */
 function plain(value) {
     return value.replace(EMPHASIS, "").replace(/\s+/g, " ").trim();
+}
+/**
+ * Remove leading and trailing runs of markdown emphasis characters.
+ *
+ * Written as a character class rather than an alternation of `**`, `__`, `*` and
+ * `_`. That alternation is ambiguous — a run of asterisks can be split into pairs
+ * or singles in exponentially many ways — and against an anchor that ultimately
+ * fails, the engine tries all of them: fifty asterisks in a `Depends on:` line
+ * would hang the extractor on a document that came out of an untrusted archive.
+ * A class matches the same runs in one linear pass.
+ */
+function stripEmphasis(value) {
+    return value.replace(/^[*_]+/, "").replace(/[*_]+$/, "").trim();
 }
 /** Strip matching surrounding quotes, brackets or parentheses from a scalar. */
 function unwrap(value) {
@@ -116,7 +129,7 @@ function unwrap(value) {
  * module asserting something the document did not.
  */
 function normalizeTarget(value) {
-    const trimmed = value.trim().replace(/^(?:\*\*|__|\*|_)+/, "").replace(/(?:\*\*|__|\*|_)+$/, "").trim();
+    const trimmed = stripEmphasis(value.trim());
     const link = /^\[[^\]]*\]\(\s*<?([^)\s]+)>?\s*(?:"[^"]*")?\)$/.exec(trimmed);
     if (link)
         return link[1].trim();
@@ -153,7 +166,7 @@ function labelledLine(rawLine) {
     const label = plain(body.slice(0, colon)).toLowerCase();
     if (!LABEL_SHAPE.test(label))
         return null;
-    const value = body.slice(colon + 1).trim().replace(/^(?:\*\*|__|\*|_)+/, "").trim();
+    const value = body.slice(colon + 1).trim().replace(/^[*_]+/, "").trim();
     return { label, value };
 }
 // ───────────────────────────── vocabulary ─────────────────────────────
@@ -203,7 +216,19 @@ function kindValue(raw) {
     return WORK_KIND.has(candidate) ? candidate : null;
 }
 // ───────────────────────────── structure reading ─────────────────────────────
-const ATX_HEADING = /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/;
+/**
+ * An ATX heading, split only as far as the marker.
+ *
+ * The closing `#` run is stripped afterwards in code rather than matched here.
+ * Expressing it inline as `(.*?)\s*#*\s*$` makes the trailing whitespace
+ * attributable to either of two `\s*` groups, and the engine tries every split:
+ * a heading line of five thousand characters shaped `# … ### … x` measured at
+ * twenty-six seconds. This form always succeeds once a marker and a space are
+ * present, so it never backtracks at all.
+ */
+const ATX_HEADING = /^ {0,3}(#{1,6})[ \t]+(.*)$/;
+/** A closing `#` run on a heading. One unambiguous quantifier, so linear. */
+const ATX_CLOSING = /#+$/;
 /** Every ATX heading outside frontmatter and fenced code, in document order. */
 function headings(view) {
     const out = [];
@@ -213,23 +238,32 @@ function headings(view) {
         const match = ATX_HEADING.exec(view.lines[index]);
         if (!match)
             continue;
-        const text = plain(match[2]);
+        const text = plain(match[2].trimEnd().replace(ATX_CLOSING, ""));
         if (text.length === 0)
             continue;
         out.push({ index, level: match[1].length, text });
     }
     return out;
 }
+/** A frontmatter mapping key. Anchored on both ends, so it cannot backtrack. */
+const FRONTMATTER_KEY = /^[A-Za-z][A-Za-z0-9_-]*$/;
 /** Frontmatter `key: value` scalars, in document order. */
 function frontmatterFields(view) {
     const out = [];
     if (view.frontmatterStart < 0)
         return out;
     for (let index = view.frontmatterStart; index <= view.frontmatterEnd; index++) {
-        const match = /^([A-Za-z][A-Za-z0-9_-]*)\s*:\s*(.*)$/.exec(view.lines[index]);
-        if (!match)
+        // Split at the first colon and validate the key, rather than expressing the
+        // whole line as one pattern: `key\s*:` lets a long run of key characters and
+        // a long run of spaces be divided many ways when the colon is absent.
+        const line = view.lines[index];
+        const colon = line.indexOf(":");
+        if (colon < 0)
             continue;
-        out.push({ index, key: match[1].toLowerCase(), value: match[2].trim() });
+        const key = line.slice(0, colon).trimEnd();
+        if (!FRONTMATTER_KEY.test(key))
+            continue;
+        out.push({ index, key: key.toLowerCase(), value: line.slice(colon + 1).trim() });
     }
     return out;
 }
@@ -253,7 +287,7 @@ function titleDeclarations(view) {
         if (ATX_HEADING.test(view.lines[index]))
             continue;
         const labelled = labelledLine(view.lines[index]);
-        if (labelled === null || labelled.label !== "title")
+        if (labelled?.label !== "title")
             continue;
         const text = unwrap(plain(labelled.value));
         if (text.length > 0)
@@ -304,6 +338,8 @@ const TODO_LINE = /^\s{0,8}(?:>\s?)*(?:[-*+]\s+|\d{1,3}[.)]\s+)?(?:\*\*|__)?TODO
 const BULLET = /^\s{0,3}(?:[-*+]|\d{1,3}[.)])\s+(.*)$/;
 const MILESTONE_LABEL = /^milestone(?: [a-z0-9.]{1,8})?$/;
 const BLOCKQUOTE_STATUS = /^\s{0,3}>\s*(?:\*\*|__)?\[?([A-Za-z]+)\]?(?:\*\*|__)?\s*(?::.*)?$/;
+/** Where a title stops saying what the document is and starts qualifying it. */
+const TITLE_SEGMENT = / [—–|] | - |[:(]/u;
 /** Status markers a title carries, with the reason each one counts. */
 function titleStatuses(text) {
     const found = [];
@@ -337,12 +373,15 @@ function titleStatuses(text) {
  * profile over a real repository and reading what it claimed.
  */
 function titleKinds(text) {
-    const segment = text.split(/\s+[—–|]\s+|\s+-\s+|[:(]/u)[0];
+    // Whitespace is collapsed first, in one linear pass, so the separators below
+    // are literal. Matching ` +[—–|] +` against a title carrying a long whitespace
+    // run costs a quadratic number of steps for every split position it fails at.
+    const segment = plain(text).split(TITLE_SEGMENT)[0];
     const words = segment.toLowerCase().split(/[^\p{L}]+/u).filter((word) => word.length > 0);
     if (words.length === 0)
         return [];
     const found = [];
-    for (const word of [...new Set([words[0], words[words.length - 1]])]) {
+    for (const word of new Set([words[0], words[words.length - 1]])) {
         if (WORK_KIND.has(word))
             found.push(word);
     }
@@ -399,6 +438,114 @@ function milestoneSectionBullets(view, opener) {
     }
     return out;
 }
+/** What the frontmatter block declares outright. */
+function frontmatterSignals(view) {
+    const drafts = [];
+    for (const field of frontmatterFields(view)) {
+        const line = view.lines[field.index];
+        const status = field.key === "status" || field.key === "state" ? statusValue(field.value) : null;
+        if (status !== null)
+            drafts.push(draft("work.status", status, field.index, line, "declared", "high"));
+        const kind = field.key === "type" || field.key === "kind" ? kindValue(field.value) : null;
+        if (kind !== null)
+            drafts.push(draft("work.kind", kind, field.index, line, "declared", "high"));
+    }
+    return drafts;
+}
+/**
+ * What a title marks.
+ *
+ * Weaker than a structured field, and recorded as such: a title is a name first
+ * and a statement about the document second.
+ */
+function titleSignals(view) {
+    const drafts = [];
+    for (const title of titleDeclarations(view)) {
+        const line = view.lines[title.index];
+        for (const status of titleStatuses(title.text)) {
+            drafts.push(draft("work.status", status, title.index, line, "declared", "medium"));
+        }
+        for (const kind of titleKinds(title.text)) {
+            drafts.push(draft("work.kind", kind, title.index, line, "declared", "medium"));
+        }
+    }
+    return drafts;
+}
+/** Bullets under every explicit milestone section. */
+function milestoneSectionSignals(view) {
+    const drafts = [];
+    for (const opener of milestoneSectionOpeners(view)) {
+        for (const bullet of milestoneSectionBullets(view, opener)) {
+            drafts.push(draft("work.milestone", bullet.text, bullet.index, view.lines[bullet.index], "observed", "high"));
+        }
+    }
+    return drafts;
+}
+/** A task written as list syntax: a checkbox, or a line that opens with `TODO:`. */
+function taskSignal(line, index) {
+    const checkbox = CHECKBOX.exec(line);
+    if (checkbox) {
+        const text = plain(checkbox[2]);
+        if (text.length === 0)
+            return null;
+        const predicate = checkbox[1] === " " ? "work.task.open" : "work.task.completed";
+        return draft(predicate, text, index, line, "observed", "high");
+    }
+    const todo = TODO_LINE.exec(line);
+    if (todo === null)
+        return null;
+    const text = plain(todo[1]);
+    return text.length === 0 ? null : draft("work.task.open", text, index, line, "observed", "high");
+}
+/** A bare status admonition, which only counts near the top of a document. */
+function admonitionSignal(line, index) {
+    if (index >= LEADING_ADMONITION_LINES)
+        return null;
+    const admonition = BLOCKQUOTE_STATUS.exec(line);
+    if (admonition === null)
+        return null;
+    const status = statusValue(admonition[1]);
+    return status === null ? null : draft("work.status", status, index, line, "declared", "high");
+}
+/** A `Label: value` declaration: a status, a milestone, or a declared relation. */
+function labelSignal(line, index) {
+    if (ATX_HEADING.test(line))
+        return null;
+    const labelled = labelledLine(line);
+    if (labelled === null || labelled.value.length === 0)
+        return null;
+    if (labelled.label === "status" || labelled.label === "state") {
+        const status = statusValue(labelled.value);
+        return status === null ? null : draft("work.status", status, index, line, "declared", "high");
+    }
+    if (MILESTONE_LABEL.test(labelled.label)) {
+        const text = plain(labelled.value);
+        return text.length === 0 ? null : draft("work.milestone", text, index, line, "declared", "high");
+    }
+    const predicate = RELATION_PREDICATE_BY_LABEL[labelled.label];
+    if (predicate === undefined)
+        return null;
+    const target = normalizeTarget(labelled.value);
+    return target.length === 0 ? null : draft(predicate, target, index, line, "declared", "high");
+}
+/**
+ * Line-oriented readers, in the order a line is offered to them.
+ *
+ * The order is the precedence: a checkbox is read as a task rather than as a
+ * label, and a heading is never read as a declaration. The first reader to
+ * return a draft claims the line.
+ *
+ * A reader that recognizes a line's syntax but produces nothing from it — an
+ * empty checkbox, a `TODO:` whose text is only emphasis — lets the remaining
+ * readers see the line. That is safe because the three syntaxes are mutually
+ * exclusive: a line that opens with a list marker cannot be a blockquote
+ * admonition, and a checkbox with no text has nothing after it to be a label.
+ */
+const LINE_READERS = [
+    taskSignal,
+    admonitionSignal,
+    labelSignal,
+];
 /**
  * Explicit work state: status, kind, tasks, milestones, and declared relations.
  *
@@ -412,91 +559,20 @@ exports.workIntelligenceExtractor = {
     matches: isSupportedTextDocument,
     extract(input) {
         const view = readDocument(input.sourcePath, input.content);
-        const { lines } = view;
-        const drafts = [];
-        // Structured frontmatter fields.
-        for (const field of frontmatterFields(view)) {
-            if (field.key === "status" || field.key === "state") {
-                const status = statusValue(field.value);
-                if (status !== null) {
-                    drafts.push(draft("work.status", status, field.index, lines[field.index], "declared", "high"));
-                }
-            }
-            if (field.key === "type" || field.key === "kind") {
-                const kind = kindValue(field.value);
-                if (kind !== null) {
-                    drafts.push(draft("work.kind", kind, field.index, lines[field.index], "declared", "high"));
-                }
-            }
-        }
-        // Title markers. Weaker than a status field, and recorded as such.
-        for (const title of titleDeclarations(view)) {
-            for (const status of titleStatuses(title.text)) {
-                drafts.push(draft("work.status", status, title.index, lines[title.index], "declared", "medium"));
-            }
-            for (const kind of titleKinds(title.text)) {
-                drafts.push(draft("work.kind", kind, title.index, lines[title.index], "declared", "medium"));
-            }
-        }
-        const milestoneOpeners = new Set(milestoneSectionOpeners(view));
-        for (const opener of milestoneOpeners) {
-            for (const bullet of milestoneSectionBullets(view, opener)) {
-                drafts.push(draft("work.milestone", bullet.text, bullet.index, lines[bullet.index], "observed", "high"));
-            }
-        }
-        for (let index = 0; index < lines.length; index++) {
+        const drafts = [
+            ...frontmatterSignals(view),
+            ...titleSignals(view),
+            ...milestoneSectionSignals(view),
+        ];
+        for (let index = 0; index < view.lines.length; index++) {
             if (!isProseLine(view, index))
                 continue;
-            const line = lines[index];
-            const checkbox = CHECKBOX.exec(line);
-            if (checkbox) {
-                const text = plain(checkbox[2]);
-                if (text.length > 0) {
-                    const predicate = checkbox[1] === " " ? "work.task.open" : "work.task.completed";
-                    drafts.push(draft(predicate, text, index, line, "observed", "high"));
+            for (const read of LINE_READERS) {
+                const signal = read(view.lines[index], index);
+                if (signal !== null) {
+                    drafts.push(signal);
+                    break;
                 }
-                continue;
-            }
-            const todo = TODO_LINE.exec(line);
-            if (todo) {
-                const text = plain(todo[1]);
-                if (text.length > 0)
-                    drafts.push(draft("work.task.open", text, index, line, "observed", "high"));
-                continue;
-            }
-            if (index < LEADING_ADMONITION_LINES) {
-                const admonition = BLOCKQUOTE_STATUS.exec(line);
-                if (admonition) {
-                    const status = statusValue(admonition[1]);
-                    if (status !== null) {
-                        drafts.push(draft("work.status", status, index, line, "declared", "high"));
-                        continue;
-                    }
-                }
-            }
-            if (ATX_HEADING.test(line))
-                continue;
-            const labelled = labelledLine(line);
-            if (labelled === null || labelled.value.length === 0)
-                continue;
-            if (labelled.label === "status" || labelled.label === "state") {
-                const status = statusValue(labelled.value);
-                if (status !== null) {
-                    drafts.push(draft("work.status", status, index, line, "declared", "high"));
-                }
-                continue;
-            }
-            if (MILESTONE_LABEL.test(labelled.label)) {
-                const text = plain(labelled.value);
-                if (text.length > 0)
-                    drafts.push(draft("work.milestone", text, index, line, "declared", "high"));
-                continue;
-            }
-            const predicate = RELATION_PREDICATE_BY_LABEL[labelled.label];
-            if (predicate !== undefined) {
-                const target = normalizeTarget(labelled.value);
-                if (target.length > 0)
-                    drafts.push(draft(predicate, target, index, line, "declared", "high"));
             }
         }
         return drafts;
