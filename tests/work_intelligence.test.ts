@@ -336,6 +336,17 @@ describe("hostile input", () => {
     });
   });
 
+  it("unwraps a deeply nested scalar without rescanning the whole value", () => {
+    // The replace-loop this replaced re-scanned the entire value on each layer it
+    // removed: 128ms at twenty thousand nested brackets, and quadratic from there.
+    // A status value is the path that unwraps, so that is the path measured here.
+    const nesting = HOSTILE_LENGTH / 4;
+    const line = `Status: ${"[".repeat(nesting)}wip${"]".repeat(nesting)}`;
+    within(BUDGET_MS, () => {
+      expect(objects(work("a.md", [line]), "work.status")).toEqual(["wip"]);
+    });
+  });
+
   it("trims a long closing hash run on a heading without stalling", () => {
     const line = `# Heading ${"#".repeat(HOSTILE_LENGTH)}`;
     within(BUDGET_MS, () => {
