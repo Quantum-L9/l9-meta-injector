@@ -110,9 +110,10 @@ npm run local-source -- ~/Downloads/Bundle.zip --name Bundle --out ./out
 npm run local-source -- ~/Documents/design.md  --name design --out ./out
 ```
 
-Output is a Repository Model Packet bundle under `<out>/bundle` plus an acquisition
-manifest at `<out>/local-source-manifest.json`. The manifest is never written inside
-the observed tree.
+Output is a Repository Model Packet bundle under `<out>/bundle`, an acquisition
+manifest at `<out>/local-source-manifest.json`, and the corpus intelligence projection
+described below at `<out>/corpus-index.json` and `<out>/corpus-report.md`. None of them
+is ever written inside the observed tree.
 
 What the observation guarantees:
 
@@ -149,6 +150,34 @@ What this trusts and refuses, and its known limits, is stated in
 [`docs/local-source-trust-boundary.md`](docs/local-source-trust-boundary.md).
 Moving off `--local-files`:
 [`docs/migrations/local-files-to-local-source.md`](docs/migrations/local-files-to-local-source.md).
+
+### Corpus intelligence
+
+The same run also answers what the corpus *says about itself* (ADR-037), in two
+deliberately separate epistemic classes.
+
+- **Work intelligence.** Each `.md`, `.markdown`, `.txt` and `.rst` document is read for
+  the things it declares outright — its title and headings, an explicit `Status:` or
+  frontmatter `status`, a declared kind, checkbox and `TODO:` tasks, `Milestone:` lines,
+  and `Depends on:` / `Blocked by:` / `See also:` / `Supersedes:` / `Superseded by:`
+  pointers. Each claim attaches to the *artifact that made it*, including a member of a
+  nested archive, and cites the exact line. Nothing is inferred from file age, path,
+  TODO count, or the absence of a signal, and a document that contradicts itself keeps
+  both claims.
+- **Exact duplicates — a fact.** Two artifacts are duplicates when both carry a known
+  content hash and those hashes are equal. Clusters span physical files and archive
+  members freely, and are rendered as `DUPLICATE_OF` relations to a deterministic
+  cluster representative. The representative is a rendering anchor, **not** a
+  recommendation about which copy to keep.
+- **Near-duplicates — a candidate, not a conclusion.** `text-near-duplicate/v1` scores
+  the exact Jaccard overlap of unique 5-token shingles over normalized text, default
+  threshold `0.85` (`--near-duplicate-threshold F`, or `--no-near-duplicates` to skip).
+  A candidate means two documents share wording. It does **not** mean they share a
+  topic, a project or an owner, that one supersedes the other, or that anything should
+  be merged or deleted.
+
+Nothing is moved, deleted, rewritten, consolidated or prioritized. Full semantics:
+[`docs/corpus-intelligence.md`](docs/corpus-intelligence.md).
 
 ### Legacy archive materialization
 

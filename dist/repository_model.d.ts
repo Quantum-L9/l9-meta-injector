@@ -1,13 +1,13 @@
 import { InventoryResult } from "./inventory";
 import { InterpretationResult } from "./interpretation";
+/** Re-exported so packet consumers keep one ordering import site. */
+export { compareCodePoints } from "./ordering";
 export declare const REPOSITORY_MODEL_PACKET_TYPE = "l9.repository-model";
 export declare const REPOSITORY_MODEL_PACKET_VERSION = "1.1.0";
 export declare const REPOSITORY_MODEL_PRODUCER_NAME = "l9-meta-injector.repository-model";
 export type CanonicalValue = string | number | boolean | null | CanonicalValue[] | {
     [key: string]: CanonicalValue;
 };
-/** Code-point ordering. Never locale-aware: ordering must not vary by environment. */
-export declare function compareCodePoints(a: string, b: string): number;
 /** Canonical JSON text for any packet-shaped value. */
 export declare function canonicalJson(value: unknown): string;
 /** Content identity of exact text, used by interpretation evidence. */
@@ -15,6 +15,19 @@ export declare function sha256TextPrefixed(value: string): string;
 /** Semantic identity: volatile fields removed, then canonical bytes hashed. */
 export declare function semanticHash(value: unknown): string;
 export declare function stableId(prefix: string, value: unknown): string;
+/**
+ * Stable identity of one artifact inside a repository.
+ *
+ * Interpretation needs this to point an assertion at the exact file that made a
+ * declaration, and the packet builder needs it to emit that file's artifact
+ * record. Two implementations of the same formula would eventually disagree and
+ * strand every artifact-scoped assertion, so both call this one.
+ *
+ * `sourcePath` is the repository-relative POSIX path, or a virtual archive
+ * member locator such as `Bundle.zip!/docs/a.md`. Absolute paths never
+ * participate.
+ */
+export declare function repositoryModelArtifactId(repositoryId: string, sourcePath: string): string;
 export type RepositoryModelConfidenceLevel = "low" | "medium" | "high";
 export type RepositoryModelEvidenceStrength = "none" | "weak" | "corroborated" | "direct";
 export type RepositoryModelDerivationMethod = "declared" | "deterministic" | "cross-record" | "heuristic" | "model-assisted" | "unknown";

@@ -32,6 +32,39 @@ Source revision is explicit and never inferred. Capabilities and relationships r
 evidence; unsupported domains stay empty and are reported as diagnostics. Producer-side
 validation must pass before a bundle is written.
 
+An assertion attaches to the subject the interpretation pass gave it, and the packet
+builder preserves that subject rather than rewriting it to the repository. The subject
+must be a repository or an artifact this packet emits; an assertion naming neither fails
+producer-side validation. `Extractor.subjectScope` selects the scope and defaults to
+`repository`, so an extractor's scope changes only when the extractor says so. Artifact
+identity comes from `repositoryModelArtifactId`, which packet building and interpretation
+share so the two cannot drift apart.
+
+Scope is not a wire change: `subject_id` is an unconstrained string on both sides of the
+contract, so `l9.repository-model` stays at `1.1.0`. The interpretation profile version
+moves whenever extraction rules change, and through it the semantic identity of every
+packet built with interpretation.
+
+## Corpus analysis
+
+`src/corpus_analysis.ts` and `src/corpus_report.ts` are normative for `l9.corpus-index/v1`.
+They are a projection: every value derives from the acquisition observation, the emitted
+packet, the exact-duplicate clustering, or the near-duplicate analysis, and every artifact,
+assertion, relation endpoint and candidate endpoint must resolve against the packet.
+
+Two epistemic classes stay apart. An exact duplicate is content-hash equality and is
+stated as a fact; `DUPLICATE_OF` is rendered here rather than in the packet, because the
+bound consumer's edge vocabulary does not own that edge and no existing edge type may be
+reused to mean it. A near-duplicate is a `text-near-duplicate/v1` score at a stated
+threshold and is a candidate: it establishes shared wording and nothing about topic,
+project, supersession, or what should be done. The cluster representative is a rendering
+anchor and never a recommendation.
+
+Both outputs are byte-deterministic — code-point key ordering, no wall clock, no absolute
+or scratch path — and neither is ever written inside the observed source.
+
+Full semantics: `docs/corpus-intelligence.md`.
+
 ## Distribution
 
 `docs/package-contract.json` governs the npm tarball. Committed `dist/` must equal an isolated build. The packed `dist/` set must equal committed `dist/`. Runtime, declarations, and deep-import rejection are tested from the installed tarball.

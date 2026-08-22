@@ -17,9 +17,13 @@ import * as os from "node:os";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
 import { InventoryRecord, InventoryResult, inventoryTree } from "./inventory";
+import { compareCodePoints } from "./ordering";
 import { InterpretationResult, interpretRepository } from "./interpretation";
 import { defaultExtractors } from "./extractors";
 import { UNKNOWN } from "./schema";
+
+/** Re-exported so packet consumers keep one ordering import site. */
+export { compareCodePoints } from "./ordering";
 
 export const REPOSITORY_MODEL_PACKET_TYPE = "l9.repository-model";
 export const REPOSITORY_MODEL_PACKET_VERSION = "1.1.0";
@@ -58,16 +62,6 @@ const VOLATILE_KEYS: ReadonlySet<string> = new Set([
   "artifact_hash", "semantic_hash", "packet_id", "receipt_id",
 ]);
 
-/** Code-point ordering. Never locale-aware: ordering must not vary by environment. */
-export function compareCodePoints(a: string, b: string): number {
-  const left = [...a], right = [...b];
-  const shared = Math.min(left.length, right.length);
-  for (let i = 0; i < shared; i++) {
-    const l = left[i].codePointAt(0) ?? 0, r = right[i].codePointAt(0) ?? 0;
-    if (l !== r) return l < r ? -1 : 1;
-  }
-  return left.length === right.length ? 0 : left.length < right.length ? -1 : 1;
-}
 
 function canonicalize(value: unknown): CanonicalValue {
   if (value === null) return null;
@@ -144,6 +138,22 @@ export function semanticHash(value: unknown): string {
 
 export function stableId(prefix: string, value: unknown): string {
   return `${prefix}:${semanticHash(value).slice(SHA_PREFIX.length)}`;
+}
+
+/**
+ * Stable identity of one artifact inside a repository.
+ *
+ * Interpretation needs this to point an assertion at the exact file that made a
+ * declaration, and the packet builder needs it to emit that file's artifact
+ * record. Two implementations of the same formula would eventually disagree and
+ * strand every artifact-scoped assertion, so both call this one.
+ *
+ * `sourcePath` is the repository-relative POSIX path, or a virtual archive
+ * member locator such as `Bundle.zip!/docs/a.md`. Absolute paths never
+ * participate.
+ */
+export function repositoryModelArtifactId(repositoryId: string, sourcePath: string): string {
+  return stableId("artifact", { repository_id: repositoryId, source_path: sourcePath });
 }
 
 // ───────────────────────────── contract types ─────────────────────────────
@@ -724,7 +734,7 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
     const hashed = record.content_hash !== null;
     if (!hashed) unhashedCount++;
     const contentHash = hashed ? `${SHA_PREFIX}${record.content_hash}` : UNKNOWN;
-    const artifactId = stableId("artifact", { repository_id: repositoryId, source_path: relativePath });
+    const artifactId = repositoryModelArtifactId(repositoryId, relativePath);
     const recordConfidence = artifactConfidence(record.classification_confidence, hashed);
 
     const observation = makeEvidence({
@@ -807,7 +817,7 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
   // archive that contained it, all the way back to a physical source file.
   const emittedArtifactIds = new Set(artifacts.map((artifact) => artifact.artifact_id));
   const artifactIdFor = (sourcePath: string): string =>
-    stableId("artifact", { repository_id: repositoryId, source_path: sourcePath });
+    repositoryModelArtifactId(repositoryId, sourcePath);
 
   if (input.localSource) {
     const local = input.localSource;
@@ -1081,14 +1091,21 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
       || compareCodePoints(a.message, b.message)),
     // Already ordered by the interpretation pass; re-sorted here so the packet's
     // ordering guarantee does not depend on the producer of the input.
+    //
+    // The subject each assertion arrived with is preserved. Rewriting every
+    // subject to the repository — which this builder used to do — collapsed
+    // "this plan declares itself WIP" into "the repository declares itself WIP",
+    // which is a different and much weaker claim. Validation below refuses an
+    // assertion whose subject is neither an emitted repository nor an emitted
+    // artifact, so preserving the subject cannot strand one.
     assertions: [...(input.interpretation?.assertions ?? [])]
-      .map((assertion) => ({ ...assertion, subject_id: repositoryId }))
       .sort((a, b) =>
         compareCodePoints(a.source_path, b.source_path)
         || a.source_range.start_line - b.source_range.start_line
         || compareCodePoints(a.predicate, b.predicate)
         || compareCodePoints(a.object, b.object)
-        || compareCodePoints(a.extractor_id, b.extractor_id)),
+        || compareCodePoints(a.extractor_id, b.extractor_id)
+        || compareCodePoints(a.subject_id, b.subject_id)),
   };
 
   const shell = {
@@ -1219,12 +1236,18 @@ export function validateRepositoryModelPacket(packet: RepositoryModelPacket): Re
     "every assertion cites an exact source span and a hashed source file",
     { unsupported_count: unsupportedAssertions.length }));
 
-  const assertionSubjects = payload.repositories.map((r) => r.repository_id);
+  // An assertion may attach to the repository as a whole or to one artifact in
+  // it. Both are emitted records in this packet, and an assertion pointing at
+  // neither would be a claim about something the consumer cannot resolve.
+  const assertionSubjects = new Set<string>([
+    ...payload.repositories.map((r) => r.repository_id),
+    ...payload.artifacts.map((a) => a.artifact_id),
+  ]);
   const orphanAssertions = payload.assertions.filter(
-    (assertion) => !assertionSubjects.includes(assertion.subject_id));
+    (assertion) => !assertionSubjects.has(assertion.subject_id));
   checks.push(check("assertion-subject", "cross-reference", "assertions_resolve_to_a_subject",
     orphanAssertions.length === 0,
-    "every assertion attaches to a repository in this packet",
+    "every assertion attaches to a repository or an artifact in this packet",
     { orphan_count: orphanAssertions.length }));
 
   const evidenceIds = new Set(payload.evidence.map((e) => e.evidence_id));

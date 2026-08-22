@@ -66,7 +66,18 @@ export interface InventoryResult {
 }
 /** Load and validate a canonical meta-schema YAML file. */
 export declare function loadMetaSchema(filePath: string): MetaSchema;
-/** Group records by content_hash to surface duplicate clusters across the whole tree. */
+/**
+ * Group records by content_hash to surface duplicate clusters across the whole tree.
+ *
+ * Equivalence is byte equality and nothing else: two records belong to the same
+ * cluster when both carry a known content hash and those hashes are identical.
+ * Names, locations and sizes never decide membership, which is what lets a
+ * physical file and an archive member land in one cluster.
+ *
+ * Ordering is code-point throughout. `localeCompare` used to decide both the
+ * path order and the shortest-path tie-break, which made the emitted cluster —
+ * and anything derived from it — depend on the host's locale.
+ */
 export declare function buildDuplicateClusters(records: InventoryRecord[]): DuplicateCluster[];
 interface Classification {
     type: InventoryArtifactType;

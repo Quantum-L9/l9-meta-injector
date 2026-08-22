@@ -34,6 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DEFAULT_MAX_FILE_BYTES = exports.MAX_EXCERPT_LENGTH = exports.INTERPRETATION_PROFILE_VERSION = exports.INTERPRETATION_PROFILE_ID = void 0;
+exports.extractorSubjectScope = extractorSubjectScope;
 exports.isSecretCandidatePath = isSecretCandidatePath;
 exports.looksSecret = looksSecret;
 exports.boundExcerpt = boundExcerpt;
@@ -63,7 +64,16 @@ const encoding_1 = require("./encoding");
 const repository_model_1 = require("./repository_model");
 /** Identity of the interpretation policy. Bumped when extraction rules change. */
 exports.INTERPRETATION_PROFILE_ID = "meta-injector-repository-interpretation";
-exports.INTERPRETATION_PROFILE_VERSION = "1.0.0";
+/**
+ * 1.1.0 adds artifact-scoped assertion subjects and the deterministic
+ * work-intelligence extractors. Both change what this profile observes, so the
+ * version — and through it every packet's semantic identity — moves with them.
+ */
+exports.INTERPRETATION_PROFILE_VERSION = "1.1.0";
+/** The scope an extractor declares, defaulting to the pre-scope behavior. */
+function extractorSubjectScope(extractor) {
+    return extractor.subjectScope ?? "repository";
+}
 // ───────────────────────────── secret safety ─────────────────────────────
 /**
  * Files never opened for interpretation.
@@ -125,7 +135,14 @@ function profileHash(extractors) {
         absolute_paths_in_identity: false,
         max_excerpt_length: exports.MAX_EXCERPT_LENGTH,
         extractors: extractors
-            .map((extractor) => ({ id: extractor.id, version: extractor.version }))
+            .map((extractor) => ({
+            id: extractor.id,
+            version: extractor.version,
+            // Scope is part of what an extractor observes, not just where the claim
+            // is filed: the same predicate against a repository and against an
+            // artifact are different assertions.
+            subject_scope: extractorSubjectScope(extractor),
+        }))
             .sort((left, right) => (0, repository_model_1.compareCodePoints)(left.id, right.id)),
     });
 }
@@ -136,7 +153,8 @@ function compareAssertions(left, right) {
         left.source_range.end_line - right.source_range.end_line ||
         (0, repository_model_1.compareCodePoints)(left.predicate, right.predicate) ||
         (0, repository_model_1.compareCodePoints)(left.object, right.object) ||
-        (0, repository_model_1.compareCodePoints)(left.extractor_id, right.extractor_id));
+        (0, repository_model_1.compareCodePoints)(left.extractor_id, right.extractor_id) ||
+        (0, repository_model_1.compareCodePoints)(left.subject_id, right.subject_id));
 }
 function compareDiagnostics(left, right) {
     return ((0, repository_model_1.compareCodePoints)(left.code, right.code) ||
@@ -161,6 +179,18 @@ function interpretRepository(input) {
         .sort((left, right) => (0, repository_model_1.compareCodePoints)(left.relative_path, right.relative_path));
     const observedPaths = new Set(input.inventory.records.map((record) => record.relative_path));
     const pathExists = (relativePath) => observedPaths.has(relativePath.replace(/^\.\//, ""));
+    // Subject per observed path, computed once. A virtual archive member resolves
+    // to its own artifact — `Bundle.zip!/plans/a.md`, never the outer archive and
+    // never the staged scratch copy, neither of which is what declared anything.
+    const artifactSubjects = new Map();
+    const artifactSubjectFor = (sourcePath) => {
+        const known = artifactSubjects.get(sourcePath);
+        if (known !== undefined)
+            return known;
+        const subject = (0, repository_model_1.repositoryModelArtifactId)(input.subjectId, sourcePath);
+        artifactSubjects.set(sourcePath, subject);
+        return subject;
+    };
     for (const record of records) {
         const sourcePath = record.relative_path;
         const claiming = extractors.filter((extractor) => extractor.matches(sourcePath));
@@ -219,10 +249,13 @@ function interpretRepository(input) {
         // Hash the text actually interpreted, so evidence binds to what was parsed.
         const contentHash = (0, repository_model_1.sha256TextPrefixed)(content);
         for (const extractor of claiming) {
+            const subjectId = extractorSubjectScope(extractor) === "artifact"
+                ? artifactSubjectFor(sourcePath)
+                : input.subjectId;
             let drafts;
             try {
                 drafts = extractor.extract({
-                    subjectId: input.subjectId,
+                    subjectId,
                     sourcePath,
                     content,
                     contentHash,
@@ -262,8 +295,11 @@ function interpretRepository(input) {
                     });
                     continue;
                 }
+                // The subject is part of assertion identity: the same predicate about a
+                // repository and about one of its files are two different claims, and
+                // they must not collide on one id.
                 const identity = {
-                    subject_id: input.subjectId,
+                    subject_id: subjectId,
                     predicate: draft.predicate,
                     object: draft.object,
                     source_path: sourcePath,
@@ -272,7 +308,7 @@ function interpretRepository(input) {
                 };
                 assertions.push({
                     assertion_id: (0, repository_model_1.stableId)("assertion", identity),
-                    subject_id: input.subjectId,
+                    subject_id: subjectId,
                     predicate: draft.predicate,
                     object: draft.object,
                     source_path: sourcePath,

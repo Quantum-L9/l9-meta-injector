@@ -1,7 +1,12 @@
 import { InventoryResult } from "./inventory";
 /** Identity of the interpretation policy. Bumped when extraction rules change. */
 export declare const INTERPRETATION_PROFILE_ID = "meta-injector-repository-interpretation";
-export declare const INTERPRETATION_PROFILE_VERSION = "1.0.0";
+/**
+ * 1.1.0 adds artifact-scoped assertion subjects and the deterministic
+ * work-intelligence extractors. Both change what this profile observes, so the
+ * version — and through it every packet's semantic identity — moves with them.
+ */
+export declare const INTERPRETATION_PROFILE_VERSION = "1.1.0";
 /**
  * How an assertion was evidenced.
  *
@@ -56,7 +61,11 @@ export interface InterpretationResult {
     diagnostics: InterpretationDiagnostic[];
 }
 export interface ExtractorFileInput {
-    /** Subject the assertions attach to, e.g. `repo:golden-repo`. */
+    /**
+     * Subject the assertions attach to, already resolved for the extractor's own
+     * scope: the repository id for a repository-scoped extractor, this file's
+     * artifact id for an artifact-scoped one.
+     */
     subjectId: string;
     /** Repository-relative POSIX path. Never absolute: identity must be portable. */
     sourcePath: string;
@@ -82,14 +91,36 @@ export interface AssertionDraft {
     authority: InterpretedAuthority;
     confidence: InterpretedConfidenceLevel;
 }
+/**
+ * What an extractor's assertions are *about*.
+ *
+ * `repository` — the file evidences something about the repository as a whole
+ * (its declared status, its manifest, its canonical authority list).
+ * `artifact` — the file evidences something about *itself* (this plan is a WIP,
+ * this note lists these tasks).
+ *
+ * The distinction is not cosmetic. A corpus of a thousand documents that all
+ * report their status against one repository subject says nothing about which
+ * document is which; the same claims against artifact subjects are a work map.
+ */
+export type ExtractorSubjectScope = "repository" | "artifact";
 export interface Extractor {
     id: string;
     version: string;
+    /**
+     * Scope of this extractor's assertion subjects. Absent means `repository`,
+     * which is what every extractor written before the scope existed meant: an
+     * extractor never silently changes scope because the interpreter learned to
+     * support both.
+     */
+    subjectScope?: ExtractorSubjectScope;
     /** True when this extractor claims the file. Path-based and side-effect free. */
     matches(sourcePath: string): boolean;
     /** Parse and report. Must not throw on malformed input; return [] instead. */
     extract(input: ExtractorFileInput): AssertionDraft[];
 }
+/** The scope an extractor declares, defaulting to the pre-scope behavior. */
+export declare function extractorSubjectScope(extractor: Extractor): ExtractorSubjectScope;
 export declare function isSecretCandidatePath(sourcePath: string): boolean;
 export declare function looksSecret(value: string): boolean;
 /** Excerpts are bounded so a packet can never become a file mirror. */
@@ -100,7 +131,11 @@ export declare function boundExcerpt(value: string): string;
 export interface InterpretRepositoryInput {
     /** Repository root the inventory was taken from. */
     root: string;
-    /** Subject the assertions attach to, e.g. `repo:golden-repo`. */
+    /**
+     * Repository subject, e.g. `repo:golden-repo`. Repository-scoped extractors
+     * attach their assertions here; artifact-scoped ones attach to the artifact
+     * derived from this same id, so both stay inside one identity domain.
+     */
     subjectId: string;
     inventory: InventoryResult;
     /**
