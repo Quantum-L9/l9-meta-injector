@@ -20,6 +20,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { InventoryResult } from "./inventory";
+import { probeFileEncoding } from "./encoding";
 import { compareCodePoints, semanticHash, sha256TextPrefixed, stableId } from "./repository_model";
 
 /** Identity of the interpretation policy. Bumped when extraction rules change. */
@@ -293,6 +294,24 @@ export function interpretRepository(input: InterpretRepositoryInput): Interpreta
     }
 
     const absolute = record.absolute_path ?? path.join(input.root, sourcePath);
+    // Encoding eligibility is decided over every byte before the file is decoded.
+    // A prefix that happens to be ASCII says nothing about byte 9000, and decoding
+    // a non-UTF-8 file with replacement characters would produce assertions whose
+    // excerpts do not match the bytes their hash claims to cite.
+    const encoding = probeFileEncoding(absolute);
+    if (encoding.status !== "utf8") {
+      diagnostics.push({
+        code: encoding.status === "unreadable"
+          ? "interpretation.unreadable"
+          : "interpretation.unsupported_encoding",
+        severity: "warning",
+        message: encoding.status === "unreadable"
+          ? `file could not be read: ${encoding.reason}`
+          : `file is not valid UTF-8 text and was not interpreted: ${encoding.reason}`,
+        source_path: sourcePath,
+      });
+      continue;
+    }
     let content: string;
     try {
       content = fs.readFileSync(absolute, "utf8");

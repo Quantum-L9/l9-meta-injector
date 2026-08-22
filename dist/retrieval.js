@@ -44,6 +44,7 @@ const path = __importStar(require("node:path"));
 const extract_1 = require("./extract");
 const comment_1 = require("./comment");
 const omit_1 = require("./omit");
+const encoding_1 = require("./encoding");
 const discovery_contracts_1 = require("./discovery_contracts");
 /** Injector-generated adjacent artifacts must never be rediscovered as inputs. */
 function isGeneratedArtifact(name) {
@@ -58,39 +59,26 @@ function isL9InternalPath(relPath) {
 function isHiddenControlPath(relPath) {
     return relPath.split("/").some((segment) => segment.startsWith(".") && segment !== ".");
 }
+/**
+ * Classify a file for discovery by validating its encoding over every byte.
+ *
+ * A prefix probe was not sufficient here: discovery decides which files are
+ * eligible for inline mutation, and a file whose first 8 KiB are ASCII can still
+ * be Windows-1252 further in. Rewriting such a file after a prefix-only check
+ * re-encodes the tail. Validation streams the whole file in fixed-size chunks,
+ * so the cost is bounded even on an external drive.
+ */
 function probeTextFile(filePath) {
-    let fd = null;
-    try {
-        const stat = fs.statSync(filePath);
-        fd = fs.openSync(filePath, "r");
-        const buffer = Buffer.alloc(Math.min(8192, Math.max(1, stat.size)));
-        const count = fs.readSync(fd, buffer, 0, buffer.length, 0);
-        const prefix = buffer.subarray(0, count);
-        for (let i = 0; i < prefix.length; i++) {
-            if (prefix[i] === 0)
-                return { status: "binary", reason: "NUL byte detected", sizeBytes: stat.size };
-        }
-        try {
-            new TextDecoder("utf-8", { fatal: true }).decode(prefix, { stream: count < stat.size });
-        }
-        catch (error) {
-            return {
-                status: "unsupported_encoding",
-                reason: `invalid UTF-8 prefix: ${error instanceof Error ? error.message : String(error)}`,
-                sizeBytes: stat.size,
-            };
-        }
-        return { status: "text", reason: "regular UTF-8 text file", sizeBytes: stat.size };
-    }
-    catch (error) {
-        return {
-            status: "unreadable",
-            reason: error instanceof Error ? error.message : String(error),
-        };
-    }
-    finally {
-        if (fd !== null)
-            fs.closeSync(fd);
+    const probe = (0, encoding_1.probeFileEncoding)(filePath);
+    switch (probe.status) {
+        case "utf8":
+            return { status: "text", reason: "valid UTF-8 over every byte", ...(probe.sizeBytes !== undefined ? { sizeBytes: probe.sizeBytes } : {}) };
+        case "binary":
+            return { status: "binary", reason: probe.reason, ...(probe.sizeBytes !== undefined ? { sizeBytes: probe.sizeBytes } : {}) };
+        case "invalid":
+            return { status: "unsupported_encoding", reason: probe.reason, ...(probe.sizeBytes !== undefined ? { sizeBytes: probe.sizeBytes } : {}) };
+        default:
+            return { status: "unreadable", reason: probe.reason };
     }
 }
 function record(ledger, pathName, kind, disposition, reason, sizeBytes) {
@@ -200,19 +188,24 @@ function discoverFiles(root, glob, opts = {}) {
                 record(ledger, rel, "file", "known_binary", "file extension resolves to skip-binary", stat.size);
                 continue;
             }
-            // Known-text extensions are eligible on their extension alone; only unknown
-            // extensions are sniffed on disk. This keeps a readable known-text file
-            // eligible even when the byte probe would fail (OBS-008).
+            // An extension decides which metadata carrier a file would use; it does not
+            // decide whether the file's bytes can be decoded. A `.md` file written in
+            // Windows-1252 is still a `.md` file, and declaring it eligible on its name
+            // would route it into inline mutation, where the whole file is decoded and
+            // rewritten and its tail is lost. So every candidate is validated on disk,
+            // and the extension only supplies the reason recorded for a file that
+            // passes (OBS-008 keeps a readable known-text file eligible; it does not
+            // exempt an undecodable one).
             const ext = path.extname(entry.name).toLowerCase();
             const knownText = comment_1.FRONTMATTER_EXTS.has(ext) ||
                 strategy.strategy === "line-comment" ||
                 strategy.strategy === "block-comment";
-            if (knownText) {
+            const probe = probeTextFile(full);
+            if (knownText && probe.status === "text") {
                 record(ledger, rel, "file", "eligible", "known text extension", stat.size);
                 files.push(full);
                 continue;
             }
-            const probe = probeTextFile(full);
             if (probe.status === "binary") {
                 record(ledger, rel, "file", "binary_detected", probe.reason, probe.sizeBytes);
                 continue;

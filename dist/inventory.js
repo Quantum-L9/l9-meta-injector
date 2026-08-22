@@ -39,11 +39,25 @@ exports.classifyInventory = classifyInventory;
 exports.buildRecord = buildRecord;
 exports.inventoryTree = inventoryTree;
 // inventory.ts — Filesystem/Dropbox inventory mode.
-// Non-destructive: classifies every file AND folder under a root, appends metadata
-// headers to text files (reusing the filetype-aware injector), writes a metadata
-// sidecar for binaries and for folders, and emits a single inventory manifest
-// (JSON + CSV + MD) using the ArtifactInventory record shape. Never moves, renames,
-// or deletes anything.
+//
+// This mode ANNOTATES by default. It classifies every file and folder under a root,
+// and unless told otherwise it also appends metadata headers to text files (through
+// the filetype-aware injector) and writes `.l9meta.yaml` sidecars for binaries and
+// folders, alongside a manifest (JSON + CSV + MD) in the ArtifactInventory shape.
+//
+// Three distinct behaviors are worth naming, because conflating them is how a
+// "read-only" claim becomes false:
+//
+//   observation     — classify and hash; the source is untouched.
+//   annotation      — write metadata into or beside source files. THIS IS A MUTATION.
+//   materialization — expand an archive into the source tree (see archives.ts).
+//
+// Defaults here are observation + annotation. `dryRun` reduces it to observation.
+// It never moves, renames, or deletes anything, but "never deletes" is not the same
+// as non-destructive, and this module must not be described as read-only.
+//
+// For read-only observation of an arbitrary local source — including one that is not
+// a Git repository — use `local_source.ts`, which annotates nothing (ADR-036).
 const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
 const crypto = __importStar(require("node:crypto"));
@@ -54,6 +68,7 @@ const schema_1 = require("./schema");
 const yaml_serialize_1 = require("./yaml_serialize");
 const meta_schema_1 = require("./meta_schema");
 const omit_1 = require("./omit");
+const encoding_1 = require("./encoding");
 /** Load and validate a canonical meta-schema YAML file. */
 function loadMetaSchema(filePath) {
     return (0, meta_schema_1.toMetaSchema)((0, meta_schema_1.parseCanonicalYaml)(fs.readFileSync(filePath, "utf8")));
@@ -255,7 +270,14 @@ function buildRecord(root, abs, isDir, cfg) {
         created_at: cfg.now,
     };
 }
-/** Run a non-destructive inventory over a filesystem root. */
+/**
+ * Run an inventory over a filesystem root.
+ *
+ * Annotating by default: unless `dryRun` is set, this writes metadata headers into
+ * text files and `.l9meta.yaml` sidecars beside binaries and folders. It never
+ * moves, renames, or deletes. For observation with no writes at all, set `dryRun`,
+ * or use `local_source.ts` (ADR-036).
+ */
 function inventoryTree(config) {
     const ignoreDirs = config.ignore ?? ["node_modules", ".git", ".l9inventory"];
     const cfg = {
@@ -366,21 +388,27 @@ function inventoryTree(config) {
     const manifestPaths = writeManifests(config.outDir, root, records, typeDistribution, duplicates, cfg.now, cfg.dryRun);
     return { root, total: records.length, files, folders, typeDistribution, manifestPaths, duplicates, records, skippedDirs, omittedPaths };
 }
-// Read only the first 8 KB — enough to decide binary-vs-text and pick a strategy,
-// without loading a whole large binary into memory. injectFile re-reads the full
-// file itself when it actually needs the body.
-// text=null with no error → binary; error set → the file could not be read. Keeping
-// the two distinct means a permission/IO error is no longer silently reclassified as
-// "binary, skipped" (finding OBS-005).
+// Decide text-vs-binary from the WHOLE file, then read only the first 8 KB of a
+// file that qualifies — enough to pick a strategy without loading a large file
+// into memory. injectFile re-reads the full body itself when it needs it.
+//
+// The encoding decision cannot come from the prefix: a file whose first 8 KB are
+// ASCII and whose tail is Windows-1252 would otherwise be classified as
+// injectable and then rewritten through a lossy decode. text=null with no error
+// means binary or an unsupported encoding; error set means the file could not be
+// read, and the two stay distinct so an IO failure is not reported as "binary,
+// skipped" (finding OBS-005).
 function safeRead(abs) {
+    const encoding = (0, encoding_1.probeFileEncoding)(abs);
+    if (encoding.status === "unreadable")
+        return { text: null, error: encoding.reason };
+    if (encoding.status !== "utf8")
+        return { text: null };
     let fd = null;
     try {
         fd = fs.openSync(abs, "r");
         const buf = Buffer.alloc(8192);
         const n = fs.readSync(fd, buf, 0, 8192, 0);
-        for (let i = 0; i < n; i++)
-            if (buf[i] === 0)
-                return { text: null }; // binary
         return { text: buf.subarray(0, n).toString("utf8") };
     }
     catch (err) {

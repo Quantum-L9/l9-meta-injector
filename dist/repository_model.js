@@ -293,6 +293,38 @@ const PROFILE_HASH = semanticHash({
     relationships_require_evidence: true,
     absolute_paths_in_identity: false,
 });
+/**
+ * Identity of the local-source observation policy.
+ *
+ * A local filesystem source is observed under different rules than a Git
+ * checkout: archives are staged rather than extracted beside the source,
+ * symlinks are recorded but never followed, and a resource budget bounds what an
+ * archive may expand into. Those rules belong in packet identity, so a
+ * local-source packet declares its own profile instead of borrowing the
+ * repository-inventory one. Repository packets keep the identity they had.
+ */
+const LOCAL_SOURCE_PROFILE_ID = "meta-injector-local-source-observation";
+const LOCAL_SOURCE_PROFILE_VERSION = "1.0.0";
+function localSourceProfile(input) {
+    return {
+        id: LOCAL_SOURCE_PROFILE_ID,
+        version: LOCAL_SOURCE_PROFILE_VERSION,
+        hash: semanticHash({
+            id: LOCAL_SOURCE_PROFILE_ID,
+            version: LOCAL_SOURCE_PROFILE_VERSION,
+            evidence_source: "l9-meta-injector.local-source",
+            source_kind: input.sourceKind,
+            archive_formats_expanded: ["zip"],
+            archive_policy_version: input.archivePolicyVersion,
+            archive_members_are_virtual_artifacts: true,
+            archive_expansion_mutates_source: false,
+            symlinks_followed: false,
+            ordering: "code-point",
+            absolute_paths_in_identity: false,
+            scratch_paths_in_identity: false,
+        }),
+    };
+}
 function makeEvidence(draft, producerVersion, generatedAt) {
     // Identity mirrors the consumer's make_evidence_record: confidence and created_at
     // are deliberately excluded so an identical observation keeps an identical id.
@@ -441,6 +473,140 @@ function buildRepositoryModelPacket(input) {
             adrRefs.push(relativePath);
         if (GOVERNANCE_FILENAMES.has(record.file_name))
             governanceRefs.push(relativePath);
+    }
+    // Archive provenance. Members already exist as artifacts because acquisition
+    // reported them as inventory records; what is added here is the ancestry that
+    // binds each member to the archive it came from, and each nested archive to the
+    // archive that contained it, all the way back to a physical source file.
+    const emittedArtifactIds = new Set(artifacts.map((artifact) => artifact.artifact_id));
+    const artifactIdFor = (sourcePath) => stableId("artifact", { repository_id: repositoryId, source_path: sourcePath });
+    if (input.localSource) {
+        const local = input.localSource;
+        // A local source is not a Git checkout, and nothing here should be read as a
+        // claim that one exists. The observation states what it observed.
+        diagnostics.push({
+            code: "local-source-observation",
+            severity: "info",
+            message: `This packet describes a local ${local.sourceKind} source observed read-only; ` +
+                "no Git repository is claimed and the source revision uses a local-source scheme.",
+            stage: OBSERVATION_STAGE,
+            category: "observation",
+            subject_id: repositoryId,
+            details: {
+                source_kind: local.sourceKind,
+                source_revision: input.sourceRevision,
+                archive_policy_version: local.archivePolicyVersion,
+                archives_observed: local.archives.length,
+                archive_members_observed: local.members.length,
+            },
+        });
+        for (const archive of [...local.archives].sort((a, b) => compareCodePoints(a.sourcePath, b.sourcePath))) {
+            if (archive.expanded)
+                continue;
+            // A held archive is still an observation: its bytes were hashed, its members
+            // were not claimed, and the reason is explicit rather than an absence.
+            diagnostics.push({
+                code: "archive-held",
+                severity: "warning",
+                message: `Archive ${archive.sourcePath} was observed and hashed but not expanded; ` +
+                    "none of its members are claimed as observed.",
+                stage: OBSERVATION_STAGE,
+                category: "observation",
+                subject_id: emittedArtifactIds.has(artifactIdFor(archive.sourcePath))
+                    ? artifactIdFor(archive.sourcePath)
+                    : repositoryId,
+                details: {
+                    source_path: archive.sourcePath,
+                    archive_digest: archive.contentHash,
+                    nested_depth: archive.nestedDepth,
+                    hold_codes: sortStrings(archive.holdCodes),
+                },
+            });
+        }
+        const orderedMembers = [...local.members].sort((a, b) => compareCodePoints(a.virtualSourcePath, b.virtualSourcePath));
+        for (const member of orderedMembers) {
+            const memberArtifactId = artifactIdFor(member.virtualSourcePath);
+            const archiveArtifactId = artifactIdFor(member.parentArchivePath);
+            if (!emittedArtifactIds.has(memberArtifactId) || !emittedArtifactIds.has(archiveArtifactId)) {
+                // An edge whose endpoints are not both emitted would not resolve, so the
+                // gap is reported instead of asserted.
+                diagnostics.push({
+                    code: "archive-provenance-unresolved",
+                    severity: "warning",
+                    message: `Archive member ${member.virtualSourcePath} could not be linked to ` +
+                        `${member.parentArchivePath}; one endpoint is not an emitted artifact.`,
+                    stage: OBSERVATION_STAGE,
+                    category: "coverage",
+                    subject_id: repositoryId,
+                    details: { member_path: member.virtualSourcePath, archive_path: member.parentArchivePath },
+                });
+                continue;
+            }
+            // Member identity is the triple the contract requires: which archive, which
+            // path inside it, and which exact bytes. It deliberately excludes anything
+            // about where the member was staged.
+            const memberId = stableId("member", {
+                parent_archive_hash: member.parentArchiveHash,
+                member_path: member.memberPath,
+                member_content_hash: member.contentHash,
+            });
+            const provenance = makeEvidence({
+                subjectId: memberArtifactId,
+                field: "derived_from",
+                evidenceClass: "observed",
+                sourceRef: {
+                    source_path: member.virtualSourcePath,
+                    source_revision: input.sourceRevision,
+                    content_hash: member.contentHash,
+                },
+                value: {
+                    member_id: memberId,
+                    member_path: member.memberPath,
+                    nested_depth: member.nestedDepth,
+                    archive_digest: member.parentArchiveHash,
+                    archive_source_path: member.parentArchivePath,
+                },
+                confidence: DERIVED_CONFIDENCE,
+            }, producerVersion, generatedAt);
+            evidence.push(provenance);
+            const derivedIdentity = {
+                source_id: memberArtifactId,
+                target_id: archiveArtifactId,
+                edge_type: "DERIVED_FROM",
+            };
+            relationships.push({
+                edge_id: stableId("edge", derivedIdentity),
+                source_id: memberArtifactId,
+                target_id: archiveArtifactId,
+                edge_type: "DERIVED_FROM",
+                direction: "outbound",
+                properties: {
+                    member_id: memberId,
+                    member_path: member.memberPath,
+                    nested_depth: member.nestedDepth,
+                    archive_digest: member.parentArchiveHash,
+                },
+                evidence_refs: [provenance.evidence_id],
+                confidence: DERIVED_CONFIDENCE,
+            });
+        }
+        for (const diagnostic of [...local.diagnostics].sort((a, b) => compareCodePoints(a.code, b.code)
+            || compareCodePoints(a.sourcePath ?? "", b.sourcePath ?? "")
+            || compareCodePoints(a.message, b.message))) {
+            const subjectId = diagnostic.sourcePath !== undefined
+                && emittedArtifactIds.has(artifactIdFor(diagnostic.sourcePath))
+                ? artifactIdFor(diagnostic.sourcePath)
+                : repositoryId;
+            diagnostics.push({
+                code: diagnostic.code,
+                severity: diagnostic.severity,
+                message: diagnostic.message,
+                stage: OBSERVATION_STAGE,
+                category: "observation",
+                subject_id: subjectId,
+                details: diagnostic.sourcePath !== undefined ? { source_path: diagnostic.sourcePath } : {},
+            });
+        }
     }
     // Repository-level facts derived from observed paths, each with its own evidence.
     const repositoryEvidenceRefs = [];
@@ -592,7 +758,9 @@ function buildRepositoryModelPacket(input) {
         subject: { repository_id: repositoryId },
         source_snapshot: { revision: input.sourceRevision, semantic_hash: snapshotHash },
         producer: { name: exports.REPOSITORY_MODEL_PRODUCER_NAME, version: producerVersion },
-        profile: { id: PROFILE_ID, version: PROFILE_VERSION, hash: PROFILE_HASH },
+        profile: input.localSource
+            ? localSourceProfile(input.localSource)
+            : { id: PROFILE_ID, version: PROFILE_VERSION, hash: PROFILE_HASH },
         schema_hash: SCHEMA_HASH,
         payload_refs: {},
         payload,

@@ -33,8 +33,10 @@ consumable as a **GitHub composite action** — it runs directly against the pin
 `dist/`, no build step and no npm registry needed. Drop this into any repo's workflow:
 
 ```yaml
-# Read-only preview: classify + write an inventory manifest as a build artifact.
-# Never mutates the checked-out repo. Safe as a first drop-in.
+# Observation only: classify + write an inventory manifest as a build artifact.
+# `mode: inventory` defaults to dry-run, so the checked-out repo is not modified.
+# (Setting `dry-run: "false"` turns this into annotation: it then writes metadata
+# headers and sidecars into the checkout.) Safe as a first drop-in.
 - uses: actions/checkout@v4
 - uses: Quantum-L9/l9-meta-injector@main
   with:
@@ -94,9 +96,79 @@ consumable as a **GitHub composite action** — it runs directly against the pin
 | `llm-api-key` | *(none)* | Pass from the calling workflow's own secret, e.g. `${{ secrets.OPENAI_API_KEY }}`. Never hardcoded; read via env, never placed on the command line. |
 | `llm-allow-insecure` | `false` | Allow a non-https `llm-base-url` (e.g. a self-hosted runner reaching a local model). |
 
-Local CLI (not the GitHub Action): `npm run pipeline -- <root> --local-files` expands `.zip` archives into sibling `*.l9extracted/` dirs, writes `<zip>.l9meta.yaml` sidecars, and injects extracted members (ADR-016). Default pipeline mode still skips archives. Requires system `unzip`.
+### Local sources: any file, folder, drive, or ZIP
+
+`npm run local-source -- <path> --name <name> --out <dir>` observes an arbitrary local
+source read-only (ADR-036). The path may be a single file, an ordinary folder, an
+external-drive tree, a synced folder, or a `.zip`. **It does not have to be a Git
+repository, and it is never modified** — no file under it is written, renamed, or
+removed, and nothing is extracted beside it.
+
+```bash
+npm run local-source -- /Volumes/Data/Folder --name Folder --out ./out
+npm run local-source -- ~/Downloads/Bundle.zip --name Bundle --out ./out
+npm run local-source -- ~/Documents/design.md  --name design --out ./out
+```
+
+Output is a Repository Model Packet bundle under `<out>/bundle` plus an acquisition
+manifest at `<out>/local-source-manifest.json`. The manifest is never written inside
+the observed tree.
+
+What the observation guarantees:
+
+- **Source immutability.** Archives are staged into tool-owned scratch outside the
+  source. Recursive deletion is confined to a scratch root this run created and
+  proved it owns; a directory is never removed because of its name.
+- **Virtual archive members.** A member is `Bundle.zip!/docs/a.md` — machine
+  independent, and nested as `outer.zip!/inner.zip!/src/b.py`. Each carries the digest
+  of its exact bytes and a `DERIVED_FROM` link to its archive. Scratch paths never
+  reach a packet.
+- **ZIP only, in v1.** `tar`, `gz`, `7z`, `rar` and friends are classified as
+  archives, hashed, and reported as not expanded. No external tool is consulted.
+- **Bounded expansion.** Archive size, member count, per-member/per-archive/per-session
+  expansion, compression ratio, nesting depth and path length are all capped, checked
+  against the central directory *and* against the bytes actually produced. Any
+  preflight or budget violation holds the whole archive: it is still observed and
+  hashed, and none of its members are claimed.
+- **Symlinks are not followed.** The link and its literal target text are recorded;
+  the target's bytes are not read.
+- **Secret-candidate files are not interpreted.** `Bundle.zip!/.env` keeps its path,
+  size and digest, and contributes no excerpt and no assertion.
+- **Encoding safety.** A file is validated as UTF-8 over every byte before it is
+  decoded or mutated. A file that fails is hashed, diagnosed, and left alone.
+- **Deterministic identity.** `file:sha256:…`, `archive:sha256:…`, or `fs:sha256:…`,
+  derived from bytes and repository-relative paths. If the source changes mid-read,
+  the run reports it and refuses to emit a packet rather than publishing a torn
+  snapshot.
+
+Budget flags: `--no-expand-archives`, `--max-archive-bytes`, `--max-members`,
+`--max-member-bytes`, `--max-expanded-bytes`, `--max-session-bytes`,
+`--max-compression-ratio`, `--max-archive-depth`. Run with no arguments for full usage.
+
+What this trusts and refuses, and its known limits, is stated in
+[`docs/local-source-trust-boundary.md`](docs/local-source-trust-boundary.md).
+Moving off `--local-files`:
+[`docs/migrations/local-files-to-local-source.md`](docs/migrations/local-files-to-local-source.md).
+
+### Legacy archive materialization
+
+`npm run pipeline -- <root> --local-files` is a **mutating materialization** workflow,
+not an observation one (ADR-016, hardened by ADR-036). It expands `.zip` archives into
+sibling `*.l9extracted/` directories, writes `<zip>.l9meta.yaml` sidecars, and injects
+the extracted members in place. It requires system `unzip`. Default pipeline mode still
+skips archives.
+
+It now refuses to replace an extraction target that carries no ownership marker — a
+user directory named `Foo.l9extracted` is never deleted — and its dry run performs zero
+source mutation, reporting what a real run would extract instead of extracting it.
+Prefer `local-source` for anything you do not intend to modify.
 
 `npm run skills -- <root> --llm …` runs Cursor-native skill mode (ADR-017).
+
+**`npm run inventory` is not read-only.** Unlike the Action's `mode: inventory`, the
+direct CLI defaults to annotation: it appends metadata headers to text files and writes
+`.l9meta.yaml` sidecars beside binaries and folders. Pass `--dry-run` for observation
+only, or use `npm run local-source` when the source must not be touched.
 
 Pipeline coverage: every run (including dry-run) writes `coverage-report.json` under `--out-dir` with skipped binary/non-injectable paths and classification details (ADR-018). `skipped-noninjectable` is taxonomy-gated; weak keyword false positives are demoted so in-scope prose injects.
 

@@ -27,7 +27,11 @@
     "carrier_operation": "src/carrier_operation.ts",
     "file_transaction": "src/file_transaction.ts",
     "frontmatter_patch": "src/frontmatter_patch.ts",
-    "output_placement": "docs/output-placement-contract.md"
+    "output_placement": "docs/output-placement-contract.md",
+    "local_source": "src/local_source.ts",
+    "local_archive_policy": "src/local_archive_policy.ts",
+    "archive_preflight": "src/archive_preflight.ts",
+    "encoding": "src/encoding.ts"
   },
   "distribution": {
     "model": "committed_dist_mirror",
@@ -187,5 +191,37 @@
     "unrelated_field_preservation": true,
     "complex_yaml_policy": "fail_closed",
     "skills_patch_scope": "materially_changed_fields_only"
+  },
+  "local_source_acquisition": {
+    "model": "read_only_staged_observation",
+    "acquirer": "src/local_source.ts#acquireLocalSource",
+    "packet_egress": "src/local_source_model.ts#observeLocalSourceModel",
+    "cli": "scripts/local-source-cli.js",
+    "source_kinds": [
+      "file",
+      "directory",
+      "archive"
+    ],
+    "requires_git_repository": false,
+    "source_mutation": false,
+    "dry_run_source_mutation": false,
+    "archive_formats_expanded": [
+      "zip"
+    ],
+    "archive_reader": "src/zip_reader.ts",
+    "archive_preflight": "src/archive_preflight.ts",
+    "system_unzip_in_canonical_path": false,
+    "member_locator_format": "<archive-relative-path>!/<member-path>",
+    "member_provenance_edge": "DERIVED_FROM",
+    "scratch_location": "operating_system_temp",
+    "scratch_paths_in_identity": false,
+    "adjacent_archive_sidecar_in_canonical_path": false,
+    "symlinks_followed": false,
+    "whole_file_utf8_validation_before_decode_or_mutation": true,
+    "unstable_snapshot_blocks_packet": true,
+    "resource_budget": "src/local_archive_policy.ts#LocalArchivePolicy",
+    "resource_budget_version": "1",
+    "legacy_materialization": "src/archives.ts",
+    "legacy_materialization_requires_ownership_evidence": true
   }
 }

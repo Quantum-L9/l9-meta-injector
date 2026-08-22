@@ -142,6 +142,50 @@
         "npm run topology:conformance"
       ],
       "stability": "stable"
+    },
+    {
+      "capability": "local_source_acquisition",
+      "source": "src/local_source.ts and src/local_source_model.ts",
+      "public_entrypoint": "l9-meta-injector/advanced",
+      "tests": [
+        "tests/local_source_safety.test.ts",
+        "tests/local_source_archive_security.test.ts",
+        "tests/local_source_model.test.ts",
+        "tests/local_source_qualification.test.ts"
+      ],
+      "validators": [
+        "npm run check:api",
+        "npm run check:authority",
+        "npm run validate"
+      ],
+      "stability": "stable"
+    },
+    {
+      "capability": "archive_preflight_and_budget",
+      "source": "src/archive_preflight.ts and src/zip_reader.ts and src/local_archive_policy.ts",
+      "public_entrypoint": "l9-meta-injector/advanced",
+      "tests": [
+        "tests/local_source_archive_security.test.ts"
+      ],
+      "validators": [
+        "npm run check:api",
+        "npm run validate"
+      ],
+      "stability": "stable"
+    },
+    {
+      "capability": "whole_file_encoding_safety",
+      "source": "src/encoding.ts",
+      "public_entrypoint": "l9-meta-injector/advanced",
+      "tests": [
+        "tests/encoding_safety.test.ts",
+        "tests/read_errors.test.ts"
+      ],
+      "validators": [
+        "npm run check:api",
+        "npm run validate"
+      ],
+      "stability": "stable"
     }
   ]
 }

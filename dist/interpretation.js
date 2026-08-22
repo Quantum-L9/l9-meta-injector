@@ -59,6 +59,7 @@ exports.interpretRepository = interpretRepository;
 //     that looks like a credential is persisted.
 const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
+const encoding_1 = require("./encoding");
 const repository_model_1 = require("./repository_model");
 /** Identity of the interpretation policy. Bumped when extraction rules change. */
 exports.INTERPRETATION_PROFILE_ID = "meta-injector-repository-interpretation";
@@ -184,6 +185,24 @@ function interpretRepository(input) {
             continue;
         }
         const absolute = record.absolute_path ?? path.join(input.root, sourcePath);
+        // Encoding eligibility is decided over every byte before the file is decoded.
+        // A prefix that happens to be ASCII says nothing about byte 9000, and decoding
+        // a non-UTF-8 file with replacement characters would produce assertions whose
+        // excerpts do not match the bytes their hash claims to cite.
+        const encoding = (0, encoding_1.probeFileEncoding)(absolute);
+        if (encoding.status !== "utf8") {
+            diagnostics.push({
+                code: encoding.status === "unreadable"
+                    ? "interpretation.unreadable"
+                    : "interpretation.unsupported_encoding",
+                severity: "warning",
+                message: encoding.status === "unreadable"
+                    ? `file could not be read: ${encoding.reason}`
+                    : `file is not valid UTF-8 text and was not interpreted: ${encoding.reason}`,
+                source_path: sourcePath,
+            });
+            continue;
+        }
         let content;
         try {
             content = fs.readFileSync(absolute, "utf8");

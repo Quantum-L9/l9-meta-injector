@@ -9,6 +9,7 @@ import * as path from "node:path";
 import { NormalizedMeta, InjectionRecord, MetaRecord, asRecord, normalizeMetaRecord, FieldDiff } from "./schema";
 import { serializeToYamlFrontMatter } from "./normalize_meta";
 import { contentHash } from "./extract";
+import { probeFileEncoding } from "./encoding";
 import { reconcileFields, reconcileFieldsAsync, diffsToLogYaml } from "./reconcile_fields";
 import { getAdapter } from "./llm";
 import { MetricsCollector } from "./metrics";
@@ -55,6 +56,14 @@ interface ReadCtx {
 
 // Read the file and derive the clean body + any prior metadata, per strategy.
 function readForInjection(filePath: string): ReadCtx {
+  // Injection rewrites the whole file, so eligibility is decided over the whole
+  // file. Decoding non-UTF-8 bytes here would substitute replacement characters
+  // and then write them back, silently destroying the original encoding; a
+  // filetype that "looks textual" is not evidence that its bytes are UTF-8.
+  const encoding = probeFileEncoding(filePath);
+  if (encoding.status !== "utf8") {
+    throw new Error(`UNSUPPORTED_ENCODING: ${filePath}: ${encoding.reason}`);
+  }
   const raw = fs.readFileSync(filePath, "utf8");
   const spec = resolveStrategy(filePath, raw);
 

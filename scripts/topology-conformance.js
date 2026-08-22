@@ -30,6 +30,11 @@ const REPO = path.resolve(__dirname, "..");
 // shim — otherwise the richer packet is only theoretically compatible.
 const BUNDLES = [
   { id: "inventory", bundle: "fixtures/repository-model/expected-bundle" },
+  // A local-source packet exercises the domains an inventory-only packet does not:
+  // archive artifacts at virtual member locators, DERIVED_FROM ancestry across a
+  // nested archive, and a non-Git `fs:sha256:` source revision. Proving the
+  // inventory bundle alone would leave all three only theoretically compatible.
+  { id: "local-source", bundle: "fixtures/local-source/expected-bundle" },
 ];
 const EVIDENCE = path.join(REPO, "docs", "topology-conformance.json");
 const LABEL = "topology-conformance";

@@ -2,6 +2,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { execFileSync } from "child_process";
+import { createHash } from "crypto";
 import { describe, expect, test } from "vitest";
 import { runPipelineAsync } from "../src/pipeline";
 import { findFiles } from "../src/retrieval";
@@ -9,6 +10,7 @@ import { PipelineConfig } from "../src/schema";
 import {
   extractDirFor,
   expandArchivesUnderRoot,
+  extractZip,
   listZipMembers,
   writeArchiveSidecar,
 } from "../src/archives";
@@ -16,6 +18,22 @@ import { sidecarPathFor } from "../src/comment";
 
 function tmp(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "l9-archives-"));
+}
+
+/** Path -> content digest for every file under a root; the mutation oracle. */
+function treeSnapshot(root: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  const walk = (dir: string): void => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      const abs = path.join(dir, entry.name);
+      const rel = path.relative(root, abs).split(path.sep).join("/");
+      if (entry.isDirectory()) { out[`${rel}/`] = "dir"; walk(abs); }
+      else if (entry.isFile()) out[rel] = createHash("sha256").update(fs.readFileSync(abs)).digest("hex");
+      else out[rel] = `other:${entry.isSymbolicLink() ? "symlink" : "special"}`;
+    }
+  };
+  walk(root);
+  return out;
 }
 
 function cfg(root: string, out: string, localFiles = false): PipelineConfig {
@@ -69,13 +87,56 @@ describe("archives — local-files expansion", () => {
     expect(sc).toMatch(/member_count: 2/);
   });
 
-  test("dryRun expands but skips archive sidecar", () => {
+  // ADR-036: dry run means zero source-tree mutation. This path used to extract
+  // during a dry run and skip only the sidecar, so "dry run" described something
+  // the code did not do.
+  test("dryRun performs zero source mutation and reports what a real run would extract", () => {
     const root = tmp();
     const zipPath = path.join(root, "pack.zip");
     makeZip(zipPath, path.join(root, "_stage"), { "a.md": "# doctrine governance policy principle\n" });
-    expandArchivesUnderRoot(root, { dryRun: true, verbose: false });
-    expect(fs.existsSync(path.join(extractDirFor(zipPath), "a.md"))).toBe(true);
+    const before = treeSnapshot(root);
+
+    const result = expandArchivesUnderRoot(root, { dryRun: true, verbose: false });
+
+    expect(fs.existsSync(extractDirFor(zipPath))).toBe(false);
     expect(fs.existsSync(sidecarPathFor(zipPath))).toBe(false);
+    expect(treeSnapshot(root)).toEqual(before);
+    expect(result.extractedRoots).toEqual([]);
+    expect(result.archives).toHaveLength(1);
+    expect(result.archives[0].memberCount).toBe(0);
+    expect(result.archives[0].heldReason).toMatch(/dry-run: 1 member\(s\) would be extracted/);
+  });
+
+  test("an existing sibling directory without an ownership marker is never deleted", () => {
+    const root = tmp();
+    const zipPath = path.join(root, "Foo.zip");
+    makeZip(zipPath, path.join(root, "_stage"), { "a.md": "# skill capability function action\n" });
+    // A user directory that merely happens to be named like an extraction target.
+    const userDir = extractDirFor(zipPath);
+    fs.mkdirSync(userDir, { recursive: true });
+    fs.writeFileSync(path.join(userDir, "IMPORTANT_USER_DATA"), "irreplaceable\n");
+    const before = treeSnapshot(root);
+
+    const result = expandArchivesUnderRoot(root, { dryRun: false, verbose: false });
+
+    expect(fs.readFileSync(path.join(userDir, "IMPORTANT_USER_DATA"), "utf8")).toBe("irreplaceable\n");
+    expect(treeSnapshot(root)).toEqual(before);
+    expect(result.archives[0].heldReason).toMatch(/carries no .* ownership marker/);
+    expect(() => extractZip(zipPath, userDir)).toThrow(/never removed/);
+  });
+
+  test("a tool-owned extraction directory may be refreshed", () => {
+    const root = tmp();
+    const zipPath = path.join(root, "Bar.zip");
+    makeZip(zipPath, path.join(root, "_stage"), { "a.md": "# skill capability function action\n" });
+
+    const first = expandArchivesUnderRoot(root, { dryRun: false, verbose: false });
+    expect(first.archives[0].heldReason).toBeUndefined();
+    expect(fs.existsSync(path.join(extractDirFor(zipPath), ".l9extracted-owner.json"))).toBe(true);
+
+    const second = expandArchivesUnderRoot(root, { dryRun: false, verbose: false });
+    expect(second.archives[0].heldReason).toBeUndefined();
+    expect(second.archives[0].memberCount).toBe(1);
   });
 
   test("listZipMembers rejects Zip-Slip paths", () => {

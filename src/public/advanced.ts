@@ -58,3 +58,33 @@ export {
   dedupReportToMarkdown,
 } from "../compiler";
 export type { NearDuplicate } from "../compiler";
+export {
+  acquireLocalSource, hasLegacyExtractionOwnership, isLegacyGeneratedExtraction,
+  physicalManifestDigest, hashFileStreaming,
+  ARCHIVE_MEMBER_SEPARATOR, GENERATED_ARTIFACT_OMIT_PATTERNS,
+  LEGACY_EXTRACTION_OWNER_FILE, LEGACY_EXTRACTION_SUFFIX, SCRATCH_OWNER_FILE, SCRATCH_OWNER_ID,
+} from "../local_source";
+export type {
+  LocalSourceAcquireInput, LocalSourceObservation, LocalSourceKind, LocalEntryKind,
+  LocalSourceDiagnostic, LocalSourceDiagnosticSeverity, LocalArchiveObservation,
+  LocalArchiveMemberObservation, PhysicalManifestEntry, RequestedSourceKind,
+} from "../local_source";
+export {
+  observeLocalSourceModel, withLocalSourceModel, canonicalBlockReason,
+  toRepositoryModelLocalSource, buildLocalSourceManifest, writeLocalSourceManifest,
+  LOCAL_SOURCE_MANIFEST_SCHEMA,
+} from "../local_source_model";
+export type {
+  LocalSourceModelInput, LocalSourceModelResult, LocalSourceManifest,
+  BuildLocalSourceManifestOptions,
+} from "../local_source_model";
+export {
+  DEFAULT_LOCAL_ARCHIVE_POLICY, resolveLocalArchivePolicy, LOCAL_ARCHIVE_POLICY_VERSION,
+} from "../local_archive_policy";
+export type { LocalArchivePolicy } from "../local_archive_policy";
+export { preflightArchive, canonicalMemberPath, memberCollisionKey } from "../archive_preflight";
+export type {
+  ArchiveHold, ArchiveHoldCode, ArchivePreflightInput, ArchivePreflightResult, PreflightMember,
+} from "../archive_preflight";
+export { probeFileEncoding, probeBufferEncoding, readUtf8Strict, isDecodableText, ENCODING_CHUNK_BYTES } from "../encoding";
+export type { EncodingProbe, EncodingStatus } from "../encoding";

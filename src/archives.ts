@@ -1,10 +1,30 @@
-// archives.ts — Opt-in local-files archive expansion for the pipeline.
+// archives.ts — legacy, opt-in, MUTATING local-files archive expansion.
+//
+// This is not the canonical observation path. Canonical local-source and archive
+// observation lives in `local_source.ts`, is read-only, and stages members into
+// tool-owned scratch (ADR-036). This module remains only for the pre-existing
+// `PipelineConfig.localFiles` materialization workflow, where the operator has
+// explicitly asked for archive members to be written beside their archive and
+// injected in place. It is a materialization surface, not an observation one, and
+// it must never be described as non-destructive.
+//
 // Default (repo) mode never extracts. When PipelineConfig.localFiles is set,
 // .zip archives under the scan root are expanded into sibling *.l9extracted/
 // directories, members become ordinary inject targets, and each archive gets an
 // inventory-style sidecar (<zip>.l9meta.yaml). Nested zips are expanded up to
 // maxDepth. Extraction uses a fixed-path system `unzip` binary (macOS/Linux);
 // missing unzip fails closed with an explicit error.
+//
+// Two invariants this module now holds unconditionally, legacy or not:
+//
+//   - A directory is never removed because of its name. `Foo.l9extracted` may be
+//     a user directory that happens to be named that way, so extraction refuses
+//     to overwrite any existing directory that does not carry this tool's
+//     ownership marker. The previous unconditional recursive delete could destroy
+//     user data that merely sat next to a zip.
+//   - Dry run means zero source-tree mutation. This path previously extracted
+//     even in dry run and only skipped the sidecar, which made "dry run" a claim
+//     the code did not honor.
 //
 // Omit (ADR-017): when an OmitMatcher is supplied, omitted archives are not
 // expanded / sidecared, omitted directories are not walked, and omitted zip
@@ -16,6 +36,7 @@ import { execFileSync } from "node:child_process";
 import { sidecarPathFor } from "./comment";
 import { serializeYamlObject } from "./yaml_serialize";
 import type { OmitMatcher } from "./omit";
+import { LEGACY_EXTRACTION_OWNER_FILE, hasLegacyExtractionOwnership } from "./local_source";
 
 /** Directory-name suffix for an expanded archive (sibling of the .zip). */
 export const EXTRACTED_DIR_SUFFIX = ".l9extracted";
@@ -32,10 +53,16 @@ export interface ArchiveRecord {
   memberCount: number;
   sidecarPath?: string;
   nestedDepth: number;
+  /**
+   * Why this archive was observed but not expanded. Absent when it was expanded.
+   * A refusal is reported rather than thrown so one unsafe archive does not abort
+   * a whole local-files run.
+   */
+  heldReason?: string;
 }
 
 export interface ExpandArchivesOptions {
-  /** When true, still extract (local-files is mutative for archives) but skip sidecar writes. */
+  /** When true, nothing is extracted and no sidecar is written: zero source mutation. */
   dryRun: boolean;
   verbose: boolean;
   /** Max nested-zip depth (outer zip = 0). Default 3. */
@@ -115,15 +142,56 @@ export function listZipMembers(zipPath: string): string[] {
 }
 
 /**
- * Remove and recreate extractDir, then unzip allowed members into it.
+ * Reason an existing extraction directory may not be replaced, or null when it may.
+ *
+ * Ownership must be proven, never inferred from the path. A directory named
+ * `Foo.l9extracted` next to `Foo.zip` can be a user directory: without the
+ * ownership marker this tool writes, removing it would destroy data this package
+ * never created.
+ */
+export function extractionRefusalReason(extractDir: string): string | null {
+  if (!fs.existsSync(extractDir)) return null;
+  let stat: fs.Stats;
+  try {
+    stat = fs.lstatSync(extractDir);
+  } catch (error) {
+    return `extraction target cannot be inspected: ${(error as Error).message}`;
+  }
+  if (stat.isSymbolicLink()) return `extraction target is a symbolic link: ${extractDir}`;
+  if (!stat.isDirectory()) return `extraction target exists and is not a directory: ${extractDir}`;
+  if (fs.readdirSync(extractDir).length === 0) return null;
+  if (hasLegacyExtractionOwnership(extractDir)) return null;
+  return (
+    `extraction target already exists and carries no ${LEGACY_EXTRACTION_OWNER_FILE} ownership marker, ` +
+    `so it is treated as user data and never removed: ${extractDir}`
+  );
+}
+
+/** Record that this tool owns an extraction directory, so a later run may refresh it. */
+function writeExtractionOwnership(extractDir: string, zipPath: string): void {
+  fs.writeFileSync(
+    path.join(extractDir, LEGACY_EXTRACTION_OWNER_FILE),
+    JSON.stringify({ owner: "l9-meta-injector.local-files", archive: path.basename(zipPath) }, null, 2),
+    "utf8",
+  );
+}
+
+/**
+ * Refresh extractDir and unzip allowed members into it.
  * When `allowedMembers` is set, only those paths are extracted (omit filter).
  * Returns the number of non-directory members actually extracted.
+ *
+ * Throws rather than deleting when the target exists and is not provably this
+ * tool's own output.
  */
 export function extractZip(
   zipPath: string,
   extractDir: string,
   allowedMembers?: string[],
 ): number {
+  const refusal = extractionRefusalReason(extractDir);
+  if (refusal !== null) throw new Error(`local-files: ${refusal}`);
+
   const members = listZipMembers(zipPath);
   const files = members.filter((m) => !m.endsWith("/"));
   const toExtract = allowedMembers
@@ -132,6 +200,7 @@ export function extractZip(
 
   if (fs.existsSync(extractDir)) fs.rmSync(extractDir, { recursive: true, force: true });
   fs.mkdirSync(extractDir, { recursive: true });
+  writeExtractionOwnership(extractDir, zipPath);
 
   if (toExtract.length === 0) return 0;
 
@@ -153,9 +222,21 @@ function walkFiles(dir: string, out: string[]): void {
   }
 }
 
-function shouldSkipArchiveDir(name: string, omit: OmitMatcher | undefined, rel: string): boolean {
+/**
+ * Skip a directory during archive discovery.
+ *
+ * A `.l9extracted` suffix alone is not evidence that this tool produced the
+ * directory, so the ownership marker must also be present. Otherwise the
+ * directory is ordinary user content and is walked like any other.
+ */
+function shouldSkipArchiveDir(
+  name: string,
+  omit: OmitMatcher | undefined,
+  rel: string,
+  absolute: string,
+): boolean {
   if (name.startsWith(".") || name === "node_modules") return true;
-  if (name.endsWith(EXTRACTED_DIR_SUFFIX)) return true;
+  if (name.endsWith(EXTRACTED_DIR_SUFFIX) && hasLegacyExtractionOwnership(absolute)) return true;
   return isOmitted(omit, rel);
 }
 
@@ -176,7 +257,7 @@ export function findArchives(
       const full = path.join(dir, entry.name);
       const rel = relPosix(absRoot, full);
       if (entry.isDirectory()) {
-        if (shouldSkipArchiveDir(entry.name, omit, rel)) continue;
+        if (shouldSkipArchiveDir(entry.name, omit, rel, full)) continue;
         walk(full);
         continue;
       }
@@ -269,6 +350,25 @@ function expandOneArchive(
   const members = listZipMembers(zipPath).filter((m) => !m.endsWith("/"));
   const allowed = filterAllowedMembers(absRoot, extractDir, members, omit);
 
+  // Dry run is a promise of zero source-tree mutation, and sibling extraction is
+  // a source-tree mutation. The archive is still listed and reported, so a dry run
+  // states exactly what a real run would materialize.
+  if (opts.dryRun) {
+    if (opts.verbose) {
+      process.stderr.write(
+        `[l9-meta-injector] local-files: dry-run would extract ${zipPath} → ${extractDir} ` +
+          `(depth=${depth}, members=${allowed.length}/${members.length})\n`,
+      );
+    }
+    return {
+      zipPath,
+      extractDir,
+      memberCount: 0,
+      nestedDepth: depth,
+      heldReason: `dry-run: ${allowed.length} member(s) would be extracted to ${extractDir}`,
+    };
+  }
+
   if (opts.verbose) {
     process.stderr.write(
       `[l9-meta-injector] local-files: extracting ${zipPath} → ${extractDir} ` +
@@ -276,15 +376,18 @@ function expandOneArchive(
     );
   }
 
-  const memberCount = extractZip(zipPath, extractDir, omit ? allowed : undefined);
-  let sidecarPath: string | undefined;
-  if (!opts.dryRun) {
-    sidecarPath = writeArchiveSidecar(zipPath, extractDir, memberCount, {
-      nested_depth: depth,
-      expanded_at: new Date().toISOString(),
-      members_omitted: members.length - allowed.length,
-    });
+  const refusal = extractionRefusalReason(extractDir);
+  if (refusal !== null) {
+    process.stderr.write(`[l9-meta-injector] local-files: refusing to expand ${zipPath}: ${refusal}\n`);
+    return { zipPath, extractDir, memberCount: 0, nestedDepth: depth, heldReason: refusal };
   }
+
+  const memberCount = extractZip(zipPath, extractDir, omit ? allowed : undefined);
+  const sidecarPath = writeArchiveSidecar(zipPath, extractDir, memberCount, {
+    nested_depth: depth,
+    expanded_at: new Date().toISOString(),
+    members_omitted: members.length - allowed.length,
+  });
   return { zipPath, extractDir, memberCount, sidecarPath, nestedDepth: depth };
 }
 
@@ -324,8 +427,9 @@ export function expandArchivesUnderRoot(root: string, opts: ExpandArchivesOption
     }
 
     const record = expandOneArchive(absRoot, zipPath, depth, opts, omit);
-    extractedRoots.push(record.extractDir);
     archives.push(record);
+    if (record.heldReason !== undefined) continue;
+    extractedRoots.push(record.extractDir);
     enqueueNestedZips(absRoot, record.extractDir, depth, maxDepth, omit, queue, omittedArchives);
   }
 

@@ -1,9 +1,20 @@
 #!/usr/bin/env node
 /*
  * inventory.js — point the l9-meta-injector at ANY folder (hard drive, Dropbox, …)
- * and produce a non-destructive inventory: classify every file AND folder, append
- * metadata headers to text files, write metadata sidecars for binaries and folders,
- * and emit an inventory manifest (JSON + CSV + MD). Never moves, renames, or deletes.
+ * and produce an inventory: classify every file AND folder, and emit a manifest
+ * (JSON + CSV + MD).
+ *
+ * THIS COMMAND MODIFIES THE SOURCE BY DEFAULT. It appends metadata headers to text
+ * files and writes `.l9meta.yaml` sidecars beside binaries and folders. It never
+ * moves, renames, or deletes, but that is not the same as read-only:
+ *
+ *   observation     classify + hash; source untouched      --dry-run
+ *   annotation      write metadata into/beside source      (the default)
+ *   materialization expand archives into the source tree   pipeline --local-files
+ *
+ * Use `--dry-run` for observation only, or `scripts/local-source-cli.js` for
+ * read-only observation of an arbitrary file, folder, drive tree or ZIP that also
+ * produces a Repository Model Packet (ADR-036).
  *
  *   node scripts/inventory.js <root> [options]
  *   npm run inventory -- <root> [options]
@@ -11,7 +22,7 @@
  * Options:
  *   --out <dir>        where to write inventory.{json,csv,md}   (default: sibling <root>.l9inventory)
  *   --source <name>    source_system: dropbox|github|local|upload|unknown  (default: local)
- *   --dry-run          classify + manifest only; do NOT touch any file/folder
+ *   --dry-run          observation only: classify + manifest, touch no file/folder
  *   --no-inject        do not append headers to text files (sidecars/manifest only)
  *   --no-folder-sidecars   do not write <folder>/.l9meta.yaml
  *   --ignore a,b,c     comma-list of directory names to skip (default: node_modules,.git)
@@ -53,6 +64,9 @@ const config = {
 };
 
 console.error(`inventory: scanning ${root}${config.dryRun ? " (dry-run)" : ""} …`);
+if (!config.dryRun && (config.injectHeaders || config.folderSidecars)) {
+  console.error("inventory: WRITING metadata into the source tree (headers and/or sidecars). Use --dry-run to observe only.");
+}
 const r = pkg.inventoryTree(config);
 console.log(`inventory: ${r.total} entries (${r.files} files, ${r.folders} folders)`);
 console.log(`  omitted: ${r.omittedPaths.length}`);
@@ -62,4 +76,5 @@ console.log(`  manifest: ${path.relative(process.cwd(), r.manifestPaths.json)}`)
 console.log(`           ${path.relative(process.cwd(), r.manifestPaths.csv)}`);
 console.log(`           ${path.relative(process.cwd(), r.manifestPaths.md)}`);
 console.log(`           ${path.relative(process.cwd(), r.manifestPaths.duplicates)}`);
-if (config.dryRun) console.log("  (dry-run: no files/folders were modified; manifest only)");
+if (config.dryRun) console.log("  (dry-run: no file or folder under the root was modified; manifest only)");
+else console.log("  (source annotated: metadata headers and/or sidecars were written under the root)");

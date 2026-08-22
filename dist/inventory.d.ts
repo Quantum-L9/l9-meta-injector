@@ -77,6 +77,13 @@ interface Classification {
 /** Deterministic, evidence-based classification into the ArtifactInventory taxonomy. */
 export declare function classifyInventory(relPath: string, fileName: string, ext: string, isDir: boolean): Classification;
 export declare function buildRecord(root: string, abs: string, isDir: boolean, cfg: Required<Pick<InventoryConfig, "sourceSystem" | "hashMaxBytes" | "now">>): InventoryRecord;
-/** Run a non-destructive inventory over a filesystem root. */
+/**
+ * Run an inventory over a filesystem root.
+ *
+ * Annotating by default: unless `dryRun` is set, this writes metadata headers into
+ * text files and `.l9meta.yaml` sidecars beside binaries and folders. It never
+ * moves, renames, or deletes. For observation with no writes at all, set `dryRun`,
+ * or use `local_source.ts` (ADR-036).
+ */
 export declare function inventoryTree(config: InventoryConfig): InventoryResult;
 export {};

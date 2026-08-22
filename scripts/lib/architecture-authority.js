@@ -34,6 +34,38 @@ const AUTHORITY_CRITICAL_PATHS = [
   "src/schema.ts",
   "src/meta_v3.ts",
   "src/repository_model.ts",
+  "src/local_source.ts",
+  "src/local_source_model.ts",
+  "src/local_archive_policy.ts",
+  "src/archive_preflight.ts",
+  "src/zip_reader.ts",
+  "src/encoding.ts",
+  "dist/local_source.js",
+  "dist/local_source.d.ts",
+  "dist/local_source.js.map",
+  "dist/local_source_model.js",
+  "dist/local_source_model.d.ts",
+  "dist/local_source_model.js.map",
+  "dist/local_archive_policy.js",
+  "dist/local_archive_policy.d.ts",
+  "dist/local_archive_policy.js.map",
+  "dist/archive_preflight.js",
+  "dist/archive_preflight.d.ts",
+  "dist/archive_preflight.js.map",
+  "dist/zip_reader.js",
+  "dist/zip_reader.d.ts",
+  "dist/zip_reader.js.map",
+  "dist/encoding.js",
+  "dist/encoding.d.ts",
+  "dist/encoding.js.map",
+  "scripts/local-source-cli.js",
+  "tests/local_source_safety.test.ts",
+  "tests/local_source_archive_security.test.ts",
+  "tests/local_source_model.test.ts",
+  "tests/local_source_qualification.test.ts",
+  "tests/encoding_safety.test.ts",
+  "tests/helpers/zip_fixtures.ts",
+  "docs/decisions/036-read-only-local-source-acquisition.md",
   "src/public/inventory.ts",
   "src/public/schema.ts",
   "src/public/advanced.ts",
@@ -80,6 +112,12 @@ const AUTHORITY_CRITICAL_PATHS = [
   "tests/repository_model.test.ts",
   "docs/topology-conformance.json",
   "fixtures/repository-model/expected-bundle/manifest.json",
+  "fixtures/local-source/expected-bundle/manifest.json",
+  "fixtures/local-source/expected-bundle/packet.json",
+  "fixtures/local-source/expected-bundle/receipts/validation-receipt.json",
+  "fixtures/local-source/sample-source/Bundle.zip",
+  "fixtures/local-source/sample-source/README.md",
+  "fixtures/local-source/sample-source/package.json",
   "fixtures/repository-model/expected-bundle/packet.json",
   "fixtures/repository-model/expected-bundle/receipts/validation-receipt.json",
   "docs/architecture.md",
@@ -94,6 +132,8 @@ const AUTHORITY_CRITICAL_PATHS = [
   "docs/manifest.md",
   "docs/public-api.md",
   "docs/migrations/v2-to-v3.md",
+  "docs/migrations/local-files-to-local-source.md",
+  "docs/local-source-trust-boundary.md",
   "docs/traceability-map.json",
   "docs/schemas/architecture-authority.schema.json",
   "docs/legacy/consolidation-v1/README.md",
@@ -149,7 +189,7 @@ function validateAuthorityDocument(authority) {
   const errors = [];
   exactKeys(authority,
     ["schema","repository","audit_base_ref","status","engine","contracts","distribution","public_api","persisted_outputs","validation","legacy"],
-    ["operation_contract","invocation_boundary","deterministic_identity","carrier_policy","metadata_index","frontmatter_safety"], "authority", errors);
+    ["operation_contract","invocation_boundary","deterministic_identity","carrier_policy","metadata_index","frontmatter_safety","local_source_acquisition"], "authority", errors);
   if (!isPlainObject(authority)) return errors;
   if (authority.schema !== "l9.architecture-authority/v1") errors.push("authority.schema is invalid");
   if (authority.repository !== "Quantum-L9/l9-meta-injector") errors.push("authority.repository is invalid");
@@ -161,7 +201,7 @@ function validateAuthorityDocument(authority) {
     if (authority.engine.language !== "typescript") errors.push("authority.engine.language must be typescript");
     for (const key of ["source_root","runtime_entrypoint","package_entrypoint","types_entrypoint"]) requireString(authority.engine[key], `authority.engine.${key}`, errors);
   }
-  exactKeys(authority.contracts, ["metadata","pipeline","architecture","public_api","package"], ["operations","repository_authority","authority_scan","check","operation_dispatch","discovery","carrier_policy","metadata_index","carrier_operation","file_transaction","frontmatter_patch","output_placement"], "authority.contracts", errors);
+  exactKeys(authority.contracts, ["metadata","pipeline","architecture","public_api","package"], ["operations","repository_authority","authority_scan","check","operation_dispatch","discovery","carrier_policy","metadata_index","carrier_operation","file_transaction","frontmatter_patch","output_placement","local_source","local_archive_policy","archive_preflight","encoding"], "authority.contracts", errors);
   if (isPlainObject(authority.contracts)) for (const key of Object.keys(authority.contracts)) requireString(authority.contracts[key], `authority.contracts.${key}`, errors);
   exactKeys(authority.distribution, ["model","source_root","generated_root","compliance_state","source_parity_command","packed_consumer_command","package_contract"], [], "authority.distribution", errors);
   if (isPlainObject(authority.distribution)) {
