@@ -186,6 +186,46 @@
         "npm run validate"
       ],
       "stability": "stable"
+    },
+    {
+      "capability": "artifact_scoped_assertions",
+      "source": "src/interpretation.ts and src/repository_model.ts",
+      "public_entrypoint": "l9-meta-injector/repository-model",
+      "tests": [
+        "tests/artifact_scoped_assertions.test.ts",
+        "tests/interpretation.test.ts",
+        "tests/repository_model.test.ts"
+      ],
+      "validators": [
+        "npm run check:api",
+        "npm run validate"
+      ],
+      "stability": "stable"
+    },
+    {
+      "capability": "work_intelligence_extraction",
+      "source": "src/extractors/work_intelligence.ts",
+      "public_entrypoint": null,
+      "tests": [
+        "tests/work_intelligence.test.ts"
+      ],
+      "validators": [
+        "npm run validate"
+      ],
+      "stability": "stable"
+    },
+    {
+      "capability": "corpus_duplicate_and_candidate_analysis",
+      "source": "src/corpus_analysis.ts and src/corpus_report.ts and src/ordering.ts",
+      "public_entrypoint": null,
+      "tests": [
+        "tests/corpus_intelligence.test.ts",
+        "tests/local_source_cli.test.ts"
+      ],
+      "validators": [
+        "npm run validate"
+      ],
+      "stability": "stable"
     }
   ]
 }

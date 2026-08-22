@@ -1,6 +1,7 @@
 import { InterpretationResult } from "./interpretation";
 import { LocalSourceAcquireInput, LocalSourceObservation } from "./local_source";
 import { LocalArchivePolicy } from "./local_archive_policy";
+import { CorpusIndex, NearDuplicateOptions } from "./corpus_analysis";
 import { RepositoryModelLocalSourceInput, RepositoryModelPacket } from "./repository_model";
 /** Schema of the acquisition manifest written beside a bundle. */
 export declare const LOCAL_SOURCE_MANIFEST_SCHEMA = "l9.local-source-manifest/v1";
@@ -31,6 +32,25 @@ export declare function canonicalBlockReason(observation: LocalSourceObservation
 export declare function observeLocalSourceModel(input: LocalSourceModelInput): LocalSourceModelResult;
 /** Run `body` against a fresh observation and always dispose the staging root. */
 export declare function withLocalSourceModel<T>(input: LocalSourceModelInput, body: (result: LocalSourceModelResult) => T): T;
+export interface LocalSourceCorpusOptions {
+    nearDuplicates?: NearDuplicateOptions;
+}
+export interface LocalSourceCorpusOutputs {
+    index: CorpusIndex;
+    /** Rendered `corpus-index.json` bytes. */
+    indexJson: string;
+    /** Rendered `corpus-report.md` bytes. */
+    report: string;
+}
+/**
+ * Derive the corpus index and its human report from an already-built model.
+ *
+ * Everything here is a projection of the observation, the packet and the two
+ * duplicate analyses. The staged archive-member bytes must still be on disk,
+ * because the similarity pass reads member text the same way it reads a physical
+ * file — so call this before `observation.dispose()`.
+ */
+export declare function buildLocalSourceCorpus(result: LocalSourceModelResult, options?: LocalSourceCorpusOptions): LocalSourceCorpusOutputs;
 export interface LocalSourceManifest {
     schema: string;
     source_kind: string;
@@ -72,10 +92,13 @@ export interface BuildLocalSourceManifestOptions {
 }
 /** Build the acquisition manifest. Never written inside the observed source tree. */
 export declare function buildLocalSourceManifest(observation: LocalSourceObservation, options: BuildLocalSourceManifestOptions): LocalSourceManifest;
-/**
- * Write the acquisition manifest to a tool-owned output location.
- *
- * Refuses to write inside the observed source tree: an adjacent manifest would
- * mutate the source and would be re-observed by the next run.
- */
+/** Write the acquisition manifest to a tool-owned output location. */
 export declare function writeLocalSourceManifest(manifest: LocalSourceManifest, targetPath: string, sourceRoot: string): string;
+/** Write `corpus-index.json` and `corpus-report.md` outside the observed source. */
+export declare function writeLocalSourceCorpus(outputs: LocalSourceCorpusOutputs, targets: {
+    indexPath: string;
+    reportPath: string;
+}, sourceRoot: string): {
+    indexPath: string;
+    reportPath: string;
+};

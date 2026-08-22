@@ -31,7 +31,11 @@
     "local_source": "src/local_source.ts",
     "local_archive_policy": "src/local_archive_policy.ts",
     "archive_preflight": "src/archive_preflight.ts",
-    "encoding": "src/encoding.ts"
+    "encoding": "src/encoding.ts",
+    "corpus_analysis": "src/corpus_analysis.ts",
+    "corpus_report": "src/corpus_report.ts",
+    "work_intelligence": "src/extractors/work_intelligence.ts",
+    "ordering": "src/ordering.ts"
   },
   "distribution": {
     "model": "committed_dist_mirror",

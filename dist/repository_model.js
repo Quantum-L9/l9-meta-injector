@@ -33,12 +33,12 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.REPOSITORY_MODEL_PRODUCER_NAME = exports.REPOSITORY_MODEL_PACKET_VERSION = exports.REPOSITORY_MODEL_PACKET_TYPE = void 0;
-exports.compareCodePoints = compareCodePoints;
+exports.REPOSITORY_MODEL_PRODUCER_NAME = exports.REPOSITORY_MODEL_PACKET_VERSION = exports.REPOSITORY_MODEL_PACKET_TYPE = exports.compareCodePoints = void 0;
 exports.canonicalJson = canonicalJson;
 exports.sha256TextPrefixed = sha256TextPrefixed;
 exports.semanticHash = semanticHash;
 exports.stableId = stableId;
+exports.repositoryModelArtifactId = repositoryModelArtifactId;
 exports.buildRepositoryModelPacket = buildRepositoryModelPacket;
 exports.validateRepositoryModelPacket = validateRepositoryModelPacket;
 exports.emitRepositoryModelBundle = emitRepositoryModelBundle;
@@ -62,9 +62,13 @@ const os = __importStar(require("node:os"));
 const path = __importStar(require("node:path"));
 const crypto = __importStar(require("node:crypto"));
 const inventory_1 = require("./inventory");
+const ordering_1 = require("./ordering");
 const interpretation_1 = require("./interpretation");
 const extractors_1 = require("./extractors");
 const schema_1 = require("./schema");
+/** Re-exported so packet consumers keep one ordering import site. */
+var ordering_2 = require("./ordering");
+Object.defineProperty(exports, "compareCodePoints", { enumerable: true, get: function () { return ordering_2.compareCodePoints; } });
 exports.REPOSITORY_MODEL_PACKET_TYPE = "l9.repository-model";
 exports.REPOSITORY_MODEL_PACKET_VERSION = "1.1.0";
 exports.REPOSITORY_MODEL_PRODUCER_NAME = "l9-meta-injector.repository-model";
@@ -91,17 +95,6 @@ const VOLATILE_KEYS = new Set([
     "run_id", "stage_id", "trace_id", "workflow_id",
     "artifact_hash", "semantic_hash", "packet_id", "receipt_id",
 ]);
-/** Code-point ordering. Never locale-aware: ordering must not vary by environment. */
-function compareCodePoints(a, b) {
-    const left = [...a], right = [...b];
-    const shared = Math.min(left.length, right.length);
-    for (let i = 0; i < shared; i++) {
-        const l = left[i].codePointAt(0) ?? 0, r = right[i].codePointAt(0) ?? 0;
-        if (l !== r)
-            return l < r ? -1 : 1;
-    }
-    return left.length === right.length ? 0 : left.length < right.length ? -1 : 1;
-}
 function canonicalize(value) {
     if (value === null)
         return null;
@@ -110,7 +103,7 @@ function canonicalize(value) {
     if (typeof value === "object") {
         const source = value;
         const out = {};
-        for (const key of Object.keys(source).sort(compareCodePoints)) {
+        for (const key of Object.keys(source).sort(ordering_1.compareCodePoints)) {
             const item = source[key];
             if (item === undefined)
                 continue; // an absent field, not a null one
@@ -142,7 +135,7 @@ function render(value) {
         return JSON.stringify(value);
     if (Array.isArray(value))
         return `[${value.map((item) => render(item)).join(",")}]`;
-    const keys = Object.keys(value).sort(compareCodePoints);
+    const keys = Object.keys(value).sort(ordering_1.compareCodePoints);
     return `{${keys.map((key) => `${JSON.stringify(key)}:${render(value[key])}`).join(",")}}`;
 }
 /** Canonical JSON text for any packet-shaped value. */
@@ -180,6 +173,21 @@ function semanticHash(value) {
 }
 function stableId(prefix, value) {
     return `${prefix}:${semanticHash(value).slice(SHA_PREFIX.length)}`;
+}
+/**
+ * Stable identity of one artifact inside a repository.
+ *
+ * Interpretation needs this to point an assertion at the exact file that made a
+ * declaration, and the packet builder needs it to emit that file's artifact
+ * record. Two implementations of the same formula would eventually disagree and
+ * strand every artifact-scoped assertion, so both call this one.
+ *
+ * `sourcePath` is the repository-relative POSIX path, or a virtual archive
+ * member locator such as `Bundle.zip!/docs/a.md`. Absolute paths never
+ * participate.
+ */
+function repositoryModelArtifactId(repositoryId, sourcePath) {
+    return stableId("artifact", { repository_id: repositoryId, source_path: sourcePath });
 }
 // ───────────────────────────── confidence ─────────────────────────────
 function confidence(level, strength, method, authority, completeness) {
@@ -252,7 +260,7 @@ function isAdrPath(relativePath) {
     return /(^|\/)adr-[^/]*\.md$/.test(relativePath);
 }
 function sortStrings(values) {
-    return [...values].sort(compareCodePoints);
+    return [...values].sort(ordering_1.compareCodePoints);
 }
 // ───────────────────────────── builder ─────────────────────────────
 /** Deterministic identity of the observation set, independent of where it was checked out. */
@@ -375,7 +383,7 @@ function buildRepositoryModelPacket(input) {
     const repositoryId = `repo:${input.repositoryName}`;
     // Folders carry no artifact identity of their own; they are reported as a diagnostic
     // rather than silently dropped.
-    const allRecords = [...input.inventory.records].sort((a, b) => compareCodePoints(a.relative_path, b.relative_path));
+    const allRecords = [...input.inventory.records].sort((a, b) => (0, ordering_1.compareCodePoints)(a.relative_path, b.relative_path));
     const fileRecords = allRecords.filter((record) => record.artifact_type !== "folder");
     const folderCount = allRecords.length - fileRecords.length;
     const snapshotHash = snapshotSemanticHash(fileRecords, input.sourceRevision);
@@ -397,7 +405,7 @@ function buildRepositoryModelPacket(input) {
         if (!hashed)
             unhashedCount++;
         const contentHash = hashed ? `${SHA_PREFIX}${record.content_hash}` : schema_1.UNKNOWN;
-        const artifactId = stableId("artifact", { repository_id: repositoryId, source_path: relativePath });
+        const artifactId = repositoryModelArtifactId(repositoryId, relativePath);
         const recordConfidence = artifactConfidence(record.classification_confidence, hashed);
         const observation = makeEvidence({
             subjectId: artifactId,
@@ -479,7 +487,7 @@ function buildRepositoryModelPacket(input) {
     // binds each member to the archive it came from, and each nested archive to the
     // archive that contained it, all the way back to a physical source file.
     const emittedArtifactIds = new Set(artifacts.map((artifact) => artifact.artifact_id));
-    const artifactIdFor = (sourcePath) => stableId("artifact", { repository_id: repositoryId, source_path: sourcePath });
+    const artifactIdFor = (sourcePath) => repositoryModelArtifactId(repositoryId, sourcePath);
     if (input.localSource) {
         const local = input.localSource;
         // A local source is not a Git checkout, and nothing here should be read as a
@@ -500,7 +508,7 @@ function buildRepositoryModelPacket(input) {
                 archive_members_observed: local.members.length,
             },
         });
-        for (const archive of [...local.archives].sort((a, b) => compareCodePoints(a.sourcePath, b.sourcePath))) {
+        for (const archive of [...local.archives].sort((a, b) => (0, ordering_1.compareCodePoints)(a.sourcePath, b.sourcePath))) {
             if (archive.expanded)
                 continue;
             // A held archive is still an observation: its bytes were hashed, its members
@@ -523,7 +531,7 @@ function buildRepositoryModelPacket(input) {
                 },
             });
         }
-        const orderedMembers = [...local.members].sort((a, b) => compareCodePoints(a.virtualSourcePath, b.virtualSourcePath));
+        const orderedMembers = [...local.members].sort((a, b) => (0, ordering_1.compareCodePoints)(a.virtualSourcePath, b.virtualSourcePath));
         for (const member of orderedMembers) {
             const memberArtifactId = artifactIdFor(member.virtualSourcePath);
             const archiveArtifactId = artifactIdFor(member.parentArchivePath);
@@ -590,9 +598,9 @@ function buildRepositoryModelPacket(input) {
                 confidence: DERIVED_CONFIDENCE,
             });
         }
-        for (const diagnostic of [...local.diagnostics].sort((a, b) => compareCodePoints(a.code, b.code)
-            || compareCodePoints(a.sourcePath ?? "", b.sourcePath ?? "")
-            || compareCodePoints(a.message, b.message))) {
+        for (const diagnostic of [...local.diagnostics].sort((a, b) => (0, ordering_1.compareCodePoints)(a.code, b.code)
+            || (0, ordering_1.compareCodePoints)(a.sourcePath ?? "", b.sourcePath ?? "")
+            || (0, ordering_1.compareCodePoints)(a.message, b.message))) {
             const subjectId = diagnostic.sourcePath !== undefined
                 && emittedArtifactIds.has(artifactIdFor(diagnostic.sourcePath))
                 ? artifactIdFor(diagnostic.sourcePath)
@@ -737,20 +745,27 @@ function buildRepositoryModelPacket(input) {
         repositories: [repository],
         artifacts,
         capabilities: [],
-        relationships: relationships.sort((a, b) => compareCodePoints(a.edge_id, b.edge_id)),
-        evidence: evidence.sort((a, b) => compareCodePoints(a.evidence_id, b.evidence_id)),
-        diagnostics: diagnostics.sort((a, b) => compareCodePoints(a.code, b.code)
-            || compareCodePoints(a.subject_id ?? "", b.subject_id ?? "")
-            || compareCodePoints(a.message, b.message)),
+        relationships: relationships.sort((a, b) => (0, ordering_1.compareCodePoints)(a.edge_id, b.edge_id)),
+        evidence: evidence.sort((a, b) => (0, ordering_1.compareCodePoints)(a.evidence_id, b.evidence_id)),
+        diagnostics: diagnostics.sort((a, b) => (0, ordering_1.compareCodePoints)(a.code, b.code)
+            || (0, ordering_1.compareCodePoints)(a.subject_id ?? "", b.subject_id ?? "")
+            || (0, ordering_1.compareCodePoints)(a.message, b.message)),
         // Already ordered by the interpretation pass; re-sorted here so the packet's
         // ordering guarantee does not depend on the producer of the input.
+        //
+        // The subject each assertion arrived with is preserved. Rewriting every
+        // subject to the repository — which this builder used to do — collapsed
+        // "this plan declares itself WIP" into "the repository declares itself WIP",
+        // which is a different and much weaker claim. Validation below refuses an
+        // assertion whose subject is neither an emitted repository nor an emitted
+        // artifact, so preserving the subject cannot strand one.
         assertions: [...(input.interpretation?.assertions ?? [])]
-            .map((assertion) => ({ ...assertion, subject_id: repositoryId }))
-            .sort((a, b) => compareCodePoints(a.source_path, b.source_path)
+            .sort((a, b) => (0, ordering_1.compareCodePoints)(a.source_path, b.source_path)
             || a.source_range.start_line - b.source_range.start_line
-            || compareCodePoints(a.predicate, b.predicate)
-            || compareCodePoints(a.object, b.object)
-            || compareCodePoints(a.extractor_id, b.extractor_id)),
+            || (0, ordering_1.compareCodePoints)(a.predicate, b.predicate)
+            || (0, ordering_1.compareCodePoints)(a.object, b.object)
+            || (0, ordering_1.compareCodePoints)(a.extractor_id, b.extractor_id)
+            || (0, ordering_1.compareCodePoints)(a.subject_id, b.subject_id)),
     };
     const shell = {
         packet_type: exports.REPOSITORY_MODEL_PACKET_TYPE,
@@ -828,7 +843,7 @@ function validateRepositoryModelPacket(packet) {
     checks.push(check("packet-id", "invariant", "packet_id_is_semantically_derived", packet.packet_id === `packet:${packet.semantic_hash.slice(SHA_PREFIX.length)}`, "packet id is derived from the semantic hash"));
     const absolute = payload.artifacts.filter((a) => a.source_path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(a.source_path) || a.source_path.includes("\\"));
     checks.push(check("portable-paths", "invariant", "source_paths_are_repository_relative", absolute.length === 0, "every artifact source path is a portable repository-relative POSIX path", { offending_count: absolute.length }));
-    const orderedArtifacts = payload.artifacts.every((a, i) => i === 0 || compareCodePoints(payload.artifacts[i - 1].source_path, a.source_path) < 0);
+    const orderedArtifacts = payload.artifacts.every((a, i) => i === 0 || (0, ordering_1.compareCodePoints)(payload.artifacts[i - 1].source_path, a.source_path) < 0);
     checks.push(check("stable-ordering", "invariant", "ordering_is_explicit_and_stable", orderedArtifacts, "artifacts are ordered by repository-relative path"));
     // An assertion without a resolvable, hashed span is not evidence of anything,
     // so the producer refuses to emit one rather than letting it reach a consumer.
@@ -839,9 +854,15 @@ function validateRepositoryModelPacket(packet) {
         || assertion.evidence_excerpt.length === 0
         || !assertion.extractor_id);
     checks.push(check("assertion-evidence", "evidence", "assertions_cite_exact_sources", unsupportedAssertions.length === 0, "every assertion cites an exact source span and a hashed source file", { unsupported_count: unsupportedAssertions.length }));
-    const assertionSubjects = payload.repositories.map((r) => r.repository_id);
-    const orphanAssertions = payload.assertions.filter((assertion) => !assertionSubjects.includes(assertion.subject_id));
-    checks.push(check("assertion-subject", "cross-reference", "assertions_resolve_to_a_subject", orphanAssertions.length === 0, "every assertion attaches to a repository in this packet", { orphan_count: orphanAssertions.length }));
+    // An assertion may attach to the repository as a whole or to one artifact in
+    // it. Both are emitted records in this packet, and an assertion pointing at
+    // neither would be a claim about something the consumer cannot resolve.
+    const assertionSubjects = new Set([
+        ...payload.repositories.map((r) => r.repository_id),
+        ...payload.artifacts.map((a) => a.artifact_id),
+    ]);
+    const orphanAssertions = payload.assertions.filter((assertion) => !assertionSubjects.has(assertion.subject_id));
+    checks.push(check("assertion-subject", "cross-reference", "assertions_resolve_to_a_subject", orphanAssertions.length === 0, "every assertion attaches to a repository or an artifact in this packet", { orphan_count: orphanAssertions.length }));
     const evidenceIds = new Set(payload.evidence.map((e) => e.evidence_id));
     const danglingEvidence = [];
     const collect = (refs) => {
@@ -927,7 +948,7 @@ function emitRepositoryModelBundle(packet, options) {
     const files = [
         { path: PACKET_RELATIVE_PATH, media_type: JSON_MEDIA_TYPE, ...packetFile },
         { path: RECEIPT_RELATIVE_PATH, media_type: JSON_MEDIA_TYPE, ...receiptFile },
-    ].sort((a, b) => compareCodePoints(a.path, b.path));
+    ].sort((a, b) => (0, ordering_1.compareCodePoints)(a.path, b.path));
     const manifestPath = path.join(bundleRoot, MANIFEST_RELATIVE_PATH);
     writeCanonicalFile(manifestPath, {
         manifest_version: MANIFEST_VERSION,

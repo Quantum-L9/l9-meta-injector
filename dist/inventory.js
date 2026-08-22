@@ -69,11 +69,23 @@ const yaml_serialize_1 = require("./yaml_serialize");
 const meta_schema_1 = require("./meta_schema");
 const omit_1 = require("./omit");
 const encoding_1 = require("./encoding");
+const ordering_1 = require("./ordering");
 /** Load and validate a canonical meta-schema YAML file. */
 function loadMetaSchema(filePath) {
     return (0, meta_schema_1.toMetaSchema)((0, meta_schema_1.parseCanonicalYaml)(fs.readFileSync(filePath, "utf8")));
 }
-/** Group records by content_hash to surface duplicate clusters across the whole tree. */
+/**
+ * Group records by content_hash to surface duplicate clusters across the whole tree.
+ *
+ * Equivalence is byte equality and nothing else: two records belong to the same
+ * cluster when both carry a known content hash and those hashes are identical.
+ * Names, locations and sizes never decide membership, which is what lets a
+ * physical file and an archive member land in one cluster.
+ *
+ * Ordering is code-point throughout. `localeCompare` used to decide both the
+ * path order and the shortest-path tie-break, which made the emitted cluster —
+ * and anything derived from it — depend on the host's locale.
+ */
 function buildDuplicateClusters(records) {
     const byHash = new Map();
     for (const r of records) {
@@ -87,17 +99,19 @@ function buildDuplicateClusters(records) {
     for (const [hash, group] of byHash) {
         if (group.length < 2)
             continue;
-        const paths = group.map((g) => g.relative_path).sort((a, b) => a.localeCompare(b));
+        const paths = group.map((g) => g.relative_path).sort(ordering_1.compareCodePoints);
         const size = group[0].size_bytes ?? 0;
         clusters.push({
             content_hash: hash,
             count: group.length,
             wasted_bytes: (group.length - 1) * size,
-            keeper: paths.slice().sort((a, b) => a.length - b.length || a.localeCompare(b))[0],
+            keeper: paths.slice().sort((a, b) => a.length - b.length || (0, ordering_1.compareCodePoints)(a, b))[0],
             paths,
         });
     }
-    return clusters.sort((a, b) => b.wasted_bytes - a.wasted_bytes || b.count - a.count);
+    return clusters.sort((a, b) => b.wasted_bytes - a.wasted_bytes
+        || b.count - a.count
+        || (0, ordering_1.compareCodePoints)(a.content_hash, b.content_hash));
 }
 const CODE_EXTS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".go", ".rs", ".java", ".c", ".h", ".cpp", ".hpp", ".cc", ".cs", ".rb", ".php", ".swift", ".kt", ".kts", ".scala", ".sh", ".bash", ".zsh", ".lua", ".r", ".jl", ".pl", ".pm", ".dart", ".ex", ".exs", ".ql", ".qls"]);
 const CONFIG_EXTS = new Set([".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", ".properties", ".env", ".lock", ".plist", ".tf", ".tfvars", ".sha256", ".sha1", ".md5"]);
