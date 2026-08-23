@@ -149,6 +149,59 @@ absolute or scratch path.
 
 Semantics, vocabulary and non-goals: `docs/corpus-intelligence.md`.
 
+## Corpus archaeology
+
+ADR-038 adds a fifth layer above the four above: a corpus assembled from several roots,
+processed incrementally, and projected as evidence rather than judgement. It reuses the
+acquisition, interpretation and analysis layers unchanged and adds no second engine.
+
+```text
+src/corpus_roots.ts       root identity, path namespace, corpus snapshot identity
+src/corpus_cache.ts       six content-addressed layers, integrity, self-healing
+src/corpus_snapshot.ts    the artifact identity set a later run diffs against
+src/corpus_diff.ts        classification and downstream invalidation
+src/corpus_session.ts     resume state, resource budgets, atomic output commit
+src/corpus_candidates.ts  project candidates and topic candidates
+src/corpus_readiness.ts   readiness signals and body-of-work counts
+src/corpus_coverage.ts    coverage ratios and the reasoning handoff
+src/corpus_scan.ts        the order of operations that makes the cache safe
+```
+
+A root carries two identities that must not be conflated: `root_id`, derived from its
+declared key, answers *which root is this* and survives a byte changing; `root_snapshot_id`,
+derived from the physical snapshot hash, answers *what did it contain* and changes when
+any byte does. Neither contains the mount point. Corpus identity is
+`H(sorted(root source revisions), corpus profile)`.
+
+Acquisition never consults the cache: every byte is hashed on every run, so a warm run
+establishes that a document is unchanged before deciding not to open it. Every derived
+layer's key is a function of the content hash and the rules applied to it, and every
+entry proves its own integrity before it is believed. `mtime` is a scheduling hint whose
+accuracy is measured and reported; no code path lets it skip a hash.
+
+Three deliberate deviations, all about correctness: the interpretation key includes the
+source path, because an assertion cites its path and several extractors read it; an
+interpretation whose extractors consulted the rest of the root is used but never stored,
+because it is not a function of the document's own bytes; and the candidate-analysis key
+binds each input's artifact id and corpus path, because the candidate documents embed
+those, so a renamed-but-unchanged corpus is a different input to that analysis.
+
+Every writable location this layer approves — the output directory, the cache, the
+session manifest — is resolved through `realpath` first, dangling links included. A
+lexical comparison approves a symlink pointing into an observed tree, and every write
+then follows it through the read-only guarantee.
+
+`interpretRepository` delegates to the exported `interpretDocumentContent`, so
+per-document interpretation has one implementation. `clusterExactDuplicates` and
+`buildCorpusDuplicateClusters` are two entry points to one clustering rule, sharing the
+representative-selection and ordering helpers.
+
+Readiness is counts and citations. `FORBIDDEN_READINESS_METRICS` names the five values
+this package refuses to compute, restates them in every emitted document, and a test
+walks the document to prove none appears.
+
+Semantics, vocabulary and non-goals: `docs/corpus-archaeology.md`.
+
 ## Distribution
 
 Source compiles to committed `dist/`. `check:dist` rebuilds in isolation and compares every JavaScript file, declaration, and source map. It rejects missing, extra, changed, untracked, or symlinked distribution files.

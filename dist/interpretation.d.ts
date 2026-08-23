@@ -147,6 +147,41 @@ export interface InterpretRepositoryInput {
     maxFileBytes?: number;
 }
 /**
+ * Hash of the rules a run of interpretation applied.
+ *
+ * Exported because a caller that caches interpretation output has to key it on
+ * the rules that produced it, and a second implementation of this formula would
+ * eventually disagree and serve one profile's assertions under another's name.
+ */
+export declare function interpretationProfileHash(extractors: Extractor[]): string;
+export interface InterpretDocumentInput {
+    /** Repository subject, e.g. `repo:golden-repo`. */
+    repositorySubjectId: string;
+    /** Repository-relative POSIX path, or a virtual archive member locator. */
+    sourcePath: string;
+    /** The decoded UTF-8 text. The caller owns eligibility and decoding. */
+    content: string;
+    extractors: Extractor[];
+    /** Whether another path exists in the same observation. */
+    pathExists: (relativePath: string) => boolean;
+}
+export interface InterpretDocumentResult {
+    /** Hash of the text actually interpreted, so evidence binds to what was parsed. */
+    contentHash: string;
+    assertions: InterpretedAssertion[];
+    diagnostics: InterpretationDiagnostic[];
+}
+/**
+ * Interpret one already-decoded document.
+ *
+ * Split out of `interpretRepository` so that a caller which can prove a
+ * document's bytes are unchanged can reuse this result rather than recompute it.
+ * Eligibility — the secret-path refusal, the size limit, the UTF-8 probe — stays
+ * with the caller, because each of those is a decision about whether to open a
+ * file rather than about what the file says.
+ */
+export declare function interpretDocumentContent(input: InterpretDocumentInput): InterpretDocumentResult;
+/**
  * Interpret a repository that inventory has already observed.
  *
  * Returns an empty assertion set rather than throwing when nothing matches: a

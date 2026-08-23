@@ -179,6 +179,52 @@ deliberately separate epistemic classes.
 Nothing is moved, deleted, rewritten, consolidated or prioritized. Full semantics:
 [`docs/corpus-intelligence.md`](docs/corpus-intelligence.md).
 
+### Corpus archaeology across several disks
+
+Passing one or more `--root` switches reads several roots as **one corpus** (ADR-038),
+so the duplicate that spans two disks and the project whose files are split across them
+stop being invisible.
+
+```bash
+npm run local-source -- \
+  --root /Volumes/OldSSD \
+  --root /Volumes/Backup \
+  --root ~/ArchiveZips \
+  --out ./corpus-out
+```
+
+- **A root is identified by its own name, not by where it is mounted.** `/Volumes/OldSSD`
+  and `/mnt/recovered/OldSSD` are the same root, and the same corpus read from two
+  different absolute paths produces byte-identical output. Every artifact is addressed
+  as `OldSSD::widget-api/PLAN.md`, so two roots holding `notes/monday.md` hold two
+  artifacts.
+- **Unchanged bytes reuse the work already done on them.** Six content-addressed cache
+  layers under `~/.l9/corpus-cache` (configurable, and refused inside an observed root)
+  mean a second run decodes, interprets and tokenizes only what actually changed. Every
+  byte is still hashed on every run: `mtime` is a scheduling hint whose accuracy is
+  reported, and it never decides an identity. A cold run and a fully warm run produce
+  byte-identical semantic output.
+- **`corpus-diff.json`** classifies everything against the previous snapshot — added,
+  removed, changed, renamed candidate, unchanged, and the same three for archives — and
+  says exactly which cache layers that invalidates. Nothing is ever evicted because an
+  artifact left the corpus.
+- **`readiness-evidence.json`** carries twelve measurable signals per artifact — source,
+  tests, build manifest, CI, container, deployment, specification, documentation, open
+  tasks, blockers, roadmap, plan — each with the exact filename, path segment, extension
+  or declared predicate that decided it, plus per-project counts. It contains **no**
+  priority, score, percentage complete or abandonment estimate; those five names are
+  refused explicitly and a test walks the emitted document to prove it.
+- **`corpus-coverage.json`** says what the scan reached and what it did not: decode,
+  interpretation and lexical coverage as ratios, unsupported formats counted by
+  extension, OCR-required imagery, encrypted members, oversized documents and
+  credential-path skips.
+- **Interrupted scans resume.** `corpus-session.json` records completions by
+  content-addressed key; `--resume` picks them up. Concurrency and in-flight memory are
+  bounded and configurable, and every projection is staged and renamed together.
+
+No model is called and no network request is made. Full semantics:
+[`docs/corpus-archaeology.md`](docs/corpus-archaeology.md).
+
 ### Legacy archive materialization
 
 `npm run pipeline -- <root> --local-files` is a **mutating materialization** workflow,

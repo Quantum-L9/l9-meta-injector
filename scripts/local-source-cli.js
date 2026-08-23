@@ -14,6 +14,10 @@
 //   local-source-manifest.json     acquisition manifest (never written in-source)
 //   corpus-index.json              machine-readable corpus intelligence projection
 //   corpus-report.md               the same projection, rendered for a person
+//
+// Passing one or more --root switches to corpus mode: several roots are read as a
+// single logical corpus, duplicate and candidate analysis crosses the root
+// boundaries, and the output layout is the corpus projection set instead.
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -46,6 +50,25 @@ const USAGE = [
   "  --max-compression-ratio N  largest uncompressed:compressed ratio",
   "  --max-archive-depth N      nested-archive depth ceiling",
   "",
+  "multi-root corpus mode (repeat --root, or point at a manifest):",
+  "  --root PATH[=NAME]         add a root; repeatable. NAME defaults to the final",
+  "                             path segment and is the root's identity across runs",
+  "  --root-manifest FILE       read roots from a l9.corpus-roots/v1 JSON document",
+  "                             or a plain list of paths, one per line",
+  "  --cache-dir DIR            content-addressed cache root (default: $L9_CORPUS_CACHE",
+  "                             or ~/.l9/corpus-cache); never inside an observed root",
+  "  --no-cache                 run cold: read nothing from the cache, write nothing",
+  "  --previous-snapshot FILE   diff against this snapshot (default: <out>/corpus-snapshot.json)",
+  "  --no-diff                  do not produce corpus-diff.json",
+  "  --session FILE             session manifest path (default: <out>/corpus-session.json)",
+  "  --resume                   adopt an existing session manifest for the same roots",
+  "  --topic-threshold F        topic candidate vocabulary overlap in [0,1] (default: 0.35)",
+  "  --no-topic-candidates      skip topic candidate analysis",
+  "  --max-parallel-decoders N  documents decoded concurrently (default: 4)",
+  "  --max-parallel-hashers N   recorded; acquisition hashes each root with one reader",
+  "  --max-parallel-embedding-requests N   recorded; embeddings are not enabled",
+  "  --max-memory-bytes N       ceiling on decoded text held at once (default: 256 MiB)",
+  "",
   "The source is never modified. Archive members are observed as virtual",
   "artifacts named <archive>!/<member>; nothing is extracted beside the source.",
 ].join("\n");
@@ -56,7 +79,10 @@ function fail(message, code = 1) {
 }
 
 function parseArgs(argv) {
-  if (argv.length === 0 || argv[0].startsWith("-")) {
+  // Corpus mode names its roots with --root, so it has no positional target; the
+  // single-source mode still requires one.
+  const corpusMode = argv.includes("--root") || argv.includes("--root-manifest");
+  if (argv.length === 0 || (!corpusMode && argv[0].startsWith("-"))) {
     console.error(USAGE);
     process.exit(2);
   }
@@ -70,7 +96,7 @@ function parseArgs(argv) {
     for (let i = 0; i < argv.length; i++) if (argv[i] === name && argv[i + 1]) out.push(argv[i + 1]);
     return out;
   };
-  return { argv, flag, opt, optAll, target: argv[0] };
+  return { argv, flag, opt, optAll, corpusMode, target: corpusMode ? null : argv[0] };
 }
 
 /** Parse a fractional flag in [0,1], or exit with a precise message. */
@@ -120,8 +146,279 @@ function collectPolicy(cli) {
   return policy;
 }
 
+/** Roots named on the command line and in any manifest, in the order given. */
+function collectRoots(cli, roots) {
+  const specs = [];
+  for (const value of cli.optAll("--root")) specs.push(roots.parseRootArgument(value));
+  const manifest = cli.opt("--root-manifest", null);
+  if (manifest !== null) specs.push(...roots.readRootManifest(manifest));
+  return specs;
+}
+
+/** Resource budgets, defaulted by the engine and overridable one at a time. */
+function collectBudgets(cli) {
+  const budgets = {};
+  const map = {
+    max_parallel_hashers: "--max-parallel-hashers",
+    max_parallel_decoders: "--max-parallel-decoders",
+    max_parallel_embedding_requests: "--max-parallel-embedding-requests",
+    max_memory_bytes: "--max-memory-bytes",
+  };
+  for (const [key, flagName] of Object.entries(map)) {
+    const value = numericOpt(cli, flagName);
+    if (value !== undefined) budgets[key] = value;
+  }
+  return budgets;
+}
+
+/**
+ * Everything corpus mode prints, and nothing it decides.
+ *
+ * Kept out of `runCorpusMode` because it is sixty lines of formatting with no
+ * control flow of its own, and leaving it inline made the one function that does
+ * decide things harder to read than it needed to be.
+ */
+function reportCorpusRun(context) {
+  const { result, cacheEnabled, cache, resumed, written, sessionPath } = context;
+  const coverage = result.coverage;
+  const summary = result.candidates.summary;
+  console.log(`${LABEL}: OK (corpus mode)`);
+  console.log("  no root was modified: no file was written, renamed, or removed under any of them");
+  console.log(`  corpus_snapshot  ${result.snapshot.corpus_snapshot_id}`);
+  console.log(`  roots            ${result.bindings.length}`);
+  for (const binding of result.bindings) {
+    console.log(`    ${binding.root_label}  ${binding.source_revision}  ${binding.absolute_path}`);
+  }
+  console.log(`  files scanned    ${result.scanned.files} (${result.scanned.bytes} byte(s))`);
+  console.log(`  archives         ${coverage.archive_count}, ${coverage.archive_member_count} member(s)`);
+  console.log(`  exact hashes     ${coverage.exact_hash_coverage.covered}/${coverage.exact_hash_coverage.eligible}`);
+  console.log(`  decoded          ${coverage.normalized_document_coverage.covered}/${coverage.normalized_document_coverage.eligible}`);
+  console.log(`  interpreted      ${coverage.interpretation_coverage.covered}/${coverage.interpretation_coverage.eligible}`);
+  console.log(`  lexical          ${coverage.lexical_analysis_coverage.covered}/${coverage.lexical_analysis_coverage.eligible}`);
+  console.log(`  embeddings       not enabled; no model was called and no network request was made`);
+  console.log(
+    `  duplicates       ${summary.exact_duplicate_cluster_count} cluster(s), `
+    + `${summary.cross_root_duplicate_cluster_count} crossing a root boundary`,
+  );
+  console.log(
+    `  near-duplicates  ${summary.near_duplicate_candidate_count} candidate(s), `
+    + `${summary.cross_root_near_duplicate_count} crossing a root boundary`,
+  );
+  console.log(
+    `  topic candidates ${summary.topic_candidate_count}, `
+    + `${summary.cross_root_topic_candidate_count} crossing a root boundary`,
+  );
+  console.log(
+    `  projects         ${summary.project_candidate_count} candidate(s), `
+    + `${summary.cross_root_project_candidate_count} crossing a root boundary, `
+    + `${coverage.reasoning_eligible_candidate_count} reasoning-eligible`,
+  );
+  const unsupported = coverage.unsupported_format_counts
+    .map((format) => `${format.extension}:${format.count}`)
+    .join(" ");
+  console.log(`  unsupported      ${unsupported || "none"}`);
+  console.log(`  ocr required     ${coverage.ocr_required_count}`);
+  console.log(`  encrypted        ${coverage.encrypted_document_count}`);
+  console.log(`  oversized        ${coverage.oversized_document_count}`);
+  console.log(`  secrets skipped  ${coverage.secret_skipped_count}`);
+  console.log(
+    `  cache            ${cacheEnabled ? "on" : "off"}, hit ratio ${coverage.cache.hit_ratio} `
+    + `(${coverage.cache.hits} hit, ${coverage.cache.misses} miss, ${coverage.cache.corrupt} discarded)`,
+  );
+  if (cache !== undefined) console.log(`  cache dir        ${cache.root}`);
+  console.log(
+    `  mtime precheck   ${result.precheck.predicted_unchanged} predicted unchanged, `
+    + `${result.precheck.confirmed_unchanged} confirmed by hash, ${result.precheck.contradicted} contradicted`,
+  );
+  if (resumed.source_ids + resumed.decoder_keys + resumed.analysis_keys > 0) {
+    console.log(
+      `  resumed          ${resumed.source_ids} source(s), ${resumed.decoder_keys} decoder key(s), `
+      + `${resumed.analysis_keys} analysis key(s) carried in from a previous session`,
+    );
+  }
+  if (result.diff !== null) {
+    const counts = result.diff.counts;
+    console.log(
+      `  diff             +${counts.added} -${counts.removed} ~${counts.changed_content} `
+      + `renamed-candidate ${counts.renamed_candidate} unchanged ${counts.unchanged}`,
+    );
+    console.log(
+      `  archives diff    +${counts.archive_added} -${counts.archive_removed} ~${counts.archive_changed}`,
+    );
+    console.log(
+      `  invalidation     ${result.diff.invalidation.new_content_hashes.length} new content hash(es); `
+      + `${result.diff.invalidation.retained_content_hash_count} reusable; `
+      + `${result.diff.invalidation.cache_entries_removed} cache entries removed`,
+    );
+  }
+  console.log("  no ranking, score or priority is produced; readiness evidence is counts and citations");
+  for (const file of written) console.log(`  wrote            ${file}`);
+  console.log(`  session          ${sessionPath}`);
+  for (const diagnostic of result.diagnostics) {
+    console.log(`  ${diagnostic.severity}: ${diagnostic.code} ${diagnostic.message}`);
+  }
+}
+
+async function runCorpusMode(cli) {
+  const repo = path.resolve(__dirname, "..");
+  const scan = requireBuilt(path.join(repo, "dist", "corpus_scan.js"));
+  const roots = requireBuilt(path.join(repo, "dist", "corpus_roots.js"));
+  const cacheModule = requireBuilt(path.join(repo, "dist", "corpus_cache.js"));
+  const sessionModule = requireBuilt(path.join(repo, "dist", "corpus_session.js"));
+  const snapshotModule = requireBuilt(path.join(repo, "dist", "corpus_snapshot.js"));
+  const diffModule = requireBuilt(path.join(repo, "dist", "corpus_diff.js"));
+  const coverageModule = requireBuilt(path.join(repo, "dist", "corpus_coverage.js"));
+  const { version } = require(path.join(repo, "package.json"));
+
+  const specs = collectRoots(cli, roots);
+  if (specs.length === 0) fail("corpus mode needs at least one --root or --root-manifest", 2);
+  for (const spec of specs) {
+    if (!fs.existsSync(spec.path)) fail(`root does not exist: ${spec.path}`, 2);
+  }
+  const rootPaths = specs.map((spec) => path.resolve(spec.path));
+
+  const outDir = path.resolve(cli.opt("--out", path.join(os.tmpdir(), "l9-corpus-out")));
+  roots.assertOutsideRoots(outDir, rootPaths, "the corpus output directory");
+
+  const cacheEnabled = !cli.flag("--no-cache");
+  // The session manifest names the work that was finished; the cache holds what
+  // that work produced. Resuming without the cache could only skip work whose
+  // result is gone, which would emit a corpus silently missing those documents'
+  // assertions — worse than redoing it. So the combination is refused rather than
+  // quietly doing nothing.
+  if (cli.flag("--resume") && !cacheEnabled) {
+    fail("--resume needs the cache: the session records what was completed, the cache holds it. "
+      + "Drop --no-cache, or drop --resume to run cold.", 2);
+  }
+  let cache;
+  if (cacheEnabled) {
+    try {
+      cache = new cacheModule.FileCorpusCache({
+        root: cli.opt("--cache-dir", cacheModule.defaultCorpusCacheDir()),
+        producerVersion: version,
+        observedRootPaths: rootPaths,
+      });
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error), 2);
+    }
+  }
+
+  const sessionPath = roots.assertOutsideRoots(
+    cli.opt("--session", path.join(outDir, "corpus-session.json")),
+    rootPaths,
+    "the session manifest",
+  );
+  const budgets = {
+    ...sessionModule.DEFAULT_CORPUS_BUDGETS,
+    ...collectBudgets(cli),
+    archive: collectPolicy(cli),
+  };
+  const session = sessionModule.CorpusSessionStore.open({
+    file: sessionPath,
+    roots: specs.map((spec) => {
+      const rootKey = spec.name && spec.name.length > 0 ? spec.name : roots.defaultRootKey(spec.path);
+      return {
+        root_id: roots.corpusRootId(rootKey),
+        root_key: rootKey,
+        absolute_path: path.resolve(spec.path),
+      };
+    }),
+    budgets,
+    now: new Date().toISOString(),
+    resume: cli.flag("--resume"),
+  });
+  const resumed = session.resumedCounts;
+  session.save(new Date().toISOString());
+
+  const snapshotPath = path.join(outDir, "corpus-snapshot.json");
+  const previousPath = cli.opt("--previous-snapshot", snapshotPath);
+  let previousSnapshot;
+  if (!cli.flag("--no-diff") && fs.existsSync(previousPath)) {
+    try {
+      previousSnapshot = snapshotModule.readCorpusSnapshot(previousPath);
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error), 2);
+    }
+  }
+
+  const topicThreshold = unitIntervalOpt(cli, "--topic-threshold");
+  const nearDuplicateThreshold = unitIntervalOpt(cli, "--near-duplicate-threshold");
+  const hashMaxBytes = numericOpt(cli, "--hash-max-bytes");
+  const omitPatterns = cli.optAll("--omit");
+  const omitFile = cli.opt("--omit-file", undefined);
+
+  let result;
+  try {
+    result = await scan.runCorpusScan({
+      roots: specs,
+      producerVersion: version,
+      ...(cache !== undefined ? { cache } : {}),
+      session,
+      ...(previousSnapshot !== undefined ? { previousSnapshot } : {}),
+      expandArchives: !cli.flag("--no-expand-archives"),
+      interpret: !cli.flag("--no-interpret"),
+      archivePolicy: collectPolicy(cli),
+      ...(omitPatterns.length ? { omitPatterns } : {}),
+      ...(omitFile !== undefined ? { omitFile } : {}),
+      ...(hashMaxBytes !== undefined ? { hashMaxBytes } : {}),
+      nearDuplicates: {
+        enabled: !cli.flag("--no-near-duplicates"),
+        ...(nearDuplicateThreshold !== undefined ? { threshold: nearDuplicateThreshold } : {}),
+      },
+      topics: {
+        enabled: !cli.flag("--no-topic-candidates"),
+        ...(topicThreshold !== undefined ? { threshold: topicThreshold } : {}),
+      },
+      budgets: collectBudgets(cli),
+    });
+  } catch (error) {
+    session.fail({
+      code: "corpus.scan_failed",
+      severity: "error",
+      message: error instanceof Error ? error.message : String(error),
+    });
+    session.save(new Date().toISOString());
+    fail(error instanceof Error ? error.message : String(error));
+    return;
+  }
+
+  // Every projection is staged and then renamed, so a reader never sees a
+  // coverage report describing one corpus beside a readiness document describing
+  // another.
+  const diffPath = path.join(outDir, "corpus-diff.json");
+  const outputs = [
+    { path: snapshotPath, contents: snapshotModule.renderCorpusSnapshot(result.snapshot) },
+    { path: path.join(outDir, "corpus-candidates.json"), contents: scan.renderCorpusCandidates(result.candidates) },
+    { path: path.join(outDir, "readiness-evidence.json"), contents: scan.renderReadinessEvidence(result.readiness) },
+    { path: path.join(outDir, "corpus-coverage.json"), contents: coverageModule.renderCorpusCoverage(result.coverage) },
+  ];
+  if (result.diff !== null) {
+    outputs.push({ path: diffPath, contents: diffModule.renderCorpusDiff(result.diff) });
+  }
+  // A diff from a previous run describes a comparison this run did not make, and
+  // nothing inside the file says so. It leaves with the rest of the output set.
+  const written = sessionModule.commitCorpusOutputs({
+    files: outputs,
+    remove: result.diff === null ? [diffPath] : [],
+  });
+  session.save(new Date().toISOString());
+
+  reportCorpusRun({
+    result,
+    cacheEnabled,
+    cache,
+    resumed,
+    written,
+    sessionPath,
+  });
+}
+
 function main() {
   const cli = parseArgs(process.argv.slice(2));
+  if (cli.corpusMode) {
+    runCorpusMode(cli).catch((error) => fail(error instanceof Error ? error.message : String(error)));
+    return;
+  }
   const target = path.resolve(cli.target);
   if (!fs.existsSync(target)) fail(`path does not exist: ${target}`, 2);
 

@@ -38,6 +38,8 @@ exports.extractorSubjectScope = extractorSubjectScope;
 exports.isSecretCandidatePath = isSecretCandidatePath;
 exports.looksSecret = looksSecret;
 exports.boundExcerpt = boundExcerpt;
+exports.interpretationProfileHash = interpretationProfileHash;
+exports.interpretDocumentContent = interpretDocumentContent;
 exports.interpretRepository = interpretRepository;
 // interpretation.ts — deterministic repository interpretation (Seam B).
 //
@@ -126,6 +128,16 @@ function boundExcerpt(value) {
         ? collapsed
         : `${collapsed.slice(0, exports.MAX_EXCERPT_LENGTH - 1)}…`;
 }
+/**
+ * Hash of the rules a run of interpretation applied.
+ *
+ * Exported because a caller that caches interpretation output has to key it on
+ * the rules that produced it, and a second implementation of this formula would
+ * eventually disagree and serve one profile's assertions under another's name.
+ */
+function interpretationProfileHash(extractors) {
+    return profileHash([...extractors].sort((left, right) => (0, repository_model_1.compareCodePoints)(left.id, right.id)));
+}
 function profileHash(extractors) {
     return (0, repository_model_1.semanticHash)({
         id: exports.INTERPRETATION_PROFILE_ID,
@@ -162,6 +174,98 @@ function compareDiagnostics(left, right) {
         (0, repository_model_1.compareCodePoints)(left.message, right.message));
 }
 /**
+ * Interpret one already-decoded document.
+ *
+ * Split out of `interpretRepository` so that a caller which can prove a
+ * document's bytes are unchanged can reuse this result rather than recompute it.
+ * Eligibility — the secret-path refusal, the size limit, the UTF-8 probe — stays
+ * with the caller, because each of those is a decision about whether to open a
+ * file rather than about what the file says.
+ */
+function interpretDocumentContent(input) {
+    const extractors = [...input.extractors].sort((left, right) => (0, repository_model_1.compareCodePoints)(left.id, right.id));
+    const sourcePath = input.sourcePath;
+    const contentHash = (0, repository_model_1.sha256TextPrefixed)(input.content);
+    const assertions = [];
+    const diagnostics = [];
+    const claiming = extractors.filter((extractor) => extractor.matches(sourcePath));
+    for (const extractor of claiming) {
+        const subjectId = extractorSubjectScope(extractor) === "artifact"
+            ? (0, repository_model_1.repositoryModelArtifactId)(input.repositorySubjectId, sourcePath)
+            : input.repositorySubjectId;
+        let drafts;
+        try {
+            drafts = extractor.extract({
+                subjectId,
+                sourcePath,
+                content: input.content,
+                contentHash,
+                pathExists: input.pathExists,
+            });
+        }
+        catch (error) {
+            // A malformed file is a fact about the repository, not a crash.
+            diagnostics.push({
+                code: "interpretation.extractor_failed",
+                severity: "warning",
+                message: `extractor did not complete: ${error.message}`,
+                extractor_id: extractor.id,
+                source_path: sourcePath,
+            });
+            continue;
+        }
+        for (const draft of drafts) {
+            const excerpt = boundExcerpt(draft.evidenceExcerpt);
+            if (looksSecret(excerpt) || looksSecret(draft.object)) {
+                diagnostics.push({
+                    code: "interpretation.secret_value_suppressed",
+                    severity: "warning",
+                    message: "assertion was dropped because its evidence resembled a credential",
+                    extractor_id: extractor.id,
+                    source_path: sourcePath,
+                });
+                continue;
+            }
+            if (draft.sourceRange.start_line < 1 || draft.sourceRange.end_line < draft.sourceRange.start_line) {
+                diagnostics.push({
+                    code: "interpretation.invalid_source_range",
+                    severity: "error",
+                    message: "assertion was dropped because its source range was not a valid span",
+                    extractor_id: extractor.id,
+                    source_path: sourcePath,
+                });
+                continue;
+            }
+            // The subject is part of assertion identity: the same predicate about a
+            // repository and about one of its files are two different claims, and
+            // they must not collide on one id.
+            const identity = {
+                subject_id: subjectId,
+                predicate: draft.predicate,
+                object: draft.object,
+                source_path: sourcePath,
+                source_range: draft.sourceRange,
+                extractor_id: extractor.id,
+            };
+            assertions.push({
+                assertion_id: (0, repository_model_1.stableId)("assertion", identity),
+                subject_id: subjectId,
+                predicate: draft.predicate,
+                object: draft.object,
+                source_path: sourcePath,
+                source_range: draft.sourceRange,
+                evidence_excerpt: excerpt,
+                source_content_hash: contentHash,
+                extractor_id: extractor.id,
+                evidence_class: draft.evidenceClass,
+                authority: draft.authority,
+                confidence: draft.confidence,
+            });
+        }
+    }
+    return { contentHash, assertions, diagnostics };
+}
+/**
  * Interpret a repository that inventory has already observed.
  *
  * Returns an empty assertion set rather than throwing when nothing matches: a
@@ -179,22 +283,11 @@ function interpretRepository(input) {
         .sort((left, right) => (0, repository_model_1.compareCodePoints)(left.relative_path, right.relative_path));
     const observedPaths = new Set(input.inventory.records.map((record) => record.relative_path));
     const pathExists = (relativePath) => observedPaths.has(relativePath.replace(/^\.\//, ""));
-    // Subject per observed path, computed once. A virtual archive member resolves
-    // to its own artifact — `Bundle.zip!/plans/a.md`, never the outer archive and
-    // never the staged scratch copy, neither of which is what declared anything.
-    const artifactSubjects = new Map();
-    const artifactSubjectFor = (sourcePath) => {
-        const known = artifactSubjects.get(sourcePath);
-        if (known !== undefined)
-            return known;
-        const subject = (0, repository_model_1.repositoryModelArtifactId)(input.subjectId, sourcePath);
-        artifactSubjects.set(sourcePath, subject);
-        return subject;
-    };
     for (const record of records) {
         const sourcePath = record.relative_path;
-        const claiming = extractors.filter((extractor) => extractor.matches(sourcePath));
-        if (claiming.length === 0)
+        // Eligibility is decided before the file is opened; `interpretDocumentContent`
+        // is only ever handed text this loop already proved it was allowed to read.
+        if (!extractors.some((extractor) => extractor.matches(sourcePath)))
             continue;
         if (isSecretCandidatePath(sourcePath)) {
             diagnostics.push({
@@ -246,82 +339,15 @@ function interpretRepository(input) {
             });
             continue;
         }
-        // Hash the text actually interpreted, so evidence binds to what was parsed.
-        const contentHash = (0, repository_model_1.sha256TextPrefixed)(content);
-        for (const extractor of claiming) {
-            const subjectId = extractorSubjectScope(extractor) === "artifact"
-                ? artifactSubjectFor(sourcePath)
-                : input.subjectId;
-            let drafts;
-            try {
-                drafts = extractor.extract({
-                    subjectId,
-                    sourcePath,
-                    content,
-                    contentHash,
-                    pathExists,
-                });
-            }
-            catch (error) {
-                // A malformed file is a fact about the repository, not a crash.
-                diagnostics.push({
-                    code: "interpretation.extractor_failed",
-                    severity: "warning",
-                    message: `extractor did not complete: ${error.message}`,
-                    extractor_id: extractor.id,
-                    source_path: sourcePath,
-                });
-                continue;
-            }
-            for (const draft of drafts) {
-                const excerpt = boundExcerpt(draft.evidenceExcerpt);
-                if (looksSecret(excerpt) || looksSecret(draft.object)) {
-                    diagnostics.push({
-                        code: "interpretation.secret_value_suppressed",
-                        severity: "warning",
-                        message: "assertion was dropped because its evidence resembled a credential",
-                        extractor_id: extractor.id,
-                        source_path: sourcePath,
-                    });
-                    continue;
-                }
-                if (draft.sourceRange.start_line < 1 || draft.sourceRange.end_line < draft.sourceRange.start_line) {
-                    diagnostics.push({
-                        code: "interpretation.invalid_source_range",
-                        severity: "error",
-                        message: "assertion was dropped because its source range was not a valid span",
-                        extractor_id: extractor.id,
-                        source_path: sourcePath,
-                    });
-                    continue;
-                }
-                // The subject is part of assertion identity: the same predicate about a
-                // repository and about one of its files are two different claims, and
-                // they must not collide on one id.
-                const identity = {
-                    subject_id: subjectId,
-                    predicate: draft.predicate,
-                    object: draft.object,
-                    source_path: sourcePath,
-                    source_range: draft.sourceRange,
-                    extractor_id: extractor.id,
-                };
-                assertions.push({
-                    assertion_id: (0, repository_model_1.stableId)("assertion", identity),
-                    subject_id: subjectId,
-                    predicate: draft.predicate,
-                    object: draft.object,
-                    source_path: sourcePath,
-                    source_range: draft.sourceRange,
-                    evidence_excerpt: excerpt,
-                    source_content_hash: contentHash,
-                    extractor_id: extractor.id,
-                    evidence_class: draft.evidenceClass,
-                    authority: draft.authority,
-                    confidence: draft.confidence,
-                });
-            }
-        }
+        const interpreted = interpretDocumentContent({
+            repositorySubjectId: input.subjectId,
+            sourcePath,
+            content,
+            extractors,
+            pathExists,
+        });
+        assertions.push(...interpreted.assertions);
+        diagnostics.push(...interpreted.diagnostics);
     }
     return {
         profile: {

@@ -226,6 +226,85 @@
         "npm run validate"
       ],
       "stability": "stable"
+    },
+    {
+      "capability": "multi_root_corpus_identity",
+      "source": "src/corpus_roots.ts and src/corpus_snapshot.ts",
+      "public_entrypoint": null,
+      "tests": [
+        "tests/corpus_multi_root.test.ts",
+        "tests/corpus_qualification.test.ts"
+      ],
+      "validators": [
+        "npm run validate"
+      ],
+      "stability": "stable"
+    },
+    {
+      "capability": "content_addressed_incremental_processing",
+      "source": "src/corpus_cache.ts and src/corpus_scan.ts",
+      "public_entrypoint": null,
+      "tests": [
+        "tests/corpus_cache.test.ts",
+        "tests/corpus_qualification.test.ts",
+        "tests/corpus_scale.test.ts"
+      ],
+      "validators": [
+        "npm run validate"
+      ],
+      "stability": "stable"
+    },
+    {
+      "capability": "corpus_snapshot_diff_and_invalidation",
+      "source": "src/corpus_diff.ts",
+      "public_entrypoint": null,
+      "tests": [
+        "tests/corpus_diff.test.ts",
+        "tests/corpus_qualification.test.ts"
+      ],
+      "validators": [
+        "npm run validate"
+      ],
+      "stability": "stable"
+    },
+    {
+      "capability": "resumable_bounded_corpus_scan",
+      "source": "src/corpus_session.ts",
+      "public_entrypoint": null,
+      "tests": [
+        "tests/corpus_session.test.ts",
+        "tests/corpus_qualification.test.ts"
+      ],
+      "validators": [
+        "npm run validate"
+      ],
+      "stability": "stable"
+    },
+    {
+      "capability": "project_readiness_evidence",
+      "source": "src/corpus_readiness.ts and src/corpus_candidates.ts",
+      "public_entrypoint": null,
+      "tests": [
+        "tests/corpus_readiness.test.ts",
+        "tests/corpus_candidates.test.ts"
+      ],
+      "validators": [
+        "npm run validate"
+      ],
+      "stability": "stable"
+    },
+    {
+      "capability": "corpus_coverage_and_reasoning_handoff",
+      "source": "src/corpus_coverage.ts and src/corpus_scan.ts",
+      "public_entrypoint": null,
+      "tests": [
+        "tests/corpus_multi_root.test.ts",
+        "tests/corpus_cli.test.ts"
+      ],
+      "validators": [
+        "npm run validate"
+      ],
+      "stability": "stable"
     }
   ]
 }
