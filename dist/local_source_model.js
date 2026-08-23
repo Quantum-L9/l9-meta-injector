@@ -65,6 +65,7 @@ const interpretation_1 = require("./interpretation");
 const extractors_1 = require("./extractors");
 const local_source_1 = require("./local_source");
 const corpus_analysis_1 = require("./corpus_analysis");
+const corpus_semantic_run_1 = require("./corpus_semantic_run");
 const corpus_report_1 = require("./corpus_report");
 const repository_model_1 = require("./repository_model");
 /** Schema of the acquisition manifest written beside a bundle. */
@@ -175,13 +176,105 @@ function withLocalSourceModel(input, body) {
  * file — so call this before `observation.dispose()`.
  */
 function buildLocalSourceCorpus(result, options = {}) {
-    const index = (0, corpus_analysis_1.buildCorpusIndex)({
+    const base = (0, corpus_analysis_1.buildCorpusIndex)({
         acquisition: result.observation,
         packet: result.packet,
         ...(result.interpretation ? { interpretation: result.interpretation } : {}),
         ...(options.nearDuplicates ? { nearDuplicates: options.nearDuplicates } : {}),
     });
+    // The semantic pass runs over the index's own artifacts, which already carry
+    // their duplicate cluster and near-duplicate edges, plus the assertions the
+    // interpretation produced. It is built here rather than inside
+    // `buildCorpusIndex` so that `corpus_analysis` keeps no dependency on the
+    // analysis that fills it — the semantic modules import it, not the reverse.
+    //
+    // What this path does not have is the lexical cache's term counts, so
+    // keyphrases here are drawn from titles, headings and declared identifiers
+    // rather than from document bodies. Corpus mode, which does have them, sees
+    // more. That is a real difference in recall and is documented as one.
+    const index = options.semanticAnalysis === false
+        ? base
+        : (0, corpus_analysis_1.withSemanticProjection)(base, semanticProjectionFor(result, base));
     return { index, indexJson: (0, corpus_analysis_1.renderCorpusIndex)(index), report: (0, corpus_report_1.renderCorpusReport)(index) };
+}
+/** Run the semantic pass over an index and reduce it to the index's projection. */
+function semanticProjectionFor(result, index) {
+    const assertions = [
+        ...(result.interpretation?.assertions ?? result.packet.payload.assertions),
+    ];
+    const bySubject = new Map();
+    for (const assertion of assertions) {
+        const existing = bySubject.get(assertion.subject_id) ?? [];
+        existing.push(assertion);
+        bySubject.set(assertion.subject_id, existing);
+    }
+    const analysis = (0, corpus_semantic_run_1.runSemanticAnalysis)({
+        corpusSnapshotId: index.source.physical_snapshot_hash,
+        artifacts: index.artifacts.map((artifact) => ({
+            artifact_id: artifact.artifact_id,
+            root_id: index.source.source_name,
+            corpus_path: artifact.source_path,
+            root_relative_path: artifact.source_path,
+            content_hash: artifact.content_hash,
+            normalized_document_id: null,
+            is_archive_member: artifact.is_archive_member,
+            archive_ancestry: archiveAncestryOf(artifact.source_path),
+            assertions: (bySubject.get(artifact.artifact_id) ?? []).map((assertion) => ({
+                assertion_id: assertion.assertion_id,
+                predicate: assertion.predicate,
+                object: assertion.object,
+            })),
+            declared_identifiers: [],
+            exact_duplicate_cluster_id: artifact.exact_duplicate_cluster_id,
+            near_duplicate_candidate_ids: artifact.near_duplicate_candidate_ids,
+        })),
+        nearDuplicatePairs: index.near_duplicate_candidates.map((candidate) => ({
+            artifact_a_id: candidate.artifact_a_id,
+            artifact_b_id: candidate.artifact_b_id,
+            score: candidate.score,
+        })),
+        assertionsByArtifact: new Map([...bySubject.entries()].map(([subject, list]) => [
+            subject,
+            list.map((assertion) => ({
+                assertion_id: assertion.assertion_id,
+                predicate: assertion.predicate,
+                object: assertion.object,
+                source_path: assertion.source_path,
+                evidence_excerpt: assertion.evidence_excerpt,
+                source_content_hash: assertion.source_content_hash,
+            })),
+        ])),
+    });
+    return {
+        semantic_analysis_profile_id: analysis.profile.semantic_analysis_profile_id,
+        semantic_analysis_profile_version: analysis.profile.semantic_analysis_profile_version,
+        keyphrase_profile: analysis.profile.keyphrase_profile,
+        semantic_fusion_profile: analysis.profile.semantic_fusion_profile,
+        reasoning_routing_profile: analysis.profile.reasoning_routing_profile,
+        embedding_enabled: analysis.profile.embedding_enabled,
+        embedding_provider_when_enabled: analysis.profile.embedding_provider_when_enabled,
+        embedding_model_when_enabled: analysis.profile.embedding_model_when_enabled,
+        embedding_model_revision_when_available: analysis.profile.embedding_model_revision_when_available,
+        semantic_pair_count: analysis.summary.semantic_pair_count,
+        topic_candidate_count: analysis.summary.topic_candidate_count,
+        project_candidate_count: analysis.summary.project_candidate_count,
+        consolidation_candidate_count: analysis.summary.consolidation_candidate_count,
+        reasoning_eligible_count: analysis.summary.reasoning_eligible_count,
+        embedding_eligible_artifact_count: analysis.summary.embedding_eligible_artifact_count,
+        embedded_artifact_count: analysis.summary.embedded_artifact_count,
+        candidate_ids_by_artifact: Object.fromEntries(analysis.candidateIdsByArtifact),
+        candidate_statement: analysis.topics.candidate_statement,
+    };
+}
+/** Enclosing archives of a virtual member locator, outermost first. */
+function archiveAncestryOf(sourcePath) {
+    const parts = sourcePath.split("!/");
+    if (parts.length < 2)
+        return [];
+    const ancestry = [];
+    for (let i = 0; i < parts.length - 1; i += 1)
+        ancestry.push(parts.slice(0, i + 1).join("!/"));
+    return ancestry;
 }
 /**
  * Replace any manifest value that resembles a credential.

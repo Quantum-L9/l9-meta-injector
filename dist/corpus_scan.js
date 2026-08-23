@@ -76,6 +76,8 @@ const extractors_1 = require("./extractors");
 const interpretation_1 = require("./interpretation");
 const local_source_1 = require("./local_source");
 const ordering_1 = require("./ordering");
+const corpus_documents_1 = require("./corpus_documents");
+const corpus_semantic_run_1 = require("./corpus_semantic_run");
 const repository_model_1 = require("./repository_model");
 exports.CORPUS_CANDIDATES_SCHEMA = "l9.corpus-candidates/v1";
 /** Decoder that turns exact bytes into the text every later layer reads. */
@@ -102,6 +104,23 @@ exports.CANDIDATE_STATEMENT = "Exact duplicates are byte equality and are facts.
     + "them claims two documents mean the same thing, that anything should be merged, "
     + "moved or deleted, or that one is more valuable than another.";
 // ───────────────────────────── helpers ─────────────────────────────
+/**
+ * The archives a member sits inside, outermost first.
+ *
+ * `old.zip!/inner.zip!/draft.md` is two archives deep, and its ancestry is the
+ * successive archive prefixes rather than the bare filenames — `inner.zip` alone
+ * would collide with an unrelated `inner.zip` in another archive.
+ */
+function archiveAncestryOf(rootRelativePath) {
+    const parts = rootRelativePath.split(local_source_1.ARCHIVE_MEMBER_SEPARATOR);
+    if (parts.length < 2)
+        return [];
+    const ancestry = [];
+    for (let i = 0; i < parts.length - 1; i += 1) {
+        ancestry.push(parts.slice(0, i + 1).join(local_source_1.ARCHIVE_MEMBER_SEPARATOR));
+    }
+    return ancestry;
+}
 function normalizeHash(value) {
     if (value === null || value.length === 0)
         return null;
@@ -805,6 +824,102 @@ async function runCorpusScan(input) {
                 nearDuplicatePairs: nearPairs,
             },
         });
+        // ── 7. normalized documents, written down ─────────────────────────────
+        //
+        // Every field below was already established above. The index exists because
+        // a later pass reasoning over documents cannot recover which artifact a
+        // document came from, which source bytes it describes, or which decoder
+        // produced it, once the run has ended.
+        const documentIndex = (0, corpus_documents_1.buildDocumentIndex)({
+            corpusSnapshotId: snapshotId,
+            decoderId: exports.TEXT_DECODER_ID,
+            decoderVersion: exports.TEXT_DECODER_VERSION,
+            artifacts: artifacts.map((artifact) => {
+                const record = normalized.get(artifact.virtualSourceId);
+                return {
+                    artifactId: artifact.virtualSourceId,
+                    rootId: artifact.rootId,
+                    corpusPath: artifact.corpusPath,
+                    rootRelativePath: artifact.rootRelativePath,
+                    contentHash: artifact.contentHash,
+                    sizeBytes: artifact.sizeBytes,
+                    isArchiveMember: artifact.isArchiveMember,
+                    archiveAncestry: archiveAncestryOf(artifact.rootRelativePath),
+                    ...(record !== undefined ? { normalized: record } : {}),
+                    normalizedDocumentId: artifact.contentHash === null
+                        ? null
+                        : (0, corpus_cache_1.normalizedDocumentKey)({
+                            contentHash: artifact.contentHash,
+                            decoderId: exports.TEXT_DECODER_ID,
+                            decoderVersion: exports.TEXT_DECODER_VERSION,
+                        }),
+                };
+            }),
+        });
+        // ── 8. semantic candidate discovery ───────────────────────────────────
+        let semantic = null;
+        if (input.semanticAnalysis !== false) {
+            const documentById = new Map(documentIndex.documents.map((doc) => [doc.artifact_id, doc]));
+            const semanticArtifacts = artifacts.map((artifact) => {
+                const document = documentById.get(artifact.virtualSourceId);
+                const declared = manifestIdentifiers.get(artifact.virtualSourceId) ?? null;
+                const features = lexical.get(artifact.virtualSourceId);
+                return {
+                    artifact_id: artifact.virtualSourceId,
+                    root_id: artifact.rootId,
+                    corpus_path: artifact.corpusPath,
+                    root_relative_path: artifact.rootRelativePath,
+                    content_hash: artifact.contentHash,
+                    normalized_document_id: document?.normalized_document_id ?? null,
+                    is_archive_member: artifact.isArchiveMember,
+                    archive_ancestry: archiveAncestryOf(artifact.rootRelativePath),
+                    assertions: (interpreted.get(artifact.virtualSourceId)?.assertions ?? []).map((assertion) => ({
+                        assertion_id: assertion.assertion_id,
+                        predicate: assertion.predicate,
+                        object: assertion.object,
+                    })),
+                    declared_identifiers: declared === null
+                        ? []
+                        : [{
+                                identifier: declared.identifier,
+                                manifest: artifact.basename.toLowerCase(),
+                                field: declared.field,
+                            }],
+                    exact_duplicate_cluster_id: clusterByArtifact.get(artifact.virtualSourceId) ?? null,
+                    near_duplicate_candidate_ids: nearByArtifact.get(artifact.virtualSourceId) ?? [],
+                    // Term counts rather than text: the lexical cache holds a bag of words
+                    // and never a body, so the semantic pass never needs the source back.
+                    ...(features !== undefined ? { body_term_counts: features.term_counts } : {}),
+                };
+            });
+            const assertionsByArtifact = new Map();
+            for (const [artifactId, record] of interpreted) {
+                assertionsByArtifact.set(artifactId, record.assertions.map((assertion) => ({
+                    assertion_id: assertion.assertion_id,
+                    predicate: assertion.predicate,
+                    object: assertion.object,
+                    source_path: assertion.source_path,
+                    evidence_excerpt: assertion.evidence_excerpt,
+                    source_content_hash: assertion.source_content_hash,
+                })));
+            }
+            semantic = (0, corpus_semantic_run_1.runSemanticAnalysis)({
+                corpusSnapshotId: snapshotId,
+                artifacts: semanticArtifacts,
+                nearDuplicatePairs: nearCandidates.map((candidate) => ({
+                    artifact_a_id: candidate.artifact_a_id,
+                    artifact_b_id: candidate.artifact_b_id,
+                    score: candidate.score,
+                })),
+                assertionsByArtifact,
+                ...(input.embeddingPairs !== undefined ? { embeddingPairs: input.embeddingPairs } : {}),
+                ...(input.embeddingReport !== undefined ? { embeddingReport: input.embeddingReport } : {}),
+                ...(input.packBudget !== undefined ? { packBudget: input.packBudget } : {}),
+            });
+            for (const note of semantic.relations.diagnostics) {
+                diagnostics.push({ code: note.code, severity: note.severity, message: note.message });
+            }
+        }
         const decodableIds = new Set(decodable.map((artifact) => artifact.virtualSourceId));
         const decodedIds = new Set([...normalized.entries()].filter(([, record]) => record.decodes).map(([id]) => id));
         const interpretationEligible = artifacts.filter((artifact) => interpretEnabled && extractors.some((extractor) => extractor.matches(artifact.rootRelativePath)));
@@ -925,6 +1040,8 @@ async function runCorpusScan(input) {
             bindings: bound.roots,
             precheck,
             scanned: { files: scannedFiles, bytes: scannedBytes },
+            documentIndex,
+            semantic,
         };
     }
     finally {

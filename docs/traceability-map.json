@@ -318,6 +318,61 @@
         "npm run qualify:corpus"
       ],
       "stability": "stable"
+    },
+    {
+      "capability": "normalized_document_index",
+      "source": "src/corpus_documents.ts",
+      "public_entrypoint": null,
+      "tests": [
+        "tests/corpus_cli.test.ts"
+      ],
+      "validators": [
+        "npm test",
+        "npm run validate"
+      ],
+      "stability": "stable"
+    },
+    {
+      "capability": "semantic_candidate_discovery",
+      "source": "src/corpus_semantics.ts and src/corpus_pairs.ts and src/corpus_fusion.ts",
+      "public_entrypoint": null,
+      "tests": [
+        "tests/corpus_semantic_candidates.test.ts",
+        "tests/corpus_cli.test.ts"
+      ],
+      "validators": [
+        "npm test",
+        "npm run validate"
+      ],
+      "stability": "stable"
+    },
+    {
+      "capability": "reasoning_handoff",
+      "source": "src/corpus_reasoning.ts and src/corpus_semantic_run.ts",
+      "public_entrypoint": null,
+      "tests": [
+        "tests/corpus_semantic_candidates.test.ts",
+        "tests/corpus_cli.test.ts"
+      ],
+      "validators": [
+        "npm test",
+        "npm run validate"
+      ],
+      "stability": "stable"
+    },
+    {
+      "capability": "optional_semantic_embeddings",
+      "source": "src/corpus_embeddings.ts",
+      "public_entrypoint": null,
+      "tests": [
+        "tests/corpus_embeddings.test.ts",
+        "tests/corpus_cli.test.ts"
+      ],
+      "validators": [
+        "npm test",
+        "npm run validate"
+      ],
+      "stability": "stable"
     }
   ]
 }

@@ -1,6 +1,6 @@
 // corpus_cli.test.ts — corpus mode as an operator runs it.
 //
-// The CLI is where the roots, the cache, the session and the five projections are
+// The CLI is where the roots, the cache, the session and every projection are
 // wired together, and it is the only surface most people will ever touch. Every
 // run below is the real script against the committed `dist/`, so a wiring mistake
 // fails here rather than in someone's terminal.
@@ -67,11 +67,18 @@ describe("corpus mode", () => {
     expect(f.roots.map((root) => treeSnapshot(root))).toEqual(before);
 
     expect(fs.readdirSync(f.out).sort()).toEqual([
+      "consolidation-candidates.json",
       "corpus-candidates.json",
       "corpus-coverage.json",
       "corpus-session.json",
       "corpus-snapshot.json",
+      "document-index.json",
+      "project-candidates.json",
       "readiness-evidence.json",
+      "reasoning-candidates.jsonl",
+      "reasoning-evidence-packs.jsonl",
+      "semantic-relations.json",
+      "topic-candidates.json",
     ]);
     const snapshot = JSON.parse(fs.readFileSync(path.join(f.out, "corpus-snapshot.json"), "utf8"));
     const candidates = JSON.parse(fs.readFileSync(path.join(f.out, "corpus-candidates.json"), "utf8"));
@@ -182,5 +189,122 @@ describe("corpus mode", () => {
     expect(result.stdout).toContain("local-source: OK");
     expect(fs.existsSync(path.join(out, "corpus-index.json"))).toBe(true);
     expect(fs.existsSync(path.join(out, "corpus-snapshot.json"))).toBe(false);
+  });
+});
+
+describe("semantic candidate discovery", () => {
+  it("emits the candidate documents, the reasoning queue and the document index", () => {
+    const f = fixture();
+    expect(run(argsFor(f)).status).toBe(0);
+
+    const relations = JSON.parse(fs.readFileSync(path.join(f.out, "semantic-relations.json"), "utf8"));
+    const topics = JSON.parse(fs.readFileSync(path.join(f.out, "topic-candidates.json"), "utf8"));
+    const projects = JSON.parse(fs.readFileSync(path.join(f.out, "project-candidates.json"), "utf8"));
+    const consolidation = JSON.parse(
+      fs.readFileSync(path.join(f.out, "consolidation-candidates.json"), "utf8"));
+    const documents = JSON.parse(fs.readFileSync(path.join(f.out, "document-index.json"), "utf8"));
+
+    expect(relations.schema).toBe("l9.semantic-relations/v1");
+    expect(topics.schema).toBe("l9.topic-candidates/v1");
+    expect(projects.schema).toBe("l9.project-candidates/v1");
+    expect(consolidation.schema).toBe("l9.consolidation-candidates/v1");
+    expect(documents.schema).toBe("l9.document-index/v1");
+
+    // The document index is the prerequisite this contract had to build: every
+    // entry names its artifact, the exact source hash, and the decoder identity.
+    expect(documents.documents.length).toBeGreaterThan(0);
+    for (const entry of documents.documents) {
+      expect(entry.artifact_id.length).toBeGreaterThan(0);
+      expect(entry.decoder_id).toBe("utf8-text-decoder");
+      if (entry.decoded) expect(entry.normalized_document_id).not.toBeNull();
+    }
+  });
+
+  it("writes one JSONL record per line, and a pack for every eligible candidate", () => {
+    const f = fixture();
+    expect(run(argsFor(f)).status).toBe(0);
+
+    const queue = fs.readFileSync(path.join(f.out, "reasoning-candidates.jsonl"), "utf8")
+      .split("\n").filter((line) => line.length > 0).map((line) => JSON.parse(line));
+    const packs = fs.readFileSync(path.join(f.out, "reasoning-evidence-packs.jsonl"), "utf8")
+      .split("\n").filter((line) => line.length > 0).map((line) => JSON.parse(line));
+
+    const eligible = queue.filter((row) => row.reasoning_type !== "NONE");
+    expect(packs).toHaveLength(eligible.length);
+    for (const row of queue) {
+      expect(row.schema).toBe("l9.reasoning-candidate/v1");
+      expect(String(row.reason).length).toBeGreaterThan(0);
+    }
+  });
+
+  it("reports zero model calls, because it makes none", () => {
+    const f = fixture();
+    const result = run(argsFor(f));
+    expect(result.stdout).toContain("zero LLM calls");
+    expect(result.stdout).toContain("embeddings       off");
+  });
+
+  it("can be switched off, leaving the duplicate analysis in place", () => {
+    const f = fixture();
+    expect(run(argsFor(f, ["--no-semantic-analysis"])).status).toBe(0);
+
+    const written = fs.readdirSync(f.out).sort();
+    expect(written).not.toContain("topic-candidates.json");
+    expect(written).not.toContain("reasoning-candidates.jsonl");
+    // The document index is not part of the semantic pass and still lands.
+    expect(written).toContain("document-index.json");
+    expect(written).toContain("corpus-candidates.json");
+  });
+
+  it("keeps every mount point out of the semantic documents", () => {
+    const f = fixture();
+    expect(run(argsFor(f)).status).toBe(0);
+    for (const name of [
+      "semantic-relations.json", "topic-candidates.json", "project-candidates.json",
+      "consolidation-candidates.json", "reasoning-candidates.jsonl",
+      "reasoning-evidence-packs.jsonl", "document-index.json",
+    ]) {
+      const text = fs.readFileSync(path.join(f.out, name), "utf8");
+      for (const root of f.roots) expect(text).not.toContain(root);
+    }
+  });
+});
+
+describe("the embedding guards", () => {
+  it("refuse embeddings with no provider named", () => {
+    const f = fixture();
+    const result = run(argsFor(f, ["--embeddings"]));
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("--embedding-provider");
+  });
+
+  it("refuse a remote provider without the separate remote opt-in", () => {
+    const f = fixture();
+    const result = run(argsFor(f, [
+      "--embeddings", "--embedding-provider", "acme", "--embedding-model", "m1",
+      "--embedding-locality", "remote", "--embedding-endpoint", "https://acme.example.com",
+    ]));
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("--allow-remote-embeddings");
+  });
+
+  it("refuse a remote endpoint that is not https", () => {
+    const f = fixture();
+    const result = run(argsFor(f, [
+      "--embeddings", "--embedding-provider", "acme", "--embedding-model", "m1",
+      "--embedding-locality", "remote", "--embedding-endpoint", "http://acme.example.com",
+      "--allow-remote-embeddings",
+    ]));
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("https://");
+  });
+
+  it("say plainly that no provider ships, rather than reporting an empty run", () => {
+    const f = fixture();
+    const result = run(argsFor(f, [
+      "--embeddings", "--embedding-provider", "acme", "--embedding-model", "m1",
+    ]));
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("ships no embedding provider");
   });
 });

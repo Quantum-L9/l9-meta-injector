@@ -258,6 +258,15 @@ npm run validate
 
 The canonical gate covers typing, tests, the exact API contract, architecture authority, deterministic manifest, committed distribution parity, selfpack, and an installed-tarball consumer.
 
+### Semantic candidates
+
+`npm run local-source -- --root <path> …` also runs deterministic semantic candidate
+discovery: keyphrases, multi-signal pair evidence, topic/project/consolidation candidates,
+and a bounded reasoning queue naming which candidates a future model would be worth
+spending on. Optional embeddings are **off by default** and a remote provider needs a
+second explicit opt-in. **No model is called anywhere in this package.** See
+[`docs/semantic-candidates.md`](docs/semantic-candidates.md).
+
 `npm run qualify:corpus` is separate and deliberately not part of that gate. It measures
 rather than asserts: it scans a mixed read-only two-root corpus cold and then warm and
 writes `reports/corpus-real-world-qualification.json` — bytes and files scanned, the second

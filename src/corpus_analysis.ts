@@ -434,6 +434,8 @@ export interface NearDuplicateOptions {
 }
 
 export interface CorpusAnalysisInput {
+  /** Semantic candidate discovery, when a caller has run it. */
+  semantic?: CorpusSemanticProjection;
   acquisition: CorpusAcquisition;
   packet: RepositoryModelPacket;
   interpretation?: InterpretationResult;
@@ -481,6 +483,11 @@ export interface CorpusArtifact {
   work_signal_summary: CorpusWorkSignalSummary;
   exact_duplicate_cluster_id: string | null;
   near_duplicate_candidate_ids: string[];
+  /** Empty when the semantic pass did not run; `index.semantic` says which. */
+  topic_candidate_ids: string[];
+  project_candidate_ids: string[];
+  consolidation_candidate_ids: string[];
+  reasoning_candidate_ids: string[];
 }
 
 export interface CorpusDuplicateCluster {
@@ -551,6 +558,45 @@ export interface CorpusDiagnostics {
   near_duplicate_excluded: { reason: string; count: number }[];
 }
 
+/**
+ * The semantic pass's projection into the corpus index.
+ *
+ * Declared here as plain data rather than imported from `corpus_semantic_run`,
+ * so the index does not depend on the analysis that fills it — the semantic
+ * modules already import this one, and a return edge would close a cycle.
+ *
+ * Null on the index means the pass did not run. That is deliberately different
+ * from zeros: "no candidates were found" and "nobody looked" are not the same
+ * statement about a corpus.
+ */
+export interface CorpusSemanticProjection {
+  semantic_analysis_profile_id: string;
+  semantic_analysis_profile_version: string;
+  keyphrase_profile: string;
+  semantic_fusion_profile: string;
+  reasoning_routing_profile: string;
+  embedding_enabled: boolean;
+  embedding_provider_when_enabled: string | null;
+  embedding_model_when_enabled: string | null;
+  embedding_model_revision_when_available: string | null;
+  semantic_pair_count: number;
+  topic_candidate_count: number;
+  project_candidate_count: number;
+  consolidation_candidate_count: number;
+  reasoning_eligible_count: number;
+  embedding_eligible_artifact_count: number;
+  embedded_artifact_count: number;
+  /** Candidate ids per artifact id, for the per-artifact rows below. */
+  candidate_ids_by_artifact: Record<string, {
+    topic_candidate_ids: string[];
+    project_candidate_ids: string[];
+    consolidation_candidate_ids: string[];
+    reasoning_candidate_ids: string[];
+  }>;
+  /** Restated so a reader of the index alone sees the boundary. */
+  candidate_statement: string;
+}
+
 export interface CorpusIndex {
   schema: string;
   source: { source_name: string; source_revision: string; physical_snapshot_hash: string };
@@ -583,6 +629,8 @@ export interface CorpusIndex {
   near_duplicate_candidates: NearDuplicateCandidate[];
   archives: CorpusArchive[];
   diagnostics: CorpusDiagnostics;
+  /** Semantic candidate discovery, or null when the pass did not run. */
+  semantic: CorpusSemanticProjection | null;
 }
 
 // ───────────────────────────── work signal projection ─────────────────────────────
@@ -1049,6 +1097,24 @@ export function buildCorpusIndex(input: CorpusAnalysisInput): CorpusIndex {
     }
   }
 
+  // Candidate ids per artifact, or four empty lists when the pass did not run.
+  // `index.semantic` is what tells those two cases apart; empty lists here never
+  // claim on their own that a corpus has no candidates.
+  const semanticIdsFor = (artifactId: string): {
+    topic_candidate_ids: string[];
+    project_candidate_ids: string[];
+    consolidation_candidate_ids: string[];
+    reasoning_candidate_ids: string[];
+  } => {
+    const entry = input.semantic?.candidate_ids_by_artifact[artifactId];
+    return {
+      topic_candidate_ids: [...(entry?.topic_candidate_ids ?? [])].sort(compareCodePoints),
+      project_candidate_ids: [...(entry?.project_candidate_ids ?? [])].sort(compareCodePoints),
+      consolidation_candidate_ids: [...(entry?.consolidation_candidate_ids ?? [])].sort(compareCodePoints),
+      reasoning_candidate_ids: [...(entry?.reasoning_candidate_ids ?? [])].sort(compareCodePoints),
+    };
+  };
+
   const artifacts: CorpusArtifact[] = artifactRecords
     .map((artifact) => ({
       artifact_id: artifact.artifact_id,
@@ -1061,6 +1127,7 @@ export function buildCorpusIndex(input: CorpusAnalysisInput): CorpusIndex {
       work_signal_summary: settleSummary(summaries.get(artifact.artifact_id) ?? emptySummary()),
       exact_duplicate_cluster_id: clusterByArtifact.get(artifact.artifact_id) ?? null,
       near_duplicate_candidate_ids: (candidateIdsByArtifact.get(artifact.artifact_id) ?? []).sort(compareCodePoints),
+      ...semanticIdsFor(artifact.artifact_id),
     }))
     .sort((left, right) => compareCodePoints(left.source_path, right.source_path));
 
@@ -1162,6 +1229,41 @@ export function buildCorpusIndex(input: CorpusAnalysisInput): CorpusIndex {
         .map(([reason, count]) => ({ reason, count }))
         .sort((left, right) => compareCodePoints(left.reason, right.reason)),
     },
+    semantic: input.semantic ?? null,
+  };
+}
+
+/**
+ * Attach a semantic projection to an already-built index.
+ *
+ * A pure transformation, and the reason this module does not import the semantic
+ * analysis: the semantic modules already import this one, so a call in the other
+ * direction would close a cycle. The caller runs the pass and hands the result
+ * back here.
+ */
+export function withSemanticProjection(
+  index: CorpusIndex,
+  semantic: CorpusSemanticProjection,
+): CorpusIndex {
+  const empty = {
+    topic_candidate_ids: [] as string[],
+    project_candidate_ids: [] as string[],
+    consolidation_candidate_ids: [] as string[],
+    reasoning_candidate_ids: [] as string[],
+  };
+  return {
+    ...index,
+    artifacts: index.artifacts.map((artifact) => {
+      const entry = semantic.candidate_ids_by_artifact[artifact.artifact_id] ?? empty;
+      return {
+        ...artifact,
+        topic_candidate_ids: [...entry.topic_candidate_ids].sort(compareCodePoints),
+        project_candidate_ids: [...entry.project_candidate_ids].sort(compareCodePoints),
+        consolidation_candidate_ids: [...entry.consolidation_candidate_ids].sort(compareCodePoints),
+        reasoning_candidate_ids: [...entry.reasoning_candidate_ids].sort(compareCodePoints),
+      };
+    }),
+    semantic,
   };
 }
 
