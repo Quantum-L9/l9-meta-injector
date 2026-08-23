@@ -329,23 +329,31 @@ function kindValue(raw) {
 }
 // ───────────────────────────── structure reading ─────────────────────────────
 /**
- * Why the tail of every pattern here captures with `[\s\S]` rather than `.`.
+ * Why the patterns below match a prefix and the text is taken by slicing.
  *
- * `.` excludes `\r`, `\n`, `\u2028` and `\u2029`. A tail written `\s*(.*)$`
- * therefore lets two quantifiers compete for the same whitespace and then fail
- * at the anchor whenever one of those four characters appears later in the
- * string — and the engine retries every division of the whitespace before giving
- * up. Measured on a line carrying a lone carriage return: 16,000 characters in
- * 200ms, quadrupling with each doubling, so a 120 KiB line takes minutes.
+ * Each of them used to end `\s*(.*)$`, which is two quantifiers competing for the
+ * same whitespace in front of an anchor. `.` excludes `\r`, `\n`, `\u2028` and
+ * `\u2029`, so whenever one of those appeared later in the string the anchor
+ * failed and the engine retried every division of the whitespace before giving
+ * up: measured at 200ms for 16,000 characters and quadrupling with each
+ * doubling, so a 120 KiB line — well inside the 512 KiB interpretation limit —
+ * took minutes. A lone `\r` is not a contrived input: `toLines` splits on
+ * `/\r?\n/`, so a classic Mac line ending survives into what this module calls a
+ * line, and that is precisely the vintage of document an archive of old plans is
+ * full of.
  *
- * A lone `\r` is not a contrived input. `toLines` splits on `/\r?\n/`, so a
- * classic Mac line ending survives into what this module calls a line, and that
- * is precisely the vintage of document an archive of old plans is full of.
+ * Writing the tail `([\s\S]*)$` fixes the runtime — the anchor is reached on the
+ * first attempt — and leaves the two quantifiers adjacent, which a static
+ * analyzer still reads as the super-linear shape it is elsewhere. In a module
+ * whose whole claim is that its patterns are linear on hostile input, a finding
+ * that says otherwise is worse than the microsecond it costs to remove: a reader
+ * cannot tell it apart from a real one.
  *
- * `[\s\S]*` matches every character including those four, so the anchor is
- * reached on the first attempt and the pattern never backtracks. For a line with
- * no stray control character — every ordinary line — the two forms capture
- * exactly the same text.
+ * So the regex matches only the part with fixed structure, and the text after it
+ * is taken with `slice`. There is no ambiguity left to reason about, and it is
+ * the same move `trimRunStart` and `trimRunEnd` already make in this file for the
+ * same reason. `plainText` trims, so the whitespace the pattern used to consume
+ * is handled either way.
  */
 /**
  * An ATX heading, split only as far as the marker.
@@ -357,7 +365,7 @@ function kindValue(raw) {
  * twenty-six seconds. This form always succeeds once a marker and a space are
  * present, so it never backtracks at all.
  */
-const ATX_HEADING = /^ {0,3}(#{1,6})[ \t]+([\s\S]*)$/;
+const ATX_HEADING = /^ {0,3}(#{1,6})[ \t]+/;
 const isHash = (character) => character === "#";
 /** Every ATX heading outside frontmatter and fenced code, in document order. */
 function headings(view) {
@@ -365,10 +373,11 @@ function headings(view) {
     for (let index = 0; index < view.lines.length; index++) {
         if (!isProseLine(view, index))
             continue;
-        const match = ATX_HEADING.exec(view.lines[index]);
+        const line = view.lines[index];
+        const match = ATX_HEADING.exec(line);
         if (!match)
             continue;
-        const text = plainText(trimRunEnd(match[2].trimEnd(), isHash));
+        const text = plainText(trimRunEnd(line.slice(match[0].length).trimEnd(), isHash));
         if (text.length === 0)
             continue;
         out.push({ index, level: match[1].length, text });
@@ -469,7 +478,7 @@ exports.documentStructureExtractor = {
     },
 };
 // ───────────────────────── work-intelligence/v1 ─────────────────────────
-const CHECKBOX = /^\s{0,8}(?:[-*+]|\d{1,3}[.)])\s+\[([ xX])\]\s*([\s\S]*)$/;
+const CHECKBOX = /^\s{0,8}(?:[-*+]|\d{1,3}[.)])\s+\[([ xX])\]/;
 /**
  * An explicit `TODO:` line, matched after the list prefix has been stripped.
  *
@@ -477,7 +486,7 @@ const CHECKBOX = /^\s{0,8}(?:[-*+]|\d{1,3}[.)])\s+\[([ xX])\]\s*([\s\S]*)$/;
  * made it the most complicated regex in the module and meant two places had to
  * agree about what a list marker looks like.
  */
-const TODO_LINE = /^(?:\*\*|__)?TODO(?:\*\*|__)?\s*:\s*([\s\S]+)$/;
+const TODO_LINE = /^(?:\*\*|__)?TODO(?:\*\*|__)?\s*:/;
 const BULLET = /^\s{0,3}(?:[-*+]|\d{1,3}[.)])\s+(.*)$/;
 const MILESTONE_LABEL = /^milestone(?: [a-z0-9.]{1,8})?$/;
 const BLOCKQUOTE_STATUS = /^\s{0,3}>\s*(?:\*\*|__)?\[?([A-Za-z]+)\]?(?:\*\*|__)?\s*(?::.*)?$/;
@@ -635,21 +644,22 @@ function milestoneSectionSignals(view) {
  * Markdown checklist and no Word one, which is the same file failing to be
  * understood because of the program it was written in.
  */
-const BARE_CHECKBOX = /^\s{0,8}\[([ xX])\]\s*([\s\S]*)$/;
+const BARE_CHECKBOX = /^\s{0,8}\[([ xX])\]/;
 /** A task written as list syntax: a checkbox, or a line that opens with `TODO:`. */
 function taskSignal(line, listMarkerImplied = false) {
     const checkbox = CHECKBOX.exec(line) ?? (listMarkerImplied ? BARE_CHECKBOX.exec(line) : null);
     if (checkbox) {
-        const text = plainText(checkbox[2]);
+        const text = plainText(line.slice(checkbox[0].length));
         if (text.length === 0)
             return null;
         const predicate = checkbox[1] === " " ? "work.task.open" : "work.task.completed";
         return reading(predicate, text, line, "observed", "high");
     }
-    const todo = TODO_LINE.exec(line.replace(LIST_PREFIX, ""));
+    const body = line.replace(LIST_PREFIX, "");
+    const todo = TODO_LINE.exec(body);
     if (todo === null)
         return null;
-    const text = plainText(todo[1]);
+    const text = plainText(body.slice(todo[0].length));
     return text.length === 0 ? null : reading("work.task.open", text, line, "observed", "high");
 }
 /**
