@@ -258,6 +258,13 @@ npm run validate
 
 The canonical gate covers typing, tests, the exact API contract, architecture authority, deterministic manifest, committed distribution parity, selfpack, and an installed-tarball consumer.
 
+`npm run qualify:corpus` is separate and deliberately not part of that gate. It measures
+rather than asserts: it scans a mixed read-only two-root corpus cold and then warm and
+writes `reports/corpus-real-world-qualification.json` — bytes and files scanned, the second
+run's cache hit ratio, decoder coverage, duplicate and candidate counts, and everything it
+could not read split by why. See
+[`docs/corpus-archaeology.md`](docs/corpus-archaeology.md#what-it-does-on-a-real-corpus).
+
 `prepack` enforces package integrity. `prepublishOnly` additionally runs `check:publication`; publication remains blocked until the external distribution history and constellation-consumer inventory are resolved in `docs/package-publication-decision.json`.
 
 ## Architecture and contracts
