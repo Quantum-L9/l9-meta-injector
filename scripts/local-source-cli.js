@@ -171,6 +171,94 @@ function collectBudgets(cli) {
   return budgets;
 }
 
+/**
+ * Everything corpus mode prints, and nothing it decides.
+ *
+ * Kept out of `runCorpusMode` because it is sixty lines of formatting with no
+ * control flow of its own, and leaving it inline made the one function that does
+ * decide things harder to read than it needed to be.
+ */
+function reportCorpusRun(context) {
+  const { result, cacheEnabled, cache, resumed, written, sessionPath } = context;
+  const coverage = result.coverage;
+  const summary = result.candidates.summary;
+  console.log(`${LABEL}: OK (corpus mode)`);
+  console.log("  no root was modified: no file was written, renamed, or removed under any of them");
+  console.log(`  corpus_snapshot  ${result.snapshot.corpus_snapshot_id}`);
+  console.log(`  roots            ${result.bindings.length}`);
+  for (const binding of result.bindings) {
+    console.log(`    ${binding.root_label}  ${binding.source_revision}  ${binding.absolute_path}`);
+  }
+  console.log(`  files scanned    ${result.scanned.files} (${result.scanned.bytes} byte(s))`);
+  console.log(`  archives         ${coverage.archive_count}, ${coverage.archive_member_count} member(s)`);
+  console.log(`  exact hashes     ${coverage.exact_hash_coverage.covered}/${coverage.exact_hash_coverage.eligible}`);
+  console.log(`  decoded          ${coverage.normalized_document_coverage.covered}/${coverage.normalized_document_coverage.eligible}`);
+  console.log(`  interpreted      ${coverage.interpretation_coverage.covered}/${coverage.interpretation_coverage.eligible}`);
+  console.log(`  lexical          ${coverage.lexical_analysis_coverage.covered}/${coverage.lexical_analysis_coverage.eligible}`);
+  console.log(`  embeddings       not enabled; no model was called and no network request was made`);
+  console.log(
+    `  duplicates       ${summary.exact_duplicate_cluster_count} cluster(s), `
+    + `${summary.cross_root_duplicate_cluster_count} crossing a root boundary`,
+  );
+  console.log(
+    `  near-duplicates  ${summary.near_duplicate_candidate_count} candidate(s), `
+    + `${summary.cross_root_near_duplicate_count} crossing a root boundary`,
+  );
+  console.log(
+    `  topic candidates ${summary.topic_candidate_count}, `
+    + `${summary.cross_root_topic_candidate_count} crossing a root boundary`,
+  );
+  console.log(
+    `  projects         ${summary.project_candidate_count} candidate(s), `
+    + `${summary.cross_root_project_candidate_count} crossing a root boundary, `
+    + `${coverage.reasoning_eligible_candidate_count} reasoning-eligible`,
+  );
+  const unsupported = coverage.unsupported_format_counts
+    .map((format) => `${format.extension}:${format.count}`)
+    .join(" ");
+  console.log(`  unsupported      ${unsupported || "none"}`);
+  console.log(`  ocr required     ${coverage.ocr_required_count}`);
+  console.log(`  encrypted        ${coverage.encrypted_document_count}`);
+  console.log(`  oversized        ${coverage.oversized_document_count}`);
+  console.log(`  secrets skipped  ${coverage.secret_skipped_count}`);
+  console.log(
+    `  cache            ${cacheEnabled ? "on" : "off"}, hit ratio ${coverage.cache.hit_ratio} `
+    + `(${coverage.cache.hits} hit, ${coverage.cache.misses} miss, ${coverage.cache.corrupt} discarded)`,
+  );
+  if (cache !== undefined) console.log(`  cache dir        ${cache.root}`);
+  console.log(
+    `  mtime precheck   ${result.precheck.predicted_unchanged} predicted unchanged, `
+    + `${result.precheck.confirmed_unchanged} confirmed by hash, ${result.precheck.contradicted} contradicted`,
+  );
+  if (resumed.source_ids + resumed.decoder_keys + resumed.analysis_keys > 0) {
+    console.log(
+      `  resumed          ${resumed.source_ids} source(s), ${resumed.decoder_keys} decoder key(s), `
+      + `${resumed.analysis_keys} analysis key(s) carried in from a previous session`,
+    );
+  }
+  if (result.diff !== null) {
+    const counts = result.diff.counts;
+    console.log(
+      `  diff             +${counts.added} -${counts.removed} ~${counts.changed_content} `
+      + `renamed-candidate ${counts.renamed_candidate} unchanged ${counts.unchanged}`,
+    );
+    console.log(
+      `  archives diff    +${counts.archive_added} -${counts.archive_removed} ~${counts.archive_changed}`,
+    );
+    console.log(
+      `  invalidation     ${result.diff.invalidation.new_content_hashes.length} new content hash(es); `
+      + `${result.diff.invalidation.retained_content_hash_count} reusable; `
+      + `${result.diff.invalidation.cache_entries_removed} cache entries removed`,
+    );
+  }
+  console.log("  no ranking, score or priority is produced; readiness evidence is counts and citations");
+  for (const file of written) console.log(`  wrote            ${file}`);
+  console.log(`  session          ${sessionPath}`);
+  for (const diagnostic of result.diagnostics) {
+    console.log(`  ${diagnostic.severity}: ${diagnostic.code} ${diagnostic.message}`);
+  }
+}
+
 async function runCorpusMode(cli) {
   const repo = path.resolve(__dirname, "..");
   const scan = requireBuilt(path.join(repo, "dist", "corpus_scan.js"));
@@ -315,83 +403,14 @@ async function runCorpusMode(cli) {
   });
   session.save(new Date().toISOString());
 
-  const coverage = result.coverage;
-  const summary = result.candidates.summary;
-  console.log(`${LABEL}: OK (corpus mode)`);
-  console.log("  no root was modified: no file was written, renamed, or removed under any of them");
-  console.log(`  corpus_snapshot  ${result.snapshot.corpus_snapshot_id}`);
-  console.log(`  roots            ${result.bindings.length}`);
-  for (const binding of result.bindings) {
-    console.log(`    ${binding.root_label}  ${binding.source_revision}  ${binding.absolute_path}`);
-  }
-  console.log(`  files scanned    ${result.scanned.files} (${result.scanned.bytes} byte(s))`);
-  console.log(`  archives         ${coverage.archive_count}, ${coverage.archive_member_count} member(s)`);
-  console.log(`  exact hashes     ${coverage.exact_hash_coverage.covered}/${coverage.exact_hash_coverage.eligible}`);
-  console.log(`  decoded          ${coverage.normalized_document_coverage.covered}/${coverage.normalized_document_coverage.eligible}`);
-  console.log(`  interpreted      ${coverage.interpretation_coverage.covered}/${coverage.interpretation_coverage.eligible}`);
-  console.log(`  lexical          ${coverage.lexical_analysis_coverage.covered}/${coverage.lexical_analysis_coverage.eligible}`);
-  console.log(`  embeddings       not enabled; no model was called and no network request was made`);
-  console.log(
-    `  duplicates       ${summary.exact_duplicate_cluster_count} cluster(s), `
-    + `${summary.cross_root_duplicate_cluster_count} crossing a root boundary`,
-  );
-  console.log(
-    `  near-duplicates  ${summary.near_duplicate_candidate_count} candidate(s), `
-    + `${summary.cross_root_near_duplicate_count} crossing a root boundary`,
-  );
-  console.log(
-    `  topic candidates ${summary.topic_candidate_count}, `
-    + `${summary.cross_root_topic_candidate_count} crossing a root boundary`,
-  );
-  console.log(
-    `  projects         ${summary.project_candidate_count} candidate(s), `
-    + `${summary.cross_root_project_candidate_count} crossing a root boundary, `
-    + `${coverage.reasoning_eligible_candidate_count} reasoning-eligible`,
-  );
-  const unsupported = coverage.unsupported_format_counts
-    .map((format) => `${format.extension}:${format.count}`)
-    .join(" ");
-  console.log(`  unsupported      ${unsupported || "none"}`);
-  console.log(`  ocr required     ${coverage.ocr_required_count}`);
-  console.log(`  encrypted        ${coverage.encrypted_document_count}`);
-  console.log(`  oversized        ${coverage.oversized_document_count}`);
-  console.log(`  secrets skipped  ${coverage.secret_skipped_count}`);
-  console.log(
-    `  cache            ${cacheEnabled ? "on" : "off"}, hit ratio ${coverage.cache.hit_ratio} `
-    + `(${coverage.cache.hits} hit, ${coverage.cache.misses} miss, ${coverage.cache.corrupt} discarded)`,
-  );
-  if (cache !== undefined) console.log(`  cache dir        ${cache.root}`);
-  console.log(
-    `  mtime precheck   ${result.precheck.predicted_unchanged} predicted unchanged, `
-    + `${result.precheck.confirmed_unchanged} confirmed by hash, ${result.precheck.contradicted} contradicted`,
-  );
-  if (resumed.source_ids + resumed.decoder_keys + resumed.analysis_keys > 0) {
-    console.log(
-      `  resumed          ${resumed.source_ids} source(s), ${resumed.decoder_keys} decoder key(s), `
-      + `${resumed.analysis_keys} analysis key(s) carried in from a previous session`,
-    );
-  }
-  if (result.diff !== null) {
-    const counts = result.diff.counts;
-    console.log(
-      `  diff             +${counts.added} -${counts.removed} ~${counts.changed_content} `
-      + `renamed-candidate ${counts.renamed_candidate} unchanged ${counts.unchanged}`,
-    );
-    console.log(
-      `  archives diff    +${counts.archive_added} -${counts.archive_removed} ~${counts.archive_changed}`,
-    );
-    console.log(
-      `  invalidation     ${result.diff.invalidation.new_content_hashes.length} new content hash(es); `
-      + `${result.diff.invalidation.retained_content_hash_count} reusable; `
-      + `${result.diff.invalidation.cache_entries_removed} cache entries removed`,
-    );
-  }
-  console.log("  no ranking, score or priority is produced; readiness evidence is counts and citations");
-  for (const file of written) console.log(`  wrote            ${file}`);
-  console.log(`  session          ${sessionPath}`);
-  for (const diagnostic of result.diagnostics) {
-    console.log(`  ${diagnostic.severity}: ${diagnostic.code} ${diagnostic.message}`);
-  }
+  reportCorpusRun({
+    result,
+    cacheEnabled,
+    cache,
+    resumed,
+    written,
+    sessionPath,
+  });
 }
 
 function main() {

@@ -542,7 +542,7 @@
     },
     {
       "path": "scripts/local-source-cli.js",
-      "git_blob_sha1": "f5f69cca89bfca76c67bb3e983a1ba7eec19c51e"
+      "git_blob_sha1": "6839b3e9970db5e7f3dc532f105ebbd8b54a0bf4"
     },
     {
       "path": "scripts/repository-model-cli.js",
