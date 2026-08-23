@@ -593,8 +593,14 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
     const manifestIdentifiers = new Map<string, DeclaredIdentifier | null>();
 
     const memory = new MemoryBudget(budgets.max_memory_bytes);
+    // Anything an extractor claims must be something the decoder is willing to
+    // open, or interpretation coverage would report a gap the decoder set caused
+    // rather than the corpus. The extension list is the floor, not the ceiling.
     const decodable = artifacts.filter(
-      (artifact) => artifact.contentHash !== null && isTextDecodable(artifact.rootRelativePath),
+      (artifact) =>
+        artifact.contentHash !== null
+        && (isTextDecodable(artifact.rootRelativePath)
+          || extractors.some((extractor) => extractor.matches(artifact.rootRelativePath))),
     );
 
     await boundedMap(decodable, budgets.max_parallel_decoders, async (artifact) => {

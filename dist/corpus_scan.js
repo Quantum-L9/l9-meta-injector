@@ -366,7 +366,12 @@ async function runCorpusScan(input) {
         const skipped = { secret: 0, oversized: 0, encoding: 0, unreadable: 0 };
         const manifestIdentifiers = new Map();
         const memory = new corpus_session_1.MemoryBudget(budgets.max_memory_bytes);
-        const decodable = artifacts.filter((artifact) => artifact.contentHash !== null && isTextDecodable(artifact.rootRelativePath));
+        // Anything an extractor claims must be something the decoder is willing to
+        // open, or interpretation coverage would report a gap the decoder set caused
+        // rather than the corpus. The extension list is the floor, not the ceiling.
+        const decodable = artifacts.filter((artifact) => artifact.contentHash !== null
+            && (isTextDecodable(artifact.rootRelativePath)
+                || extractors.some((extractor) => extractor.matches(artifact.rootRelativePath))));
         await (0, corpus_session_1.boundedMap)(decodable, budgets.max_parallel_decoders, async (artifact) => {
             const contentHash = artifact.contentHash;
             const documentKey = (0, corpus_cache_1.normalizedDocumentKey)({

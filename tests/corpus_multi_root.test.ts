@@ -209,6 +209,21 @@ describe("analysis across the root boundary", () => {
     expect(result.coverage.reasoning_handoff.readiness_evidence_refs.file).toBe("readiness-evidence.json");
   });
 
+  it("decodes everything an extractor claims, not only the lexical extensions", async () => {
+    // `.py` is claimed by the prose extractor and is not a lexical-analysis
+    // extension. If the decoder's own list were the only gate, interpretation
+    // coverage would report a gap that the decoder set caused rather than one the
+    // corpus has.
+    const root = path.join(tmp(), "svc");
+    fs.mkdirSync(path.join(root, "src"), { recursive: true });
+    fs.writeFileSync(path.join(root, "pyproject.toml"), '[project]\nname = "svc"\n', "utf8");
+    fs.writeFileSync(path.join(root, "src", "main.py"), '"""Entry point."""\n\n\ndef main():\n    return 1\n', "utf8");
+    const result = await runCorpusScan({ roots: [{ path: root }], producerVersion: "test" });
+    expect(result.coverage.interpretation_coverage.eligible).toBeGreaterThan(0);
+    expect(result.coverage.interpretation_coverage.ratio).toBe(1);
+    expect(result.coverage.normalized_document_coverage.ratio).toBe(1);
+  });
+
   it("finds archive members and files on disk in one duplicate cluster", async () => {
     const corpus = writeMultiRootCorpus(tmp());
     const result = await runCorpusScan({
