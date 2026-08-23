@@ -123,7 +123,9 @@ import {
   CorpusSessionStore,
   DEFAULT_CORPUS_BUDGETS,
   MemoryBudget,
+  YIELD_INTERVAL,
   boundedMap,
+  yieldToEventLoop,
 } from "./corpus_session";
 import { probeFileEncoding } from "./encoding";
 import { defaultExtractors } from "./extractors";
@@ -844,7 +846,12 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
   const failedRoots: { rootKey: string; rootId: string; reason: string }[] = [];
   const disposals: LocalSourceObservation[] = [];
   try {
+    let acquiredRoots = 0;
     for (const spec of input.roots) {
+      // Between roots, so a corpus of several drives is not one block the length
+      // of every drive together.
+      if (acquiredRoots > 0) await yieldToEventLoop();
+      acquiredRoots += 1;
       const rootKey = spec.name !== undefined && spec.name.length > 0
         ? spec.name
         : defaultRootKey(spec.path);
@@ -978,6 +985,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
     const rootPathsById = new Map<string, Set<string>>();
     let scannedFiles = 0;
     let scannedBytes = 0;
+    let recordsSeen = 0;
 
     for (const entry of active) {
       const binding = bindingById.get(entry.binding.root_id) as CorpusRootBinding;
@@ -986,6 +994,11 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
         entry.observation.virtualArtifacts.map((member) => member.virtualSourcePath),
       );
       for (const record of entry.observation.inventory.records) {
+        // Counted per record rather than per artifact: folders are skipped below,
+        // so a run of them at a multiple of the interval would otherwise yield
+        // once for each of them.
+        recordsSeen += 1;
+        if (recordsSeen % YIELD_INTERVAL === 0) await yieldToEventLoop();
         observed.add(record.relative_path);
         if (record.artifact_type === "folder") continue;
         const rootRelativePath = record.relative_path;

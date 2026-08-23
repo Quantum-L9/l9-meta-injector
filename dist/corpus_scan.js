@@ -476,7 +476,13 @@ async function runCorpusScan(input) {
     const failedRoots = [];
     const disposals = [];
     try {
+        let acquiredRoots = 0;
         for (const spec of input.roots) {
+            // Between roots, so a corpus of several drives is not one block the length
+            // of every drive together.
+            if (acquiredRoots > 0)
+                await (0, corpus_session_1.yieldToEventLoop)();
+            acquiredRoots += 1;
             const rootKey = spec.name !== undefined && spec.name.length > 0
                 ? spec.name
                 : (0, corpus_roots_1.defaultRootKey)(spec.path);
@@ -606,11 +612,18 @@ async function runCorpusScan(input) {
         const rootPathsById = new Map();
         let scannedFiles = 0;
         let scannedBytes = 0;
+        let recordsSeen = 0;
         for (const entry of active) {
             const binding = bindingById.get(entry.binding.root_id);
             const observed = new Set();
             const memberPaths = new Set(entry.observation.virtualArtifacts.map((member) => member.virtualSourcePath));
             for (const record of entry.observation.inventory.records) {
+                // Counted per record rather than per artifact: folders are skipped below,
+                // so a run of them at a multiple of the interval would otherwise yield
+                // once for each of them.
+                recordsSeen += 1;
+                if (recordsSeen % corpus_session_1.YIELD_INTERVAL === 0)
+                    await (0, corpus_session_1.yieldToEventLoop)();
                 observed.add(record.relative_path);
                 if (record.artifact_type === "folder")
                     continue;

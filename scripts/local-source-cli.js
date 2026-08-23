@@ -150,15 +150,22 @@ function numericOpt(cli, name) {
   return value;
 }
 
-/** Every file under `root`, as root-relative POSIX paths, in code-point order. */
-function listFilesRecursively(root, prefix = "") {
+/**
+ * Every file under `root`, as root-relative POSIX paths, in code-point order.
+ *
+ * `compare` is the engine's own `compareCodePoints`. A bare `.sort()` would order
+ * by UTF-16 code *unit*, which is a different order from code points for anything
+ * outside the BMP — and every ordering this package emits is decided rather than
+ * inherited, so the comparator is passed in rather than assumed.
+ */
+function listFilesRecursively(root, compare, prefix = "") {
   const out = [];
   for (const entry of fs.readdirSync(path.join(root, prefix), { withFileTypes: true })) {
     const relative = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
-    if (entry.isDirectory()) out.push(...listFilesRecursively(root, relative));
+    if (entry.isDirectory()) out.push(...listFilesRecursively(root, compare, relative));
     else out.push(relative);
   }
-  return out.sort();
+  return out.sort(compare);
 }
 
 function requireBuilt(modulePath) {
@@ -386,6 +393,7 @@ async function runCorpusMode(cli) {
   const documentsModule = requireBuilt(path.join(repo, "dist", "corpus_documents.js"));
   const embeddingsModule = requireBuilt(path.join(repo, "dist", "corpus_embeddings.js"));
   const repositoryModel = requireBuilt(path.join(repo, "dist", "public", "repository_model.js"));
+  const ordering = requireBuilt(path.join(repo, "dist", "ordering.js"));
   const { version } = require(path.join(repo, "package.json"));
 
   let specs;
@@ -606,7 +614,7 @@ async function runCorpusMode(cli) {
       const rootDir = path.join(outDir, "roots", root.directory);
       const staged = path.join(bundleScratch, root.directory);
       repositoryModel.emitRepositoryModelBundle(root.packet, { outDir: staged });
-      for (const relative of listFilesRecursively(staged)) {
+      for (const relative of listFilesRecursively(staged, ordering.compareCodePoints)) {
         outputs.push({
           path: path.join(rootDir, "bundle", relative),
           contents: fs.readFileSync(path.join(staged, relative), "utf8"),

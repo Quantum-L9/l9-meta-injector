@@ -110,6 +110,22 @@ export declare class CorpusSessionStore {
  * exhaust file handles on a large disk long before it exhausts anything else, and
  * an unbounded promise fan-out is the usual way that happens.
  */
+/**
+ * Hand the event loop back for one tick.
+ *
+ * Acquisition and artifact assembly are synchronous passes, and over a corpus of
+ * tens of thousands of artifacts a single uninterrupted pass holds the thread for
+ * tens of seconds. Nothing else in the process runs during that: a signal handler
+ * cannot observe a SIGINT, a progress reporter cannot report, and a host that
+ * expects the process to answer periodically concludes it has hung.
+ *
+ * `setImmediate` rather than `await null`: a resolved promise only drains the
+ * microtask queue and would let the same synchronous pass continue without any
+ * I/O or timer callback getting a turn.
+ */
+export declare function yieldToEventLoop(): Promise<void>;
+/** Artifacts assembled between two yields. Small enough to stay responsive. */
+export declare const YIELD_INTERVAL = 512;
 export declare function boundedMap<T, R>(items: readonly T[], limit: number, worker: (item: T, index: number) => Promise<R>): Promise<R[]>;
 /**
  * A ceiling on bytes held at once.

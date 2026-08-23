@@ -33,8 +33,9 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.MemoryBudget = exports.CorpusSessionStore = exports.DEFAULT_CORPUS_BUDGETS = exports.CORPUS_SESSION_SCHEMA = void 0;
+exports.MemoryBudget = exports.YIELD_INTERVAL = exports.CorpusSessionStore = exports.DEFAULT_CORPUS_BUDGETS = exports.CORPUS_SESSION_SCHEMA = void 0;
 exports.corpusSessionId = corpusSessionId;
+exports.yieldToEventLoop = yieldToEventLoop;
 exports.boundedMap = boundedMap;
 exports.commitCorpusOutputs = commitCorpusOutputs;
 // corpus_session.ts — resuming a scan that did not finish, and staying inside a budget.
@@ -222,6 +223,24 @@ exports.CorpusSessionStore = CorpusSessionStore;
  * exhaust file handles on a large disk long before it exhausts anything else, and
  * an unbounded promise fan-out is the usual way that happens.
  */
+/**
+ * Hand the event loop back for one tick.
+ *
+ * Acquisition and artifact assembly are synchronous passes, and over a corpus of
+ * tens of thousands of artifacts a single uninterrupted pass holds the thread for
+ * tens of seconds. Nothing else in the process runs during that: a signal handler
+ * cannot observe a SIGINT, a progress reporter cannot report, and a host that
+ * expects the process to answer periodically concludes it has hung.
+ *
+ * `setImmediate` rather than `await null`: a resolved promise only drains the
+ * microtask queue and would let the same synchronous pass continue without any
+ * I/O or timer callback getting a turn.
+ */
+function yieldToEventLoop() {
+    return new Promise((resolve) => setImmediate(resolve));
+}
+/** Artifacts assembled between two yields. Small enough to stay responsive. */
+exports.YIELD_INTERVAL = 512;
 async function boundedMap(items, limit, worker) {
     const bound = Math.max(1, Math.floor(limit));
     const results = new Array(items.length);

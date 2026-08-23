@@ -19,7 +19,6 @@ import { MemoryCorpusCache } from "../src/corpus_cache";
 import { runCorpusScan } from "../src/corpus_scan";
 import { renderCorpusSnapshot } from "../src/corpus_snapshot";
 import { writeScaleCorpus } from "./helpers/multi_root_fixtures";
-import { writeRawZip } from "./helpers/zip_fixtures";
 
 const scratch: string[] = [];
 function tmp(prefix = "l9-corpus-scale-"): string {
@@ -51,13 +50,16 @@ const SPEC = {
 };
 
 describe("a ten-thousand-artifact corpus", () => {
-  it("scans, clusters and resumes without recomputing unchanged work", async () => {
+  // Runs 1 and 2 of the five the qualification asks for: cold full, then warm
+  // full over the same bytes. The incremental chain is its own file — each of
+  // these runs is a claim about the run before it, so they are kept together in
+  // whichever file they belong to, and split only where the chain does.
+  it("scans, clusters and reuses everything on a second full pass", async () => {
     const base = tmp();
     const corpus = writeScaleCorpus(base, SPEC);
     const roots = corpus.roots.map((root) => ({ path: root }));
     const cache = new MemoryCorpusCache("scale");
-
-    const cold = await runCorpusScan({
+    const options = {
       roots,
       producerVersion: "scale",
       cache,
@@ -67,7 +69,10 @@ describe("a ten-thousand-artifact corpus", () => {
       // scan. Every other analysis is on.
       topics: { enabled: false },
       archivePolicy: ARCHIVE_POLICY,
-    });
+    };
+
+    // ── 1. cold, full ─────────────────────────────────────────────────────
+    const cold = await runCorpusScan(options);
 
     expect(cold.snapshot.counts.artifact_count).toBeGreaterThanOrEqual(SPEC.artifacts);
     // Every top-level archive, every nested one, and every archive found inside a
@@ -80,11 +85,12 @@ describe("a ten-thousand-artifact corpus", () => {
     expect(cold.snapshot.counts.root_count).toBe(3);
     expect(cold.snapshot.corpus_status).toBe("complete");
     expect(cold.snapshot.verification.verification_class).toBe("fully_verified");
+    expect(cold.snapshot.verification.cached_hash_reuse_count).toBe(0);
     // Three roots, three independent packets. None is a view of a merged tree.
     expect(new Set(cold.rootPackets.map((entry) => entry.packet.packet_id)).size).toBe(3);
 
-    // The duplicate payloads were written into both roots, so each of their
-    // clusters spans the boundary. The archives add one more: every archive holds
+    // The duplicate payloads were written into more than one root, so each of
+    // their clusters spans a boundary. The archives add more: every archive holds
     // the same `notes/shared.md`.
     expect(cold.candidates.summary.exact_duplicate_cluster_count)
       .toBeGreaterThanOrEqual(SPEC.duplicateClusters + 1);
@@ -96,7 +102,8 @@ describe("a ten-thousand-artifact corpus", () => {
     const declared = cold.candidates.project_candidates.filter((c) => c.identifier_is_declared);
     expect(declared).toHaveLength(SPEC.candidateProjects);
     expect(cold.coverage.semantics.project_candidate_count).toBe(SPEC.candidateProjects);
-    expect(cold.coverage.reasoning_handoff.reasoning_eligible_candidate_count).toBe(SPEC.candidateProjects);
+    expect(cold.coverage.reasoning_handoff.reasoning_eligible_candidate_count)
+      .toBe(SPEC.candidateProjects);
     expect(cold.readiness.bodies_of_work).toHaveLength(SPEC.candidateProjects);
     for (const body of cold.readiness.bodies_of_work) {
       expect(body.origin).toBe("explicit_project_identifier");
@@ -105,14 +112,8 @@ describe("a ten-thousand-artifact corpus", () => {
       expect(body.metrics.knowledge.plan_count).toBe(1);
     }
 
-    const warm = await runCorpusScan({
-      roots,
-      producerVersion: "scale",
-      cache,
-      topics: { enabled: false },
-      archivePolicy: ARCHIVE_POLICY,
-      previousSnapshot: cold.snapshot,
-    });
+    // ── 2. warm, full ─────────────────────────────────────────────────────
+    const warm = await runCorpusScan({ ...options, previousSnapshot: cold.snapshot });
     expect(renderCorpusSnapshot(warm.snapshot)).toBe(renderCorpusSnapshot(cold.snapshot));
     expect(warm.cacheStats.misses).toBe(0);
     expect(warm.cacheStats.hit_ratio).toBe(1);
@@ -126,98 +127,5 @@ describe("a ten-thousand-artifact corpus", () => {
     expect(warm.precheck.contradicted).toBe(0);
     expect(warm.precheck.confirmed_unchanged).toBe(warm.precheck.predicted_unchanged);
     expect(warm.precheck.predicted_unchanged).toBeGreaterThan(SPEC.artifacts / 2);
-
-    // One document changes: exactly its own layers are recomputed.
-    const target = path.join(corpus.roots[0], "shared", "doc-0000.md");
-    fs.writeFileSync(target, "# Shared 0\n\nRewritten, so this cluster loses a member.\n", "utf8");
-    const incremental = await runCorpusScan({
-      roots,
-      producerVersion: "scale",
-      cache,
-      topics: { enabled: false },
-      archivePolicy: ARCHIVE_POLICY,
-      previousSnapshot: warm.snapshot,
-    });
-    expect(incremental.diff?.counts.changed_content).toBe(1);
-    expect(incremental.diff?.invalidation.new_content_hashes).toHaveLength(1);
-    const misses = Object.fromEntries(
-      incremental.cacheStats.layers.map((layer) => [layer.layer, layer.misses]),
-    );
-    expect(misses.raw_identity).toBe(1);
-    expect(misses.normalized_document).toBe(1);
-    expect(misses.lexical_features).toBe(1);
-    expect(misses.embedding).toBe(0);
-    expect(incremental.cacheStats.hits).toBeGreaterThan(10000);
-    expect(incremental.candidates.summary.exact_duplicate_cluster_count)
-      .toBe(cold.candidates.summary.exact_duplicate_cluster_count - 1);
-  }, 600_000);
-
-  it("reuses hashes in incremental mode and never calls the result verified", async () => {
-    const base = tmp();
-    const corpus = writeScaleCorpus(base, SPEC);
-    const roots = corpus.roots.map((root) => ({ path: root }));
-    const cache = new MemoryCorpusCache("scale-incremental");
-    const options = {
-      roots,
-      producerVersion: "scale",
-      cache,
-      topics: { enabled: false },
-      archivePolicy: ARCHIVE_POLICY,
-    };
-
-    // Run 1 — cold, full. The baseline every later run is measured against.
-    const cold = await runCorpusScan(options);
-    expect(cold.snapshot.verification.cached_hash_reuse_count).toBe(0);
-
-    // Run 3 — warm cache, incremental, nothing changed. No byte should be read.
-    const unchanged = await runCorpusScan({
-      ...options,
-      verification: "incremental",
-      previousSnapshot: cold.snapshot,
-    });
-    expect(unchanged.snapshot.verification.verification_class)
-      .toBe("cached_unchanged_assumption");
-    expect(unchanged.snapshot.verification.fully_rehashed_artifact_count).toBe(0);
-    expect(unchanged.snapshot.verification.cached_hash_reuse_count)
-      .toBe(cold.snapshot.verification.fully_rehashed_artifact_count);
-    // Reuse is only worth having if it lands on the same answer.
-    expect(unchanged.snapshot.corpus_source_snapshot_id)
-      .toBe(cold.snapshot.corpus_source_snapshot_id);
-    expect(unchanged.cacheStats.misses).toBe(0);
-
-    // Run 4 — incremental with one document and one archive changed. Everything
-    // unaffected is carried; exactly what depends on the changed bytes is redone.
-    const document = path.join(corpus.roots[0] as string, "shared", "doc-0001.md");
-    fs.writeFileSync(document, "# Shared 1\n\nRewritten between the two scans.\n", "utf8");
-    const archive = path.join(corpus.roots[2] as string, "zips", "bundle-000.zip");
-    writeRawZip(archive, [
-      { name: "notes/inner.md", content: "# Inner 0\n\nRepacked with a different body.\n" },
-      { name: "notes/shared.md", content: "# Shared member\n\nIdentical in every archive in this corpus.\n" },
-    ]);
-
-    const changed = await runCorpusScan({
-      ...options,
-      verification: "incremental",
-      previousSnapshot: unchanged.snapshot,
-    });
-    expect(changed.snapshot.verification.fully_rehashed_artifact_count).toBe(2);
-    expect(changed.snapshot.verification.cached_hash_reuse_count)
-      .toBe(cold.snapshot.verification.fully_rehashed_artifact_count - 2);
-    expect(changed.diff?.counts.changed_content).toBeGreaterThanOrEqual(1);
-    expect(changed.diff?.counts.archive_changed).toBe(1);
-    expect(changed.diff?.source_changed).toBe(true);
-
-    // Run 5 — --verify-content, restoring a byte-verified snapshot of the corpus
-    // as it now stands.
-    const verified = await runCorpusScan({
-      ...options,
-      verification: "incremental",
-      verifyContent: true,
-      previousSnapshot: changed.snapshot,
-    });
-    expect(verified.snapshot.verification.verification_class).toBe("fully_verified");
-    expect(verified.snapshot.verification.cached_hash_reuse_count).toBe(0);
-    expect(verified.snapshot.corpus_source_snapshot_id)
-      .toBe(changed.snapshot.corpus_source_snapshot_id);
   }, 900_000);
 });
