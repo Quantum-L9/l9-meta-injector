@@ -15,6 +15,7 @@ import {
   FileCorpusCache,
   MemoryCorpusCache,
   NullCorpusCache,
+  archiveManifestKey,
   cacheEntryPath,
   cachePayloadHash,
   cacheStatsDelta,
@@ -65,6 +66,7 @@ describe("keys", () => {
 
   it("name every layer the contract declares, and mark which are reproducible", () => {
     expect([...CORPUS_CACHE_LAYERS]).toEqual([
+      "archive_manifest",
       "raw_identity",
       "normalized_document",
       "interpretation",
@@ -201,5 +203,83 @@ describe("the mtime precheck", () => {
     expect(statPrecheckMatches({ size_bytes: 1, mtime_ms: 2 }, { size_bytes: 1, mtime_ms: 2 })).toBe(true);
     expect(statPrecheckMatches({ size_bytes: 1, mtime_ms: 2 }, { size_bytes: 1, mtime_ms: 3 })).toBe(false);
     expect(statPrecheckMatches({ size_bytes: 9, mtime_ms: 2 }, { size_bytes: 1, mtime_ms: 2 })).toBe(false);
+  });
+});
+
+describe("the archive manifest layer", () => {
+  it("keys a verdict to the bytes, the reader and the policy", () => {
+    const hash = `sha256:${"a".repeat(64)}`;
+    const base = { archiveContentHash: hash, archiveReaderVersion: "1.0.0", archivePolicyVersion: "2.0.0" };
+    expect(archiveManifestKey(base)).toBe(archiveManifestKey({ ...base }));
+    // A stricter policy asks a different question about the same archive, and
+    // must never be answered out of the looser policy's entry.
+    expect(archiveManifestKey({ ...base, archivePolicyVersion: "3.0.0" })).not.toBe(archiveManifestKey(base));
+    expect(archiveManifestKey({ ...base, archiveReaderVersion: "2.0.0" })).not.toBe(archiveManifestKey(base));
+    expect(archiveManifestKey({ ...base, archiveContentHash: `sha256:${"b".repeat(64)}` }))
+      .not.toBe(archiveManifestKey(base));
+  });
+
+  it("is reproducible, unlike the embedding layer", () => {
+    expect(DETERMINISTIC_CACHE_LAYERS).toContain("archive_manifest");
+  });
+});
+
+describe("cache privacy", () => {
+  it("creates its directories and entries owner-only", () => {
+    const root = path.join(tmp(), "private-cache");
+    const cache = new FileCorpusCache({ root, producerVersion: "1.0.0" });
+    cache.put("normalized_document", "k", { text: "a private document's decoded text" });
+
+    // The cache holds decoded text from an operator's own documents. It is theirs.
+    expect(fs.statSync(cache.root).mode & 0o777).toBe(0o700);
+    const entry = cacheEntryPath(cache.root, "normalized_document", "k");
+    expect(fs.statSync(entry).mode & 0o777).toBe(0o600);
+    expect(fs.statSync(path.dirname(entry)).mode & 0o777).toBe(0o700);
+  });
+
+  it("tightens a cache root an earlier release left open", () => {
+    const root = path.join(tmp(), "loose-cache");
+    fs.mkdirSync(root, { recursive: true, mode: 0o755 });
+    expect(fs.statSync(root).mode & 0o777).toBe(0o755);
+
+    const cache = new FileCorpusCache({ root, producerVersion: "1.0.0" });
+    expect(fs.statSync(cache.root).mode & 0o777).toBe(0o700);
+  });
+});
+
+describe("two runs writing one key", () => {
+  it("leaves a complete entry, because the key decides the bytes", () => {
+    const root = path.join(tmp(), "shared-cache");
+    const a = new FileCorpusCache({ root, producerVersion: "1.0.0" });
+    const b = new FileCorpusCache({ root, producerVersion: "1.0.0" });
+
+    // The key is content-addressed: both processes compute the same payload, so
+    // whichever rename lands last lands identical bytes. Interleaving them is the
+    // case that must not produce a half-written entry.
+    a.put("lexical_features", "shared", { tokens: 12 });
+    b.put("lexical_features", "shared", { tokens: 12 });
+    a.put("lexical_features", "shared", { tokens: 12 });
+
+    const reader = new FileCorpusCache({ root, producerVersion: "1.0.0" });
+    expect(reader.get("lexical_features", "shared")).toEqual({ tokens: 12 });
+    // No staging file survives to be mistaken for an entry.
+    const layerDir = path.dirname(cacheEntryPath(root, "lexical_features", "shared"));
+    expect(fs.readdirSync(layerDir).filter((name) => name.endsWith(".tmp"))).toEqual([]);
+  });
+
+  it("does not serve a partially written entry", () => {
+    const root = path.join(tmp(), "partial-cache");
+    const cache = new FileCorpusCache({ root, producerVersion: "1.0.0" });
+    cache.put("normalized_document", "k", { text: "complete" });
+    const entry = cacheEntryPath(root, "normalized_document", "k");
+
+    // Half a JSON document, exactly as an interrupted non-atomic write would
+    // leave behind if entries were written in place.
+    const whole = fs.readFileSync(entry, "utf8");
+    fs.writeFileSync(entry, whole.slice(0, Math.floor(whole.length / 2)), "utf8");
+
+    const reader = new FileCorpusCache({ root, producerVersion: "1.0.0" });
+    expect(reader.get("normalized_document", "k")).toBeUndefined();
+    expect(reader.stats().corrupt).toBe(1);
   });
 });

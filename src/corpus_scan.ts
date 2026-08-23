@@ -52,6 +52,7 @@ import {
   interpretationKey,
   lexicalFeaturesKey,
   normalizedDocumentKey,
+  archiveManifestKey,
   rawIdentityKey,
   statPrecheckMatches,
 } from "./corpus_cache";
@@ -141,8 +142,10 @@ import {
   isSecretCandidatePath,
 } from "./interpretation";
 import { LocalArchivePolicy } from "./local_archive_policy";
+import type { ArchivePreflightResult } from "./archive_preflight";
 import {
   ARCHIVE_MEMBER_SEPARATOR,
+  ArchiveManifestStore,
   KnownFileHash,
   LocalSourceObservation,
   acquireLocalSource,
@@ -206,6 +209,12 @@ export interface CorpusScanInput {
   verification?: VerificationMode;
   /** Force a full read even under `incremental`, and say so in the snapshot. */
   verifyContent?: boolean;
+  /**
+   * Emit a snapshot marked `partial` when a root cannot be read, instead of
+   * failing the run. The snapshot is never labelled complete, and every missing
+   * root is named in it.
+   */
+  allowPartialRoots?: boolean;
   cache?: CorpusCache;
   session?: CorpusSessionStore;
   /** Snapshot of a previous run; when present, `corpus-diff.json` is produced. */
@@ -791,6 +800,21 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
   // `--verify-content` outranks `--incremental`: it exists precisely to turn a
   // stat-assisted snapshot back into a byte-verified one, so it must win when
   // both are given rather than quietly deferring to the cheaper mode.
+  // An archive's preflight verdict is a function of its bytes, the reader and the
+  // policy, so it is cached under exactly those. The bytes are still staged: the
+  // members are needed by whatever reads them next, and a verdict is not members.
+  const archiveManifestStore: ArchiveManifestStore = {
+    get: (key) => cache.get<ArchivePreflightResult>("archive_manifest", archiveManifestKey({
+      archiveContentHash: key.archiveContentHash,
+      archiveReaderVersion: key.readerVersion,
+      archivePolicyVersion: key.policyVersion,
+    })),
+    put: (key, value) => cache.put("archive_manifest", archiveManifestKey({
+      archiveContentHash: key.archiveContentHash,
+      archiveReaderVersion: key.readerVersion,
+      archivePolicyVersion: key.policyVersion,
+    }), value),
+  };
   const knownHashesEnabled = verificationMode === "incremental"
     && !verifyContent
     && input.previousSnapshot !== undefined;
@@ -817,6 +841,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
 
   // ── 1. acquire every root, read-only ────────────────────────────────────
   const observations: { binding: CorpusRootBinding; observation: LocalSourceObservation }[] = [];
+  const failedRoots: { rootKey: string; rootId: string; reason: string }[] = [];
   const disposals: LocalSourceObservation[] = [];
   try {
     for (const spec of input.roots) {
@@ -824,26 +849,46 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
         ? spec.name
         : defaultRootKey(spec.path);
       assertUsableRootKey(rootKey, spec.path);
-      const observation = acquireLocalSource({
-        path: spec.path,
-        sourceKind: "auto",
-        name: rootKey,
-        ...(knownHashesEnabled
-          ? { knownHashes: knownHashesForRoot(corpusRootId(rootKey), input.previousSnapshot) }
-          : {}),
-        expandArchives: input.expandArchives !== false,
-        ...(input.archivePolicy ? { archivePolicy: input.archivePolicy } : {}),
-        ...(input.omitPatterns ? { omitPatterns: input.omitPatterns } : {}),
-        ...(input.omitFile !== undefined ? { omitFile: input.omitFile } : {}),
-        ...(input.hashMaxBytes !== undefined ? { hashMaxBytes: input.hashMaxBytes } : {}),
-        ...(input.scratchParent !== undefined ? { scratchParent: input.scratchParent } : {}),
-      });
+      // An unplugged drive is a fact about the corpus and has to end up inside
+      // it. Swallowing the failure and carrying on would produce a snapshot that
+      // looks complete and is missing a disk, which is the one outcome a corpus
+      // spread across removable media must never produce.
+      let observation: LocalSourceObservation;
+      try {
+        observation = acquireLocalSource({
+          path: spec.path,
+          sourceKind: "auto",
+          name: rootKey,
+          ...(knownHashesEnabled
+            ? { knownHashes: knownHashesForRoot(corpusRootId(rootKey), input.previousSnapshot) }
+            : {}),
+          expandArchives: input.expandArchives !== false,
+          ...(input.archivePolicy ? { archivePolicy: input.archivePolicy } : {}),
+          ...(input.omitPatterns ? { omitPatterns: input.omitPatterns } : {}),
+          ...(input.omitFile !== undefined ? { omitFile: input.omitFile } : {}),
+          ...(input.hashMaxBytes !== undefined ? { hashMaxBytes: input.hashMaxBytes } : {}),
+          ...(input.scratchParent !== undefined ? { scratchParent: input.scratchParent } : {}),
+          archiveManifests: archiveManifestStore,
+        });
+      } catch (error) {
+        if (input.allowPartialRoots !== true) throw error;
+        const reason = error instanceof Error ? error.message : String(error);
+        failedRoots.push({ rootKey, rootId: corpusRootId(rootKey), reason });
+        diagnostics.push({
+          code: "corpus.root_unreadable",
+          severity: "error",
+          message: `root '${rootKey}' could not be observed and is missing from this corpus: ${reason}`,
+        });
+        continue;
+      }
       disposals.push(observation);
       if (!observation.stable) {
-        throw new Error(
-          `corpus: SOURCE_CHANGED_DURING_OBSERVATION under root '${rootKey}'; `
-          + "the root changed while it was being read, so it has no deterministic snapshot",
-        );
+        const unstable = `corpus: SOURCE_CHANGED_DURING_OBSERVATION under root '${rootKey}'; `
+          + "the root changed while it was being read, so it has no deterministic snapshot";
+        if (input.allowPartialRoots !== true) throw new Error(unstable);
+        failedRoots.push({ rootKey, rootId: corpusRootId(rootKey), reason: unstable });
+        diagnostics.push({ code: "corpus.root_unstable", severity: "error", message: unstable });
+        continue;
       }
       const rootId = corpusRootId(rootKey);
       observations.push({
@@ -1353,6 +1398,27 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
         ? FULLY_VERIFIED_STATEMENT
         : CACHED_ASSUMPTION_STATEMENT,
     };
+    // A root that was named and could not be read appears in the snapshot as a
+    // missing root, not as an absence. Downstream, "12 project candidates" over a
+    // corpus with an unplugged drive is a different claim from the same number
+    // over a whole one, and the only way it can be told is if the snapshot says so.
+    for (const failed of failedRoots) {
+      snapshotRoots.push({
+        root_id: failed.rootId,
+        root_key: failed.rootKey,
+        root_label: failed.rootKey,
+        root_snapshot_id: "",
+        source_kind: "unknown",
+        source_revision: "",
+        physical_snapshot_hash: "",
+        rmp_packet_id: "",
+        rmp_semantic_hash: "",
+        bundle_ref: null,
+        observation_status: "missing",
+        failure_reason: failed.reason,
+      });
+    }
+    snapshotRoots.sort((a, b) => compareCodePoints(a.root_id, b.root_id));
     const corpusStatus: CorpusStatus = snapshotRoots.every(
       (root) => root.observation_status === "observed",
     )
@@ -1365,14 +1431,14 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       analysis: analysisIdentity,
       corpus_status: corpusStatus,
       verification,
-      missing_root_ids: [],
+      missing_root_ids: failedRoots.map((failed) => failed.rootId).sort(compareCodePoints),
       roots: snapshotRoots,
       artifacts: snapshotArtifacts,
       archives: orderedArchives,
       counts: {
         root_count_requested: input.roots.length,
-        root_count_observed: snapshotRoots.filter((r) => r.observation_status === "observed").length,
-        root_count_failed: snapshotRoots.filter((r) => r.observation_status !== "observed").length,
+        root_count_observed: bound.roots.length,
+        root_count_failed: failedRoots.length,
         root_count: bound.roots.length,
         artifact_count: artifacts.length,
         archive_count: archives.length,

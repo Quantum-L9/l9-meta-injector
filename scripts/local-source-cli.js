@@ -393,8 +393,16 @@ async function runCorpusMode(cli) {
     return;
   }
   if (specs.length === 0) fail("corpus mode needs at least one --root, --manifest or --root-manifest", 2);
+  // A root that is not there is a decision point, not a detail: either the run
+  // stops, or the operator has said they want a snapshot that names what is
+  // missing. It is never silently dropped.
+  const allowPartial = cli.flag("--allow-partial-roots");
   for (const spec of specs) {
-    if (!fs.existsSync(spec.path)) fail(`root does not exist: ${spec.path}`, 2);
+    if (fs.existsSync(spec.path)) continue;
+    if (!allowPartial) {
+      fail(`root does not exist: ${spec.path}. Pass --allow-partial-roots to emit a `
+        + "snapshot that records it as missing instead.", 2);
+    }
   }
   const rootPaths = specs.map((spec) => path.resolve(spec.path));
 
@@ -544,6 +552,7 @@ async function runCorpusMode(cli) {
       observedAt: new Date().toISOString(),
       verification: cli.flag("--incremental") ? "incremental" : "full",
       verifyContent: cli.flag("--verify-content"),
+      allowPartialRoots: cli.flag("--allow-partial-roots"),
       semanticAnalysis: !cli.flag("--no-semantic-analysis"),
       ...(Object.keys(packBudget).length > 0 ? { packBudget } : {}),
     });

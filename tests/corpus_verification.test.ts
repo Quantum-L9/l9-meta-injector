@@ -182,3 +182,64 @@ describe("coverage", () => {
     expect(second.coverage.embeddings.eligible_count).toBeNull();
   });
 });
+
+describe("a root that cannot be read", () => {
+  it("fails the run by default, rather than quietly shrinking the corpus", async () => {
+    const present = root();
+    await expect(runCorpusScan({
+      roots: [{ path: present, name: "disk" }, { path: path.join(tmp(), "unplugged"), name: "old-ssd" }],
+      producerVersion: "test",
+    })).rejects.toThrow();
+  });
+
+  it("is named in the snapshot when the operator asked for a partial one", async () => {
+    const present = root();
+    const missing = path.join(tmp(), "unplugged");
+    const result = await runCorpusScan({
+      roots: [{ path: present, name: "disk" }, { path: missing, name: "old-ssd" }],
+      producerVersion: "test",
+      allowPartialRoots: true,
+    });
+
+    // Never labelled complete. An unplugged drive that vanished from the corpus
+    // silently is the one failure this whole mode exists to prevent.
+    expect(result.snapshot.corpus_status).toBe("partial");
+    expect(result.snapshot.counts.root_count_requested).toBe(2);
+    expect(result.snapshot.counts.root_count_observed).toBe(1);
+    expect(result.snapshot.counts.root_count_failed).toBe(1);
+
+    const lost = result.snapshot.roots.find((entry) => entry.root_key === "old-ssd");
+    expect(lost?.observation_status).toBe("missing");
+    expect(lost?.failure_reason).toMatch(/does not exist/);
+    expect(lost?.rmp_packet_id).toBe("");
+    expect(lost?.bundle_ref).toBeNull();
+    expect(result.snapshot.missing_root_ids).toEqual([lost?.root_id]);
+
+    // Coverage carries the same denominators, so a reader of the counts alone
+    // still sees that a drive is missing.
+    expect(result.coverage.corpus.root_count_failed).toBe(1);
+    expect(result.diagnostics.some((d) => d.code === "corpus.root_unreadable")).toBe(true);
+  });
+
+  it("gives a partial corpus a different identity from the whole one", async () => {
+    const present = root();
+    const partial = await runCorpusScan({
+      roots: [{ path: present, name: "disk" }, { path: path.join(tmp(), "gone"), name: "old-ssd" }],
+      producerVersion: "test",
+      allowPartialRoots: true,
+    });
+    const whole = await runCorpusScan({
+      roots: [{ path: present, name: "disk" }],
+      producerVersion: "test",
+    });
+
+    // The observed roots are identical, so the source identity is too: identity
+    // is computed from what was observed. What differs is the status and the
+    // named missing root, which is where the difference belongs.
+    expect(partial.snapshot.corpus_source_snapshot_id)
+      .toBe(whole.snapshot.corpus_source_snapshot_id);
+    expect(partial.snapshot.corpus_status).toBe("partial");
+    expect(whole.snapshot.corpus_status).toBe("complete");
+    expect(whole.snapshot.missing_root_ids).toEqual([]);
+  });
+});

@@ -33,7 +33,8 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.FileCorpusCache = exports.MemoryCorpusCache = exports.NullCorpusCache = exports.DETERMINISTIC_CACHE_LAYERS = exports.CORPUS_CACHE_LAYERS = exports.CORPUS_CACHE_ENV = exports.CORPUS_CACHE_ENTRY_SCHEMA = void 0;
+exports.FileCorpusCache = exports.CACHE_FILE_MODE = exports.CACHE_DIRECTORY_MODE = exports.MemoryCorpusCache = exports.NullCorpusCache = exports.DETERMINISTIC_CACHE_LAYERS = exports.CORPUS_CACHE_LAYERS = exports.CORPUS_CACHE_ENV = exports.CORPUS_CACHE_ENTRY_SCHEMA = void 0;
+exports.archiveManifestKey = archiveManifestKey;
 exports.rawIdentityKey = rawIdentityKey;
 exports.normalizedDocumentKey = normalizedDocumentKey;
 exports.interpretationKey = interpretationKey;
@@ -80,6 +81,7 @@ exports.CORPUS_CACHE_ENTRY_SCHEMA = "l9.corpus-cache-entry/v1";
 /** Environment variable that overrides the default cache location. */
 exports.CORPUS_CACHE_ENV = "L9_CORPUS_CACHE";
 exports.CORPUS_CACHE_LAYERS = [
+    "archive_manifest",
     "raw_identity",
     "normalized_document",
     "interpretation",
@@ -96,6 +98,7 @@ exports.CORPUS_CACHE_LAYERS = [
  * cached, and it is never claimed to be reproducible.
  */
 exports.DETERMINISTIC_CACHE_LAYERS = [
+    "archive_manifest",
     "raw_identity",
     "normalized_document",
     "interpretation",
@@ -104,6 +107,22 @@ exports.DETERMINISTIC_CACHE_LAYERS = [
 ];
 // ───────────────────────────── keys ─────────────────────────────
 /** Key of the exact-bytes layer. The content hash is the identity. */
+/**
+ * What an archive was found to contain, keyed on the archive's own bytes.
+ *
+ * An outer ZIP that has not changed does not need decompressing again merely to
+ * rediscover member paths and hashes a previous run already established from
+ * exactly those bytes. The reader and policy versions are in the key because both
+ * decide what is admitted: a stricter policy is a different question about the
+ * same archive, and must not be answered from the looser one's cache.
+ */
+function archiveManifestKey(input) {
+    return (0, repository_model_1.stableId)("archive-manifest", {
+        archive_content_hash: input.archiveContentHash,
+        archive_policy_version: input.archivePolicyVersion,
+        archive_reader_version: input.archiveReaderVersion,
+    });
+}
 function rawIdentityKey(input) {
     return (0, repository_model_1.stableId)("raw", { exact_content_hash: input.contentHash });
 }
@@ -332,10 +351,33 @@ function cacheEntryPath(root, layer, key) {
     return path.join(root, layer, digest.slice(0, 2), digest.slice(2, 4), `${digest}.json`);
 }
 /** Disk-backed cache. Atomic writes, verified reads, self-healing on corruption. */
+/** Owner-only, because the cache holds decoded text from private documents. */
+exports.CACHE_DIRECTORY_MODE = 0o700;
+exports.CACHE_FILE_MODE = 0o600;
+/**
+ * Narrow a path to owner-only access.
+ *
+ * Best effort by design: a cache on a filesystem with no POSIX permission model
+ * cannot be tightened, and refusing to cache at all there would be a worse answer
+ * than caching without it. The failure is silent because there is nothing the
+ * caller can do about it and nothing unsafe about proceeding — the cache is local
+ * and is never the authority for anything.
+ */
+function applyRestrictivePermissions(target, mode = exports.CACHE_FILE_MODE) {
+    try {
+        fs.chmodSync(target, mode);
+    }
+    catch {
+        // No POSIX permissions here. The cache is still local-only and still not
+        // authoritative; nothing further is owed.
+    }
+}
 class FileCorpusCache {
     constructor(options) {
         this.enabled = true;
         this.accounting = new CacheAccounting();
+        /** Distinguishes concurrent staging files written by one process. */
+        this.stagingCounter = 0;
         // Resolved through `realpath`, like every other writable location this
         // package approves: a symlinked cache directory pointing into an observed
         // tree would otherwise pass a lexical check and then write through it.
@@ -347,7 +389,11 @@ class FileCorpusCache {
         }
         this.root = absolute;
         this.producerVersion = options.producerVersion;
-        fs.mkdirSync(this.root, { recursive: true });
+        fs.mkdirSync(this.root, { recursive: true, mode: exports.CACHE_DIRECTORY_MODE });
+        // `mkdirSync` applies the mode only to directories it creates, and a umask
+        // can narrow it further but never widen it. An existing cache root created
+        // by an earlier release is tightened here rather than left open.
+        applyRestrictivePermissions(this.root, exports.CACHE_DIRECTORY_MODE);
     }
     discard(file) {
         try {
@@ -420,11 +466,19 @@ class FileCorpusCache {
             payload,
         };
         const file = cacheEntryPath(this.root, layer, key);
-        fs.mkdirSync(path.dirname(file), { recursive: true });
+        // The cache holds decoded text and structural facts about an operator's
+        // private documents. It is theirs, and it is created that way rather than
+        // inheriting whatever umask the run happened to have.
+        fs.mkdirSync(path.dirname(file), { recursive: true, mode: exports.CACHE_DIRECTORY_MODE });
         // Written to a sibling and renamed: a half-written entry that a later run
-        // could read as complete is the one corruption a cache can cause itself.
-        const staging = `${file}.${process.pid}.tmp`;
-        fs.writeFileSync(staging, `${(0, corpus_analysis_1.canonicalCorpusJson)(entry)}\n`, "utf8");
+        // could read as complete is the one corruption a cache can cause itself. The
+        // rename is atomic on a single filesystem, so two processes computing the
+        // same immutable key each write a complete entry and the last one wins with
+        // identical bytes — the key is content-addressed, so there is no other
+        // outcome to lose.
+        const staging = `${file}.${process.pid}.${this.stagingCounter++}.tmp`;
+        fs.writeFileSync(staging, `${(0, corpus_analysis_1.canonicalCorpusJson)(entry)}\n`, { encoding: "utf8", mode: exports.CACHE_FILE_MODE });
+        applyRestrictivePermissions(staging);
         fs.renameSync(staging, file);
         this.accounting.bump(layer, "writes");
     }

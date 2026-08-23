@@ -7,7 +7,10 @@
 import { describe, expect, it } from "vitest";
 import {
   CONTENT_KEYED_LAYERS,
+  CORPUS_ANALYSIS_DIFF_CATEGORIES,
+  CROSS_ROOT_MOVE_STATEMENT,
   CORPUS_DIFF_CATEGORIES,
+  CORPUS_ROOT_DIFF_CATEGORIES,
   CORPUS_SCOPED_LAYERS,
   RENAMED_CANDIDATE_STATEMENT,
   buildCorpusDiff,
@@ -114,6 +117,19 @@ describe("categories", () => {
       "archive_added",
       "archive_removed",
       "archive_changed",
+      "archive_unchanged",
+    ]);
+    expect([...CORPUS_ROOT_DIFF_CATEGORIES]).toEqual([
+      "root_added",
+      "root_removed",
+      "root_changed",
+      "root_unchanged",
+    ]);
+    expect([...CORPUS_ANALYSIS_DIFF_CATEGORIES]).toEqual([
+      "candidate_added",
+      "candidate_removed",
+      "candidate_changed",
+      "readiness_evidence_changed",
     ]);
   });
 
@@ -138,6 +154,11 @@ describe("categories", () => {
       archive_added: 0,
       archive_removed: 0,
       archive_changed: 0,
+      archive_unchanged: 0,
+      root_added: 0,
+      root_removed: 0,
+      root_changed: 1,
+      root_unchanged: 0,
     });
     const changed = diff.entries.find((entry) => entry.category === "changed_content");
     expect(changed?.previous_content_hash).toBe("sha256:before");
@@ -254,5 +275,133 @@ describe("the snapshot document", () => {
     expect(rendered.indexOf("A::a.md")).toBeLessThan(rendered.indexOf("A::z.md"));
     expect(renderCorpusSnapshot(unordered)).toBe(rendered);
     expect(rendered).not.toMatch(/\d{4}-\d{2}-\d{2}T/);
+  });
+});
+
+describe("roots", () => {
+  /** A snapshot whose roots are given explicitly, so a root can be added or lost. */
+  function withRoots(
+    id: string,
+    roots: { root_id: string; root_key: string; revision?: string; packet?: string }[],
+  ): CorpusSnapshot {
+    const base = snapshot(id, []);
+    return {
+      ...base,
+      roots: roots.map((root) => ({
+        root_id: root.root_id,
+        root_key: root.root_key,
+        root_label: root.root_key,
+        root_snapshot_id: `root-snapshot:${root.root_id}`,
+        source_kind: "directory",
+        source_revision: root.revision ?? `fs:${root.root_id}`,
+        physical_snapshot_hash: `sha256:${root.root_id}`,
+        rmp_packet_id: root.packet ?? `packet:${root.root_id}`,
+        rmp_semantic_hash: `sha256:${root.root_id}`,
+        bundle_ref: `roots/${root.root_key}/bundle`,
+        observation_status: "observed" as const,
+        failure_reason: null,
+      })),
+    };
+  }
+
+  it("classifies a root that arrived, one that left, one that moved and one that did not", () => {
+    const previous = withRoots("one", [
+      { root_id: "root:a", root_key: "A" },
+      { root_id: "root:b", root_key: "B" },
+      { root_id: "root:c", root_key: "C" },
+    ]);
+    const current = withRoots("two", [
+      { root_id: "root:a", root_key: "A" },
+      { root_id: "root:b", root_key: "B", revision: "fs:changed", packet: "packet:changed" },
+      { root_id: "root:d", root_key: "D" },
+    ]);
+
+    const diff = buildCorpusDiff(previous, current);
+    expect(diff.counts).toMatchObject({
+      root_added: 1,
+      root_removed: 1,
+      root_changed: 1,
+      root_unchanged: 1,
+    });
+    const byRoot = new Map(diff.roots.map((entry) => [entry.root_id, entry]));
+    expect(byRoot.get("root:a")?.category).toBe("root_unchanged");
+    expect(byRoot.get("root:b")?.category).toBe("root_changed");
+    expect(byRoot.get("root:c")?.category).toBe("root_removed");
+    expect(byRoot.get("root:d")?.category).toBe("root_added");
+    // A removed root has a previous revision and no current one, and vice versa.
+    expect(byRoot.get("root:c")?.current_source_revision).toBeNull();
+    expect(byRoot.get("root:d")?.previous_rmp_packet_id).toBeNull();
+  });
+
+  it("is not confused by the order the roots were listed in", () => {
+    const forward = withRoots("one", [
+      { root_id: "root:a", root_key: "A" },
+      { root_id: "root:b", root_key: "B" },
+    ]);
+    const reversed = withRoots("one", [
+      { root_id: "root:b", root_key: "B" },
+      { root_id: "root:a", root_key: "A" },
+    ]);
+    const diff = buildCorpusDiff(forward, reversed);
+    expect(diff.counts.root_unchanged).toBe(2);
+    expect(diff.counts.root_added + diff.counts.root_removed + diff.counts.root_changed).toBe(0);
+  });
+});
+
+describe("a file that appears in another root", () => {
+  it("is a candidate, and the diff says why it is only that", () => {
+    const previous = snapshot("one", [
+      artifact("A::notes/monday.md", "sha256:same", { root_id: "root:a" }),
+    ]);
+    const current = {
+      ...snapshot("two", [
+        artifact("B::archive/monday.md", "sha256:same", { root_id: "root:b" }),
+      ]),
+    };
+    const diff = buildCorpusDiff(previous, current);
+    expect(diff.cross_root_move_candidates).toEqual([{
+      content_hash: "sha256:same",
+      from_root_id: "root:a",
+      from_corpus_path: "A::notes/monday.md",
+      to_root_id: "root:b",
+      to_corpus_path: "B::archive/monday.md",
+    }]);
+    // The wording is the guardrail: a copy whose original was deleted, and two
+    // unrelated identical files, produce this exact evidence.
+    expect(diff.cross_root_move_statement).toBe(CROSS_ROOT_MOVE_STATEMENT);
+  });
+
+  it("is not reported when the bytes merely moved within one root", () => {
+    const previous = snapshot("one", [artifact("A::a.md", "sha256:same", { root_id: "root:a" })]);
+    const current = snapshot("two", [artifact("A::b.md", "sha256:same", { root_id: "root:a" })]);
+    const diff = buildCorpusDiff(previous, current);
+    // That is a rename candidate, which the diff already had a category for.
+    expect(diff.cross_root_move_candidates).toEqual([]);
+    expect(diff.counts.renamed_candidate).toBe(1);
+  });
+});
+
+describe("a change to the rules rather than the disks", () => {
+  it("is reported as a profile change, not a source change", () => {
+    const previous = snapshot("one", [artifact("A::a.md", "sha256:a")], [], "profile:one");
+    const current = snapshot("one", [artifact("A::a.md", "sha256:a")], [], "profile:two");
+    const diff = buildCorpusDiff(previous, current);
+
+    expect(diff.source_changed).toBe(false);
+    expect(diff.invalidation.profile_changed).toBe(true);
+    expect(diff.counts.unchanged).toBe(1);
+    expect(diff.counts.changed_content).toBe(0);
+    // The conclusions are not comparable across a profile change, and the diff
+    // says so rather than reporting a zero that would read as "nothing changed".
+    expect(diff.analysis.comparable).toBe(false);
+  });
+
+  it("is reported as a source change when the bytes really moved", () => {
+    const previous = snapshot("one", [artifact("A::a.md", "sha256:before")]);
+    const current = snapshot("two", [artifact("A::a.md", "sha256:after")]);
+    const diff = buildCorpusDiff(previous, current);
+    expect(diff.source_changed).toBe(true);
+    expect(diff.invalidation.profile_changed).toBe(false);
+    expect(diff.analysis.readiness_evidence_changed).toBe(true);
   });
 });

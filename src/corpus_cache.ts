@@ -34,6 +34,7 @@ export const CORPUS_CACHE_ENTRY_SCHEMA = "l9.corpus-cache-entry/v1";
 export const CORPUS_CACHE_ENV = "L9_CORPUS_CACHE";
 
 export const CORPUS_CACHE_LAYERS = [
+  "archive_manifest",
   "raw_identity",
   "normalized_document",
   "interpretation",
@@ -53,6 +54,7 @@ export type CorpusCacheLayer = (typeof CORPUS_CACHE_LAYERS)[number];
  * cached, and it is never claimed to be reproducible.
  */
 export const DETERMINISTIC_CACHE_LAYERS: readonly CorpusCacheLayer[] = [
+  "archive_manifest",
   "raw_identity",
   "normalized_document",
   "interpretation",
@@ -113,6 +115,27 @@ export interface CorpusCache {
 // ───────────────────────────── keys ─────────────────────────────
 
 /** Key of the exact-bytes layer. The content hash is the identity. */
+/**
+ * What an archive was found to contain, keyed on the archive's own bytes.
+ *
+ * An outer ZIP that has not changed does not need decompressing again merely to
+ * rediscover member paths and hashes a previous run already established from
+ * exactly those bytes. The reader and policy versions are in the key because both
+ * decide what is admitted: a stricter policy is a different question about the
+ * same archive, and must not be answered from the looser one's cache.
+ */
+export function archiveManifestKey(input: {
+  archiveContentHash: string;
+  archiveReaderVersion: string;
+  archivePolicyVersion: string;
+}): string {
+  return stableId("archive-manifest", {
+    archive_content_hash: input.archiveContentHash,
+    archive_policy_version: input.archivePolicyVersion,
+    archive_reader_version: input.archiveReaderVersion,
+  });
+}
+
 export function rawIdentityKey(input: { contentHash: string }): string {
   return stableId("raw", { exact_content_hash: input.contentHash });
 }
@@ -385,11 +408,35 @@ export function cacheEntryPath(root: string, layer: CorpusCacheLayer, key: strin
 }
 
 /** Disk-backed cache. Atomic writes, verified reads, self-healing on corruption. */
+/** Owner-only, because the cache holds decoded text from private documents. */
+export const CACHE_DIRECTORY_MODE = 0o700;
+export const CACHE_FILE_MODE = 0o600;
+
+/**
+ * Narrow a path to owner-only access.
+ *
+ * Best effort by design: a cache on a filesystem with no POSIX permission model
+ * cannot be tightened, and refusing to cache at all there would be a worse answer
+ * than caching without it. The failure is silent because there is nothing the
+ * caller can do about it and nothing unsafe about proceeding — the cache is local
+ * and is never the authority for anything.
+ */
+function applyRestrictivePermissions(target: string, mode: number = CACHE_FILE_MODE): void {
+  try {
+    fs.chmodSync(target, mode);
+  } catch {
+    // No POSIX permissions here. The cache is still local-only and still not
+    // authoritative; nothing further is owed.
+  }
+}
+
 export class FileCorpusCache implements CorpusCache {
   readonly enabled = true;
   readonly root: string;
   private readonly producerVersion: string;
   private readonly accounting = new CacheAccounting();
+  /** Distinguishes concurrent staging files written by one process. */
+  private stagingCounter = 0;
 
   constructor(options: FileCorpusCacheOptions) {
     // Resolved through `realpath`, like every other writable location this
@@ -405,7 +452,11 @@ export class FileCorpusCache implements CorpusCache {
     }
     this.root = absolute;
     this.producerVersion = options.producerVersion;
-    fs.mkdirSync(this.root, { recursive: true });
+    fs.mkdirSync(this.root, { recursive: true, mode: CACHE_DIRECTORY_MODE });
+    // `mkdirSync` applies the mode only to directories it creates, and a umask
+    // can narrow it further but never widen it. An existing cache root created
+    // by an earlier release is tightened here rather than left open.
+    applyRestrictivePermissions(this.root, CACHE_DIRECTORY_MODE);
   }
 
   private discard(file: string): void {
@@ -478,11 +529,19 @@ export class FileCorpusCache implements CorpusCache {
       payload,
     };
     const file = cacheEntryPath(this.root, layer, key);
-    fs.mkdirSync(path.dirname(file), { recursive: true });
+    // The cache holds decoded text and structural facts about an operator's
+    // private documents. It is theirs, and it is created that way rather than
+    // inheriting whatever umask the run happened to have.
+    fs.mkdirSync(path.dirname(file), { recursive: true, mode: CACHE_DIRECTORY_MODE });
     // Written to a sibling and renamed: a half-written entry that a later run
-    // could read as complete is the one corruption a cache can cause itself.
-    const staging = `${file}.${process.pid}.tmp`;
-    fs.writeFileSync(staging, `${canonicalCorpusJson(entry)}\n`, "utf8");
+    // could read as complete is the one corruption a cache can cause itself. The
+    // rename is atomic on a single filesystem, so two processes computing the
+    // same immutable key each write a complete entry and the last one wins with
+    // identical bytes — the key is content-addressed, so there is no other
+    // outcome to lose.
+    const staging = `${file}.${process.pid}.${this.stagingCounter++}.tmp`;
+    fs.writeFileSync(staging, `${canonicalCorpusJson(entry)}\n`, { encoding: "utf8", mode: CACHE_FILE_MODE });
+    applyRestrictivePermissions(staging);
     fs.renameSync(staging, file);
     this.accounting.bump(layer, "writes");
   }

@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.LEGACY_EXTRACTION_SUFFIX = exports.LEGACY_EXTRACTION_OWNER_FILE = exports.GENERATED_ARTIFACT_OMIT_PATTERNS = exports.SCRATCH_OWNER_ID = exports.SCRATCH_OWNER_FILE = exports.ARCHIVE_MEMBER_SEPARATOR = void 0;
+exports.ARCHIVE_READER_VERSION = exports.LEGACY_EXTRACTION_SUFFIX = exports.LEGACY_EXTRACTION_OWNER_FILE = exports.GENERATED_ARTIFACT_OMIT_PATTERNS = exports.SCRATCH_OWNER_ID = exports.SCRATCH_OWNER_FILE = exports.ARCHIVE_MEMBER_SEPARATOR = void 0;
 exports.removeOwnedScratch = removeOwnedScratch;
 exports.hasLegacyExtractionOwnership = hasLegacyExtractionOwnership;
 exports.isLegacyGeneratedExtraction = isLegacyGeneratedExtraction;
@@ -106,6 +106,8 @@ exports.GENERATED_ARTIFACT_OMIT_PATTERNS = [
 /** Marker a tool-owned legacy extraction directory carries. */
 exports.LEGACY_EXTRACTION_OWNER_FILE = ".l9extracted-owner.json";
 exports.LEGACY_EXTRACTION_SUFFIX = ".l9extracted";
+/** Version of the ZIP reader whose output an archive manifest describes. */
+exports.ARCHIVE_READER_VERSION = "1.0.0";
 /**
  * Create a tool-owned scratch root outside the source tree.
  *
@@ -608,6 +610,32 @@ function enqueueNestedArchives(context, task, archiveHash, members, queue) {
 }
 /** Read the staged archive's central directory and judge it, or hold it. */
 function preflightStaged(context, task, staged) {
+    // Depth is part of what preflight decides on, and it is not part of the key:
+    // the same archive nested one level deeper is a different question. Only a
+    // top-level archive is served from the store, where depth is fixed at 0.
+    const cacheKey = task.depth === 0
+        ? {
+            archiveContentHash: staged.archiveHash,
+            readerVersion: exports.ARCHIVE_READER_VERSION,
+            policyVersion: context.policy.version,
+        }
+        : null;
+    const cached = cacheKey === null ? undefined : context.manifests?.get(cacheKey);
+    if (cached !== undefined) {
+        if (!cached.accepted) {
+            holdArchive(context, task, staged.archiveHash, staged.sizeBytes, cached.holds);
+            return null;
+        }
+        const refusal = context.budget.refuseReason(cached.declaredUncompressedBytes);
+        if (refusal !== null) {
+            holdArchive(context, task, staged.archiveHash, staged.sizeBytes, [{
+                    code: "archive.session_budget_exceeded",
+                    message: refusal,
+                }]);
+            return null;
+        }
+        return cached;
+    }
     let preflight;
     try {
         preflight = (0, archive_preflight_1.preflightArchive)({
@@ -624,6 +652,11 @@ function preflightStaged(context, task, staged) {
             }]);
         return null;
     }
+    // Stored before the session budget is consulted: the verdict is a fact about
+    // the archive, while the budget is a fact about this run, and mixing them would
+    // cache one run's exhaustion as another run's refusal.
+    if (cacheKey !== null)
+        context.manifests?.put(cacheKey, preflight);
     if (!preflight.accepted) {
         holdArchive(context, task, staged.archiveHash, staged.sizeBytes, preflight.holds);
         return null;
@@ -1132,6 +1165,7 @@ function acquireLocalSource(input) {
     else if (unstableReason === null) {
         const context = {
             scratch, policy, budget, omit, diagnostics, archives, members, omittedPaths,
+            manifests: input.archiveManifests,
         };
         const queue = planArchiveTasks(hashed, diagnostics);
         while (queue.length > 0)

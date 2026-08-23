@@ -35,7 +35,28 @@ export const CORPUS_DIFF_CATEGORIES = [
   "archive_added",
   "archive_removed",
   "archive_changed",
+  "archive_unchanged",
 ] as const;
+
+/** How each root fared between two snapshots. */
+export const CORPUS_ROOT_DIFF_CATEGORIES = [
+  "root_added",
+  "root_removed",
+  "root_changed",
+  "root_unchanged",
+] as const;
+
+export type CorpusRootDiffCategory = (typeof CORPUS_ROOT_DIFF_CATEGORIES)[number];
+
+/** How the analysis over the corpus fared, as distinct from the corpus itself. */
+export const CORPUS_ANALYSIS_DIFF_CATEGORIES = [
+  "candidate_added",
+  "candidate_removed",
+  "candidate_changed",
+  "readiness_evidence_changed",
+] as const;
+
+export type CorpusAnalysisDiffCategory = (typeof CORPUS_ANALYSIS_DIFF_CATEGORIES)[number];
 
 export type CorpusDiffCategory = (typeof CORPUS_DIFF_CATEGORIES)[number];
 
@@ -79,6 +100,38 @@ export interface CorpusDiffInvalidation {
   cache_entries_removed: number;
 }
 
+/** One root, and what happened to it between the two snapshots. */
+export interface CorpusRootDiffEntry {
+  category: CorpusRootDiffCategory;
+  root_id: string;
+  root_key: string;
+  previous_source_revision: string | null;
+  current_source_revision: string | null;
+  previous_rmp_packet_id: string | null;
+  current_rmp_packet_id: string | null;
+}
+
+/**
+ * One artifact that moved between roots without changing.
+ *
+ * A candidate and never a conclusion: identical bytes leaving one root and
+ * appearing in another is consistent with a move, with a copy that was then
+ * deleted, and with two unrelated files that happen to be identical — which in a
+ * corpus of backups is the ordinary case rather than the exotic one.
+ */
+export interface CrossRootMoveCandidate {
+  content_hash: string;
+  from_root_id: string;
+  from_corpus_path: string;
+  to_root_id: string;
+  to_corpus_path: string;
+}
+
+export const CROSS_ROOT_MOVE_STATEMENT =
+  "A cross-root move candidate is identical bytes absent from one root and present in another. "
+  + "It is not a claim that the file was moved: a copy whose original was deleted, and two "
+  + "unrelated identical files, produce exactly the same evidence.";
+
 export interface CorpusDiffCounts {
   added: number;
   removed: number;
@@ -88,6 +141,11 @@ export interface CorpusDiffCounts {
   archive_added: number;
   archive_removed: number;
   archive_changed: number;
+  archive_unchanged: number;
+  root_added: number;
+  root_removed: number;
+  root_changed: number;
+  root_unchanged: number;
 }
 
 export interface CorpusDiff {
@@ -101,6 +159,18 @@ export interface CorpusDiff {
   previous_root_ids: string[];
   current_root_ids: string[];
   counts: CorpusDiffCounts;
+  roots: CorpusRootDiffEntry[];
+  /** What changed about the analysis, kept apart from what changed on the disks. */
+  analysis: {
+    candidate_added: number;
+    candidate_removed: number;
+    candidate_changed: number;
+    readiness_evidence_changed: boolean;
+    /** Null when neither snapshot recorded candidate counts to compare. */
+    comparable: boolean;
+  };
+  cross_root_move_candidates: CrossRootMoveCandidate[];
+  cross_root_move_statement: string;
   entries: CorpusDiffEntry[];
   invalidation: CorpusDiffInvalidation;
   /** Restated in the document so a consumer reading only JSON sees the limit. */
@@ -122,6 +192,11 @@ function emptyCounts(): CorpusDiffCounts {
     archive_added: 0,
     archive_removed: 0,
     archive_changed: 0,
+    archive_unchanged: 0,
+    root_added: 0,
+    root_removed: 0,
+    root_changed: 0,
+    root_unchanged: 0,
   };
 }
 
@@ -222,6 +297,35 @@ function analysisProfileFingerprint(snapshot: CorpusSnapshot): string {
   ].join("|");
 }
 
+/**
+ * What changed about the analysis, as distinct from what changed on the disks.
+ *
+ * A snapshot records what was observed, not what was concluded, so the candidate
+ * counts are not in it. What can be said from two snapshots alone is whether the
+ * rules changed and whether the corpus changed; both leave the conclusions open,
+ * and saying "comparable: false" is the honest report rather than a zero that
+ * would read as "nothing changed".
+ */
+function analysisDelta(
+  previous: CorpusSnapshot,
+  current: CorpusSnapshot,
+  profileChanged: boolean,
+): CorpusDiff["analysis"] {
+  const sourceChanged = previous.corpus_source_snapshot_id !== current.corpus_source_snapshot_id;
+  const analysisChanged = previous.analysis.corpus_analysis_id !== current.analysis.corpus_analysis_id;
+  return {
+    candidate_added: 0,
+    candidate_removed: 0,
+    candidate_changed: 0,
+    // Readiness is recomputed whenever its own profile moves or the corpus does.
+    readiness_evidence_changed: sourceChanged
+      || previous.analysis.readiness_profile !== current.analysis.readiness_profile,
+    // The candidate documents are not part of a snapshot, so a snapshot-to-snapshot
+    // diff cannot count them. It can say whether anything they depend on moved.
+    comparable: !analysisChanged && !profileChanged,
+  };
+}
+
 export function buildCorpusDiff(previous: CorpusSnapshot, current: CorpusSnapshot): CorpusDiff {
   const previousById = byId(previous.artifacts);
   const currentById = byId(current.artifacts);
@@ -319,7 +423,17 @@ export function buildCorpusDiff(previous: CorpusSnapshot, current: CorpusSnapsho
       });
       continue;
     }
-    if (before.content_hash !== archive.content_hash) {
+    if (before.content_hash === archive.content_hash) {
+      counts.archive_unchanged += 1;
+      entries.push({
+        category: "archive_unchanged",
+        virtual_source_id: archive.archive_id,
+        corpus_path: archive.corpus_path,
+        root_id: archive.root_id,
+        content_hash: archive.content_hash,
+        size_bytes: archive.size_bytes,
+      });
+    } else {
       counts.archive_changed += 1;
       entries.push({
         category: "archive_changed",
@@ -360,6 +474,86 @@ export function buildCorpusDiff(previous: CorpusSnapshot, current: CorpusSnapsho
     || retiredHashes.length > 0
     || previous.artifacts.length !== current.artifacts.length;
 
+  // Roots, compared by identity rather than by position. A corpus that gained a
+  // drive and a corpus whose drives were listed in another order are not the same
+  // event, and only the root id can tell them apart.
+  const previousRoots = new Map(previous.roots.map((root) => [root.root_id, root]));
+  const currentRoots = new Map(current.roots.map((root) => [root.root_id, root]));
+  const rootEntries: CorpusRootDiffEntry[] = [];
+  for (const [rootId, root] of currentRoots) {
+    const before = previousRoots.get(rootId);
+    if (before === undefined) {
+      counts.root_added += 1;
+      rootEntries.push({
+        category: "root_added",
+        root_id: rootId,
+        root_key: root.root_key,
+        previous_source_revision: null,
+        current_source_revision: root.source_revision,
+        previous_rmp_packet_id: null,
+        current_rmp_packet_id: root.rmp_packet_id,
+      });
+      continue;
+    }
+    const changed = before.source_revision !== root.source_revision
+      || before.rmp_packet_id !== root.rmp_packet_id;
+    if (changed) counts.root_changed += 1;
+    else counts.root_unchanged += 1;
+    rootEntries.push({
+      category: changed ? "root_changed" : "root_unchanged",
+      root_id: rootId,
+      root_key: root.root_key,
+      previous_source_revision: before.source_revision,
+      current_source_revision: root.source_revision,
+      previous_rmp_packet_id: before.rmp_packet_id,
+      current_rmp_packet_id: root.rmp_packet_id,
+    });
+  }
+  for (const [rootId, root] of previousRoots) {
+    if (currentRoots.has(rootId)) continue;
+    counts.root_removed += 1;
+    rootEntries.push({
+      category: "root_removed",
+      root_id: rootId,
+      root_key: root.root_key,
+      previous_source_revision: root.source_revision,
+      current_source_revision: null,
+      previous_rmp_packet_id: root.rmp_packet_id,
+      current_rmp_packet_id: null,
+    });
+  }
+  rootEntries.sort((a, b) => compareCodePoints(a.root_id, b.root_id));
+
+  // Identical bytes that left one root and appeared in another. Reported as a
+  // candidate: the same evidence is produced by a move, by a copy whose original
+  // was deleted, and by two unrelated identical files — which in a corpus made of
+  // backups is the ordinary case rather than the exotic one.
+  const crossRootMoves: CrossRootMoveCandidate[] = [];
+  const arrivedByHash = new Map<string, CorpusSnapshotArtifact[]>();
+  for (const artifact of arrived) {
+    if (artifact.content_hash === null) continue;
+    const bucket = arrivedByHash.get(artifact.content_hash) ?? [];
+    bucket.push(artifact);
+    arrivedByHash.set(artifact.content_hash, bucket);
+  }
+  for (const gone of departed) {
+    if (gone.content_hash === null) continue;
+    for (const landed of arrivedByHash.get(gone.content_hash) ?? []) {
+      if (landed.root_id === gone.root_id) continue;
+      crossRootMoves.push({
+        content_hash: gone.content_hash,
+        from_root_id: gone.root_id,
+        from_corpus_path: gone.corpus_path,
+        to_root_id: landed.root_id,
+        to_corpus_path: landed.corpus_path,
+      });
+    }
+  }
+  crossRootMoves.sort(
+    (a, b) => compareCodePoints(a.from_corpus_path, b.from_corpus_path)
+      || compareCodePoints(a.to_corpus_path, b.to_corpus_path),
+  );
+
   const previousRootIds = [...previous.roots.map((root) => root.root_id)].sort(compareCodePoints);
   const currentRootIds = [...current.roots.map((root) => root.root_id)].sort(compareCodePoints);
   const orderedEntries = [...entries].sort(compareEntries);
@@ -374,6 +568,10 @@ export function buildCorpusDiff(previous: CorpusSnapshot, current: CorpusSnapsho
     previous_root_ids: previousRootIds,
     current_root_ids: currentRootIds,
     counts,
+    roots: rootEntries,
+    analysis: analysisDelta(previous, current, profileChanged),
+    cross_root_move_candidates: crossRootMoves,
+    cross_root_move_statement: CROSS_ROOT_MOVE_STATEMENT,
     entries: orderedEntries,
     invalidation: {
       profile_changed: profileChanged,

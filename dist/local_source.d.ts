@@ -1,6 +1,6 @@
 import { InventoryResult } from "./inventory";
 import { OmitMatcher } from "./omit";
-import { ArchiveHold } from "./archive_preflight";
+import { ArchiveHold, ArchivePreflightResult } from "./archive_preflight";
 import { LocalArchivePolicy } from "./local_archive_policy";
 /** Separator between an archive path and a member path in a virtual locator. */
 export declare const ARCHIVE_MEMBER_SEPARATOR = "!/";
@@ -94,7 +94,34 @@ export interface LocalSourceAcquireInput {
      * see `hashing` on the observation.
      */
     knownHashes?: ReadonlyMap<string, KnownFileHash>;
+    /**
+     * Where an archive's preflight verdict may be read from and written to.
+     *
+     * An unchanged outer ZIP does not need its central directory re-read and its
+     * policy rules re-evaluated to produce the same verdict it produced last time.
+     * The key is the archive's own content hash plus the reader and policy
+     * versions, so a stricter policy is never answered from a looser one's entry.
+     *
+     * The archive's bytes are still staged: the members are needed by whatever
+     * reads them next, and a manifest does not contain them.
+     */
+    archiveManifests?: ArchiveManifestStore;
 }
+/** Read-through storage for archive preflight verdicts. */
+export interface ArchiveManifestStore {
+    get(key: {
+        archiveContentHash: string;
+        readerVersion: string;
+        policyVersion: string;
+    }): ArchivePreflightResult | undefined;
+    put(key: {
+        archiveContentHash: string;
+        readerVersion: string;
+        policyVersion: string;
+    }, value: ArchivePreflightResult): void;
+}
+/** Version of the ZIP reader whose output an archive manifest describes. */
+export declare const ARCHIVE_READER_VERSION = "1.0.0";
 /** What a previous run established about one file, and the stat it saw. */
 export interface KnownFileHash {
     /** `sha256:`-prefixed, as a previous run computed it from the exact bytes. */

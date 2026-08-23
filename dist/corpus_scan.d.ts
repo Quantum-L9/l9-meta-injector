@@ -37,6 +37,12 @@ export interface CorpusScanInput {
     verification?: VerificationMode;
     /** Force a full read even under `incremental`, and say so in the snapshot. */
     verifyContent?: boolean;
+    /**
+     * Emit a snapshot marked `partial` when a root cannot be read, instead of
+     * failing the run. The snapshot is never labelled complete, and every missing
+     * root is named in it.
+     */
+    allowPartialRoots?: boolean;
     cache?: CorpusCache;
     session?: CorpusSessionStore;
     /** Snapshot of a previous run; when present, `corpus-diff.json` is produced. */

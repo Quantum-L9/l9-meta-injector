@@ -171,7 +171,32 @@ export interface LocalSourceAcquireInput {
    * see `hashing` on the observation.
    */
   knownHashes?: ReadonlyMap<string, KnownFileHash>;
+  /**
+   * Where an archive's preflight verdict may be read from and written to.
+   *
+   * An unchanged outer ZIP does not need its central directory re-read and its
+   * policy rules re-evaluated to produce the same verdict it produced last time.
+   * The key is the archive's own content hash plus the reader and policy
+   * versions, so a stricter policy is never answered from a looser one's entry.
+   *
+   * The archive's bytes are still staged: the members are needed by whatever
+   * reads them next, and a manifest does not contain them.
+   */
+  archiveManifests?: ArchiveManifestStore;
 }
+
+/** Read-through storage for archive preflight verdicts. */
+export interface ArchiveManifestStore {
+  get(key: { archiveContentHash: string; readerVersion: string; policyVersion: string }):
+    ArchivePreflightResult | undefined;
+  put(
+    key: { archiveContentHash: string; readerVersion: string; policyVersion: string },
+    value: ArchivePreflightResult,
+  ): void;
+}
+
+/** Version of the ZIP reader whose output an archive manifest describes. */
+export const ARCHIVE_READER_VERSION = "1.0.0";
 
 /** What a previous run established about one file, and the stat it saw. */
 export interface KnownFileHash {
@@ -574,6 +599,8 @@ interface ArchiveContext {
   archives: LocalArchiveObservation[];
   members: LocalArchiveMemberObservation[];
   omittedPaths: string[];
+  /** Where preflight verdicts are read from and written to, when supplied. */
+  manifests?: ArchiveManifestStore | undefined;
 }
 
 function holdArchive(
@@ -861,6 +888,33 @@ function preflightStaged(
   task: ArchiveTask,
   staged: StagedArchive,
 ): ArchivePreflightResult | null {
+  // Depth is part of what preflight decides on, and it is not part of the key:
+  // the same archive nested one level deeper is a different question. Only a
+  // top-level archive is served from the store, where depth is fixed at 0.
+  const cacheKey = task.depth === 0
+    ? {
+        archiveContentHash: staged.archiveHash,
+        readerVersion: ARCHIVE_READER_VERSION,
+        policyVersion: context.policy.version,
+      }
+    : null;
+  const cached = cacheKey === null ? undefined : context.manifests?.get(cacheKey);
+  if (cached !== undefined) {
+    if (!cached.accepted) {
+      holdArchive(context, task, staged.archiveHash, staged.sizeBytes, cached.holds);
+      return null;
+    }
+    const refusal = context.budget.refuseReason(cached.declaredUncompressedBytes);
+    if (refusal !== null) {
+      holdArchive(context, task, staged.archiveHash, staged.sizeBytes, [{
+        code: "archive.session_budget_exceeded",
+        message: refusal,
+      }]);
+      return null;
+    }
+    return cached;
+  }
+
   let preflight: ArchivePreflightResult;
   try {
     preflight = preflightArchive({
@@ -876,6 +930,10 @@ function preflightStaged(
     }]);
     return null;
   }
+  // Stored before the session budget is consulted: the verdict is a fact about
+  // the archive, while the budget is a fact about this run, and mixing them would
+  // cache one run's exhaustion as another run's refusal.
+  if (cacheKey !== null) context.manifests?.put(cacheKey, preflight);
   if (!preflight.accepted) {
     holdArchive(context, task, staged.archiveHash, staged.sizeBytes, preflight.holds);
     return null;
@@ -1442,6 +1500,7 @@ export function acquireLocalSource(input: LocalSourceAcquireInput): LocalSourceO
   } else if (unstableReason === null) {
     const context: ArchiveContext = {
       scratch, policy, budget, omit, diagnostics, archives, members, omittedPaths,
+      manifests: input.archiveManifests,
     };
     const queue = planArchiveTasks(hashed, diagnostics);
     while (queue.length > 0) acquireArchive(context, queue.shift() as ArchiveTask, queue);

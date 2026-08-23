@@ -131,6 +131,9 @@ describe("incremental invalidation", () => {
       second.cacheStats.layers.map((layer) => [layer.layer, layer.misses]),
     );
     expect(misses).toEqual({
+      // The archives did not change, so their verdicts are answered from the
+      // cache and nothing re-reads a central directory.
+      archive_manifest: 0,
       raw_identity: 1,
       normalized_document: 1,
       interpretation: 1,
