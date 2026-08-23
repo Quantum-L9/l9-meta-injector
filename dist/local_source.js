@@ -276,6 +276,7 @@ function observeEntry(absolutePath, relativePath, diagnostics) {
         kind,
         sizeBytes: kind === "file" ? stats.size : null,
         mtimeMs: kind === "directory" ? null : stats.mtimeMs,
+        mtimeNs: kind === "directory" ? null : highResolutionMtime(absolutePath),
         linkTarget,
     };
 }
@@ -716,6 +717,23 @@ function buildAcquisitionOmit(input, omitRoot) {
     });
 }
 /**
+ * The finest mtime the platform will give for this file, as a decimal string.
+ *
+ * Millisecond mtime is a coarse revalidation signal: on a filesystem with a 1 ms
+ * or worse timestamp granularity, a rewrite within the same tick is invisible to
+ * it. `bigint` stats expose the nanosecond field where the platform keeps one,
+ * which narrows that window without closing it — which is why reuse is still
+ * disclosed rather than trusted.
+ */
+function highResolutionMtime(absolutePath) {
+    try {
+        return fs.lstatSync(absolutePath, { bigint: true }).mtimeNs.toString();
+    }
+    catch {
+        return null;
+    }
+}
+/**
  * Hash every regular file, verifying that the file did not change underneath the
  * read. A file whose size or mtime moved across its own hash is re-read a bounded
  * number of times before the observation is declared unstable.
@@ -752,8 +770,25 @@ function hashStableFile(entry) {
     }
     return { digest: null, reason, changed: true };
 }
+/**
+ * Whether a prior hash may stand in for reading this file's bytes.
+ *
+ * Every recorded stat field must match, and the finest one available decides: if
+ * both runs recorded a nanosecond mtime, a millisecond agreement is not enough.
+ * A prior record with no hash, or one that never saw this path, is not a match —
+ * absence is not evidence of sameness.
+ */
+function priorHashStillApplies(entry, known) {
+    if (known === undefined)
+        return false;
+    if (entry.sizeBytes === null || known.size_bytes !== entry.sizeBytes)
+        return false;
+    if (known.mtime_ns !== undefined && entry.mtimeNs !== null)
+        return known.mtime_ns === entry.mtimeNs;
+    return entry.mtimeMs !== null && known.mtime_ms === entry.mtimeMs;
+}
 /** Hash one entry and classify its encoding, or explain why neither happened. */
-function hashOneEntry(entry, hashMaxBytes, diagnostics) {
+function hashOneEntry(entry, hashMaxBytes, diagnostics, known) {
     const unknowns = [];
     if (hashMaxBytes !== undefined && (entry.sizeBytes ?? 0) > hashMaxBytes) {
         unknowns.push("content_hash_skipped:file_exceeds_hash_budget");
@@ -764,6 +799,22 @@ function hashOneEntry(entry, hashMaxBytes, diagnostics) {
             sourcePath: entry.relativePath,
         });
         return { hashed: { entry, contentHashHex: null, encoding: null, unknowns }, unstableReason: null };
+    }
+    if (priorHashStillApplies(entry, known)) {
+        // The encoding probe still reads the file: it is a bounded prefix read rather
+        // than a full stream, and skipping it would silently drop the "not UTF-8"
+        // fact from an incremental run's inventory.
+        const carried = known.content_hash;
+        return {
+            hashed: {
+                entry,
+                contentHashHex: carried.replace("sha256:", ""),
+                encoding: (0, encoding_1.probeFileEncoding)(entry.absolutePath),
+                unknowns,
+                reused: true,
+            },
+            unstableReason: null,
+        };
     }
     const attempt = hashStableFile(entry);
     if (attempt.digest === null) {
@@ -802,19 +853,30 @@ function hashOneEntry(entry, hashMaxBytes, diagnostics) {
  * file that changed across its own hash stops the pass and makes the observation
  * unstable, because there is no single snapshot left to describe.
  */
-function hashEntries(entries, hashMaxBytes, diagnostics) {
+function hashEntries(entries, hashMaxBytes, diagnostics, knownHashes) {
     const hashed = [];
+    const hashing = {
+        fully_rehashed_count: 0,
+        cached_reuse_count: 0,
+        unhashed_count: 0,
+    };
     for (const entry of entries) {
         if (entry.kind !== "file") {
             hashed.push({ entry, contentHashHex: null, encoding: null, unknowns: [] });
             continue;
         }
-        const result = hashOneEntry(entry, hashMaxBytes, diagnostics);
+        const result = hashOneEntry(entry, hashMaxBytes, diagnostics, knownHashes?.get(entry.relativePath));
         if (result.unstableReason !== null)
-            return { hashed, unstableReason: result.unstableReason };
+            return { hashed, unstableReason: result.unstableReason, hashing };
+        if (result.hashed.contentHashHex === null)
+            hashing.unhashed_count += 1;
+        else if (result.hashed.reused === true)
+            hashing.cached_reuse_count += 1;
+        else
+            hashing.fully_rehashed_count += 1;
         hashed.push(result.hashed);
     }
-    return { hashed, unstableReason: null };
+    return { hashed, unstableReason: null, hashing };
 }
 function revisionFor(sourceKind, digest) {
     const bare = digest.replace("sha256:", "");
@@ -836,6 +898,7 @@ function enumerateSource(absoluteSource, sourceKind, omit, diagnostics, omittedP
             kind: "file",
             sizeBytes: stats.size,
             mtimeMs: stats.mtimeMs,
+            mtimeNs: highResolutionMtime(absoluteSource),
             linkTarget: null,
         }];
 }
@@ -1047,7 +1110,7 @@ function acquireLocalSource(input) {
     // Enumerate, hash, then re-enumerate. A source that moved between the first and
     // last read has no single snapshot to describe, and saying so is the whole point.
     const entries = enumerateSource(absoluteSource, sourceKind, omit, diagnostics, omittedPaths, skippedDirs);
-    const { hashed, unstableReason: hashUnstable } = hashEntries(entries, input.hashMaxBytes, diagnostics);
+    const { hashed, unstableReason: hashUnstable, hashing } = hashEntries(entries, input.hashMaxBytes, diagnostics, input.knownHashes);
     const unstableReason = hashUnstable
         ?? verifySnapshotStability(absoluteSource, sourceKind, entries, omit);
     if (unstableReason !== null) {
@@ -1087,6 +1150,7 @@ function acquireLocalSource(input) {
         sourceName,
         sourceRevision: identity.sourceRevision,
         physicalSnapshotHash: identity.physicalSnapshotHash,
+        hashing,
         inventory: buildInventoryResult(absoluteSource, records, skippedDirs, omittedPaths),
         archives: [...archives].sort((a, b) => (0, ordering_1.compareCodePoints)(a.sourcePath, b.sourcePath)),
         virtualArtifacts: [...members].sort((a, b) => (0, ordering_1.compareCodePoints)(a.virtualSourcePath, b.virtualSourcePath)),

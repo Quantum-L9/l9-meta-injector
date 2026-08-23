@@ -55,18 +55,28 @@ const USAGE = [
   "                             path segment and is the root's identity across runs",
   "  --root-manifest FILE       read roots from a l9.corpus-roots/v1 JSON document",
   "                             or a plain list of paths, one per line",
-  "  --cache-dir DIR            content-addressed cache root (default: $L9_CORPUS_CACHE",
+  "  --cache-root DIR           content-addressed cache root (default: $L9_CORPUS_CACHE",
   "                             or ~/.l9/corpus-cache); never inside an observed root",
+  "                             (--cache-dir is the older spelling of the same flag)",
   "  --no-cache                 run cold: read nothing from the cache, write nothing",
   "  --previous-snapshot FILE   diff against this snapshot (default: <out>/corpus-snapshot.json)",
+  "  --incremental              carry a previous run's content hash forward when a file's",
+  "                             size and mtime have not moved. Fast, and explicitly NOT",
+  "                             byte-verified: the run reports how many hashes it reused",
+  "                             and refuses to call the result fully_verified",
+  "  --verify-content           read every byte even under --incremental, restoring a",
+  "                             fully_verified snapshot",
+  "  --allow-partial-roots      emit a snapshot marked partial when a root cannot be read,",
+  "                             instead of failing the run. Never labelled complete",
   "  --no-diff                  do not produce corpus-diff.json",
   "  --session FILE             session manifest path (default: <out>/corpus-session.json)",
   "  --resume                   adopt an existing session manifest for the same roots",
   "  --topic-threshold F        topic candidate vocabulary overlap in [0,1] (default: 0.35)",
   "  --no-topic-candidates      skip topic candidate analysis",
-  "  --max-parallel-decoders N  documents decoded concurrently (default: 4)",
-  "  --max-parallel-hashers N   recorded; acquisition hashes each root with one reader",
-  "  --max-parallel-embedding-requests N   recorded; embeddings are not enabled",
+  "  --max-decoder-workers N    documents decoded concurrently (default: 4)",
+  "  --max-hash-workers N       recorded; acquisition hashes each root with one reader",
+  "  --max-analysis-workers N   recorded; candidate analysis is a single pass",
+  "  --max-embedding-workers N  recorded; embeddings are not enabled in this release",
   "  --max-memory-bytes N       ceiling on decoded text held at once (default: 256 MiB)",
   "",
   "semantic candidate discovery (on by default):",
@@ -202,15 +212,24 @@ function collectRoots(cli, roots) {
 /** Resource budgets, defaulted by the engine and overridable one at a time. */
 function collectBudgets(cli) {
   const budgets = {};
+  // The contract names these workers; the older --max-parallel-* spellings are
+  // kept so an existing invocation does not break, and the newer name wins when
+  // both are given.
   const map = {
-    max_parallel_hashers: "--max-parallel-hashers",
-    max_parallel_decoders: "--max-parallel-decoders",
-    max_parallel_embedding_requests: "--max-parallel-embedding-requests",
-    max_memory_bytes: "--max-memory-bytes",
+    max_parallel_hashers: ["--max-hash-workers", "--max-parallel-hashers"],
+    max_parallel_decoders: ["--max-decoder-workers", "--max-parallel-decoders"],
+    max_parallel_analysis: ["--max-analysis-workers"],
+    max_parallel_embedding_requests: ["--max-embedding-workers", "--max-parallel-embedding-requests"],
+    max_memory_bytes: ["--max-memory-bytes"],
   };
-  for (const [key, flagName] of Object.entries(map)) {
-    const value = numericOpt(cli, flagName);
-    if (value !== undefined) budgets[key] = value;
+  for (const [key, flagNames] of Object.entries(map)) {
+    for (const flagName of flagNames) {
+      const value = numericOpt(cli, flagName);
+      if (value !== undefined) {
+        budgets[key] = value;
+        break;
+      }
+    }
   }
   return budgets;
 }
@@ -306,6 +325,17 @@ function reportCorpusRun(context) {
     + `(${coverage.cache.hits} hit, ${coverage.cache.misses} miss, ${coverage.cache.corrupt} discarded)`,
   );
   if (cache !== undefined) console.log(`  cache dir        ${cache.root}`);
+  const verification = result.snapshot.verification;
+  console.log(
+    `  verification     ${verification.mode}${verification.verify_content_requested ? " (--verify-content)" : ""}`
+    + ` -> ${verification.verification_class}`,
+  );
+  console.log(
+    `  hashes           ${verification.fully_rehashed_artifact_count} read in full, `
+    + `${verification.cached_hash_reuse_count} carried over, `
+    + `${verification.unhashed_artifact_count} unhashed`,
+  );
+  if (verification.cached_hash_reuse_count > 0) console.log(`  ${verification.statement}`);
   console.log(
     `  mtime precheck   ${result.precheck.predicted_unchanged} predicted unchanged, `
     + `${result.precheck.confirmed_unchanged} confirmed by hash, ${result.precheck.contradicted} contradicted`,
@@ -385,7 +415,7 @@ async function runCorpusMode(cli) {
   if (cacheEnabled) {
     try {
       cache = new cacheModule.FileCorpusCache({
-        root: cli.opt("--cache-dir", cacheModule.defaultCorpusCacheDir()),
+        root: cli.opt("--cache-root", cli.opt("--cache-dir", cacheModule.defaultCorpusCacheDir())),
         producerVersion: version,
         observedRootPaths: rootPaths,
       });
@@ -512,6 +542,8 @@ async function runCorpusMode(cli) {
       budgets: collectBudgets(cli),
       corpusId,
       observedAt: new Date().toISOString(),
+      verification: cli.flag("--incremental") ? "incremental" : "full",
+      verifyContent: cli.flag("--verify-content"),
       semanticAnalysis: !cli.flag("--no-semantic-analysis"),
       ...(Object.keys(packBudget).length > 0 ? { packBudget } : {}),
     });

@@ -160,6 +160,37 @@ export interface LocalSourceAcquireInput {
   hashMaxBytes?: number;
   /** Scratch parent directory. Defaults to the OS temporary directory. */
   scratchParent?: string;
+  /**
+   * Exact hashes a previous fully-verified run established, by relative path.
+   *
+   * Supplying this switches a file from "read every byte" to "read the bytes only
+   * if size or mtime moved". That is a revalidation signal, never content truth:
+   * a file rewritten in place within one filesystem timestamp tick and to exactly
+   * the same length would be reported unchanged. The observation records how many
+   * hashes were reused so nothing downstream can call the result byte-verified —
+   * see `hashing` on the observation.
+   */
+  knownHashes?: ReadonlyMap<string, KnownFileHash>;
+}
+
+/** What a previous run established about one file, and the stat it saw. */
+export interface KnownFileHash {
+  /** `sha256:`-prefixed, as a previous run computed it from the exact bytes. */
+  content_hash: string;
+  size_bytes: number;
+  mtime_ms: number;
+  /** Nanosecond mtime, where the platform reports one. Compared when present. */
+  mtime_ns?: string;
+}
+
+/** How the hashes in one observation were arrived at. */
+export interface LocalSourceHashingReport {
+  /** Files whose bytes this run read in full. */
+  fully_rehashed_count: number;
+  /** Files whose hash was carried over because size and mtime had not moved. */
+  cached_reuse_count: number;
+  /** Files with no hash at all: over budget, or unreadable. */
+  unhashed_count: number;
 }
 
 export interface LocalSourceObservation {
@@ -169,6 +200,8 @@ export interface LocalSourceObservation {
   sourceRevision: string;
   /** `sha256:`-prefixed digest of the canonical physical manifest. */
   physicalSnapshotHash: string;
+  /** How the hashes were arrived at: read, carried over, or absent. */
+  hashing: LocalSourceHashingReport;
   /** Physical entries plus virtual archive members, in the inventory record shape. */
   inventory: InventoryResult;
   archives: LocalArchiveObservation[];
@@ -339,6 +372,8 @@ interface EnumeratedEntry {
   /** Stability metadata, compared before and after hashing. Never part of identity. */
   sizeBytes: number | null;
   mtimeMs: number | null;
+  /** Nanosecond mtime where the platform reports one; the finest tick available. */
+  mtimeNs: string | null;
   linkTarget: string | null;
 }
 
@@ -394,6 +429,7 @@ function observeEntry(
     kind,
     sizeBytes: kind === "file" ? stats.size : null,
     mtimeMs: kind === "directory" ? null : stats.mtimeMs,
+    mtimeNs: kind === "directory" ? null : highResolutionMtime(absolutePath),
     linkTarget,
   };
 }
@@ -944,6 +980,25 @@ interface HashedEntry {
   contentHashHex: string | null;
   encoding: EncodingProbe | null;
   unknowns: string[];
+  /** True when the hash was carried over rather than computed from the bytes. */
+  reused?: boolean;
+}
+
+/**
+ * The finest mtime the platform will give for this file, as a decimal string.
+ *
+ * Millisecond mtime is a coarse revalidation signal: on a filesystem with a 1 ms
+ * or worse timestamp granularity, a rewrite within the same tick is invisible to
+ * it. `bigint` stats expose the nanosecond field where the platform keeps one,
+ * which narrows that window without closing it — which is why reuse is still
+ * disclosed rather than trusted.
+ */
+function highResolutionMtime(absolutePath: string): string | null {
+  try {
+    return fs.lstatSync(absolutePath, { bigint: true }).mtimeNs.toString();
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -982,11 +1037,27 @@ function hashStableFile(entry: EnumeratedEntry): { digest: string | null; reason
   return { digest: null, reason, changed: true };
 }
 
+/**
+ * Whether a prior hash may stand in for reading this file's bytes.
+ *
+ * Every recorded stat field must match, and the finest one available decides: if
+ * both runs recorded a nanosecond mtime, a millisecond agreement is not enough.
+ * A prior record with no hash, or one that never saw this path, is not a match —
+ * absence is not evidence of sameness.
+ */
+function priorHashStillApplies(entry: EnumeratedEntry, known: KnownFileHash | undefined): boolean {
+  if (known === undefined) return false;
+  if (entry.sizeBytes === null || known.size_bytes !== entry.sizeBytes) return false;
+  if (known.mtime_ns !== undefined && entry.mtimeNs !== null) return known.mtime_ns === entry.mtimeNs;
+  return entry.mtimeMs !== null && known.mtime_ms === entry.mtimeMs;
+}
+
 /** Hash one entry and classify its encoding, or explain why neither happened. */
 function hashOneEntry(
   entry: EnumeratedEntry,
   hashMaxBytes: number | undefined,
   diagnostics: LocalSourceDiagnostic[],
+  known?: KnownFileHash,
 ): { hashed: HashedEntry; unstableReason: string | null } {
   const unknowns: string[] = [];
   if (hashMaxBytes !== undefined && (entry.sizeBytes ?? 0) > hashMaxBytes) {
@@ -998,6 +1069,23 @@ function hashOneEntry(
       sourcePath: entry.relativePath,
     });
     return { hashed: { entry, contentHashHex: null, encoding: null, unknowns }, unstableReason: null };
+  }
+
+  if (priorHashStillApplies(entry, known)) {
+    // The encoding probe still reads the file: it is a bounded prefix read rather
+    // than a full stream, and skipping it would silently drop the "not UTF-8"
+    // fact from an incremental run's inventory.
+    const carried = (known as KnownFileHash).content_hash;
+    return {
+      hashed: {
+        entry,
+        contentHashHex: carried.replace("sha256:", ""),
+        encoding: probeFileEncoding(entry.absolutePath),
+        unknowns,
+        reused: true,
+      },
+      unstableReason: null,
+    };
   }
 
   const attempt = hashStableFile(entry);
@@ -1043,18 +1131,27 @@ function hashEntries(
   entries: EnumeratedEntry[],
   hashMaxBytes: number | undefined,
   diagnostics: LocalSourceDiagnostic[],
-): { hashed: HashedEntry[]; unstableReason: string | null } {
+  knownHashes?: ReadonlyMap<string, KnownFileHash>,
+): { hashed: HashedEntry[]; unstableReason: string | null; hashing: LocalSourceHashingReport } {
   const hashed: HashedEntry[] = [];
+  const hashing: LocalSourceHashingReport = {
+    fully_rehashed_count: 0,
+    cached_reuse_count: 0,
+    unhashed_count: 0,
+  };
   for (const entry of entries) {
     if (entry.kind !== "file") {
       hashed.push({ entry, contentHashHex: null, encoding: null, unknowns: [] });
       continue;
     }
-    const result = hashOneEntry(entry, hashMaxBytes, diagnostics);
-    if (result.unstableReason !== null) return { hashed, unstableReason: result.unstableReason };
+    const result = hashOneEntry(entry, hashMaxBytes, diagnostics, knownHashes?.get(entry.relativePath));
+    if (result.unstableReason !== null) return { hashed, unstableReason: result.unstableReason, hashing };
+    if (result.hashed.contentHashHex === null) hashing.unhashed_count += 1;
+    else if (result.hashed.reused === true) hashing.cached_reuse_count += 1;
+    else hashing.fully_rehashed_count += 1;
     hashed.push(result.hashed);
   }
-  return { hashed, unstableReason: null };
+  return { hashed, unstableReason: null, hashing };
 }
 
 function revisionFor(sourceKind: LocalSourceKind, digest: string): string {
@@ -1083,6 +1180,7 @@ function enumerateSource(
     kind: "file",
     sizeBytes: stats.size,
     mtimeMs: stats.mtimeMs,
+    mtimeNs: highResolutionMtime(absoluteSource),
     linkTarget: null,
   }];
 }
@@ -1315,7 +1413,12 @@ export function acquireLocalSource(input: LocalSourceAcquireInput): LocalSourceO
   // Enumerate, hash, then re-enumerate. A source that moved between the first and
   // last read has no single snapshot to describe, and saying so is the whole point.
   const entries = enumerateSource(absoluteSource, sourceKind, omit, diagnostics, omittedPaths, skippedDirs);
-  const { hashed, unstableReason: hashUnstable } = hashEntries(entries, input.hashMaxBytes, diagnostics);
+  const { hashed, unstableReason: hashUnstable, hashing } = hashEntries(
+    entries,
+    input.hashMaxBytes,
+    diagnostics,
+    input.knownHashes,
+  );
   const unstableReason = hashUnstable
     ?? verifySnapshotStability(absoluteSource, sourceKind, entries, omit);
   if (unstableReason !== null) {
@@ -1358,6 +1461,7 @@ export function acquireLocalSource(input: LocalSourceAcquireInput): LocalSourceO
     sourceName,
     sourceRevision: identity.sourceRevision,
     physicalSnapshotHash: identity.physicalSnapshotHash,
+    hashing,
     inventory: buildInventoryResult(absoluteSource, records, skippedDirs, omittedPaths),
     archives: [...archives].sort((a, b) => compareCodePoints(a.sourcePath, b.sourcePath)),
     virtualArtifacts: [...members].sort((a, b) => compareCodePoints(a.virtualSourcePath, b.virtualSourcePath)),

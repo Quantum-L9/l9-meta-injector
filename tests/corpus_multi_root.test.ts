@@ -252,9 +252,9 @@ describe("analysis across the root boundary", () => {
     expect(result.coverage.unsupported_format_counts).toEqual([
       { extension: ".pdf", count: 1, bytes: expect.any(Number) },
     ]);
-    expect(result.coverage.ocr_required_count).toBe(1);
+    expect(result.coverage.documents.ocr_required_count).toBe(1);
     expect(result.coverage.embedding_coverage_when_enabled).toBeNull();
-    expect(result.coverage.embedding_enabled).toBe(false);
+    expect(result.coverage.embeddings.enabled).toBe(false);
     expect(result.coverage.exact_hash_coverage.ratio).toBe(1);
     expect(result.coverage.reasoning_handoff.no_priority_statement).toContain("no priority");
     expect(result.coverage.reasoning_handoff.unique_content_estimate).toBeGreaterThan(0);
@@ -286,7 +286,7 @@ describe("analysis across the root boundary", () => {
       c.source_paths.some((p) => p.includes("old-work.zip!/")),
     );
     expect(cluster?.source_paths.some((p) => !p.includes("!/"))).toBe(true);
-    expect(result.coverage.archive_count).toBe(1);
-    expect(result.coverage.archive_member_count).toBe(2);
+    expect(result.coverage.corpus.archive_count).toBe(1);
+    expect(result.coverage.corpus.archive_member_count).toBe(2);
   });
 });

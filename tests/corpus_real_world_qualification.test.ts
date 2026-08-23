@@ -321,9 +321,9 @@ describe("the coverage projection of the same run", () => {
     const { cold, report } = await qualify("memory");
     const coverage = JSON.parse(renderCorpusCoverage(cold.coverage)) as Record<string, unknown>;
 
-    expect(coverage.ocr_required_count).toBe(report.unsupported_counts.ocr_required_count);
-    expect(coverage.secret_skipped_count).toBe(report.unsupported_counts.secret_skipped_count);
-    expect(coverage.reasoning_eligible_candidate_count).toBe(report.reasoning_eligible_count);
-    expect(coverage.archive_count).toBe(report.corpus.archive_count);
+    expect(coverage.documents.ocr_required_count).toBe(report.unsupported_counts.ocr_required_count);
+    expect(coverage.documents.secret_skipped_count).toBe(report.unsupported_counts.secret_skipped_count);
+    expect(coverage.reasoning_handoff.reasoning_eligible_candidate_count).toBe(report.reasoning_eligible_count);
+    expect(coverage.corpus.archive_count).toBe(report.corpus.archive_count);
   });
 });

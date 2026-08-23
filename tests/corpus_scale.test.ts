@@ -69,8 +69,8 @@ describe("a ten-thousand-artifact corpus", () => {
     // declared-identifier body of work rather than a directory-name guess.
     const declared = cold.candidates.project_candidates.filter((c) => c.identifier_is_declared);
     expect(declared).toHaveLength(SPEC.candidateProjects);
-    expect(cold.coverage.project_candidate_count).toBe(SPEC.candidateProjects);
-    expect(cold.coverage.reasoning_eligible_candidate_count).toBe(SPEC.candidateProjects);
+    expect(cold.coverage.semantics.project_candidate_count).toBe(SPEC.candidateProjects);
+    expect(cold.coverage.reasoning_handoff.reasoning_eligible_candidate_count).toBe(SPEC.candidateProjects);
     expect(cold.readiness.bodies_of_work).toHaveLength(SPEC.candidateProjects);
     for (const body of cold.readiness.bodies_of_work) {
       expect(body.origin).toBe("explicit_project_identifier");

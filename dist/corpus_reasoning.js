@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.PACK_SELECTION_PRIORITY = exports.DEFAULT_REASONING_PACK_BUDGET = exports.REASONING_TYPES = exports.REASONING_EVIDENCE_PACK_SCHEMA = exports.REASONING_CANDIDATE_SCHEMA = exports.REASONING_ROUTING_PROFILE_VERSION = exports.REASONING_ROUTING_PROFILE_ID = void 0;
+exports.PACK_SELECTION_PRIORITY = exports.DEFAULT_REASONING_PACK_BUDGET = exports.REASONING_GROUNDING_REFS = exports.REASONING_TYPES = exports.REASONING_EVIDENCE_PACK_SCHEMA = exports.REASONING_CANDIDATE_SCHEMA = exports.REASONING_ROUTING_PROFILE_VERSION = exports.REASONING_ROUTING_PROFILE_ID = void 0;
 exports.reasoningRoutingProfileHash = reasoningRoutingProfileHash;
 exports.routeReasoningCandidates = routeReasoningCandidates;
 exports.reasoningEligible = reasoningEligible;
@@ -75,6 +75,12 @@ function reasoningRoutingProfileHash() {
         types: exports.REASONING_TYPES,
     });
 }
+/** Files a routed candidate points at for its grounded measurements. */
+exports.REASONING_GROUNDING_REFS = {
+    readiness_evidence_ref: "readiness-evidence.json",
+    corpus_coverage_ref: "corpus-coverage.json",
+    corpus_snapshot_ref: "corpus-snapshot.json",
+};
 function candidateId(candidate) {
     return candidate.candidate_id;
 }
@@ -193,6 +199,7 @@ function routeReasoningCandidates(input) {
             reasoning_type: routed.type,
             reason: routed.reason,
             member_artifact_ids: [...candidate.member_artifact_ids].sort(ordering_1.compareCodePoints),
+            grounding_refs: { ...exports.REASONING_GROUNDING_REFS },
             routing_profile: routingProfile,
         });
     };

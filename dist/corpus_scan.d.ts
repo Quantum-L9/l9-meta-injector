@@ -5,7 +5,7 @@ import { CorpusCoverage } from "./corpus_coverage";
 import { CorpusDiff } from "./corpus_diff";
 import { ReadinessEvidence } from "./corpus_readiness";
 import { CorpusRootBinding, CorpusRootSpec, rootIdentity } from "./corpus_roots";
-import { CorpusSnapshot } from "./corpus_snapshot";
+import { CorpusSnapshot, VerificationMode } from "./corpus_snapshot";
 import { CorpusResourceBudgets, CorpusSessionStore } from "./corpus_session";
 import { LocalArchivePolicy } from "./local_archive_policy";
 import type { DocumentIndex } from "./corpus_documents";
@@ -30,6 +30,13 @@ export interface CorpusScanInput {
     generatedAt?: string;
     /** Wall clock recorded in each root's acquisition manifest. Operational only. */
     observedAt?: string;
+    /**
+     * `full` reads every byte; `incremental` may carry a previous run's hash forward
+     * when size and mtime have not moved. Default `full`.
+     */
+    verification?: VerificationMode;
+    /** Force a full read even under `incremental`, and say so in the snapshot. */
+    verifyContent?: boolean;
     cache?: CorpusCache;
     session?: CorpusSessionStore;
     /** Snapshot of a previous run; when present, `corpus-diff.json` is produced. */

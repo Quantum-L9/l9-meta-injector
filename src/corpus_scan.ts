@@ -111,6 +111,10 @@ import {
   CorpusSnapshotArtifact,
   CorpusSnapshotRoot,
   CorpusStatus,
+  CorpusVerification,
+  CACHED_ASSUMPTION_STATEMENT,
+  FULLY_VERIFIED_STATEMENT,
+  VerificationMode,
   snapshotPrechecks,
 } from "./corpus_snapshot";
 import {
@@ -137,7 +141,12 @@ import {
   isSecretCandidatePath,
 } from "./interpretation";
 import { LocalArchivePolicy } from "./local_archive_policy";
-import { ARCHIVE_MEMBER_SEPARATOR, LocalSourceObservation, acquireLocalSource } from "./local_source";
+import {
+  ARCHIVE_MEMBER_SEPARATOR,
+  KnownFileHash,
+  LocalSourceObservation,
+  acquireLocalSource,
+} from "./local_source";
 import { compareCodePoints } from "./ordering";
 import { UNDECODED_REASON_NOT_ELIGIBLE, buildDocumentIndex } from "./corpus_documents";
 import { runSemanticAnalysis } from "./corpus_semantic_run";
@@ -190,6 +199,13 @@ export interface CorpusScanInput {
   generatedAt?: string;
   /** Wall clock recorded in each root's acquisition manifest. Operational only. */
   observedAt?: string;
+  /**
+   * `full` reads every byte; `incremental` may carry a previous run's hash forward
+   * when size and mtime have not moved. Default `full`.
+   */
+  verification?: VerificationMode;
+  /** Force a full read even under `incremental`, and say so in the snapshot. */
+  verifyContent?: boolean;
   cache?: CorpusCache;
   session?: CorpusSessionStore;
   /** Snapshot of a previous run; when present, `corpus-diff.json` is produced. */
@@ -364,7 +380,7 @@ interface ScanArtifact {
   isArchiveMember: boolean;
   basename: string;
   extension: string;
-  statPrecheck?: { size_bytes: number; mtime_ms: number };
+  statPrecheck?: { size_bytes: number; mtime_ms: number; mtime_ns?: string };
 }
 
 /** What the text decoder established about one set of bytes. */
@@ -710,6 +726,35 @@ async function deriveDocumentLayers(
   }
 }
 
+/**
+ * A previous run's hashes for one root, keyed by root-relative path.
+ *
+ * Only artifacts with both a hash and the stat they were hashed at are eligible:
+ * a record missing either cannot be revalidated, and an unrevalidatable record is
+ * not a reason to skip reading a file. Archive members are excluded — their bytes
+ * live inside an archive this run re-reads, so there is nothing to stat.
+ */
+function knownHashesForRoot(
+  rootId: string,
+  previous: CorpusSnapshot | undefined,
+): Map<string, KnownFileHash> {
+  const known = new Map<string, KnownFileHash>();
+  for (const artifact of previous?.artifacts ?? []) {
+    if (artifact.root_id !== rootId) continue;
+    if (artifact.is_archive_member) continue;
+    if (artifact.content_hash === null || artifact.stat_precheck === undefined) continue;
+    known.set(artifact.root_relative_path, {
+      content_hash: artifact.content_hash,
+      size_bytes: artifact.stat_precheck.size_bytes,
+      mtime_ms: artifact.stat_precheck.mtime_ms,
+      ...(artifact.stat_precheck.mtime_ns !== undefined
+        ? { mtime_ns: artifact.stat_precheck.mtime_ns }
+        : {}),
+    });
+  }
+  return known;
+}
+
 // ───────────────────────────── the scan ─────────────────────────────
 
 /**
@@ -741,7 +786,25 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
   const extractors = defaultExtractors();
   const interpretProfile = interpretationProfileHash(extractors);
   const interpretEnabled = input.interpret !== false;
+  const verificationMode: VerificationMode = input.verification ?? "full";
+  const verifyContent = input.verifyContent === true;
+  // `--verify-content` outranks `--incremental`: it exists precisely to turn a
+  // stat-assisted snapshot back into a byte-verified one, so it must win when
+  // both are given rather than quietly deferring to the cheaper mode.
+  const knownHashesEnabled = verificationMode === "incremental"
+    && !verifyContent
+    && input.previousSnapshot !== undefined;
 
+  if (budgets.max_parallel_analysis > 1) {
+    diagnostics.push({
+      code: "corpus.analysis_parallelism_recorded",
+      severity: "info",
+      message:
+        `max_parallel_analysis=${budgets.max_parallel_analysis} was recorded, but candidate `
+        + "generation is a single pass over evidence already in memory; the value is not "
+        + "exercised in this release",
+    });
+  }
   if (budgets.max_parallel_hashers > 1) {
     diagnostics.push({
       code: "corpus.hasher_parallelism_clamped",
@@ -765,6 +828,9 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
         path: spec.path,
         sourceKind: "auto",
         name: rootKey,
+        ...(knownHashesEnabled
+          ? { knownHashes: knownHashesForRoot(corpusRootId(rootKey), input.previousSnapshot) }
+          : {}),
         expandArchives: input.expandArchives !== false,
         ...(input.archivePolicy ? { archivePolicy: input.archivePolicy } : {}),
         ...(input.omitPatterns ? { omitPatterns: input.omitPatterns } : {}),
@@ -897,7 +963,20 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
         if (!artifact.isArchiveMember && record.absolute_path !== null) {
           try {
             const stats = fs.statSync(record.absolute_path);
-            artifact.statPrecheck = { size_bytes: stats.size, mtime_ms: Math.trunc(stats.mtimeMs) };
+            // The nanosecond field is recorded when the platform keeps one, so
+            // the next incremental run can revalidate against the finest tick
+            // available rather than a millisecond one it might sit inside.
+            let mtimeNs: string | null = null;
+            try {
+              mtimeNs = fs.statSync(record.absolute_path, { bigint: true }).mtimeNs.toString();
+            } catch {
+              // No high-resolution stat here; the millisecond field still stands.
+            }
+            artifact.statPrecheck = {
+              size_bytes: stats.size,
+              mtime_ms: Math.trunc(stats.mtimeMs),
+              ...(mtimeNs !== null ? { mtime_ns: mtimeNs } : {}),
+            };
           } catch {
             // A file that vanished between acquisition and here contributes no
             // hint. It contributes no identity either: the hash already decided.
@@ -1244,6 +1323,30 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
         failure_reason: null,
       };
     });
+    const hashingTotals = active.reduce(
+      (sum, entry) => ({
+        fully_rehashed_count: sum.fully_rehashed_count + entry.observation.hashing.fully_rehashed_count,
+        cached_reuse_count: sum.cached_reuse_count + entry.observation.hashing.cached_reuse_count,
+        unhashed_count: sum.unhashed_count + entry.observation.hashing.unhashed_count,
+      }),
+      { fully_rehashed_count: 0, cached_reuse_count: 0, unhashed_count: 0 },
+    );
+    // The label follows the run, not the request. An incremental run that happened
+    // to reuse nothing did read every byte and may say so; a run that reused even
+    // one hash did not, whatever mode it was asked for.
+    const verification: CorpusVerification = {
+      mode: verificationMode,
+      verify_content_requested: verifyContent,
+      verification_class: hashingTotals.cached_reuse_count === 0
+        ? "fully_verified"
+        : "cached_unchanged_assumption",
+      fully_rehashed_artifact_count: hashingTotals.fully_rehashed_count,
+      cached_hash_reuse_count: hashingTotals.cached_reuse_count,
+      unhashed_artifact_count: hashingTotals.unhashed_count,
+      statement: hashingTotals.cached_reuse_count === 0
+        ? FULLY_VERIFIED_STATEMENT
+        : CACHED_ASSUMPTION_STATEMENT,
+    };
     const corpusStatus: CorpusStatus = snapshotRoots.every(
       (root) => root.observation_status === "observed",
     )
@@ -1255,6 +1358,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       corpus_source_snapshot_id: sourceSnapshotId,
       analysis: analysisIdentity,
       corpus_status: corpusStatus,
+      verification,
       missing_root_ids: [],
       roots: snapshotRoots,
       artifacts: snapshotArtifacts,
@@ -1552,6 +1656,15 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
         ),
       0,
     );
+    // Artifacts carrying at least one `work.*` claim. This is the denominator a
+    // reader needs beside "3 blocked": three of eleven documents that say anything
+    // about their own state is a different corpus from three of eleven thousand.
+    const workSignalArtifacts = new Set<string>();
+    for (const [artifactId, record] of interpreted) {
+      if (record.assertions.some((assertion) => assertion.predicate.startsWith("work."))) {
+        workSignalArtifacts.add(artifactId);
+      }
+    }
     const dependencyPredicates = new Map<string, number>();
     for (const record of interpreted.values()) {
       for (const assertion of record.assertions) {
@@ -1583,10 +1696,64 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       corpus_source_snapshot_id: sourceSnapshotId,
       corpus_analysis_id: analysisIdentity.corpus_analysis_id,
       root_ids: bound.roots.map((root) => root.root_id).sort(compareCodePoints),
-      total_files: artifacts.length,
-      total_bytes: snapshot.counts.total_bytes,
-      archive_count: archives.length,
-      archive_member_count: snapshot.counts.archive_member_count,
+      corpus: {
+        root_count_requested: snapshot.counts.root_count_requested,
+        root_count_observed: snapshot.counts.root_count_observed,
+        root_count_failed: snapshot.counts.root_count_failed,
+        total_physical_artifacts: artifacts.filter((a) => !a.isArchiveMember).length,
+        total_virtual_archive_artifacts: artifacts.filter((a) => a.isArchiveMember).length,
+        total_bytes_observed: snapshot.counts.total_bytes,
+        archive_count: archives.length,
+        archive_member_count: snapshot.counts.archive_member_count,
+      },
+      hashing: {
+        fully_rehashed_count: verification.fully_rehashed_artifact_count,
+        cached_hash_reuse_count: verification.cached_hash_reuse_count,
+        unhashed_count: verification.unhashed_artifact_count,
+        verification_class: verification.verification_class,
+        verification_mode: verification.mode,
+      },
+      documents: {
+        decoder_eligible_count: decodableIds.size,
+        normalized_document_count: decodedIds.size,
+        unsupported_format_count: artifacts.filter(
+          (artifact) => UNDECODED_EXTENSIONS.has(artifact.extension),
+        ).length,
+        // A decoder that was offered bytes and could not read them. Distinct from
+        // an artifact no decoder claims: one is a gap in this corpus, the other is
+        // a gap in the decoder set, and merging them hides which.
+        decoder_failure_count: decodableIds.size - decodedIds.size,
+        ocr_required_count: artifacts.filter((a) => OCR_EXTENSIONS.has(a.extension)).length,
+        encrypted_document_count: encryptedCount,
+        oversized_document_count: skipped.oversized,
+        secret_skipped_count: skipped.secret,
+      },
+      semantics: {
+        interpreted_artifact_count: interpreted.size,
+        work_signal_artifact_count: workSignalArtifacts.size,
+        exact_duplicate_cluster_count: clusters.length,
+        near_duplicate_candidate_count: nearCandidates.length,
+        topic_candidate_count: topicCandidates.length,
+        project_candidate_count: projectCandidates.length,
+        consolidation_candidate_count: semantic?.consolidations.candidates.length ?? 0,
+      },
+      embeddings: {
+        enabled: input.embeddingReport?.enabled === true,
+        eligible_count: input.embeddingReport?.enabled === true
+          ? input.embeddingReport.eligible_artifact_count
+          : null,
+        embedded_count: input.embeddingReport?.enabled === true
+          ? input.embeddingReport.embedded_artifact_count
+          : null,
+        cache_hit_count: input.embeddingReport?.enabled === true
+          ? input.embeddingReport.cache_hits
+          : null,
+        provider_failure_count: input.embeddingReport?.enabled === true
+          ? input.embeddingReport.eligible_artifact_count
+            - input.embeddingReport.embedded_artifact_count
+            - input.embeddingReport.secret_candidates_skipped
+          : null,
+      },
       exact_hash_coverage: coverageRatio(
         artifacts.filter((artifact) => artifact.contentHash !== null).length,
         artifacts.length,
@@ -1601,20 +1768,20 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
         lexicalEligible.length,
       ),
       embedding_coverage_when_enabled: null,
-      embedding_enabled: false,
       unsupported_format_counts: formatCounts(
         artifacts
           .filter((artifact) => UNDECODED_EXTENSIONS.has(artifact.extension))
           .map((artifact) => ({ extension: artifact.extension, bytes: artifact.sizeBytes ?? 0 })),
       ),
-      ocr_required_count: artifacts.filter((artifact) => OCR_EXTENSIONS.has(artifact.extension)).length,
-      encrypted_document_count: encryptedCount,
-      oversized_document_count: skipped.oversized,
-      secret_skipped_count: skipped.secret,
-      project_candidate_count: projectCandidates.length,
-      topic_candidate_count: topicCandidates.length,
-      reasoning_eligible_candidate_count: reasoningEligible,
       reasoning_handoff: {
+        reasoning_eligible_candidate_count: reasoningEligible,
+        reasoning_candidate_count: semantic?.reasoningCandidates.length ?? 0,
+        reasoning_evidence_pack_count: semantic?.evidencePacks.length ?? 0,
+        truncated_evidence_pack_count: semantic?.evidencePacks.filter(
+          (pack) => pack.truncation.truncated,
+        ).length ?? 0,
+        corpus_snapshot_ref: "corpus-snapshot.json",
+        corpus_coverage_ref: "corpus-coverage.json",
         readiness_evidence_refs: {
           schema: readiness.schema,
           file: "readiness-evidence.json",
