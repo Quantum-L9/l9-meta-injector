@@ -77,9 +77,7 @@ const USAGE = [
   "  --topic-threshold F        topic candidate vocabulary overlap in [0,1] (default: 0.35)",
   "  --no-topic-candidates      skip topic candidate analysis",
   "  --max-decoder-workers N    documents decoded concurrently (default: 4)",
-  "  --max-hash-workers N       recorded; acquisition hashes each root with one reader",
-  "  --max-analysis-workers N   recorded; candidate analysis is a single pass",
-  "  --max-embedding-workers N  documents embedded concurrently (default: 1)",
+  "  --max-embedding-workers N  documents embedded concurrently (default: 2)",
   "  --max-memory-bytes N       ceiling on decoded text held at once (default: 256 MiB)",
   "",
   "semantic candidate discovery (on by default):",
@@ -225,16 +223,41 @@ function collectRoots(cli, roots) {
   return { specs, corpusId: corpusId ?? roots.DEFAULT_CORPUS_ID };
 }
 
+/**
+ * Flags this CLI used to accept and act on nowhere.
+ *
+ * Refused rather than ignored. Silently dropping a flag an operator passed is
+ * how a decorative knob keeps working after it is removed: the invocation still
+ * succeeds, the setting still has no effect, and now there is not even a field
+ * in the manifest to notice. An error naming the reason is the only honest exit.
+ */
+const RETIRED_BUDGET_FLAGS = {
+  "--max-hash-workers":
+    "acquisition hashes a root with one synchronous streaming reader, which is what makes its "
+    + "did-this-tree-move check meaningful; the flag was recorded and never exercised",
+  "--max-parallel-hashers": "see --max-hash-workers",
+  "--max-analysis-workers":
+    "candidate generation is a single pass over evidence already in memory; the flag was "
+    + "recorded and never exercised",
+};
+
 /** Resource budgets, defaulted by the engine and overridable one at a time. */
 function collectBudgets(cli) {
+  for (const [flagName, reason] of Object.entries(RETIRED_BUDGET_FLAGS)) {
+    if (cli.opt(flagName, null) !== null || cli.flag(flagName)) {
+      fail(`${flagName} has been removed: ${reason}. Drop the flag.`, 2);
+    }
+  }
   const budgets = {};
-  // The contract names these workers; the older --max-parallel-* spellings are
-  // kept so an existing invocation does not break, and the newer name wins when
-  // both are given.
+  // Only bounds the run is actually held to. `--max-hash-workers` and
+  // `--max-analysis-workers` were accepted here and exercised nowhere; they are
+  // gone rather than documented as decorative, and an invocation still passing
+  // one is refused below rather than silently ignored.
+  //
+  // The older --max-parallel-* spellings are kept for the two that remain, so an
+  // existing invocation does not break; the newer name wins when both are given.
   const map = {
-    max_parallel_hashers: ["--max-hash-workers", "--max-parallel-hashers"],
     max_parallel_decoders: ["--max-decoder-workers", "--max-parallel-decoders"],
-    max_parallel_analysis: ["--max-analysis-workers"],
     max_parallel_embedding_requests: ["--max-embedding-workers", "--max-parallel-embedding-requests"],
     max_memory_bytes: ["--max-memory-bytes"],
   };

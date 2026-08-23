@@ -64,9 +64,7 @@ const ordering_1 = require("./ordering");
 const repository_model_1 = require("./repository_model");
 exports.CORPUS_SESSION_SCHEMA = "l9.corpus-session/v1";
 exports.DEFAULT_CORPUS_BUDGETS = {
-    max_parallel_hashers: 1,
     max_parallel_decoders: 4,
-    max_parallel_analysis: 1,
     max_parallel_embedding_requests: 2,
     max_memory_bytes: 256 * 1024 * 1024,
 };

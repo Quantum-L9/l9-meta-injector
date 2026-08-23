@@ -96,6 +96,15 @@ exports.MANIFEST_DECODER_VERSION = "1.0.0";
 /** Extensions the text decoder claims beyond the lexical-analysis set. */
 /** Extensionless files the text decoder claims by name. */
 const LEXICAL_EXTENSIONS = new Set(corpus_analysis_1.NEAR_DUPLICATE_EXTENSIONS);
+/**
+ * Formats whose decoder consumes the whole file, so the scan reads it once.
+ *
+ * The complement — `docx`, `pptx`, `xlsx` — are ZIP containers whose reader
+ * streams individual parts out by offset. Handing those a whole-file buffer
+ * would cost a second copy of every spreadsheet in the corpus to save a read the
+ * container reader never makes.
+ */
+const WHOLE_FILE_FORMATS = new Set(["text", "markdown", "csv", "html", "ipynb", "pdf"]);
 exports.CANDIDATE_STATEMENT = "Exact duplicates are byte equality and are facts. Near-duplicate candidates, topic "
     + "candidates and project candidates are deterministic candidate analyses: they report "
     + "shared bytes, shared wording and a container that holds a project marker. None of "
@@ -330,11 +339,35 @@ async function deriveDocumentLayers(artifact, context) {
             skipped.unreadable += 1;
             return;
         }
+        // Read the bytes here, asynchronously, for the formats whose decoders
+        // consume the whole file.
+        //
+        // This is the seam `max_parallel_decoders` bounds. With the read inside a
+        // synchronous decoder there is nothing to overlap in a single-threaded
+        // runtime, and the budget would govern only how many pipelines happened to
+        // be between awaits — a number nobody sets a flag for. Reading here puts N
+        // reads genuinely in flight, which on a spinning disk or a network mount is
+        // the difference the operator was reaching for.
+        //
+        // Container formats are excluded on purpose: their readers stream parts out
+        // by offset, and pulling a whole `.xlsx` into memory to hand it over would
+        // trade the concurrency for a memory spike and a second copy of every file.
+        let bytes;
+        if (WHOLE_FILE_FORMATS.has(decoder.format)) {
+            try {
+                bytes = await fs.promises.readFile(absolute);
+            }
+            catch {
+                skipped.unreadable += 1;
+                return;
+            }
+        }
         const outcome = decoder.decode({
             artifactId: artifact.virtualSourceId,
             contentHash,
             sourcePath: artifact.rootRelativePath,
             absolutePath: absolute,
+            ...(bytes !== undefined ? { bytes } : {}),
             sizeBytes: artifact.sizeBytes ?? 0,
             budget: documents_1.DEFAULT_DECODER_BUDGET,
         });
@@ -370,13 +403,13 @@ async function deriveDocumentLayers(artifact, context) {
         // what `document-signals.json` carries.
         let text;
         if (textFamily) {
-            try {
-                text = fs.readFileSync(absolute, "utf8");
-            }
-            catch {
+            // The bytes are already in hand from the read above; decoding them again
+            // beats a second trip to the filesystem for the same file.
+            if (bytes === undefined) {
                 skipped.unreadable += 1;
                 return;
             }
+            text = bytes.toString("utf8");
         }
         else {
             text = document.blocks.map((block) => block.text).join("\n");
@@ -545,23 +578,6 @@ async function runCorpusScan(input) {
     const knownHashesEnabled = verificationMode === "incremental"
         && !verifyContent
         && input.previousSnapshot !== undefined;
-    if (budgets.max_parallel_analysis > 1) {
-        diagnostics.push({
-            code: "corpus.analysis_parallelism_recorded",
-            severity: "info",
-            message: `max_parallel_analysis=${budgets.max_parallel_analysis} was recorded, but candidate `
-                + "generation is a single pass over evidence already in memory; the value is not "
-                + "exercised in this release",
-        });
-    }
-    if (budgets.max_parallel_hashers > 1) {
-        diagnostics.push({
-            code: "corpus.hasher_parallelism_clamped",
-            severity: "info",
-            message: `max_parallel_hashers=${budgets.max_parallel_hashers} was recorded, but acquisition `
-                + "hashes each root with one streaming reader; the value is not exercised in this release",
-        });
-    }
     // ── 1. acquire every root, read-only ────────────────────────────────────
     const observations = [];
     const failedRoots = [];

@@ -174,6 +174,21 @@ export interface DecodeInput {
   sourcePath: string;
   /** Absolute path to the bytes. Staged copies are fine; the source is not written. */
   absolutePath: string;
+  /**
+   * The file's bytes, when the caller already read them.
+   *
+   * Supplied by the corpus scan, which reads whole-file formats asynchronously so
+   * several reads can be in flight at once — the concurrency
+   * `max_parallel_decoders` exists to bound. A decoder that consumes whole bytes
+   * must prefer this over reading the path again: doing otherwise reads every
+   * document twice and puts the read back on the synchronous path, where the
+   * bound has nothing to bound.
+   *
+   * Absent for container formats, whose readers stream parts out of the file by
+   * offset rather than taking the whole thing into memory, and absent when a
+   * decoder is called directly rather than from a scan.
+   */
+  bytes?: Buffer;
   sizeBytes: number;
   budget: DecoderBudget;
 }

@@ -434,7 +434,7 @@ exports.pdfDecoder = {
                 diagnostics: [{ code: "decoder.budget_exceeded", severity: "warning", message }],
             };
         }
-        const bytes = fs.readFileSync(input.absolutePath);
+        const bytes = input.bytes ?? fs.readFileSync(input.absolutePath);
         if (!bytes.subarray(0, 1024).toString("latin1").includes("%PDF-")) {
             const message = "file does not begin with a PDF header";
             return {

@@ -334,6 +334,37 @@ describe("semantic candidate discovery", () => {
   });
 });
 
+describe("the worker budgets", () => {
+  it("refuses a flag it no longer acts on, rather than ignoring it", () => {
+    const f = fixture();
+    for (const flag of ["--max-hash-workers", "--max-analysis-workers", "--max-parallel-hashers"]) {
+      const result = run(argsFor(f, [flag, "8"]));
+      // Silently dropping it is how a decorative knob survives its own removal:
+      // the invocation succeeds, the setting still does nothing, and now there
+      // is not even a manifest field to notice it by.
+      expect(result.status, flag).not.toBe(0);
+      expect(result.stderr, flag).toContain("has been removed");
+    }
+  });
+
+  it("still accepts the budgets it enforces, and records them", () => {
+    const f = fixture();
+    const result = run(argsFor(f, [
+      "--max-decoder-workers", "3", "--max-memory-bytes", "67108864",
+    ]));
+    expect(result.stderr).toBe("");
+    expect(result.status).toBe(0);
+    const session = JSON.parse(
+      fs.readFileSync(path.join(f.out, "session", "corpus-session.json"), "utf8"),
+    );
+    expect(session.budgets.max_parallel_decoders).toBe(3);
+    expect(session.budgets.max_memory_bytes).toBe(67_108_864);
+    // The manifest names only budgets the run was actually subject to.
+    expect(session.budgets).not.toHaveProperty("max_parallel_hashers");
+    expect(session.budgets).not.toHaveProperty("max_parallel_analysis");
+  });
+});
+
 describe("the embedding guards", () => {
   it("refuse embeddings with no provider named", () => {
     const f = fixture();

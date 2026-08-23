@@ -54,7 +54,7 @@ function readUtf8(input) {
     if (input.sizeBytes > input.budget.maxSourceBytes) {
         return { reason: `file exceeds the ${input.budget.maxSourceBytes}-byte decoder ceiling` };
     }
-    const bytes = fs.readFileSync(input.absolutePath);
+    const bytes = input.bytes ?? fs.readFileSync(input.absolutePath);
     const text = bytes.toString("utf8");
     // `toString` never fails; it substitutes U+FFFD. Round-tripping is how the
     // difference between "text with a replacement character in it" and "bytes that

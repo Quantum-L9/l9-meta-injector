@@ -198,11 +198,11 @@
     },
     {
       "path": "dist/corpus_scan.js",
-      "git_blob_sha1": "63c7173968b46d8fd6c88d56ac34d13d37068be5"
+      "git_blob_sha1": "b4e6b061a9693f75666e690494c06f82b9e6a3f9"
     },
     {
       "path": "dist/corpus_scan.js.map",
-      "git_blob_sha1": "33c454ce8018537405da19be8c0e7083a0de78bb"
+      "git_blob_sha1": "6d354b836c137752bb31f17f7a19f21150dd542d"
     },
     {
       "path": "dist/corpus_semantic_run.d.ts",
@@ -230,15 +230,15 @@
     },
     {
       "path": "dist/corpus_session.d.ts",
-      "git_blob_sha1": "331105510f7a445e84547b332ab1a78577d386ce"
+      "git_blob_sha1": "98a8dc32c55f366cdbbf0bc2ff8fe1270c01b016"
     },
     {
       "path": "dist/corpus_session.js",
-      "git_blob_sha1": "6a0b508120d1fe732bbd6bf9231060c16803c4b0"
+      "git_blob_sha1": "bfd523bd0352eb508efd87b7342c4fa2c3b3587d"
     },
     {
       "path": "dist/corpus_session.js.map",
-      "git_blob_sha1": "cfb2777e3cc6e62b36c38f59c0e6f4ed8f7079b6"
+      "git_blob_sha1": "2a3356be3debf3d66bfdd65c2041a80e1e1391dc"
     },
     {
       "path": "dist/corpus_snapshot.d.ts",
@@ -654,7 +654,7 @@
     },
     {
       "path": "scripts/local-source-cli.js",
-      "git_blob_sha1": "fec61f83c089b24d79b7b8e8acd680be0fb7b013"
+      "git_blob_sha1": "966a7733048543c29a08349cc8956cd0d632d395"
     },
     {
       "path": "scripts/repository-model-cli.js",
@@ -734,7 +734,7 @@
     },
     {
       "path": "src/corpus_scan.ts",
-      "git_blob_sha1": "e5403de4a84f2b23cbaed1ad676289b2bee2a6c2"
+      "git_blob_sha1": "24720c899a73c3c277efb94bf91da4559a9702e6"
     },
     {
       "path": "src/corpus_semantic_run.ts",
@@ -746,7 +746,7 @@
     },
     {
       "path": "src/corpus_session.ts",
-      "git_blob_sha1": "9d50b55fea978d9c8d9e55885f3cbf1ffaf82381"
+      "git_blob_sha1": "cc7adbe2d08fba71a275c8927eb649733ba49e98"
     },
     {
       "path": "src/corpus_snapshot.ts",
@@ -850,7 +850,7 @@
     },
     {
       "path": "tests/corpus_cli.test.ts",
-      "git_blob_sha1": "37a0e71ca8f94a3658aa67199822488c441994fc"
+      "git_blob_sha1": "735ed5ec1fc094fdb595e75abb260f688c3a71d4"
     },
     {
       "path": "tests/corpus_diff.test.ts",

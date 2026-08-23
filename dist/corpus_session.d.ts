@@ -11,16 +11,26 @@ export interface CorpusSessionRoot {
     /** Operational only: where this root was mounted for this session. */
     absolute_path: string;
 }
+/**
+ * The bounds a run is actually held to.
+ *
+ * Every field here changes what a run does. Two earlier fields did not —
+ * `max_parallel_hashers` and `max_parallel_analysis` were accepted, written into
+ * the session manifest, and acted on nowhere — and they were removed rather than
+ * documented, because a knob that records an operator's intention and ignores it
+ * is worse than no knob: it answers "can I make this faster" with a yes that is
+ * false, and the manifest then carries a setting the run was never subject to.
+ *
+ * Neither is a gap waiting to be filled by a larger number. Acquisition hashes a
+ * root with one synchronous streaming reader, which is what makes its
+ * did-this-tree-move-under-us check mean anything; candidate generation is a
+ * single pass over evidence already in memory. Parallelising either is a
+ * redesign of that layer, not a budget, and would arrive with its own field.
+ */
 export interface CorpusResourceBudgets {
-    max_parallel_hashers: number;
+    /** Documents decoded concurrently. Exercised by `boundedMap` in the scan. */
     max_parallel_decoders: number;
-    /**
-     * Candidate analysis workers. Recorded rather than exercised: candidate
-     * generation is one pass over evidence already in memory, so raising this
-     * buys nothing today. It is here because the budget is part of the session
-     * manifest, and a resumed run must be able to see it was asked for.
-     */
-    max_parallel_analysis: number;
+    /** Documents embedded concurrently. Exercised by the embedding pass's pool. */
     max_parallel_embedding_requests: number;
     /** Ceiling on decoded text held in memory at once, in bytes. */
     max_memory_bytes: number;
