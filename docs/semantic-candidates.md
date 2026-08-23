@@ -269,10 +269,15 @@ Writes, in addition to the existing corpus outputs:
 | `--embedding-locality local\|remote` | default `local` |
 | `--embedding-endpoint URL` | required for a remote provider; must be `https://` |
 | `--allow-remote-embeddings` | permit a remote provider to receive bounded document text |
-| `--embedding-pair-threshold F` | cosine at which a pair is offered, default `0.75` |
-| `--embedding-strong-threshold F` | cosine counted as strong, default `0.85` |
 | `--reasoning-pack-max-artifacts N` | members per pack, default `12` |
 | `--reasoning-pack-max-chars N` | characters per pack, default `24000` |
+
+The similarity thresholds (`0.75` to offer a pair, `0.85` to count it strong) are
+**not** CLI flags. This release ships no embedding provider, so `--embeddings` is
+refused and a threshold flag could not take effect; they are set programmatically
+via `FusionOptions.embeddingStrongThreshold` and `RunEmbeddingsInput.pairThreshold`
+by a caller that supplies its own provider. A flag that cannot change anything is
+worse than no flag.
 
 Single-source mode (`npm run local-source -- <path>`) runs the same pass and
 extends `corpus-index.json` and `corpus-report.md` with it. **Recall differs**:

@@ -534,7 +534,7 @@
     },
     {
       "path": "docs/semantic-candidates.md",
-      "git_blob_sha1": "94bea50265d8060e25488b6b099fecc242de0ec8"
+      "git_blob_sha1": "3d51d0a84bce0211e24b516af39e4e90d47ee6c4"
     },
     {
       "path": "docs/topology-conformance.json",
@@ -654,7 +654,7 @@
     },
     {
       "path": "scripts/local-source-cli.js",
-      "git_blob_sha1": "51d3fb5060041f23fc574287f2ad0b98bf0e8dcb"
+      "git_blob_sha1": "4183bf2be082be0b4ccaa429c6abfb0fa8cdeff4"
     },
     {
       "path": "scripts/repository-model-cli.js",
