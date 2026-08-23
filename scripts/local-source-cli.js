@@ -69,6 +69,21 @@ const USAGE = [
   "  --max-parallel-embedding-requests N   recorded; embeddings are not enabled",
   "  --max-memory-bytes N       ceiling on decoded text held at once (default: 256 MiB)",
   "",
+  "semantic candidate discovery (on by default):",
+  "  --no-semantic-analysis     skip candidate discovery; duplicates still reported",
+  "  --embeddings               enable optional semantic embeddings (default: off)",
+  "  --embedding-provider NAME  required when --embeddings is given",
+  "  --embedding-model ID       required when --embeddings is given",
+  "  --embedding-model-revision R   recorded when the provider exposes one",
+  "  --embedding-endpoint URL   required for a remote provider; must be https://",
+  "  --embedding-locality K     local (default) or remote",
+  "  --embedding-pair-threshold F   cosine at which a pair is offered (default: 0.75)",
+  "  --embedding-strong-threshold F cosine counted as strong (default: 0.85)",
+  "  --allow-remote-embeddings  permit a remote provider to receive bounded document",
+  "                             text; enabling embeddings alone does NOT imply this",
+  "  --reasoning-pack-max-artifacts N   members per evidence pack (default: 12)",
+  "  --reasoning-pack-max-chars N       characters per evidence pack (default: 24000)",
+  "",
   "The source is never modified. Archive members are observed as virtual",
   "artifacts named <archive>!/<member>; nothing is extracted beside the source.",
 ].join("\n");
@@ -221,6 +236,39 @@ function reportCorpusRun(context) {
   console.log(`  encrypted        ${coverage.encrypted_document_count}`);
   console.log(`  oversized        ${coverage.oversized_document_count}`);
   console.log(`  secrets skipped  ${coverage.secret_skipped_count}`);
+  if (result.semantic === null) {
+    console.log("  semantic         off (--no-semantic-analysis)");
+  } else {
+    const semantic = result.semantic;
+    const relations = semantic.relations;
+    const lexical = relations.pairs.filter(
+      (pair) => pair.signals.some((signal) => signal.kind !== "embedding_similarity"
+        && signal.kind !== "archive_context"),
+    ).length;
+    const embeddingRelations = relations.pairs.filter(
+      (pair) => pair.signals.some((signal) => signal.kind === "embedding_similarity"),
+    ).length;
+    console.log(
+      `  relationships    ${lexical} lexical/structural, ${embeddingRelations} embedding `
+      + `(${relations.generation.scored_pair_count} scored of `
+      + `${relations.generation.exhaustive_pair_count} possible)`,
+    );
+    console.log(
+      `  candidates       ${semantic.summary.topic_candidate_count} topic, `
+      + `${semantic.summary.project_candidate_count} project, `
+      + `${semantic.summary.consolidation_candidate_count} consolidation`,
+    );
+    console.log(
+      `  reasoning        ${semantic.summary.reasoning_eligible_count} eligible of `
+      + `${semantic.reasoningCandidates.length} routed; `
+      + `${semantic.evidencePacks.length} evidence pack(s)`,
+    );
+    console.log(
+      `  embeddings       ${semantic.embeddingReport.enabled ? "on" : "off"}, remote `
+      + `${semantic.embeddingReport.remote ? "on" : "off"}`,
+    );
+    console.log("  no model was called: this pass is deterministic and makes zero LLM calls");
+  }
   console.log(
     `  cache            ${cacheEnabled ? "on" : "off"}, hit ratio ${coverage.cache.hit_ratio} `
     + `(${coverage.cache.hits} hit, ${coverage.cache.misses} miss, ${coverage.cache.corrupt} discarded)`,
@@ -268,6 +316,9 @@ async function runCorpusMode(cli) {
   const snapshotModule = requireBuilt(path.join(repo, "dist", "corpus_snapshot.js"));
   const diffModule = requireBuilt(path.join(repo, "dist", "corpus_diff.js"));
   const coverageModule = requireBuilt(path.join(repo, "dist", "corpus_coverage.js"));
+  const semanticRun = requireBuilt(path.join(repo, "dist", "corpus_semantic_run.js"));
+  const documentsModule = requireBuilt(path.join(repo, "dist", "corpus_documents.js"));
+  const embeddingsModule = requireBuilt(path.join(repo, "dist", "corpus_embeddings.js"));
   const { version } = require(path.join(repo, "package.json"));
 
   const specs = collectRoots(cli, roots);
@@ -347,6 +398,55 @@ async function runCorpusMode(cli) {
   const omitPatterns = cli.optAll("--omit");
   const omitFile = cli.opt("--omit-file", undefined);
 
+  // Embeddings are off unless asked for, and a remote provider needs a second,
+  // separate permission. The guard runs before the scan so a misconfiguration
+  // fails before anything is read, rather than after.
+  const embeddingsEnabled = cli.flag("--embeddings");
+  const allowRemoteEmbeddings = cli.flag("--allow-remote-embeddings");
+  let embeddingConfiguration;
+  if (embeddingsEnabled) {
+    const locality = cli.opt("--embedding-locality", "local");
+    if (locality !== "local" && locality !== "remote") {
+      fail(`--embedding-locality must be 'local' or 'remote', got '${locality}'`, 2);
+    }
+    const endpoint = cli.opt("--embedding-endpoint", undefined);
+    embeddingConfiguration = {
+      provider: cli.opt("--embedding-provider", ""),
+      model_id: cli.opt("--embedding-model", ""),
+      locality,
+      ...(cli.opt("--embedding-model-revision", undefined) !== undefined
+        ? { model_revision: cli.opt("--embedding-model-revision", undefined) }
+        : {}),
+      ...(endpoint !== undefined ? { endpoint } : {}),
+    };
+  }
+  try {
+    embeddingsModule.assertEmbeddingConfiguration({
+      embeddingsEnabled,
+      allowRemoteEmbeddings,
+      ...(embeddingConfiguration !== undefined ? { configuration: embeddingConfiguration } : {}),
+    });
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error), 2);
+  }
+  if (embeddingsEnabled) {
+    // The provider interface is an operator's to supply. This package ships no
+    // model, so there is nothing to call, and saying so beats embedding nothing
+    // and reporting a coverage of zero as though a model had run.
+    fail(
+      "embeddings are enabled but this release ships no embedding provider. The provider "
+      + "interface is exported from corpus_embeddings for an operator to implement; the CLI "
+      + "cannot invoke one yet. Re-run without --embeddings.",
+      2,
+    );
+  }
+
+  const packBudget = {};
+  const packMaxArtifacts = numericOpt(cli, "--reasoning-pack-max-artifacts");
+  const packMaxChars = numericOpt(cli, "--reasoning-pack-max-chars");
+  if (packMaxArtifacts !== undefined) packBudget.maxArtifactsPerPack = packMaxArtifacts;
+  if (packMaxChars !== undefined) packBudget.maxTotalPackCharacters = packMaxChars;
+
   let result;
   try {
     result = await scan.runCorpusScan({
@@ -370,6 +470,8 @@ async function runCorpusMode(cli) {
         ...(topicThreshold !== undefined ? { threshold: topicThreshold } : {}),
       },
       budgets: collectBudgets(cli),
+      semanticAnalysis: !cli.flag("--no-semantic-analysis"),
+      ...(Object.keys(packBudget).length > 0 ? { packBudget } : {}),
     });
   } catch (error) {
     session.fail({
@@ -391,7 +493,18 @@ async function runCorpusMode(cli) {
     { path: path.join(outDir, "corpus-candidates.json"), contents: scan.renderCorpusCandidates(result.candidates) },
     { path: path.join(outDir, "readiness-evidence.json"), contents: scan.renderReadinessEvidence(result.readiness) },
     { path: path.join(outDir, "corpus-coverage.json"), contents: coverageModule.renderCorpusCoverage(result.coverage) },
+    { path: path.join(outDir, "document-index.json"), contents: documentsModule.renderDocumentIndex(result.documentIndex) },
   ];
+  if (result.semantic !== null) {
+    outputs.push(
+      { path: path.join(outDir, "semantic-relations.json"), contents: semanticRun.renderSemanticRelations(result.semantic.relations) },
+      { path: path.join(outDir, "topic-candidates.json"), contents: semanticRun.renderTopicCandidates(result.semantic.topics) },
+      { path: path.join(outDir, "project-candidates.json"), contents: semanticRun.renderProjectCandidates(result.semantic.projects) },
+      { path: path.join(outDir, "consolidation-candidates.json"), contents: semanticRun.renderConsolidationCandidates(result.semantic.consolidations) },
+      { path: path.join(outDir, "reasoning-candidates.jsonl"), contents: semanticRun.renderReasoningCandidates(result.semantic.reasoningCandidates) },
+      { path: path.join(outDir, "reasoning-evidence-packs.jsonl"), contents: semanticRun.renderReasoningEvidencePacks(result.semantic.evidencePacks) },
+    );
+  }
   if (result.diff !== null) {
     outputs.push({ path: diffPath, contents: diffModule.renderCorpusDiff(result.diff) });
   }

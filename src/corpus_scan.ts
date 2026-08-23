@@ -126,8 +126,16 @@ import {
   isSecretCandidatePath,
 } from "./interpretation";
 import { LocalArchivePolicy } from "./local_archive_policy";
-import { LocalSourceObservation, acquireLocalSource } from "./local_source";
+import { ARCHIVE_MEMBER_SEPARATOR, LocalSourceObservation, acquireLocalSource } from "./local_source";
 import { compareCodePoints } from "./ordering";
+import { buildDocumentIndex } from "./corpus_documents";
+import { runSemanticAnalysis } from "./corpus_semantic_run";
+import type { DocumentIndex } from "./corpus_documents";
+import type { SemanticAnalysisResult } from "./corpus_semantic_run";
+import type { SemanticArtifactInput } from "./corpus_semantics";
+import type { PackAssertion } from "./corpus_reasoning";
+import type { EmbeddingPairScore } from "./corpus_pairs";
+import type { EmbeddingRunReport } from "./corpus_embeddings";
 import { stableId } from "./repository_model";
 
 export const CORPUS_CANDIDATES_SCHEMA = "l9.corpus-candidates/v1";
@@ -175,6 +183,13 @@ export interface CorpusScanInput {
   topics?: { enabled?: boolean; threshold?: number };
   budgets?: Partial<Omit<CorpusResourceBudgets, "archive">>;
   scratchParent?: string;
+  /** Semantic candidate discovery. On by default; costs one pass over recorded evidence. */
+  semanticAnalysis?: boolean;
+  /** Cosine scores from an embedding pass the caller ran. Absent means embeddings were off. */
+  embeddingPairs?: readonly EmbeddingPairScore[];
+  embeddingReport?: EmbeddingRunReport;
+  /** Overrides for the bounded reasoning evidence packs. */
+  packBudget?: { maxArtifactsPerPack?: number; maxTotalPackCharacters?: number };
 }
 
 export interface CorpusScanDiagnostic {
@@ -266,6 +281,10 @@ export interface CorpusScanResult {
   precheck: { predicted_unchanged: number; confirmed_unchanged: number; contradicted: number };
   /** Bytes and files the acquisition pass actually read. */
   scanned: { files: number; bytes: number };
+  /** The normalized documents, written down rather than discarded with the run. */
+  documentIndex: DocumentIndex;
+  /** Candidate discovery over recorded evidence. Null when it was switched off. */
+  semantic: SemanticAnalysisResult | null;
 }
 
 // ───────────────────────────── internal shapes ─────────────────────────────
@@ -307,6 +326,24 @@ interface InterpretationRecord {
 }
 
 // ───────────────────────────── helpers ─────────────────────────────
+
+/**
+ * The archives a member sits inside, outermost first.
+ *
+ * `old.zip!/inner.zip!/draft.md` is two archives deep, and its ancestry is the
+ * successive archive prefixes rather than the bare filenames — `inner.zip` alone
+ * would collide with an unrelated `inner.zip` in another archive.
+ */
+function archiveAncestryOf(rootRelativePath: string): string[] {
+  const parts = rootRelativePath.split(ARCHIVE_MEMBER_SEPARATOR);
+  if (parts.length < 2) return [];
+  const ancestry: string[] = [];
+  for (let i = 0; i < parts.length - 1; i += 1) {
+    ancestry.push(parts.slice(0, i + 1).join(ARCHIVE_MEMBER_SEPARATOR));
+  }
+  return ancestry;
+}
+
 
 function normalizeHash(value: string | null): string | null {
   if (value === null || value.length === 0) return null;
@@ -1111,6 +1148,108 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       },
     });
 
+    // ── 7. normalized documents, written down ─────────────────────────────
+    //
+    // Every field below was already established above. The index exists because
+    // a later pass reasoning over documents cannot recover which artifact a
+    // document came from, which source bytes it describes, or which decoder
+    // produced it, once the run has ended.
+    const documentIndex = buildDocumentIndex({
+      corpusSnapshotId: snapshotId,
+      decoderId: TEXT_DECODER_ID,
+      decoderVersion: TEXT_DECODER_VERSION,
+      artifacts: artifacts.map((artifact) => {
+        const record = normalized.get(artifact.virtualSourceId);
+        return {
+          artifactId: artifact.virtualSourceId,
+          rootId: artifact.rootId,
+          corpusPath: artifact.corpusPath,
+          rootRelativePath: artifact.rootRelativePath,
+          contentHash: artifact.contentHash,
+          sizeBytes: artifact.sizeBytes,
+          isArchiveMember: artifact.isArchiveMember,
+          archiveAncestry: archiveAncestryOf(artifact.rootRelativePath),
+          ...(record !== undefined ? { normalized: record } : {}),
+          normalizedDocumentId: artifact.contentHash === null
+            ? null
+            : normalizedDocumentKey({
+              contentHash: artifact.contentHash,
+              decoderId: TEXT_DECODER_ID,
+              decoderVersion: TEXT_DECODER_VERSION,
+            }),
+        };
+      }),
+    });
+
+    // ── 8. semantic candidate discovery ───────────────────────────────────
+    let semantic: SemanticAnalysisResult | null = null;
+    if (input.semanticAnalysis !== false) {
+      const documentById = new Map(documentIndex.documents.map((doc) => [doc.artifact_id, doc]));
+      const semanticArtifacts: SemanticArtifactInput[] = artifacts.map((artifact) => {
+        const document = documentById.get(artifact.virtualSourceId);
+        const declared = manifestIdentifiers.get(artifact.virtualSourceId) ?? null;
+        const features = lexical.get(artifact.virtualSourceId);
+        return {
+          artifact_id: artifact.virtualSourceId,
+          root_id: artifact.rootId,
+          corpus_path: artifact.corpusPath,
+          root_relative_path: artifact.rootRelativePath,
+          content_hash: artifact.contentHash,
+          normalized_document_id: document?.normalized_document_id ?? null,
+          is_archive_member: artifact.isArchiveMember,
+          archive_ancestry: archiveAncestryOf(artifact.rootRelativePath),
+          assertions: (interpreted.get(artifact.virtualSourceId)?.assertions ?? []).map(
+            (assertion) => ({
+              assertion_id: assertion.assertion_id,
+              predicate: assertion.predicate,
+              object: assertion.object,
+            }),
+          ),
+          declared_identifiers: declared === null
+            ? []
+            : [{
+              identifier: declared.identifier,
+              manifest: artifact.basename.toLowerCase(),
+              field: declared.field,
+            }],
+          exact_duplicate_cluster_id: clusterByArtifact.get(artifact.virtualSourceId) ?? null,
+          near_duplicate_candidate_ids: nearByArtifact.get(artifact.virtualSourceId) ?? [],
+          // Term counts rather than text: the lexical cache holds a bag of words
+          // and never a body, so the semantic pass never needs the source back.
+          ...(features !== undefined ? { body_term_counts: features.term_counts } : {}),
+        };
+      });
+
+      const assertionsByArtifact = new Map<string, PackAssertion[]>();
+      for (const [artifactId, record] of interpreted) {
+        assertionsByArtifact.set(artifactId, record.assertions.map((assertion) => ({
+          assertion_id: assertion.assertion_id,
+          predicate: assertion.predicate,
+          object: assertion.object,
+          source_path: assertion.source_path,
+          evidence_excerpt: assertion.evidence_excerpt,
+          source_content_hash: assertion.source_content_hash,
+        })));
+      }
+
+      semantic = runSemanticAnalysis({
+        corpusSnapshotId: snapshotId,
+        artifacts: semanticArtifacts,
+        nearDuplicatePairs: nearCandidates.map((candidate) => ({
+          artifact_a_id: candidate.artifact_a_id,
+          artifact_b_id: candidate.artifact_b_id,
+          score: candidate.score,
+        })),
+        assertionsByArtifact,
+        ...(input.embeddingPairs !== undefined ? { embeddingPairs: input.embeddingPairs } : {}),
+        ...(input.embeddingReport !== undefined ? { embeddingReport: input.embeddingReport } : {}),
+        ...(input.packBudget !== undefined ? { packBudget: input.packBudget } : {}),
+      });
+      for (const note of semantic.relations.diagnostics) {
+        diagnostics.push({ code: note.code, severity: note.severity, message: note.message });
+      }
+    }
+
     const decodableIds = new Set(decodable.map((artifact) => artifact.virtualSourceId));
     const decodedIds = new Set(
       [...normalized.entries()].filter(([, record]) => record.decodes).map(([id]) => id),
@@ -1264,6 +1403,8 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       bindings: bound.roots,
       precheck,
       scanned: { files: scannedFiles, bytes: scannedBytes },
+      documentIndex,
+      semantic,
     };
   } finally {
     for (const observation of disposals) observation.dispose();

@@ -450,6 +450,15 @@ export function buildSemanticPairs(input: BuildPairsInput): BuildPairsResult {
           referenceDetail.push(`${from.artifact_id} references ${target}`);
         }
       }
+      // A declared dependency that resolves to another artifact is a graph edge
+      // in exactly the way a reference is: the document named the other one. It
+      // is kept separate from `dependency_overlap`, which is the different fact
+      // that two documents depend on the same third thing.
+      for (const target of from.declared_dependencies) {
+        if (resolveReference(referenceIndex, target) === to.artifact_id) {
+          referenceDetail.push(`${from.artifact_id} depends on ${target}`);
+        }
+      }
       for (const declaration of from.supersession_declarations) {
         if (resolveReference(referenceIndex, declaration.object) === to.artifact_id) {
           referenceDetail.push(`${from.artifact_id} ${declaration.predicate} ${declaration.object}`);

@@ -143,8 +143,14 @@ export function assertEmbeddingConfiguration(options: EmbeddingEnableOptions): v
     );
   }
   if (configuration.provider.trim().length === 0 || configuration.model_id.trim().length === 0) {
+    const missing = [
+      configuration.provider.trim().length === 0 ? "--embedding-provider" : null,
+      configuration.model_id.trim().length === 0 ? "--embedding-model" : null,
+    ].filter((flag): flag is string => flag !== null);
     throw new EmbeddingConfigurationError(
-      "embeddings are enabled but the provider or model id is empty: both must be named explicitly",
+      `embeddings are enabled but ${missing.join(" and ")} ${missing.length === 1 ? "is" : "are"} `
+      + "empty: a provider and a model must both be named explicitly, because the identity of what "
+      + "produced a vector is part of what makes the vector meaningful",
     );
   }
   if (configuration.locality === "remote") {

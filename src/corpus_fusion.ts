@@ -635,15 +635,33 @@ export function buildConsolidationCandidates(
     );
   }
 
-  // Project candidates holding more than one content variant.
+  // Project candidates that hold more than one *version of something*.
+  //
+  // Distinct content hashes are not enough on their own. A project with a plan
+  // and a spec in it has two hashes and nothing to consolidate — admitting it
+  // would make every multi-file project a consolidation candidate, which is a
+  // false-positive generator rather than a finding. What is needed is evidence
+  // of a lineage: a near-duplicate edge between members, or a member declaring
+  // it supersedes another.
   const projectByKey = new Map<string, string>();
   for (const project of input.projectCandidates) {
+    const members = new Set(project.member_artifact_ids);
     const hashes = new Set(
       project.member_artifact_ids
         .map((id) => context.byId.get(id)?.content_hash)
         .filter((hash): hash is string => typeof hash === "string"),
     );
     if (hashes.size < 2) continue;
+
+    const hasVersionLineage = input.pairs.some(
+      (pair) => members.has(pair.artifact_a_id)
+        && members.has(pair.artifact_b_id)
+        && pair.signals.some((signal) => signal.kind === "near_duplicate"),
+    ) || project.member_artifact_ids.some(
+      (id) => (context.byId.get(id)?.supersession_declarations.length ?? 0) > 0,
+    );
+    if (!hasVersionLineage) continue;
+
     const key = `project:${project.candidate_id}`;
     projectByKey.set(key, project.candidate_id);
     record(key, project.member_artifact_ids, CONSOLIDATION_EVIDENCE_PROJECT_VERSIONS);

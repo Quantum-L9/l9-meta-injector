@@ -8,6 +8,10 @@ import { CorpusRootBinding, CorpusRootSpec, rootIdentity } from "./corpus_roots"
 import { CorpusSnapshot } from "./corpus_snapshot";
 import { CorpusResourceBudgets, CorpusSessionStore } from "./corpus_session";
 import { LocalArchivePolicy } from "./local_archive_policy";
+import type { DocumentIndex } from "./corpus_documents";
+import type { SemanticAnalysisResult } from "./corpus_semantic_run";
+import type { EmbeddingPairScore } from "./corpus_pairs";
+import type { EmbeddingRunReport } from "./corpus_embeddings";
 export declare const CORPUS_CANDIDATES_SCHEMA = "l9.corpus-candidates/v1";
 /** Decoder that turns exact bytes into the text every later layer reads. */
 export declare const TEXT_DECODER_ID = "utf8-text-decoder";
@@ -39,6 +43,16 @@ export interface CorpusScanInput {
     };
     budgets?: Partial<Omit<CorpusResourceBudgets, "archive">>;
     scratchParent?: string;
+    /** Semantic candidate discovery. On by default; costs one pass over recorded evidence. */
+    semanticAnalysis?: boolean;
+    /** Cosine scores from an embedding pass the caller ran. Absent means embeddings were off. */
+    embeddingPairs?: readonly EmbeddingPairScore[];
+    embeddingReport?: EmbeddingRunReport;
+    /** Overrides for the bounded reasoning evidence packs. */
+    packBudget?: {
+        maxArtifactsPerPack?: number;
+        maxTotalPackCharacters?: number;
+    };
 }
 export interface CorpusScanDiagnostic {
     code: string;
@@ -128,6 +142,10 @@ export interface CorpusScanResult {
         files: number;
         bytes: number;
     };
+    /** The normalized documents, written down rather than discarded with the run. */
+    documentIndex: DocumentIndex;
+    /** Candidate discovery over recorded evidence. Null when it was switched off. */
+    semantic: SemanticAnalysisResult | null;
 }
 /** True when the text decoder claims this artifact at all. */
 export declare function isTextDecodable(rootRelativePath: string): boolean;
