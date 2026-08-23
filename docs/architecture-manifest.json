@@ -610,7 +610,7 @@
     },
     {
       "path": "package.json",
-      "git_blob_sha1": "cb9540f5b97e374c38ccd45de79d0fa7e902b5ac"
+      "git_blob_sha1": "80dc64b9d963921a94de8a3b6aad29a34e994d0b"
     },
     {
       "path": "README.md",
@@ -670,7 +670,7 @@
     },
     {
       "path": "scripts/topology-conformance.js",
-      "git_blob_sha1": "95599efbed649a244906f6840ee2bd337cced32f"
+      "git_blob_sha1": "afb18a5cecff2b84824ed5e503453112d2aec737"
     },
     {
       "path": "src/archive_preflight.ts",
@@ -954,7 +954,7 @@
     },
     {
       "path": "tests/repository_model.test.ts",
-      "git_blob_sha1": "278083ea38af44415278a4d08322a2033b96fe93"
+      "git_blob_sha1": "b132aebde1faa272b9cd4a067a79384950a89eea"
     },
     {
       "path": "tests/semantic_firewall.test.ts",

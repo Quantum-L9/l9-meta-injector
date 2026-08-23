@@ -1,3 +1,4 @@
+import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -376,6 +377,23 @@ describe("topology conformance evidence", () => {
       .toEqual(["inventory", "local-source"]);
     expect(evidence.subjects.some((subject: { bundle: string }) => subject.bundle === path.relative(REPO, GOLDEN)))
       .toBe(true);
+  });
+
+  it("binds the record to the exact bytes of every file in each bundle", () => {
+    // Packet id and semantic hash cover `packet.json`. The manifest and the
+    // receipt are the two files a bundle carries beside it, and a record that
+    // did not name their bytes could describe a bundle whose receipt had since
+    // been rewritten.
+    for (const subject of evidence.subjects) {
+      expect(Array.isArray(subject.files)).toBe(true);
+      expect(subject.files.map((file: { path: string }) => file.path).sort())
+        .toEqual(["manifest.json", "packet.json", "receipts/validation-receipt.json"]);
+      for (const file of subject.files) {
+        const absolute = path.join(REPO, subject.bundle, ...file.path.split("/"));
+        const digest = `sha256:${crypto.createHash("sha256").update(fs.readFileSync(absolute)).digest("hex")}`;
+        expect(digest, `${subject.id}/${file.path}`).toBe(file.content_hash);
+      }
+    }
   });
 
   it("proves the local-source packet reached the consumer with its archive provenance", () => {

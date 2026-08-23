@@ -1,0 +1,209 @@
+{
+  "schema": "l9.final-contract-closure/v1",
+  "contract_id": "l9-meta-injector-final-corpus-closure-v1",
+  "repository": "Quantum-L9/l9-meta-injector",
+  "branch": "claude/l9-meta-injector-contract-cja2x6",
+  "statement": "Each workstream below is PASS only where the behaviour it names is exercised by a test that would fail if the behaviour were absent. PARTIAL_AS_PASS and DEFERRED_AS_PASS are not values this document uses.",
+  "workstreams": [
+    {
+      "id": "CLOSURE-DOCS",
+      "status": "PASS",
+      "requirement": "Real PDF, DOCX, PPTX, XLSX, IPYNB, CSV and HTML decoding into NormalizedDocument with structured locators; decoded content participates in candidate analysis, not only coverage; document-signals.json emitted.",
+      "implementation": [
+        "src/documents/{decoder,text,notebook,xml,ooxml,office,html,pdf,index}.ts — seven decoders, zero new runtime dependencies",
+        "src/corpus_document_signals.ts — per-format decode, refusal, locator and analysis-participation counts",
+        "src/corpus_scan.ts — prose document formats enter lexical analysis on format rather than extension",
+        "src/corpus_coverage.ts — decode_gap reconciles eligible against decoded with an `unaccounted` residual"
+      ],
+      "evidence": [
+        "tests/document_decoders.test.ts — real OOXML/PDF/notebook/HTML bytes, XXE refusal, macro noting, path-escape refusal, encrypted-container detection",
+        "tests/corpus_document_participation.test.ts — a .docx and a .md saying the same thing are found to be near-duplicates of each other; all seven formats reach lexical analysis; each format cites its own locator kind and none cites a line number",
+        "tests/corpus_real_world_qualification.test.ts — genuine documents in a read-only three-root corpus"
+      ],
+      "notes": "Interpretation stays extension-gated. The work-signal extractors cite line spans, and a binary document has no lines; running them over joined block text would produce the fake line numbers the contract forbids."
+    },
+    {
+      "id": "CLOSURE-EMBED",
+      "status": "PASS",
+      "requirement": "A runnable http-json embedding provider; the CLI stops refusing --embeddings; a real end-to-end test against a loopback server; --max-embedding-workers does something.",
+      "implementation": [
+        "src/corpus_embedding_http.ts — POSTs {model, input}, reads four response shapes, refuses a local provider aimed at a non-loopback host, never follows a redirect, reads under a byte cap, takes its bearer from the environment and refuses it over cleartext",
+        "src/corpus_embeddings.ts — a fixed worker pool over documents; reported dimension taken from the sorted id set so width cannot change the output",
+        "src/corpus_scan.ts — the pass runs inside the scan, because the text it sends is the normalized text",
+        "scripts/local-source-cli.js — constructs the provider and reports what was sent"
+      ],
+      "evidence": [
+        "tests/corpus_embedding_http.test.ts — sixteen tests against real HTTP servers on the loopback interface, including redirect refusal, cap enforcement, and identical vector digests at width 1 and width 8",
+        "tests/corpus_embedding_http.test.ts — measured concurrency: peak in-flight requests above 1 and never above the bound; peak exactly 1 when the bound is 1",
+        "tests/corpus_cli.test.ts — the CLI embeds against a loopback server and the server is proven to have been called"
+      ],
+      "notes": "Two hollow numbers were fixed alongside: secret_candidates_skipped was tallied inside the decoded set and was therefore structurally always zero, and embedding_coverage_when_enabled was hard-coded null."
+    },
+    {
+      "id": "CLOSURE-DIFF",
+      "status": "PASS",
+      "requirement": "Snapshot analysis_manifest with candidate_id and semantic_payload_hash; real added/removed/changed; snapshots without a manifest report null, never zeros.",
+      "implementation": [
+        "src/corpus_analysis_manifest.ts — per-candidate id, kind and payload hash; an exact diff with a per-kind breakdown",
+        "src/corpus_snapshot.ts — analysis_manifest carried beside both identities and entering neither",
+        "src/corpus_diff.ts — four counts that are numbers or null, with not_computed_reason saying which"
+      ],
+      "evidence": [
+        "tests/corpus_candidate_diff.test.ts — added, removed and changed each made to move by actually adding, deleting and editing documents; null with a stated reason for a snapshot predating the manifest and for mismatched manifest versions; zeros only when two manifests were genuinely compared and matched"
+      ],
+      "notes": "Member order does not change a payload hash; a member joining does. A score is hashed at the six places the report prints."
+    },
+    {
+      "id": "CLOSURE-CONCURRENCY",
+      "status": "PASS",
+      "requirement": "Implement or remove every worker flag; no recorded-only flags; instrumentation tests.",
+      "implementation": [
+        "src/corpus_session.ts — max_parallel_hashers and max_parallel_analysis removed from the budget type and the defaults",
+        "scripts/local-source-cli.js — both flags refused by name with the reason, rather than ignored",
+        "src/corpus_scan.ts — whole-file formats are read with fs.promises and the bytes handed to the decoder, so max_parallel_decoders bounds real in-flight I/O"
+      ],
+      "evidence": [
+        "tests/corpus_concurrency.test.ts — concurrency measured at the read seam (not at decode, which is synchronous and could never overlap); boundedMap proven never to exceed its limit and to preserve input order; MemoryBudget proven to hold concurrent reservations under the ceiling; identical output at width 1 and width 8",
+        "tests/corpus_cli.test.ts — a retired flag exits non-zero naming the reason; the session manifest records only budgets the run was subject to"
+      ],
+      "notes": "Neither removed flag is a gap awaiting a larger number: acquisition hashes a root with one synchronous streaming reader, which is what makes its stability check meaningful, and candidate generation is a single pass over evidence already in memory."
+    },
+    {
+      "id": "CLOSURE-ROOTS",
+      "status": "PASS",
+      "requirement": "root_identity_class declared versus inferred; guard longitudinal use of an inferred identity.",
+      "implementation": [
+        "src/corpus_roots.ts — RootIdentityClass on every root identity, including roots that failed to observe",
+        "src/corpus_diff.ts — identity_basis per root diff row and longitudinal_identity_cautions naming any match not made between two declared keys",
+        "scripts/local-source-cli.js — the caution is printed with the remedy"
+      ],
+      "evidence": [
+        "tests/corpus_root_identity_durability.test.ts — inferred for a basename, declared when named, present on a root that could not be read; a caution raised across two runs on an inferred key, silence on a declared one, and no caution on a root that only appeared or only vanished"
+      ],
+      "notes": "A snapshot written before the class existed reads as inferred. Assuming declared would manufacture a guarantee out of a missing field."
+    },
+    {
+      "id": "CLOSURE-CACHE",
+      "status": "PASS",
+      "requirement": "fsync the staging file, rename, fsync the parent directory.",
+      "implementation": [
+        "src/durable_write.ts — write, fsync the file, rename, fsync the parent, with a substitutable syscall surface",
+        "src/corpus_cache.ts and src/corpus_session.ts — both write paths route through it"
+      ],
+      "evidence": [
+        "tests/corpus_root_identity_durability.test.ts — the call order asserted as [write, fsync:file, rename, fsync:dir]; permissions applied while the descriptor is open; a filesystem refusing a directory sync tolerated without failing the write; no staging file survives a cache write"
+      ],
+      "notes": "The ordering is asserted through a seam rather than a spy: node:fs is an ES module namespace and cannot be spied on, and all four orderings leave the same bytes at the same path, so the alternative was asserting nothing."
+    },
+    {
+      "id": "CLOSURE-PUBLISH",
+      "status": "PASS",
+      "requirement": "generations/<id>/ plus an atomic CURRENT.json switch; crash-injection tests.",
+      "implementation": [
+        "src/corpus_publish.ts — one generation directory written in full, then one durable rename of the pointer; pruning strictly after the switch and never of what the pointer names",
+        "src/corpus_session.ts — commitCorpusOutputs removed rather than left beside its replacement",
+        "scripts/local-source-cli.js — publishes generationally and resolves the previous snapshot through the pointer"
+      ],
+      "evidence": [
+        "tests/corpus_publish.test.ts — the publish crashed before the switch, six times in sequence, with the reader's view reconstructed from the pointer after each and required to be exactly one run's files; nothing readable when the first publish dies; a generation that lost a file reported as missing rather than returned short",
+        "tests/corpus_cli.test.ts — the generational layout end to end, retention, and the previous generation still readable byte for byte"
+      ],
+      "notes": "Generation ids are content-addressed. The CLI's manifests carry a wall clock, so its runs land in new generations, which is correct: those are different output sets."
+    },
+    {
+      "id": "CLOSURE-SCALE",
+      "status": "PASS",
+      "requirement": "Ten thousand artifacts with semantic analysis enabled and topic candidates not disabled; structurally bounded pair work; pair-evaluation counts recorded.",
+      "implementation": [
+        "src/corpus_candidates.ts — the topic index now holds each document's rarest-first prefix under an exact prefix bound, plus a size bound; buildTopicCandidatesExhaustive exported as the reference",
+        "src/corpus_coverage.ts — topic_pair_work reported in every coverage document",
+        "tests/helpers/multi_root_fixtures.ts — filler notes are real prose, so ten thousand documents are genuinely eligible for the topic pass"
+      ],
+      "evidence": [
+        "tests/corpus_scale.test.ts — topic candidates enabled at ten thousand artifacts: 9,740 eligible documents, 47,428,930 exhaustive pairs, 9,733 Jaccard computations actually run",
+        "tests/corpus_topic_scale.test.ts — exact agreement with an exhaustive pass at six thresholds on four corpus shapes, including one where every document shares a dominant term; comparison count required not to more than double when the corpus doubles"
+      ],
+      "notes": "Topic method version moved to 1.1.0. The bound is exact so the candidates are the same, but the method is not, and an analysis identity that did not move would claim two algorithms were one."
+    },
+    {
+      "id": "CLOSURE-REAL",
+      "status": "PASS",
+      "requirement": "Env-gated real-archive acceptance via L9_ACCEPTANCE_CORPUS_MANIFEST; never search arbitrary drives.",
+      "implementation": [
+        "tests/corpus_real_archive_acceptance.test.ts — runs only when an operator names a manifest; scans exactly the roots the manifest declares"
+      ],
+      "evidence": [
+        "The gate's own guard runs on every machine: with the variable unset the acceptance describe is skipped and a test asserts there is no fallback path, no default location and no search",
+        "Manifest validation refuses non-JSON, a missing or empty roots array, a rootless entry, a relative path, an absent path and a path that is not a directory — each of which would otherwise scan nothing and pass",
+        "Executed against a genuine mixed corpus through the manifest: 73 artifacts, 7 archives, 0 mutated paths, every binary format decoded and reaching candidates (pdf 3, docx 1, pptx 1, xlsx 2, csv 1), warm run identical, no absolute path in any projection"
+      ],
+      "notes": "The skip is a stated, narrow, externally-unavoidable exception: there is no real archive on a CI runner, and manufacturing one would make this the fixture test it exists to complement."
+    },
+    {
+      "id": "CLOSURE-TOPOLOGY",
+      "status": "PASS",
+      "requirement": "Conformance against the bound revision; topology mutation forbidden.",
+      "implementation": [
+        "scripts/topology-conformance.js — digests the consumer checkout before and after the probe and fails the run if anything moved; interpreter bytecode caches removed before the comparison rather than tolerated in it"
+      ],
+      "evidence": [
+        "tests/topology_readonly_guard.test.ts — the guard exercised against a real directory tree: a changed file, an added file, a removed file and a changed permission bit each detected; git's own bookkeeping ignored; bytecode caches removed without taking anything else",
+        "tests/repository_model.test.ts — the recorded evidence bound to the consumer revision, to every golden bundle's packet id and semantic hash, and now to the exact bytes of all three files in each bundle"
+      ],
+      "notes": "The checkout digests are deliberately not written into docs/topology-conformance.json. They are a property of one machine's working tree, so a committed verification record carrying them would hold a field nobody else can reproduce."
+    },
+    {
+      "id": "CLOSURE-VALIDATION",
+      "status": "PASS",
+      "requirement": "A fresh CURRENT_VALIDATION_REPORT.md bound to the head SHA; stale report reuse forbidden.",
+      "implementation": [
+        "scripts/validation-report.js — runs each command and records the exit code it received, then binds the report to a digest of the tree it ran over",
+        "VALIDATION_REPORT.md removed: it was dated, unbound and described a suite less than half the current size"
+      ],
+      "evidence": [
+        "tests/validation_report.test.ts — the digest moves when the tree does and does not move when only the report changes; the failing render path exercised, not only the green one; the committed report required to name this tree's digest and a green verdict, so a stale report is a test failure"
+      ],
+      "notes": "The binding is to the tree digest rather than the commit id, because a report bound to HEAD is invalidated by the commit that carries it, and a check nobody can satisfy is a check everyone learns to skip. The commit is recorded beside it and the report says which of the two is compared."
+    }
+  ],
+  "invariants_held": [
+    "observed sources are read-only; every corpus test digests content and mode before and after",
+    "no archive modified, no source file moved or deleted",
+    "no discovered code, test or package manager executed",
+    "no notebook cell executed — the notebook decoder reads `source` and never `outputs`",
+    "no spreadsheet formula evaluated — formulas are rendered with their last saved value and a note",
+    "no Office macro executed — macro parts are noted as present and never read as code",
+    "no HTML script executed — script, style and other opaque element contents are dropped, not indexed",
+    "no external resource fetched from a document — external relationships and links are recorded as declared references",
+    "no secret-candidate content embedded or decoded — refused on the path, before any byte is read",
+    "no LLM called; the only network call any code path can make is to an embedding endpoint an operator explicitly configured",
+    "embeddings remain candidate analysis: an embedding signal is never a fact and never creates a project candidate alone",
+    "no build priority, strategic roadmap or ranking generated",
+    "no consolidation executed",
+    "no fake source locators and no fake line numbers: each format cites its own coordinate and only Markdown cites a line span",
+    "the cache is acceleration and not truth: a warm run is required to be byte-identical to a cold one",
+    "absolute paths never enter semantic identity or any semantic projection"
+  ],
+  "not_done": [
+    {
+      "item": "Interpretation of binary document formats",
+      "reason": "The work-signal extractors cite line spans. A Word document has no lines, and running them over joined block text would produce exactly the fabricated line numbers the contract forbids. Binary formats therefore reach lexical analysis and candidates, and are reported as interpreted_count 0 per format in document-signals.json rather than silently counted."
+    },
+    {
+      "item": "Legacy container formats (.doc, .xls, .ppt, .odt, .epub, .pages, .rtf)",
+      "reason": "Different containers from the OOXML ZIP the shipped decoders read. Counted explicitly as unsupported formats with their byte totals, so the gap is a stated number rather than an absence."
+    },
+    {
+      "item": "OCR",
+      "reason": "Not performed and not pretended. A scanned PDF is opened, found to have no text layer, and reported as decoder.ocr_required — a different finding from a decode failure and from a format nothing claims."
+    }
+  ],
+  "authority": {
+    "maximum_pull_requests": 1,
+    "merge_performed": false,
+    "auto_merge_enabled": false,
+    "force_push_performed": false,
+    "release_or_publish_performed": false,
+    "terminal_state": "HALT_BEFORE_MERGE"
+  }
+}
