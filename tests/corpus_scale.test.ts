@@ -58,7 +58,7 @@ describe("a ten-thousand-artifact corpus", () => {
   it("scans, clusters and reuses everything on a second full pass", async () => {
     const base = tmp();
     const corpus = writeScaleCorpus(base, SPEC);
-    const roots = corpus.roots.map((root) => ({ path: root }));
+    const roots = corpus.roots.map((root) => ({ path: root, name: path.basename(root) }));
     const cache = new MemoryCorpusCache("scale");
     const options = {
       roots,

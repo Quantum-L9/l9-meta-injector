@@ -74,8 +74,21 @@ function fixture(): Fixture {
   };
 }
 
+/**
+ * The arguments an operator who names their roots would type.
+ *
+ * `PATH=KEY` rather than a bare path, because most of these runs compare, resume
+ * or reuse across runs, and continuity on a key nobody declared is refused. The
+ * refusal and its override are the subject of `corpus_root_history.test.ts`;
+ * here the roots are named so these tests are about what they say they are.
+ */
 function argsFor(f: Fixture, extra: string[] = []): string[] {
-  return [...f.roots.flatMap((root) => ["--root", root]), "--out", f.out, "--cache-dir", f.cache, ...extra];
+  return [
+    ...f.roots.flatMap((root) => ["--root", `${root}=${path.basename(root)}`]),
+    "--out", f.out,
+    "--cache-dir", f.cache,
+    ...extra,
+  ];
 }
 
 /**
@@ -167,6 +180,8 @@ describe("corpus mode", () => {
       "corpus-snapshot.json",
       "document-index.json",
       "document-signals.json",
+      "document-work-signals.jsonl",
+      "document-work-signals.manifest.json",
       "project-candidates.json",
       "readiness-evidence.json",
       "reasoning-candidates.jsonl",
@@ -274,7 +289,11 @@ describe("corpus mode", () => {
   it("runs cold when the cache is switched off", () => {
     const f = fixture();
     expect(run(argsFor(f)).status).toBe(0);
-    const cold = run([...f.roots.flatMap((root) => ["--root", root]), "--out", f.out, "--no-cache"]);
+    const cold = run([
+      ...f.roots.flatMap((root) => ["--root", `${root}=${path.basename(root)}`]),
+      "--out", f.out,
+      "--no-cache",
+    ]);
     expect(cold.status).toBe(0);
     expect(cold.stdout).toContain("cache            off");
   });

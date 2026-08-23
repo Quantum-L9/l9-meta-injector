@@ -74,7 +74,7 @@
     },
     {
       "path": "dist/corpus_diff.d.ts",
-      "git_blob_sha1": "a3cd59a983ddc600eef4991095027b7c945f44b8"
+      "git_blob_sha1": "8107118caf1206f8dadbce78f37bf99fbc186736"
     },
     {
       "path": "dist/corpus_diff.js",
@@ -82,7 +82,7 @@
     },
     {
       "path": "dist/corpus_diff.js.map",
-      "git_blob_sha1": "803cf6a6f204a69e0765c5653a28fb221b0f5270"
+      "git_blob_sha1": "a1dfc23add38be675da4861cc29c4aa315e03023"
     },
     {
       "path": "dist/corpus_documents.d.ts",
@@ -194,15 +194,15 @@
     },
     {
       "path": "dist/corpus_scan.d.ts",
-      "git_blob_sha1": "295802444e2db4acb0f354d3c4a34335124a6ce3"
+      "git_blob_sha1": "c2585984a973658edcf3636d3aad77242cf14207"
     },
     {
       "path": "dist/corpus_scan.js",
-      "git_blob_sha1": "340f5df1ef62d86ae3c1e32ac7d75d0b27bb4116"
+      "git_blob_sha1": "696562e26da03b32b61d02ad1ffb00e11ccfadbe"
     },
     {
       "path": "dist/corpus_scan.js.map",
-      "git_blob_sha1": "63e81170376d6e6054c10f46d1dee968c4ac922a"
+      "git_blob_sha1": "0ad184d87352ab12079daf90c2dca0d6e8553af8"
     },
     {
       "path": "dist/corpus_semantic_run.d.ts",
@@ -230,19 +230,19 @@
     },
     {
       "path": "dist/corpus_session.d.ts",
-      "git_blob_sha1": "9ead314f7019f4df44134790236cad455afac047"
+      "git_blob_sha1": "574ee1e59e7e23788e390cdf4b7f85a9a8c35af5"
     },
     {
       "path": "dist/corpus_session.js",
-      "git_blob_sha1": "500c09059599df6d271788a7f6c89a440330711f"
+      "git_blob_sha1": "9f1f89c86459ad74b14067bd688897c55a933ca2"
     },
     {
       "path": "dist/corpus_session.js.map",
-      "git_blob_sha1": "76402ed68b1d328b3fd54c10983a073136886458"
+      "git_blob_sha1": "e523fd34b2fe424b419f72933031b347d79abe8e"
     },
     {
       "path": "dist/corpus_snapshot.d.ts",
-      "git_blob_sha1": "ee5fa523840d0aa6393d2388ec4f1aa6c0ca04c7"
+      "git_blob_sha1": "a69c40619ffa740341e7bd2c004b2c04ef83a4da"
     },
     {
       "path": "dist/corpus_snapshot.js",
@@ -250,7 +250,7 @@
     },
     {
       "path": "dist/corpus_snapshot.js.map",
-      "git_blob_sha1": "2a05730fc3b75a5d19b6f1a67494bbe332e339ea"
+      "git_blob_sha1": "2db066c20af3cd33a52cd0974476e1e55a989b8e"
     },
     {
       "path": "dist/encoding.d.ts",
@@ -438,7 +438,7 @@
     },
     {
       "path": "docs/corpus-intelligence.md",
-      "git_blob_sha1": "5bf553956fca5a0321421d93653c586f79c1e885"
+      "git_blob_sha1": "6aa046e2f11aabcf996753167996bf1e1ba6252c"
     },
     {
       "path": "docs/decision_log.md",
@@ -614,7 +614,7 @@
     },
     {
       "path": "README.md",
-      "git_blob_sha1": "4f0f127b3f020ca9c7bbd8fec265956c6cc4ad3a"
+      "git_blob_sha1": "009d46da6949295f53e93f230aee7ea59f0bde5e"
     },
     {
       "path": "scripts/check-architecture-authority.js",
@@ -654,7 +654,7 @@
     },
     {
       "path": "scripts/local-source-cli.js",
-      "git_blob_sha1": "804a7dee724df20c87eb00a39e52f56600500b6f"
+      "git_blob_sha1": "42dd286f7fbd476dc57a0ac52c256394a26b9669"
     },
     {
       "path": "scripts/repository-model-cli.js",
@@ -694,7 +694,7 @@
     },
     {
       "path": "src/corpus_diff.ts",
-      "git_blob_sha1": "ead8541b0d588474ccbae1c0ccc5f6a85f07ca2a"
+      "git_blob_sha1": "450e93e018717db7fd414d4853d1f799ca4b4339"
     },
     {
       "path": "src/corpus_documents.ts",
@@ -734,7 +734,7 @@
     },
     {
       "path": "src/corpus_scan.ts",
-      "git_blob_sha1": "450fd7a3f37f8783b8d4be365f4b213d44696811"
+      "git_blob_sha1": "472e38042fcd5125014f914d19f7d1b4e6ee19e6"
     },
     {
       "path": "src/corpus_semantic_run.ts",
@@ -746,11 +746,11 @@
     },
     {
       "path": "src/corpus_session.ts",
-      "git_blob_sha1": "1c91bb5423c6d983766d9ad79279606c339ae381"
+      "git_blob_sha1": "9f38cc093f5465e0ee8abe32b85d04324095f67c"
     },
     {
       "path": "src/corpus_snapshot.ts",
-      "git_blob_sha1": "fce120454df4dcec806a2e819fc8fde745fbe2ef"
+      "git_blob_sha1": "72fcb0b99573956a4bc779156e28989432faf66b"
     },
     {
       "path": "src/encoding.ts",
@@ -850,7 +850,7 @@
     },
     {
       "path": "tests/corpus_cli.test.ts",
-      "git_blob_sha1": "d839e56bbe7acee303f669f2fb1909d881d7ba92"
+      "git_blob_sha1": "4026d3bd15b251de730d7d87d3e892d75169ecbf"
     },
     {
       "path": "tests/corpus_diff.test.ts",
@@ -870,7 +870,7 @@
     },
     {
       "path": "tests/corpus_qualification.test.ts",
-      "git_blob_sha1": "9e700e72a28d0d4fff2e51f80673bebfca28f08f"
+      "git_blob_sha1": "3fc71db4c3735ad67565645d16eef0091078e97d"
     },
     {
       "path": "tests/corpus_readiness.test.ts",
@@ -882,7 +882,7 @@
     },
     {
       "path": "tests/corpus_scale.test.ts",
-      "git_blob_sha1": "7ac616e2c26295936818fbd772452bb797cc5868"
+      "git_blob_sha1": "588c875f1cb5056847634de1a271eb9fc657deea"
     },
     {
       "path": "tests/corpus_semantic_candidates.test.ts",

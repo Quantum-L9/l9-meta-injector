@@ -44,7 +44,7 @@ describe("a ten-thousand-artifact corpus, rescanned", () => {
   it("reuses hashes, redoes only what moved, and never calls the result verified", async () => {
     const base = tmp();
     const corpus = writeScaleCorpus(base, SPEC);
-    const roots = corpus.roots.map((root) => ({ path: root }));
+    const roots = corpus.roots.map((root) => ({ path: root, name: path.basename(root) }));
     const cache = new MemoryCorpusCache("scale-incremental");
     const options = {
       roots,

@@ -77,18 +77,35 @@ describe("root_identity_class", () => {
 });
 
 describe("the diff's longitudinal identity guard", () => {
-  /** Two runs over one root, so the diff has something to compare. */
-  async function twoRuns(spec: { path: string; name?: string }) {
+  /**
+   * Two runs over one root, so the diff has something to compare.
+   *
+   * `allowInferredRootHistory` is what an unnamed root now needs in order to be
+   * compared at all: the caution below describes a claim the operator has
+   * accepted, not one this tool made on its own.
+   */
+  async function twoRuns(spec: { path: string; name?: string }, allow = false) {
     const first = await runCorpusScan({ roots: [spec], producerVersion: "test" });
     fs.writeFileSync(path.join(spec.path, "extra.md"), "# Extra\n\nMore prose.\n", "utf8");
     const second = await runCorpusScan({
-      roots: [spec], producerVersion: "test", previousSnapshot: first.snapshot,
+      roots: [spec],
+      producerVersion: "test",
+      previousSnapshot: first.snapshot,
+      ...(allow ? { allowInferredRootHistory: true } : {}),
     });
     return { first, second };
   }
 
-  it("cautions when two runs were matched on a key nobody declared", async () => {
-    const { second } = await twoRuns({ path: corpusAt(tmp(), "Backup") });
+  it("refuses to compare two runs matched on a key nobody declared", async () => {
+    // The caution this file used to assert here was the whole response. It is
+    // now the second half of one: the comparison does not happen at all unless
+    // the operator says these two observations are the same disk.
+    await expect(twoRuns({ path: corpusAt(tmp(), "Backup") }))
+      .rejects.toThrow(/refusing previous-snapshot diff/);
+  });
+
+  it("cautions when the operator accepted a key nobody declared", async () => {
+    const { second } = await twoRuns({ path: corpusAt(tmp(), "Backup") }, true);
     const diff = second.diff;
 
     expect(diff?.roots[0]?.category).toBe("root_changed");
@@ -99,6 +116,8 @@ describe("the diff's longitudinal identity guard", () => {
     expect(caution?.message).toContain("mount point");
     // And it says what to do about it rather than only that something is wrong.
     expect(caution?.message).toContain("--root");
+    // Beside the record of who accepted it.
+    expect(diff?.inferred_root_history_override?.enabled).toBe(true);
   });
 
   it("stays silent when the operator named the root", async () => {

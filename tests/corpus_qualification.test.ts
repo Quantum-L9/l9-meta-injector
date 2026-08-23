@@ -71,7 +71,11 @@ async function scan(roots: { path: string; name?: string }[], extra: Partial<Par
 describe("cold and warm runs", () => {
   it("produce byte-identical semantic output, and the warm run reads no source file twice", async () => {
     const corpus = writeMultiRootCorpus(tmp());
-    const roots = [{ path: corpus.oldSsd }, { path: corpus.backup }, { path: corpus.archives }];
+    const roots = [
+      { path: corpus.oldSsd, name: "OldSSD" },
+      { path: corpus.backup, name: "Backup" },
+      { path: corpus.archives, name: "Archives" },
+    ];
     const cache = new MemoryCorpusCache("qualification");
 
     const cold = await scan(roots);
@@ -91,7 +95,7 @@ describe("cold and warm runs", () => {
 
   it("hash every byte on the warm run, because identity is never cached", async () => {
     const corpus = writeMultiRootCorpus(tmp());
-    const roots = [{ path: corpus.oldSsd }];
+    const roots = [{ path: corpus.oldSsd, name: "OldSSD" }];
     const cache = new MemoryCorpusCache("qualification");
     const cold = await scan(roots, { cache });
     const warm = await scan(roots, { cache });
@@ -106,7 +110,7 @@ describe("cold and warm runs", () => {
 describe("incremental invalidation", () => {
   it("reprocesses only the changed document when one file changes", async () => {
     const corpus = writeMultiRootCorpus(tmp());
-    const roots = [{ path: corpus.oldSsd }, { path: corpus.backup }];
+    const roots = [{ path: corpus.oldSsd, name: "OldSSD" }, { path: corpus.backup, name: "Backup" }];
     const cache = new MemoryCorpusCache("qualification");
     const first = await scan(roots, { cache });
 
@@ -147,7 +151,7 @@ describe("incremental invalidation", () => {
 
   it("classifies a moved file as a rename candidate and redecodes nothing", async () => {
     const corpus = writeMultiRootCorpus(tmp());
-    const roots = [{ path: corpus.oldSsd }];
+    const roots = [{ path: corpus.oldSsd, name: "OldSSD" }];
     const cache = new MemoryCorpusCache("qualification");
     const first = await scan(roots, { cache });
 
@@ -214,7 +218,7 @@ describe("incremental invalidation", () => {
 
   it("reports an added archive, its members, and a removed archive", async () => {
     const corpus = writeMultiRootCorpus(tmp());
-    const roots = [{ path: corpus.archives }];
+    const roots = [{ path: corpus.archives, name: "ArchiveZips" }];
     const first = await scan(roots);
 
     writeRawZip(path.join(corpus.archives, "new-work.zip"), [
@@ -240,13 +244,17 @@ describe("incremental invalidation", () => {
 describe("interruption and resume", () => {
   it("carries completed work forward and finishes with identical output", async () => {
     const corpus = writeMultiRootCorpus(tmp());
-    const roots = [{ path: corpus.oldSsd }, { path: corpus.backup }];
+    const roots = [{ path: corpus.oldSsd, name: "OldSSD" }, { path: corpus.backup, name: "Backup" }];
     const sessionFile = path.join(tmp("l9-corpus-session-"), "corpus-session.json");
     const budgets = { ...DEFAULT_CORPUS_BUDGETS, archive: {} };
+    // Keyed and classed the way the CLI writes a session manifest: resuming
+    // adopts completions recorded against a root id, so the class the session
+    // was started under is what a later resume is judged against.
     const sessionRoots = roots.map((root) => ({
-      root_id: corpusRootId(path.basename(root.path)),
-      root_key: path.basename(root.path),
+      root_id: corpusRootId(root.name),
+      root_key: root.name,
       absolute_path: root.path,
+      root_identity_class: "declared" as const,
     }));
     const cache = new MemoryCorpusCache("qualification");
 
@@ -304,7 +312,7 @@ describe("interruption and resume", () => {
 describe("a corrupt cache entry", () => {
   it("is discarded, recomputed, reported, and changes no output", async () => {
     const corpus = writeMultiRootCorpus(tmp());
-    const roots = [{ path: corpus.oldSsd }];
+    const roots = [{ path: corpus.oldSsd, name: "OldSSD" }];
     const cache = new MemoryCorpusCache("qualification");
     const clean = await scan(roots, { cache });
 
@@ -402,7 +410,11 @@ describe("mount points and path namespaces", () => {
 describe("the source", () => {
   it("is byte-for-byte unchanged by a scan, warm or cold", async () => {
     const corpus = writeMultiRootCorpus(tmp());
-    const roots = [{ path: corpus.oldSsd }, { path: corpus.backup }, { path: corpus.archives }];
+    const roots = [
+      { path: corpus.oldSsd, name: "OldSSD" },
+      { path: corpus.backup, name: "Backup" },
+      { path: corpus.archives, name: "Archives" },
+    ];
     const before = roots.map((root) => treeSnapshot(root.path));
     const cache = new MemoryCorpusCache("qualification");
     await scan(roots, { cache });

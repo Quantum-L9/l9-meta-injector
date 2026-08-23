@@ -77,6 +77,8 @@ const corpus_snapshot_1 = require("./corpus_snapshot");
 const corpus_session_1 = require("./corpus_session");
 const encoding_1 = require("./encoding");
 const documents_1 = require("./documents");
+const corpus_root_history_1 = require("./corpus_root_history");
+const corpus_work_signal_export_1 = require("./corpus_work_signal_export");
 const extractors_1 = require("./extractors");
 const document_blocks_1 = require("./extractors/document_blocks");
 const interpretation_1 = require("./interpretation");
@@ -611,9 +613,54 @@ async function runCorpusScan(input) {
             archivePolicyVersion: key.policyVersion,
         }), value),
     };
+    // ── 0. may this run claim continuity with a previous one? ───────────────
+    //
+    // Decided before a byte is read, from the root specs alone: a spec carrying an
+    // explicit name is a declared identity, one without is the mount point's final
+    // segment. Every longitudinal path is gated here rather than at its own call
+    // site, so the diff, the resume and the incremental reuse cannot come to
+    // disagree about what continuity is worth.
+    const allowInferredRootHistory = input.allowInferredRootHistory === true;
+    const declaredIdentities = input.roots.map((spec) => {
+        const rootKey = spec.name !== undefined && spec.name.length > 0
+            ? spec.name
+            : (0, corpus_roots_1.defaultRootKey)(spec.path);
+        return {
+            root_id: (0, corpus_roots_1.corpusRootId)(rootKey),
+            root_key: rootKey,
+            root_identity_class: spec.name !== undefined && spec.name.length > 0
+                ? "declared"
+                : "inferred",
+        };
+    });
+    const authorizations = [];
+    const authorize = (operation, previousRoots) => {
+        const result = (0, corpus_root_history_1.assertLongitudinalRootIdentityAuthorized)({
+            operation,
+            currentRoots: declaredIdentities,
+            previousRoots,
+            allowInferredRootHistory,
+        });
+        authorizations.push({ operation, result });
+    };
+    if (input.previousSnapshot !== undefined) {
+        authorize("previous-snapshot diff", input.previousSnapshot.roots);
+    }
+    // A session with no roots recorded yet is one this run is about to create, and
+    // creating it claims nothing about a previous observation.
+    const sessionRoots = input.session?.resumedRoots ?? [];
+    if (sessionRoots.length > 0) {
+        authorize("resume", sessionRoots);
+    }
     const knownHashesEnabled = verificationMode === "incremental"
         && !verifyContent
         && input.previousSnapshot !== undefined;
+    if (knownHashesEnabled) {
+        // Reuse keyed purely on content is safe whatever the root is called: the key
+        // is the bytes. This is the other kind — "that path under that root had these
+        // bytes last run" — and it is a continuity claim like any other.
+        authorize("incremental hash reuse", input.previousSnapshot.roots);
+    }
     // ── 1. acquire every root, read-only ────────────────────────────────────
     const observations = [];
     const failedRoots = [];
@@ -1040,6 +1087,50 @@ async function runCorpusScan(input) {
             embedding_profile: embeddingProfile,
             readiness_profile: (0, corpus_readiness_1.readinessProfileHash)(),
         };
+        // Both projections of the work signals are built from this one array. The
+        // report samples it and the machine payload carries all of it, so the two can
+        // disagree about presentation and never about how much the corpus found.
+        const workSignalRecords = [...blockSignals.entries()]
+            .flatMap(([artifactId, signals]) => signals.map((signal) => ({
+            signal_id: signal.assertion_id,
+            artifact_id: artifactId,
+            rmp_artifact_id: signal.subject_id,
+            source_path: signal.source_path,
+            format: signal.format,
+            raw_content_hash: signal.source_content_hash,
+            normalized_document_id: signal.evidence.normalized_document_id,
+            decoder_id: signal.evidence.decoder_id,
+            decoder_version: signal.evidence.decoder_version,
+            block_id: signal.evidence.block_id,
+            block_kind: signal.evidence.block_kind,
+            structured_locator: signal.evidence.locator,
+            predicate: signal.predicate,
+            object: signal.object,
+            bounded_excerpt: signal.evidence_excerpt,
+            evidence_class: signal.evidence_class,
+            authority: signal.authority,
+            confidence: signal.confidence,
+            extractor_id: signal.extractor_id,
+            extractor_profile_version: document_blocks_1.DOCUMENT_BLOCK_PROFILE_VERSION,
+        })));
+        // The complete payload is built here, before the snapshot, because the
+        // snapshot carries a reference to it: a record count and the two hashes, so a
+        // reader holding only the snapshot can tell whether the payload beside it is
+        // the one this run produced.
+        const documentWorkSignals = (0, corpus_work_signal_export_1.buildDocumentWorkSignalExport)({
+            corpusSourceSnapshotId: sourceSnapshotId,
+            corpusAnalysisId: analysisIdentity.corpus_analysis_id,
+            profile: {
+                profile_id: document_blocks_1.DOCUMENT_BLOCK_PROFILE_ID,
+                profile_version: document_blocks_1.DOCUMENT_BLOCK_PROFILE_VERSION,
+                profile_hash: blockProfile,
+            },
+            records: workSignalRecords,
+        });
+        // What the operator authorized, recorded beside what was observed. Null on
+        // an ordinary run: an `enabled: false` entry on every run would train a
+        // reader to skip the field precisely when it says something.
+        const historyOverride = (0, corpus_root_history_1.inferredRootHistoryOverride)(authorizations);
         session?.setTarget(sourceSnapshotId);
         // ── 5. readiness signals ──────────────────────────────────────────────
         const readinessInputs = artifacts.map((artifact) => ({
@@ -1259,6 +1350,10 @@ async function runCorpusScan(input) {
             corpus_id: corpusIdLabel,
             corpus_source_snapshot_id: sourceSnapshotId,
             analysis: analysisIdentity,
+            document_work_signals: (0, corpus_work_signal_export_1.documentWorkSignalsRef)(documentWorkSignals.manifest),
+            ...(historyOverride !== null
+                ? { operational_provenance: { inferred_root_history_override: historyOverride } }
+                : {}),
             corpus_status: corpusStatus,
             verification,
             missing_root_ids: failedRoots.map((failed) => failed.rootId).sort(ordering_1.compareCodePoints),
@@ -1608,24 +1703,7 @@ async function runCorpusScan(input) {
                 profile_hash: blockProfile,
                 extractor_id: document_blocks_1.DOCUMENT_BLOCK_EXTRACTOR_ID,
             },
-            blockSignals: [...blockSignals.entries()].flatMap(([artifactId, signals]) => signals.map((signal) => ({
-                artifact_id: artifactId,
-                source_path: signal.source_path,
-                format: signal.format,
-                raw_content_hash: signal.source_content_hash,
-                normalized_document_id: signal.evidence.normalized_document_id,
-                decoder_id: signal.evidence.decoder_id,
-                decoder_version: signal.evidence.decoder_version,
-                block_id: signal.evidence.block_id,
-                block_kind: signal.evidence.block_kind,
-                structured_locator: signal.evidence.locator,
-                predicate: signal.predicate,
-                object: signal.object,
-                bounded_excerpt: signal.evidence_excerpt,
-                evidence_class: signal.evidence_class,
-                confidence: signal.confidence,
-                extractor_id: signal.extractor_id,
-            }))),
+            blockSignals: workSignalRecords,
             // Interpreted means "said something", by either reader. Counting only the
             // line-based one would report every decoded Word document as interpreted
             // zero times, which is the exact shape of failure this document exists to
@@ -1884,6 +1962,16 @@ async function runCorpusScan(input) {
             });
             session?.fail({ code: note.code, severity: note.severity, message: note.message });
         }
+        if (historyOverride !== null) {
+            // Stated in the run's own diagnostics as well as recorded in the snapshot:
+            // a reader of the report should not have to open the snapshot to find out
+            // that the continuity it describes is the operator's claim.
+            diagnostics.push({
+                code: "corpus.inferred_root_history_override",
+                severity: "warning",
+                message: (0, corpus_root_history_1.inferredRootHistoryWarning)(historyOverride),
+            });
+        }
         if (skipped.encoding > 0) {
             diagnostics.push({
                 code: "corpus.unsupported_encoding",
@@ -1891,14 +1979,41 @@ async function runCorpusScan(input) {
                 message: `${skipped.encoding} file(s) were hashed but are not valid UTF-8 and were not decoded`,
             });
         }
+        // The completeness contract, checked before anything is written rather than
+        // asserted in a document. Every failure here means the payload and the report
+        // disagree about what the corpus found, or a signal points at something the
+        // corpus does not contain — and a consumer reading either one would be
+        // reading a number nobody could reconcile.
+        const exportProblems = (0, corpus_work_signal_export_1.verifyDocumentWorkSignalExport)({
+            manifest: documentWorkSignals.manifest,
+            payloadJsonl: documentWorkSignals.payloadJsonl,
+            knownArtifactIds: new Set(artifacts.map((artifact) => artifact.virtualSourceId)),
+            knownNormalizedDocumentIds: new Set(artifacts
+                .map((artifact) => normalizedDocumentIdOf(artifact.contentHash, normalized.get(artifact.virtualSourceId)))
+                .filter((id) => id !== null)),
+            reportSignalCount: documentSignals.block_signals.signal_count,
+        });
+        if (exportProblems.length > 0) {
+            throw new Error("corpus: the complete document work-signal payload failed its own completeness "
+                + `check and was not published:\n  - ${exportProblems.join("\n  - ")}`);
+        }
+        // Built only after the guard above allowed the comparison: an unauthorized
+        // inferred continuity never reaches this call, so a diff exists exactly when
+        // there was a claim worth making.
         const diff = input.previousSnapshot
-            ? (0, corpus_diff_1.buildCorpusDiff)(input.previousSnapshot, snapshot)
+            ? {
+                ...(0, corpus_diff_1.buildCorpusDiff)(input.previousSnapshot, snapshot),
+                ...(historyOverride !== null
+                    ? { inferred_root_history_override: historyOverride }
+                    : {}),
+            }
             : null;
         const orderedDiagnostics = [...diagnostics].sort((a, b) => (0, ordering_1.compareCodePoints)(a.code, b.code)
             || (0, ordering_1.compareCodePoints)(a.corpus_path ?? "", b.corpus_path ?? "")
             || (0, ordering_1.compareCodePoints)(a.message, b.message));
         return {
             snapshot,
+            documentWorkSignals,
             rootPackets,
             candidates: candidatesDocument,
             readiness,

@@ -184,6 +184,16 @@ const KNOWN_DOCUMENTS: { name: string; path: string; schema: string | null }[] =
     path: "document-signals.json",
     schema: "l9.document-signals/v1",
   },
+  {
+    name: "document_work_signals",
+    path: "document-work-signals.jsonl",
+    schema: "l9.document-work-signals/v1",
+  },
+  {
+    name: "document_work_signals_manifest",
+    path: "document-work-signals.manifest.json",
+    schema: "l9.document-work-signals-manifest/v1",
+  },
   { name: "semantic_relations", path: "semantic-relations.json", schema: "l9.semantic-relations/v1" },
   { name: "topic_candidates", path: "topic-candidates.json", schema: "l9.topic-candidates/v1" },
   { name: "project_candidates", path: "project-candidates.json", schema: "l9.project-candidates/v1" },

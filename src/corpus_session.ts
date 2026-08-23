@@ -22,6 +22,7 @@ import * as path from "node:path";
 import { canonicalCorpusJson } from "./corpus_analysis";
 import { commitFileDurably } from "./durable_write";
 import { compareCodePoints } from "./ordering";
+import type { RootIdentityClass } from "./corpus_roots";
 import { stableId } from "./repository_model";
 
 export const CORPUS_SESSION_SCHEMA = "l9.corpus-session/v1";
@@ -38,6 +39,17 @@ export interface CorpusSessionRoot {
   root_key: string;
   /** Operational only: where this root was mounted for this session. */
   absolute_path: string;
+  /**
+   * How this root's key was chosen when the session was started.
+   *
+   * Retained because resuming is a continuity claim: it adopts completions
+   * recorded against a root id, and a root id derived from a mount point's final
+   * segment can be shared by two unrelated directories. Optional because a
+   * manifest written before the class was recorded says nothing about it, and
+   * absent is read as `inferred` — the only honest reading of a document that
+   * does not say the operator named the root.
+   */
+  root_identity_class?: RootIdentityClass;
 }
 
 /**
@@ -120,9 +132,20 @@ export class CorpusSessionStore {
   private readonly decoderKeys: Set<string>;
   private readonly analysisKeys: Set<string>;
 
-  private constructor(file: string, session: CorpusSession) {
+  /**
+   * The roots the adopted manifest recorded, or empty when nothing was adopted.
+   *
+   * Kept apart from `session.roots`, which is always this run's view: the
+   * previous run's identity classes are what a continuity guard has to compare
+   * against, and overwriting them with this run's would make every resume look
+   * like it was between roots the operator had named.
+   */
+  private readonly adoptedRoots: CorpusSessionRoot[];
+
+  private constructor(file: string, session: CorpusSession, adoptedRoots: CorpusSessionRoot[] = []) {
     this.file = file;
     this.session = session;
+    this.adoptedRoots = adoptedRoots;
     this.sourceIds = new Set(session.completed_source_ids);
     this.archiveHashes = new Set(session.completed_archive_hashes);
     this.decoderKeys = new Set(session.completed_decoder_keys);
@@ -180,11 +203,21 @@ export class CorpusSessionStore {
       completed_analysis_keys: parsed.completed_analysis_keys ?? [],
       failure_diagnostics: parsed.failure_diagnostics ?? [],
       started_at: parsed.started_at ?? input.now,
-    });
+    }, parsed.roots ?? []);
   }
 
   get id(): string {
     return this.session.session_id;
+  }
+
+  /**
+   * Roots as the manifest this session resumed recorded them.
+   *
+   * Empty when this session started fresh, which is the case that makes no
+   * continuity claim at all.
+   */
+  get resumedRoots(): readonly CorpusSessionRoot[] {
+    return this.adoptedRoots;
   }
 
   /** Completions carried in from a previous attempt, before this one adds any. */

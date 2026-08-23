@@ -1,5 +1,7 @@
 import { CorpusRootIdentity } from "./corpus_roots";
 import type { CorpusAnalysisManifest } from "./corpus_analysis_manifest";
+import type { DocumentWorkSignalsRef } from "./corpus_work_signal_export";
+import type { InferredRootHistoryOverride } from "./corpus_root_history";
 export declare const CORPUS_SNAPSHOT_SCHEMA = "l9.corpus-snapshot/v1";
 export interface CorpusSnapshotArtifact {
     virtual_source_id: string;
@@ -110,6 +112,27 @@ export interface CorpusSnapshot {
      * about the conclusions, which are a function of both.
      */
     analysis_manifest?: CorpusAnalysisManifest;
+    /**
+     * Where the complete document work-signal payload is, and what it should be.
+     *
+     * A reference rather than the records: the payload is a separate file in the
+     * same generation precisely because it can be large, and copying it into the
+     * snapshot would defeat that. The record count and the two hashes are enough
+     * for a reader holding this snapshot to tell whether the payload beside it is
+     * the one this run produced.
+     */
+    document_work_signals?: DocumentWorkSignalsRef;
+    /**
+     * What the operator authorized about this run, as distinct from what was seen.
+     *
+     * Absent unless something was authorized. It enters no identity:
+     * `corpus_source_snapshot_id` is about the bytes on the disks, and an operator
+     * accepting a weaker continuity claim changes the strength of a claim about
+     * history rather than the bytes this run observed.
+     */
+    operational_provenance?: {
+        inferred_root_history_override?: InferredRootHistoryOverride;
+    };
     corpus_status: CorpusStatus;
     /** How the hashes in this snapshot were established. */
     verification: CorpusVerification;

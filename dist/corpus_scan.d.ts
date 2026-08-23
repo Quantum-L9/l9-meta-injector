@@ -9,6 +9,7 @@ import { CorpusRootBinding, CorpusRootSpec, rootIdentity } from "./corpus_roots"
 import { CorpusSnapshot, VerificationMode } from "./corpus_snapshot";
 import { CorpusResourceBudgets, CorpusSessionStore } from "./corpus_session";
 import { DecoderRegistry } from "./documents";
+import { DocumentWorkSignalExport } from "./corpus_work_signal_export";
 import { LocalArchivePolicy } from "./local_archive_policy";
 import type { DocumentIndex, DocumentIndexSummary } from "./corpus_documents";
 import type { SemanticAnalysisResult } from "./corpus_semantic_run";
@@ -51,6 +52,16 @@ export interface CorpusScanInput {
     session?: CorpusSessionStore;
     /** Snapshot of a previous run; when present, `corpus-diff.json` is produced. */
     previousSnapshot?: CorpusSnapshot;
+    /**
+     * The operator's acceptance of a weaker root identity for history.
+     *
+     * A root nobody named is keyed by its mount point's final segment, and two
+     * unrelated directories can share one. Comparing, resuming or reusing hashes
+     * across runs on such a key is a continuity claim this tool cannot make, so it
+     * refuses by default; this is the operator saying they know these are the same
+     * disk. See `src/corpus_root_history.ts`.
+     */
+    allowInferredRootHistory?: boolean;
     expandArchives?: boolean;
     interpret?: boolean;
     archivePolicy?: Partial<LocalArchivePolicy>;
@@ -222,6 +233,15 @@ export interface CorpusScanResult {
     documentIndex: DocumentIndex;
     /** What each decoder read, and whether what it read reached the analysis. */
     documentSignals: CorpusDocumentSignals;
+    /**
+     * Every structured document work signal, complete and never sampled.
+     *
+     * `documentSignals` above is the report: complete counts, a bounded sample of
+     * the evidence. This is the machine payload a downstream consumer reads, and
+     * the two are built from one array so they cannot come to disagree about how
+     * much the corpus found.
+     */
+    documentWorkSignals: DocumentWorkSignalExport;
     /** Candidate discovery over recorded evidence. Null when it was switched off. */
     semantic: SemanticAnalysisResult | null;
 }

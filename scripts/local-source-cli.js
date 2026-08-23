@@ -74,6 +74,11 @@ const USAGE = [
   "  --no-diff                  do not produce corpus-diff.json",
   "  --session FILE             session manifest path (default: <out>/corpus-session.json)",
   "  --resume                   adopt an existing session manifest for the same roots",
+  "  --allow-inferred-root-history  permit resume, incremental reuse, or previous-snapshot",
+  "                             comparison when root continuity depends on an inferred",
+  "                             basename identity. Two unrelated directories can share",
+  "                             one, so this is refused by default; supplying it records",
+  "                             the weaker-authority override in the run's provenance",
   "  --topic-threshold F        topic candidate vocabulary overlap in [0,1] (default: 0.35)",
   "  --no-topic-candidates      skip topic candidate analysis",
   "  --keep-generations N       output generations retained (default: 3)",
@@ -575,6 +580,9 @@ async function runCorpusMode(cli) {
         root_id: roots.corpusRootId(rootKey),
         root_key: rootKey,
         absolute_path: path.resolve(spec.path),
+        // Recorded so a later resume can tell whether adopting this session's
+        // completions is a continuity claim anyone underwrote.
+        root_identity_class: spec.name && spec.name.length > 0 ? "declared" : "inferred",
       };
     }),
     budgets,
@@ -708,6 +716,7 @@ async function runCorpusMode(cli) {
       observedAt: new Date().toISOString(),
       verification: cli.flag("--incremental") ? "incremental" : "full",
       verifyContent: cli.flag("--verify-content"),
+      allowInferredRootHistory: cli.flag("--allow-inferred-root-history"),
       allowPartialRoots: cli.flag("--allow-partial-roots"),
       semanticAnalysis: !cli.flag("--no-semantic-analysis"),
       ...(embeddingProvider !== undefined ? { embeddingProvider } : {}),
@@ -735,6 +744,11 @@ async function runCorpusMode(cli) {
     { path: "corpus-coverage.json", contents: coverageModule.renderCorpusCoverage(result.coverage) },
     { path: "document-index.json", contents: documentsModule.renderDocumentIndex(result.documentIndex) },
     { path: "document-signals.json", contents: signalsModule.renderCorpusDocumentSignals(result.documentSignals) },
+    // The report above samples its evidence records. These two are the machine
+    // contract: every structured work signal, and a receipt saying how many there
+    // are and hashing what was written.
+    { path: "document-work-signals.jsonl", contents: result.documentWorkSignals.payloadJsonl },
+    { path: "document-work-signals.manifest.json", contents: result.documentWorkSignals.manifestJson },
   ];
   if (result.semantic !== null) {
     outputs.push(
