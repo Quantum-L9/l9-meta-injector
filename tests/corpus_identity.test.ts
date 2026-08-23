@@ -130,6 +130,25 @@ describe("the root output directory", () => {
     expect(rootDirectoryName("..")).not.toBe("..");
     // Stable: a directory name is a function of the key and nothing else.
     expect(rootDirectoryName("a/b")).toBe(slashed);
+
+    // Leading and trailing separators are trimmed, so the name never starts with
+    // a dash or dot and never ends with a dash before the digest.
+    for (const key of ["--leading", "trailing--", "...dots", "-", "---", "/", "  "]) {
+      const name = rootDirectoryName(key);
+      expect(name).not.toMatch(/^[-.]/);
+      expect(name).not.toContain("/");
+      expect(name.length).toBeGreaterThan(0);
+    }
+    // Distinct keys stay distinct even when they slug to the same thing.
+    expect(rootDirectoryName("-")).not.toBe(rootDirectoryName("---"));
+
+    // A pathological key is handled in linear time rather than by backtracking:
+    // an end-anchored quantifier over a long run of dashes is quadratic.
+    const pathological = "-".repeat(200_000);
+    const started = process.hrtime.bigint();
+    expect(rootDirectoryName(pathological)).toMatch(/^root-[0-9a-f]{12}$/);
+    const elapsedMs = Number(process.hrtime.bigint() - started) / 1e6;
+    expect(elapsedMs).toBeLessThan(1_000);
   });
 });
 

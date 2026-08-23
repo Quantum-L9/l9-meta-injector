@@ -600,7 +600,7 @@ interface ArchiveContext {
   members: LocalArchiveMemberObservation[];
   omittedPaths: string[];
   /** Where preflight verdicts are read from and written to, when supplied. */
-  manifests?: ArchiveManifestStore | undefined;
+  manifests?: ArchiveManifestStore;
 }
 
 function holdArchive(

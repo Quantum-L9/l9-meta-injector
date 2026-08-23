@@ -186,11 +186,11 @@
     },
     {
       "path": "dist/corpus_roots.js",
-      "git_blob_sha1": "2b6f081f80ffc5dcdc4c687319030d0fba3fd44e"
+      "git_blob_sha1": "9d05860d3ec899597f94dc046089e405a82042db"
     },
     {
       "path": "dist/corpus_roots.js.map",
-      "git_blob_sha1": "74f03c4c5a6397791d5f501efdffe68d1b1f373a"
+      "git_blob_sha1": "210f58964195ab9a7bd15f8131ced25edff6eb31"
     },
     {
       "path": "dist/corpus_scan.d.ts",
@@ -730,7 +730,7 @@
     },
     {
       "path": "src/corpus_roots.ts",
-      "git_blob_sha1": "9f56c14330de584f3d99310efa7e49cd0bd2389c"
+      "git_blob_sha1": "258ef6d3e17c5c067f638640b1188df88822f105"
     },
     {
       "path": "src/corpus_scan.ts",
@@ -786,7 +786,7 @@
     },
     {
       "path": "src/local_source.ts",
-      "git_blob_sha1": "e7790ef00edb1872e148a16c9dce8c4b3515e3ae"
+      "git_blob_sha1": "8078e3f9185227a8bf5f30982ba3a6d20701218a"
     },
     {
       "path": "src/meta_v3.ts",

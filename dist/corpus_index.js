@@ -170,15 +170,7 @@ function renderCorpusIndexReport(index) {
         "",
     ];
     if (index.missing_root_ids.length > 0) {
-        lines.splice(lines.indexOf("## Corpus size"), 0, ...[
-            "## Missing roots",
-            "",
-            "These roots were named and were not observed. Every count above is a count over",
-            "the roots that were.",
-            "",
-            ...index.missing_root_ids.map((rootId) => `- ${rootId}`),
-            "",
-        ]);
+        lines.splice(lines.indexOf("## Corpus size"), 0, "## Missing roots", "", "These roots were named and were not observed. Every count above is a count over", "the roots that were.", "", ...index.missing_root_ids.map((rootId) => `- ${rootId}`), "");
     }
     return lines.join("\n");
 }

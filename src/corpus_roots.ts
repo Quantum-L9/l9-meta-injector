@@ -227,11 +227,18 @@ const SAFE_ROOT_DIRECTORY = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
  */
 export function rootDirectoryName(rootKey: string): string {
   if (SAFE_ROOT_DIRECTORY.test(rootKey) && rootKey !== "." && rootKey !== "..") return rootKey;
-  const slug = rootKey
-    .replace(/[^A-Za-z0-9._-]+/g, "-")
-    .replace(/^[-.]+/, "")
-    .replace(/-+$/, "")
-    .slice(0, 48);
+  // Trimmed by index rather than by `/-+$/`. An end-anchored quantifier
+  // backtracks from every start position, so a key that is a long run of dashes
+  // costs time quadratic in its length — and a root key is whatever the operator
+  // typed. Scanning in from both ends is linear and says the same thing.
+  const collapsed = rootKey.replace(/[^A-Za-z0-9._-]+/g, "-").slice(0, 48);
+  let start = 0;
+  while (start < collapsed.length && (collapsed[start] === "-" || collapsed[start] === ".")) {
+    start += 1;
+  }
+  let end = collapsed.length;
+  while (end > start && collapsed[end - 1] === "-") end -= 1;
+  const slug = collapsed.slice(start, end);
   const digest = sha256TextPrefixed(rootKey).slice("sha256:".length, "sha256:".length + 12);
   return slug.length > 0 ? `${slug}-${digest}` : `root-${digest}`;
 }
