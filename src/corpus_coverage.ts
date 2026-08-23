@@ -6,35 +6,67 @@
 // analysis actually saw.
 //
 // The distinction it keeps carefully is between *not supported* and *not present*.
-// A PDF is a text-bearing document this release does not decode: it is counted as
-// an unsupported format, by extension, so an operator can see precisely how much
-// of their archive is invisible to the current decoder set. A PNG is not a
-// document that failed to decode; it is a document that requires OCR, which this
-// package does not perform and does not pretend to.
+// A `.doc` is a text-bearing document this release does not decode: its container
+// is an OLE compound file, not the OOXML ZIP the shipped decoders open, so it is
+// counted as an unsupported format, by extension, and an operator can see
+// precisely how much of their archive is invisible to the current decoder set. A
+// PNG is not a document that failed to decode; it is a document that requires
+// OCR, which this package does not perform and does not pretend to.
+//
+// Both sets are re-exported from `src/documents`, which is where the decoder
+// registry lives, because a gap list that drifts from the registry is worse than
+// no gap list: it reports a format as unreadable while a decoder reads it, or
+// omits one nothing can open. `documentGaps` below proves they cannot overlap.
 //
 // The reasoning handoff at the end points a downstream layer at the evidence and
 // stops. It carries references and counts, and no priority — deciding what to do
 // with a corpus is a judgement, and this producer does not make judgements.
 import { canonicalCorpusJson } from "./corpus_analysis";
+import {
+  DecoderRegistry,
+  OCR_CANDIDATE_EXTENSIONS,
+  UNSUPPORTED_LEGACY_EXTENSIONS,
+  defaultDecoderRegistry,
+} from "./documents";
 import { compareCodePoints } from "./ordering";
 
 export const CORPUS_COVERAGE_SCHEMA = "l9.corpus-coverage/v1";
 
 /** Raster formats that carry no extractable text layer without OCR. */
-export const OCR_REQUIRED_EXTENSIONS: readonly string[] = [
-  ".bmp", ".gif", ".heic", ".heif", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp",
-];
+export const OCR_REQUIRED_EXTENSIONS: readonly string[] = OCR_CANDIDATE_EXTENSIONS;
 
 /**
  * Text-bearing formats this release does not decode.
  *
  * Listed rather than inferred, so the gap is a stated set an operator can read
- * off the report and a future decoder can be measured against.
+ * off the report and a future decoder can be measured against. The list is the
+ * decoder registry's complement, not a parallel opinion about it: `documentGaps`
+ * refuses a registry and a gap list that both claim one extension.
  */
-export const UNDECODED_DOCUMENT_EXTENSIONS: readonly string[] = [
-  ".doc", ".docx", ".epub", ".key", ".numbers", ".odp", ".ods", ".odt", ".pages",
-  ".pdf", ".ppt", ".pptx", ".rtf", ".xls", ".xlsx",
-];
+export const UNDECODED_DOCUMENT_EXTENSIONS: readonly string[] = UNSUPPORTED_LEGACY_EXTENSIONS;
+
+/**
+ * The two gap sets, checked against a registry rather than asserted beside it.
+ *
+ * Called at the top of a coverage build so a decoder added without its extension
+ * being struck from the gap list fails loudly at the first scan, instead of
+ * producing a report that counts a decoded format as unreadable.
+ */
+export function documentGaps(registry: DecoderRegistry = defaultDecoderRegistry()): {
+  unsupported: readonly string[];
+  ocrRequired: readonly string[];
+} {
+  const claimed = new Set(registry.extensions());
+  const conflict = [...UNDECODED_DOCUMENT_EXTENSIONS, ...OCR_REQUIRED_EXTENSIONS]
+    .filter((extension) => claimed.has(extension))
+    .sort(compareCodePoints);
+  if (conflict.length > 0) {
+    throw new Error(
+      `coverage gap list claims extensions a decoder also claims: ${conflict.join(", ")}`,
+    );
+  }
+  return { unsupported: UNDECODED_DOCUMENT_EXTENSIONS, ocrRequired: OCR_REQUIRED_EXTENSIONS };
+}
 
 export interface CoverageRatio {
   /** Artifacts the analysis could apply to at all. */
@@ -121,6 +153,40 @@ export interface HashingCoverage {
 }
 
 /** What the decoders reached, and what they did not. */
+/**
+ * Why an eligible document did not become a normalized one.
+ *
+ * Every eligible artifact is either decoded or accounted for here, and
+ * `unaccounted` is the residual that makes the arithmetic checkable rather than
+ * asserted: `eligible = decoded + sum(named) + unaccounted`. A gap that grows
+ * without a cause being named shows up as a rising `unaccounted` instead of
+ * disappearing into a total.
+ *
+ * The named causes are kept apart because they are different findings. A scanned
+ * page has no text to read and needs OCR this package does not perform. An
+ * encrypted container has text and will not hand it over. A file refused for its
+ * name was never opened at all. Only `malformed` is a decoder meeting bytes it
+ * claimed and failing on them.
+ */
+export interface DecodeGap {
+  /** Refused on the strength of its name, before any byte was decoded. */
+  secret_skipped: number;
+  /** Larger than the decode budget allowed. */
+  oversized: number;
+  /** Claimed by a text decoder, and not text. */
+  encoding_rejected: number;
+  /** Opened, and carrying no text layer: a scan. */
+  ocr_required: number;
+  /** Opened, and encrypted. */
+  encrypted: number;
+  /** Opened, and broken. */
+  malformed: number;
+  /** Any other refusal reason a decoder reported. */
+  other_refusal: number;
+  /** Eligible, undecoded, and matched by none of the above. */
+  unaccounted: number;
+}
+
 export interface DocumentCoverage {
   decoder_eligible_count: number;
   normalized_document_count: number;
@@ -130,6 +196,8 @@ export interface DocumentCoverage {
   encrypted_document_count: number;
   oversized_document_count: number;
   secret_skipped_count: number;
+  /** The full reconciliation of `decoder_eligible_count` against decodes. */
+  decode_gap: DecodeGap;
 }
 
 /** What the analysis found, over the denominators above. */

@@ -294,6 +294,23 @@ function reportCorpusRun(context) {
     .map((format) => `${format.extension}:${format.count}`)
     .join(" ");
   console.log(`  unsupported      ${unsupported || "none"}`);
+  // Decoding is not the deliverable; what the decoded text reached is. A format
+  // that decodes cleanly and appears in no candidate is a real finding, and it
+  // is invisible in a coverage ratio, so it is printed here beside one.
+  const signals = result.documentSignals;
+  const participation = signals.analysis_participation;
+  console.log(
+    `  decoded formats  ${signals.formats.filter((entry) => entry.decoded_count > 0).length}`
+    + ` (${participation.decoded_document_count} document(s),`
+    + ` ${participation.candidate_member_count} named by a candidate)`,
+  );
+  for (const entry of participation.by_format) {
+    if (entry.decoded_count === 0) continue;
+    console.log(
+      `    ${entry.format.padEnd(14)} ${entry.decoded_count} decoded,`
+      + ` ${entry.lexically_analyzed_count} analyzed, ${entry.candidate_member_count} in candidates`,
+    );
+  }
   console.log(`  ocr required     ${coverage.ocr_required_count}`);
   console.log(`  encrypted        ${coverage.encrypted_document_count}`);
   console.log(`  oversized        ${coverage.oversized_document_count}`);
@@ -389,6 +406,7 @@ async function runCorpusMode(cli) {
   const snapshotModule = requireBuilt(path.join(repo, "dist", "corpus_snapshot.js"));
   const diffModule = requireBuilt(path.join(repo, "dist", "corpus_diff.js"));
   const coverageModule = requireBuilt(path.join(repo, "dist", "corpus_coverage.js"));
+  const signalsModule = requireBuilt(path.join(repo, "dist", "corpus_document_signals.js"));
   const semanticRun = requireBuilt(path.join(repo, "dist", "corpus_semantic_run.js"));
   const documentsModule = requireBuilt(path.join(repo, "dist", "corpus_documents.js"));
   const embeddingsModule = requireBuilt(path.join(repo, "dist", "corpus_embeddings.js"));
@@ -589,6 +607,7 @@ async function runCorpusMode(cli) {
     { path: path.join(outDir, "readiness-evidence.json"), contents: scan.renderReadinessEvidence(result.readiness) },
     { path: path.join(outDir, "corpus-coverage.json"), contents: coverageModule.renderCorpusCoverage(result.coverage) },
     { path: path.join(outDir, "document-index.json"), contents: documentsModule.renderDocumentIndex(result.documentIndex) },
+    { path: path.join(outDir, "document-signals.json"), contents: signalsModule.renderCorpusDocumentSignals(result.documentSignals) },
   ];
   if (result.semantic !== null) {
     outputs.push(

@@ -79,6 +79,11 @@ const KNOWN_DOCUMENTS: { name: string; path: string; schema: string | null }[] =
   { name: "readiness_evidence", path: "readiness-evidence.json", schema: "l9.readiness-evidence/v1" },
   { name: "candidates", path: "corpus-candidates.json", schema: "l9.corpus-candidates/v1" },
   { name: "document_index", path: "document-index.json", schema: "l9.document-index/v1" },
+  {
+    name: "document_signals",
+    path: "document-signals.json",
+    schema: "l9.corpus-document-signals/v1",
+  },
   { name: "semantic_relations", path: "semantic-relations.json", schema: "l9.semantic-relations/v1" },
   { name: "topic_candidates", path: "topic-candidates.json", schema: "l9.topic-candidates/v1" },
   { name: "project_candidates", path: "project-candidates.json", schema: "l9.project-candidates/v1" },

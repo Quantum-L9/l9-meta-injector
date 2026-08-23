@@ -1,3 +1,4 @@
+import { DecoderRegistry } from "./documents";
 export declare const CORPUS_COVERAGE_SCHEMA = "l9.corpus-coverage/v1";
 /** Raster formats that carry no extractable text layer without OCR. */
 export declare const OCR_REQUIRED_EXTENSIONS: readonly string[];
@@ -5,9 +6,22 @@ export declare const OCR_REQUIRED_EXTENSIONS: readonly string[];
  * Text-bearing formats this release does not decode.
  *
  * Listed rather than inferred, so the gap is a stated set an operator can read
- * off the report and a future decoder can be measured against.
+ * off the report and a future decoder can be measured against. The list is the
+ * decoder registry's complement, not a parallel opinion about it: `documentGaps`
+ * refuses a registry and a gap list that both claim one extension.
  */
 export declare const UNDECODED_DOCUMENT_EXTENSIONS: readonly string[];
+/**
+ * The two gap sets, checked against a registry rather than asserted beside it.
+ *
+ * Called at the top of a coverage build so a decoder added without its extension
+ * being struck from the gap list fails loudly at the first scan, instead of
+ * producing a report that counts a decoded format as unreadable.
+ */
+export declare function documentGaps(registry?: DecoderRegistry): {
+    unsupported: readonly string[];
+    ocrRequired: readonly string[];
+};
 export interface CoverageRatio {
     /** Artifacts the analysis could apply to at all. */
     eligible: number;
@@ -88,6 +102,39 @@ export interface HashingCoverage {
     verification_mode: string;
 }
 /** What the decoders reached, and what they did not. */
+/**
+ * Why an eligible document did not become a normalized one.
+ *
+ * Every eligible artifact is either decoded or accounted for here, and
+ * `unaccounted` is the residual that makes the arithmetic checkable rather than
+ * asserted: `eligible = decoded + sum(named) + unaccounted`. A gap that grows
+ * without a cause being named shows up as a rising `unaccounted` instead of
+ * disappearing into a total.
+ *
+ * The named causes are kept apart because they are different findings. A scanned
+ * page has no text to read and needs OCR this package does not perform. An
+ * encrypted container has text and will not hand it over. A file refused for its
+ * name was never opened at all. Only `malformed` is a decoder meeting bytes it
+ * claimed and failing on them.
+ */
+export interface DecodeGap {
+    /** Refused on the strength of its name, before any byte was decoded. */
+    secret_skipped: number;
+    /** Larger than the decode budget allowed. */
+    oversized: number;
+    /** Claimed by a text decoder, and not text. */
+    encoding_rejected: number;
+    /** Opened, and carrying no text layer: a scan. */
+    ocr_required: number;
+    /** Opened, and encrypted. */
+    encrypted: number;
+    /** Opened, and broken. */
+    malformed: number;
+    /** Any other refusal reason a decoder reported. */
+    other_refusal: number;
+    /** Eligible, undecoded, and matched by none of the above. */
+    unaccounted: number;
+}
 export interface DocumentCoverage {
     decoder_eligible_count: number;
     normalized_document_count: number;
@@ -97,6 +144,8 @@ export interface DocumentCoverage {
     encrypted_document_count: number;
     oversized_document_count: number;
     secret_skipped_count: number;
+    /** The full reconciliation of `decoder_eligible_count` against decodes. */
+    decode_gap: DecodeGap;
 }
 /** What the analysis found, over the denominators above. */
 export interface SemanticCoverage {

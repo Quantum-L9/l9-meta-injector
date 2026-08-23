@@ -174,6 +174,7 @@ function emitReport(rendered: string): void {
 describe("a real mixed corpus on three read-only roots", () => {
   it("is measured end to end, and every contract field is reported", async () => {
     const { report, cold, mutated } = await qualify("file");
+    const coverage = cold.coverage;
 
     expect(report.schema).toBe(CORPUS_QUALIFICATION_SCHEMA);
     expect(report.producer_version).toBe(PRODUCER_VERSION);
@@ -235,21 +236,32 @@ describe("a real mixed corpus on three read-only roots", () => {
     expect(report.decoder_coverage.lexical_analysis.covered).toBeGreaterThan(0);
     // Two separate gaps, and the report keeps them apart.
     //
-    // The first is eligibility: a .pdf or a .png is not a decode failure, it is a
-    // document no decoder claims, so it never enters the ratio at all. That gap
-    // is reported in `unsupported_counts` below, and shows up here as an eligible
-    // set much smaller than the corpus.
+    // The first is eligibility: a `.doc` or a `.png` is not a decode failure, it
+    // is a document no decoder claims, so it never enters the ratio at all. That
+    // gap is reported in `unsupported_counts` below, and shows up here as an
+    // eligible set smaller than the corpus.
     //
     // The second is refusal: a file named `secrets.yaml` *is* eligible and is
-    // deliberately not opened. That gap is inside the ratio, and it accounts for
-    // the whole of the shortfall — which is the exact claim worth pinning, since
-    // any decode that silently failed would break this equality.
+    // deliberately not opened; a scanned PDF is eligible, is opened, and turns
+    // out to have no text layer. Both are inside the ratio, and between them they
+    // account for the whole of the shortfall. That reconciliation is the claim
+    // worth pinning, because a decode that silently failed would land in
+    // `unaccounted` rather than disappearing into a difference of two totals.
     expect(report.decoder_coverage.normalized_document.eligible)
       .toBeLessThan(report.corpus.artifact_count);
+    const gap = coverage.documents.decode_gap;
+    expect(gap.unaccounted).toBe(0);
+    expect(gap.secret_skipped).toBe(2);
+    expect(gap.ocr_required).toBe(1);
+    expect(gap.malformed).toBe(0);
     expect(
       report.decoder_coverage.normalized_document.eligible
       - report.decoder_coverage.normalized_document.covered,
-    ).toBe(report.unsupported_counts.secret_skipped_count);
+    ).toBe(
+      gap.secret_skipped + gap.oversized + gap.encoding_rejected
+      + gap.ocr_required + gap.encrypted + gap.malformed
+      + gap.other_refusal + gap.unaccounted,
+    );
     // Embeddings are not enabled in this release, and the report says so rather
     // than reporting a coverage of zero that would read as a failure.
     expect(report.decoder_coverage.embedding_enabled).toBe(false);
@@ -272,13 +284,19 @@ describe("a real mixed corpus on three read-only roots", () => {
     // 8. reasoning_eligible_count
     expect(report.reasoning_eligible_count).toBeGreaterThan(0);
 
-    // 9. unsupported_counts — the honest half. A .pdf is a document this release
-    // does not decode; a .png is one that has no text layer to decode at all.
+    // 9. unsupported_counts — the honest half, and the half that had to shrink
+    // when the decoders arrived. A `.doc` is an OLE compound document and a
+    // `.odt` an OpenDocument ZIP: text-bearing containers nothing here opens. A
+    // `.png` is not that; it is a document with no text layer to open at all.
+    // `.docx` and `.pdf` are on neither list any more, because they are read.
     const unsupported = report.unsupported_counts;
     expect(unsupported.unsupported_format_total).toBeGreaterThanOrEqual(3);
     expect(unsupported.unsupported_format_bytes).toBeGreaterThan(0);
-    expect(unsupported.unsupported_format_counts.map((entry) => entry.extension))
-      .toEqual(expect.arrayContaining([".docx", ".pdf"]));
+    const unsupportedExtensions = unsupported.unsupported_format_counts
+      .map((entry) => entry.extension);
+    expect(unsupportedExtensions).toEqual(expect.arrayContaining([".doc", ".odt", ".rtf"]));
+    expect(unsupportedExtensions).not.toContain(".docx");
+    expect(unsupportedExtensions).not.toContain(".pdf");
     expect(unsupported.ocr_required_count).toBeGreaterThanOrEqual(5);
     expect(unsupported.secret_skipped_count).toBe(2);
 

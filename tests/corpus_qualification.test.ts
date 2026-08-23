@@ -23,6 +23,7 @@ import {
   normalizedDocumentKey,
 } from "../src/corpus_cache";
 import { CorpusScanResult, TEXT_DECODER_ID, TEXT_DECODER_VERSION, runCorpusScan } from "../src/corpus_scan";
+import { defaultDecoderRegistry } from "../src/documents";
 import { CorpusSessionStore, DEFAULT_CORPUS_BUDGETS } from "../src/corpus_session";
 import { corpusRootId } from "../src/corpus_roots";
 import { renderCorpusSnapshot } from "../src/corpus_snapshot";
@@ -309,10 +310,14 @@ describe("a corrupt cache entry", () => {
 
     const plan = clean.snapshot.artifacts.find((a) => a.corpus_path.endsWith("PLAN.md"));
     expect(plan?.content_hash).toBeTruthy();
+    // The key names the decoder that actually claimed the file, so a decoder
+    // revision invalidates its own entries and this test keeps pointing at the
+    // entry the run really wrote.
+    const planDecoder = defaultDecoderRegistry().forPath("PLAN.md");
     const documentKey = normalizedDocumentKey({
       contentHash: plan?.content_hash as string,
-      decoderId: TEXT_DECODER_ID,
-      decoderVersion: TEXT_DECODER_VERSION,
+      decoderId: planDecoder?.id as string,
+      decoderVersion: planDecoder?.version as string,
     });
     expect(cache.corrupt("normalized_document", documentKey)).toBe(true);
 

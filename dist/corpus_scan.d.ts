@@ -3,10 +3,12 @@ import { CorpusCache, CorpusCacheStats } from "./corpus_cache";
 import { ProjectCandidate, TopicCandidate } from "./corpus_candidates";
 import { CorpusCoverage } from "./corpus_coverage";
 import { CorpusDiff } from "./corpus_diff";
+import { CorpusDocumentSignals } from "./corpus_document_signals";
 import { ReadinessEvidence } from "./corpus_readiness";
 import { CorpusRootBinding, CorpusRootSpec, rootIdentity } from "./corpus_roots";
 import { CorpusSnapshot, VerificationMode } from "./corpus_snapshot";
 import { CorpusResourceBudgets, CorpusSessionStore } from "./corpus_session";
+import { DecoderRegistry } from "./documents";
 import { LocalArchivePolicy } from "./local_archive_policy";
 import type { DocumentIndex } from "./corpus_documents";
 import type { SemanticAnalysisResult } from "./corpus_semantic_run";
@@ -37,6 +39,8 @@ export interface CorpusScanInput {
     verification?: VerificationMode;
     /** Force a full read even under `incremental`, and say so in the snapshot. */
     verifyContent?: boolean;
+    /** Decoder set to use. Defaults to the registry this release ships. */
+    decoderRegistry?: DecoderRegistry;
     /**
      * Emit a snapshot marked `partial` when a root cannot be read, instead of
      * failing the run. The snapshot is never labelled complete, and every missing
@@ -209,11 +213,19 @@ export interface CorpusScanResult {
     };
     /** The normalized documents, written down rather than discarded with the run. */
     documentIndex: DocumentIndex;
+    /** What each decoder read, and whether what it read reached the analysis. */
+    documentSignals: CorpusDocumentSignals;
     /** Candidate discovery over recorded evidence. Null when it was switched off. */
     semantic: SemanticAnalysisResult | null;
 }
-/** True when the text decoder claims this artifact at all. */
-export declare function isTextDecodable(rootRelativePath: string): boolean;
+/**
+ * True when some decoder in `registry` claims this artifact.
+ *
+ * This is the coverage denominator, so it has to be the same question the derive
+ * stage asks. Deriving eligibility from a second hand-maintained extension list
+ * is how "decoder_eligible_count" drifts away from what actually gets decoded.
+ */
+export declare function isDecodable(rootRelativePath: string, registry: DecoderRegistry): boolean;
 /** True when the lexical passes claim this artifact. */
 export declare function isLexicallyAnalyzable(rootRelativePath: string): boolean;
 /**

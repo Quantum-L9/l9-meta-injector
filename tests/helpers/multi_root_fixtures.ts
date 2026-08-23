@@ -67,7 +67,15 @@ export function writeMultiRootCorpus(base: string): MultiRootCorpus {
   write(oldSsd, "widget-api/Dockerfile", "FROM scratch\n");
   write(oldSsd, "widget-api/PLAN.md", plan);
   write(oldSsd, "notes/monday.md", "# Monday\n\nA short note about nothing in particular.\n");
-  write(oldSsd, "reports/quarterly.pdf", "%PDF-1.4 not really a pdf\n");
+  // The two gaps, one of each kind. A `.doc` is an OLE compound document: a
+  // text-bearing format nothing in the shipped registry opens, so its bytes are
+  // never looked at and a placeholder is honest. A `.png` is a document with no
+  // text layer, which is a different finding and is also never opened.
+  //
+  // Deliberately not a `.pdf` or a `.docx`: those *are* decoded now, so a
+  // placeholder in either would be a decode failure rather than a gap, and this
+  // test is about the gap.
+  write(oldSsd, "reports/quarterly.doc", "not really a doc\n");
   write(oldSsd, "photos/scan.png", "PNG not really a png\n");
 
   write(backup, "widget-api/package.json", `${JSON.stringify({ name: "widget-api", version: "1.4.0" }, null, 2)}\n`);

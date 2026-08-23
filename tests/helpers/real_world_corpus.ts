@@ -11,9 +11,14 @@
 // folder of loose ZIPs, which is the shape an actual archive corpus has:
 //
 //   - documents across two dozen extensions: sixteen text formats the decoders
-//     open, two extensionless build files, and five binary formats they do not —
-//     split between formats that are simply not decoded yet (.pdf, .docx) and
-//     formats carrying no text layer at all without OCR (.png, .jpg, .tiff)
+//     open, two extensionless build files, and — because an archive is not all
+//     Markdown — genuine binary documents in every format the decoders claim: a
+//     real PDF with a real Flate content stream, a real .docx, .pptx and .xlsx,
+//     a real notebook. They are built as those formats rather than stubbed,
+//     because a fake .pdf proves the decoder rejects garbage and nothing else.
+//   - the two honest gaps beside them, so both stay measured: legacy containers
+//     no decoder here opens (.doc, .rtf) and documents with no text layer to
+//     open at all (.png, .jpg, .tiff, and a scanned PDF whose pages are images)
 //   - five ZIP archives, one of them nested two deep, holding both fresh
 //     documents and byte-exact copies of documents that also exist loose on disk
 //   - four project-shaped directories with real build manifests, test trees, CI
@@ -33,6 +38,14 @@
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import {
+  writeDocx,
+  writeNotebook,
+  writePdf,
+  writePptx,
+  writeScannedPdf,
+  writeXlsx,
+} from "./document_fixtures";
 import { writeRawZip } from "./zip_fixtures";
 
 /**
@@ -253,6 +266,108 @@ function binary(seed: string, length: number): Buffer {
   return out;
 }
 
+/**
+ * The binary documents, written as their real formats.
+ *
+ * Kept apart from `driveFiles` and `backupFiles` because those hand back bytes
+ * and these are built by writers that own their own containers — a real ZIP of
+ * real OOXML parts, a real PDF with a real xref. The subject matter is
+ * deliberately the same subject matter as the Markdown around them: the point of
+ * decoding a `.docx` is that its sentences reach the same candidate analysis the
+ * `.md` files reach, and content nobody could form a candidate from would prove
+ * only that the bytes were parsed.
+ */
+function writeBinaryDocuments(driveRoot: string, backupRoot: string): void {
+  writePdf(
+    path.join(driveRoot, "scans", "invoice-2019.pdf"),
+    [
+      "Storage Migration Plan - acquisition layer statement of work",
+      "The acquisition layer observes a local folder, an external drive or a zip",
+      "archive and writes nothing into the source it reads.",
+      "Identity is derived from content and from root-relative paths, never from",
+      "the mount point a disk happened to be attached at.",
+      "Depends on: services/ingest/README.md",
+    ],
+    { title: "Acquisition Layer Statement of Work" },
+  );
+
+  // A scan: pages carrying an image and no text layer. It is a PDF the decoder
+  // opens and correctly reports as needing OCR, which is a different outcome
+  // from the invoice above and from a format nothing claims.
+  writeScannedPdf(path.join(driveRoot, "scans", "signed-agreement.pdf"));
+
+  writeDocx(path.join(driveRoot, "contracts", "ingest-contract.docx"), {
+    title: "Ingest Service Contract",
+    headings: ["Scope", "Invalidation"],
+    paragraphs: [
+      "The ingest service reads the corpus and writes a normalized index.",
+      "The cache is keyed by the hash of the bytes and by the identity of the rules"
+      + " applied to those bytes, so a decoder version bump invalidates every"
+      + " normalized document it produced and nothing else.",
+    ],
+    listItems: [
+      "hash every byte on acquisition rather than trusting mtime",
+      "key the normalized-document layer on the decoder version",
+    ],
+    table: [["milestone", "owner"], ["M1 content-addressed cache", "ingest"]],
+    externalLink: "https://example.invalid/ingest-contract",
+  });
+
+  writePptx(path.join(driveRoot, "decks", "ingest-review.pptx"), [
+    {
+      title: "Ingest Roadmap",
+      bullets: [
+        "M1 content-addressed cache behind every deterministic layer",
+        "M2 resumable scans over a multi-terabyte corpus",
+      ],
+      notes: "The warm run reads almost everything it needs out of the cache.",
+    },
+    {
+      title: "Open Questions",
+      bullets: ["Where does the staging directory live", "What invalidates a normalized document"],
+    },
+  ]);
+
+  writeXlsx(path.join(driveRoot, "sheets", "capacity-model.xlsx"), [
+    {
+      name: "runs",
+      rows: [
+        ["run", "files", "bytes", "hit_ratio"],
+        ["cold", "10412", "884213312", "0.0"],
+        ["warm", "10412", "884213312", "0.997"],
+        ["total", "=SUM(B2:B3)", "=SUM(C2:C3)", ""],
+      ],
+    },
+  ]);
+
+  writeNotebook(path.join(driveRoot, "notebooks", "hit-ratio.ipynb"), {
+    title: "Warm-run hit ratio",
+    markdown: [
+      "Measuring the cache hit ratio of the second run over the ingest corpus.",
+      "TODO: measure the warm-run hit ratio on a real disk",
+    ],
+    code: ["ratio = hits / (hits + misses)", "print(ratio)"],
+    withOutputs: true,
+  });
+
+  writePdf(
+    path.join(backupRoot, "scans", "receipt-2018.pdf"),
+    [
+      "Ingest Roadmap - January backup copy",
+      "M1 content-addressed cache behind every deterministic layer",
+      "M3 coverage reporting that names what the decoders cannot open",
+    ],
+    { title: "Ingest Roadmap (January)" },
+  );
+
+  writeXlsx(path.join(backupRoot, "projects", "hasher", "benchmarks.xlsx"), [
+    {
+      name: "throughput",
+      rows: [["case", "mb_per_second"], ["stream", "412"], ["mmap", "508"]],
+    },
+  ]);
+}
+
 type Entry = readonly [string, string | Buffer];
 
 /** Loose files on the working disk. */
@@ -299,9 +414,14 @@ function driveFiles(): Entry[] {
       + "    assert cluster({'a': '1', 'b': '1'}) == {'1': ['a', 'b']}\n"],
     ["tools/dedupe/TODO.md", "# TODO\n\n- [ ] stream large files\n- [x] cluster by hash\n"],
 
-    // Things the decoders do not open.
-    ["scans/invoice-2019.pdf", binary("invoice-2019", 4096)],
-    ["scans/contract.docx", binary("contract", 6144)],
+    // Things the decoders genuinely cannot open: pre-2007 OLE compound
+    // documents and RTF. Fake bytes are honest here in a way they are not for
+    // a .pdf, because nothing opens the container to find out.
+    ["legacy/2011-proposal.doc", binary("proposal", 7168)],
+    ["legacy/memo.rtf", binary("memo", 2560)],
+
+    // Things with no text layer at all: raster scans, counted as OCR-required
+    // rather than as a decode failure.
     ["scans/whiteboard.png", binary("whiteboard", 3072)],
     ["media/logo.jpg", binary("logo", 2048)],
 
@@ -346,7 +466,10 @@ function backupFiles(): Entry[] {
     ["projects/hasher/src/main.rs", 'fn main() { println!("hash"); }\n'],
     ["projects/hasher/README.md", "# hasher\n\nStreaming content hasher.\n"],
 
-    ["scans/receipt-2018.pdf", binary("receipt-2018", 5120)],
+    // An OpenDocument container: a ZIP, but not the OOXML part layout the
+    // shipped decoders read, so it is a stated gap rather than a silent one.
+    ["archive/legacy-notes.odt", binary("legacy-notes", 3584)],
+
     ["media/photo.tiff", binary("photo", 4096)],
   ];
 }
@@ -410,9 +533,18 @@ function writeArchives(
     },
   ]);
 
+  // A real PDF inside a ZIP, so an archive member reaches a binary decoder the
+  // same way a loose file does. Staged and read back rather than synthesized,
+  // because the member must be the same bytes a PDF reader would accept.
+  const memberPdf = path.join(scratch, "receipt.pdf");
+  writePdf(memberPdf, [
+    "Ingest Kickoff receipt",
+    "The ingest pipeline reads the corpus and writes a normalized index.",
+  ], { title: "Ingest Kickoff receipt" });
+
   writeRawZip(path.join(zipRoot, "misc-2017.zip"), [
     { name: "handover.txt", content: HANDOVER_TXT, stored: true },
-    { name: "receipt.pdf", content: binary("receipt", 1024), stored: true },
+    { name: "receipt.pdf", content: fs.readFileSync(memberPdf), stored: true },
   ]);
 }
 
@@ -445,6 +577,7 @@ export function writeRealWorldCorpus(parent: string): RealWorldCorpus {
 
   writeAll(driveRoot, driveFiles());
   writeAll(backupRoot, backupFiles());
+  writeBinaryDocuments(driveRoot, backupRoot);
 
   const scratch = fs.mkdtempSync(path.join(parent, ".archive-build-"));
   writeArchives(driveRoot, backupRoot, zipRoot, scratch);

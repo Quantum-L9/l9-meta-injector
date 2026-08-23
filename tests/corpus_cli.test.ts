@@ -79,6 +79,7 @@ describe("corpus mode", () => {
       "corpus-report.md",
       "corpus-snapshot.json",
       "document-index.json",
+      "document-signals.json",
       "project-candidates.json",
       "readiness-evidence.json",
       "reasoning-candidates.jsonl",
@@ -117,9 +118,20 @@ describe("corpus mode", () => {
       fs.readFileSync(path.join(f.out, "session", "corpus-session.json"), "utf8"),
     );
 
+    const signals = JSON.parse(fs.readFileSync(path.join(f.out, "document-signals.json"), "utf8"));
+
     expect(snapshot.schema).toBe("l9.corpus-snapshot/v1");
     expect(candidates.schema).toBe("l9.corpus-candidates/v1");
     expect(coverage.schema).toBe("l9.corpus-coverage/v1");
+    expect(signals.schema).toBe("l9.corpus-document-signals/v1");
+    expect(signals.corpus_source_snapshot_id).toBe(snapshot.corpus_source_snapshot_id);
+    // Decoding that reaches nothing is not a result. The signals document says
+    // how much of what was decoded a candidate actually names, so the CLI cannot
+    // report a wired decoder as a working one.
+    expect(signals.analysis_participation.decoded_document_count).toBeGreaterThan(0);
+    expect(signals.analysis_participation.candidate_member_count).toBeGreaterThan(0);
+    expect(signals.decoder_profiles.length).toBeGreaterThan(0);
+    for (const profile of signals.decoder_profiles) expect(profile).toMatch(/^l9\.[a-z-]+@\d+\.\d+\.\d+$/);
     expect(readiness.schema).toBe("l9.readiness-evidence/v1");
     expect(session.schema).toBe("l9.corpus-session/v1");
     expect(snapshot.counts.root_count).toBe(3);
