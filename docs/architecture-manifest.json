@@ -442,7 +442,7 @@
     },
     {
       "path": "docs/decision_log.md",
-      "git_blob_sha1": "d151ff5522515d10a6ac1e493b08b3bc133e258d"
+      "git_blob_sha1": "d93c00379328976a9f994c8658fd6e146c2b0a7c"
     },
     {
       "path": "docs/decisions/036-read-only-local-source-acquisition.md",

@@ -74,13 +74,41 @@ const REPORT_RELATIVE = "CURRENT_VALIDATION_REPORT.md";
  */
 function treeState() {
   const head = git(["rev-parse", "HEAD"]);
+  // Both lists are parsed into `<status> <path>` and rebuilt, rather than
+  // filtered as raw lines.
+  //
+  // Porcelain's layout is `XY <path>` where an unstaged modification leaves X a
+  // space — and `git()` trims the whole output, so whichever path sorts first
+  // loses that leading space. Filtering the report's own line by suffix then
+  // *changed the text of a different line*, because removing the first entry
+  // promoted another one into the trimmed position. Rebuilding from the parsed
+  // columns is immune to where a line happens to sit.
+  const parseTracked = (line) => {
+    const tab = line.indexOf("\t");
+    return tab < 0 ? null : { meta: line.slice(0, tab), path: line.slice(tab + 1) };
+  };
+  const parseStatus = (line) => {
+    // The status is the first two columns; the path follows one space. A leading
+    // space may have been trimmed, in which case the columns are one short.
+    const trimmedLead = !line.startsWith(" ") && !/^[A-Z?!]{2} /.test(line);
+    const status = trimmedLead ? ` ${line.slice(0, 1)}` : line.slice(0, 2);
+    const body = trimmedLead ? line.slice(2) : line.slice(3);
+    // `R  old -> new` names two paths; the destination is the one that matters.
+    const arrow = body.indexOf(" -> ");
+    return { meta: status, path: arrow < 0 ? body : body.slice(arrow + 4) };
+  };
+
   const tracked = git(["ls-files", "-s"])
     .split(/\r?\n/)
-    .filter((line) => line.length > 0 && !line.endsWith(`\t${REPORT_RELATIVE}`))
+    .map((line) => (line.length === 0 ? null : parseTracked(line)))
+    .filter((entry) => entry !== null && entry.path !== REPORT_RELATIVE)
+    .map((entry) => `${entry.meta}\t${entry.path}`)
     .sort();
   const porcelain = git(["status", "--porcelain", "--untracked-files=all"])
     .split(/\r?\n/)
-    .filter((line) => line.length > 0 && !line.endsWith(` ${REPORT_RELATIVE}`))
+    .map((line) => (line.length === 0 ? null : parseStatus(line)))
+    .filter((entry) => entry !== null && entry.path !== REPORT_RELATIVE)
+    .map((entry) => `${entry.meta} ${entry.path}`)
     .sort();
   const digest = crypto
     .createHash("sha256")
