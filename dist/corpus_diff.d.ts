@@ -1,3 +1,5 @@
+import type { CandidateKind } from "./corpus_analysis_manifest";
+import type { RootIdentityClass } from "./corpus_roots";
 import { CorpusSnapshot } from "./corpus_snapshot";
 export declare const CORPUS_DIFF_SCHEMA = "l9.corpus-diff/v1";
 export declare const CORPUS_DIFF_CATEGORIES: readonly ["added", "removed", "changed_content", "renamed_candidate", "unchanged", "archive_added", "archive_removed", "archive_changed", "archive_unchanged"];
@@ -45,10 +47,39 @@ export interface CorpusRootDiffEntry {
     category: CorpusRootDiffCategory;
     root_id: string;
     root_key: string;
+    /**
+     * How much this row's continuity claim is worth.
+     *
+     * `declared` on both sides: the operator named this root, so "the same root as
+     * last run" is a person's statement and the row means what it says.
+     *
+     * `inferred` on either side: the key is a mount point's final segment. Two
+     * runs matching on it are usually the same disk and are not necessarily so —
+     * `/Volumes/Backup` and an unrelated `/mnt/usb/Backup` produce the same root
+     * id, and nothing in the bytes distinguishes them. The row is still emitted;
+     * it is marked, and the diff carries a caution naming it.
+     */
+    identity_basis: RootIdentityClass | "mixed";
     previous_source_revision: string | null;
     current_source_revision: string | null;
     previous_rmp_packet_id: string | null;
     current_rmp_packet_id: string | null;
+}
+/**
+ * A root matched across two runs on a key nobody declared.
+ *
+ * Not an error and not a refusal to compare: it is the statement that the
+ * comparison rests on a basename. An operator reading "root_unchanged" for a
+ * drive they never named is owed the knowledge that the run cannot tell that
+ * drive from another one whose path ends the same way, and that declaring a key
+ * is what makes the claim solid.
+ */
+export interface LongitudinalIdentityCaution {
+    root_id: string;
+    root_key: string;
+    previous_class: RootIdentityClass;
+    current_class: RootIdentityClass;
+    message: string;
 }
 /**
  * One artifact that moved between roots without changing.
@@ -93,13 +124,44 @@ export interface CorpusDiff {
     current_root_ids: string[];
     counts: CorpusDiffCounts;
     roots: CorpusRootDiffEntry[];
-    /** What changed about the analysis, kept apart from what changed on the disks. */
+    /**
+     * Roots compared across runs on an inferred key. Empty when every match was
+     * between roots the operator named, which is the case worth aiming for.
+     */
+    longitudinal_identity_cautions: LongitudinalIdentityCaution[];
+    /**
+     * What changed about the analysis, kept apart from what changed on the disks.
+     *
+     * The three candidate counts are computed from the two snapshots' analysis
+     * manifests when both carry one, and are `null` — with `not_computed_reason`
+     * saying why — when either does not. They are never zero as a stand-in for
+     * "not computed": three zeros read as "nothing changed" to anyone who does not
+     * check a flag first, and that is a claim this diff has no basis to make.
+     */
     analysis: {
-        candidate_added: number;
-        candidate_removed: number;
-        candidate_changed: number;
+        candidate_added: number | null;
+        candidate_removed: number | null;
+        candidate_changed: number | null;
+        candidate_unchanged: number | null;
+        /** Null exactly when the counts above are real. */
+        not_computed_reason: string | null;
+        /** The same four counts per candidate kind, so a null cannot hide a category. */
+        by_kind: {
+            candidate_kind: CandidateKind;
+            added: number;
+            removed: number;
+            changed: number;
+            unchanged: number;
+        }[];
         readiness_evidence_changed: boolean;
-        /** Null when neither snapshot recorded candidate counts to compare. */
+        /**
+         * True when the two runs were computed under the same rules over the same
+         * bytes, so a candidate difference would be a genuine surprise.
+         *
+         * Distinct from whether the counts could be computed at all: an incomparable
+         * pair of runs still gets real counts when both carry manifests, and the
+         * counts are then explained by the profile change rather than doubted.
+         */
         comparable: boolean;
     };
     cross_root_move_candidates: CrossRootMoveCandidate[];

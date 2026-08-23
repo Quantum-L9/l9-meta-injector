@@ -151,7 +151,13 @@ describe("what gets embedded", () => {
     });
     const embedded = new Set(result.report.vector_digests.map((entry) => entry.artifact_id));
     expect(embedded.has("binary")).toBe(false);
-    expect(result.report.eligible_artifact_count).toBe(3);
+    // Eligibility is "there was text to embed and it was allowed to be sent".
+    // The undecoded artifact fails the first half and the secret-candidate one
+    // fails the second, so two of the four documents are eligible and the
+    // refusal is counted where it means something rather than absorbed here.
+    expect(result.report.eligible_artifact_count).toBe(2);
+    expect(result.report.secret_candidates_skipped).toBe(1);
+    expect(result.report.embedded_artifact_count).toBe(2);
   });
 
   it("reports what was sent, without sending a path or any content", async () => {

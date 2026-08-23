@@ -76,25 +76,29 @@ const USAGE = [
   "  --resume                   adopt an existing session manifest for the same roots",
   "  --topic-threshold F        topic candidate vocabulary overlap in [0,1] (default: 0.35)",
   "  --no-topic-candidates      skip topic candidate analysis",
+  "  --keep-generations N       output generations retained (default: 3)",
   "  --max-decoder-workers N    documents decoded concurrently (default: 4)",
-  "  --max-hash-workers N       recorded; acquisition hashes each root with one reader",
-  "  --max-analysis-workers N   recorded; candidate analysis is a single pass",
-  "  --max-embedding-workers N  recorded; embeddings are not enabled in this release",
+  "  --max-embedding-workers N  documents embedded concurrently (default: 2)",
   "  --max-memory-bytes N       ceiling on decoded text held at once (default: 256 MiB)",
   "",
   "semantic candidate discovery (on by default):",
   "  --no-semantic-analysis     skip candidate discovery; duplicates still reported",
   "  --embeddings               enable optional semantic embeddings (default: off)",
-  "  --embedding-provider NAME  required when --embeddings is given",
+  "  --embedding-provider NAME  required when --embeddings is given; 'http-json' is",
+  "                             the provider this package can run",
   "  --embedding-model ID       required when --embeddings is given",
   "  --embedding-model-revision R   recorded when the provider exposes one",
-  "  --embedding-endpoint URL   required for a remote provider; must be https://",
+  "  --embedding-endpoint URL   where http-json POSTs {model,input}; a local",
+  "                             provider must name a loopback host, a remote one",
+  "                             must be https://",
   "  --embedding-locality K     local (default) or remote",
+  "  --embedding-pair-threshold F   cosine at which a pair is offered (default 0.75)",
   "  --allow-remote-embeddings  permit a remote provider to receive bounded document",
   "                             text; enabling embeddings alone does NOT imply this",
-  "                             (this release ships no provider: --embeddings is",
-  "                             refused, and the similarity thresholds are set",
-  "                             programmatically, not from this CLI)",
+  "",
+  "  A bearer token is read from L9_EMBEDDING_BEARER_TOKEN, never from a flag, and",
+  "  is refused over a cleartext endpoint. Redirects are never followed. Documents",
+  "  whose path matches a secret pattern are never embedded at any setting.",
   "  --reasoning-pack-max-artifacts N   members per evidence pack (default: 12)",
   "  --reasoning-pack-max-chars N       characters per evidence pack (default: 24000)",
   "",
@@ -220,16 +224,41 @@ function collectRoots(cli, roots) {
   return { specs, corpusId: corpusId ?? roots.DEFAULT_CORPUS_ID };
 }
 
+/**
+ * Flags this CLI used to accept and act on nowhere.
+ *
+ * Refused rather than ignored. Silently dropping a flag an operator passed is
+ * how a decorative knob keeps working after it is removed: the invocation still
+ * succeeds, the setting still has no effect, and now there is not even a field
+ * in the manifest to notice. An error naming the reason is the only honest exit.
+ */
+const RETIRED_BUDGET_FLAGS = {
+  "--max-hash-workers":
+    "acquisition hashes a root with one synchronous streaming reader, which is what makes its "
+    + "did-this-tree-move check meaningful; the flag was recorded and never exercised",
+  "--max-parallel-hashers": "see --max-hash-workers",
+  "--max-analysis-workers":
+    "candidate generation is a single pass over evidence already in memory; the flag was "
+    + "recorded and never exercised",
+};
+
 /** Resource budgets, defaulted by the engine and overridable one at a time. */
 function collectBudgets(cli) {
+  for (const [flagName, reason] of Object.entries(RETIRED_BUDGET_FLAGS)) {
+    if (cli.opt(flagName, null) !== null || cli.flag(flagName)) {
+      fail(`${flagName} has been removed: ${reason}. Drop the flag.`, 2);
+    }
+  }
   const budgets = {};
-  // The contract names these workers; the older --max-parallel-* spellings are
-  // kept so an existing invocation does not break, and the newer name wins when
-  // both are given.
+  // Only bounds the run is actually held to. `--max-hash-workers` and
+  // `--max-analysis-workers` were accepted here and exercised nowhere; they are
+  // gone rather than documented as decorative, and an invocation still passing
+  // one is refused below rather than silently ignored.
+  //
+  // The older --max-parallel-* spellings are kept for the two that remain, so an
+  // existing invocation does not break; the newer name wins when both are given.
   const map = {
-    max_parallel_hashers: ["--max-hash-workers", "--max-parallel-hashers"],
     max_parallel_decoders: ["--max-decoder-workers", "--max-parallel-decoders"],
-    max_parallel_analysis: ["--max-analysis-workers"],
     max_parallel_embedding_requests: ["--max-embedding-workers", "--max-parallel-embedding-requests"],
     max_memory_bytes: ["--max-memory-bytes"],
   };
@@ -253,7 +282,7 @@ function collectBudgets(cli) {
  * decide things harder to read than it needed to be.
  */
 function reportCorpusRun(context) {
-  const { result, cacheEnabled, cache, resumed, written, sessionPath } = context;
+  const { result, cacheEnabled, cache, resumed, written, sessionPath, published } = context;
   const coverage = result.coverage;
   const summary = result.candidates.summary;
   console.log(`${LABEL}: OK (corpus mode)`);
@@ -272,7 +301,27 @@ function reportCorpusRun(context) {
   console.log(`  decoded          ${coverage.normalized_document_coverage.covered}/${coverage.normalized_document_coverage.eligible}`);
   console.log(`  interpreted      ${coverage.interpretation_coverage.covered}/${coverage.interpretation_coverage.eligible}`);
   console.log(`  lexical          ${coverage.lexical_analysis_coverage.covered}/${coverage.lexical_analysis_coverage.eligible}`);
-  console.log(`  embeddings       not enabled; no model was called and no network request was made`);
+  // The two states are reported differently on purpose. "Not enabled" is a claim
+  // that nothing left the machine; an enabled run has to say what it sent, to
+  // where, and how much of it came back, because that is what makes a remote
+  // pass auditable after the fact.
+  const embeddings = coverage.embeddings;
+  if (embeddings.enabled !== true) {
+    console.log("  embeddings       not enabled; no model was called and no network request was made");
+  } else {
+    const report = result.semantic?.embeddingReport;
+    console.log(
+      `  embeddings       ${embeddings.embedded_count}/${embeddings.eligible_count} embedded`
+      + ` (${embeddings.cache_hit_count} from cache),`
+      + ` ${report?.remote === true ? "remote" : "local"} ${report?.provider ?? "?"}`
+      + ` model ${report?.model_id ?? "?"}`,
+    );
+    console.log(
+      `  embeddings sent  ${report?.artifact_count_sent ?? 0} document(s),`
+      + ` ${report?.chunk_count_sent ?? 0} bounded chunk(s);`
+      + ` ${report?.secret_candidates_skipped ?? 0} secret-candidate document(s) never sent`,
+    );
+  }
   console.log(
     `  duplicates       ${summary.exact_duplicate_cluster_count} cluster(s), `
     + `${summary.cross_root_duplicate_cluster_count} crossing a root boundary`,
@@ -294,6 +343,23 @@ function reportCorpusRun(context) {
     .map((format) => `${format.extension}:${format.count}`)
     .join(" ");
   console.log(`  unsupported      ${unsupported || "none"}`);
+  // Decoding is not the deliverable; what the decoded text reached is. A format
+  // that decodes cleanly and appears in no candidate is a real finding, and it
+  // is invisible in a coverage ratio, so it is printed here beside one.
+  const signals = result.documentSignals;
+  const participation = signals.analysis_participation;
+  console.log(
+    `  decoded formats  ${signals.formats.filter((entry) => entry.decoded_count > 0).length}`
+    + ` (${participation.decoded_document_count} document(s),`
+    + ` ${participation.candidate_member_count} named by a candidate)`,
+  );
+  for (const entry of participation.by_format) {
+    if (entry.decoded_count === 0) continue;
+    console.log(
+      `    ${entry.format.padEnd(14)} ${entry.decoded_count} decoded,`
+      + ` ${entry.lexically_analyzed_count} analyzed, ${entry.candidate_member_count} in candidates`,
+    );
+  }
   console.log(`  ocr required     ${coverage.ocr_required_count}`);
   console.log(`  encrypted        ${coverage.encrypted_document_count}`);
   console.log(`  oversized        ${coverage.oversized_document_count}`);
@@ -325,11 +391,19 @@ function reportCorpusRun(context) {
       + `${semantic.reasoningCandidates.length} routed; `
       + `${semantic.evidencePacks.length} evidence pack(s)`,
     );
+    // The embedding state is reported above, in one place, with the counts.
+    // Repeating it here as a bare on/off was one more line to keep in step.
+    //
+    // The no-model claim is conditional because it has to be true. Candidate
+    // discovery calls no model whatever the settings; an embedding pass calls
+    // one by definition, and printing "no model was called" after thirty
+    // requests to a model server would be the report lying about its own run.
     console.log(
-      `  embeddings       ${semantic.embeddingReport.enabled ? "on" : "off"}, remote `
-      + `${semantic.embeddingReport.remote ? "on" : "off"}`,
+      semantic.embeddingReport.enabled
+        ? "  no language model was called: candidate discovery is deterministic, and the "
+          + "embedding pass calls only the embedding model named above"
+        : "  no model was called: this pass is deterministic and makes zero LLM calls",
     );
-    console.log("  no model was called: this pass is deterministic and makes zero LLM calls");
   }
   console.log(
     `  cache            ${cacheEnabled ? "on" : "off"}, hit ratio ${coverage.cache.hit_ratio} `
@@ -366,6 +440,30 @@ function reportCorpusRun(context) {
     console.log(
       `  archives diff    +${counts.archive_added} -${counts.archive_removed} ~${counts.archive_changed}`,
     );
+    // Two states, printed as two different sentences. A run that could not
+    // compare candidates says so; it does not print three zeros that read as
+    // "nothing changed" to anyone not checking a flag first.
+    const analysis = result.diff.analysis;
+    if (analysis.not_computed_reason !== null) {
+      console.log(`  candidates diff  not computed: ${analysis.not_computed_reason}`);
+    } else {
+      console.log(
+        `  candidates diff  +${analysis.candidate_added} -${analysis.candidate_removed} `
+        + `~${analysis.candidate_changed} unchanged ${analysis.candidate_unchanged}`,
+      );
+      for (const kind of analysis.by_kind) {
+        if (kind.added === 0 && kind.removed === 0 && kind.changed === 0) continue;
+        console.log(
+          `    ${kind.candidate_kind.padEnd(24)} +${kind.added} -${kind.removed} ~${kind.changed}`,
+        );
+      }
+    }
+    // A root matched across runs on a basename is a comparison resting on a
+    // mount point. Worth one line: the operator is the only one who can turn it
+    // into a real identity, and they will not do it if nobody says so.
+    for (const caution of result.diff.longitudinal_identity_cautions) {
+      console.log(`  caution          ${caution.message}`);
+    }
     console.log(
       `  invalidation     ${result.diff.invalidation.new_content_hashes.length} new content hash(es); `
       + `${result.diff.invalidation.retained_content_hash_count} reusable; `
@@ -373,6 +471,18 @@ function reportCorpusRun(context) {
     );
   }
   console.log("  no ranking, score or priority is produced; readiness evidence is counts and citations");
+  // The generation, then what is in it. An operator reading this needs to know
+  // which directory the run landed in, because that is what CURRENT.json now
+  // points at and what a later --previous-snapshot would name.
+  console.log(`  generation       ${published.generation_id}`);
+  console.log(`  generation dir   ${published.generation_directory}`);
+  console.log(`  current          ${published.current_file}`);
+  if (published.reused) {
+    console.log("  generation       reused: this corpus under these rules produced these exact bytes before");
+  }
+  if (published.pruned_generation_ids.length > 0) {
+    console.log(`  pruned           ${published.pruned_generation_ids.length} older generation(s)`);
+  }
   for (const file of written) console.log(`  wrote            ${file}`);
   console.log(`  session          ${sessionPath}`);
   for (const diagnostic of result.diagnostics) {
@@ -389,9 +499,12 @@ async function runCorpusMode(cli) {
   const snapshotModule = requireBuilt(path.join(repo, "dist", "corpus_snapshot.js"));
   const diffModule = requireBuilt(path.join(repo, "dist", "corpus_diff.js"));
   const coverageModule = requireBuilt(path.join(repo, "dist", "corpus_coverage.js"));
+  const signalsModule = requireBuilt(path.join(repo, "dist", "corpus_document_signals.js"));
   const semanticRun = requireBuilt(path.join(repo, "dist", "corpus_semantic_run.js"));
   const documentsModule = requireBuilt(path.join(repo, "dist", "corpus_documents.js"));
   const embeddingsModule = requireBuilt(path.join(repo, "dist", "corpus_embeddings.js"));
+  const publishModule = requireBuilt(path.join(repo, "dist", "corpus_publish.js"));
+  const httpEmbeddings = requireBuilt(path.join(repo, "dist", "corpus_embedding_http.js"));
   const repositoryModel = requireBuilt(path.join(repo, "dist", "public", "repository_model.js"));
   const ordering = requireBuilt(path.join(repo, "dist", "ordering.js"));
   const { version } = require(path.join(repo, "package.json"));
@@ -471,8 +584,20 @@ async function runCorpusMode(cli) {
   const resumed = session.resumedCounts;
   session.save(new Date().toISOString());
 
-  const snapshotPath = path.join(outDir, "corpus-snapshot.json");
-  const previousPath = cli.opt("--previous-snapshot", snapshotPath);
+  const generationsKept = numericOpt(cli, "--keep-generations");
+
+  // The previous run's snapshot is found through CURRENT.json rather than at a
+  // fixed path, because a generation directory is named by its own contents and
+  // nothing outside the pointer knows where the last one landed. An explicit
+  // --previous-snapshot still wins: comparing against a snapshot from somewhere
+  // else entirely is a thing operators do.
+  const publishedPrevious = publishModule.resolveCurrentGeneration(outDir);
+  const previousPath = cli.opt(
+    "--previous-snapshot",
+    publishedPrevious === null
+      ? path.join(outDir, "corpus-snapshot.json")
+      : path.join(publishedPrevious.directory, "corpus-snapshot.json"),
+  );
   let previousSnapshot;
   if (!cli.flag("--no-diff") && fs.existsSync(previousPath)) {
     try {
@@ -519,17 +644,36 @@ async function runCorpusMode(cli) {
   } catch (error) {
     fail(error instanceof Error ? error.message : String(error), 2);
   }
+  // Build the provider now, so a bad endpoint or a `local` provider aimed at a
+  // public host fails before a single file has been read rather than after the
+  // scan has already walked the disk.
+  let embeddingProvider;
   if (embeddingsEnabled) {
-    // The provider interface is an operator's to supply. This package ships no
-    // model, so there is nothing to call, and saying so beats embedding nothing
-    // and reporting a coverage of zero as though a model had run.
-    fail(
-      "embeddings are enabled but this release ships no embedding provider. The provider "
-      + "interface is exported from corpus_embeddings for an operator to implement; the CLI "
-      + "cannot invoke one yet. Re-run without --embeddings.",
-      2,
-    );
+    const name = embeddingConfiguration.provider.trim();
+    if (name !== httpEmbeddings.HTTP_JSON_PROVIDER) {
+      fail(
+        `--embedding-provider '${name}' is not a provider this CLI can run. This package ships `
+        + `one: '${httpEmbeddings.HTTP_JSON_PROVIDER}', which POSTs {model, input} to `
+        + "--embedding-endpoint and reads a vector back. Any other provider is supplied in "
+        + "process through the EmbeddingProvider interface exported from corpus_embeddings.",
+        2,
+      );
+    }
+    try {
+      embeddingProvider = new httpEmbeddings.HttpJsonEmbeddingProvider({
+        endpoint: embeddingConfiguration.endpoint ?? "",
+        modelId: embeddingConfiguration.model_id,
+        locality: embeddingConfiguration.locality,
+        ...(embeddingConfiguration.model_revision !== undefined
+          ? { modelRevision: embeddingConfiguration.model_revision }
+          : {}),
+      });
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error), 2);
+    }
   }
+
+  const embeddingPairThreshold = numericOpt(cli, "--embedding-pair-threshold");
 
   const packBudget = {};
   const packMaxArtifacts = numericOpt(cli, "--reasoning-pack-max-artifacts");
@@ -566,6 +710,8 @@ async function runCorpusMode(cli) {
       verifyContent: cli.flag("--verify-content"),
       allowPartialRoots: cli.flag("--allow-partial-roots"),
       semanticAnalysis: !cli.flag("--no-semantic-analysis"),
+      ...(embeddingProvider !== undefined ? { embeddingProvider } : {}),
+      ...(embeddingPairThreshold !== undefined ? { embeddingPairThreshold } : {}),
       ...(Object.keys(packBudget).length > 0 ? { packBudget } : {}),
     });
   } catch (error) {
@@ -579,29 +725,33 @@ async function runCorpusMode(cli) {
     return;
   }
 
-  // Every projection is staged and then renamed, so a reader never sees a
-  // coverage report describing one corpus beside a readiness document describing
-  // another.
-  const diffPath = path.join(outDir, "corpus-diff.json");
+  // Every projection of one run goes into one generation directory, and a single
+  // atomic switch of CURRENT.json makes the whole set visible at once. Paths here
+  // are relative to that directory, not to the output root.
   const outputs = [
-    { path: snapshotPath, contents: snapshotModule.renderCorpusSnapshot(result.snapshot) },
-    { path: path.join(outDir, "corpus-candidates.json"), contents: scan.renderCorpusCandidates(result.candidates) },
-    { path: path.join(outDir, "readiness-evidence.json"), contents: scan.renderReadinessEvidence(result.readiness) },
-    { path: path.join(outDir, "corpus-coverage.json"), contents: coverageModule.renderCorpusCoverage(result.coverage) },
-    { path: path.join(outDir, "document-index.json"), contents: documentsModule.renderDocumentIndex(result.documentIndex) },
+    { path: "corpus-snapshot.json", contents: snapshotModule.renderCorpusSnapshot(result.snapshot) },
+    { path: "corpus-candidates.json", contents: scan.renderCorpusCandidates(result.candidates) },
+    { path: "readiness-evidence.json", contents: scan.renderReadinessEvidence(result.readiness) },
+    { path: "corpus-coverage.json", contents: coverageModule.renderCorpusCoverage(result.coverage) },
+    { path: "document-index.json", contents: documentsModule.renderDocumentIndex(result.documentIndex) },
+    { path: "document-signals.json", contents: signalsModule.renderCorpusDocumentSignals(result.documentSignals) },
   ];
   if (result.semantic !== null) {
     outputs.push(
-      { path: path.join(outDir, "semantic-relations.json"), contents: semanticRun.renderSemanticRelations(result.semantic.relations) },
-      { path: path.join(outDir, "topic-candidates.json"), contents: semanticRun.renderTopicCandidates(result.semantic.topics) },
-      { path: path.join(outDir, "project-candidates.json"), contents: semanticRun.renderProjectCandidates(result.semantic.projects) },
-      { path: path.join(outDir, "consolidation-candidates.json"), contents: semanticRun.renderConsolidationCandidates(result.semantic.consolidations) },
-      { path: path.join(outDir, "reasoning-candidates.jsonl"), contents: semanticRun.renderReasoningCandidates(result.semantic.reasoningCandidates) },
-      { path: path.join(outDir, "reasoning-evidence-packs.jsonl"), contents: semanticRun.renderReasoningEvidencePacks(result.semantic.evidencePacks) },
+      { path: "semantic-relations.json", contents: semanticRun.renderSemanticRelations(result.semantic.relations) },
+      { path: "topic-candidates.json", contents: semanticRun.renderTopicCandidates(result.semantic.topics) },
+      { path: "project-candidates.json", contents: semanticRun.renderProjectCandidates(result.semantic.projects) },
+      { path: "consolidation-candidates.json", contents: semanticRun.renderConsolidationCandidates(result.semantic.consolidations) },
+      { path: "reasoning-candidates.jsonl", contents: semanticRun.renderReasoningCandidates(result.semantic.reasoningCandidates) },
+      { path: "reasoning-evidence-packs.jsonl", contents: semanticRun.renderReasoningEvidencePacks(result.semantic.evidencePacks) },
     );
   }
+  // A diff from a previous run describes a comparison this run did not make. It
+  // is simply absent from this generation rather than deleted from a shared
+  // directory: a generation holds what its run produced, so there is nothing
+  // left over to remove.
   if (result.diff !== null) {
-    outputs.push({ path: diffPath, contents: diffModule.renderCorpusDiff(result.diff) });
+    outputs.push({ path: "corpus-diff.json", contents: diffModule.renderCorpusDiff(result.diff) });
   }
 
   // Each root's own outputs, under its own directory. The bundle is produced by
@@ -611,26 +761,26 @@ async function runCorpusMode(cli) {
   const bundleScratch = fs.mkdtempSync(path.join(os.tmpdir(), "l9-corpus-bundles-"));
   try {
     for (const root of result.rootPackets) {
-      const rootDir = path.join(outDir, "roots", root.directory);
+      const rootDir = `roots/${root.directory}`;
       const staged = path.join(bundleScratch, root.directory);
       repositoryModel.emitRepositoryModelBundle(root.packet, { outDir: staged });
       for (const relative of listFilesRecursively(staged, ordering.compareCodePoints)) {
         outputs.push({
-          path: path.join(rootDir, "bundle", relative),
+          path: `${rootDir}/bundle/${relative.split(path.sep).join("/")}`,
           contents: fs.readFileSync(path.join(staged, relative), "utf8"),
         });
       }
       outputs.push(
         {
-          path: path.join(rootDir, "local-source-manifest.json"),
+          path: `${rootDir}/local-source-manifest.json`,
           contents: `${JSON.stringify(root.localSourceManifest, null, 2)}\n`,
         },
         {
-          path: path.join(rootDir, "document-index.json"),
+          path: `${rootDir}/document-index.json`,
           contents: documentsModule.renderDocumentIndex(root.documentIndex),
         },
         {
-          path: path.join(rootDir, "document-coverage.json"),
+          path: `${rootDir}/document-coverage.json`,
           contents: scan.renderDocumentCoverage(root.documentCoverage),
         },
       );
@@ -648,22 +798,28 @@ async function runCorpusMode(cli) {
     snapshot: result.snapshot,
     rootDirectories: new Map(result.rootPackets.map((root) => [root.root_id, root.directory])),
     writtenPaths: [
-      ...outputs.map((file) => path.relative(outDir, file.path).split(path.sep).join("/")),
+      ...outputs.map((file) => file.path),
       "corpus-index.json",
       "corpus-report.md",
     ],
   });
   outputs.push(
-    { path: path.join(outDir, "corpus-index.json"), contents: indexModule.renderCorpusIndex(corpusIndex) },
-    { path: path.join(outDir, "corpus-report.md"), contents: indexModule.renderCorpusIndexReport(corpusIndex) },
+    { path: "corpus-index.json", contents: indexModule.renderCorpusIndex(corpusIndex) },
+    { path: "corpus-report.md", contents: indexModule.renderCorpusIndexReport(corpusIndex) },
   );
 
-  // A diff from a previous run describes a comparison this run did not make, and
-  // nothing inside the file says so. It leaves with the rest of the output set.
-  const written = sessionModule.commitCorpusOutputs({
+  // One directory, then one rename. A crash anywhere in the write leaves the
+  // previous generation intact and reachable, because CURRENT.json has not
+  // moved; a crash during the rename leaves one pointer or the other, because a
+  // rename is atomic. There is no moment at which a reader can see half of this
+  // run beside half of the last one.
+  const published = publishModule.publishCorpusGeneration({
+    outDir,
     files: outputs,
-    remove: result.diff === null ? [diffPath] : [],
+    committedAt: new Date().toISOString(),
+    ...(generationsKept !== undefined ? { keep: generationsKept } : {}),
   });
+  const written = outputs.map((file) => `${published.generation_id.slice(-12)}/${file.path}`);
   session.save(new Date().toISOString());
 
   reportCorpusRun({
@@ -673,6 +829,7 @@ async function runCorpusMode(cli) {
     resumed,
     written,
     sessionPath,
+    published,
   });
 }
 

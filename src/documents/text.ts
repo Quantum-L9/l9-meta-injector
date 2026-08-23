@@ -1,0 +1,282 @@
+// text.ts — the formats that are already text, and the two that nearly are.
+//
+// Markdown, plain text, and the structured-config family decode by being read.
+// What this file adds is structure: a Markdown heading becomes a `heading` block
+// citing its line span, so the same work-signal extractors that read a heading in
+// a Word document read one here, and a consumer never has to know which format a
+// block came from in order to use it.
+import * as fs from "node:fs";
+import {
+  BlockBuilder,
+  DecodeInput,
+  DecodeOutcome,
+  DocumentDecoder,
+  buildNormalizedDocument,
+  normalizedDocumentId,
+} from "./decoder";
+
+export const TEXT_DECODER_ID = "l9.text-decoder";
+export const TEXT_DECODER_VERSION = "1.0.0";
+export const CSV_DECODER_ID = "l9.csv-decoder";
+export const CSV_DECODER_VERSION = "1.0.0";
+
+/** Read a file as UTF-8, refusing bytes that are not valid UTF-8. */
+export function readUtf8(input: DecodeInput): { text: string } | { reason: string } {
+  if (input.sizeBytes > input.budget.maxSourceBytes) {
+    return { reason: `file exceeds the ${input.budget.maxSourceBytes}-byte decoder ceiling` };
+  }
+  const bytes = input.bytes ?? fs.readFileSync(input.absolutePath);
+  const text = bytes.toString("utf8");
+  // `toString` never fails; it substitutes U+FFFD. Round-tripping is how the
+  // difference between "text with a replacement character in it" and "bytes that
+  // are not text" is actually established.
+  if (!Buffer.from(text, "utf8").equals(bytes)) {
+    return { reason: "bytes are not valid UTF-8" };
+  }
+  return { text };
+}
+
+const MARKDOWN_EXTENSIONS = new Set([".md", ".markdown", ".mdx"]);
+
+/** ATX and Setext headings, list items, fenced code, and everything else. */
+function decodeTextBlocks(text: string, builder: BlockBuilder, markdown: boolean): void {
+  const lines = text.split(/\r?\n/);
+  let paragraph: string[] = [];
+  let paragraphStart = 1;
+  let fence: string | null = null;
+  let fenceStart = 1;
+  let fenceLines: string[] = [];
+  let sawTitle = false;
+
+  const flushParagraph = (endLine: number): void => {
+    if (paragraph.length === 0) return;
+    builder.add("paragraph", paragraph.join("\n"), {
+      kind: "line_span",
+      line_start: paragraphStart,
+      line_end: endLine,
+    });
+    paragraph = [];
+  };
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] as string;
+    const lineNumber = index + 1;
+
+    if (markdown) {
+      const fenceMatch = /^\s*(```|~~~)/.exec(line);
+      if (fence !== null) {
+        if (fenceMatch !== null && line.trim().startsWith(fence)) {
+          builder.add("code", fenceLines.join("\n"), {
+            kind: "line_span",
+            line_start: fenceStart,
+            line_end: lineNumber,
+          });
+          fence = null;
+          fenceLines = [];
+          continue;
+        }
+        fenceLines.push(line);
+        continue;
+      }
+      if (fenceMatch !== null) {
+        flushParagraph(lineNumber - 1);
+        fence = fenceMatch[1] as string;
+        fenceStart = lineNumber;
+        fenceLines = [];
+        continue;
+      }
+
+      const atx = /^(#{1,6})\s+(.*\S)\s*#*\s*$/.exec(line);
+      if (atx !== null) {
+        flushParagraph(lineNumber - 1);
+        const level = (atx[1] as string).length;
+        const heading = atx[2] as string;
+        // The first level-1 heading is the document's title. Later ones are
+        // headings: a file with three `#` sections has one title, not three.
+        const kind = level === 1 && !sawTitle ? "title" : "heading";
+        if (kind === "title") sawTitle = true;
+        builder.add(kind, heading, { kind: "line_span", line_start: lineNumber, line_end: lineNumber });
+        continue;
+      }
+
+      const listItem = /^\s*(?:[-*+]|\d+[.)])\s+(.*\S)\s*$/.exec(line);
+      if (listItem !== null) {
+        flushParagraph(lineNumber - 1);
+        builder.add("list_item", listItem[1] as string, {
+          kind: "line_span",
+          line_start: lineNumber,
+          line_end: lineNumber,
+        });
+        continue;
+      }
+    }
+
+    if (line.trim().length === 0) {
+      flushParagraph(lineNumber - 1);
+      continue;
+    }
+    if (paragraph.length === 0) paragraphStart = lineNumber;
+    paragraph.push(line);
+  }
+
+  if (fence !== null) {
+    builder.add("code", fenceLines.join("\n"), {
+      kind: "line_span",
+      line_start: fenceStart,
+      line_end: lines.length,
+    });
+    builder.note({
+      code: "decoder.malformed",
+      severity: "info",
+      message: "a fenced code block was not closed; it was read to the end of the file",
+    });
+  }
+  flushParagraph(lines.length);
+}
+
+export const textDecoder: DocumentDecoder = {
+  id: TEXT_DECODER_ID,
+  version: TEXT_DECODER_VERSION,
+  format: "text",
+  extensions: [
+    ".md", ".markdown", ".mdx", ".txt", ".rst", ".adoc", ".org",
+    ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".xml",
+    ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".rb", ".go", ".rs",
+    ".java", ".kt", ".kts", ".c", ".h", ".cc", ".cpp", ".hpp", ".cs", ".swift",
+    ".php", ".pl", ".lua", ".sh", ".bash", ".zsh", ".sql", ".graphql", ".proto",
+  ],
+  // Build and container manifests carry no extension and are ordinary text.
+  filenames: [
+    "dockerfile", "containerfile", "gemfile", "jenkinsfile", "makefile", "procfile",
+    "readme", "license", "changelog", "notice", "authors", "codeowners",
+  ],
+  decode(input: DecodeInput): DecodeOutcome {
+    const read = readUtf8(input);
+    if ("reason" in read) {
+      return {
+        decoded: false,
+        reason: "decoder.malformed",
+        message: read.reason,
+        diagnostics: [{ code: "decoder.malformed", severity: "warning", message: read.reason }],
+      };
+    }
+    const documentId = normalizedDocumentId({
+      contentHash: input.contentHash,
+      decoderId: TEXT_DECODER_ID,
+      decoderVersion: TEXT_DECODER_VERSION,
+    });
+    const builder = new BlockBuilder(documentId, input.budget);
+    const basename = input.sourcePath.slice(input.sourcePath.lastIndexOf("/") + 1).toLowerCase();
+    const dot = basename.lastIndexOf(".");
+    const markdown = dot > 0 && MARKDOWN_EXTENSIONS.has(basename.slice(dot));
+    decodeTextBlocks(read.text, builder, markdown);
+    const title = builder.finish().blocks.find((block) => block.kind === "title");
+    return {
+      decoded: true,
+      document: buildNormalizedDocument({
+        decoder: { id: TEXT_DECODER_ID, version: TEXT_DECODER_VERSION, format: markdown ? "markdown" : "text" },
+        decodeInput: input,
+        documentId,
+        metadata: title !== undefined ? { title: title.text } : {},
+        builder,
+      }),
+    };
+  },
+};
+
+/**
+ * Split one CSV line, honouring RFC 4180 quoting.
+ *
+ * Written out rather than split on commas because a project tracker's "Blocked
+ * by: procurement, legal" cell is exactly the case a naive split corrupts, and a
+ * corrupted cell becomes a corrupted work signal.
+ */
+export function splitCsvLine(line: string, delimiter: string): string[] {
+  const cells: string[] = [];
+  let cell = "";
+  let quoted = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index] as string;
+    if (quoted) {
+      if (char === '"') {
+        if (line[index + 1] === '"') {
+          cell += '"';
+          index += 1;
+        } else {
+          quoted = false;
+        }
+      } else {
+        cell += char;
+      }
+      continue;
+    }
+    if (char === '"') {
+      quoted = true;
+      continue;
+    }
+    if (char === delimiter) {
+      cells.push(cell);
+      cell = "";
+      continue;
+    }
+    cell += char;
+  }
+  cells.push(cell);
+  return cells;
+}
+
+export const csvDecoder: DocumentDecoder = {
+  id: CSV_DECODER_ID,
+  version: CSV_DECODER_VERSION,
+  format: "csv",
+  extensions: [".csv", ".tsv"],
+  decode(input: DecodeInput): DecodeOutcome {
+    const read = readUtf8(input);
+    if ("reason" in read) {
+      return {
+        decoded: false,
+        reason: "decoder.malformed",
+        message: read.reason,
+        diagnostics: [{ code: "decoder.malformed", severity: "warning", message: read.reason }],
+      };
+    }
+    const documentId = normalizedDocumentId({
+      contentHash: input.contentHash,
+      decoderId: CSV_DECODER_ID,
+      decoderVersion: CSV_DECODER_VERSION,
+    });
+    const builder = new BlockBuilder(documentId, input.budget);
+    const delimiter = input.sourcePath.toLowerCase().endsWith(".tsv") ? "\t" : ",";
+    const lines = read.text.split(/\r?\n/);
+    const rows: string[][] = [];
+    let header: string[] = [];
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index] as string;
+      if (line.trim().length === 0) continue;
+      const cells = splitCsvLine(line, delimiter);
+      const rowNumber = index + 1;
+      if (rows.length === 0) header = cells;
+      rows.push(cells);
+      // Each row is a block so a row naming a blocker is citable as a row rather
+      // than as "somewhere in this file".
+      const label = header.length === cells.length && rows.length > 1
+        ? cells.map((cell, column) => `${header[column]}: ${cell}`).join("; ")
+        : cells.join(" | ");
+      builder.add("cell", label, { kind: "csv_row", row_number: rowNumber });
+      if (builder.isFull) break;
+    }
+    if (rows.length > 0) {
+      builder.addTable(rows, { kind: "csv_row", row_number: 1 });
+    }
+    return {
+      decoded: true,
+      document: buildNormalizedDocument({
+        decoder: { id: CSV_DECODER_ID, version: CSV_DECODER_VERSION, format: "csv" },
+        decodeInput: input,
+        documentId,
+        metadata: {},
+        builder,
+      }),
+    };
+  },
+};

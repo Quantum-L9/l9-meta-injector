@@ -3,15 +3,17 @@ import { CorpusCache, CorpusCacheStats } from "./corpus_cache";
 import { ProjectCandidate, TopicCandidate } from "./corpus_candidates";
 import { CorpusCoverage } from "./corpus_coverage";
 import { CorpusDiff } from "./corpus_diff";
+import { CorpusDocumentSignals } from "./corpus_document_signals";
 import { ReadinessEvidence } from "./corpus_readiness";
 import { CorpusRootBinding, CorpusRootSpec, rootIdentity } from "./corpus_roots";
 import { CorpusSnapshot, VerificationMode } from "./corpus_snapshot";
 import { CorpusResourceBudgets, CorpusSessionStore } from "./corpus_session";
+import { DecoderRegistry } from "./documents";
 import { LocalArchivePolicy } from "./local_archive_policy";
 import type { DocumentIndex } from "./corpus_documents";
 import type { SemanticAnalysisResult } from "./corpus_semantic_run";
 import type { EmbeddingPairScore } from "./corpus_pairs";
-import type { EmbeddingRunReport } from "./corpus_embeddings";
+import type { EmbeddingProvider, EmbeddingRunReport } from "./corpus_embeddings";
 import { RepositoryModelPacket } from "./repository_model";
 import { LocalSourceManifest } from "./local_source_model";
 export declare const CORPUS_CANDIDATES_SCHEMA = "l9.corpus-candidates/v1";
@@ -37,6 +39,8 @@ export interface CorpusScanInput {
     verification?: VerificationMode;
     /** Force a full read even under `incremental`, and say so in the snapshot. */
     verifyContent?: boolean;
+    /** Decoder set to use. Defaults to the registry this release ships. */
+    decoderRegistry?: DecoderRegistry;
     /**
      * Emit a snapshot marked `partial` when a root cannot be read, instead of
      * failing the run. The snapshot is never labelled complete, and every missing
@@ -69,6 +73,21 @@ export interface CorpusScanInput {
     /** Cosine scores from an embedding pass the caller ran. Absent means embeddings were off. */
     embeddingPairs?: readonly EmbeddingPairScore[];
     embeddingReport?: EmbeddingRunReport;
+    /**
+     * A provider to run the embedding pass with, in place of supplying its results.
+     *
+     * The two are alternatives, not a pair: a caller either ran the pass itself and
+     * hands over `embeddingPairs` and `embeddingReport`, or hands over a provider
+     * and lets the scan run it. The scan is the only place that can, because the
+     * text to embed is the normalized text and that does not exist until the
+     * decoders have run.
+     *
+     * Absent — the default — means no embedding pass, no network request, and no
+     * model call of any kind.
+     */
+    embeddingProvider?: EmbeddingProvider;
+    /** Cosine at or above which a pair is offered to fusion. Default 0.75. */
+    embeddingPairThreshold?: number;
     /** Overrides for the bounded reasoning evidence packs. */
     packBudget?: {
         maxArtifactsPerPack?: number;
@@ -209,11 +228,19 @@ export interface CorpusScanResult {
     };
     /** The normalized documents, written down rather than discarded with the run. */
     documentIndex: DocumentIndex;
+    /** What each decoder read, and whether what it read reached the analysis. */
+    documentSignals: CorpusDocumentSignals;
     /** Candidate discovery over recorded evidence. Null when it was switched off. */
     semantic: SemanticAnalysisResult | null;
 }
-/** True when the text decoder claims this artifact at all. */
-export declare function isTextDecodable(rootRelativePath: string): boolean;
+/**
+ * True when some decoder in `registry` claims this artifact.
+ *
+ * This is the coverage denominator, so it has to be the same question the derive
+ * stage asks. Deriving eligibility from a second hand-maintained extension list
+ * is how "decoder_eligible_count" drifts away from what actually gets decoded.
+ */
+export declare function isDecodable(rootRelativePath: string, registry: DecoderRegistry): boolean;
 /** True when the lexical passes claim this artifact. */
 export declare function isLexicallyAnalyzable(rootRelativePath: string): boolean;
 /**

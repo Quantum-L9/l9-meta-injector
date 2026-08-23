@@ -79,6 +79,14 @@ exports.CACHED_ASSUMPTION_STATEMENT = "Some content hashes were carried over fro
 /** How a corpus as a whole observed. */
 exports.CORPUS_STATUSES = ["complete", "partial", "failed"];
 /** Order a snapshot's contents so two equal corpora render identically. */
+/** Manifest entries in a fixed order, so a rendered snapshot is canonical. */
+function orderManifest(manifest) {
+    return {
+        ...manifest,
+        entries: [...manifest.entries].sort((a, b) => (0, ordering_1.compareCodePoints)(a.candidate_kind, b.candidate_kind)
+            || (0, ordering_1.compareCodePoints)(a.candidate_id, b.candidate_id)),
+    };
+}
 function orderCorpusSnapshot(snapshot) {
     return {
         ...snapshot,
@@ -87,6 +95,9 @@ function orderCorpusSnapshot(snapshot) {
             ...snapshot.analysis,
             document_decoder_profiles: [...snapshot.analysis.document_decoder_profiles].sort(ordering_1.compareCodePoints),
         },
+        ...(snapshot.analysis_manifest !== undefined
+            ? { analysis_manifest: orderManifest(snapshot.analysis_manifest) }
+            : {}),
         roots: [...snapshot.roots].sort((a, b) => (0, ordering_1.compareCodePoints)(a.root_id, b.root_id)),
         artifacts: [...snapshot.artifacts].sort((a, b) => (0, ordering_1.compareCodePoints)(a.corpus_path, b.corpus_path)
             || (0, ordering_1.compareCodePoints)(a.virtual_source_id, b.virtual_source_id)),

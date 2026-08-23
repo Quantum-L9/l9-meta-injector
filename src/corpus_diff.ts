@@ -21,6 +21,9 @@
 // back on the next disk the operator plugs in, and the work already done on those
 // bytes is still correct.
 import { canonicalCorpusJson } from "./corpus_analysis";
+import { diffAnalysisManifests } from "./corpus_analysis_manifest";
+import type { CandidateKind } from "./corpus_analysis_manifest";
+import type { RootIdentityClass } from "./corpus_roots";
 import { CorpusSnapshot, CorpusSnapshotArchive, CorpusSnapshotArtifact } from "./corpus_snapshot";
 import { compareCodePoints } from "./ordering";
 
@@ -105,10 +108,40 @@ export interface CorpusRootDiffEntry {
   category: CorpusRootDiffCategory;
   root_id: string;
   root_key: string;
+  /**
+   * How much this row's continuity claim is worth.
+   *
+   * `declared` on both sides: the operator named this root, so "the same root as
+   * last run" is a person's statement and the row means what it says.
+   *
+   * `inferred` on either side: the key is a mount point's final segment. Two
+   * runs matching on it are usually the same disk and are not necessarily so —
+   * `/Volumes/Backup` and an unrelated `/mnt/usb/Backup` produce the same root
+   * id, and nothing in the bytes distinguishes them. The row is still emitted;
+   * it is marked, and the diff carries a caution naming it.
+   */
+  identity_basis: RootIdentityClass | "mixed";
   previous_source_revision: string | null;
   current_source_revision: string | null;
   previous_rmp_packet_id: string | null;
   current_rmp_packet_id: string | null;
+}
+
+/**
+ * A root matched across two runs on a key nobody declared.
+ *
+ * Not an error and not a refusal to compare: it is the statement that the
+ * comparison rests on a basename. An operator reading "root_unchanged" for a
+ * drive they never named is owed the knowledge that the run cannot tell that
+ * drive from another one whose path ends the same way, and that declaring a key
+ * is what makes the claim solid.
+ */
+export interface LongitudinalIdentityCaution {
+  root_id: string;
+  root_key: string;
+  previous_class: RootIdentityClass;
+  current_class: RootIdentityClass;
+  message: string;
 }
 
 /**
@@ -160,13 +193,44 @@ export interface CorpusDiff {
   current_root_ids: string[];
   counts: CorpusDiffCounts;
   roots: CorpusRootDiffEntry[];
-  /** What changed about the analysis, kept apart from what changed on the disks. */
+  /**
+   * Roots compared across runs on an inferred key. Empty when every match was
+   * between roots the operator named, which is the case worth aiming for.
+   */
+  longitudinal_identity_cautions: LongitudinalIdentityCaution[];
+  /**
+   * What changed about the analysis, kept apart from what changed on the disks.
+   *
+   * The three candidate counts are computed from the two snapshots' analysis
+   * manifests when both carry one, and are `null` — with `not_computed_reason`
+   * saying why — when either does not. They are never zero as a stand-in for
+   * "not computed": three zeros read as "nothing changed" to anyone who does not
+   * check a flag first, and that is a claim this diff has no basis to make.
+   */
   analysis: {
-    candidate_added: number;
-    candidate_removed: number;
-    candidate_changed: number;
+    candidate_added: number | null;
+    candidate_removed: number | null;
+    candidate_changed: number | null;
+    candidate_unchanged: number | null;
+    /** Null exactly when the counts above are real. */
+    not_computed_reason: string | null;
+    /** The same four counts per candidate kind, so a null cannot hide a category. */
+    by_kind: {
+      candidate_kind: CandidateKind;
+      added: number;
+      removed: number;
+      changed: number;
+      unchanged: number;
+    }[];
     readiness_evidence_changed: boolean;
-    /** Null when neither snapshot recorded candidate counts to compare. */
+    /**
+     * True when the two runs were computed under the same rules over the same
+     * bytes, so a candidate difference would be a genuine surprise.
+     *
+     * Distinct from whether the counts could be computed at all: an incomparable
+     * pair of runs still gets real counts when both carry manifests, and the
+     * counts are then explained by the profile change rather than doubted.
+     */
     comparable: boolean;
   };
   cross_root_move_candidates: CrossRootMoveCandidate[];
@@ -313,15 +377,17 @@ function analysisDelta(
 ): CorpusDiff["analysis"] {
   const sourceChanged = previous.corpus_source_snapshot_id !== current.corpus_source_snapshot_id;
   const analysisChanged = previous.analysis.corpus_analysis_id !== current.analysis.corpus_analysis_id;
+  const delta = diffAnalysisManifests(previous.analysis_manifest, current.analysis_manifest);
   return {
-    candidate_added: 0,
-    candidate_removed: 0,
-    candidate_changed: 0,
+    candidate_added: delta.candidate_added,
+    candidate_removed: delta.candidate_removed,
+    candidate_changed: delta.candidate_changed,
+    candidate_unchanged: delta.candidate_unchanged,
+    not_computed_reason: delta.not_computed_reason,
+    by_kind: delta.by_kind,
     // Readiness is recomputed whenever its own profile moves or the corpus does.
     readiness_evidence_changed: sourceChanged
       || previous.analysis.readiness_profile !== current.analysis.readiness_profile,
-    // The candidate documents are not part of a snapshot, so a snapshot-to-snapshot
-    // diff cannot count them. It can say whether anything they depend on moved.
     comparable: !analysisChanged && !profileChanged,
   };
 }
@@ -480,6 +546,13 @@ export function buildCorpusDiff(previous: CorpusSnapshot, current: CorpusSnapsho
   const previousRoots = new Map(previous.roots.map((root) => [root.root_id, root]));
   const currentRoots = new Map(current.roots.map((root) => [root.root_id, root]));
   const rootEntries: CorpusRootDiffEntry[] = [];
+  const cautions: LongitudinalIdentityCaution[] = [];
+  // A snapshot from before the class was recorded says nothing about how its
+  // keys were chosen, so it is read as `inferred` — the weaker of the two, which
+  // is the reading that produces a caution rather than a claim.
+  const classOf = (root: { root_identity_class?: RootIdentityClass }): RootIdentityClass =>
+    root.root_identity_class ?? "inferred";
+
   for (const [rootId, root] of currentRoots) {
     const before = previousRoots.get(rootId);
     if (before === undefined) {
@@ -488,12 +561,34 @@ export function buildCorpusDiff(previous: CorpusSnapshot, current: CorpusSnapsho
         category: "root_added",
         root_id: rootId,
         root_key: root.root_key,
+        // A root with no previous side makes no continuity claim, so its basis
+        // is simply how this run keyed it.
+        identity_basis: classOf(root),
         previous_source_revision: null,
         current_source_revision: root.source_revision,
         previous_rmp_packet_id: null,
         current_rmp_packet_id: root.rmp_packet_id,
       });
       continue;
+    }
+    const previousClass = classOf(before);
+    const currentClass = classOf(root);
+    const basis: RootIdentityClass | "mixed" = previousClass === currentClass
+      ? previousClass
+      : "mixed";
+    if (basis !== "declared") {
+      cautions.push({
+        root_id: rootId,
+        root_key: root.root_key,
+        previous_class: previousClass,
+        current_class: currentClass,
+        message:
+          `root '${root.root_key}' was matched across runs on a key that was not declared on `
+          + `${basis === "mixed" ? "one of the two runs" : "either run"}; the key is a mount `
+          + "point's final segment, so two different disks mounted at paths ending the same "
+          + "way are one root under this rule. Declare a key with --root <key>=<path> to make "
+          + "the comparison rest on a name rather than on a path.",
+      });
     }
     const changed = before.source_revision !== root.source_revision
       || before.rmp_packet_id !== root.rmp_packet_id;
@@ -503,6 +598,7 @@ export function buildCorpusDiff(previous: CorpusSnapshot, current: CorpusSnapsho
       category: changed ? "root_changed" : "root_unchanged",
       root_id: rootId,
       root_key: root.root_key,
+      identity_basis: basis,
       previous_source_revision: before.source_revision,
       current_source_revision: root.source_revision,
       previous_rmp_packet_id: before.rmp_packet_id,
@@ -516,6 +612,7 @@ export function buildCorpusDiff(previous: CorpusSnapshot, current: CorpusSnapsho
       category: "root_removed",
       root_id: rootId,
       root_key: root.root_key,
+      identity_basis: classOf(root),
       previous_source_revision: root.source_revision,
       current_source_revision: null,
       previous_rmp_packet_id: root.rmp_packet_id,
@@ -523,6 +620,7 @@ export function buildCorpusDiff(previous: CorpusSnapshot, current: CorpusSnapsho
     });
   }
   rootEntries.sort((a, b) => compareCodePoints(a.root_id, b.root_id));
+  cautions.sort((a, b) => compareCodePoints(a.root_id, b.root_id));
 
   // Identical bytes that left one root and appeared in another. Reported as a
   // candidate: the same evidence is produced by a move, by a copy whose original
@@ -569,6 +667,7 @@ export function buildCorpusDiff(previous: CorpusSnapshot, current: CorpusSnapsho
     current_root_ids: currentRootIds,
     counts,
     roots: rootEntries,
+    longitudinal_identity_cautions: cautions,
     analysis: analysisDelta(previous, current, profileChanged),
     cross_root_move_candidates: crossRootMoves,
     cross_root_move_statement: CROSS_ROOT_MOVE_STATEMENT,

@@ -26,6 +26,7 @@ exports.renderCorpusDiff = renderCorpusDiff;
 // back on the next disk the operator plugs in, and the work already done on those
 // bytes is still correct.
 const corpus_analysis_1 = require("./corpus_analysis");
+const corpus_analysis_manifest_1 = require("./corpus_analysis_manifest");
 const ordering_1 = require("./ordering");
 exports.CORPUS_DIFF_SCHEMA = "l9.corpus-diff/v1";
 exports.CORPUS_DIFF_CATEGORIES = [
@@ -178,15 +179,17 @@ function analysisProfileFingerprint(snapshot) {
 function analysisDelta(previous, current, profileChanged) {
     const sourceChanged = previous.corpus_source_snapshot_id !== current.corpus_source_snapshot_id;
     const analysisChanged = previous.analysis.corpus_analysis_id !== current.analysis.corpus_analysis_id;
+    const delta = (0, corpus_analysis_manifest_1.diffAnalysisManifests)(previous.analysis_manifest, current.analysis_manifest);
     return {
-        candidate_added: 0,
-        candidate_removed: 0,
-        candidate_changed: 0,
+        candidate_added: delta.candidate_added,
+        candidate_removed: delta.candidate_removed,
+        candidate_changed: delta.candidate_changed,
+        candidate_unchanged: delta.candidate_unchanged,
+        not_computed_reason: delta.not_computed_reason,
+        by_kind: delta.by_kind,
         // Readiness is recomputed whenever its own profile moves or the corpus does.
         readiness_evidence_changed: sourceChanged
             || previous.analysis.readiness_profile !== current.analysis.readiness_profile,
-        // The candidate documents are not part of a snapshot, so a snapshot-to-snapshot
-        // diff cannot count them. It can say whether anything they depend on moved.
         comparable: !analysisChanged && !profileChanged,
     };
 }
@@ -340,6 +343,11 @@ function buildCorpusDiff(previous, current) {
     const previousRoots = new Map(previous.roots.map((root) => [root.root_id, root]));
     const currentRoots = new Map(current.roots.map((root) => [root.root_id, root]));
     const rootEntries = [];
+    const cautions = [];
+    // A snapshot from before the class was recorded says nothing about how its
+    // keys were chosen, so it is read as `inferred` — the weaker of the two, which
+    // is the reading that produces a caution rather than a claim.
+    const classOf = (root) => root.root_identity_class ?? "inferred";
     for (const [rootId, root] of currentRoots) {
         const before = previousRoots.get(rootId);
         if (before === undefined) {
@@ -348,12 +356,33 @@ function buildCorpusDiff(previous, current) {
                 category: "root_added",
                 root_id: rootId,
                 root_key: root.root_key,
+                // A root with no previous side makes no continuity claim, so its basis
+                // is simply how this run keyed it.
+                identity_basis: classOf(root),
                 previous_source_revision: null,
                 current_source_revision: root.source_revision,
                 previous_rmp_packet_id: null,
                 current_rmp_packet_id: root.rmp_packet_id,
             });
             continue;
+        }
+        const previousClass = classOf(before);
+        const currentClass = classOf(root);
+        const basis = previousClass === currentClass
+            ? previousClass
+            : "mixed";
+        if (basis !== "declared") {
+            cautions.push({
+                root_id: rootId,
+                root_key: root.root_key,
+                previous_class: previousClass,
+                current_class: currentClass,
+                message: `root '${root.root_key}' was matched across runs on a key that was not declared on `
+                    + `${basis === "mixed" ? "one of the two runs" : "either run"}; the key is a mount `
+                    + "point's final segment, so two different disks mounted at paths ending the same "
+                    + "way are one root under this rule. Declare a key with --root <key>=<path> to make "
+                    + "the comparison rest on a name rather than on a path.",
+            });
         }
         const changed = before.source_revision !== root.source_revision
             || before.rmp_packet_id !== root.rmp_packet_id;
@@ -365,6 +394,7 @@ function buildCorpusDiff(previous, current) {
             category: changed ? "root_changed" : "root_unchanged",
             root_id: rootId,
             root_key: root.root_key,
+            identity_basis: basis,
             previous_source_revision: before.source_revision,
             current_source_revision: root.source_revision,
             previous_rmp_packet_id: before.rmp_packet_id,
@@ -379,6 +409,7 @@ function buildCorpusDiff(previous, current) {
             category: "root_removed",
             root_id: rootId,
             root_key: root.root_key,
+            identity_basis: classOf(root),
             previous_source_revision: root.source_revision,
             current_source_revision: null,
             previous_rmp_packet_id: root.rmp_packet_id,
@@ -386,6 +417,7 @@ function buildCorpusDiff(previous, current) {
         });
     }
     rootEntries.sort((a, b) => (0, ordering_1.compareCodePoints)(a.root_id, b.root_id));
+    cautions.sort((a, b) => (0, ordering_1.compareCodePoints)(a.root_id, b.root_id));
     // Identical bytes that left one root and appeared in another. Reported as a
     // candidate: the same evidence is produced by a move, by a copy whose original
     // was deleted, and by two unrelated identical files — which in a corpus made of
@@ -430,6 +462,7 @@ function buildCorpusDiff(previous, current) {
         current_root_ids: currentRootIds,
         counts,
         roots: rootEntries,
+        longitudinal_identity_cautions: cautions,
         analysis: analysisDelta(previous, current, profileChanged),
         cross_root_move_candidates: crossRootMoves,
         cross_root_move_statement: exports.CROSS_ROOT_MOVE_STATEMENT,

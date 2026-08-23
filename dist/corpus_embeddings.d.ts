@@ -139,6 +139,20 @@ export interface RunEmbeddingsInput {
     cache?: EmbeddingCache;
     /** Cosine at or above which a pair is offered to fusion at all. */
     pairThreshold: number;
+    /**
+     * Documents embedded concurrently. Default 1, which is strictly sequential.
+     *
+     * A request to an embedding server is latency, not work this process does, so
+     * a corpus of ten thousand documents against a sequential provider spends its
+     * whole run waiting. The bound exists because the server on the other end has
+     * its own limits and this is the caller's chance to respect them.
+     *
+     * Raising it changes when requests are issued and nothing else: the result is
+     * built from a map keyed by artifact id and every reported number is a sum or
+     * a count, so two runs at different widths produce byte-identical output.
+     * `tests/corpus_embedding_http.test.ts` asserts exactly that.
+     */
+    maxParallelRequests?: number;
 }
 export interface RunEmbeddingsResult {
     pairs: EmbeddingPairCandidate[];

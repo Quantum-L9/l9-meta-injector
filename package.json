@@ -66,7 +66,8 @@
     "validate": "npm run typecheck && npm test && npm run check:api && npm run check:authority && npm run check:manifest && npm run check:dist && npm run selfpack && npm run test:packed && npm run check:release-candidate",
     "prepack": "npm run check:api && npm run check:authority && npm run check:manifest && npm run check:dist && npm run check:release-candidate",
     "prepublishOnly": "npm run validate && npm run check:publication",
-    "check:release-candidate": "node scripts/check-release-candidate.js"
+    "check:release-candidate": "node scripts/check-release-candidate.js",
+    "validate:report": "node scripts/validation-report.js"
   },
   "devDependencies": {
     "typescript": "5.9.3",

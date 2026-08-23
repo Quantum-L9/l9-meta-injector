@@ -14,7 +14,6 @@ import {
   DEFAULT_CORPUS_BUDGETS,
   MemoryBudget,
   boundedMap,
-  commitCorpusOutputs,
   corpusSessionId,
 } from "../src/corpus_session";
 import { corpusRootId } from "../src/corpus_roots";
@@ -147,75 +146,20 @@ describe("bounded work", () => {
 });
 
 describe("the output commit", () => {
-  it("moves every projection into place only after all of them exist", () => {
-    const out = tmp();
-    const written = commitCorpusOutputs({
-      files: [
-        { path: path.join(out, "a.json"), contents: "{}\n" },
-        { path: path.join(out, "nested", "b.json"), contents: "[]\n" },
-      ],
-    });
-    expect(written.map((file) => path.relative(out, file))).toEqual(["a.json", path.join("nested", "b.json")]);
-    expect(fs.readFileSync(path.join(out, "a.json"), "utf8")).toBe("{}\n");
-    expect(fs.readdirSync(out).filter((name) => name.endsWith(".tmp"))).toEqual([]);
-  });
-
-  it("leaves the previous output in place when a later file cannot be staged", () => {
-    const out = tmp();
-    fs.writeFileSync(path.join(out, "a.json"), "previous\n", "utf8");
-    // A directory where a file is expected fails the staging write.
-    fs.mkdirSync(path.join(out, "b.json"), { recursive: true });
-    expect(() =>
-      commitCorpusOutputs({
-        files: [
-          { path: path.join(out, "a.json"), contents: "new\n" },
-          { path: path.join(out, "b.json"), contents: "new\n" },
-        ],
-      }),
-    ).toThrow();
-    expect(fs.readFileSync(path.join(out, "a.json"), "utf8")).toBe("previous\n");
-    expect(fs.readdirSync(out).filter((name) => name.endsWith(".tmp"))).toEqual([]);
-  });
-
-  it("puts the previous contents back when a later rename fails", () => {
-    const out = tmp();
-    for (const name of ["a.json", "b.json", "c.json"]) {
-      fs.writeFileSync(path.join(out, name), `previous-${name}\n`, "utf8");
-    }
-
-    // Each existing target is moved aside to `<target>.<pid>.tmp.prev` before it
-    // is replaced. Occupying that path with a non-empty directory makes the third
-    // file's backup rename fail for real — no mocking — after the first two have
-    // already been replaced, which is exactly the state the rollback is for.
-    const blocked = path.join(out, `c.json.${process.pid}.tmp.prev`);
-    fs.mkdirSync(blocked, { recursive: true });
-    fs.writeFileSync(path.join(blocked, "occupied"), "x", "utf8");
-
-    expect(() =>
-      commitCorpusOutputs({
-        files: [
-          { path: path.join(out, "a.json"), contents: "new-a\n" },
-          { path: path.join(out, "b.json"), contents: "new-b\n" },
-          { path: path.join(out, "c.json"), contents: "new-c\n" },
-        ],
-      }),
-    ).toThrow();
-
-    for (const name of ["a.json", "b.json", "c.json"]) {
-      expect(fs.readFileSync(path.join(out, name), "utf8")).toBe(`previous-${name}\n`);
-    }
-    expect(fs.readdirSync(out).filter((name) => name.endsWith(".tmp"))).toEqual([]);
-  });
-
-  it("removes a projection this run did not produce", () => {
-    const out = tmp();
-    fs.writeFileSync(path.join(out, "corpus-diff.json"), "stale\n", "utf8");
-    commitCorpusOutputs({
-      files: [{ path: path.join(out, "corpus-snapshot.json"), contents: "{}\n" }],
-      remove: [path.join(out, "corpus-diff.json")],
-    });
-    // A diff describing a comparison this run did not make must not outlive it.
-    expect(fs.existsSync(path.join(out, "corpus-diff.json"))).toBe(false);
-    expect(fs.existsSync(path.join(out, "corpus-snapshot.json"))).toBe(true);
+  // The staged-then-renamed commit that used to live here is gone, and its tests
+  // with it. It could not be atomic as a set — no userspace sequence of renames
+  // is — so a process killed between the twelfth rename and the thirteenth left a
+  // coverage report from one run beside a readiness document from another. The
+  // replacement writes one generation directory and switches a single pointer,
+  // and it is qualified against injected crashes in `corpus_publish.test.ts`.
+  //
+  // Kept as a marker rather than deleted silently: a reader looking for the old
+  // commit path deserves to be told where the guarantee moved to, and why it is
+  // a different guarantee rather than the same one relocated.
+  it("has moved to corpus_publish, where the whole set switches at once", async () => {
+    const session = await import("../src/corpus_session");
+    expect(session).not.toHaveProperty("commitCorpusOutputs");
+    const publish = await import("../src/corpus_publish");
+    expect(publish.publishCorpusGeneration).toBeTypeOf("function");
   });
 });

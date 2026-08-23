@@ -209,34 +209,40 @@ function embeddingCacheKey(input) {
 async function runEmbeddings(input) {
     const configuration = input.provider.configuration;
     const chunkProfile = embeddingChunkProfileHash();
-    const eligible = input.documents.filter((document) => document.decoded);
-    const secretsSkipped = eligible.filter((document) => document.is_secret_candidate).length;
-    const embeddable = eligible.filter((document) => !document.is_secret_candidate);
+    // Secrets are counted over every document, not over the decoded ones.
+    //
+    // A caller that refuses to open a file named `secrets.yaml` hands it over here
+    // as undecoded, so a tally taken inside the decoded set would report zero
+    // secret documents skipped on a corpus full of them — a number that is always
+    // right and never means anything. The guard below is still a real second
+    // guard: a caller that did decode such a file finds it dropped here too.
+    const secretsSkipped = input.documents.filter((document) => document.is_secret_candidate).length;
+    const eligible = input.documents.filter((document) => document.decoded && !document.is_secret_candidate);
+    const embeddable = eligible;
     const vectors = new Map();
     let chunksSent = 0;
     let artifactsSent = 0;
     let cacheHits = 0;
-    let dimension = null;
-    for (const document of [...embeddable].sort((a, b) => (0, ordering_1.compareCodePoints)(a.artifact_id, b.artifact_id))) {
-        const identity = {
-            provider: configuration.provider,
-            model_id: configuration.model_id,
-            model_revision: configuration.model_revision ?? null,
-            dimension: dimension ?? 0,
-            chunk_profile: chunkProfile,
-        };
+    const ordered = [...embeddable].sort((a, b) => (0, ordering_1.compareCodePoints)(a.artifact_id, b.artifact_id));
+    const identity = {
+        provider: configuration.provider,
+        model_id: configuration.model_id,
+        model_revision: configuration.model_revision ?? null,
+        dimension: 0,
+        chunk_profile: chunkProfile,
+    };
+    const embedOne = async (document) => {
         const key = embeddingCacheKey({
             normalizedDocumentId: document.normalized_document_id,
             artifactId: document.artifact_id,
             chunkProfile,
-            identity: { ...identity, dimension: 0 },
+            identity,
         });
         const cached = input.cache?.get(key);
         if (cached !== undefined) {
             vectors.set(document.artifact_id, cached);
-            dimension = dimension ?? cached.length;
             cacheHits += 1;
-            continue;
+            return;
         }
         const chunks = chunkDocument({
             artifactId: document.artifact_id,
@@ -246,7 +252,10 @@ async function runEmbeddings(input) {
             ...(document.body !== undefined ? { body: document.body } : {}),
         });
         if (chunks.length === 0)
-            continue;
+            return;
+        // A document's own chunks stay sequential. The parallelism is across
+        // documents, where the unit of work is the thing an operator sized the
+        // bound against, and where a partial document cannot be left half-embedded.
         const chunkVectors = [];
         for (const chunk of chunks) {
             const result = await input.provider.embed(chunk.text);
@@ -256,12 +265,34 @@ async function runEmbeddings(input) {
         artifactsSent += 1;
         const mean = meanVector(chunkVectors);
         if (mean.length === 0)
-            continue;
-        dimension = dimension ?? mean.length;
+            return;
         vectors.set(document.artifact_id, mean);
         input.cache?.put(key, mean);
-    }
+    };
+    // A fixed pool drawing from a shared cursor: `width` workers, each taking the
+    // next document when it finishes one. Deliberately not `Promise.all` over
+    // every document, which would issue ten thousand simultaneous requests and
+    // make the bound a decoration.
+    const width = Math.max(1, Math.floor(input.maxParallelRequests ?? 1));
+    let cursor = 0;
+    const worker = async () => {
+        for (;;) {
+            const index = cursor;
+            cursor += 1;
+            if (index >= ordered.length)
+                return;
+            await embedOne(ordered[index]);
+        }
+    };
+    await Promise.all(Array.from({ length: Math.min(width, Math.max(ordered.length, 1)) }, () => worker()));
     const ids = [...vectors.keys()].sort(ordering_1.compareCodePoints);
+    // Taken from the sorted set rather than from whichever request finished first,
+    // so the reported dimension is a property of the corpus and not of the
+    // scheduling. Every other number here is a sum or a count and is already
+    // order-free; this was the one field a wider pool could have changed.
+    const dimension = ids.length === 0
+        ? null
+        : vectors.get(ids[0]).length;
     const pairs = [];
     for (let i = 0; i < ids.length; i += 1) {
         for (let j = i + 1; j < ids.length; j += 1) {

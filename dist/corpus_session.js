@@ -37,7 +37,6 @@ exports.MemoryBudget = exports.YIELD_INTERVAL = exports.CorpusSessionStore = exp
 exports.corpusSessionId = corpusSessionId;
 exports.yieldToEventLoop = yieldToEventLoop;
 exports.boundedMap = boundedMap;
-exports.commitCorpusOutputs = commitCorpusOutputs;
 // corpus_session.ts — resuming a scan that did not finish, and staying inside a budget.
 //
 // A corpus large enough to be interesting is large enough that something will
@@ -60,13 +59,12 @@ exports.commitCorpusOutputs = commitCorpusOutputs;
 const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
 const corpus_analysis_1 = require("./corpus_analysis");
+const durable_write_1 = require("./durable_write");
 const ordering_1 = require("./ordering");
 const repository_model_1 = require("./repository_model");
 exports.CORPUS_SESSION_SCHEMA = "l9.corpus-session/v1";
 exports.DEFAULT_CORPUS_BUDGETS = {
-    max_parallel_hashers: 1,
     max_parallel_decoders: 4,
-    max_parallel_analysis: 1,
     max_parallel_embedding_requests: 2,
     max_memory_bytes: 256 * 1024 * 1024,
 };
@@ -203,14 +201,24 @@ class CorpusSessionStore {
             updated_at: now,
         };
     }
-    /** Write the manifest through a rename, so it is never observed half-written. */
+    /**
+     * Write the manifest durably, so it is never read back half-written.
+     *
+     * Staged, synced, renamed, parent synced. A resume manifest is the one file in
+     * this package whose corruption is silently harmful rather than loudly so: a
+     * torn `completed_source_ids` that still parses makes the next attempt skip
+     * work that was never done, which is precisely the failure a resume feature
+     * must not have. The rename alone does not survive a power cut.
+     */
     save(now) {
         const session = this.snapshot(now);
         this.session = session;
         fs.mkdirSync(path.dirname(this.file), { recursive: true });
-        const staging = `${this.file}.${process.pid}.tmp`;
-        fs.writeFileSync(staging, `${(0, corpus_analysis_1.canonicalCorpusJson)(session)}\n`, "utf8");
-        fs.renameSync(staging, this.file);
+        (0, durable_write_1.commitFileDurably)({
+            staging: `${this.file}.${process.pid}.tmp`,
+            target: this.file,
+            contents: `${(0, corpus_analysis_1.canonicalCorpusJson)(session)}\n`,
+        });
         return this.file;
     }
 }
@@ -293,89 +301,4 @@ class MemoryBudget {
     }
 }
 exports.MemoryBudget = MemoryBudget;
-/**
- * Write every projection, then move them all into place.
- *
- * A run that fails mid-write must not leave a coverage report describing one
- * corpus beside a readiness document describing another. Three things make that
- * hold: every file is staged before any is moved, every target is checked before
- * anything is staged, and each target's previous contents are moved aside rather
- * than overwritten, so a failure part-way through the renames can put them back.
- *
- * What this cannot defend against is the process being killed between two
- * renames. No userspace sequence of renames is atomic as a set, and claiming
- * otherwise would be the kind of guarantee that is only discovered to be false
- * during an incident.
- */
-function commitCorpusOutputs(input) {
-    const staged = [];
-    const suffix = `${process.pid}.tmp`;
-    const removals = (input.remove ?? []).map((file) => path.resolve(file));
-    const discardStaging = () => {
-        for (const entry of staged)
-            fs.rmSync(entry.staging, { force: true });
-    };
-    const restoreRenamed = () => {
-        for (const entry of staged) {
-            if (!entry.renamed)
-                continue;
-            fs.rmSync(entry.target, { force: true });
-            if (entry.backup !== null) {
-                try {
-                    fs.renameSync(entry.backup, entry.target);
-                }
-                catch {
-                    // The previous contents could not be put back. Nothing better is
-                    // available here, and the backup is left on disk rather than deleted
-                    // so an operator can recover it by hand.
-                }
-            }
-        }
-    };
-    const dropBackups = () => {
-        for (const entry of staged) {
-            if (entry.backup !== null)
-                fs.rmSync(entry.backup, { force: true });
-        }
-    };
-    try {
-        for (const file of input.files) {
-            const target = path.resolve(file.path);
-            // Every reason a rename could fail is checked here, while nothing has moved
-            // yet. A target that is a directory is the one that actually happens, and
-            // discovering it halfway through the renames would leave half a result set.
-            if (fs.existsSync(target) && fs.statSync(target).isDirectory()) {
-                throw new Error(`corpus: refusing to replace the directory ${target} with an output file`);
-            }
-            fs.mkdirSync(path.dirname(target), { recursive: true });
-            const staging = `${target}.${suffix}`;
-            fs.writeFileSync(staging, file.contents, "utf8");
-            staged.push({ staging, target, backup: null, renamed: false });
-        }
-    }
-    catch (error) {
-        discardStaging();
-        throw error;
-    }
-    try {
-        for (const entry of staged) {
-            if (fs.existsSync(entry.target)) {
-                const backup = `${entry.target}.${suffix}.prev`;
-                fs.renameSync(entry.target, backup);
-                entry.backup = backup;
-            }
-            fs.renameSync(entry.staging, entry.target);
-            entry.renamed = true;
-        }
-        for (const file of removals)
-            fs.rmSync(file, { force: true });
-    }
-    catch (error) {
-        restoreRenamed();
-        discardStaging();
-        throw error;
-    }
-    dropBackups();
-    return staged.map((entry) => entry.target);
-}
 //# sourceMappingURL=corpus_session.js.map

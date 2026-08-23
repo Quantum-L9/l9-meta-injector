@@ -250,7 +250,7 @@ describe("analysis across the root boundary", () => {
       producerVersion: "test",
     });
     expect(result.coverage.unsupported_format_counts).toEqual([
-      { extension: ".pdf", count: 1, bytes: expect.any(Number) },
+      { extension: ".doc", count: 1, bytes: expect.any(Number) },
     ]);
     expect(result.coverage.documents.ocr_required_count).toBe(1);
     expect(result.coverage.embedding_coverage_when_enabled).toBeNull();

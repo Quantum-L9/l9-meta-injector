@@ -1,4 +1,5 @@
 import { CorpusRootIdentity } from "./corpus_roots";
+import type { CorpusAnalysisManifest } from "./corpus_analysis_manifest";
 export declare const CORPUS_SNAPSHOT_SCHEMA = "l9.corpus-snapshot/v1";
 export interface CorpusSnapshotArtifact {
     virtual_source_id: string;
@@ -97,6 +98,16 @@ export interface CorpusSnapshot {
     corpus_source_snapshot_id: string;
     /** Identity of what was concluded from them, and under which rules. */
     analysis: CorpusAnalysisIdentity;
+    /**
+     * The candidates this run produced, by id and payload hash.
+     *
+     * Absent on a snapshot written before manifests existed, which is why the
+     * field is optional and why `buildCorpusDiff` reports `null` rather than zero
+     * when it is missing. It enters neither identity: `corpus_source_snapshot_id`
+     * is about the disks and `corpus_analysis_id` is about the rules, and this is
+     * about the conclusions, which are a function of both.
+     */
+    analysis_manifest?: CorpusAnalysisManifest;
     corpus_status: CorpusStatus;
     /** How the hashes in this snapshot were established. */
     verification: CorpusVerification;
@@ -116,7 +127,6 @@ export interface CorpusSnapshot {
         total_bytes: number;
     };
 }
-/** Order a snapshot's contents so two equal corpora render identically. */
 export declare function orderCorpusSnapshot(snapshot: CorpusSnapshot): CorpusSnapshot;
 /** Canonical bytes of a snapshot. */
 export declare function renderCorpusSnapshot(snapshot: CorpusSnapshot): string;

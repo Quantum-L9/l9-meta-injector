@@ -325,6 +325,20 @@ export interface RunEmbeddingsInput {
   cache?: EmbeddingCache;
   /** Cosine at or above which a pair is offered to fusion at all. */
   pairThreshold: number;
+  /**
+   * Documents embedded concurrently. Default 1, which is strictly sequential.
+   *
+   * A request to an embedding server is latency, not work this process does, so
+   * a corpus of ten thousand documents against a sequential provider spends its
+   * whole run waiting. The bound exists because the server on the other end has
+   * its own limits and this is the caller's chance to respect them.
+   *
+   * Raising it changes when requests are issued and nothing else: the result is
+   * built from a map keyed by artifact id and every reported number is a sum or
+   * a count, so two runs at different widths produce byte-identical output.
+   * `tests/corpus_embedding_http.test.ts` asserts exactly that.
+   */
+  maxParallelRequests?: number;
 }
 
 export interface RunEmbeddingsResult {
@@ -344,36 +358,45 @@ export async function runEmbeddings(input: RunEmbeddingsInput): Promise<RunEmbed
   const configuration = input.provider.configuration;
   const chunkProfile = embeddingChunkProfileHash();
 
-  const eligible = input.documents.filter((document) => document.decoded);
-  const secretsSkipped = eligible.filter((document) => document.is_secret_candidate).length;
-  const embeddable = eligible.filter((document) => !document.is_secret_candidate);
+  // Secrets are counted over every document, not over the decoded ones.
+  //
+  // A caller that refuses to open a file named `secrets.yaml` hands it over here
+  // as undecoded, so a tally taken inside the decoded set would report zero
+  // secret documents skipped on a corpus full of them — a number that is always
+  // right and never means anything. The guard below is still a real second
+  // guard: a caller that did decode such a file finds it dropped here too.
+  const secretsSkipped = input.documents.filter((document) => document.is_secret_candidate).length;
+  const eligible = input.documents.filter(
+    (document) => document.decoded && !document.is_secret_candidate,
+  );
+  const embeddable = eligible;
 
   const vectors = new Map<string, number[]>();
   let chunksSent = 0;
   let artifactsSent = 0;
   let cacheHits = 0;
-  let dimension: number | null = null;
 
-  for (const document of [...embeddable].sort((a, b) => compareCodePoints(a.artifact_id, b.artifact_id))) {
-    const identity: EmbeddingModelIdentity = {
-      provider: configuration.provider,
-      model_id: configuration.model_id,
-      model_revision: configuration.model_revision ?? null,
-      dimension: dimension ?? 0,
-      chunk_profile: chunkProfile,
-    };
+  const ordered = [...embeddable].sort((a, b) => compareCodePoints(a.artifact_id, b.artifact_id));
+  const identity: EmbeddingModelIdentity = {
+    provider: configuration.provider,
+    model_id: configuration.model_id,
+    model_revision: configuration.model_revision ?? null,
+    dimension: 0,
+    chunk_profile: chunkProfile,
+  };
+
+  const embedOne = async (document: EmbeddableDocument): Promise<void> => {
     const key = embeddingCacheKey({
       normalizedDocumentId: document.normalized_document_id,
       artifactId: document.artifact_id,
       chunkProfile,
-      identity: { ...identity, dimension: 0 },
+      identity,
     });
     const cached = input.cache?.get(key);
     if (cached !== undefined) {
       vectors.set(document.artifact_id, cached);
-      dimension = dimension ?? cached.length;
       cacheHits += 1;
-      continue;
+      return;
     }
 
     const chunks = chunkDocument({
@@ -383,8 +406,11 @@ export async function runEmbeddings(input: RunEmbeddingsInput): Promise<RunEmbed
       ...(document.headings !== undefined ? { headings: document.headings } : {}),
       ...(document.body !== undefined ? { body: document.body } : {}),
     });
-    if (chunks.length === 0) continue;
+    if (chunks.length === 0) return;
 
+    // A document's own chunks stay sequential. The parallelism is across
+    // documents, where the unit of work is the thing an operator sized the
+    // bound against, and where a partial document cannot be left half-embedded.
     const chunkVectors: number[][] = [];
     for (const chunk of chunks) {
       const result = await input.provider.embed(chunk.text);
@@ -393,13 +419,37 @@ export async function runEmbeddings(input: RunEmbeddingsInput): Promise<RunEmbed
     }
     artifactsSent += 1;
     const mean = meanVector(chunkVectors);
-    if (mean.length === 0) continue;
-    dimension = dimension ?? mean.length;
+    if (mean.length === 0) return;
     vectors.set(document.artifact_id, mean);
     input.cache?.put(key, mean);
-  }
+  };
+
+  // A fixed pool drawing from a shared cursor: `width` workers, each taking the
+  // next document when it finishes one. Deliberately not `Promise.all` over
+  // every document, which would issue ten thousand simultaneous requests and
+  // make the bound a decoration.
+  const width = Math.max(1, Math.floor(input.maxParallelRequests ?? 1));
+  let cursor = 0;
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      const index = cursor;
+      cursor += 1;
+      if (index >= ordered.length) return;
+      await embedOne(ordered[index] as EmbeddableDocument);
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(width, Math.max(ordered.length, 1)) }, () => worker()),
+  );
 
   const ids = [...vectors.keys()].sort(compareCodePoints);
+  // Taken from the sorted set rather than from whichever request finished first,
+  // so the reported dimension is a property of the corpus and not of the
+  // scheduling. Every other number here is a sum or a count and is already
+  // order-free; this was the one field a wider pool could have changed.
+  const dimension: number | null = ids.length === 0
+    ? null
+    : (vectors.get(ids[0] as string) as number[]).length;
   const pairs: EmbeddingPairCandidate[] = [];
   for (let i = 0; i < ids.length; i += 1) {
     for (let j = i + 1; j < ids.length; j += 1) {

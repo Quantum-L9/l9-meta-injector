@@ -221,7 +221,7 @@ describe("topic candidates", () => {
       document("c", baking),
       document("d", `${baking} more words about hydration and crumb`),
     ];
-    const candidates = buildTopicCandidates({
+    const { candidates } = buildTopicCandidates({
       documents,
       rootById: new Map(documents.map((d) => [d.virtual_source_id, "root:a"])),
     });
@@ -237,7 +237,7 @@ describe("topic candidates", () => {
 
   it("do not score a document below the minimum token count", () => {
     const short = { ...document("short", "one two three", 1), token_count: TOPIC_MIN_TOKENS - 1 };
-    const candidates = buildTopicCandidates({
+    const { candidates } = buildTopicCandidates({
       documents: [short, { ...short, virtual_source_id: "short2", corpus_path: "R::short2.md" }],
       rootById: new Map(),
     });
@@ -246,7 +246,7 @@ describe("topic candidates", () => {
 
   it("report when a topic crosses a root boundary", () => {
     const documents = [document("a", routing), document("b", routing + " deployment")];
-    const candidates = buildTopicCandidates({
+    const { candidates } = buildTopicCandidates({
       documents,
       rootById: new Map([
         ["a", "root:a"],
@@ -264,8 +264,9 @@ describe("topic candidates", () => {
     // silently under-reports — the same reason the near-duplicate pass keeps an
     // exhaustive path at zero.
     const documents = [document("a", routing), document("b", baking)];
-    expect(buildTopicCandidates({ documents, rootById: new Map(), threshold: 0.35 })).toEqual([]);
-    const joined = buildTopicCandidates({ documents, rootById: new Map(), threshold: 0 });
+    expect(buildTopicCandidates({ documents, rootById: new Map(), threshold: 0.35 }).candidates)
+      .toEqual([]);
+    const { candidates: joined } = buildTopicCandidates({ documents, rootById: new Map(), threshold: 0 });
     expect(joined).toHaveLength(1);
     expect([...joined[0].member_ids].sort()).toEqual(["a", "b"]);
     expect(joined[0].threshold).toBe(0);
@@ -273,8 +274,10 @@ describe("topic candidates", () => {
 
   it("give the same set of members the same candidate id, whatever order they arrive in", () => {
     const documents = [document("a", routing), document("b", `${routing} deployment`)];
-    const forward = buildTopicCandidates({ documents, rootById: new Map() });
-    const backward = buildTopicCandidates({ documents: [...documents].reverse(), rootById: new Map() });
+    const { candidates: forward } = buildTopicCandidates({ documents, rootById: new Map() });
+    const { candidates: backward } = buildTopicCandidates({
+      documents: [...documents].reverse(), rootById: new Map(),
+    });
     expect(backward[0].candidate_id).toBe(forward[0].candidate_id);
   });
 });

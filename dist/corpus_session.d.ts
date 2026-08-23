@@ -11,16 +11,26 @@ export interface CorpusSessionRoot {
     /** Operational only: where this root was mounted for this session. */
     absolute_path: string;
 }
+/**
+ * The bounds a run is actually held to.
+ *
+ * Every field here changes what a run does. Two earlier fields did not —
+ * `max_parallel_hashers` and `max_parallel_analysis` were accepted, written into
+ * the session manifest, and acted on nowhere — and they were removed rather than
+ * documented, because a knob that records an operator's intention and ignores it
+ * is worse than no knob: it answers "can I make this faster" with a yes that is
+ * false, and the manifest then carries a setting the run was never subject to.
+ *
+ * Neither is a gap waiting to be filled by a larger number. Acquisition hashes a
+ * root with one synchronous streaming reader, which is what makes its
+ * did-this-tree-move-under-us check mean anything; candidate generation is a
+ * single pass over evidence already in memory. Parallelising either is a
+ * redesign of that layer, not a budget, and would arrive with its own field.
+ */
 export interface CorpusResourceBudgets {
-    max_parallel_hashers: number;
+    /** Documents decoded concurrently. Exercised by `boundedMap` in the scan. */
     max_parallel_decoders: number;
-    /**
-     * Candidate analysis workers. Recorded rather than exercised: candidate
-     * generation is one pass over evidence already in memory, so raising this
-     * buys nothing today. It is here because the budget is part of the session
-     * manifest, and a resumed run must be able to see it was asked for.
-     */
-    max_parallel_analysis: number;
+    /** Documents embedded concurrently. Exercised by the embedding pass's pool. */
     max_parallel_embedding_requests: number;
     /** Ceiling on decoded text held in memory at once, in bytes. */
     max_memory_bytes: number;
@@ -100,7 +110,15 @@ export declare class CorpusSessionStore {
     setTarget(corpusSnapshotId: string): void;
     /** The manifest as it currently stands. */
     snapshot(now: string): CorpusSession;
-    /** Write the manifest through a rename, so it is never observed half-written. */
+    /**
+     * Write the manifest durably, so it is never read back half-written.
+     *
+     * Staged, synced, renamed, parent synced. A resume manifest is the one file in
+     * this package whose corruption is silently harmful rather than loudly so: a
+     * torn `completed_source_ids` that still parses makes the next attempt skip
+     * work that was never done, which is precisely the failure a resume feature
+     * must not have. The rename alone does not survive a power cut.
+     */
     save(now: string): string;
 }
 /**
@@ -147,32 +165,3 @@ export declare class MemoryBudget {
     reserve(bytes: number): Promise<void>;
     release(bytes: number): void;
 }
-export interface CorpusOutputFile {
-    /** Absolute path the file lands at. */
-    path: string;
-    contents: string;
-}
-export interface CommitCorpusOutputsInput {
-    files: readonly CorpusOutputFile[];
-    /**
-     * Projections this run did not produce that must not survive from a previous
-     * one. A `corpus-diff.json` left beside a newer snapshot describes a comparison
-     * that no longer holds, and nothing in the file says so.
-     */
-    remove?: readonly string[];
-}
-/**
- * Write every projection, then move them all into place.
- *
- * A run that fails mid-write must not leave a coverage report describing one
- * corpus beside a readiness document describing another. Three things make that
- * hold: every file is staged before any is moved, every target is checked before
- * anything is staged, and each target's previous contents are moved aside rather
- * than overwritten, so a failure part-way through the renames can put them back.
- *
- * What this cannot defend against is the process being killed between two
- * renames. No userspace sequence of renames is atomic as a set, and claiming
- * otherwise would be the kind of guarantee that is only discovered to be false
- * during an incident.
- */
-export declare function commitCorpusOutputs(input: CommitCorpusOutputsInput): string[];

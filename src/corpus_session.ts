@@ -20,6 +20,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { canonicalCorpusJson } from "./corpus_analysis";
+import { commitFileDurably } from "./durable_write";
 import { compareCodePoints } from "./ordering";
 import { stableId } from "./repository_model";
 
@@ -39,16 +40,26 @@ export interface CorpusSessionRoot {
   absolute_path: string;
 }
 
+/**
+ * The bounds a run is actually held to.
+ *
+ * Every field here changes what a run does. Two earlier fields did not —
+ * `max_parallel_hashers` and `max_parallel_analysis` were accepted, written into
+ * the session manifest, and acted on nowhere — and they were removed rather than
+ * documented, because a knob that records an operator's intention and ignores it
+ * is worse than no knob: it answers "can I make this faster" with a yes that is
+ * false, and the manifest then carries a setting the run was never subject to.
+ *
+ * Neither is a gap waiting to be filled by a larger number. Acquisition hashes a
+ * root with one synchronous streaming reader, which is what makes its
+ * did-this-tree-move-under-us check mean anything; candidate generation is a
+ * single pass over evidence already in memory. Parallelising either is a
+ * redesign of that layer, not a budget, and would arrive with its own field.
+ */
 export interface CorpusResourceBudgets {
-  max_parallel_hashers: number;
+  /** Documents decoded concurrently. Exercised by `boundedMap` in the scan. */
   max_parallel_decoders: number;
-  /**
-   * Candidate analysis workers. Recorded rather than exercised: candidate
-   * generation is one pass over evidence already in memory, so raising this
-   * buys nothing today. It is here because the budget is part of the session
-   * manifest, and a resumed run must be able to see it was asked for.
-   */
-  max_parallel_analysis: number;
+  /** Documents embedded concurrently. Exercised by the embedding pass's pool. */
   max_parallel_embedding_requests: number;
   /** Ceiling on decoded text held in memory at once, in bytes. */
   max_memory_bytes: number;
@@ -74,9 +85,7 @@ export interface CorpusSession {
 }
 
 export const DEFAULT_CORPUS_BUDGETS: Omit<CorpusResourceBudgets, "archive"> = {
-  max_parallel_hashers: 1,
   max_parallel_decoders: 4,
-  max_parallel_analysis: 1,
   max_parallel_embedding_requests: 2,
   max_memory_bytes: 256 * 1024 * 1024,
 };
@@ -250,14 +259,24 @@ export class CorpusSessionStore {
     };
   }
 
-  /** Write the manifest through a rename, so it is never observed half-written. */
+  /**
+   * Write the manifest durably, so it is never read back half-written.
+   *
+   * Staged, synced, renamed, parent synced. A resume manifest is the one file in
+   * this package whose corruption is silently harmful rather than loudly so: a
+   * torn `completed_source_ids` that still parses makes the next attempt skip
+   * work that was never done, which is precisely the failure a resume feature
+   * must not have. The rename alone does not survive a power cut.
+   */
   save(now: string): string {
     const session = this.snapshot(now);
     this.session = session;
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
-    const staging = `${this.file}.${process.pid}.tmp`;
-    fs.writeFileSync(staging, `${canonicalCorpusJson(session)}\n`, "utf8");
-    fs.renameSync(staging, this.file);
+    commitFileDurably({
+      staging: `${this.file}.${process.pid}.tmp`,
+      target: this.file,
+      contents: `${canonicalCorpusJson(session)}\n`,
+    });
     return this.file;
   }
 }
@@ -346,111 +365,3 @@ export class MemoryBudget {
   }
 }
 
-// ───────────────────────────── atomic output ─────────────────────────────
-
-export interface CorpusOutputFile {
-  /** Absolute path the file lands at. */
-  path: string;
-  contents: string;
-}
-
-export interface CommitCorpusOutputsInput {
-  files: readonly CorpusOutputFile[];
-  /**
-   * Projections this run did not produce that must not survive from a previous
-   * one. A `corpus-diff.json` left beside a newer snapshot describes a comparison
-   * that no longer holds, and nothing in the file says so.
-   */
-  remove?: readonly string[];
-}
-
-interface StagedOutput {
-  staging: string;
-  target: string;
-  /** Where the previous contents were moved, when there were any. */
-  backup: string | null;
-  renamed: boolean;
-}
-
-/**
- * Write every projection, then move them all into place.
- *
- * A run that fails mid-write must not leave a coverage report describing one
- * corpus beside a readiness document describing another. Three things make that
- * hold: every file is staged before any is moved, every target is checked before
- * anything is staged, and each target's previous contents are moved aside rather
- * than overwritten, so a failure part-way through the renames can put them back.
- *
- * What this cannot defend against is the process being killed between two
- * renames. No userspace sequence of renames is atomic as a set, and claiming
- * otherwise would be the kind of guarantee that is only discovered to be false
- * during an incident.
- */
-export function commitCorpusOutputs(input: CommitCorpusOutputsInput): string[] {
-  const staged: StagedOutput[] = [];
-  const suffix = `${process.pid}.tmp`;
-  const removals = (input.remove ?? []).map((file) => path.resolve(file));
-
-  const discardStaging = (): void => {
-    for (const entry of staged) fs.rmSync(entry.staging, { force: true });
-  };
-  const restoreRenamed = (): void => {
-    for (const entry of staged) {
-      if (!entry.renamed) continue;
-      fs.rmSync(entry.target, { force: true });
-      if (entry.backup !== null) {
-        try {
-          fs.renameSync(entry.backup, entry.target);
-        } catch {
-          // The previous contents could not be put back. Nothing better is
-          // available here, and the backup is left on disk rather than deleted
-          // so an operator can recover it by hand.
-        }
-      }
-    }
-  };
-  const dropBackups = (): void => {
-    for (const entry of staged) {
-      if (entry.backup !== null) fs.rmSync(entry.backup, { force: true });
-    }
-  };
-
-  try {
-    for (const file of input.files) {
-      const target = path.resolve(file.path);
-      // Every reason a rename could fail is checked here, while nothing has moved
-      // yet. A target that is a directory is the one that actually happens, and
-      // discovering it halfway through the renames would leave half a result set.
-      if (fs.existsSync(target) && fs.statSync(target).isDirectory()) {
-        throw new Error(`corpus: refusing to replace the directory ${target} with an output file`);
-      }
-      fs.mkdirSync(path.dirname(target), { recursive: true });
-      const staging = `${target}.${suffix}`;
-      fs.writeFileSync(staging, file.contents, "utf8");
-      staged.push({ staging, target, backup: null, renamed: false });
-    }
-  } catch (error) {
-    discardStaging();
-    throw error;
-  }
-
-  try {
-    for (const entry of staged) {
-      if (fs.existsSync(entry.target)) {
-        const backup = `${entry.target}.${suffix}.prev`;
-        fs.renameSync(entry.target, backup);
-        entry.backup = backup;
-      }
-      fs.renameSync(entry.staging, entry.target);
-      entry.renamed = true;
-    }
-    for (const file of removals) fs.rmSync(file, { force: true });
-  } catch (error) {
-    restoreRenamed();
-    discardStaging();
-    throw error;
-  }
-
-  dropBackups();
-  return staged.map((entry) => entry.target);
-}

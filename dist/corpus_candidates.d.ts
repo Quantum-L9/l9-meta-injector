@@ -1,7 +1,7 @@
 export declare const PROJECT_CANDIDATE_METHOD = "container-project-candidate/v1";
 export declare const PROJECT_CANDIDATE_METHOD_VERSION = "1.0.0";
 export declare const TOPIC_CANDIDATE_METHOD = "lexical-topic-candidate/v1";
-export declare const TOPIC_CANDIDATE_METHOD_VERSION = "1.0.0";
+export declare const TOPIC_CANDIDATE_METHOD_VERSION = "1.1.0";
 /** Default salient-vocabulary overlap at which two documents join a topic. */
 export declare const DEFAULT_TOPIC_THRESHOLD = 0.35;
 /** Documents shorter than this are not scored; short text overlaps by accident. */
@@ -150,14 +150,82 @@ export interface BuildTopicCandidatesInput {
     rootById: ReadonlyMap<string, string>;
 }
 /**
+ * How much pair work a topic pass actually did.
+ *
+ * Recorded rather than assumed, because "bounded" is a claim about a number and
+ * a claim about a number is worth exactly as much as the number. `exhaustive`
+ * beside `evaluated` is the whole point: at ten thousand documents the first is
+ * fifty million and the second, on any corpus with a vocabulary, is four or five
+ * orders of magnitude smaller.
+ */
+export interface TopicPairWork {
+    eligible_document_count: number;
+    /** `n(n-1)/2` — what comparing every pair would have cost. */
+    exhaustive_pair_count: number;
+    /** Jaccard computations actually run. */
+    evaluated_pair_count: number;
+    /** Pairs the index offered that were already in one component. */
+    skipped_same_component_count: number;
+    /** Postings written into the index: the prefix of each document's terms. */
+    indexed_posting_count: number;
+    /** Terms that never enter the index because they are nobody's prefix. */
+    unindexed_term_count: number;
+}
+export interface TopicCandidateResult {
+    candidates: TopicCandidate[];
+    pair_work: TopicPairWork;
+}
+/**
+ * The prefix of a salient-term set a qualifying partner must intersect.
+ *
+ * Identical in form to the near-duplicate prefix bound in `corpus_analysis`, and
+ * exact for the same reason: for Jaccard at threshold `t`, a pair can only reach
+ * `t` if it shares at least `ceil(t * |X|)` terms with the smaller set. Under a
+ * fixed global order, two sets sharing that many elements must both contain one
+ * of the first `|X| - ceil(t*|X|) + 1` — otherwise the shared elements would all
+ * have to sit past a point where fewer than that many remain.
+ *
+ * So this is a filter, not a sample. No qualifying pair is lost.
+ */
+export declare function topicPrefixLength(setSize: number, threshold: number): number;
+/**
  * Connected groups of documents whose salient vocabulary overlaps.
  *
  * Reached through an inverted index over salient terms, for the same reason the
  * near-duplicate pass uses one: two documents sharing no salient term score
  * exactly zero and cannot qualify at any positive threshold, so comparing them is
  * provably unnecessary rather than merely unlikely to matter.
+ *
+ * The index used to hold every salient term of every document, and that is what
+ * made this pass unusable at scale rather than merely slow. A term appearing in
+ * four thousand documents produces eight million pairs from one posting list, and
+ * a corpus has many such terms — so the cost was quadratic in the corpus after
+ * all, arriving through the index instead of around it.
+ *
+ * Two exact bounds fix it, both consequences of the definition of Jaccard rather
+ * than approximations of it:
+ *
+ *   - a **prefix bound**: terms are put in one global order, rarest first, and
+ *     only each document's prefix is indexed. `topicPrefixLength` above is the
+ *     proof. Rarest-first is what makes it pay: the terms half the corpus shares
+ *     sort to the end, where they are never indexed and so never generate a
+ *     posting list the size of the corpus.
+ *   - a **size bound**: a pair whose salient sets differ in size by more than a
+ *     factor of `t` cannot reach `t`, so documents are visited smallest-first and
+ *     a partner too small to qualify is skipped without measuring.
+ *
+ * Neither drops a qualifying pair — `tests/corpus_topic_scale.test.ts` holds this
+ * to an exhaustive reference at six thresholds — and the work done is reported
+ * rather than asserted.
  */
-export declare function buildTopicCandidates(input: BuildTopicCandidatesInput): TopicCandidate[];
+export declare function buildTopicCandidates(input: BuildTopicCandidatesInput): TopicCandidateResult;
+/**
+ * Every pair compared, as the reference the indexed pass is held to.
+ *
+ * Exported because a bound is only a bound if something independent agrees with
+ * what it produced. Never used by a scan: it is `n(n-1)/2` by construction.
+ */
+export declare function buildTopicCandidatesExhaustive(input: BuildTopicCandidatesInput): TopicCandidate[];
 /** Hash binding every rule the candidate passes apply. */
 export declare function candidateProfileHash(input: {
     topicThreshold: number;

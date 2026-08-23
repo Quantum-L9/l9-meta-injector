@@ -74,6 +74,7 @@ const os = __importStar(require("node:os"));
 const path = __importStar(require("node:path"));
 const corpus_analysis_1 = require("./corpus_analysis");
 const corpus_roots_1 = require("./corpus_roots");
+const durable_write_1 = require("./durable_write");
 const ordering_1 = require("./ordering");
 const repository_model_1 = require("./repository_model");
 /** Schema every persisted cache entry declares. */
@@ -476,10 +477,20 @@ class FileCorpusCache {
         // same immutable key each write a complete entry and the last one wins with
         // identical bytes — the key is content-addressed, so there is no other
         // outcome to lose.
+        // Staged, synced, renamed, and the parent synced. The rename alone is atomic
+        // against this process dying; it is not atomic against the machine losing
+        // power, because both the bytes and the directory entry that names them can
+        // still be sitting in the page cache. A cache entry that came back after a
+        // crash as a right-length file of zeros would parse, and would be read as
+        // complete — the integrity check is over the entry's own declared payload.
         const staging = `${file}.${process.pid}.${this.stagingCounter++}.tmp`;
-        fs.writeFileSync(staging, `${(0, corpus_analysis_1.canonicalCorpusJson)(entry)}\n`, { encoding: "utf8", mode: exports.CACHE_FILE_MODE });
-        applyRestrictivePermissions(staging);
-        fs.renameSync(staging, file);
+        (0, durable_write_1.commitFileDurably)({
+            staging,
+            target: file,
+            contents: `${(0, corpus_analysis_1.canonicalCorpusJson)(entry)}\n`,
+            mode: exports.CACHE_FILE_MODE,
+            between: () => applyRestrictivePermissions(staging),
+        });
         this.accounting.bump(layer, "writes");
     }
     stats() {

@@ -34,7 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DOCUMENT_COVERAGE_SCHEMA = exports.CANDIDATE_STATEMENT = exports.MANIFEST_DECODER_VERSION = exports.MANIFEST_DECODER_ID = exports.TEXT_DECODER_VERSION = exports.TEXT_DECODER_ID = exports.CORPUS_CANDIDATES_SCHEMA = void 0;
-exports.isTextDecodable = isTextDecodable;
+exports.isDecodable = isDecodable;
 exports.isLexicallyAnalyzable = isLexicallyAnalyzable;
 exports.runCorpusScan = runCorpusScan;
 exports.renderCorpusCandidates = renderCorpusCandidates;
@@ -67,18 +67,23 @@ const corpus_analysis_1 = require("./corpus_analysis");
 const corpus_cache_1 = require("./corpus_cache");
 const corpus_candidates_1 = require("./corpus_candidates");
 const corpus_coverage_1 = require("./corpus_coverage");
+const corpus_analysis_manifest_1 = require("./corpus_analysis_manifest");
 const corpus_diff_1 = require("./corpus_diff");
+const corpus_document_signals_1 = require("./corpus_document_signals");
 const corpus_readiness_1 = require("./corpus_readiness");
 const corpus_roots_1 = require("./corpus_roots");
 const corpus_snapshot_1 = require("./corpus_snapshot");
 const corpus_session_1 = require("./corpus_session");
 const encoding_1 = require("./encoding");
+const documents_1 = require("./documents");
 const extractors_1 = require("./extractors");
 const interpretation_1 = require("./interpretation");
 const local_source_1 = require("./local_source");
 const ordering_1 = require("./ordering");
 const corpus_documents_1 = require("./corpus_documents");
 const corpus_semantic_run_1 = require("./corpus_semantic_run");
+const corpus_fusion_1 = require("./corpus_fusion");
+const corpus_embeddings_1 = require("./corpus_embeddings");
 const repository_model_1 = require("./repository_model");
 const local_source_model_1 = require("./local_source_model");
 exports.CORPUS_CANDIDATES_SCHEMA = "l9.corpus-candidates/v1";
@@ -89,17 +94,17 @@ exports.TEXT_DECODER_VERSION = "1.0.0";
 exports.MANIFEST_DECODER_ID = "manifest-identifier-reader";
 exports.MANIFEST_DECODER_VERSION = "1.0.0";
 /** Extensions the text decoder claims beyond the lexical-analysis set. */
-const STRUCTURED_TEXT_EXTENSIONS = new Set([
-    ".cfg", ".clj", ".conf", ".gradle", ".ini", ".json", ".mod", ".properties",
-    ".sbt", ".toml", ".xml", ".yaml", ".yml",
-]);
 /** Extensionless files the text decoder claims by name. */
-const STRUCTURED_TEXT_NAMES = new Set([
-    "dockerfile", "containerfile", "gemfile", "jenkinsfile", "makefile", "procfile",
-]);
 const LEXICAL_EXTENSIONS = new Set(corpus_analysis_1.NEAR_DUPLICATE_EXTENSIONS);
-const OCR_EXTENSIONS = new Set(corpus_coverage_1.OCR_REQUIRED_EXTENSIONS);
-const UNDECODED_EXTENSIONS = new Set(corpus_coverage_1.UNDECODED_DOCUMENT_EXTENSIONS);
+/**
+ * Formats whose decoder consumes the whole file, so the scan reads it once.
+ *
+ * The complement — `docx`, `pptx`, `xlsx` — are ZIP containers whose reader
+ * streams individual parts out by offset. Handing those a whole-file buffer
+ * would cost a second copy of every spreadsheet in the corpus to save a read the
+ * container reader never makes.
+ */
+const WHOLE_FILE_FORMATS = new Set(["text", "markdown", "csv", "html", "ipynb", "pdf"]);
 exports.CANDIDATE_STATEMENT = "Exact duplicates are byte equality and are facts. Near-duplicate candidates, topic "
     + "candidates and project candidates are deterministic candidate analyses: they report "
     + "shared bytes, shared wording and a container that holds a project marker. None of "
@@ -136,15 +141,15 @@ function extensionOf(basename) {
     const dot = basename.lastIndexOf(".");
     return dot <= 0 ? "" : basename.slice(dot);
 }
-/** True when the text decoder claims this artifact at all. */
-function isTextDecodable(rootRelativePath) {
-    const basename = basenameOf(rootRelativePath);
-    const extension = extensionOf(basename);
-    if (LEXICAL_EXTENSIONS.has(extension))
-        return true;
-    if (STRUCTURED_TEXT_EXTENSIONS.has(extension))
-        return true;
-    return extension === "" && STRUCTURED_TEXT_NAMES.has(basename);
+/**
+ * True when some decoder in `registry` claims this artifact.
+ *
+ * This is the coverage denominator, so it has to be the same question the derive
+ * stage asks. Deriving eligibility from a second hand-maintained extension list
+ * is how "decoder_eligible_count" drifts away from what actually gets decoded.
+ */
+function isDecodable(rootRelativePath, registry) {
+    return registry.forPath(rootRelativePath) !== undefined;
 }
 /** True when the lexical passes claim this artifact. */
 function isLexicallyAnalyzable(rootRelativePath) {
@@ -197,13 +202,17 @@ function assertUsableRootKey(rootKey, rootPath) {
  * content-addressed key, the file is never opened.
  */
 async function deriveDocumentLayers(artifact, context) {
-    const { cache, session, memory, extractors, candidateProfile, interpretProfile, interpretEnabled, maxFileBytes, rootPathsById, rootKeyById, into, } = context;
+    const { cache, session, memory, extractors, candidateProfile, interpretProfile, interpretEnabled, maxFileBytes, rootPathsById, rootKeyById, registry, into, } = context;
     const { normalized, lexical, interpreted, manifestIdentifiers, skipped } = into;
     const contentHash = artifact.contentHash;
+    // The decoder that claims this path decides the key. A `.docx` and a `.md` are
+    // read by different code into different documents, and a decoder revision must
+    // invalidate its own entries without touching anyone else's.
+    const decoder = registry.forPath(artifact.rootRelativePath);
     const documentKey = (0, corpus_cache_1.normalizedDocumentKey)({
         contentHash,
-        decoderId: exports.TEXT_DECODER_ID,
-        decoderVersion: exports.TEXT_DECODER_VERSION,
+        decoderId: decoder?.id ?? exports.TEXT_DECODER_ID,
+        decoderVersion: decoder?.version ?? exports.TEXT_DECODER_VERSION,
     });
     const lexicalKey = (0, corpus_cache_1.lexicalFeaturesKey)({
         normalizedDocumentIdentity: documentKey,
@@ -226,7 +235,15 @@ async function deriveDocumentLayers(artifact, context) {
         }),
         interpretationProfileHash: interpretProfile,
     });
-    const wantsLexical = isLexicallyAnalyzable(artifact.rootRelativePath);
+    // Two routes into lexical analysis, because the two families answer the
+    // question differently. For text and Markdown the extension decides, since the
+    // text decoder also claims source code and shingling a repository's TypeScript
+    // would make every file that shares an import block a near-duplicate of every
+    // other. For a document format there is nothing left to consult: a Word file
+    // is prose whatever it is called. Without the second route a decoded `.docx`
+    // would be counted in coverage and reach no candidate at all.
+    const wantsLexical = isLexicallyAnalyzable(artifact.rootRelativePath)
+        || (decoder !== undefined && (0, documents_1.isProseDocumentFormat)(decoder.format));
     const wantsInterpretation = interpretEnabled
         && extractors.some((extractor) => extractor.matches(artifact.rootRelativePath));
     const wantsIdentifier = (0, corpus_candidates_1.readsDeclaredIdentifier)(artifact.basename);
@@ -241,10 +258,15 @@ async function deriveDocumentLayers(artifact, context) {
         return;
     }
     const documentHit = cache.get("normalized_document", documentKey);
-    const lexicalHit = wantsLexical
+    // A document already known not to decode has no derived layers and never will.
+    // Asking for them anyway records a miss on every run — for a scanned PDF, on
+    // every run forever — and a warm run over a corpus containing one could never
+    // reach a full cache however many times it was repeated.
+    const mayDecode = documentHit === undefined || documentHit.decodes;
+    const lexicalHit = wantsLexical && mayDecode
         ? cache.get("lexical_features", lexicalKey)
         : undefined;
-    const portableHit = wantsInterpretation
+    const portableHit = wantsInterpretation && mayDecode
         ? cache.get("interpretation", interpretKey)
         : undefined;
     const repositorySubjectId = `repo:${rootKeyById.get(artifact.rootId) ?? artifact.rootId}`;
@@ -259,7 +281,7 @@ async function deriveDocumentLayers(artifact, context) {
         decoderId: exports.MANIFEST_DECODER_ID,
         decoderVersion: exports.MANIFEST_DECODER_VERSION,
     });
-    const identifierHit = wantsIdentifier
+    const identifierHit = wantsIdentifier && mayDecode
         ? cache.get("normalized_document", identifierKey)
         : undefined;
     const needsText = documentHit === undefined
@@ -286,30 +308,111 @@ async function deriveDocumentLayers(artifact, context) {
     const reserve = artifact.sizeBytes ?? 0;
     await memory.reserve(reserve);
     try {
-        const encoding = (0, encoding_1.probeFileEncoding)(absolute);
-        if (encoding.status !== "utf8") {
-            if (encoding.status === "unreadable")
+        // A decoder that reads text still needs the bytes to be text; one that reads
+        // a container does not, and probing a `.docx` for UTF-8 would reject every
+        // Word document in the corpus.
+        const textFamily = decoder === undefined || decoder.format === "text" || decoder.format === "markdown";
+        if (textFamily) {
+            const encoding = (0, encoding_1.probeFileEncoding)(absolute);
+            if (encoding.status !== "utf8") {
+                if (encoding.status === "unreadable")
+                    skipped.unreadable += 1;
+                else
+                    skipped.encoding += 1;
+                const record = {
+                    decodes: false,
+                    reason: encoding.status,
+                    byte_length: artifact.sizeBytes ?? 0,
+                    normalized_content_hash: null,
+                    token_count: 0,
+                    format: decoder?.format ?? "unknown",
+                    decoder_id: decoder?.id ?? exports.TEXT_DECODER_ID,
+                    decoder_version: decoder?.version ?? exports.TEXT_DECODER_VERSION,
+                    block_count: 0,
+                };
+                cache.put("normalized_document", documentKey, record);
+                normalized.set(artifact.virtualSourceId, record);
+                return;
+            }
+        }
+        if (decoder === undefined) {
+            skipped.unreadable += 1;
+            return;
+        }
+        // Read the bytes here, asynchronously, for the formats whose decoders
+        // consume the whole file.
+        //
+        // This is the seam `max_parallel_decoders` bounds. With the read inside a
+        // synchronous decoder there is nothing to overlap in a single-threaded
+        // runtime, and the budget would govern only how many pipelines happened to
+        // be between awaits — a number nobody sets a flag for. Reading here puts N
+        // reads genuinely in flight, which on a spinning disk or a network mount is
+        // the difference the operator was reaching for.
+        //
+        // Container formats are excluded on purpose: their readers stream parts out
+        // by offset, and pulling a whole `.xlsx` into memory to hand it over would
+        // trade the concurrency for a memory spike and a second copy of every file.
+        let bytes;
+        if (WHOLE_FILE_FORMATS.has(decoder.format)) {
+            try {
+                bytes = await fs.promises.readFile(absolute);
+            }
+            catch {
                 skipped.unreadable += 1;
-            else
-                skipped.encoding += 1;
+                return;
+            }
+        }
+        const outcome = decoder.decode({
+            artifactId: artifact.virtualSourceId,
+            contentHash,
+            sourcePath: artifact.rootRelativePath,
+            absolutePath: absolute,
+            ...(bytes !== undefined ? { bytes } : {}),
+            sizeBytes: artifact.sizeBytes ?? 0,
+            budget: documents_1.DEFAULT_DECODER_BUDGET,
+        });
+        if (!outcome.decoded) {
+            // A refusal is a typed fact with a reason, never an empty document. A
+            // scanned PDF and a PDF with nothing in it are different findings.
             const record = {
                 decodes: false,
-                reason: encoding.status,
+                reason: outcome.reason,
                 byte_length: artifact.sizeBytes ?? 0,
                 normalized_content_hash: null,
                 token_count: 0,
+                format: decoder.format,
+                decoder_id: decoder.id,
+                decoder_version: decoder.version,
+                block_count: 0,
             };
             cache.put("normalized_document", documentKey, record);
             normalized.set(artifact.virtualSourceId, record);
             return;
         }
+        const document = outcome.document;
+        // Which text the later layers read depends on whether the format has lines.
+        //
+        // A Markdown file does. Its assertions cite line spans, and those spans have
+        // to point at lines of the file an operator can open — so a text document is
+        // read exactly as it was before this decoder existed, from its own bytes.
+        //
+        // A Word document does not have lines. Its blocks are the only text there is,
+        // so joining them is what puts a `.docx` plan into the same keyphrase and
+        // near-duplicate analysis as a `.md` one instead of leaving it a coverage
+        // statistic. Its evidence cites block ids and structured locators, which is
+        // what `document-signals.json` carries.
         let text;
-        try {
-            text = fs.readFileSync(absolute, "utf8");
+        if (textFamily) {
+            // The bytes are already in hand from the read above; decoding them again
+            // beats a second trip to the filesystem for the same file.
+            if (bytes === undefined) {
+                skipped.unreadable += 1;
+                return;
+            }
+            text = bytes.toString("utf8");
         }
-        catch {
-            skipped.unreadable += 1;
-            return;
+        else {
+            text = document.blocks.map((block) => block.text).join("\n");
         }
         const analysisText = (0, corpus_analysis_1.normalizeForAnalysis)(text);
         const tokens = (0, corpus_analysis_1.analysisTokens)(analysisText);
@@ -319,6 +422,16 @@ async function deriveDocumentLayers(artifact, context) {
             byte_length: Buffer.byteLength(text, "utf8"),
             normalized_content_hash: (0, repository_model_1.stableId)("normtext", { text: analysisText }),
             token_count: tokens.length,
+            format: document.format,
+            decoder_id: document.decoder_id,
+            decoder_version: document.decoder_version,
+            block_count: document.blocks.length,
+            blocks: document.blocks.map((block) => ({
+                block_id: block.block_id,
+                kind: block.kind,
+                text: block.text,
+                locator: block.locator,
+            })),
         };
         cache.put("normalized_document", documentKey, record);
         normalized.set(artifact.virtualSourceId, record);
@@ -429,6 +542,17 @@ async function runCorpusScan(input) {
     const topicsEnabled = input.topics?.enabled !== false;
     const topicThreshold = input.topics?.threshold ?? corpus_candidates_1.DEFAULT_TOPIC_THRESHOLD;
     const extractors = (0, extractors_1.defaultExtractors)();
+    // Supplied by the caller only in tests that need a narrower decoder set; a
+    // corpus run always uses the shipped registry, so what a document decodes to
+    // is a property of the release rather than of the invocation.
+    const registry = input.decoderRegistry ?? (0, documents_1.defaultDecoderRegistry)();
+    // The gap sets are asked of the registry rather than read from a constant, so
+    // a run with a wider decoder set reports a correspondingly narrower gap, and a
+    // decoder registered without its extension leaving the gap list is rejected
+    // here rather than producing a report that contradicts itself.
+    const gaps = (0, corpus_coverage_1.documentGaps)(registry);
+    const ocrExtensions = new Set(gaps.ocrRequired);
+    const undecodedExtensions = new Set(gaps.unsupported);
     const interpretProfile = (0, interpretation_1.interpretationProfileHash)(extractors);
     const interpretEnabled = input.interpret !== false;
     const verificationMode = input.verification ?? "full";
@@ -454,23 +578,6 @@ async function runCorpusScan(input) {
     const knownHashesEnabled = verificationMode === "incremental"
         && !verifyContent
         && input.previousSnapshot !== undefined;
-    if (budgets.max_parallel_analysis > 1) {
-        diagnostics.push({
-            code: "corpus.analysis_parallelism_recorded",
-            severity: "info",
-            message: `max_parallel_analysis=${budgets.max_parallel_analysis} was recorded, but candidate `
-                + "generation is a single pass over evidence already in memory; the value is not "
-                + "exercised in this release",
-        });
-    }
-    if (budgets.max_parallel_hashers > 1) {
-        diagnostics.push({
-            code: "corpus.hasher_parallelism_clamped",
-            severity: "info",
-            message: `max_parallel_hashers=${budgets.max_parallel_hashers} was recorded, but acquisition `
-                + "hashes each root with one streaming reader; the value is not exercised in this release",
-        });
-    }
     // ── 1. acquire every root, read-only ────────────────────────────────────
     const observations = [];
     const failedRoots = [];
@@ -487,6 +594,10 @@ async function runCorpusScan(input) {
                 ? spec.name
                 : (0, corpus_roots_1.defaultRootKey)(spec.path);
             assertUsableRootKey(rootKey, spec.path);
+            // Whether the key is the operator's word or the mount point's last
+            // segment. It decides `root_identity_class`, which is what a later diff
+            // consults before treating two runs' roots as the same disk.
+            const keyDeclared = spec.name !== undefined && spec.name.length > 0;
             // An unplugged drive is a fact about the corpus and has to end up inside
             // it. Swallowing the failure and carrying on would produce a snapshot that
             // looks complete and is missing a disk, which is the one outcome a corpus
@@ -513,7 +624,7 @@ async function runCorpusScan(input) {
                 if (input.allowPartialRoots !== true)
                     throw error;
                 const reason = error instanceof Error ? error.message : String(error);
-                failedRoots.push({ rootKey, rootId: (0, corpus_roots_1.corpusRootId)(rootKey), reason });
+                failedRoots.push({ rootKey, rootId: (0, corpus_roots_1.corpusRootId)(rootKey), reason, keyDeclared });
                 diagnostics.push({
                     code: "corpus.root_unreadable",
                     severity: "error",
@@ -527,7 +638,9 @@ async function runCorpusScan(input) {
                     + "the root changed while it was being read, so it has no deterministic snapshot";
                 if (input.allowPartialRoots !== true)
                     throw new Error(unstable);
-                failedRoots.push({ rootKey, rootId: (0, corpus_roots_1.corpusRootId)(rootKey), reason: unstable });
+                failedRoots.push({
+                    rootKey, rootId: (0, corpus_roots_1.corpusRootId)(rootKey), reason: unstable, keyDeclared,
+                });
                 diagnostics.push({ code: "corpus.root_unstable", severity: "error", message: unstable });
                 continue;
             }
@@ -536,13 +649,14 @@ async function runCorpusScan(input) {
                 binding: {
                     root_id: rootId,
                     root_key: rootKey,
+                    root_identity_class: keyDeclared ? "declared" : "inferred",
                     root_label: rootKey,
                     root_snapshot_id: (0, corpus_roots_1.corpusRootSnapshotId)(observation.physicalSnapshotHash),
                     source_kind: observation.sourceKind,
                     source_revision: observation.sourceRevision,
                     physical_snapshot_hash: observation.physicalSnapshotHash,
                     absolute_path: path.resolve(spec.path),
-                    key_declared: spec.name !== undefined && spec.name.length > 0,
+                    key_declared: keyDeclared,
                 },
                 observation,
             });
@@ -587,17 +701,31 @@ async function runCorpusScan(input) {
         // A decoder revision changes what the normalized documents say and so changes
         // the analysis identity; it changes nothing about the bytes.
         const documentDecoderProfiles = [
-            `${exports.TEXT_DECODER_ID}@${exports.TEXT_DECODER_VERSION}`,
+            ...registry.profile(),
             `${exports.MANIFEST_DECODER_ID}@${exports.MANIFEST_DECODER_VERSION}`,
         ];
-        const embeddingProfile = input.embeddingReport?.enabled === true
+        // The embedding profile is a property of the model and the chunking, both
+        // known before a single vector exists — which is what lets a run that will
+        // embed carry the right analysis identity even though the pass itself has to
+        // wait for the decoders. A supplied provider and a supplied report are
+        // alternatives; the provider wins when both are given, because it is the one
+        // that will actually produce this run's numbers.
+        const embeddingConfiguration = input.embeddingProvider?.configuration;
+        const embeddingProfile = embeddingConfiguration !== undefined
             ? (0, repository_model_1.stableId)("embedding-profile", {
-                chunk_profile: input.embeddingReport.chunk_profile,
-                model_id: input.embeddingReport.model_id ?? "",
-                model_revision: input.embeddingReport.model_revision ?? "",
-                provider: input.embeddingReport.provider ?? "",
+                chunk_profile: (0, corpus_embeddings_1.embeddingChunkProfileHash)(),
+                model_id: embeddingConfiguration.model_id,
+                model_revision: embeddingConfiguration.model_revision ?? "",
+                provider: embeddingConfiguration.provider,
             })
-            : null;
+            : input.embeddingReport?.enabled === true
+                ? (0, repository_model_1.stableId)("embedding-profile", {
+                    chunk_profile: input.embeddingReport.chunk_profile,
+                    model_id: input.embeddingReport.model_id ?? "",
+                    model_revision: input.embeddingReport.model_revision ?? "",
+                    provider: input.embeddingReport.provider ?? "",
+                })
+                : null;
         // ── 3. corpus artifacts ───────────────────────────────────────────────
         const previousPrechecks = input.previousSnapshot
             ? (0, corpus_snapshot_1.snapshotPrechecks)(input.previousSnapshot)
@@ -726,7 +854,7 @@ async function runCorpusScan(input) {
         // open, or interpretation coverage would report a gap the decoder set caused
         // rather than the corpus. The extension list is the floor, not the ceiling.
         const decodable = artifacts.filter((artifact) => artifact.contentHash !== null
-            && (isTextDecodable(artifact.rootRelativePath)
+            && (isDecodable(artifact.rootRelativePath, registry)
                 || extractors.some((extractor) => extractor.matches(artifact.rootRelativePath))));
         await (0, corpus_session_1.boundedMap)(decodable, budgets.max_parallel_decoders, (artifact) => deriveDocumentLayers(artifact, {
             cache,
@@ -739,6 +867,7 @@ async function runCorpusScan(input) {
             maxFileBytes,
             rootPathsById,
             rootKeyById: new Map(bound.roots.map((root) => [root.root_id, root.root_key])),
+            registry,
             into: { normalized, lexical, interpreted, manifestIdentifiers, skipped },
         }));
         // ── 4b. per-root Repository Model Packets ─────────────────────────────
@@ -838,7 +967,7 @@ async function runCorpusScan(input) {
             // as one archive rather than two.
             archive_id: archiveAncestryOf(artifact.rootRelativePath)[0] ?? null,
             decoded: normalized.get(artifact.virtualSourceId)?.decodes === true,
-            unsupported_format: UNDECODED_EXTENSIONS.has(artifact.extension),
+            unsupported_format: undecodedExtensions.has(artifact.extension),
             assertions: (interpreted.get(artifact.virtualSourceId)?.assertions ?? []).map((assertion) => ({
                 predicate: assertion.predicate,
                 object: assertion.object,
@@ -888,7 +1017,7 @@ async function runCorpusScan(input) {
             candidateProfileHash: candidateProfile,
         });
         const rootByArtifact = new Map(artifacts.map((artifact) => [artifact.virtualSourceId, artifact.rootId]));
-        const topicCandidates = topicsEnabled
+        const topicResult = topicsEnabled
             ? (0, corpus_cache_1.cached)(cache, "candidate_analysis", topicKey, () => (0, corpus_candidates_1.buildTopicCandidates)({
                 documents: artifacts
                     .filter((artifact) => lexical.has(artifact.virtualSourceId))
@@ -904,7 +1033,18 @@ async function runCorpusScan(input) {
                 threshold: topicThreshold,
                 rootById: rootByArtifact,
             }))
-            : [];
+            : {
+                candidates: [],
+                pair_work: {
+                    eligible_document_count: 0,
+                    exhaustive_pair_count: 0,
+                    evaluated_pair_count: 0,
+                    skipped_same_component_count: 0,
+                    indexed_posting_count: 0,
+                    unindexed_term_count: 0,
+                },
+            };
+        const topicCandidates = topicResult.candidates;
         if (topicsEnabled)
             session?.completeAnalysis(topicKey);
         const markers = [];
@@ -1005,6 +1145,7 @@ async function runCorpusScan(input) {
             snapshotRoots.push({
                 root_id: failed.rootId,
                 root_key: failed.rootKey,
+                root_identity_class: failed.keyDeclared ? "declared" : "inferred",
                 root_label: failed.rootKey,
                 root_snapshot_id: "",
                 source_kind: "unknown",
@@ -1043,6 +1184,20 @@ async function runCorpusScan(input) {
                 total_bytes: artifacts.reduce((sum, artifact) => sum + (artifact.sizeBytes ?? 0), 0),
             },
         };
+        // What this run concluded, written into the snapshot so the *next* run can
+        // diff it. Without this a snapshot-to-snapshot diff can only say whether the
+        // rules or the bytes moved, and the candidate deltas were three hard zeros.
+        //
+        // It is attached after the snapshot object rather than built into it because
+        // the candidates do not exist until the analyses above have run, and neither
+        // identity may depend on them: the source id is about the disks, the analysis
+        // id is about the rules, and this is about the conclusions.
+        snapshot.analysis_manifest = (0, corpus_analysis_manifest_1.buildAnalysisManifest)({
+            exactDuplicateClusters: clusters,
+            nearDuplicates: nearCandidates,
+            topics: topicCandidates,
+            projects: projectCandidates,
+        });
         const crossRoot = (items) => items.filter((item) => item.root_ids.length > 1).length;
         const clusterRootIds = (cluster) => [
             ...new Set(cluster.artifact_ids.map((id) => rootByArtifact.get(id) ?? "")),
@@ -1200,6 +1355,68 @@ async function runCorpusScan(input) {
                 },
             };
         });
+        // ── 7c. the embedding pass, when a provider was supplied ──────────────
+        //
+        // It runs here and not in the caller because the text it sends is the
+        // *normalized* text — a decoded Word document's blocks, a PDF's page text —
+        // and that only exists once the decoders have run. A caller that wanted to
+        // run the pass itself would have to reimplement the decode stage to get the
+        // input, which is how "the provider interface is exported for an operator to
+        // implement" turned into a CLI that refused `--embeddings` outright.
+        //
+        // Every containment rule in `corpus_embeddings.ts` applies to what is
+        // assembled here: title and headings from block kinds, body from the rest,
+        // secret-candidate paths marked so the pass drops them before chunking, and
+        // never a path, never a raw byte, never an archive.
+        let embeddingPairs = input.embeddingPairs;
+        let embeddingReport = input.embeddingReport;
+        if (input.embeddingProvider !== undefined) {
+            const embeddable = artifacts.map((artifact) => {
+                const record = normalized.get(artifact.virtualSourceId);
+                const blocks = record?.blocks ?? [];
+                const title = blocks.find((block) => block.kind === "title")?.text;
+                const headings = blocks
+                    .filter((block) => block.kind === "heading")
+                    .map((block) => block.text);
+                const body = blocks
+                    .filter((block) => block.kind !== "title" && block.kind !== "heading")
+                    .map((block) => block.text)
+                    .join("\n");
+                return {
+                    artifact_id: artifact.virtualSourceId,
+                    normalized_document_id: record?.normalized_content_hash ?? null,
+                    ...(title !== undefined ? { title } : {}),
+                    ...(headings.length > 0 ? { headings } : {}),
+                    ...(body.length > 0 ? { body } : {}),
+                    is_secret_candidate: (0, interpretation_1.isSecretCandidatePath)(artifact.rootRelativePath),
+                    decoded: record?.decodes === true,
+                };
+            });
+            try {
+                const run = await (0, corpus_embeddings_1.runEmbeddings)({
+                    documents: embeddable,
+                    provider: input.embeddingProvider,
+                    pairThreshold: input.embeddingPairThreshold ?? corpus_fusion_1.DEFAULT_EMBEDDING_PAIR_THRESHOLD,
+                    // The budget an operator already sets with `--max-embedding-workers`,
+                    // rather than a second knob beside it. This is the number that was
+                    // previously recorded in the session manifest and acted on nowhere.
+                    maxParallelRequests: budgets.max_parallel_embedding_requests,
+                });
+                embeddingPairs = run.pairs.map((pair) => ({
+                    artifact_a_id: pair.artifact_a_id,
+                    artifact_b_id: pair.artifact_b_id,
+                    score: pair.score,
+                }));
+                embeddingReport = run.report;
+            }
+            catch (error) {
+                // A provider that fails is reported as a failure, not absorbed into a
+                // run that then claims embeddings were off. The distinction matters: one
+                // says nothing was asked of a model, the other says something was asked
+                // and did not come back.
+                throw new Error(`embedding pass failed: ${error instanceof Error ? error.message : String(error)}`);
+            }
+        }
         // ── 8. semantic candidate discovery ───────────────────────────────────
         let semantic = null;
         if (input.semanticAnalysis !== false) {
@@ -1257,18 +1474,90 @@ async function runCorpusScan(input) {
                     score: candidate.score,
                 })),
                 assertionsByArtifact,
-                ...(input.embeddingPairs !== undefined ? { embeddingPairs: input.embeddingPairs } : {}),
-                ...(input.embeddingReport !== undefined ? { embeddingReport: input.embeddingReport } : {}),
+                ...(embeddingPairs !== undefined ? { embeddingPairs } : {}),
+                ...(embeddingReport !== undefined ? { embeddingReport } : {}),
                 ...(input.packBudget !== undefined ? { packBudget: input.packBudget } : {}),
             });
             for (const note of semantic.relations.diagnostics) {
                 diagnostics.push({ code: note.code, severity: note.severity, message: note.message });
             }
         }
+        // Which artifacts a candidate of any kind actually names. Read off the
+        // per-artifact candidate fields rather than inferred, because "the decoder
+        // opened it" and "something downstream used it" are different claims and
+        // only the second one means the decoding was worth doing.
+        const candidateMembers = new Set(candidatesDocument.artifacts
+            .filter((artifact) => artifact.exact_duplicate_cluster_id !== null
+            || artifact.near_duplicate_candidate_ids.length > 0
+            || artifact.topic_candidate_ids.length > 0
+            || artifact.project_candidate_ids.length > 0)
+            .map((artifact) => artifact.virtual_source_id));
+        const documentSignals = (0, corpus_document_signals_1.buildCorpusDocumentSignals)({
+            corpusSourceSnapshotId: sourceSnapshotId,
+            corpusAnalysisId: analysisIdentity.corpus_analysis_id,
+            decoderProfiles: registry.profile(),
+            documents: [...normalized.entries()].map(([artifactId, record]) => ({
+                virtual_source_id: artifactId,
+                format: record.format,
+                decoder_id: record.decoder_id,
+                decoder_version: record.decoder_version,
+                decoded: record.decodes,
+                reason: record.reason,
+                blocks: (record.blocks ?? []).map((block) => ({
+                    block_id: block.block_id,
+                    kind: block.kind,
+                    locator: block.locator,
+                })),
+            })),
+            interpreted: new Set([...interpreted.entries()]
+                .filter(([, record]) => record.assertions.length > 0)
+                .map(([artifactId]) => artifactId)),
+            lexicallyAnalyzed: new Set(lexical.keys()),
+            candidateMembers,
+        });
         const decodableIds = new Set(decodable.map((artifact) => artifact.virtualSourceId));
         const decodedIds = new Set([...normalized.entries()].filter(([, record]) => record.decodes).map(([id]) => id));
+        // Why the eligible documents that are not normalized documents are not.
+        //
+        // Tallied from the refusal reasons the decoders actually returned rather
+        // than guessed from extensions, because the two disagree in exactly the case
+        // that matters: a `.pdf` is a format a decoder claims, and a *scanned* `.pdf`
+        // is one it opens and correctly reports as having no text layer. An
+        // extension-only tally calls the first a decode failure and never sees the
+        // second at all.
+        const refusalReasons = new Map();
+        for (const record of normalized.values()) {
+            if (record.decodes || record.reason === null)
+                continue;
+            refusalReasons.set(record.reason, (refusalReasons.get(record.reason) ?? 0) + 1);
+        }
+        const refusals = (...reasons) => reasons.reduce((sum, reason) => sum + (refusalReasons.get(reason) ?? 0), 0);
+        const namedRefusals = new Set([
+            "decoder.ocr_required", "decoder.encrypted", "decoder.malformed",
+            "not_utf8", "binary", "encoding",
+        ]);
+        const decodeGap = {
+            secret_skipped: skipped.secret,
+            oversized: skipped.oversized,
+            encoding_rejected: refusals("not_utf8", "binary", "encoding"),
+            ocr_required: refusals("decoder.ocr_required"),
+            encrypted: refusals("decoder.encrypted"),
+            malformed: refusals("decoder.malformed"),
+            other_refusal: [...refusalReasons.entries()]
+                .filter(([reason]) => !namedRefusals.has(reason))
+                .reduce((sum, [, count]) => sum + count, 0),
+            unaccounted: 0,
+        };
+        // The residual, computed rather than assumed zero: if a document goes missing
+        // between eligibility and decoding by a route nobody named, it surfaces here
+        // instead of vanishing into the difference between two totals.
+        decodeGap.unaccounted = decodableIds.size - decodedIds.size
+            - decodeGap.secret_skipped - decodeGap.oversized - decodeGap.encoding_rejected
+            - decodeGap.ocr_required - decodeGap.encrypted - decodeGap.malformed
+            - decodeGap.other_refusal;
         const interpretationEligible = artifacts.filter((artifact) => interpretEnabled && extractors.some((extractor) => extractor.matches(artifact.rootRelativePath)));
-        const lexicalEligible = artifacts.filter((artifact) => isLexicallyAnalyzable(artifact.rootRelativePath));
+        const lexicalEligible = artifacts.filter((artifact) => isLexicallyAnalyzable(artifact.rootRelativePath)
+            || (0, documents_1.isProseDocumentFormat)(registry.forPath(artifact.rootRelativePath)?.format ?? ""));
         const encryptedCount = active.reduce((sum, entry) => sum
             + entry.observation.archives.reduce((holds, archive) => holds + archive.holds.filter((hold) => hold.code === "archive.member_encrypted").length, 0), 0);
         // Artifacts carrying at least one `work.*` claim. This is the denominator a
@@ -1353,15 +1642,21 @@ async function runCorpusScan(input) {
             documents: {
                 decoder_eligible_count: decodableIds.size,
                 normalized_document_count: decodedIds.size,
-                unsupported_format_count: artifacts.filter((artifact) => UNDECODED_EXTENSIONS.has(artifact.extension)).length,
-                // A decoder that was offered bytes and could not read them. Distinct from
-                // an artifact no decoder claims: one is a gap in this corpus, the other is
-                // a gap in the decoder set, and merging them hides which.
-                decoder_failure_count: decodableIds.size - decodedIds.size,
-                ocr_required_count: artifacts.filter((a) => OCR_EXTENSIONS.has(a.extension)).length,
-                encrypted_document_count: encryptedCount,
+                unsupported_format_count: artifacts.filter((artifact) => undecodedExtensions.has(artifact.extension)).length,
+                // A decoder that was offered bytes it claimed and could not read them.
+                // Distinct from an artifact no decoder claims — one is a gap in this
+                // corpus, the other a gap in the decoder set — and distinct again from a
+                // page that simply has no text on it, which is neither.
+                decoder_failure_count: decodeGap.malformed + decodeGap.encoding_rejected
+                    + decodeGap.other_refusal + decodeGap.unaccounted,
+                // Two routes to the same finding: a raster file, known by its extension,
+                // and a document a decoder opened to discover its pages are images.
+                ocr_required_count: artifacts.filter((a) => ocrExtensions.has(a.extension)).length
+                    + decodeGap.ocr_required,
+                encrypted_document_count: encryptedCount + decodeGap.encrypted,
                 oversized_document_count: skipped.oversized,
                 secret_skipped_count: skipped.secret,
+                decode_gap: decodeGap,
             },
             semantics: {
                 interpreted_artifact_count: interpreted.size,
@@ -1371,31 +1666,37 @@ async function runCorpusScan(input) {
                 topic_candidate_count: topicCandidates.length,
                 project_candidate_count: projectCandidates.length,
                 consolidation_candidate_count: semantic?.consolidations.candidates.length ?? 0,
+                topic_pair_work: topicResult.pair_work,
             },
             embeddings: {
-                enabled: input.embeddingReport?.enabled === true,
-                eligible_count: input.embeddingReport?.enabled === true
-                    ? input.embeddingReport.eligible_artifact_count
+                enabled: embeddingReport?.enabled === true,
+                eligible_count: embeddingReport?.enabled === true
+                    ? embeddingReport.eligible_artifact_count
                     : null,
-                embedded_count: input.embeddingReport?.enabled === true
-                    ? input.embeddingReport.embedded_artifact_count
+                embedded_count: embeddingReport?.enabled === true
+                    ? embeddingReport.embedded_artifact_count
                     : null,
-                cache_hit_count: input.embeddingReport?.enabled === true
-                    ? input.embeddingReport.cache_hits
+                cache_hit_count: embeddingReport?.enabled === true
+                    ? embeddingReport.cache_hits
                     : null,
-                provider_failure_count: input.embeddingReport?.enabled === true
-                    ? input.embeddingReport.eligible_artifact_count
-                        - input.embeddingReport.embedded_artifact_count
-                        - input.embeddingReport.secret_candidates_skipped
+                // Eligibility already excludes the documents refused for their name, so
+                // subtracting them again would report a negative failure count on any
+                // corpus holding one.
+                provider_failure_count: embeddingReport?.enabled === true
+                    ? embeddingReport.eligible_artifact_count - embeddingReport.embedded_artifact_count
                     : null,
             },
             exact_hash_coverage: (0, corpus_coverage_1.coverageRatio)(artifacts.filter((artifact) => artifact.contentHash !== null).length, artifacts.length),
             normalized_document_coverage: (0, corpus_coverage_1.coverageRatio)(decodedIds.size, decodableIds.size),
             interpretation_coverage: (0, corpus_coverage_1.coverageRatio)(interpretationEligible.filter((artifact) => interpreted.has(artifact.virtualSourceId)).length, interpretationEligible.length),
             lexical_analysis_coverage: (0, corpus_coverage_1.coverageRatio)(lexicalEligible.filter((artifact) => lexical.has(artifact.virtualSourceId)).length, lexicalEligible.length),
-            embedding_coverage_when_enabled: null,
+            // A real ratio when a pass ran, and null — not zero — when none did. Zero
+            // would read as "the model was asked and answered nothing".
+            embedding_coverage_when_enabled: embeddingReport?.enabled === true
+                ? (0, corpus_coverage_1.coverageRatio)(embeddingReport.embedded_artifact_count, embeddingReport.eligible_artifact_count)
+                : null,
             unsupported_format_counts: (0, corpus_coverage_1.formatCounts)(artifacts
-                .filter((artifact) => UNDECODED_EXTENSIONS.has(artifact.extension))
+                .filter((artifact) => undecodedExtensions.has(artifact.extension))
                 .map((artifact) => ({ extension: artifact.extension, bytes: artifact.sizeBytes ?? 0 }))),
             reasoning_handoff: {
                 reasoning_eligible_candidate_count: reasoningEligible,
@@ -1474,6 +1775,7 @@ async function runCorpusScan(input) {
             precheck,
             scanned: { files: scannedFiles, bytes: scannedBytes },
             documentIndex,
+            documentSignals,
             semantic,
         };
     }
