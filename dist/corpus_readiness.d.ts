@@ -97,7 +97,8 @@ export interface ReadinessEvidence {
         signal_vocabulary: readonly string[];
         forbidden_metrics: readonly string[];
     };
-    corpus_snapshot_id: string;
+    corpus_source_snapshot_id: string;
+    corpus_analysis_id: string;
     artifact_evidence: ReadinessArtifactEvidence[];
     bodies_of_work: BodyOfWork[];
     signal_totals: {
@@ -137,7 +138,8 @@ export declare function buildBodyOfWork(spec: BodyOfWorkSpec, context: BodyOfWor
 /** Hash binding the readiness rules that produced a document. */
 export declare function readinessProfileHash(): string;
 export interface BuildReadinessEvidenceInput {
-    corpusSnapshotId: string;
+    corpusSourceSnapshotId: string;
+    corpusAnalysisId: string;
     artifacts: readonly ReadinessArtifactInput[];
     bodies: readonly BodyOfWorkSpec[];
     context: BodyOfWorkContext;

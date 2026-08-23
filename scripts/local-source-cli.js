@@ -97,7 +97,9 @@ function fail(message, code = 1) {
 function parseArgs(argv) {
   // Corpus mode names its roots with --root, so it has no positional target; the
   // single-source mode still requires one.
-  const corpusMode = argv.includes("--root") || argv.includes("--root-manifest");
+  const corpusMode = argv.includes("--root")
+    || argv.includes("--root-manifest")
+    || argv.includes("--manifest");
   if (argv.length === 0 || (!corpusMode && argv[0].startsWith("-"))) {
     console.error(USAGE);
     process.exit(2);
@@ -135,6 +137,17 @@ function numericOpt(cli, name) {
   return value;
 }
 
+/** Every file under `root`, as root-relative POSIX paths, in code-point order. */
+function listFilesRecursively(root, prefix = "") {
+  const out = [];
+  for (const entry of fs.readdirSync(path.join(root, prefix), { withFileTypes: true })) {
+    const relative = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
+    if (entry.isDirectory()) out.push(...listFilesRecursively(root, relative));
+    else out.push(relative);
+  }
+  return out.sort();
+}
+
 function requireBuilt(modulePath) {
   try {
     return require(modulePath);
@@ -163,12 +176,27 @@ function collectPolicy(cli) {
 }
 
 /** Roots named on the command line and in any manifest, in the order given. */
+/**
+ * The roots to observe, and the corpus they belong to.
+ *
+ * `--manifest` is the form that names both; `--root` is the quick one for a
+ * corpus an operator is assembling at the prompt, and `--corpus-id` names it.
+ */
 function collectRoots(cli, roots) {
   const specs = [];
   for (const value of cli.optAll("--root")) specs.push(roots.parseRootArgument(value));
-  const manifest = cli.opt("--root-manifest", null);
-  if (manifest !== null) specs.push(...roots.readRootManifest(manifest));
-  return specs;
+  const rootManifest = cli.opt("--root-manifest", null);
+  if (rootManifest !== null) specs.push(...roots.readRootManifest(rootManifest));
+
+  let corpusId = cli.opt("--corpus-id", null);
+  const manifest = cli.opt("--manifest", null);
+  if (manifest !== null) {
+    const parsed = roots.readCorpusManifest(manifest);
+    specs.push(...parsed.roots);
+    // An explicit --corpus-id still wins: the flag is the more specific request.
+    if (corpusId === null) corpusId = parsed.corpus_id;
+  }
+  return { specs, corpusId: corpusId ?? roots.DEFAULT_CORPUS_ID };
 }
 
 /** Resource budgets, defaulted by the engine and overridable one at a time. */
@@ -200,7 +228,10 @@ function reportCorpusRun(context) {
   const summary = result.candidates.summary;
   console.log(`${LABEL}: OK (corpus mode)`);
   console.log("  no root was modified: no file was written, renamed, or removed under any of them");
-  console.log(`  corpus_snapshot  ${result.snapshot.corpus_snapshot_id}`);
+  console.log(`  corpus_id        ${result.snapshot.corpus_id}`);
+  console.log(`  source_snapshot  ${result.snapshot.corpus_source_snapshot_id}`);
+  console.log(`  analysis_id      ${result.snapshot.analysis.corpus_analysis_id}`);
+  console.log(`  corpus_status    ${result.snapshot.corpus_status}`);
   console.log(`  roots            ${result.bindings.length}`);
   for (const binding of result.bindings) {
     console.log(`    ${binding.root_label}  ${binding.source_revision}  ${binding.absolute_path}`);
@@ -320,10 +351,18 @@ async function runCorpusMode(cli) {
   const semanticRun = requireBuilt(path.join(repo, "dist", "corpus_semantic_run.js"));
   const documentsModule = requireBuilt(path.join(repo, "dist", "corpus_documents.js"));
   const embeddingsModule = requireBuilt(path.join(repo, "dist", "corpus_embeddings.js"));
+  const repositoryModel = requireBuilt(path.join(repo, "dist", "public", "repository_model.js"));
   const { version } = require(path.join(repo, "package.json"));
 
-  const specs = collectRoots(cli, roots);
-  if (specs.length === 0) fail("corpus mode needs at least one --root or --root-manifest", 2);
+  let specs;
+  let corpusId;
+  try {
+    ({ specs, corpusId } = collectRoots(cli, roots));
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error), 2);
+    return;
+  }
+  if (specs.length === 0) fail("corpus mode needs at least one --root, --manifest or --root-manifest", 2);
   for (const spec of specs) {
     if (!fs.existsSync(spec.path)) fail(`root does not exist: ${spec.path}`, 2);
   }
@@ -356,7 +395,7 @@ async function runCorpusMode(cli) {
   }
 
   const sessionPath = roots.assertOutsideRoots(
-    cli.opt("--session", path.join(outDir, "corpus-session.json")),
+    cli.opt("--session", path.join(outDir, "session", "corpus-session.json")),
     rootPaths,
     "the session manifest",
   );
@@ -471,6 +510,8 @@ async function runCorpusMode(cli) {
         ...(topicThreshold !== undefined ? { threshold: topicThreshold } : {}),
       },
       budgets: collectBudgets(cli),
+      corpusId,
+      observedAt: new Date().toISOString(),
       semanticAnalysis: !cli.flag("--no-semantic-analysis"),
       ...(Object.keys(packBudget).length > 0 ? { packBudget } : {}),
     });
@@ -509,6 +550,61 @@ async function runCorpusMode(cli) {
   if (result.diff !== null) {
     outputs.push({ path: diffPath, contents: diffModule.renderCorpusDiff(result.diff) });
   }
+
+  // Each root's own outputs, under its own directory. The bundle is produced by
+  // the canonical emitter into a scratch directory and then read back as files,
+  // so the per-root bundles land through the same staged-and-renamed commit as
+  // every other projection rather than through a second, unguarded write path.
+  const bundleScratch = fs.mkdtempSync(path.join(os.tmpdir(), "l9-corpus-bundles-"));
+  try {
+    for (const root of result.rootPackets) {
+      const rootDir = path.join(outDir, "roots", root.directory);
+      const staged = path.join(bundleScratch, root.directory);
+      repositoryModel.emitRepositoryModelBundle(root.packet, { outDir: staged });
+      for (const relative of listFilesRecursively(staged)) {
+        outputs.push({
+          path: path.join(rootDir, "bundle", relative),
+          contents: fs.readFileSync(path.join(staged, relative), "utf8"),
+        });
+      }
+      outputs.push(
+        {
+          path: path.join(rootDir, "local-source-manifest.json"),
+          contents: `${JSON.stringify(root.localSourceManifest, null, 2)}\n`,
+        },
+        {
+          path: path.join(rootDir, "document-index.json"),
+          contents: documentsModule.renderDocumentIndex(root.documentIndex),
+        },
+        {
+          path: path.join(rootDir, "document-coverage.json"),
+          contents: scan.renderDocumentCoverage(root.documentCoverage),
+        },
+      );
+    }
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error));
+    return;
+  } finally {
+    fs.rmSync(bundleScratch, { recursive: true, force: true });
+  }
+  // The index names every other document, so it is built once the output set is
+  // final — including the ones this run decided not to write.
+  const indexModule = requireBuilt(path.join(repo, "dist", "corpus_index.js"));
+  const corpusIndex = indexModule.buildCorpusIndex({
+    snapshot: result.snapshot,
+    rootDirectories: new Map(result.rootPackets.map((root) => [root.root_id, root.directory])),
+    writtenPaths: [
+      ...outputs.map((file) => path.relative(outDir, file.path).split(path.sep).join("/")),
+      "corpus-index.json",
+      "corpus-report.md",
+    ],
+  });
+  outputs.push(
+    { path: path.join(outDir, "corpus-index.json"), contents: indexModule.renderCorpusIndex(corpusIndex) },
+    { path: path.join(outDir, "corpus-report.md"), contents: indexModule.renderCorpusIndexReport(corpusIndex) },
+  );
+
   // A diff from a previous run describes a comparison this run did not make, and
   // nothing inside the file says so. It leaves with the rest of the output set.
   const written = sessionModule.commitCorpusOutputs({

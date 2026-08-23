@@ -57,6 +57,11 @@ function argsFor(f: Fixture, extra: string[] = []): string[] {
   return [...f.roots.flatMap((root) => ["--root", root]), "--out", f.out, "--cache-dir", f.cache, ...extra];
 }
 
+/** The roots recorded in a fixture's snapshot. */
+function snapshotRoots(f: Fixture): { root_key: string; rmp_packet_id: string; bundle_ref: string }[] {
+  return JSON.parse(fs.readFileSync(path.join(f.out, "corpus-snapshot.json"), "utf8")).roots;
+}
+
 describe("corpus mode", () => {
   it("writes the projection set and leaves every root untouched", () => {
     const f = fixture();
@@ -70,21 +75,47 @@ describe("corpus mode", () => {
       "consolidation-candidates.json",
       "corpus-candidates.json",
       "corpus-coverage.json",
-      "corpus-session.json",
+      "corpus-index.json",
+      "corpus-report.md",
       "corpus-snapshot.json",
       "document-index.json",
       "project-candidates.json",
       "readiness-evidence.json",
       "reasoning-candidates.jsonl",
       "reasoning-evidence-packs.jsonl",
+      "roots",
       "semantic-relations.json",
+      "session",
       "topic-candidates.json",
     ]);
+
+    // Every root keeps its own bundle, acquisition manifest and document index,
+    // under a directory named after the key the operator declared.
+    expect(fs.readdirSync(path.join(f.out, "roots")).sort()).toEqual(
+      f.roots.map((root) => path.basename(root)).sort(),
+    );
+    for (const root of fs.readdirSync(path.join(f.out, "roots"))) {
+      const dir = path.join(f.out, "roots", root);
+      expect(fs.readdirSync(dir).sort()).toEqual([
+        "bundle",
+        "document-coverage.json",
+        "document-index.json",
+        "local-source-manifest.json",
+      ]);
+      expect(fs.readdirSync(path.join(dir, "bundle")).sort())
+        .toEqual(["manifest.json", "packet.json", "receipts"]);
+      const bundle = JSON.parse(fs.readFileSync(path.join(dir, "bundle", "manifest.json"), "utf8"));
+      const entry = snapshotRoots(f).find((r: { root_key: string }) => r.root_key === root);
+      expect(entry?.rmp_packet_id).toBe(bundle.packet_id);
+      expect(entry?.bundle_ref).toBe(`roots/${root}/bundle`);
+    }
     const snapshot = JSON.parse(fs.readFileSync(path.join(f.out, "corpus-snapshot.json"), "utf8"));
     const candidates = JSON.parse(fs.readFileSync(path.join(f.out, "corpus-candidates.json"), "utf8"));
     const coverage = JSON.parse(fs.readFileSync(path.join(f.out, "corpus-coverage.json"), "utf8"));
     const readiness = JSON.parse(fs.readFileSync(path.join(f.out, "readiness-evidence.json"), "utf8"));
-    const session = JSON.parse(fs.readFileSync(path.join(f.out, "corpus-session.json"), "utf8"));
+    const session = JSON.parse(
+      fs.readFileSync(path.join(f.out, "session", "corpus-session.json"), "utf8"),
+    );
 
     expect(snapshot.schema).toBe("l9.corpus-snapshot/v1");
     expect(candidates.schema).toBe("l9.corpus-candidates/v1");
@@ -92,7 +123,7 @@ describe("corpus mode", () => {
     expect(readiness.schema).toBe("l9.readiness-evidence/v1");
     expect(session.schema).toBe("l9.corpus-session/v1");
     expect(snapshot.counts.root_count).toBe(3);
-    expect(session.corpus_snapshot_target).toBe(snapshot.corpus_snapshot_id);
+    expect(session.corpus_snapshot_target).toBe(snapshot.corpus_source_snapshot_id);
 
     expect(result.stdout).toContain("no root was modified");
     expect(result.stdout).toContain("crossing a root boundary");
@@ -109,7 +140,8 @@ describe("corpus mode", () => {
       expect(contents).not.toContain(os.tmpdir());
     }
     // The session manifest is operational and does carry them, on purpose.
-    expect(fs.readFileSync(path.join(f.out, "corpus-session.json"), "utf8")).toContain(f.corpus.oldSsd);
+    expect(fs.readFileSync(path.join(f.out, "session", "corpus-session.json"), "utf8"))
+      .toContain(f.corpus.oldSsd);
   });
 
   it("diffs against its own previous snapshot on the next run", () => {

@@ -14,7 +14,8 @@ import {
   corpusPath,
   corpusRootId,
   corpusRootSnapshotId,
-  corpusSnapshotId,
+  corpusAnalysisId,
+  corpusSourceSnapshotId,
   defaultRootKey,
   parseRootArgument,
   readRootManifest,
@@ -49,11 +50,62 @@ describe("root identity", () => {
     expect(defaultRootKey("/Volumes/OldSSD/")).toBe("OldSSD");
   });
 
-  it("hashes a corpus snapshot over the sorted root revisions and the profile", () => {
-    const forward = corpusSnapshotId({ rootSourceRevisions: ["a", "b"], corpusProfileHash: "p" });
-    expect(corpusSnapshotId({ rootSourceRevisions: ["b", "a"], corpusProfileHash: "p" })).toBe(forward);
-    expect(corpusSnapshotId({ rootSourceRevisions: ["a", "b"], corpusProfileHash: "q" })).not.toBe(forward);
-    expect(corpusSnapshotId({ rootSourceRevisions: ["a", "c"], corpusProfileHash: "p" })).not.toBe(forward);
+  it("hashes the source snapshot over the sorted roots and nothing else", () => {
+    const root = (id: string, revision: string, packet: string) => ({
+      root_id: id,
+      source_revision: revision,
+      rmp_packet_id: packet,
+    });
+    const forward = corpusSourceSnapshotId([root("a", "r1", "p1"), root("b", "r2", "p2")]);
+    // The order the operator typed the roots in is not a fact about the corpus.
+    expect(corpusSourceSnapshotId([root("b", "r2", "p2"), root("a", "r1", "p1")])).toBe(forward);
+    expect(corpusSourceSnapshotId([root("a", "r9", "p1"), root("b", "r2", "p2")])).not.toBe(forward);
+    // Two runs that read the same bytes but modelled them differently are not the
+    // same observation, so the packet id participates.
+    expect(corpusSourceSnapshotId([root("a", "r1", "p9"), root("b", "r2", "p2")])).not.toBe(forward);
+    expect(corpusSourceSnapshotId([root("z", "r1", "p1"), root("b", "r2", "p2")])).not.toBe(forward);
+  });
+
+  it("keeps analysis policy out of the source identity and in the analysis identity", () => {
+    const roots = [{ root_id: "a", source_revision: "r1", rmp_packet_id: "p1" }];
+    const source = corpusSourceSnapshotId(roots);
+    const profiles = {
+      corpus_profile: "corpus",
+      document_decoder_profiles: ["utf8@1.0.0"],
+      interpretation_profile: "interp",
+      semantic_candidate_profile: "cand",
+      readiness_profile: "ready",
+    };
+    const base = corpusAnalysisId({ corpusSourceSnapshotId: source, profiles });
+
+    // Every profile change moves the analysis identity...
+    for (const changed of [
+      { ...profiles, corpus_profile: "other" },
+      { ...profiles, document_decoder_profiles: ["utf8@2.0.0"] },
+      { ...profiles, interpretation_profile: "other" },
+      { ...profiles, semantic_candidate_profile: "other" },
+      { ...profiles, readiness_profile: "other" },
+      { ...profiles, embedding_profile: "text-embedding-3" },
+    ]) {
+      expect(corpusAnalysisId({ corpusSourceSnapshotId: source, profiles: changed })).not.toBe(base);
+    }
+
+    // ...and none of them moves the source identity. Swapping an embedding model
+    // must not report that the disks were rewritten.
+    expect(corpusSourceSnapshotId(roots)).toBe(source);
+
+    // The decoder list is a set, not a sequence.
+    expect(
+      corpusAnalysisId({
+        corpusSourceSnapshotId: source,
+        profiles: { ...profiles, document_decoder_profiles: ["b@1", "a@1"] },
+      }),
+    ).toBe(
+      corpusAnalysisId({
+        corpusSourceSnapshotId: source,
+        profiles: { ...profiles, document_decoder_profiles: ["a@1", "b@1"] },
+      }),
+    );
   });
 });
 

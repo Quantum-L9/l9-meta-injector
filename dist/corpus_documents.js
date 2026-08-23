@@ -90,7 +90,8 @@ function buildDocumentIndex(input) {
     }
     return {
         schema: exports.DOCUMENT_INDEX_SCHEMA,
-        corpus_snapshot_id: input.corpusSnapshotId,
+        corpus_source_snapshot_id: input.corpusSourceSnapshotId,
+        corpus_analysis_id: input.corpusAnalysisId,
         decoder: { decoder_id: input.decoderId, decoder_version: input.decoderVersion },
         summary: {
             artifact_count: documents.length,

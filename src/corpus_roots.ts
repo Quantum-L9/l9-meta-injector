@@ -33,6 +33,12 @@ import { sha256TextPrefixed, stableId } from "./repository_model";
 /** Schema of a roots manifest file accepted by `--root-manifest`. */
 export const CORPUS_ROOTS_SCHEMA = "l9.corpus-roots/v1";
 
+/** Schema of a corpus manifest file accepted by `--manifest`. */
+export const CORPUS_MANIFEST_SCHEMA = "l9.local-corpus/v1";
+
+/** Corpus name used when no manifest declares one. */
+export const DEFAULT_CORPUS_ID = "local-corpus";
+
 /** Separator between a root label and a root-relative path in a corpus path. */
 export const CORPUS_PATH_SEPARATOR = "::";
 
@@ -104,20 +110,71 @@ export function defaultRootKey(rootPath: string): string {
   return base.length > 0 ? base : absolute;
 }
 
+/** One root's contribution to the corpus source identity. */
+export interface CorpusSourceSnapshotRoot {
+  root_id: string;
+  source_revision: string;
+  /** Packet id of the root's own Repository Model Packet. */
+  rmp_packet_id: string;
+}
+
 /**
- * Identity of the corpus as a whole.
+ * Identity of what the corpus *contained*.
  *
- * `H(sorted(root source revisions), corpus profile)`. Sorted, so the order the
- * roots were typed in cannot change it; profile-bound, so a corpus analyzed under
- * different rules is a different snapshot even when the bytes are the same.
+ * `H(sorted(root_id, source_revision, rmp_packet_id))`. Sorted, so the order the
+ * roots were typed in cannot change it.
+ *
+ * No analysis profile enters this. That separation is the whole point: swapping an
+ * embedding model, raising a threshold or turning interpretation off changes what
+ * was concluded about the corpus and changes nothing about what was on the disks.
+ * An identity that mixed the two would report every policy change as though the
+ * drives had been rewritten, and a later run could no longer tell a real byte
+ * change from a settings change. What the analysis was computed under is
+ * `corpusAnalysisId`, and it is a separate number on purpose.
  */
-export function corpusSnapshotId(input: {
-  rootSourceRevisions: readonly string[];
-  corpusProfileHash: string;
+export function corpusSourceSnapshotId(roots: readonly CorpusSourceSnapshotRoot[]): string {
+  return stableId("corpus-source-snapshot", {
+    roots: [...roots]
+      .map((root) => ({
+        rmp_packet_id: root.rmp_packet_id,
+        root_id: root.root_id,
+        source_revision: root.source_revision,
+      }))
+      .sort((a, b) => compareCodePoints(a.root_id, b.root_id)),
+  });
+}
+
+/** Every policy the derived layers were computed under. */
+export interface CorpusAnalysisProfiles {
+  corpus_profile: string;
+  document_decoder_profiles: readonly string[];
+  interpretation_profile: string;
+  semantic_candidate_profile: string;
+  /** Present only when embeddings ran. */
+  embedding_profile?: string;
+  readiness_profile: string;
+}
+
+/**
+ * Identity of what was *concluded* about the corpus.
+ *
+ * Binds the source identity and every analysis profile, so two runs share it only
+ * when both the bytes and the rules were the same. Changing a model changes this
+ * and leaves `corpusSourceSnapshotId` alone, which is the honest report: the
+ * conclusions are new, the disks are not.
+ */
+export function corpusAnalysisId(input: {
+  corpusSourceSnapshotId: string;
+  profiles: CorpusAnalysisProfiles;
 }): string {
-  return stableId("corpus-snapshot", {
-    corpus_profile_hash: input.corpusProfileHash,
-    root_source_revisions: [...input.rootSourceRevisions].sort(compareCodePoints),
+  return stableId("corpus-analysis", {
+    corpus_profile: input.profiles.corpus_profile,
+    corpus_source_snapshot_id: input.corpusSourceSnapshotId,
+    document_decoder_profiles: [...input.profiles.document_decoder_profiles].sort(compareCodePoints),
+    embedding_profile: input.profiles.embedding_profile ?? null,
+    interpretation_profile: input.profiles.interpretation_profile,
+    readiness_profile: input.profiles.readiness_profile,
+    semantic_candidate_profile: input.profiles.semantic_candidate_profile,
   });
 }
 
@@ -152,6 +209,31 @@ export function splitCorpusPath(value: string): { rootLabel: string; rootRelativ
  */
 export function virtualSourceId(rootId: string, rootRelativePath: string): string {
   return stableId("vsrc", { root_id: rootId, root_relative_path: rootRelativePath });
+}
+
+/** A root key that is already safe to use verbatim as a directory name. */
+const SAFE_ROOT_DIRECTORY = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+
+/**
+ * The directory a root's own outputs are written under, inside `roots/`.
+ *
+ * An operator who declared `old-ssd` should find `roots/old-ssd/`, so a key that
+ * is already a plain directory name is used as one. A key that is not — one with
+ * a slash, a space, a leading dot, or a script the local filesystem may normalize
+ * — is slugged and given a short digest of the exact key. The digest is what makes
+ * the mapping injective: two keys that slug alike stay two directories, and the
+ * name is still stable across runs and machines because it is a function of the
+ * key alone.
+ */
+export function rootDirectoryName(rootKey: string): string {
+  if (SAFE_ROOT_DIRECTORY.test(rootKey) && rootKey !== "." && rootKey !== "..") return rootKey;
+  const slug = rootKey
+    .replace(/[^A-Za-z0-9._-]+/g, "-")
+    .replace(/^[-.]+/, "")
+    .replace(/-+$/, "")
+    .slice(0, 48);
+  const digest = sha256TextPrefixed(rootKey).slice("sha256:".length, "sha256:".length + 12);
+  return slug.length > 0 ? `${slug}-${digest}` : `root-${digest}`;
 }
 
 // ───────────────────────────── root specs ─────────────────────────────
@@ -213,6 +295,80 @@ export function readRootManifest(manifestPath: string): CorpusRootSpec[] {
     .map((line) => line.trim())
     .filter((line) => line.length > 0 && !line.startsWith("#"))
     .map((line) => resolveSpec(parseRootArgument(line)));
+}
+
+/** A corpus manifest: a named corpus and the roots it is made of. */
+export interface CorpusManifest {
+  corpus_id: string;
+  roots: CorpusRootSpec[];
+}
+
+/**
+ * Read a corpus manifest.
+ *
+ * The manifest is where an operator names their corpus and names each root, and
+ * naming the roots is the point: `root_id` is the identity the corpus carries
+ * across runs, so it has to be a decision rather than a consequence of where the
+ * drive happened to mount today. A root declared `old-ssd` stays `old-ssd` at
+ * `/Volumes/OldSSD`, at `/mnt/recovered/OldSSD`, and on the next machine.
+ *
+ * `--root-manifest`'s two older forms are still accepted here, so a roots list
+ * that predates corpus naming keeps working; those carry no corpus name, and the
+ * default one is used.
+ */
+export function readCorpusManifest(manifestPath: string): CorpusManifest {
+  const absolute = path.resolve(manifestPath);
+  const text = fs.readFileSync(absolute, "utf8");
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("{")) {
+    return { corpus_id: DEFAULT_CORPUS_ID, roots: readRootManifest(manifestPath) };
+  }
+
+  const parsed = JSON.parse(trimmed) as { schema?: unknown; corpus_id?: unknown; roots?: unknown };
+  if (parsed.schema === CORPUS_ROOTS_SCHEMA) {
+    return { corpus_id: DEFAULT_CORPUS_ID, roots: readRootManifest(manifestPath) };
+  }
+  if (parsed.schema !== CORPUS_MANIFEST_SCHEMA) {
+    throw new Error(
+      `corpus: ${absolute} declares schema '${String(parsed.schema)}'; expected `
+      + `'${CORPUS_MANIFEST_SCHEMA}' or '${CORPUS_ROOTS_SCHEMA}'`,
+    );
+  }
+  if (typeof parsed.corpus_id !== "string" || parsed.corpus_id.trim().length === 0) {
+    throw new Error(`corpus: ${absolute} has no 'corpus_id'`);
+  }
+  if (!Array.isArray(parsed.roots) || parsed.roots.length === 0) {
+    throw new Error(`corpus: ${absolute} declares no roots`);
+  }
+
+  const base = path.dirname(absolute);
+  const declared = new Set<string>();
+  const roots = parsed.roots.map((entry, index) => {
+    if (entry === null || typeof entry !== "object") {
+      throw new Error(`corpus: ${absolute} root #${index} is not an object`);
+    }
+    const record = entry as { root_id?: unknown; path?: unknown; name?: unknown };
+    if (typeof record.path !== "string" || record.path.length === 0) {
+      throw new Error(`corpus: ${absolute} root #${index} has no 'path'`);
+    }
+    if (typeof record.root_id !== "string" || record.root_id.trim().length === 0) {
+      throw new Error(
+        `corpus: ${absolute} root #${index} (${record.path}) has no 'root_id'; `
+        + "a corpus manifest names every root explicitly so the name survives a remount",
+      );
+    }
+    const rootId = record.root_id;
+    // Two roots under one name would be folded into one root, or refused for
+    // holding different bytes. Either way the manifest said something it did not
+    // mean, and saying so here names the line rather than the symptom.
+    if (declared.has(rootId)) {
+      throw new Error(`corpus: ${absolute} declares root_id '${rootId}' more than once`);
+    }
+    declared.add(rootId);
+    return { path: path.resolve(base, record.path), name: rootId };
+  });
+
+  return { corpus_id: parsed.corpus_id, roots };
 }
 
 // ───────────────────────────── binding ─────────────────────────────

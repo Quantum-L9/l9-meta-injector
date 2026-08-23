@@ -41,14 +41,62 @@ export interface CorpusSnapshotArchive {
   expanded: boolean;
 }
 
+/** How a root observed. `observed` is the only status a complete corpus allows. */
+export const CORPUS_OBSERVATION_STATUSES = ["observed", "failed", "missing"] as const;
+export type CorpusObservationStatus = (typeof CORPUS_OBSERVATION_STATUSES)[number];
+
+/** How a corpus as a whole observed. */
+export const CORPUS_STATUSES = ["complete", "partial", "failed"] as const;
+export type CorpusStatus = (typeof CORPUS_STATUSES)[number];
+
+/**
+ * A root inside a snapshot: its identity, plus its own Repository Model Packet.
+ *
+ * The packet id is here because it is what makes the corpus source identity
+ * checkable. A corpus that recorded only the roots' content hashes would say two
+ * runs saw the same bytes; recording the packet each root produced says they also
+ * modelled them the same way, which is the claim a consumer actually depends on.
+ */
+export interface CorpusSnapshotRoot extends CorpusRootIdentity {
+  /** Packet id of this root's own RMP. Empty when the root did not observe. */
+  rmp_packet_id: string;
+  rmp_semantic_hash: string;
+  /** Output-relative location of the root's bundle. Never absolute. */
+  bundle_ref: string | null;
+  observation_status: CorpusObservationStatus;
+  /** Why the root did not observe. Null whenever it did. */
+  failure_reason: string | null;
+}
+
+/** The analysis policies a snapshot's derived layers were computed under. */
+export interface CorpusAnalysisIdentity {
+  corpus_analysis_id: string;
+  corpus_profile: string;
+  document_decoder_profiles: string[];
+  interpretation_profile: string;
+  semantic_candidate_profile: string;
+  embedding_profile: string | null;
+  readiness_profile: string;
+}
+
 export interface CorpusSnapshot {
   schema: string;
-  corpus_snapshot_id: string;
-  corpus_profile_hash: string;
-  roots: CorpusRootIdentity[];
+  /** Operator's name for this corpus. A label: it enters no identity. */
+  corpus_id: string;
+  /** Identity of what the disks held. Excludes every analysis profile. */
+  corpus_source_snapshot_id: string;
+  /** Identity of what was concluded from them, and under which rules. */
+  analysis: CorpusAnalysisIdentity;
+  corpus_status: CorpusStatus;
+  /** Roots the operator asked for but that did not observe. */
+  missing_root_ids: string[];
+  roots: CorpusSnapshotRoot[];
   artifacts: CorpusSnapshotArtifact[];
   archives: CorpusSnapshotArchive[];
   counts: {
+    root_count_requested: number;
+    root_count_observed: number;
+    root_count_failed: number;
     root_count: number;
     artifact_count: number;
     archive_count: number;
@@ -61,6 +109,11 @@ export interface CorpusSnapshot {
 export function orderCorpusSnapshot(snapshot: CorpusSnapshot): CorpusSnapshot {
   return {
     ...snapshot,
+    missing_root_ids: [...snapshot.missing_root_ids].sort(compareCodePoints),
+    analysis: {
+      ...snapshot.analysis,
+      document_decoder_profiles: [...snapshot.analysis.document_decoder_profiles].sort(compareCodePoints),
+    },
     roots: [...snapshot.roots].sort((a, b) => compareCodePoints(a.root_id, b.root_id)),
     artifacts: [...snapshot.artifacts].sort(
       (a, b) => compareCodePoints(a.corpus_path, b.corpus_path)
@@ -86,6 +139,17 @@ export function readCorpusSnapshot(snapshotPath: string): CorpusSnapshot {
   }
   if (!Array.isArray(parsed.artifacts) || !Array.isArray(parsed.archives) || !Array.isArray(parsed.roots)) {
     throw new Error(`corpus: ${absolute} is not a complete corpus snapshot`);
+  }
+  // A snapshot written before source identity and analysis identity were split
+  // carries the same schema string and a conflated `corpus_snapshot_id`. Diffing
+  // against it would compare a source identity with a profile-bound one and call
+  // every unchanged corpus changed, so it is refused by shape rather than trusted
+  // by version.
+  if (typeof parsed.corpus_source_snapshot_id !== "string" || parsed.analysis === undefined) {
+    throw new Error(
+      `corpus: ${absolute} predates the split between source identity and analysis `
+      + "identity and cannot be diffed against; run a full scan to write a current snapshot",
+    );
   }
   return parsed as CorpusSnapshot;
 }

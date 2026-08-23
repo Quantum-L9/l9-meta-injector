@@ -82,7 +82,8 @@ export const NO_PRIORITY_STATEMENT =
 
 export interface CorpusCoverage {
   schema: string;
-  corpus_snapshot_id: string;
+  corpus_source_snapshot_id: string;
+  corpus_analysis_id: string;
   root_ids: string[];
   total_files: number;
   total_bytes: number;

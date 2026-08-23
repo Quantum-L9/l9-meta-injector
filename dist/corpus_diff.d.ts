@@ -46,8 +46,12 @@ export interface CorpusDiffCounts {
 }
 export interface CorpusDiff {
     schema: string;
-    previous_corpus_snapshot_id: string;
-    current_corpus_snapshot_id: string;
+    previous_corpus_source_snapshot_id: string;
+    current_corpus_source_snapshot_id: string;
+    previous_corpus_analysis_id: string;
+    current_corpus_analysis_id: string;
+    /** True when the bytes differ, independently of any analysis-policy change. */
+    source_changed: boolean;
     previous_root_ids: string[];
     current_root_ids: string[];
     counts: CorpusDiffCounts;
@@ -57,7 +61,6 @@ export interface CorpusDiff {
     renamed_candidate_statement: string;
 }
 export declare const RENAMED_CANDIDATE_STATEMENT: string;
-/** Classify a current snapshot against a previous one. */
 export declare function buildCorpusDiff(previous: CorpusSnapshot, current: CorpusSnapshot): CorpusDiff;
 /** Canonical bytes of a diff. */
 export declare function renderCorpusDiff(diff: CorpusDiff): string;

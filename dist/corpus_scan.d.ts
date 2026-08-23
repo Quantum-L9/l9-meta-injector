@@ -12,6 +12,8 @@ import type { DocumentIndex } from "./corpus_documents";
 import type { SemanticAnalysisResult } from "./corpus_semantic_run";
 import type { EmbeddingPairScore } from "./corpus_pairs";
 import type { EmbeddingRunReport } from "./corpus_embeddings";
+import { RepositoryModelPacket } from "./repository_model";
+import { LocalSourceManifest } from "./local_source_model";
 export declare const CORPUS_CANDIDATES_SCHEMA = "l9.corpus-candidates/v1";
 /** Decoder that turns exact bytes into the text every later layer reads. */
 export declare const TEXT_DECODER_ID = "utf8-text-decoder";
@@ -22,6 +24,12 @@ export declare const MANIFEST_DECODER_VERSION = "1.0.0";
 export interface CorpusScanInput {
     roots: readonly CorpusRootSpec[];
     producerVersion: string;
+    /** Operator's name for the corpus. A label; it enters no identity. */
+    corpusId?: string;
+    /** Timestamp recorded in each per-root packet. Excluded from identity. */
+    generatedAt?: string;
+    /** Wall clock recorded in each root's acquisition manifest. Operational only. */
+    observedAt?: string;
     cache?: CorpusCache;
     session?: CorpusSessionStore;
     /** Snapshot of a previous run; when present, `corpus-diff.json` is produced. */
@@ -62,7 +70,8 @@ export interface CorpusScanDiagnostic {
 }
 export interface CorpusCandidatesDocument {
     schema: string;
-    corpus_snapshot_id: string;
+    corpus_source_snapshot_id: string;
+    corpus_analysis_id: string;
     corpus_profile_hash: string;
     roots: ReturnType<typeof rootIdentity>[];
     analysis_profile: {
@@ -121,8 +130,51 @@ export interface CorpusCandidatesDocument {
     candidate_statement: string;
 }
 export declare const CANDIDATE_STATEMENT: string;
+export declare const DOCUMENT_COVERAGE_SCHEMA = "l9.document-coverage/v1";
+/** Per-root document coverage: what the decoders reached inside one root. */
+export interface RootDocumentCoverage {
+    schema: string;
+    corpus_source_snapshot_id: string;
+    corpus_analysis_id: string;
+    root_id: string;
+    root_key: string;
+    decoder: {
+        decoder_id: string;
+        decoder_version: string;
+    };
+    artifact_count: number;
+    decoded_count: number;
+    undecoded_count: number;
+    distinct_document_count: number;
+    archive_member_count: number;
+    total_token_count: number;
+    undecoded_by_reason: {
+        reason: string;
+        count: number;
+    }[];
+}
+/**
+ * Everything one root produces on its own.
+ *
+ * A root's packet, acquisition manifest and document index are facts about that
+ * root and are written under it, not folded into a corpus-wide file. A corpus is
+ * an analysis across roots; it is not a filesystem that replaces them, and an
+ * operator who later wants only the old SSD should find it whole in one place.
+ */
+export interface CorpusRootPacket {
+    root_id: string;
+    root_key: string;
+    /** Directory name under `roots/`. A function of the root key alone. */
+    directory: string;
+    packet: RepositoryModelPacket;
+    localSourceManifest: LocalSourceManifest;
+    documentIndex: DocumentIndex;
+    documentCoverage: RootDocumentCoverage;
+}
 export interface CorpusScanResult {
     snapshot: CorpusSnapshot;
+    /** Each root's independent RMP. One per observed root, ordered by root id. */
+    rootPackets: CorpusRootPacket[];
     candidates: CorpusCandidatesDocument;
     readiness: ReadinessEvidence;
     coverage: CorpusCoverage;
@@ -161,5 +213,7 @@ export declare function isLexicallyAnalyzable(rootRelativePath: string): boolean
 export declare function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanResult>;
 /** Canonical bytes of the candidate projection. */
 export declare function renderCorpusCandidates(document: CorpusCandidatesDocument): string;
+/** Canonical bytes of one root's document coverage. */
+export declare function renderDocumentCoverage(coverage: RootDocumentCoverage): string;
 /** Canonical bytes of the readiness projection. */
 export declare function renderReadinessEvidence(evidence: ReadinessEvidence): string;

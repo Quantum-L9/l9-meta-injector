@@ -126,6 +126,23 @@ function pairRenames(removed, added) {
     };
 }
 /** Classify a current snapshot against a previous one. */
+/**
+ * The analysis policies a snapshot was produced under, as one comparable string.
+ *
+ * Deliberately not `corpus_analysis_id`: that binds the source identity too, so
+ * every corpus whose bytes changed would also read as a profile change.
+ */
+function analysisProfileFingerprint(snapshot) {
+    const analysis = snapshot.analysis;
+    return [
+        analysis.corpus_profile,
+        [...analysis.document_decoder_profiles].sort(ordering_1.compareCodePoints).join(","),
+        analysis.interpretation_profile,
+        analysis.semantic_candidate_profile,
+        analysis.embedding_profile ?? "",
+        analysis.readiness_profile,
+    ].join("|");
+}
 function buildCorpusDiff(previous, current) {
     const previousById = byId(previous.artifacts);
     const currentById = byId(current.artifacts);
@@ -250,7 +267,12 @@ function buildCorpusDiff(previous, current) {
     const newHashes = [...currentHashes].filter((hash) => !previousHashes.has(hash)).sort(ordering_1.compareCodePoints);
     const retiredHashes = [...previousHashes].filter((hash) => !currentHashes.has(hash)).sort(ordering_1.compareCodePoints);
     const retained = [...currentHashes].filter((hash) => previousHashes.has(hash)).length;
-    const profileChanged = previous.corpus_profile_hash !== current.corpus_profile_hash;
+    // Analysis identity, not source identity. A raised threshold or a new decoder
+    // changes what was concluded and changes no byte on any disk, and a diff that
+    // reported the two together would tell an operator their archive had been
+    // rewritten every time they changed a setting.
+    const profileChanged = analysisProfileFingerprint(previous) !== analysisProfileFingerprint(current);
+    const sourceChanged = previous.corpus_source_snapshot_id !== current.corpus_source_snapshot_id;
     const membershipChanged = newHashes.length > 0
         || retiredHashes.length > 0
         || previous.artifacts.length !== current.artifacts.length;
@@ -259,8 +281,11 @@ function buildCorpusDiff(previous, current) {
     const orderedEntries = [...entries].sort(compareEntries);
     return {
         schema: exports.CORPUS_DIFF_SCHEMA,
-        previous_corpus_snapshot_id: previous.corpus_snapshot_id,
-        current_corpus_snapshot_id: current.corpus_snapshot_id,
+        previous_corpus_source_snapshot_id: previous.corpus_source_snapshot_id,
+        current_corpus_source_snapshot_id: current.corpus_source_snapshot_id,
+        previous_corpus_analysis_id: previous.analysis.corpus_analysis_id,
+        current_corpus_analysis_id: current.analysis.corpus_analysis_id,
+        source_changed: sourceChanged,
         previous_root_ids: previousRootIds,
         current_root_ids: currentRootIds,
         counts,

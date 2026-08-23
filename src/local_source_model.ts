@@ -237,7 +237,11 @@ function semanticProjectionFor(
   }
 
   const analysis = runSemanticAnalysis({
-    corpusSnapshotId: index.source.physical_snapshot_hash,
+    // A single source has no corpus around it, so its own physical snapshot is
+    // both halves of the identity: there is no multi-root source identity to
+    // separate from, and the analysis ran under this build's fixed profiles.
+    corpusSourceSnapshotId: index.source.physical_snapshot_hash,
+    corpusAnalysisId: index.source.physical_snapshot_hash,
     artifacts: index.artifacts.map((artifact) => ({
       artifact_id: artifact.artifact_id,
       root_id: index.source.source_name,

@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.CORPUS_SNAPSHOT_SCHEMA = void 0;
+exports.CORPUS_STATUSES = exports.CORPUS_OBSERVATION_STATUSES = exports.CORPUS_SNAPSHOT_SCHEMA = void 0;
 exports.orderCorpusSnapshot = orderCorpusSnapshot;
 exports.renderCorpusSnapshot = renderCorpusSnapshot;
 exports.readCorpusSnapshot = readCorpusSnapshot;
@@ -55,10 +55,19 @@ const path = __importStar(require("node:path"));
 const corpus_analysis_1 = require("./corpus_analysis");
 const ordering_1 = require("./ordering");
 exports.CORPUS_SNAPSHOT_SCHEMA = "l9.corpus-snapshot/v1";
+/** How a root observed. `observed` is the only status a complete corpus allows. */
+exports.CORPUS_OBSERVATION_STATUSES = ["observed", "failed", "missing"];
+/** How a corpus as a whole observed. */
+exports.CORPUS_STATUSES = ["complete", "partial", "failed"];
 /** Order a snapshot's contents so two equal corpora render identically. */
 function orderCorpusSnapshot(snapshot) {
     return {
         ...snapshot,
+        missing_root_ids: [...snapshot.missing_root_ids].sort(ordering_1.compareCodePoints),
+        analysis: {
+            ...snapshot.analysis,
+            document_decoder_profiles: [...snapshot.analysis.document_decoder_profiles].sort(ordering_1.compareCodePoints),
+        },
         roots: [...snapshot.roots].sort((a, b) => (0, ordering_1.compareCodePoints)(a.root_id, b.root_id)),
         artifacts: [...snapshot.artifacts].sort((a, b) => (0, ordering_1.compareCodePoints)(a.corpus_path, b.corpus_path)
             || (0, ordering_1.compareCodePoints)(a.virtual_source_id, b.virtual_source_id)),
@@ -78,6 +87,15 @@ function readCorpusSnapshot(snapshotPath) {
     }
     if (!Array.isArray(parsed.artifacts) || !Array.isArray(parsed.archives) || !Array.isArray(parsed.roots)) {
         throw new Error(`corpus: ${absolute} is not a complete corpus snapshot`);
+    }
+    // A snapshot written before source identity and analysis identity were split
+    // carries the same schema string and a conflated `corpus_snapshot_id`. Diffing
+    // against it would compare a source identity with a profile-bound one and call
+    // every unchanged corpus changed, so it is refused by shape rather than trusted
+    // by version.
+    if (typeof parsed.corpus_source_snapshot_id !== "string" || parsed.analysis === undefined) {
+        throw new Error(`corpus: ${absolute} predates the split between source identity and analysis `
+            + "identity and cannot be diffed against; run a full scan to write a current snapshot");
     }
     return parsed;
 }

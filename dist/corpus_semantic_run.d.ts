@@ -24,7 +24,8 @@ export interface SemanticAnalysisProfile {
 }
 export interface SemanticRelationsDocument {
     schema: string;
-    corpus_snapshot_id: string;
+    corpus_source_snapshot_id: string;
+    corpus_analysis_id: string;
     analysis_profile: SemanticAnalysisProfile;
     generation: {
         artifact_count: number;
@@ -43,21 +44,24 @@ export interface SemanticRelationsDocument {
 export declare const RELATION_STATEMENT: string;
 export interface TopicCandidatesDocument {
     schema: string;
-    corpus_snapshot_id: string;
+    corpus_source_snapshot_id: string;
+    corpus_analysis_id: string;
     analysis_profile: SemanticAnalysisProfile;
     candidates: TopicCandidate[];
     candidate_statement: string;
 }
 export interface ProjectCandidatesDocument {
     schema: string;
-    corpus_snapshot_id: string;
+    corpus_source_snapshot_id: string;
+    corpus_analysis_id: string;
     analysis_profile: SemanticAnalysisProfile;
     candidates: ProjectCandidate[];
     candidate_statement: string;
 }
 export interface ConsolidationCandidatesDocument {
     schema: string;
-    corpus_snapshot_id: string;
+    corpus_source_snapshot_id: string;
+    corpus_analysis_id: string;
     analysis_profile: SemanticAnalysisProfile;
     candidates: ConsolidationCandidate[];
     candidate_statement: string;
@@ -94,7 +98,8 @@ export interface SemanticAnalysisResult {
     }>;
 }
 export interface SemanticAnalysisInput {
-    corpusSnapshotId: string;
+    corpusSourceSnapshotId: string;
+    corpusAnalysisId: string;
     artifacts: readonly SemanticArtifactInput[];
     nearDuplicatePairs?: readonly {
         artifact_a_id: string;

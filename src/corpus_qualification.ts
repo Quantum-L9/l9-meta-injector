@@ -224,7 +224,7 @@ export function buildCorpusQualificationReport(
 
   return {
     schema: CORPUS_QUALIFICATION_SCHEMA,
-    corpus_snapshot_id: cold.snapshot.corpus_snapshot_id,
+    corpus_snapshot_id: cold.snapshot.corpus_source_snapshot_id,
     corpus_profile_hash: cold.candidates.corpus_profile_hash,
     producer_version: input.producerVersion,
     roots: cold.bindings
@@ -287,7 +287,7 @@ export function buildCorpusQualificationReport(
     cold_warm_equivalence: {
       semantic_output_identical: input.semanticOutputIdentical,
       corpus_snapshot_id_identical:
-        cold.snapshot.corpus_snapshot_id === warm.snapshot.corpus_snapshot_id,
+        cold.snapshot.corpus_source_snapshot_id === warm.snapshot.corpus_source_snapshot_id,
       cold_files_scanned: cold.scanned.files,
       warm_files_scanned: warm.scanned.files,
       cold_cache_hits: cold.cacheStats.hits,

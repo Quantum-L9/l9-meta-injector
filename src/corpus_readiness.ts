@@ -211,7 +211,8 @@ export interface ReadinessEvidence {
     signal_vocabulary: readonly string[];
     forbidden_metrics: readonly string[];
   };
-  corpus_snapshot_id: string;
+  corpus_source_snapshot_id: string;
+  corpus_analysis_id: string;
   artifact_evidence: ReadinessArtifactEvidence[];
   bodies_of_work: BodyOfWork[];
   signal_totals: { signal: ReadinessSignalName; artifact_count: number }[];
@@ -571,7 +572,8 @@ export function readinessProfileHash(): string {
 }
 
 export interface BuildReadinessEvidenceInput {
-  corpusSnapshotId: string;
+  corpusSourceSnapshotId: string;
+  corpusAnalysisId: string;
   artifacts: readonly ReadinessArtifactInput[];
   bodies: readonly BodyOfWorkSpec[];
   context: BodyOfWorkContext;
@@ -592,7 +594,8 @@ export function buildReadinessEvidence(input: BuildReadinessEvidenceInput): Read
       signal_vocabulary: [...READINESS_SIGNALS],
       forbidden_metrics: [...FORBIDDEN_READINESS_METRICS],
     },
-    corpus_snapshot_id: input.corpusSnapshotId,
+    corpus_source_snapshot_id: input.corpusSourceSnapshotId,
+    corpus_analysis_id: input.corpusAnalysisId,
     artifact_evidence: artifactEvidence,
     bodies_of_work: bodies,
     signal_totals: signalCounts(

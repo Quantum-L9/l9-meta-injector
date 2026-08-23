@@ -59,8 +59,19 @@ function snapshot(
 ): CorpusSnapshot {
   return {
     schema: CORPUS_SNAPSHOT_SCHEMA,
-    corpus_snapshot_id: id,
-    corpus_profile_hash: profileHash,
+    corpus_id: "test-corpus",
+    corpus_source_snapshot_id: id,
+    analysis: {
+      corpus_analysis_id: `corpus-analysis:${id}:${profileHash}`,
+      corpus_profile: profileHash,
+      document_decoder_profiles: ["utf8-text-decoder@1.0.0"],
+      interpretation_profile: "interp:one",
+      semantic_candidate_profile: "cand:one",
+      embedding_profile: null,
+      readiness_profile: "ready:one",
+    },
+    corpus_status: "complete",
+    missing_root_ids: [],
     roots: [
       {
         root_id: "root:a",
@@ -70,11 +81,19 @@ function snapshot(
         source_kind: "directory",
         source_revision: `fs:${id}`,
         physical_snapshot_hash: `sha256:${id}`,
+        rmp_packet_id: `packet:${id}`,
+        rmp_semantic_hash: `sha256:${id}`,
+        bundle_ref: "roots/A/bundle",
+        observation_status: "observed",
+        failure_reason: null,
       },
     ],
     artifacts,
     archives,
     counts: {
+      root_count_requested: 1,
+      root_count_observed: 1,
+      root_count_failed: 0,
       root_count: 1,
       artifact_count: artifacts.length,
       archive_count: archives.length,
