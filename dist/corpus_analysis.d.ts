@@ -173,6 +173,8 @@ export interface NearDuplicateOptions {
     maxFileBytes?: number;
 }
 export interface CorpusAnalysisInput {
+    /** Semantic candidate discovery, when a caller has run it. */
+    semantic?: CorpusSemanticProjection;
     acquisition: CorpusAcquisition;
     packet: RepositoryModelPacket;
     interpretation?: InterpretationResult;
@@ -218,6 +220,11 @@ export interface CorpusArtifact {
     work_signal_summary: CorpusWorkSignalSummary;
     exact_duplicate_cluster_id: string | null;
     near_duplicate_candidate_ids: string[];
+    /** Empty when the semantic pass did not run; `index.semantic` says which. */
+    topic_candidate_ids: string[];
+    project_candidate_ids: string[];
+    consolidation_candidate_ids: string[];
+    reasoning_candidate_ids: string[];
 }
 export interface CorpusDuplicateCluster {
     cluster_id: string;
@@ -293,6 +300,44 @@ export interface CorpusDiagnostics {
         count: number;
     }[];
 }
+/**
+ * The semantic pass's projection into the corpus index.
+ *
+ * Declared here as plain data rather than imported from `corpus_semantic_run`,
+ * so the index does not depend on the analysis that fills it — the semantic
+ * modules already import this one, and a return edge would close a cycle.
+ *
+ * Null on the index means the pass did not run. That is deliberately different
+ * from zeros: "no candidates were found" and "nobody looked" are not the same
+ * statement about a corpus.
+ */
+export interface CorpusSemanticProjection {
+    semantic_analysis_profile_id: string;
+    semantic_analysis_profile_version: string;
+    keyphrase_profile: string;
+    semantic_fusion_profile: string;
+    reasoning_routing_profile: string;
+    embedding_enabled: boolean;
+    embedding_provider_when_enabled: string | null;
+    embedding_model_when_enabled: string | null;
+    embedding_model_revision_when_available: string | null;
+    semantic_pair_count: number;
+    topic_candidate_count: number;
+    project_candidate_count: number;
+    consolidation_candidate_count: number;
+    reasoning_eligible_count: number;
+    embedding_eligible_artifact_count: number;
+    embedded_artifact_count: number;
+    /** Candidate ids per artifact id, for the per-artifact rows below. */
+    candidate_ids_by_artifact: Record<string, {
+        topic_candidate_ids: string[];
+        project_candidate_ids: string[];
+        consolidation_candidate_ids: string[];
+        reasoning_candidate_ids: string[];
+    }>;
+    /** Restated so a reader of the index alone sees the boundary. */
+    candidate_statement: string;
+}
 export interface CorpusIndex {
     schema: string;
     source: {
@@ -329,6 +374,8 @@ export interface CorpusIndex {
     near_duplicate_candidates: NearDuplicateCandidate[];
     archives: CorpusArchive[];
     diagnostics: CorpusDiagnostics;
+    /** Semantic candidate discovery, or null when the pass did not run. */
+    semantic: CorpusSemanticProjection | null;
 }
 /** Predicates the corpus index treats as work intelligence. */
 export declare const CORPUS_WORK_PREDICATES: readonly string[];
@@ -387,5 +434,14 @@ export declare function buildDuplicateRelations(clusters: readonly CorpusDuplica
  * something acquisition saw, the index simply has nothing to say about it.
  */
 export declare function buildCorpusIndex(input: CorpusAnalysisInput): CorpusIndex;
+/**
+ * Attach a semantic projection to an already-built index.
+ *
+ * A pure transformation, and the reason this module does not import the semantic
+ * analysis: the semantic modules already import this one, so a call in the other
+ * direction would close a cycle. The caller runs the pass and hands the result
+ * back here.
+ */
+export declare function withSemanticProjection(index: CorpusIndex, semantic: CorpusSemanticProjection): CorpusIndex;
 /** Serialize an index to the bytes written as `corpus-index.json`. */
 export declare function renderCorpusIndex(index: CorpusIndex): string;

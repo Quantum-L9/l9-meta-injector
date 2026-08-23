@@ -34,6 +34,8 @@ export declare function observeLocalSourceModel(input: LocalSourceModelInput): L
 export declare function withLocalSourceModel<T>(input: LocalSourceModelInput, body: (result: LocalSourceModelResult) => T): T;
 export interface LocalSourceCorpusOptions {
     nearDuplicates?: NearDuplicateOptions;
+    /** Semantic candidate discovery. On by default. */
+    semanticAnalysis?: boolean;
 }
 export interface LocalSourceCorpusOutputs {
     index: CorpusIndex;

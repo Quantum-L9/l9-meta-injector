@@ -50,6 +50,7 @@ exports.clusterExactDuplicates = clusterExactDuplicates;
 exports.buildCorpusDuplicateClusters = buildCorpusDuplicateClusters;
 exports.buildDuplicateRelations = buildDuplicateRelations;
 exports.buildCorpusIndex = buildCorpusIndex;
+exports.withSemanticProjection = withSemanticProjection;
 exports.renderCorpusIndex = renderCorpusIndex;
 // corpus_analysis.ts — derived analysis over an acquired corpus.
 //
@@ -776,6 +777,18 @@ function buildCorpusIndex(input) {
             candidateIdsByArtifact.set(artifactId, ids);
         }
     }
+    // Candidate ids per artifact, or four empty lists when the pass did not run.
+    // `index.semantic` is what tells those two cases apart; empty lists here never
+    // claim on their own that a corpus has no candidates.
+    const semanticIdsFor = (artifactId) => {
+        const entry = input.semantic?.candidate_ids_by_artifact[artifactId];
+        return {
+            topic_candidate_ids: [...(entry?.topic_candidate_ids ?? [])].sort(ordering_1.compareCodePoints),
+            project_candidate_ids: [...(entry?.project_candidate_ids ?? [])].sort(ordering_1.compareCodePoints),
+            consolidation_candidate_ids: [...(entry?.consolidation_candidate_ids ?? [])].sort(ordering_1.compareCodePoints),
+            reasoning_candidate_ids: [...(entry?.reasoning_candidate_ids ?? [])].sort(ordering_1.compareCodePoints),
+        };
+    };
     const artifacts = artifactRecords
         .map((artifact) => ({
         artifact_id: artifact.artifact_id,
@@ -788,6 +801,7 @@ function buildCorpusIndex(input) {
         work_signal_summary: settleSummary(summaries.get(artifact.artifact_id) ?? emptySummary()),
         exact_duplicate_cluster_id: clusterByArtifact.get(artifact.artifact_id) ?? null,
         near_duplicate_candidate_ids: (candidateIdsByArtifact.get(artifact.artifact_id) ?? []).sort(ordering_1.compareCodePoints),
+        ...semanticIdsFor(artifact.artifact_id),
     }))
         .sort((left, right) => (0, ordering_1.compareCodePoints)(left.source_path, right.source_path));
     const withWorkSignals = artifacts.filter((artifact) => artifact.work_signal_summary.signal_count > 0);
@@ -877,6 +891,37 @@ function buildCorpusIndex(input) {
                 .map(([reason, count]) => ({ reason, count }))
                 .sort((left, right) => (0, ordering_1.compareCodePoints)(left.reason, right.reason)),
         },
+        semantic: input.semantic ?? null,
+    };
+}
+/**
+ * Attach a semantic projection to an already-built index.
+ *
+ * A pure transformation, and the reason this module does not import the semantic
+ * analysis: the semantic modules already import this one, so a call in the other
+ * direction would close a cycle. The caller runs the pass and hands the result
+ * back here.
+ */
+function withSemanticProjection(index, semantic) {
+    const empty = {
+        topic_candidate_ids: [],
+        project_candidate_ids: [],
+        consolidation_candidate_ids: [],
+        reasoning_candidate_ids: [],
+    };
+    return {
+        ...index,
+        artifacts: index.artifacts.map((artifact) => {
+            const entry = semantic.candidate_ids_by_artifact[artifact.artifact_id] ?? empty;
+            return {
+                ...artifact,
+                topic_candidate_ids: [...entry.topic_candidate_ids].sort(ordering_1.compareCodePoints),
+                project_candidate_ids: [...entry.project_candidate_ids].sort(ordering_1.compareCodePoints),
+                consolidation_candidate_ids: [...entry.consolidation_candidate_ids].sort(ordering_1.compareCodePoints),
+                reasoning_candidate_ids: [...entry.reasoning_candidate_ids].sort(ordering_1.compareCodePoints),
+            };
+        }),
+        semantic,
     };
 }
 /** Serialize an index to the bytes written as `corpus-index.json`. */

@@ -163,6 +163,88 @@ function diagnosticsSections(index) {
  * produces the same bytes. No timestamp is written: an observation instant is
  * operational, and putting one here would make every regeneration a diff.
  */
+/**
+ * The semantic candidate sections.
+ *
+ * Every sentence here obeys the same rule the documents do: a candidate is
+ * offered, never asserted. The words "same project", "should merge", "should
+ * delete", "obsolete" and "abandoned" do not appear, because none of them is
+ * something this analysis is entitled to say.
+ */
+function semanticSections(index) {
+    const semantic = index.semantic;
+    if (semantic === null) {
+        return section("## Semantic Analysis Coverage", [
+            "Semantic candidate discovery did not run for this observation, so this report carries no",
+            "topic, project, consolidation or reasoning candidates. That is different from finding none:",
+            "nothing looked.",
+        ], []);
+    }
+    const byArtifact = semantic.candidate_ids_by_artifact;
+    const artifactsIn = (pick) => {
+        const out = new Map();
+        for (const artifact of index.artifacts) {
+            for (const candidateId of pick(byArtifact[artifact.artifact_id] ?? {
+                topic_candidate_ids: [], project_candidate_ids: [],
+                consolidation_candidate_ids: [], reasoning_candidate_ids: [],
+            })) {
+                const members = out.get(candidateId) ?? [];
+                members.push(artifact.source_path);
+                out.set(candidateId, members);
+            }
+        }
+        return out;
+    };
+    const rowsFor = (members) => [...members.entries()]
+        .sort((left, right) => (0, ordering_1.compareCodePoints)(left[0], right[0]))
+        .map(([candidateId, paths]) => [
+        code(candidateId),
+        `${paths.length}`,
+        paths.map(code).join("<br>"),
+    ]);
+    return [
+        ...section("## Candidate Topics", [
+            "Groups of artifacts that appear related by supporting signals — shared titles, shared",
+            "headings, shared salient vocabulary. A candidate topic means these documents show evidence",
+            "of discussing related subject matter. It does not mean they belong together.",
+        ], table(["candidate", "members", "artifacts"], rowsFor(artifactsIn((entry) => entry.topic_candidate_ids)), "No group of artifacts reached the corroboration required for a topic candidate.")),
+        ...section("## Candidate Bodies of Work", [
+            "Groups admitted on declared identity, an explicit reference or dependency between",
+            "documents, or lexical similarity corroborated by a second independent kind of evidence.",
+            "Similarity alone never admits a group here, and neither does a shared folder or archive.",
+            "No name is synthesized for any group: identifiers shown are ones a manifest declared.",
+        ], table(["candidate", "members", "artifacts"], rowsFor(artifactsIn((entry) => entry.project_candidate_ids)), "No group of artifacts carries evidence of belonging to one body of work.")),
+        ...section("## Consolidation Review Candidates", [
+            "Groups worth inspecting together, because they contain byte-identical copies, documents",
+            "of high lexical similarity, or a declared supersession. This section recommends no action:",
+            "it does not identify a copy to keep, and it does not propose removing anything.",
+        ], table(["candidate", "members", "artifacts"], rowsFor(artifactsIn((entry) => entry.consolidation_candidate_ids)), "No group of artifacts carries duplicate, similarity or supersession evidence.")),
+        ...section("## Candidates Recommended for Later Reasoning", [
+            "Candidates whose evidence is ambiguous in a way that reading might resolve — contradictory",
+            "declared statuses, a supersession pointing two ways, several variants of one document.",
+            "Reasoning-eligible means spending attention on it may be useful. It does not mean the",
+            "candidate is important, correct, or valuable, and this package does not adjudicate it.",
+        ], table(["candidate", "members", "artifacts"], rowsFor(artifactsIn((entry) => entry.reasoning_candidate_ids)), "No candidate carries the kind of ambiguity that later reasoning could settle.")),
+        ...section("## Semantic Analysis Coverage", [
+            "What the semantic pass computed, and under which versioned profiles.",
+        ], table(["measure", "value"], [
+            ["pair relations scored", `${semantic.semantic_pair_count}`],
+            ["topic candidates", `${semantic.topic_candidate_count}`],
+            ["candidate bodies of work", `${semantic.project_candidate_count}`],
+            ["consolidation candidates", `${semantic.consolidation_candidate_count}`],
+            ["reasoning eligible", `${semantic.reasoning_eligible_count}`],
+            ["embeddings", semantic.embedding_enabled ? "enabled" : "disabled"],
+            ["embedding provider", semantic.embedding_provider_when_enabled ?? "—"],
+            ["embedding model", semantic.embedding_model_when_enabled ?? "—"],
+            ["artifacts eligible for embedding", `${semantic.embedding_eligible_artifact_count}`],
+            ["artifacts embedded", `${semantic.embedded_artifact_count}`],
+            ["keyphrase profile", code(semantic.keyphrase_profile)],
+            ["fusion profile", code(semantic.semantic_fusion_profile)],
+            ["reasoning routing profile", code(semantic.reasoning_routing_profile)],
+            ["model calls", "0"],
+        ], "No semantic measurements are available.")),
+    ];
+}
 function renderCorpusReport(index) {
     const profile = index.analysis_profile;
     const lines = [
@@ -211,6 +293,7 @@ function renderCorpusReport(index) {
             `${archive.omitted_member_count}`,
             archive.hold_codes.length > 0 ? archive.hold_codes.map(code).join(", ") : "—",
         ]), "No archive was observed.")),
+        ...semanticSections(index),
         ...diagnosticsSections(index),
     ];
     return `${lines.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd()}\n`;

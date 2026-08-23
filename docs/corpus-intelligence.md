@@ -252,8 +252,17 @@ takes two items off that list: **topic candidates** and **project candidates**, 
 deterministic, both lexical or marker-based, and both labelled candidates for the same
 reason near-duplicates are. See [corpus-archaeology.md](corpus-archaeology.md), which
 also covers multi-root corpora, the content-addressed cache and readiness evidence.
-Everything else above stays where it is: no embedding is computed, no model is called,
-nothing is moved or deleted, and no priority is produced.
+
+[ADR-040](decisions/040-semantic-candidate-discovery-and-reasoning-handoff.md) takes two
+more: **optional semantic embeddings**, off by default and never able to establish
+anything on their own, and a **deterministic reasoning queue** that routes ambiguous
+candidates to a future model without calling one. See
+[semantic-candidates.md](semantic-candidates.md).
+
+Everything else above stays where it is. No `SAME_TOPIC` edge is written, no project is
+named, no roadmap is generated, no build is prioritized, no consolidation is performed,
+no file is moved or deleted, no keeper is selected, no binary document format is
+extracted, no OCR is run, and **no model is called anywhere in this package**.
 
 ## Running it
 
@@ -273,6 +282,9 @@ Adds to the existing output layout:
   corpus-index.json
   corpus-report.md
 ```
+
+Corpus mode (`--root`) additionally writes the document index and the semantic
+candidate set — see [semantic-candidates.md](semantic-candidates.md).
 
 | Flag | Effect |
 |---|---|
