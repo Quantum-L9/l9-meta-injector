@@ -298,20 +298,16 @@ export interface VerifyDocumentWorkSignalExportInput {
 }
 
 /**
- * Prove a payload is the complete set its manifest claims, before anything is
- * published.
+ * Read the payload back the way a consumer would, reporting what would not parse.
  *
- * Every check here answers a question a consumer would otherwise have to take on
- * trust, and each returns a stated reason rather than a boolean: a validation
- * that fails without saying which record broke it sends a reader to the whole
- * file.
+ * The trailing newline is checked here rather than tolerated: a payload whose
+ * last line is a record is a payload that was truncated mid-write, and a reader
+ * splitting on newlines cannot tell that from a complete one.
  */
-export function verifyDocumentWorkSignalExport(
-  input: VerifyDocumentWorkSignalExportInput,
-): string[] {
+function readPayloadRecords(
+  payloadJsonl: string,
+): { records: DocumentWorkSignalRecord[]; problems: string[] } {
   const problems: string[] = [];
-  const { manifest, payloadJsonl } = input;
-
   const lines = payloadJsonl.length === 0 ? [] : payloadJsonl.split("\n");
   if (payloadJsonl.length > 0 && lines[lines.length - 1] !== "") {
     problems.push("payload does not end with a newline");
@@ -330,16 +326,25 @@ export function verifyDocumentWorkSignalExport(
       problems.push(`payload line ${index + 1} is not valid JSON: ${(error as Error).message}`);
     }
   }
+  return { records, problems };
+}
 
+/** The manifest's claims about the bytes, against the bytes. */
+function checkPayloadAgainstManifest(
+  manifest: DocumentWorkSignalManifest,
+  payloadJsonl: string,
+  records: readonly DocumentWorkSignalRecord[],
+): string[] {
+  const problems: string[] = [];
   if (records.length !== manifest.record_count) {
     problems.push(
       `manifest says ${manifest.record_count} record(s) and the payload carries ${records.length}`,
     );
   }
-  if (Buffer.byteLength(payloadJsonl, "utf8") !== manifest.payload_byte_length) {
+  const byteLength = Buffer.byteLength(payloadJsonl, "utf8");
+  if (byteLength !== manifest.payload_byte_length) {
     problems.push(
-      `manifest says ${manifest.payload_byte_length} byte(s) and the payload is `
-      + `${Buffer.byteLength(payloadJsonl, "utf8")}`,
+      `manifest says ${manifest.payload_byte_length} byte(s) and the payload is ${byteLength}`,
     );
   }
   const artifactHash = sha256TextPrefixed(payloadJsonl);
@@ -362,28 +367,30 @@ export function verifyDocumentWorkSignalExport(
       );
     }
   }
+  return problems;
+}
 
-  if (manifest.record_count !== input.reportSignalCount) {
-    problems.push(
-      `the sampled report states ${input.reportSignalCount} signal(s) and the complete `
-      + `payload manifest states ${manifest.record_count}`,
-    );
-  }
-
+/** Every record's own id, and the two ids it points at. */
+function checkRecordIdentities(
+  records: readonly DocumentWorkSignalRecord[],
+  knownArtifactIds: ReadonlySet<string>,
+  knownNormalizedDocumentIds: ReadonlySet<string>,
+): string[] {
+  const problems: string[] = [];
   const seen = new Set<string>();
   for (const record of records) {
     if (seen.has(record.signal_id)) {
       problems.push(`duplicate signal_id ${record.signal_id}`);
     }
     seen.add(record.signal_id);
-    if (!input.knownArtifactIds.has(record.artifact_id)) {
+    if (!knownArtifactIds.has(record.artifact_id)) {
       problems.push(
         `signal ${record.signal_id} names artifact ${record.artifact_id}, which this corpus did not observe`,
       );
     }
     if (
       record.normalized_document_id !== null
-      && !input.knownNormalizedDocumentIds.has(record.normalized_document_id)
+      && !knownNormalizedDocumentIds.has(record.normalized_document_id)
     ) {
       problems.push(
         `signal ${record.signal_id} names normalized document ${record.normalized_document_id}, `
@@ -391,7 +398,12 @@ export function verifyDocumentWorkSignalExport(
       );
     }
   }
+  return problems;
+}
 
+/** A grouping that does not sum to the whole is a grouping that lost something. */
+function checkGroupTotals(manifest: DocumentWorkSignalManifest): string[] {
+  const problems: string[] = [];
   const formatTotal = manifest.by_format.reduce((sum, entry) => sum + entry.signal_count, 0);
   if (formatTotal !== manifest.record_count) {
     problems.push(
@@ -404,6 +416,43 @@ export function verifyDocumentWorkSignalExport(
       `by_predicate totals ${predicateTotal} and the manifest states ${manifest.record_count}`,
     );
   }
-
   return problems;
+}
+
+/**
+ * Prove a payload is the complete set its manifest claims, before anything is
+ * published.
+ *
+ * Every check here answers a question a consumer would otherwise have to take on
+ * trust, and each returns a stated reason rather than a boolean: a validation
+ * that fails without saying which record broke it sends a reader to the whole
+ * file.
+ *
+ * The checks are separate functions and the order they run in is the order a
+ * reader wants their answers: can this be read at all, is it the bytes the
+ * manifest describes, does it agree with the report, does every record resolve,
+ * and do the groupings account for the whole. Each returns its own problems, so
+ * one failing check never hides the next.
+ */
+export function verifyDocumentWorkSignalExport(
+  input: VerifyDocumentWorkSignalExportInput,
+): string[] {
+  const { manifest, payloadJsonl } = input;
+  const { records, problems: readProblems } = readPayloadRecords(payloadJsonl);
+
+  const reportProblems: string[] = [];
+  if (manifest.record_count !== input.reportSignalCount) {
+    reportProblems.push(
+      `the sampled report states ${input.reportSignalCount} signal(s) and the complete `
+      + `payload manifest states ${manifest.record_count}`,
+    );
+  }
+
+  return [
+    ...readProblems,
+    ...checkPayloadAgainstManifest(manifest, payloadJsonl, records),
+    ...reportProblems,
+    ...checkRecordIdentities(records, input.knownArtifactIds, input.knownNormalizedDocumentIds),
+    ...checkGroupTotals(manifest),
+  ];
 }

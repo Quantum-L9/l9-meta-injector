@@ -152,5 +152,11 @@ export interface VerifyDocumentWorkSignalExportInput {
  * trust, and each returns a stated reason rather than a boolean: a validation
  * that fails without saying which record broke it sends a reader to the whole
  * file.
+ *
+ * The checks are separate functions and the order they run in is the order a
+ * reader wants their answers: can this be read at all, is it the bytes the
+ * manifest describes, does it agree with the report, does every record resolve,
+ * and do the groupings account for the whole. Each returns its own problems, so
+ * one failing check never hides the next.
  */
 export declare function verifyDocumentWorkSignalExport(input: VerifyDocumentWorkSignalExportInput): string[];
