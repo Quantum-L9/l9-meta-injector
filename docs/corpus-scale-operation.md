@@ -156,6 +156,21 @@ thousand, and a different claim again when four of six drives were never plugged
 in. Embeddings report as disabled rather than being omitted — those are different
 facts.
 
+## Topology conformance, per root
+
+Each root's packet is proven acceptable to the bound consumer without a second
+golden fixture, and by a stronger route than one: a corpus models a root into
+canonically the same packet the single-source path produces for it. The committed
+`fixtures/local-source/expected-bundle` is what
+`npm run topology:conformance` proves the consumer accepts, and a corpus run over
+the same sample reproduces that packet byte for byte — same `packet_id`, same
+`semantic_hash`. So conformance established for that bundle covers every per-root
+corpus bundle, and the property is pinned by a test rather than argued here.
+
+The corpus-level projections are deliberately not inserted into the Repository
+Model wire contract. Cross-root candidates stay corpus-level inputs for a later
+Topology or World Model evolution to consume on its own terms.
+
 ## What this layer will not tell you
 
 No priority, no ranking, no percentage complete, no readiness score, no strategic

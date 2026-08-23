@@ -30,6 +30,7 @@ import {
   toPortableAssertions,
 } from "../src/interpretation";
 import { defaultExtractors } from "../src/extractors";
+import { canonicalJson } from "../src/repository_model";
 
 const scratch: string[] = [];
 function tmp(prefix = "l9-identity-"): string {
@@ -263,5 +264,62 @@ describe("a corpus snapshot", () => {
       .toBe(base.snapshot.corpus_source_snapshot_id);
     expect(retuned.snapshot.analysis.corpus_analysis_id)
       .not.toBe(base.snapshot.analysis.corpus_analysis_id);
+  });
+});
+
+describe("a root inside a corpus", () => {
+  const REPO = path.resolve(__dirname, "..");
+  const SAMPLE = path.join(REPO, "fixtures", "local-source", "sample-source");
+  const GOLDEN = path.join(REPO, "fixtures", "local-source", "expected-bundle");
+
+  it("produces the same packet it produces when observed alone", async () => {
+    // The committed golden bundle is the one the bound topology consumer was
+    // proven against. If a corpus models a root into the same bytes, the
+    // conformance already established for that bundle covers every per-root
+    // corpus bundle too — which is a stronger claim than a second fixture, and it
+    // is the property the whole per-root design rests on: a corpus is an analysis
+    // across roots, not a different way of modelling one.
+    const golden = JSON.parse(
+      fs.readFileSync(path.join(GOLDEN, "packet.json"), "utf8"),
+    ) as { packet_id: string; semantic_hash: string; producer: { version: string } };
+
+    const result = await runCorpusScan({
+      roots: [{ path: SAMPLE, name: "sample-local-source" }],
+      producerVersion: golden.producer.version,
+      corpusId: "a-corpus-that-should-not-matter",
+    });
+
+    const packet = result.rootPackets[0]?.packet;
+    expect(packet?.packet_id).toBe(golden.packet_id);
+    expect(packet?.semantic_hash).toBe(golden.semantic_hash);
+    // Compared canonically: the committed file is canonical JSON and the
+    // in-memory packet carries insertion order, which is a difference in
+    // serialization rather than in the packet.
+    expect(canonicalJson(packet as unknown as Record<string, unknown>))
+      .toBe(canonicalJson(golden as unknown as Record<string, unknown>));
+
+    // And the snapshot cites exactly that packet, so the corpus points at the
+    // artifact the consumer accepts rather than at a description of one.
+    expect(result.snapshot.roots[0]?.rmp_packet_id).toBe(golden.packet_id);
+  });
+
+  it("is modelled the same however many other roots it sits beside", async () => {
+    const { rootA } = twinRoots();
+    const alone = await runCorpusScan({
+      roots: [{ path: SAMPLE, name: "sample-local-source" }],
+      producerVersion: "test",
+    });
+    const beside = await runCorpusScan({
+      roots: [{ path: SAMPLE, name: "sample-local-source" }, { path: rootA, name: "rootA" }],
+      producerVersion: "test",
+    });
+
+    const find = (result: Awaited<ReturnType<typeof runCorpusScan>>) =>
+      result.rootPackets.find((entry) => entry.root_key === "sample-local-source")?.packet;
+    expect(canonicalJson(find(beside) as unknown as Record<string, unknown>))
+      .toBe(canonicalJson(find(alone) as unknown as Record<string, unknown>));
+    // Adding a root changes the corpus identity and leaves the roots alone.
+    expect(beside.snapshot.corpus_source_snapshot_id)
+      .not.toBe(alone.snapshot.corpus_source_snapshot_id);
   });
 });
