@@ -142,6 +142,7 @@ const AUTHORITY_CRITICAL_PATHS = [
   "tests/corpus_semantic_candidates.test.ts",
   "tests/corpus_embeddings.test.ts",
   "tests/helpers/semantic_fixtures.ts",
+  "tests/semantic_firewall.test.ts",
   "tests/helpers/real_world_corpus.ts",
   "docs/corpus-intelligence.md",
   "docs/corpus-archaeology.md",

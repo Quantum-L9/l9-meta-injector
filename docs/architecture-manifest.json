@@ -642,7 +642,7 @@
     },
     {
       "path": "scripts/lib/architecture-authority.js",
-      "git_blob_sha1": "df0353884b3896cb57e998795ab5c8889564fa6f"
+      "git_blob_sha1": "3254dbd2ff1af0e73e3287e9dbfb0650d6abbc00"
     },
     {
       "path": "scripts/lib/dist-integrity.js",
@@ -955,6 +955,10 @@
     {
       "path": "tests/repository_model.test.ts",
       "git_blob_sha1": "278083ea38af44415278a4d08322a2033b96fe93"
+    },
+    {
+      "path": "tests/semantic_firewall.test.ts",
+      "git_blob_sha1": "92771eaa178e26311ef8c32c07cf36dc1bda0f36"
     },
     {
       "path": "tests/work_intelligence.test.ts",
