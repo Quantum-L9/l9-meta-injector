@@ -79,22 +79,27 @@ const USAGE = [
   "  --max-decoder-workers N    documents decoded concurrently (default: 4)",
   "  --max-hash-workers N       recorded; acquisition hashes each root with one reader",
   "  --max-analysis-workers N   recorded; candidate analysis is a single pass",
-  "  --max-embedding-workers N  recorded; embeddings are not enabled in this release",
+  "  --max-embedding-workers N  documents embedded concurrently (default: 1)",
   "  --max-memory-bytes N       ceiling on decoded text held at once (default: 256 MiB)",
   "",
   "semantic candidate discovery (on by default):",
   "  --no-semantic-analysis     skip candidate discovery; duplicates still reported",
   "  --embeddings               enable optional semantic embeddings (default: off)",
-  "  --embedding-provider NAME  required when --embeddings is given",
+  "  --embedding-provider NAME  required when --embeddings is given; 'http-json' is",
+  "                             the provider this package can run",
   "  --embedding-model ID       required when --embeddings is given",
   "  --embedding-model-revision R   recorded when the provider exposes one",
-  "  --embedding-endpoint URL   required for a remote provider; must be https://",
+  "  --embedding-endpoint URL   where http-json POSTs {model,input}; a local",
+  "                             provider must name a loopback host, a remote one",
+  "                             must be https://",
   "  --embedding-locality K     local (default) or remote",
+  "  --embedding-pair-threshold F   cosine at which a pair is offered (default 0.75)",
   "  --allow-remote-embeddings  permit a remote provider to receive bounded document",
   "                             text; enabling embeddings alone does NOT imply this",
-  "                             (this release ships no provider: --embeddings is",
-  "                             refused, and the similarity thresholds are set",
-  "                             programmatically, not from this CLI)",
+  "",
+  "  A bearer token is read from L9_EMBEDDING_BEARER_TOKEN, never from a flag, and",
+  "  is refused over a cleartext endpoint. Redirects are never followed. Documents",
+  "  whose path matches a secret pattern are never embedded at any setting.",
   "  --reasoning-pack-max-artifacts N   members per evidence pack (default: 12)",
   "  --reasoning-pack-max-chars N       characters per evidence pack (default: 24000)",
   "",
@@ -272,7 +277,27 @@ function reportCorpusRun(context) {
   console.log(`  decoded          ${coverage.normalized_document_coverage.covered}/${coverage.normalized_document_coverage.eligible}`);
   console.log(`  interpreted      ${coverage.interpretation_coverage.covered}/${coverage.interpretation_coverage.eligible}`);
   console.log(`  lexical          ${coverage.lexical_analysis_coverage.covered}/${coverage.lexical_analysis_coverage.eligible}`);
-  console.log(`  embeddings       not enabled; no model was called and no network request was made`);
+  // The two states are reported differently on purpose. "Not enabled" is a claim
+  // that nothing left the machine; an enabled run has to say what it sent, to
+  // where, and how much of it came back, because that is what makes a remote
+  // pass auditable after the fact.
+  const embeddings = coverage.embeddings;
+  if (embeddings.enabled !== true) {
+    console.log("  embeddings       not enabled; no model was called and no network request was made");
+  } else {
+    const report = result.semantic?.embeddingReport;
+    console.log(
+      `  embeddings       ${embeddings.embedded_count}/${embeddings.eligible_count} embedded`
+      + ` (${embeddings.cache_hit_count} from cache),`
+      + ` ${report?.remote === true ? "remote" : "local"} ${report?.provider ?? "?"}`
+      + ` model ${report?.model_id ?? "?"}`,
+    );
+    console.log(
+      `  embeddings sent  ${report?.artifact_count_sent ?? 0} document(s),`
+      + ` ${report?.chunk_count_sent ?? 0} bounded chunk(s);`
+      + ` ${report?.secret_candidates_skipped ?? 0} secret-candidate document(s) never sent`,
+    );
+  }
   console.log(
     `  duplicates       ${summary.exact_duplicate_cluster_count} cluster(s), `
     + `${summary.cross_root_duplicate_cluster_count} crossing a root boundary`,
@@ -342,11 +367,19 @@ function reportCorpusRun(context) {
       + `${semantic.reasoningCandidates.length} routed; `
       + `${semantic.evidencePacks.length} evidence pack(s)`,
     );
+    // The embedding state is reported above, in one place, with the counts.
+    // Repeating it here as a bare on/off was one more line to keep in step.
+    //
+    // The no-model claim is conditional because it has to be true. Candidate
+    // discovery calls no model whatever the settings; an embedding pass calls
+    // one by definition, and printing "no model was called" after thirty
+    // requests to a model server would be the report lying about its own run.
     console.log(
-      `  embeddings       ${semantic.embeddingReport.enabled ? "on" : "off"}, remote `
-      + `${semantic.embeddingReport.remote ? "on" : "off"}`,
+      semantic.embeddingReport.enabled
+        ? "  no language model was called: candidate discovery is deterministic, and the "
+          + "embedding pass calls only the embedding model named above"
+        : "  no model was called: this pass is deterministic and makes zero LLM calls",
     );
-    console.log("  no model was called: this pass is deterministic and makes zero LLM calls");
   }
   console.log(
     `  cache            ${cacheEnabled ? "on" : "off"}, hit ratio ${coverage.cache.hit_ratio} `
@@ -410,6 +443,7 @@ async function runCorpusMode(cli) {
   const semanticRun = requireBuilt(path.join(repo, "dist", "corpus_semantic_run.js"));
   const documentsModule = requireBuilt(path.join(repo, "dist", "corpus_documents.js"));
   const embeddingsModule = requireBuilt(path.join(repo, "dist", "corpus_embeddings.js"));
+  const httpEmbeddings = requireBuilt(path.join(repo, "dist", "corpus_embedding_http.js"));
   const repositoryModel = requireBuilt(path.join(repo, "dist", "public", "repository_model.js"));
   const ordering = requireBuilt(path.join(repo, "dist", "ordering.js"));
   const { version } = require(path.join(repo, "package.json"));
@@ -537,17 +571,36 @@ async function runCorpusMode(cli) {
   } catch (error) {
     fail(error instanceof Error ? error.message : String(error), 2);
   }
+  // Build the provider now, so a bad endpoint or a `local` provider aimed at a
+  // public host fails before a single file has been read rather than after the
+  // scan has already walked the disk.
+  let embeddingProvider;
   if (embeddingsEnabled) {
-    // The provider interface is an operator's to supply. This package ships no
-    // model, so there is nothing to call, and saying so beats embedding nothing
-    // and reporting a coverage of zero as though a model had run.
-    fail(
-      "embeddings are enabled but this release ships no embedding provider. The provider "
-      + "interface is exported from corpus_embeddings for an operator to implement; the CLI "
-      + "cannot invoke one yet. Re-run without --embeddings.",
-      2,
-    );
+    const name = embeddingConfiguration.provider.trim();
+    if (name !== httpEmbeddings.HTTP_JSON_PROVIDER) {
+      fail(
+        `--embedding-provider '${name}' is not a provider this CLI can run. This package ships `
+        + `one: '${httpEmbeddings.HTTP_JSON_PROVIDER}', which POSTs {model, input} to `
+        + "--embedding-endpoint and reads a vector back. Any other provider is supplied in "
+        + "process through the EmbeddingProvider interface exported from corpus_embeddings.",
+        2,
+      );
+    }
+    try {
+      embeddingProvider = new httpEmbeddings.HttpJsonEmbeddingProvider({
+        endpoint: embeddingConfiguration.endpoint ?? "",
+        modelId: embeddingConfiguration.model_id,
+        locality: embeddingConfiguration.locality,
+        ...(embeddingConfiguration.model_revision !== undefined
+          ? { modelRevision: embeddingConfiguration.model_revision }
+          : {}),
+      });
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error), 2);
+    }
   }
+
+  const embeddingPairThreshold = numericOpt(cli, "--embedding-pair-threshold");
 
   const packBudget = {};
   const packMaxArtifacts = numericOpt(cli, "--reasoning-pack-max-artifacts");
@@ -584,6 +637,8 @@ async function runCorpusMode(cli) {
       verifyContent: cli.flag("--verify-content"),
       allowPartialRoots: cli.flag("--allow-partial-roots"),
       semanticAnalysis: !cli.flag("--no-semantic-analysis"),
+      ...(embeddingProvider !== undefined ? { embeddingProvider } : {}),
+      ...(embeddingPairThreshold !== undefined ? { embeddingPairThreshold } : {}),
       ...(Object.keys(packBudget).length > 0 ? { packBudget } : {}),
     });
   } catch (error) {

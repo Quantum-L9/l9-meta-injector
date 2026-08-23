@@ -5,6 +5,7 @@
 // run below is the real script against the committed `dist/`, so a wiring mistake
 // fails here rather than in someone's terminal.
 import * as cp from "node:child_process";
+import * as http from "node:http";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -34,6 +35,25 @@ interface Run {
 function run(args: string[]): Run {
   const result = cp.spawnSync(process.execPath, [CLI, ...args], { encoding: "utf8" });
   return { status: result.status, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
+}
+
+/**
+ * The same run, without blocking this process's event loop.
+ *
+ * `spawnSync` stops everything until the child exits, which is fine when the
+ * child needs nothing from here. It is fatal when the child is expected to reach
+ * a server running in *this* process: the socket is never accepted, and the run
+ * fails on a timeout that has nothing to do with the code under test.
+ */
+function runAsync(args: string[]): Promise<Run> {
+  return new Promise((resolve) => {
+    const child = cp.spawn(process.execPath, [CLI, ...args], { encoding: "utf8" });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk: string) => { stdout += chunk; });
+    child.stderr.on("data", (chunk: string) => { stderr += chunk; });
+    child.on("close", (status) => resolve({ status, stdout, stderr }));
+  });
 }
 
 interface Fixture {
@@ -285,7 +305,7 @@ describe("semantic candidate discovery", () => {
     const f = fixture();
     const result = run(argsFor(f));
     expect(result.stdout).toContain("zero LLM calls");
-    expect(result.stdout).toContain("embeddings       off");
+    expect(result.stdout).toContain("embeddings       not enabled");
   });
 
   it("can be switched off, leaving the duplicate analysis in place", () => {
@@ -343,12 +363,107 @@ describe("the embedding guards", () => {
     expect(result.stderr).toContain("https://");
   });
 
-  it("say plainly that no provider ships, rather than reporting an empty run", () => {
+  it("name the one provider it can run, rather than accepting any name", () => {
     const f = fixture();
     const result = run(argsFor(f, [
       "--embeddings", "--embedding-provider", "acme", "--embedding-model", "m1",
     ]));
     expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain("ships no embedding provider");
+    expect(result.stderr).toContain("http-json");
+  });
+
+  it("refuse a local provider pointed at a host that is not this machine", () => {
+    const f = fixture();
+    const result = run(argsFor(f, [
+      "--embeddings", "--embedding-provider", "http-json", "--embedding-model", "m1",
+      "--embedding-endpoint", "https://embeddings.example.com/v1",
+    ]));
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("loopback");
+  });
+});
+
+describe("an embedding run through the CLI", () => {
+  /**
+   * A loopback server for the duration of one CLI invocation.
+   *
+   * The CLI runs in a child process, so nothing can be stubbed into it: this is
+   * a real server on a real port, reached over a real socket by the script an
+   * operator would run. That is the only way to prove `--embeddings` stopped
+   * being a flag that fails.
+   */
+  async function withServer<T>(
+    body: (url: string, seen: () => number) => Promise<T> | T,
+  ): Promise<T> {
+    let count = 0;
+    const server = http.createServer((request, response) => {
+      const chunks: Buffer[] = [];
+      request.on("data", (chunk: Buffer) => chunks.push(chunk));
+      request.on("end", () => {
+        count += 1;
+        const text = (JSON.parse(Buffer.concat(chunks).toString("utf8")) as { input: string }).input;
+        // A deterministic function of the text: enough for a cosine, not a model.
+        const vector = new Array<number>(12).fill(0);
+        for (const word of text.toLowerCase().split(/[^a-z0-9]+/)) {
+          if (word.length < 3) continue;
+          let hash = 0;
+          for (const character of word) hash = (hash * 31 + character.charCodeAt(0)) % 100_003;
+          vector[hash % 12] = (vector[hash % 12] as number) + 1;
+        }
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ model: "toy-v1", embedding: vector }));
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const address = server.address();
+      if (address === null || typeof address === "string") throw new Error("no port");
+      return await body(`http://127.0.0.1:${address.port}/embed`, () => count);
+    } finally {
+      server.close();
+    }
+  }
+
+  it("embeds against a loopback server and reports what it sent", async () => {
+    await withServer(async (url, seen) => {
+      const f = fixture();
+      const result = await runAsync(argsFor(f, [
+        "--embeddings",
+        "--embedding-provider", "http-json",
+        "--embedding-model", "toy",
+        "--embedding-endpoint", url,
+        "--embedding-locality", "local",
+        "--max-embedding-workers", "3",
+      ]));
+      expect(result.stderr).toBe("");
+      expect(result.status).toBe(0);
+      // The server was actually called. Without this the rest could pass on a
+      // run that quietly embedded nothing.
+      expect(seen()).toBeGreaterThan(0);
+
+      expect(result.stdout).toContain("embedded");
+      expect(result.stdout).toContain("local http-json");
+      expect(result.stdout).toContain("bounded chunk(s)");
+      expect(result.stdout).not.toContain("no model was called");
+
+      const coverage = JSON.parse(
+        fs.readFileSync(path.join(f.out, "corpus-coverage.json"), "utf8"),
+      );
+      expect(coverage.embeddings.enabled).toBe(true);
+      expect(coverage.embeddings.embedded_count).toBeGreaterThan(0);
+      expect(coverage.embedding_coverage_when_enabled).not.toBeNull();
+
+      // The model identity reaches the analysis identity, so two runs under two
+      // models are two analyses of one snapshot rather than one contradictory
+      // record.
+      const snapshot = JSON.parse(
+        fs.readFileSync(path.join(f.out, "corpus-snapshot.json"), "utf8"),
+      );
+      expect(snapshot.analysis.embedding_profile).not.toBeNull();
+
+      // And still no mount point anywhere in the projections.
+      const rendered = fs.readFileSync(path.join(f.out, "corpus-coverage.json"), "utf8");
+      for (const root of f.roots) expect(rendered).not.toContain(root);
+    });
   });
 });

@@ -170,7 +170,13 @@ import type { SemanticAnalysisResult } from "./corpus_semantic_run";
 import type { SemanticArtifactInput } from "./corpus_semantics";
 import type { PackAssertion } from "./corpus_reasoning";
 import type { EmbeddingPairScore } from "./corpus_pairs";
-import type { EmbeddingRunReport } from "./corpus_embeddings";
+import { DEFAULT_EMBEDDING_PAIR_THRESHOLD } from "./corpus_fusion";
+import { embeddingChunkProfileHash, runEmbeddings } from "./corpus_embeddings";
+import type {
+  EmbeddableDocument,
+  EmbeddingProvider,
+  EmbeddingRunReport,
+} from "./corpus_embeddings";
 import { RepositoryModelPacket, buildRepositoryModelPacket, stableId } from "./repository_model";
 import {
   LocalSourceManifest,
@@ -241,6 +247,21 @@ export interface CorpusScanInput {
   /** Cosine scores from an embedding pass the caller ran. Absent means embeddings were off. */
   embeddingPairs?: readonly EmbeddingPairScore[];
   embeddingReport?: EmbeddingRunReport;
+  /**
+   * A provider to run the embedding pass with, in place of supplying its results.
+   *
+   * The two are alternatives, not a pair: a caller either ran the pass itself and
+   * hands over `embeddingPairs` and `embeddingReport`, or hands over a provider
+   * and lets the scan run it. The scan is the only place that can, because the
+   * text to embed is the normalized text and that does not exist until the
+   * decoders have run.
+   *
+   * Absent — the default — means no embedding pass, no network request, and no
+   * model call of any kind.
+   */
+  embeddingProvider?: EmbeddingProvider;
+  /** Cosine at or above which a pair is offered to fusion. Default 0.75. */
+  embeddingPairThreshold?: number;
   /** Overrides for the bounded reasoning evidence packs. */
   packBudget?: { maxArtifactsPerPack?: number; maxTotalPackCharacters?: number };
 }
@@ -1073,14 +1094,28 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       ...registry.profile(),
       `${MANIFEST_DECODER_ID}@${MANIFEST_DECODER_VERSION}`,
     ];
-    const embeddingProfile: string | null = input.embeddingReport?.enabled === true
+    // The embedding profile is a property of the model and the chunking, both
+    // known before a single vector exists — which is what lets a run that will
+    // embed carry the right analysis identity even though the pass itself has to
+    // wait for the decoders. A supplied provider and a supplied report are
+    // alternatives; the provider wins when both are given, because it is the one
+    // that will actually produce this run's numbers.
+    const embeddingConfiguration = input.embeddingProvider?.configuration;
+    const embeddingProfile: string | null = embeddingConfiguration !== undefined
       ? stableId("embedding-profile", {
-          chunk_profile: input.embeddingReport.chunk_profile,
-          model_id: input.embeddingReport.model_id ?? "",
-          model_revision: input.embeddingReport.model_revision ?? "",
-          provider: input.embeddingReport.provider ?? "",
+          chunk_profile: embeddingChunkProfileHash(),
+          model_id: embeddingConfiguration.model_id,
+          model_revision: embeddingConfiguration.model_revision ?? "",
+          provider: embeddingConfiguration.provider,
         })
-      : null;
+      : input.embeddingReport?.enabled === true
+        ? stableId("embedding-profile", {
+            chunk_profile: input.embeddingReport.chunk_profile,
+            model_id: input.embeddingReport.model_id ?? "",
+            model_revision: input.embeddingReport.model_revision ?? "",
+            provider: input.embeddingReport.provider ?? "",
+          })
+        : null;
 
     // ── 3. corpus artifacts ───────────────────────────────────────────────
     const previousPrechecks = input.previousSnapshot
@@ -1752,6 +1787,70 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       };
     });
 
+    // ── 7c. the embedding pass, when a provider was supplied ──────────────
+    //
+    // It runs here and not in the caller because the text it sends is the
+    // *normalized* text — a decoded Word document's blocks, a PDF's page text —
+    // and that only exists once the decoders have run. A caller that wanted to
+    // run the pass itself would have to reimplement the decode stage to get the
+    // input, which is how "the provider interface is exported for an operator to
+    // implement" turned into a CLI that refused `--embeddings` outright.
+    //
+    // Every containment rule in `corpus_embeddings.ts` applies to what is
+    // assembled here: title and headings from block kinds, body from the rest,
+    // secret-candidate paths marked so the pass drops them before chunking, and
+    // never a path, never a raw byte, never an archive.
+    let embeddingPairs = input.embeddingPairs;
+    let embeddingReport = input.embeddingReport;
+    if (input.embeddingProvider !== undefined) {
+      const embeddable: EmbeddableDocument[] = artifacts.map((artifact) => {
+        const record = normalized.get(artifact.virtualSourceId);
+        const blocks = record?.blocks ?? [];
+        const title = blocks.find((block) => block.kind === "title")?.text;
+        const headings = blocks
+          .filter((block) => block.kind === "heading")
+          .map((block) => block.text);
+        const body = blocks
+          .filter((block) => block.kind !== "title" && block.kind !== "heading")
+          .map((block) => block.text)
+          .join("\n");
+        return {
+          artifact_id: artifact.virtualSourceId,
+          normalized_document_id: record?.normalized_content_hash ?? null,
+          ...(title !== undefined ? { title } : {}),
+          ...(headings.length > 0 ? { headings } : {}),
+          ...(body.length > 0 ? { body } : {}),
+          is_secret_candidate: isSecretCandidatePath(artifact.rootRelativePath),
+          decoded: record?.decodes === true,
+        };
+      });
+      try {
+        const run = await runEmbeddings({
+          documents: embeddable,
+          provider: input.embeddingProvider,
+          pairThreshold: input.embeddingPairThreshold ?? DEFAULT_EMBEDDING_PAIR_THRESHOLD,
+          // The budget an operator already sets with `--max-embedding-workers`,
+          // rather than a second knob beside it. This is the number that was
+          // previously recorded in the session manifest and acted on nowhere.
+          maxParallelRequests: budgets.max_parallel_embedding_requests,
+        });
+        embeddingPairs = run.pairs.map((pair) => ({
+          artifact_a_id: pair.artifact_a_id,
+          artifact_b_id: pair.artifact_b_id,
+          score: pair.score,
+        }));
+        embeddingReport = run.report;
+      } catch (error) {
+        // A provider that fails is reported as a failure, not absorbed into a
+        // run that then claims embeddings were off. The distinction matters: one
+        // says nothing was asked of a model, the other says something was asked
+        // and did not come back.
+        throw new Error(
+          `embedding pass failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+
     // ── 8. semantic candidate discovery ───────────────────────────────────
     let semantic: SemanticAnalysisResult | null = null;
     if (input.semanticAnalysis !== false) {
@@ -1813,8 +1912,8 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
           score: candidate.score,
         })),
         assertionsByArtifact,
-        ...(input.embeddingPairs !== undefined ? { embeddingPairs: input.embeddingPairs } : {}),
-        ...(input.embeddingReport !== undefined ? { embeddingReport: input.embeddingReport } : {}),
+        ...(embeddingPairs !== undefined ? { embeddingPairs } : {}),
+        ...(embeddingReport !== undefined ? { embeddingReport } : {}),
         ...(input.packBudget !== undefined ? { packBudget: input.packBudget } : {}),
       });
       for (const note of semantic.relations.diagnostics) {
@@ -2038,20 +2137,21 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
         consolidation_candidate_count: semantic?.consolidations.candidates.length ?? 0,
       },
       embeddings: {
-        enabled: input.embeddingReport?.enabled === true,
-        eligible_count: input.embeddingReport?.enabled === true
-          ? input.embeddingReport.eligible_artifact_count
+        enabled: embeddingReport?.enabled === true,
+        eligible_count: embeddingReport?.enabled === true
+          ? embeddingReport.eligible_artifact_count
           : null,
-        embedded_count: input.embeddingReport?.enabled === true
-          ? input.embeddingReport.embedded_artifact_count
+        embedded_count: embeddingReport?.enabled === true
+          ? embeddingReport.embedded_artifact_count
           : null,
-        cache_hit_count: input.embeddingReport?.enabled === true
-          ? input.embeddingReport.cache_hits
+        cache_hit_count: embeddingReport?.enabled === true
+          ? embeddingReport.cache_hits
           : null,
-        provider_failure_count: input.embeddingReport?.enabled === true
-          ? input.embeddingReport.eligible_artifact_count
-            - input.embeddingReport.embedded_artifact_count
-            - input.embeddingReport.secret_candidates_skipped
+        // Eligibility already excludes the documents refused for their name, so
+        // subtracting them again would report a negative failure count on any
+        // corpus holding one.
+        provider_failure_count: embeddingReport?.enabled === true
+          ? embeddingReport.eligible_artifact_count - embeddingReport.embedded_artifact_count
           : null,
       },
       exact_hash_coverage: coverageRatio(
@@ -2067,7 +2167,14 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
         lexicalEligible.filter((artifact) => lexical.has(artifact.virtualSourceId)).length,
         lexicalEligible.length,
       ),
-      embedding_coverage_when_enabled: null,
+      // A real ratio when a pass ran, and null — not zero — when none did. Zero
+      // would read as "the model was asked and answered nothing".
+      embedding_coverage_when_enabled: embeddingReport?.enabled === true
+        ? coverageRatio(
+          embeddingReport.embedded_artifact_count,
+          embeddingReport.eligible_artifact_count,
+        )
+        : null,
       unsupported_format_counts: formatCounts(
         artifacts
           .filter((artifact) => undecodedExtensions.has(artifact.extension))
