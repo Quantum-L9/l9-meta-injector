@@ -236,6 +236,33 @@ export function splitCsvLine(line: string, delimiter: string): string[] {
   return cells;
 }
 
+/**
+ * One block per populated cell of a row, under its column's name.
+ *
+ * The row block stays: a row naming a blocker is worth citing as a row. These are
+ * what make one *field* of it a readable statement rather than a fragment of a
+ * joined string — `owner: mel; status: blocked` offers a reader `owner` and
+ * nothing else, because a declaration is read up to its first colon.
+ */
+function addCsvCellBlocks(
+  builder: BlockBuilder,
+  header: readonly string[],
+  cells: readonly string[],
+  rowNumber: number,
+): void {
+  for (let column = 0; column < cells.length; column += 1) {
+    const value = (cells[column] as string).trim();
+    const name = (header[column] as string).trim();
+    if (value.length === 0 || name.length === 0) continue;
+    builder.add("cell", `${name}: ${value}`, {
+      kind: "csv_row",
+      row_number: rowNumber,
+      column: name,
+    });
+    if (builder.isFull) return;
+  }
+}
+
 export const csvDecoder: DocumentDecoder = {
   id: CSV_DECODER_ID,
   version: CSV_DECODER_VERSION,
@@ -276,24 +303,8 @@ export const csvDecoder: DocumentDecoder = {
         : cells.join(" | ");
       builder.add("cell", label, { kind: "csv_row", row_number: rowNumber });
       if (builder.isFull) break;
-      // And each populated cell on its own, under its column's name. The row
-      // block stays because a row naming a blocker is worth citing as a row; the
-      // cell blocks are what make one field of it a readable statement rather
-      // than a fragment of a joined string.
-      if (labelled) {
-        for (let column = 0; column < cells.length; column += 1) {
-          const value = (cells[column] as string).trim();
-          const name = (header[column] as string).trim();
-          if (value.length === 0 || name.length === 0) continue;
-          builder.add("cell", `${name}: ${value}`, {
-            kind: "csv_row",
-            row_number: rowNumber,
-            column: name,
-          });
-          if (builder.isFull) break;
-        }
-        if (builder.isFull) break;
-      }
+      if (labelled) addCsvCellBlocks(builder, header, cells, rowNumber);
+      if (builder.isFull) break;
     }
     if (rows.length > 0) {
       builder.addTable(rows, { kind: "csv_row", row_number: 1 });

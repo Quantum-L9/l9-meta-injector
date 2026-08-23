@@ -57,6 +57,39 @@ function firstContentLine(text) {
     }
     return null;
 }
+/** The checkbox marker a milestone may be written with, and is not part of. */
+const MILESTONE_CHECKBOX = /^\s*\[[ xX]\]\s*/;
+/** Every milestone one list-item block declares. */
+function milestonesInBlock(block) {
+    const drafts = [];
+    for (const line of unitsOf(block.text)) {
+        // A milestone written as a checklist item is still a milestone; the checkbox
+        // marker is task syntax rather than part of the milestone.
+        const text = (0, work_intelligence_1.documentText)(line.replace(MILESTONE_CHECKBOX, ""));
+        if (text.length === 0)
+            continue;
+        drafts.push({
+            predicate: "work.milestone",
+            object: text,
+            excerpt: line,
+            evidenceClass: "observed",
+            confidence: "high",
+            block,
+        });
+    }
+    return drafts;
+}
+/** The list-item blocks belonging to the section a titular block opened. */
+function milestoneSectionMembers(blocks, opener) {
+    const members = [];
+    for (let index = opener + 1; index < blocks.length; index++) {
+        const block = blocks[index];
+        if (block.kind !== "list_item")
+            break;
+        members.push(block);
+    }
+    return members;
+}
 /**
  * Milestones declared as a list under a `Milestones` heading.
  *
@@ -72,25 +105,8 @@ function milestoneSectionDrafts(blocks) {
             continue;
         if (!(0, work_intelligence_1.isMilestoneSectionHeading)(opener.text))
             continue;
-        for (let member = index + 1; member < blocks.length; member++) {
-            const block = blocks[member];
-            if (block.kind !== "list_item")
-                break;
-            for (const line of unitsOf(block.text)) {
-                // A milestone written as a checklist item is still a milestone; the
-                // checkbox marker is task syntax rather than part of the milestone.
-                const text = (0, work_intelligence_1.documentText)(line.replace(/^\s*\[[ xX]\]\s*/, ""));
-                if (text.length === 0)
-                    continue;
-                drafts.push({
-                    predicate: "work.milestone",
-                    object: text,
-                    excerpt: line,
-                    evidenceClass: "observed",
-                    confidence: "high",
-                    block,
-                });
-            }
+        for (const member of milestoneSectionMembers(blocks, index)) {
+            drafts.push(...milestonesInBlock(member));
         }
     }
     return drafts;
@@ -113,6 +129,30 @@ function milestoneSectionDrafts(blocks) {
  * confidence stays `medium`, exactly as it is for a Markdown title: a name is a
  * name first and a claim about the document second.
  */
+/** What one titular block declares: its text, and any marker that text carries. */
+function titularBlockDrafts(block, line, text, isName) {
+    const drafts = [{
+            predicate: isName ? "document.title" : "document.heading",
+            object: text,
+            excerpt: line,
+            evidenceClass: isName ? "declared" : "observed",
+            confidence: "high",
+            block,
+        }];
+    if (block.kind !== "title")
+        return drafts;
+    for (const marker of (0, work_intelligence_1.readTitleMarkers)(text, line)) {
+        drafts.push({
+            predicate: marker.predicate,
+            object: marker.object,
+            excerpt: marker.excerpt,
+            evidenceClass: marker.evidenceClass,
+            confidence: marker.confidence,
+            block,
+        });
+    }
+    return drafts;
+}
 function titularDrafts(blocks) {
     const drafts = [];
     let named = false;
@@ -128,26 +168,7 @@ function titularDrafts(blocks) {
         const isName = block.kind === "title" && !named;
         if (isName)
             named = true;
-        drafts.push({
-            predicate: isName ? "document.title" : "document.heading",
-            object: text,
-            excerpt: line,
-            evidenceClass: isName ? "declared" : "observed",
-            confidence: "high",
-            block,
-        });
-        if (block.kind !== "title")
-            continue;
-        for (const marker of (0, work_intelligence_1.readTitleMarkers)(text, line)) {
-            drafts.push({
-                predicate: marker.predicate,
-                object: marker.object,
-                excerpt: marker.excerpt,
-                evidenceClass: marker.evidenceClass,
-                confidence: marker.confidence,
-                block,
-            });
-        }
+        drafts.push(...titularBlockDrafts(block, line, text, isName));
     }
     return drafts;
 }

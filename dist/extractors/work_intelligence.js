@@ -329,6 +329,25 @@ function kindValue(raw) {
 }
 // ───────────────────────────── structure reading ─────────────────────────────
 /**
+ * Why the tail of every pattern here captures with `[\s\S]` rather than `.`.
+ *
+ * `.` excludes `\r`, `\n`, `\u2028` and `\u2029`. A tail written `\s*(.*)$`
+ * therefore lets two quantifiers compete for the same whitespace and then fail
+ * at the anchor whenever one of those four characters appears later in the
+ * string — and the engine retries every division of the whitespace before giving
+ * up. Measured on a line carrying a lone carriage return: 16,000 characters in
+ * 200ms, quadrupling with each doubling, so a 120 KiB line takes minutes.
+ *
+ * A lone `\r` is not a contrived input. `toLines` splits on `/\r?\n/`, so a
+ * classic Mac line ending survives into what this module calls a line, and that
+ * is precisely the vintage of document an archive of old plans is full of.
+ *
+ * `[\s\S]*` matches every character including those four, so the anchor is
+ * reached on the first attempt and the pattern never backtracks. For a line with
+ * no stray control character — every ordinary line — the two forms capture
+ * exactly the same text.
+ */
+/**
  * An ATX heading, split only as far as the marker.
  *
  * The closing `#` run is trimmed afterwards by a scan rather than matched here.
@@ -338,7 +357,7 @@ function kindValue(raw) {
  * twenty-six seconds. This form always succeeds once a marker and a space are
  * present, so it never backtracks at all.
  */
-const ATX_HEADING = /^ {0,3}(#{1,6})[ \t]+(.*)$/;
+const ATX_HEADING = /^ {0,3}(#{1,6})[ \t]+([\s\S]*)$/;
 const isHash = (character) => character === "#";
 /** Every ATX heading outside frontmatter and fenced code, in document order. */
 function headings(view) {
@@ -450,7 +469,7 @@ exports.documentStructureExtractor = {
     },
 };
 // ───────────────────────── work-intelligence/v1 ─────────────────────────
-const CHECKBOX = /^\s{0,8}(?:[-*+]|\d{1,3}[.)])\s+\[([ xX])\]\s*(.*)$/;
+const CHECKBOX = /^\s{0,8}(?:[-*+]|\d{1,3}[.)])\s+\[([ xX])\]\s*([\s\S]*)$/;
 /**
  * An explicit `TODO:` line, matched after the list prefix has been stripped.
  *
@@ -458,7 +477,7 @@ const CHECKBOX = /^\s{0,8}(?:[-*+]|\d{1,3}[.)])\s+\[([ xX])\]\s*(.*)$/;
  * made it the most complicated regex in the module and meant two places had to
  * agree about what a list marker looks like.
  */
-const TODO_LINE = /^(?:\*\*|__)?TODO(?:\*\*|__)?\s*:\s*(.+)$/;
+const TODO_LINE = /^(?:\*\*|__)?TODO(?:\*\*|__)?\s*:\s*([\s\S]+)$/;
 const BULLET = /^\s{0,3}(?:[-*+]|\d{1,3}[.)])\s+(.*)$/;
 const MILESTONE_LABEL = /^milestone(?: [a-z0-9.]{1,8})?$/;
 const BLOCKQUOTE_STATUS = /^\s{0,3}>\s*(?:\*\*|__)?\[?([A-Za-z]+)\]?(?:\*\*|__)?\s*(?::.*)?$/;
@@ -616,7 +635,7 @@ function milestoneSectionSignals(view) {
  * Markdown checklist and no Word one, which is the same file failing to be
  * understood because of the program it was written in.
  */
-const BARE_CHECKBOX = /^\s{0,8}\[([ xX])\]\s*(.*)$/;
+const BARE_CHECKBOX = /^\s{0,8}\[([ xX])\]\s*([\s\S]*)$/;
 /** A task written as list syntax: a checkbox, or a line that opens with `TODO:`. */
 function taskSignal(line, listMarkerImplied = false) {
     const checkbox = CHECKBOX.exec(line) ?? (listMarkerImplied ? BARE_CHECKBOX.exec(line) : null);

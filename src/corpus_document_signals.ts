@@ -423,7 +423,7 @@ function buildBlockSignalEvidence(input: DocumentSignalsInput): DocumentSignalEv
       .map((entry) => {
         // Sorted before slicing, so the listed sample is the same sample on every
         // run over the same corpus rather than whichever records arrived first.
-        const sorted = entry.records.sort(compareRecords);
+        const sorted = [...entry.records].sort(compareRecords);
         const listed = sorted.slice(0, MAX_LISTED_SIGNALS_PER_FORMAT);
         return {
           format: entry.format,

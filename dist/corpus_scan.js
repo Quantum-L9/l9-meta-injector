@@ -925,7 +925,7 @@ async function runCorpusScan(input) {
         const blockSignals = new Map();
         for (const artifact of decodable) {
             const record = normalized.get(artifact.virtualSourceId);
-            if (record === undefined || !record.decodes)
+            if (record?.decodes !== true)
                 continue;
             // A text document is skipped: its assertions already exist, and they cite
             // the line spans it actually has. Reading it twice would double every task
