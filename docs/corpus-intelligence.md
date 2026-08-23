@@ -247,6 +247,14 @@ The order is deliberate. A trustworthy artifact-level evidence substrate comes f
 higher-order grouping and strategic judgement come after it has been run against real
 archives.
 
+It has been, and [ADR-038](decisions/038-multi-root-corpus-incremental-cache-and-readiness-evidence.md)
+takes two items off that list: **topic candidates** and **project candidates**, both
+deterministic, both lexical or marker-based, and both labelled candidates for the same
+reason near-duplicates are. See [corpus-archaeology.md](corpus-archaeology.md), which
+also covers multi-root corpora, the content-addressed cache and readiness evidence.
+Everything else above stays where it is: no embedding is computed, no model is called,
+nothing is moved or deleted, and no priority is produced.
+
 ## Running it
 
 ```bash

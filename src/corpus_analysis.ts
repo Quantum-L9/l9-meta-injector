@@ -292,13 +292,38 @@ export function nearDuplicateCandidatesExhaustive(
 }
 
 /**
+ * The prefix of a shingle set that a qualifying partner must intersect.
+ *
+ * For Jaccard at threshold `t`, a pair can only reach `t` if it shares at least
+ * `ceil(t * |X|)` shingles with the smaller of the two sets. Under any fixed
+ * global order over shingles, two sets that share that many elements must both
+ * contain one of the first `|X| - ceil(t * |X|) + 1` of them — otherwise the
+ * shared elements would all have to sit past a point where fewer than that many
+ * elements remain. So indexing only that prefix loses no qualifying pair.
+ */
+export function prefixLength(setSize: number, threshold: number): number {
+  if (setSize === 0) return 0;
+  return Math.max(1, setSize - Math.ceil(roundScore(threshold) * setSize) + 1);
+}
+
+/**
  * The same qualifying pairs, reached through a shingle index.
  *
- * A pair that shares no shingle scores exactly zero, so at any positive threshold
- * it cannot qualify and never has to be compared. That makes the index an exact
- * optimization rather than an approximation — the tests hold it to the reference
- * implementation above. At a threshold of zero every pair qualifies by
- * definition, and the exhaustive path is used instead.
+ * Two exact filters do the work, and both are consequences of the definition of
+ * Jaccard rather than approximations of it:
+ *
+ *   - a size bound: a set can share at most `min(|A|, |B|)` shingles, so a pair
+ *     whose sizes differ by more than a factor of `t` cannot reach `t`;
+ *   - a prefix bound: shingles are put in one global order — rarest first — and
+ *     only each document's prefix is indexed, because a qualifying pair must
+ *     intersect there.
+ *
+ * The tests hold this to the bounded all-pairs reference above at six thresholds.
+ * Rarest-first matters for cost rather than correctness: it puts the shingles
+ * every document in a corpus shares — a boilerplate heading, a licence block —
+ * at the end of the order, where they are never indexed and so never generate a
+ * candidate list the size of the corpus. At a threshold of zero every pair
+ * qualifies by definition, and the exhaustive path is used instead.
  */
 export function nearDuplicateCandidates(
   documents: NearDuplicateDocument[],
@@ -306,33 +331,61 @@ export function nearDuplicateCandidates(
 ): NearDuplicateCandidate[] {
   if (roundScore(threshold) <= 0) return nearDuplicateCandidatesExhaustive(documents, threshold);
 
+  const documentFrequency = new Map<string, number>();
+  for (const document of documents) {
+    for (const shingle of document.shingles) {
+      documentFrequency.set(shingle, (documentFrequency.get(shingle) ?? 0) + 1);
+    }
+  }
+  const globalOrder = (left: string, right: string): number =>
+    (documentFrequency.get(left) ?? 0) - (documentFrequency.get(right) ?? 0)
+    || compareCodePoints(left, right);
+
+  // Smallest set first, so that when a document is compared it has already seen
+  // every partner that could satisfy the size bound from below.
+  const ordered = documents
+    .map((document, index) => ({ document, index }))
+    .sort(
+      (left, right) =>
+        left.document.shingles.size - right.document.shingles.size
+        || compareCodePoints(left.document.artifactId, right.document.artifactId),
+    );
+
   const postings = new Map<string, number[]>();
-  for (let index = 0; index < documents.length; index++) {
-    for (const shingle of documents[index].shingles) {
-      const bucket = postings.get(shingle);
-      if (bucket === undefined) postings.set(shingle, [index]);
-      else bucket.push(index);
-    }
-  }
-  // Pairs are keyed as one number rather than a string: a corpus where many
-  // documents share a boilerplate header produces a large candidate set, and the
-  // difference between a numeric key and a parsed string key is what keeps that
-  // set affordable.
-  const pairs = new Set<number>();
-  for (const bucket of postings.values()) {
-    if (bucket.length < 2) continue;
-    for (let i = 0; i < bucket.length; i++) {
-      for (let j = i + 1; j < bucket.length; j++) pairs.add(bucket[i] * documents.length + bucket[j]);
-    }
-  }
   const out: NearDuplicateCandidate[] = [];
-  for (const key of pairs) {
-    const left = Math.floor(key / documents.length);
-    const right = key % documents.length;
-    if (pairIneligible(documents[left], documents[right])) continue;
-    const measured = jaccard(documents[left].shingles, documents[right].shingles);
-    if (roundScore(measured.score) < roundScore(threshold)) continue;
-    out.push(candidateFor(documents[left], documents[right], measured, threshold));
+  const seen = new Set<number>();
+
+  for (let position = 0; position < ordered.length; position++) {
+    const current = ordered[position].document;
+    const size = current.shingles.size;
+    if (size === 0) continue;
+    const shingles = [...current.shingles].sort(globalOrder);
+    const prefix = shingles.slice(0, prefixLength(size, threshold));
+
+    // Candidates for this document only. Kept per document rather than for the
+    // whole corpus, so a corpus of ten thousand documents never has to hold ten
+    // thousand squared pair keys at once.
+    seen.clear();
+    for (const shingle of prefix) {
+      for (const other of postings.get(shingle) ?? []) {
+        if (seen.has(other)) continue;
+        seen.add(other);
+        const partner = ordered[other].document;
+        // Size bound: `partner` is no larger than `current`, so a pair can only
+        // reach the threshold when the smaller set is at least `t` of the larger.
+        if (partner.shingles.size < roundScore(threshold) * size) continue;
+        if (pairIneligible(current, partner)) continue;
+        const measured = jaccard(current.shingles, partner.shingles);
+        if (roundScore(measured.score) < roundScore(threshold)) continue;
+        out.push(candidateFor(current, partner, measured, threshold));
+      }
+    }
+
+    for (const shingle of prefix) {
+      const bucket = postings.get(shingle);
+      if (bucket === undefined) postings.set(shingle, [position]);
+      else bucket.push(position);
+    }
   }
   return out.sort(compareCandidates);
 }
@@ -613,6 +666,80 @@ function clusterId(contentHash: string): string {
 }
 
 /**
+ * The member a rendering draws toward: shortest source path, then code point.
+ *
+ * Shared by both clusterers so "representative" has one definition. It is a
+ * drawing convenience and nothing else — every member of an exact cluster is
+ * byte-equal to every other, so no member is the original, the canonical copy or
+ * the one to keep.
+ */
+export function duplicateRepresentative<T extends { sourcePath: string }>(members: readonly T[]): T {
+  return [...members].sort(
+    (left, right) =>
+      left.sourcePath.length - right.sourcePath.length
+      || compareCodePoints(left.sourcePath, right.sourcePath),
+  )[0];
+}
+
+/** Total order over clusters: most recoverable bytes, then size, then id. */
+export function compareDuplicateClusters(
+  left: CorpusDuplicateCluster,
+  right: CorpusDuplicateCluster,
+): number {
+  return (
+    right.recoverable_bytes - left.recoverable_bytes
+    || right.count - left.count
+    || compareCodePoints(left.cluster_id, right.cluster_id)
+  );
+}
+
+/** One artifact's contribution to exact-duplicate clustering. */
+export interface ExactDuplicateInput {
+  artifactId: string;
+  sourcePath: string;
+  contentHash: string;
+  sizeBytes: number | null;
+}
+
+/**
+ * Cluster artifacts by byte equality, over any artifact set.
+ *
+ * The corpus-scope counterpart of `buildCorpusDuplicateClusters`: same rule —
+ * equal known content hashes, two or more members — reached from a flat artifact
+ * list rather than from one repository's inventory, so a cluster can span roots,
+ * disks and archives.
+ */
+export function clusterExactDuplicates(
+  artifacts: readonly ExactDuplicateInput[],
+): CorpusDuplicateCluster[] {
+  const byHash = new Map<string, ExactDuplicateInput[]>();
+  for (const artifact of artifacts) {
+    if (artifact.contentHash.length === 0) continue;
+    const bucket = byHash.get(artifact.contentHash);
+    if (bucket === undefined) byHash.set(artifact.contentHash, [artifact]);
+    else bucket.push(artifact);
+  }
+  const clusters: CorpusDuplicateCluster[] = [];
+  for (const [hash, group] of byHash) {
+    if (group.length < 2) continue;
+    const members = [...group].sort((left, right) => compareCodePoints(left.sourcePath, right.sourcePath));
+    const representative = duplicateRepresentative(members);
+    const size = members[0].sizeBytes ?? 0;
+    clusters.push({
+      cluster_id: clusterId(hash),
+      content_hash: `sha256:${hash.replace(/^sha256:/, "")}`,
+      representative_artifact_id: representative.artifactId,
+      representative_source_path: representative.sourcePath,
+      artifact_ids: members.map((member) => member.artifactId).sort(compareCodePoints),
+      source_paths: members.map((member) => member.sourcePath),
+      count: members.length,
+      recoverable_bytes: (members.length - 1) * size,
+    });
+  }
+  return clusters.sort(compareDuplicateClusters);
+}
+
+/**
  * Project the canonical duplicate clusters onto artifact identity.
  *
  * Membership is decided by the acquisition clustering, which is byte equality.
@@ -631,14 +758,7 @@ export function buildCorpusDuplicateClusters(
       .map((sourcePath) => ({ sourcePath, artifactId: repositoryModelArtifactId(repositoryId, sourcePath) }))
       .filter((entry) => emittedArtifactIds.has(entry.artifactId));
     if (resolved.length < 2) continue;
-    // Shortest path first, then code point. A short path is easier to read in a
-    // rendering; that is the whole of the criterion, and it implies nothing about
-    // which copy anyone should keep.
-    const representative = [...resolved].sort(
-      (left, right) =>
-        left.sourcePath.length - right.sourcePath.length
-        || compareCodePoints(left.sourcePath, right.sourcePath),
-    )[0];
+    const representative = duplicateRepresentative(resolved);
     clusters.push({
       cluster_id: clusterId(cluster.content_hash),
       content_hash: `sha256:${cluster.content_hash.replace(/^sha256:/, "")}`,
@@ -650,12 +770,7 @@ export function buildCorpusDuplicateClusters(
       recoverable_bytes: cluster.wasted_bytes,
     });
   }
-  return clusters.sort(
-    (left, right) =>
-      right.recoverable_bytes - left.recoverable_bytes
-      || right.count - left.count
-      || compareCodePoints(left.cluster_id, right.cluster_id),
-  );
+  return clusters.sort(compareDuplicateClusters);
 }
 
 /**

@@ -288,6 +288,27 @@ describe("near-duplicate scoring", () => {
     }
   });
 
+  it("matches the exhaustive reference over a generated corpus with shared boilerplate", () => {
+    // A deterministic pseudo-random corpus: every document carries the same
+    // heading, which is exactly the shape that makes a naive all-pairs index
+    // enumerate the whole corpus, and it is also the shape where an inexact
+    // filter would quietly start losing pairs.
+    let seed = 12345;
+    const next = (): number => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      return seed / 0x7fffffff;
+    };
+    const boilerplate = "shared heading line repeated in every document of this corpus";
+    const documents = Array.from({ length: 60 }, (_value, index) => {
+      const words = Array.from({ length: 40 }, () => `word${Math.floor(next() * 25)}`).join(" ");
+      return document(`gen-${index}`, `${boilerplate}\n${words}`);
+    });
+    for (const threshold of [0.05, 0.2, 0.35, 0.6, 0.85, 0.95, 1]) {
+      expect(nearDuplicateCandidates(documents, threshold), `threshold ${threshold}`)
+        .toEqual(nearDuplicateCandidatesExhaustive(documents, threshold));
+    }
+  });
+
   it("orders candidates and their pairs deterministically", () => {
     const documents = [
       document("zeta", LONG),

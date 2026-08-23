@@ -96,13 +96,34 @@ export declare function compareCandidates(left: NearDuplicateCandidate, right: N
  */
 export declare function nearDuplicateCandidatesExhaustive(documents: NearDuplicateDocument[], threshold: number): NearDuplicateCandidate[];
 /**
+ * The prefix of a shingle set that a qualifying partner must intersect.
+ *
+ * For Jaccard at threshold `t`, a pair can only reach `t` if it shares at least
+ * `ceil(t * |X|)` shingles with the smaller of the two sets. Under any fixed
+ * global order over shingles, two sets that share that many elements must both
+ * contain one of the first `|X| - ceil(t * |X|) + 1` of them — otherwise the
+ * shared elements would all have to sit past a point where fewer than that many
+ * elements remain. So indexing only that prefix loses no qualifying pair.
+ */
+export declare function prefixLength(setSize: number, threshold: number): number;
+/**
  * The same qualifying pairs, reached through a shingle index.
  *
- * A pair that shares no shingle scores exactly zero, so at any positive threshold
- * it cannot qualify and never has to be compared. That makes the index an exact
- * optimization rather than an approximation — the tests hold it to the reference
- * implementation above. At a threshold of zero every pair qualifies by
- * definition, and the exhaustive path is used instead.
+ * Two exact filters do the work, and both are consequences of the definition of
+ * Jaccard rather than approximations of it:
+ *
+ *   - a size bound: a set can share at most `min(|A|, |B|)` shingles, so a pair
+ *     whose sizes differ by more than a factor of `t` cannot reach `t`;
+ *   - a prefix bound: shingles are put in one global order — rarest first — and
+ *     only each document's prefix is indexed, because a qualifying pair must
+ *     intersect there.
+ *
+ * The tests hold this to the bounded all-pairs reference above at six thresholds.
+ * Rarest-first matters for cost rather than correctness: it puts the shingles
+ * every document in a corpus shares — a boilerplate heading, a licence block —
+ * at the end of the order, where they are never indexed and so never generate a
+ * candidate list the size of the corpus. At a threshold of zero every pair
+ * qualifies by definition, and the exhaustive path is used instead.
  */
 export declare function nearDuplicateCandidates(documents: NearDuplicateDocument[], threshold: number): NearDuplicateCandidate[];
 /**
@@ -311,6 +332,35 @@ export interface CorpusIndex {
 }
 /** Predicates the corpus index treats as work intelligence. */
 export declare const CORPUS_WORK_PREDICATES: readonly string[];
+/**
+ * The member a rendering draws toward: shortest source path, then code point.
+ *
+ * Shared by both clusterers so "representative" has one definition. It is a
+ * drawing convenience and nothing else — every member of an exact cluster is
+ * byte-equal to every other, so no member is the original, the canonical copy or
+ * the one to keep.
+ */
+export declare function duplicateRepresentative<T extends {
+    sourcePath: string;
+}>(members: readonly T[]): T;
+/** Total order over clusters: most recoverable bytes, then size, then id. */
+export declare function compareDuplicateClusters(left: CorpusDuplicateCluster, right: CorpusDuplicateCluster): number;
+/** One artifact's contribution to exact-duplicate clustering. */
+export interface ExactDuplicateInput {
+    artifactId: string;
+    sourcePath: string;
+    contentHash: string;
+    sizeBytes: number | null;
+}
+/**
+ * Cluster artifacts by byte equality, over any artifact set.
+ *
+ * The corpus-scope counterpart of `buildCorpusDuplicateClusters`: same rule —
+ * equal known content hashes, two or more members — reached from a flat artifact
+ * list rather than from one repository's inventory, so a cluster can span roots,
+ * disks and archives.
+ */
+export declare function clusterExactDuplicates(artifacts: readonly ExactDuplicateInput[]): CorpusDuplicateCluster[];
 /**
  * Project the canonical duplicate clusters onto artifact identity.
  *
