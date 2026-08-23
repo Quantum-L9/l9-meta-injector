@@ -80,6 +80,18 @@ export declare function corpusRootSnapshotId(physicalSnapshotHash: string): stri
  * segment declares distinct keys instead.
  */
 export declare function defaultRootKey(rootPath: string): string;
+/**
+ * A root spec's key, and whether the operator chose it.
+ *
+ * Both answers come from one place because they come from one fact — whether the
+ * spec carried a name — and they govern each other: the key is the operator's
+ * word exactly when the class is `declared`. Deriving them separately is how a
+ * key ends up called declared at one call site and inferred at another.
+ */
+export declare function resolveRootIdentity(spec: CorpusRootSpec): {
+    rootKey: string;
+    declared: boolean;
+};
 /** One root's contribution to the corpus source identity. */
 export interface CorpusSourceSnapshotRoot {
     root_id: string;

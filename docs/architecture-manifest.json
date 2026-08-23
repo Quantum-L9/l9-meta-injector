@@ -182,15 +182,15 @@
     },
     {
       "path": "dist/corpus_roots.d.ts",
-      "git_blob_sha1": "4cb3fdf8e89b1bb1678496acec8b16a8ed076cf3"
+      "git_blob_sha1": "2e3724589415c1217694539b53d233bdd8f8bcf5"
     },
     {
       "path": "dist/corpus_roots.js",
-      "git_blob_sha1": "4fe325a9c6af9a3ee9d6e2db9bf39333d27da232"
+      "git_blob_sha1": "7ea04670a4aa0fb42fadb5d0af52e6f9396feaa2"
     },
     {
       "path": "dist/corpus_roots.js.map",
-      "git_blob_sha1": "0e873698cc1c0eeb738ed0017fd7ed1ecbad8a1e"
+      "git_blob_sha1": "bf5a878a556b024099e0c76d95c9134bf13fe659"
     },
     {
       "path": "dist/corpus_scan.d.ts",
@@ -198,11 +198,11 @@
     },
     {
       "path": "dist/corpus_scan.js",
-      "git_blob_sha1": "696562e26da03b32b61d02ad1ffb00e11ccfadbe"
+      "git_blob_sha1": "311d7ae35998f57724fa00b989934ca6360eb00b"
     },
     {
       "path": "dist/corpus_scan.js.map",
-      "git_blob_sha1": "0ad184d87352ab12079daf90c2dca0d6e8553af8"
+      "git_blob_sha1": "3634be46c7aeba8311098b6edca2d0584bbc2c7a"
     },
     {
       "path": "dist/corpus_semantic_run.d.ts",
@@ -730,11 +730,11 @@
     },
     {
       "path": "src/corpus_roots.ts",
-      "git_blob_sha1": "84a4c09fc181baf4461c66a127f2e12a012140ed"
+      "git_blob_sha1": "d7d4ebae4a04abca9e6941deb1f596d46df0ea63"
     },
     {
       "path": "src/corpus_scan.ts",
-      "git_blob_sha1": "472e38042fcd5125014f914d19f7d1b4e6ee19e6"
+      "git_blob_sha1": "a5c70aa742d3288a4d47947e6d26ab31b879aa29"
     },
     {
       "path": "src/corpus_semantic_run.ts",

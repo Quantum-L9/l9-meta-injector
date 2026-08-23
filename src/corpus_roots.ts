@@ -134,6 +134,21 @@ export function defaultRootKey(rootPath: string): string {
   return base.length > 0 ? base : absolute;
 }
 
+/**
+ * A root spec's key, and whether the operator chose it.
+ *
+ * Both answers come from one place because they come from one fact — whether the
+ * spec carried a name — and they govern each other: the key is the operator's
+ * word exactly when the class is `declared`. Deriving them separately is how a
+ * key ends up called declared at one call site and inferred at another.
+ */
+export function resolveRootIdentity(
+  spec: CorpusRootSpec,
+): { rootKey: string; declared: boolean } {
+  const declared = spec.name !== undefined && spec.name.length > 0;
+  return { rootKey: declared ? (spec.name as string) : defaultRootKey(spec.path), declared };
+}
+
 /** One root's contribution to the corpus source identity. */
 export interface CorpusSourceSnapshotRoot {
   root_id: string;

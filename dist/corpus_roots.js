@@ -37,6 +37,7 @@ exports.CORPUS_PATH_SEPARATOR = exports.DEFAULT_CORPUS_ID = exports.CORPUS_MANIF
 exports.corpusRootId = corpusRootId;
 exports.corpusRootSnapshotId = corpusRootSnapshotId;
 exports.defaultRootKey = defaultRootKey;
+exports.resolveRootIdentity = resolveRootIdentity;
 exports.corpusSourceSnapshotId = corpusSourceSnapshotId;
 exports.corpusAnalysisId = corpusAnalysisId;
 exports.corpusPath = corpusPath;
@@ -114,6 +115,18 @@ function defaultRootKey(rootPath) {
     const absolute = path.resolve(rootPath);
     const base = path.basename(absolute);
     return base.length > 0 ? base : absolute;
+}
+/**
+ * A root spec's key, and whether the operator chose it.
+ *
+ * Both answers come from one place because they come from one fact — whether the
+ * spec carried a name — and they govern each other: the key is the operator's
+ * word exactly when the class is `declared`. Deriving them separately is how a
+ * key ends up called declared at one call site and inferred at another.
+ */
+function resolveRootIdentity(spec) {
+    const declared = spec.name !== undefined && spec.name.length > 0;
+    return { rootKey: declared ? spec.name : defaultRootKey(spec.path), declared };
 }
 /**
  * Identity of what the corpus *contained*.

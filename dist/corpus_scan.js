@@ -622,15 +622,11 @@ async function runCorpusScan(input) {
     // disagree about what continuity is worth.
     const allowInferredRootHistory = input.allowInferredRootHistory === true;
     const declaredIdentities = input.roots.map((spec) => {
-        const rootKey = spec.name !== undefined && spec.name.length > 0
-            ? spec.name
-            : (0, corpus_roots_1.defaultRootKey)(spec.path);
+        const { rootKey, declared } = (0, corpus_roots_1.resolveRootIdentity)(spec);
         return {
             root_id: (0, corpus_roots_1.corpusRootId)(rootKey),
             root_key: rootKey,
-            root_identity_class: spec.name !== undefined && spec.name.length > 0
-                ? "declared"
-                : "inferred",
+            root_identity_class: declared ? "declared" : "inferred",
         };
     });
     const authorizations = [];
@@ -673,14 +669,12 @@ async function runCorpusScan(input) {
             if (acquiredRoots > 0)
                 await (0, corpus_session_1.yieldToEventLoop)();
             acquiredRoots += 1;
-            const rootKey = spec.name !== undefined && spec.name.length > 0
-                ? spec.name
-                : (0, corpus_roots_1.defaultRootKey)(spec.path);
-            assertUsableRootKey(rootKey, spec.path);
             // Whether the key is the operator's word or the mount point's last
             // segment. It decides `root_identity_class`, which is what a later diff
-            // consults before treating two runs' roots as the same disk.
-            const keyDeclared = spec.name !== undefined && spec.name.length > 0;
+            // consults before treating two runs' roots as the same disk, so it is
+            // resolved by the same function that gated this run's continuity above.
+            const { rootKey, declared: keyDeclared } = (0, corpus_roots_1.resolveRootIdentity)(spec);
+            assertUsableRootKey(rootKey, spec.path);
             // An unplugged drive is a fact about the corpus and has to end up inside
             // it. Swallowing the failure and carrying on would produce a snapshot that
             // looks complete and is missing a disk, which is the one outcome a corpus
