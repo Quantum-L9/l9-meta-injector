@@ -198,11 +198,11 @@
     },
     {
       "path": "dist/corpus_scan.js",
-      "git_blob_sha1": "b7986ad233301e46f822aa7808533af1fcac9d7f"
+      "git_blob_sha1": "340f5df1ef62d86ae3c1e32ac7d75d0b27bb4116"
     },
     {
       "path": "dist/corpus_scan.js.map",
-      "git_blob_sha1": "b1521cd4b07a931d139a3be4200c463af189ae1a"
+      "git_blob_sha1": "63e81170376d6e6054c10f46d1dee968c4ac922a"
     },
     {
       "path": "dist/corpus_semantic_run.d.ts",
@@ -270,11 +270,11 @@
     },
     {
       "path": "dist/extractors/work_intelligence.js",
-      "git_blob_sha1": "4e88be19488cc81efe66a437896f55886864aa84"
+      "git_blob_sha1": "4afccd8479ba64f63597123fbab6a22024a60de0"
     },
     {
       "path": "dist/extractors/work_intelligence.js.map",
-      "git_blob_sha1": "81a2584d47d9d5cd790b78a12e7e08ad3d397720"
+      "git_blob_sha1": "779e99d3e3140872a643ced440239d07314a5251"
     },
     {
       "path": "dist/index.d.ts",
@@ -734,7 +734,7 @@
     },
     {
       "path": "src/corpus_scan.ts",
-      "git_blob_sha1": "f8c11a059b970927c3fde8f8c86b820b7069a76e"
+      "git_blob_sha1": "450fd7a3f37f8783b8d4be365f4b213d44696811"
     },
     {
       "path": "src/corpus_semantic_run.ts",
@@ -762,7 +762,7 @@
     },
     {
       "path": "src/extractors/work_intelligence.ts",
-      "git_blob_sha1": "30022e604aa09490f8e8059598952149399e270e"
+      "git_blob_sha1": "a0f5bf274e6c283f2ff173e06a40f0453c78c94e"
     },
     {
       "path": "src/index.ts",
@@ -962,7 +962,7 @@
     },
     {
       "path": "tests/work_intelligence.test.ts",
-      "git_blob_sha1": "c6ca74a84709a5bb84ab32f0af961f87aa98903f"
+      "git_blob_sha1": "a49f8c845d469f33cfad379bb9a69d30d511f3d0"
     },
     {
       "path": "tools/consolidation/README.md",
