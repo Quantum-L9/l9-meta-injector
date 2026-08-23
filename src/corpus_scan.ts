@@ -76,6 +76,7 @@ import {
   documentGaps,
   formatCounts,
 } from "./corpus_coverage";
+import { buildAnalysisManifest } from "./corpus_analysis_manifest";
 import { CorpusDiff, buildCorpusDiff } from "./corpus_diff";
 import {
   CorpusDocumentSignals,
@@ -1609,6 +1610,21 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
         total_bytes: artifacts.reduce((sum, artifact) => sum + (artifact.sizeBytes ?? 0), 0),
       },
     };
+
+    // What this run concluded, written into the snapshot so the *next* run can
+    // diff it. Without this a snapshot-to-snapshot diff can only say whether the
+    // rules or the bytes moved, and the candidate deltas were three hard zeros.
+    //
+    // It is attached after the snapshot object rather than built into it because
+    // the candidates do not exist until the analyses above have run, and neither
+    // identity may depend on them: the source id is about the disks, the analysis
+    // id is about the rules, and this is about the conclusions.
+    snapshot.analysis_manifest = buildAnalysisManifest({
+      exactDuplicateClusters: clusters,
+      nearDuplicates: nearCandidates,
+      topics: topicCandidates,
+      projects: projectCandidates,
+    });
 
     const crossRoot = <T extends { root_ids: string[] }>(items: readonly T[]): number =>
       items.filter((item) => item.root_ids.length > 1).length;

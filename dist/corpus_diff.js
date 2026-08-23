@@ -26,6 +26,7 @@ exports.renderCorpusDiff = renderCorpusDiff;
 // back on the next disk the operator plugs in, and the work already done on those
 // bytes is still correct.
 const corpus_analysis_1 = require("./corpus_analysis");
+const corpus_analysis_manifest_1 = require("./corpus_analysis_manifest");
 const ordering_1 = require("./ordering");
 exports.CORPUS_DIFF_SCHEMA = "l9.corpus-diff/v1";
 exports.CORPUS_DIFF_CATEGORIES = [
@@ -178,15 +179,17 @@ function analysisProfileFingerprint(snapshot) {
 function analysisDelta(previous, current, profileChanged) {
     const sourceChanged = previous.corpus_source_snapshot_id !== current.corpus_source_snapshot_id;
     const analysisChanged = previous.analysis.corpus_analysis_id !== current.analysis.corpus_analysis_id;
+    const delta = (0, corpus_analysis_manifest_1.diffAnalysisManifests)(previous.analysis_manifest, current.analysis_manifest);
     return {
-        candidate_added: 0,
-        candidate_removed: 0,
-        candidate_changed: 0,
+        candidate_added: delta.candidate_added,
+        candidate_removed: delta.candidate_removed,
+        candidate_changed: delta.candidate_changed,
+        candidate_unchanged: delta.candidate_unchanged,
+        not_computed_reason: delta.not_computed_reason,
+        by_kind: delta.by_kind,
         // Readiness is recomputed whenever its own profile moves or the corpus does.
         readiness_evidence_changed: sourceChanged
             || previous.analysis.readiness_profile !== current.analysis.readiness_profile,
-        // The candidate documents are not part of a snapshot, so a snapshot-to-snapshot
-        // diff cannot count them. It can say whether anything they depend on moved.
         comparable: !analysisChanged && !profileChanged,
     };
 }

@@ -1,3 +1,4 @@
+import type { CandidateKind } from "./corpus_analysis_manifest";
 import { CorpusSnapshot } from "./corpus_snapshot";
 export declare const CORPUS_DIFF_SCHEMA = "l9.corpus-diff/v1";
 export declare const CORPUS_DIFF_CATEGORIES: readonly ["added", "removed", "changed_content", "renamed_candidate", "unchanged", "archive_added", "archive_removed", "archive_changed", "archive_unchanged"];
@@ -93,13 +94,39 @@ export interface CorpusDiff {
     current_root_ids: string[];
     counts: CorpusDiffCounts;
     roots: CorpusRootDiffEntry[];
-    /** What changed about the analysis, kept apart from what changed on the disks. */
+    /**
+     * What changed about the analysis, kept apart from what changed on the disks.
+     *
+     * The three candidate counts are computed from the two snapshots' analysis
+     * manifests when both carry one, and are `null` — with `not_computed_reason`
+     * saying why — when either does not. They are never zero as a stand-in for
+     * "not computed": three zeros read as "nothing changed" to anyone who does not
+     * check a flag first, and that is a claim this diff has no basis to make.
+     */
     analysis: {
-        candidate_added: number;
-        candidate_removed: number;
-        candidate_changed: number;
+        candidate_added: number | null;
+        candidate_removed: number | null;
+        candidate_changed: number | null;
+        candidate_unchanged: number | null;
+        /** Null exactly when the counts above are real. */
+        not_computed_reason: string | null;
+        /** The same four counts per candidate kind, so a null cannot hide a category. */
+        by_kind: {
+            candidate_kind: CandidateKind;
+            added: number;
+            removed: number;
+            changed: number;
+            unchanged: number;
+        }[];
         readiness_evidence_changed: boolean;
-        /** Null when neither snapshot recorded candidate counts to compare. */
+        /**
+         * True when the two runs were computed under the same rules over the same
+         * bytes, so a candidate difference would be a genuine surprise.
+         *
+         * Distinct from whether the counts could be computed at all: an incomparable
+         * pair of runs still gets real counts when both carry manifests, and the
+         * counts are then explained by the profile change rather than doubted.
+         */
         comparable: boolean;
     };
     cross_root_move_candidates: CrossRootMoveCandidate[];

@@ -67,6 +67,7 @@ const corpus_analysis_1 = require("./corpus_analysis");
 const corpus_cache_1 = require("./corpus_cache");
 const corpus_candidates_1 = require("./corpus_candidates");
 const corpus_coverage_1 = require("./corpus_coverage");
+const corpus_analysis_manifest_1 = require("./corpus_analysis_manifest");
 const corpus_diff_1 = require("./corpus_diff");
 const corpus_document_signals_1 = require("./corpus_document_signals");
 const corpus_readiness_1 = require("./corpus_readiness");
@@ -1148,6 +1149,20 @@ async function runCorpusScan(input) {
                 total_bytes: artifacts.reduce((sum, artifact) => sum + (artifact.sizeBytes ?? 0), 0),
             },
         };
+        // What this run concluded, written into the snapshot so the *next* run can
+        // diff it. Without this a snapshot-to-snapshot diff can only say whether the
+        // rules or the bytes moved, and the candidate deltas were three hard zeros.
+        //
+        // It is attached after the snapshot object rather than built into it because
+        // the candidates do not exist until the analyses above have run, and neither
+        // identity may depend on them: the source id is about the disks, the analysis
+        // id is about the rules, and this is about the conclusions.
+        snapshot.analysis_manifest = (0, corpus_analysis_manifest_1.buildAnalysisManifest)({
+            exactDuplicateClusters: clusters,
+            nearDuplicates: nearCandidates,
+            topics: topicCandidates,
+            projects: projectCandidates,
+        });
         const crossRoot = (items) => items.filter((item) => item.root_ids.length > 1).length;
         const clusterRootIds = (cluster) => [
             ...new Set(cluster.artifact_ids.map((id) => rootByArtifact.get(id) ?? "")),

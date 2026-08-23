@@ -416,6 +416,24 @@ function reportCorpusRun(context) {
     console.log(
       `  archives diff    +${counts.archive_added} -${counts.archive_removed} ~${counts.archive_changed}`,
     );
+    // Two states, printed as two different sentences. A run that could not
+    // compare candidates says so; it does not print three zeros that read as
+    // "nothing changed" to anyone not checking a flag first.
+    const analysis = result.diff.analysis;
+    if (analysis.not_computed_reason !== null) {
+      console.log(`  candidates diff  not computed: ${analysis.not_computed_reason}`);
+    } else {
+      console.log(
+        `  candidates diff  +${analysis.candidate_added} -${analysis.candidate_removed} `
+        + `~${analysis.candidate_changed} unchanged ${analysis.candidate_unchanged}`,
+      );
+      for (const kind of analysis.by_kind) {
+        if (kind.added === 0 && kind.removed === 0 && kind.changed === 0) continue;
+        console.log(
+          `    ${kind.candidate_kind.padEnd(24)} +${kind.added} -${kind.removed} ~${kind.changed}`,
+        );
+      }
+    }
     console.log(
       `  invalidation     ${result.diff.invalidation.new_content_hashes.length} new content hash(es); `
       + `${result.diff.invalidation.retained_content_hash_count} reusable; `

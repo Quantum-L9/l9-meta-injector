@@ -15,6 +15,7 @@ import * as path from "node:path";
 import { canonicalCorpusJson } from "./corpus_analysis";
 import { compareCodePoints } from "./ordering";
 import { CorpusRootIdentity } from "./corpus_roots";
+import type { CorpusAnalysisManifest } from "./corpus_analysis_manifest";
 
 export const CORPUS_SNAPSHOT_SCHEMA = "l9.corpus-snapshot/v1";
 
@@ -128,6 +129,16 @@ export interface CorpusSnapshot {
   corpus_source_snapshot_id: string;
   /** Identity of what was concluded from them, and under which rules. */
   analysis: CorpusAnalysisIdentity;
+  /**
+   * The candidates this run produced, by id and payload hash.
+   *
+   * Absent on a snapshot written before manifests existed, which is why the
+   * field is optional and why `buildCorpusDiff` reports `null` rather than zero
+   * when it is missing. It enters neither identity: `corpus_source_snapshot_id`
+   * is about the disks and `corpus_analysis_id` is about the rules, and this is
+   * about the conclusions, which are a function of both.
+   */
+  analysis_manifest?: CorpusAnalysisManifest;
   corpus_status: CorpusStatus;
   /** How the hashes in this snapshot were established. */
   verification: CorpusVerification;
@@ -149,6 +160,17 @@ export interface CorpusSnapshot {
 }
 
 /** Order a snapshot's contents so two equal corpora render identically. */
+/** Manifest entries in a fixed order, so a rendered snapshot is canonical. */
+function orderManifest(manifest: CorpusAnalysisManifest): CorpusAnalysisManifest {
+  return {
+    ...manifest,
+    entries: [...manifest.entries].sort(
+      (a, b) => compareCodePoints(a.candidate_kind, b.candidate_kind)
+        || compareCodePoints(a.candidate_id, b.candidate_id),
+    ),
+  };
+}
+
 export function orderCorpusSnapshot(snapshot: CorpusSnapshot): CorpusSnapshot {
   return {
     ...snapshot,
@@ -157,6 +179,9 @@ export function orderCorpusSnapshot(snapshot: CorpusSnapshot): CorpusSnapshot {
       ...snapshot.analysis,
       document_decoder_profiles: [...snapshot.analysis.document_decoder_profiles].sort(compareCodePoints),
     },
+    ...(snapshot.analysis_manifest !== undefined
+      ? { analysis_manifest: orderManifest(snapshot.analysis_manifest) }
+      : {}),
     roots: [...snapshot.roots].sort((a, b) => compareCodePoints(a.root_id, b.root_id)),
     artifacts: [...snapshot.artifacts].sort(
       (a, b) => compareCodePoints(a.corpus_path, b.corpus_path)
