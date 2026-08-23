@@ -135,6 +135,22 @@ consumer accepts artifact subjects with no translation shim.
 rule reads a form the author chose deliberately; none reads file age, path, TODO count
 or the absence of a signal. The interpretation profile is `1.1.0`.
 
+The recognizers themselves carry no position: each returns a `SignalReading`, and two
+callers attach the coordinate their own source has. The extractors above attach a line
+span. `src/extractors/document_blocks.ts` attaches a block id and the structured
+locator the decoder emitted, and so reads the same vocabulary out of a decoded PDF,
+Word document, deck, worksheet, notebook, saved page or register — formats with no
+lines to cite. One implementation decides what a status declaration is, so a `.docx`
+plan and the `.md` copy beside it cannot be found to say different things.
+
+`DocumentBlockAssertion` is deliberately not `InterpretedAssertion`: that type's
+evidence is a line span and it is what the Repository Model Packet carries, so a
+`pptx_shape` locator has no meaning to a consumer promised line numbers. Block-bound
+claims reach readiness, the semantic passes, coverage, the corpus index and the report;
+they do not reach the packet. The rules are versioned separately as
+`document_block_profile`, which sits beside `interpretation_profile` in the analysis
+identity rather than being folded into it.
+
 Exact duplicates are content-hash equality over the unified record set, so a physical
 file and a member of a nested archive can share a cluster. `DUPLICATE_OF` is rendered
 in the corpus index rather than in the packet, because `RepositoryModelEdgeType` is the

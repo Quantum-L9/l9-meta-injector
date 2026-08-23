@@ -1,3 +1,5 @@
+import type { CorpusCoverage } from "./corpus_coverage";
+import type { CorpusDocumentSignals } from "./corpus_document_signals";
 import type { CorpusSnapshot } from "./corpus_snapshot";
 export declare const CORPUS_INDEX_SCHEMA = "l9.corpus-index/v1";
 /** One root, as the index points at it. */
@@ -35,7 +37,58 @@ export interface CorpusIndex {
     missing_root_ids: string[];
     counts: CorpusSnapshot["counts"];
     documents: CorpusIndexArtifactRef[];
+    /**
+     * What was understood, and what was not.
+     *
+     * Present so the report an operator reads can answer the question the corpus
+     * exists to answer — "we inspected this and found nothing" against "we could
+     * not understand this" — without their having to open two JSON files and join
+     * them by hand. Optional because an index can be built from a snapshot alone,
+     * and a coverage section invented from one would be a fabrication.
+     */
+    coverage?: CorpusIndexCoverage;
     statement: string;
+}
+/** Every count the coverage law requires the report to state. */
+export interface CorpusIndexCoverage {
+    hashed_artifact_count: number;
+    unhashed_artifact_count: number;
+    /** Per format: eligible, decoded, and the refusals, by the decoder's reason. */
+    decoding: {
+        format: string;
+        decoder_id: string;
+        eligible_count: number;
+        decoded_count: number;
+        interpreted_count: number;
+        refusals: {
+            name: string;
+            count: number;
+        }[];
+    }[];
+    ocr_required_count: number;
+    encrypted_count: number;
+    unsupported_legacy_counts: {
+        extension: string;
+        count: number;
+        bytes: number;
+    }[];
+    decoder_failure_count: number;
+    intelligence: {
+        artifacts_with_work_signals: number;
+        exact_duplicate_clusters: number;
+        near_duplicate_candidates: number;
+        topic_candidates: number;
+        project_candidates: number;
+        consolidation_candidates: number;
+        reasoning_eligible_candidates: number;
+    };
+    embedding: {
+        enabled: boolean;
+        eligible_artifacts: number | null;
+        embedded_artifacts: number | null;
+        skipped_secret_artifacts: number | null;
+        provider_failures: number | null;
+    };
 }
 export declare const CORPUS_INDEX_STATEMENT: string;
 export interface BuildCorpusIndexInput {
@@ -44,6 +97,9 @@ export interface BuildCorpusIndexInput {
     rootDirectories: ReadonlyMap<string, string>;
     /** Output-relative paths this run actually wrote. */
     writtenPaths: readonly string[];
+    /** The coverage document and the document signals, joined into the report. */
+    coverage?: CorpusCoverage;
+    documentSignals?: CorpusDocumentSignals;
 }
 export declare function buildCorpusIndex(input: BuildCorpusIndexInput): CorpusIndex;
 /** Canonical bytes of the index. */

@@ -7,6 +7,14 @@
 // described by the generator rather than by a reader.
 import * as fs from "node:fs";
 import * as path from "node:path";
+import {
+  writeDocx,
+  writeHtml,
+  writeNotebook,
+  writePdf,
+  writePptx,
+  writeXlsx,
+} from "./document_fixtures";
 import { writeRawZip } from "./zip_fixtures";
 
 function write(root: string, relative: string, contents: string): void {
@@ -111,6 +119,17 @@ export interface ScaleCorpusSpec {
   candidateProjects: number;
   /** Archives that hold another archive, so nesting is exercised at depth. */
   nestedArchives: number;
+  /**
+   * Documents to write *per binary format*.
+   *
+   * A scale corpus made only of Markdown qualifies the passes that read Markdown
+   * and nothing else. The operator's disks are not made of Markdown: they are
+   * made of Word documents, decks, spreadsheets, notebooks and PDFs, and every
+   * one of those has to be opened by a decoder before a single word of it can
+   * reach a topic. Leaving them out would mean the ten-thousand-document run
+   * measured the cheapest path through the scan.
+   */
+  mixedDocumentsPerFormat: number;
 }
 
 export interface ScaleCorpusResult extends ScaleCorpusSpec {
@@ -120,6 +139,8 @@ export interface ScaleCorpusResult extends ScaleCorpusSpec {
   archiveMembers: number;
   /** Members that live inside a nested archive rather than a top-level one. */
   nestedArchiveMembers: number;
+  /** How many documents of each format the corpus holds, by decoder format name. */
+  mixedDocumentCounts: Record<string, number>;
 }
 
 /**
@@ -180,11 +201,92 @@ function scaleNoteBody(index: number): string {
   ].join("\n");
 }
 
+/**
+ * The prose a mixed-format document carries.
+ *
+ * Drawn from the same subject pool as the Markdown filler, on purpose: a PDF that
+ * shares no vocabulary with anything else in the corpus can be decoded perfectly
+ * and still join no topic, and a scale run over such a corpus would report the
+ * decoders working and the analysis finding nothing — indistinguishable from the
+ * decoders not being wired to the analysis at all.
+ */
+function mixedDocumentLines(index: number): string[] {
+  const subject = SCALE_SUBJECTS[index % SCALE_SUBJECTS.length] as string;
+  return [
+    SCALE_BOILERPLATE,
+    subject,
+    `Filed as document ${index} and carried forward from the previous review.`,
+  ];
+}
+
+/**
+ * Write one document of every binary format, numbered.
+ *
+ * Each states something explicit about itself, so the corpus exercises the block
+ * reader at scale rather than only the decoders: a run where ten thousand
+ * documents are decoded and none of them is found to say anything is the failure
+ * these formats were added to catch.
+ */
+function writeMixedDocuments(
+  root: string,
+  directory: string,
+  index: number,
+): Record<string, number> {
+  const stamp = String(index).padStart(3, "0");
+  const lines = mixedDocumentLines(index);
+  const at = (name: string): string => path.join(root, directory, name);
+  fs.mkdirSync(path.join(root, directory), { recursive: true });
+
+  writeDocx(at(`brief-${stamp}.docx`), {
+    title: `Migration Brief ${stamp}`,
+    headings: ["Scope"],
+    paragraphs: ["Status: wip", ...lines],
+    listItems: [`[ ] Complete review ${stamp}`],
+  });
+  writePptx(at(`review-${stamp}.pptx`), [
+    { title: `Quarterly Roadmap ${stamp}`, bullets: ["Status: active", ...lines] },
+  ]);
+  // The stamp appears in the body of every format, not only in its filename.
+  // Without it the spreadsheets and registers sharing a subject would be byte
+  // identical, and the fixture would manufacture duplicate clusters the spec did
+  // not ask for — quietly changing what the duplicate assertions are measuring.
+  writeXlsx(at(`tracker-${stamp}.xlsx`), [
+    {
+      name: "Tracker",
+      rows: [["Status: planned"], [`Tracker ${stamp}`], [lines[0] as string], [lines[1] as string]],
+    },
+  ]);
+  writeNotebook(at(`study-${stamp}.ipynb`), {
+    title: `Latency Study ${stamp}`,
+    markdown: ["Status: draft", ...lines],
+    code: ["print('never executed')"],
+  });
+  writePdf(at(`research-${stamp}.pdf`), [`Research Summary ${stamp}`, "Status: complete", ...lines], {
+    title: `Research Summary ${stamp}`,
+  });
+  writeHtml(at(`retro-${stamp}.html`), {
+    title: `Retro Notes ${stamp}`,
+    headings: ["Findings"],
+    paragraphs: ["Status: archived", ...lines],
+  });
+  write(
+    root,
+    `${directory}/register-${stamp}.csv`,
+    // A register with a status column, which is what a register is. The column
+    // name is the label, so this gives the block reader a `csv_row` coordinate to
+    // cite at scale rather than only the formats that are ZIP containers.
+    `register,subject,status\n"${stamp}","${lines[1]}","planned"\n`,
+  );
+
+  return { docx: 1, pptx: 1, xlsx: 1, ipynb: 1, pdf: 1, html: 1, csv: 1 };
+}
+
 export function writeScaleCorpus(base: string, spec: ScaleCorpusSpec): ScaleCorpusResult {
   const rootA = path.join(base, "ScaleA");
   const rootB = path.join(base, "ScaleB");
   const rootC = path.join(base, "ScaleZips");
   let written = 0;
+  const mixedDocumentCounts: Record<string, number> = {};
 
   for (let index = 0; index < spec.candidateProjects; index++) {
     const root = index % 2 === 0 ? rootA : rootB;
@@ -194,6 +296,17 @@ export function writeScaleCorpus(base: string, spec: ScaleCorpusSpec): ScaleCorp
     write(root, `projects/${project}/tests/main.test.ts`, `it('${project}', () => {});\n`);
     write(root, `projects/${project}/PLAN.md`, planDocument(project));
     written += 4;
+  }
+
+  // Mixed-format documents, split across the two file roots so neither the
+  // decoders nor the block reader can be qualified on one root's worth of them.
+  for (let index = 0; index < spec.mixedDocumentsPerFormat; index++) {
+    const root = index % 2 === 0 ? rootA : rootB;
+    const counts = writeMixedDocuments(root, "documents", index);
+    for (const [format, count] of Object.entries(counts)) {
+      mixedDocumentCounts[format] = (mixedDocumentCounts[format] ?? 0) + count;
+      written += count;
+    }
   }
 
   // Duplicate payloads: one identical body per cluster, written into both roots.
@@ -280,5 +393,6 @@ export function writeScaleCorpus(base: string, spec: ScaleCorpusSpec): ScaleCorp
     writtenFiles: written,
     archiveMembers,
     nestedArchiveMembers,
+    mixedDocumentCounts,
   };
 }

@@ -152,6 +152,7 @@ function corpusAnalysisId(input) {
     return (0, repository_model_1.stableId)("corpus-analysis", {
         corpus_profile: input.profiles.corpus_profile,
         corpus_source_snapshot_id: input.corpusSourceSnapshotId,
+        document_block_profile: input.profiles.document_block_profile,
         document_decoder_profiles: [...input.profiles.document_decoder_profiles].sort(ordering_1.compareCodePoints),
         embedding_profile: input.profiles.embedding_profile ?? null,
         interpretation_profile: input.profiles.interpretation_profile,

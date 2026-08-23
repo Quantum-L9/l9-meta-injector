@@ -796,6 +796,10 @@ async function runCorpusMode(cli) {
   const indexModule = requireBuilt(path.join(repo, "dist", "corpus_index.js"));
   const corpusIndex = indexModule.buildCorpusIndex({
     snapshot: result.snapshot,
+    // The coverage document and the document signals, so the report a person
+    // reads states what was understood beside what was written.
+    coverage: result.coverage,
+    documentSignals: result.documentSignals,
     rootDirectories: new Map(result.rootPackets.map((root) => [root.root_id, root.directory])),
     writtenPaths: [
       ...outputs.map((file) => file.path),

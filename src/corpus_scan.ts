@@ -139,7 +139,16 @@ import {
   defaultDecoderRegistry,
   isProseDocumentFormat,
 } from "./documents";
+import type { BlockKind, BlockLocator } from "./documents/decoder";
 import { defaultExtractors } from "./extractors";
+import {
+  DOCUMENT_BLOCK_EXTRACTOR_ID,
+  DOCUMENT_BLOCK_PROFILE_ID,
+  DOCUMENT_BLOCK_PROFILE_VERSION,
+  DocumentBlockAssertion,
+  documentBlockProfileHash,
+  readDocumentBlockSignals,
+} from "./extractors/document_blocks";
 import {
   DEFAULT_MAX_FILE_BYTES,
   Extractor,
@@ -164,9 +173,9 @@ import {
   acquireLocalSource,
 } from "./local_source";
 import { compareCodePoints } from "./ordering";
-import { UNDECODED_REASON_NOT_ELIGIBLE, buildDocumentIndex } from "./corpus_documents";
+import { buildDocumentIndex, summarizeDocuments } from "./corpus_documents";
 import { runSemanticAnalysis } from "./corpus_semantic_run";
-import type { DocumentIndex } from "./corpus_documents";
+import type { DocumentIndex, DocumentIndexSummary } from "./corpus_documents";
 import type { SemanticAnalysisResult } from "./corpus_semantic_run";
 import type { SemanticArtifactInput } from "./corpus_semantics";
 import type { PackAssertion } from "./corpus_reasoning";
@@ -179,7 +188,12 @@ import type {
   EmbeddingProvider,
   EmbeddingRunReport,
 } from "./corpus_embeddings";
-import { RepositoryModelPacket, buildRepositoryModelPacket, stableId } from "./repository_model";
+import {
+  RepositoryModelPacket,
+  buildRepositoryModelPacket,
+  repositoryModelArtifactId,
+  stableId,
+} from "./repository_model";
 import {
   LocalSourceManifest,
   buildLocalSourceManifest,
@@ -354,23 +368,21 @@ export const CANDIDATE_STATEMENT =
   + "them claims two documents mean the same thing, that anything should be merged, "
   + "moved or deleted, or that one is more valuable than another.";
 
-export const DOCUMENT_COVERAGE_SCHEMA = "l9.document-coverage/v1";
+/**
+ * v2 alongside `l9.document-index/v2`, and for the same reason: the single
+ * `decoder` field named one decoder for a root that seven of them read.
+ */
+export const DOCUMENT_COVERAGE_SCHEMA = "l9.document-coverage/v2";
 
 /** Per-root document coverage: what the decoders reached inside one root. */
-export interface RootDocumentCoverage {
+export interface RootDocumentCoverage extends DocumentIndexSummary {
   schema: string;
   corpus_source_snapshot_id: string;
   corpus_analysis_id: string;
   root_id: string;
   root_key: string;
-  decoder: { decoder_id: string; decoder_version: string };
-  artifact_count: number;
-  decoded_count: number;
-  undecoded_count: number;
-  distinct_document_count: number;
-  archive_member_count: number;
-  total_token_count: number;
-  undecoded_by_reason: { reason: string; count: number }[];
+  /** `id@version` for every decoder in the registry this run used. */
+  decoder_profiles: string[];
 }
 
 /**
@@ -525,6 +537,39 @@ export function isDecodable(rootRelativePath: string, registry: DecoderRegistry)
 /** True when the lexical passes claim this artifact. */
 export function isLexicallyAnalyzable(rootRelativePath: string): boolean {
   return LEXICAL_EXTENSIONS.has(extensionOf(basenameOf(rootRelativePath)));
+}
+
+/**
+ * True for a format whose source bytes are themselves the text.
+ *
+ * The distinction decides two things that must not drift apart: whether the file
+ * is probed for UTF-8 before being opened, and whether its statements are read
+ * from its lines or from its blocks. A `.md` file has lines an operator can open
+ * the file to; a `.docx` has no lines at all, and the two are read accordingly.
+ */
+export function isTextFamilyFormat(format: string): boolean {
+  return format === "text" || format === "markdown";
+}
+
+/**
+ * The identity of a decoded document: `H(content_hash, decoder_id, version)`.
+ *
+ * Derived from the decoder that actually read the bytes. Naming a fixed decoder
+ * here instead would give every `.docx` in a corpus an id that says the text
+ * decoder produced it, and that id is the join key between the document index,
+ * the cache and every piece of block-bound evidence — three places that would
+ * then disagree about which decoding they mean.
+ */
+function normalizedDocumentIdOf(
+  contentHash: string | null,
+  record: { decoder_id: string; decoder_version: string } | undefined,
+): string | null {
+  if (contentHash === null) return null;
+  return normalizedDocumentKey({
+    contentHash,
+    decoderId: record?.decoder_id ?? TEXT_DECODER_ID,
+    decoderVersion: record?.decoder_version ?? TEXT_DECODER_VERSION,
+  });
 }
 
 function termCounts(tokens: readonly string[]): [string, number][] {
@@ -721,7 +766,7 @@ async function deriveDocumentLayers(
     // A decoder that reads text still needs the bytes to be text; one that reads
     // a container does not, and probing a `.docx` for UTF-8 would reject every
     // Word document in the corpus.
-    const textFamily = decoder === undefined || decoder.format === "text" || decoder.format === "markdown";
+    const textFamily = decoder === undefined || isTextFamilyFormat(decoder.format);
     if (textFamily) {
       const encoding = probeFileEncoding(absolute);
       if (encoding.status !== "utf8") {
@@ -968,6 +1013,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
   const ocrExtensions = new Set(gaps.ocrRequired);
   const undecodedExtensions = new Set(gaps.unsupported);
   const interpretProfile = interpretationProfileHash(extractors);
+  const blockProfile = documentBlockProfileHash();
   const interpretEnabled = input.interpret !== false;
   const verificationMode: VerificationMode = input.verification ?? "full";
   const verifyContent = input.verifyContent === true;
@@ -1281,6 +1327,8 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
           || extractors.some((extractor) => extractor.matches(artifact.rootRelativePath))),
     );
 
+    const rootKeyById = new Map(bound.roots.map((root) => [root.root_id, root.root_key]));
+
     await boundedMap(decodable, budgets.max_parallel_decoders, (artifact) =>
       deriveDocumentLayers(artifact, {
         cache,
@@ -1292,10 +1340,54 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
         interpretEnabled,
         maxFileBytes,
         rootPathsById,
-        rootKeyById: new Map(bound.roots.map((root) => [root.root_id, root.root_key])),
+        rootKeyById,
         registry,
         into: { normalized, lexical, interpreted, manifestIdentifiers, skipped },
       }));
+
+    // ── 4a. what the decoded documents say about themselves ───────────────
+    //
+    // The line-based interpretation above reads files that have lines. Everything
+    // a decoder opens that does not — a Word document, a deck, a worksheet, a
+    // notebook, a PDF, an HTML page, a CSV — states its status, its tasks and its
+    // dependencies in exactly the same vocabulary, and until this pass existed it
+    // stated them to nobody: the text reached the lexical analysis and the
+    // statements reached nothing at all.
+    //
+    // Read here rather than inside `deriveDocumentLayers` because the blocks are
+    // part of the normalized document record, so they are equally in hand whether
+    // the document was just decoded or read out of the cache. A warm run and a
+    // cold run therefore produce these signals from the same bytes by
+    // construction, instead of by a second cache layer having to agree with the
+    // first.
+    const blockSignals = new Map<string, DocumentBlockAssertion[]>();
+    for (const artifact of decodable) {
+      const record = normalized.get(artifact.virtualSourceId);
+      if (record === undefined || !record.decodes) continue;
+      // A text document is skipped: its assertions already exist, and they cite
+      // the line spans it actually has. Reading it twice would double every task
+      // in the corpus and file the second copy under a weaker coordinate.
+      if (isTextFamilyFormat(record.format)) continue;
+      const blocks = record.blocks ?? [];
+      if (blocks.length === 0) continue;
+      const rootKey = rootKeyById.get(artifact.rootId) ?? artifact.rootId;
+      const signals = readDocumentBlockSignals({
+        subjectId: repositoryModelArtifactId(`repo:${rootKey}`, artifact.rootRelativePath),
+        sourcePath: artifact.rootRelativePath,
+        sourceContentHash: artifact.contentHash,
+        normalizedDocumentId: normalizedDocumentIdOf(artifact.contentHash, record),
+        decoderId: record.decoder_id,
+        decoderVersion: record.decoder_version,
+        format: record.format,
+        blocks: blocks.map((block) => ({
+          block_id: block.block_id,
+          kind: block.kind as BlockKind,
+          text: block.text,
+          locator: block.locator as unknown as BlockLocator,
+        })),
+      });
+      if (signals.length > 0) blockSignals.set(artifact.virtualSourceId, signals);
+    }
 
     // ── 4b. per-root Repository Model Packets ─────────────────────────────
     // Each root is modelled on its own, exactly as it would be if it had been
@@ -1378,6 +1470,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
           corpus_profile: corpusProfileHash,
           document_decoder_profiles: documentDecoderProfiles,
           interpretation_profile: interpretProfile,
+          document_block_profile: blockProfile,
           semantic_candidate_profile: candidateProfile,
           ...(embeddingProfile !== null ? { embedding_profile: embeddingProfile } : {}),
           readiness_profile: readinessProfileHash(),
@@ -1386,6 +1479,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       corpus_profile: corpusProfileHash,
       document_decoder_profiles: [...documentDecoderProfiles],
       interpretation_profile: interpretProfile,
+      document_block_profile: blockProfile,
       semantic_candidate_profile: candidateProfile,
       embedding_profile: embeddingProfile,
       readiness_profile: readinessProfileHash(),
@@ -1405,7 +1499,13 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       archive_id: archiveAncestryOf(artifact.rootRelativePath)[0] ?? null,
       decoded: normalized.get(artifact.virtualSourceId)?.decodes === true,
       unsupported_format: undecodedExtensions.has(artifact.extension),
-      assertions: (interpreted.get(artifact.virtualSourceId)?.assertions ?? []).map((assertion) => ({
+      // Both readers, because readiness is a question about the document and not
+      // about which coordinate system its evidence happens to use. A `.docx` plan
+      // with three open tasks is exactly as unfinished as the `.md` one beside it.
+      assertions: [
+        ...(interpreted.get(artifact.virtualSourceId)?.assertions ?? []),
+        ...(blockSignals.get(artifact.virtualSourceId) ?? []),
+      ].map((assertion) => ({
         predicate: assertion.predicate,
         object: assertion.object,
       })),
@@ -1762,6 +1862,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       corpusAnalysisId: analysisIdentity.corpus_analysis_id,
       decoderId: TEXT_DECODER_ID,
       decoderVersion: TEXT_DECODER_VERSION,
+      decoderProfiles: registry.profile(),
       artifacts: artifacts.map((artifact) => {
         const record = normalized.get(artifact.virtualSourceId);
         return {
@@ -1773,14 +1874,18 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
           sizeBytes: artifact.sizeBytes,
           isArchiveMember: artifact.isArchiveMember,
           archiveAncestry: archiveAncestryOf(artifact.rootRelativePath),
-          ...(record !== undefined ? { normalized: record } : {}),
-          normalizedDocumentId: artifact.contentHash === null
-            ? null
-            : normalizedDocumentKey({
-              contentHash: artifact.contentHash,
-              decoderId: TEXT_DECODER_ID,
-              decoderVersion: TEXT_DECODER_VERSION,
-            }),
+          ...(record !== undefined
+            ? {
+              normalized: {
+                ...record,
+                // Read off the blocks rather than declared beside them, so the
+                // index cannot claim a coordinate system no block of this
+                // document actually cites.
+                locator_kinds: (record.blocks ?? []).map((block) => String(block.locator.kind)),
+              },
+            }
+            : {}),
+          normalizedDocumentId: normalizedDocumentIdOf(artifact.contentHash, record),
         };
       }),
     });
@@ -1797,28 +1902,11 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
     }
     const rootPackets: CorpusRootPacket[] = builtPackets.map((entry) => {
       const documents = documentsByRoot.get(entry.binding.root_id) ?? [];
-      const decoded = documents.filter((document) => document.decoded);
-      const undecodedCounts = new Map<string, number>();
-      for (const document of documents) {
-        if (document.decoded) continue;
-        const reason = document.undecoded_reason ?? UNDECODED_REASON_NOT_ELIGIBLE;
-        undecodedCounts.set(reason, (undecodedCounts.get(reason) ?? 0) + 1);
-      }
+      // Summarized by the same function as the corpus index, so a per-root file
+      // and the corpus file can never come to disagree about one root.
       const rootIndex: DocumentIndex = {
         ...documentIndex,
-        summary: {
-          artifact_count: documents.length,
-          decoded_count: decoded.length,
-          undecoded_count: documents.length - decoded.length,
-          distinct_document_count: new Set(
-            decoded.map((document) => document.normalized_document_id ?? ""),
-          ).size,
-          archive_member_count: documents.filter((d) => d.is_archive_member).length,
-          total_token_count: decoded.reduce((sum, d) => sum + (d.token_count ?? 0), 0),
-          undecoded_by_reason: [...undecodedCounts.entries()]
-            .map(([reason, count]) => ({ reason, count }))
-            .sort((a, b) => compareCodePoints(a.reason, b.reason)),
-        },
+        summary: summarizeDocuments(documents),
         documents,
       };
       return {
@@ -1834,7 +1922,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
           corpus_analysis_id: analysisIdentity.corpus_analysis_id,
           root_id: entry.binding.root_id,
           root_key: entry.binding.root_key,
-          decoder: { decoder_id: TEXT_DECODER_ID, decoder_version: TEXT_DECODER_VERSION },
+          decoder_profiles: registry.profile(),
           ...rootIndex.summary,
         },
       };
@@ -1921,13 +2009,14 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
           normalized_document_id: document?.normalized_document_id ?? null,
           is_archive_member: artifact.isArchiveMember,
           archive_ancestry: archiveAncestryOf(artifact.rootRelativePath),
-          assertions: (interpreted.get(artifact.virtualSourceId)?.assertions ?? []).map(
-            (assertion) => ({
-              assertion_id: assertion.assertion_id,
-              predicate: assertion.predicate,
-              object: assertion.object,
-            }),
-          ),
+          assertions: [
+            ...(interpreted.get(artifact.virtualSourceId)?.assertions ?? []),
+            ...(blockSignals.get(artifact.virtualSourceId) ?? []),
+          ].map((assertion) => ({
+            assertion_id: assertion.assertion_id,
+            predicate: assertion.predicate,
+            object: assertion.object,
+          })),
           declared_identifiers: declared === null
             ? []
             : [{
@@ -1944,15 +2033,31 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       });
 
       const assertionsByArtifact = new Map<string, PackAssertion[]>();
+      const packAssertion = (assertion: {
+        assertion_id: string;
+        predicate: string;
+        object: string;
+        source_path: string;
+        evidence_excerpt: string;
+        source_content_hash: string | null;
+      }): PackAssertion => ({
+        assertion_id: assertion.assertion_id,
+        predicate: assertion.predicate,
+        object: assertion.object,
+        source_path: assertion.source_path,
+        evidence_excerpt: assertion.evidence_excerpt,
+        source_content_hash: assertion.source_content_hash ?? "",
+      });
       for (const [artifactId, record] of interpreted) {
-        assertionsByArtifact.set(artifactId, record.assertions.map((assertion) => ({
-          assertion_id: assertion.assertion_id,
-          predicate: assertion.predicate,
-          object: assertion.object,
-          source_path: assertion.source_path,
-          evidence_excerpt: assertion.evidence_excerpt,
-          source_content_hash: assertion.source_content_hash,
-        })));
+        assertionsByArtifact.set(artifactId, record.assertions.map(packAssertion));
+      }
+      // Block-bound claims join the same packs. An evidence pack quotes what a
+      // document said and names where it said it; the locator differs by format
+      // and the claim does not, so excluding these would build reasoning packs
+      // that silently omit every plan the operator wrote in Word.
+      for (const [artifactId, signals] of blockSignals) {
+        const existing = assertionsByArtifact.get(artifactId) ?? [];
+        assertionsByArtifact.set(artifactId, [...existing, ...signals.map(packAssertion)]);
       }
 
       semantic = runSemanticAnalysis({
@@ -2004,11 +2109,41 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
           locator: block.locator,
         })),
       })),
-      interpreted: new Set(
-        [...interpreted.entries()]
+      blockProfile: {
+        profile_id: DOCUMENT_BLOCK_PROFILE_ID,
+        profile_version: DOCUMENT_BLOCK_PROFILE_VERSION,
+        profile_hash: blockProfile,
+        extractor_id: DOCUMENT_BLOCK_EXTRACTOR_ID,
+      },
+      blockSignals: [...blockSignals.entries()].flatMap(([artifactId, signals]) =>
+        signals.map((signal) => ({
+          artifact_id: artifactId,
+          source_path: signal.source_path,
+          format: signal.format,
+          raw_content_hash: signal.source_content_hash,
+          normalized_document_id: signal.evidence.normalized_document_id,
+          decoder_id: signal.evidence.decoder_id,
+          decoder_version: signal.evidence.decoder_version,
+          block_id: signal.evidence.block_id,
+          block_kind: signal.evidence.block_kind,
+          structured_locator: signal.evidence.locator as unknown as Record<string, unknown>,
+          predicate: signal.predicate,
+          object: signal.object,
+          bounded_excerpt: signal.evidence_excerpt,
+          evidence_class: signal.evidence_class,
+          confidence: signal.confidence,
+          extractor_id: signal.extractor_id,
+        }))),
+      // Interpreted means "said something", by either reader. Counting only the
+      // line-based one would report every decoded Word document as interpreted
+      // zero times, which is the exact shape of failure this document exists to
+      // make visible.
+      interpreted: new Set([
+        ...[...interpreted.entries()]
           .filter(([, record]) => record.assertions.length > 0)
           .map(([artifactId]) => artifactId),
-      ),
+        ...blockSignals.keys(),
+      ]),
       lexicallyAnalyzed: new Set(lexical.keys()),
       candidateMembers,
     });
@@ -2081,9 +2216,17 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
         workSignalArtifacts.add(artifactId);
       }
     }
+    for (const [artifactId, signals] of blockSignals) {
+      if (signals.some((assertion) => assertion.predicate.startsWith("work."))) {
+        workSignalArtifacts.add(artifactId);
+      }
+    }
     const dependencyPredicates = new Map<string, number>();
-    for (const record of interpreted.values()) {
-      for (const assertion of record.assertions) {
+    for (const assertions of [
+      ...[...interpreted.values()].map((record) => record.assertions),
+      ...blockSignals.values(),
+    ]) {
+      for (const assertion of assertions) {
         if (!assertion.predicate.startsWith("work.depends_on")
           && !assertion.predicate.startsWith("work.blocked_by")
           && !assertion.predicate.startsWith("work.references")) continue;
@@ -2206,6 +2349,9 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
         // corpus holding one.
         provider_failure_count: embeddingReport?.enabled === true
           ? embeddingReport.eligible_artifact_count - embeddingReport.embedded_artifact_count
+          : null,
+        secret_skipped_count: embeddingReport?.enabled === true
+          ? embeddingReport.secret_candidates_skipped
           : null,
       },
       exact_hash_coverage: coverageRatio(

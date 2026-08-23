@@ -452,6 +452,52 @@ function titleDeclarations(view: DocumentView): { index: number; text: string }[
 
 // ───────────────────────────── draft helpers ─────────────────────────────
 
+/**
+ * A recognized claim, before anything has been decided about where it came from.
+ *
+ * Every rule in this module recognizes a claim in a *unit of text* — a line of
+ * Markdown, a paragraph of a Word document, a shape on a slide, a spreadsheet
+ * cell. What differs between those is the coordinate the evidence cites, not the
+ * rule that read it: `Status: blocked` means the same thing in all four.
+ *
+ * So recognition returns this, carrying no position at all, and the two callers
+ * attach the coordinate their own source actually has. A line-oriented file gets
+ * a line span; a decoded document gets the block id and structured locator of the
+ * block the text sat in. Neither can borrow the other's coordinate system, which
+ * is what stops a Word document from being given line numbers it does not have.
+ */
+export interface SignalReading {
+  predicate: string;
+  object: string;
+  /** The unit of text the claim was read from, quoted verbatim. */
+  excerpt: string;
+  evidenceClass: AssertionDraft["evidenceClass"];
+  confidence: AssertionDraft["confidence"];
+}
+
+function reading(
+  predicate: string,
+  object: string,
+  excerpt: string,
+  evidenceClass: AssertionDraft["evidenceClass"],
+  confidence: AssertionDraft["confidence"],
+): SignalReading {
+  return { predicate, object, excerpt, evidenceClass, confidence };
+}
+
+/** Attach a line coordinate to a reading. Markdown, plain text and reST only. */
+function draftAt(signal: SignalReading, index: number): AssertionDraft {
+  return {
+    predicate: signal.predicate,
+    object: signal.object,
+    sourceRange: lineRange(index),
+    evidenceExcerpt: signal.excerpt,
+    evidenceClass: signal.evidenceClass,
+    authority: "source",
+    confidence: signal.confidence,
+  };
+}
+
 function draft(
   predicate: string,
   object: string,
@@ -460,15 +506,7 @@ function draft(
   evidenceClass: AssertionDraft["evidenceClass"],
   confidence: AssertionDraft["confidence"],
 ): AssertionDraft {
-  return {
-    predicate,
-    object,
-    sourceRange: lineRange(index),
-    evidenceExcerpt: line,
-    evidenceClass,
-    authority: "source",
-    confidence,
-  };
+  return draftAt(reading(predicate, object, line, evidenceClass, confidence), index);
 }
 
 // ───────────────────────── document-structure/v1 ─────────────────────────
@@ -654,68 +692,144 @@ function milestoneSectionSignals(view: DocumentView): AssertionDraft[] {
   return drafts;
 }
 
+/**
+ * A checkbox whose list marker is not in the text.
+ *
+ * Markdown writes a task as `- [ ] ship it`, so the marker and the box arrive
+ * together. A Word or PowerPoint list item carries its marker in the document's
+ * numbering definition and its text as `[ ] ship it`; the decoder records that
+ * structure as the block's `list_item` kind rather than by inventing a bullet
+ * character. Requiring the marker in the text would therefore read every
+ * Markdown checklist and no Word one, which is the same file failing to be
+ * understood because of the program it was written in.
+ */
+const BARE_CHECKBOX = /^\s{0,8}\[([ xX])\]\s*(.*)$/;
+
 /** A task written as list syntax: a checkbox, or a line that opens with `TODO:`. */
-function taskSignal(line: string, index: number): AssertionDraft | null {
-  const checkbox = CHECKBOX.exec(line);
+function taskSignal(line: string, listMarkerImplied = false): SignalReading | null {
+  const checkbox = CHECKBOX.exec(line) ?? (listMarkerImplied ? BARE_CHECKBOX.exec(line) : null);
   if (checkbox) {
     const text = plainText(checkbox[2]);
     if (text.length === 0) return null;
     const predicate = checkbox[1] === " " ? "work.task.open" : "work.task.completed";
-    return draft(predicate, text, index, line, "observed", "high");
+    return reading(predicate, text, line, "observed", "high");
   }
   const todo = TODO_LINE.exec(line.replace(LIST_PREFIX, ""));
   if (todo === null) return null;
   const text = plainText(todo[1]);
-  return text.length === 0 ? null : draft("work.task.open", text, index, line, "observed", "high");
+  return text.length === 0 ? null : reading("work.task.open", text, line, "observed", "high");
 }
 
-/** A bare status admonition, which only counts near the top of a document. */
-function admonitionSignal(line: string, index: number): AssertionDraft | null {
-  if (index >= LEADING_ADMONITION_LINES) return null;
+/**
+ * A bare status admonition.
+ *
+ * Only counts near the top of a document — `> **BLOCKED**` under a heading
+ * halfway down is about that section, not about the file — so the caller decides
+ * whether this reader is offered the text at all. The position rule lives there
+ * because "near the top" is measured in lines in a text file and in blocks in a
+ * decoded one, and this reader knows about neither.
+ */
+function admonitionSignal(line: string): SignalReading | null {
   const admonition = BLOCKQUOTE_STATUS.exec(line);
   if (admonition === null) return null;
   const status = statusValue(admonition[1]);
-  return status === null ? null : draft("work.status", status, index, line, "declared", "high");
+  return status === null ? null : reading("work.status", status, line, "declared", "high");
 }
 
 /** A `Label: value` declaration: a status, a milestone, or a declared relation. */
-function labelSignal(line: string, index: number): AssertionDraft | null {
+function labelSignal(line: string): SignalReading | null {
   if (ATX_HEADING.test(line)) return null;
   const labelled = labelledLine(line);
   if (labelled === null || labelled.value.length === 0) return null;
 
   if (labelled.label === "status" || labelled.label === "state") {
     const status = statusValue(labelled.value);
-    return status === null ? null : draft("work.status", status, index, line, "declared", "high");
+    return status === null ? null : reading("work.status", status, line, "declared", "high");
   }
   if (MILESTONE_LABEL.test(labelled.label)) {
     const text = plainText(labelled.value);
-    return text.length === 0 ? null : draft("work.milestone", text, index, line, "declared", "high");
+    return text.length === 0 ? null : reading("work.milestone", text, line, "declared", "high");
   }
   const predicate = RELATION_PREDICATE_BY_LABEL[labelled.label];
   if (predicate === undefined) return null;
   const target = normalizeTarget(labelled.value);
-  return target.length === 0 ? null : draft(predicate, target, index, line, "declared", "high");
+  return target.length === 0 ? null : reading(predicate, target, line, "declared", "high");
 }
 
 /**
- * Line-oriented readers, in the order a line is offered to them.
+ * Text-unit readers, in the order a unit is offered to them.
  *
  * The order is the precedence: a checkbox is read as a task rather than as a
  * label, and a heading is never read as a declaration. The first reader to
- * return a draft claims the line.
+ * return a reading claims the text.
  *
- * A reader that recognizes a line's syntax but produces nothing from it — an
+ * A reader that recognizes a unit's syntax but produces nothing from it — an
  * empty checkbox, a `TODO:` whose text is only emphasis — lets the remaining
- * readers see the line. That is safe because the three syntaxes are mutually
+ * readers see it. That is safe because the three syntaxes are mutually
  * exclusive: a line that opens with a list marker cannot be a blockquote
  * admonition, and a checkbox with no text has nothing after it to be a label.
  */
-const LINE_READERS: readonly ((line: string, index: number) => AssertionDraft | null)[] = [
+const UNIT_READERS: readonly ((line: string, listMarkerImplied: boolean) => SignalReading | null)[] = [
   taskSignal,
   admonitionSignal,
   labelSignal,
 ];
+
+/**
+ * Read one unit of text with the whole vocabulary, in precedence order.
+ *
+ * `admonitionsAllowed` is the caller's answer to "is this near the top of the
+ * document", which is the only positional question any of these rules asks.
+ * `listMarkerImplied` is its answer to "did the source say this was a list item
+ * some way other than by writing a bullet".
+ *
+ * Exported because the block-driven reader in `./document_blocks` must apply
+ * exactly these rules to a paragraph of a Word document or a shape on a slide. A
+ * second implementation of "what is a status declaration" would eventually
+ * disagree with this one, and a corpus would then report a `.docx` plan and the
+ * `.md` copy of it beside it as saying different things.
+ */
+export function readTextUnit(
+  line: string,
+  options: { admonitionsAllowed: boolean; listMarkerImplied?: boolean },
+): SignalReading | null {
+  for (const read of UNIT_READERS) {
+    if (read === admonitionSignal && !options.admonitionsAllowed) continue;
+    const signal = read(line, options.listMarkerImplied === true);
+    if (signal !== null) return signal;
+  }
+  return null;
+}
+
+/**
+ * Status and kind markers a declared title carries.
+ *
+ * Exported for the block reader, which meets titles as `title` blocks rather
+ * than as `# ` lines but must read the same markers out of them.
+ */
+export function readTitleMarkers(text: string, excerpt: string): SignalReading[] {
+  const signals: SignalReading[] = [];
+  for (const status of titleStatuses(text)) {
+    signals.push(reading("work.status", status, excerpt, "declared", "medium"));
+  }
+  for (const kind of titleKinds(text)) {
+    signals.push(reading("work.kind", kind, excerpt, "declared", "medium"));
+  }
+  return signals;
+}
+
+/** True for a heading that opens an explicit milestone list. */
+export function isMilestoneSectionHeading(text: string): boolean {
+  return /^milestones:?$/i.test(plainText(text).trim());
+}
+
+/** Normalize a fragment of document text for use as an assertion object. */
+export function documentText(value: string): string {
+  return plainText(value);
+}
+
+/** How far into a document a bare status admonition still counts as leading. */
+export const LEADING_ADMONITION_UNITS = LEADING_ADMONITION_LINES;
 
 /**
  * Explicit work state: status, kind, tasks, milestones, and declared relations.
@@ -737,13 +851,10 @@ export const workIntelligenceExtractor: Extractor = {
     ];
     for (let index = 0; index < view.lines.length; index++) {
       if (!isProseLine(view, index)) continue;
-      for (const read of LINE_READERS) {
-        const signal = read(view.lines[index], index);
-        if (signal !== null) {
-          drafts.push(signal);
-          break;
-        }
-      }
+      const signal = readTextUnit(view.lines[index], {
+        admonitionsAllowed: index < LEADING_ADMONITION_LINES,
+      });
+      if (signal !== null) drafts.push(draftAt(signal, index));
     }
     return drafts;
   },

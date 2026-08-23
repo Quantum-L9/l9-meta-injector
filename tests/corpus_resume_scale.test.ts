@@ -40,6 +40,7 @@ const SPEC = {
   nestedArchives: 10,
   duplicateClusters: 100,
   candidateProjects: 20,
+  mixedDocumentsPerFormat: 10,
 };
 
 describe("a large scan that was interrupted", () => {
@@ -133,6 +134,7 @@ describe("the archive budget at scale", () => {
     const base = tmp();
     const corpus = writeScaleCorpus(base, {
       artifacts: 300, archives: 100, nestedArchives: 10, duplicateClusters: 10, candidateProjects: 4,
+      mixedDocumentsPerFormat: 2,
     });
     // The default ceiling, deliberately left in place: an unbounded archive
     // expansion is how a scan becomes a zip bomb, and a corpus of a hundred ZIPs

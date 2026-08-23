@@ -107,6 +107,16 @@ export interface CorpusAnalysisProfiles {
     corpus_profile: string;
     document_decoder_profiles: readonly string[];
     interpretation_profile: string;
+    /**
+     * The rules read over decoded blocks, for formats that have no lines.
+     *
+     * Separate from `interpretation_profile` because the two answer the same
+     * question about different sources: one reads a file that has line numbers and
+     * cites them, the other reads a Word document that has none and cites block
+     * locators. Folding them together would mean a change to either invalidated
+     * both, and would hide which of the two produced a given claim.
+     */
+    document_block_profile: string;
     semantic_candidate_profile: string;
     /** Present only when embeddings ran. */
     embedding_profile?: string;

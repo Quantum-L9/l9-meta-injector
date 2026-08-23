@@ -226,6 +226,7 @@ Accepted ADRs remain in the repository. A changed decision receives a new sequen
 | INV-023 | Release identity, immutable-ref, packed-CLI, and consumer single-writer migration tests |
 | INV-024 | Corpus source-versus-analysis identity, verification-class, and partial-corpus tests |
 | INV-025 | Document decoding, reported work, generational publication, and bound evidence tests |
+| INV-026 | Block-bound work-signal, per-format decoder-identity, and reuse-parity tests |
 
 ### INV-023: Releases and consumer migrations use immutable identity
 
@@ -318,3 +319,44 @@ scans the roots an operator declared and never discovers one.
 `tests/corpus_root_identity_durability.test.ts`,
 `tests/corpus_real_archive_acceptance.test.ts`,
 `tests/topology_readonly_guard.test.ts`, and `tests/validation_report.test.ts`.
+
+### INV-026: A decoded document states what it says, at a coordinate it has
+
+Every supported format is read with one vocabulary. A status, a kind, a task, a
+milestone and a declared relation are recognized by a single implementation, so
+the same sentence in a `.docx` and in the `.md` copy beside it produces the same
+claim. A format is never reported as having said nothing because of the program
+it was written in.
+
+A claim cites the coordinate its own source has. A file with lines cites a line
+span; a decoded document cites its block id and the structured locator its
+decoder emitted — a slide and a shape, a sheet and a cell, a page and a block, a
+row and a column. No block-bound claim cites a line span. Block-bound evidence
+binds the artifact id, the raw content hash, the normalized document id, the
+decoder and its version, the block, the locator, a bounded excerpt, the predicate
+and the object; it reaches readiness, the semantic passes, coverage, the corpus
+index and the report, and it does not reach the Repository Model Packet, whose
+evidence class is a line span.
+
+An identity names what produced it. A document entry names the decoder that read
+those bytes and the format it read them as, and its normalized document id is
+derived from that decoder — never from a fixed one — because that id joins the
+index, the cache and every piece of evidence, and three things that must agree
+cannot be computed from a decoder that did not run.
+
+Reuse lands on the same answer. An observation recorded when a file is hashed is
+recorded when a prior run's hash is carried forward, so an incremental scan of an
+unchanged disk produces the inventory a full scan of those exact bytes produces,
+and neither the packet semantic hash nor the corpus source snapshot id moves for
+a corpus nobody touched.
+
+The report distinguishes the two failures. Exact observation, per-format decoding
+with eligible beside decoded beside understood, intelligence and embedding are
+stated in `corpus-report.md`, so "we inspected this and found nothing" and "we
+could not understand this" are different rows rather than one total. Where a
+listing is bounded, the complete count and the omitted count are both stated.
+
+**Enforced by:** `tests/corpus_document_work_signals.test.ts`,
+`tests/corpus_document_participation.test.ts`,
+`tests/local_source_safety.test.ts`, `tests/corpus_cli.test.ts`,
+`tests/corpus_scale.test.ts`, and `tests/corpus_scale_incremental.test.ts`.

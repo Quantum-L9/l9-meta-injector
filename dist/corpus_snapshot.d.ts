@@ -86,6 +86,8 @@ export interface CorpusAnalysisIdentity {
     corpus_profile: string;
     document_decoder_profiles: string[];
     interpretation_profile: string;
+    /** Rules read over decoded blocks, for the formats that have no line numbers. */
+    document_block_profile: string;
     semantic_candidate_profile: string;
     embedding_profile: string | null;
     readiness_profile: string;

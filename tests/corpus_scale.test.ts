@@ -47,6 +47,7 @@ const SPEC = {
   nestedArchives: 10,
   duplicateClusters: 100,
   candidateProjects: 20,
+  mixedDocumentsPerFormat: 30,
 };
 
 describe("a ten-thousand-artifact corpus", () => {
@@ -127,6 +128,54 @@ describe("a ten-thousand-artifact corpus", () => {
     // rarest-first ordering worth having rather than merely tidy.
     expect(pairWork.unindexed_term_count).toBeGreaterThan(0);
     expect(cold.coverage.semantics.topic_candidate_count).toBeGreaterThan(0);
+
+    // ── 1b. the mixed formats, at this size ───────────────────────────────
+    //
+    // A ten-thousand-document run over Markdown alone qualifies the cheapest
+    // path through the scan. The operator's disks hold Word documents, decks,
+    // spreadsheets, notebooks and PDFs, and every one of those has to be opened
+    // by a decoder before a word of it can reach a topic — so each format is
+    // required to be present, decoded, read for what it states, and named by a
+    // candidate, at this size rather than in a five-file fixture.
+    const byFormat = new Map(
+      cold.documentSignals.analysis_participation.by_format.map((entry) => [entry.format, entry]),
+    );
+    for (const format of ["pdf", "docx", "pptx", "xlsx", "ipynb", "markdown", "html", "csv"]) {
+      const participation = byFormat.get(format);
+      expect(participation, `${format} is absent from the corpus`).toBeDefined();
+      expect(participation?.decoded_count, `${format} decoded`).toBeGreaterThan(0);
+      expect(participation?.lexically_analyzed_count, `${format} analyzed`).toBeGreaterThan(0);
+    }
+    for (const format of ["pdf", "docx", "pptx", "xlsx", "ipynb"]) {
+      expect(byFormat.get(format)?.decoded_count).toBe(SPEC.mixedDocumentsPerFormat);
+      // The count this closure exists to move off zero: decoded *and* found to
+      // have said something, per format, at scale.
+      expect(byFormat.get(format)?.interpreted_count, `${format} interpreted`)
+        .toBe(SPEC.mixedDocumentsPerFormat);
+    }
+
+    // Every decoder that ran is named with the format it read, rather than the
+    // whole index reporting one decoder for eight formats.
+    const indexFormats = new Map(
+      cold.documentIndex.summary.by_format.map((entry) => [entry.format, entry]),
+    );
+    expect(indexFormats.get("docx")?.decoder_id).not.toBe(indexFormats.get("pdf")?.decoder_id);
+    for (const entry of cold.documentIndex.summary.by_format) {
+      expect(entry.block_count, `${entry.format} blocks`).toBeGreaterThan(0);
+      expect(entry.structured_locator_types.length).toBeGreaterThan(0);
+    }
+
+    // And the block-bound evidence is real at this size: statements, from every
+    // binary format, each citing a coordinate that is not a line number.
+    const evidence = cold.documentSignals.block_signals;
+    expect(evidence.signal_count).toBeGreaterThan(SPEC.mixedDocumentsPerFormat * 5);
+    expect(evidence.by_format.map((entry) => entry.format).sort())
+      .toEqual(["csv", "docx", "html", "ipynb", "pdf", "pptx", "xlsx"]);
+    for (const entry of evidence.by_format) {
+      for (const record of entry.records) {
+        expect(record.structured_locator.kind).not.toBe("line_span");
+      }
+    }
 
     // ── 2. warm, full ─────────────────────────────────────────────────────
     const warm = await runCorpusScan({ ...options, previousSnapshot: cold.snapshot });

@@ -15,6 +15,8 @@
 // thirty files or thirty thousand.
 import { canonicalCorpusJson } from "./corpus_analysis";
 import { compareCodePoints } from "./ordering";
+import type { CorpusCoverage } from "./corpus_coverage";
+import type { CorpusDocumentSignals } from "./corpus_document_signals";
 import type { CorpusSnapshot } from "./corpus_snapshot";
 
 export const CORPUS_INDEX_SCHEMA = "l9.corpus-index/v1";
@@ -56,7 +58,52 @@ export interface CorpusIndex {
   missing_root_ids: string[];
   counts: CorpusSnapshot["counts"];
   documents: CorpusIndexArtifactRef[];
+  /**
+   * What was understood, and what was not.
+   *
+   * Present so the report an operator reads can answer the question the corpus
+   * exists to answer — "we inspected this and found nothing" against "we could
+   * not understand this" — without their having to open two JSON files and join
+   * them by hand. Optional because an index can be built from a snapshot alone,
+   * and a coverage section invented from one would be a fabrication.
+   */
+  coverage?: CorpusIndexCoverage;
   statement: string;
+}
+
+/** Every count the coverage law requires the report to state. */
+export interface CorpusIndexCoverage {
+  hashed_artifact_count: number;
+  unhashed_artifact_count: number;
+  /** Per format: eligible, decoded, and the refusals, by the decoder's reason. */
+  decoding: {
+    format: string;
+    decoder_id: string;
+    eligible_count: number;
+    decoded_count: number;
+    interpreted_count: number;
+    refusals: { name: string; count: number }[];
+  }[];
+  ocr_required_count: number;
+  encrypted_count: number;
+  unsupported_legacy_counts: { extension: string; count: number; bytes: number }[];
+  decoder_failure_count: number;
+  intelligence: {
+    artifacts_with_work_signals: number;
+    exact_duplicate_clusters: number;
+    near_duplicate_candidates: number;
+    topic_candidates: number;
+    project_candidates: number;
+    consolidation_candidates: number;
+    reasoning_eligible_candidates: number;
+  };
+  embedding: {
+    enabled: boolean;
+    eligible_artifacts: number | null;
+    embedded_artifacts: number | null;
+    skipped_secret_artifacts: number | null;
+    provider_failures: number | null;
+  };
 }
 
 export const CORPUS_INDEX_STATEMENT =
@@ -69,6 +116,59 @@ export interface BuildCorpusIndexInput {
   rootDirectories: ReadonlyMap<string, string>;
   /** Output-relative paths this run actually wrote. */
   writtenPaths: readonly string[];
+  /** The coverage document and the document signals, joined into the report. */
+  coverage?: CorpusCoverage;
+  documentSignals?: CorpusDocumentSignals;
+}
+
+/**
+ * Join the two coverage documents into the counts the report states.
+ *
+ * Both already exist as JSON. What did not exist was one place a person could
+ * read them together — and "eleven PDFs decoded" beside "zero PDFs understood"
+ * is a finding that neither file states on its own.
+ */
+function coverageFor(
+  coverage: CorpusCoverage,
+  signals: CorpusDocumentSignals | undefined,
+): CorpusIndexCoverage {
+  const participation = new Map(
+    (signals?.analysis_participation.by_format ?? []).map((entry) => [entry.format, entry]),
+  );
+  return {
+    hashed_artifact_count: coverage.exact_hash_coverage.covered,
+    unhashed_artifact_count:
+      coverage.exact_hash_coverage.eligible - coverage.exact_hash_coverage.covered,
+    decoding: (signals?.formats ?? []).map((entry) => ({
+      format: entry.format,
+      decoder_id: entry.decoder_id,
+      eligible_count: entry.eligible_count,
+      decoded_count: entry.decoded_count,
+      interpreted_count: participation.get(entry.format)?.interpreted_count ?? 0,
+      refusals: entry.refusals.map((refusal) => ({ ...refusal })),
+    })),
+    ocr_required_count: coverage.documents.ocr_required_count,
+    encrypted_count: coverage.documents.encrypted_document_count,
+    unsupported_legacy_counts: coverage.unsupported_format_counts.map((entry) => ({ ...entry })),
+    decoder_failure_count: coverage.documents.decoder_failure_count,
+    intelligence: {
+      artifacts_with_work_signals: coverage.semantics.work_signal_artifact_count,
+      exact_duplicate_clusters: coverage.semantics.exact_duplicate_cluster_count,
+      near_duplicate_candidates: coverage.semantics.near_duplicate_candidate_count,
+      topic_candidates: coverage.semantics.topic_candidate_count,
+      project_candidates: coverage.semantics.project_candidate_count,
+      consolidation_candidates: coverage.semantics.consolidation_candidate_count,
+      reasoning_eligible_candidates:
+        coverage.reasoning_handoff.reasoning_eligible_candidate_count,
+    },
+    embedding: {
+      enabled: coverage.embeddings.enabled,
+      eligible_artifacts: coverage.embeddings.eligible_count,
+      embedded_artifacts: coverage.embeddings.embedded_count,
+      skipped_secret_artifacts: coverage.embeddings.secret_skipped_count,
+      provider_failures: coverage.embeddings.provider_failure_count,
+    },
+  };
 }
 
 /** Named documents a corpus run may write, in the order a reader meets them. */
@@ -78,11 +178,11 @@ const KNOWN_DOCUMENTS: { name: string; path: string; schema: string | null }[] =
   { name: "coverage", path: "corpus-coverage.json", schema: "l9.corpus-coverage/v1" },
   { name: "readiness_evidence", path: "readiness-evidence.json", schema: "l9.readiness-evidence/v1" },
   { name: "candidates", path: "corpus-candidates.json", schema: "l9.corpus-candidates/v1" },
-  { name: "document_index", path: "document-index.json", schema: "l9.document-index/v1" },
+  { name: "document_index", path: "document-index.json", schema: "l9.document-index/v2" },
   {
     name: "document_signals",
     path: "document-signals.json",
-    schema: "l9.corpus-document-signals/v1",
+    schema: "l9.document-signals/v1",
   },
   { name: "semantic_relations", path: "semantic-relations.json", schema: "l9.semantic-relations/v1" },
   { name: "topic_candidates", path: "topic-candidates.json", schema: "l9.topic-candidates/v1" },
@@ -153,6 +253,9 @@ export function buildCorpusIndex(input: BuildCorpusIndexInput): CorpusIndex {
       ...document,
       present: written.has(document.path),
     })),
+    ...(input.coverage !== undefined
+      ? { coverage: coverageFor(input.coverage, input.documentSignals) }
+      : {}),
     statement: CORPUS_INDEX_STATEMENT,
   };
 }
@@ -164,6 +267,96 @@ export function renderCorpusIndex(index: CorpusIndex): string {
 
 function row(cells: readonly string[]): string {
   return `| ${cells.join(" | ")} |`;
+}
+
+/**
+ * What the run understood, stated so the two failures cannot be confused.
+ *
+ * "Nothing found here" and "this could not be read" look identical in a total.
+ * Split by format, with the refusal reasons the decoders actually gave, they are
+ * two different rows — which is the whole difference between a corpus an
+ * operator can act on and a number they have to trust.
+ */
+function coverageSection(index: CorpusIndex): string[] {
+  const coverage = index.coverage;
+  if (coverage === undefined) return [];
+  const embedding = coverage.embedding;
+  const value = (count: number | null): string => (count === null ? "—" : `${count}`);
+  const lines = [
+    "## Exact observation",
+    "",
+    row(["count", "value"]),
+    row(["---", "---"]),
+    row(["artifacts hashed", `${coverage.hashed_artifact_count}`]),
+    row(["artifacts unhashed", `${coverage.unhashed_artifact_count}`]),
+    "",
+    "## Decoding",
+    "",
+    "`eligible` is what a decoder claimed, `decoded` is what it read, and",
+    "`understood` is how many of those were found to state anything. A format",
+    "decoded but never understood is a decoder wired to nothing.",
+    "",
+    row(["format", "decoder", "eligible", "decoded", "understood", "refused"]),
+    row(["---", "---", "---", "---", "---", "---"]),
+    ...coverage.decoding.map((entry) => row([
+      entry.format,
+      `\`${entry.decoder_id}\``,
+      `${entry.eligible_count}`,
+      `${entry.decoded_count}`,
+      `${entry.interpreted_count}`,
+      entry.refusals.map((refusal) => `${refusal.name} ${refusal.count}`).join(", ") || "—",
+    ])),
+    "",
+    row(["gap", "count"]),
+    row(["---", "---"]),
+    row(["needs OCR", `${coverage.ocr_required_count}`]),
+    row(["encrypted", `${coverage.encrypted_count}`]),
+    row(["decoder failures", `${coverage.decoder_failure_count}`]),
+    "",
+  ];
+  if (coverage.unsupported_legacy_counts.length > 0) {
+    lines.push(
+      "Formats no decoder in this release claims, by extension. Counted rather than",
+      "omitted: an operator has to be able to see how much of an archive is invisible.",
+      "",
+      row(["extension", "artifacts", "bytes"]),
+      row(["---", "---", "---"]),
+      ...coverage.unsupported_legacy_counts.map((entry) => row([
+        `\`${entry.extension}\``,
+        `${entry.count}`,
+        `${entry.bytes}`,
+      ])),
+      "",
+    );
+  }
+  lines.push(
+    "## Intelligence",
+    "",
+    row(["finding", "count"]),
+    row(["---", "---"]),
+    row(["artifacts with work signals", `${coverage.intelligence.artifacts_with_work_signals}`]),
+    row(["exact duplicate clusters", `${coverage.intelligence.exact_duplicate_clusters}`]),
+    row(["near-duplicate candidates", `${coverage.intelligence.near_duplicate_candidates}`]),
+    row(["topic candidates", `${coverage.intelligence.topic_candidates}`]),
+    row(["project candidates", `${coverage.intelligence.project_candidates}`]),
+    row(["consolidation candidates", `${coverage.intelligence.consolidation_candidates}`]),
+    row(["reasoning-eligible candidates", `${coverage.intelligence.reasoning_eligible_candidates}`]),
+    "",
+    "Every row above is a candidate or an observation. None is a ranking, a",
+    "priority, or an instruction to do anything with the files it names.",
+    "",
+    "## Embedding",
+    "",
+    row(["field", "value"]),
+    row(["---", "---"]),
+    row(["enabled", embedding.enabled ? "yes" : "no"]),
+    row(["eligible artifacts", value(embedding.eligible_artifacts)]),
+    row(["embedded artifacts", value(embedding.embedded_artifacts)]),
+    row(["skipped as secret candidates", value(embedding.skipped_secret_artifacts)]),
+    row(["provider failures", value(embedding.provider_failures)]),
+    "",
+  );
+  return lines;
 }
 
 /** The same index, rendered for a person. */
@@ -226,6 +419,7 @@ export function renderCorpusIndexReport(index: CorpusIndex): string {
       document.present ? "yes" : "no",
     ])),
     "",
+    ...coverageSection(index),
     index.statement,
     "",
   ];

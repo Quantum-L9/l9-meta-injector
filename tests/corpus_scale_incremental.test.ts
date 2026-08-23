@@ -37,6 +37,7 @@ const SPEC = {
   nestedArchives: 10,
   duplicateClusters: 100,
   candidateProjects: 20,
+  mixedDocumentsPerFormat: 10,
 };
 
 describe("a ten-thousand-artifact corpus, rescanned", () => {

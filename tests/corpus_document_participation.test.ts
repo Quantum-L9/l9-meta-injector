@@ -226,6 +226,13 @@ describe("a decoded document reaches the analysis, not only the coverage report"
       corpusSourceSnapshotId: "corpus-source-snapshot:x",
       corpusAnalysisId: "corpus-analysis:y",
       decoderProfiles: ["l9.pdf-decoder@1.0.0", "l9.docx-decoder@1.0.0"],
+      blockProfile: {
+        profile_id: "meta-injector-document-block-signals",
+        profile_version: "1.0.0",
+        profile_hash: "sha256:profile",
+        extractor_id: "document-block-work-intelligence/v1",
+      },
+      blockSignals: [],
       documents: [
         {
           virtual_source_id: "b", format: "pdf", decoder_id: "l9.pdf-decoder",
@@ -252,5 +259,75 @@ describe("a decoded document reaches the analysis, not only the coverage report"
     expect(signals.analysis_participation.interpreted_count).toBe(1);
     expect(signals.analysis_participation.candidate_member_count).toBe(1);
     expect(signals.analysis_participation.lexically_analyzed_count).toBe(2);
+  });
+});
+
+// ───────────────────────── per-format provenance ─────────────────────────
+//
+// The index used to carry one decoder for the whole corpus and stamp it on every
+// row, so a `.docx` entry said the text decoder had read it, and the normalized
+// document id derived from that same wrong decoder — an id that joins the index
+// to the cache and to every piece of evidence, and joined them to nothing.
+
+describe("the document index names the decoder that actually read each file", () => {
+  it("gives each format its own decoder, format, block count and locator type", async () => {
+    const root = participationRoot();
+    const result = await runCorpusScan({ roots: [{ path: root }], producerVersion: "test" });
+    const index = result.rootPackets[0]?.documentIndex;
+    expect(index?.schema).toBe("l9.document-index/v2");
+
+    const byPath = new Map(
+      (index?.documents ?? []).map((document) => [document.root_relative_path, document]),
+    );
+    const docx = byPath.get("storage-migration.docx");
+    expect(docx?.format).toBe("docx");
+    expect(docx?.decoder_id).toContain("docx");
+    expect(docx?.block_count).toBeGreaterThan(0);
+    expect(docx?.structured_locator_type).toBe("docx_block");
+
+    const markdown = byPath.get("storage-migration.md");
+    expect(markdown?.format).toBe("markdown");
+    expect(markdown?.structured_locator_type).toBe("line_span");
+
+    // The two are the same words in two containers, so they must not share an id:
+    // a normalized document is a decoding, and these are two different decodings.
+    expect(docx?.normalized_document_id).not.toBe(markdown?.normalized_document_id);
+    expect(index?.decoder_profiles.length).toBeGreaterThan(1);
+  });
+
+  it("summarizes by format, and per root by the same function as the corpus", async () => {
+    const root = participationRoot();
+    const result = await runCorpusScan({ roots: [{ path: root }], producerVersion: "test" });
+    const index = result.rootPackets[0]?.documentIndex;
+    const formats = (index?.summary.by_format ?? []).map((entry) => entry.format);
+    expect(formats).toEqual(["docx", "markdown"]);
+    // Two formats, two decoders, each counted under its own name rather than
+    // both under whichever one the index happened to be told about.
+    const decoders = new Set((index?.summary.by_format ?? []).map((entry) => entry.decoder_id));
+    expect(decoders.size).toBe(2);
+
+    const decodedByFormat = (index?.summary.by_format ?? [])
+      .reduce((sum, entry) => sum + entry.decoded_count, 0);
+    expect(decodedByFormat).toBe(index?.summary.decoded_count);
+
+    // One root, so the per-root coverage and the corpus index must agree exactly.
+    const coverage = result.rootPackets[0]?.documentCoverage;
+    expect(coverage?.schema).toBe("l9.document-coverage/v2");
+    expect(coverage?.by_format).toEqual(index?.summary.by_format);
+    expect(coverage?.decoded_count).toBe(index?.summary.decoded_count);
+  });
+
+  it("reports no format and no blocks for an artifact nothing decoded", async () => {
+    const root = participationRoot();
+    const result = await runCorpusScan({ roots: [{ path: root }], producerVersion: "test" });
+    const undecoded = (result.rootPackets[0]?.documentIndex.documents ?? [])
+      .filter((document) => !document.decoded);
+    for (const document of undecoded) {
+      expect(document.format).toBeNull();
+      expect(document.block_count).toBeNull();
+      expect(document.structured_locator_type).toBeNull();
+      expect(document.structured_locator_types).toEqual([]);
+      expect(document.undecoded_reason).not.toBeNull();
+    }
   });
 });

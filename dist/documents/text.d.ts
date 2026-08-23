@@ -2,7 +2,18 @@ import { DecodeInput, DocumentDecoder } from "./decoder";
 export declare const TEXT_DECODER_ID = "l9.text-decoder";
 export declare const TEXT_DECODER_VERSION = "1.0.0";
 export declare const CSV_DECODER_ID = "l9.csv-decoder";
-export declare const CSV_DECODER_VERSION = "1.0.0";
+/**
+ * 1.1.0 emits a block per populated cell beside the row block.
+ *
+ * The `csv_row` locator has carried an optional `column` since it was defined and
+ * nothing ever set it, because the decoder's smallest unit was the row. A row
+ * block's text is a rendering of the whole row — `owner: mel; status: blocked` —
+ * and a reader looking for a declaration finds `owner` and stops. So a register
+ * with a status column was decoded, counted, and understood to say nothing,
+ * while the identical table in a worksheet was understood, purely because the
+ * worksheet decoder emits cells and this one did not.
+ */
+export declare const CSV_DECODER_VERSION = "1.1.0";
 /** Read a file as UTF-8, refusing bytes that are not valid UTF-8. */
 export declare function readUtf8(input: DecodeInput): {
     text: string;

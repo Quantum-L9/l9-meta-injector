@@ -1110,6 +1110,34 @@ function priorHashStillApplies(entry: EnumeratedEntry, known: KnownFileHash | un
   return entry.mtimeMs !== null && known.mtime_ms === entry.mtimeMs;
 }
 
+/**
+ * Record that a file is not valid UTF-8, when the probe found that.
+ *
+ * Called from both the freshly-hashed path and the path that carries a prior
+ * run's hash forward, because the observation belongs to the file rather than to
+ * how its hash was obtained. Recorded in only one of the two, an incremental scan
+ * of an unchanged disk holding a single Word document produced an inventory that
+ * omitted a fact the full scan of the same bytes recorded — and since the
+ * inventory is part of the Repository Model Packet, the packet's semantic hash
+ * and therefore the corpus source snapshot id moved for a corpus nobody had
+ * touched. Reuse is only worth having if it lands on the same answer.
+ */
+function noteUnsupportedEncoding(
+  entry: EnumeratedEntry,
+  encoding: EncodingProbe,
+  unknowns: string[],
+  diagnostics: LocalSourceDiagnostic[],
+): void {
+  if (encoding.status !== "invalid") return;
+  unknowns.push("unsupported_encoding");
+  diagnostics.push({
+    code: "local-source.unsupported_encoding",
+    severity: "warning",
+    message: `file is not valid UTF-8 and is observed by hash only: ${encoding.reason}`,
+    sourcePath: entry.relativePath,
+  });
+}
+
 /** Hash one entry and classify its encoding, or explain why neither happened. */
 function hashOneEntry(
   entry: EnumeratedEntry,
@@ -1134,11 +1162,13 @@ function hashOneEntry(
     // than a full stream, and skipping it would silently drop the "not UTF-8"
     // fact from an incremental run's inventory.
     const carried = (known as KnownFileHash).content_hash;
+    const encoding = probeFileEncoding(entry.absolutePath);
+    noteUnsupportedEncoding(entry, encoding, unknowns, diagnostics);
     return {
       hashed: {
         entry,
         contentHashHex: carried.replace("sha256:", ""),
-        encoding: probeFileEncoding(entry.absolutePath),
+        encoding,
         unknowns,
         reused: true,
       },
@@ -1165,15 +1195,7 @@ function hashOneEntry(
   }
 
   const encoding = probeFileEncoding(entry.absolutePath);
-  if (encoding.status === "invalid") {
-    unknowns.push("unsupported_encoding");
-    diagnostics.push({
-      code: "local-source.unsupported_encoding",
-      severity: "warning",
-      message: `file is not valid UTF-8 and is observed by hash only: ${encoding.reason}`,
-      sourcePath: entry.relativePath,
-    });
-  }
+  noteUnsupportedEncoding(entry, encoding, unknowns, diagnostics);
   return {
     hashed: { entry, contentHashHex: attempt.digest.replace("sha256:", ""), encoding, unknowns },
     unstableReason: null,
