@@ -156,14 +156,18 @@ processed incrementally, and projected as evidence rather than judgement. It reu
 acquisition, interpretation and analysis layers unchanged and adds no second engine.
 
 ```text
-src/corpus_roots.ts       root identity, path namespace, corpus snapshot identity
-src/corpus_cache.ts       six content-addressed layers, integrity, self-healing
-src/corpus_snapshot.ts    the artifact identity set a later run diffs against
+src/corpus_roots.ts       root identity, path namespace, corpus manifest, the two
+                          corpus identities: source snapshot and analysis
+src/corpus_cache.ts       seven content-addressed layers, integrity, self-healing,
+                          owner-only permissions
+src/corpus_snapshot.ts    the artifact identity set a later run diffs against, each
+                          root's packet reference, and the verification class
+src/corpus_index.ts       the corpus table of contents and its rendered report
 src/corpus_diff.ts        classification and downstream invalidation
 src/corpus_session.ts     resume state, resource budgets, atomic output commit
 src/corpus_candidates.ts  project candidates and topic candidates
 src/corpus_readiness.ts   readiness signals and body-of-work counts
-src/corpus_coverage.ts    coverage ratios and the reasoning handoff
+src/corpus_coverage.ts    coverage denominators, ratios and the reasoning handoff
 src/corpus_scan.ts        the order of operations that makes the cache safe
 ```
 
