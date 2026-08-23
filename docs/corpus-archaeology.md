@@ -452,6 +452,58 @@ What that does **not** cover is the process being killed between two renames. No
 userspace sequence of renames is atomic as a set, and claiming otherwise would be
 a guarantee only discovered to be false during an incident.
 
+## What it does on a real corpus
+
+Everything above is a guarantee. This section is a measurement, and the two are
+qualified differently on purpose.
+
+`tests/corpus_qualification.test.ts` and `tests/corpus_scale.test.ts` prove the
+guarantees on corpora written from constants, and are written to be insensitive
+to what those corpora contain — which is exactly what makes them unable to answer
+"how much of my archive can you actually read".
+
+`npm run qualify:corpus` answers that. It builds a deliberately mixed, read-only,
+two-root corpus — five archives including one nested two deep, documents across
+two dozen extensions, four project shapes, cross-root exact duplicates, two
+revisions of one plan, and three credential-shaped files — scans it cold, scans it
+warm, and writes `l9.corpus-qualification-report/v1` to
+`reports/corpus-real-world-qualification.json`.
+
+The report carries the measurements the guarantees do not:
+
+| Field | What it measures |
+|---|---|
+| `bytes_scanned`, `files_scanned` | what acquisition read, from the cold run |
+| `cache_hit_ratio_second_run` | the second warm run's own accounting, per layer |
+| `decoder_coverage` | decoded over eligible, plus the decoder's identity |
+| `duplicate_counts` | exact clusters, cross-root clusters, near-duplicate candidates |
+| `topic_candidate_counts`, `project_candidate_counts` | totals and the cross-root subset |
+| `reasoning_eligible_count` | candidates carrying enough decoded content to reason over |
+| `unsupported_counts` | what was not read, split by why |
+
+`unsupported_counts` is the field worth reading first, because it splits three
+gaps a single "coverage" number would blur. A `.pdf` is a text-bearing format this
+release does not decode. A `.png` has no text layer to decode at all. A file named
+`secrets.yaml` is a format the decoders would happily open and is deliberately
+refused before a byte of it is read — and only that third class is inside the
+`decoder_coverage` ratio, which is why the ratio is below one.
+
+The measurements come from the cold run and the hit ratio comes from the warm one,
+because each number is a fact about the run it is a fact about. The two are never
+averaged.
+
+Two fields are environment-dependent by construction and are not pass criteria.
+`read_only_enforced_for_process` is false when the run is root, because root
+writes through `0o444`; the tree digests include mode bits and so differ between
+machines. The pass criterion is `mutated_path_count: 0`, compared over content
+*and* mode for every path — a scan that left the bytes alone but relaxed a
+permission bit has still modified the source. For the same reason the report is
+not gate-checked against a committed golden copy: that would pin exactly the
+fields that legitimately vary.
+
+The harness runs the test file and writes the report the passing run produced, so
+a report on disk is never from a run that did not pass.
+
 ## Nothing is executed, moved or judged
 
 No build is run. No test in an observed project is executed. Nothing is

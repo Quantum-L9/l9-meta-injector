@@ -1,0 +1,161 @@
+{
+  "bytes_scanned": 48144,
+  "cache_hit_ratio_second_run": {
+    "corrupt": 0,
+    "enabled": true,
+    "hit_ratio": 1,
+    "hits": 146,
+    "layers": [
+      {
+        "corrupt": 0,
+        "hits": 2,
+        "layer": "candidate_analysis",
+        "misses": 0,
+        "writes": 0
+      },
+      {
+        "corrupt": 0,
+        "hits": 0,
+        "layer": "embedding",
+        "misses": 0,
+        "writes": 0
+      },
+      {
+        "corrupt": 0,
+        "hits": 27,
+        "layer": "interpretation",
+        "misses": 0,
+        "writes": 0
+      },
+      {
+        "corrupt": 0,
+        "hits": 20,
+        "layer": "lexical_features",
+        "misses": 0,
+        "writes": 0
+      },
+      {
+        "corrupt": 0,
+        "hits": 38,
+        "layer": "normalized_document",
+        "misses": 0,
+        "writes": 0
+      },
+      {
+        "corrupt": 0,
+        "hits": 59,
+        "layer": "raw_identity",
+        "misses": 0,
+        "writes": 0
+      }
+    ],
+    "misses": 0,
+    "stale_producer": 0,
+    "writes": 0
+  },
+  "cold_warm_equivalence": {
+    "cold_cache_hits": 0,
+    "cold_files_scanned": 59,
+    "corpus_snapshot_id_identical": true,
+    "semantic_output_identical": true,
+    "warm_cache_hits": 146,
+    "warm_files_scanned": 59
+  },
+  "corpus": {
+    "archive_count": 5,
+    "archive_member_count": 11,
+    "artifact_count": 59,
+    "distinct_extension_count": 24,
+    "root_count": 2
+  },
+  "corpus_profile_hash": "corpus-profile:4a329690db81326ea5425f83971eecd51b95e7494e4cb968e1e800a86e2768dd",
+  "corpus_snapshot_id": "corpus-snapshot:bb11811393ffc70e6d62fc734c45d79665b27542990b275c4ec3a494a5abd95d",
+  "decoder_coverage": {
+    "embedding_enabled": false,
+    "embedding_when_enabled": null,
+    "interpretation": {
+      "covered": 27,
+      "eligible": 27,
+      "ratio": 1
+    },
+    "lexical_analysis": {
+      "covered": 20,
+      "eligible": 20,
+      "ratio": 1
+    },
+    "normalized_document": {
+      "covered": 33,
+      "eligible": 35,
+      "ratio": 0.942857
+    },
+    "text_decoder_id": "utf8-text-decoder",
+    "text_decoder_version": "1.0.0"
+  },
+  "duplicate_counts": {
+    "cross_root_duplicate_cluster_count": 3,
+    "cross_root_near_duplicate_count": 1,
+    "exact_duplicate_artifact_count": 10,
+    "exact_duplicate_cluster_count": 4,
+    "near_duplicate_candidate_count": 3,
+    "near_duplicate_threshold": 0.85,
+    "recoverable_duplicate_bytes": 3654,
+    "unique_content_bytes_estimate": 44490,
+    "unique_content_estimate": 53
+  },
+  "files_scanned": 59,
+  "no_priority_statement": "This report measures one run over one corpus. Every field in it is a count, a ratio or an identity. It contains no priority, no ranking and no recommendation about any artifact, candidate or body of work it describes.",
+  "producer_version": "real-world-qualification",
+  "project_candidate_counts": {
+    "candidate_count": 5,
+    "cross_root_candidate_count": 0
+  },
+  "reasoning_eligible_count": 5,
+  "roots": [
+    {
+      "root_id": "root:1361167a274126df295eeac187abcbfc236b1bc4a9bf155369fb133153ab017b",
+      "root_label": "backup",
+      "root_snapshot_id": "root-snapshot:57f9ef47737bbdd482c3a35c213fa251a03bb357fdf1cdaf6808e23da33066a4",
+      "source_kind": "directory",
+      "source_revision": "fs:sha256:e5b7c4ee647cf1916d21329b8055d4d1f3a091087932fc4ccc24b0e68b0a4e32"
+    },
+    {
+      "root_id": "root:f565a3576f9c642941bd3e6b456b7bc311a8dd916b914760848d33e7b92edfd8",
+      "root_label": "old-ssd",
+      "root_snapshot_id": "root-snapshot:346c4cfce6029a999d19b142e9ef60bce6daaa1eb3a38e594cdac83ee1acf591",
+      "source_kind": "directory",
+      "source_revision": "fs:sha256:7379dc2f3e467a0549651a7e5e2570a7fbfc8b516f68ece8bd38198b14472692"
+    }
+  ],
+  "schema": "l9.corpus-qualification-report/v1",
+  "source_mutation": {
+    "mutated_path_count": 0,
+    "read_only_enforced_for_process": false,
+    "read_only_mode_applied": true,
+    "tree_digest_after": "sha256:90b2fc970df1c5e5eaa67e0ca40904c430fe5e4963ff623adcea9e054e6b41d1+sha256:2e6b18938796529411b8a74d9064ed61a358a17fafd94da931f3dff17528a036",
+    "tree_digest_before": "sha256:90b2fc970df1c5e5eaa67e0ca40904c430fe5e4963ff623adcea9e054e6b41d1+sha256:2e6b18938796529411b8a74d9064ed61a358a17fafd94da931f3dff17528a036"
+  },
+  "topic_candidate_counts": {
+    "candidate_count": 3,
+    "cross_root_candidate_count": 3
+  },
+  "unsupported_counts": {
+    "encrypted_document_count": 0,
+    "ocr_required_count": 5,
+    "oversized_document_count": 0,
+    "secret_skipped_count": 2,
+    "unsupported_format_bytes": 15360,
+    "unsupported_format_counts": [
+      {
+        "bytes": 6144,
+        "count": 1,
+        "extension": ".docx"
+      },
+      {
+        "bytes": 9216,
+        "count": 2,
+        "extension": ".pdf"
+      }
+    ],
+    "unsupported_format_total": 3
+  }
+}

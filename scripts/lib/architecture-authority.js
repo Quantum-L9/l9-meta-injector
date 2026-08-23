@@ -47,6 +47,7 @@ const AUTHORITY_CRITICAL_PATHS = [
   "src/corpus_readiness.ts",
   "src/corpus_candidates.ts",
   "src/corpus_coverage.ts",
+  "src/corpus_qualification.ts",
   "src/ordering.ts",
   "src/extractors/work_intelligence.ts",
   "src/extractors/index.ts",
@@ -82,6 +83,9 @@ const AUTHORITY_CRITICAL_PATHS = [
   "dist/corpus_coverage.js",
   "dist/corpus_coverage.d.ts",
   "dist/corpus_coverage.js.map",
+  "dist/corpus_qualification.js",
+  "dist/corpus_qualification.d.ts",
+  "dist/corpus_qualification.js.map",
   "dist/corpus_report.js",
   "dist/corpus_report.d.ts",
   "dist/corpus_report.js.map",
@@ -106,10 +110,13 @@ const AUTHORITY_CRITICAL_PATHS = [
   "tests/artifact_scoped_assertions.test.ts",
   "tests/local_source_cli.test.ts",
   "tests/helpers/corpus_fixtures.ts",
+  "tests/corpus_real_world_qualification.test.ts",
+  "tests/helpers/real_world_corpus.ts",
   "docs/corpus-intelligence.md",
   "docs/corpus-archaeology.md",
   "docs/decisions/037-corpus-intelligence-artifact-scope-and-duplicate-topology.md",
   "docs/decisions/038-multi-root-corpus-incremental-cache-and-readiness-evidence.md",
+  "docs/decisions/039-real-corpus-qualification-report.md",
   "src/local_archive_policy.ts",
   "src/archive_preflight.ts",
   "src/zip_reader.ts",
@@ -133,6 +140,7 @@ const AUTHORITY_CRITICAL_PATHS = [
   "dist/encoding.d.ts",
   "dist/encoding.js.map",
   "scripts/local-source-cli.js",
+  "scripts/corpus-qualification.js",
   "tests/local_source_safety.test.ts",
   "tests/local_source_archive_security.test.ts",
   "tests/local_source_model.test.ts",
@@ -275,7 +283,7 @@ function validateAuthorityDocument(authority) {
     if (authority.engine.language !== "typescript") errors.push("authority.engine.language must be typescript");
     for (const key of ["source_root","runtime_entrypoint","package_entrypoint","types_entrypoint"]) requireString(authority.engine[key], `authority.engine.${key}`, errors);
   }
-  exactKeys(authority.contracts, ["metadata","pipeline","architecture","public_api","package"], ["operations","repository_authority","authority_scan","check","operation_dispatch","discovery","carrier_policy","metadata_index","carrier_operation","file_transaction","frontmatter_patch","output_placement","local_source","local_archive_policy","archive_preflight","encoding","corpus_analysis","corpus_report","corpus_scan","corpus_roots","corpus_cache","corpus_snapshot","corpus_diff","corpus_session","corpus_readiness","corpus_candidates","corpus_coverage","corpus_archaeology","work_intelligence","ordering"], "authority.contracts", errors);
+  exactKeys(authority.contracts, ["metadata","pipeline","architecture","public_api","package"], ["operations","repository_authority","authority_scan","check","operation_dispatch","discovery","carrier_policy","metadata_index","carrier_operation","file_transaction","frontmatter_patch","output_placement","local_source","local_archive_policy","archive_preflight","encoding","corpus_analysis","corpus_report","corpus_scan","corpus_roots","corpus_cache","corpus_snapshot","corpus_diff","corpus_session","corpus_readiness","corpus_candidates","corpus_coverage","corpus_qualification","corpus_archaeology","work_intelligence","ordering"], "authority.contracts", errors);
   if (isPlainObject(authority.contracts)) for (const key of Object.keys(authority.contracts)) requireString(authority.contracts[key], `authority.contracts.${key}`, errors);
   exactKeys(authority.distribution, ["model","source_root","generated_root","compliance_state","source_parity_command","packed_consumer_command","package_contract"], [], "authority.distribution", errors);
   if (isPlainObject(authority.distribution)) {

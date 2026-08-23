@@ -305,6 +305,19 @@
         "npm run validate"
       ],
       "stability": "stable"
+    },
+    {
+      "capability": "real_corpus_qualification_report",
+      "source": "src/corpus_qualification.ts",
+      "public_entrypoint": null,
+      "tests": [
+        "tests/corpus_real_world_qualification.test.ts"
+      ],
+      "validators": [
+        "npm test",
+        "npm run qualify:corpus"
+      ],
+      "stability": "stable"
     }
   ]
 }
