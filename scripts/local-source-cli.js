@@ -76,6 +76,7 @@ const USAGE = [
   "  --resume                   adopt an existing session manifest for the same roots",
   "  --topic-threshold F        topic candidate vocabulary overlap in [0,1] (default: 0.35)",
   "  --no-topic-candidates      skip topic candidate analysis",
+  "  --keep-generations N       output generations retained (default: 3)",
   "  --max-decoder-workers N    documents decoded concurrently (default: 4)",
   "  --max-embedding-workers N  documents embedded concurrently (default: 2)",
   "  --max-memory-bytes N       ceiling on decoded text held at once (default: 256 MiB)",
@@ -281,7 +282,7 @@ function collectBudgets(cli) {
  * decide things harder to read than it needed to be.
  */
 function reportCorpusRun(context) {
-  const { result, cacheEnabled, cache, resumed, written, sessionPath } = context;
+  const { result, cacheEnabled, cache, resumed, written, sessionPath, published } = context;
   const coverage = result.coverage;
   const summary = result.candidates.summary;
   console.log(`${LABEL}: OK (corpus mode)`);
@@ -470,6 +471,18 @@ function reportCorpusRun(context) {
     );
   }
   console.log("  no ranking, score or priority is produced; readiness evidence is counts and citations");
+  // The generation, then what is in it. An operator reading this needs to know
+  // which directory the run landed in, because that is what CURRENT.json now
+  // points at and what a later --previous-snapshot would name.
+  console.log(`  generation       ${published.generation_id}`);
+  console.log(`  generation dir   ${published.generation_directory}`);
+  console.log(`  current          ${published.current_file}`);
+  if (published.reused) {
+    console.log("  generation       reused: this corpus under these rules produced these exact bytes before");
+  }
+  if (published.pruned_generation_ids.length > 0) {
+    console.log(`  pruned           ${published.pruned_generation_ids.length} older generation(s)`);
+  }
   for (const file of written) console.log(`  wrote            ${file}`);
   console.log(`  session          ${sessionPath}`);
   for (const diagnostic of result.diagnostics) {
@@ -490,6 +503,7 @@ async function runCorpusMode(cli) {
   const semanticRun = requireBuilt(path.join(repo, "dist", "corpus_semantic_run.js"));
   const documentsModule = requireBuilt(path.join(repo, "dist", "corpus_documents.js"));
   const embeddingsModule = requireBuilt(path.join(repo, "dist", "corpus_embeddings.js"));
+  const publishModule = requireBuilt(path.join(repo, "dist", "corpus_publish.js"));
   const httpEmbeddings = requireBuilt(path.join(repo, "dist", "corpus_embedding_http.js"));
   const repositoryModel = requireBuilt(path.join(repo, "dist", "public", "repository_model.js"));
   const ordering = requireBuilt(path.join(repo, "dist", "ordering.js"));
@@ -570,8 +584,20 @@ async function runCorpusMode(cli) {
   const resumed = session.resumedCounts;
   session.save(new Date().toISOString());
 
-  const snapshotPath = path.join(outDir, "corpus-snapshot.json");
-  const previousPath = cli.opt("--previous-snapshot", snapshotPath);
+  const generationsKept = numericOpt(cli, "--keep-generations");
+
+  // The previous run's snapshot is found through CURRENT.json rather than at a
+  // fixed path, because a generation directory is named by its own contents and
+  // nothing outside the pointer knows where the last one landed. An explicit
+  // --previous-snapshot still wins: comparing against a snapshot from somewhere
+  // else entirely is a thing operators do.
+  const publishedPrevious = publishModule.resolveCurrentGeneration(outDir);
+  const previousPath = cli.opt(
+    "--previous-snapshot",
+    publishedPrevious === null
+      ? path.join(outDir, "corpus-snapshot.json")
+      : path.join(publishedPrevious.directory, "corpus-snapshot.json"),
+  );
   let previousSnapshot;
   if (!cli.flag("--no-diff") && fs.existsSync(previousPath)) {
     try {
@@ -699,30 +725,33 @@ async function runCorpusMode(cli) {
     return;
   }
 
-  // Every projection is staged and then renamed, so a reader never sees a
-  // coverage report describing one corpus beside a readiness document describing
-  // another.
-  const diffPath = path.join(outDir, "corpus-diff.json");
+  // Every projection of one run goes into one generation directory, and a single
+  // atomic switch of CURRENT.json makes the whole set visible at once. Paths here
+  // are relative to that directory, not to the output root.
   const outputs = [
-    { path: snapshotPath, contents: snapshotModule.renderCorpusSnapshot(result.snapshot) },
-    { path: path.join(outDir, "corpus-candidates.json"), contents: scan.renderCorpusCandidates(result.candidates) },
-    { path: path.join(outDir, "readiness-evidence.json"), contents: scan.renderReadinessEvidence(result.readiness) },
-    { path: path.join(outDir, "corpus-coverage.json"), contents: coverageModule.renderCorpusCoverage(result.coverage) },
-    { path: path.join(outDir, "document-index.json"), contents: documentsModule.renderDocumentIndex(result.documentIndex) },
-    { path: path.join(outDir, "document-signals.json"), contents: signalsModule.renderCorpusDocumentSignals(result.documentSignals) },
+    { path: "corpus-snapshot.json", contents: snapshotModule.renderCorpusSnapshot(result.snapshot) },
+    { path: "corpus-candidates.json", contents: scan.renderCorpusCandidates(result.candidates) },
+    { path: "readiness-evidence.json", contents: scan.renderReadinessEvidence(result.readiness) },
+    { path: "corpus-coverage.json", contents: coverageModule.renderCorpusCoverage(result.coverage) },
+    { path: "document-index.json", contents: documentsModule.renderDocumentIndex(result.documentIndex) },
+    { path: "document-signals.json", contents: signalsModule.renderCorpusDocumentSignals(result.documentSignals) },
   ];
   if (result.semantic !== null) {
     outputs.push(
-      { path: path.join(outDir, "semantic-relations.json"), contents: semanticRun.renderSemanticRelations(result.semantic.relations) },
-      { path: path.join(outDir, "topic-candidates.json"), contents: semanticRun.renderTopicCandidates(result.semantic.topics) },
-      { path: path.join(outDir, "project-candidates.json"), contents: semanticRun.renderProjectCandidates(result.semantic.projects) },
-      { path: path.join(outDir, "consolidation-candidates.json"), contents: semanticRun.renderConsolidationCandidates(result.semantic.consolidations) },
-      { path: path.join(outDir, "reasoning-candidates.jsonl"), contents: semanticRun.renderReasoningCandidates(result.semantic.reasoningCandidates) },
-      { path: path.join(outDir, "reasoning-evidence-packs.jsonl"), contents: semanticRun.renderReasoningEvidencePacks(result.semantic.evidencePacks) },
+      { path: "semantic-relations.json", contents: semanticRun.renderSemanticRelations(result.semantic.relations) },
+      { path: "topic-candidates.json", contents: semanticRun.renderTopicCandidates(result.semantic.topics) },
+      { path: "project-candidates.json", contents: semanticRun.renderProjectCandidates(result.semantic.projects) },
+      { path: "consolidation-candidates.json", contents: semanticRun.renderConsolidationCandidates(result.semantic.consolidations) },
+      { path: "reasoning-candidates.jsonl", contents: semanticRun.renderReasoningCandidates(result.semantic.reasoningCandidates) },
+      { path: "reasoning-evidence-packs.jsonl", contents: semanticRun.renderReasoningEvidencePacks(result.semantic.evidencePacks) },
     );
   }
+  // A diff from a previous run describes a comparison this run did not make. It
+  // is simply absent from this generation rather than deleted from a shared
+  // directory: a generation holds what its run produced, so there is nothing
+  // left over to remove.
   if (result.diff !== null) {
-    outputs.push({ path: diffPath, contents: diffModule.renderCorpusDiff(result.diff) });
+    outputs.push({ path: "corpus-diff.json", contents: diffModule.renderCorpusDiff(result.diff) });
   }
 
   // Each root's own outputs, under its own directory. The bundle is produced by
@@ -732,26 +761,26 @@ async function runCorpusMode(cli) {
   const bundleScratch = fs.mkdtempSync(path.join(os.tmpdir(), "l9-corpus-bundles-"));
   try {
     for (const root of result.rootPackets) {
-      const rootDir = path.join(outDir, "roots", root.directory);
+      const rootDir = `roots/${root.directory}`;
       const staged = path.join(bundleScratch, root.directory);
       repositoryModel.emitRepositoryModelBundle(root.packet, { outDir: staged });
       for (const relative of listFilesRecursively(staged, ordering.compareCodePoints)) {
         outputs.push({
-          path: path.join(rootDir, "bundle", relative),
+          path: `${rootDir}/bundle/${relative.split(path.sep).join("/")}`,
           contents: fs.readFileSync(path.join(staged, relative), "utf8"),
         });
       }
       outputs.push(
         {
-          path: path.join(rootDir, "local-source-manifest.json"),
+          path: `${rootDir}/local-source-manifest.json`,
           contents: `${JSON.stringify(root.localSourceManifest, null, 2)}\n`,
         },
         {
-          path: path.join(rootDir, "document-index.json"),
+          path: `${rootDir}/document-index.json`,
           contents: documentsModule.renderDocumentIndex(root.documentIndex),
         },
         {
-          path: path.join(rootDir, "document-coverage.json"),
+          path: `${rootDir}/document-coverage.json`,
           contents: scan.renderDocumentCoverage(root.documentCoverage),
         },
       );
@@ -769,22 +798,28 @@ async function runCorpusMode(cli) {
     snapshot: result.snapshot,
     rootDirectories: new Map(result.rootPackets.map((root) => [root.root_id, root.directory])),
     writtenPaths: [
-      ...outputs.map((file) => path.relative(outDir, file.path).split(path.sep).join("/")),
+      ...outputs.map((file) => file.path),
       "corpus-index.json",
       "corpus-report.md",
     ],
   });
   outputs.push(
-    { path: path.join(outDir, "corpus-index.json"), contents: indexModule.renderCorpusIndex(corpusIndex) },
-    { path: path.join(outDir, "corpus-report.md"), contents: indexModule.renderCorpusIndexReport(corpusIndex) },
+    { path: "corpus-index.json", contents: indexModule.renderCorpusIndex(corpusIndex) },
+    { path: "corpus-report.md", contents: indexModule.renderCorpusIndexReport(corpusIndex) },
   );
 
-  // A diff from a previous run describes a comparison this run did not make, and
-  // nothing inside the file says so. It leaves with the rest of the output set.
-  const written = sessionModule.commitCorpusOutputs({
+  // One directory, then one rename. A crash anywhere in the write leaves the
+  // previous generation intact and reachable, because CURRENT.json has not
+  // moved; a crash during the rename leaves one pointer or the other, because a
+  // rename is atomic. There is no moment at which a reader can see half of this
+  // run beside half of the last one.
+  const published = publishModule.publishCorpusGeneration({
+    outDir,
     files: outputs,
-    remove: result.diff === null ? [diffPath] : [],
+    committedAt: new Date().toISOString(),
+    ...(generationsKept !== undefined ? { keep: generationsKept } : {}),
   });
+  const written = outputs.map((file) => `${published.generation_id.slice(-12)}/${file.path}`);
   session.save(new Date().toISOString());
 
   reportCorpusRun({
@@ -794,6 +829,7 @@ async function runCorpusMode(cli) {
     resumed,
     written,
     sessionPath,
+    published,
   });
 }
 

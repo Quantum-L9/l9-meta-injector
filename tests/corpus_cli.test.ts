@@ -5,6 +5,7 @@
 // run below is the real script against the committed `dist/`, so a wiring mistake
 // fails here rather than in someone's terminal.
 import * as cp from "node:child_process";
+import * as crypto from "node:crypto";
 import * as http from "node:http";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -77,9 +78,28 @@ function argsFor(f: Fixture, extra: string[] = []): string[] {
   return [...f.roots.flatMap((root) => ["--root", root]), "--out", f.out, "--cache-dir", f.cache, ...extra];
 }
 
+/**
+ * Where the projections of the most recent run actually live.
+ *
+ * A run writes one generation directory and then switches `CURRENT.json` to it
+ * with a single atomic rename, so nothing is at a fixed path any more and every
+ * reader — these tests included — resolves through the pointer. That is the
+ * point of the layout: a reader either sees a whole generation or the previous
+ * whole generation, never a mixture assembled out of twelve separate renames.
+ */
+function sha256Of(contents: string): string {
+  return `sha256:${crypto.createHash("sha256").update(contents, "utf8").digest("hex")}`;
+}
+
+function generation(f: Fixture): string {
+  const current = JSON.parse(fs.readFileSync(path.join(f.out, "CURRENT.json"), "utf8"));
+  expect(current.schema).toBe("l9.corpus-current/v1");
+  return path.join(f.out, ...String(current.generation_ref).split("/"));
+}
+
 /** The roots recorded in a fixture's snapshot. */
 function snapshotRoots(f: Fixture): { root_key: string; rmp_packet_id: string; bundle_ref: string }[] {
-  return JSON.parse(fs.readFileSync(path.join(f.out, "corpus-snapshot.json"), "utf8")).roots;
+  return JSON.parse(fs.readFileSync(path.join(generation(f), "corpus-snapshot.json"), "utf8")).roots;
 }
 
 describe("corpus mode", () => {
@@ -91,7 +111,13 @@ describe("corpus mode", () => {
     expect(result.status).toBe(0);
     expect(f.roots.map((root) => treeSnapshot(root))).toEqual(before);
 
-    expect(fs.readdirSync(f.out).sort()).toEqual([
+    // The output root holds a pointer, the generations, and the session. Nothing
+    // else: a projection at a fixed path beside a pointer is a second way to
+    // read the results, and the second way is the one that goes stale.
+    expect(fs.readdirSync(f.out).sort()).toEqual(["CURRENT.json", "generations", "session"]);
+    expect(fs.readdirSync(path.join(f.out, "generations"))).toHaveLength(1);
+
+    expect(fs.readdirSync(generation(f)).sort()).toEqual([
       "consolidation-candidates.json",
       "corpus-candidates.json",
       "corpus-coverage.json",
@@ -106,17 +132,16 @@ describe("corpus mode", () => {
       "reasoning-evidence-packs.jsonl",
       "roots",
       "semantic-relations.json",
-      "session",
       "topic-candidates.json",
     ]);
 
     // Every root keeps its own bundle, acquisition manifest and document index,
     // under a directory named after the key the operator declared.
-    expect(fs.readdirSync(path.join(f.out, "roots")).sort()).toEqual(
+    expect(fs.readdirSync(path.join(generation(f), "roots")).sort()).toEqual(
       f.roots.map((root) => path.basename(root)).sort(),
     );
-    for (const root of fs.readdirSync(path.join(f.out, "roots"))) {
-      const dir = path.join(f.out, "roots", root);
+    for (const root of fs.readdirSync(path.join(generation(f), "roots"))) {
+      const dir = path.join(generation(f), "roots", root);
       expect(fs.readdirSync(dir).sort()).toEqual([
         "bundle",
         "document-coverage.json",
@@ -130,15 +155,15 @@ describe("corpus mode", () => {
       expect(entry?.rmp_packet_id).toBe(bundle.packet_id);
       expect(entry?.bundle_ref).toBe(`roots/${root}/bundle`);
     }
-    const snapshot = JSON.parse(fs.readFileSync(path.join(f.out, "corpus-snapshot.json"), "utf8"));
-    const candidates = JSON.parse(fs.readFileSync(path.join(f.out, "corpus-candidates.json"), "utf8"));
-    const coverage = JSON.parse(fs.readFileSync(path.join(f.out, "corpus-coverage.json"), "utf8"));
-    const readiness = JSON.parse(fs.readFileSync(path.join(f.out, "readiness-evidence.json"), "utf8"));
+    const snapshot = JSON.parse(fs.readFileSync(path.join(generation(f), "corpus-snapshot.json"), "utf8"));
+    const candidates = JSON.parse(fs.readFileSync(path.join(generation(f), "corpus-candidates.json"), "utf8"));
+    const coverage = JSON.parse(fs.readFileSync(path.join(generation(f), "corpus-coverage.json"), "utf8"));
+    const readiness = JSON.parse(fs.readFileSync(path.join(generation(f), "readiness-evidence.json"), "utf8"));
     const session = JSON.parse(
       fs.readFileSync(path.join(f.out, "session", "corpus-session.json"), "utf8"),
     );
 
-    const signals = JSON.parse(fs.readFileSync(path.join(f.out, "document-signals.json"), "utf8"));
+    const signals = JSON.parse(fs.readFileSync(path.join(generation(f), "document-signals.json"), "utf8"));
 
     expect(snapshot.schema).toBe("l9.corpus-snapshot/v1");
     expect(candidates.schema).toBe("l9.corpus-candidates/v1");
@@ -167,7 +192,7 @@ describe("corpus mode", () => {
     const f = fixture();
     expect(run(argsFor(f)).status).toBe(0);
     for (const name of ["corpus-snapshot.json", "corpus-candidates.json", "readiness-evidence.json", "corpus-coverage.json"]) {
-      const contents = fs.readFileSync(path.join(f.out, name), "utf8");
+      const contents = fs.readFileSync(path.join(generation(f), name), "utf8");
       for (const root of f.roots) expect(contents).not.toContain(root);
       expect(contents).not.toContain(os.tmpdir());
     }
@@ -179,12 +204,12 @@ describe("corpus mode", () => {
   it("diffs against its own previous snapshot on the next run", () => {
     const f = fixture();
     expect(run(argsFor(f)).status).toBe(0);
-    expect(fs.existsSync(path.join(f.out, "corpus-diff.json"))).toBe(false);
+    expect(fs.existsSync(path.join(generation(f), "corpus-diff.json"))).toBe(false);
 
     fs.writeFileSync(path.join(f.corpus.oldSsd, "notes/tuesday.md"), "# Tuesday\n\nA new note.\n", "utf8");
     const second = run(argsFor(f));
     expect(second.status).toBe(0);
-    const diff = JSON.parse(fs.readFileSync(path.join(f.out, "corpus-diff.json"), "utf8"));
+    const diff = JSON.parse(fs.readFileSync(path.join(generation(f), "corpus-diff.json"), "utf8"));
     expect(diff.schema).toBe("l9.corpus-diff/v1");
     expect(diff.counts.added).toBe(1);
     expect(diff.counts.changed_content).toBe(0);
@@ -192,7 +217,7 @@ describe("corpus mode", () => {
     expect(second.stdout).toContain("diff             +1 -0 ~0");
     // The second run reused the first run's work for everything that did not move:
     // only the arrival's own layers, and the two corpus-scope analyses, missed.
-    const coverage = JSON.parse(fs.readFileSync(path.join(f.out, "corpus-coverage.json"), "utf8"));
+    const coverage = JSON.parse(fs.readFileSync(path.join(generation(f), "corpus-coverage.json"), "utf8"));
     expect(coverage.cache.misses).toBe(6);
     expect(coverage.cache.hit_ratio).toBeGreaterThan(0.8);
   });
@@ -223,7 +248,7 @@ describe("corpus mode", () => {
     );
     const result = run(["--root-manifest", manifest, "--out", f.out, "--cache-dir", f.cache]);
     expect(result.status).toBe(0);
-    expect(JSON.parse(fs.readFileSync(path.join(f.out, "corpus-snapshot.json"), "utf8")).counts.root_count).toBe(3);
+    expect(JSON.parse(fs.readFileSync(path.join(generation(f), "corpus-snapshot.json"), "utf8")).counts.root_count).toBe(3);
   });
 
   it("refuses to write its output or its cache inside a root", () => {
@@ -261,12 +286,12 @@ describe("semantic candidate discovery", () => {
     const f = fixture();
     expect(run(argsFor(f)).status).toBe(0);
 
-    const relations = JSON.parse(fs.readFileSync(path.join(f.out, "semantic-relations.json"), "utf8"));
-    const topics = JSON.parse(fs.readFileSync(path.join(f.out, "topic-candidates.json"), "utf8"));
-    const projects = JSON.parse(fs.readFileSync(path.join(f.out, "project-candidates.json"), "utf8"));
+    const relations = JSON.parse(fs.readFileSync(path.join(generation(f), "semantic-relations.json"), "utf8"));
+    const topics = JSON.parse(fs.readFileSync(path.join(generation(f), "topic-candidates.json"), "utf8"));
+    const projects = JSON.parse(fs.readFileSync(path.join(generation(f), "project-candidates.json"), "utf8"));
     const consolidation = JSON.parse(
-      fs.readFileSync(path.join(f.out, "consolidation-candidates.json"), "utf8"));
-    const documents = JSON.parse(fs.readFileSync(path.join(f.out, "document-index.json"), "utf8"));
+      fs.readFileSync(path.join(generation(f), "consolidation-candidates.json"), "utf8"));
+    const documents = JSON.parse(fs.readFileSync(path.join(generation(f), "document-index.json"), "utf8"));
 
     expect(relations.schema).toBe("l9.semantic-relations/v1");
     expect(topics.schema).toBe("l9.topic-candidates/v1");
@@ -288,9 +313,9 @@ describe("semantic candidate discovery", () => {
     const f = fixture();
     expect(run(argsFor(f)).status).toBe(0);
 
-    const queue = fs.readFileSync(path.join(f.out, "reasoning-candidates.jsonl"), "utf8")
+    const queue = fs.readFileSync(path.join(generation(f), "reasoning-candidates.jsonl"), "utf8")
       .split("\n").filter((line) => line.length > 0).map((line) => JSON.parse(line));
-    const packs = fs.readFileSync(path.join(f.out, "reasoning-evidence-packs.jsonl"), "utf8")
+    const packs = fs.readFileSync(path.join(generation(f), "reasoning-evidence-packs.jsonl"), "utf8")
       .split("\n").filter((line) => line.length > 0).map((line) => JSON.parse(line));
 
     const eligible = queue.filter((row) => row.reasoning_type !== "NONE");
@@ -312,7 +337,7 @@ describe("semantic candidate discovery", () => {
     const f = fixture();
     expect(run(argsFor(f, ["--no-semantic-analysis"])).status).toBe(0);
 
-    const written = fs.readdirSync(f.out).sort();
+    const written = fs.readdirSync(generation(f)).sort();
     expect(written).not.toContain("topic-candidates.json");
     expect(written).not.toContain("reasoning-candidates.jsonl");
     // The document index is not part of the semantic pass and still lands.
@@ -328,9 +353,73 @@ describe("semantic candidate discovery", () => {
       "consolidation-candidates.json", "reasoning-candidates.jsonl",
       "reasoning-evidence-packs.jsonl", "document-index.json",
     ]) {
-      const text = fs.readFileSync(path.join(f.out, name), "utf8");
+      const text = fs.readFileSync(path.join(generation(f), name), "utf8");
       for (const root of f.roots) expect(text).not.toContain(root);
     }
+  });
+});
+
+describe("the generational output layout", () => {
+  it("switches the whole result set with one pointer, run after run", () => {
+    const f = fixture();
+    expect(run(argsFor(f)).status).toBe(0);
+    const first = JSON.parse(fs.readFileSync(path.join(f.out, "CURRENT.json"), "utf8"));
+    const firstSnapshot = fs.readFileSync(path.join(generation(f), "corpus-snapshot.json"), "utf8");
+
+    // A second run lands in a new generation, because its acquisition manifests
+    // carry a wall clock and its output set is therefore genuinely different
+    // bytes. The identity that must not move is the snapshot's, and it does not.
+    fs.writeFileSync(path.join(f.corpus.oldSsd, "new-note.md"), "# New\n\nAdded.\n", "utf8");
+    expect(run(argsFor(f)).status).toBe(0);
+    const second = JSON.parse(fs.readFileSync(path.join(f.out, "CURRENT.json"), "utf8"));
+    expect(second.generation_id).not.toBe(first.generation_id);
+    expect(fs.readdirSync(path.join(f.out, "generations")).sort()).toHaveLength(2);
+
+    // The previous generation is still on disk and still readable, byte for
+    // byte. That is what makes the switch a switch rather than an overwrite: a
+    // consumer part-way through reading the old one is not pulled out from
+    // under, and an operator can compare the two directly.
+    const previousDir = path.join(f.out, ...String(first.generation_ref).split("/"));
+    expect(fs.readFileSync(path.join(previousDir, "corpus-snapshot.json"), "utf8"))
+      .toBe(firstSnapshot);
+
+    // And every file the pointer names is present, with the hash it promised.
+    for (const entry of second.files as { path: string; content_hash: string }[]) {
+      const absolute = path.join(generation(f), ...entry.path.split("/"));
+      expect(fs.existsSync(absolute), entry.path).toBe(true);
+      expect(sha256Of(fs.readFileSync(absolute, "utf8")), entry.path).toBe(entry.content_hash);
+    }
+  });
+
+  it("keeps only the generations it was asked to keep", () => {
+    const f = fixture();
+    for (let i = 0; i < 4; i += 1) {
+      fs.writeFileSync(
+        path.join(f.corpus.oldSsd, `note-${i}.md`),
+        `# Note ${i}\n\nDistinct content ${i}.\n`,
+        "utf8",
+      );
+      expect(run(argsFor(f, ["--keep-generations", "2"])).status).toBe(0);
+    }
+    expect(fs.readdirSync(path.join(f.out, "generations"))).toHaveLength(2);
+    // Pruning never touches the one in use.
+    const current = JSON.parse(fs.readFileSync(path.join(f.out, "CURRENT.json"), "utf8"));
+    expect(fs.existsSync(path.join(f.out, ...String(current.generation_ref).split("/")))).toBe(true);
+    expect(fs.existsSync(path.join(generation(f), "corpus-snapshot.json"))).toBe(true);
+  });
+
+  it("finds the previous snapshot through the pointer, not at a fixed path", () => {
+    const f = fixture();
+    expect(run(argsFor(f)).status).toBe(0);
+    fs.writeFileSync(path.join(f.corpus.oldSsd, "later.md"), "# Later\n\nAdded later.\n", "utf8");
+    const second = run(argsFor(f));
+    expect(second.status).toBe(0);
+
+    // Nothing sits at <out>/corpus-snapshot.json any more, so a diff on the
+    // second run proves the pointer was resolved rather than a path guessed.
+    expect(fs.existsSync(path.join(f.out, "corpus-snapshot.json"))).toBe(false);
+    const diff = JSON.parse(fs.readFileSync(path.join(generation(f), "corpus-diff.json"), "utf8"));
+    expect(diff.counts.added).toBeGreaterThan(0);
   });
 });
 
@@ -478,7 +567,7 @@ describe("an embedding run through the CLI", () => {
       expect(result.stdout).not.toContain("no model was called");
 
       const coverage = JSON.parse(
-        fs.readFileSync(path.join(f.out, "corpus-coverage.json"), "utf8"),
+        fs.readFileSync(path.join(generation(f), "corpus-coverage.json"), "utf8"),
       );
       expect(coverage.embeddings.enabled).toBe(true);
       expect(coverage.embeddings.embedded_count).toBeGreaterThan(0);
@@ -488,12 +577,12 @@ describe("an embedding run through the CLI", () => {
       // models are two analyses of one snapshot rather than one contradictory
       // record.
       const snapshot = JSON.parse(
-        fs.readFileSync(path.join(f.out, "corpus-snapshot.json"), "utf8"),
+        fs.readFileSync(path.join(generation(f), "corpus-snapshot.json"), "utf8"),
       );
       expect(snapshot.analysis.embedding_profile).not.toBeNull();
 
       // And still no mount point anywhere in the projections.
-      const rendered = fs.readFileSync(path.join(f.out, "corpus-coverage.json"), "utf8");
+      const rendered = fs.readFileSync(path.join(generation(f), "corpus-coverage.json"), "utf8");
       for (const root of f.roots) expect(rendered).not.toContain(root);
     });
   });
