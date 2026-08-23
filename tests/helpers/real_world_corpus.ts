@@ -9,9 +9,10 @@
 //
 // So it carries, across two roots:
 //
-//   - documents in a dozen text formats the decoders open, and six binary ones
-//     they do not, split between formats that are simply not decoded yet (.pdf,
-//     .docx) and formats that carry no text layer at all without OCR (.png, .jpg)
+//   - documents across two dozen extensions: sixteen text formats the decoders
+//     open, two extensionless build files, and five binary formats they do not —
+//     split between formats that are simply not decoded yet (.pdf, .docx) and
+//     formats carrying no text layer at all without OCR (.png, .jpg, .tiff)
 //   - five ZIP archives, one of them nested two deep, holding both fresh
 //     documents and byte-exact copies of documents that also exist loose on disk
 //   - four project-shaped directories with real build manifests, test trees, CI

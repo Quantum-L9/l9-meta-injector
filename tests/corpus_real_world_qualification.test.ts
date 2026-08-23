@@ -144,6 +144,10 @@ async function qualify(cacheKind: "file" | "memory") {
       tree_digest_after: `${after.drive.digest}+${after.backup.digest}`,
       mutated_path_count: mutated.length,
       read_only_mode_applied: true,
+      // Ordering here is load-bearing. `readOnlyEnforced` finds out whether the
+      // mode bits hold by trying a write, so it must run *after* the `after`
+      // digests above: moving it earlier would put a probe file into the very
+      // measurement it is reporting alongside.
       read_only_enforced_for_process:
         readOnlyEnforced(corpus.driveRoot) && readOnlyEnforced(corpus.backupRoot),
     },

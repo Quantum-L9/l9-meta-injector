@@ -522,7 +522,7 @@
     },
     {
       "path": "README.md",
-      "git_blob_sha1": "a7105d5d200f97db374c42b0f4978024cfbc4a49"
+      "git_blob_sha1": "641ce4752c23ef2f0aea475199eef73be73bda45"
     },
     {
       "path": "scripts/check-architecture-authority.js",
@@ -754,7 +754,7 @@
     },
     {
       "path": "tests/corpus_real_world_qualification.test.ts",
-      "git_blob_sha1": "e65a5b8dca305c26ae8ed0b2027bfbb43b96cbb0"
+      "git_blob_sha1": "06e45945396b81f57dadc487454898786caba5b9"
     },
     {
       "path": "tests/corpus_scale.test.ts",
@@ -782,7 +782,7 @@
     },
     {
       "path": "tests/helpers/real_world_corpus.ts",
-      "git_blob_sha1": "96972e113f84a3d6877450f1fddfb518e5a86edc"
+      "git_blob_sha1": "1b4d79c04a92da3f466ef50a6ef34820b8c4a97f"
     },
     {
       "path": "tests/helpers/zip_fixtures.ts",
