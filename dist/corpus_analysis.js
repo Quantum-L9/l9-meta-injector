@@ -756,34 +756,6 @@ function buildCorpusIndex(input) {
             confidence: assertion.confidence,
         });
     }
-    // The same vocabulary, read out of decoded documents. Projected here rather
-    // than left in `document-signals.json` alone, because `corpus-index.json` and
-    // the report an operator actually reads are built from this list: a corpus
-    // whose index shows three blocked plans and omits the twenty Word documents
-    // beside them has answered the question wrong, not partially.
-    for (const signal of input.blockSignals ?? []) {
-        if (!emittedArtifactIds.has(signal.subject_id))
-            continue;
-        const ids = assertionIdsByArtifact.get(signal.subject_id) ?? [];
-        ids.push(signal.assertion_id);
-        assertionIdsByArtifact.set(signal.subject_id, ids);
-        if (!workPredicates.has(signal.predicate))
-            continue;
-        const summary = summaries.get(signal.subject_id) ?? emptySummary();
-        addSignal(summary, signal);
-        summaries.set(signal.subject_id, summary);
-        workSignals.push({
-            assertion_id: signal.assertion_id,
-            artifact_id: signal.subject_id,
-            predicate: signal.predicate,
-            object: signal.object,
-            source_path: signal.source_path,
-            block_evidence: { ...signal.evidence, locator: { ...signal.evidence.locator } },
-            extractor_id: signal.extractor_id,
-            evidence_class: signal.evidence_class,
-            confidence: signal.confidence,
-        });
-    }
     const clusters = buildCorpusDuplicateClusters(acquisition.inventory, repositoryId, emittedArtifactIds);
     const relations = buildDuplicateRelations(clusters);
     const clusterByArtifact = new Map();
@@ -870,11 +842,7 @@ function buildCorpusIndex(input) {
         .sort((left, right) => (0, ordering_1.compareCodePoints)(left.source_path, right.source_path));
     const interpretationProfile = resolveInterpretationProfile(input.interpretation, packet);
     const orderedWorkSignals = [...workSignals].sort((left, right) => (0, ordering_1.compareCodePoints)(left.source_path, right.source_path)
-        // A signal with a line span orders by it; one with a block coordinate
-        // orders by block id. The two never compete for a position, because a
-        // single artifact is read by one reader or the other and never by both.
-        || (left.source_range?.start_line ?? 0) - (right.source_range?.start_line ?? 0)
-        || (0, ordering_1.compareCodePoints)(left.block_evidence?.block_id ?? "", right.block_evidence?.block_id ?? "")
+        || left.source_range.start_line - right.source_range.start_line
         || (0, ordering_1.compareCodePoints)(left.predicate, right.predicate)
         || (0, ordering_1.compareCodePoints)(left.object, right.object)
         || (0, ordering_1.compareCodePoints)(left.assertion_id, right.assertion_id));

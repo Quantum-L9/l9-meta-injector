@@ -73,10 +73,20 @@ say different things.
 id, decoder id and version, block id, structured locator, bounded excerpt,
 predicate and object. It is deliberately not `InterpretedAssertion`: that type's
 evidence is a line span and it is what the Repository Model Packet carries, so a
-`pptx_shape` locator has no meaning to a consumer promised line numbers. These
-assertions reach readiness, the semantic passes, coverage, the corpus index and
-the operator's report — and not the packet. The Topology contract is unchanged
-and no dispatch is made.
+`pptx_shape` locator has no meaning to a consumer promised line numbers.
+
+These assertions reach readiness signals and metrics, the semantic candidate
+passes, the reasoning evidence packs, and the coverage counts — where they are
+reported per format in `corpus-index.json` and `corpus-report.md` as the
+difference between decoded and *understood*. The claims themselves are carried in
+`document-signals.json`. They do not reach the Repository Model Packet. The
+Topology contract is unchanged and no dispatch is made.
+
+Single-root `local-source` mode is unaffected: it runs no decoder registry, so it
+has no normalized documents and therefore no block signals. Its work-signal list
+stays line-bound, which is honest about what that mode reads. Plumbing an
+unreachable branch through it was drafted and removed rather than shipped as a
+surface with nothing behind it.
 
 **A decoded block never borrows a coordinate it does not have.** No block signal
 cites a `line_span`. The one structured locator that carries line numbers is

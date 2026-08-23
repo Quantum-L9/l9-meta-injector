@@ -51,29 +51,10 @@ function byPredicate(index: CorpusIndex, predicate: string): CorpusWorkSignal[] 
   return index.work_signals.filter((signal) => signal.predicate === predicate);
 }
 
-/**
- * Where a signal was read, in whatever coordinate system its source has.
- *
- * A Markdown file has a line and this prints the line. A slide has a slide and a
- * shape, a worksheet has a sheet and a cell, and printing a line number for
- * either would give a reader something to look for that is not there. The values
- * come from the locator the decoder emitted, so the column is a quotation rather
- * than a rendering this file invents per format.
- */
-function signalLocation(signal: CorpusWorkSignal): string {
-  if (signal.source_range !== undefined) return `${signal.source_range.start_line}`;
-  const locator = signal.block_evidence?.locator;
-  if (locator === undefined) return "—";
-  const parts = Object.entries(locator)
-    .filter(([key, value]) => key !== "kind" && value !== undefined && value !== null)
-    .map(([key, value]) => `${key} ${String(value)}`);
-  return parts.length === 0 ? String(locator.kind ?? "—") : parts.join(", ");
-}
-
 function signalRows(signals: CorpusWorkSignal[]): string[][] {
   return signals.map((signal) => [
     code(signal.source_path),
-    signalLocation(signal),
+    `${signal.source_range.start_line}`,
     escapeCell(signal.object),
     signal.confidence,
   ]);
@@ -94,7 +75,7 @@ function statusRows(index: CorpusIndex, statuses: readonly string[]): string[][]
 function relationRows(index: CorpusIndex, predicate: string): string[][] {
   return byPredicate(index, predicate).map((signal) => [
     code(signal.source_path),
-    signalLocation(signal),
+    `${signal.source_range.start_line}`,
     escapeCell(signal.object),
   ]);
 }
@@ -162,7 +143,7 @@ function summaryRows(index: CorpusIndex): string[][] {
 function workSignalSections(index: CorpusIndex): string[] {
   const signalTable = (heading: string, column: string, predicate: string, empty: string): string[] =>
     section(`### ${heading}`, [], table(
-      ["artifact", "where", column, "confidence"],
+      ["artifact", "line", column, "confidence"],
       signalRows(byPredicate(index, predicate)),
       empty,
     ));
@@ -212,7 +193,7 @@ function relationSections(index: CorpusIndex): string[] {
     ...RELATION_SECTIONS.flatMap(([heading, predicate, empty]) => section(
       `### ${heading}`,
       [],
-      table(["artifact", "where", "declared target"], relationRows(index, predicate), empty),
+      table(["artifact", "line", "declared target"], relationRows(index, predicate), empty),
     )),
   ];
 }

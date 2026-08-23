@@ -439,11 +439,6 @@ export interface CorpusAnalysisInput {
   acquisition: CorpusAcquisition;
   packet: RepositoryModelPacket;
   interpretation?: InterpretationResult;
-  /**
-   * Claims read out of decoded documents, keyed by nothing: each names its own
-   * subject. Absent when no document format in the corpus had any.
-   */
-  blockSignals?: readonly CorpusBlockWorkSignal[];
   nearDuplicates?: NearDuplicateOptions;
 }
 
@@ -455,52 +450,10 @@ export interface CorpusWorkSignal {
   predicate: string;
   object: string;
   source_path: string;
-  /**
-   * The line span, for a signal read out of a file that has lines.
-   *
-   * Absent for a signal read out of a decoded document, where `block_evidence`
-   * below carries the coordinate instead. Optional rather than filled with a
-   * placeholder span: `{start_line: 0, end_line: 0}` would be a location, and a
-   * reader who followed it would find nothing there.
-   */
-  source_range?: { start_line: number; end_line: number };
-  /** The block coordinate, for a signal read out of a decoded document. */
-  block_evidence?: {
-    normalized_document_id: string | null;
-    decoder_id: string;
-    block_id: string;
-    block_kind: string;
-    locator: Record<string, unknown>;
-  };
+  source_range: { start_line: number; end_line: number };
   extractor_id: string;
   evidence_class: string;
   confidence: string;
-}
-
-/**
- * A claim read out of a decoded document's blocks, as this projection needs it.
- *
- * Structurally the block-bound half of the work-signal vocabulary. Kept as its
- * own input rather than widened into `InterpretedAssertion`, because that type's
- * evidence is a line span and it is what the Repository Model Packet carries: a
- * `pptx_shape` locator has no meaning to a consumer promised line numbers.
- */
-export interface CorpusBlockWorkSignal {
-  assertion_id: string;
-  subject_id: string;
-  predicate: string;
-  object: string;
-  source_path: string;
-  extractor_id: string;
-  evidence_class: string;
-  confidence: string;
-  evidence: {
-    normalized_document_id: string | null;
-    decoder_id: string;
-    block_id: string;
-    block_kind: string;
-    locator: Record<string, unknown>;
-  };
 }
 
 export interface CorpusWorkSignalSummary {
@@ -722,10 +675,7 @@ function emptySummary(): CorpusWorkSignalSummary {
   };
 }
 
-function addSignal(
-  summary: CorpusWorkSignalSummary,
-  assertion: { predicate: string; object: string },
-): void {
+function addSignal(summary: CorpusWorkSignalSummary, assertion: InterpretedAssertion): void {
   summary.signal_count++;
   switch (assertion.predicate) {
     case STATUS_PREDICATE: summary.statuses.push(assertion.object); return;
@@ -1125,33 +1075,6 @@ export function buildCorpusIndex(input: CorpusAnalysisInput): CorpusIndex {
     });
   }
 
-  // The same vocabulary, read out of decoded documents. Projected here rather
-  // than left in `document-signals.json` alone, because `corpus-index.json` and
-  // the report an operator actually reads are built from this list: a corpus
-  // whose index shows three blocked plans and omits the twenty Word documents
-  // beside them has answered the question wrong, not partially.
-  for (const signal of input.blockSignals ?? []) {
-    if (!emittedArtifactIds.has(signal.subject_id)) continue;
-    const ids = assertionIdsByArtifact.get(signal.subject_id) ?? [];
-    ids.push(signal.assertion_id);
-    assertionIdsByArtifact.set(signal.subject_id, ids);
-    if (!workPredicates.has(signal.predicate)) continue;
-    const summary = summaries.get(signal.subject_id) ?? emptySummary();
-    addSignal(summary, signal);
-    summaries.set(signal.subject_id, summary);
-    workSignals.push({
-      assertion_id: signal.assertion_id,
-      artifact_id: signal.subject_id,
-      predicate: signal.predicate,
-      object: signal.object,
-      source_path: signal.source_path,
-      block_evidence: { ...signal.evidence, locator: { ...signal.evidence.locator } },
-      extractor_id: signal.extractor_id,
-      evidence_class: signal.evidence_class,
-      confidence: signal.confidence,
-    });
-  }
-
   const clusters = buildCorpusDuplicateClusters(acquisition.inventory, repositoryId, emittedArtifactIds);
   const relations = buildDuplicateRelations(clusters);
   const clusterByArtifact = new Map<string, string>();
@@ -1255,14 +1178,7 @@ export function buildCorpusIndex(input: CorpusAnalysisInput): CorpusIndex {
   const orderedWorkSignals = [...workSignals].sort(
     (left, right) =>
       compareCodePoints(left.source_path, right.source_path)
-      // A signal with a line span orders by it; one with a block coordinate
-      // orders by block id. The two never compete for a position, because a
-      // single artifact is read by one reader or the other and never by both.
-      || (left.source_range?.start_line ?? 0) - (right.source_range?.start_line ?? 0)
-      || compareCodePoints(
-        left.block_evidence?.block_id ?? "",
-        right.block_evidence?.block_id ?? "",
-      )
+      || left.source_range.start_line - right.source_range.start_line
       || compareCodePoints(left.predicate, right.predicate)
       || compareCodePoints(left.object, right.object)
       || compareCodePoints(left.assertion_id, right.assertion_id),

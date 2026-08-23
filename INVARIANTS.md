@@ -334,9 +334,10 @@ decoder emitted — a slide and a shape, a sheet and a cell, a page and a block,
 row and a column. No block-bound claim cites a line span. Block-bound evidence
 binds the artifact id, the raw content hash, the normalized document id, the
 decoder and its version, the block, the locator, a bounded excerpt, the predicate
-and the object; it reaches readiness, the semantic passes, coverage, the corpus
-index and the report, and it does not reach the Repository Model Packet, whose
-evidence class is a line span.
+and the object. It reaches readiness, the semantic passes, the reasoning evidence
+packs and the coverage counts — reported per format in the corpus index and the
+report as the difference between decoded and understood — and it does not reach
+the Repository Model Packet, whose evidence class is a line span.
 
 An identity names what produced it. A document entry names the decoder that read
 those bytes and the format it read them as, and its normalized document id is

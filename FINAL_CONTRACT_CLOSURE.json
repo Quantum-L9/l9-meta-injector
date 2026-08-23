@@ -13,11 +13,11 @@
         "src/documents/{decoder,text,notebook,xml,ooxml,office,html,pdf,index}.ts — seven decoders, zero new runtime dependencies",
         "src/extractors/work_intelligence.ts — recognizers return a position-free SignalReading; the line extractor attaches a line span",
         "src/extractors/document_blocks.ts — the same recognizers over normalized blocks, attaching block id and structured locator",
-        "src/corpus_scan.ts — block signals derived from the normalized-document record, so warm and cold agree by construction; fed to readiness, semantics, reasoning packs, coverage and the index",
         "src/corpus_document_signals.ts — l9.document-signals/v1: per-format decode, refusal, locator and analysis-participation counts, plus the bound evidence records",
         "src/corpus_documents.ts — l9.document-index/v2: per-entry decoder, format, block count and locator type; one summarizer for the corpus index and every per-root one",
         "src/corpus_index.ts — corpus-report.md states exact observation, per-format decoding, intelligence and embedding",
-        "src/documents/text.ts — the CSV decoder emits a block per populated cell under its column name (1.1.0)"
+        "src/documents/text.ts — the CSV decoder emits a block per populated cell under its column name (1.1.0)",
+        "src/corpus_scan.ts — block signals derived from the normalized-document record, so warm and cold agree by construction; fed to readiness, the semantic passes, the reasoning evidence packs and the coverage counts, and not to the Repository Model Packet"
       ],
       "evidence": [
         "tests/corpus_document_work_signals.test.ts — 21 tests: the contract's scenarios 1, 2 and 4 by name; every decoded format cites its own locator kind and none cites a line span; a Word checklist whose bullet is structural is read; a code block and a heading are never read as declarations; a credential-shaped excerpt is refused",
@@ -26,7 +26,7 @@
         "tests/corpus_cli.test.ts — the report states what was understood; the index carries the coverage counts",
         "tests/document_decoders.test.ts — real OOXML/PDF/notebook/HTML bytes, XXE refusal, macro noting, path-escape refusal, encrypted-container detection"
       ],
-      "notes": "The previous revision recorded interpretation of binary formats as not done, on the grounds that the extractors cite line spans and a Word document has none. The premise was right and the conclusion was not: the contract already answered it by requiring evidence bound to a block id and a structured locator instead. Closing it also exposed that the document index stamped one decoder on every row and derived normalized document ids from it, and that the CSV decoder's smallest unit was the row, so a register with a status column was understood only when the identical table was a worksheet. Both are fixed here. See ADR-043."
+      "notes": "The previous revision recorded interpretation of binary formats as not done, on the grounds that the extractors cite line spans and a Word document has none. The premise was right and the conclusion was not: the contract already answered it by requiring evidence bound to a block id and a structured locator instead. Closing it also exposed that the document index stamped one decoder on every row and derived normalized document ids from it, and that the CSV decoder's smallest unit was the row, so a register with a status column was understood only when the identical table was a worksheet. Both are fixed here. See ADR-043. Single-root local-source mode runs no decoder registry, so it has no normalized documents and no block signals; plumbing an unreachable branch through its work-signal projection was drafted and removed rather than shipped as a surface with nothing behind it."
     },
     {
       "id": "CLOSURE-EMBED",

@@ -29,30 +29,10 @@ function table(headers, rows, empty) {
 function byPredicate(index, predicate) {
     return index.work_signals.filter((signal) => signal.predicate === predicate);
 }
-/**
- * Where a signal was read, in whatever coordinate system its source has.
- *
- * A Markdown file has a line and this prints the line. A slide has a slide and a
- * shape, a worksheet has a sheet and a cell, and printing a line number for
- * either would give a reader something to look for that is not there. The values
- * come from the locator the decoder emitted, so the column is a quotation rather
- * than a rendering this file invents per format.
- */
-function signalLocation(signal) {
-    if (signal.source_range !== undefined)
-        return `${signal.source_range.start_line}`;
-    const locator = signal.block_evidence?.locator;
-    if (locator === undefined)
-        return "—";
-    const parts = Object.entries(locator)
-        .filter(([key, value]) => key !== "kind" && value !== undefined && value !== null)
-        .map(([key, value]) => `${key} ${String(value)}`);
-    return parts.length === 0 ? String(locator.kind ?? "—") : parts.join(", ");
-}
 function signalRows(signals) {
     return signals.map((signal) => [
         code(signal.source_path),
-        signalLocation(signal),
+        `${signal.source_range.start_line}`,
         escapeCell(signal.object),
         signal.confidence,
     ]);
@@ -71,7 +51,7 @@ function statusRows(index, statuses) {
 function relationRows(index, predicate) {
     return byPredicate(index, predicate).map((signal) => [
         code(signal.source_path),
-        signalLocation(signal),
+        `${signal.source_range.start_line}`,
         escapeCell(signal.object),
     ]);
 }
@@ -130,7 +110,7 @@ function summaryRows(index) {
 }
 /** The work-signal subsections, each one an explicit statement documents made. */
 function workSignalSections(index) {
-    const signalTable = (heading, column, predicate, empty) => section(`### ${heading}`, [], table(["artifact", "where", column, "confidence"], signalRows(byPredicate(index, predicate)), empty));
+    const signalTable = (heading, column, predicate, empty) => section(`### ${heading}`, [], table(["artifact", "line", column, "confidence"], signalRows(byPredicate(index, predicate)), empty));
     return [
         ...section("## Work Signals", [
             "Every row below is an explicit statement a document makes about itself, cited to the",
@@ -160,7 +140,7 @@ function relationSections(index) {
             "Declared pointers, carried as the exact target text each document wrote. A target is",
             "not resolved to an artifact unless the document named an observed path outright.",
         ], []),
-        ...RELATION_SECTIONS.flatMap(([heading, predicate, empty]) => section(`### ${heading}`, [], table(["artifact", "where", "declared target"], relationRows(index, predicate), empty))),
+        ...RELATION_SECTIONS.flatMap(([heading, predicate, empty]) => section(`### ${heading}`, [], table(["artifact", "line", "declared target"], relationRows(index, predicate), empty))),
     ];
 }
 function diagnosticsSections(index) {

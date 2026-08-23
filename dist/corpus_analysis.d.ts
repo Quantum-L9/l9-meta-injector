@@ -178,11 +178,6 @@ export interface CorpusAnalysisInput {
     acquisition: CorpusAcquisition;
     packet: RepositoryModelPacket;
     interpretation?: InterpretationResult;
-    /**
-     * Claims read out of decoded documents, keyed by nothing: each names its own
-     * subject. Absent when no document format in the corpus had any.
-     */
-    blockSignals?: readonly CorpusBlockWorkSignal[];
     nearDuplicates?: NearDuplicateOptions;
 }
 export interface CorpusWorkSignal {
@@ -191,54 +186,13 @@ export interface CorpusWorkSignal {
     predicate: string;
     object: string;
     source_path: string;
-    /**
-     * The line span, for a signal read out of a file that has lines.
-     *
-     * Absent for a signal read out of a decoded document, where `block_evidence`
-     * below carries the coordinate instead. Optional rather than filled with a
-     * placeholder span: `{start_line: 0, end_line: 0}` would be a location, and a
-     * reader who followed it would find nothing there.
-     */
-    source_range?: {
+    source_range: {
         start_line: number;
         end_line: number;
     };
-    /** The block coordinate, for a signal read out of a decoded document. */
-    block_evidence?: {
-        normalized_document_id: string | null;
-        decoder_id: string;
-        block_id: string;
-        block_kind: string;
-        locator: Record<string, unknown>;
-    };
     extractor_id: string;
     evidence_class: string;
     confidence: string;
-}
-/**
- * A claim read out of a decoded document's blocks, as this projection needs it.
- *
- * Structurally the block-bound half of the work-signal vocabulary. Kept as its
- * own input rather than widened into `InterpretedAssertion`, because that type's
- * evidence is a line span and it is what the Repository Model Packet carries: a
- * `pptx_shape` locator has no meaning to a consumer promised line numbers.
- */
-export interface CorpusBlockWorkSignal {
-    assertion_id: string;
-    subject_id: string;
-    predicate: string;
-    object: string;
-    source_path: string;
-    extractor_id: string;
-    evidence_class: string;
-    confidence: string;
-    evidence: {
-        normalized_document_id: string | null;
-        decoder_id: string;
-        block_id: string;
-        block_kind: string;
-        locator: Record<string, unknown>;
-    };
 }
 export interface CorpusWorkSignalSummary {
     statuses: string[];
