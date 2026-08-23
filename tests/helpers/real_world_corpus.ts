@@ -34,6 +34,34 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { writeRawZip } from "./zip_fixtures";
 
+/**
+ * Code-point order, defined here rather than imported from `src/ordering`.
+ *
+ * Every other fixture helper in this suite depends on `node:*` and on its
+ * siblings, and nothing else. That boundary is worth keeping: a fixture that
+ * imports the engine stops being an independent witness of it, and the digest
+ * below would silently change meaning if the engine's ordering ever did. The
+ * duplication is the point, not an oversight.
+ *
+ * Spelled out rather than left to a bare `.sort()`, and rather than `a < b`,
+ * because both of those compare UTF-16 code *units*. That is a different order
+ * from code points for anything outside the BMP, and a digest is only a digest
+ * if its input order is decided rather than inherited. Iterating the string
+ * yields whole code points, which is what makes the comparison match its name.
+ */
+function byCodePoint(a: string, b: string): number {
+  const left = [...a];
+  const right = [...b];
+  const shared = Math.min(left.length, right.length);
+  for (let i = 0; i < shared; i += 1) {
+    const l = (left[i] as string).codePointAt(0) ?? 0;
+    const r = (right[i] as string).codePointAt(0) ?? 0;
+    if (l !== r) return l < r ? -1 : 1;
+  }
+  if (left.length === right.length) return 0;
+  return left.length < right.length ? -1 : 1;
+}
+
 /** Body shared by `plan.md` and both its revisions, long enough to score on wording. */
 const PLAN_BODY = [
   "This plan describes the migration of the acquisition layer onto content-addressed",
@@ -403,11 +431,27 @@ export function writeRealWorldCorpus(parent: string): RealWorldCorpus {
 }
 
 /**
+ * Modes for the locked tree.
+ *
+ * Owner-only, granting nothing to group or other. A fixture that exists to prove
+ * a tree was not written to has no reason to be readable by anyone but the
+ * process reading it, and the narrower grant is also the more honest test: the
+ * scan is proven to work against the least permission it could be given.
+ */
+const LOCKED_FILE = 0o400;
+const LOCKED_DIR = 0o500;
+/** Owner-only again on the way back, wide enough only for teardown to remove it. */
+const UNLOCKED_FILE = 0o600;
+const UNLOCKED_DIR = 0o700;
+
+/**
  * Make every file and directory in the tree read-only.
  *
  * Directories are collected on the way down and cleared on the way back up, so a
  * directory's own mode is dropped only after everything inside it has been
- * reached.
+ * reached. The reversal copies rather than reversing in place: `directories` is
+ * the collection being walked, and mutating it as the loop subject is a trap
+ * even where it currently happens to be harmless.
  */
 export function lockReadOnly(root: string): void {
   const directories: string[] = [];
@@ -416,21 +460,21 @@ export function lockReadOnly(root: string): void {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
       const absolute = path.join(directory, entry.name);
       if (entry.isDirectory()) walk(absolute);
-      else if (entry.isFile()) fs.chmodSync(absolute, 0o444);
+      else if (entry.isFile()) fs.chmodSync(absolute, LOCKED_FILE);
     }
   };
   walk(root);
-  for (const directory of directories.reverse()) fs.chmodSync(directory, 0o555);
+  for (const directory of [...directories].reverse()) fs.chmodSync(directory, LOCKED_DIR);
 }
 
 /** Restore write permission so the tree can be removed in teardown. */
 export function unlockReadOnly(root: string): void {
   const walk = (directory: string): void => {
-    fs.chmodSync(directory, 0o755);
+    fs.chmodSync(directory, UNLOCKED_DIR);
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
       const absolute = path.join(directory, entry.name);
       if (entry.isDirectory()) walk(absolute);
-      else if (entry.isFile()) fs.chmodSync(absolute, 0o644);
+      else if (entry.isFile()) fs.chmodSync(absolute, UNLOCKED_FILE);
     }
   };
   walk(root);
@@ -464,7 +508,7 @@ export function readOnlyEnforced(root: string): boolean {
 export function treeDigest(root: string): { digest: string; entries: Record<string, string> } {
   const entries: Record<string, string> = {};
   const walk = (directory: string): void => {
-    for (const name of fs.readdirSync(directory).sort()) {
+    for (const name of fs.readdirSync(directory).sort(byCodePoint)) {
       const absolute = path.join(directory, name);
       const relative = path.relative(root, absolute).split(path.sep).join("/");
       const stats = fs.lstatSync(absolute);
@@ -488,7 +532,7 @@ export function treeDigest(root: string): { digest: string; entries: Record<stri
   };
   walk(root);
   const canonical = Object.keys(entries)
-    .sort()
+    .sort(byCodePoint)
     .map((key) => `${key} ${entries[key] as string}`)
     .join("\n");
   return {
@@ -503,5 +547,5 @@ export function mutatedPaths(
   after: Record<string, string>,
 ): string[] {
   const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
-  return [...keys].filter((key) => before[key] !== after[key]).sort();
+  return [...keys].filter((key) => before[key] !== after[key]).sort(byCodePoint);
 }

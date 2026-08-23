@@ -782,7 +782,7 @@
     },
     {
       "path": "tests/helpers/real_world_corpus.ts",
-      "git_blob_sha1": "1b4d79c04a92da3f466ef50a6ef34820b8c4a97f"
+      "git_blob_sha1": "0f1a7ae1ced4344a275e65b3e5b74ea7b24451c0"
     },
     {
       "path": "tests/helpers/zip_fixtures.ts",
