@@ -193,6 +193,15 @@ async function runCorpusMode(cli) {
   roots.assertOutsideRoots(outDir, rootPaths, "the corpus output directory");
 
   const cacheEnabled = !cli.flag("--no-cache");
+  // The session manifest names the work that was finished; the cache holds what
+  // that work produced. Resuming without the cache could only skip work whose
+  // result is gone, which would emit a corpus silently missing those documents'
+  // assertions — worse than redoing it. So the combination is refused rather than
+  // quietly doing nothing.
+  if (cli.flag("--resume") && !cacheEnabled) {
+    fail("--resume needs the cache: the session records what was completed, the cache holds it. "
+      + "Drop --no-cache, or drop --resume to run cold.", 2);
+  }
   let cache;
   if (cacheEnabled) {
     try {
@@ -288,6 +297,7 @@ async function runCorpusMode(cli) {
   // Every projection is staged and then renamed, so a reader never sees a
   // coverage report describing one corpus beside a readiness document describing
   // another.
+  const diffPath = path.join(outDir, "corpus-diff.json");
   const outputs = [
     { path: snapshotPath, contents: snapshotModule.renderCorpusSnapshot(result.snapshot) },
     { path: path.join(outDir, "corpus-candidates.json"), contents: scan.renderCorpusCandidates(result.candidates) },
@@ -295,9 +305,14 @@ async function runCorpusMode(cli) {
     { path: path.join(outDir, "corpus-coverage.json"), contents: coverageModule.renderCorpusCoverage(result.coverage) },
   ];
   if (result.diff !== null) {
-    outputs.push({ path: path.join(outDir, "corpus-diff.json"), contents: diffModule.renderCorpusDiff(result.diff) });
+    outputs.push({ path: diffPath, contents: diffModule.renderCorpusDiff(result.diff) });
   }
-  const written = sessionModule.commitCorpusOutputs(outputs);
+  // A diff from a previous run describes a comparison this run did not make, and
+  // nothing inside the file says so. It leaves with the rest of the output set.
+  const written = sessionModule.commitCorpusOutputs({
+    files: outputs,
+    remove: result.diff === null ? [diffPath] : [],
+  });
   session.save(new Date().toISOString());
 
   const coverage = result.coverage;

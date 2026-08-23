@@ -121,11 +121,37 @@ export declare function bindCorpusRoots(bindings: readonly CorpusRootBinding[]):
 /** The identity half of a binding, with every operational field dropped. */
 export declare function rootIdentity(binding: CorpusRootBinding): CorpusRootIdentity;
 /**
+ * The path a write to `target` would actually land on.
+ *
+ * `path.resolve` normalizes `..` and `.` and stops there, which is not enough to
+ * decide containment: a symlink at `/tmp/out` pointing into an observed root
+ * resolves to `/tmp/out` lexically and to the root in fact, and a check that only
+ * looked at the former would approve writes straight into the tree this package
+ * promises not to touch.
+ *
+ * The nearest existing ancestor is resolved through `realpath` and the
+ * not-yet-existing remainder is re-appended, so a target that has not been
+ * created yet is still judged by where it would be created.
+ */
+export declare function resolveForContainment(target: string): string;
+/**
+ * The directory an observed root's outputs must stay out of.
+ *
+ * A root that is a file protects its parent directory, because that is where a
+ * sibling write would land.
+ */
+export declare function containmentBoundary(rootPath: string): string;
+/** True when `target` is `container` or lies beneath it, both already resolved. */
+export declare function isInsideContainer(container: string, target: string): boolean;
+/**
  * Refuse a path that lies inside any observed root.
  *
  * Used for every writable location the corpus layer owns — the cache, the session
  * manifest, the projections. Writing under an observed root would mutate what was
  * just observed and make the next run read this run's output as user content.
+ *
+ * Both sides are resolved through `realpath` first. Comparing lexical paths would
+ * let a symlink walk straight through this check.
  */
 export declare function assertOutsideRoots(target: string, rootPaths: readonly string[], what: string): string;
 /** Digest of a text payload, used by callers that need a profile hash. */

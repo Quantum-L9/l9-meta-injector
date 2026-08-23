@@ -179,10 +179,17 @@ layer's key is a function of the content hash and the rules applied to it, and e
 entry proves its own integrity before it is believed. `mtime` is a scheduling hint whose
 accuracy is measured and reported; no code path lets it skip a hash.
 
-Two deliberate deviations, both about correctness: the interpretation key includes the
-source path, because an assertion cites its path and several extractors read it; and an
+Three deliberate deviations, all about correctness: the interpretation key includes the
+source path, because an assertion cites its path and several extractors read it; an
 interpretation whose extractors consulted the rest of the root is used but never stored,
-because it is not a function of the document's own bytes.
+because it is not a function of the document's own bytes; and the candidate-analysis key
+binds each input's artifact id and corpus path, because the candidate documents embed
+those, so a renamed-but-unchanged corpus is a different input to that analysis.
+
+Every writable location this layer approves — the output directory, the cache, the
+session manifest — is resolved through `realpath` first, dangling links included. A
+lexical comparison approves a symlink pointing into an observed tree, and every write
+then follows it through the read-only guarantee.
 
 `interpretRepository` delegates to the exported `interpretDocumentContent`, so
 per-document interpretation has one implementation. `clusterExactDuplicates` and

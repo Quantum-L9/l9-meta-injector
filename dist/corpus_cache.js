@@ -72,6 +72,7 @@ const fs = __importStar(require("node:fs"));
 const os = __importStar(require("node:os"));
 const path = __importStar(require("node:path"));
 const corpus_analysis_1 = require("./corpus_analysis");
+const corpus_roots_1 = require("./corpus_roots");
 const ordering_1 = require("./ordering");
 const repository_model_1 = require("./repository_model");
 /** Schema every persisted cache entry declares. */
@@ -335,13 +336,12 @@ class FileCorpusCache {
     constructor(options) {
         this.enabled = true;
         this.accounting = new CacheAccounting();
-        const absolute = path.resolve(options.root);
+        // Resolved through `realpath`, like every other writable location this
+        // package approves: a symlinked cache directory pointing into an observed
+        // tree would otherwise pass a lexical check and then write through it.
+        const absolute = (0, corpus_roots_1.resolveForContainment)(options.root);
         for (const rootPath of options.observedRootPaths ?? []) {
-            const observed = path.resolve(rootPath);
-            const container = fs.existsSync(observed) && fs.statSync(observed).isDirectory()
-                ? observed
-                : path.dirname(observed);
-            if (absolute === container || absolute.startsWith(container + path.sep)) {
+            if ((0, corpus_roots_1.isInsideContainer)((0, corpus_roots_1.containmentBoundary)(rootPath), absolute)) {
                 throw new Error(`corpus-cache: refusing a cache root inside an observed source tree: ${absolute}`);
             }
         }

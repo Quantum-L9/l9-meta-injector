@@ -165,6 +165,49 @@ describe("incremental invalidation", () => {
     expect(second.cacheStats.layers.find((layer) => layer.layer === "normalized_document")?.misses).toBe(0);
   });
 
+  it("does not reuse a corpus-scope analysis across a rename", async () => {
+    // The candidate documents embed artifact ids and corpus paths. A corpus whose
+    // documents are unchanged but renamed is therefore a different input to that
+    // analysis, and keying it on content alone served back candidates naming
+    // artifacts the new snapshot does not contain.
+    const root = path.join(tmp(), "Corpus");
+    const shared = [
+      "The routing table regeneration is verified against a recorded fixture rather than a",
+      "live upstream, and the staging promotion job is unchanged in this revision of the",
+      "document. Procurement remains the blocker for the hosting region decision.",
+    ].join("\n");
+    fs.mkdirSync(path.join(root, "notes"), { recursive: true });
+    fs.writeFileSync(path.join(root, "notes/one.md"), `# One\n\n${shared}\n`, "utf8");
+    fs.writeFileSync(path.join(root, "notes/two.md"), `# Two\n\n${shared}\nA differing tail.\n`, "utf8");
+
+    const cache = new MemoryCorpusCache("qualification");
+    const before = await scan([{ path: root }], { cache });
+    expect(before.candidates.near_duplicate_candidates.length).toBeGreaterThan(0);
+
+    fs.mkdirSync(path.join(root, "archive"), { recursive: true });
+    fs.renameSync(path.join(root, "notes/one.md"), path.join(root, "archive/one.md"));
+
+    const warm = await scan([{ path: root }], { cache });
+    const cold = await scan([{ path: root }]);
+
+    // Warm and cold agree, and every candidate endpoint is an artifact that is
+    // actually in the snapshot the candidates were emitted beside.
+    expect(renderCorpusCandidates(warm.candidates)).toBe(renderCorpusCandidates(cold.candidates));
+    const present = new Set(warm.snapshot.artifacts.map((artifact) => artifact.virtual_source_id));
+    for (const candidate of warm.candidates.near_duplicate_candidates) {
+      expect(present.has(candidate.artifact_a_id)).toBe(true);
+      expect(present.has(candidate.artifact_b_id)).toBe(true);
+    }
+    for (const candidate of warm.candidates.topic_candidates) {
+      for (const id of candidate.member_ids) expect(present.has(id)).toBe(true);
+    }
+    const paths = warm.candidates.near_duplicate_candidates.flatMap(
+      (candidate) => [candidate.source_path_a, candidate.source_path_b],
+    );
+    expect(paths).toContain("Corpus::archive/one.md");
+    expect(paths).not.toContain("Corpus::notes/one.md");
+  });
+
   it("reports an added archive, its members, and a removed archive", async () => {
     const corpus = writeMultiRootCorpus(tmp());
     const roots = [{ path: corpus.archives }];
@@ -358,6 +401,36 @@ describe("the source", () => {
     await scan(roots, { cache });
     const after = roots.map((root) => treeSnapshot(root.path));
     expect(after).toEqual(before);
+  });
+
+  it("is not reachable through a symlink either", async () => {
+    const corpus = writeMultiRootCorpus(tmp());
+    const { assertOutsideRoots, resolveForContainment } = await import("../src/corpus_roots");
+    const { FileCorpusCache } = await import("../src/corpus_cache");
+
+    // A lexical containment check approves this path: it resolves to itself and
+    // does not begin with the root. Following it lands in the observed tree.
+    const link = path.join(tmp("l9-symlink-"), "outlink");
+    fs.symlinkSync(path.join(corpus.oldSsd, "generated"), link);
+    expect(resolveForContainment(link)).toContain(path.resolve(corpus.oldSsd));
+    expect(() => assertOutsideRoots(link, [corpus.oldSsd], "the output")).toThrow(
+      /refusing to write the output inside an observed root/,
+    );
+    expect(() =>
+      new FileCorpusCache({ root: link, producerVersion: "q", observedRootPaths: [corpus.oldSsd] }),
+    ).toThrow(/refusing a cache root inside an observed source tree/);
+
+    // …and a path under a symlink that does not exist yet is judged the same way,
+    // because it is judged by where it would be created.
+    const nested = path.join(link, "deep", "corpus-out");
+    expect(() => assertOutsideRoots(nested, [corpus.oldSsd], "the output")).toThrow(
+      /refusing to write the output inside an observed root/,
+    );
+
+    // A symlink pointing somewhere else is still fine.
+    const elsewhere = path.join(tmp("l9-symlink-ok-"), "outlink");
+    fs.symlinkSync(tmp("l9-symlink-target-"), elsewhere);
+    expect(() => assertOutsideRoots(elsewhere, [corpus.oldSsd], "the output")).not.toThrow();
   });
 
   it("is never where the cache, the session or the output may be written", async () => {

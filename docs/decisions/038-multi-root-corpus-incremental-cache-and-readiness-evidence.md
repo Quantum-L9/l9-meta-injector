@@ -227,6 +227,22 @@ previous complete set or the new one.
 - Topic candidates and project candidates leave the ADR-037 "not in v1" list.
   Everything else on it stays there: no embeddings are computed, no model is
   called, no file is moved, consolidated or deleted, and no priority is produced.
+- Review of this change found three defects in it, each recorded as a rule above
+  rather than only as a patch: a containment check that compared lexical paths let
+  a symlinked output write through the read-only guarantee; a corpus-scope
+  analysis keyed on content alone was reused across a rename and emitted
+  candidates naming artifacts the new snapshot did not contain; and a topic
+  threshold of zero was answered through an index that cannot reach the pairs a
+  zero threshold admits. The first two falsified guarantees this change makes in
+  writing, which is why they are stated as decisions here and not as fixes.
+- Resumption is the session manifest **and** the cache together: the manifest
+  names the work that was finished, the cache holds what it produced. Skipping a
+  document on the manifest's word alone would emit a corpus silently missing that
+  document's assertions, so `--resume --no-cache` is refused.
+- The output commit moves each target's previous contents aside rather than
+  overwriting them, so a failure part-way through the renames can restore them. A
+  process killed between two renames is not covered, and the documentation says so
+  instead of implying otherwise.
 - `max_parallel_hashers` is accepted, recorded and not exercised: acquisition
   hashes each root with one streaming reader. A value above one emits a
   diagnostic saying so rather than implying a parallelism that does not exist.

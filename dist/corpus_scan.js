@@ -614,7 +614,11 @@ async function runCorpusScan(input) {
                 tokenCount: features.token_count,
             });
         }
-        const featureIdentities = lexicalDocuments.map((document) => document.normalizedContentHash);
+        // Each input's identity, not just its bytes. The candidate documents embed
+        // artifact ids and corpus paths, so a corpus whose documents are unchanged but
+        // renamed is a different input to this analysis: keying on content alone would
+        // serve back candidates naming artifacts the current snapshot does not have.
+        const featureIdentities = lexicalDocuments.map((document) => `${document.artifactId} ${document.sourcePath} ${document.normalizedContentHash}`);
         const nearKey = (0, corpus_cache_1.candidateAnalysisKey)({
             inputFeatureIdentities: [...featureIdentities, `near:${nearDuplicateThreshold.toFixed(6)}`],
             candidateProfileHash: candidateProfile,

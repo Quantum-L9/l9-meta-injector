@@ -258,6 +258,19 @@ describe("topic candidates", () => {
     expect(candidates[0].root_ids).toEqual(["root:a", "root:b"]);
   });
 
+  it("join every eligible document at a threshold of zero, including disjoint ones", () => {
+    // At zero every pair qualifies by definition. The salient-term index can only
+    // reach pairs that share a term, so the zero case needs its own answer or it
+    // silently under-reports — the same reason the near-duplicate pass keeps an
+    // exhaustive path at zero.
+    const documents = [document("a", routing), document("b", baking)];
+    expect(buildTopicCandidates({ documents, rootById: new Map(), threshold: 0.35 })).toEqual([]);
+    const joined = buildTopicCandidates({ documents, rootById: new Map(), threshold: 0 });
+    expect(joined).toHaveLength(1);
+    expect([...joined[0].member_ids].sort()).toEqual(["a", "b"]);
+    expect(joined[0].threshold).toBe(0);
+  });
+
   it("give the same set of members the same candidate id, whatever order they arrive in", () => {
     const documents = [document("a", routing), document("b", `${routing} deployment`)];
     const forward = buildTopicCandidates({ documents, rootById: new Map() });

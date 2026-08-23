@@ -276,19 +276,50 @@ exports.MemoryBudget = MemoryBudget;
 /**
  * Write every projection, then move them all into place.
  *
- * A run that dies mid-write must not leave a coverage report describing one
- * corpus beside a readiness document describing another. Every file is staged
- * first and only renamed once all of them exist, so a reader sees either the
- * previous complete set or the new complete set.
+ * A run that fails mid-write must not leave a coverage report describing one
+ * corpus beside a readiness document describing another. Three things make that
+ * hold: every file is staged before any is moved, every target is checked before
+ * anything is staged, and each target's previous contents are moved aside rather
+ * than overwritten, so a failure part-way through the renames can put them back.
+ *
+ * What this cannot defend against is the process being killed between two
+ * renames. No userspace sequence of renames is atomic as a set, and claiming
+ * otherwise would be the kind of guarantee that is only discovered to be false
+ * during an incident.
  */
-function commitCorpusOutputs(files) {
+function commitCorpusOutputs(input) {
     const staged = [];
-    const discardStaged = () => {
+    const suffix = `${process.pid}.tmp`;
+    const removals = (input.remove ?? []).map((file) => path.resolve(file));
+    const discardStaging = () => {
         for (const entry of staged)
             fs.rmSync(entry.staging, { force: true });
     };
+    const restoreRenamed = () => {
+        for (const entry of staged) {
+            if (!entry.renamed)
+                continue;
+            fs.rmSync(entry.target, { force: true });
+            if (entry.backup !== null) {
+                try {
+                    fs.renameSync(entry.backup, entry.target);
+                }
+                catch {
+                    // The previous contents could not be put back. Nothing better is
+                    // available here, and the backup is left on disk rather than deleted
+                    // so an operator can recover it by hand.
+                }
+            }
+        }
+    };
+    const dropBackups = () => {
+        for (const entry of staged) {
+            if (entry.backup !== null)
+                fs.rmSync(entry.backup, { force: true });
+        }
+    };
     try {
-        for (const file of files) {
+        for (const file of input.files) {
             const target = path.resolve(file.path);
             // Every reason a rename could fail is checked here, while nothing has moved
             // yet. A target that is a directory is the one that actually happens, and
@@ -297,23 +328,34 @@ function commitCorpusOutputs(files) {
                 throw new Error(`corpus: refusing to replace the directory ${target} with an output file`);
             }
             fs.mkdirSync(path.dirname(target), { recursive: true });
-            const staging = `${target}.${process.pid}.tmp`;
+            const staging = `${target}.${suffix}`;
             fs.writeFileSync(staging, file.contents, "utf8");
-            staged.push({ staging, target });
+            staged.push({ staging, target, backup: null, renamed: false });
         }
     }
     catch (error) {
-        discardStaged();
+        discardStaging();
         throw error;
     }
     try {
-        for (const entry of staged)
+        for (const entry of staged) {
+            if (fs.existsSync(entry.target)) {
+                const backup = `${entry.target}.${suffix}.prev`;
+                fs.renameSync(entry.target, backup);
+                entry.backup = backup;
+            }
             fs.renameSync(entry.staging, entry.target);
+            entry.renamed = true;
+        }
+        for (const file of removals)
+            fs.rmSync(file, { force: true });
     }
     catch (error) {
-        discardStaged();
+        restoreRenamed();
+        discardStaging();
         throw error;
     }
+    dropBackups();
     return staged.map((entry) => entry.target);
 }
 //# sourceMappingURL=corpus_session.js.map

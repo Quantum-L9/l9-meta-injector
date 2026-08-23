@@ -149,10 +149,12 @@ describe("bounded work", () => {
 describe("the output commit", () => {
   it("moves every projection into place only after all of them exist", () => {
     const out = tmp();
-    const written = commitCorpusOutputs([
-      { path: path.join(out, "a.json"), contents: "{}\n" },
-      { path: path.join(out, "nested", "b.json"), contents: "[]\n" },
-    ]);
+    const written = commitCorpusOutputs({
+      files: [
+        { path: path.join(out, "a.json"), contents: "{}\n" },
+        { path: path.join(out, "nested", "b.json"), contents: "[]\n" },
+      ],
+    });
     expect(written.map((file) => path.relative(out, file))).toEqual(["a.json", path.join("nested", "b.json")]);
     expect(fs.readFileSync(path.join(out, "a.json"), "utf8")).toBe("{}\n");
     expect(fs.readdirSync(out).filter((name) => name.endsWith(".tmp"))).toEqual([]);
@@ -164,12 +166,56 @@ describe("the output commit", () => {
     // A directory where a file is expected fails the staging write.
     fs.mkdirSync(path.join(out, "b.json"), { recursive: true });
     expect(() =>
-      commitCorpusOutputs([
-        { path: path.join(out, "a.json"), contents: "new\n" },
-        { path: path.join(out, "b.json"), contents: "new\n" },
-      ]),
+      commitCorpusOutputs({
+        files: [
+          { path: path.join(out, "a.json"), contents: "new\n" },
+          { path: path.join(out, "b.json"), contents: "new\n" },
+        ],
+      }),
     ).toThrow();
     expect(fs.readFileSync(path.join(out, "a.json"), "utf8")).toBe("previous\n");
     expect(fs.readdirSync(out).filter((name) => name.endsWith(".tmp"))).toEqual([]);
+  });
+
+  it("puts the previous contents back when a later rename fails", () => {
+    const out = tmp();
+    for (const name of ["a.json", "b.json", "c.json"]) {
+      fs.writeFileSync(path.join(out, name), `previous-${name}\n`, "utf8");
+    }
+
+    // Each existing target is moved aside to `<target>.<pid>.tmp.prev` before it
+    // is replaced. Occupying that path with a non-empty directory makes the third
+    // file's backup rename fail for real — no mocking — after the first two have
+    // already been replaced, which is exactly the state the rollback is for.
+    const blocked = path.join(out, `c.json.${process.pid}.tmp.prev`);
+    fs.mkdirSync(blocked, { recursive: true });
+    fs.writeFileSync(path.join(blocked, "occupied"), "x", "utf8");
+
+    expect(() =>
+      commitCorpusOutputs({
+        files: [
+          { path: path.join(out, "a.json"), contents: "new-a\n" },
+          { path: path.join(out, "b.json"), contents: "new-b\n" },
+          { path: path.join(out, "c.json"), contents: "new-c\n" },
+        ],
+      }),
+    ).toThrow();
+
+    for (const name of ["a.json", "b.json", "c.json"]) {
+      expect(fs.readFileSync(path.join(out, name), "utf8")).toBe(`previous-${name}\n`);
+    }
+    expect(fs.readdirSync(out).filter((name) => name.endsWith(".tmp"))).toEqual([]);
+  });
+
+  it("removes a projection this run did not produce", () => {
+    const out = tmp();
+    fs.writeFileSync(path.join(out, "corpus-diff.json"), "stale\n", "utf8");
+    commitCorpusOutputs({
+      files: [{ path: path.join(out, "corpus-snapshot.json"), contents: "{}\n" }],
+      remove: [path.join(out, "corpus-diff.json")],
+    });
+    // A diff describing a comparison this run did not make must not outlive it.
+    expect(fs.existsSync(path.join(out, "corpus-diff.json"))).toBe(false);
+    expect(fs.existsSync(path.join(out, "corpus-snapshot.json"))).toBe(true);
   });
 });

@@ -36,6 +36,9 @@ export const CORPUS_ROOTS_SCHEMA = "l9.corpus-roots/v1";
 /** Separator between a root label and a root-relative path in a corpus path. */
 export const CORPUS_PATH_SEPARATOR = "::";
 
+/** Link hops followed before a chain is treated as unresolvable. */
+const MAX_SYMLINK_HOPS = 64;
+
 /** What the operator asked to be scanned. */
 export interface CorpusRootSpec {
   /** Absolute or relative filesystem path to a file, directory or archive. */
@@ -282,28 +285,100 @@ export function rootIdentity(binding: CorpusRootBinding): CorpusRootIdentity {
 }
 
 /**
+ * The path a write to `target` would actually land on.
+ *
+ * `path.resolve` normalizes `..` and `.` and stops there, which is not enough to
+ * decide containment: a symlink at `/tmp/out` pointing into an observed root
+ * resolves to `/tmp/out` lexically and to the root in fact, and a check that only
+ * looked at the former would approve writes straight into the tree this package
+ * promises not to touch.
+ *
+ * The nearest existing ancestor is resolved through `realpath` and the
+ * not-yet-existing remainder is re-appended, so a target that has not been
+ * created yet is still judged by where it would be created.
+ */
+export function resolveForContainment(target: string): string {
+  const missing: string[] = [];
+  const rejoin = (base: string): string =>
+    missing.length === 0 ? base : path.join(base, ...[...missing].reverse());
+  let cursor = path.resolve(target);
+  let hops = 0;
+  for (;;) {
+    try {
+      return rejoin(fs.realpathSync(cursor));
+    } catch {
+      // Not fully present. Either this component is a link that does not resolve,
+      // or it does not exist at all.
+    }
+
+    // A dangling symlink is the case that matters: `--out` pointing at a
+    // directory that does not exist *yet*, inside a tree this run is observing.
+    // `realpath` refuses it, so the link is read directly.
+    let linkTarget: string | null = null;
+    try {
+      if (fs.lstatSync(cursor).isSymbolicLink()) linkTarget = fs.readlinkSync(cursor);
+    } catch {
+      // Not a link, or unreadable; fall through to walking up.
+    }
+    if (linkTarget !== null && hops < MAX_SYMLINK_HOPS) {
+      hops += 1;
+      cursor = path.resolve(path.dirname(cursor), linkTarget);
+      continue;
+    }
+
+    const parent = path.dirname(cursor);
+    // The filesystem root itself could not be resolved, or a link chain is longer
+    // than any legitimate one: nothing better than the lexical answer is
+    // available, and it is the conservative one to compare against.
+    if (parent === cursor) return rejoin(cursor);
+    missing.push(path.basename(cursor));
+    cursor = parent;
+  }
+}
+
+/**
+ * The directory an observed root's outputs must stay out of.
+ *
+ * A root that is a file protects its parent directory, because that is where a
+ * sibling write would land.
+ */
+export function containmentBoundary(rootPath: string): string {
+  const resolved = resolveForContainment(rootPath);
+  return fs.existsSync(resolved) && fs.statSync(resolved).isDirectory()
+    ? resolved
+    : path.dirname(resolved);
+}
+
+/** True when `target` is `container` or lies beneath it, both already resolved. */
+export function isInsideContainer(container: string, target: string): boolean {
+  return target === container || target.startsWith(container + path.sep);
+}
+
+/**
  * Refuse a path that lies inside any observed root.
  *
  * Used for every writable location the corpus layer owns — the cache, the session
  * manifest, the projections. Writing under an observed root would mutate what was
  * just observed and make the next run read this run's output as user content.
+ *
+ * Both sides are resolved through `realpath` first. Comparing lexical paths would
+ * let a symlink walk straight through this check.
  */
 export function assertOutsideRoots(
   target: string,
   rootPaths: readonly string[],
   what: string,
 ): string {
-  const absoluteTarget = path.resolve(target);
+  const resolvedTarget = resolveForContainment(target);
   for (const rootPath of rootPaths) {
-    const absoluteRoot = path.resolve(rootPath);
-    const container = fs.existsSync(absoluteRoot) && fs.statSync(absoluteRoot).isDirectory()
-      ? absoluteRoot
-      : path.dirname(absoluteRoot);
-    if (absoluteTarget === container || absoluteTarget.startsWith(container + path.sep)) {
-      throw new Error(`corpus: refusing to write ${what} inside an observed root: ${absoluteTarget}`);
+    if (isInsideContainer(containmentBoundary(rootPath), resolvedTarget)) {
+      throw new Error(
+        `corpus: refusing to write ${what} inside an observed root: ${resolvedTarget}`
+        + (resolvedTarget === path.resolve(target) ? "" : ` (reached through ${path.resolve(target)})`),
+      );
     }
   }
-  return absoluteTarget;
+  return resolvedTarget;
 }
 
 /** Digest of a text payload, used by callers that need a profile hash. */

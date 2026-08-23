@@ -23,6 +23,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { canonicalCorpusJson } from "./corpus_analysis";
+import { containmentBoundary, isInsideContainer, resolveForContainment } from "./corpus_roots";
 import { compareCodePoints } from "./ordering";
 import { sha256TextPrefixed, stableId } from "./repository_model";
 
@@ -391,13 +392,12 @@ export class FileCorpusCache implements CorpusCache {
   private readonly accounting = new CacheAccounting();
 
   constructor(options: FileCorpusCacheOptions) {
-    const absolute = path.resolve(options.root);
+    // Resolved through `realpath`, like every other writable location this
+    // package approves: a symlinked cache directory pointing into an observed
+    // tree would otherwise pass a lexical check and then write through it.
+    const absolute = resolveForContainment(options.root);
     for (const rootPath of options.observedRootPaths ?? []) {
-      const observed = path.resolve(rootPath);
-      const container = fs.existsSync(observed) && fs.statSync(observed).isDirectory()
-        ? observed
-        : path.dirname(observed);
-      if (absolute === container || absolute.startsWith(container + path.sep)) {
+      if (isInsideContainer(containmentBoundary(rootPath), absolute)) {
         throw new Error(
           `corpus-cache: refusing a cache root inside an observed source tree: ${absolute}`,
         );

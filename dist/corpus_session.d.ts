@@ -129,12 +129,27 @@ export interface CorpusOutputFile {
     path: string;
     contents: string;
 }
+export interface CommitCorpusOutputsInput {
+    files: readonly CorpusOutputFile[];
+    /**
+     * Projections this run did not produce that must not survive from a previous
+     * one. A `corpus-diff.json` left beside a newer snapshot describes a comparison
+     * that no longer holds, and nothing in the file says so.
+     */
+    remove?: readonly string[];
+}
 /**
  * Write every projection, then move them all into place.
  *
- * A run that dies mid-write must not leave a coverage report describing one
- * corpus beside a readiness document describing another. Every file is staged
- * first and only renamed once all of them exist, so a reader sees either the
- * previous complete set or the new complete set.
+ * A run that fails mid-write must not leave a coverage report describing one
+ * corpus beside a readiness document describing another. Three things make that
+ * hold: every file is staged before any is moved, every target is checked before
+ * anything is staged, and each target's previous contents are moved aside rather
+ * than overwritten, so a failure part-way through the renames can put them back.
+ *
+ * What this cannot defend against is the process being killed between two
+ * renames. No userspace sequence of renames is atomic as a set, and claiming
+ * otherwise would be the kind of guarantee that is only discovered to be false
+ * during an incident.
  */
-export declare function commitCorpusOutputs(files: readonly CorpusOutputFile[]): string[];
+export declare function commitCorpusOutputs(input: CommitCorpusOutputsInput): string[];

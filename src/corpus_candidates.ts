@@ -479,6 +479,52 @@ function jaccardOfSets(left: ReadonlySet<string>, right: ReadonlySet<string>): n
   return union === 0 ? 0 : shared / union;
 }
 
+/** Round a threshold the way every other score in this package is rounded. */
+function roundTopicScore(value: number): number {
+  return Math.round(value * 1e6) / 1e6;
+}
+
+/** One topic candidate from its members. Shared by the indexed and zero paths. */
+function buildTopicCandidate(
+  members: readonly { document: TopicDocumentInput; terms: Set<string> }[],
+  threshold: number,
+  rootById: ReadonlyMap<string, string>,
+): TopicCandidate {
+  const ordered = [...members].sort(
+    (a, b) => compareCodePoints(a.document.corpus_path, b.document.corpus_path),
+  );
+  const memberIds = ordered.map((member) => member.document.virtual_source_id);
+  const termCounts = new Map<string, number>();
+  for (const member of ordered) {
+    for (const term of member.terms) termCounts.set(term, (termCounts.get(term) ?? 0) + 1);
+  }
+  const half = ordered.length / 2;
+  const sharedTerms = [...termCounts.entries()]
+    .filter(([, count]) => count >= half)
+    .map(([term]) => term)
+    .sort(compareCodePoints);
+  const rootIds = [
+    ...new Set(memberIds.map((id) => rootById.get(id)).filter((id): id is string => !!id)),
+  ].sort(compareCodePoints);
+  return {
+    candidate_id: stableId("topic-candidate", {
+      algorithm_id: TOPIC_CANDIDATE_METHOD,
+      algorithm_version: TOPIC_CANDIDATE_METHOD_VERSION,
+      member_ids: [...memberIds].sort(compareCodePoints),
+      threshold: threshold.toFixed(6),
+    }),
+    method: TOPIC_CANDIDATE_METHOD,
+    algorithm_version: TOPIC_CANDIDATE_METHOD_VERSION,
+    threshold: roundTopicScore(threshold),
+    member_ids: memberIds,
+    member_paths: ordered.map((member) => member.document.corpus_path),
+    member_count: memberIds.length,
+    root_ids: rootIds,
+    spans_roots: rootIds.length > 1,
+    shared_terms: sharedTerms,
+  };
+}
+
 export interface BuildTopicCandidatesInput {
   documents: readonly TopicDocumentInput[];
   threshold?: number;
@@ -498,6 +544,15 @@ export function buildTopicCandidates(input: BuildTopicCandidatesInput): TopicCan
   const threshold = input.threshold ?? DEFAULT_TOPIC_THRESHOLD;
   const eligible = input.documents.filter((document) => document.token_count >= TOPIC_MIN_TOKENS);
   if (eligible.length < 2) return [];
+
+  // At a threshold of zero every pair qualifies by definition, including two
+  // documents sharing no term at all. The salient-term index below can only reach
+  // pairs that share one, so it would silently under-report — the same reason the
+  // near-duplicate pass keeps an exhaustive path at zero. Every eligible document
+  // is one component, which is what "every pair joins" means.
+  if (roundTopicScore(threshold) <= 0) {
+    return [buildTopicCandidate(eligible.map((document) => ({ document, terms: new Set<string>() })), threshold, input.rootById)];
+  }
 
   const documentFrequency = new Map<string, number>();
   for (const document of eligible) {
@@ -564,39 +619,7 @@ export function buildTopicCandidates(input: BuildTopicCandidatesInput): TopicCan
   const candidates: TopicCandidate[] = [];
   for (const bucket of components.values()) {
     if (bucket.length < 2) continue;
-    const members = bucket
-      .map((index) => features[index])
-      .sort((a, b) => compareCodePoints(a.document.corpus_path, b.document.corpus_path));
-    const memberIds = members.map((member) => member.document.virtual_source_id);
-    const termCounts = new Map<string, number>();
-    for (const member of members) {
-      for (const term of member.terms) termCounts.set(term, (termCounts.get(term) ?? 0) + 1);
-    }
-    const half = members.length / 2;
-    const sharedTerms = [...termCounts.entries()]
-      .filter(([, count]) => count >= half)
-      .map(([term]) => term)
-      .sort(compareCodePoints);
-    const rootIds = [
-      ...new Set(memberIds.map((id) => input.rootById.get(id)).filter((id): id is string => !!id)),
-    ].sort(compareCodePoints);
-    candidates.push({
-      candidate_id: stableId("topic-candidate", {
-        algorithm_id: TOPIC_CANDIDATE_METHOD,
-        algorithm_version: TOPIC_CANDIDATE_METHOD_VERSION,
-        member_ids: [...memberIds].sort(compareCodePoints),
-        threshold: threshold.toFixed(6),
-      }),
-      method: TOPIC_CANDIDATE_METHOD,
-      algorithm_version: TOPIC_CANDIDATE_METHOD_VERSION,
-      threshold: Math.round(threshold * 1e6) / 1e6,
-      member_ids: memberIds,
-      member_paths: members.map((member) => member.document.corpus_path),
-      member_count: memberIds.length,
-      root_ids: rootIds,
-      spans_roots: rootIds.length > 1,
-      shared_terms: sharedTerms,
-    });
+    candidates.push(buildTopicCandidate(bucket.map((index) => features[index]), threshold, input.rootById));
   }
   return candidates.sort(
     (a, b) =>

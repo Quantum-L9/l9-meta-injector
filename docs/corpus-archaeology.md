@@ -161,7 +161,7 @@ mtime precheck   6 predicted unchanged, 6 confirmed by hash, 0 contradicted
 It is a scheduling hint and an accuracy report. No code path lets it skip a hash
 or decide an identity.
 
-### Two deliberate deviations
+### Three deliberate deviations
 
 The interpretation key carries the **source path** as well as the two the table
 names. An assertion cites the path it was read from, is filed against that path's
@@ -172,6 +172,14 @@ content-addressed key would serve one under the other's name.
 An interpretation whose extractors **consulted the rest of the root** is computed
 and used but never stored: it is not a function of the document's own bytes.
 Whether that happened is observed at run time rather than declared per extractor.
+
+The **candidate analysis** key binds each input's artifact id and corpus path as
+well as its normalized content hash. The candidate documents embed artifact ids
+and corpus paths, so a corpus whose documents are unchanged but *renamed* is a
+different input to that analysis. Keying it on content alone reused the previous
+run's answer and emitted candidates naming artifacts the new snapshot did not
+contain — found in review on this change, and the reason a rename now invalidates
+the corpus-scope analyses even though it invalidates nothing content-keyed.
 
 ### Cold equals warm
 
@@ -329,7 +337,10 @@ monorepo does not swallow its own packages.
 
 Reached through an inverted index over salient terms, for the same reason the
 near-duplicate pass uses one: two documents sharing no salient term score exactly
-zero and cannot qualify at any positive threshold.
+zero and cannot qualify at any positive threshold. At a threshold of *zero* every
+pair qualifies by definition, including documents sharing no term at all, so that
+case is answered directly — every eligible document in one candidate — rather than
+through an index that could never reach it.
 
 `shared_terms` lists the terms at least half the members carry.
 
@@ -423,10 +434,23 @@ that has stopped being true simply produces a different key and is never
 consulted. `--resume` adopts a manifest for the same root set; a manifest for
 other roots, or one that cannot be read, is replaced rather than trusted.
 
-Every projection is staged and then renamed, and every target is checked before
-anything is staged, so a reader sees either the previous complete set or the new
-one — never a coverage report describing one corpus beside a readiness document
-describing another.
+The manifest names the work that was finished; **the cache holds what that work
+produced**, and the two together are what make resumption real. Skipping a
+document because the manifest says it was decoded, without the cached result,
+would emit a corpus silently missing that document's assertions — worse than
+redoing the work. `--resume --no-cache` is therefore refused rather than quietly
+doing nothing.
+
+Every projection is staged before any is moved, every target is checked before
+anything is staged, and each target's previous contents are moved aside rather
+than overwritten — so a failure part-way through the renames puts them back. A
+projection this run did not produce leaves with the set: a `corpus-diff.json` from
+an earlier run describes a comparison this run did not make, and nothing inside
+the file says so, so `--no-diff` and a first run both remove it.
+
+What that does **not** cover is the process being killed between two renames. No
+userspace sequence of renames is atomic as a set, and claiming otherwise would be
+a guarantee only discovered to be false during an incident.
 
 ## Nothing is executed, moved or judged
 
@@ -435,6 +459,13 @@ installed. No macro is executed. No file is moved, consolidated, deleted or
 rewritten. No model is called. The source checksum before a scan equals the
 checksum after it, warm or cold, and the CLI refuses to write its output, its
 cache or its session manifest inside any observed root.
+
+That refusal resolves symlinks first, on both sides. A lexical comparison approves
+a symlink at `/tmp/out` pointing into an observed tree — it resolves to itself and
+does not begin with the root — and every write then follows it straight through
+the read-only guarantee. Dangling links are resolved too, because `--out` naming a
+directory that does not exist *yet* inside an observed root is exactly the case
+that matters.
 
 ## Still not in this release
 
