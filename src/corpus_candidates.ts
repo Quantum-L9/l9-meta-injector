@@ -152,9 +152,19 @@ export function projectContainerForMarker(rootRelativePath: string): string {
   return container;
 }
 
-/** Last path segment of a container, used as a fallback grouping key. */
+/**
+ * Last path segment of a container, used as a fallback grouping key.
+ *
+ * The trailing separators are trimmed by scanning rather than by `/[!/]+$/`.
+ * That pattern backtracks quadratically on a path that is mostly separators, and
+ * these paths come out of archive member names this package does not control —
+ * so a super-linear pattern here is a denial of service rather than a style
+ * question.
+ */
 function containerName(containerPath: string): string {
-  const cleaned = containerPath.replace(/[!/]+$/, "");
+  let end = containerPath.length;
+  while (end > 0 && (containerPath[end - 1] === "!" || containerPath[end - 1] === "/")) end--;
+  const cleaned = containerPath.slice(0, end);
   const slash = cleaned.lastIndexOf("/");
   return slash < 0 ? cleaned : cleaned.slice(slash + 1);
 }
@@ -165,6 +175,24 @@ export function isUnderContainer(containerPath: string, candidate: string): bool
   if (candidate === containerPath) return true;
   const prefix = containerPath.endsWith("/") ? containerPath : `${containerPath}/`;
   return candidate.startsWith(prefix);
+}
+
+/**
+ * The key containers are grouped under, and the whole of that rule.
+ *
+ * A declared identifier joins containers across roots and disks. A container with
+ * no declared name can only join others of the same directory name. A root-level
+ * container with no declared name joins nothing at all, because the only name it
+ * has left is its root, and a root is not a project.
+ */
+function projectGroupKey(input: {
+  declared: string | undefined;
+  containerName: string;
+  rootLabel: string;
+}): string {
+  if (input.declared !== undefined) return `project:${input.declared}`;
+  if (input.containerName.length > 0) return `container:${input.containerName}`;
+  return `container:${input.rootLabel}`;
 }
 
 export interface BuildProjectCandidatesInput {
@@ -241,13 +269,13 @@ export function buildProjectCandidates(input: BuildProjectCandidatesInput): Proj
   // name, and a root-level container with no name joins nothing at all.
   const grouped = new Map<string, { declared: boolean; containers: ProjectCandidateContainer[] }>();
   for (const container of containers.values()) {
-    const declared = [...container.declared_identifiers].sort(compareCodePoints)[0];
-    const name = containerName(container.container_path);
-    const key = declared !== undefined
-      ? `project:${declared}`
-      : name.length > 0
-        ? `container:${name}`
-        : `container:${input.rootLabels.get(container.root_id) ?? container.root_id}`;
+    const sortedIdentifiers = [...container.declared_identifiers].sort(compareCodePoints);
+    const declared = sortedIdentifiers[0];
+    const key = projectGroupKey({
+      declared,
+      containerName: containerName(container.container_path),
+      rootLabel: input.rootLabels.get(container.root_id) ?? container.root_id,
+    });
     const group = grouped.get(key) ?? { declared: declared !== undefined, containers: [] };
     group.declared = group.declared || declared !== undefined;
     group.containers.push(container);
@@ -353,7 +381,7 @@ export function readDeclaredIdentifier(
     if (parsed === null || typeof parsed !== "object") return undefined;
     const value = (parsed as Record<string, unknown>)[jsonField];
     if (typeof value !== "string" || value.trim().length === 0) return undefined;
-    const quoted = new RegExp(`"${jsonField}"\\s*:`);
+    const quoted = new RegExp(String.raw`"${jsonField}"\s*:`);
     return {
       identifier: value.trim(),
       field: jsonField,
@@ -437,11 +465,9 @@ export function salientTerms(
     // document is kept, because a corpus of near-unique vocabulary is normal.
     return (documentFrequency.get(term) ?? 0) <= ceiling;
   });
-  return kept
-    .sort((a, b) => b[1] - a[1] || compareCodePoints(a[0], b[0]))
-    .slice(0, TOPIC_SALIENT_TERMS)
-    .map(([term]) => term)
-    .sort(compareCodePoints);
+  const byFrequency = [...kept].sort((a, b) => b[1] - a[1] || compareCodePoints(a[0], b[0]));
+  const salient = byFrequency.slice(0, TOPIC_SALIENT_TERMS).map(([term]) => term);
+  return salient.sort(compareCodePoints);
 }
 
 function jaccardOfSets(left: ReadonlySet<string>, right: ReadonlySet<string>): number {

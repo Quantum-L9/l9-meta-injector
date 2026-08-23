@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.REFUSED_METRIC_NAMES = exports.CANDIDATE_STATEMENT = exports.MANIFEST_DECODER_VERSION = exports.MANIFEST_DECODER_ID = exports.TEXT_DECODER_VERSION = exports.TEXT_DECODER_ID = exports.CORPUS_CANDIDATES_SCHEMA = void 0;
+exports.CANDIDATE_STATEMENT = exports.MANIFEST_DECODER_VERSION = exports.MANIFEST_DECODER_ID = exports.TEXT_DECODER_VERSION = exports.TEXT_DECODER_ID = exports.CORPUS_CANDIDATES_SCHEMA = void 0;
 exports.isTextDecodable = isTextDecodable;
 exports.isLexicallyAnalyzable = isLexicallyAnalyzable;
 exports.runCorpusScan = runCorpusScan;
@@ -134,6 +134,27 @@ function termCounts(tokens) {
         counts.set(token, (counts.get(token) ?? 0) + 1);
     return [...counts.entries()].sort((a, b) => (0, ordering_1.compareCodePoints)(a[0], b[0]));
 }
+/**
+ * Invert a membership relation: which groups each member belongs to.
+ *
+ * Near-duplicate candidates, topic candidates and project candidates all need the
+ * same inversion, and three hand-rolled copies of it were three places for the
+ * bucket-initialization branch to be got wrong.
+ */
+function indexMembership(groups, membersOf, idOf) {
+    const index = new Map();
+    for (const group of groups) {
+        const id = idOf(group);
+        for (const member of membersOf(group)) {
+            const bucket = index.get(member);
+            if (bucket === undefined)
+                index.set(member, [id]);
+            else
+                bucket.push(id);
+        }
+    }
+    return index;
+}
 /** Reject a root key that would make a corpus path ambiguous. */
 function assertUsableRootKey(rootKey, rootPath) {
     if (rootKey.length === 0) {
@@ -142,6 +163,177 @@ function assertUsableRootKey(rootKey, rootPath) {
     if (rootKey.includes(corpus_roots_1.CORPUS_PATH_SEPARATOR) || /[\n\r]/.test(rootKey)) {
         throw new Error(`corpus: root key '${rootKey}' contains '${corpus_roots_1.CORPUS_PATH_SEPARATOR}' or a newline, `
             + "which would make a corpus path ambiguous");
+    }
+}
+/**
+ * Establish one document's derived layers, opening it only if it has to.
+ *
+ * Every key here is computed from the content hash the acquisition pass already
+ * produced, so the decision not to read a file is made *after* its identity is
+ * known rather than instead of knowing it. `needsText` is the whole of that
+ * decision: if every layer this document wants is already stored under its own
+ * content-addressed key, the file is never opened.
+ */
+async function deriveDocumentLayers(artifact, context) {
+    const { cache, session, memory, extractors, candidateProfile, interpretProfile, interpretEnabled, maxFileBytes, rootPathsById, rootKeyById, into, } = context;
+    const { normalized, lexical, interpreted, manifestIdentifiers, skipped } = into;
+    const contentHash = artifact.contentHash;
+    const documentKey = (0, corpus_cache_1.normalizedDocumentKey)({
+        contentHash,
+        decoderId: exports.TEXT_DECODER_ID,
+        decoderVersion: exports.TEXT_DECODER_VERSION,
+    });
+    const lexicalKey = (0, corpus_cache_1.lexicalFeaturesKey)({
+        normalizedDocumentIdentity: documentKey,
+        lexicalProfileHash: candidateProfile,
+    });
+    // The interpretation key carries the source path as well as the two the
+    // cache contract names. An assertion cites the path it was read from and is
+    // filed against that path's artifact subject, and several extractors read
+    // the path itself — so two identical files at two paths are two different
+    // interpretations, and a purely content-addressed key would serve one under
+    // the other's name.
+    const interpretKey = (0, corpus_cache_1.interpretationKey)({
+        normalizedDocumentIdentity: (0, repository_model_1.stableId)("interp-subject", {
+            normalized_document_identity: documentKey,
+            source_path: artifact.rootRelativePath,
+        }),
+        interpretationProfileHash: interpretProfile,
+    });
+    const wantsLexical = isLexicallyAnalyzable(artifact.rootRelativePath);
+    const wantsInterpretation = interpretEnabled
+        && extractors.some((extractor) => extractor.matches(artifact.rootRelativePath));
+    const wantsIdentifier = (0, corpus_candidates_1.readsDeclaredIdentifier)(artifact.basename);
+    // Eligibility first: a refusal to open a file is a decision about the file,
+    // not about its bytes, so it is never cached under a content key.
+    if ((0, interpretation_1.isSecretCandidatePath)(artifact.rootRelativePath)) {
+        skipped.secret += 1;
+        return;
+    }
+    if (artifact.sizeBytes !== null && artifact.sizeBytes > maxFileBytes) {
+        skipped.oversized += 1;
+        return;
+    }
+    const documentHit = cache.get("normalized_document", documentKey);
+    const lexicalHit = wantsLexical
+        ? cache.get("lexical_features", lexicalKey)
+        : undefined;
+    const interpretHit = wantsInterpretation
+        ? cache.get("interpretation", interpretKey)
+        : undefined;
+    const identifierKey = (0, corpus_cache_1.normalizedDocumentKey)({
+        contentHash,
+        decoderId: exports.MANIFEST_DECODER_ID,
+        decoderVersion: exports.MANIFEST_DECODER_VERSION,
+    });
+    const identifierHit = wantsIdentifier
+        ? cache.get("normalized_document", identifierKey)
+        : undefined;
+    const needsText = documentHit === undefined
+        || (wantsLexical && lexicalHit === undefined && documentHit.decodes)
+        || (wantsInterpretation && interpretHit === undefined && documentHit.decodes)
+        || (wantsIdentifier && identifierHit === undefined && documentHit.decodes);
+    if (documentHit !== undefined)
+        normalized.set(artifact.virtualSourceId, documentHit);
+    if (lexicalHit !== undefined)
+        lexical.set(artifact.virtualSourceId, lexicalHit);
+    if (interpretHit !== undefined)
+        interpreted.set(artifact.virtualSourceId, interpretHit);
+    if (identifierHit !== undefined)
+        manifestIdentifiers.set(artifact.virtualSourceId, identifierHit.declared);
+    if (!needsText) {
+        session?.completeDecoder(documentKey);
+        return;
+    }
+    const absolute = artifact.absolutePath;
+    if (absolute === null) {
+        skipped.unreadable += 1;
+        return;
+    }
+    const reserve = artifact.sizeBytes ?? 0;
+    await memory.reserve(reserve);
+    try {
+        const encoding = (0, encoding_1.probeFileEncoding)(absolute);
+        if (encoding.status !== "utf8") {
+            if (encoding.status === "unreadable")
+                skipped.unreadable += 1;
+            else
+                skipped.encoding += 1;
+            const record = {
+                decodes: false,
+                reason: encoding.status,
+                byte_length: artifact.sizeBytes ?? 0,
+                normalized_content_hash: null,
+                token_count: 0,
+            };
+            cache.put("normalized_document", documentKey, record);
+            normalized.set(artifact.virtualSourceId, record);
+            return;
+        }
+        let text;
+        try {
+            text = fs.readFileSync(absolute, "utf8");
+        }
+        catch {
+            skipped.unreadable += 1;
+            return;
+        }
+        const analysisText = (0, corpus_analysis_1.normalizeForAnalysis)(text);
+        const tokens = (0, corpus_analysis_1.analysisTokens)(analysisText);
+        const record = {
+            decodes: true,
+            reason: null,
+            byte_length: Buffer.byteLength(text, "utf8"),
+            normalized_content_hash: (0, repository_model_1.stableId)("normtext", { text: analysisText }),
+            token_count: tokens.length,
+        };
+        cache.put("normalized_document", documentKey, record);
+        normalized.set(artifact.virtualSourceId, record);
+        session?.completeDecoder(documentKey);
+        if (wantsLexical && lexicalHit === undefined) {
+            const features = {
+                normalized_content_hash: record.normalized_content_hash,
+                token_count: tokens.length,
+                shingles: [...(0, corpus_analysis_1.shingleSet)(tokens)],
+                term_counts: termCounts(tokens),
+            };
+            cache.put("lexical_features", lexicalKey, features);
+            lexical.set(artifact.virtualSourceId, features);
+        }
+        if (wantsInterpretation && interpretHit === undefined) {
+            const observedPaths = rootPathsById.get(artifact.rootId) ?? new Set();
+            // Whether the extractor set consulted the rest of the root is discovered
+            // rather than assumed. A document whose interpretation depended on which
+            // other paths exist is not a function of its own bytes, so it is
+            // computed and used but never stored: a later run with a different root
+            // would otherwise read back an answer that is no longer true.
+            let consultedRoot = false;
+            const result = (0, interpretation_1.interpretDocumentContent)({
+                repositorySubjectId: `repo:${rootKeyById.get(artifact.rootId) ?? artifact.rootId}`,
+                sourcePath: artifact.rootRelativePath,
+                content: text,
+                extractors,
+                pathExists: (relativePath) => {
+                    consultedRoot = true;
+                    return observedPaths.has(relativePath.replace(/^\.\//, ""));
+                },
+            });
+            const stored = {
+                assertions: result.assertions,
+                diagnostics: result.diagnostics,
+            };
+            if (!consultedRoot)
+                cache.put("interpretation", interpretKey, stored);
+            interpreted.set(artifact.virtualSourceId, stored);
+        }
+        if (wantsIdentifier && identifierHit === undefined) {
+            const declared = (0, corpus_candidates_1.readDeclaredIdentifier)(artifact.basename, text) ?? null;
+            cache.put("normalized_document", identifierKey, { declared });
+            manifestIdentifiers.set(artifact.virtualSourceId, declared);
+        }
+    }
+    finally {
+        memory.release(reserve);
     }
 }
 // ───────────────────────────── the scan ─────────────────────────────
@@ -164,7 +356,7 @@ async function runCorpusScan(input) {
     const diagnostics = [];
     const budgets = {
         ...corpus_session_1.DEFAULT_CORPUS_BUDGETS,
-        ...(input.budgets ?? {}),
+        ...input.budgets,
     };
     const maxFileBytes = input.maxFileBytes ?? interpretation_1.DEFAULT_MAX_FILE_BYTES;
     const nearDuplicatesEnabled = input.nearDuplicates?.enabled !== false;
@@ -372,166 +564,19 @@ async function runCorpusScan(input) {
         const decodable = artifacts.filter((artifact) => artifact.contentHash !== null
             && (isTextDecodable(artifact.rootRelativePath)
                 || extractors.some((extractor) => extractor.matches(artifact.rootRelativePath))));
-        await (0, corpus_session_1.boundedMap)(decodable, budgets.max_parallel_decoders, async (artifact) => {
-            const contentHash = artifact.contentHash;
-            const documentKey = (0, corpus_cache_1.normalizedDocumentKey)({
-                contentHash,
-                decoderId: exports.TEXT_DECODER_ID,
-                decoderVersion: exports.TEXT_DECODER_VERSION,
-            });
-            const lexicalKey = (0, corpus_cache_1.lexicalFeaturesKey)({
-                normalizedDocumentIdentity: documentKey,
-                lexicalProfileHash: candidateProfile,
-            });
-            // The interpretation key carries the source path as well as the two the
-            // cache contract names. An assertion cites the path it was read from and is
-            // filed against that path's artifact subject, and several extractors read
-            // the path itself — so two identical files at two paths are two different
-            // interpretations, and a purely content-addressed key would serve one under
-            // the other's name.
-            const interpretKey = (0, corpus_cache_1.interpretationKey)({
-                normalizedDocumentIdentity: (0, repository_model_1.stableId)("interp-subject", {
-                    normalized_document_identity: documentKey,
-                    source_path: artifact.rootRelativePath,
-                }),
-                interpretationProfileHash: interpretProfile,
-            });
-            const wantsLexical = isLexicallyAnalyzable(artifact.rootRelativePath);
-            const wantsInterpretation = interpretEnabled
-                && extractors.some((extractor) => extractor.matches(artifact.rootRelativePath));
-            const wantsIdentifier = (0, corpus_candidates_1.readsDeclaredIdentifier)(artifact.basename);
-            // Eligibility first: a refusal to open a file is a decision about the file,
-            // not about its bytes, so it is never cached under a content key.
-            if ((0, interpretation_1.isSecretCandidatePath)(artifact.rootRelativePath)) {
-                skipped.secret += 1;
-                return;
-            }
-            if (artifact.sizeBytes !== null && artifact.sizeBytes > maxFileBytes) {
-                skipped.oversized += 1;
-                return;
-            }
-            const documentHit = cache.get("normalized_document", documentKey);
-            const lexicalHit = wantsLexical
-                ? cache.get("lexical_features", lexicalKey)
-                : undefined;
-            const interpretHit = wantsInterpretation
-                ? cache.get("interpretation", interpretKey)
-                : undefined;
-            const identifierKey = (0, corpus_cache_1.normalizedDocumentKey)({
-                contentHash,
-                decoderId: exports.MANIFEST_DECODER_ID,
-                decoderVersion: exports.MANIFEST_DECODER_VERSION,
-            });
-            const identifierHit = wantsIdentifier
-                ? cache.get("normalized_document", identifierKey)
-                : undefined;
-            const needsText = documentHit === undefined
-                || (wantsLexical && lexicalHit === undefined && documentHit.decodes)
-                || (wantsInterpretation && interpretHit === undefined && documentHit.decodes)
-                || (wantsIdentifier && identifierHit === undefined && documentHit.decodes);
-            if (documentHit !== undefined)
-                normalized.set(artifact.virtualSourceId, documentHit);
-            if (lexicalHit !== undefined)
-                lexical.set(artifact.virtualSourceId, lexicalHit);
-            if (interpretHit !== undefined)
-                interpreted.set(artifact.virtualSourceId, interpretHit);
-            if (identifierHit !== undefined)
-                manifestIdentifiers.set(artifact.virtualSourceId, identifierHit.declared);
-            if (!needsText) {
-                session?.completeDecoder(documentKey);
-                return;
-            }
-            const absolute = artifact.absolutePath;
-            if (absolute === null) {
-                skipped.unreadable += 1;
-                return;
-            }
-            const reserve = artifact.sizeBytes ?? 0;
-            await memory.reserve(reserve);
-            try {
-                const encoding = (0, encoding_1.probeFileEncoding)(absolute);
-                if (encoding.status !== "utf8") {
-                    if (encoding.status === "unreadable")
-                        skipped.unreadable += 1;
-                    else
-                        skipped.encoding += 1;
-                    const record = {
-                        decodes: false,
-                        reason: encoding.status,
-                        byte_length: artifact.sizeBytes ?? 0,
-                        normalized_content_hash: null,
-                        token_count: 0,
-                    };
-                    cache.put("normalized_document", documentKey, record);
-                    normalized.set(artifact.virtualSourceId, record);
-                    return;
-                }
-                let text;
-                try {
-                    text = fs.readFileSync(absolute, "utf8");
-                }
-                catch {
-                    skipped.unreadable += 1;
-                    return;
-                }
-                const analysisText = (0, corpus_analysis_1.normalizeForAnalysis)(text);
-                const tokens = (0, corpus_analysis_1.analysisTokens)(analysisText);
-                const record = {
-                    decodes: true,
-                    reason: null,
-                    byte_length: Buffer.byteLength(text, "utf8"),
-                    normalized_content_hash: (0, repository_model_1.stableId)("normtext", { text: analysisText }),
-                    token_count: tokens.length,
-                };
-                cache.put("normalized_document", documentKey, record);
-                normalized.set(artifact.virtualSourceId, record);
-                session?.completeDecoder(documentKey);
-                if (wantsLexical && lexicalHit === undefined) {
-                    const features = {
-                        normalized_content_hash: record.normalized_content_hash,
-                        token_count: tokens.length,
-                        shingles: [...(0, corpus_analysis_1.shingleSet)(tokens)],
-                        term_counts: termCounts(tokens),
-                    };
-                    cache.put("lexical_features", lexicalKey, features);
-                    lexical.set(artifact.virtualSourceId, features);
-                }
-                if (wantsInterpretation && interpretHit === undefined) {
-                    const observedPaths = rootPathsById.get(artifact.rootId) ?? new Set();
-                    // Whether the extractor set consulted the rest of the root is discovered
-                    // rather than assumed. A document whose interpretation depended on which
-                    // other paths exist is not a function of its own bytes, so it is
-                    // computed and used but never stored: a later run with a different root
-                    // would otherwise read back an answer that is no longer true.
-                    let consultedRoot = false;
-                    const result = (0, interpretation_1.interpretDocumentContent)({
-                        repositorySubjectId: `repo:${bindingById.get(artifact.rootId)?.root_key ?? artifact.rootId}`,
-                        sourcePath: artifact.rootRelativePath,
-                        content: text,
-                        extractors,
-                        pathExists: (relativePath) => {
-                            consultedRoot = true;
-                            return observedPaths.has(relativePath.replace(/^\.\//, ""));
-                        },
-                    });
-                    const stored = {
-                        assertions: result.assertions,
-                        diagnostics: result.diagnostics,
-                    };
-                    if (!consultedRoot)
-                        cache.put("interpretation", interpretKey, stored);
-                    interpreted.set(artifact.virtualSourceId, stored);
-                }
-                if (wantsIdentifier && identifierHit === undefined) {
-                    const declared = (0, corpus_candidates_1.readDeclaredIdentifier)(artifact.basename, text) ?? null;
-                    cache.put("normalized_document", identifierKey, { declared });
-                    manifestIdentifiers.set(artifact.virtualSourceId, declared);
-                }
-            }
-            finally {
-                memory.release(reserve);
-            }
-        });
+        await (0, corpus_session_1.boundedMap)(decodable, budgets.max_parallel_decoders, (artifact) => deriveDocumentLayers(artifact, {
+            cache,
+            ...(session !== undefined ? { session } : {}),
+            memory,
+            extractors,
+            candidateProfile,
+            interpretProfile,
+            interpretEnabled,
+            maxFileBytes,
+            rootPathsById,
+            rootKeyById: new Map(bound.roots.map((root) => [root.root_id, root.root_key])),
+            into: { normalized, lexical, interpreted, manifestIdentifiers, skipped },
+        }));
         // ── 5. readiness signals ──────────────────────────────────────────────
         const readinessInputs = artifacts.map((artifact) => ({
             virtual_source_id: artifact.virtualSourceId,
@@ -641,36 +686,12 @@ async function runCorpusScan(input) {
             for (const artifactId of cluster.artifact_ids)
                 clusterByArtifact.set(artifactId, cluster.cluster_id);
         }
-        const nearByArtifact = new Map();
-        for (const candidate of nearCandidates) {
-            for (const artifactId of [candidate.artifact_a_id, candidate.artifact_b_id]) {
-                const bucket = nearByArtifact.get(artifactId);
-                if (bucket === undefined)
-                    nearByArtifact.set(artifactId, [candidate.candidate_id]);
-                else
-                    bucket.push(candidate.candidate_id);
-            }
-        }
-        const topicByArtifact = new Map();
-        for (const candidate of topicCandidates) {
-            for (const artifactId of candidate.member_ids) {
-                const bucket = topicByArtifact.get(artifactId);
-                if (bucket === undefined)
-                    topicByArtifact.set(artifactId, [candidate.candidate_id]);
-                else
-                    bucket.push(candidate.candidate_id);
-            }
-        }
-        const projectByArtifact = new Map();
-        for (const candidate of projectCandidates) {
-            for (const artifactId of candidate.member_ids) {
-                const bucket = projectByArtifact.get(artifactId);
-                if (bucket === undefined)
-                    projectByArtifact.set(artifactId, [candidate.candidate_id]);
-                else
-                    bucket.push(candidate.candidate_id);
-            }
-        }
+        const nearByArtifact = indexMembership(nearCandidates, (candidate) => [
+            candidate.artifact_a_id,
+            candidate.artifact_b_id,
+        ], (candidate) => candidate.candidate_id);
+        const topicByArtifact = indexMembership(topicCandidates, (candidate) => candidate.member_ids, (candidate) => candidate.candidate_id);
+        const projectByArtifact = indexMembership(projectCandidates, (candidate) => candidate.member_ids, (candidate) => candidate.candidate_id);
         const snapshotArtifacts = artifacts.map((artifact) => ({
             virtual_source_id: artifact.virtualSourceId,
             corpus_path: artifact.corpusPath,
@@ -682,13 +703,14 @@ async function runCorpusScan(input) {
             artifact_type: artifact.artifactType,
             ...(artifact.statPrecheck !== undefined ? { stat_precheck: artifact.statPrecheck } : {}),
         }));
+        const orderedArchives = [...archives].sort((a, b) => (0, ordering_1.compareCodePoints)(a.corpus_path, b.corpus_path));
         const snapshot = {
             schema: corpus_snapshot_1.CORPUS_SNAPSHOT_SCHEMA,
             corpus_snapshot_id: snapshotId,
             corpus_profile_hash: corpusProfileHash,
             roots: bound.roots.map(corpus_roots_1.rootIdentity),
             artifacts: snapshotArtifacts,
-            archives: archives.sort((a, b) => (0, ordering_1.compareCodePoints)(a.corpus_path, b.corpus_path)),
+            archives: orderedArchives,
             counts: {
                 root_count: bound.roots.length,
                 artifact_count: artifacts.length,
@@ -885,15 +907,16 @@ async function runCorpusScan(input) {
         const diff = input.previousSnapshot
             ? (0, corpus_diff_1.buildCorpusDiff)(input.previousSnapshot, snapshot)
             : null;
+        const orderedDiagnostics = [...diagnostics].sort((a, b) => (0, ordering_1.compareCodePoints)(a.code, b.code)
+            || (0, ordering_1.compareCodePoints)(a.corpus_path ?? "", b.corpus_path ?? "")
+            || (0, ordering_1.compareCodePoints)(a.message, b.message));
         return {
             snapshot,
             candidates: candidatesDocument,
             readiness,
             coverage,
             diff,
-            diagnostics: diagnostics.sort((a, b) => (0, ordering_1.compareCodePoints)(a.code, b.code)
-                || (0, ordering_1.compareCodePoints)(a.corpus_path ?? "", b.corpus_path ?? "")
-                || (0, ordering_1.compareCodePoints)(a.message, b.message)),
+            diagnostics: orderedDiagnostics,
             cacheStats,
             bindings: bound.roots,
             precheck,
@@ -913,6 +936,4 @@ function renderCorpusCandidates(document) {
 function renderReadinessEvidence(evidence) {
     return `${(0, corpus_analysis_1.canonicalCorpusJson)(evidence)}\n`;
 }
-/** Metric names this package refuses to emit, re-exported for validators. */
-exports.REFUSED_METRIC_NAMES = corpus_readiness_1.FORBIDDEN_READINESS_METRICS;
 //# sourceMappingURL=corpus_scan.js.map

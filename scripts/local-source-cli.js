@@ -333,7 +333,10 @@ async function runCorpusMode(cli) {
     + `${summary.cross_root_project_candidate_count} crossing a root boundary, `
     + `${coverage.reasoning_eligible_candidate_count} reasoning-eligible`,
   );
-  console.log(`  unsupported      ${coverage.unsupported_format_counts.map((f) => `${f.extension}:${f.count}`).join(" ") || "none"}`);
+  const unsupported = coverage.unsupported_format_counts
+    .map((format) => `${format.extension}:${format.count}`)
+    .join(" ");
+  console.log(`  unsupported      ${unsupported || "none"}`);
   console.log(`  ocr required     ${coverage.ocr_required_count}`);
   console.log(`  encrypted        ${coverage.encrypted_document_count}`);
   console.log(`  oversized        ${coverage.oversized_document_count}`);

@@ -145,5 +145,3 @@ export declare function runCorpusScan(input: CorpusScanInput): Promise<CorpusSca
 export declare function renderCorpusCandidates(document: CorpusCandidatesDocument): string;
 /** Canonical bytes of the readiness projection. */
 export declare function renderReadinessEvidence(evidence: ReadinessEvidence): string;
-/** Metric names this package refuses to emit, re-exported for validators. */
-export declare const REFUSED_METRIC_NAMES: readonly string[];

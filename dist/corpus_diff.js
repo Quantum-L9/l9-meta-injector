@@ -254,14 +254,17 @@ function buildCorpusDiff(previous, current) {
     const membershipChanged = newHashes.length > 0
         || retiredHashes.length > 0
         || previous.artifacts.length !== current.artifacts.length;
+    const previousRootIds = [...previous.roots.map((root) => root.root_id)].sort(ordering_1.compareCodePoints);
+    const currentRootIds = [...current.roots.map((root) => root.root_id)].sort(ordering_1.compareCodePoints);
+    const orderedEntries = [...entries].sort(compareEntries);
     return {
         schema: exports.CORPUS_DIFF_SCHEMA,
         previous_corpus_snapshot_id: previous.corpus_snapshot_id,
         current_corpus_snapshot_id: current.corpus_snapshot_id,
-        previous_root_ids: previous.roots.map((root) => root.root_id).sort(ordering_1.compareCodePoints),
-        current_root_ids: current.roots.map((root) => root.root_id).sort(ordering_1.compareCodePoints),
+        previous_root_ids: previousRootIds,
+        current_root_ids: currentRootIds,
         counts,
-        entries: entries.sort(compareEntries),
+        entries: orderedEntries,
         invalidation: {
             profile_changed: profileChanged,
             new_content_hashes: newHashes,

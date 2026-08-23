@@ -78,7 +78,6 @@ import {
 } from "./corpus_coverage";
 import { CorpusDiff, buildCorpusDiff } from "./corpus_diff";
 import {
-  FORBIDDEN_READINESS_METRICS,
   READINESS_SIGNALS,
   ReadinessArtifactInput,
   ReadinessEvidence,
@@ -119,6 +118,7 @@ import { probeFileEncoding } from "./encoding";
 import { defaultExtractors } from "./extractors";
 import {
   DEFAULT_MAX_FILE_BYTES,
+  Extractor,
   InterpretedAssertion,
   InterpretationDiagnostic,
   interpretDocumentContent,
@@ -342,6 +342,30 @@ function termCounts(tokens: readonly string[]): [string, number][] {
   return [...counts.entries()].sort((a, b) => compareCodePoints(a[0], b[0]));
 }
 
+/**
+ * Invert a membership relation: which groups each member belongs to.
+ *
+ * Near-duplicate candidates, topic candidates and project candidates all need the
+ * same inversion, and three hand-rolled copies of it were three places for the
+ * bucket-initialization branch to be got wrong.
+ */
+function indexMembership<T>(
+  groups: readonly T[],
+  membersOf: (group: T) => readonly string[],
+  idOf: (group: T) => string,
+): Map<string, string[]> {
+  const index = new Map<string, string[]>();
+  for (const group of groups) {
+    const id = idOf(group);
+    for (const member of membersOf(group)) {
+      const bucket = index.get(member);
+      if (bucket === undefined) index.set(member, [id]);
+      else bucket.push(id);
+    }
+  }
+  return index;
+}
+
 /** Reject a root key that would make a corpus path ambiguous. */
 function assertUsableRootKey(rootKey: string, rootPath: string): void {
   if (rootKey.length === 0) {
@@ -352,6 +376,205 @@ function assertUsableRootKey(rootKey: string, rootPath: string): void {
       `corpus: root key '${rootKey}' contains '${CORPUS_PATH_SEPARATOR}' or a newline, `
       + "which would make a corpus path ambiguous",
     );
+  }
+}
+
+/** Everything the derive stage accumulates for one corpus. */
+interface DerivedLayers {
+  normalized: Map<string, NormalizedDocumentRecord>;
+  lexical: Map<string, LexicalFeatureRecord>;
+  interpreted: Map<string, InterpretationRecord>;
+  manifestIdentifiers: Map<string, DeclaredIdentifier | null>;
+  /** Documents the scan deliberately did not decode, by reason. */
+  skipped: { secret: number; oversized: number; encoding: number; unreadable: number };
+}
+
+interface DeriveDocumentContext {
+  cache: CorpusCache;
+  session?: CorpusSessionStore;
+  memory: MemoryBudget;
+  extractors: Extractor[];
+  candidateProfile: string;
+  interpretProfile: string;
+  interpretEnabled: boolean;
+  maxFileBytes: number;
+  rootPathsById: ReadonlyMap<string, Set<string>>;
+  rootKeyById: ReadonlyMap<string, string>;
+  into: DerivedLayers;
+}
+
+/**
+ * Establish one document's derived layers, opening it only if it has to.
+ *
+ * Every key here is computed from the content hash the acquisition pass already
+ * produced, so the decision not to read a file is made *after* its identity is
+ * known rather than instead of knowing it. `needsText` is the whole of that
+ * decision: if every layer this document wants is already stored under its own
+ * content-addressed key, the file is never opened.
+ */
+async function deriveDocumentLayers(
+  artifact: ScanArtifact,
+  context: DeriveDocumentContext,
+): Promise<void> {
+  const {
+    cache, session, memory, extractors, candidateProfile, interpretProfile,
+    interpretEnabled, maxFileBytes, rootPathsById, rootKeyById, into,
+  } = context;
+  const { normalized, lexical, interpreted, manifestIdentifiers, skipped } = into;
+  const contentHash = artifact.contentHash as string;
+  const documentKey = normalizedDocumentKey({
+    contentHash,
+    decoderId: TEXT_DECODER_ID,
+    decoderVersion: TEXT_DECODER_VERSION,
+  });
+  const lexicalKey = lexicalFeaturesKey({
+    normalizedDocumentIdentity: documentKey,
+    lexicalProfileHash: candidateProfile,
+  });
+  // The interpretation key carries the source path as well as the two the
+  // cache contract names. An assertion cites the path it was read from and is
+  // filed against that path's artifact subject, and several extractors read
+  // the path itself — so two identical files at two paths are two different
+  // interpretations, and a purely content-addressed key would serve one under
+  // the other's name.
+  const interpretKey = interpretationKey({
+    normalizedDocumentIdentity: stableId("interp-subject", {
+      normalized_document_identity: documentKey,
+      source_path: artifact.rootRelativePath,
+    }),
+    interpretationProfileHash: interpretProfile,
+  });
+  const wantsLexical = isLexicallyAnalyzable(artifact.rootRelativePath);
+  const wantsInterpretation = interpretEnabled
+    && extractors.some((extractor) => extractor.matches(artifact.rootRelativePath));
+  const wantsIdentifier = readsDeclaredIdentifier(artifact.basename);
+
+  // Eligibility first: a refusal to open a file is a decision about the file,
+  // not about its bytes, so it is never cached under a content key.
+  if (isSecretCandidatePath(artifact.rootRelativePath)) {
+    skipped.secret += 1;
+    return;
+  }
+  if (artifact.sizeBytes !== null && artifact.sizeBytes > maxFileBytes) {
+    skipped.oversized += 1;
+    return;
+  }
+
+  const documentHit = cache.get<NormalizedDocumentRecord>("normalized_document", documentKey);
+  const lexicalHit = wantsLexical
+    ? cache.get<LexicalFeatureRecord>("lexical_features", lexicalKey)
+    : undefined;
+  const interpretHit = wantsInterpretation
+    ? cache.get<InterpretationRecord>("interpretation", interpretKey)
+    : undefined;
+  const identifierKey = normalizedDocumentKey({
+    contentHash,
+    decoderId: MANIFEST_DECODER_ID,
+    decoderVersion: MANIFEST_DECODER_VERSION,
+  });
+  const identifierHit = wantsIdentifier
+    ? cache.get<{ declared: DeclaredIdentifier | null }>("normalized_document", identifierKey)
+    : undefined;
+
+  const needsText = documentHit === undefined
+    || (wantsLexical && lexicalHit === undefined && documentHit.decodes)
+    || (wantsInterpretation && interpretHit === undefined && documentHit.decodes)
+    || (wantsIdentifier && identifierHit === undefined && documentHit.decodes);
+
+  if (documentHit !== undefined) normalized.set(artifact.virtualSourceId, documentHit);
+  if (lexicalHit !== undefined) lexical.set(artifact.virtualSourceId, lexicalHit);
+  if (interpretHit !== undefined) interpreted.set(artifact.virtualSourceId, interpretHit);
+  if (identifierHit !== undefined) manifestIdentifiers.set(artifact.virtualSourceId, identifierHit.declared);
+  if (!needsText) {
+    session?.completeDecoder(documentKey);
+    return;
+  }
+
+  const absolute = artifact.absolutePath;
+  if (absolute === null) {
+    skipped.unreadable += 1;
+    return;
+  }
+  const reserve = artifact.sizeBytes ?? 0;
+  await memory.reserve(reserve);
+  try {
+    const encoding = probeFileEncoding(absolute);
+    if (encoding.status !== "utf8") {
+      if (encoding.status === "unreadable") skipped.unreadable += 1;
+      else skipped.encoding += 1;
+      const record: NormalizedDocumentRecord = {
+        decodes: false,
+        reason: encoding.status,
+        byte_length: artifact.sizeBytes ?? 0,
+        normalized_content_hash: null,
+        token_count: 0,
+      };
+      cache.put("normalized_document", documentKey, record);
+      normalized.set(artifact.virtualSourceId, record);
+      return;
+    }
+    let text: string;
+    try {
+      text = fs.readFileSync(absolute, "utf8");
+    } catch {
+      skipped.unreadable += 1;
+      return;
+    }
+    const analysisText = normalizeForAnalysis(text);
+    const tokens = analysisTokens(analysisText);
+    const record: NormalizedDocumentRecord = {
+      decodes: true,
+      reason: null,
+      byte_length: Buffer.byteLength(text, "utf8"),
+      normalized_content_hash: stableId("normtext", { text: analysisText }),
+      token_count: tokens.length,
+    };
+    cache.put("normalized_document", documentKey, record);
+    normalized.set(artifact.virtualSourceId, record);
+    session?.completeDecoder(documentKey);
+
+    if (wantsLexical && lexicalHit === undefined) {
+      const features: LexicalFeatureRecord = {
+        normalized_content_hash: record.normalized_content_hash as string,
+        token_count: tokens.length,
+        shingles: [...shingleSet(tokens)],
+        term_counts: termCounts(tokens),
+      };
+      cache.put("lexical_features", lexicalKey, features);
+      lexical.set(artifact.virtualSourceId, features);
+    }
+    if (wantsInterpretation && interpretHit === undefined) {
+      const observedPaths = rootPathsById.get(artifact.rootId) ?? new Set<string>();
+      // Whether the extractor set consulted the rest of the root is discovered
+      // rather than assumed. A document whose interpretation depended on which
+      // other paths exist is not a function of its own bytes, so it is
+      // computed and used but never stored: a later run with a different root
+      // would otherwise read back an answer that is no longer true.
+      let consultedRoot = false;
+      const result = interpretDocumentContent({
+        repositorySubjectId: `repo:${rootKeyById.get(artifact.rootId) ?? artifact.rootId}`,
+        sourcePath: artifact.rootRelativePath,
+        content: text,
+        extractors,
+        pathExists: (relativePath) => {
+          consultedRoot = true;
+          return observedPaths.has(relativePath.replace(/^\.\//, ""));
+        },
+      });
+      const stored: InterpretationRecord = {
+        assertions: result.assertions,
+        diagnostics: result.diagnostics,
+      };
+      if (!consultedRoot) cache.put("interpretation", interpretKey, stored);
+      interpreted.set(artifact.virtualSourceId, stored);
+    }
+    if (wantsIdentifier && identifierHit === undefined) {
+      const declared = readDeclaredIdentifier(artifact.basename, text) ?? null;
+      cache.put("normalized_document", identifierKey, { declared });
+      manifestIdentifiers.set(artifact.virtualSourceId, declared);
+    }
+  } finally {
+    memory.release(reserve);
   }
 }
 
@@ -376,7 +599,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
   const diagnostics: CorpusScanDiagnostic[] = [];
   const budgets: Omit<CorpusResourceBudgets, "archive"> = {
     ...DEFAULT_CORPUS_BUDGETS,
-    ...(input.budgets ?? {}),
+    ...input.budgets,
   };
   const maxFileBytes = input.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES;
   const nearDuplicatesEnabled = input.nearDuplicates?.enabled !== false;
@@ -603,163 +826,20 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
           || extractors.some((extractor) => extractor.matches(artifact.rootRelativePath))),
     );
 
-    await boundedMap(decodable, budgets.max_parallel_decoders, async (artifact) => {
-      const contentHash = artifact.contentHash as string;
-      const documentKey = normalizedDocumentKey({
-        contentHash,
-        decoderId: TEXT_DECODER_ID,
-        decoderVersion: TEXT_DECODER_VERSION,
-      });
-      const lexicalKey = lexicalFeaturesKey({
-        normalizedDocumentIdentity: documentKey,
-        lexicalProfileHash: candidateProfile,
-      });
-      // The interpretation key carries the source path as well as the two the
-      // cache contract names. An assertion cites the path it was read from and is
-      // filed against that path's artifact subject, and several extractors read
-      // the path itself — so two identical files at two paths are two different
-      // interpretations, and a purely content-addressed key would serve one under
-      // the other's name.
-      const interpretKey = interpretationKey({
-        normalizedDocumentIdentity: stableId("interp-subject", {
-          normalized_document_identity: documentKey,
-          source_path: artifact.rootRelativePath,
-        }),
-        interpretationProfileHash: interpretProfile,
-      });
-      const wantsLexical = isLexicallyAnalyzable(artifact.rootRelativePath);
-      const wantsInterpretation = interpretEnabled
-        && extractors.some((extractor) => extractor.matches(artifact.rootRelativePath));
-      const wantsIdentifier = readsDeclaredIdentifier(artifact.basename);
-
-      // Eligibility first: a refusal to open a file is a decision about the file,
-      // not about its bytes, so it is never cached under a content key.
-      if (isSecretCandidatePath(artifact.rootRelativePath)) {
-        skipped.secret += 1;
-        return;
-      }
-      if (artifact.sizeBytes !== null && artifact.sizeBytes > maxFileBytes) {
-        skipped.oversized += 1;
-        return;
-      }
-
-      const documentHit = cache.get<NormalizedDocumentRecord>("normalized_document", documentKey);
-      const lexicalHit = wantsLexical
-        ? cache.get<LexicalFeatureRecord>("lexical_features", lexicalKey)
-        : undefined;
-      const interpretHit = wantsInterpretation
-        ? cache.get<InterpretationRecord>("interpretation", interpretKey)
-        : undefined;
-      const identifierKey = normalizedDocumentKey({
-        contentHash,
-        decoderId: MANIFEST_DECODER_ID,
-        decoderVersion: MANIFEST_DECODER_VERSION,
-      });
-      const identifierHit = wantsIdentifier
-        ? cache.get<{ declared: DeclaredIdentifier | null }>("normalized_document", identifierKey)
-        : undefined;
-
-      const needsText = documentHit === undefined
-        || (wantsLexical && lexicalHit === undefined && documentHit.decodes)
-        || (wantsInterpretation && interpretHit === undefined && documentHit.decodes)
-        || (wantsIdentifier && identifierHit === undefined && documentHit.decodes);
-
-      if (documentHit !== undefined) normalized.set(artifact.virtualSourceId, documentHit);
-      if (lexicalHit !== undefined) lexical.set(artifact.virtualSourceId, lexicalHit);
-      if (interpretHit !== undefined) interpreted.set(artifact.virtualSourceId, interpretHit);
-      if (identifierHit !== undefined) manifestIdentifiers.set(artifact.virtualSourceId, identifierHit.declared);
-      if (!needsText) {
-        session?.completeDecoder(documentKey);
-        return;
-      }
-
-      const absolute = artifact.absolutePath;
-      if (absolute === null) {
-        skipped.unreadable += 1;
-        return;
-      }
-      const reserve = artifact.sizeBytes ?? 0;
-      await memory.reserve(reserve);
-      try {
-        const encoding = probeFileEncoding(absolute);
-        if (encoding.status !== "utf8") {
-          if (encoding.status === "unreadable") skipped.unreadable += 1;
-          else skipped.encoding += 1;
-          const record: NormalizedDocumentRecord = {
-            decodes: false,
-            reason: encoding.status,
-            byte_length: artifact.sizeBytes ?? 0,
-            normalized_content_hash: null,
-            token_count: 0,
-          };
-          cache.put("normalized_document", documentKey, record);
-          normalized.set(artifact.virtualSourceId, record);
-          return;
-        }
-        let text: string;
-        try {
-          text = fs.readFileSync(absolute, "utf8");
-        } catch {
-          skipped.unreadable += 1;
-          return;
-        }
-        const analysisText = normalizeForAnalysis(text);
-        const tokens = analysisTokens(analysisText);
-        const record: NormalizedDocumentRecord = {
-          decodes: true,
-          reason: null,
-          byte_length: Buffer.byteLength(text, "utf8"),
-          normalized_content_hash: stableId("normtext", { text: analysisText }),
-          token_count: tokens.length,
-        };
-        cache.put("normalized_document", documentKey, record);
-        normalized.set(artifact.virtualSourceId, record);
-        session?.completeDecoder(documentKey);
-
-        if (wantsLexical && lexicalHit === undefined) {
-          const features: LexicalFeatureRecord = {
-            normalized_content_hash: record.normalized_content_hash as string,
-            token_count: tokens.length,
-            shingles: [...shingleSet(tokens)],
-            term_counts: termCounts(tokens),
-          };
-          cache.put("lexical_features", lexicalKey, features);
-          lexical.set(artifact.virtualSourceId, features);
-        }
-        if (wantsInterpretation && interpretHit === undefined) {
-          const observedPaths = rootPathsById.get(artifact.rootId) ?? new Set<string>();
-          // Whether the extractor set consulted the rest of the root is discovered
-          // rather than assumed. A document whose interpretation depended on which
-          // other paths exist is not a function of its own bytes, so it is
-          // computed and used but never stored: a later run with a different root
-          // would otherwise read back an answer that is no longer true.
-          let consultedRoot = false;
-          const result = interpretDocumentContent({
-            repositorySubjectId: `repo:${bindingById.get(artifact.rootId)?.root_key ?? artifact.rootId}`,
-            sourcePath: artifact.rootRelativePath,
-            content: text,
-            extractors,
-            pathExists: (relativePath) => {
-              consultedRoot = true;
-              return observedPaths.has(relativePath.replace(/^\.\//, ""));
-            },
-          });
-          const stored: InterpretationRecord = {
-            assertions: result.assertions,
-            diagnostics: result.diagnostics,
-          };
-          if (!consultedRoot) cache.put("interpretation", interpretKey, stored);
-          interpreted.set(artifact.virtualSourceId, stored);
-        }
-        if (wantsIdentifier && identifierHit === undefined) {
-          const declared = readDeclaredIdentifier(artifact.basename, text) ?? null;
-          cache.put("normalized_document", identifierKey, { declared });
-          manifestIdentifiers.set(artifact.virtualSourceId, declared);
-        }
-      } finally {
-        memory.release(reserve);
-      }
-    });
+    await boundedMap(decodable, budgets.max_parallel_decoders, (artifact) =>
+      deriveDocumentLayers(artifact, {
+        cache,
+        ...(session !== undefined ? { session } : {}),
+        memory,
+        extractors,
+        candidateProfile,
+        interpretProfile,
+        interpretEnabled,
+        maxFileBytes,
+        rootPathsById,
+        rootKeyById: new Map(bound.roots.map((root) => [root.root_id, root.root_key])),
+        into: { normalized, lexical, interpreted, manifestIdentifiers, skipped },
+      }));
 
     // ── 5. readiness signals ──────────────────────────────────────────────
     const readinessInputs: ReadinessArtifactInput[] = artifacts.map((artifact) => ({
@@ -877,30 +957,20 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
     for (const cluster of clusters) {
       for (const artifactId of cluster.artifact_ids) clusterByArtifact.set(artifactId, cluster.cluster_id);
     }
-    const nearByArtifact = new Map<string, string[]>();
-    for (const candidate of nearCandidates) {
-      for (const artifactId of [candidate.artifact_a_id, candidate.artifact_b_id]) {
-        const bucket = nearByArtifact.get(artifactId);
-        if (bucket === undefined) nearByArtifact.set(artifactId, [candidate.candidate_id]);
-        else bucket.push(candidate.candidate_id);
-      }
-    }
-    const topicByArtifact = new Map<string, string[]>();
-    for (const candidate of topicCandidates) {
-      for (const artifactId of candidate.member_ids) {
-        const bucket = topicByArtifact.get(artifactId);
-        if (bucket === undefined) topicByArtifact.set(artifactId, [candidate.candidate_id]);
-        else bucket.push(candidate.candidate_id);
-      }
-    }
-    const projectByArtifact = new Map<string, string[]>();
-    for (const candidate of projectCandidates) {
-      for (const artifactId of candidate.member_ids) {
-        const bucket = projectByArtifact.get(artifactId);
-        if (bucket === undefined) projectByArtifact.set(artifactId, [candidate.candidate_id]);
-        else bucket.push(candidate.candidate_id);
-      }
-    }
+    const nearByArtifact = indexMembership(nearCandidates, (candidate) => [
+      candidate.artifact_a_id,
+      candidate.artifact_b_id,
+    ], (candidate) => candidate.candidate_id);
+    const topicByArtifact = indexMembership(
+      topicCandidates,
+      (candidate) => candidate.member_ids,
+      (candidate) => candidate.candidate_id,
+    );
+    const projectByArtifact = indexMembership(
+      projectCandidates,
+      (candidate) => candidate.member_ids,
+      (candidate) => candidate.candidate_id,
+    );
 
     const snapshotArtifacts: CorpusSnapshotArtifact[] = artifacts.map((artifact) => ({
       virtual_source_id: artifact.virtualSourceId,
@@ -914,13 +984,16 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       ...(artifact.statPrecheck !== undefined ? { stat_precheck: artifact.statPrecheck } : {}),
     }));
 
+    const orderedArchives = [...archives].sort(
+      (a, b) => compareCodePoints(a.corpus_path, b.corpus_path),
+    );
     const snapshot: CorpusSnapshot = {
       schema: CORPUS_SNAPSHOT_SCHEMA,
       corpus_snapshot_id: snapshotId,
       corpus_profile_hash: corpusProfileHash,
       roots: bound.roots.map(rootIdentity),
       artifacts: snapshotArtifacts,
-      archives: archives.sort((a, b) => compareCodePoints(a.corpus_path, b.corpus_path)),
+      archives: orderedArchives,
       counts: {
         root_count: bound.roots.length,
         artifact_count: artifacts.length,
@@ -1168,6 +1241,11 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
     const diff = input.previousSnapshot
       ? buildCorpusDiff(input.previousSnapshot, snapshot)
       : null;
+    const orderedDiagnostics = [...diagnostics].sort(
+      (a, b) => compareCodePoints(a.code, b.code)
+        || compareCodePoints(a.corpus_path ?? "", b.corpus_path ?? "")
+        || compareCodePoints(a.message, b.message),
+    );
 
     return {
       snapshot,
@@ -1175,11 +1253,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       readiness,
       coverage,
       diff,
-      diagnostics: diagnostics.sort(
-        (a, b) => compareCodePoints(a.code, b.code)
-          || compareCodePoints(a.corpus_path ?? "", b.corpus_path ?? "")
-          || compareCodePoints(a.message, b.message),
-      ),
+      diagnostics: orderedDiagnostics,
       cacheStats,
       bindings: bound.roots,
       precheck,
@@ -1199,6 +1273,3 @@ export function renderCorpusCandidates(document: CorpusCandidatesDocument): stri
 export function renderReadinessEvidence(evidence: ReadinessEvidence): string {
   return `${canonicalCorpusJson(evidence)}\n`;
 }
-
-/** Metric names this package refuses to emit, re-exported for validators. */
-export const REFUSED_METRIC_NAMES = FORBIDDEN_READINESS_METRICS;

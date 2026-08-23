@@ -333,14 +333,18 @@ export function buildCorpusDiff(previous: CorpusSnapshot, current: CorpusSnapsho
     || retiredHashes.length > 0
     || previous.artifacts.length !== current.artifacts.length;
 
+  const previousRootIds = [...previous.roots.map((root) => root.root_id)].sort(compareCodePoints);
+  const currentRootIds = [...current.roots.map((root) => root.root_id)].sort(compareCodePoints);
+  const orderedEntries = [...entries].sort(compareEntries);
+
   return {
     schema: CORPUS_DIFF_SCHEMA,
     previous_corpus_snapshot_id: previous.corpus_snapshot_id,
     current_corpus_snapshot_id: current.corpus_snapshot_id,
-    previous_root_ids: previous.roots.map((root) => root.root_id).sort(compareCodePoints),
-    current_root_ids: current.roots.map((root) => root.root_id).sort(compareCodePoints),
+    previous_root_ids: previousRootIds,
+    current_root_ids: currentRootIds,
     counts,
-    entries: entries.sort(compareEntries),
+    entries: orderedEntries,
     invalidation: {
       profile_changed: profileChanged,
       new_content_hashes: newHashes,
