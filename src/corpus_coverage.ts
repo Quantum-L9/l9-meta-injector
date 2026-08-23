@@ -200,6 +200,25 @@ export interface DocumentCoverage {
   decode_gap: DecodeGap;
 }
 
+/**
+ * What the candidate passes cost, beside what comparing everything would have.
+ *
+ * A scale claim is a claim about a number, and is worth exactly what the number
+ * is. `exhaustive_pair_count` beside `evaluated_pair_count` is the whole report:
+ * at ten thousand documents the first is fifty million, and if the second is not
+ * orders of magnitude smaller then the index is not doing its job whatever the
+ * wall clock happened to say on the machine the test ran on.
+ */
+export interface TopicPairWorkCoverage {
+  eligible_document_count: number;
+  exhaustive_pair_count: number;
+  evaluated_pair_count: number;
+  skipped_same_component_count: number;
+  indexed_posting_count: number;
+  /** Salient terms no document's prefix reached: the common vocabulary. */
+  unindexed_term_count: number;
+}
+
 /** What the analysis found, over the denominators above. */
 export interface SemanticCoverage {
   interpreted_artifact_count: number;
@@ -209,6 +228,8 @@ export interface SemanticCoverage {
   topic_candidate_count: number;
   project_candidate_count: number;
   consolidation_candidate_count: number;
+  /** What the topic pass compared. Zeroed when topic candidates were off. */
+  topic_pair_work: TopicPairWorkCoverage;
 }
 
 /** Embeddings, reported as off rather than omitted when they are off. */

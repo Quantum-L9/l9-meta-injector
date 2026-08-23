@@ -63,11 +63,10 @@ describe("a ten-thousand-artifact corpus", () => {
       roots,
       producerVersion: "scale",
       cache,
-      // Topic candidates over ten thousand documents are a corpus-wide quadratic
-      // in the worst case; the qualification they belong to is the candidate
-      // suite, and running them here would measure the fixture rather than the
-      // scan. Every other analysis is on.
-      topics: { enabled: false },
+      // Every analysis is on, topic candidates included. Switching them off here
+      // was the shortcut that made this file measure a scan the release does not
+      // perform: an operator pointing this at a disk gets topic candidates, so a
+      // scale qualification that skips them qualifies something else.
       archivePolicy: ARCHIVE_POLICY,
     };
 
@@ -111,6 +110,23 @@ describe("a ten-thousand-artifact corpus", () => {
       expect(body.metrics.validation.structural_test_artifact_count).toBe(1);
       expect(body.metrics.knowledge.plan_count).toBe(1);
     }
+
+    // Topic candidates ran, over ten thousand documents, and the pass reports
+    // what it cost. Fifty million pairs is what comparing everything would have
+    // been; the index has to be orders of magnitude under that or it is not
+    // bounding anything, whatever the wall clock said on this machine.
+    const pairWork = cold.coverage.semantics.topic_pair_work;
+    expect(pairWork.eligible_document_count).toBeGreaterThan(1_000);
+    expect(pairWork.exhaustive_pair_count).toBeGreaterThan(1_000_000);
+    expect(pairWork.evaluated_pair_count).toBeLessThan(pairWork.exhaustive_pair_count / 100);
+    // And it did compare things: a bound that evaluated nothing would pass the
+    // line above and mean the index reached no pair at all.
+    expect(pairWork.evaluated_pair_count).toBeGreaterThan(0);
+    expect(pairWork.indexed_posting_count).toBeGreaterThan(0);
+    // The common vocabulary is outside every prefix, which is what makes the
+    // rarest-first ordering worth having rather than merely tidy.
+    expect(pairWork.unindexed_term_count).toBeGreaterThan(0);
+    expect(cold.coverage.semantics.topic_candidate_count).toBeGreaterThan(0);
 
     // ── 2. warm, full ─────────────────────────────────────────────────────
     const warm = await runCorpusScan({ ...options, previousSnapshot: cold.snapshot });

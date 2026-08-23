@@ -25,7 +25,11 @@ export const PROJECT_CANDIDATE_METHOD = "container-project-candidate/v1";
 export const PROJECT_CANDIDATE_METHOD_VERSION = "1.0.0";
 
 export const TOPIC_CANDIDATE_METHOD = "lexical-topic-candidate/v1";
-export const TOPIC_CANDIDATE_METHOD_VERSION = "1.0.0";
+// Bumped when the pass moved from an index over every salient term to one over
+// each document's rarest-first prefix. The bound is exact, so the candidates are
+// the same ones; the method that found them is not, and an analysis identity that
+// did not move would claim two different algorithms were one.
+export const TOPIC_CANDIDATE_METHOD_VERSION = "1.1.0";
 
 /** Default salient-vocabulary overlap at which two documents join a topic. */
 export const DEFAULT_TOPIC_THRESHOLD = 0.35;
@@ -533,25 +537,111 @@ export interface BuildTopicCandidatesInput {
 }
 
 /**
+ * How much pair work a topic pass actually did.
+ *
+ * Recorded rather than assumed, because "bounded" is a claim about a number and
+ * a claim about a number is worth exactly as much as the number. `exhaustive`
+ * beside `evaluated` is the whole point: at ten thousand documents the first is
+ * fifty million and the second, on any corpus with a vocabulary, is four or five
+ * orders of magnitude smaller.
+ */
+export interface TopicPairWork {
+  eligible_document_count: number;
+  /** `n(n-1)/2` — what comparing every pair would have cost. */
+  exhaustive_pair_count: number;
+  /** Jaccard computations actually run. */
+  evaluated_pair_count: number;
+  /** Pairs the index offered that were already in one component. */
+  skipped_same_component_count: number;
+  /** Postings written into the index: the prefix of each document's terms. */
+  indexed_posting_count: number;
+  /** Terms that never enter the index because they are nobody's prefix. */
+  unindexed_term_count: number;
+}
+
+export interface TopicCandidateResult {
+  candidates: TopicCandidate[];
+  pair_work: TopicPairWork;
+}
+
+/**
+ * The prefix of a salient-term set a qualifying partner must intersect.
+ *
+ * Identical in form to the near-duplicate prefix bound in `corpus_analysis`, and
+ * exact for the same reason: for Jaccard at threshold `t`, a pair can only reach
+ * `t` if it shares at least `ceil(t * |X|)` terms with the smaller set. Under a
+ * fixed global order, two sets sharing that many elements must both contain one
+ * of the first `|X| - ceil(t*|X|) + 1` — otherwise the shared elements would all
+ * have to sit past a point where fewer than that many remain.
+ *
+ * So this is a filter, not a sample. No qualifying pair is lost.
+ */
+export function topicPrefixLength(setSize: number, threshold: number): number {
+  if (setSize === 0) return 0;
+  return Math.max(1, setSize - Math.ceil(roundTopicScore(threshold) * setSize) + 1);
+}
+
+/**
  * Connected groups of documents whose salient vocabulary overlaps.
  *
  * Reached through an inverted index over salient terms, for the same reason the
  * near-duplicate pass uses one: two documents sharing no salient term score
  * exactly zero and cannot qualify at any positive threshold, so comparing them is
  * provably unnecessary rather than merely unlikely to matter.
+ *
+ * The index used to hold every salient term of every document, and that is what
+ * made this pass unusable at scale rather than merely slow. A term appearing in
+ * four thousand documents produces eight million pairs from one posting list, and
+ * a corpus has many such terms — so the cost was quadratic in the corpus after
+ * all, arriving through the index instead of around it.
+ *
+ * Two exact bounds fix it, both consequences of the definition of Jaccard rather
+ * than approximations of it:
+ *
+ *   - a **prefix bound**: terms are put in one global order, rarest first, and
+ *     only each document's prefix is indexed. `topicPrefixLength` above is the
+ *     proof. Rarest-first is what makes it pay: the terms half the corpus shares
+ *     sort to the end, where they are never indexed and so never generate a
+ *     posting list the size of the corpus.
+ *   - a **size bound**: a pair whose salient sets differ in size by more than a
+ *     factor of `t` cannot reach `t`, so documents are visited smallest-first and
+ *     a partner too small to qualify is skipped without measuring.
+ *
+ * Neither drops a qualifying pair — `tests/corpus_topic_scale.test.ts` holds this
+ * to an exhaustive reference at six thresholds — and the work done is reported
+ * rather than asserted.
  */
-export function buildTopicCandidates(input: BuildTopicCandidatesInput): TopicCandidate[] {
+export function buildTopicCandidates(input: BuildTopicCandidatesInput): TopicCandidateResult {
   const threshold = input.threshold ?? DEFAULT_TOPIC_THRESHOLD;
   const eligible = input.documents.filter((document) => document.token_count >= TOPIC_MIN_TOKENS);
-  if (eligible.length < 2) return [];
+  // `Math.max` rather than the bare product: at zero eligible documents the
+  // expression is `-0`, which serializes as `-0` and reads as a different number
+  // from the `0` every other empty count in this package reports.
+  const exhaustivePairs = Math.max(0, (eligible.length * (eligible.length - 1)) / 2);
+  const emptyWork = (evaluated = 0): TopicPairWork => ({
+    eligible_document_count: eligible.length,
+    exhaustive_pair_count: exhaustivePairs,
+    evaluated_pair_count: evaluated,
+    skipped_same_component_count: 0,
+    indexed_posting_count: 0,
+    unindexed_term_count: 0,
+  });
+  if (eligible.length < 2) return { candidates: [], pair_work: emptyWork() };
 
   // At a threshold of zero every pair qualifies by definition, including two
-  // documents sharing no term at all. The salient-term index below can only reach
-  // pairs that share one, so it would silently under-report — the same reason the
-  // near-duplicate pass keeps an exhaustive path at zero. Every eligible document
-  // is one component, which is what "every pair joins" means.
+  // documents sharing no term at all. The index can only reach pairs that share
+  // one, so it would silently under-report — the same reason the near-duplicate
+  // pass keeps an exhaustive path at zero. Every eligible document is one
+  // component, which is what "every pair joins" means.
   if (roundTopicScore(threshold) <= 0) {
-    return [buildTopicCandidate(eligible.map((document) => ({ document, terms: new Set<string>() })), threshold, input.rootById)];
+    return {
+      candidates: [buildTopicCandidate(
+        eligible.map((document) => ({ document, terms: new Set<string>() })),
+        threshold,
+        input.rootById,
+      )],
+      pair_work: emptyWork(),
+    };
   }
 
   const documentFrequency = new Map<string, number>();
@@ -566,14 +656,25 @@ export function buildTopicCandidates(input: BuildTopicCandidatesInput): TopicCan
     terms: new Set(salientTerms(document, documentFrequency, eligible.length)),
   }));
 
-  const postings = new Map<string, number[]>();
-  for (let index = 0; index < features.length; index++) {
-    for (const term of features[index].terms) {
-      const bucket = postings.get(term);
-      if (bucket === undefined) postings.set(term, [index]);
-      else bucket.push(index);
-    }
-  }
+  // Rarest first. This is the ordering that makes the prefix bound worth having:
+  // it puts the vocabulary a corpus shares — a boilerplate heading, a licence
+  // line, a word every plan contains — at the end, where it falls outside every
+  // prefix and is never indexed.
+  const globalOrder = (left: string, right: string): number =>
+    (documentFrequency.get(left) ?? 0) - (documentFrequency.get(right) ?? 0)
+    || compareCodePoints(left, right);
+
+  // Smallest salient set first, so a document meets every partner that could
+  // satisfy the size bound from below before it is itself indexed.
+  const order = features
+    .map((feature, index) => ({ feature, index }))
+    .sort(
+      (left, right) => left.feature.terms.size - right.feature.terms.size
+        || compareCodePoints(
+          left.feature.document.virtual_source_id,
+          right.feature.document.virtual_source_id,
+        ),
+    );
 
   const parent = features.map((_feature, index) => index);
   const find = (index: number): number => {
@@ -592,19 +693,55 @@ export function buildTopicCandidates(input: BuildTopicCandidatesInput): TopicCan
     if (rootA !== rootB) parent[rootA] = rootB;
   };
 
-  const compared = new Set<number>();
-  for (const bucket of postings.values()) {
-    if (bucket.length < 2) continue;
-    for (let i = 0; i < bucket.length; i++) {
-      for (let j = i + 1; j < bucket.length; j++) {
-        const [left, right] = [bucket[i], bucket[j]];
-        if (find(left) === find(right)) continue;
-        const key = left * features.length + right;
-        if (compared.has(key)) continue;
-        compared.add(key);
-        if (jaccardOfSets(features[left].terms, features[right].terms) < threshold) continue;
-        union(left, right);
+  const postings = new Map<string, number[]>();
+  // Partners already offered to the document being visited, as a stamp per slot
+  // rather than a set that is cleared. At this scale the index offers millions
+  // of partners across the corpus, and a `Set` of small integers spends more
+  // time on hashing them than the comparison it is protecting costs.
+  const offeredAt = new Int32Array(features.length).fill(-1);
+  const indexedTerms = new Set<string>();
+  let evaluated = 0;
+  let sameComponent = 0;
+  let indexedPostings = 0;
+
+  for (const { feature, index } of order) {
+    const size = feature.terms.size;
+    if (size === 0) continue;
+    const terms = [...feature.terms].sort(globalOrder);
+    const prefix = terms.slice(0, topicPrefixLength(size, threshold));
+
+    // Partners for this document only. Held per document rather than for the
+    // whole corpus, so ten thousand documents never means ten thousand squared
+    // pair keys resident at once — which is how the previous `compared` set
+    // turned a cost problem into a memory one as well.
+    let root = find(index);
+    for (const term of prefix) {
+      for (const other of postings.get(term) ?? []) {
+        if (offeredAt[other] === index) continue;
+        offeredAt[other] = index;
+        if (find(other) === root) {
+          sameComponent += 1;
+          continue;
+        }
+        // Size bound: `other` was visited earlier so its set is no larger, and a
+        // pair can only reach the threshold when the smaller is at least `t` of
+        // the larger.
+        if (features[other].terms.size < roundTopicScore(threshold) * size) continue;
+        evaluated += 1;
+        if (jaccardOfSets(feature.terms, features[other].terms) < threshold) continue;
+        union(other, index);
+        // The document just moved component, so every later same-component test
+        // in this pass has to be against where it is now.
+        root = find(index);
       }
+    }
+
+    for (const term of prefix) {
+      indexedTerms.add(term);
+      indexedPostings += 1;
+      const bucket = postings.get(term);
+      if (bucket === undefined) postings.set(term, [index]);
+      else bucket.push(index);
     }
   }
 
@@ -619,7 +756,93 @@ export function buildTopicCandidates(input: BuildTopicCandidatesInput): TopicCan
   const candidates: TopicCandidate[] = [];
   for (const bucket of components.values()) {
     if (bucket.length < 2) continue;
-    candidates.push(buildTopicCandidate(bucket.map((index) => features[index]), threshold, input.rootById));
+    candidates.push(buildTopicCandidate(
+      bucket.map((index) => features[index]),
+      threshold,
+      input.rootById,
+    ));
+  }
+  candidates.sort(
+    (a, b) =>
+      b.member_count - a.member_count
+      || compareCodePoints(a.member_paths[0] ?? "", b.member_paths[0] ?? "")
+      || compareCodePoints(a.candidate_id, b.candidate_id),
+  );
+
+  const salientTermCount = new Set(features.flatMap((feature) => [...feature.terms])).size;
+  return {
+    candidates,
+    pair_work: {
+      eligible_document_count: eligible.length,
+      exhaustive_pair_count: exhaustivePairs,
+      evaluated_pair_count: evaluated,
+      skipped_same_component_count: sameComponent,
+      indexed_posting_count: indexedPostings,
+      unindexed_term_count: salientTermCount - indexedTerms.size,
+    },
+  };
+}
+
+/**
+ * Every pair compared, as the reference the indexed pass is held to.
+ *
+ * Exported because a bound is only a bound if something independent agrees with
+ * what it produced. Never used by a scan: it is `n(n-1)/2` by construction.
+ */
+export function buildTopicCandidatesExhaustive(
+  input: BuildTopicCandidatesInput,
+): TopicCandidate[] {
+  const threshold = input.threshold ?? DEFAULT_TOPIC_THRESHOLD;
+  const eligible = input.documents.filter((document) => document.token_count >= TOPIC_MIN_TOKENS);
+  if (eligible.length < 2) return [];
+  if (roundTopicScore(threshold) <= 0) {
+    return [buildTopicCandidate(
+      eligible.map((document) => ({ document, terms: new Set<string>() })),
+      threshold,
+      input.rootById,
+    )];
+  }
+
+  const documentFrequency = new Map<string, number>();
+  for (const document of eligible) {
+    for (const [term] of document.term_counts) {
+      documentFrequency.set(term, (documentFrequency.get(term) ?? 0) + 1);
+    }
+  }
+  const features = eligible.map((document) => ({
+    document,
+    terms: new Set(salientTerms(document, documentFrequency, eligible.length)),
+  }));
+
+  const parent = features.map((_feature, index) => index);
+  const find = (index: number): number => {
+    let root = index;
+    while (parent[root] !== root) root = parent[root];
+    return root;
+  };
+  for (let i = 0; i < features.length; i++) {
+    for (let j = i + 1; j < features.length; j++) {
+      if (jaccardOfSets(features[i].terms, features[j].terms) < threshold) continue;
+      const [rootA, rootB] = [find(i), find(j)];
+      if (rootA !== rootB) parent[rootA] = rootB;
+    }
+  }
+
+  const components = new Map<number, number[]>();
+  for (let index = 0; index < features.length; index++) {
+    const root = find(index);
+    const bucket = components.get(root);
+    if (bucket === undefined) components.set(root, [index]);
+    else bucket.push(index);
+  }
+  const candidates: TopicCandidate[] = [];
+  for (const bucket of components.values()) {
+    if (bucket.length < 2) continue;
+    candidates.push(buildTopicCandidate(
+      bucket.map((index) => features[index]),
+      threshold,
+      input.rootById,
+    ));
   }
   return candidates.sort(
     (a, b) =>

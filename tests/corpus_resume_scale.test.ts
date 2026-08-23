@@ -58,6 +58,11 @@ describe("a large scan that was interrupted", () => {
     const options = {
       roots,
       producerVersion: "scale",
+      // Off here, and on in `corpus_scale.test.ts`, which is the file that
+      // qualifies semantic discovery at ten thousand documents. This file is
+      // about resuming an interrupted scan and about the archive budget. Neither
+      // is a function of the topic pass, and running it here would add a minute
+      // to a test that measures something else.
       topics: { enabled: false },
       archivePolicy: ARCHIVE_POLICY,
     };
@@ -135,6 +140,11 @@ describe("the archive budget at scale", () => {
     const result = await runCorpusScan({
       roots: corpus.roots.map((root) => ({ path: root })),
       producerVersion: "budget",
+      // Off here, and on in `corpus_scale.test.ts`, which is the file that
+      // qualifies semantic discovery at ten thousand documents. This file is
+      // about resuming an interrupted scan and about the archive budget. Neither
+      // is a function of the topic pass, and running it here would add a minute
+      // to a test that measures something else.
       topics: { enabled: false },
     });
 

@@ -170,6 +170,7 @@ import type { DocumentIndex } from "./corpus_documents";
 import type { SemanticAnalysisResult } from "./corpus_semantic_run";
 import type { SemanticArtifactInput } from "./corpus_semantics";
 import type { PackAssertion } from "./corpus_reasoning";
+import type { TopicCandidateResult } from "./corpus_candidates";
 import type { EmbeddingPairScore } from "./corpus_pairs";
 import { DEFAULT_EMBEDDING_PAIR_THRESHOLD } from "./corpus_fusion";
 import { embeddingChunkProfileHash, runEmbeddings } from "./corpus_embeddings";
@@ -1462,7 +1463,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       candidateProfileHash: candidateProfile,
     });
     const rootByArtifact = new Map(artifacts.map((artifact) => [artifact.virtualSourceId, artifact.rootId]));
-    const topicCandidates = topicsEnabled
+    const topicResult: TopicCandidateResult = topicsEnabled
       ? cached(cache, "candidate_analysis", topicKey, () =>
         buildTopicCandidates({
           documents: artifacts
@@ -1479,7 +1480,18 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
           threshold: topicThreshold,
           rootById: rootByArtifact,
         }))
-      : [];
+      : {
+        candidates: [],
+        pair_work: {
+          eligible_document_count: 0,
+          exhaustive_pair_count: 0,
+          evaluated_pair_count: 0,
+          skipped_same_component_count: 0,
+          indexed_posting_count: 0,
+          unindexed_term_count: 0,
+        },
+      };
+    const topicCandidates = topicResult.candidates;
     if (topicsEnabled) session?.completeAnalysis(topicKey);
 
     const markers: ProjectMarker[] = [];
@@ -2176,6 +2188,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
         topic_candidate_count: topicCandidates.length,
         project_candidate_count: projectCandidates.length,
         consolidation_candidate_count: semantic?.consolidations.candidates.length ?? 0,
+        topic_pair_work: topicResult.pair_work,
       },
       embeddings: {
         enabled: embeddingReport?.enabled === true,

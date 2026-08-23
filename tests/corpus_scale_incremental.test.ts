@@ -49,6 +49,12 @@ describe("a ten-thousand-artifact corpus, rescanned", () => {
       roots,
       producerVersion: "scale",
       cache,
+      // Off here, and on in `corpus_scale.test.ts`, which is the file that
+      // qualifies semantic discovery at ten thousand documents. This file is
+      // about verification modes: which hashes were reused, which were redone,
+      // and what the run is willing to call verified. None of that is a function
+      // of the topic pass, and running it here would add a minute to a test that
+      // measures something else.
       topics: { enabled: false },
       archivePolicy: ARCHIVE_POLICY,
     };

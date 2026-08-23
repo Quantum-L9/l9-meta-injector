@@ -1017,7 +1017,7 @@ async function runCorpusScan(input) {
             candidateProfileHash: candidateProfile,
         });
         const rootByArtifact = new Map(artifacts.map((artifact) => [artifact.virtualSourceId, artifact.rootId]));
-        const topicCandidates = topicsEnabled
+        const topicResult = topicsEnabled
             ? (0, corpus_cache_1.cached)(cache, "candidate_analysis", topicKey, () => (0, corpus_candidates_1.buildTopicCandidates)({
                 documents: artifacts
                     .filter((artifact) => lexical.has(artifact.virtualSourceId))
@@ -1033,7 +1033,18 @@ async function runCorpusScan(input) {
                 threshold: topicThreshold,
                 rootById: rootByArtifact,
             }))
-            : [];
+            : {
+                candidates: [],
+                pair_work: {
+                    eligible_document_count: 0,
+                    exhaustive_pair_count: 0,
+                    evaluated_pair_count: 0,
+                    skipped_same_component_count: 0,
+                    indexed_posting_count: 0,
+                    unindexed_term_count: 0,
+                },
+            };
+        const topicCandidates = topicResult.candidates;
         if (topicsEnabled)
             session?.completeAnalysis(topicKey);
         const markers = [];
@@ -1655,6 +1666,7 @@ async function runCorpusScan(input) {
                 topic_candidate_count: topicCandidates.length,
                 project_candidate_count: projectCandidates.length,
                 consolidation_candidate_count: semantic?.consolidations.candidates.length ?? 0,
+                topic_pair_work: topicResult.pair_work,
             },
             embeddings: {
                 enabled: embeddingReport?.enabled === true,

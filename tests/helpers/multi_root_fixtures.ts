@@ -134,6 +134,52 @@ export interface ScaleCorpusResult extends ScaleCorpusSpec {
  * scale and identity, and a corpus of long documents would spend the whole test
  * budget on shingling.
  */
+/**
+ * Vocabulary every filler note carries: the common terms an index must not hold.
+ *
+ * One sentence rather than a paragraph. It only has to be present in every
+ * document to be the common vocabulary the prefix bound must exclude, and every
+ * extra word is ten thousand more shingles for the near-duplicate pass to hash.
+ */
+const SCALE_BOILERPLATE =
+  "This note was written during the migration and kept for the record.";
+
+/** Subjects the filler notes are drawn from, so real topic groups exist. */
+const SCALE_SUBJECTS: readonly string[] = [
+  "Acquisition reads a folder, an external drive or a zip archive without writing into it.",
+  "Identity comes from content hashes and root-relative paths, never from a mount point.",
+  "The cache is keyed by the bytes and by the identity of the rules applied to them.",
+  "Duplicate clusters are byte equality and are facts rather than similarity judgements.",
+  "Near-duplicate candidates report shared shingles and claim nothing about meaning.",
+  "Coverage reports what the decoders could not open as well as what they could.",
+  "Archive members are staged into tool-owned scratch and carried as virtual artifacts.",
+  "Readiness evidence is counts and citations, and carries no ranking or priority.",
+  "Resumable scans record completed work so an interrupted run does not repeat it.",
+  "Embedding vectors are candidate analysis and never become facts about a corpus.",
+  "Snapshot identity excludes every analysis profile so a policy change is not a byte change.",
+  "Project candidates come from a declared manifest identifier rather than a directory name.",
+];
+
+/**
+ * One filler note: boilerplate, a subject, and a line nothing else has.
+ *
+ * Long enough to clear the topic pass's minimum token count, which is what makes
+ * a ten-thousand-document scale run a test of the topic pass rather than a test
+ * of a corpus that had nothing for it to look at.
+ */
+function scaleNoteBody(index: number): string {
+  const subject = SCALE_SUBJECTS[index % SCALE_SUBJECTS.length] as string;
+  return [
+    `# Note ${index}`,
+    "",
+    SCALE_BOILERPLATE,
+    subject,
+    "",
+    `Reference ${index}: a paragraph unique to note ${index} and found nowhere else.`,
+    "",
+  ].join("\n");
+}
+
 export function writeScaleCorpus(base: string, spec: ScaleCorpusSpec): ScaleCorpusResult {
   const rootA = path.join(base, "ScaleA");
   const rootB = path.join(base, "ScaleB");
@@ -159,13 +205,28 @@ export function writeScaleCorpus(base: string, spec: ScaleCorpusSpec): ScaleCorp
   }
 
   // Filler, split across the two roots and unique by construction.
+  //
+  // Deliberately real prose rather than one line each. A corpus of one-sentence
+  // notes is below the topic pass's minimum token count, so a scale run over it
+  // would report zero eligible documents and qualify nothing — which is a
+  // quieter version of switching the pass off.
+  //
+  // Each body has three parts, and each part is there for a reason:
+  //
+  //   - boilerplate every note shares, which is the vocabulary that produces a
+  //     posting list the size of the corpus and is exactly what the rarest-first
+  //     prefix bound has to keep out of the index;
+  //   - a subject drawn from a small pool, so genuine topic groups exist to be
+  //     found rather than a corpus of ten thousand unrelated documents where
+  //     finding nothing would look like success;
+  //   - a unique line, so no two filler documents are duplicates of each other.
   let filler = 0;
   while (written < spec.artifacts) {
     const root = filler % 2 === 0 ? rootA : rootB;
     write(
       root,
       `bulk/${String(Math.floor(filler / 500)).padStart(3, "0")}/note-${String(filler).padStart(5, "0")}.md`,
-      `# Note ${filler}\n\nA unique body numbered ${filler} so no two of these collide.\n`,
+      scaleNoteBody(filler),
     );
     filler++;
     written++;
