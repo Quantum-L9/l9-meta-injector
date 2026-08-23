@@ -95,12 +95,33 @@ export interface ReasoningCandidate {
   /** Why this routing was chosen. Always present, including for NONE. */
   reason: string;
   member_artifact_ids: string[];
+  /**
+   * Where the grounded measurements for this candidate live.
+   *
+   * A downstream reasoner is given references, never a copy: it needs to know how
+   * much source-code, test, CI and blocker evidence a candidate carries, and over
+   * what fraction of the corpus those counts were computed. Copying the numbers
+   * here would put a second, drifting version of them in the queue; naming the
+   * files keeps one.
+   */
+  grounding_refs: {
+    readiness_evidence_ref: string;
+    corpus_coverage_ref: string;
+    corpus_snapshot_ref: string;
+  };
   routing_profile: {
     reasoning_routing_profile_id: string;
     reasoning_routing_profile_version: string;
     reasoning_routing_profile_hash: string;
   };
 }
+
+/** Files a routed candidate points at for its grounded measurements. */
+export const REASONING_GROUNDING_REFS = {
+  readiness_evidence_ref: "readiness-evidence.json",
+  corpus_coverage_ref: "corpus-coverage.json",
+  corpus_snapshot_ref: "corpus-snapshot.json",
+} as const;
 
 function candidateId(
   candidate: TopicCandidate | ProjectCandidate | ConsolidationCandidate,
@@ -247,6 +268,7 @@ export function routeReasoningCandidates(input: RouteReasoningInput): ReasoningC
       reasoning_type: routed.type,
       reason: routed.reason,
       member_artifact_ids: [...candidate.member_artifact_ids].sort(compareCodePoints),
+      grounding_refs: { ...REASONING_GROUNDING_REFS },
       routing_profile: routingProfile,
     });
   };

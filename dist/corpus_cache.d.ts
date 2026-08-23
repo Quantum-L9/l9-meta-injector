@@ -2,7 +2,7 @@
 export declare const CORPUS_CACHE_ENTRY_SCHEMA = "l9.corpus-cache-entry/v1";
 /** Environment variable that overrides the default cache location. */
 export declare const CORPUS_CACHE_ENV = "L9_CORPUS_CACHE";
-export declare const CORPUS_CACHE_LAYERS: readonly ["raw_identity", "normalized_document", "interpretation", "lexical_features", "embedding", "candidate_analysis"];
+export declare const CORPUS_CACHE_LAYERS: readonly ["archive_manifest", "raw_identity", "normalized_document", "interpretation", "lexical_features", "embedding", "candidate_analysis"];
 export type CorpusCacheLayer = (typeof CORPUS_CACHE_LAYERS)[number];
 /**
  * Layers whose output is a pure function of their key.
@@ -59,6 +59,20 @@ export interface CorpusCache {
     diagnostics(): CorpusCacheDiagnostic[];
 }
 /** Key of the exact-bytes layer. The content hash is the identity. */
+/**
+ * What an archive was found to contain, keyed on the archive's own bytes.
+ *
+ * An outer ZIP that has not changed does not need decompressing again merely to
+ * rediscover member paths and hashes a previous run already established from
+ * exactly those bytes. The reader and policy versions are in the key because both
+ * decide what is admitted: a stricter policy is a different question about the
+ * same archive, and must not be answered from the looser one's cache.
+ */
+export declare function archiveManifestKey(input: {
+    archiveContentHash: string;
+    archiveReaderVersion: string;
+    archivePolicyVersion: string;
+}): string;
 export declare function rawIdentityKey(input: {
     contentHash: string;
 }): string;
@@ -141,11 +155,16 @@ export declare function defaultCorpusCacheDir(env?: NodeJS.ProcessEnv): string;
 /** Path of one entry, sharded so a large corpus does not build one huge directory. */
 export declare function cacheEntryPath(root: string, layer: CorpusCacheLayer, key: string): string;
 /** Disk-backed cache. Atomic writes, verified reads, self-healing on corruption. */
+/** Owner-only, because the cache holds decoded text from private documents. */
+export declare const CACHE_DIRECTORY_MODE = 448;
+export declare const CACHE_FILE_MODE = 384;
 export declare class FileCorpusCache implements CorpusCache {
     readonly enabled = true;
     readonly root: string;
     private readonly producerVersion;
     private readonly accounting;
+    /** Distinguishes concurrent staging files written by one process. */
+    private stagingCounter;
     constructor(options: FileCorpusCacheOptions);
     private discard;
     get<T>(layer: CorpusCacheLayer, key: string): T | undefined;

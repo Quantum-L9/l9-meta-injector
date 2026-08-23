@@ -16,6 +16,7 @@ import {
   ReadinessSignal,
   buildBodyOfWork,
   buildReadinessArtifactEvidence,
+  UNIQUE_CONTENT_METHOD,
   buildReadinessEvidence,
   readinessSignalsFor,
 } from "../src/corpus_readiness";
@@ -160,25 +161,55 @@ describe("body-of-work metrics", () => {
       context,
     );
     expect(body.metrics).toEqual({
-      source_file_count: 3,
-      test_file_count: 1,
-      manifest_count: 1,
-      ci_definition_count: 0,
-      container_definition_count: 0,
-      deployment_definition_count: 0,
-      specification_count: 0,
-      documentation_count: 2,
-      open_task_count: 2,
-      completed_task_count: 1,
-      blocker_count: 1,
-      plan_count: 1,
-      roadmap_count: 0,
-      exact_duplicate_count: 2,
-      near_duplicate_count: 1,
-      candidate_version_count: 1,
-      supersession_declaration_count: 1,
-      unique_content_estimate: 5,
-      unique_content_bytes_estimate: 50,
+      corpus: { artifact_count: 6, root_count: 1, archive_count: 0, total_bytes: 60 },
+      implementation: {
+        source_artifact_count: 3,
+        language_distribution: [{ language: ".ts", artifact_count: 3 }],
+        manifest_count: 1,
+        build_definition_count: 0,
+      },
+      // Structural, and named so: files placed and named like tests exist. It
+      // does not say a test was run, and there is no metric here that could.
+      validation: { structural_test_artifact_count: 1, ci_definition_count: 0 },
+      delivery: { container_definition_count: 0, deployment_definition_count: 0 },
+      knowledge: {
+        specification_count: 0,
+        documentation_count: 2,
+        plan_count: 1,
+        roadmap_count: 0,
+      },
+      work_state: {
+        wip_count: 0,
+        draft_count: 0,
+        blocked_count: 1,
+        complete_declared_count: 0,
+        open_task_count: 2,
+        completed_task_count: 1,
+        milestone_count: 0,
+      },
+      dependency: { explicit_dependency_count: 0, explicit_blocker_count: 1 },
+      reuse_and_duplication: {
+        exact_duplicate_cluster_count: 0,
+        exact_duplicate_artifact_count: 2,
+        near_duplicate_candidate_count: 1,
+        consolidation_candidate_count: 0,
+        explicit_supersession_count: 1,
+        content_variant_count: 1,
+      },
+      uncertainty: {
+        conflicting_status_count: 0,
+        unsupported_document_count: 0,
+        // These inputs say nothing about decoding, and an absent report is not
+        // the same claim as "a decoder tried and failed". Only an explicit
+        // `decoded: false` is counted; see the uncertainty test below.
+        undecoded_artifact_count: 0,
+        coverage_gap_count: 0,
+      },
+      unique_content: {
+        distinct_content_hash_count: 5,
+        distinct_content_bytes: 50,
+        method: UNIQUE_CONTENT_METHOD,
+      },
     });
     expect(body.member_count).toBe(6);
     expect(body.root_ids).toEqual(["root:one"]);
@@ -242,5 +273,82 @@ describe("the emitted document", () => {
       artifact("src/a.ts"),
     ]);
     expect(evidenceRows.map((row) => row.corpus_path)).toEqual(["R::src/a.ts"]);
+  });
+});
+
+describe("uncertainty", () => {
+  // Three ways of not knowing, and they are not the same fact. A PDF nothing here
+  // reads, bytes a decoder was given and could not turn into text, and a file
+  // whose bytes were never established at all each tell an operator to do
+  // something different, so they are counted apart.
+  const inputs = [
+    artifact("proj/design.pdf", [], { unsupported_format: true, decoded: false }),
+    artifact("proj/blob.bin", [], { decoded: false }),
+    artifact("proj/huge.iso", [], { content_hash: null, decoded: false }),
+    artifact("proj/README.md", [], { decoded: true }),
+  ];
+  const context: BodyOfWorkContext = {
+    signalsById: new Map(inputs.map((i) => [i.virtual_source_id, readinessSignalsFor(i)])),
+    artifactsById: new Map(inputs.map((i) => [i.virtual_source_id, i])),
+    rootById: new Map(inputs.map((i) => [i.virtual_source_id, "root:one"])),
+    exactDuplicateIds: new Set(),
+    nearDuplicatePairs: [],
+  };
+
+  it("separates an unread format from unread bytes from absent bytes", () => {
+    const body = buildBodyOfWork(
+      {
+        origin: "project_candidate",
+        origin_ref: "container:proj",
+        member_ids: inputs.map((i) => i.virtual_source_id),
+      },
+      context,
+    );
+    expect(body.metrics.uncertainty).toEqual({
+      conflicting_status_count: 0,
+      unsupported_document_count: 1,
+      undecoded_artifact_count: 1,
+      coverage_gap_count: 1,
+    });
+    // Every member is accounted for: one decoded, three uncertain in three ways.
+    expect(body.metrics.corpus.artifact_count).toBe(4);
+  });
+
+  it("reports a body whose documents disagree about their own state", () => {
+    const disagreeing = [
+      artifact("proj/A.md", [{ predicate: "work.status", object: "complete" }]),
+      artifact("proj/B.md", [{ predicate: "work.status", object: "wip" }]),
+      artifact("proj/C.md", []),
+    ];
+    const ctx: BodyOfWorkContext = {
+      signalsById: new Map(disagreeing.map((i) => [i.virtual_source_id, readinessSignalsFor(i)])),
+      artifactsById: new Map(disagreeing.map((i) => [i.virtual_source_id, i])),
+      rootById: new Map(disagreeing.map((i) => [i.virtual_source_id, "root:one"])),
+      exactDuplicateIds: new Set(),
+      nearDuplicatePairs: [],
+    };
+    const body = buildBodyOfWork(
+      {
+        origin: "project_candidate",
+        origin_ref: "container:proj",
+        member_ids: disagreeing.map((i) => i.virtual_source_id),
+      },
+      ctx,
+    );
+    // Both declarations are counted, and neither is picked as the truth.
+    expect(body.metrics.uncertainty.conflicting_status_count).toBe(2);
+    expect(body.metrics.work_state.complete_declared_count).toBe(1);
+    expect(body.metrics.work_state.wip_count).toBe(1);
+
+    // One document declaring one status is not a conflict.
+    const agreed = buildBodyOfWork(
+      {
+        origin: "project_candidate",
+        origin_ref: "container:proj",
+        member_ids: [disagreeing[0]!.virtual_source_id],
+      },
+      ctx,
+    );
+    expect(agreed.metrics.uncertainty.conflicting_status_count).toBe(0);
   });
 });

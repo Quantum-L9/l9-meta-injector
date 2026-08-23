@@ -9,10 +9,14 @@ export interface CorpusSnapshotArtifact {
     size_bytes: number | null;
     is_archive_member: boolean;
     artifact_type: string;
-    /** Size and mtime, for the next run's scheduling hint. Never an identity. */
+    /**
+     * Size and mtime as this run saw them. Never an identity, and never content
+     * truth: it is what `--incremental` revalidates against on the next run.
+     */
     stat_precheck?: {
         size_bytes: number;
         mtime_ms: number;
+        mtime_ns?: string;
     };
 }
 export interface CorpusSnapshotArchive {
@@ -24,14 +28,87 @@ export interface CorpusSnapshotArchive {
     member_count: number;
     expanded: boolean;
 }
+/** How a root observed. `observed` is the only status a complete corpus allows. */
+export declare const CORPUS_OBSERVATION_STATUSES: readonly ["observed", "failed", "missing"];
+export type CorpusObservationStatus = (typeof CORPUS_OBSERVATION_STATUSES)[number];
+/**
+ * How this run established the hashes it reports.
+ *
+ * `fully_verified` means every byte was read on this run. `cached_unchanged_assumption`
+ * means at least one hash was carried over from a previous run because size and
+ * mtime had not moved — a revalidation signal, not content truth. The two are
+ * separate words because collapsing them would let a stat-assisted scan be read
+ * as a byte-verified one, which is the one claim this whole layer exists to keep
+ * honest.
+ */
+export declare const VERIFICATION_CLASSES: readonly ["fully_verified", "cached_unchanged_assumption"];
+export type VerificationClass = (typeof VERIFICATION_CLASSES)[number];
+/** What the operator asked for, as distinct from what was achieved. */
+export declare const VERIFICATION_MODES: readonly ["full", "incremental"];
+export type VerificationMode = (typeof VERIFICATION_MODES)[number];
+export interface CorpusVerification {
+    mode: VerificationMode;
+    /** True when `--verify-content` forced a full read regardless of mode. */
+    verify_content_requested: boolean;
+    verification_class: VerificationClass;
+    fully_rehashed_artifact_count: number;
+    cached_hash_reuse_count: number;
+    unhashed_artifact_count: number;
+    statement: string;
+}
+export declare const FULLY_VERIFIED_STATEMENT: string;
+export declare const CACHED_ASSUMPTION_STATEMENT: string;
+/** How a corpus as a whole observed. */
+export declare const CORPUS_STATUSES: readonly ["complete", "partial", "failed"];
+export type CorpusStatus = (typeof CORPUS_STATUSES)[number];
+/**
+ * A root inside a snapshot: its identity, plus its own Repository Model Packet.
+ *
+ * The packet id is here because it is what makes the corpus source identity
+ * checkable. A corpus that recorded only the roots' content hashes would say two
+ * runs saw the same bytes; recording the packet each root produced says they also
+ * modelled them the same way, which is the claim a consumer actually depends on.
+ */
+export interface CorpusSnapshotRoot extends CorpusRootIdentity {
+    /** Packet id of this root's own RMP. Empty when the root did not observe. */
+    rmp_packet_id: string;
+    rmp_semantic_hash: string;
+    /** Output-relative location of the root's bundle. Never absolute. */
+    bundle_ref: string | null;
+    observation_status: CorpusObservationStatus;
+    /** Why the root did not observe. Null whenever it did. */
+    failure_reason: string | null;
+}
+/** The analysis policies a snapshot's derived layers were computed under. */
+export interface CorpusAnalysisIdentity {
+    corpus_analysis_id: string;
+    corpus_profile: string;
+    document_decoder_profiles: string[];
+    interpretation_profile: string;
+    semantic_candidate_profile: string;
+    embedding_profile: string | null;
+    readiness_profile: string;
+}
 export interface CorpusSnapshot {
     schema: string;
-    corpus_snapshot_id: string;
-    corpus_profile_hash: string;
-    roots: CorpusRootIdentity[];
+    /** Operator's name for this corpus. A label: it enters no identity. */
+    corpus_id: string;
+    /** Identity of what the disks held. Excludes every analysis profile. */
+    corpus_source_snapshot_id: string;
+    /** Identity of what was concluded from them, and under which rules. */
+    analysis: CorpusAnalysisIdentity;
+    corpus_status: CorpusStatus;
+    /** How the hashes in this snapshot were established. */
+    verification: CorpusVerification;
+    /** Roots the operator asked for but that did not observe. */
+    missing_root_ids: string[];
+    roots: CorpusSnapshotRoot[];
     artifacts: CorpusSnapshotArtifact[];
     archives: CorpusSnapshotArchive[];
     counts: {
+        root_count_requested: number;
+        root_count_observed: number;
+        root_count_failed: number;
         root_count: number;
         artifact_count: number;
         archive_count: number;

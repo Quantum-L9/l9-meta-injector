@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.LEGACY_EXTRACTION_SUFFIX = exports.LEGACY_EXTRACTION_OWNER_FILE = exports.GENERATED_ARTIFACT_OMIT_PATTERNS = exports.SCRATCH_OWNER_ID = exports.SCRATCH_OWNER_FILE = exports.ARCHIVE_MEMBER_SEPARATOR = void 0;
+exports.ARCHIVE_READER_VERSION = exports.LEGACY_EXTRACTION_SUFFIX = exports.LEGACY_EXTRACTION_OWNER_FILE = exports.GENERATED_ARTIFACT_OMIT_PATTERNS = exports.SCRATCH_OWNER_ID = exports.SCRATCH_OWNER_FILE = exports.ARCHIVE_MEMBER_SEPARATOR = void 0;
 exports.removeOwnedScratch = removeOwnedScratch;
 exports.hasLegacyExtractionOwnership = hasLegacyExtractionOwnership;
 exports.isLegacyGeneratedExtraction = isLegacyGeneratedExtraction;
@@ -106,6 +106,8 @@ exports.GENERATED_ARTIFACT_OMIT_PATTERNS = [
 /** Marker a tool-owned legacy extraction directory carries. */
 exports.LEGACY_EXTRACTION_OWNER_FILE = ".l9extracted-owner.json";
 exports.LEGACY_EXTRACTION_SUFFIX = ".l9extracted";
+/** Version of the ZIP reader whose output an archive manifest describes. */
+exports.ARCHIVE_READER_VERSION = "1.0.0";
 /**
  * Create a tool-owned scratch root outside the source tree.
  *
@@ -276,6 +278,7 @@ function observeEntry(absolutePath, relativePath, diagnostics) {
         kind,
         sizeBytes: kind === "file" ? stats.size : null,
         mtimeMs: kind === "directory" ? null : stats.mtimeMs,
+        mtimeNs: kind === "directory" ? null : highResolutionMtime(absolutePath),
         linkTarget,
     };
 }
@@ -607,6 +610,32 @@ function enqueueNestedArchives(context, task, archiveHash, members, queue) {
 }
 /** Read the staged archive's central directory and judge it, or hold it. */
 function preflightStaged(context, task, staged) {
+    // Depth is part of what preflight decides on, and it is not part of the key:
+    // the same archive nested one level deeper is a different question. Only a
+    // top-level archive is served from the store, where depth is fixed at 0.
+    const cacheKey = task.depth === 0
+        ? {
+            archiveContentHash: staged.archiveHash,
+            readerVersion: exports.ARCHIVE_READER_VERSION,
+            policyVersion: context.policy.version,
+        }
+        : null;
+    const cached = cacheKey === null ? undefined : context.manifests?.get(cacheKey);
+    if (cached !== undefined) {
+        if (!cached.accepted) {
+            holdArchive(context, task, staged.archiveHash, staged.sizeBytes, cached.holds);
+            return null;
+        }
+        const refusal = context.budget.refuseReason(cached.declaredUncompressedBytes);
+        if (refusal !== null) {
+            holdArchive(context, task, staged.archiveHash, staged.sizeBytes, [{
+                    code: "archive.session_budget_exceeded",
+                    message: refusal,
+                }]);
+            return null;
+        }
+        return cached;
+    }
     let preflight;
     try {
         preflight = (0, archive_preflight_1.preflightArchive)({
@@ -623,6 +652,11 @@ function preflightStaged(context, task, staged) {
             }]);
         return null;
     }
+    // Stored before the session budget is consulted: the verdict is a fact about
+    // the archive, while the budget is a fact about this run, and mixing them would
+    // cache one run's exhaustion as another run's refusal.
+    if (cacheKey !== null)
+        context.manifests?.put(cacheKey, preflight);
     if (!preflight.accepted) {
         holdArchive(context, task, staged.archiveHash, staged.sizeBytes, preflight.holds);
         return null;
@@ -716,6 +750,23 @@ function buildAcquisitionOmit(input, omitRoot) {
     });
 }
 /**
+ * The finest mtime the platform will give for this file, as a decimal string.
+ *
+ * Millisecond mtime is a coarse revalidation signal: on a filesystem with a 1 ms
+ * or worse timestamp granularity, a rewrite within the same tick is invisible to
+ * it. `bigint` stats expose the nanosecond field where the platform keeps one,
+ * which narrows that window without closing it — which is why reuse is still
+ * disclosed rather than trusted.
+ */
+function highResolutionMtime(absolutePath) {
+    try {
+        return fs.lstatSync(absolutePath, { bigint: true }).mtimeNs.toString();
+    }
+    catch {
+        return null;
+    }
+}
+/**
  * Hash every regular file, verifying that the file did not change underneath the
  * read. A file whose size or mtime moved across its own hash is re-read a bounded
  * number of times before the observation is declared unstable.
@@ -752,8 +803,25 @@ function hashStableFile(entry) {
     }
     return { digest: null, reason, changed: true };
 }
+/**
+ * Whether a prior hash may stand in for reading this file's bytes.
+ *
+ * Every recorded stat field must match, and the finest one available decides: if
+ * both runs recorded a nanosecond mtime, a millisecond agreement is not enough.
+ * A prior record with no hash, or one that never saw this path, is not a match —
+ * absence is not evidence of sameness.
+ */
+function priorHashStillApplies(entry, known) {
+    if (known === undefined)
+        return false;
+    if (entry.sizeBytes === null || known.size_bytes !== entry.sizeBytes)
+        return false;
+    if (known.mtime_ns !== undefined && entry.mtimeNs !== null)
+        return known.mtime_ns === entry.mtimeNs;
+    return entry.mtimeMs !== null && known.mtime_ms === entry.mtimeMs;
+}
 /** Hash one entry and classify its encoding, or explain why neither happened. */
-function hashOneEntry(entry, hashMaxBytes, diagnostics) {
+function hashOneEntry(entry, hashMaxBytes, diagnostics, known) {
     const unknowns = [];
     if (hashMaxBytes !== undefined && (entry.sizeBytes ?? 0) > hashMaxBytes) {
         unknowns.push("content_hash_skipped:file_exceeds_hash_budget");
@@ -764,6 +832,22 @@ function hashOneEntry(entry, hashMaxBytes, diagnostics) {
             sourcePath: entry.relativePath,
         });
         return { hashed: { entry, contentHashHex: null, encoding: null, unknowns }, unstableReason: null };
+    }
+    if (priorHashStillApplies(entry, known)) {
+        // The encoding probe still reads the file: it is a bounded prefix read rather
+        // than a full stream, and skipping it would silently drop the "not UTF-8"
+        // fact from an incremental run's inventory.
+        const carried = known.content_hash;
+        return {
+            hashed: {
+                entry,
+                contentHashHex: carried.replace("sha256:", ""),
+                encoding: (0, encoding_1.probeFileEncoding)(entry.absolutePath),
+                unknowns,
+                reused: true,
+            },
+            unstableReason: null,
+        };
     }
     const attempt = hashStableFile(entry);
     if (attempt.digest === null) {
@@ -802,19 +886,30 @@ function hashOneEntry(entry, hashMaxBytes, diagnostics) {
  * file that changed across its own hash stops the pass and makes the observation
  * unstable, because there is no single snapshot left to describe.
  */
-function hashEntries(entries, hashMaxBytes, diagnostics) {
+function hashEntries(entries, hashMaxBytes, diagnostics, knownHashes) {
     const hashed = [];
+    const hashing = {
+        fully_rehashed_count: 0,
+        cached_reuse_count: 0,
+        unhashed_count: 0,
+    };
     for (const entry of entries) {
         if (entry.kind !== "file") {
             hashed.push({ entry, contentHashHex: null, encoding: null, unknowns: [] });
             continue;
         }
-        const result = hashOneEntry(entry, hashMaxBytes, diagnostics);
+        const result = hashOneEntry(entry, hashMaxBytes, diagnostics, knownHashes?.get(entry.relativePath));
         if (result.unstableReason !== null)
-            return { hashed, unstableReason: result.unstableReason };
+            return { hashed, unstableReason: result.unstableReason, hashing };
+        if (result.hashed.contentHashHex === null)
+            hashing.unhashed_count += 1;
+        else if (result.hashed.reused === true)
+            hashing.cached_reuse_count += 1;
+        else
+            hashing.fully_rehashed_count += 1;
         hashed.push(result.hashed);
     }
-    return { hashed, unstableReason: null };
+    return { hashed, unstableReason: null, hashing };
 }
 function revisionFor(sourceKind, digest) {
     const bare = digest.replace("sha256:", "");
@@ -836,6 +931,7 @@ function enumerateSource(absoluteSource, sourceKind, omit, diagnostics, omittedP
             kind: "file",
             sizeBytes: stats.size,
             mtimeMs: stats.mtimeMs,
+            mtimeNs: highResolutionMtime(absoluteSource),
             linkTarget: null,
         }];
 }
@@ -1047,7 +1143,7 @@ function acquireLocalSource(input) {
     // Enumerate, hash, then re-enumerate. A source that moved between the first and
     // last read has no single snapshot to describe, and saying so is the whole point.
     const entries = enumerateSource(absoluteSource, sourceKind, omit, diagnostics, omittedPaths, skippedDirs);
-    const { hashed, unstableReason: hashUnstable } = hashEntries(entries, input.hashMaxBytes, diagnostics);
+    const { hashed, unstableReason: hashUnstable, hashing } = hashEntries(entries, input.hashMaxBytes, diagnostics, input.knownHashes);
     const unstableReason = hashUnstable
         ?? verifySnapshotStability(absoluteSource, sourceKind, entries, omit);
     if (unstableReason !== null) {
@@ -1069,6 +1165,7 @@ function acquireLocalSource(input) {
     else if (unstableReason === null) {
         const context = {
             scratch, policy, budget, omit, diagnostics, archives, members, omittedPaths,
+            manifests: input.archiveManifests,
         };
         const queue = planArchiveTasks(hashed, diagnostics);
         while (queue.length > 0)
@@ -1087,6 +1184,7 @@ function acquireLocalSource(input) {
         sourceName,
         sourceRevision: identity.sourceRevision,
         physicalSnapshotHash: identity.physicalSnapshotHash,
+        hashing,
         inventory: buildInventoryResult(absoluteSource, records, skippedDirs, omittedPaths),
         archives: [...archives].sort((a, b) => (0, ordering_1.compareCodePoints)(a.sourcePath, b.sourcePath)),
         virtualArtifacts: [...members].sort((a, b) => (0, ordering_1.compareCodePoints)(a.virtualSourcePath, b.virtualSourcePath)),

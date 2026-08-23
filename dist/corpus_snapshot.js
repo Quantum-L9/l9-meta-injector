@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.CORPUS_SNAPSHOT_SCHEMA = void 0;
+exports.CORPUS_STATUSES = exports.CACHED_ASSUMPTION_STATEMENT = exports.FULLY_VERIFIED_STATEMENT = exports.VERIFICATION_MODES = exports.VERIFICATION_CLASSES = exports.CORPUS_OBSERVATION_STATUSES = exports.CORPUS_SNAPSHOT_SCHEMA = void 0;
 exports.orderCorpusSnapshot = orderCorpusSnapshot;
 exports.renderCorpusSnapshot = renderCorpusSnapshot;
 exports.readCorpusSnapshot = readCorpusSnapshot;
@@ -55,10 +55,38 @@ const path = __importStar(require("node:path"));
 const corpus_analysis_1 = require("./corpus_analysis");
 const ordering_1 = require("./ordering");
 exports.CORPUS_SNAPSHOT_SCHEMA = "l9.corpus-snapshot/v1";
+/** How a root observed. `observed` is the only status a complete corpus allows. */
+exports.CORPUS_OBSERVATION_STATUSES = ["observed", "failed", "missing"];
+/**
+ * How this run established the hashes it reports.
+ *
+ * `fully_verified` means every byte was read on this run. `cached_unchanged_assumption`
+ * means at least one hash was carried over from a previous run because size and
+ * mtime had not moved — a revalidation signal, not content truth. The two are
+ * separate words because collapsing them would let a stat-assisted scan be read
+ * as a byte-verified one, which is the one claim this whole layer exists to keep
+ * honest.
+ */
+exports.VERIFICATION_CLASSES = ["fully_verified", "cached_unchanged_assumption"];
+/** What the operator asked for, as distinct from what was achieved. */
+exports.VERIFICATION_MODES = ["full", "incremental"];
+exports.FULLY_VERIFIED_STATEMENT = "Every regular file under every root was read in full on this run, so each content hash "
+    + "describes bytes this run observed.";
+exports.CACHED_ASSUMPTION_STATEMENT = "Some content hashes were carried over from a previous run because the file's size and "
+    + "mtime had not moved. Filesystem metadata is a revalidation signal, not content truth: "
+    + "this run did not read those bytes, and this snapshot is not byte-verified. Run with "
+    + "--verify-content to establish one that is.";
+/** How a corpus as a whole observed. */
+exports.CORPUS_STATUSES = ["complete", "partial", "failed"];
 /** Order a snapshot's contents so two equal corpora render identically. */
 function orderCorpusSnapshot(snapshot) {
     return {
         ...snapshot,
+        missing_root_ids: [...snapshot.missing_root_ids].sort(ordering_1.compareCodePoints),
+        analysis: {
+            ...snapshot.analysis,
+            document_decoder_profiles: [...snapshot.analysis.document_decoder_profiles].sort(ordering_1.compareCodePoints),
+        },
         roots: [...snapshot.roots].sort((a, b) => (0, ordering_1.compareCodePoints)(a.root_id, b.root_id)),
         artifacts: [...snapshot.artifacts].sort((a, b) => (0, ordering_1.compareCodePoints)(a.corpus_path, b.corpus_path)
             || (0, ordering_1.compareCodePoints)(a.virtual_source_id, b.virtual_source_id)),
@@ -78,6 +106,15 @@ function readCorpusSnapshot(snapshotPath) {
     }
     if (!Array.isArray(parsed.artifacts) || !Array.isArray(parsed.archives) || !Array.isArray(parsed.roots)) {
         throw new Error(`corpus: ${absolute} is not a complete corpus snapshot`);
+    }
+    // A snapshot written before source identity and analysis identity were split
+    // carries the same schema string and a conflated `corpus_snapshot_id`. Diffing
+    // against it would compare a source identity with a profile-bound one and call
+    // every unchanged corpus changed, so it is refused by shape rather than trusted
+    // by version.
+    if (typeof parsed.corpus_source_snapshot_id !== "string" || parsed.analysis === undefined) {
+        throw new Error(`corpus: ${absolute} predates the split between source identity and analysis `
+            + "identity and cannot be diffed against; run a full scan to write a current snapshot");
     }
     return parsed;
 }

@@ -224,9 +224,41 @@ Accepted ADRs remain in the repository. A changed decision receives a new sequen
 | INV-021 | Multi-file transaction, rollback, concurrent-drift, validation-failure, and recovery tests |
 | INV-022 | Frontmatter byte-preservation, idempotency, unsafe-YAML refusal, and carrier-extension tests |
 | INV-023 | Release identity, immutable-ref, packed-CLI, and consumer single-writer migration tests |
+| INV-024 | Corpus source-versus-analysis identity, verification-class, and partial-corpus tests |
 
 ### INV-023: Releases and consumer migrations use immutable identity
 
 Package, lockfile, changelog, release plan, and packed executable must agree on one semantic version. Consumer automation pins the final 40-character release commit and removes every competing writer before canonical apply. npm publication is a separate authorization and may remain blocked without blocking GitHub commit consumption.
 
 **Enforced by:** `scripts/check-release-candidate.js`, release contract tests, the PR-5 exact-checkout runner, and the l9-deploy migration installer.
+
+### INV-024: A corpus says what it observed, under which rules, and how it knows
+
+A corpus carries two identities. `corpus_source_snapshot_id` is derived from the
+roots' ids, source revisions and Repository Model Packet ids alone; no analysis
+profile enters it. `corpus_analysis_id` binds that plus every profile the derived
+layers were computed under. Changing a decoder, threshold or model moves the
+second and never the first, and `corpus_id` is a label that enters neither.
+
+Every observed root emits its own Repository Model Packet, canonically identical
+to the packet the single-source path produces for that root, so conformance proven
+for a single-source bundle covers every per-root corpus bundle.
+
+A content hash records how it was obtained. `verification_class` is
+`fully_verified` only when every byte was read on that run; reuse of a single
+prior hash under `--incremental` makes the whole snapshot
+`cached_unchanged_assumption`. No optimization may upgrade a weaker evidence class
+into byte verification.
+
+A root that could not be read fails the run unless `--allow-partial-roots` is
+given, and a partial corpus is recorded as `partial` with the missing root named —
+never as complete.
+
+A cached interpretation carries no subject-bound identity; subject and assertion
+ids are derived for whichever root reads the entry, so two roots holding identical
+bytes at identical relative paths cannot absorb each other's artifacts.
+
+**Enforced by:** `tests/corpus_identity.test.ts`, `tests/corpus_verification.test.ts`,
+`tests/corpus_diff.test.ts`, `tests/corpus_cache.test.ts`, and the scale and
+real-corpus qualification suites.
+

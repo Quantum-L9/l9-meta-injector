@@ -135,7 +135,8 @@ function runSemanticAnalysis(input) {
         entry.consolidation_candidate_ids.sort(ordering_1.compareCodePoints);
         entry.reasoning_candidate_ids.sort(ordering_1.compareCodePoints);
     }
-    const header = { corpus_snapshot_id: input.corpusSnapshotId, analysis_profile: profile };
+    const header = { corpus_source_snapshot_id: input.corpusSourceSnapshotId,
+        corpus_analysis_id: input.corpusAnalysisId, analysis_profile: profile };
     return {
         profile,
         views,

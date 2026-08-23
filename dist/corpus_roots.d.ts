@@ -1,5 +1,9 @@
 /** Schema of a roots manifest file accepted by `--root-manifest`. */
 export declare const CORPUS_ROOTS_SCHEMA = "l9.corpus-roots/v1";
+/** Schema of a corpus manifest file accepted by `--manifest`. */
+export declare const CORPUS_MANIFEST_SCHEMA = "l9.local-corpus/v1";
+/** Corpus name used when no manifest declares one. */
+export declare const DEFAULT_CORPUS_ID = "local-corpus";
 /** Separator between a root label and a root-relative path in a corpus path. */
 export declare const CORPUS_PATH_SEPARATOR = "::";
 /** What the operator asked to be scanned. */
@@ -53,16 +57,49 @@ export declare function corpusRootSnapshotId(physicalSnapshotHash: string): stri
  * segment declares distinct keys instead.
  */
 export declare function defaultRootKey(rootPath: string): string;
+/** One root's contribution to the corpus source identity. */
+export interface CorpusSourceSnapshotRoot {
+    root_id: string;
+    source_revision: string;
+    /** Packet id of the root's own Repository Model Packet. */
+    rmp_packet_id: string;
+}
 /**
- * Identity of the corpus as a whole.
+ * Identity of what the corpus *contained*.
  *
- * `H(sorted(root source revisions), corpus profile)`. Sorted, so the order the
- * roots were typed in cannot change it; profile-bound, so a corpus analyzed under
- * different rules is a different snapshot even when the bytes are the same.
+ * `H(sorted(root_id, source_revision, rmp_packet_id))`. Sorted, so the order the
+ * roots were typed in cannot change it.
+ *
+ * No analysis profile enters this. That separation is the whole point: swapping an
+ * embedding model, raising a threshold or turning interpretation off changes what
+ * was concluded about the corpus and changes nothing about what was on the disks.
+ * An identity that mixed the two would report every policy change as though the
+ * drives had been rewritten, and a later run could no longer tell a real byte
+ * change from a settings change. What the analysis was computed under is
+ * `corpusAnalysisId`, and it is a separate number on purpose.
  */
-export declare function corpusSnapshotId(input: {
-    rootSourceRevisions: readonly string[];
-    corpusProfileHash: string;
+export declare function corpusSourceSnapshotId(roots: readonly CorpusSourceSnapshotRoot[]): string;
+/** Every policy the derived layers were computed under. */
+export interface CorpusAnalysisProfiles {
+    corpus_profile: string;
+    document_decoder_profiles: readonly string[];
+    interpretation_profile: string;
+    semantic_candidate_profile: string;
+    /** Present only when embeddings ran. */
+    embedding_profile?: string;
+    readiness_profile: string;
+}
+/**
+ * Identity of what was *concluded* about the corpus.
+ *
+ * Binds the source identity and every analysis profile, so two runs share it only
+ * when both the bytes and the rules were the same. Changing a model changes this
+ * and leaves `corpusSourceSnapshotId` alone, which is the honest report: the
+ * conclusions are new, the disks are not.
+ */
+export declare function corpusAnalysisId(input: {
+    corpusSourceSnapshotId: string;
+    profiles: CorpusAnalysisProfiles;
 }): string;
 /**
  * The corpus-scoped path of a root-relative path.
@@ -86,6 +123,18 @@ export declare function splitCorpusPath(value: string): {
  * what lets the next run report a change rather than a deletion and an addition.
  */
 export declare function virtualSourceId(rootId: string, rootRelativePath: string): string;
+/**
+ * The directory a root's own outputs are written under, inside `roots/`.
+ *
+ * An operator who declared `old-ssd` should find `roots/old-ssd/`, so a key that
+ * is already a plain directory name is used as one. A key that is not — one with
+ * a slash, a space, a leading dot, or a script the local filesystem may normalize
+ * — is slugged and given a short digest of the exact key. The digest is what makes
+ * the mapping injective: two keys that slug alike stay two directories, and the
+ * name is still stable across runs and machines because it is a function of the
+ * key alone.
+ */
+export declare function rootDirectoryName(rootKey: string): string;
 /** Parse a `--root PATH` or `--root PATH=NAME` argument. */
 export declare function parseRootArgument(value: string): CorpusRootSpec;
 /**
@@ -96,6 +145,25 @@ export declare function parseRootArgument(value: string): CorpusRootSpec;
  * with `#` comments. Relative paths resolve against the manifest's own directory.
  */
 export declare function readRootManifest(manifestPath: string): CorpusRootSpec[];
+/** A corpus manifest: a named corpus and the roots it is made of. */
+export interface CorpusManifest {
+    corpus_id: string;
+    roots: CorpusRootSpec[];
+}
+/**
+ * Read a corpus manifest.
+ *
+ * The manifest is where an operator names their corpus and names each root, and
+ * naming the roots is the point: `root_id` is the identity the corpus carries
+ * across runs, so it has to be a decision rather than a consequence of where the
+ * drive happened to mount today. A root declared `old-ssd` stays `old-ssd` at
+ * `/Volumes/OldSSD`, at `/mnt/recovered/OldSSD`, and on the next machine.
+ *
+ * `--root-manifest`'s two older forms are still accepted here, so a roots list
+ * that predates corpus naming keeps working; those carry no corpus name, and the
+ * default one is used.
+ */
+export declare function readCorpusManifest(manifestPath: string): CorpusManifest;
 /** One root folded into another because both are the same root, twice mounted. */
 export interface FoldedRoot {
     root_id: string;

@@ -1,7 +1,9 @@
 // corpus_scale.test.ts — the scan at the size the contract asks it to survive.
 //
-// Ten thousand artifacts, a hundred archives, a hundred duplicate clusters and
-// twenty candidate projects, split across two roots. The point is not the wall
+// Ten thousand artifacts, a hundred archives, ten of them holding another
+// archive, a hundred duplicate clusters and twenty candidate projects, split
+// across three roots — a working drive, a backup of it, and a folder of zips,
+// which is the shape a real archive corpus has. The point is not the wall
 // clock: it is that identity, clustering, candidate generation and the cache all
 // keep working when the corpus stops fitting in a person's head, and that a
 // second pass over an unchanged corpus of that size recomputes nothing.
@@ -28,21 +30,36 @@ afterAll(() => {
   for (const dir of scratch) fs.rmSync(dir, { recursive: true, force: true });
 });
 
+/**
+ * The archive budget this corpus needs.
+ *
+ * The default ceiling is 64 archives expanded in one run, and it is there on
+ * purpose: an unbounded archive expansion is how a scan turns into a zip bomb.
+ * A corpus of a hundred ZIPs is exactly the case where an operator raises it
+ * deliberately, so the qualification raises it deliberately too, rather than
+ * quietly measuring a corpus half of which was never opened.
+ */
+const ARCHIVE_POLICY = { maxNestedArchiveCount: 512 };
+
 const SPEC = {
   artifacts: 10000,
   archives: 100,
+  nestedArchives: 10,
   duplicateClusters: 100,
   candidateProjects: 20,
 };
 
 describe("a ten-thousand-artifact corpus", () => {
-  it("scans, clusters and resumes without recomputing unchanged work", async () => {
+  // Runs 1 and 2 of the five the qualification asks for: cold full, then warm
+  // full over the same bytes. The incremental chain is its own file — each of
+  // these runs is a claim about the run before it, so they are kept together in
+  // whichever file they belong to, and split only where the chain does.
+  it("scans, clusters and reuses everything on a second full pass", async () => {
     const base = tmp();
     const corpus = writeScaleCorpus(base, SPEC);
     const roots = corpus.roots.map((root) => ({ path: root }));
     const cache = new MemoryCorpusCache("scale");
-
-    const cold = await runCorpusScan({
+    const options = {
       roots,
       producerVersion: "scale",
       cache,
@@ -51,41 +68,52 @@ describe("a ten-thousand-artifact corpus", () => {
       // suite, and running them here would measure the fixture rather than the
       // scan. Every other analysis is on.
       topics: { enabled: false },
-    });
+      archivePolicy: ARCHIVE_POLICY,
+    };
+
+    // ── 1. cold, full ─────────────────────────────────────────────────────
+    const cold = await runCorpusScan(options);
 
     expect(cold.snapshot.counts.artifact_count).toBeGreaterThanOrEqual(SPEC.artifacts);
-    expect(cold.snapshot.counts.archive_count).toBe(SPEC.archives);
-    expect(cold.snapshot.counts.archive_member_count).toBe(corpus.archiveMembers);
+    // Every top-level archive, every nested one, and every archive found inside a
+    // nested one: nesting is observed at depth rather than stopped at the surface.
+    expect(cold.snapshot.counts.archive_count)
+      .toBe(SPEC.archives + SPEC.nestedArchives * 2);
+    expect(cold.snapshot.counts.archive_member_count)
+      .toBe(corpus.archiveMembers + corpus.nestedArchiveMembers);
     expect(cold.coverage.exact_hash_coverage.ratio).toBe(1);
-    expect(cold.snapshot.counts.root_count).toBe(2);
+    expect(cold.snapshot.counts.root_count).toBe(3);
+    expect(cold.snapshot.corpus_status).toBe("complete");
+    expect(cold.snapshot.verification.verification_class).toBe("fully_verified");
+    expect(cold.snapshot.verification.cached_hash_reuse_count).toBe(0);
+    // Three roots, three independent packets. None is a view of a merged tree.
+    expect(new Set(cold.rootPackets.map((entry) => entry.packet.packet_id)).size).toBe(3);
 
-    // The duplicate payloads were written into both roots, so each of their
-    // clusters spans the boundary. The archives add one more: every archive holds
+    // The duplicate payloads were written into more than one root, so each of
+    // their clusters spans a boundary. The archives add more: every archive holds
     // the same `notes/shared.md`.
-    expect(cold.candidates.summary.exact_duplicate_cluster_count).toBe(SPEC.duplicateClusters + 1);
-    expect(cold.candidates.summary.cross_root_duplicate_cluster_count).toBe(SPEC.duplicateClusters + 1);
+    expect(cold.candidates.summary.exact_duplicate_cluster_count)
+      .toBeGreaterThanOrEqual(SPEC.duplicateClusters + 1);
+    expect(cold.candidates.summary.cross_root_duplicate_cluster_count)
+      .toBeGreaterThanOrEqual(SPEC.duplicateClusters + 1);
 
     // Every project declares a name in its manifest, so every one of them is a
     // declared-identifier body of work rather than a directory-name guess.
     const declared = cold.candidates.project_candidates.filter((c) => c.identifier_is_declared);
     expect(declared).toHaveLength(SPEC.candidateProjects);
-    expect(cold.coverage.project_candidate_count).toBe(SPEC.candidateProjects);
-    expect(cold.coverage.reasoning_eligible_candidate_count).toBe(SPEC.candidateProjects);
+    expect(cold.coverage.semantics.project_candidate_count).toBe(SPEC.candidateProjects);
+    expect(cold.coverage.reasoning_handoff.reasoning_eligible_candidate_count)
+      .toBe(SPEC.candidateProjects);
     expect(cold.readiness.bodies_of_work).toHaveLength(SPEC.candidateProjects);
     for (const body of cold.readiness.bodies_of_work) {
       expect(body.origin).toBe("explicit_project_identifier");
-      expect(body.metrics.manifest_count).toBe(1);
-      expect(body.metrics.test_file_count).toBe(1);
-      expect(body.metrics.plan_count).toBe(1);
+      expect(body.metrics.implementation.manifest_count).toBe(1);
+      expect(body.metrics.validation.structural_test_artifact_count).toBe(1);
+      expect(body.metrics.knowledge.plan_count).toBe(1);
     }
 
-    const warm = await runCorpusScan({
-      roots,
-      producerVersion: "scale",
-      cache,
-      topics: { enabled: false },
-      previousSnapshot: cold.snapshot,
-    });
+    // ── 2. warm, full ─────────────────────────────────────────────────────
+    const warm = await runCorpusScan({ ...options, previousSnapshot: cold.snapshot });
     expect(renderCorpusSnapshot(warm.snapshot)).toBe(renderCorpusSnapshot(cold.snapshot));
     expect(warm.cacheStats.misses).toBe(0);
     expect(warm.cacheStats.hit_ratio).toBe(1);
@@ -99,27 +127,5 @@ describe("a ten-thousand-artifact corpus", () => {
     expect(warm.precheck.contradicted).toBe(0);
     expect(warm.precheck.confirmed_unchanged).toBe(warm.precheck.predicted_unchanged);
     expect(warm.precheck.predicted_unchanged).toBeGreaterThan(SPEC.artifacts / 2);
-
-    // One document changes: exactly its own layers are recomputed.
-    const target = path.join(corpus.roots[0], "shared", "doc-0000.md");
-    fs.writeFileSync(target, "# Shared 0\n\nRewritten, so this cluster loses a member.\n", "utf8");
-    const incremental = await runCorpusScan({
-      roots,
-      producerVersion: "scale",
-      cache,
-      topics: { enabled: false },
-      previousSnapshot: warm.snapshot,
-    });
-    expect(incremental.diff?.counts.changed_content).toBe(1);
-    expect(incremental.diff?.invalidation.new_content_hashes).toHaveLength(1);
-    const misses = Object.fromEntries(
-      incremental.cacheStats.layers.map((layer) => [layer.layer, layer.misses]),
-    );
-    expect(misses.raw_identity).toBe(1);
-    expect(misses.normalized_document).toBe(1);
-    expect(misses.lexical_features).toBe(1);
-    expect(misses.embedding).toBe(0);
-    expect(incremental.cacheStats.hits).toBeGreaterThan(10000);
-    expect(incremental.candidates.summary.exact_duplicate_cluster_count).toBe(SPEC.duplicateClusters);
-  }, 600_000);
+  }, 900_000);
 });

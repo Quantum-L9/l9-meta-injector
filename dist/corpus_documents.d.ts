@@ -57,7 +57,8 @@ export interface DocumentIndexSummary {
 }
 export interface DocumentIndex {
     schema: string;
-    corpus_snapshot_id: string;
+    corpus_source_snapshot_id: string;
+    corpus_analysis_id: string;
     decoder: {
         decoder_id: string;
         decoder_version: string;
@@ -87,7 +88,8 @@ export interface DocumentIndexArtifactInput {
     normalizedDocumentId?: string | null;
 }
 export interface BuildDocumentIndexInput {
-    corpusSnapshotId: string;
+    corpusSourceSnapshotId: string;
+    corpusAnalysisId: string;
     decoderId: string;
     decoderVersion: string;
     artifacts: readonly DocumentIndexArtifactInput[];

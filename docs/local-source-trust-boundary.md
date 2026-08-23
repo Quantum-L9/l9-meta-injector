@@ -111,3 +111,19 @@ times, observation wall clock, usernames and hostnames never cross it.
   source tree by design. It is hardened against name-based deletion and dry-run
   mutation, but it is not covered by the guarantees above. Use `local-source` for
   anything you do not intend to modify.
+
+## The cache is inside the boundary, not outside it
+
+The content-addressed cache holds decoded text from the documents being observed,
+so it is treated as material of the same sensitivity as the source: its
+directories are created `0700` and its entries `0600`, it is refused inside any
+observed root (resolved through `realpath`, so a symlink cannot walk through the
+check), and documents whose path looks like a credential are never decoded and so
+never reach it. No document content is written to a log.
+
+A cached hash is not a fresh observation. `--incremental` may carry a previous
+run's content hash forward on a size and mtime match, and a snapshot that did so
+is labelled `cached_unchanged_assumption` rather than `fully_verified`. No
+performance optimization is permitted to upgrade a weaker evidence class into
+byte verification; see [`corpus-cache.md`](corpus-cache.md) and
+[`corpus-scale-operation.md`](corpus-scale-operation.md).

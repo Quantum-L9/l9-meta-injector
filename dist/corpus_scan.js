@@ -33,11 +33,12 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.CANDIDATE_STATEMENT = exports.MANIFEST_DECODER_VERSION = exports.MANIFEST_DECODER_ID = exports.TEXT_DECODER_VERSION = exports.TEXT_DECODER_ID = exports.CORPUS_CANDIDATES_SCHEMA = void 0;
+exports.DOCUMENT_COVERAGE_SCHEMA = exports.CANDIDATE_STATEMENT = exports.MANIFEST_DECODER_VERSION = exports.MANIFEST_DECODER_ID = exports.TEXT_DECODER_VERSION = exports.TEXT_DECODER_ID = exports.CORPUS_CANDIDATES_SCHEMA = void 0;
 exports.isTextDecodable = isTextDecodable;
 exports.isLexicallyAnalyzable = isLexicallyAnalyzable;
 exports.runCorpusScan = runCorpusScan;
 exports.renderCorpusCandidates = renderCorpusCandidates;
+exports.renderDocumentCoverage = renderDocumentCoverage;
 exports.renderReadinessEvidence = renderReadinessEvidence;
 // corpus_scan.ts — one read-only pass over a multi-root corpus.
 //
@@ -79,6 +80,7 @@ const ordering_1 = require("./ordering");
 const corpus_documents_1 = require("./corpus_documents");
 const corpus_semantic_run_1 = require("./corpus_semantic_run");
 const repository_model_1 = require("./repository_model");
+const local_source_model_1 = require("./local_source_model");
 exports.CORPUS_CANDIDATES_SCHEMA = "l9.corpus-candidates/v1";
 /** Decoder that turns exact bytes into the text every later layer reads. */
 exports.TEXT_DECODER_ID = "utf8-text-decoder";
@@ -103,6 +105,7 @@ exports.CANDIDATE_STATEMENT = "Exact duplicates are byte equality and are facts.
     + "shared bytes, shared wording and a container that holds a project marker. None of "
     + "them claims two documents mean the same thing, that anything should be merged, "
     + "moved or deleted, or that one is more valuable than another.";
+exports.DOCUMENT_COVERAGE_SCHEMA = "l9.document-coverage/v1";
 // ───────────────────────────── helpers ─────────────────────────────
 /**
  * The archives a member sits inside, outermost first.
@@ -214,6 +217,10 @@ async function deriveDocumentLayers(artifact, context) {
     // the other's name.
     const interpretKey = (0, corpus_cache_1.interpretationKey)({
         normalizedDocumentIdentity: (0, repository_model_1.stableId)("interp-subject", {
+            // Bumped when the stored shape changed to drop subject-bound identity. An
+            // entry written by the previous release carries another root's subject ids
+            // and must never be served; a distinct key is what guarantees it is not.
+            cache_format: 2,
             normalized_document_identity: documentKey,
             source_path: artifact.rootRelativePath,
         }),
@@ -237,9 +244,16 @@ async function deriveDocumentLayers(artifact, context) {
     const lexicalHit = wantsLexical
         ? cache.get("lexical_features", lexicalKey)
         : undefined;
-    const interpretHit = wantsInterpretation
+    const portableHit = wantsInterpretation
         ? cache.get("interpretation", interpretKey)
         : undefined;
+    const repositorySubjectId = `repo:${rootKeyById.get(artifact.rootId) ?? artifact.rootId}`;
+    const interpretHit = portableHit === undefined
+        ? undefined
+        : {
+            assertions: (0, interpretation_1.bindPortableAssertions)(portableHit.assertions, repositorySubjectId),
+            diagnostics: portableHit.diagnostics,
+        };
     const identifierKey = (0, corpus_cache_1.normalizedDocumentKey)({
         contentHash,
         decoderId: exports.MANIFEST_DECODER_ID,
@@ -328,7 +342,7 @@ async function deriveDocumentLayers(artifact, context) {
             // would otherwise read back an answer that is no longer true.
             let consultedRoot = false;
             const result = (0, interpretation_1.interpretDocumentContent)({
-                repositorySubjectId: `repo:${rootKeyById.get(artifact.rootId) ?? artifact.rootId}`,
+                repositorySubjectId,
                 sourcePath: artifact.rootRelativePath,
                 content: text,
                 extractors,
@@ -337,13 +351,17 @@ async function deriveDocumentLayers(artifact, context) {
                     return observedPaths.has(relativePath.replace(/^\.\//, ""));
                 },
             });
-            const stored = {
+            if (!consultedRoot) {
+                const portable = {
+                    assertions: (0, interpretation_1.toPortableAssertions)(result.assertions),
+                    diagnostics: result.diagnostics,
+                };
+                cache.put("interpretation", interpretKey, portable);
+            }
+            interpreted.set(artifact.virtualSourceId, {
                 assertions: result.assertions,
                 diagnostics: result.diagnostics,
-            };
-            if (!consultedRoot)
-                cache.put("interpretation", interpretKey, stored);
-            interpreted.set(artifact.virtualSourceId, stored);
+            });
         }
         if (wantsIdentifier && identifierHit === undefined) {
             const declared = (0, corpus_candidates_1.readDeclaredIdentifier)(artifact.basename, text) ?? null;
@@ -354,6 +372,34 @@ async function deriveDocumentLayers(artifact, context) {
     finally {
         memory.release(reserve);
     }
+}
+/**
+ * A previous run's hashes for one root, keyed by root-relative path.
+ *
+ * Only artifacts with both a hash and the stat they were hashed at are eligible:
+ * a record missing either cannot be revalidated, and an unrevalidatable record is
+ * not a reason to skip reading a file. Archive members are excluded — their bytes
+ * live inside an archive this run re-reads, so there is nothing to stat.
+ */
+function knownHashesForRoot(rootId, previous) {
+    const known = new Map();
+    for (const artifact of previous?.artifacts ?? []) {
+        if (artifact.root_id !== rootId)
+            continue;
+        if (artifact.is_archive_member)
+            continue;
+        if (artifact.content_hash === null || artifact.stat_precheck === undefined)
+            continue;
+        known.set(artifact.root_relative_path, {
+            content_hash: artifact.content_hash,
+            size_bytes: artifact.stat_precheck.size_bytes,
+            mtime_ms: artifact.stat_precheck.mtime_ms,
+            ...(artifact.stat_precheck.mtime_ns !== undefined
+                ? { mtime_ns: artifact.stat_precheck.mtime_ns }
+                : {}),
+        });
+    }
+    return known;
 }
 // ───────────────────────────── the scan ─────────────────────────────
 /**
@@ -385,6 +431,38 @@ async function runCorpusScan(input) {
     const extractors = (0, extractors_1.defaultExtractors)();
     const interpretProfile = (0, interpretation_1.interpretationProfileHash)(extractors);
     const interpretEnabled = input.interpret !== false;
+    const verificationMode = input.verification ?? "full";
+    const verifyContent = input.verifyContent === true;
+    // `--verify-content` outranks `--incremental`: it exists precisely to turn a
+    // stat-assisted snapshot back into a byte-verified one, so it must win when
+    // both are given rather than quietly deferring to the cheaper mode.
+    // An archive's preflight verdict is a function of its bytes, the reader and the
+    // policy, so it is cached under exactly those. The bytes are still staged: the
+    // members are needed by whatever reads them next, and a verdict is not members.
+    const archiveManifestStore = {
+        get: (key) => cache.get("archive_manifest", (0, corpus_cache_1.archiveManifestKey)({
+            archiveContentHash: key.archiveContentHash,
+            archiveReaderVersion: key.readerVersion,
+            archivePolicyVersion: key.policyVersion,
+        })),
+        put: (key, value) => cache.put("archive_manifest", (0, corpus_cache_1.archiveManifestKey)({
+            archiveContentHash: key.archiveContentHash,
+            archiveReaderVersion: key.readerVersion,
+            archivePolicyVersion: key.policyVersion,
+        }), value),
+    };
+    const knownHashesEnabled = verificationMode === "incremental"
+        && !verifyContent
+        && input.previousSnapshot !== undefined;
+    if (budgets.max_parallel_analysis > 1) {
+        diagnostics.push({
+            code: "corpus.analysis_parallelism_recorded",
+            severity: "info",
+            message: `max_parallel_analysis=${budgets.max_parallel_analysis} was recorded, but candidate `
+                + "generation is a single pass over evidence already in memory; the value is not "
+                + "exercised in this release",
+        });
+    }
     if (budgets.max_parallel_hashers > 1) {
         diagnostics.push({
             code: "corpus.hasher_parallelism_clamped",
@@ -395,28 +473,63 @@ async function runCorpusScan(input) {
     }
     // ── 1. acquire every root, read-only ────────────────────────────────────
     const observations = [];
+    const failedRoots = [];
     const disposals = [];
     try {
+        let acquiredRoots = 0;
         for (const spec of input.roots) {
+            // Between roots, so a corpus of several drives is not one block the length
+            // of every drive together.
+            if (acquiredRoots > 0)
+                await (0, corpus_session_1.yieldToEventLoop)();
+            acquiredRoots += 1;
             const rootKey = spec.name !== undefined && spec.name.length > 0
                 ? spec.name
                 : (0, corpus_roots_1.defaultRootKey)(spec.path);
             assertUsableRootKey(rootKey, spec.path);
-            const observation = (0, local_source_1.acquireLocalSource)({
-                path: spec.path,
-                sourceKind: "auto",
-                name: rootKey,
-                expandArchives: input.expandArchives !== false,
-                ...(input.archivePolicy ? { archivePolicy: input.archivePolicy } : {}),
-                ...(input.omitPatterns ? { omitPatterns: input.omitPatterns } : {}),
-                ...(input.omitFile !== undefined ? { omitFile: input.omitFile } : {}),
-                ...(input.hashMaxBytes !== undefined ? { hashMaxBytes: input.hashMaxBytes } : {}),
-                ...(input.scratchParent !== undefined ? { scratchParent: input.scratchParent } : {}),
-            });
+            // An unplugged drive is a fact about the corpus and has to end up inside
+            // it. Swallowing the failure and carrying on would produce a snapshot that
+            // looks complete and is missing a disk, which is the one outcome a corpus
+            // spread across removable media must never produce.
+            let observation;
+            try {
+                observation = (0, local_source_1.acquireLocalSource)({
+                    path: spec.path,
+                    sourceKind: "auto",
+                    name: rootKey,
+                    ...(knownHashesEnabled
+                        ? { knownHashes: knownHashesForRoot((0, corpus_roots_1.corpusRootId)(rootKey), input.previousSnapshot) }
+                        : {}),
+                    expandArchives: input.expandArchives !== false,
+                    ...(input.archivePolicy ? { archivePolicy: input.archivePolicy } : {}),
+                    ...(input.omitPatterns ? { omitPatterns: input.omitPatterns } : {}),
+                    ...(input.omitFile !== undefined ? { omitFile: input.omitFile } : {}),
+                    ...(input.hashMaxBytes !== undefined ? { hashMaxBytes: input.hashMaxBytes } : {}),
+                    ...(input.scratchParent !== undefined ? { scratchParent: input.scratchParent } : {}),
+                    archiveManifests: archiveManifestStore,
+                });
+            }
+            catch (error) {
+                if (input.allowPartialRoots !== true)
+                    throw error;
+                const reason = error instanceof Error ? error.message : String(error);
+                failedRoots.push({ rootKey, rootId: (0, corpus_roots_1.corpusRootId)(rootKey), reason });
+                diagnostics.push({
+                    code: "corpus.root_unreadable",
+                    severity: "error",
+                    message: `root '${rootKey}' could not be observed and is missing from this corpus: ${reason}`,
+                });
+                continue;
+            }
             disposals.push(observation);
             if (!observation.stable) {
-                throw new Error(`corpus: SOURCE_CHANGED_DURING_OBSERVATION under root '${rootKey}'; `
-                    + "the root changed while it was being read, so it has no deterministic snapshot");
+                const unstable = `corpus: SOURCE_CHANGED_DURING_OBSERVATION under root '${rootKey}'; `
+                    + "the root changed while it was being read, so it has no deterministic snapshot";
+                if (input.allowPartialRoots !== true)
+                    throw new Error(unstable);
+                failedRoots.push({ rootKey, rootId: (0, corpus_roots_1.corpusRootId)(rootKey), reason: unstable });
+                diagnostics.push({ code: "corpus.root_unstable", severity: "error", message: unstable });
+                continue;
             }
             const rootId = (0, corpus_roots_1.corpusRootId)(rootKey);
             observations.push({
@@ -469,11 +582,22 @@ async function runCorpusScan(input) {
             text_decoder_version: exports.TEXT_DECODER_VERSION,
             topic_candidates_enabled: topicsEnabled,
         });
-        const snapshotId = (0, corpus_roots_1.corpusSnapshotId)({
-            rootSourceRevisions: bound.roots.map((root) => root.source_revision),
-            corpusProfileHash,
-        });
-        session?.setTarget(snapshotId);
+        const corpusIdLabel = input.corpusId ?? corpus_roots_1.DEFAULT_CORPUS_ID;
+        // Every decoder that can claim bytes in this release, named with its version.
+        // A decoder revision changes what the normalized documents say and so changes
+        // the analysis identity; it changes nothing about the bytes.
+        const documentDecoderProfiles = [
+            `${exports.TEXT_DECODER_ID}@${exports.TEXT_DECODER_VERSION}`,
+            `${exports.MANIFEST_DECODER_ID}@${exports.MANIFEST_DECODER_VERSION}`,
+        ];
+        const embeddingProfile = input.embeddingReport?.enabled === true
+            ? (0, repository_model_1.stableId)("embedding-profile", {
+                chunk_profile: input.embeddingReport.chunk_profile,
+                model_id: input.embeddingReport.model_id ?? "",
+                model_revision: input.embeddingReport.model_revision ?? "",
+                provider: input.embeddingReport.provider ?? "",
+            })
+            : null;
         // ── 3. corpus artifacts ───────────────────────────────────────────────
         const previousPrechecks = input.previousSnapshot
             ? (0, corpus_snapshot_1.snapshotPrechecks)(input.previousSnapshot)
@@ -488,11 +612,18 @@ async function runCorpusScan(input) {
         const rootPathsById = new Map();
         let scannedFiles = 0;
         let scannedBytes = 0;
+        let recordsSeen = 0;
         for (const entry of active) {
             const binding = bindingById.get(entry.binding.root_id);
             const observed = new Set();
             const memberPaths = new Set(entry.observation.virtualArtifacts.map((member) => member.virtualSourcePath));
             for (const record of entry.observation.inventory.records) {
+                // Counted per record rather than per artifact: folders are skipped below,
+                // so a run of them at a multiple of the interval would otherwise yield
+                // once for each of them.
+                recordsSeen += 1;
+                if (recordsSeen % corpus_session_1.YIELD_INTERVAL === 0)
+                    await (0, corpus_session_1.yieldToEventLoop)();
                 observed.add(record.relative_path);
                 if (record.artifact_type === "folder")
                     continue;
@@ -516,7 +647,21 @@ async function runCorpusScan(input) {
                 if (!artifact.isArchiveMember && record.absolute_path !== null) {
                     try {
                         const stats = fs.statSync(record.absolute_path);
-                        artifact.statPrecheck = { size_bytes: stats.size, mtime_ms: Math.trunc(stats.mtimeMs) };
+                        // The nanosecond field is recorded when the platform keeps one, so
+                        // the next incremental run can revalidate against the finest tick
+                        // available rather than a millisecond one it might sit inside.
+                        let mtimeNs = null;
+                        try {
+                            mtimeNs = fs.statSync(record.absolute_path, { bigint: true }).mtimeNs.toString();
+                        }
+                        catch {
+                            // No high-resolution stat here; the millisecond field still stands.
+                        }
+                        artifact.statPrecheck = {
+                            size_bytes: stats.size,
+                            mtime_ms: Math.trunc(stats.mtimeMs),
+                            ...(mtimeNs !== null ? { mtime_ns: mtimeNs } : {}),
+                        };
                     }
                     catch {
                         // A file that vanished between acquisition and here contributes no
@@ -596,6 +741,91 @@ async function runCorpusScan(input) {
             rootKeyById: new Map(bound.roots.map((root) => [root.root_id, root.root_key])),
             into: { normalized, lexical, interpreted, manifestIdentifiers, skipped },
         }));
+        // ── 4b. per-root Repository Model Packets ─────────────────────────────
+        // Each root is modelled on its own, exactly as it would be if it had been
+        // observed alone: the corpus is an analysis over several roots, not a
+        // synthetic filesystem that replaces them. Nothing about the corpus — its
+        // name, its other roots, its thresholds — reaches a packet, so a root carries
+        // the same packet id into every corpus it is ever named in.
+        const builtPackets = [];
+        for (const entry of active) {
+            const binding = bindingById.get(entry.binding.root_id);
+            const rootAssertions = [];
+            const rootDiagnostics = [];
+            for (const artifact of artifacts) {
+                if (artifact.rootId !== binding.root_id)
+                    continue;
+                const record = interpreted.get(artifact.virtualSourceId);
+                if (record === undefined)
+                    continue;
+                rootAssertions.push(...record.assertions);
+                rootDiagnostics.push(...record.diagnostics);
+            }
+            const packet = (0, repository_model_1.buildRepositoryModelPacket)({
+                inventory: entry.observation.inventory,
+                repositoryName: binding.root_key,
+                sourceRevision: binding.source_revision,
+                producerVersion: input.producerVersion,
+                localSource: (0, local_source_model_1.toRepositoryModelLocalSource)(entry.observation),
+                ...(interpretEnabled
+                    ? {
+                        interpretation: {
+                            profile: {
+                                profile_id: interpretation_1.INTERPRETATION_PROFILE_ID,
+                                profile_version: interpretation_1.INTERPRETATION_PROFILE_VERSION,
+                                profile_hash: interpretProfile,
+                                extractor_versions: Object.fromEntries([...extractors]
+                                    .sort((a, b) => (0, ordering_1.compareCodePoints)(a.id, b.id))
+                                    .map((extractor) => [extractor.id, extractor.version])),
+                            },
+                            // Sorted so a packet does not inherit the order documents happened
+                            // to finish decoding in; the decode stage is bounded-parallel.
+                            assertions: [...rootAssertions].sort((a, b) => (0, ordering_1.compareCodePoints)(a.assertion_id, b.assertion_id)),
+                            diagnostics: [...rootDiagnostics].sort((a, b) => (0, ordering_1.compareCodePoints)(a.code, b.code) || (0, ordering_1.compareCodePoints)(a.message, b.message)),
+                        },
+                    }
+                    : {}),
+                ...(input.generatedAt !== undefined ? { generatedAt: input.generatedAt } : {}),
+            });
+            builtPackets.push({
+                binding,
+                packet,
+                // Operational, and the only wall clock in a root's own outputs: it says
+                // when the drive was read, which is a fact about the run rather than
+                // about the corpus. Deterministic unless the caller supplies one.
+                localSourceManifest: (0, local_source_model_1.buildLocalSourceManifest)(entry.observation, {
+                    observedAt: input.observedAt ?? "1970-01-01T00:00:00.000Z",
+                }),
+            });
+        }
+        builtPackets.sort((a, b) => (0, ordering_1.compareCodePoints)(a.binding.root_id, b.binding.root_id));
+        const packetByRoot = new Map(builtPackets.map((e) => [e.binding.root_id, e.packet]));
+        // ── 4c. corpus identity, in two halves ────────────────────────────────
+        const sourceSnapshotId = (0, corpus_roots_1.corpusSourceSnapshotId)(bound.roots.map((root) => ({
+            root_id: root.root_id,
+            source_revision: root.source_revision,
+            rmp_packet_id: packetByRoot.get(root.root_id)?.packet_id ?? "",
+        })));
+        const analysisIdentity = {
+            corpus_analysis_id: (0, corpus_roots_1.corpusAnalysisId)({
+                corpusSourceSnapshotId: sourceSnapshotId,
+                profiles: {
+                    corpus_profile: corpusProfileHash,
+                    document_decoder_profiles: documentDecoderProfiles,
+                    interpretation_profile: interpretProfile,
+                    semantic_candidate_profile: candidateProfile,
+                    ...(embeddingProfile !== null ? { embedding_profile: embeddingProfile } : {}),
+                    readiness_profile: (0, corpus_readiness_1.readinessProfileHash)(),
+                },
+            }),
+            corpus_profile: corpusProfileHash,
+            document_decoder_profiles: [...documentDecoderProfiles],
+            interpretation_profile: interpretProfile,
+            semantic_candidate_profile: candidateProfile,
+            embedding_profile: embeddingProfile,
+            readiness_profile: (0, corpus_readiness_1.readinessProfileHash)(),
+        };
+        session?.setTarget(sourceSnapshotId);
         // ── 5. readiness signals ──────────────────────────────────────────────
         const readinessInputs = artifacts.map((artifact) => ({
             virtual_source_id: artifact.virtualSourceId,
@@ -603,6 +833,12 @@ async function runCorpusScan(input) {
             root_relative_path: artifact.rootRelativePath,
             content_hash: artifact.contentHash,
             size_bytes: artifact.sizeBytes,
+            is_archive_member: artifact.isArchiveMember,
+            // The outermost archive a member sits in, so two members of one ZIP count
+            // as one archive rather than two.
+            archive_id: archiveAncestryOf(artifact.rootRelativePath)[0] ?? null,
+            decoded: normalized.get(artifact.virtualSourceId)?.decodes === true,
+            unsupported_format: UNDECODED_EXTENSIONS.has(artifact.extension),
             assertions: (interpreted.get(artifact.virtualSourceId)?.assertions ?? []).map((assertion) => ({
                 predicate: assertion.predicate,
                 object: assertion.object,
@@ -727,14 +963,79 @@ async function runCorpusScan(input) {
             ...(artifact.statPrecheck !== undefined ? { stat_precheck: artifact.statPrecheck } : {}),
         }));
         const orderedArchives = [...archives].sort((a, b) => (0, ordering_1.compareCodePoints)(a.corpus_path, b.corpus_path));
+        const snapshotRoots = bound.roots.map((root) => {
+            const packet = packetByRoot.get(root.root_id);
+            return {
+                ...(0, corpus_roots_1.rootIdentity)(root),
+                rmp_packet_id: packet?.packet_id ?? "",
+                rmp_semantic_hash: packet?.semantic_hash ?? "",
+                // Output-relative, so a snapshot copied to another machine still points at
+                // its own bundles. The absolute location is the operator's business.
+                bundle_ref: packet === undefined ? null : `roots/${(0, corpus_roots_1.rootDirectoryName)(root.root_key)}/bundle`,
+                observation_status: packet === undefined ? "failed" : "observed",
+                failure_reason: null,
+            };
+        });
+        const hashingTotals = active.reduce((sum, entry) => ({
+            fully_rehashed_count: sum.fully_rehashed_count + entry.observation.hashing.fully_rehashed_count,
+            cached_reuse_count: sum.cached_reuse_count + entry.observation.hashing.cached_reuse_count,
+            unhashed_count: sum.unhashed_count + entry.observation.hashing.unhashed_count,
+        }), { fully_rehashed_count: 0, cached_reuse_count: 0, unhashed_count: 0 });
+        // The label follows the run, not the request. An incremental run that happened
+        // to reuse nothing did read every byte and may say so; a run that reused even
+        // one hash did not, whatever mode it was asked for.
+        const verification = {
+            mode: verificationMode,
+            verify_content_requested: verifyContent,
+            verification_class: hashingTotals.cached_reuse_count === 0
+                ? "fully_verified"
+                : "cached_unchanged_assumption",
+            fully_rehashed_artifact_count: hashingTotals.fully_rehashed_count,
+            cached_hash_reuse_count: hashingTotals.cached_reuse_count,
+            unhashed_artifact_count: hashingTotals.unhashed_count,
+            statement: hashingTotals.cached_reuse_count === 0
+                ? corpus_snapshot_1.FULLY_VERIFIED_STATEMENT
+                : corpus_snapshot_1.CACHED_ASSUMPTION_STATEMENT,
+        };
+        // A root that was named and could not be read appears in the snapshot as a
+        // missing root, not as an absence. Downstream, "12 project candidates" over a
+        // corpus with an unplugged drive is a different claim from the same number
+        // over a whole one, and the only way it can be told is if the snapshot says so.
+        for (const failed of failedRoots) {
+            snapshotRoots.push({
+                root_id: failed.rootId,
+                root_key: failed.rootKey,
+                root_label: failed.rootKey,
+                root_snapshot_id: "",
+                source_kind: "unknown",
+                source_revision: "",
+                physical_snapshot_hash: "",
+                rmp_packet_id: "",
+                rmp_semantic_hash: "",
+                bundle_ref: null,
+                observation_status: "missing",
+                failure_reason: failed.reason,
+            });
+        }
+        snapshotRoots.sort((a, b) => (0, ordering_1.compareCodePoints)(a.root_id, b.root_id));
+        const corpusStatus = snapshotRoots.every((root) => root.observation_status === "observed")
+            ? "complete"
+            : "partial";
         const snapshot = {
             schema: corpus_snapshot_1.CORPUS_SNAPSHOT_SCHEMA,
-            corpus_snapshot_id: snapshotId,
-            corpus_profile_hash: corpusProfileHash,
-            roots: bound.roots.map(corpus_roots_1.rootIdentity),
+            corpus_id: corpusIdLabel,
+            corpus_source_snapshot_id: sourceSnapshotId,
+            analysis: analysisIdentity,
+            corpus_status: corpusStatus,
+            verification,
+            missing_root_ids: failedRoots.map((failed) => failed.rootId).sort(ordering_1.compareCodePoints),
+            roots: snapshotRoots,
             artifacts: snapshotArtifacts,
             archives: orderedArchives,
             counts: {
+                root_count_requested: input.roots.length,
+                root_count_observed: bound.roots.length,
+                root_count_failed: failedRoots.length,
                 root_count: bound.roots.length,
                 artifact_count: artifacts.length,
                 archive_count: archives.length,
@@ -748,7 +1049,8 @@ async function runCorpusScan(input) {
         ];
         const candidatesDocument = {
             schema: exports.CORPUS_CANDIDATES_SCHEMA,
-            corpus_snapshot_id: snapshotId,
+            corpus_source_snapshot_id: sourceSnapshotId,
+            corpus_analysis_id: analysisIdentity.corpus_analysis_id,
             corpus_profile_hash: corpusProfileHash,
             roots: bound.roots.map(corpus_roots_1.rootIdentity),
             analysis_profile: {
@@ -812,18 +1114,6 @@ async function runCorpusScan(input) {
             origin_ref: candidate.project_key,
             member_ids: candidate.member_ids,
         }));
-        const readiness = (0, corpus_readiness_1.buildReadinessEvidence)({
-            corpusSnapshotId: snapshotId,
-            artifacts: readinessInputs,
-            bodies,
-            context: {
-                signalsById,
-                artifactsById: new Map(readinessInputs.map((artifact) => [artifact.virtual_source_id, artifact])),
-                rootById: rootByArtifact,
-                exactDuplicateIds,
-                nearDuplicatePairs: nearPairs,
-            },
-        });
         // ── 7. normalized documents, written down ─────────────────────────────
         //
         // Every field below was already established above. The index exists because
@@ -831,7 +1121,8 @@ async function runCorpusScan(input) {
         // document came from, which source bytes it describes, or which decoder
         // produced it, once the run has ended.
         const documentIndex = (0, corpus_documents_1.buildDocumentIndex)({
-            corpusSnapshotId: snapshotId,
+            corpusSourceSnapshotId: sourceSnapshotId,
+            corpusAnalysisId: analysisIdentity.corpus_analysis_id,
             decoderId: exports.TEXT_DECODER_ID,
             decoderVersion: exports.TEXT_DECODER_VERSION,
             artifacts: artifacts.map((artifact) => {
@@ -855,6 +1146,59 @@ async function runCorpusScan(input) {
                         }),
                 };
             }),
+        });
+        // ── 7b. per-root projections ──────────────────────────────────────────
+        // Each root's own index, built from the same records as the corpus one but
+        // scoped to that root. An operator who later wants only the old SSD finds it
+        // whole under `roots/old-ssd/` rather than having to filter a corpus file.
+        const documentsByRoot = new Map();
+        for (const document of documentIndex.documents) {
+            const bucket = documentsByRoot.get(document.root_id) ?? [];
+            bucket.push(document);
+            documentsByRoot.set(document.root_id, bucket);
+        }
+        const rootPackets = builtPackets.map((entry) => {
+            const documents = documentsByRoot.get(entry.binding.root_id) ?? [];
+            const decoded = documents.filter((document) => document.decoded);
+            const undecodedCounts = new Map();
+            for (const document of documents) {
+                if (document.decoded)
+                    continue;
+                const reason = document.undecoded_reason ?? corpus_documents_1.UNDECODED_REASON_NOT_ELIGIBLE;
+                undecodedCounts.set(reason, (undecodedCounts.get(reason) ?? 0) + 1);
+            }
+            const rootIndex = {
+                ...documentIndex,
+                summary: {
+                    artifact_count: documents.length,
+                    decoded_count: decoded.length,
+                    undecoded_count: documents.length - decoded.length,
+                    distinct_document_count: new Set(decoded.map((document) => document.normalized_document_id ?? "")).size,
+                    archive_member_count: documents.filter((d) => d.is_archive_member).length,
+                    total_token_count: decoded.reduce((sum, d) => sum + (d.token_count ?? 0), 0),
+                    undecoded_by_reason: [...undecodedCounts.entries()]
+                        .map(([reason, count]) => ({ reason, count }))
+                        .sort((a, b) => (0, ordering_1.compareCodePoints)(a.reason, b.reason)),
+                },
+                documents,
+            };
+            return {
+                root_id: entry.binding.root_id,
+                root_key: entry.binding.root_key,
+                directory: (0, corpus_roots_1.rootDirectoryName)(entry.binding.root_key),
+                packet: entry.packet,
+                localSourceManifest: entry.localSourceManifest,
+                documentIndex: rootIndex,
+                documentCoverage: {
+                    schema: exports.DOCUMENT_COVERAGE_SCHEMA,
+                    corpus_source_snapshot_id: sourceSnapshotId,
+                    corpus_analysis_id: analysisIdentity.corpus_analysis_id,
+                    root_id: entry.binding.root_id,
+                    root_key: entry.binding.root_key,
+                    decoder: { decoder_id: exports.TEXT_DECODER_ID, decoder_version: exports.TEXT_DECODER_VERSION },
+                    ...rootIndex.summary,
+                },
+            };
         });
         // ── 8. semantic candidate discovery ───────────────────────────────────
         let semantic = null;
@@ -904,7 +1248,8 @@ async function runCorpusScan(input) {
                 })));
             }
             semantic = (0, corpus_semantic_run_1.runSemanticAnalysis)({
-                corpusSnapshotId: snapshotId,
+                corpusSourceSnapshotId: sourceSnapshotId,
+                corpusAnalysisId: analysisIdentity.corpus_analysis_id,
                 artifacts: semanticArtifacts,
                 nearDuplicatePairs: nearCandidates.map((candidate) => ({
                     artifact_a_id: candidate.artifact_a_id,
@@ -926,6 +1271,15 @@ async function runCorpusScan(input) {
         const lexicalEligible = artifacts.filter((artifact) => isLexicallyAnalyzable(artifact.rootRelativePath));
         const encryptedCount = active.reduce((sum, entry) => sum
             + entry.observation.archives.reduce((holds, archive) => holds + archive.holds.filter((hold) => hold.code === "archive.member_encrypted").length, 0), 0);
+        // Artifacts carrying at least one `work.*` claim. This is the denominator a
+        // reader needs beside "3 blocked": three of eleven documents that say anything
+        // about their own state is a different corpus from three of eleven thousand.
+        const workSignalArtifacts = new Set();
+        for (const [artifactId, record] of interpreted) {
+            if (record.assertions.some((assertion) => assertion.predicate.startsWith("work."))) {
+                workSignalArtifacts.add(artifactId);
+            }
+        }
         const dependencyPredicates = new Map();
         for (const record of interpreted.values()) {
             for (const assertion of record.assertions) {
@@ -947,31 +1301,109 @@ async function runCorpusScan(input) {
         const reasoningEligible = projectCandidates.filter((candidate) => candidate.member_ids.some((id) => decodedIds.has(id))
             && candidate.member_ids.some((id) => (signalsById.get(id) ?? []).length > 0)).length;
         const cacheStats = (0, corpus_cache_1.cacheStatsDelta)(cacheAtStart, cache.stats());
+        // ── 8b. readiness evidence ────────────────────────────────────────────
+        // Built after candidate discovery so a body of work can be told how many
+        // consolidation candidates its own members appear in. Readiness is evidence
+        // about candidates; it cannot be assembled before the candidates exist.
+        const consolidationsByArtifact = new Map();
+        for (const candidate of semantic?.consolidations.candidates ?? []) {
+            for (const memberId of candidate.member_artifact_ids) {
+                const bucket = consolidationsByArtifact.get(memberId) ?? [];
+                bucket.push(candidate.candidate_id);
+                consolidationsByArtifact.set(memberId, bucket);
+            }
+        }
+        const readiness = (0, corpus_readiness_1.buildReadinessEvidence)({
+            corpusSourceSnapshotId: sourceSnapshotId,
+            corpusAnalysisId: analysisIdentity.corpus_analysis_id,
+            artifacts: readinessInputs,
+            bodies,
+            context: {
+                signalsById,
+                artifactsById: new Map(readinessInputs.map((artifact) => [artifact.virtual_source_id, artifact])),
+                rootById: rootByArtifact,
+                exactDuplicateIds,
+                clusterByArtifact,
+                consolidationsByArtifact,
+                nearDuplicatePairs: nearPairs,
+            },
+        });
         const coverage = {
             schema: corpus_coverage_1.CORPUS_COVERAGE_SCHEMA,
-            corpus_snapshot_id: snapshotId,
+            corpus_source_snapshot_id: sourceSnapshotId,
+            corpus_analysis_id: analysisIdentity.corpus_analysis_id,
             root_ids: bound.roots.map((root) => root.root_id).sort(ordering_1.compareCodePoints),
-            total_files: artifacts.length,
-            total_bytes: snapshot.counts.total_bytes,
-            archive_count: archives.length,
-            archive_member_count: snapshot.counts.archive_member_count,
+            corpus: {
+                root_count_requested: snapshot.counts.root_count_requested,
+                root_count_observed: snapshot.counts.root_count_observed,
+                root_count_failed: snapshot.counts.root_count_failed,
+                total_physical_artifacts: artifacts.filter((a) => !a.isArchiveMember).length,
+                total_virtual_archive_artifacts: artifacts.filter((a) => a.isArchiveMember).length,
+                total_bytes_observed: snapshot.counts.total_bytes,
+                archive_count: archives.length,
+                archive_member_count: snapshot.counts.archive_member_count,
+            },
+            hashing: {
+                fully_rehashed_count: verification.fully_rehashed_artifact_count,
+                cached_hash_reuse_count: verification.cached_hash_reuse_count,
+                unhashed_count: verification.unhashed_artifact_count,
+                verification_class: verification.verification_class,
+                verification_mode: verification.mode,
+            },
+            documents: {
+                decoder_eligible_count: decodableIds.size,
+                normalized_document_count: decodedIds.size,
+                unsupported_format_count: artifacts.filter((artifact) => UNDECODED_EXTENSIONS.has(artifact.extension)).length,
+                // A decoder that was offered bytes and could not read them. Distinct from
+                // an artifact no decoder claims: one is a gap in this corpus, the other is
+                // a gap in the decoder set, and merging them hides which.
+                decoder_failure_count: decodableIds.size - decodedIds.size,
+                ocr_required_count: artifacts.filter((a) => OCR_EXTENSIONS.has(a.extension)).length,
+                encrypted_document_count: encryptedCount,
+                oversized_document_count: skipped.oversized,
+                secret_skipped_count: skipped.secret,
+            },
+            semantics: {
+                interpreted_artifact_count: interpreted.size,
+                work_signal_artifact_count: workSignalArtifacts.size,
+                exact_duplicate_cluster_count: clusters.length,
+                near_duplicate_candidate_count: nearCandidates.length,
+                topic_candidate_count: topicCandidates.length,
+                project_candidate_count: projectCandidates.length,
+                consolidation_candidate_count: semantic?.consolidations.candidates.length ?? 0,
+            },
+            embeddings: {
+                enabled: input.embeddingReport?.enabled === true,
+                eligible_count: input.embeddingReport?.enabled === true
+                    ? input.embeddingReport.eligible_artifact_count
+                    : null,
+                embedded_count: input.embeddingReport?.enabled === true
+                    ? input.embeddingReport.embedded_artifact_count
+                    : null,
+                cache_hit_count: input.embeddingReport?.enabled === true
+                    ? input.embeddingReport.cache_hits
+                    : null,
+                provider_failure_count: input.embeddingReport?.enabled === true
+                    ? input.embeddingReport.eligible_artifact_count
+                        - input.embeddingReport.embedded_artifact_count
+                        - input.embeddingReport.secret_candidates_skipped
+                    : null,
+            },
             exact_hash_coverage: (0, corpus_coverage_1.coverageRatio)(artifacts.filter((artifact) => artifact.contentHash !== null).length, artifacts.length),
             normalized_document_coverage: (0, corpus_coverage_1.coverageRatio)(decodedIds.size, decodableIds.size),
             interpretation_coverage: (0, corpus_coverage_1.coverageRatio)(interpretationEligible.filter((artifact) => interpreted.has(artifact.virtualSourceId)).length, interpretationEligible.length),
             lexical_analysis_coverage: (0, corpus_coverage_1.coverageRatio)(lexicalEligible.filter((artifact) => lexical.has(artifact.virtualSourceId)).length, lexicalEligible.length),
             embedding_coverage_when_enabled: null,
-            embedding_enabled: false,
             unsupported_format_counts: (0, corpus_coverage_1.formatCounts)(artifacts
                 .filter((artifact) => UNDECODED_EXTENSIONS.has(artifact.extension))
                 .map((artifact) => ({ extension: artifact.extension, bytes: artifact.sizeBytes ?? 0 }))),
-            ocr_required_count: artifacts.filter((artifact) => OCR_EXTENSIONS.has(artifact.extension)).length,
-            encrypted_document_count: encryptedCount,
-            oversized_document_count: skipped.oversized,
-            secret_skipped_count: skipped.secret,
-            project_candidate_count: projectCandidates.length,
-            topic_candidate_count: topicCandidates.length,
-            reasoning_eligible_candidate_count: reasoningEligible,
             reasoning_handoff: {
+                reasoning_eligible_candidate_count: reasoningEligible,
+                reasoning_candidate_count: semantic?.reasoningCandidates.length ?? 0,
+                reasoning_evidence_pack_count: semantic?.evidencePacks.length ?? 0,
+                truncated_evidence_pack_count: semantic?.evidencePacks.filter((pack) => pack.truncation.truncated).length ?? 0,
+                corpus_snapshot_ref: "corpus-snapshot.json",
+                corpus_coverage_ref: "corpus-coverage.json",
                 readiness_evidence_refs: {
                     schema: readiness.schema,
                     file: "readiness-evidence.json",
@@ -1031,6 +1463,7 @@ async function runCorpusScan(input) {
             || (0, ordering_1.compareCodePoints)(a.message, b.message));
         return {
             snapshot,
+            rootPackets,
             candidates: candidatesDocument,
             readiness,
             coverage,
@@ -1052,6 +1485,10 @@ async function runCorpusScan(input) {
 /** Canonical bytes of the candidate projection. */
 function renderCorpusCandidates(document) {
     return `${(0, corpus_analysis_1.canonicalCorpusJson)(document)}\n`;
+}
+/** Canonical bytes of one root's document coverage. */
+function renderDocumentCoverage(coverage) {
+    return `${(0, corpus_analysis_1.canonicalCorpusJson)(coverage)}\n`;
 }
 /** Canonical bytes of the readiness projection. */
 function renderReadinessEvidence(evidence) {

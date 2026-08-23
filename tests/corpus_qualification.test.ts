@@ -131,6 +131,9 @@ describe("incremental invalidation", () => {
       second.cacheStats.layers.map((layer) => [layer.layer, layer.misses]),
     );
     expect(misses).toEqual({
+      // The archives did not change, so their verdicts are answered from the
+      // cache and nothing re-reads a central directory.
+      archive_manifest: 0,
       raw_identity: 1,
       normalized_document: 1,
       interpretation: 1,
@@ -351,7 +354,7 @@ describe("mount points and path namespaces", () => {
     const here = await scan([{ path: first.oldSsd }, { path: first.backup }]);
     const there = await scan([{ path: second.oldSsd }, { path: second.backup }]);
 
-    expect(there.snapshot.corpus_snapshot_id).toBe(here.snapshot.corpus_snapshot_id);
+    expect(there.snapshot.corpus_source_snapshot_id).toBe(here.snapshot.corpus_source_snapshot_id);
     expect(contentOnlySnapshot(there)).toBe(contentOnlySnapshot(here));
     expect(renderCorpusCandidates(there.candidates)).toBe(renderCorpusCandidates(here.candidates));
     expect(renderReadinessEvidence(there.readiness)).toBe(renderReadinessEvidence(here.readiness));

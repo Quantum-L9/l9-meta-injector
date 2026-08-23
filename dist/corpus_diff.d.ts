@@ -1,6 +1,12 @@
 import { CorpusSnapshot } from "./corpus_snapshot";
 export declare const CORPUS_DIFF_SCHEMA = "l9.corpus-diff/v1";
-export declare const CORPUS_DIFF_CATEGORIES: readonly ["added", "removed", "changed_content", "renamed_candidate", "unchanged", "archive_added", "archive_removed", "archive_changed"];
+export declare const CORPUS_DIFF_CATEGORIES: readonly ["added", "removed", "changed_content", "renamed_candidate", "unchanged", "archive_added", "archive_removed", "archive_changed", "archive_unchanged"];
+/** How each root fared between two snapshots. */
+export declare const CORPUS_ROOT_DIFF_CATEGORIES: readonly ["root_added", "root_removed", "root_changed", "root_unchanged"];
+export type CorpusRootDiffCategory = (typeof CORPUS_ROOT_DIFF_CATEGORIES)[number];
+/** How the analysis over the corpus fared, as distinct from the corpus itself. */
+export declare const CORPUS_ANALYSIS_DIFF_CATEGORIES: readonly ["candidate_added", "candidate_removed", "candidate_changed", "readiness_evidence_changed"];
+export type CorpusAnalysisDiffCategory = (typeof CORPUS_ANALYSIS_DIFF_CATEGORIES)[number];
 export type CorpusDiffCategory = (typeof CORPUS_DIFF_CATEGORIES)[number];
 /** Per-document cache layers keyed on a content hash. */
 export declare const CONTENT_KEYED_LAYERS: readonly string[];
@@ -34,6 +40,32 @@ export interface CorpusDiffInvalidation {
     /** Always zero. A departed artifact never causes a cache entry to be deleted. */
     cache_entries_removed: number;
 }
+/** One root, and what happened to it between the two snapshots. */
+export interface CorpusRootDiffEntry {
+    category: CorpusRootDiffCategory;
+    root_id: string;
+    root_key: string;
+    previous_source_revision: string | null;
+    current_source_revision: string | null;
+    previous_rmp_packet_id: string | null;
+    current_rmp_packet_id: string | null;
+}
+/**
+ * One artifact that moved between roots without changing.
+ *
+ * A candidate and never a conclusion: identical bytes leaving one root and
+ * appearing in another is consistent with a move, with a copy that was then
+ * deleted, and with two unrelated files that happen to be identical — which in a
+ * corpus of backups is the ordinary case rather than the exotic one.
+ */
+export interface CrossRootMoveCandidate {
+    content_hash: string;
+    from_root_id: string;
+    from_corpus_path: string;
+    to_root_id: string;
+    to_corpus_path: string;
+}
+export declare const CROSS_ROOT_MOVE_STATEMENT: string;
 export interface CorpusDiffCounts {
     added: number;
     removed: number;
@@ -43,21 +75,41 @@ export interface CorpusDiffCounts {
     archive_added: number;
     archive_removed: number;
     archive_changed: number;
+    archive_unchanged: number;
+    root_added: number;
+    root_removed: number;
+    root_changed: number;
+    root_unchanged: number;
 }
 export interface CorpusDiff {
     schema: string;
-    previous_corpus_snapshot_id: string;
-    current_corpus_snapshot_id: string;
+    previous_corpus_source_snapshot_id: string;
+    current_corpus_source_snapshot_id: string;
+    previous_corpus_analysis_id: string;
+    current_corpus_analysis_id: string;
+    /** True when the bytes differ, independently of any analysis-policy change. */
+    source_changed: boolean;
     previous_root_ids: string[];
     current_root_ids: string[];
     counts: CorpusDiffCounts;
+    roots: CorpusRootDiffEntry[];
+    /** What changed about the analysis, kept apart from what changed on the disks. */
+    analysis: {
+        candidate_added: number;
+        candidate_removed: number;
+        candidate_changed: number;
+        readiness_evidence_changed: boolean;
+        /** Null when neither snapshot recorded candidate counts to compare. */
+        comparable: boolean;
+    };
+    cross_root_move_candidates: CrossRootMoveCandidate[];
+    cross_root_move_statement: string;
     entries: CorpusDiffEntry[];
     invalidation: CorpusDiffInvalidation;
     /** Restated in the document so a consumer reading only JSON sees the limit. */
     renamed_candidate_statement: string;
 }
 export declare const RENAMED_CANDIDATE_STATEMENT: string;
-/** Classify a current snapshot against a previous one. */
 export declare function buildCorpusDiff(previous: CorpusSnapshot, current: CorpusSnapshot): CorpusDiff;
 /** Canonical bytes of a diff. */
 export declare function renderCorpusDiff(diff: CorpusDiff): string;

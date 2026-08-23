@@ -180,6 +180,30 @@ export interface InterpretDocumentResult {
  * with the caller, because each of those is a decision about whether to open a
  * file rather than about what the file says.
  */
+/** An assertion with its subject-bound identity removed, ready to be cached. */
+export interface PortableAssertion extends Omit<InterpretedAssertion, "assertion_id" | "subject_id"> {
+    /** Whether the assertion was filed against the repository or against one file. */
+    subject_scope: ExtractorSubjectScope;
+}
+/**
+ * Strip an assertion's subject-bound identity so it can be cached by content.
+ *
+ * An assertion's subject and its id both name the repository it was read in. Two
+ * roots can hold the same bytes at the same relative path — that is the ordinary
+ * case in an archive corpus, not a corner case — so an interpretation cached with
+ * those ids and served to the other root would file the second root's document
+ * under the first root's artifact. Everything except the two derived ids is a
+ * function of the bytes and the path, so those two are what is dropped.
+ */
+export declare function toPortableAssertions(assertions: readonly InterpretedAssertion[]): PortableAssertion[];
+/**
+ * Re-derive subject and assertion ids against the repository being projected into.
+ *
+ * The inverse of `toPortableAssertions`, and the only supported way to turn a
+ * cached interpretation back into assertions: identity is recomputed here, so a
+ * cache hit can never carry another root's subject into this root's packet.
+ */
+export declare function bindPortableAssertions(assertions: readonly PortableAssertion[], repositorySubjectId: string): InterpretedAssertion[];
 export declare function interpretDocumentContent(input: InterpretDocumentInput): InterpretDocumentResult;
 /**
  * Interpret a repository that inventory has already observed.

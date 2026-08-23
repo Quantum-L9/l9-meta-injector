@@ -87,7 +87,8 @@ export interface DocumentIndexSummary {
 
 export interface DocumentIndex {
   schema: string;
-  corpus_snapshot_id: string;
+  corpus_source_snapshot_id: string;
+  corpus_analysis_id: string;
   decoder: { decoder_id: string; decoder_version: string };
   summary: DocumentIndexSummary;
   documents: NormalizedDocumentEntry[];
@@ -116,7 +117,8 @@ export interface DocumentIndexArtifactInput {
 }
 
 export interface BuildDocumentIndexInput {
-  corpusSnapshotId: string;
+  corpusSourceSnapshotId: string;
+  corpusAnalysisId: string;
   decoderId: string;
   decoderVersion: string;
   artifacts: readonly DocumentIndexArtifactInput[];
@@ -186,7 +188,8 @@ export function buildDocumentIndex(input: BuildDocumentIndexInput): DocumentInde
 
   return {
     schema: DOCUMENT_INDEX_SCHEMA,
-    corpus_snapshot_id: input.corpusSnapshotId,
+    corpus_source_snapshot_id: input.corpusSourceSnapshotId,
+    corpus_analysis_id: input.corpusAnalysisId,
     decoder: { decoder_id: input.decoderId, decoder_version: input.decoderVersion },
     summary: {
       artifact_count: documents.length,

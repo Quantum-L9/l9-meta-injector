@@ -39,6 +39,8 @@ exports.isSecretCandidatePath = isSecretCandidatePath;
 exports.looksSecret = looksSecret;
 exports.boundExcerpt = boundExcerpt;
 exports.interpretationProfileHash = interpretationProfileHash;
+exports.toPortableAssertions = toPortableAssertions;
+exports.bindPortableAssertions = bindPortableAssertions;
 exports.interpretDocumentContent = interpretDocumentContent;
 exports.interpretRepository = interpretRepository;
 // interpretation.ts — deterministic repository interpretation (Seam B).
@@ -174,14 +176,53 @@ function compareDiagnostics(left, right) {
         (0, repository_model_1.compareCodePoints)(left.message, right.message));
 }
 /**
- * Interpret one already-decoded document.
+ * Strip an assertion's subject-bound identity so it can be cached by content.
  *
- * Split out of `interpretRepository` so that a caller which can prove a
- * document's bytes are unchanged can reuse this result rather than recompute it.
- * Eligibility — the secret-path refusal, the size limit, the UTF-8 probe — stays
- * with the caller, because each of those is a decision about whether to open a
- * file rather than about what the file says.
+ * An assertion's subject and its id both name the repository it was read in. Two
+ * roots can hold the same bytes at the same relative path — that is the ordinary
+ * case in an archive corpus, not a corner case — so an interpretation cached with
+ * those ids and served to the other root would file the second root's document
+ * under the first root's artifact. Everything except the two derived ids is a
+ * function of the bytes and the path, so those two are what is dropped.
  */
+function toPortableAssertions(assertions) {
+    return assertions.map((assertion) => {
+        const { assertion_id: _id, subject_id: subject, ...rest } = assertion;
+        return {
+            ...rest,
+            // `stableId` prefixes every id with its kind, so the subject says which
+            // scope produced it without the caller having to remember.
+            subject_scope: subject.startsWith("artifact:") ? "artifact" : "repository",
+        };
+    });
+}
+/**
+ * Re-derive subject and assertion ids against the repository being projected into.
+ *
+ * The inverse of `toPortableAssertions`, and the only supported way to turn a
+ * cached interpretation back into assertions: identity is recomputed here, so a
+ * cache hit can never carry another root's subject into this root's packet.
+ */
+function bindPortableAssertions(assertions, repositorySubjectId) {
+    return assertions.map((portable) => {
+        const { subject_scope: scope, ...rest } = portable;
+        const subjectId = scope === "artifact"
+            ? (0, repository_model_1.repositoryModelArtifactId)(repositorySubjectId, portable.source_path)
+            : repositorySubjectId;
+        return {
+            assertion_id: (0, repository_model_1.stableId)("assertion", {
+                subject_id: subjectId,
+                predicate: portable.predicate,
+                object: portable.object,
+                source_path: portable.source_path,
+                source_range: portable.source_range,
+                extractor_id: portable.extractor_id,
+            }),
+            subject_id: subjectId,
+            ...rest,
+        };
+    });
+}
 function interpretDocumentContent(input) {
     const extractors = [...input.extractors].sort((left, right) => (0, repository_model_1.compareCodePoints)(left.id, right.id));
     const sourcePath = input.sourcePath;

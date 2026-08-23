@@ -91,7 +91,8 @@ export interface SemanticAnalysisProfile {
 
 export interface SemanticRelationsDocument {
   schema: string;
-  corpus_snapshot_id: string;
+  corpus_source_snapshot_id: string;
+  corpus_analysis_id: string;
   analysis_profile: SemanticAnalysisProfile;
   generation: {
     artifact_count: number;
@@ -116,7 +117,8 @@ export const RELATION_STATEMENT =
 
 export interface TopicCandidatesDocument {
   schema: string;
-  corpus_snapshot_id: string;
+  corpus_source_snapshot_id: string;
+  corpus_analysis_id: string;
   analysis_profile: SemanticAnalysisProfile;
   candidates: TopicCandidate[];
   candidate_statement: string;
@@ -124,7 +126,8 @@ export interface TopicCandidatesDocument {
 
 export interface ProjectCandidatesDocument {
   schema: string;
-  corpus_snapshot_id: string;
+  corpus_source_snapshot_id: string;
+  corpus_analysis_id: string;
   analysis_profile: SemanticAnalysisProfile;
   candidates: ProjectCandidate[];
   candidate_statement: string;
@@ -132,7 +135,8 @@ export interface ProjectCandidatesDocument {
 
 export interface ConsolidationCandidatesDocument {
   schema: string;
-  corpus_snapshot_id: string;
+  corpus_source_snapshot_id: string;
+  corpus_analysis_id: string;
   analysis_profile: SemanticAnalysisProfile;
   candidates: ConsolidationCandidate[];
   candidate_statement: string;
@@ -184,7 +188,8 @@ export interface SemanticAnalysisResult {
 }
 
 export interface SemanticAnalysisInput {
-  corpusSnapshotId: string;
+  corpusSourceSnapshotId: string;
+  corpusAnalysisId: string;
   artifacts: readonly SemanticArtifactInput[];
   nearDuplicatePairs?: readonly { artifact_a_id: string; artifact_b_id: string; score: number }[];
   embeddingPairs?: readonly EmbeddingPairScore[];
@@ -289,7 +294,8 @@ export function runSemanticAnalysis(input: SemanticAnalysisInput): SemanticAnaly
     entry.reasoning_candidate_ids.sort(compareCodePoints);
   }
 
-  const header = { corpus_snapshot_id: input.corpusSnapshotId, analysis_profile: profile };
+  const header = { corpus_source_snapshot_id: input.corpusSourceSnapshotId,
+    corpus_analysis_id: input.corpusAnalysisId, analysis_profile: profile };
 
   return {
     profile,

@@ -1,6 +1,6 @@
 import { InventoryResult } from "./inventory";
 import { OmitMatcher } from "./omit";
-import { ArchiveHold } from "./archive_preflight";
+import { ArchiveHold, ArchivePreflightResult } from "./archive_preflight";
 import { LocalArchivePolicy } from "./local_archive_policy";
 /** Separator between an archive path and a member path in a virtual locator. */
 export declare const ARCHIVE_MEMBER_SEPARATOR = "!/";
@@ -83,6 +83,62 @@ export interface LocalSourceAcquireInput {
     hashMaxBytes?: number;
     /** Scratch parent directory. Defaults to the OS temporary directory. */
     scratchParent?: string;
+    /**
+     * Exact hashes a previous fully-verified run established, by relative path.
+     *
+     * Supplying this switches a file from "read every byte" to "read the bytes only
+     * if size or mtime moved". That is a revalidation signal, never content truth:
+     * a file rewritten in place within one filesystem timestamp tick and to exactly
+     * the same length would be reported unchanged. The observation records how many
+     * hashes were reused so nothing downstream can call the result byte-verified —
+     * see `hashing` on the observation.
+     */
+    knownHashes?: ReadonlyMap<string, KnownFileHash>;
+    /**
+     * Where an archive's preflight verdict may be read from and written to.
+     *
+     * An unchanged outer ZIP does not need its central directory re-read and its
+     * policy rules re-evaluated to produce the same verdict it produced last time.
+     * The key is the archive's own content hash plus the reader and policy
+     * versions, so a stricter policy is never answered from a looser one's entry.
+     *
+     * The archive's bytes are still staged: the members are needed by whatever
+     * reads them next, and a manifest does not contain them.
+     */
+    archiveManifests?: ArchiveManifestStore;
+}
+/** Read-through storage for archive preflight verdicts. */
+export interface ArchiveManifestStore {
+    get(key: {
+        archiveContentHash: string;
+        readerVersion: string;
+        policyVersion: string;
+    }): ArchivePreflightResult | undefined;
+    put(key: {
+        archiveContentHash: string;
+        readerVersion: string;
+        policyVersion: string;
+    }, value: ArchivePreflightResult): void;
+}
+/** Version of the ZIP reader whose output an archive manifest describes. */
+export declare const ARCHIVE_READER_VERSION = "1.0.0";
+/** What a previous run established about one file, and the stat it saw. */
+export interface KnownFileHash {
+    /** `sha256:`-prefixed, as a previous run computed it from the exact bytes. */
+    content_hash: string;
+    size_bytes: number;
+    mtime_ms: number;
+    /** Nanosecond mtime, where the platform reports one. Compared when present. */
+    mtime_ns?: string;
+}
+/** How the hashes in one observation were arrived at. */
+export interface LocalSourceHashingReport {
+    /** Files whose bytes this run read in full. */
+    fully_rehashed_count: number;
+    /** Files whose hash was carried over because size and mtime had not moved. */
+    cached_reuse_count: number;
+    /** Files with no hash at all: over budget, or unreadable. */
+    unhashed_count: number;
 }
 export interface LocalSourceObservation {
     sourceKind: LocalSourceKind;
@@ -91,6 +147,8 @@ export interface LocalSourceObservation {
     sourceRevision: string;
     /** `sha256:`-prefixed digest of the canonical physical manifest. */
     physicalSnapshotHash: string;
+    /** How the hashes were arrived at: read, carried over, or absent. */
+    hashing: LocalSourceHashingReport;
     /** Physical entries plus virtual archive members, in the inventory record shape. */
     inventory: InventoryResult;
     archives: LocalArchiveObservation[];

@@ -22,6 +22,16 @@ export interface FormatCount {
     bytes: number;
 }
 export interface ReasoningHandoff {
+    /** How many candidates were routed for later reasoning, and how they were packed. */
+    reasoning_candidate_count: number;
+    reasoning_evidence_pack_count: number;
+    /** Packs that hit a budget, so a reader knows the evidence is not the whole file. */
+    truncated_evidence_pack_count: number;
+    /** Candidates routed to a reasoning type other than NONE. */
+    reasoning_eligible_candidate_count: number;
+    /** Where the grounded measurements a pack may cite actually live. */
+    corpus_snapshot_ref: string;
+    corpus_coverage_ref: string;
     /** Where the readiness signals for this corpus live. */
     readiness_evidence_refs: {
         schema: string;
@@ -49,29 +59,82 @@ export interface ReasoningHandoff {
     no_priority_statement: string;
 }
 export declare const NO_PRIORITY_STATEMENT: string;
-export interface CorpusCoverage {
-    schema: string;
-    corpus_snapshot_id: string;
-    root_ids: string[];
-    total_files: number;
-    total_bytes: number;
+/**
+ * The corpus's own denominators.
+ *
+ * These exist so no count below can be read without its base. "12 project
+ * candidates" is a different claim over a corpus of two hundred files than over
+ * one of two hundred thousand, and a different claim again when four of the six
+ * drives were never plugged in.
+ */
+export interface CorpusScopeCoverage {
+    root_count_requested: number;
+    root_count_observed: number;
+    root_count_failed: number;
+    /** Files that exist on a disk. */
+    total_physical_artifacts: number;
+    /** Files that exist only inside an archive. */
+    total_virtual_archive_artifacts: number;
+    total_bytes_observed: number;
     archive_count: number;
     archive_member_count: number;
+}
+/** How the hashes were arrived at, and what may therefore be claimed of them. */
+export interface HashingCoverage {
+    fully_rehashed_count: number;
+    cached_hash_reuse_count: number;
+    unhashed_count: number;
+    verification_class: string;
+    verification_mode: string;
+}
+/** What the decoders reached, and what they did not. */
+export interface DocumentCoverage {
+    decoder_eligible_count: number;
+    normalized_document_count: number;
+    unsupported_format_count: number;
+    decoder_failure_count: number;
+    ocr_required_count: number;
+    encrypted_document_count: number;
+    oversized_document_count: number;
+    secret_skipped_count: number;
+}
+/** What the analysis found, over the denominators above. */
+export interface SemanticCoverage {
+    interpreted_artifact_count: number;
+    work_signal_artifact_count: number;
+    exact_duplicate_cluster_count: number;
+    near_duplicate_candidate_count: number;
+    topic_candidate_count: number;
+    project_candidate_count: number;
+    consolidation_candidate_count: number;
+}
+/** Embeddings, reported as off rather than omitted when they are off. */
+export interface EmbeddingCoverage {
+    enabled: boolean;
+    /** Null when embeddings were not enabled, which is the default. */
+    eligible_count: number | null;
+    embedded_count: number | null;
+    cache_hit_count: number | null;
+    provider_failure_count: number | null;
+}
+export interface CorpusCoverage {
+    schema: string;
+    corpus_source_snapshot_id: string;
+    corpus_analysis_id: string;
+    root_ids: string[];
+    corpus: CorpusScopeCoverage;
+    hashing: HashingCoverage;
+    documents: DocumentCoverage;
+    semantics: SemanticCoverage;
+    embeddings: EmbeddingCoverage;
     exact_hash_coverage: CoverageRatio;
     normalized_document_coverage: CoverageRatio;
     interpretation_coverage: CoverageRatio;
     lexical_analysis_coverage: CoverageRatio;
     /** Null when embeddings were not enabled, which is the default. */
     embedding_coverage_when_enabled: CoverageRatio | null;
-    embedding_enabled: boolean;
+    /** Which extensions the undecoded artifacts were, and how many bytes each held. */
     unsupported_format_counts: FormatCount[];
-    ocr_required_count: number;
-    encrypted_document_count: number;
-    oversized_document_count: number;
-    secret_skipped_count: number;
-    project_candidate_count: number;
-    topic_candidate_count: number;
-    reasoning_eligible_candidate_count: number;
     reasoning_handoff: ReasoningHandoff;
     /** Every cache layer's hit accounting, so a reported ratio can be checked. */
     cache: {

@@ -11,6 +11,7 @@
 #   make pr         gate, then push the current branch and open/reuse its pull request
 #
 #   PR_BASE=origin/main   base ref for the pull request
+#   PR_TITLE=<text>       pull request title; defaults to the first commit subject
 #   PR_BODY_FILE=<path>   pull request body; defaults to a commit summary
 #   OPEN_PR=0             gate and push, but do not open a pull request
 
@@ -19,6 +20,7 @@ SHELL := /usr/bin/env bash
 .PHONY: pr pr-check
 
 PR_BASE ?= origin/main
+PR_TITLE ?=
 OPEN_PR ?= 1
 # Optional: when a governance clone is present, its L4 release receipt is honoured.
 GOV_ROOT ?= $(HOME)/.cursor-governance
@@ -62,7 +64,10 @@ pr: pr-check
 	if [[ -n "$$existing" && "$$existing" != "null" ]]; then \
 	  echo "pull request already open: $$existing"; \
 	else \
-	  title="$$(git log "$(PR_BASE)..HEAD" --format='%s' --reverse | head -1)"; \
+	  title="$(PR_TITLE)"; \
+	  if [[ -z "$$title" ]]; then \
+	    title="$$(git log "$(PR_BASE)..HEAD" --format='%s' --reverse | head -1)"; \
+	  fi; \
 	  body_file="$(PR_BODY_FILE)"; \
 	  if [[ -z "$$body_file" ]]; then \
 	    body_file="$$(mktemp)"; \

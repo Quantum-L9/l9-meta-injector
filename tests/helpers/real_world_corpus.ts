@@ -7,7 +7,8 @@
 // exists to answer is not "does this property hold" but "what does the engine
 // actually report when it is pointed at two old disks".
 //
-// So it carries, across two roots:
+// So it carries, across three roots — a working drive, a backup of it, and a
+// folder of loose ZIPs, which is the shape an actual archive corpus has:
 //
 //   - documents across two dozen extensions: sixteen text formats the decoders
 //     open, two extensionless build files, and five binary formats they do not —
@@ -351,7 +352,12 @@ function backupFiles(): Entry[] {
 }
 
 /** Build the five archives. Two of them hold copies of loose documents. */
-function writeArchives(driveRoot: string, backupRoot: string, scratch: string): void {
+function writeArchives(
+  driveRoot: string,
+  backupRoot: string,
+  zipRoot: string,
+  scratch: string,
+): void {
   const innerPath = path.join(scratch, "inner.zip");
   writeRawZip(innerPath, [
     {
@@ -388,13 +394,35 @@ function writeArchives(driveRoot: string, backupRoot: string, scratch: string): 
     { name: "scan-01.png", content: binary("scan-01", 2048), stored: true },
     { name: "scan-02.png", content: binary("scan-02", 2048), stored: true },
   ]);
+
+  // The third root is nothing but archives — the folder of zips nobody has opened
+  // in years. It holds a byte-exact copy of a plan that also exists loose on the
+  // drive, so the duplicate it forms spans two roots and lives inside an archive
+  // on one of them: the case a single-root scan structurally cannot find.
+  writeRawZip(path.join(zipRoot, "2016-archive.zip"), [
+    { name: "plan.md", content: PLAN_MD, stored: true },
+    {
+      name: "meeting-notes.md",
+      content: "---\ntitle: Ingest Kickoff\nkind: note\n---\n\n# Ingest Kickoff\n\n"
+        + "The ingest pipeline reads the corpus and writes a normalized index.\n"
+        + "Depends on: alpha-service\n",
+      stored: true,
+    },
+  ]);
+
+  writeRawZip(path.join(zipRoot, "misc-2017.zip"), [
+    { name: "handover.txt", content: HANDOVER_TXT, stored: true },
+    { name: "receipt.pdf", content: binary("receipt", 1024), stored: true },
+  ]);
 }
 
 export interface RealWorldCorpus {
-  /** The two roots, in the order they are handed to the scanner. */
+  /** The three roots, in the order they are handed to the scanner. */
   roots: { name: string; path: string }[];
   driveRoot: string;
   backupRoot: string;
+  /** A root that is nothing but ZIPs, which is a shape real corpora have. */
+  zipRoot: string;
 }
 
 function writeAll(root: string, entries: readonly Entry[]): void {
@@ -410,22 +438,26 @@ function writeAll(root: string, entries: readonly Entry[]): void {
 export function writeRealWorldCorpus(parent: string): RealWorldCorpus {
   const driveRoot = path.join(parent, "OldSSD");
   const backupRoot = path.join(parent, "Backup");
+  const zipRoot = path.join(parent, "ZipShelf");
   fs.mkdirSync(driveRoot, { recursive: true });
   fs.mkdirSync(backupRoot, { recursive: true });
+  fs.mkdirSync(zipRoot, { recursive: true });
 
   writeAll(driveRoot, driveFiles());
   writeAll(backupRoot, backupFiles());
 
   const scratch = fs.mkdtempSync(path.join(parent, ".archive-build-"));
-  writeArchives(driveRoot, backupRoot, scratch);
+  writeArchives(driveRoot, backupRoot, zipRoot, scratch);
   fs.rmSync(scratch, { recursive: true, force: true });
 
   return {
     driveRoot,
     backupRoot,
+    zipRoot,
     roots: [
       { name: "old-ssd", path: driveRoot },
       { name: "backup", path: backupRoot },
+      { name: "zip-shelf", path: zipRoot },
     ],
   };
 }

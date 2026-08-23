@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.RENAMED_CANDIDATE_STATEMENT = exports.CORPUS_SCOPED_LAYERS = exports.CONTENT_KEYED_LAYERS = exports.CORPUS_DIFF_CATEGORIES = exports.CORPUS_DIFF_SCHEMA = void 0;
+exports.RENAMED_CANDIDATE_STATEMENT = exports.CROSS_ROOT_MOVE_STATEMENT = exports.CORPUS_SCOPED_LAYERS = exports.CONTENT_KEYED_LAYERS = exports.CORPUS_ANALYSIS_DIFF_CATEGORIES = exports.CORPUS_ROOT_DIFF_CATEGORIES = exports.CORPUS_DIFF_CATEGORIES = exports.CORPUS_DIFF_SCHEMA = void 0;
 exports.buildCorpusDiff = buildCorpusDiff;
 exports.renderCorpusDiff = renderCorpusDiff;
 // corpus_diff.ts — what changed between two observations of one corpus.
@@ -37,6 +37,21 @@ exports.CORPUS_DIFF_CATEGORIES = [
     "archive_added",
     "archive_removed",
     "archive_changed",
+    "archive_unchanged",
+];
+/** How each root fared between two snapshots. */
+exports.CORPUS_ROOT_DIFF_CATEGORIES = [
+    "root_added",
+    "root_removed",
+    "root_changed",
+    "root_unchanged",
+];
+/** How the analysis over the corpus fared, as distinct from the corpus itself. */
+exports.CORPUS_ANALYSIS_DIFF_CATEGORIES = [
+    "candidate_added",
+    "candidate_removed",
+    "candidate_changed",
+    "readiness_evidence_changed",
 ];
 /** Per-document cache layers keyed on a content hash. */
 exports.CONTENT_KEYED_LAYERS = [
@@ -46,6 +61,9 @@ exports.CONTENT_KEYED_LAYERS = [
 ];
 /** Cache layers keyed on the whole corpus, so any membership change retires them. */
 exports.CORPUS_SCOPED_LAYERS = ["candidate_analysis"];
+exports.CROSS_ROOT_MOVE_STATEMENT = "A cross-root move candidate is identical bytes absent from one root and present in another. "
+    + "It is not a claim that the file was moved: a copy whose original was deleted, and two "
+    + "unrelated identical files, produce exactly the same evidence.";
 exports.RENAMED_CANDIDATE_STATEMENT = "A renamed candidate is one content hash absent at an old corpus path and present at a "
     + "new one. It is not evidence that a file was moved, that a move was intentional, or "
     + "that the two paths mean the same thing.";
@@ -59,6 +77,11 @@ function emptyCounts() {
         archive_added: 0,
         archive_removed: 0,
         archive_changed: 0,
+        archive_unchanged: 0,
+        root_added: 0,
+        root_removed: 0,
+        root_changed: 0,
+        root_unchanged: 0,
     };
 }
 function byId(artifacts) {
@@ -126,6 +149,47 @@ function pairRenames(removed, added) {
     };
 }
 /** Classify a current snapshot against a previous one. */
+/**
+ * The analysis policies a snapshot was produced under, as one comparable string.
+ *
+ * Deliberately not `corpus_analysis_id`: that binds the source identity too, so
+ * every corpus whose bytes changed would also read as a profile change.
+ */
+function analysisProfileFingerprint(snapshot) {
+    const analysis = snapshot.analysis;
+    return [
+        analysis.corpus_profile,
+        [...analysis.document_decoder_profiles].sort(ordering_1.compareCodePoints).join(","),
+        analysis.interpretation_profile,
+        analysis.semantic_candidate_profile,
+        analysis.embedding_profile ?? "",
+        analysis.readiness_profile,
+    ].join("|");
+}
+/**
+ * What changed about the analysis, as distinct from what changed on the disks.
+ *
+ * A snapshot records what was observed, not what was concluded, so the candidate
+ * counts are not in it. What can be said from two snapshots alone is whether the
+ * rules changed and whether the corpus changed; both leave the conclusions open,
+ * and saying "comparable: false" is the honest report rather than a zero that
+ * would read as "nothing changed".
+ */
+function analysisDelta(previous, current, profileChanged) {
+    const sourceChanged = previous.corpus_source_snapshot_id !== current.corpus_source_snapshot_id;
+    const analysisChanged = previous.analysis.corpus_analysis_id !== current.analysis.corpus_analysis_id;
+    return {
+        candidate_added: 0,
+        candidate_removed: 0,
+        candidate_changed: 0,
+        // Readiness is recomputed whenever its own profile moves or the corpus does.
+        readiness_evidence_changed: sourceChanged
+            || previous.analysis.readiness_profile !== current.analysis.readiness_profile,
+        // The candidate documents are not part of a snapshot, so a snapshot-to-snapshot
+        // diff cannot count them. It can say whether anything they depend on moved.
+        comparable: !analysisChanged && !profileChanged,
+    };
+}
 function buildCorpusDiff(previous, current) {
     const previousById = byId(previous.artifacts);
     const currentById = byId(current.artifacts);
@@ -219,7 +283,18 @@ function buildCorpusDiff(previous, current) {
             });
             continue;
         }
-        if (before.content_hash !== archive.content_hash) {
+        if (before.content_hash === archive.content_hash) {
+            counts.archive_unchanged += 1;
+            entries.push({
+                category: "archive_unchanged",
+                virtual_source_id: archive.archive_id,
+                corpus_path: archive.corpus_path,
+                root_id: archive.root_id,
+                content_hash: archive.content_hash,
+                size_bytes: archive.size_bytes,
+            });
+        }
+        else {
             counts.archive_changed += 1;
             entries.push({
                 category: "archive_changed",
@@ -250,20 +325,114 @@ function buildCorpusDiff(previous, current) {
     const newHashes = [...currentHashes].filter((hash) => !previousHashes.has(hash)).sort(ordering_1.compareCodePoints);
     const retiredHashes = [...previousHashes].filter((hash) => !currentHashes.has(hash)).sort(ordering_1.compareCodePoints);
     const retained = [...currentHashes].filter((hash) => previousHashes.has(hash)).length;
-    const profileChanged = previous.corpus_profile_hash !== current.corpus_profile_hash;
+    // Analysis identity, not source identity. A raised threshold or a new decoder
+    // changes what was concluded and changes no byte on any disk, and a diff that
+    // reported the two together would tell an operator their archive had been
+    // rewritten every time they changed a setting.
+    const profileChanged = analysisProfileFingerprint(previous) !== analysisProfileFingerprint(current);
+    const sourceChanged = previous.corpus_source_snapshot_id !== current.corpus_source_snapshot_id;
     const membershipChanged = newHashes.length > 0
         || retiredHashes.length > 0
         || previous.artifacts.length !== current.artifacts.length;
+    // Roots, compared by identity rather than by position. A corpus that gained a
+    // drive and a corpus whose drives were listed in another order are not the same
+    // event, and only the root id can tell them apart.
+    const previousRoots = new Map(previous.roots.map((root) => [root.root_id, root]));
+    const currentRoots = new Map(current.roots.map((root) => [root.root_id, root]));
+    const rootEntries = [];
+    for (const [rootId, root] of currentRoots) {
+        const before = previousRoots.get(rootId);
+        if (before === undefined) {
+            counts.root_added += 1;
+            rootEntries.push({
+                category: "root_added",
+                root_id: rootId,
+                root_key: root.root_key,
+                previous_source_revision: null,
+                current_source_revision: root.source_revision,
+                previous_rmp_packet_id: null,
+                current_rmp_packet_id: root.rmp_packet_id,
+            });
+            continue;
+        }
+        const changed = before.source_revision !== root.source_revision
+            || before.rmp_packet_id !== root.rmp_packet_id;
+        if (changed)
+            counts.root_changed += 1;
+        else
+            counts.root_unchanged += 1;
+        rootEntries.push({
+            category: changed ? "root_changed" : "root_unchanged",
+            root_id: rootId,
+            root_key: root.root_key,
+            previous_source_revision: before.source_revision,
+            current_source_revision: root.source_revision,
+            previous_rmp_packet_id: before.rmp_packet_id,
+            current_rmp_packet_id: root.rmp_packet_id,
+        });
+    }
+    for (const [rootId, root] of previousRoots) {
+        if (currentRoots.has(rootId))
+            continue;
+        counts.root_removed += 1;
+        rootEntries.push({
+            category: "root_removed",
+            root_id: rootId,
+            root_key: root.root_key,
+            previous_source_revision: root.source_revision,
+            current_source_revision: null,
+            previous_rmp_packet_id: root.rmp_packet_id,
+            current_rmp_packet_id: null,
+        });
+    }
+    rootEntries.sort((a, b) => (0, ordering_1.compareCodePoints)(a.root_id, b.root_id));
+    // Identical bytes that left one root and appeared in another. Reported as a
+    // candidate: the same evidence is produced by a move, by a copy whose original
+    // was deleted, and by two unrelated identical files — which in a corpus made of
+    // backups is the ordinary case rather than the exotic one.
+    const crossRootMoves = [];
+    const arrivedByHash = new Map();
+    for (const artifact of arrived) {
+        if (artifact.content_hash === null)
+            continue;
+        const bucket = arrivedByHash.get(artifact.content_hash) ?? [];
+        bucket.push(artifact);
+        arrivedByHash.set(artifact.content_hash, bucket);
+    }
+    for (const gone of departed) {
+        if (gone.content_hash === null)
+            continue;
+        for (const landed of arrivedByHash.get(gone.content_hash) ?? []) {
+            if (landed.root_id === gone.root_id)
+                continue;
+            crossRootMoves.push({
+                content_hash: gone.content_hash,
+                from_root_id: gone.root_id,
+                from_corpus_path: gone.corpus_path,
+                to_root_id: landed.root_id,
+                to_corpus_path: landed.corpus_path,
+            });
+        }
+    }
+    crossRootMoves.sort((a, b) => (0, ordering_1.compareCodePoints)(a.from_corpus_path, b.from_corpus_path)
+        || (0, ordering_1.compareCodePoints)(a.to_corpus_path, b.to_corpus_path));
     const previousRootIds = [...previous.roots.map((root) => root.root_id)].sort(ordering_1.compareCodePoints);
     const currentRootIds = [...current.roots.map((root) => root.root_id)].sort(ordering_1.compareCodePoints);
     const orderedEntries = [...entries].sort(compareEntries);
     return {
         schema: exports.CORPUS_DIFF_SCHEMA,
-        previous_corpus_snapshot_id: previous.corpus_snapshot_id,
-        current_corpus_snapshot_id: current.corpus_snapshot_id,
+        previous_corpus_source_snapshot_id: previous.corpus_source_snapshot_id,
+        current_corpus_source_snapshot_id: current.corpus_source_snapshot_id,
+        previous_corpus_analysis_id: previous.analysis.corpus_analysis_id,
+        current_corpus_analysis_id: current.analysis.corpus_analysis_id,
+        source_changed: sourceChanged,
         previous_root_ids: previousRootIds,
         current_root_ids: currentRootIds,
         counts,
+        roots: rootEntries,
+        analysis: analysisDelta(previous, current, profileChanged),
+        cross_root_move_candidates: crossRootMoves,
+        cross_root_move_statement: exports.CROSS_ROOT_MOVE_STATEMENT,
         entries: orderedEntries,
         invalidation: {
             profile_changed: profileChanged,

@@ -49,24 +49,37 @@ const USAGE = [
   "  --max-session-bytes N      largest total uncompressed size for the whole run",
   "  --max-compression-ratio N  largest uncompressed:compressed ratio",
   "  --max-archive-depth N      nested-archive depth ceiling",
+  "  --max-archives N           archives expanded in one run (default: 64). A corpus that",
+  "                             is mostly ZIPs will hit this; the run says so rather than",
+  "                             quietly stopping, and every held archive is still hashed",
   "",
   "multi-root corpus mode (repeat --root, or point at a manifest):",
   "  --root PATH[=NAME]         add a root; repeatable. NAME defaults to the final",
   "                             path segment and is the root's identity across runs",
   "  --root-manifest FILE       read roots from a l9.corpus-roots/v1 JSON document",
   "                             or a plain list of paths, one per line",
-  "  --cache-dir DIR            content-addressed cache root (default: $L9_CORPUS_CACHE",
+  "  --cache-root DIR           content-addressed cache root (default: $L9_CORPUS_CACHE",
   "                             or ~/.l9/corpus-cache); never inside an observed root",
+  "                             (--cache-dir is the older spelling of the same flag)",
   "  --no-cache                 run cold: read nothing from the cache, write nothing",
   "  --previous-snapshot FILE   diff against this snapshot (default: <out>/corpus-snapshot.json)",
+  "  --incremental              carry a previous run's content hash forward when a file's",
+  "                             size and mtime have not moved. Fast, and explicitly NOT",
+  "                             byte-verified: the run reports how many hashes it reused",
+  "                             and refuses to call the result fully_verified",
+  "  --verify-content           read every byte even under --incremental, restoring a",
+  "                             fully_verified snapshot",
+  "  --allow-partial-roots      emit a snapshot marked partial when a root cannot be read,",
+  "                             instead of failing the run. Never labelled complete",
   "  --no-diff                  do not produce corpus-diff.json",
   "  --session FILE             session manifest path (default: <out>/corpus-session.json)",
   "  --resume                   adopt an existing session manifest for the same roots",
   "  --topic-threshold F        topic candidate vocabulary overlap in [0,1] (default: 0.35)",
   "  --no-topic-candidates      skip topic candidate analysis",
-  "  --max-parallel-decoders N  documents decoded concurrently (default: 4)",
-  "  --max-parallel-hashers N   recorded; acquisition hashes each root with one reader",
-  "  --max-parallel-embedding-requests N   recorded; embeddings are not enabled",
+  "  --max-decoder-workers N    documents decoded concurrently (default: 4)",
+  "  --max-hash-workers N       recorded; acquisition hashes each root with one reader",
+  "  --max-analysis-workers N   recorded; candidate analysis is a single pass",
+  "  --max-embedding-workers N  recorded; embeddings are not enabled in this release",
   "  --max-memory-bytes N       ceiling on decoded text held at once (default: 256 MiB)",
   "",
   "semantic candidate discovery (on by default):",
@@ -97,7 +110,9 @@ function fail(message, code = 1) {
 function parseArgs(argv) {
   // Corpus mode names its roots with --root, so it has no positional target; the
   // single-source mode still requires one.
-  const corpusMode = argv.includes("--root") || argv.includes("--root-manifest");
+  const corpusMode = argv.includes("--root")
+    || argv.includes("--root-manifest")
+    || argv.includes("--manifest");
   if (argv.length === 0 || (!corpusMode && argv[0].startsWith("-"))) {
     console.error(USAGE);
     process.exit(2);
@@ -135,6 +150,24 @@ function numericOpt(cli, name) {
   return value;
 }
 
+/**
+ * Every file under `root`, as root-relative POSIX paths, in code-point order.
+ *
+ * `compare` is the engine's own `compareCodePoints`. A bare `.sort()` would order
+ * by UTF-16 code *unit*, which is a different order from code points for anything
+ * outside the BMP — and every ordering this package emits is decided rather than
+ * inherited, so the comparator is passed in rather than assumed.
+ */
+function listFilesRecursively(root, compare, prefix = "") {
+  const out = [];
+  for (const entry of fs.readdirSync(path.join(root, prefix), { withFileTypes: true })) {
+    const relative = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
+    if (entry.isDirectory()) out.push(...listFilesRecursively(root, compare, relative));
+    else out.push(relative);
+  }
+  return out.sort(compare);
+}
+
 function requireBuilt(modulePath) {
   try {
     return require(modulePath);
@@ -154,6 +187,7 @@ function collectPolicy(cli) {
     maxTotalUncompressedBytesPerSession: "--max-session-bytes",
     maxCompressionRatio: "--max-compression-ratio",
     maxNestedDepth: "--max-archive-depth",
+    maxNestedArchiveCount: "--max-archives",
   };
   for (const [key, flagName] of Object.entries(map)) {
     const value = numericOpt(cli, flagName);
@@ -163,26 +197,50 @@ function collectPolicy(cli) {
 }
 
 /** Roots named on the command line and in any manifest, in the order given. */
+/**
+ * The roots to observe, and the corpus they belong to.
+ *
+ * `--manifest` is the form that names both; `--root` is the quick one for a
+ * corpus an operator is assembling at the prompt, and `--corpus-id` names it.
+ */
 function collectRoots(cli, roots) {
   const specs = [];
   for (const value of cli.optAll("--root")) specs.push(roots.parseRootArgument(value));
-  const manifest = cli.opt("--root-manifest", null);
-  if (manifest !== null) specs.push(...roots.readRootManifest(manifest));
-  return specs;
+  const rootManifest = cli.opt("--root-manifest", null);
+  if (rootManifest !== null) specs.push(...roots.readRootManifest(rootManifest));
+
+  let corpusId = cli.opt("--corpus-id", null);
+  const manifest = cli.opt("--manifest", null);
+  if (manifest !== null) {
+    const parsed = roots.readCorpusManifest(manifest);
+    specs.push(...parsed.roots);
+    // An explicit --corpus-id still wins: the flag is the more specific request.
+    if (corpusId === null) corpusId = parsed.corpus_id;
+  }
+  return { specs, corpusId: corpusId ?? roots.DEFAULT_CORPUS_ID };
 }
 
 /** Resource budgets, defaulted by the engine and overridable one at a time. */
 function collectBudgets(cli) {
   const budgets = {};
+  // The contract names these workers; the older --max-parallel-* spellings are
+  // kept so an existing invocation does not break, and the newer name wins when
+  // both are given.
   const map = {
-    max_parallel_hashers: "--max-parallel-hashers",
-    max_parallel_decoders: "--max-parallel-decoders",
-    max_parallel_embedding_requests: "--max-parallel-embedding-requests",
-    max_memory_bytes: "--max-memory-bytes",
+    max_parallel_hashers: ["--max-hash-workers", "--max-parallel-hashers"],
+    max_parallel_decoders: ["--max-decoder-workers", "--max-parallel-decoders"],
+    max_parallel_analysis: ["--max-analysis-workers"],
+    max_parallel_embedding_requests: ["--max-embedding-workers", "--max-parallel-embedding-requests"],
+    max_memory_bytes: ["--max-memory-bytes"],
   };
-  for (const [key, flagName] of Object.entries(map)) {
-    const value = numericOpt(cli, flagName);
-    if (value !== undefined) budgets[key] = value;
+  for (const [key, flagNames] of Object.entries(map)) {
+    for (const flagName of flagNames) {
+      const value = numericOpt(cli, flagName);
+      if (value !== undefined) {
+        budgets[key] = value;
+        break;
+      }
+    }
   }
   return budgets;
 }
@@ -200,7 +258,10 @@ function reportCorpusRun(context) {
   const summary = result.candidates.summary;
   console.log(`${LABEL}: OK (corpus mode)`);
   console.log("  no root was modified: no file was written, renamed, or removed under any of them");
-  console.log(`  corpus_snapshot  ${result.snapshot.corpus_snapshot_id}`);
+  console.log(`  corpus_id        ${result.snapshot.corpus_id}`);
+  console.log(`  source_snapshot  ${result.snapshot.corpus_source_snapshot_id}`);
+  console.log(`  analysis_id      ${result.snapshot.analysis.corpus_analysis_id}`);
+  console.log(`  corpus_status    ${result.snapshot.corpus_status}`);
   console.log(`  roots            ${result.bindings.length}`);
   for (const binding of result.bindings) {
     console.log(`    ${binding.root_label}  ${binding.source_revision}  ${binding.absolute_path}`);
@@ -275,6 +336,17 @@ function reportCorpusRun(context) {
     + `(${coverage.cache.hits} hit, ${coverage.cache.misses} miss, ${coverage.cache.corrupt} discarded)`,
   );
   if (cache !== undefined) console.log(`  cache dir        ${cache.root}`);
+  const verification = result.snapshot.verification;
+  console.log(
+    `  verification     ${verification.mode}${verification.verify_content_requested ? " (--verify-content)" : ""}`
+    + ` -> ${verification.verification_class}`,
+  );
+  console.log(
+    `  hashes           ${verification.fully_rehashed_artifact_count} read in full, `
+    + `${verification.cached_hash_reuse_count} carried over, `
+    + `${verification.unhashed_artifact_count} unhashed`,
+  );
+  if (verification.cached_hash_reuse_count > 0) console.log(`  ${verification.statement}`);
   console.log(
     `  mtime precheck   ${result.precheck.predicted_unchanged} predicted unchanged, `
     + `${result.precheck.confirmed_unchanged} confirmed by hash, ${result.precheck.contradicted} contradicted`,
@@ -320,12 +392,29 @@ async function runCorpusMode(cli) {
   const semanticRun = requireBuilt(path.join(repo, "dist", "corpus_semantic_run.js"));
   const documentsModule = requireBuilt(path.join(repo, "dist", "corpus_documents.js"));
   const embeddingsModule = requireBuilt(path.join(repo, "dist", "corpus_embeddings.js"));
+  const repositoryModel = requireBuilt(path.join(repo, "dist", "public", "repository_model.js"));
+  const ordering = requireBuilt(path.join(repo, "dist", "ordering.js"));
   const { version } = require(path.join(repo, "package.json"));
 
-  const specs = collectRoots(cli, roots);
-  if (specs.length === 0) fail("corpus mode needs at least one --root or --root-manifest", 2);
+  let specs;
+  let corpusId;
+  try {
+    ({ specs, corpusId } = collectRoots(cli, roots));
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error), 2);
+    return;
+  }
+  if (specs.length === 0) fail("corpus mode needs at least one --root, --manifest or --root-manifest", 2);
+  // A root that is not there is a decision point, not a detail: either the run
+  // stops, or the operator has said they want a snapshot that names what is
+  // missing. It is never silently dropped.
+  const allowPartial = cli.flag("--allow-partial-roots");
   for (const spec of specs) {
-    if (!fs.existsSync(spec.path)) fail(`root does not exist: ${spec.path}`, 2);
+    if (fs.existsSync(spec.path)) continue;
+    if (!allowPartial) {
+      fail(`root does not exist: ${spec.path}. Pass --allow-partial-roots to emit a `
+        + "snapshot that records it as missing instead.", 2);
+    }
   }
   const rootPaths = specs.map((spec) => path.resolve(spec.path));
 
@@ -346,7 +435,7 @@ async function runCorpusMode(cli) {
   if (cacheEnabled) {
     try {
       cache = new cacheModule.FileCorpusCache({
-        root: cli.opt("--cache-dir", cacheModule.defaultCorpusCacheDir()),
+        root: cli.opt("--cache-root", cli.opt("--cache-dir", cacheModule.defaultCorpusCacheDir())),
         producerVersion: version,
         observedRootPaths: rootPaths,
       });
@@ -356,7 +445,7 @@ async function runCorpusMode(cli) {
   }
 
   const sessionPath = roots.assertOutsideRoots(
-    cli.opt("--session", path.join(outDir, "corpus-session.json")),
+    cli.opt("--session", path.join(outDir, "session", "corpus-session.json")),
     rootPaths,
     "the session manifest",
   );
@@ -471,6 +560,11 @@ async function runCorpusMode(cli) {
         ...(topicThreshold !== undefined ? { threshold: topicThreshold } : {}),
       },
       budgets: collectBudgets(cli),
+      corpusId,
+      observedAt: new Date().toISOString(),
+      verification: cli.flag("--incremental") ? "incremental" : "full",
+      verifyContent: cli.flag("--verify-content"),
+      allowPartialRoots: cli.flag("--allow-partial-roots"),
       semanticAnalysis: !cli.flag("--no-semantic-analysis"),
       ...(Object.keys(packBudget).length > 0 ? { packBudget } : {}),
     });
@@ -509,6 +603,61 @@ async function runCorpusMode(cli) {
   if (result.diff !== null) {
     outputs.push({ path: diffPath, contents: diffModule.renderCorpusDiff(result.diff) });
   }
+
+  // Each root's own outputs, under its own directory. The bundle is produced by
+  // the canonical emitter into a scratch directory and then read back as files,
+  // so the per-root bundles land through the same staged-and-renamed commit as
+  // every other projection rather than through a second, unguarded write path.
+  const bundleScratch = fs.mkdtempSync(path.join(os.tmpdir(), "l9-corpus-bundles-"));
+  try {
+    for (const root of result.rootPackets) {
+      const rootDir = path.join(outDir, "roots", root.directory);
+      const staged = path.join(bundleScratch, root.directory);
+      repositoryModel.emitRepositoryModelBundle(root.packet, { outDir: staged });
+      for (const relative of listFilesRecursively(staged, ordering.compareCodePoints)) {
+        outputs.push({
+          path: path.join(rootDir, "bundle", relative),
+          contents: fs.readFileSync(path.join(staged, relative), "utf8"),
+        });
+      }
+      outputs.push(
+        {
+          path: path.join(rootDir, "local-source-manifest.json"),
+          contents: `${JSON.stringify(root.localSourceManifest, null, 2)}\n`,
+        },
+        {
+          path: path.join(rootDir, "document-index.json"),
+          contents: documentsModule.renderDocumentIndex(root.documentIndex),
+        },
+        {
+          path: path.join(rootDir, "document-coverage.json"),
+          contents: scan.renderDocumentCoverage(root.documentCoverage),
+        },
+      );
+    }
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error));
+    return;
+  } finally {
+    fs.rmSync(bundleScratch, { recursive: true, force: true });
+  }
+  // The index names every other document, so it is built once the output set is
+  // final — including the ones this run decided not to write.
+  const indexModule = requireBuilt(path.join(repo, "dist", "corpus_index.js"));
+  const corpusIndex = indexModule.buildCorpusIndex({
+    snapshot: result.snapshot,
+    rootDirectories: new Map(result.rootPackets.map((root) => [root.root_id, root.directory])),
+    writtenPaths: [
+      ...outputs.map((file) => path.relative(outDir, file.path).split(path.sep).join("/")),
+      "corpus-index.json",
+      "corpus-report.md",
+    ],
+  });
+  outputs.push(
+    { path: path.join(outDir, "corpus-index.json"), contents: indexModule.renderCorpusIndex(corpusIndex) },
+    { path: path.join(outDir, "corpus-report.md"), contents: indexModule.renderCorpusIndexReport(corpusIndex) },
+  );
+
   // A diff from a previous run describes a comparison this run did not make, and
   // nothing inside the file says so. It leaves with the rest of the output set.
   const written = sessionModule.commitCorpusOutputs({

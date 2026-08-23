@@ -131,9 +131,34 @@ export interface SourceMutationProof {
   read_only_enforced_for_process: boolean;
 }
 
+/** One root's own Repository Model Packet, as the report cites it. */
+export interface QualificationRootPacket {
+  root_label: string;
+  rmp_packet_id: string;
+  rmp_semantic_hash: string;
+  bundle_ref: string | null;
+  observation_status: string;
+}
+
+/** How this run established its hashes, and what may be claimed of them. */
+export interface QualificationVerification {
+  mode: string;
+  verification_class: string;
+  fully_rehashed_artifact_count: number;
+  cached_hash_reuse_count: number;
+  unhashed_artifact_count: number;
+}
+
 export interface CorpusQualificationReport {
   schema: string;
+  corpus_id: string;
   corpus_snapshot_id: string;
+  corpus_analysis_id: string;
+  corpus_status: string;
+  missing_root_ids: string[];
+  verification: QualificationVerification;
+  /** One packet per observed root: the corpus never replaced them with one tree. */
+  root_packets: QualificationRootPacket[];
   corpus_profile_hash: string;
   producer_version: string;
   roots: QualificationRoot[];
@@ -224,7 +249,25 @@ export function buildCorpusQualificationReport(
 
   return {
     schema: CORPUS_QUALIFICATION_SCHEMA,
-    corpus_snapshot_id: cold.snapshot.corpus_snapshot_id,
+    corpus_id: cold.snapshot.corpus_id,
+    corpus_snapshot_id: cold.snapshot.corpus_source_snapshot_id,
+    corpus_analysis_id: cold.snapshot.analysis.corpus_analysis_id,
+    corpus_status: cold.snapshot.corpus_status,
+    missing_root_ids: [...cold.snapshot.missing_root_ids],
+    verification: {
+      mode: cold.snapshot.verification.mode,
+      verification_class: cold.snapshot.verification.verification_class,
+      fully_rehashed_artifact_count: cold.snapshot.verification.fully_rehashed_artifact_count,
+      cached_hash_reuse_count: cold.snapshot.verification.cached_hash_reuse_count,
+      unhashed_artifact_count: cold.snapshot.verification.unhashed_artifact_count,
+    },
+    root_packets: cold.snapshot.roots.map((root) => ({
+      root_label: root.root_label,
+      rmp_packet_id: root.rmp_packet_id,
+      rmp_semantic_hash: root.rmp_semantic_hash,
+      bundle_ref: root.bundle_ref,
+      observation_status: root.observation_status,
+    })),
     corpus_profile_hash: cold.candidates.corpus_profile_hash,
     producer_version: input.producerVersion,
     roots: cold.bindings
@@ -253,7 +296,7 @@ export function buildCorpusQualificationReport(
       interpretation: coverage.interpretation_coverage,
       lexical_analysis: coverage.lexical_analysis_coverage,
       embedding_when_enabled: coverage.embedding_coverage_when_enabled,
-      embedding_enabled: coverage.embedding_enabled,
+      embedding_enabled: coverage.embeddings.enabled,
     },
     duplicate_counts: {
       exact_duplicate_cluster_count: summary.exact_duplicate_cluster_count,
@@ -274,20 +317,20 @@ export function buildCorpusQualificationReport(
       candidate_count: summary.project_candidate_count,
       cross_root_candidate_count: summary.cross_root_project_candidate_count,
     },
-    reasoning_eligible_count: coverage.reasoning_eligible_candidate_count,
+    reasoning_eligible_count: coverage.reasoning_handoff.reasoning_eligible_candidate_count,
     unsupported_counts: {
       unsupported_format_counts: unsupported,
       unsupported_format_total: unsupported.reduce((total, entry) => total + entry.count, 0),
       unsupported_format_bytes: unsupported.reduce((total, entry) => total + entry.bytes, 0),
-      ocr_required_count: coverage.ocr_required_count,
-      encrypted_document_count: coverage.encrypted_document_count,
-      oversized_document_count: coverage.oversized_document_count,
-      secret_skipped_count: coverage.secret_skipped_count,
+      ocr_required_count: coverage.documents.ocr_required_count,
+      encrypted_document_count: coverage.documents.encrypted_document_count,
+      oversized_document_count: coverage.documents.oversized_document_count,
+      secret_skipped_count: coverage.documents.secret_skipped_count,
     },
     cold_warm_equivalence: {
       semantic_output_identical: input.semanticOutputIdentical,
       corpus_snapshot_id_identical:
-        cold.snapshot.corpus_snapshot_id === warm.snapshot.corpus_snapshot_id,
+        cold.snapshot.corpus_source_snapshot_id === warm.snapshot.corpus_source_snapshot_id,
       cold_files_scanned: cold.scanned.files,
       warm_files_scanned: warm.scanned.files,
       cold_cache_hits: cold.cacheStats.hits,
