@@ -112,8 +112,10 @@ npm run local-source -- ~/Documents/design.md  --name design --out ./out
 
 Output is a Repository Model Packet bundle under `<out>/bundle`, an acquisition
 manifest at `<out>/local-source-manifest.json`, and the corpus intelligence projection
-described below at `<out>/corpus-index.json` and `<out>/corpus-report.md`. None of them
-is ever written inside the observed tree.
+described below. A corpus run publishes generationally — see **A whole result set
+appears at once** below — so its documents live under
+`<out>/generations/<id>/` and `<out>/CURRENT.json` names the generation to read.
+None of them is ever written inside the observed tree.
 
 What the observation guarantees:
 
@@ -227,6 +229,14 @@ npm run local-source -- \
   added, removed, changed and unchanged, and cross-root move candidates — and says
   exactly which cache layers that invalidates, separating a change to the rules from a
   change to the disks. Nothing is ever evicted because an artifact left the corpus.
+  Candidate deltas are computed from each snapshot's analysis manifest and are reported
+  as `null` with a stated reason when a snapshot has none — never as a zero that would
+  read as "nothing changed".
+- **A root says how much its identity is worth.** A key the operator declared is a name
+  a person chose; a key inferred from a mount point's last segment is a good default
+  and a weak identity, because `/Volumes/Backup` and an unrelated `/mnt/usb/Backup` key
+  the same. Each root diff row states which it rests on, and a match not made between
+  two declared keys raises a caution naming the root and the remedy.
 - **`readiness-evidence.json`** carries twelve measurable signals per artifact — source,
   tests, build manifest, CI, container, deployment, specification, documentation, open
   tasks, blockers, roadmap, plan — each with the exact filename, path segment, extension
@@ -236,12 +246,36 @@ npm run local-source -- \
 - **`corpus-coverage.json`** says what the scan reached and what it did not: decode,
   interpretation and lexical coverage as ratios, unsupported formats counted by
   extension, OCR-required imagery, encrypted members, oversized documents and
-  credential-path skips.
+  credential-path skips. `decode_gap` reconciles the eligible set against the decoded
+  one cause by cause, with an `unaccounted` residual so a document lost by a route
+  nobody named surfaces instead of vanishing into a difference of two totals.
+- **Documents are decoded, not counted as unreadable** (ADR-042). PDF, DOCX, PPTX,
+  XLSX, IPYNB, CSV and HTML are read into the same normalized form Markdown is, with
+  **no new runtime dependency** — OOXML is a ZIP of XML parts and PDF's FlateDecode is
+  Node's own `zlib`. Every block cites its own format's coordinate — a page and an
+  index, a slide and a shape, a sheet and a cell, a notebook cell index — and no format
+  without lines is ever given a line number. A scanned PDF reports `decoder.ocr_required`
+  and an encrypted one `decoder.encrypted`; neither is silently an empty document. No
+  notebook cell is executed, no spreadsheet formula evaluated, no macro run, no script
+  run, and no external reference fetched.
+- **`document-signals.json`** reports, per format, what decoded, what refused it and
+  why, which locator kinds it cited, and how much of it a candidate actually named.
+  Decoding that reaches nothing is a real failure and is invisible in a coverage ratio.
+- **A whole result set appears at once.** Every projection of one run is written into
+  `generations/<id>/` and a single atomic rename of `CURRENT.json` makes the set
+  visible. A crash at any point leaves the whole previous generation or the whole new
+  one, never a coverage report from one run beside a readiness document from another.
+  `--keep-generations` bounds retention; pruning never touches what the pointer names.
 - **Interrupted scans resume.** `corpus-session.json` records completions by
-  content-addressed key; `--resume` picks them up. Concurrency and in-flight memory are
-  bounded and configurable, and every projection is staged and renamed together.
+  content-addressed key; `--resume` picks them up. Cache and session writes are staged,
+  fsynced, renamed, and the parent directory fsynced — a rename is atomic against a
+  crashed process and not against a power cut. `--max-decoder-workers` bounds documents
+  read concurrently and `--max-memory-bytes` bounds decoded text held at once; both are
+  measured rather than recorded, and a budget that governed nothing was removed rather
+  than documented.
 
-No model is called and no network request is made. Full semantics:
+No model is called and no network request is made unless an operator explicitly
+configures an embedding endpoint. Full semantics:
 [`docs/corpus-archaeology.md`](docs/corpus-archaeology.md). Running one at scale:
 [`docs/corpus-scale-operation.md`](docs/corpus-scale-operation.md). What the cache is
 and is not: [`docs/corpus-cache.md`](docs/corpus-cache.md).
@@ -279,14 +313,37 @@ npm run validate
 
 The canonical gate covers typing, tests, the exact API contract, architecture authority, deterministic manifest, committed distribution parity, selfpack, and an installed-tarball consumer.
 
+`npm run validate:report` runs the gate and writes `CURRENT_VALIDATION_REPORT.md`,
+recording the exit code each command actually returned and binding the result to a digest
+of the tree it ran over. `npm run validate:report -- --check` fails when that digest has
+moved, so a report written against an earlier tree cannot be presented as evidence for
+this one.
+
+`L9_ACCEPTANCE_CORPUS_MANIFEST=<manifest.json> npm test` additionally scans a real
+archive an operator names — roots the manifest declares and nothing else. Nothing
+enumerates drives or guesses at locations, and with the variable unset the acceptance
+suite is skipped.
+
 ### Semantic candidates
 
 `npm run local-source -- --root <path> …` also runs deterministic semantic candidate
 discovery: keyphrases, multi-signal pair evidence, topic/project/consolidation candidates,
 and a bounded reasoning queue naming which candidates a future model would be worth
-spending on. Optional embeddings are **off by default** and a remote provider needs a
-second explicit opt-in. **No model is called anywhere in this package.** See
-[`docs/semantic-candidates.md`](docs/semantic-candidates.md).
+spending on. Decoded PDFs, Word documents, decks and spreadsheets enter that analysis on
+the same terms Markdown does, so a plan saved as `.docx` and the same plan saved as
+`.md` are found to be near-duplicates of each other.
+
+Topic candidates run over ten thousand documents under an exact rarest-first prefix
+bound rather than a sample: at that size, comparing every pair would be 47,428,930
+comparisons and the index performs 9,733. `corpus-coverage.json` reports both numbers,
+and the bounded pass is held to an exhaustive reference at six thresholds.
+
+Optional embeddings are **off by default**, a remote provider needs a second explicit
+opt-in, and the one provider this package ships (`http-json`) refuses a `local` endpoint
+that is not a loopback literal, never follows a redirect, and takes its bearer token from
+the environment rather than a flag. **No language model is called anywhere in this
+package**; an embedding pass calls only the embedding endpoint an operator configured.
+See [`docs/semantic-candidates.md`](docs/semantic-candidates.md).
 
 `npm run qualify:corpus` is separate and deliberately not part of that gate. It measures
 rather than asserts: it scans a mixed read-only two-root corpus cold and then warm and

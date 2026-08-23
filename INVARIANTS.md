@@ -225,6 +225,7 @@ Accepted ADRs remain in the repository. A changed decision receives a new sequen
 | INV-022 | Frontmatter byte-preservation, idempotency, unsafe-YAML refusal, and carrier-extension tests |
 | INV-023 | Release identity, immutable-ref, packed-CLI, and consumer single-writer migration tests |
 | INV-024 | Corpus source-versus-analysis identity, verification-class, and partial-corpus tests |
+| INV-025 | Document decoding, reported work, generational publication, and bound evidence tests |
 
 ### INV-023: Releases and consumer migrations use immutable identity
 
@@ -262,3 +263,58 @@ bytes at identical relative paths cannot absorb each other's artifacts.
 `tests/corpus_diff.test.ts`, `tests/corpus_cache.test.ts`, and the scale and
 real-corpus qualification suites.
 
+### INV-025: A reported number was measured, and a whole result set appears at once
+
+A decoder that opened a document is not the claim; what came out of it reaching
+the analysis is. Prose document formats — PDF, DOCX, PPTX, XLSX, IPYNB, CSV,
+HTML — enter lexical analysis on format rather than extension, and
+`document-signals.json` reports per format how many of its documents were
+decoded, analyzed and named by a candidate. A format with a decode count above
+zero and a participation count of zero is a defect this document exists to make
+visible.
+
+Every block cites a coordinate its own format has. No format without lines is
+given a line number, and a decoder that cannot read a document returns a typed
+reason — `decoder.ocr_required`, `decoder.encrypted`, `decoder.malformed` — never
+an empty document. No notebook cell is executed, no spreadsheet formula
+evaluated, no macro or script run, and no reference declared inside a document is
+fetched.
+
+A count is computed or it is `null` with a stated reason. Candidate deltas come
+from each snapshot's analysis manifest; when a snapshot has none, all four counts
+are null and `not_computed_reason` says which case it is. Zero means two manifests
+were compared and matched. `decode_gap` reconciles the eligible set against the
+decoded one with an `unaccounted` residual, so a document lost by an unnamed route
+is reported rather than absorbed.
+
+A budget bounds the run or it does not exist. A flag that is recorded and
+exercised nowhere is removed, and an invocation still passing it is refused by
+name rather than ignored.
+
+Candidate pair work is bounded by an exact filter rather than a sample, and the
+work done is reported beside what comparing everything would have cost. A bounded
+pass must agree exactly with an exhaustive one.
+
+Output is published generationally: every projection of one run is written into
+one directory and a single atomic rename of `CURRENT.json` makes the set visible.
+No reader may observe one run's coverage report beside another run's readiness
+document. Cache and session writes are staged, fsynced, renamed, and the parent
+directory fsynced, because a rename is atomic against a crashed process and not
+against a power cut.
+
+A root identity states whether it was declared or inferred, and a longitudinal
+comparison resting on an inferred key raises a caution rather than an unqualified
+claim of continuity.
+
+Evidence is bound to what it describes. A validation report names a digest of the
+tree it ran over and is invalid the moment that tree moves; a conformance record
+names the exact bytes of every bundle it accepted; a real-archive acceptance run
+scans the roots an operator declared and never discovers one.
+
+**Enforced by:** `tests/corpus_document_participation.test.ts`,
+`tests/document_decoders.test.ts`, `tests/corpus_candidate_diff.test.ts`,
+`tests/corpus_concurrency.test.ts`, `tests/corpus_topic_scale.test.ts`,
+`tests/corpus_scale.test.ts`, `tests/corpus_publish.test.ts`,
+`tests/corpus_root_identity_durability.test.ts`,
+`tests/corpus_real_archive_acceptance.test.ts`,
+`tests/topology_readonly_guard.test.ts`, and `tests/validation_report.test.ts`.
