@@ -74,9 +74,9 @@ describe("a ten-thousand-artifact corpus", () => {
     expect(cold.readiness.bodies_of_work).toHaveLength(SPEC.candidateProjects);
     for (const body of cold.readiness.bodies_of_work) {
       expect(body.origin).toBe("explicit_project_identifier");
-      expect(body.metrics.manifest_count).toBe(1);
-      expect(body.metrics.test_file_count).toBe(1);
-      expect(body.metrics.plan_count).toBe(1);
+      expect(body.metrics.implementation.manifest_count).toBe(1);
+      expect(body.metrics.validation.structural_test_artifact_count).toBe(1);
+      expect(body.metrics.knowledge.plan_count).toBe(1);
     }
 
     const warm = await runCorpusScan({

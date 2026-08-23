@@ -146,15 +146,15 @@
     },
     {
       "path": "dist/corpus_readiness.d.ts",
-      "git_blob_sha1": "262b014105f72043f0c0d211e192ba763b86ae01"
+      "git_blob_sha1": "be63e8f87c7ea844130babe337b226b7f0141668"
     },
     {
       "path": "dist/corpus_readiness.js",
-      "git_blob_sha1": "be764784799fdcbc9b62fc351349f4b1fccceb50"
+      "git_blob_sha1": "ff4d3ef06fc4b741e0f4f010f88b7d94303e5ea8"
     },
     {
       "path": "dist/corpus_readiness.js.map",
-      "git_blob_sha1": "6947e3102c7602bceb39eb0d9d59cd2ebd079741"
+      "git_blob_sha1": "4f9e99a8df0664ea15ddda7bed0c70ebcf1f9d27"
     },
     {
       "path": "dist/corpus_reasoning.d.ts",
@@ -198,11 +198,11 @@
     },
     {
       "path": "dist/corpus_scan.js",
-      "git_blob_sha1": "597a9ccc2d4a29568e44ea178f94ab4e3c52e28a"
+      "git_blob_sha1": "92a67cb15fe3c164a628d12bc8cbb6a0fb262566"
     },
     {
       "path": "dist/corpus_scan.js.map",
-      "git_blob_sha1": "79770020dd48b439b906f7b102a91e721ab6ad34"
+      "git_blob_sha1": "55a39919b39cf6799822c5c6d19cee19958bf9e5"
     },
     {
       "path": "dist/corpus_semantic_run.d.ts",
@@ -718,7 +718,7 @@
     },
     {
       "path": "src/corpus_readiness.ts",
-      "git_blob_sha1": "771d8e972f5d7d336b7382b39e92693a670191a6"
+      "git_blob_sha1": "42036798073f415ff52607eaaec043a6e605892c"
     },
     {
       "path": "src/corpus_reasoning.ts",
@@ -734,7 +734,7 @@
     },
     {
       "path": "src/corpus_scan.ts",
-      "git_blob_sha1": "b0d97c4d531c519729d98f72aa03b4b724116cfc"
+      "git_blob_sha1": "6c0f5a3446f47b6fb576ea994795d041584f8bfd"
     },
     {
       "path": "src/corpus_semantic_run.ts",
@@ -874,7 +874,7 @@
     },
     {
       "path": "tests/corpus_readiness.test.ts",
-      "git_blob_sha1": "87883fd2d4966fb3daea3ec9a77dd1456965e05e"
+      "git_blob_sha1": "ff74e1f3e81b9d637bdaec05e52521a9f35644a4"
     },
     {
       "path": "tests/corpus_real_world_qualification.test.ts",
@@ -882,7 +882,7 @@
     },
     {
       "path": "tests/corpus_scale.test.ts",
-      "git_blob_sha1": "a16d11318a49cf330fe4048c70d9d9e18d19e598"
+      "git_blob_sha1": "1c22c213ea88ac29ee5efb128488b3efd8dfdbdd"
     },
     {
       "path": "tests/corpus_semantic_candidates.test.ts",

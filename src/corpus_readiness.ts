@@ -36,6 +36,7 @@ export const READINESS_SIGNALS = [
   "artifact.has_source_code",
   "artifact.has_tests",
   "artifact.has_build_manifest",
+  "artifact.has_build_definition",
   "artifact.has_ci_definition",
   "artifact.has_container_definition",
   "artifact.has_deployment_definition",
@@ -89,6 +90,14 @@ const BUILD_MANIFEST_NAMES = new Set([
 
 const BUILD_MANIFEST_EXTENSIONS = new Set([".csproj", ".fsproj", ".sln", ".vbproj"]);
 
+/** Files that define how something is assembled, as opposed to what it needs. */
+const BUILD_DEFINITION_NAMES = new Set([
+  "build.gradle", "build.gradle.kts", "build.sbt", "cmakelists.txt", "makefile",
+  "meson.build", "mix.exs", "pom.xml", "settings.gradle", "settings.gradle.kts",
+]);
+
+const BUILD_DEFINITION_EXTENSIONS = new Set([".csproj", ".fsproj", ".sln", ".vbproj"]);
+
 const CI_DEFINITION_NAMES = new Set([
   ".gitlab-ci.yml", ".gitlab-ci.yaml", ".travis.yml", "appveyor.yml",
   "azure-pipelines.yml", "azure-pipelines.yaml", "bitbucket-pipelines.yml",
@@ -123,6 +132,17 @@ const TEST_NAME = /(^|[._-])(test|tests|spec|specs)([._-]|$)/;
 
 const STATUS_BLOCKED = new Set(["blocked"]);
 
+/**
+ * Declared status vocabularies.
+ *
+ * These read a document's own claim about itself and nothing more. A file
+ * declaring `status: complete` is a file that says so; whether it is complete is
+ * not a question a filename or a front-matter line can answer.
+ */
+const WIP_STATUSES = new Set(["wip", "in-progress", "in_progress", "active", "ongoing"]);
+const DRAFT_STATUSES = new Set(["draft", "proposed", "idea", "sketch"]);
+const COMPLETE_STATUSES = new Set(["complete", "completed", "done", "shipped", "released", "accepted"]);
+
 // ───────────────────────────── inputs and outputs ─────────────────────────────
 
 /** One assertion, reduced to the two fields readiness reads. */
@@ -142,6 +162,14 @@ export interface ReadinessArtifactInput {
   content_hash: string | null;
   size_bytes: number | null;
   assertions?: readonly ReadinessAssertion[];
+  /** True when this artifact exists only inside an archive. */
+  is_archive_member?: boolean;
+  /** The archive it lives in, so archives can be counted per body of work. */
+  archive_id?: string | null;
+  /** True when a decoder produced a normalized document from these bytes. */
+  decoded?: boolean;
+  /** True when the extension is a document format no decoder in this release reads. */
+  unsupported_format?: boolean;
 }
 
 export interface ReadinessSignal {
@@ -158,35 +186,101 @@ export interface ReadinessArtifactEvidence {
 }
 
 /**
- * Counts for one body of work.
+ * Counts for one body of work, grouped by the question each group answers.
  *
  * Every field is a count of things observed. None of them is combined with any
  * other, weighted, or projected forward: a strategy layer that wants a ratio can
- * divide two of these itself and own the meaning of the result.
+ * divide two of these, and will then own the ratio. The grouping is not cosmetic
+ * — it keeps the corpus denominators beside the counts drawn from them, so "two
+ * test files" is never read without "out of how many files".
  */
 export interface BodyOfWorkMetrics {
-  source_file_count: number;
-  test_file_count: number;
-  manifest_count: number;
-  ci_definition_count: number;
-  container_definition_count: number;
-  deployment_definition_count: number;
-  specification_count: number;
-  documentation_count: number;
-  open_task_count: number;
-  completed_task_count: number;
-  blocker_count: number;
-  plan_count: number;
-  roadmap_count: number;
-  exact_duplicate_count: number;
-  near_duplicate_count: number;
-  candidate_version_count: number;
-  supersession_declaration_count: number;
-  /** Distinct content hashes among the members. Exact duplicates collapse to one. */
-  unique_content_estimate: number;
-  /** Bytes of those distinct hashes, counted once each. */
-  unique_content_bytes_estimate: number;
+  /** How much of the corpus this body is. The base for everything below. */
+  corpus: {
+    artifact_count: number;
+    root_count: number;
+    archive_count: number;
+    total_bytes: number;
+  };
+  implementation: {
+    source_artifact_count: number;
+    /** Extensions of the source artifacts, by count, in code-point order. */
+    language_distribution: { language: string; artifact_count: number }[];
+    /** Files declaring dependencies or package identity: package.json, go.mod. */
+    manifest_count: number;
+    /** Files defining a build procedure: Makefile, CMakeLists.txt, build.gradle. */
+    build_definition_count: number;
+  };
+  validation: {
+    /**
+     * Files a test convention claims. Structural evidence only: it means files
+     * named or placed like tests exist, never that any test was run or passed.
+     */
+    structural_test_artifact_count: number;
+    ci_definition_count: number;
+  };
+  delivery: {
+    container_definition_count: number;
+    deployment_definition_count: number;
+  };
+  knowledge: {
+    specification_count: number;
+    documentation_count: number;
+    plan_count: number;
+    roadmap_count: number;
+  };
+  /** What the documents declare about their own state. Declarations, not verdicts. */
+  work_state: {
+    wip_count: number;
+    draft_count: number;
+    blocked_count: number;
+    complete_declared_count: number;
+    open_task_count: number;
+    completed_task_count: number;
+    milestone_count: number;
+  };
+  dependency: {
+    explicit_dependency_count: number;
+    explicit_blocker_count: number;
+  };
+  reuse_and_duplication: {
+    exact_duplicate_cluster_count: number;
+    exact_duplicate_artifact_count: number;
+    near_duplicate_candidate_count: number;
+    consolidation_candidate_count: number;
+    explicit_supersession_count: number;
+    /** Groups of members that are lexically near-duplicates of one another. */
+    content_variant_count: number;
+  };
+  /**
+   * What is not known about this body, kept beside what is.
+   *
+   * A body whose documents are mostly undecodable produces thin evidence, and a
+   * reader who cannot see that will mistake thin evidence for a thin project.
+   */
+  uncertainty: {
+    /** Members declaring two different `work.status` values. */
+    conflicting_status_count: number;
+    /** Document formats no decoder in this release reads: PDF, DOCX, and so on. */
+    unsupported_document_count: number;
+    /** Members with exact bytes on record that no decoder turned into a document. */
+    undecoded_artifact_count: number;
+    /** Members with no content hash at all: unreadable, or over the hash budget. */
+    coverage_gap_count: number;
+  };
+  /** Distinct content, counted once per hash. Deterministic; not a value estimate. */
+  unique_content: {
+    distinct_content_hash_count: number;
+    distinct_content_bytes: number;
+    method: string;
+  };
 }
+
+/** How `unique_content` is arrived at, stated in the document that carries it. */
+export const UNIQUE_CONTENT_METHOD =
+  "Distinct sha256 content hashes among this body's members, counted once each, with the "
+  + "bytes of one member per hash. It measures how much of the body is not a copy of the rest "
+  + "of it. It is not a measure of importance, value, or effort.";
 
 export interface BodyOfWork {
   body_id: string;
@@ -273,12 +367,24 @@ function conventionSignals(rootRelativePath: string): ReadinessSignal[] {
     }
   }
 
+  // A manifest declares what a project depends on and what it is called; a build
+  // definition declares how it is assembled. Several files are honestly both, and
+  // are counted in both — `pom.xml` really does declare dependencies and really
+  // does define a build. Neither signal says the project builds.
   if (BUILD_MANIFEST_NAMES.has(basename) || BUILD_MANIFEST_EXTENSIONS.has(extension)) {
     push(
       signals,
       "artifact.has_build_manifest",
       BUILD_MANIFEST_NAMES.has(basename) ? "filename_convention" : "extension_convention",
       BUILD_MANIFEST_NAMES.has(basename) ? basename : extension,
+    );
+  }
+  if (BUILD_DEFINITION_NAMES.has(basename) || BUILD_DEFINITION_EXTENSIONS.has(extension)) {
+    push(
+      signals,
+      "artifact.has_build_definition",
+      BUILD_DEFINITION_NAMES.has(basename) ? "filename_convention" : "extension_convention",
+      BUILD_DEFINITION_NAMES.has(basename) ? basename : extension,
     );
   }
 
@@ -398,47 +504,80 @@ export interface BodyOfWorkContext {
   rootById: ReadonlyMap<string, string>;
   /** Members of each exact-duplicate cluster, keyed by virtual source id. */
   exactDuplicateIds: ReadonlySet<string>;
+  /** Which exact-duplicate cluster each artifact belongs to, when it belongs to one. */
+  clusterByArtifact?: ReadonlyMap<string, string>;
+  /** Consolidation candidates each artifact is a member of. */
+  consolidationsByArtifact?: ReadonlyMap<string, readonly string[]>;
   /** Near-duplicate candidate pairs, as ordered id pairs. */
   nearDuplicatePairs: readonly (readonly [string, string])[];
 }
 
 function emptyMetrics(): BodyOfWorkMetrics {
   return {
-    source_file_count: 0,
-    test_file_count: 0,
-    manifest_count: 0,
-    ci_definition_count: 0,
-    container_definition_count: 0,
-    deployment_definition_count: 0,
-    specification_count: 0,
-    documentation_count: 0,
-    open_task_count: 0,
-    completed_task_count: 0,
-    blocker_count: 0,
-    plan_count: 0,
-    roadmap_count: 0,
-    exact_duplicate_count: 0,
-    near_duplicate_count: 0,
-    candidate_version_count: 0,
-    supersession_declaration_count: 0,
-    unique_content_estimate: 0,
-    unique_content_bytes_estimate: 0,
+    corpus: { artifact_count: 0, root_count: 0, archive_count: 0, total_bytes: 0 },
+    implementation: {
+      source_artifact_count: 0,
+      language_distribution: [],
+      manifest_count: 0,
+      build_definition_count: 0,
+    },
+    validation: { structural_test_artifact_count: 0, ci_definition_count: 0 },
+    delivery: { container_definition_count: 0, deployment_definition_count: 0 },
+    knowledge: {
+      specification_count: 0,
+      documentation_count: 0,
+      plan_count: 0,
+      roadmap_count: 0,
+    },
+    work_state: {
+      wip_count: 0,
+      draft_count: 0,
+      blocked_count: 0,
+      complete_declared_count: 0,
+      open_task_count: 0,
+      completed_task_count: 0,
+      milestone_count: 0,
+    },
+    dependency: { explicit_dependency_count: 0, explicit_blocker_count: 0 },
+    reuse_and_duplication: {
+      exact_duplicate_cluster_count: 0,
+      exact_duplicate_artifact_count: 0,
+      near_duplicate_candidate_count: 0,
+      consolidation_candidate_count: 0,
+      explicit_supersession_count: 0,
+      content_variant_count: 0,
+    },
+    uncertainty: {
+      conflicting_status_count: 0,
+      unsupported_document_count: 0,
+      undecoded_artifact_count: 0,
+      coverage_gap_count: 0,
+    },
+    unique_content: {
+      distinct_content_hash_count: 0,
+      distinct_content_bytes: 0,
+      method: UNIQUE_CONTENT_METHOD,
+    },
   };
 }
 
-const SIGNAL_METRIC: Readonly<Record<ReadinessSignalName, keyof BodyOfWorkMetrics | null>> = {
-  "artifact.has_source_code": "source_file_count",
-  "artifact.has_tests": "test_file_count",
-  "artifact.has_build_manifest": "manifest_count",
-  "artifact.has_ci_definition": "ci_definition_count",
-  "artifact.has_container_definition": "container_definition_count",
-  "artifact.has_deployment_definition": "deployment_definition_count",
-  "artifact.has_specification": "specification_count",
-  "artifact.has_documentation": "documentation_count",
+/** Where each signal is tallied. `null` means the signal is not a count here. */
+const SIGNAL_METRIC: Readonly<Record<ReadinessSignalName, ((m: BodyOfWorkMetrics) => void) | null>> = {
+  "artifact.has_source_code": (m) => { m.implementation.source_artifact_count += 1; },
+  "artifact.has_tests": (m) => { m.validation.structural_test_artifact_count += 1; },
+  "artifact.has_build_manifest": (m) => { m.implementation.manifest_count += 1; },
+  "artifact.has_build_definition": (m) => { m.implementation.build_definition_count += 1; },
+  "artifact.has_ci_definition": (m) => { m.validation.ci_definition_count += 1; },
+  "artifact.has_container_definition": (m) => { m.delivery.container_definition_count += 1; },
+  "artifact.has_deployment_definition": (m) => { m.delivery.deployment_definition_count += 1; },
+  "artifact.has_specification": (m) => { m.knowledge.specification_count += 1; },
+  "artifact.has_documentation": (m) => { m.knowledge.documentation_count += 1; },
+  // Tallied from the assertions themselves, so one document with five open tasks
+  // counts five rather than one.
   "artifact.has_open_tasks": null,
   "artifact.has_blockers": null,
-  "artifact.has_roadmap": "roadmap_count",
-  "artifact.has_plan": "plan_count",
+  "artifact.has_roadmap": (m) => { m.knowledge.roadmap_count += 1; },
+  "artifact.has_plan": (m) => { m.knowledge.plan_count += 1; },
 };
 
 /**
@@ -490,32 +629,107 @@ export function buildBodyOfWorkMetrics(
   const metrics = emptyMetrics();
   const members = new Set(memberIds);
   const contentHashes = new Map<string, number>();
+  const roots = new Set<string>();
+  const archives = new Set<string>();
+  const clusters = new Set<string>();
+  const consolidations = new Set<string>();
+  const languages = new Map<string, number>();
+  const declaredStatuses = new Map<string, string[]>();
 
   for (const id of memberIds) {
     for (const signal of context.signalsById.get(id) ?? []) {
-      const field = SIGNAL_METRIC[signal.signal];
-      if (field !== null) metrics[field] += 1;
+      const tally = SIGNAL_METRIC[signal.signal];
+      if (tally !== null) tally(metrics);
+      // The language of a source artifact is its extension, and it is read from
+      // the signal's own evidence rather than re-derived, so the distribution can
+      // never disagree with the count it breaks down.
+      if (signal.signal === "artifact.has_source_code"
+        && signal.evidence_class === "extension_convention") {
+        languages.set(signal.evidence, (languages.get(signal.evidence) ?? 0) + 1);
+      }
     }
+
+    const root = context.rootById.get(id);
+    if (root !== undefined) roots.add(root);
+    const cluster = context.clusterByArtifact?.get(id);
+    if (cluster !== undefined) clusters.add(cluster);
+    for (const candidate of context.consolidationsByArtifact?.get(id) ?? []) {
+      consolidations.add(candidate);
+    }
+
     const artifact = context.artifactsById.get(id);
     if (artifact === undefined) continue;
-    for (const assertion of artifact.assertions ?? []) {
-      if (assertion.predicate === "work.task.open") metrics.open_task_count += 1;
-      else if (assertion.predicate === "work.task.completed") metrics.completed_task_count += 1;
-      else if (assertion.predicate === "work.blocked_by") metrics.blocker_count += 1;
-      else if (assertion.predicate === "work.supersedes") metrics.supersession_declaration_count += 1;
-      else if (assertion.predicate === "work.superseded_by") metrics.supersession_declaration_count += 1;
+    if (artifact.archive_id !== undefined && artifact.archive_id !== null) {
+      archives.add(artifact.archive_id);
     }
-    if (context.exactDuplicateIds.has(id)) metrics.exact_duplicate_count += 1;
+    metrics.corpus.total_bytes += artifact.size_bytes ?? 0;
+
+    for (const assertion of artifact.assertions ?? []) {
+      switch (assertion.predicate) {
+        case "work.task.open": metrics.work_state.open_task_count += 1; break;
+        case "work.task.completed": metrics.work_state.completed_task_count += 1; break;
+        case "work.milestone": metrics.work_state.milestone_count += 1; break;
+        case "work.blocked_by":
+          metrics.work_state.blocked_count += 1;
+          metrics.dependency.explicit_blocker_count += 1;
+          break;
+        case "work.depends_on": metrics.dependency.explicit_dependency_count += 1; break;
+        case "work.supersedes":
+        case "work.superseded_by":
+          metrics.reuse_and_duplication.explicit_supersession_count += 1;
+          break;
+        case "work.status": {
+          const value = assertion.object.trim().toLowerCase();
+          const seen = declaredStatuses.get(id) ?? [];
+          seen.push(value);
+          declaredStatuses.set(id, seen);
+          if (WIP_STATUSES.has(value)) metrics.work_state.wip_count += 1;
+          else if (DRAFT_STATUSES.has(value)) metrics.work_state.draft_count += 1;
+          else if (COMPLETE_STATUSES.has(value)) metrics.work_state.complete_declared_count += 1;
+          else if (STATUS_BLOCKED.has(value)) metrics.work_state.blocked_count += 1;
+          break;
+        }
+        default: break;
+      }
+    }
+
+    if (context.exactDuplicateIds.has(id)) {
+      metrics.reuse_and_duplication.exact_duplicate_artifact_count += 1;
+    }
+
+    // Three disjoint kinds of not-knowing, kept apart because they mean different
+    // things: a format nothing here reads, bytes a decoder could not turn into
+    // text, and a file whose bytes were never established at all.
+    if (artifact.content_hash === null) metrics.uncertainty.coverage_gap_count += 1;
+    else if (artifact.unsupported_format === true) metrics.uncertainty.unsupported_document_count += 1;
+    else if (artifact.decoded === false) metrics.uncertainty.undecoded_artifact_count += 1;
+
     if (artifact.content_hash !== null && !contentHashes.has(artifact.content_hash)) {
       contentHashes.set(artifact.content_hash, artifact.size_bytes ?? 0);
     }
   }
 
+  // A body whose documents disagree about their own state — one says complete,
+  // another says wip — is reported as ambiguous rather than resolved by picking
+  // one. Every member that declared a status participates in the disagreement.
+  const distinctStatuses = new Set([...declaredStatuses.values()].flat());
+  if (distinctStatuses.size > 1) {
+    metrics.uncertainty.conflicting_status_count = declaredStatuses.size;
+  }
+
   const localPairs = context.nearDuplicatePairs.filter(([a, b]) => members.has(a) && members.has(b));
-  metrics.near_duplicate_count = localPairs.length;
-  metrics.candidate_version_count = componentCount(members, localPairs);
-  metrics.unique_content_estimate = contentHashes.size;
-  metrics.unique_content_bytes_estimate = [...contentHashes.values()].reduce(
+  metrics.corpus.artifact_count = members.size;
+  metrics.corpus.root_count = roots.size;
+  metrics.corpus.archive_count = archives.size;
+  metrics.implementation.language_distribution = [...languages.entries()]
+    .map(([language, artifact_count]) => ({ language, artifact_count }))
+    .sort((a, b) => compareCodePoints(a.language, b.language));
+  metrics.reuse_and_duplication.exact_duplicate_cluster_count = clusters.size;
+  metrics.reuse_and_duplication.consolidation_candidate_count = consolidations.size;
+  metrics.reuse_and_duplication.near_duplicate_candidate_count = localPairs.length;
+  metrics.reuse_and_duplication.content_variant_count = componentCount(members, localPairs);
+  metrics.unique_content.distinct_content_hash_count = contentHashes.size;
+  metrics.unique_content.distinct_content_bytes = [...contentHashes.values()].reduce(
     (sum, bytes) => sum + bytes,
     0,
   );

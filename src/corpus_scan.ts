@@ -1165,6 +1165,12 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       root_relative_path: artifact.rootRelativePath,
       content_hash: artifact.contentHash,
       size_bytes: artifact.sizeBytes,
+      is_archive_member: artifact.isArchiveMember,
+      // The outermost archive a member sits in, so two members of one ZIP count
+      // as one archive rather than two.
+      archive_id: archiveAncestryOf(artifact.rootRelativePath)[0] ?? null,
+      decoded: normalized.get(artifact.virtualSourceId)?.decodes === true,
+      unsupported_format: UNDECODED_EXTENSIONS.has(artifact.extension),
       assertions: (interpreted.get(artifact.virtualSourceId)?.assertions ?? []).map((assertion) => ({
         predicate: assertion.predicate,
         object: assertion.object,
@@ -1463,22 +1469,6 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       origin_ref: candidate.project_key,
       member_ids: candidate.member_ids,
     }));
-    const readiness = buildReadinessEvidence({
-      corpusSourceSnapshotId: sourceSnapshotId,
-      corpusAnalysisId: analysisIdentity.corpus_analysis_id,
-      artifacts: readinessInputs,
-      bodies,
-      context: {
-        signalsById,
-        artifactsById: new Map(
-          readinessInputs.map((artifact) => [artifact.virtual_source_id, artifact]),
-        ),
-        rootById: rootByArtifact,
-        exactDuplicateIds,
-        nearDuplicatePairs: nearPairs,
-      },
-    });
-
     // ── 7. normalized documents, written down ─────────────────────────────
     //
     // Every field below was already established above. The index exists because
@@ -1691,6 +1681,36 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
     ).length;
 
     const cacheStats = cacheStatsDelta(cacheAtStart, cache.stats());
+    // ── 8b. readiness evidence ────────────────────────────────────────────
+    // Built after candidate discovery so a body of work can be told how many
+    // consolidation candidates its own members appear in. Readiness is evidence
+    // about candidates; it cannot be assembled before the candidates exist.
+    const consolidationsByArtifact = new Map<string, string[]>();
+    for (const candidate of semantic?.consolidations.candidates ?? []) {
+      for (const memberId of candidate.member_artifact_ids) {
+        const bucket = consolidationsByArtifact.get(memberId) ?? [];
+        bucket.push(candidate.candidate_id);
+        consolidationsByArtifact.set(memberId, bucket);
+      }
+    }
+    const readiness = buildReadinessEvidence({
+      corpusSourceSnapshotId: sourceSnapshotId,
+      corpusAnalysisId: analysisIdentity.corpus_analysis_id,
+      artifacts: readinessInputs,
+      bodies,
+      context: {
+        signalsById,
+        artifactsById: new Map(
+          readinessInputs.map((artifact) => [artifact.virtual_source_id, artifact]),
+        ),
+        rootById: rootByArtifact,
+        exactDuplicateIds,
+        clusterByArtifact,
+        consolidationsByArtifact,
+        nearDuplicatePairs: nearPairs,
+      },
+    });
+
     const coverage: CorpusCoverage = {
       schema: CORPUS_COVERAGE_SCHEMA,
       corpus_source_snapshot_id: sourceSnapshotId,
