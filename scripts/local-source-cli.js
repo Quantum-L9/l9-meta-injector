@@ -49,6 +49,9 @@ const USAGE = [
   "  --max-session-bytes N      largest total uncompressed size for the whole run",
   "  --max-compression-ratio N  largest uncompressed:compressed ratio",
   "  --max-archive-depth N      nested-archive depth ceiling",
+  "  --max-archives N           archives expanded in one run (default: 64). A corpus that",
+  "                             is mostly ZIPs will hit this; the run says so rather than",
+  "                             quietly stopping, and every held archive is still hashed",
   "",
   "multi-root corpus mode (repeat --root, or point at a manifest):",
   "  --root PATH[=NAME]         add a root; repeatable. NAME defaults to the final",
@@ -177,6 +180,7 @@ function collectPolicy(cli) {
     maxTotalUncompressedBytesPerSession: "--max-session-bytes",
     maxCompressionRatio: "--max-compression-ratio",
     maxNestedDepth: "--max-archive-depth",
+    maxNestedArchiveCount: "--max-archives",
   };
   for (const [key, flagName] of Object.entries(map)) {
     const value = numericOpt(cli, flagName);

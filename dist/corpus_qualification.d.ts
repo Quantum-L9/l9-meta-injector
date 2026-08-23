@@ -100,9 +100,32 @@ export interface SourceMutationProof {
     /** True only when a probe write into the fixture actually failed. */
     read_only_enforced_for_process: boolean;
 }
+/** One root's own Repository Model Packet, as the report cites it. */
+export interface QualificationRootPacket {
+    root_label: string;
+    rmp_packet_id: string;
+    rmp_semantic_hash: string;
+    bundle_ref: string | null;
+    observation_status: string;
+}
+/** How this run established its hashes, and what may be claimed of them. */
+export interface QualificationVerification {
+    mode: string;
+    verification_class: string;
+    fully_rehashed_artifact_count: number;
+    cached_hash_reuse_count: number;
+    unhashed_artifact_count: number;
+}
 export interface CorpusQualificationReport {
     schema: string;
+    corpus_id: string;
     corpus_snapshot_id: string;
+    corpus_analysis_id: string;
+    corpus_status: string;
+    missing_root_ids: string[];
+    verification: QualificationVerification;
+    /** One packet per observed root: the corpus never replaced them with one tree. */
+    root_packets: QualificationRootPacket[];
     corpus_profile_hash: string;
     producer_version: string;
     roots: QualificationRoot[];

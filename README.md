@@ -204,10 +204,29 @@ npm run local-source -- \
   byte is still hashed on every run: `mtime` is a scheduling hint whose accuracy is
   reported, and it never decides an identity. A cold run and a fully warm run produce
   byte-identical semantic output.
+- **A corpus has two identities, and they mean different things.**
+  `corpus_source_snapshot_id` says what the disks held; `corpus_analysis_id` says what
+  was concluded and under which rules. Swapping an embedding model or raising a
+  threshold moves the second and leaves the first alone, so a settings change is never
+  reported as though the drives had been rewritten (ADR-041).
+- **Every root keeps its own Repository Model Packet** under `roots/<root>/bundle/`,
+  beside that root's acquisition manifest, document index and document coverage. A root
+  is modelled exactly as it would be if observed alone, so it carries the same packet id
+  into every corpus it is named in. The corpus is an analysis across roots, not a
+  synthetic tree that replaces them.
+- **A hash records how it was obtained.** `--incremental` carries a previous run's
+  content hash forward when a file's size and mtime have not moved, and the snapshot is
+  then `cached_unchanged_assumption` — never `fully_verified`, because filesystem
+  metadata is a revalidation signal and not content truth. `--verify-content` reads
+  every byte again and restores a verified snapshot.
+- **A drive that is not plugged in stays visible.** By default an unreadable root fails
+  the run. `--allow-partial-roots` records it in the snapshot with its reason, names it
+  in `missing_root_ids`, and labels the corpus `partial` — never complete.
 - **`corpus-diff.json`** classifies everything against the previous snapshot — added,
-  removed, changed, renamed candidate, unchanged, and the same three for archives — and
-  says exactly which cache layers that invalidates. Nothing is ever evicted because an
-  artifact left the corpus.
+  removed, changed, renamed candidate, unchanged, the same four for archives, roots
+  added, removed, changed and unchanged, and cross-root move candidates — and says
+  exactly which cache layers that invalidates, separating a change to the rules from a
+  change to the disks. Nothing is ever evicted because an artifact left the corpus.
 - **`readiness-evidence.json`** carries twelve measurable signals per artifact — source,
   tests, build manifest, CI, container, deployment, specification, documentation, open
   tasks, blockers, roadmap, plan — each with the exact filename, path segment, extension
@@ -223,7 +242,9 @@ npm run local-source -- \
   bounded and configurable, and every projection is staged and renamed together.
 
 No model is called and no network request is made. Full semantics:
-[`docs/corpus-archaeology.md`](docs/corpus-archaeology.md).
+[`docs/corpus-archaeology.md`](docs/corpus-archaeology.md). Running one at scale:
+[`docs/corpus-scale-operation.md`](docs/corpus-scale-operation.md). What the cache is
+and is not: [`docs/corpus-cache.md`](docs/corpus-cache.md).
 
 ### Legacy archive materialization
 

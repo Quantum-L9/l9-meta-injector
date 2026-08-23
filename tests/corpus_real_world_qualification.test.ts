@@ -171,22 +171,48 @@ function emitReport(rendered: string): void {
   fs.writeFileSync(path.resolve(target), rendered, "utf8");
 }
 
-describe("a real mixed corpus on two read-only roots", () => {
+describe("a real mixed corpus on three read-only roots", () => {
   it("is measured end to end, and every contract field is reported", async () => {
     const { report, cold, mutated } = await qualify("file");
 
     expect(report.schema).toBe(CORPUS_QUALIFICATION_SCHEMA);
     expect(report.producer_version).toBe(PRODUCER_VERSION);
 
-    // Nontrivial, as the contract requires: two roots, five archives, mixed
+    // Nontrivial, as the contract requires: an ordinary directory, a second
+    // independent root, and a ZIP collection — three roots, seven archives, mixed
     // documents. Asserted as floors rather than equalities so the fixture can
     // grow without this becoming a test of the fixture.
-    expect(report.corpus.root_count).toBe(2);
-    expect(report.corpus.archive_count).toBeGreaterThanOrEqual(5);
-    expect(report.corpus.archive_member_count).toBeGreaterThanOrEqual(9);
+    expect(report.corpus.root_count).toBe(3);
+    expect(report.corpus.archive_count).toBeGreaterThanOrEqual(7);
+    expect(report.corpus.archive_member_count).toBeGreaterThanOrEqual(13);
     expect(report.corpus.distinct_extension_count).toBeGreaterThanOrEqual(15);
-    expect(report.roots).toHaveLength(2);
-    expect(report.roots.map((root) => root.root_label).sort()).toEqual(["backup", "old-ssd"]);
+    expect(report.roots).toHaveLength(3);
+    expect(report.roots.map((root) => root.root_label).sort())
+      .toEqual(["backup", "old-ssd", "zip-shelf"]);
+
+    // Every root kept its own Repository Model Packet. The corpus is an analysis
+    // across three roots, not a synthetic tree that replaced them.
+    expect(report.root_packets).toHaveLength(3);
+    expect(new Set(report.root_packets.map((root) => root.rmp_packet_id)).size).toBe(3);
+    for (const root of report.root_packets) {
+      expect(root.observation_status).toBe("observed");
+      expect(root.rmp_packet_id).toMatch(/^packet:/);
+      expect(root.bundle_ref).toBe(`roots/${root.root_label}/bundle`);
+    }
+    expect(report.corpus_status).toBe("complete");
+    expect(report.missing_root_ids).toEqual([]);
+
+    // Source identity and analysis identity are two numbers, and the report
+    // carries both rather than one that means neither.
+    expect(report.corpus_snapshot_id).toMatch(/^corpus-source-snapshot:/);
+    expect(report.corpus_analysis_id).toMatch(/^corpus-analysis:/);
+    expect(report.corpus_id).toBe("local-corpus");
+
+    // The qualification run reads every byte, and says so.
+    expect(report.verification.mode).toBe("full");
+    expect(report.verification.verification_class).toBe("fully_verified");
+    expect(report.verification.cached_hash_reuse_count).toBe(0);
+    expect(report.verification.fully_rehashed_artifact_count).toBeGreaterThan(0);
 
     // 1. bytes_scanned / 2. files_scanned
     expect(report.files_scanned).toBeGreaterThan(40);

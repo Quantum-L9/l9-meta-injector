@@ -290,3 +290,11 @@ candidate set — see [semantic-candidates.md](semantic-candidates.md).
 |---|---|
 | `--near-duplicate-threshold F` | lexical similarity threshold in `[0, 1]`, default `0.85` |
 | `--no-near-duplicates` | skip the similarity pass; exact duplicates and every other corpus output are unaffected |
+
+## Operating at scale
+
+Multi-root corpora, the corpus manifest, the two identities a corpus carries,
+verification modes, partial corpora, the archive budget and resume semantics are
+described in [`corpus-scale-operation.md`](corpus-scale-operation.md). What the
+content-addressed cache is keyed on, what it refuses to hold, and why it is never
+an authority is in [`corpus-cache.md`](corpus-cache.md).

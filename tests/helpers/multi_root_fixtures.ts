@@ -101,6 +101,8 @@ export interface ScaleCorpusSpec {
   /** Distinct byte payloads that appear more than once. */
   duplicateClusters: number;
   candidateProjects: number;
+  /** Archives that hold another archive, so nesting is exercised at depth. */
+  nestedArchives: number;
 }
 
 export interface ScaleCorpusResult extends ScaleCorpusSpec {
@@ -108,20 +110,26 @@ export interface ScaleCorpusResult extends ScaleCorpusSpec {
   /** Files actually written, archives and members included. */
   writtenFiles: number;
   archiveMembers: number;
+  /** Members that live inside a nested archive rather than a top-level one. */
+  nestedArchiveMembers: number;
 }
 
 /**
- * A corpus generated to a stated size, split across two roots.
+ * A corpus generated to a stated size, split across three roots.
  *
- * The duplicate payloads are written into both roots so the duplicate clusters
- * are cross-root by construction, and the projects are given declared identifiers
- * so the project candidates are too. Documents are kept short: the qualification
- * this fixture supports is about scale and identity, and a corpus of long
- * documents would spend the whole test budget on shingling.
+ * Three rather than two, and the third is a ZIP-only root, because that is the
+ * shape a real archive corpus has: a working drive, a backup of it, and a folder
+ * of zips nobody has opened in years. The duplicate payloads are written into
+ * more than one root so the duplicate clusters are cross-root by construction,
+ * and the projects are given declared identifiers so the project candidates are
+ * too. Documents are kept short: the qualification this fixture supports is about
+ * scale and identity, and a corpus of long documents would spend the whole test
+ * budget on shingling.
  */
 export function writeScaleCorpus(base: string, spec: ScaleCorpusSpec): ScaleCorpusResult {
   const rootA = path.join(base, "ScaleA");
   const rootB = path.join(base, "ScaleB");
+  const rootC = path.join(base, "ScaleZips");
   let written = 0;
 
   for (let index = 0; index < spec.candidateProjects; index++) {
@@ -155,9 +163,14 @@ export function writeScaleCorpus(base: string, spec: ScaleCorpusSpec): ScaleCorp
     written++;
   }
 
+  // Archives spread over all three roots, with the ZIP-only root taking the
+  // largest share: a folder of zips is a root in its own right, not a corner of
+  // one, and the corpus must cross that boundary like any other.
+  const archiveRoots = [rootC, rootA, rootB, rootC];
   let archiveMembers = 0;
+  let nestedArchiveMembers = 0;
   for (let index = 0; index < spec.archives; index++) {
-    const root = index % 2 === 0 ? rootA : rootB;
+    const root = archiveRoots[index % archiveRoots.length] as string;
     const target = path.join(root, "zips", `bundle-${String(index).padStart(3, "0")}.zip`);
     fs.mkdirSync(path.dirname(target), { recursive: true });
     const members = [
@@ -169,10 +182,34 @@ export function writeScaleCorpus(base: string, spec: ScaleCorpusSpec): ScaleCorp
     written += 1;
   }
 
+  // Nested archives: a ZIP holding a ZIP, so depth is exercised rather than
+  // assumed. Built by writing the inner archive to a scratch path, reading its
+  // bytes back, and storing them as a member of the outer one.
+  const scratch = path.join(base, ".nested-scratch");
+  fs.mkdirSync(scratch, { recursive: true });
+  for (let index = 0; index < spec.nestedArchives; index++) {
+    const innerPath = path.join(scratch, `inner-${index}.zip`);
+    const innerMembers = [
+      { name: "deep/buried.md", content: `# Buried ${index}\n\nTwo archives down, and still observed.\n` },
+    ];
+    writeRawZip(innerPath, innerMembers);
+    const outer = path.join(rootC, "zips", `nested-${String(index).padStart(2, "0")}.zip`);
+    fs.mkdirSync(path.dirname(outer), { recursive: true });
+    writeRawZip(outer, [
+      { name: "carried/inner.zip", content: fs.readFileSync(innerPath) },
+      { name: "readme.md", content: `# Nested ${index}\n\nThe archive beside this one holds another.\n` },
+    ]);
+    archiveMembers += 2;
+    nestedArchiveMembers += innerMembers.length;
+    written += 1;
+  }
+  fs.rmSync(scratch, { recursive: true, force: true });
+
   return {
     ...spec,
-    roots: [rootA, rootB],
+    roots: [rootA, rootB, rootC],
     writtenFiles: written,
     archiveMembers,
+    nestedArchiveMembers,
   };
 }

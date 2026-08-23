@@ -77,7 +77,25 @@ function buildCorpusQualificationReport(input) {
     const unsupported = coverage.unsupported_format_counts;
     return {
         schema: exports.CORPUS_QUALIFICATION_SCHEMA,
+        corpus_id: cold.snapshot.corpus_id,
         corpus_snapshot_id: cold.snapshot.corpus_source_snapshot_id,
+        corpus_analysis_id: cold.snapshot.analysis.corpus_analysis_id,
+        corpus_status: cold.snapshot.corpus_status,
+        missing_root_ids: [...cold.snapshot.missing_root_ids],
+        verification: {
+            mode: cold.snapshot.verification.mode,
+            verification_class: cold.snapshot.verification.verification_class,
+            fully_rehashed_artifact_count: cold.snapshot.verification.fully_rehashed_artifact_count,
+            cached_hash_reuse_count: cold.snapshot.verification.cached_hash_reuse_count,
+            unhashed_artifact_count: cold.snapshot.verification.unhashed_artifact_count,
+        },
+        root_packets: cold.snapshot.roots.map((root) => ({
+            root_label: root.root_label,
+            rmp_packet_id: root.rmp_packet_id,
+            rmp_semantic_hash: root.rmp_semantic_hash,
+            bundle_ref: root.bundle_ref,
+            observation_status: root.observation_status,
+        })),
         corpus_profile_hash: cold.candidates.corpus_profile_hash,
         producer_version: input.producerVersion,
         roots: cold.bindings
