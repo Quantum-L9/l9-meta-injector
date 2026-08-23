@@ -54,6 +54,19 @@ exports.ARCHIVE_CONTEXT_METHOD = "shared-archive-ancestry/v1";
  * an operator when the corpus grows.
  */
 exports.MAX_POSTINGS_FOR_PAIR_GENERATION = 64;
+/**
+ * Separator joining two artifact ids into one map key.
+ *
+ * A NUL, because it is the one byte an artifact id cannot contain — the same
+ * reason `corpus_candidates.ts` uses one for its container keys. A space would
+ * work for today's `vsrc:<hex>` ids and would quietly stop working for an id
+ * shape that allowed one.
+ *
+ * Named rather than written inline: a bare "\u0000" in a template literal is
+ * invisible in a diff, and a source file containing raw NUL bytes is treated as
+ * binary by grep and most review tools.
+ */
+const PAIR_KEY_SEPARATOR = "\u0000";
 /** Decimal places every reported score is rounded to, so replays are byte-identical. */
 const SCORE_PRECISION = 6;
 function round(value) {
@@ -99,10 +112,8 @@ function jaccardOf(left, right) {
             shared.push(value);
     }
     const union = new Set([...a, ...b]).size;
-    return {
-        score: union === 0 ? 0 : round(shared.length / union),
-        shared: shared.sort(ordering_1.compareCodePoints),
-    };
+    shared.sort(ordering_1.compareCodePoints);
+    return { score: union === 0 ? 0 : round(shared.length / union), shared };
 }
 /**
  * Weighted keyphrase overlap.
@@ -131,9 +142,10 @@ function keyphraseOverlap(a, b) {
     const leftTotal = [...left.values()].reduce((sum, w) => sum + w, 0);
     const rightTotal = [...right.values()].reduce((sum, w) => sum + w, 0);
     const denominator = Math.min(leftTotal, rightTotal);
+    shared.sort(ordering_1.compareCodePoints);
     return {
         score: denominator === 0 ? 0 : round(Math.min(1, sharedWeight / denominator)),
-        shared: shared.sort(ordering_1.compareCodePoints),
+        shared,
     };
 }
 /** Shared enclosing archives, outermost first. */
@@ -158,15 +170,15 @@ function buildReferenceIndex(views) {
 }
 function resolveReference(index, target) {
     const exact = index.byPath.get(target);
-    if (exact !== undefined && exact.length === 1)
+    if (exact?.length === 1)
         return exact[0];
     // A path that resolves to several artifacts (the same relative path on two
     // roots) is not a reference to one of them.
-    if (exact !== undefined && exact.length > 1)
+    if (exact !== undefined)
         return null;
     const basename = target.split("/").pop() ?? target;
     const byName = index.byBasename.get(basename);
-    if (byName !== undefined && byName.length === 1)
+    if (byName?.length === 1)
         return byName[0];
     return null;
 }
@@ -189,11 +201,119 @@ function pairsFromIndex(index, out, ceiling) {
         for (let i = 0; i < ordered.length; i += 1) {
             for (let j = i + 1; j < ordered.length; j += 1) {
                 const [a, b] = (0, ordering_1.canonicalPair)(ordered[i], ordered[j]);
-                out.add(`${a} ${b}`);
+                out.add(`${a}${PAIR_KEY_SEPARATOR}${b}`);
             }
         }
     }
     return skipped;
+}
+/**
+ * Score one pair.
+ *
+ * Extracted from `buildSemanticPairs` so that the loop reads as "generate, score,
+ * identify, emit" rather than as one long function whose shape hides where a
+ * signal is decided. Every branch is independent of every other: a signal that
+ * does not fire is absent, never zero.
+ */
+function scorePair(a, b, context) {
+    const { key, referenceIndex, nearByPair, embeddingByPair } = context;
+    const signals = [];
+    const evidenceRefs = new Set();
+    const title = jaccardOf(a.normalized_title_tokens, b.normalized_title_tokens);
+    if (title.score > 0) {
+        signals.push({
+            kind: "title_overlap", method: exports.TITLE_OVERLAP_METHOD, score: title.score,
+            categorical: false, fact: false, detail: title.shared,
+        });
+    }
+    const heading = jaccardOf(a.normalized_heading_tokens, b.normalized_heading_tokens);
+    if (heading.score > 0) {
+        signals.push({
+            kind: "heading_overlap", method: exports.HEADING_OVERLAP_METHOD, score: heading.score,
+            categorical: false, fact: false, detail: heading.shared,
+        });
+    }
+    const keyphrase = keyphraseOverlap(a, b);
+    if (keyphrase.score > 0) {
+        signals.push({
+            kind: "keyphrase_overlap", method: exports.KEYPHRASE_OVERLAP_METHOD, score: keyphrase.score,
+            categorical: false, fact: false, detail: keyphrase.shared,
+        });
+    }
+    const identifiers = jaccardOf(a.declared_project_identifiers, b.declared_project_identifiers);
+    if (identifiers.shared.length > 0) {
+        signals.push({
+            kind: "declared_identifier_match", method: exports.DECLARED_IDENTIFIER_METHOD, score: 1,
+            categorical: true, fact: false, detail: identifiers.shared,
+        });
+    }
+    const referenceDetail = [];
+    for (const [from, to] of [[a, b], [b, a]]) {
+        for (const target of from.normalized_reference_targets) {
+            if (resolveReference(referenceIndex, target) === to.artifact_id) {
+                referenceDetail.push(`${from.artifact_id} references ${target}`);
+            }
+        }
+        // A declared dependency that resolves to another artifact is a graph edge
+        // in exactly the way a reference is: the document named the other one. It
+        // is kept separate from `dependency_overlap`, which is the different fact
+        // that two documents depend on the same third thing.
+        for (const target of from.declared_dependencies) {
+            if (resolveReference(referenceIndex, target) === to.artifact_id) {
+                referenceDetail.push(`${from.artifact_id} depends on ${target}`);
+            }
+        }
+        for (const declaration of from.supersession_declarations) {
+            if (resolveReference(referenceIndex, declaration.object) === to.artifact_id) {
+                referenceDetail.push(`${from.artifact_id} ${declaration.predicate} ${declaration.object}`);
+                evidenceRefs.add(declaration.assertion_id);
+            }
+        }
+    }
+    if (referenceDetail.length > 0) {
+        referenceDetail.sort(ordering_1.compareCodePoints);
+        signals.push({
+            kind: "explicit_reference", method: exports.EXPLICIT_REFERENCE_METHOD, score: 1,
+            categorical: true, fact: false, detail: referenceDetail,
+        });
+    }
+    const dependencies = jaccardOf(a.declared_dependencies, b.declared_dependencies);
+    if (dependencies.score > 0) {
+        signals.push({
+            kind: "dependency_overlap", method: exports.DEPENDENCY_OVERLAP_METHOD, score: dependencies.score,
+            categorical: false, fact: false, detail: dependencies.shared,
+        });
+    }
+    const nearScore = nearByPair.get(key);
+    if (nearScore !== undefined) {
+        signals.push({
+            kind: "near_duplicate", method: exports.NEAR_DUPLICATE_METHOD_REF, score: round(nearScore),
+            categorical: false, fact: false, detail: [],
+        });
+    }
+    const isExactDuplicate = a.exact_duplicate_cluster_id !== null
+        && a.exact_duplicate_cluster_id === b.exact_duplicate_cluster_id;
+    if (isExactDuplicate) {
+        signals.push({
+            kind: "exact_duplicate", method: exports.EXACT_DUPLICATE_METHOD_REF, score: 1,
+            categorical: true, fact: true, detail: [a.exact_duplicate_cluster_id],
+        });
+    }
+    const embeddingScore = embeddingByPair.get(key);
+    if (embeddingScore !== undefined) {
+        signals.push({
+            kind: "embedding_similarity", method: "cosine/v1", score: round(embeddingScore),
+            categorical: false, fact: false, detail: [],
+        });
+    }
+    const ancestry = sharedAncestry(a, b);
+    if (ancestry.length > 0) {
+        signals.push({
+            kind: "archive_context", method: exports.ARCHIVE_CONTEXT_METHOD, score: 1,
+            categorical: true, fact: false, detail: ancestry,
+        });
+    }
+    return { signals, evidenceRefs };
 }
 /**
  * Score every pair some index proposes.
@@ -227,7 +347,7 @@ function buildSemanticPairs(input) {
         for (let i = 0; i < views.length; i += 1) {
             for (let j = i + 1; j < views.length; j += 1) {
                 const [a, b] = (0, ordering_1.canonicalPair)(views[i].artifact_id, views[j].artifact_id);
-                generated.add(`${a} ${b}`);
+                generated.add(`${a}${PAIR_KEY_SEPARATOR}${b}`);
             }
         }
     }
@@ -246,23 +366,23 @@ function buildSemanticPairs(input) {
                 if (resolved === null || resolved === view.artifact_id)
                     continue;
                 const [a, b] = (0, ordering_1.canonicalPair)(view.artifact_id, resolved);
-                generated.add(`${a} ${b}`);
+                generated.add(`${a}${PAIR_KEY_SEPARATOR}${b}`);
             }
             for (const declaration of view.supersession_declarations) {
                 const resolved = resolveReference(referenceIndex, declaration.object);
                 if (resolved === null || resolved === view.artifact_id)
                     continue;
                 const [a, b] = (0, ordering_1.canonicalPair)(view.artifact_id, resolved);
-                generated.add(`${a} ${b}`);
+                generated.add(`${a}${PAIR_KEY_SEPARATOR}${b}`);
             }
         }
         for (const near of input.nearDuplicatePairs ?? []) {
             const [a, b] = (0, ordering_1.canonicalPair)(near.artifact_a_id, near.artifact_b_id);
-            generated.add(`${a} ${b}`);
+            generated.add(`${a}${PAIR_KEY_SEPARATOR}${b}`);
         }
         for (const embedding of input.embeddingPairs ?? []) {
             const [a, b] = (0, ordering_1.canonicalPair)(embedding.artifact_a_id, embedding.artifact_b_id);
-            generated.add(`${a} ${b}`);
+            generated.add(`${a}${PAIR_KEY_SEPARATOR}${b}`);
         }
     }
     if (skippedTerms > 0) {
@@ -277,136 +397,58 @@ function buildSemanticPairs(input) {
     const nearByPair = new Map();
     for (const near of input.nearDuplicatePairs ?? []) {
         const [a, b] = (0, ordering_1.canonicalPair)(near.artifact_a_id, near.artifact_b_id);
-        nearByPair.set(`${a} ${b}`, near.score);
+        nearByPair.set(`${a}${PAIR_KEY_SEPARATOR}${b}`, near.score);
     }
     const embeddingByPair = new Map();
     for (const embedding of input.embeddingPairs ?? []) {
         const [a, b] = (0, ordering_1.canonicalPair)(embedding.artifact_a_id, embedding.artifact_b_id);
-        embeddingByPair.set(`${a} ${b}`, embedding.score);
+        embeddingByPair.set(`${a}${PAIR_KEY_SEPARATOR}${b}`, embedding.score);
     }
     const referenceIndex = buildReferenceIndex(views);
     const pairs = [];
     for (const key of generated) {
-        const [aId, bId] = key.split(" ");
+        const [aId, bId] = key.split(PAIR_KEY_SEPARATOR);
         const a = byId.get(aId);
         const b = byId.get(bId);
         if (a === undefined || b === undefined)
             continue;
-        const signals = [];
-        const evidenceRefs = new Set();
-        const title = jaccardOf(a.normalized_title_tokens, b.normalized_title_tokens);
-        if (title.score > 0) {
-            signals.push({
-                kind: "title_overlap", method: exports.TITLE_OVERLAP_METHOD, score: title.score,
-                categorical: false, fact: false, detail: title.shared,
-            });
-        }
-        const heading = jaccardOf(a.normalized_heading_tokens, b.normalized_heading_tokens);
-        if (heading.score > 0) {
-            signals.push({
-                kind: "heading_overlap", method: exports.HEADING_OVERLAP_METHOD, score: heading.score,
-                categorical: false, fact: false, detail: heading.shared,
-            });
-        }
-        const keyphrase = keyphraseOverlap(a, b);
-        if (keyphrase.score > 0) {
-            signals.push({
-                kind: "keyphrase_overlap", method: exports.KEYPHRASE_OVERLAP_METHOD, score: keyphrase.score,
-                categorical: false, fact: false, detail: keyphrase.shared,
-            });
-        }
-        const identifiers = jaccardOf(a.declared_project_identifiers, b.declared_project_identifiers);
-        if (identifiers.shared.length > 0) {
-            signals.push({
-                kind: "declared_identifier_match", method: exports.DECLARED_IDENTIFIER_METHOD, score: 1,
-                categorical: true, fact: false, detail: identifiers.shared,
-            });
-        }
-        const referenceDetail = [];
-        for (const [from, to] of [[a, b], [b, a]]) {
-            for (const target of from.normalized_reference_targets) {
-                if (resolveReference(referenceIndex, target) === to.artifact_id) {
-                    referenceDetail.push(`${from.artifact_id} references ${target}`);
-                }
-            }
-            // A declared dependency that resolves to another artifact is a graph edge
-            // in exactly the way a reference is: the document named the other one. It
-            // is kept separate from `dependency_overlap`, which is the different fact
-            // that two documents depend on the same third thing.
-            for (const target of from.declared_dependencies) {
-                if (resolveReference(referenceIndex, target) === to.artifact_id) {
-                    referenceDetail.push(`${from.artifact_id} depends on ${target}`);
-                }
-            }
-            for (const declaration of from.supersession_declarations) {
-                if (resolveReference(referenceIndex, declaration.object) === to.artifact_id) {
-                    referenceDetail.push(`${from.artifact_id} ${declaration.predicate} ${declaration.object}`);
-                    evidenceRefs.add(declaration.assertion_id);
-                }
-            }
-        }
-        if (referenceDetail.length > 0) {
-            signals.push({
-                kind: "explicit_reference", method: exports.EXPLICIT_REFERENCE_METHOD, score: 1,
-                categorical: true, fact: false, detail: referenceDetail.sort(ordering_1.compareCodePoints),
-            });
-        }
-        const dependencies = jaccardOf(a.declared_dependencies, b.declared_dependencies);
-        if (dependencies.score > 0) {
-            signals.push({
-                kind: "dependency_overlap", method: exports.DEPENDENCY_OVERLAP_METHOD, score: dependencies.score,
-                categorical: false, fact: false, detail: dependencies.shared,
-            });
-        }
-        const nearScore = nearByPair.get(key);
-        if (nearScore !== undefined) {
-            signals.push({
-                kind: "near_duplicate", method: exports.NEAR_DUPLICATE_METHOD_REF, score: round(nearScore),
-                categorical: false, fact: false, detail: [],
-            });
-        }
-        const isExactDuplicate = a.exact_duplicate_cluster_id !== null
-            && a.exact_duplicate_cluster_id === b.exact_duplicate_cluster_id;
-        if (isExactDuplicate) {
-            signals.push({
-                kind: "exact_duplicate", method: exports.EXACT_DUPLICATE_METHOD_REF, score: 1,
-                categorical: true, fact: true, detail: [a.exact_duplicate_cluster_id],
-            });
-        }
-        const embeddingScore = embeddingByPair.get(key);
-        if (embeddingScore !== undefined) {
-            signals.push({
-                kind: "embedding_similarity", method: "cosine/v1", score: round(embeddingScore),
-                categorical: false, fact: false, detail: [],
-            });
-        }
-        const ancestry = sharedAncestry(a, b);
-        if (ancestry.length > 0) {
-            signals.push({
-                kind: "archive_context", method: exports.ARCHIVE_CONTEXT_METHOD, score: 1,
-                categorical: true, fact: false, detail: ancestry,
-            });
-        }
+        const scored = scorePair(a, b, { key, referenceIndex, nearByPair, embeddingByPair });
+        const signals = scored.signals;
+        const evidenceRefs = scored.evidenceRefs;
         if (signals.length === 0)
             continue;
+        // Ordered before the identity is computed, not after.
+        //
+        // These are pushed in whatever order the checks above happen to run, which is
+        // an artefact of how this function is written rather than a fact about the
+        // pair. Hashing that order would make every pair id in every corpus depend on
+        // the source-code order of the pushes — so reordering two blocks here, a pure
+        // refactor, would silently invalidate every previously emitted id.
+        const orderedSignals = [...signals].sort((x, y) => (0, ordering_1.compareCodePoints)(x.kind, y.kind));
         // Only signals that fired contribute to identity, so a pair's id does not
         // change when an unrelated signal is added to a later version of this module.
+        const featureIdentities = [
+            a.normalized_document_id ?? a.content_hash ?? aId,
+            b.normalized_document_id ?? b.content_hash ?? bId,
+        ].sort(ordering_1.compareCodePoints);
         const pairId = (0, repository_model_1.stableId)("semantic-pair", {
             artifact_a_id: aId,
             artifact_b_id: bId,
-            feature_identities: [a.normalized_document_id ?? a.content_hash ?? aId,
-                b.normalized_document_id ?? b.content_hash ?? bId].sort(ordering_1.compareCodePoints),
+            feature_identities: featureIdentities,
             pair_signal_profile_hash: profileHash,
             // Scores are fixed-precision strings here, never floats: the canonical
             // hasher refuses non-integer numbers precisely because float repr differs
             // between runtimes, and an identity that did that would not be stable.
-            signals: signals.map((signal) => ({ kind: signal.kind, score: signal.score.toFixed(6) })),
+            signals: orderedSignals.map((signal) => ({
+                kind: signal.kind,
+                score: signal.score.toFixed(6),
+            })),
         });
         pairs.push({
             pair_id: pairId,
             artifact_a_id: aId,
             artifact_b_id: bId,
-            signals: signals.sort((x, y) => (0, ordering_1.compareCodePoints)(x.kind, y.kind)),
+            signals: orderedSignals,
             evidence_refs: [...evidenceRefs].sort(ordering_1.compareCodePoints),
             analysis_profile: {
                 pair_signal_profile_id: exports.PAIR_SIGNAL_PROFILE_ID,
@@ -440,9 +482,9 @@ function buildSemanticPairs(input) {
 function referenceFixtureComparison(input) {
     const blocked = buildSemanticPairs({ ...input, exhaustive: false });
     const full = buildSemanticPairs({ ...input, exhaustive: true });
-    const seen = new Set(blocked.pairs.map((pair) => `${pair.artifact_a_id} ${pair.artifact_b_id}`));
+    const seen = new Set(blocked.pairs.map((pair) => `${pair.artifact_a_id}${PAIR_KEY_SEPARATOR}${pair.artifact_b_id}`));
     const missed = full.pairs
-        .filter((pair) => !seen.has(`${pair.artifact_a_id} ${pair.artifact_b_id}`))
+        .filter((pair) => !seen.has(`${pair.artifact_a_id}${PAIR_KEY_SEPARATOR}${pair.artifact_b_id}`))
         .map((pair) => pair.pair_id)
         .sort(ordering_1.compareCodePoints);
     return { generated: blocked.pairs.length, exhaustive: full.pairs.length, missedPairIds: missed };

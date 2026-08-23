@@ -278,9 +278,8 @@ function keyphrasesFor(prepared, documentFrequency, documentCount) {
             source_block_refs: [...(prepared.refsByTerm.get(term) ?? [])].sort(ordering_1.compareCodePoints),
         });
     }
-    return scored
-        .sort((a, b) => b.weight - a.weight || (0, ordering_1.compareCodePoints)(a.normalized_term, b.normalized_term))
-        .slice(0, exports.MAX_KEYPHRASES_PER_ARTIFACT);
+    scored.sort((a, b) => b.weight - a.weight || (0, ordering_1.compareCodePoints)(a.normalized_term, b.normalized_term));
+    return scored.slice(0, exports.MAX_KEYPHRASES_PER_ARTIFACT);
 }
 function featureViewFor(prepared, keyphrases) {
     const artifact = prepared.input;

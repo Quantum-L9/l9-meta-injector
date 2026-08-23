@@ -426,9 +426,10 @@ function keyphrasesFor(
       source_block_refs: [...(prepared.refsByTerm.get(term) ?? [])].sort(compareCodePoints),
     });
   }
-  return scored
-    .sort((a, b) => b.weight - a.weight || compareCodePoints(a.normalized_term, b.normalized_term))
-    .slice(0, MAX_KEYPHRASES_PER_ARTIFACT);
+  scored.sort(
+    (a, b) => b.weight - a.weight || compareCodePoints(a.normalized_term, b.normalized_term),
+  );
+  return scored.slice(0, MAX_KEYPHRASES_PER_ARTIFACT);
 }
 
 function featureViewFor(

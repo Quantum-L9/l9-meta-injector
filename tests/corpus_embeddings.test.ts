@@ -296,7 +296,7 @@ describe("reproducibility", () => {
     });
     expect(result.report.reproducibility_class).toBe("provider_bound");
     expect(result.report.remote).toBe(true);
-    expect(result.report.vector_digests.length).toBe(2);
+    expect(result.report.vector_digests).toHaveLength(2);
     expect(vectorDigest([1, 0.9, 0.1, 0])).toBe(vectorDigest([1, 0.9, 0.1, 0]));
     expect(vectorDigest([1, 0.9, 0.1, 0])).not.toBe(vectorDigest([1, 0.9, 0.1, 0.5]));
   });

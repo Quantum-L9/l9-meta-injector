@@ -272,9 +272,10 @@ async function runEmbeddings(input) {
                 pairs.push({ artifact_a_id: a, artifact_b_id: b, score });
         }
     }
+    pairs.sort((x, y) => (0, ordering_1.compareCodePoints)(x.artifact_a_id, y.artifact_a_id)
+        || (0, ordering_1.compareCodePoints)(x.artifact_b_id, y.artifact_b_id));
     return {
-        pairs: pairs.sort((x, y) => (0, ordering_1.compareCodePoints)(x.artifact_a_id, y.artifact_a_id)
-            || (0, ordering_1.compareCodePoints)(x.artifact_b_id, y.artifact_b_id)),
+        pairs,
         report: {
             enabled: true,
             provider: configuration.provider,

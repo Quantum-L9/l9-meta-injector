@@ -410,11 +410,12 @@ export async function runEmbeddings(input: RunEmbeddingsInput): Promise<RunEmbed
     }
   }
 
+  pairs.sort(
+    (x, y) => compareCodePoints(x.artifact_a_id, y.artifact_a_id)
+      || compareCodePoints(x.artifact_b_id, y.artifact_b_id),
+  );
   return {
-    pairs: pairs.sort(
-      (x, y) => compareCodePoints(x.artifact_a_id, y.artifact_a_id)
-        || compareCodePoints(x.artifact_b_id, y.artifact_b_id),
-    ),
+    pairs,
     report: {
       enabled: true,
       provider: configuration.provider,

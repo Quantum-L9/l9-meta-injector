@@ -257,12 +257,8 @@ function truncate(text, limit) {
  * written to avoid.
  */
 function buildReasoningEvidencePacks(input) {
-    const budget = { ...exports.DEFAULT_REASONING_PACK_BUDGET, ...(input.budget ?? {}) };
+    const budget = { ...exports.DEFAULT_REASONING_PACK_BUDGET, ...input.budget };
     const byId = new Map(input.views.map((view) => [view.artifact_id, view]));
-    const pairsByMembers = new Map();
-    for (const pair of input.pairs) {
-        pairsByMembers.set(`${pair.artifact_a_id} ${pair.artifact_b_id}`, pair);
-    }
     const packs = [];
     for (const row of input.reasoningCandidates) {
         if (row.reasoning_type === "NONE")
@@ -348,6 +344,10 @@ function buildReasoningEvidencePacks(input) {
         }
         if (statuses.size > 1)
             conflictFlags.push(`declared statuses differ: ${[...statuses].sort(ordering_1.compareCodePoints).join(", ")}`);
+        nearScores.sort((a, b) => (0, ordering_1.compareCodePoints)(a.pair_id, b.pair_id));
+        lexicalSignals.sort((a, b) => (0, ordering_1.compareCodePoints)(a.pair_id, b.pair_id) || (0, ordering_1.compareCodePoints)(a.kind, b.kind));
+        embeddingScores.sort((a, b) => (0, ordering_1.compareCodePoints)(a.pair_id, b.pair_id));
+        coverageGaps.sort(ordering_1.compareCodePoints);
         const truncated = artifactsOmitted > 0 || excerptsOmitted > 0 || charactersOmitted > 0;
         const packId = (0, repository_model_1.stableId)("l9.reasoning-evidence-pack/v1", {
             pack_profile: { budget, selection_priority: exports.PACK_SELECTION_PRIORITY },
@@ -364,15 +364,15 @@ function buildReasoningEvidencePacks(input) {
             artifacts,
             relationship_context: {
                 exact_duplicate_relations: [...new Set(exactRelations)].sort(ordering_1.compareCodePoints),
-                near_duplicate_scores: nearScores.sort((a, b) => (0, ordering_1.compareCodePoints)(a.pair_id, b.pair_id)),
-                lexical_pair_signals: lexicalSignals.sort((a, b) => (0, ordering_1.compareCodePoints)(a.pair_id, b.pair_id) || (0, ordering_1.compareCodePoints)(a.kind, b.kind)),
-                embedding_scores: embeddingScores.sort((a, b) => (0, ordering_1.compareCodePoints)(a.pair_id, b.pair_id)),
+                near_duplicate_scores: nearScores,
+                lexical_pair_signals: lexicalSignals,
+                embedding_scores: embeddingScores,
                 candidate_membership: [row.candidate_id],
             },
             ambiguity: {
                 conflict_flags: conflictFlags,
                 unsupported_evidence: [],
-                coverage_gaps: coverageGaps.sort(ordering_1.compareCodePoints),
+                coverage_gaps: coverageGaps,
             },
             truncation: {
                 truncated,
