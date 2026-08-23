@@ -457,6 +457,12 @@ function reportCorpusRun(context) {
         );
       }
     }
+    // A root matched across runs on a basename is a comparison resting on a
+    // mount point. Worth one line: the operator is the only one who can turn it
+    // into a real identity, and they will not do it if nobody says so.
+    for (const caution of result.diff.longitudinal_identity_cautions) {
+      console.log(`  caution          ${caution.message}`);
+    }
     console.log(
       `  invalidation     ${result.diff.invalidation.new_content_hashes.length} new content hash(es); `
       + `${result.diff.invalidation.retained_content_hash_count} reusable; `

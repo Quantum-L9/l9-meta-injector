@@ -378,6 +378,7 @@ function rootIdentity(binding) {
     return {
         root_id: binding.root_id,
         root_key: binding.root_key,
+        root_identity_class: binding.root_identity_class,
         root_label: binding.root_label,
         root_snapshot_id: binding.root_snapshot_id,
         source_kind: binding.source_kind,

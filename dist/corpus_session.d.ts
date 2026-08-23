@@ -110,7 +110,15 @@ export declare class CorpusSessionStore {
     setTarget(corpusSnapshotId: string): void;
     /** The manifest as it currently stands. */
     snapshot(now: string): CorpusSession;
-    /** Write the manifest through a rename, so it is never observed half-written. */
+    /**
+     * Write the manifest durably, so it is never read back half-written.
+     *
+     * Staged, synced, renamed, parent synced. A resume manifest is the one file in
+     * this package whose corruption is silently harmful rather than loudly so: a
+     * torn `completed_source_ids` that still parses makes the next attempt skip
+     * work that was never done, which is precisely the failure a resume feature
+     * must not have. The rename alone does not survive a power cut.
+     */
     save(now: string): string;
 }
 /**

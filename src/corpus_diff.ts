@@ -23,6 +23,7 @@
 import { canonicalCorpusJson } from "./corpus_analysis";
 import { diffAnalysisManifests } from "./corpus_analysis_manifest";
 import type { CandidateKind } from "./corpus_analysis_manifest";
+import type { RootIdentityClass } from "./corpus_roots";
 import { CorpusSnapshot, CorpusSnapshotArchive, CorpusSnapshotArtifact } from "./corpus_snapshot";
 import { compareCodePoints } from "./ordering";
 
@@ -107,10 +108,40 @@ export interface CorpusRootDiffEntry {
   category: CorpusRootDiffCategory;
   root_id: string;
   root_key: string;
+  /**
+   * How much this row's continuity claim is worth.
+   *
+   * `declared` on both sides: the operator named this root, so "the same root as
+   * last run" is a person's statement and the row means what it says.
+   *
+   * `inferred` on either side: the key is a mount point's final segment. Two
+   * runs matching on it are usually the same disk and are not necessarily so —
+   * `/Volumes/Backup` and an unrelated `/mnt/usb/Backup` produce the same root
+   * id, and nothing in the bytes distinguishes them. The row is still emitted;
+   * it is marked, and the diff carries a caution naming it.
+   */
+  identity_basis: RootIdentityClass | "mixed";
   previous_source_revision: string | null;
   current_source_revision: string | null;
   previous_rmp_packet_id: string | null;
   current_rmp_packet_id: string | null;
+}
+
+/**
+ * A root matched across two runs on a key nobody declared.
+ *
+ * Not an error and not a refusal to compare: it is the statement that the
+ * comparison rests on a basename. An operator reading "root_unchanged" for a
+ * drive they never named is owed the knowledge that the run cannot tell that
+ * drive from another one whose path ends the same way, and that declaring a key
+ * is what makes the claim solid.
+ */
+export interface LongitudinalIdentityCaution {
+  root_id: string;
+  root_key: string;
+  previous_class: RootIdentityClass;
+  current_class: RootIdentityClass;
+  message: string;
 }
 
 /**
@@ -162,6 +193,11 @@ export interface CorpusDiff {
   current_root_ids: string[];
   counts: CorpusDiffCounts;
   roots: CorpusRootDiffEntry[];
+  /**
+   * Roots compared across runs on an inferred key. Empty when every match was
+   * between roots the operator named, which is the case worth aiming for.
+   */
+  longitudinal_identity_cautions: LongitudinalIdentityCaution[];
   /**
    * What changed about the analysis, kept apart from what changed on the disks.
    *
@@ -510,6 +546,13 @@ export function buildCorpusDiff(previous: CorpusSnapshot, current: CorpusSnapsho
   const previousRoots = new Map(previous.roots.map((root) => [root.root_id, root]));
   const currentRoots = new Map(current.roots.map((root) => [root.root_id, root]));
   const rootEntries: CorpusRootDiffEntry[] = [];
+  const cautions: LongitudinalIdentityCaution[] = [];
+  // A snapshot from before the class was recorded says nothing about how its
+  // keys were chosen, so it is read as `inferred` — the weaker of the two, which
+  // is the reading that produces a caution rather than a claim.
+  const classOf = (root: { root_identity_class?: RootIdentityClass }): RootIdentityClass =>
+    root.root_identity_class ?? "inferred";
+
   for (const [rootId, root] of currentRoots) {
     const before = previousRoots.get(rootId);
     if (before === undefined) {
@@ -518,12 +561,34 @@ export function buildCorpusDiff(previous: CorpusSnapshot, current: CorpusSnapsho
         category: "root_added",
         root_id: rootId,
         root_key: root.root_key,
+        // A root with no previous side makes no continuity claim, so its basis
+        // is simply how this run keyed it.
+        identity_basis: classOf(root),
         previous_source_revision: null,
         current_source_revision: root.source_revision,
         previous_rmp_packet_id: null,
         current_rmp_packet_id: root.rmp_packet_id,
       });
       continue;
+    }
+    const previousClass = classOf(before);
+    const currentClass = classOf(root);
+    const basis: RootIdentityClass | "mixed" = previousClass === currentClass
+      ? previousClass
+      : "mixed";
+    if (basis !== "declared") {
+      cautions.push({
+        root_id: rootId,
+        root_key: root.root_key,
+        previous_class: previousClass,
+        current_class: currentClass,
+        message:
+          `root '${root.root_key}' was matched across runs on a key that was not declared on `
+          + `${basis === "mixed" ? "one of the two runs" : "either run"}; the key is a mount `
+          + "point's final segment, so two different disks mounted at paths ending the same "
+          + "way are one root under this rule. Declare a key with --root <key>=<path> to make "
+          + "the comparison rest on a name rather than on a path.",
+      });
     }
     const changed = before.source_revision !== root.source_revision
       || before.rmp_packet_id !== root.rmp_packet_id;
@@ -533,6 +598,7 @@ export function buildCorpusDiff(previous: CorpusSnapshot, current: CorpusSnapsho
       category: changed ? "root_changed" : "root_unchanged",
       root_id: rootId,
       root_key: root.root_key,
+      identity_basis: basis,
       previous_source_revision: before.source_revision,
       current_source_revision: root.source_revision,
       previous_rmp_packet_id: before.rmp_packet_id,
@@ -546,6 +612,7 @@ export function buildCorpusDiff(previous: CorpusSnapshot, current: CorpusSnapsho
       category: "root_removed",
       root_id: rootId,
       root_key: root.root_key,
+      identity_basis: classOf(root),
       previous_source_revision: root.source_revision,
       current_source_revision: null,
       previous_rmp_packet_id: root.rmp_packet_id,
@@ -553,6 +620,7 @@ export function buildCorpusDiff(previous: CorpusSnapshot, current: CorpusSnapsho
     });
   }
   rootEntries.sort((a, b) => compareCodePoints(a.root_id, b.root_id));
+  cautions.sort((a, b) => compareCodePoints(a.root_id, b.root_id));
 
   // Identical bytes that left one root and appeared in another. Reported as a
   // candidate: the same evidence is produced by a move, by a copy whose original
@@ -599,6 +667,7 @@ export function buildCorpusDiff(previous: CorpusSnapshot, current: CorpusSnapsho
     current_root_ids: currentRootIds,
     counts,
     roots: rootEntries,
+    longitudinal_identity_cautions: cautions,
     analysis: analysisDelta(previous, current, profileChanged),
     cross_root_move_candidates: crossRootMoves,
     cross_root_move_statement: CROSS_ROOT_MOVE_STATEMENT,

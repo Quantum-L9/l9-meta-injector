@@ -18,12 +18,30 @@ export interface CorpusRootSpec {
      */
     name?: string;
 }
+/**
+ * Where a root's key came from, and therefore how much its id is worth.
+ *
+ * `declared` — the operator named this root. The key is a name they chose for a
+ * disk, so the same key across two runs means the same disk because a person
+ * said so. This is the identity a longitudinal comparison can rest on.
+ *
+ * `inferred` — the key is the final segment of the path it was mounted at. That
+ * is a good default and a weak identity: `/Volumes/Backup` this month and
+ * `/mnt/usb/Backup` next month are the same disk under this rule, which is
+ * usually right, but so are two entirely unrelated drives that both happen to
+ * end in `Backup`. Nothing in the bytes can tell those cases apart, so the class
+ * is recorded and the diff refuses to quietly treat an inferred match as
+ * continuity.
+ */
+export type RootIdentityClass = "declared" | "inferred";
 /** Identity of one root: which root it is, and what it held on this run. */
 export interface CorpusRootIdentity {
     /** `root:sha256:<hex>` of the declared key. Stable across runs and mounts. */
     root_id: string;
     /** The declared key itself, carried so a report is readable. */
     root_key: string;
+    /** Whether the operator named this root or its basename was taken. */
+    root_identity_class: RootIdentityClass;
     /** Label qualifying every path in this root. Equals `root_key`. */
     root_label: string;
     /** `root-snapshot:sha256:<hex>` of the physical snapshot hash. Per run. */
@@ -41,7 +59,12 @@ export interface CorpusRootIdentity {
  */
 export interface CorpusRootBinding extends CorpusRootIdentity {
     absolute_path: string;
-    /** True when the operator named the root rather than inheriting its basename. */
+    /**
+     * True when the operator named the root rather than inheriting its basename.
+     *
+     * The same fact as `root_identity_class`, kept as a boolean because callers
+     * branch on it. The class is what reaches the snapshot; this stays operational.
+     */
     key_declared: boolean;
 }
 /** Root id of a declared key. Stable across runs, mounts and content changes. */

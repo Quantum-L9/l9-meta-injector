@@ -594,6 +594,10 @@ async function runCorpusScan(input) {
                 ? spec.name
                 : (0, corpus_roots_1.defaultRootKey)(spec.path);
             assertUsableRootKey(rootKey, spec.path);
+            // Whether the key is the operator's word or the mount point's last
+            // segment. It decides `root_identity_class`, which is what a later diff
+            // consults before treating two runs' roots as the same disk.
+            const keyDeclared = spec.name !== undefined && spec.name.length > 0;
             // An unplugged drive is a fact about the corpus and has to end up inside
             // it. Swallowing the failure and carrying on would produce a snapshot that
             // looks complete and is missing a disk, which is the one outcome a corpus
@@ -620,7 +624,7 @@ async function runCorpusScan(input) {
                 if (input.allowPartialRoots !== true)
                     throw error;
                 const reason = error instanceof Error ? error.message : String(error);
-                failedRoots.push({ rootKey, rootId: (0, corpus_roots_1.corpusRootId)(rootKey), reason });
+                failedRoots.push({ rootKey, rootId: (0, corpus_roots_1.corpusRootId)(rootKey), reason, keyDeclared });
                 diagnostics.push({
                     code: "corpus.root_unreadable",
                     severity: "error",
@@ -634,7 +638,9 @@ async function runCorpusScan(input) {
                     + "the root changed while it was being read, so it has no deterministic snapshot";
                 if (input.allowPartialRoots !== true)
                     throw new Error(unstable);
-                failedRoots.push({ rootKey, rootId: (0, corpus_roots_1.corpusRootId)(rootKey), reason: unstable });
+                failedRoots.push({
+                    rootKey, rootId: (0, corpus_roots_1.corpusRootId)(rootKey), reason: unstable, keyDeclared,
+                });
                 diagnostics.push({ code: "corpus.root_unstable", severity: "error", message: unstable });
                 continue;
             }
@@ -643,13 +649,14 @@ async function runCorpusScan(input) {
                 binding: {
                     root_id: rootId,
                     root_key: rootKey,
+                    root_identity_class: keyDeclared ? "declared" : "inferred",
                     root_label: rootKey,
                     root_snapshot_id: (0, corpus_roots_1.corpusRootSnapshotId)(observation.physicalSnapshotHash),
                     source_kind: observation.sourceKind,
                     source_revision: observation.sourceRevision,
                     physical_snapshot_hash: observation.physicalSnapshotHash,
                     absolute_path: path.resolve(spec.path),
-                    key_declared: spec.name !== undefined && spec.name.length > 0,
+                    key_declared: keyDeclared,
                 },
                 observation,
             });
@@ -1127,6 +1134,7 @@ async function runCorpusScan(input) {
             snapshotRoots.push({
                 root_id: failed.rootId,
                 root_key: failed.rootKey,
+                root_identity_class: failed.keyDeclared ? "declared" : "inferred",
                 root_label: failed.rootKey,
                 root_snapshot_id: "",
                 source_kind: "unknown",

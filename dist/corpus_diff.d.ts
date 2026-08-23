@@ -1,4 +1,5 @@
 import type { CandidateKind } from "./corpus_analysis_manifest";
+import type { RootIdentityClass } from "./corpus_roots";
 import { CorpusSnapshot } from "./corpus_snapshot";
 export declare const CORPUS_DIFF_SCHEMA = "l9.corpus-diff/v1";
 export declare const CORPUS_DIFF_CATEGORIES: readonly ["added", "removed", "changed_content", "renamed_candidate", "unchanged", "archive_added", "archive_removed", "archive_changed", "archive_unchanged"];
@@ -46,10 +47,39 @@ export interface CorpusRootDiffEntry {
     category: CorpusRootDiffCategory;
     root_id: string;
     root_key: string;
+    /**
+     * How much this row's continuity claim is worth.
+     *
+     * `declared` on both sides: the operator named this root, so "the same root as
+     * last run" is a person's statement and the row means what it says.
+     *
+     * `inferred` on either side: the key is a mount point's final segment. Two
+     * runs matching on it are usually the same disk and are not necessarily so —
+     * `/Volumes/Backup` and an unrelated `/mnt/usb/Backup` produce the same root
+     * id, and nothing in the bytes distinguishes them. The row is still emitted;
+     * it is marked, and the diff carries a caution naming it.
+     */
+    identity_basis: RootIdentityClass | "mixed";
     previous_source_revision: string | null;
     current_source_revision: string | null;
     previous_rmp_packet_id: string | null;
     current_rmp_packet_id: string | null;
+}
+/**
+ * A root matched across two runs on a key nobody declared.
+ *
+ * Not an error and not a refusal to compare: it is the statement that the
+ * comparison rests on a basename. An operator reading "root_unchanged" for a
+ * drive they never named is owed the knowledge that the run cannot tell that
+ * drive from another one whose path ends the same way, and that declaring a key
+ * is what makes the claim solid.
+ */
+export interface LongitudinalIdentityCaution {
+    root_id: string;
+    root_key: string;
+    previous_class: RootIdentityClass;
+    current_class: RootIdentityClass;
+    message: string;
 }
 /**
  * One artifact that moved between roots without changing.
@@ -94,6 +124,11 @@ export interface CorpusDiff {
     current_root_ids: string[];
     counts: CorpusDiffCounts;
     roots: CorpusRootDiffEntry[];
+    /**
+     * Roots compared across runs on an inferred key. Empty when every match was
+     * between roots the operator named, which is the case worth aiming for.
+     */
+    longitudinal_identity_cautions: LongitudinalIdentityCaution[];
     /**
      * What changed about the analysis, kept apart from what changed on the disks.
      *

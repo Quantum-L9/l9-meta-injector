@@ -60,6 +60,7 @@ exports.commitCorpusOutputs = commitCorpusOutputs;
 const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
 const corpus_analysis_1 = require("./corpus_analysis");
+const durable_write_1 = require("./durable_write");
 const ordering_1 = require("./ordering");
 const repository_model_1 = require("./repository_model");
 exports.CORPUS_SESSION_SCHEMA = "l9.corpus-session/v1";
@@ -201,14 +202,24 @@ class CorpusSessionStore {
             updated_at: now,
         };
     }
-    /** Write the manifest through a rename, so it is never observed half-written. */
+    /**
+     * Write the manifest durably, so it is never read back half-written.
+     *
+     * Staged, synced, renamed, parent synced. A resume manifest is the one file in
+     * this package whose corruption is silently harmful rather than loudly so: a
+     * torn `completed_source_ids` that still parses makes the next attempt skip
+     * work that was never done, which is precisely the failure a resume feature
+     * must not have. The rename alone does not survive a power cut.
+     */
     save(now) {
         const session = this.snapshot(now);
         this.session = session;
         fs.mkdirSync(path.dirname(this.file), { recursive: true });
-        const staging = `${this.file}.${process.pid}.tmp`;
-        fs.writeFileSync(staging, `${(0, corpus_analysis_1.canonicalCorpusJson)(session)}\n`, "utf8");
-        fs.renameSync(staging, this.file);
+        (0, durable_write_1.commitFileDurably)({
+            staging: `${this.file}.${process.pid}.tmp`,
+            target: this.file,
+            contents: `${(0, corpus_analysis_1.canonicalCorpusJson)(session)}\n`,
+        });
         return this.file;
     }
 }
