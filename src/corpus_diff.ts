@@ -26,6 +26,7 @@ import type { CandidateKind } from "./corpus_analysis_manifest";
 import type { RootIdentityClass } from "./corpus_roots";
 import { CorpusSnapshot, CorpusSnapshotArchive, CorpusSnapshotArtifact } from "./corpus_snapshot";
 import { compareCodePoints } from "./ordering";
+import type { InferredRootHistoryOverride } from "./corpus_root_history";
 
 export const CORPUS_DIFF_SCHEMA = "l9.corpus-diff/v1";
 
@@ -198,6 +199,15 @@ export interface CorpusDiff {
    * between roots the operator named, which is the case worth aiming for.
    */
   longitudinal_identity_cautions: LongitudinalIdentityCaution[];
+  /**
+   * The operator's explicit acceptance of an inferred continuity claim.
+   *
+   * Absent unless `--allow-inferred-root-history` was supplied. A diff carrying
+   * cautions and no override was produced from declared keys on at least one
+   * side; a diff carrying this was produced because someone said the two disks
+   * were the same disk.
+   */
+  inferred_root_history_override?: InferredRootHistoryOverride;
   /**
    * What changed about the analysis, kept apart from what changed on the disks.
    *

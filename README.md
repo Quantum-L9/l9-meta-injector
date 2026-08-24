@@ -258,9 +258,43 @@ npm run local-source -- \
   and an encrypted one `decoder.encrypted`; neither is silently an empty document. No
   notebook cell is executed, no spreadsheet formula evaluated, no macro run, no script
   run, and no external reference fetched.
-- **`document-signals.json`** reports, per format, what decoded, what refused it and
-  why, which locator kinds it cited, and how much of it a candidate actually named.
-  Decoding that reaches nothing is a real failure and is invisible in a coverage ratio.
+- **A decoded document states what it says** (ADR-043). The work vocabulary —
+  `work.status`, `work.kind`, `work.task.open`, `work.milestone`, `work.depends_on`,
+  `work.blocked_by`, `work.supersedes` and the rest — is read out of every supported
+  format by one implementation, so `Status: blocked` in a `.docx` and in the `.md` copy
+  beside it produce the same claim. A Word checklist whose bullet lives in the document's
+  numbering, a slide titled `Q3 Roadmap`, a worksheet cell reading `Status: blocked` and
+  a register with a status column are each read, and each claim cites the coordinate its
+  own format has rather than a line number the file does not have.
+- **`document-signals.json`** (`l9.document-signals/v1`) reports, per format, what
+  decoded, what refused it and why, which locator kinds it cited, how much of it a
+  candidate actually named — and the claims themselves, each binding the artifact id,
+  the raw content hash, the normalized document id, the decoder and version, the block,
+  the structured locator, a bounded excerpt, the predicate and the object. Decoding that
+  reaches nothing is a real failure and is invisible in a coverage ratio. The record
+  listing is bounded per format; the counts beside it are complete, and the difference is
+  stated rather than left to subtraction.
+- **`document-work-signals.jsonl`** (`l9.document-work-signals/v1`) is the same claims
+  again, and this time all of them. `document-signals.json` is a projection for a person
+  reading it, so its listing stops at fifty records per format; a machine consumer needs
+  the corpus rather than a readable share of it, so this file is written one JSON object
+  per line with **no sample ceiling at any volume**. Each record carries both identities a
+  consumer has to join on — the corpus `artifact_id` and the `rmp_artifact_id` naming the
+  artifact inside its root's Repository Model Packet — beside the decoder, the block, the
+  structured locator, the predicate, the object and a bounded excerpt.
+  `document-work-signals.manifest.json` (`l9.document-work-signals-manifest/v1`) states the
+  record count, the per-format and per-predicate totals, and two hashes: one over the exact
+  bytes, one over the canonical records so it survives being moved. A consumer verifies the
+  payload against the manifest before trusting a single record, and the counts agree with
+  the report's complete counts — the report lists fewer, it never *knows* fewer.
+- **`document-index.json`** (`l9.document-index/v2`) names, for every decoded document,
+  the decoder that actually read it, the format it was read as, its block count and its
+  locator type — and derives `normalized_document_id` from that decoder, because that id
+  joins the index, the cache and every piece of evidence.
+- **`corpus-report.md` states what was understood.** Exact observation, per-format
+  decoding with eligible beside decoded beside *understood*, intelligence counts and the
+  embedding report, so an operator can tell "we inspected this and found nothing" from
+  "we could not understand this" without opening two JSON files and joining them by hand.
 - **A whole result set appears at once.** Every projection of one run is written into
   `generations/<id>/` and a single atomic rename of `CURRENT.json` makes the set
   visible. A crash at any point leaves the whole previous generation or the whole new
@@ -273,6 +307,18 @@ npm run local-source -- \
   read concurrently and `--max-memory-bytes` bounds decoded text held at once; both are
   measured rather than recorded, and a budget that governed nothing was removed rather
   than documented.
+- **A root nobody named cannot carry history.** A root's key is either *declared* — the
+  operator wrote `--root /Volumes/OldSSD=OldSSD`, or a root manifest did — or *inferred*
+  from the final path segment. Inferred keys are fine for a single run and are not an
+  identity: two unrelated directories both called `Backup` infer the same key, so a
+  previous-snapshot diff across them would report one drive's files as the other's
+  deletions. So the three operations that claim a root is the same root it was last time
+  — `--previous-snapshot`, `--resume`, and `--incremental` — **refuse** to run when either
+  side of the match rests on an inferred key. The refusal names the root, both identity
+  classes, and the two ways forward: declare the key, or pass
+  `--allow-inferred-root-history` to say the basenames really do mean the same drive. The
+  override is recorded in the snapshot's operational provenance, and it changes nothing
+  about identity — it authorizes the comparison, it does not make the key declared.
 
 No model is called and no network request is made unless an operator explicitly
 configures an embedding endpoint. Full semantics:

@@ -38,6 +38,26 @@ Artifacts are addressed `old-ssd::plans/deploy.md`. Two roots holding
 they form an exact-duplicate cluster, which is precisely the finding a single-root
 scan structurally cannot make.
 
+### And what happens when one is not
+
+`--root /Volumes/OldSSD` with no `=name` still runs. The key is inferred from the final
+path segment, which is fine for one scan and is not an identity: `/Volumes/Backup` and
+`/mnt/nas/Backup` infer the same `Backup`, and a later run has no way to notice they were
+two drives.
+
+So the operations that compare a root against its own past — `--previous-snapshot`,
+`--resume`, `--incremental` — refuse to start when a matched root's key was inferred on
+either side. The refusal is the point: a diff between two different drives that happen to
+share a basename reports one drive's files as the other's deletions, and it does so
+convincingly. Naming the root (`--root /Volumes/OldSSD=old-ssd`, or a manifest) removes
+the problem. `--allow-inferred-root-history` overrides it for an operator who knows the
+two really are one drive; the run then records the override in the snapshot and emits a
+`corpus.inferred_root_history_override` diagnostic, so the decision is visible later
+rather than inferred from its absence.
+
+Roots that were only added or only removed between the two runs make no continuity claim
+and are never blocked.
+
 ### Why the roots stay separate
 
 Each root produces its own Repository Model Packet under

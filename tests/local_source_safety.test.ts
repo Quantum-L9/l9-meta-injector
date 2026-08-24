@@ -257,4 +257,65 @@ describe("local source — snapshot stability", () => {
     expect(first).toBe(second);
     expect(first).toMatch(/^fs:sha256:[a-f0-9]{64}$/);
   });
+
+  test("carrying a prior hash forward keeps the not-UTF-8 observation", () => {
+    // The bug this covers: reuse recorded a different inventory from a fresh read
+    // of the same unchanged bytes. `unsupported_encoding` was pushed only on the
+    // freshly-hashed path, so an incremental scan of a disk holding one Word
+    // document produced an observation the full scan of those exact bytes did
+    // not — and the inventory is part of the Repository Model Packet, so the
+    // packet's semantic hash moved for a corpus nobody had touched.
+    const root = tmp();
+    fs.writeFileSync(path.join(root, "a.md"), "# A\n");
+    // Bytes no UTF-8 decoder accepts, under a name that does not announce them.
+    // That is the case the probe exists for and the one a real corpus is full of:
+    // a `.pdf` is not a binary extension the classifier knows to skip, so the
+    // probe reads it, finds it is not text, and records that it was observed by
+    // hash alone.
+    fs.writeFileSync(
+      path.join(root, "scan.pdf"),
+      Buffer.concat([Buffer.from("%PDF-1.4\n", "ascii"), Buffer.from([0x80, 0x81, 0xfe]), Buffer.from("\n%%EOF\n", "ascii")]),
+    );
+
+    const view = (observation: ReturnType<typeof acquireLocalSource>) => ({
+      unknowns: observation.inventory.records
+        .map((record) => `${record.relative_path}: ${record.unknowns.join(",")}`)
+        .sort(),
+      codes: observation.diagnostics.map((diagnostic) => diagnostic.code).sort(),
+      revision: observation.sourceRevision,
+      physical: observation.physicalSnapshotHash,
+    });
+
+    const fresh = observe({ path: root }, (observation) => ({
+      ...view(observation),
+      hashes: new Map(
+        observation.inventory.records
+          .filter((record) => record.content_hash !== null)
+          .map((record) => {
+            const stats = fs.statSync(path.join(root, record.relative_path));
+            return [record.relative_path, {
+              content_hash: record.content_hash as string,
+              size_bytes: stats.size,
+              mtime_ms: stats.mtimeMs,
+            }];
+          }),
+      ),
+    }));
+
+    // Hand the first run's hashes back, which is exactly what an incremental
+    // scan does with the previous snapshot.
+    const reused = observe(
+      { path: root, knownHashes: fresh.hashes },
+      (observation) => ({ ...view(observation), reuse: observation.hashing.cached_reuse_count }),
+    );
+
+    expect(reused.reuse).toBe(fresh.hashes.size);
+    expect(fresh.unknowns).toContain("scan.pdf: unsupported_encoding");
+    expect(fresh.codes).toContain("local-source.unsupported_encoding");
+    // Reuse is only worth having if it lands on the same answer.
+    expect(reused.unknowns).toEqual(fresh.unknowns);
+    expect(reused.codes).toEqual(fresh.codes);
+    expect(reused.revision).toBe(fresh.revision);
+    expect(reused.physical).toBe(fresh.physical);
+  });
 });

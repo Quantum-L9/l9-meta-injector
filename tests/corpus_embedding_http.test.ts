@@ -291,6 +291,10 @@ describe("a corpus scan with an embedding provider", () => {
     expect(embeddings.embedded_count).toBe(3);
     expect(embeddings.eligible_count).toBe(3);
     expect(embeddings.provider_failure_count).toBe(0);
+    // And the count of what was refused before it could be sent, carried in the
+    // coverage document as well as in the embedding report, because this is the
+    // document an operator reads to find out what left the machine.
+    expect(embeddings.secret_skipped_count).toBe(1);
     expect(result.coverage.embedding_coverage_when_enabled).not.toBeNull();
 
     const report = result.semantic?.embeddingReport;

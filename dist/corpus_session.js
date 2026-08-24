@@ -89,9 +89,10 @@ function uniqueSorted(values) {
  * is the one failure mode a resume feature must not have.
  */
 class CorpusSessionStore {
-    constructor(file, session) {
+    constructor(file, session, adoptedRoots = []) {
         this.file = file;
         this.session = session;
+        this.adoptedRoots = adoptedRoots;
         this.sourceIds = new Set(session.completed_source_ids);
         this.archiveHashes = new Set(session.completed_archive_hashes);
         this.decoderKeys = new Set(session.completed_decoder_keys);
@@ -143,10 +144,19 @@ class CorpusSessionStore {
             completed_analysis_keys: parsed.completed_analysis_keys ?? [],
             failure_diagnostics: parsed.failure_diagnostics ?? [],
             started_at: parsed.started_at ?? input.now,
-        });
+        }, parsed.roots ?? []);
     }
     get id() {
         return this.session.session_id;
+    }
+    /**
+     * Roots as the manifest this session resumed recorded them.
+     *
+     * Empty when this session started fresh, which is the case that makes no
+     * continuity claim at all.
+     */
+    get resumedRoots() {
+        return this.adoptedRoots;
     }
     /** Completions carried in from a previous attempt, before this one adds any. */
     get resumedCounts() {

@@ -240,6 +240,15 @@ export interface EmbeddingCoverage {
   embedded_count: number | null;
   cache_hit_count: number | null;
   provider_failure_count: number | null;
+  /**
+   * Documents refused before a byte of them reached the provider, because their
+   * path looked like a credential's.
+   *
+   * Carried here as well as in the embedding report because this is the document
+   * an operator reads to find out what left the machine, and "how many did we
+   * refuse to send" is half of that answer.
+   */
+  secret_skipped_count: number | null;
 }
 
 export interface CorpusCoverage {

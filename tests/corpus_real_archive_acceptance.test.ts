@@ -222,6 +222,30 @@ describe.skipIf(!enabled)("a real archive an operator named", () => {
     expect(participation.decoded_document_count).toBeGreaterThan(0);
     expect(participation.lexically_analyzed_count).toBeGreaterThan(0);
 
+    // 4b. What the decoded documents were found to *state*, and where. On a real
+    //     archive this is the number that says whether the operator's old plans
+    //     were read or merely opened. Nothing is required to be non-zero — an
+    //     archive of holiday photographs declares nothing and that is a true
+    //     finding — but whatever was read must cite a coordinate its own format
+    //     has, and never a line number invented for a file that has no lines.
+    const blockSignals = cold.documentSignals.block_signals;
+    expect(blockSignals.profile_hash).toMatch(/^sha256:/);
+    for (const entry of blockSignals.by_format) {
+      expect(entry.listed_signal_count + entry.omitted_signal_count).toBe(entry.signal_count);
+      for (const record of entry.records) {
+        expect(record.structured_locator.kind).not.toBe("line_span");
+        expect(record.block_id.length).toBeGreaterThan(0);
+        expect(record.raw_content_hash).toMatch(/^sha256:/);
+        expect(record.normalized_document_id).not.toBeNull();
+      }
+    }
+    for (const format of manifest.expect_formats ?? []) {
+      const decoded = cold.documentSignals.analysis_participation.by_format
+        .find((entry) => entry.format === format);
+      // Decoded and understood are different claims, and both are recorded.
+      expect(decoded?.decoded_count, `${format} decoded`).toBeGreaterThan(0);
+    }
+
     // The evidence, written where the operator asked for it. Counts and hashes
     // only: this file must not become a way to copy somebody's archive into a
     // report.
@@ -235,6 +259,16 @@ describe.skipIf(!enabled)("a real archive an operator named", () => {
         artifact_count: cold.snapshot.counts.artifact_count,
         archive_count: cold.snapshot.counts.archive_count,
         bytes_observed: cold.snapshot.counts.total_bytes,
+        block_signals: {
+          document_count: blockSignals.document_count,
+          signal_count: blockSignals.signal_count,
+          predicates: blockSignals.predicates,
+          by_format: blockSignals.by_format.map((entry) => ({
+            format: entry.format,
+            documents_with_signals: entry.documents_with_signals,
+            signal_count: entry.signal_count,
+          })),
+        },
         source_mutation: {
           mutated_path_count: 0,
           tree_digests_before: before.map((entry) => entry.digest.digest),

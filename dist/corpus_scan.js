@@ -36,6 +36,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.DOCUMENT_COVERAGE_SCHEMA = exports.CANDIDATE_STATEMENT = exports.MANIFEST_DECODER_VERSION = exports.MANIFEST_DECODER_ID = exports.TEXT_DECODER_VERSION = exports.TEXT_DECODER_ID = exports.CORPUS_CANDIDATES_SCHEMA = void 0;
 exports.isDecodable = isDecodable;
 exports.isLexicallyAnalyzable = isLexicallyAnalyzable;
+exports.isTextFamilyFormat = isTextFamilyFormat;
 exports.runCorpusScan = runCorpusScan;
 exports.renderCorpusCandidates = renderCorpusCandidates;
 exports.renderDocumentCoverage = renderDocumentCoverage;
@@ -76,7 +77,10 @@ const corpus_snapshot_1 = require("./corpus_snapshot");
 const corpus_session_1 = require("./corpus_session");
 const encoding_1 = require("./encoding");
 const documents_1 = require("./documents");
+const corpus_root_history_1 = require("./corpus_root_history");
+const corpus_work_signal_export_1 = require("./corpus_work_signal_export");
 const extractors_1 = require("./extractors");
+const document_blocks_1 = require("./extractors/document_blocks");
 const interpretation_1 = require("./interpretation");
 const local_source_1 = require("./local_source");
 const ordering_1 = require("./ordering");
@@ -110,7 +114,11 @@ exports.CANDIDATE_STATEMENT = "Exact duplicates are byte equality and are facts.
     + "shared bytes, shared wording and a container that holds a project marker. None of "
     + "them claims two documents mean the same thing, that anything should be merged, "
     + "moved or deleted, or that one is more valuable than another.";
-exports.DOCUMENT_COVERAGE_SCHEMA = "l9.document-coverage/v1";
+/**
+ * v2 alongside `l9.document-index/v2`, and for the same reason: the single
+ * `decoder` field named one decoder for a root that seven of them read.
+ */
+exports.DOCUMENT_COVERAGE_SCHEMA = "l9.document-coverage/v2";
 // ───────────────────────────── helpers ─────────────────────────────
 /**
  * The archives a member sits inside, outermost first.
@@ -154,6 +162,35 @@ function isDecodable(rootRelativePath, registry) {
 /** True when the lexical passes claim this artifact. */
 function isLexicallyAnalyzable(rootRelativePath) {
     return LEXICAL_EXTENSIONS.has(extensionOf(basenameOf(rootRelativePath)));
+}
+/**
+ * True for a format whose source bytes are themselves the text.
+ *
+ * The distinction decides two things that must not drift apart: whether the file
+ * is probed for UTF-8 before being opened, and whether its statements are read
+ * from its lines or from its blocks. A `.md` file has lines an operator can open
+ * the file to; a `.docx` has no lines at all, and the two are read accordingly.
+ */
+function isTextFamilyFormat(format) {
+    return format === "text" || format === "markdown";
+}
+/**
+ * The identity of a decoded document: `H(content_hash, decoder_id, version)`.
+ *
+ * Derived from the decoder that actually read the bytes. Naming a fixed decoder
+ * here instead would give every `.docx` in a corpus an id that says the text
+ * decoder produced it, and that id is the join key between the document index,
+ * the cache and every piece of block-bound evidence — three places that would
+ * then disagree about which decoding they mean.
+ */
+function normalizedDocumentIdOf(contentHash, record) {
+    if (contentHash === null)
+        return null;
+    return (0, corpus_cache_1.normalizedDocumentKey)({
+        contentHash,
+        decoderId: record?.decoder_id ?? exports.TEXT_DECODER_ID,
+        decoderVersion: record?.decoder_version ?? exports.TEXT_DECODER_VERSION,
+    });
 }
 function termCounts(tokens) {
     const counts = new Map();
@@ -311,7 +348,7 @@ async function deriveDocumentLayers(artifact, context) {
         // A decoder that reads text still needs the bytes to be text; one that reads
         // a container does not, and probing a `.docx` for UTF-8 would reject every
         // Word document in the corpus.
-        const textFamily = decoder === undefined || decoder.format === "text" || decoder.format === "markdown";
+        const textFamily = decoder === undefined || isTextFamilyFormat(decoder.format);
         if (textFamily) {
             const encoding = (0, encoding_1.probeFileEncoding)(absolute);
             if (encoding.status !== "utf8") {
@@ -554,6 +591,7 @@ async function runCorpusScan(input) {
     const ocrExtensions = new Set(gaps.ocrRequired);
     const undecodedExtensions = new Set(gaps.unsupported);
     const interpretProfile = (0, interpretation_1.interpretationProfileHash)(extractors);
+    const blockProfile = (0, document_blocks_1.documentBlockProfileHash)();
     const interpretEnabled = input.interpret !== false;
     const verificationMode = input.verification ?? "full";
     const verifyContent = input.verifyContent === true;
@@ -575,9 +613,50 @@ async function runCorpusScan(input) {
             archivePolicyVersion: key.policyVersion,
         }), value),
     };
+    // ── 0. may this run claim continuity with a previous one? ───────────────
+    //
+    // Decided before a byte is read, from the root specs alone: a spec carrying an
+    // explicit name is a declared identity, one without is the mount point's final
+    // segment. Every longitudinal path is gated here rather than at its own call
+    // site, so the diff, the resume and the incremental reuse cannot come to
+    // disagree about what continuity is worth.
+    const allowInferredRootHistory = input.allowInferredRootHistory === true;
+    const declaredIdentities = input.roots.map((spec) => {
+        const { rootKey, declared } = (0, corpus_roots_1.resolveRootIdentity)(spec);
+        return {
+            root_id: (0, corpus_roots_1.corpusRootId)(rootKey),
+            root_key: rootKey,
+            root_identity_class: declared ? "declared" : "inferred",
+        };
+    });
+    const authorizations = [];
+    const authorize = (operation, previousRoots) => {
+        const result = (0, corpus_root_history_1.assertLongitudinalRootIdentityAuthorized)({
+            operation,
+            currentRoots: declaredIdentities,
+            previousRoots,
+            allowInferredRootHistory,
+        });
+        authorizations.push({ operation, result });
+    };
+    if (input.previousSnapshot !== undefined) {
+        authorize("previous-snapshot diff", input.previousSnapshot.roots);
+    }
+    // A session with no roots recorded yet is one this run is about to create, and
+    // creating it claims nothing about a previous observation.
+    const sessionRoots = input.session?.resumedRoots ?? [];
+    if (sessionRoots.length > 0) {
+        authorize("resume", sessionRoots);
+    }
     const knownHashesEnabled = verificationMode === "incremental"
         && !verifyContent
         && input.previousSnapshot !== undefined;
+    if (knownHashesEnabled) {
+        // Reuse keyed purely on content is safe whatever the root is called: the key
+        // is the bytes. This is the other kind — "that path under that root had these
+        // bytes last run" — and it is a continuity claim like any other.
+        authorize("incremental hash reuse", input.previousSnapshot.roots);
+    }
     // ── 1. acquire every root, read-only ────────────────────────────────────
     const observations = [];
     const failedRoots = [];
@@ -590,14 +669,12 @@ async function runCorpusScan(input) {
             if (acquiredRoots > 0)
                 await (0, corpus_session_1.yieldToEventLoop)();
             acquiredRoots += 1;
-            const rootKey = spec.name !== undefined && spec.name.length > 0
-                ? spec.name
-                : (0, corpus_roots_1.defaultRootKey)(spec.path);
-            assertUsableRootKey(rootKey, spec.path);
             // Whether the key is the operator's word or the mount point's last
             // segment. It decides `root_identity_class`, which is what a later diff
-            // consults before treating two runs' roots as the same disk.
-            const keyDeclared = spec.name !== undefined && spec.name.length > 0;
+            // consults before treating two runs' roots as the same disk, so it is
+            // resolved by the same function that gated this run's continuity above.
+            const { rootKey, declared: keyDeclared } = (0, corpus_roots_1.resolveRootIdentity)(spec);
+            assertUsableRootKey(rootKey, spec.path);
             // An unplugged drive is a fact about the corpus and has to end up inside
             // it. Swallowing the failure and carrying on would produce a snapshot that
             // looks complete and is missing a disk, which is the one outcome a corpus
@@ -856,6 +933,7 @@ async function runCorpusScan(input) {
         const decodable = artifacts.filter((artifact) => artifact.contentHash !== null
             && (isDecodable(artifact.rootRelativePath, registry)
                 || extractors.some((extractor) => extractor.matches(artifact.rootRelativePath))));
+        const rootKeyById = new Map(bound.roots.map((root) => [root.root_id, root.root_key]));
         await (0, corpus_session_1.boundedMap)(decodable, budgets.max_parallel_decoders, (artifact) => deriveDocumentLayers(artifact, {
             cache,
             ...(session !== undefined ? { session } : {}),
@@ -866,10 +944,57 @@ async function runCorpusScan(input) {
             interpretEnabled,
             maxFileBytes,
             rootPathsById,
-            rootKeyById: new Map(bound.roots.map((root) => [root.root_id, root.root_key])),
+            rootKeyById,
             registry,
             into: { normalized, lexical, interpreted, manifestIdentifiers, skipped },
         }));
+        // ── 4a. what the decoded documents say about themselves ───────────────
+        //
+        // The line-based interpretation above reads files that have lines. Everything
+        // a decoder opens that does not — a Word document, a deck, a worksheet, a
+        // notebook, a PDF, an HTML page, a CSV — states its status, its tasks and its
+        // dependencies in exactly the same vocabulary, and until this pass existed it
+        // stated them to nobody: the text reached the lexical analysis and the
+        // statements reached nothing at all.
+        //
+        // Read here rather than inside `deriveDocumentLayers` because the blocks are
+        // part of the normalized document record, so they are equally in hand whether
+        // the document was just decoded or read out of the cache. A warm run and a
+        // cold run therefore produce these signals from the same bytes by
+        // construction, instead of by a second cache layer having to agree with the
+        // first.
+        const blockSignals = new Map();
+        for (const artifact of decodable) {
+            const record = normalized.get(artifact.virtualSourceId);
+            if (record?.decodes !== true)
+                continue;
+            // A text document is skipped: its assertions already exist, and they cite
+            // the line spans it actually has. Reading it twice would double every task
+            // in the corpus and file the second copy under a weaker coordinate.
+            if (isTextFamilyFormat(record.format))
+                continue;
+            const blocks = record.blocks ?? [];
+            if (blocks.length === 0)
+                continue;
+            const rootKey = rootKeyById.get(artifact.rootId) ?? artifact.rootId;
+            const signals = (0, document_blocks_1.readDocumentBlockSignals)({
+                subjectId: (0, repository_model_1.repositoryModelArtifactId)(`repo:${rootKey}`, artifact.rootRelativePath),
+                sourcePath: artifact.rootRelativePath,
+                sourceContentHash: artifact.contentHash,
+                normalizedDocumentId: normalizedDocumentIdOf(artifact.contentHash, record),
+                decoderId: record.decoder_id,
+                decoderVersion: record.decoder_version,
+                format: record.format,
+                blocks: blocks.map((block) => ({
+                    block_id: block.block_id,
+                    kind: block.kind,
+                    text: block.text,
+                    locator: block.locator,
+                })),
+            });
+            if (signals.length > 0)
+                blockSignals.set(artifact.virtualSourceId, signals);
+        }
         // ── 4b. per-root Repository Model Packets ─────────────────────────────
         // Each root is modelled on its own, exactly as it would be if it had been
         // observed alone: the corpus is an analysis over several roots, not a
@@ -942,6 +1067,7 @@ async function runCorpusScan(input) {
                     corpus_profile: corpusProfileHash,
                     document_decoder_profiles: documentDecoderProfiles,
                     interpretation_profile: interpretProfile,
+                    document_block_profile: blockProfile,
                     semantic_candidate_profile: candidateProfile,
                     ...(embeddingProfile !== null ? { embedding_profile: embeddingProfile } : {}),
                     readiness_profile: (0, corpus_readiness_1.readinessProfileHash)(),
@@ -950,10 +1076,55 @@ async function runCorpusScan(input) {
             corpus_profile: corpusProfileHash,
             document_decoder_profiles: [...documentDecoderProfiles],
             interpretation_profile: interpretProfile,
+            document_block_profile: blockProfile,
             semantic_candidate_profile: candidateProfile,
             embedding_profile: embeddingProfile,
             readiness_profile: (0, corpus_readiness_1.readinessProfileHash)(),
         };
+        // Both projections of the work signals are built from this one array. The
+        // report samples it and the machine payload carries all of it, so the two can
+        // disagree about presentation and never about how much the corpus found.
+        const workSignalRecords = [...blockSignals.entries()]
+            .flatMap(([artifactId, signals]) => signals.map((signal) => ({
+            signal_id: signal.assertion_id,
+            artifact_id: artifactId,
+            rmp_artifact_id: signal.subject_id,
+            source_path: signal.source_path,
+            format: signal.format,
+            raw_content_hash: signal.source_content_hash,
+            normalized_document_id: signal.evidence.normalized_document_id,
+            decoder_id: signal.evidence.decoder_id,
+            decoder_version: signal.evidence.decoder_version,
+            block_id: signal.evidence.block_id,
+            block_kind: signal.evidence.block_kind,
+            structured_locator: signal.evidence.locator,
+            predicate: signal.predicate,
+            object: signal.object,
+            bounded_excerpt: signal.evidence_excerpt,
+            evidence_class: signal.evidence_class,
+            authority: signal.authority,
+            confidence: signal.confidence,
+            extractor_id: signal.extractor_id,
+            extractor_profile_version: document_blocks_1.DOCUMENT_BLOCK_PROFILE_VERSION,
+        })));
+        // The complete payload is built here, before the snapshot, because the
+        // snapshot carries a reference to it: a record count and the two hashes, so a
+        // reader holding only the snapshot can tell whether the payload beside it is
+        // the one this run produced.
+        const documentWorkSignals = (0, corpus_work_signal_export_1.buildDocumentWorkSignalExport)({
+            corpusSourceSnapshotId: sourceSnapshotId,
+            corpusAnalysisId: analysisIdentity.corpus_analysis_id,
+            profile: {
+                profile_id: document_blocks_1.DOCUMENT_BLOCK_PROFILE_ID,
+                profile_version: document_blocks_1.DOCUMENT_BLOCK_PROFILE_VERSION,
+                profile_hash: blockProfile,
+            },
+            records: workSignalRecords,
+        });
+        // What the operator authorized, recorded beside what was observed. Null on
+        // an ordinary run: an `enabled: false` entry on every run would train a
+        // reader to skip the field precisely when it says something.
+        const historyOverride = (0, corpus_root_history_1.inferredRootHistoryOverride)(authorizations);
         session?.setTarget(sourceSnapshotId);
         // ── 5. readiness signals ──────────────────────────────────────────────
         const readinessInputs = artifacts.map((artifact) => ({
@@ -968,7 +1139,13 @@ async function runCorpusScan(input) {
             archive_id: archiveAncestryOf(artifact.rootRelativePath)[0] ?? null,
             decoded: normalized.get(artifact.virtualSourceId)?.decodes === true,
             unsupported_format: undecodedExtensions.has(artifact.extension),
-            assertions: (interpreted.get(artifact.virtualSourceId)?.assertions ?? []).map((assertion) => ({
+            // Both readers, because readiness is a question about the document and not
+            // about which coordinate system its evidence happens to use. A `.docx` plan
+            // with three open tasks is exactly as unfinished as the `.md` one beside it.
+            assertions: [
+                ...(interpreted.get(artifact.virtualSourceId)?.assertions ?? []),
+                ...(blockSignals.get(artifact.virtualSourceId) ?? []),
+            ].map((assertion) => ({
                 predicate: assertion.predicate,
                 object: assertion.object,
             })),
@@ -1167,6 +1344,10 @@ async function runCorpusScan(input) {
             corpus_id: corpusIdLabel,
             corpus_source_snapshot_id: sourceSnapshotId,
             analysis: analysisIdentity,
+            document_work_signals: (0, corpus_work_signal_export_1.documentWorkSignalsRef)(documentWorkSignals.manifest),
+            ...(historyOverride !== null
+                ? { operational_provenance: { inferred_root_history_override: historyOverride } }
+                : {}),
             corpus_status: corpusStatus,
             verification,
             missing_root_ids: failedRoots.map((failed) => failed.rootId).sort(ordering_1.compareCodePoints),
@@ -1280,6 +1461,7 @@ async function runCorpusScan(input) {
             corpusAnalysisId: analysisIdentity.corpus_analysis_id,
             decoderId: exports.TEXT_DECODER_ID,
             decoderVersion: exports.TEXT_DECODER_VERSION,
+            decoderProfiles: registry.profile(),
             artifacts: artifacts.map((artifact) => {
                 const record = normalized.get(artifact.virtualSourceId);
                 return {
@@ -1291,14 +1473,18 @@ async function runCorpusScan(input) {
                     sizeBytes: artifact.sizeBytes,
                     isArchiveMember: artifact.isArchiveMember,
                     archiveAncestry: archiveAncestryOf(artifact.rootRelativePath),
-                    ...(record !== undefined ? { normalized: record } : {}),
-                    normalizedDocumentId: artifact.contentHash === null
-                        ? null
-                        : (0, corpus_cache_1.normalizedDocumentKey)({
-                            contentHash: artifact.contentHash,
-                            decoderId: exports.TEXT_DECODER_ID,
-                            decoderVersion: exports.TEXT_DECODER_VERSION,
-                        }),
+                    ...(record !== undefined
+                        ? {
+                            normalized: {
+                                ...record,
+                                // Read off the blocks rather than declared beside them, so the
+                                // index cannot claim a coordinate system no block of this
+                                // document actually cites.
+                                locator_kinds: (record.blocks ?? []).map((block) => String(block.locator.kind)),
+                            },
+                        }
+                        : {}),
+                    normalizedDocumentId: normalizedDocumentIdOf(artifact.contentHash, record),
                 };
             }),
         });
@@ -1314,27 +1500,11 @@ async function runCorpusScan(input) {
         }
         const rootPackets = builtPackets.map((entry) => {
             const documents = documentsByRoot.get(entry.binding.root_id) ?? [];
-            const decoded = documents.filter((document) => document.decoded);
-            const undecodedCounts = new Map();
-            for (const document of documents) {
-                if (document.decoded)
-                    continue;
-                const reason = document.undecoded_reason ?? corpus_documents_1.UNDECODED_REASON_NOT_ELIGIBLE;
-                undecodedCounts.set(reason, (undecodedCounts.get(reason) ?? 0) + 1);
-            }
+            // Summarized by the same function as the corpus index, so a per-root file
+            // and the corpus file can never come to disagree about one root.
             const rootIndex = {
                 ...documentIndex,
-                summary: {
-                    artifact_count: documents.length,
-                    decoded_count: decoded.length,
-                    undecoded_count: documents.length - decoded.length,
-                    distinct_document_count: new Set(decoded.map((document) => document.normalized_document_id ?? "")).size,
-                    archive_member_count: documents.filter((d) => d.is_archive_member).length,
-                    total_token_count: decoded.reduce((sum, d) => sum + (d.token_count ?? 0), 0),
-                    undecoded_by_reason: [...undecodedCounts.entries()]
-                        .map(([reason, count]) => ({ reason, count }))
-                        .sort((a, b) => (0, ordering_1.compareCodePoints)(a.reason, b.reason)),
-                },
+                summary: (0, corpus_documents_1.summarizeDocuments)(documents),
                 documents,
             };
             return {
@@ -1350,7 +1520,7 @@ async function runCorpusScan(input) {
                     corpus_analysis_id: analysisIdentity.corpus_analysis_id,
                     root_id: entry.binding.root_id,
                     root_key: entry.binding.root_key,
-                    decoder: { decoder_id: exports.TEXT_DECODER_ID, decoder_version: exports.TEXT_DECODER_VERSION },
+                    decoder_profiles: registry.profile(),
                     ...rootIndex.summary,
                 },
             };
@@ -1434,7 +1604,10 @@ async function runCorpusScan(input) {
                     normalized_document_id: document?.normalized_document_id ?? null,
                     is_archive_member: artifact.isArchiveMember,
                     archive_ancestry: archiveAncestryOf(artifact.rootRelativePath),
-                    assertions: (interpreted.get(artifact.virtualSourceId)?.assertions ?? []).map((assertion) => ({
+                    assertions: [
+                        ...(interpreted.get(artifact.virtualSourceId)?.assertions ?? []),
+                        ...(blockSignals.get(artifact.virtualSourceId) ?? []),
+                    ].map((assertion) => ({
                         assertion_id: assertion.assertion_id,
                         predicate: assertion.predicate,
                         object: assertion.object,
@@ -1454,15 +1627,24 @@ async function runCorpusScan(input) {
                 };
             });
             const assertionsByArtifact = new Map();
+            const packAssertion = (assertion) => ({
+                assertion_id: assertion.assertion_id,
+                predicate: assertion.predicate,
+                object: assertion.object,
+                source_path: assertion.source_path,
+                evidence_excerpt: assertion.evidence_excerpt,
+                source_content_hash: assertion.source_content_hash ?? "",
+            });
             for (const [artifactId, record] of interpreted) {
-                assertionsByArtifact.set(artifactId, record.assertions.map((assertion) => ({
-                    assertion_id: assertion.assertion_id,
-                    predicate: assertion.predicate,
-                    object: assertion.object,
-                    source_path: assertion.source_path,
-                    evidence_excerpt: assertion.evidence_excerpt,
-                    source_content_hash: assertion.source_content_hash,
-                })));
+                assertionsByArtifact.set(artifactId, record.assertions.map(packAssertion));
+            }
+            // Block-bound claims join the same packs. An evidence pack quotes what a
+            // document said and names where it said it; the locator differs by format
+            // and the claim does not, so excluding these would build reasoning packs
+            // that silently omit every plan the operator wrote in Word.
+            for (const [artifactId, signals] of blockSignals) {
+                const existing = assertionsByArtifact.get(artifactId) ?? [];
+                assertionsByArtifact.set(artifactId, [...existing, ...signals.map(packAssertion)]);
             }
             semantic = (0, corpus_semantic_run_1.runSemanticAnalysis)({
                 corpusSourceSnapshotId: sourceSnapshotId,
@@ -1509,9 +1691,23 @@ async function runCorpusScan(input) {
                     locator: block.locator,
                 })),
             })),
-            interpreted: new Set([...interpreted.entries()]
-                .filter(([, record]) => record.assertions.length > 0)
-                .map(([artifactId]) => artifactId)),
+            blockProfile: {
+                profile_id: document_blocks_1.DOCUMENT_BLOCK_PROFILE_ID,
+                profile_version: document_blocks_1.DOCUMENT_BLOCK_PROFILE_VERSION,
+                profile_hash: blockProfile,
+                extractor_id: document_blocks_1.DOCUMENT_BLOCK_EXTRACTOR_ID,
+            },
+            blockSignals: workSignalRecords,
+            // Interpreted means "said something", by either reader. Counting only the
+            // line-based one would report every decoded Word document as interpreted
+            // zero times, which is the exact shape of failure this document exists to
+            // make visible.
+            interpreted: new Set([
+                ...[...interpreted.entries()]
+                    .filter(([, record]) => record.assertions.length > 0)
+                    .map(([artifactId]) => artifactId),
+                ...blockSignals.keys(),
+            ]),
             lexicallyAnalyzed: new Set(lexical.keys()),
             candidateMembers,
         });
@@ -1569,9 +1765,17 @@ async function runCorpusScan(input) {
                 workSignalArtifacts.add(artifactId);
             }
         }
+        for (const [artifactId, signals] of blockSignals) {
+            if (signals.some((assertion) => assertion.predicate.startsWith("work."))) {
+                workSignalArtifacts.add(artifactId);
+            }
+        }
         const dependencyPredicates = new Map();
-        for (const record of interpreted.values()) {
-            for (const assertion of record.assertions) {
+        for (const assertions of [
+            ...[...interpreted.values()].map((record) => record.assertions),
+            ...blockSignals.values(),
+        ]) {
+            for (const assertion of assertions) {
                 if (!assertion.predicate.startsWith("work.depends_on")
                     && !assertion.predicate.startsWith("work.blocked_by")
                     && !assertion.predicate.startsWith("work.references"))
@@ -1685,6 +1889,9 @@ async function runCorpusScan(input) {
                 provider_failure_count: embeddingReport?.enabled === true
                     ? embeddingReport.eligible_artifact_count - embeddingReport.embedded_artifact_count
                     : null,
+                secret_skipped_count: embeddingReport?.enabled === true
+                    ? embeddingReport.secret_candidates_skipped
+                    : null,
             },
             exact_hash_coverage: (0, corpus_coverage_1.coverageRatio)(artifacts.filter((artifact) => artifact.contentHash !== null).length, artifacts.length),
             normalized_document_coverage: (0, corpus_coverage_1.coverageRatio)(decodedIds.size, decodableIds.size),
@@ -1749,6 +1956,16 @@ async function runCorpusScan(input) {
             });
             session?.fail({ code: note.code, severity: note.severity, message: note.message });
         }
+        if (historyOverride !== null) {
+            // Stated in the run's own diagnostics as well as recorded in the snapshot:
+            // a reader of the report should not have to open the snapshot to find out
+            // that the continuity it describes is the operator's claim.
+            diagnostics.push({
+                code: "corpus.inferred_root_history_override",
+                severity: "warning",
+                message: (0, corpus_root_history_1.inferredRootHistoryWarning)(historyOverride),
+            });
+        }
         if (skipped.encoding > 0) {
             diagnostics.push({
                 code: "corpus.unsupported_encoding",
@@ -1756,14 +1973,41 @@ async function runCorpusScan(input) {
                 message: `${skipped.encoding} file(s) were hashed but are not valid UTF-8 and were not decoded`,
             });
         }
+        // The completeness contract, checked before anything is written rather than
+        // asserted in a document. Every failure here means the payload and the report
+        // disagree about what the corpus found, or a signal points at something the
+        // corpus does not contain — and a consumer reading either one would be
+        // reading a number nobody could reconcile.
+        const exportProblems = (0, corpus_work_signal_export_1.verifyDocumentWorkSignalExport)({
+            manifest: documentWorkSignals.manifest,
+            payloadJsonl: documentWorkSignals.payloadJsonl,
+            knownArtifactIds: new Set(artifacts.map((artifact) => artifact.virtualSourceId)),
+            knownNormalizedDocumentIds: new Set(artifacts
+                .map((artifact) => normalizedDocumentIdOf(artifact.contentHash, normalized.get(artifact.virtualSourceId)))
+                .filter((id) => id !== null)),
+            reportSignalCount: documentSignals.block_signals.signal_count,
+        });
+        if (exportProblems.length > 0) {
+            throw new Error("corpus: the complete document work-signal payload failed its own completeness "
+                + `check and was not published:\n  - ${exportProblems.join("\n  - ")}`);
+        }
+        // Built only after the guard above allowed the comparison: an unauthorized
+        // inferred continuity never reaches this call, so a diff exists exactly when
+        // there was a claim worth making.
         const diff = input.previousSnapshot
-            ? (0, corpus_diff_1.buildCorpusDiff)(input.previousSnapshot, snapshot)
+            ? {
+                ...(0, corpus_diff_1.buildCorpusDiff)(input.previousSnapshot, snapshot),
+                ...(historyOverride !== null
+                    ? { inferred_root_history_override: historyOverride }
+                    : {}),
+            }
             : null;
         const orderedDiagnostics = [...diagnostics].sort((a, b) => (0, ordering_1.compareCodePoints)(a.code, b.code)
             || (0, ordering_1.compareCodePoints)(a.corpus_path ?? "", b.corpus_path ?? "")
             || (0, ordering_1.compareCodePoints)(a.message, b.message));
         return {
             snapshot,
+            documentWorkSignals,
             rootPackets,
             candidates: candidatesDocument,
             readiness,

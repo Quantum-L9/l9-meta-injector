@@ -74,8 +74,21 @@ function fixture(): Fixture {
   };
 }
 
+/**
+ * The arguments an operator who names their roots would type.
+ *
+ * `PATH=KEY` rather than a bare path, because most of these runs compare, resume
+ * or reuse across runs, and continuity on a key nobody declared is refused. The
+ * refusal and its override are the subject of `corpus_root_history.test.ts`;
+ * here the roots are named so these tests are about what they say they are.
+ */
 function argsFor(f: Fixture, extra: string[] = []): string[] {
-  return [...f.roots.flatMap((root) => ["--root", root]), "--out", f.out, "--cache-dir", f.cache, ...extra];
+  return [
+    ...f.roots.flatMap((root) => ["--root", `${root}=${path.basename(root)}`]),
+    "--out", f.out,
+    "--cache-dir", f.cache,
+    ...extra,
+  ];
 }
 
 /**
@@ -103,6 +116,47 @@ function snapshotRoots(f: Fixture): { root_key: string; rmp_packet_id: string; b
 }
 
 describe("corpus mode", () => {
+  it("states in its report what it understood and what it could not", () => {
+    const f = fixture();
+    expect(run(argsFor(f)).status).toBe(0);
+    const report = fs.readFileSync(path.join(generation(f), "corpus-report.md"), "utf8");
+
+    // The coverage law: an operator must be able to tell "we looked and found
+    // nothing" from "we could not read this", without opening a second file and
+    // joining it by hand.
+    for (const heading of [
+      "## Exact observation",
+      "## Decoding",
+      "## Intelligence",
+      "## Embedding",
+    ]) {
+      expect(report).toContain(heading);
+    }
+    expect(report).toContain("artifacts hashed");
+    expect(report).toContain("artifacts unhashed");
+    expect(report).toContain("needs OCR");
+    expect(report).toContain("encrypted");
+    expect(report).toContain("decoder failures");
+    expect(report).toContain("artifacts with work signals");
+    expect(report).toContain("skipped as secret candidates");
+    // Embeddings did not run, and the report says so rather than printing a zero
+    // that reads as "nothing was eligible".
+    expect(report).toMatch(/\| enabled \| no \|/);
+    expect(report).toMatch(/\| embedded artifacts \| — \|/);
+
+    // And the per-format decoding table, which is where a decoder wired to
+    // nothing becomes visible: decoded above zero, understood at zero.
+    expect(report).toMatch(/\| format \| decoder \| eligible \| decoded \| understood \| refused \|/);
+    const index = JSON.parse(
+      fs.readFileSync(path.join(generation(f), "corpus-index.json"), "utf8"),
+    );
+    expect(index.coverage.decoding.length).toBeGreaterThan(0);
+    for (const entry of index.coverage.decoding) {
+      expect(entry.decoded_count).toBeLessThanOrEqual(entry.eligible_count);
+      expect(entry.interpreted_count).toBeLessThanOrEqual(entry.decoded_count);
+    }
+  });
+
   it("writes the projection set and leaves every root untouched", () => {
     const f = fixture();
     const before = f.roots.map((root) => treeSnapshot(root));
@@ -126,6 +180,8 @@ describe("corpus mode", () => {
       "corpus-snapshot.json",
       "document-index.json",
       "document-signals.json",
+      "document-work-signals.jsonl",
+      "document-work-signals.manifest.json",
       "project-candidates.json",
       "readiness-evidence.json",
       "reasoning-candidates.jsonl",
@@ -168,7 +224,7 @@ describe("corpus mode", () => {
     expect(snapshot.schema).toBe("l9.corpus-snapshot/v1");
     expect(candidates.schema).toBe("l9.corpus-candidates/v1");
     expect(coverage.schema).toBe("l9.corpus-coverage/v1");
-    expect(signals.schema).toBe("l9.corpus-document-signals/v1");
+    expect(signals.schema).toBe("l9.document-signals/v1");
     expect(signals.corpus_source_snapshot_id).toBe(snapshot.corpus_source_snapshot_id);
     // Decoding that reaches nothing is not a result. The signals document says
     // how much of what was decoded a candidate actually names, so the CLI cannot
@@ -233,7 +289,11 @@ describe("corpus mode", () => {
   it("runs cold when the cache is switched off", () => {
     const f = fixture();
     expect(run(argsFor(f)).status).toBe(0);
-    const cold = run([...f.roots.flatMap((root) => ["--root", root]), "--out", f.out, "--no-cache"]);
+    const cold = run([
+      ...f.roots.flatMap((root) => ["--root", `${root}=${path.basename(root)}`]),
+      "--out", f.out,
+      "--no-cache",
+    ]);
     expect(cold.status).toBe(0);
     expect(cold.stdout).toContain("cache            off");
   });
@@ -297,16 +357,37 @@ describe("semantic candidate discovery", () => {
     expect(topics.schema).toBe("l9.topic-candidates/v1");
     expect(projects.schema).toBe("l9.project-candidates/v1");
     expect(consolidation.schema).toBe("l9.consolidation-candidates/v1");
-    expect(documents.schema).toBe("l9.document-index/v1");
+    expect(documents.schema).toBe("l9.document-index/v2");
 
     // The document index is the prerequisite this contract had to build: every
     // entry names its artifact, the exact source hash, and the decoder identity.
+    //
+    // The decoder identity is the one that *read the file*. This assertion used
+    // to require every row to name the text decoder, which the index did in fact
+    // do — including for files the text decoder never opened. A `.docx` row
+    // claiming the text decoder made the normalized document id derived from it
+    // wrong too, and that id is the join key between this index, the cache and
+    // every piece of evidence.
     expect(documents.documents.length).toBeGreaterThan(0);
+    const decodersByFormat = new Map<string, Set<string>>();
     for (const entry of documents.documents) {
       expect(entry.artifact_id.length).toBeGreaterThan(0);
-      expect(entry.decoder_id).toBe("utf8-text-decoder");
-      if (entry.decoded) expect(entry.normalized_document_id).not.toBeNull();
+      expect(entry.decoder_id.length).toBeGreaterThan(0);
+      if (!entry.decoded) {
+        expect(entry.format).toBeNull();
+        expect(entry.block_count).toBeNull();
+        continue;
+      }
+      expect(entry.normalized_document_id).not.toBeNull();
+      expect(entry.format).not.toBeNull();
+      expect(entry.block_count).toBeGreaterThanOrEqual(0);
+      const decoders = decodersByFormat.get(entry.format as string) ?? new Set<string>();
+      decoders.add(entry.decoder_id as string);
+      decodersByFormat.set(entry.format as string, decoders);
     }
+    // One decoder per format, and never one decoder for every format.
+    for (const [, decoders] of decodersByFormat) expect(decoders.size).toBe(1);
+    expect(documents.decoder_profiles.length).toBeGreaterThan(1);
   });
 
   it("writes one JSONL record per line, and a pack for every eligible candidate", () => {

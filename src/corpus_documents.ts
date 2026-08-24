@@ -28,8 +28,17 @@
 import { canonicalCorpusJson } from "./corpus_analysis";
 import { compareCodePoints } from "./ordering";
 
-/** Schema of the normalized-document index. */
-export const DOCUMENT_INDEX_SCHEMA = "l9.document-index/v1";
+/**
+ * Schema of the normalized-document index.
+ *
+ * v2 because v1 could not truthfully say what the corpus now knows. It carried a
+ * single `decoder` for the whole index and repeated it on every entry, so a
+ * `.docx` row named the text decoder; and it carried no format, no block count
+ * and no locator type at all. Those are not additions to what v1 meant — they
+ * correct what it said. Overloading the v1 name would leave a reader unable to
+ * tell an index whose decoder fields are accurate from one whose are not.
+ */
+export const DOCUMENT_INDEX_SCHEMA = "l9.document-index/v2";
 
 /**
  * One normalized document, or one artifact that could not become a document.
@@ -56,8 +65,24 @@ export interface NormalizedDocumentEntry {
    * duplicate be decoded once and read twice.
    */
   normalized_document_id: string | null;
+  /** The decoder that actually read these bytes, not the corpus's default one. */
   decoder_id: string;
   decoder_version: string;
+  /** What the decoder read the bytes *as*. Null when nothing decoded them. */
+  format: string | null;
+  /** Blocks the decoding produced. Null when it did not decode. */
+  block_count: number | null;
+  /**
+   * The coordinate system this document's blocks cite.
+   *
+   * Null when the document has no blocks, and also null in the case a document
+   * cites more than one kind — where `structured_locator_types` below has the
+   * full answer. A singular field that silently picked one of several would be a
+   * claim about the document that no block supports.
+   */
+  structured_locator_type: string | null;
+  /** Every locator kind the blocks cite, distinct and in code-point order. */
+  structured_locator_types: string[];
   /** False when no decoder claimed the artifact, or decoding refused. */
   decoded: boolean;
   /** Why it was not decoded. Null when it was. */
@@ -83,13 +108,29 @@ export interface DocumentIndexSummary {
   total_token_count: number;
   /** Why artifacts were not decoded, by reason, in code-point order. */
   undecoded_by_reason: { reason: string; count: number }[];
+  /**
+   * What was decoded, by format.
+   *
+   * The count an operator asks for by name — "how many of my Word documents did
+   * you read" — and the one a corpus-wide total carried by Markdown cannot
+   * answer.
+   */
+  by_format: {
+    format: string;
+    decoder_id: string;
+    decoder_version: string;
+    decoded_count: number;
+    block_count: number;
+    structured_locator_types: string[];
+  }[];
 }
 
 export interface DocumentIndex {
   schema: string;
   corpus_source_snapshot_id: string;
   corpus_analysis_id: string;
-  decoder: { decoder_id: string; decoder_version: string };
+  /** `id@version` for every decoder in the registry this run used. */
+  decoder_profiles: string[];
   summary: DocumentIndexSummary;
   documents: NormalizedDocumentEntry[];
 }
@@ -111,6 +152,13 @@ export interface DocumentIndexArtifactInput {
     byte_length: number;
     normalized_content_hash: string | null;
     token_count: number;
+    /** The format the bytes were read as, and by which decoder. */
+    format?: string;
+    decoder_id?: string;
+    decoder_version?: string;
+    block_count?: number;
+    /** Locator kinds the blocks cite, in any order. */
+    locator_kinds?: readonly string[];
   };
   /** Identity of the decoded document, when one exists. */
   normalizedDocumentId?: string | null;
@@ -119,8 +167,16 @@ export interface DocumentIndexArtifactInput {
 export interface BuildDocumentIndexInput {
   corpusSourceSnapshotId: string;
   corpusAnalysisId: string;
+  /**
+   * Decoder to name for an artifact whose record does not name one.
+   *
+   * Only reached for an artifact nothing decoded, where the field says which
+   * decoder would have been asked rather than which one read it.
+   */
   decoderId: string;
   decoderVersion: string;
+  /** `id@version` for every decoder in the registry, in any order. */
+  decoderProfiles: readonly string[];
   artifacts: readonly DocumentIndexArtifactInput[];
 }
 
@@ -141,6 +197,7 @@ function entryFor(
 ): NormalizedDocumentEntry {
   const normalized = artifact.normalized;
   const decoded = normalized?.decodes === true;
+  const locatorKinds = [...new Set(normalized?.locator_kinds ?? [])].sort(compareCodePoints);
   return {
     artifact_id: artifact.artifactId,
     root_id: artifact.rootId,
@@ -148,8 +205,14 @@ function entryFor(
     root_relative_path: artifact.rootRelativePath,
     content_hash: artifact.contentHash,
     normalized_document_id: artifact.normalizedDocumentId ?? null,
-    decoder_id: decoderId,
-    decoder_version: decoderVersion,
+    // The record's decoder wins. The fallback names the decoder that would have
+    // been asked, and is only reached where no decoder produced a record.
+    decoder_id: normalized?.decoder_id ?? decoderId,
+    decoder_version: normalized?.decoder_version ?? decoderVersion,
+    format: decoded ? (normalized?.format ?? null) : null,
+    block_count: decoded ? (normalized?.block_count ?? 0) : null,
+    structured_locator_type: locatorKinds.length === 1 ? (locatorKinds[0] as string) : null,
+    structured_locator_types: locatorKinds,
     decoded,
     undecoded_reason: decoded
       ? null
@@ -162,6 +225,81 @@ function entryFor(
   };
 }
 
+/**
+ * Summarize a set of index entries.
+ *
+ * Exported and used for both the corpus index and each per-root one, because the
+ * per-root summary used to be a second hand-written copy of these counts. Two
+ * implementations of "how many did we decode" drift, and the one nobody looks at
+ * drifts first — a per-root file is exactly the one nobody looks at until they
+ * need it.
+ */
+export function summarizeDocuments(
+  documents: readonly NormalizedDocumentEntry[],
+): DocumentIndexSummary {
+  const distinct = new Set<string>();
+  const reasons = new Map<string, number>();
+  interface FormatTally {
+    format: string;
+    decoderId: string;
+    decoderVersion: string;
+    decoded: number;
+    blocks: number;
+    locatorKinds: Set<string>;
+  }
+  const formats = new Map<string, FormatTally>();
+  let decodedCount = 0;
+  let tokens = 0;
+  for (const document of documents) {
+    if (document.decoded) {
+      decodedCount += 1;
+      tokens += document.token_count ?? 0;
+      if (document.normalized_document_id !== null) distinct.add(document.normalized_document_id);
+      const format = document.format ?? "unknown";
+      let tally = formats.get(format);
+      if (tally === undefined) {
+        tally = {
+          format,
+          decoderId: document.decoder_id,
+          decoderVersion: document.decoder_version,
+          decoded: 0,
+          blocks: 0,
+          locatorKinds: new Set(),
+        };
+        formats.set(format, tally);
+      }
+      tally.decoded += 1;
+      tally.blocks += document.block_count ?? 0;
+      for (const kind of document.structured_locator_types) tally.locatorKinds.add(kind);
+      continue;
+    }
+    const reason = document.undecoded_reason ?? UNDECODED_REASON_NOT_ELIGIBLE;
+    reasons.set(reason, (reasons.get(reason) ?? 0) + 1);
+  }
+
+  return {
+    artifact_count: documents.length,
+    decoded_count: decodedCount,
+    undecoded_count: documents.length - decodedCount,
+    distinct_document_count: distinct.size,
+    archive_member_count: documents.filter((document) => document.is_archive_member).length,
+    total_token_count: tokens,
+    undecoded_by_reason: [...reasons.entries()]
+      .map(([reason, count]) => ({ reason, count }))
+      .sort((a, b) => compareCodePoints(a.reason, b.reason)),
+    by_format: [...formats.values()]
+      .sort((a, b) => compareCodePoints(a.format, b.format))
+      .map((tally) => ({
+        format: tally.format,
+        decoder_id: tally.decoderId,
+        decoder_version: tally.decoderVersion,
+        decoded_count: tally.decoded,
+        block_count: tally.blocks,
+        structured_locator_types: [...tally.locatorKinds].sort(compareCodePoints),
+      })),
+  };
+}
+
 /** Build the index. Ordering is by corpus path, then artifact id, both code-point. */
 export function buildDocumentIndex(input: BuildDocumentIndexInput): DocumentIndex {
   const documents = input.artifacts
@@ -171,37 +309,12 @@ export function buildDocumentIndex(input: BuildDocumentIndexInput): DocumentInde
         || compareCodePoints(a.artifact_id, b.artifact_id),
     );
 
-  const distinct = new Set<string>();
-  const reasons = new Map<string, number>();
-  let decodedCount = 0;
-  let tokens = 0;
-  for (const document of documents) {
-    if (document.decoded) {
-      decodedCount += 1;
-      tokens += document.token_count ?? 0;
-      if (document.normalized_document_id !== null) distinct.add(document.normalized_document_id);
-      continue;
-    }
-    const reason = document.undecoded_reason ?? UNDECODED_REASON_NOT_ELIGIBLE;
-    reasons.set(reason, (reasons.get(reason) ?? 0) + 1);
-  }
-
   return {
     schema: DOCUMENT_INDEX_SCHEMA,
     corpus_source_snapshot_id: input.corpusSourceSnapshotId,
     corpus_analysis_id: input.corpusAnalysisId,
-    decoder: { decoder_id: input.decoderId, decoder_version: input.decoderVersion },
-    summary: {
-      artifact_count: documents.length,
-      decoded_count: decodedCount,
-      undecoded_count: documents.length - decodedCount,
-      distinct_document_count: distinct.size,
-      archive_member_count: documents.filter((document) => document.is_archive_member).length,
-      total_token_count: tokens,
-      undecoded_by_reason: [...reasons.entries()]
-        .map(([reason, count]) => ({ reason, count }))
-        .sort((a, b) => compareCodePoints(a.reason, b.reason)),
-    },
+    decoder_profiles: [...input.decoderProfiles].sort(compareCodePoints),
+    summary: summarizeDocuments(documents),
     documents,
   };
 }

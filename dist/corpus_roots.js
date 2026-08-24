@@ -37,6 +37,7 @@ exports.CORPUS_PATH_SEPARATOR = exports.DEFAULT_CORPUS_ID = exports.CORPUS_MANIF
 exports.corpusRootId = corpusRootId;
 exports.corpusRootSnapshotId = corpusRootSnapshotId;
 exports.defaultRootKey = defaultRootKey;
+exports.resolveRootIdentity = resolveRootIdentity;
 exports.corpusSourceSnapshotId = corpusSourceSnapshotId;
 exports.corpusAnalysisId = corpusAnalysisId;
 exports.corpusPath = corpusPath;
@@ -116,6 +117,18 @@ function defaultRootKey(rootPath) {
     return base.length > 0 ? base : absolute;
 }
 /**
+ * A root spec's key, and whether the operator chose it.
+ *
+ * Both answers come from one place because they come from one fact — whether the
+ * spec carried a name — and they govern each other: the key is the operator's
+ * word exactly when the class is `declared`. Deriving them separately is how a
+ * key ends up called declared at one call site and inferred at another.
+ */
+function resolveRootIdentity(spec) {
+    const declared = spec.name !== undefined && spec.name.length > 0;
+    return { rootKey: declared ? spec.name : defaultRootKey(spec.path), declared };
+}
+/**
  * Identity of what the corpus *contained*.
  *
  * `H(sorted(root_id, source_revision, rmp_packet_id))`. Sorted, so the order the
@@ -152,6 +165,7 @@ function corpusAnalysisId(input) {
     return (0, repository_model_1.stableId)("corpus-analysis", {
         corpus_profile: input.profiles.corpus_profile,
         corpus_source_snapshot_id: input.corpusSourceSnapshotId,
+        document_block_profile: input.profiles.document_block_profile,
         document_decoder_profiles: [...input.profiles.document_decoder_profiles].sort(ordering_1.compareCodePoints),
         embedding_profile: input.profiles.embedding_profile ?? null,
         interpretation_profile: input.profiles.interpretation_profile,

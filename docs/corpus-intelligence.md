@@ -59,9 +59,13 @@ and adapter, recorded in [`topology-conformance.json`](topology-conformance.json
 
 ## Work intelligence is explicit evidence, not inference
 
-Two artifact-scoped extractors read UTF-8 `.md`, `.markdown`, `.txt` and `.rst`, within
-the existing interpretation size limit and behind the existing secret-path refusal.
-v1 adds no PDF, DOCX, PPTX, XLSX, OCR, notebook, embedding or model extraction.
+Two artifact-scoped extractors read every document a decoder normalized — the UTF-8
+`.md`, `.markdown`, `.txt` and `.rst` they always read, and since ADR-043 the decoded
+blocks of PDF, DOCX, PPTX, XLSX, IPYNB, CSV and HTML as well — within the existing
+interpretation size limit and behind the existing secret-path refusal. One implementation
+reads all of them, so `Status: blocked` in a `.docx` and in the `.md` beside it produce
+the same claim. What is added is a second way *in*, not a second vocabulary: no OCR, no
+embedding, and no model extraction reads a signal.
 
 | Predicate | Read from |
 |---|---|
@@ -103,9 +107,12 @@ Contradictions survive. A document declaring `Status: WIP` at the top and
 `Status: Complete` at the bottom emits both assertions, each citing its own line.
 Reconciling them needs the whole corpus in view and is not this pass's job.
 
-Every assertion carries its artifact subject, exact source path, exact line span,
-bounded excerpt, source content hash, extractor id, evidence class, confidence and
-authority. An assertion that cannot cite a span is not emitted.
+Every assertion carries its artifact subject, exact source path, the coordinate its own
+format has — a line span for text, a page and block index for PDF, a slide and shape for
+a deck, a sheet and cell for a workbook, a cell index for a notebook — bounded excerpt,
+source content hash, extractor id, evidence class, confidence and authority. An assertion
+that cannot cite a coordinate is not emitted, and no format without lines is ever given a
+line number.
 
 An object is a quotation, so the characters the document wrote are kept: a task
 reading `- [ ] wire up user_profile_service` is recorded with its underscores
@@ -228,6 +235,81 @@ no timestamp. Its language is part of the contract: exact duplicates may be call
 byte-identical, candidates must be called candidates and lexical similarity, and the
 words *same topic*, *same project*, *merge these*, *delete this*, *redundant*, *keeper*
 and *canonical copy* appear nowhere in it.
+
+## Two projections of the work signals, and which one a consumer reads
+
+The work signals are written twice, for two different readers, and the difference is a
+contract rather than an accident.
+
+`document-signals.json` is the **human projection**. It is meant to be opened, so its
+per-format record listing stops at `MAX_LISTED_SIGNALS_PER_FORMAT` (50). A tracker
+stating ninety-one things contributes fifty listed records, and the entry says so:
+`signal_count` is 91, `listed_signal_count` is 50, `omitted_signal_count` is 41. The
+counts are always complete. Only the listing is sampled, and the sampling is declared on
+the same object rather than left to be discovered by subtraction.
+
+`document-work-signals.jsonl` is the **machine projection**, and it is never sampled at
+any corpus size. One JSON object per line, ordered by `artifact_id`, `block_id`,
+`predicate`, `object`, `signal_id`, so two runs over the same corpus produce the same
+bytes. Raising the report's ceiling is not a substitute for it and neither is setting the
+ceiling to a large number: a bound that is large is still a bound, and a consumer cannot
+tell a corpus that stated less from a report that listed less.
+
+`document-work-signals.manifest.json` is what makes the payload trustworthy on arrival:
+
+| Field | What a consumer does with it |
+|---|---|
+| `record_count` | count the lines and compare |
+| `payload_byte_length` | check the bytes are all there |
+| `payload_artifact_hash` | SHA-256 of the exact UTF-8 bytes — proves nothing was rewritten |
+| `payload_semantic_hash` | SHA-256 over the canonical records — survives the file being moved or re-encoded |
+| `by_format`, `by_predicate` | per-group totals, which must sum to `record_count` |
+
+Every record carries **both** identities, because the two live in different domains and
+guessing between them is how a consumer silently drops half a corpus:
+
+- `artifact_id` is the corpus identity (`vsrc:…`), which resolves in `corpus-index.json`
+  and `document-index.json`;
+- `rmp_artifact_id` is the identity that artifact has *inside its own root's Repository
+  Model Packet* (`artifact:…`).
+
+A consumer that compiles per-root packets joins on `rmp_artifact_id`. A consumer working
+against the corpus projection joins on `artifact_id`. Neither has to derive one from the
+other, and neither has to read a path to find out which artifact a signal belongs to.
+
+Both files sit in the generation directory beside the rest, are published by the same
+atomic `CURRENT.json` rename, and are named in `corpus-index.json` under
+`document_work_signals` and `document_work_signals_manifest`.
+
+## A root nobody named cannot carry history
+
+A root has a key, and the key has a class. It is **declared** when an operator supplied
+it — `--root /Volumes/OldSSD=OldSSD`, or a `l9.corpus-roots/v1` manifest — and
+**inferred** when nothing did, in which case it is the final path segment. A session
+written before this field existed carries no class and is read as inferred, which is the
+safe direction rather than the convenient one.
+
+An inferred key is perfectly good for a single run. It is not an identity across runs:
+`/Volumes/Backup` and `/mnt/nas/Backup` are two different drives that infer the same key,
+and nothing in the corpus can tell them apart afterwards. Three operations assert that a
+root is the root it was last time —
+
+- `--previous-snapshot` (previous-snapshot diff),
+- `--resume` (adopting completions recorded against a root id),
+- `--incremental` (carrying a previous run's content hash forward),
+
+— and all three **refuse to run**, before any file is opened, when either side of a
+matched root rests on an inferred key. The refusal names the operation, the root key,
+both identity classes, and the two ways forward. Roots that were added or removed make no
+continuity claim and are not considered.
+
+`--allow-inferred-root-history` is the operator saying the basenames really do name the
+same drive. It authorizes the comparison and nothing else: the key stays inferred, the
+snapshot's semantic identity is unchanged, and the override is recorded in the snapshot's
+`operational_provenance` and reported as a `corpus.inferred_root_history_override`
+diagnostic — so a run that leaned on it is distinguishable afterwards from one that did
+not. A warning printed while continuing would not be that, which is why continuing is not
+what happens without the flag.
 
 ## Nothing is moved, deleted or consolidated
 

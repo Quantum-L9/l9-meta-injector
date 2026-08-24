@@ -64,7 +64,11 @@ function baseCorpus(): string {
 
 async function scan(root: string, previous?: Awaited<ReturnType<typeof runCorpusScan>>) {
   return runCorpusScan({
-    roots: [{ path: root }],
+    // Named, because these tests compare one run against another and that is a
+    // continuity claim. An operator doing longitudinal work names their roots;
+    // the refusal that follows from not naming them is `corpus_root_history`'s
+    // own subject and is tested there.
+    roots: [{ path: root, name: "Corpus" }],
     producerVersion: "test",
     ...(previous !== undefined ? { previousSnapshot: previous.snapshot } : {}),
   });

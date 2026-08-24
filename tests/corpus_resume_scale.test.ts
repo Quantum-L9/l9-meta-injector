@@ -40,19 +40,24 @@ const SPEC = {
   nestedArchives: 10,
   duplicateClusters: 100,
   candidateProjects: 20,
+  mixedDocumentsPerFormat: 10,
 };
 
 describe("a large scan that was interrupted", () => {
   it("resumes a scan that died partway and finishes with the same output", async () => {
     const base = tmp();
     const corpus = writeScaleCorpus(base, SPEC);
-    const roots = corpus.roots.map((root) => ({ path: root }));
+    const roots = corpus.roots.map((root) => ({ path: root, name: path.basename(root) }));
     const store = new MemoryCorpusCache("scale-resume");
     const sessionFile = path.join(tmp("l9-scale-session-"), "corpus-session.json");
     const sessionRoots = roots.map((root) => ({
-      root_id: corpusRootId(path.basename(root.path)),
-      root_key: path.basename(root.path),
+      root_id: corpusRootId(root.name),
+      root_key: root.name,
       absolute_path: root.path,
+      // Resuming adopts completions recorded against a root id, which is a
+      // continuity claim; the class the session was started under is what a
+      // later resume is judged against.
+      root_identity_class: "declared" as const,
     }));
     const budgets = { ...DEFAULT_CORPUS_BUDGETS, archive: {} };
     const options = {
@@ -133,12 +138,13 @@ describe("the archive budget at scale", () => {
     const base = tmp();
     const corpus = writeScaleCorpus(base, {
       artifacts: 300, archives: 100, nestedArchives: 10, duplicateClusters: 10, candidateProjects: 4,
+      mixedDocumentsPerFormat: 2,
     });
     // The default ceiling, deliberately left in place: an unbounded archive
     // expansion is how a scan becomes a zip bomb, and a corpus of a hundred ZIPs
     // is exactly where the ceiling bites.
     const result = await runCorpusScan({
-      roots: corpus.roots.map((root) => ({ path: root })),
+      roots: corpus.roots.map((root) => ({ path: root, name: path.basename(root) })),
       producerVersion: "budget",
       // Off here, and on in `corpus_scale.test.ts`, which is the file that
       // qualifies semantic discovery at ten thousand documents. This file is

@@ -9,8 +9,9 @@ import { CorpusRootBinding, CorpusRootSpec, rootIdentity } from "./corpus_roots"
 import { CorpusSnapshot, VerificationMode } from "./corpus_snapshot";
 import { CorpusResourceBudgets, CorpusSessionStore } from "./corpus_session";
 import { DecoderRegistry } from "./documents";
+import { DocumentWorkSignalExport } from "./corpus_work_signal_export";
 import { LocalArchivePolicy } from "./local_archive_policy";
-import type { DocumentIndex } from "./corpus_documents";
+import type { DocumentIndex, DocumentIndexSummary } from "./corpus_documents";
 import type { SemanticAnalysisResult } from "./corpus_semantic_run";
 import type { EmbeddingPairScore } from "./corpus_pairs";
 import type { EmbeddingProvider, EmbeddingRunReport } from "./corpus_embeddings";
@@ -51,6 +52,16 @@ export interface CorpusScanInput {
     session?: CorpusSessionStore;
     /** Snapshot of a previous run; when present, `corpus-diff.json` is produced. */
     previousSnapshot?: CorpusSnapshot;
+    /**
+     * The operator's acceptance of a weaker root identity for history.
+     *
+     * A root nobody named is keyed by its mount point's final segment, and two
+     * unrelated directories can share one. Comparing, resuming or reusing hashes
+     * across runs on such a key is a continuity claim this tool cannot make, so it
+     * refuses by default; this is the operator saying they know these are the same
+     * disk. See `src/corpus_root_history.ts`.
+     */
+    allowInferredRootHistory?: boolean;
     expandArchives?: boolean;
     interpret?: boolean;
     archivePolicy?: Partial<LocalArchivePolicy>;
@@ -162,28 +173,20 @@ export interface CorpusCandidatesDocument {
     candidate_statement: string;
 }
 export declare const CANDIDATE_STATEMENT: string;
-export declare const DOCUMENT_COVERAGE_SCHEMA = "l9.document-coverage/v1";
+/**
+ * v2 alongside `l9.document-index/v2`, and for the same reason: the single
+ * `decoder` field named one decoder for a root that seven of them read.
+ */
+export declare const DOCUMENT_COVERAGE_SCHEMA = "l9.document-coverage/v2";
 /** Per-root document coverage: what the decoders reached inside one root. */
-export interface RootDocumentCoverage {
+export interface RootDocumentCoverage extends DocumentIndexSummary {
     schema: string;
     corpus_source_snapshot_id: string;
     corpus_analysis_id: string;
     root_id: string;
     root_key: string;
-    decoder: {
-        decoder_id: string;
-        decoder_version: string;
-    };
-    artifact_count: number;
-    decoded_count: number;
-    undecoded_count: number;
-    distinct_document_count: number;
-    archive_member_count: number;
-    total_token_count: number;
-    undecoded_by_reason: {
-        reason: string;
-        count: number;
-    }[];
+    /** `id@version` for every decoder in the registry this run used. */
+    decoder_profiles: string[];
 }
 /**
  * Everything one root produces on its own.
@@ -230,6 +233,15 @@ export interface CorpusScanResult {
     documentIndex: DocumentIndex;
     /** What each decoder read, and whether what it read reached the analysis. */
     documentSignals: CorpusDocumentSignals;
+    /**
+     * Every structured document work signal, complete and never sampled.
+     *
+     * `documentSignals` above is the report: complete counts, a bounded sample of
+     * the evidence. This is the machine payload a downstream consumer reads, and
+     * the two are built from one array so they cannot come to disagree about how
+     * much the corpus found.
+     */
+    documentWorkSignals: DocumentWorkSignalExport;
     /** Candidate discovery over recorded evidence. Null when it was switched off. */
     semantic: SemanticAnalysisResult | null;
 }
@@ -243,6 +255,15 @@ export interface CorpusScanResult {
 export declare function isDecodable(rootRelativePath: string, registry: DecoderRegistry): boolean;
 /** True when the lexical passes claim this artifact. */
 export declare function isLexicallyAnalyzable(rootRelativePath: string): boolean;
+/**
+ * True for a format whose source bytes are themselves the text.
+ *
+ * The distinction decides two things that must not drift apart: whether the file
+ * is probed for UTF-8 before being opened, and whether its statements are read
+ * from its lines or from its blocks. A `.md` file has lines an operator can open
+ * the file to; a `.docx` has no lines at all, and the two are read accordingly.
+ */
+export declare function isTextFamilyFormat(format: string): boolean;
 /**
  * Observe every root, derive the corpus, and project it.
  *

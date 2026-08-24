@@ -1,26 +1,32 @@
 {
   "schema": "l9.final-contract-closure/v1",
-  "contract_id": "l9-meta-injector-final-corpus-closure-v1",
+  "contract_id": "l9-meta-injector-topology-handoff-finalization-v1",
   "repository": "Quantum-L9/l9-meta-injector",
-  "branch": "claude/l9-meta-injector-contract-cja2x6",
-  "statement": "Each workstream below is PASS only where the behaviour it names is exercised by a test that would fail if the behaviour were absent. PARTIAL_AS_PASS and DEFERRED_AS_PASS are not values this document uses.",
+  "branch": "claude/l9-meta-injector-closure-187cp5",
+  "statement": "Each workstream below is PASS only where the behaviour it names is exercised by a test that would fail if the behaviour were absent. PARTIAL_AS_PASS and DEFERRED_AS_PASS are not values this document uses, and a workstream naming a fixture as its only evidence is not PASS. Workstreams prefixed CLOSURE- close l9-meta-injector-final-corpus-closure-v1; workstreams prefixed HANDOFF- close l9-meta-injector-topology-handoff-finalization-v1, which this pull request now also carries.",
   "workstreams": [
     {
       "id": "CLOSURE-DOCS",
       "status": "PASS",
-      "requirement": "Real PDF, DOCX, PPTX, XLSX, IPYNB, CSV and HTML decoding into NormalizedDocument with structured locators; decoded content participates in candidate analysis, not only coverage; document-signals.json emitted.",
+      "requirement": "Real PDF, DOCX, PPTX, XLSX, IPYNB, CSV and HTML decoding into NormalizedDocument with structured locators; the work-intelligence vocabulary operating over normalized blocks for every supported format; evidence bound to block_id and structured locator rather than fabricated line numbers; decoded content participating in candidate analysis, not only coverage; document-signals.json emitted.",
       "implementation": [
         "src/documents/{decoder,text,notebook,xml,ooxml,office,html,pdf,index}.ts — seven decoders, zero new runtime dependencies",
-        "src/corpus_document_signals.ts — per-format decode, refusal, locator and analysis-participation counts",
-        "src/corpus_scan.ts — prose document formats enter lexical analysis on format rather than extension",
-        "src/corpus_coverage.ts — decode_gap reconciles eligible against decoded with an `unaccounted` residual"
+        "src/extractors/work_intelligence.ts — recognizers return a position-free SignalReading; the line extractor attaches a line span",
+        "src/extractors/document_blocks.ts — the same recognizers over normalized blocks, attaching block id and structured locator",
+        "src/corpus_document_signals.ts — l9.document-signals/v1: per-format decode, refusal, locator and analysis-participation counts, plus the bound evidence records",
+        "src/corpus_documents.ts — l9.document-index/v2: per-entry decoder, format, block count and locator type; one summarizer for the corpus index and every per-root one",
+        "src/corpus_index.ts — corpus-report.md states exact observation, per-format decoding, intelligence and embedding",
+        "src/documents/text.ts — the CSV decoder emits a block per populated cell under its column name (1.1.0)",
+        "src/corpus_scan.ts — block signals derived from the normalized-document record, so warm and cold agree by construction; fed to readiness, the semantic passes, the reasoning evidence packs and the coverage counts, and not to the Repository Model Packet"
       ],
       "evidence": [
-        "tests/document_decoders.test.ts — real OOXML/PDF/notebook/HTML bytes, XXE refusal, macro noting, path-escape refusal, encrypted-container detection",
-        "tests/corpus_document_participation.test.ts — a .docx and a .md saying the same thing are found to be near-duplicates of each other; all seven formats reach lexical analysis; each format cites its own locator kind and none cites a line number",
-        "tests/corpus_real_world_qualification.test.ts — genuine documents in a read-only three-root corpus"
+        "tests/corpus_document_work_signals.test.ts — 21 tests: the contract's scenarios 1, 2 and 4 by name; every decoded format cites its own locator kind and none cites a line span; a Word checklist whose bullet is structural is read; a code block and a heading are never read as declarations; a credential-shaped excerpt is refused",
+        "tests/corpus_document_participation.test.ts — per-format decoder identity, format, block count and locator type; a .docx and a .md of the same words carry different normalized document ids",
+        "tests/corpus_scale.test.ts — every one of the eight formats decoded, understood and reaching candidates at ten thousand artifacts",
+        "tests/corpus_cli.test.ts — the report states what was understood; the index carries the coverage counts",
+        "tests/document_decoders.test.ts — real OOXML/PDF/notebook/HTML bytes, XXE refusal, macro noting, path-escape refusal, encrypted-container detection"
       ],
-      "notes": "Interpretation stays extension-gated. The work-signal extractors cite line spans, and a binary document has no lines; running them over joined block text would produce the fake line numbers the contract forbids."
+      "notes": "The previous revision recorded interpretation of binary formats as not done, on the grounds that the extractors cite line spans and a Word document has none. The premise was right and the conclusion was not: the contract already answered it by requiring evidence bound to a block id and a structured locator instead. Closing it also exposed that the document index stamped one decoder on every row and derived normalized document ids from it, and that the CSV decoder's smallest unit was the row, so a register with a status column was understood only when the identical table was a worksheet. Both are fixed here. See ADR-043. Single-root local-source mode runs no decoder registry, so it has no normalized documents and no block signals; plumbing an unreachable branch through its work-signal projection was drafted and removed rather than shipped as a surface with nothing behind it."
     },
     {
       "id": "CLOSURE-EMBED",
@@ -85,15 +91,18 @@
     {
       "id": "CLOSURE-CACHE",
       "status": "PASS",
-      "requirement": "fsync the staging file, rename, fsync the parent directory.",
+      "requirement": "fsync the staging file, rename, fsync the parent directory; a warm or incremental run lands on the same answer as a cold one.",
       "implementation": [
         "src/durable_write.ts — write, fsync the file, rename, fsync the parent, with a substitutable syscall surface",
-        "src/corpus_cache.ts and src/corpus_session.ts — both write paths route through it"
+        "src/corpus_cache.ts and src/corpus_session.ts — both write paths route through it",
+        "src/local_source.ts — noteUnsupportedEncoding records the not-UTF-8 observation on both the freshly-hashed path and the path carrying a prior run's hash forward"
       ],
       "evidence": [
-        "tests/corpus_root_identity_durability.test.ts — the call order asserted as [write, fsync:file, rename, fsync:dir]; permissions applied while the descriptor is open; a filesystem refusing a directory sync tolerated without failing the write; no staging file survives a cache write"
+        "tests/corpus_root_identity_durability.test.ts — the call order asserted as [write, fsync:file, rename, fsync:dir]; permissions applied while the descriptor is open; a filesystem refusing a directory sync tolerated without failing the write; no staging file survives a cache write",
+        "tests/local_source_safety.test.ts — a tree holding one non-UTF-8 file observed twice, the second time with the first run's hashes handed back: same unknowns, same diagnostics, same revision, same physical snapshot hash",
+        "tests/corpus_scale_incremental.test.ts — ten thousand artifacts including mixed documents; the incremental run's corpus source snapshot id equals the cold run's"
       ],
-      "notes": "The ordering is asserted through a seam rather than a spy: node:fs is an ES module namespace and cannot be spied on, and all four orderings leave the same bytes at the same path, so the alternative was asserting nothing."
+      "notes": "The ordering is asserted through a seam rather than a spy: node:fs is an ES module namespace and cannot be spied on, and all four orderings leave the same bytes at the same path, so the alternative was asserting nothing. A defect found by the scale fixture and fixed here: the unsupported_encoding observation was pushed only when a file was freshly hashed. Carrying a prior hash forward probed the encoding, held the result and dropped the finding, so an incremental scan of an untouched disk holding one Word document produced a different Repository Model Packet semantic hash — and through it a different corpus source snapshot id — than a full scan of exactly those bytes."
     },
     {
       "id": "CLOSURE-PUBLISH",
@@ -113,17 +122,19 @@
     {
       "id": "CLOSURE-SCALE",
       "status": "PASS",
-      "requirement": "Ten thousand artifacts with semantic analysis enabled and topic candidates not disabled; structurally bounded pair work; pair-evaluation counts recorded.",
+      "requirement": "Ten thousand artifacts with semantic analysis enabled and topic candidates not disabled; a nonzero count of PDF, DOCX, PPTX, XLSX, IPYNB and Markdown in the fixture; structurally bounded pair work; pair-evaluation counts recorded.",
       "implementation": [
         "src/corpus_candidates.ts — the topic index now holds each document's rarest-first prefix under an exact prefix bound, plus a size bound; buildTopicCandidatesExhaustive exported as the reference",
         "src/corpus_coverage.ts — topic_pair_work reported in every coverage document",
-        "tests/helpers/multi_root_fixtures.ts — filler notes are real prose, so ten thousand documents are genuinely eligible for the topic pass"
+        "tests/helpers/multi_root_fixtures.ts — filler notes are real prose, so ten thousand documents are genuinely eligible for the topic pass",
+        "tests/helpers/multi_root_fixtures.ts — mixedDocumentsPerFormat writes real PDF, DOCX, PPTX, XLSX, IPYNB, HTML and CSV documents across two roots, sharing the filler's subject vocabulary so they are genuinely eligible for the topic pass"
       ],
       "evidence": [
         "tests/corpus_scale.test.ts — topic candidates enabled at ten thousand artifacts: 9,740 eligible documents, 47,428,930 exhaustive pairs, 9,733 Jaccard computations actually run",
-        "tests/corpus_topic_scale.test.ts — exact agreement with an exhaustive pass at six thresholds on four corpus shapes, including one where every document shares a dominant term; comparison count required not to more than double when the corpus doubles"
+        "tests/corpus_topic_scale.test.ts — exact agreement with an exhaustive pass at six thresholds on four corpus shapes, including one where every document shares a dominant term; comparison count required not to more than double when the corpus doubles",
+        "tests/corpus_scale.test.ts — at ten thousand artifacts, each of pdf, docx, pptx, xlsx, ipynb, markdown, html and csv is decoded and lexically analyzed; each binary format is understood thirty times out of thirty; the index gives each format its own decoder; no block-bound record cites a line span"
       ],
-      "notes": "Topic method version moved to 1.1.0. The bound is exact so the candidates are the same, but the method is not, and an analysis identity that did not move would claim two algorithms were one."
+      "notes": "Topic method version moved to 1.1.0. The bound is exact so the candidates are the same, but the method is not, and an analysis identity that did not move would claim two algorithms were one. The fixture previously held Markdown and manifests only, so the ten-thousand-document run measured the cheapest path through the scan and no decoder ran at scale. Adding the required mixed documents surfaced a real incremental-scan defect, recorded under CLOSURE-CACHE."
     },
     {
       "id": "CLOSURE-REAL",
@@ -135,9 +146,9 @@
       "evidence": [
         "The gate's own guard runs on every machine: with the variable unset the acceptance describe is skipped and a test asserts there is no fallback path, no default location and no search",
         "Manifest validation refuses non-JSON, a missing or empty roots array, a rootless entry, a relative path, an absent path and a path that is not a directory — each of which would otherwise scan nothing and pass",
-        "Executed against a genuine mixed corpus through the manifest: 73 artifacts, 7 archives, 0 mutated paths, every binary format decoded and reaching candidates (pdf 3, docx 1, pptx 1, xlsx 2, csv 1), warm run identical, no absolute path in any projection"
+        "The gated path was executed once in this pull request against a SYNTHETIC three-root corpus written by the test fixtures, to prove the code path runs end to end: 133 artifacts, 5 archives, 0 mutated paths, every binary format decoded, and 80 block-bound claims across 28 documents in csv, docx, html, ipynb, pdf, pptx and xlsx. A synthetic corpus is not an operator's archive, and this run is not operator qualification"
       ],
-      "notes": "The skip is a stated, narrow, externally-unavoidable exception: there is no real archive on a CI runner, and manufacturing one would make this the fixture test it exists to complement."
+      "notes": "The skip is a stated, narrow, externally-unavoidable exception: there is no real archive on a CI runner, and manufacturing one would make this the fixture test it exists to complement. No operator corpus was named to this pull request, so the acceptance status below is REAL_CORPUS_NOT_PROVIDED and the archive gate stops at CODE_ARCHIVE_READY."
     },
     {
       "id": "CLOSURE-TOPOLOGY",
@@ -164,6 +175,99 @@
         "tests/validation_report.test.ts — the digest moves when the tree does and does not move when only the report changes; the failing render path exercised, not only the green one; the committed report required to name this tree's digest and a green verdict, so a stale report is a test failure"
       ],
       "notes": "The binding is to the tree digest rather than the commit id, because a report bound to HEAD is invalidated by the commit that carries it, and a check nobody can satisfy is a check everyone learns to skip. The commit is recorded beside it and the report says which of the two is compared."
+    },
+    {
+      "id": "CLOSURE-COVERAGE",
+      "status": "PASS",
+      "requirement": "The operator must always be able to distinguish 'we inspected this and found nothing' from 'we could not understand this'. Every supported and unsupported format has explicit counts; decoder failures, OCR-required and encrypted are explicit; no silent omission.",
+      "implementation": [
+        "src/corpus_index.ts — corpus-report.md and corpus-index.json carry exact observation, per-format decoding with eligible beside decoded beside understood, intelligence counts and the embedding report",
+        "src/corpus_coverage.ts — EmbeddingCoverage carries secret_skipped_count, so 'how many did we refuse to send' is answerable from the document an operator reads",
+        "src/corpus_document_signals.ts — a bounded record listing states its complete count and its omitted count rather than leaving the difference to subtraction"
+      ],
+      "evidence": [
+        "tests/corpus_cli.test.ts — the report's four coverage sections asserted by heading and by row; embeddings off render as 'no' and '—' rather than as zeros that read as 'nothing was eligible'; decoded never exceeds eligible and understood never exceeds decoded",
+        "tests/corpus_document_work_signals.test.ts — listed plus omitted equals the complete signal count, per format and overall"
+      ],
+      "notes": "The counts existed in corpus-coverage.json and document-signals.json and nowhere a person would read them together. 'Eleven PDFs decoded' beside 'zero PDFs understood' is a finding neither file states on its own."
+    },
+    {
+      "id": "HANDOFF-EXPORT",
+      "status": "PASS",
+      "requirement": "A complete machine export of every structured document work signal, never sampled at any corpus size, with a manifest a consumer can verify the payload against before trusting a record.",
+      "implementation": [
+        "src/corpus_work_signal_export.ts — l9.document-work-signals/v1 as JSONL (one record per line, ordered artifact_id, block_id, predicate, object, signal_id) and l9.document-work-signals-manifest/v1 beside it; verifyDocumentWorkSignalExport returns the list of problems rather than a boolean",
+        "src/corpus_work_signal_export.ts — each record carries both identities a consumer joins on: artifact_id (vsrc:…, the corpus) and rmp_artifact_id (artifact:…, that artifact inside its own root's Repository Model Packet)",
+        "src/corpus_work_signal_export.ts — the manifest carries payload_artifact_hash over the exact UTF-8 bytes and payload_semantic_hash over the canonical records, so a payload that was moved still verifies and a payload that was edited does not",
+        "src/corpus_scan.ts — one flat record list built once and fed to both the bounded report and the complete payload, so the two cannot drift; the export is verified before publication and a failure throws rather than publishing",
+        "src/corpus_index.ts, src/corpus_snapshot.ts — both files named in the corpus index and in the snapshot, and published by the same atomic CURRENT.json rename",
+        "scripts/local-source-cli.js — both files written into generations/<id>/"
+      ],
+      "evidence": [
+        "tests/corpus_work_signal_export.test.ts — 20 tests: a 137-row tracker proves the report lists 50 and the payload carries all 137; per-format and per-predicate totals sum to record_count; the payload is byte-identical across two different output roots; the manifest catches a damaged byte, a missing record, a duplicated signal_id, and an artifact id no run observed",
+        "tests/corpus_topology_handoff.test.ts — 6 tests over a two-root fixture carrying every decoded format, documents one and two archives deep, a cross-root duplicate and a self-contradicting document; a consumer verifies the manifest, resolves every rmp_artifact_id into a per-root packet, and finds no absolute or scratch path in the payload"
+      ],
+      "notes": "Raising MAX_LISTED_SIGNALS_PER_FORMAT was rejected as a substitute: a bound that is large is still a bound, and a consumer cannot distinguish a corpus that stated less from a report that listed less. The report's counts were already complete; what was missing was the records."
+    },
+    {
+      "id": "HANDOFF-ROOT-GUARD",
+      "status": "PASS",
+      "requirement": "Longitudinal operations must refuse to run when root continuity rests on an inferred basename identity, unless the operator authorizes it explicitly.",
+      "implementation": [
+        "src/corpus_root_history.ts — one shared assertLongitudinalRootIdentityAuthorized covering all three operations (previous-snapshot diff, resume, incremental hash reuse) rather than three checks that could drift; only matched roots are considered, since an added or removed root makes no continuity claim",
+        "src/corpus_root_history.ts — a record with no root_identity_class is read as inferred, so a session written before the field existed fails closed",
+        "src/corpus_scan.ts — the check runs before acquisition, so a refused run has opened no file; the refusal names the operation, the root key, both identity classes, and both ways forward",
+        "src/corpus_session.ts — CorpusSessionRoot carries root_identity_class and a resumed session reports the roots it adopted",
+        "src/corpus_snapshot.ts, src/corpus_diff.ts — an override is recorded in operational_provenance and on the diff, and emits corpus.inferred_root_history_override; it authorizes the comparison and does not change the root's identity class or the snapshot's semantic identity",
+        "scripts/local-source-cli.js — --allow-inferred-root-history, documented in --help"
+      ],
+      "evidence": [
+        "tests/corpus_root_history.test.ts — 24 tests: declared→declared runs; inferred→inferred, inferred→declared, declared→inferred and a legacy session carrying no class each refuse; two unrelated directories sharing the basename Backup are refused; added roots are ignored; the override records its provenance and leaves source identity unchanged",
+        "tests/corpus_root_identity_durability.test.ts — a run comparing two trees matched on a key nobody declared is refused, and the same comparison under the override is cautioned rather than silent"
+      ],
+      "notes": "Fifteen existing tests failed against this guard because they relied on inferred identity to do longitudinal work. They encoded the old contract, so they were corrected to declare their root names rather than the guard being weakened."
+    },
+    {
+      "id": "HANDOFF-FIXTURE",
+      "status": "PASS",
+      "requirement": "A complete, non-private generation proving the new producer boundary, with at least one format stating more than the report's sample ceiling.",
+      "implementation": [
+        "tests/corpus_topology_handoff.test.ts — a hand-written two-root corpus: every decoded format, a 90-row tracker, a DOCX inside a ZIP and another two archives deep, one body duplicated across roots, one document contradicting itself, and every relation predicate exercised"
+      ],
+      "evidence": [
+        "tests/corpus_topology_handoff.test.ts — the xlsx format states 91 signals where the report lists 50 and declares 41 omitted, so a consumer that read the report instead of the payload fails its own assertions rather than passing quietly",
+        "a real generation produced from this fixture through scripts/local-source-cli.js: record_count 113, by_format docx 5 / html 5 / ipynb 4 / pdf 4 / pptx 4 / xlsx 91, report signal_count 113 with xlsx listed 50 and omitted 41"
+      ],
+      "notes": "The fixture is written out by hand rather than generated, so each file is present for a reason a reader can see."
+    },
+    {
+      "id": "HANDOFF-PROBE",
+      "status": "PASS",
+      "requirement": "Read-only probe of l9-constellation-topology PR #18; Topology mutation forbidden; Meta payload readiness and Topology adapter readiness reported separately.",
+      "implementation": [
+        "No change to l9-constellation-topology. The probe cloned the repository read-only, fetched refs/pull/18/head at 5f2b5b553cf73b4d9a2068652dddc0630fd6c540, and ran its own adapter against a real Meta generation."
+      ],
+      "evidence": [
+        "Meta_payload_ready = YES. The generation carries document-work-signals.jsonl (113 records, none sampled) and its manifest, each record naming both artifact_id and rmp_artifact_id and citing its own format's structured locator; document-index.json is l9.document-index/v2 and carries format and structured_locator_type per document.",
+        "Topology_adapter_ready = NO, for two reasons found by execution rather than by reading. Running `l9-topology adapt-meta-corpus` against the generation returned document_work_signals: 0 and unadaptable_by_format: {\"l9.text-decoder\": 5}. First, the adapter reads document-index.json's decoder_id as if it were the format and compares it against LINE_BEARING_FORMATS = {text, markdown, csv, html, ipynb}; the producer emits and has always emitted decoder ids of the form l9.text-decoder, so every signal is declined — including the Markdown ones the adapter is designed to accept. Its own fixtures set decoder_id=\"markdown\", which is why its suite passes. The field that lookup needs, `format`, is present in l9.document-index/v2. Second, the adapter never opens document-work-signals.jsonl: it scrapes work predicates out of the per-root Repository Model Packet assertions, so it saw 5 of the 113 signals the corpus stated.",
+        "Both are changes inside l9-constellation-topology. Neither was made here, and the Meta side was not shaped to make the probe pass."
+      ],
+      "notes": "PR #18 states its own limitation as the absence of per-signal structured locators from the producer, and names emitting them as the change that closes it. That change has now been made on the producer side. The adapter's decoder_id/format confusion is a separate, pre-existing defect on the consumer side, reported rather than worked around."
+    },
+    {
+      "id": "HANDOFF-DOCS",
+      "status": "PASS",
+      "requirement": "The machine boundary and the inferred-root policy stated where a reader looks.",
+      "implementation": [
+        "README.md — document-work-signals.jsonl and its manifest described beside the report they complete, and the inferred-root refusal described beside resume",
+        "docs/corpus-intelligence.md — 'Two projections of the work signals, and which one a consumer reads' and 'A root nobody named cannot carry history'; the stale claim that only Markdown-family files are read, and the claim that every assertion cites a line span, both corrected",
+        "docs/corpus-scale-operation.md — 'And what happens when one is not', beside the section on naming roots explicitly",
+        "scripts/local-source-cli.js — --allow-inferred-root-history in --help"
+      ],
+      "evidence": [
+        "The generation listing in scripts/local-source-cli.js writes both files, and tests/corpus_cli.test.ts asserts the generation's file list contains them."
+      ],
+      "notes": ""
     }
   ],
   "invariants_held": [
@@ -180,15 +284,18 @@
     "embeddings remain candidate analysis: an embedding signal is never a fact and never creates a project candidate alone",
     "no build priority, strategic roadmap or ranking generated",
     "no consolidation executed",
-    "no fake source locators and no fake line numbers: each format cites its own coordinate and only Markdown cites a line span",
     "the cache is acceleration and not truth: a warm run is required to be byte-identical to a cold one",
-    "absolute paths never enter semantic identity or any semantic projection"
+    "absolute paths never enter semantic identity or any semantic projection",
+    "no fake source locators and no fake line numbers: each format cites its own coordinate, and no block-bound claim cites a line span. The one structured locator carrying line numbers is notebook_cell, where they are lines of that cell",
+    "candidate relationships never become source truth: block-bound claims reach readiness, the semantic passes, coverage, the corpus index and the report, and never the Repository Model Packet, whose evidence class is a line span",
+    "sampled_human_projection_may_remain_sampled — document-signals.json still lists at most 50 records per format, and still declares the omission",
+    "canonical_machine_projection_must_be_complete — document-work-signals.jsonl has no sample ceiling at any corpus size; the four counts (produced, payload, report, manifest) agree per format and per predicate",
+    "inferred_root_identity_never_silently_authorizes_history — refused before acquisition, and an override is recorded rather than warned about",
+    "RMP_1_1_semantics_unchanged — no Repository Model Packet field, id or hash changed; the export is a separate projection",
+    "no_source_mutation — the source checksum before an observation equals the checksum after",
+    "Topology_unmodified — l9-constellation-topology was cloned read-only and its PR #18 head was run, not edited"
   ],
   "not_done": [
-    {
-      "item": "Interpretation of binary document formats",
-      "reason": "The work-signal extractors cite line spans. A Word document has no lines, and running them over joined block text would produce exactly the fabricated line numbers the contract forbids. Binary formats therefore reach lexical analysis and candidates, and are reported as interpreted_count 0 per format in document-signals.json rather than silently counted."
-    },
     {
       "item": "Legacy container formats (.doc, .xls, .ppt, .odt, .epub, .pages, .rtf)",
       "reason": "Different containers from the OOXML ZIP the shipped decoders read. Counted explicitly as unsupported formats with their byte totals, so the gap is a stated number rather than an absence."
@@ -204,6 +311,20 @@
     "auto_merge_enabled": false,
     "force_push_performed": false,
     "release_or_publish_performed": false,
-    "terminal_state": "HALT_BEFORE_MERGE"
-  }
+    "terminal_state": "HALT_BEFORE_MERGE",
+    "existing_pull_request": 83,
+    "new_pull_request_created": false,
+    "expected_starting_head": "d60d8f84b15773a0dc56a4f82e052e32e05b68f8"
+  },
+  "archive_ready_gate": {
+    "status": "CODE_ARCHIVE_READY",
+    "operator_archive_qualified": false,
+    "real_corpus_acceptance": "REAL_CORPUS_NOT_PROVIDED",
+    "reason": "L9_ACCEPTANCE_CORPUS_MANIFEST was not provided to this pull request. Every requirement in the definition of done other than the operator's own private-corpus run is exercised by a test that would fail if the behaviour were absent, and the gated acceptance path was proven to execute against a synthetic corpus. Synthetic and fixture qualification is not operator qualification, and OPERATOR_ARCHIVE_QUALIFIED is not claimed.",
+    "to_reach_operator_archive_qualified": "Set L9_ACCEPTANCE_CORPUS_MANIFEST to a JSON file naming the roots to scan, optionally L9_ACCEPTANCE_CORPUS_EVIDENCE to where the counts-only evidence should be written, and run tests/corpus_real_archive_acceptance.test.ts. Nothing is searched for; only the declared roots are read."
+  },
+  "closes_contracts": [
+    "l9-meta-injector-final-corpus-closure-v1",
+    "l9-meta-injector-topology-handoff-finalization-v1"
+  ]
 }

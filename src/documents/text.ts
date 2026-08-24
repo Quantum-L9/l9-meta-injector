@@ -18,7 +18,18 @@ import {
 export const TEXT_DECODER_ID = "l9.text-decoder";
 export const TEXT_DECODER_VERSION = "1.0.0";
 export const CSV_DECODER_ID = "l9.csv-decoder";
-export const CSV_DECODER_VERSION = "1.0.0";
+/**
+ * 1.1.0 emits a block per populated cell beside the row block.
+ *
+ * The `csv_row` locator has carried an optional `column` since it was defined and
+ * nothing ever set it, because the decoder's smallest unit was the row. A row
+ * block's text is a rendering of the whole row — `owner: mel; status: blocked` —
+ * and a reader looking for a declaration finds `owner` and stops. So a register
+ * with a status column was decoded, counted, and understood to say nothing,
+ * while the identical table in a worksheet was understood, purely because the
+ * worksheet decoder emits cells and this one did not.
+ */
+export const CSV_DECODER_VERSION = "1.1.0";
 
 /** Read a file as UTF-8, refusing bytes that are not valid UTF-8. */
 export function readUtf8(input: DecodeInput): { text: string } | { reason: string } {
@@ -225,6 +236,66 @@ export function splitCsvLine(line: string, delimiter: string): string[] {
   return cells;
 }
 
+/**
+ * One block per populated cell of a row, under its column's name.
+ *
+ * The row block stays: a row naming a blocker is worth citing as a row. These are
+ * what make one *field* of it a readable statement rather than a fragment of a
+ * joined string — `owner: mel; status: blocked` offers a reader `owner` and
+ * nothing else, because a declaration is read up to its first colon.
+ */
+function addCsvCellBlocks(
+  builder: BlockBuilder,
+  header: readonly string[],
+  cells: readonly string[],
+  rowNumber: number,
+): void {
+  for (let column = 0; column < cells.length; column += 1) {
+    const value = (cells[column] as string).trim();
+    const name = (header[column] as string).trim();
+    if (value.length === 0 || name.length === 0) continue;
+    builder.add("cell", `${name}: ${value}`, {
+      kind: "csv_row",
+      row_number: rowNumber,
+      column: name,
+    });
+    if (builder.isFull) return;
+  }
+}
+
+/**
+ * One block per non-empty row, plus one per populated cell, and the rows read.
+ *
+ * The row number is the line number in the file, so a row is citable at the place
+ * an operator would look for it even though blank lines are skipped.
+ */
+function addCsvRowBlocks(
+  builder: BlockBuilder,
+  text: string,
+  delimiter: string,
+): string[][] {
+  const rows: string[][] = [];
+  let header: string[] = [];
+  const lines = text.split(/\r?\n/);
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] as string;
+    if (line.trim().length === 0) continue;
+    const cells = splitCsvLine(line, delimiter);
+    if (rows.length === 0) header = cells;
+    rows.push(cells);
+    // Each row is a block so a row naming a blocker is citable as a row rather
+    // than as "somewhere in this file".
+    const labelled = header.length === cells.length && rows.length > 1;
+    const label = labelled
+      ? cells.map((cell, column) => `${header[column]}: ${cell}`).join("; ")
+      : cells.join(" | ");
+    builder.add("cell", label, { kind: "csv_row", row_number: index + 1 });
+    if (!builder.isFull && labelled) addCsvCellBlocks(builder, header, cells, index + 1);
+    if (builder.isFull) break;
+  }
+  return rows;
+}
+
 export const csvDecoder: DocumentDecoder = {
   id: CSV_DECODER_ID,
   version: CSV_DECODER_VERSION,
@@ -247,24 +318,7 @@ export const csvDecoder: DocumentDecoder = {
     });
     const builder = new BlockBuilder(documentId, input.budget);
     const delimiter = input.sourcePath.toLowerCase().endsWith(".tsv") ? "\t" : ",";
-    const lines = read.text.split(/\r?\n/);
-    const rows: string[][] = [];
-    let header: string[] = [];
-    for (let index = 0; index < lines.length; index += 1) {
-      const line = lines[index] as string;
-      if (line.trim().length === 0) continue;
-      const cells = splitCsvLine(line, delimiter);
-      const rowNumber = index + 1;
-      if (rows.length === 0) header = cells;
-      rows.push(cells);
-      // Each row is a block so a row naming a blocker is citable as a row rather
-      // than as "somewhere in this file".
-      const label = header.length === cells.length && rows.length > 1
-        ? cells.map((cell, column) => `${header[column]}: ${cell}`).join("; ")
-        : cells.join(" | ");
-      builder.add("cell", label, { kind: "csv_row", row_number: rowNumber });
-      if (builder.isFull) break;
-    }
+    const rows = addCsvRowBlocks(builder, read.text, delimiter);
     if (rows.length > 0) {
       builder.addTable(rows, { kind: "csv_row", row_number: 1 });
     }

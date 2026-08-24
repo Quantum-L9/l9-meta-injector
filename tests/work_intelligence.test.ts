@@ -8,6 +8,7 @@
 import { describe, expect, it } from "vitest";
 import {
   documentStructureExtractor,
+  readTextUnit,
   workIntelligenceExtractor,
 } from "../src/extractors/work_intelligence";
 import type { AssertionDraft, Extractor } from "../src/interpretation";
@@ -407,6 +408,45 @@ describe("hostile input", () => {
     const lines = ["---", `${"a".repeat(HOSTILE_LENGTH / 2)}${" ".repeat(HOSTILE_LENGTH / 2)}`, "status: wip", "---", "", "body"];
     within(BUDGET_MS, () => {
       expect(objects(work("a.md", lines), "work.status")).toEqual(["wip"]);
+    });
+  });
+
+  // A lone carriage return is what a classic Mac line ending leaves behind, and
+  // `toLines` splits on /\r?\n/ — so it survives into what this module calls a
+  // line. `.` excludes it, so a tail written `\s*(.*)$` failed at the anchor and
+  // retried every division of the whitespace before it: measured at 200ms for
+  // 16,000 characters, quadrupling with each doubling. An archive of old plans is
+  // exactly where documents of that vintage live.
+  const STRAY_RETURN = "\r";
+
+  it("reads a checkbox on a line carrying a stray carriage return", () => {
+    const line = `- [ ] ${" ".repeat(HOSTILE_LENGTH)}ship it${STRAY_RETURN}tail`;
+    within(BUDGET_MS, () => {
+      expect(objects(work("a.md", [line]), "work.task.open")).toHaveLength(1);
+    });
+  });
+
+  it("reads a bulletless checkbox on a line carrying a stray carriage return", () => {
+    // The block reader's form, where the list marker lives in the document's
+    // numbering rather than in the text.
+    const line = `[x] ${" ".repeat(HOSTILE_LENGTH)}shipped${STRAY_RETURN}tail`;
+    within(BUDGET_MS, () => {
+      expect(readTextUnit(line, { admonitionsAllowed: false, listMarkerImplied: true })?.predicate)
+        .toBe("work.task.completed");
+    });
+  });
+
+  it("reads a TODO line carrying a stray carriage return", () => {
+    const line = `TODO:${" ".repeat(HOSTILE_LENGTH)}finish it${STRAY_RETURN}tail`;
+    within(BUDGET_MS, () => {
+      expect(objects(work("a.md", [line]), "work.task.open")).toHaveLength(1);
+    });
+  });
+
+  it("reads a heading carrying a stray carriage return", () => {
+    const line = `#${" ".repeat(HOSTILE_LENGTH)}Roadmap${STRAY_RETURN}tail`;
+    within(BUDGET_MS, () => {
+      expect(objects(structure("a.md", [line]), "document.title")).toHaveLength(1);
     });
   });
 

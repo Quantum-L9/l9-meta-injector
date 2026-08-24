@@ -80,6 +80,18 @@ export declare function corpusRootSnapshotId(physicalSnapshotHash: string): stri
  * segment declares distinct keys instead.
  */
 export declare function defaultRootKey(rootPath: string): string;
+/**
+ * A root spec's key, and whether the operator chose it.
+ *
+ * Both answers come from one place because they come from one fact — whether the
+ * spec carried a name — and they govern each other: the key is the operator's
+ * word exactly when the class is `declared`. Deriving them separately is how a
+ * key ends up called declared at one call site and inferred at another.
+ */
+export declare function resolveRootIdentity(spec: CorpusRootSpec): {
+    rootKey: string;
+    declared: boolean;
+};
 /** One root's contribution to the corpus source identity. */
 export interface CorpusSourceSnapshotRoot {
     root_id: string;
@@ -107,6 +119,16 @@ export interface CorpusAnalysisProfiles {
     corpus_profile: string;
     document_decoder_profiles: readonly string[];
     interpretation_profile: string;
+    /**
+     * The rules read over decoded blocks, for formats that have no lines.
+     *
+     * Separate from `interpretation_profile` because the two answer the same
+     * question about different sources: one reads a file that has line numbers and
+     * cites them, the other reads a Word document that has none and cites block
+     * locators. Folding them together would mean a change to either invalidated
+     * both, and would hide which of the two produced a given claim.
+     */
+    document_block_profile: string;
     semantic_candidate_profile: string;
     /** Present only when embeddings ran. */
     embedding_profile?: string;
