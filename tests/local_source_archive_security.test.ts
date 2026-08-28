@@ -827,3 +827,67 @@ describe("zip64 central-directory records", () => {
     expect(Buffer.concat(ok).toString()).toBe("A".repeat(512 * 1024));
   });
 });
+
+describe("archive bytes bound to the snapshot", () => {
+  test("an archive whose staged bytes contradict the snapshot digest is held with no member claimed", () => {
+    // F-002. Hashing and staging are two reads of one path, and everything
+    // downstream -- the preflight verdict, the member digests, the cache entry
+    // keyed on those bytes -- describes whichever read won. The divergence is
+    // produced here through the incremental seam that carries a previous run's
+    // digest forward on an unchanged stat, which is the real path by which a
+    // snapshot digest and the staged bytes come to disagree. Monkey-patching
+    // node:fs is not available: it is an ES module namespace and cannot be spied.
+    const root = tmp();
+    const archive = path.join(root, "Case.zip");
+    writeRawZip(archive, [{ name: "original.txt", content: "original bytes" }]);
+    const stats = fs.statSync(archive, { bigint: true });
+
+    // A prior run's record whose stat matches exactly but whose digest is wrong.
+    const stale = new Map([["Case.zip", {
+      content_hash: `sha256:${"f".repeat(64)}`,
+      size_bytes: Number(stats.size),
+      mtime_ms: Number(stats.mtimeMs),
+      mtime_ns: stats.mtimeNs.toString(),
+    }]]);
+
+    const observation = acquireLocalSource({ path: archive, knownHashes: stale });
+    try {
+      const observed = observation.archives[0];
+      expect(observed.holds.map((hold) => hold.message))
+        .toContain("archive bytes changed between hashing and staging; no member is claimed");
+      expect(observed.expanded).toBe(false);
+      expect(observed.memberCount).toBe(0);
+      // The whole point: no member is claimed out of an archive whose identity is
+      // in doubt, and the observation says so rather than reporting a clean read.
+      expect(observation.virtualArtifacts).toEqual([]);
+      expect(observation.stable).toBe(false);
+      expect(observation.diagnostics.map((d) => d.code))
+        .toContain("local-source.source_changed_during_observation");
+    } finally {
+      observation.dispose();
+    }
+  });
+
+  test("a nested member archive carries no snapshot expectation to violate", () => {
+    // Members are produced by this run rather than observed on disk, so there is
+    // no prior digest to hold them to and the check must not invent one.
+    const root = tmp();
+    const innerPath = path.join(root, "inner.zip");
+    writeRawZip(innerPath, [{ name: "leaf.txt", content: "leaf" }]);
+    const inner = fs.readFileSync(innerPath);
+    fs.rmSync(innerPath);
+    writeRawZip(path.join(root, "Outer.zip"), [{ name: "inner.zip", content: inner }]);
+
+    const observation = acquireLocalSource({ path: root });
+    try {
+      expect(observation.archives.length).toBeGreaterThan(1);
+      for (const observed of observation.archives) {
+        expect(observed.holds.map((hold) => hold.message))
+          .not.toContain("archive bytes changed between hashing and staging; no member is claimed");
+      }
+      expect(observation.virtualArtifacts.some((m) => m.virtualSourcePath.includes("leaf.txt"))).toBe(true);
+    } finally {
+      observation.dispose();
+    }
+  });
+});

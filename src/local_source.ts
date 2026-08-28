@@ -266,6 +266,54 @@ interface ScratchHandle {
 }
 
 /**
+ * Resolve a path through symlinks, falling back to the deepest ancestor that
+ * exists. A scratch parent is usually about to be created, so it cannot be
+ * required to exist before its location can be judged.
+ */
+function realPathOrNearest(target: string): string {
+  const absolute = path.resolve(target);
+  const missing: string[] = [];
+  let current = absolute;
+  for (;;) {
+    try {
+      return path.join(fs.realpathSync(current), ...missing);
+    } catch {
+      const parent = path.dirname(current);
+      if (parent === current) return absolute;
+      missing.unshift(path.basename(current));
+      current = parent;
+    }
+  }
+}
+
+/**
+ * Refuse a scratch root that would be created inside the tree being observed.
+ *
+ * Both paths are resolved through symlinks first, so a scratch parent that only
+ * points back into the source is refused on the same footing as one written
+ * inside it directly. The check runs *before* any directory is made: a
+ * containment violation that has already created a directory inside the source
+ * has already broken the read-only guarantee it exists to keep, and reporting it
+ * afterwards would be a diagnostic rather than a defence.
+ *
+ * A caller-selected scratch outside the source stays supported; this refuses one
+ * location, not the option.
+ */
+function assertScratchOutsideSource(scratchParent: string, absoluteSource: string, sourceKind: LocalSourceKind): void {
+  const realSource = realPathOrNearest(absoluteSource);
+  // For a file source the protected boundary is the directory holding it: that is
+  // the tree the observation promises not to write into.
+  const boundary = sourceKind === "directory" ? realSource : path.dirname(realSource);
+  const realParent = realPathOrNearest(scratchParent);
+  if (realParent === boundary || realParent.startsWith(boundary + path.sep)) {
+    throw new Error(
+      "scratch parent resolves inside the observed source and would write into a read-only tree: "
+      + `${scratchParent} resolves to ${realParent}, inside ${boundary}`,
+    );
+  }
+}
+
+/**
  * Create a tool-owned scratch root outside the source tree.
  *
  * The ownership token is what makes cleanup safe: a recursive delete is permitted
@@ -524,6 +572,30 @@ function enumerateDirectory(
   return out;
 }
 
+/**
+ * Whether two observations of one file describe the same bytes still in place.
+ *
+ * Size first, then the finest mtime both sides actually recorded. When each
+ * carries a nanosecond value that is the comparison, because a filesystem whose
+ * millisecond tick is coarser than a write can hide an entire rewrite inside one
+ * equal `mtimeMs`. Falling back to milliseconds only when either side lacks the
+ * finer value keeps platforms that report no nanosecond mtime behaving exactly
+ * as before.
+ *
+ * Every phase that asks "did this file hold still" asks it here. The question was
+ * previously answered in three places against `mtimeMs` alone, so the entry-set
+ * check, the during-hash recheck and the final stability sweep could each reach a
+ * different verdict about the same file.
+ */
+function observedFileStateMatches(
+  before: { sizeBytes: number | null; mtimeMs: number | null; mtimeNs: string | null },
+  after: { sizeBytes: number | null; mtimeMs: number | null; mtimeNs: string | null },
+): boolean {
+  if (before.sizeBytes !== after.sizeBytes) return false;
+  if (before.mtimeNs !== null && after.mtimeNs !== null) return before.mtimeNs === after.mtimeNs;
+  return before.mtimeMs === after.mtimeMs;
+}
+
 /** Compare two enumerations for the entry-set and per-entry stability checks. */
 function enumerationDiffers(before: EnumeratedEntry[], after: EnumeratedEntry[]): string | null {
   if (before.length !== after.length) {
@@ -535,7 +607,7 @@ function enumerationDiffers(before: EnumeratedEntry[], after: EnumeratedEntry[])
     if (later === undefined) return `entry disappeared during observation: ${entry.relativePath}`;
     if (later.kind !== entry.kind) return `entry kind changed during observation: ${entry.relativePath}`;
     if (later.sizeBytes !== entry.sizeBytes) return `file size changed during observation: ${entry.relativePath}`;
-    if (later.mtimeMs !== entry.mtimeMs) return `file mtime changed during observation: ${entry.relativePath}`;
+    if (!observedFileStateMatches(entry, later)) return `file mtime changed during observation: ${entry.relativePath}`;
   }
   return null;
 }
@@ -600,6 +672,18 @@ interface ArchiveTask {
   depth: number;
   parentArchiveHash: string | null;
   parentArchivePath: string | null;
+  /**
+   * The digest the physical snapshot recorded for these bytes, when this archive
+   * is a source file the snapshot hashed.
+   *
+   * Hashing and staging are separate reads of the same path, so a file replaced
+   * between them would be staged, parsed and reported under a digest describing
+   * bytes that are gone. Carrying the expected value here lets staging prove the
+   * two reads saw one archive. A member staged out of a parent archive has no
+   * such expectation: its bytes were produced by this run, not observed, so the
+   * field is null and nothing is compared.
+   */
+  expectedArchiveHash: string | null;
 }
 
 interface ArchiveContext {
@@ -613,6 +697,13 @@ interface ArchiveContext {
   omittedPaths: string[];
   /** Where preflight verdicts are read from and written to, when supplied. */
   manifests?: ArchiveManifestStore;
+  /**
+   * Reasons the archive pass found the source no longer describable by one
+   * snapshot. Non-empty makes the whole observation unstable, the same as a file
+   * that moved during hashing: an archive whose staged bytes contradict the
+   * digest recorded for them is the same class of event, found later.
+   */
+  sourceChanged: string[];
 }
 
 function holdArchive(
@@ -879,6 +970,9 @@ function enqueueNestedArchives(
         depth: task.depth + 1,
         parentArchiveHash: archiveHash,
         parentArchivePath: task.sourcePath,
+        // Produced by this run rather than observed, so there is no prior digest
+        // to hold it to.
+        expectedArchiveHash: null,
       });
       continue;
     }
@@ -978,6 +1072,33 @@ function acquireArchive(context: ArchiveContext, task: ArchiveTask, queue: Archi
     staged = stageArchive(context, task, occurrence);
   } catch (error) {
     recordUnstageableArchive(context, task, error);
+    return;
+  }
+
+  // The snapshot hashed this path and staging read it again. If the two reads
+  // disagree the file was replaced between them, and everything downstream --
+  // the preflight verdict, the member digests, the cache entry keyed on these
+  // bytes -- would describe an archive that is no longer there. Hold it, claim
+  // no member, and make the whole observation unstable: there is no single
+  // snapshot left to describe.
+  if (task.expectedArchiveHash !== null && task.expectedArchiveHash !== staged.archiveHash) {
+    context.sourceChanged.push(
+      `${task.sourcePath}: archive bytes changed between hashing and staging`,
+    );
+    context.diagnostics.push({
+      code: "local-source.source_changed_during_observation",
+      severity: "error",
+      message: "SOURCE_CHANGED_DURING_OBSERVATION: "
+        + `${task.sourcePath}: archive bytes changed between hashing and staging `
+        + `(snapshot ${task.expectedArchiveHash}, staged ${staged.archiveHash})`,
+    });
+    holdArchive(context, task, staged.archiveHash, staged.sizeBytes, [{
+      // The archive's bytes did not match the digest recorded for them, which is
+      // precisely an integrity failure. archive_preflight owns this vocabulary and
+      // is consume-only, so no new code is minted for the same meaning.
+      code: "archive.member_integrity_failed",
+      message: "archive bytes changed between hashing and staging; no member is claimed",
+    }]);
     return;
   }
 
@@ -1087,8 +1208,10 @@ function hashStableFile(entry: EnumeratedEntry): { digest: string | null; reason
   let reason = "";
   for (let attempt = 0; attempt <= STABILITY_RETRY_LIMIT; attempt++) {
     let before: fs.Stats;
+    let beforeNs: string | null;
     try {
       before = fs.lstatSync(entry.absolutePath);
+      beforeNs = highResolutionMtime(entry.absolutePath);
     } catch (error) {
       return { digest: null, reason: (error as Error).message, changed: false };
     }
@@ -1099,7 +1222,11 @@ function hashStableFile(entry: EnumeratedEntry): { digest: string | null; reason
       return { digest: null, reason: (error as Error).message, changed: false };
     }
     const after = fs.lstatSync(entry.absolutePath);
-    if (after.size === before.size && after.mtimeMs === before.mtimeMs) {
+    const matches = observedFileStateMatches(
+      { sizeBytes: before.size, mtimeMs: before.mtimeMs, mtimeNs: beforeNs },
+      { sizeBytes: after.size, mtimeMs: after.mtimeMs, mtimeNs: highResolutionMtime(entry.absolutePath) },
+    );
+    if (matches) {
       return { digest: candidate, reason: "", changed: false };
     }
     reason = "file changed while it was being hashed";
@@ -1291,7 +1418,12 @@ function verifySnapshotStability(
     return enumerationDiffers(entries, enumerateDirectory(absoluteSource, omit, [], [], []));
   }
   const after = fs.lstatSync(absoluteSource);
-  if (after.size !== entries[0].sizeBytes || after.mtimeMs !== entries[0].mtimeMs) {
+  const stillThere = observedFileStateMatches(entries[0], {
+    sizeBytes: after.size,
+    mtimeMs: after.mtimeMs,
+    mtimeNs: highResolutionMtime(absoluteSource),
+  });
+  if (!stillThere) {
     return `${entries[0].relativePath}: file changed while it was being observed`;
   }
   return null;
@@ -1325,7 +1457,7 @@ function deriveSourceIdentity(
 /** Queue the ZIP archives to expand, reporting the formats v1 does not open. */
 function planArchiveTasks(hashed: HashedEntry[], diagnostics: LocalSourceDiagnostic[]): ArchiveTask[] {
   const queue: ArchiveTask[] = [];
-  for (const { entry } of hashed) {
+  for (const { entry, contentHashHex } of hashed) {
     if (entry.kind !== "file") continue;
     if (isZipPath(entry.relativePath)) {
       queue.push({
@@ -1334,6 +1466,7 @@ function planArchiveTasks(hashed: HashedEntry[], diagnostics: LocalSourceDiagnos
         depth: 0,
         parentArchiveHash: null,
         parentArchivePath: null,
+        expectedArchiveHash: contentHashHex === null ? null : sha256Prefixed(contentHashHex),
       });
       continue;
     }
@@ -1523,18 +1656,23 @@ export function acquireLocalSource(input: LocalSourceAcquireInput): LocalSourceO
 
   const identity = deriveSourceIdentity(hashed, sourceKind);
 
-  const scratch = createScratch(input.scratchParent ?? os.tmpdir());
+  const scratchParent = input.scratchParent ?? os.tmpdir();
+  // Before createScratch, which is the first thing here that writes.
+  assertScratchOutsideSource(scratchParent, absoluteSource, sourceKind);
+  const scratch = createScratch(scratchParent);
   const archives: LocalArchiveObservation[] = [];
   const members: LocalArchiveMemberObservation[] = [];
 
   // Archive expansion. A held archive still contributes its own observation.
   const expandArchives = input.expandArchives !== false;
+  const archiveSourceChanged: string[] = [];
   if (!expandArchives) {
     reportDisabledExpansion(hashed, diagnostics);
   } else if (unstableReason === null) {
     const context: ArchiveContext = {
       scratch, policy, budget, omit, diagnostics, archives, members, omittedPaths,
       manifests: input.archiveManifests,
+      sourceChanged: archiveSourceChanged,
     };
     const queue = planArchiveTasks(hashed, diagnostics);
     while (queue.length > 0) acquireArchive(context, queue.shift() as ArchiveTask, queue);
@@ -1560,7 +1698,7 @@ export function acquireLocalSource(input: LocalSourceAcquireInput): LocalSourceO
     virtualArtifacts: [...members].sort((a, b) => compareCodePoints(a.virtualSourcePath, b.virtualSourcePath)),
     diagnostics: [...diagnostics].sort(compareDiagnostics),
     archivePolicy: policy,
-    stable: unstableReason === null,
+    stable: unstableReason === null && archiveSourceChanged.length === 0,
     scratchRoot: scratch.root,
     dispose: () => scratch.dispose(),
   };
