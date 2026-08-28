@@ -113,14 +113,34 @@ exports.DETERMINISTIC_CACHE_LAYERS = [
  *
  * An outer ZIP that has not changed does not need decompressing again merely to
  * rediscover member paths and hashes a previous run already established from
- * exactly those bytes. The reader and policy versions are in the key because both
- * decide what is admitted: a stricter policy is a different question about the
- * same archive, and must not be answered from the looser one's cache.
+ * exactly those bytes. What makes that reuse safe is that the question being
+ * asked is the same, and the question is the *resolved policy*, not its version
+ * string. Two runs share `version: "1"` while permitting compression ratios of
+ * 200 and 10; answering the stricter one out of the looser one's entry admits an
+ * archive the operator has just forbidden. So the policy version no longer
+ * contributes to identity at all -- not alongside the fingerprint, not as a
+ * fallback -- because a key it can influence is a key that can carry that
+ * confusion.
+ *
+ * A caller that supplies no fingerprint gets an explicitly unqualified key
+ * carrying a fresh nonce, so it cannot be satisfied by any stored entry and
+ * cannot be found again after being written. That is deliberate: the archive
+ * cache misses every time until the fingerprint is wired through, which costs
+ * recomputation and never correctness. Missing is the safe direction; guessing
+ * that an unqualified lookup may reuse a qualified verdict is not.
  */
 function archiveManifestKey(input) {
+    if (input.archivePolicyFingerprint === undefined) {
+        return (0, repository_model_1.stableId)("archive-manifest", {
+            archive_content_hash: input.archiveContentHash,
+            archive_policy_fingerprint: "unqualified",
+            archive_reader_version: input.archiveReaderVersion,
+            unqualified_nonce: crypto.randomUUID(),
+        });
+    }
     return (0, repository_model_1.stableId)("archive-manifest", {
         archive_content_hash: input.archiveContentHash,
-        archive_policy_version: input.archivePolicyVersion,
+        archive_policy_fingerprint: input.archivePolicyFingerprint,
         archive_reader_version: input.archiveReaderVersion,
     });
 }

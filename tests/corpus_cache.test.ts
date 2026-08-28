@@ -207,16 +207,59 @@ describe("the mtime precheck", () => {
 });
 
 describe("the archive manifest layer", () => {
-  it("keys a verdict to the bytes, the reader and the policy", () => {
+  it("keys a verdict to the bytes, the reader and the resolved policy fingerprint", () => {
     const hash = `sha256:${"a".repeat(64)}`;
-    const base = { archiveContentHash: hash, archiveReaderVersion: "1.0.0", archivePolicyVersion: "2.0.0" };
+    const base = {
+      archiveContentHash: hash,
+      archiveReaderVersion: "1.0.0",
+      archivePolicyFingerprint: "lap1:aaaa",
+    };
     expect(archiveManifestKey(base)).toBe(archiveManifestKey({ ...base }));
     // A stricter policy asks a different question about the same archive, and
     // must never be answered out of the looser policy's entry.
-    expect(archiveManifestKey({ ...base, archivePolicyVersion: "3.0.0" })).not.toBe(archiveManifestKey(base));
+    expect(archiveManifestKey({ ...base, archivePolicyFingerprint: "lap1:bbbb" }))
+      .not.toBe(archiveManifestKey(base));
     expect(archiveManifestKey({ ...base, archiveReaderVersion: "2.0.0" })).not.toBe(archiveManifestKey(base));
     expect(archiveManifestKey({ ...base, archiveContentHash: `sha256:${"b".repeat(64)}` }))
       .not.toBe(archiveManifestKey(base));
+  });
+
+  it("never lets the policy version contribute to cache identity", () => {
+    // F-001 closes here. Version was the whole identity and could not express a
+    // value change, so a stricter same-version policy read the looser verdict.
+    // It must now be inert -- not merely outranked by the fingerprint, but unable
+    // to move the key at all, including when no fingerprint is supplied.
+    const base = {
+      archiveContentHash: `sha256:${"a".repeat(64)}`,
+      archiveReaderVersion: "1.0.0",
+      archivePolicyFingerprint: "lap1:aaaa",
+    };
+    expect(archiveManifestKey({ ...base, archivePolicyVersion: "2.0.0" }))
+      .toBe(archiveManifestKey({ ...base, archivePolicyVersion: "3.0.0" }));
+    expect(archiveManifestKey({ ...base, archivePolicyVersion: "2.0.0" })).toBe(archiveManifestKey(base));
+  });
+
+  it("makes an unqualified key impossible to satisfy", () => {
+    // No fingerprint means the caller has not said which policy the verdict
+    // answers. The key therefore has to miss rather than fall back to something
+    // version-derived, so it carries a nonce: two calls never agree, and an entry
+    // written under one can never be read back.
+    const unqualified = {
+      archiveContentHash: `sha256:${"a".repeat(64)}`,
+      archiveReaderVersion: "1.0.0",
+      archivePolicyVersion: "2.0.0",
+    };
+    const first = archiveManifestKey(unqualified);
+    const second = archiveManifestKey(unqualified);
+    expect(first).not.toBe(second);
+    // And it can never collide with a qualified lookup for the same archive.
+    expect(first).not.toBe(archiveManifestKey({ ...unqualified, archivePolicyFingerprint: "lap1:aaaa" }));
+
+    const cache = new FileCorpusCache({ root: tmp(), producerVersion: "v1" });
+    cache.put("archive_manifest", first, { accepted: true });
+    // Written under one unqualified key, unreachable through the next one.
+    expect(cache.get("archive_manifest", archiveManifestKey(unqualified))).toBeUndefined();
+    expect(cache.get("archive_manifest", first)).toEqual({ accepted: true });
   });
 
   it("is reproducible, unlike the embedding layer", () => {
