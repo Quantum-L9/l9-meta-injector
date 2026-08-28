@@ -11,7 +11,9 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { describe, expect, test } from "vitest";
 import { acquireLocalSource } from "../src/local_source";
+import type { ArchiveManifestStore } from "../src/local_source";
 import { canonicalMemberPath, memberCollisionKey, preflightArchive } from "../src/archive_preflight";
+import type { ArchivePreflightResult } from "../src/archive_preflight";
 import { DEFAULT_LOCAL_ARCHIVE_POLICY, localArchivePolicyFingerprint, resolveLocalArchivePolicy } from "../src/local_archive_policy";
 import { ZipBudgetExceededError, readZipCentralDirectory, streamZipMember } from "../src/zip_reader";
 import { UNIX_FIFO, UNIX_SYMLINK, treeSnapshot, writeRawZip } from "./helpers/zip_fixtures";
@@ -331,6 +333,98 @@ describe("resolved-policy fingerprint", () => {
     // A caller who passes the defaults back in must not miss their own warm cache.
     expect(localArchivePolicyFingerprint(resolveLocalArchivePolicy()))
       .toBe(localArchivePolicyFingerprint({ ...DEFAULT_LOCAL_ARCHIVE_POLICY }));
+  });
+
+  test("a warm permissive verdict cannot answer a stricter same-version policy", () => {
+    // F-001 end to end, through live acquisition rather than the key function:
+    // warm the store with a policy that accepts this archive, then observe the
+    // exact same bytes under a policy that forbids it while declaring the same
+    // version. The second run must reach preflight and hold, not read the first
+    // run's "accepted" back out of the cache.
+    const entries = new Map<string, ArchivePreflightResult>();
+    const lookups: string[] = [];
+    const store: ArchiveManifestStore = {
+      get: (key) => {
+        lookups.push(key.policyFingerprint);
+        return entries.get(JSON.stringify(key));
+      },
+      put: (key, value) => { entries.set(JSON.stringify(key), value); },
+    };
+
+    const parent = tmp();
+    const root = path.join(parent, "src");
+    fs.mkdirSync(root, { recursive: true });
+    // 512 KiB of one repeated byte deflates around a thousand to one: accepted
+    // under a ratio ceiling of 100000, refused under one of 10.
+    writeRawZip(path.join(root, "Case.zip"), [{ name: "bomb.txt", content: "A".repeat(512 * 1024) }]);
+
+    const observe = (policy: Partial<LocalArchivePolicy>) => {
+      const observation = acquireLocalSource({
+        path: path.join(root, "Case.zip"),
+        archivePolicy: policy,
+        archiveManifests: store,
+      });
+      try {
+        const archive = observation.archives[0];
+        return { expanded: archive.expanded, holdCodes: archive.holds.map((hold) => hold.code) };
+      } finally {
+        observation.dispose();
+      }
+    };
+
+    const permissive = observe({ maxCompressionRatio: 100000 });
+    expect(permissive.expanded).toBe(true);
+    expect(permissive.holdCodes).toEqual([]);
+    expect(entries.size).toBe(1);
+
+    const strict = observe({ maxCompressionRatio: 10 });
+    expect(strict.expanded).toBe(false);
+    expect(strict.holdCodes).toContain("archive.compression_ratio_exceeded");
+
+    // The two runs asked different questions, so they asked under different keys
+    // and the stricter one wrote its own verdict rather than reusing the entry.
+    expect(entries.size).toBe(2);
+    expect(lookups).toHaveLength(2);
+    expect(lookups[0]).not.toBe(lookups[1]);
+    // And the versions really were identical, which is what made this reachable.
+    expect(resolveLocalArchivePolicy({ maxCompressionRatio: 100000 }).version)
+      .toBe(resolveLocalArchivePolicy({ maxCompressionRatio: 10 }).version);
+  });
+
+  test("an unchanged policy still reuses its own warm verdict", () => {
+    // The fingerprint must not defeat the cache it is protecting: the same
+    // resolved policy over the same bytes is the same question, and answering it
+    // from the store is the whole point of having one.
+    const entries = new Map<string, ArchivePreflightResult>();
+    let hits = 0;
+    const store: ArchiveManifestStore = {
+      get: (key) => {
+        const found = entries.get(JSON.stringify(key));
+        if (found !== undefined) hits += 1;
+        return found;
+      },
+      put: (key, value) => { entries.set(JSON.stringify(key), value); },
+    };
+
+    const parent = tmp();
+    const root = path.join(parent, "src");
+    fs.mkdirSync(root, { recursive: true });
+    writeRawZip(path.join(root, "Case.zip"), [{ name: "note.txt", content: "plain text" }]);
+
+    for (let run = 0; run < 2; run++) {
+      const observation = acquireLocalSource({
+        path: path.join(root, "Case.zip"),
+        archivePolicy: { maxCompressionRatio: 200 },
+        archiveManifests: store,
+      });
+      try {
+        expect(observation.archives[0].expanded).toBe(true);
+      } finally {
+        observation.dispose();
+      }
+    }
+    expect(entries.size).toBe(1);
+    expect(hits).toBe(1);
   });
 });
 

@@ -605,12 +605,12 @@ async function runCorpusScan(input) {
         get: (key) => cache.get("archive_manifest", (0, corpus_cache_1.archiveManifestKey)({
             archiveContentHash: key.archiveContentHash,
             archiveReaderVersion: key.readerVersion,
-            archivePolicyVersion: key.policyVersion,
+            archivePolicyFingerprint: key.policyFingerprint,
         })),
         put: (key, value) => cache.put("archive_manifest", (0, corpus_cache_1.archiveManifestKey)({
             archiveContentHash: key.archiveContentHash,
             archiveReaderVersion: key.readerVersion,
-            archivePolicyVersion: key.policyVersion,
+            archivePolicyFingerprint: key.policyFingerprint,
         }), value),
     };
     // ── 0. may this run claim continuity with a previous one? ───────────────

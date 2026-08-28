@@ -107,18 +107,24 @@ export interface LocalSourceAcquireInput {
      */
     archiveManifests?: ArchiveManifestStore;
 }
-/** Read-through storage for archive preflight verdicts. */
+/**
+ * Read-through storage for archive preflight verdicts.
+ *
+ * The key carries the *fingerprint* of the fully resolved policy, never its
+ * version. A version string cannot express a value change, so two policies
+ * declaring the same version while permitting different compression ratios
+ * would share an entry and the stricter one would be answered out of the
+ * looser one's verdict. The fingerprint is required rather than optional so
+ * that omitting it is a compile error here, not a silent always-miss.
+ */
+export interface ArchiveManifestKey {
+    archiveContentHash: string;
+    readerVersion: string;
+    policyFingerprint: string;
+}
 export interface ArchiveManifestStore {
-    get(key: {
-        archiveContentHash: string;
-        readerVersion: string;
-        policyVersion: string;
-    }): ArchivePreflightResult | undefined;
-    put(key: {
-        archiveContentHash: string;
-        readerVersion: string;
-        policyVersion: string;
-    }, value: ArchivePreflightResult): void;
+    get(key: ArchiveManifestKey): ArchivePreflightResult | undefined;
+    put(key: ArchiveManifestKey, value: ArchivePreflightResult): void;
 }
 /** Version of the ZIP reader whose output an archive manifest describes. */
 export declare const ARCHIVE_READER_VERSION = "1.0.0";

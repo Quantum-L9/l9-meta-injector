@@ -617,7 +617,7 @@ function preflightStaged(context, task, staged) {
         ? {
             archiveContentHash: staged.archiveHash,
             readerVersion: exports.ARCHIVE_READER_VERSION,
-            policyVersion: context.policy.version,
+            policyFingerprint: (0, local_archive_policy_1.localArchivePolicyFingerprint)(context.policy),
         }
         : null;
     const cached = cacheKey === null ? undefined : context.manifests?.get(cacheKey);

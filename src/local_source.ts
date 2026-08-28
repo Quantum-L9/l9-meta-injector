@@ -46,6 +46,7 @@ import {
 import {
   ArchiveSessionBudget,
   LocalArchivePolicy,
+  localArchivePolicyFingerprint,
   resolveLocalArchivePolicy,
 } from "./local_archive_policy";
 import { ZipBudgetExceededError, readZipCentralDirectory, streamZipMember } from "./zip_reader";
@@ -185,14 +186,25 @@ export interface LocalSourceAcquireInput {
   archiveManifests?: ArchiveManifestStore;
 }
 
-/** Read-through storage for archive preflight verdicts. */
+/**
+ * Read-through storage for archive preflight verdicts.
+ *
+ * The key carries the *fingerprint* of the fully resolved policy, never its
+ * version. A version string cannot express a value change, so two policies
+ * declaring the same version while permitting different compression ratios
+ * would share an entry and the stricter one would be answered out of the
+ * looser one's verdict. The fingerprint is required rather than optional so
+ * that omitting it is a compile error here, not a silent always-miss.
+ */
+export interface ArchiveManifestKey {
+  archiveContentHash: string;
+  readerVersion: string;
+  policyFingerprint: string;
+}
+
 export interface ArchiveManifestStore {
-  get(key: { archiveContentHash: string; readerVersion: string; policyVersion: string }):
-    ArchivePreflightResult | undefined;
-  put(
-    key: { archiveContentHash: string; readerVersion: string; policyVersion: string },
-    value: ArchivePreflightResult,
-  ): void;
+  get(key: ArchiveManifestKey): ArchivePreflightResult | undefined;
+  put(key: ArchiveManifestKey, value: ArchivePreflightResult): void;
 }
 
 /** Version of the ZIP reader whose output an archive manifest describes. */
@@ -895,7 +907,7 @@ function preflightStaged(
     ? {
         archiveContentHash: staged.archiveHash,
         readerVersion: ARCHIVE_READER_VERSION,
-        policyVersion: context.policy.version,
+        policyFingerprint: localArchivePolicyFingerprint(context.policy),
       }
     : null;
   const cached = cacheKey === null ? undefined : context.manifests?.get(cacheKey);
