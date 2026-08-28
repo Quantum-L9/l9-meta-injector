@@ -38,15 +38,15 @@
     },
     {
       "path": "dist/corpus_cache.d.ts",
-      "git_blob_sha1": "1507e3e5a86182edf19aa463096ddcb6113b462f"
+      "git_blob_sha1": "dc230beae7ca32d77240ab99f91009e09dcb749d"
     },
     {
       "path": "dist/corpus_cache.js",
-      "git_blob_sha1": "e005653c75e71c477dfdebb1f124a3a67accb26d"
+      "git_blob_sha1": "2b0673678cf2e85ca118e7e2355171c180d311ec"
     },
     {
       "path": "dist/corpus_cache.js.map",
-      "git_blob_sha1": "6929b88dfd0b3434fed8dadc19bbc7ce09225262"
+      "git_blob_sha1": "06b5da1c79aa3367359144216178d715bf3e3d73"
     },
     {
       "path": "dist/corpus_candidates.d.ts",
@@ -682,7 +682,7 @@
     },
     {
       "path": "src/corpus_cache.ts",
-      "git_blob_sha1": "3627e105539e1a0b79dbb792589c3f426f7d5a3b"
+      "git_blob_sha1": "7b4ef0d1ad8095ab8d1f35b8ecc4579738f31ca1"
     },
     {
       "path": "src/corpus_candidates.ts",
@@ -842,7 +842,7 @@
     },
     {
       "path": "tests/corpus_cache.test.ts",
-      "git_blob_sha1": "200c022a19364471822e467be149bb294671b43a"
+      "git_blob_sha1": "96397d4ae0823d733fa1cae35d128ecbf836eaa1"
     },
     {
       "path": "tests/corpus_candidates.test.ts",

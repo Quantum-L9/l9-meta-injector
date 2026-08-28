@@ -7,6 +7,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { execFileSync } from "node:child_process";
 import { afterAll, describe, expect, it } from "vitest";
 import {
   CORPUS_CACHE_ENTRY_SCHEMA,
@@ -224,42 +225,67 @@ describe("the archive manifest layer", () => {
       .not.toBe(archiveManifestKey(base));
   });
 
-  it("never lets the policy version contribute to cache identity", () => {
-    // F-001 closes here. Version was the whole identity and could not express a
-    // value change, so a stricter same-version policy read the looser verdict.
-    // It must now be inert -- not merely outranked by the fingerprint, but unable
-    // to move the key at all, including when no fingerprint is supplied.
-    const base = {
+  it("rejects a fingerprint-free or version-derived key at compile time", () => {
+    // PR-CACHESTRICT's whole point. Under the previous revision the fingerprint
+    // was optional and omitting it produced a permanently-missing key: safe, but
+    // only ever discovered as a cache that silently never hit. Absence is now a
+    // type error, so the compiler is the thing that catches it. Tests are not in
+    // tsconfig's include, so this asserts through a real tsc run rather than a
+    // `@ts-expect-error` comment nothing would check.
+    const temp = fs.mkdtempSync(path.join(os.tmpdir(), "l9-cache-types-"));
+    try {
+      const probe = (body: string): string => {
+        const src = path.join(temp, "probe.ts");
+        fs.writeFileSync(src, `import { archiveManifestKey } from "${process.cwd()}/src/corpus_cache";\n${body}\n`, "utf8");
+        const cfg = path.join(temp, "tsconfig.json");
+        fs.writeFileSync(cfg, JSON.stringify({
+          compilerOptions: {
+            target: "ES2020", module: "commonjs", strict: true, noEmit: true, skipLibCheck: true,
+            baseUrl: process.cwd(), typeRoots: [path.join(process.cwd(), "node_modules/@types")],
+          },
+          files: [src],
+        }), "utf8");
+        try {
+          execFileSync(process.execPath, [path.join(process.cwd(), "node_modules/typescript/bin/tsc"), "-p", cfg], { stdio: "pipe" });
+          return "";
+        } catch (error) {
+          const out = error as { stdout?: Buffer };
+          return String(out.stdout ?? "");
+        }
+      };
+
+      // A key built without the fingerprint does not compile.
+      const missing = probe('archiveManifestKey({ archiveContentHash: "a", archiveReaderVersion: "1" });');
+      expect(missing).toContain("archivePolicyFingerprint");
+
+      // Neither does one that tries to reach for the policy version instead.
+      const version = probe(
+        'archiveManifestKey({ archiveContentHash: "a", archiveReaderVersion: "1", archivePolicyVersion: "2" });',
+      );
+      expect(version).toContain("archivePolicyVersion");
+
+      // The supported shape still compiles, so the two rejections above are
+      // about the missing fingerprint and not about a broken probe.
+      expect(probe(
+        'archiveManifestKey({ archiveContentHash: "a", archiveReaderVersion: "1", archivePolicyFingerprint: "lap1:aaaa" });',
+      )).toBe("");
+    } finally {
+      fs.rmSync(temp, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  it("has no runtime path left that yields an unqualified key", () => {
+    // The unqualified branch carried a nonce, so its removal is observable: the
+    // same inputs must now always produce the same key. If any fallback survived,
+    // repeated calls would diverge.
+    const input = {
       archiveContentHash: `sha256:${"a".repeat(64)}`,
       archiveReaderVersion: "1.0.0",
       archivePolicyFingerprint: "lap1:aaaa",
     };
-    expect(archiveManifestKey({ ...base, archivePolicyVersion: "2.0.0" }))
-      .toBe(archiveManifestKey({ ...base, archivePolicyVersion: "3.0.0" }));
-    expect(archiveManifestKey({ ...base, archivePolicyVersion: "2.0.0" })).toBe(archiveManifestKey(base));
-  });
-
-  it("makes an unqualified key impossible to satisfy", () => {
-    // No fingerprint means the caller has not said which policy the verdict
-    // answers. The key therefore has to miss rather than fall back to something
-    // version-derived, so it carries a nonce: two calls never agree, and an entry
-    // written under one can never be read back.
-    const unqualified = {
-      archiveContentHash: `sha256:${"a".repeat(64)}`,
-      archiveReaderVersion: "1.0.0",
-      archivePolicyVersion: "2.0.0",
-    };
-    const first = archiveManifestKey(unqualified);
-    const second = archiveManifestKey(unqualified);
-    expect(first).not.toBe(second);
-    // And it can never collide with a qualified lookup for the same archive.
-    expect(first).not.toBe(archiveManifestKey({ ...unqualified, archivePolicyFingerprint: "lap1:aaaa" }));
-
-    const cache = new FileCorpusCache({ root: tmp(), producerVersion: "v1" });
-    cache.put("archive_manifest", first, { accepted: true });
-    // Written under one unqualified key, unreachable through the next one.
-    expect(cache.get("archive_manifest", archiveManifestKey(unqualified))).toBeUndefined();
-    expect(cache.get("archive_manifest", first)).toEqual({ accepted: true });
+    const keys = new Set(Array.from({ length: 32 }, () => archiveManifestKey(input)));
+    expect(keys.size).toBe(1);
+    expect([...keys][0]).not.toContain("unqualified");
   });
 
   it("is reproducible, unlike the embedding layer", () => {

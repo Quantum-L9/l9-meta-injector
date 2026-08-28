@@ -130,32 +130,21 @@ export interface CorpusCache {
  * fallback -- because a key it can influence is a key that can carry that
  * confusion.
  *
- * A caller that supplies no fingerprint gets an explicitly unqualified key
- * carrying a fresh nonce, so it cannot be satisfied by any stored entry and
- * cannot be found again after being written. That is deliberate: the archive
- * cache misses every time until the fingerprint is wired through, which costs
- * recomputation and never correctness. Missing is the safe direction; guessing
- * that an unqualified lookup may reuse a qualified verdict is not.
+ * The fingerprint is required. While callers were being rewired it was optional,
+ * and an absent one produced a nonce-carrying key that could never be satisfied
+ * -- safe, but only discoverable as a cache that silently never hit. Every caller
+ * now supplies it, so the parameter is mandatory and the unqualified branch is
+ * gone: omitting the fingerprint is a compile-time error rather than a runtime
+ * miss, and there is no longer any path that yields a key without one. The
+ * policy version is not a parameter at all, so it cannot be passed, defaulted,
+ * or fallen back to.
  */
 export function archiveManifestKey(input: {
   archiveContentHash: string;
   archiveReaderVersion: string;
-  /**
-   * Deprecated and ignored. Retained so existing callers keep compiling while
-   * the fingerprint is threaded through; it contributes nothing to identity.
-   */
-  archivePolicyVersion?: string;
-  /** Fingerprint of the fully resolved policy. Absent yields an always-miss key. */
-  archivePolicyFingerprint?: string;
+  /** Fingerprint of the fully resolved policy. Required: see above. */
+  archivePolicyFingerprint: string;
 }): string {
-  if (input.archivePolicyFingerprint === undefined) {
-    return stableId("archive-manifest", {
-      archive_content_hash: input.archiveContentHash,
-      archive_policy_fingerprint: "unqualified",
-      archive_reader_version: input.archiveReaderVersion,
-      unqualified_nonce: crypto.randomUUID(),
-    });
-  }
   return stableId("archive-manifest", {
     archive_content_hash: input.archiveContentHash,
     archive_policy_fingerprint: input.archivePolicyFingerprint,
