@@ -426,7 +426,7 @@
     },
     {
       "path": "docs/architecture.md",
-      "git_blob_sha1": "94a496fb05fec162173c48e8ff478426e40b32b6"
+      "git_blob_sha1": "aaf1f80febfc600dc03a97287c402485265a7081"
     },
     {
       "path": "docs/contracts.md",
@@ -442,7 +442,7 @@
     },
     {
       "path": "docs/decision_log.md",
-      "git_blob_sha1": "3d23fce370a2b58e69c42e2fe725a7b7ca62ac04"
+      "git_blob_sha1": "4103a8d821c5bd1cdea96e899f1aadb9590d7877"
     },
     {
       "path": "docs/decisions/036-read-only-local-source-acquisition.md",

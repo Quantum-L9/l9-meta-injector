@@ -81,20 +81,40 @@ created and can still prove it owns. A `*.l9extracted` directory is treated as
 generated output only when an ownership marker and an adjacent archive agree, so a
 user directory that merely shares the name is preserved.
 
-`src/zip_reader.ts` reads the central directory and streams members through Node's
-zlib under an explicit ceiling; no subprocess participates in the canonical security
-boundary and no dependency was added. `src/archive_preflight.ts` judges every member —
-path shape, entry type, encryption, compression method, exact duplicates, and case-
-and Unicode-folded collisions — before any byte is written, and one violation holds
-the whole archive rather than yielding a partial view. `src/local_archive_policy.ts`
-bounds size, member count, expansion, ratio, depth, path length and time, checked
-both against declared metadata and against the bytes actually produced.
+`src/zip_reader.ts` reads the central directory and returns members under explicit
+ceilings; no subprocess participates anywhere, and no dependency was added. A stored
+member is read incrementally; a deflated member is decompressed synchronously into a
+bounded buffer, refused the moment it exceeds its allowance rather than after. The
+bound is the safety property, not the buffering strategy: the reader is not a
+streaming decompressor and does not claim to be. The central directory is accepted
+only when the parsed entry count and the consumed byte span both match what the EOCD
+declared, so a truncated or padded directory yields no member rather than a partial
+one. `src/archive_preflight.ts` judges every member — path shape, entry type,
+encryption, compression method, exact duplicates, and case- and Unicode-folded
+collisions — before any byte is written, and one violation holds the whole archive
+rather than yielding a partial view. `src/local_archive_policy.ts` bounds size, member
+count, expansion, ratio, depth, path length and time, checked both against declared
+metadata and against the bytes actually produced.
+
+These three modules are the only authority on what a ZIP contains and whether its
+members may be written. Both output modes consume them: read-only observation, which
+stages into a tool-owned scratch root, and the opt-in `localFiles` materialization,
+which writes the sibling `.l9extracted` directory the operator asked for. The output
+modes differ deliberately; the archive verdict does not (ADR-044).
 
 Identity is `file:sha256:…`, `archive:sha256:…`, or `fs:sha256:…` over a canonical
 manifest of repository-relative paths, entry kinds, content hashes and literal symlink
 targets. Absolute paths, inodes, timestamps, scratch locations, usernames and
 hostnames are excluded. If the source changes between the two enumerations, the
-observation is unstable and no canonical packet is emitted.
+observation is unstable and no canonical packet is emitted. One comparator answers
+"did this hold still" for every phase, using the finest mtime both observations
+recorded — nanosecond where the platform reports one, millisecond otherwise — so a
+rewrite inside a single millisecond is still a change. An archive whose staged bytes
+contradict the digest the snapshot recorded is held with no member claimed, and the
+observation is unstable: hashing and staging are two reads, and a claim is only made
+when they agree. A caller may choose where scratch lives, but not inside the observed
+source; a parent that resolves there, directly or through a symlink, is refused before
+any directory is created.
 
 Members reach the packet as ordinary artifacts at their virtual locator, plus a
 `DERIVED_FROM` relationship to their archive carrying the archive digest, member path,
