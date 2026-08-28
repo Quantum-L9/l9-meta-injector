@@ -11,9 +11,45 @@
 // Defaults are deliberately conservative. Tests bind their own small budgets
 // rather than depending on these numbers, so tightening a default can never
 // silently invalidate a security test.
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ArchiveSessionBudget = exports.DEFAULT_LOCAL_ARCHIVE_POLICY = exports.LOCAL_ARCHIVE_POLICY_VERSION = void 0;
 exports.resolveLocalArchivePolicy = resolveLocalArchivePolicy;
+exports.localArchivePolicyFingerprint = localArchivePolicyFingerprint;
+const crypto = __importStar(require("node:crypto"));
+const ordering_1 = require("./ordering");
 /** Contract version recorded in the acquisition manifest and packet diagnostics. */
 exports.LOCAL_ARCHIVE_POLICY_VERSION = "1";
 /**
@@ -40,6 +76,31 @@ function resolveLocalArchivePolicy(overrides) {
         ...overrides,
         version: overrides?.version ?? exports.LOCAL_ARCHIVE_POLICY_VERSION,
     };
+}
+/**
+ * Deterministic fingerprint of a fully resolved archive policy.
+ *
+ * A cached admission verdict is only reusable for a policy that would judge the
+ * archive the same way, and the version string cannot carry that. Two runs share
+ * `version: "1"` while one allows a compression ratio of 200 and the other 10;
+ * replaying the looser run's verdict under the stricter policy admits an archive
+ * the operator has just finished forbidding. Identity therefore has to be the
+ * resolved values themselves.
+ *
+ * Every own enumerable field is included, sorted by key, so the fingerprint does
+ * not depend on the order overrides were merged in, and a field added to
+ * LocalArchivePolicy later enters the identity on its own rather than being
+ * quietly excluded until someone remembers to list it here.
+ */
+function localArchivePolicyFingerprint(policy) {
+    // compareCodePoints, not a bare sort() and emphatically not localeCompare: this
+    // ordering reaches a hash, and src/ordering.ts is the module that exists because
+    // locale-aware ordering varies with the runtime's ICU data, so the same policy
+    // could fingerprint two ways on two machines.
+    const fields = [...Object.keys(policy)]
+        .sort(ordering_1.compareCodePoints)
+        .map((key) => [key, policy[key]]);
+    return `lap1:${crypto.createHash("sha256").update(JSON.stringify(fields), "utf8").digest("hex")}`;
 }
 /**
  * Acquisition-wide accounting.

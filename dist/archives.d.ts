@@ -37,9 +37,15 @@ export interface ExpandArchivesResult {
 }
 /** Sibling extract directory for a zip: `Archive.zip` → `Archive.l9extracted`. */
 export declare function extractDirFor(zipPath: string): string;
-/** Resolve a fixed-path unzip binary; never consult $PATH. */
-export declare function resolveUnzipBinary(): string;
-/** List member paths inside a zip; reject Zip-Slip (`..` / absolute) names. */
+/**
+ * List member paths inside a zip, rejecting Zip-Slip (`..` / absolute) names.
+ *
+ * Read from the central directory rather than from `unzip -Z1`. The names a
+ * subprocess prints are already its own interpretation of the bytes, so taking
+ * them as input meant trusting a second parser about what a member is even
+ * called. Directory entries keep a trailing separator so callers can still tell
+ * them from files.
+ */
 export declare function listZipMembers(zipPath: string): string[];
 /**
  * Reason an existing extraction directory may not be replaced, or null when it may.
@@ -51,12 +57,15 @@ export declare function listZipMembers(zipPath: string): string[];
  */
 export declare function extractionRefusalReason(extractDir: string): string | null;
 /**
- * Refresh extractDir and unzip allowed members into it.
- * When `allowedMembers` is set, only those paths are extracted (omit filter).
- * Returns the number of non-directory members actually extracted.
+ * Refresh extractDir and materialize allowed members into it.
+ *
+ * When `allowedMembers` is set, only those canonical paths are written (omit
+ * filter). Returns the number of members actually extracted.
  *
  * Throws rather than deleting when the target exists and is not provably this
- * tool's own output.
+ * tool's own output, and refuses the whole archive when canonical preflight
+ * holds it. Admission is decided before the directory is refreshed, so a hostile
+ * archive never reaches the point of removing anything.
  */
 export declare function extractZip(zipPath: string, extractDir: string, allowedMembers?: string[]): number;
 /** Discover expandable archives under root (does not enter existing *.l9extracted dirs). */

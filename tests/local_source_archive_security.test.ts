@@ -11,9 +11,11 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { describe, expect, test } from "vitest";
 import { acquireLocalSource } from "../src/local_source";
+import type { ArchiveManifestStore } from "../src/local_source";
 import { canonicalMemberPath, memberCollisionKey, preflightArchive } from "../src/archive_preflight";
-import { DEFAULT_LOCAL_ARCHIVE_POLICY, resolveLocalArchivePolicy } from "../src/local_archive_policy";
-import { readZipCentralDirectory } from "../src/zip_reader";
+import type { ArchivePreflightResult } from "../src/archive_preflight";
+import { DEFAULT_LOCAL_ARCHIVE_POLICY, localArchivePolicyFingerprint, resolveLocalArchivePolicy } from "../src/local_archive_policy";
+import { ZipBudgetExceededError, readZipCentralDirectory, streamZipMember } from "../src/zip_reader";
 import { UNIX_FIFO, UNIX_SYMLINK, treeSnapshot, writeRawZip } from "./helpers/zip_fixtures";
 import type { ZipMemberSpec } from "./helpers/zip_fixtures";
 import type { LocalArchivePolicy } from "../src/local_archive_policy";
@@ -288,6 +290,160 @@ describe("archive budgets", () => {
   });
 });
 
+describe("resolved-policy fingerprint", () => {
+  test("is stable for the same resolved policy regardless of override order", () => {
+    const a = resolveLocalArchivePolicy({ maxMemberCount: 5, maxCompressionRatio: 12 });
+    const b = resolveLocalArchivePolicy({ maxCompressionRatio: 12, maxMemberCount: 5 });
+    expect(localArchivePolicyFingerprint(a)).toBe(localArchivePolicyFingerprint(b));
+    // And stable across calls, so it can serve as a cache identity at all.
+    expect(localArchivePolicyFingerprint(a)).toBe(localArchivePolicyFingerprint(a));
+  });
+
+  test("every field of the resolved policy contributes to the identity", () => {
+    // The point of F-001: a field that does not reach the fingerprint is a field
+    // whose tightening can be silently ignored by a warm cache. Asserted over the
+    // whole policy rather than a chosen few, so a new field is covered when it is
+    // added instead of when someone remembers to extend this test.
+    const base = resolveLocalArchivePolicy();
+    const baseline = localArchivePolicyFingerprint(base);
+    const seen = new Map<string, string>();
+    for (const key of Object.keys(base) as (keyof typeof base)[]) {
+      const current = base[key];
+      const altered = typeof current === "number"
+        ? { ...base, [key]: current + 1 }
+        : { ...base, [key]: `${String(current)}-x` };
+      const moved = localArchivePolicyFingerprint(altered);
+      expect(moved, `changing ${String(key)} left the fingerprint unchanged`).not.toBe(baseline);
+      const collided = seen.get(moved);
+      expect(collided, `${String(key)} and ${collided} produced the same fingerprint`).toBeUndefined();
+      seen.set(moved, String(key));
+    }
+    expect(seen.size).toBe(Object.keys(base).length);
+  });
+
+  test("a stricter policy at the same contract version has a different identity", () => {
+    // The exact confusion F-001 describes: same declared version, different rules.
+    const permissive = resolveLocalArchivePolicy({ maxCompressionRatio: 200 });
+    const strict = resolveLocalArchivePolicy({ maxCompressionRatio: 10 });
+    expect(permissive.version).toBe(strict.version);
+    expect(localArchivePolicyFingerprint(permissive)).not.toBe(localArchivePolicyFingerprint(strict));
+  });
+
+  test("key ordering is by code point, so the fingerprint cannot vary by host locale", () => {
+    // The fingerprint reaches a cache key, so its field ordering has to be the
+    // same on every machine. A bare sort() is code-unit ordered and happens to be
+    // stable; localeCompare -- which is what a linter will suggest here -- is not,
+    // because it follows the runtime's ICU data and the ambient locale. Pinning
+    // the value proves the ordering is fixed rather than incidentally agreeing.
+    const policy = resolveLocalArchivePolicy({ maxCompressionRatio: 42 });
+    const once = localArchivePolicyFingerprint(policy);
+    // Same fields presented in a deliberately different insertion order.
+    const shuffled = Object.fromEntries(
+      Object.keys(policy).sort().reverse().map((key) => [key, (policy as Record<string, unknown>)[key]]),
+    ) as unknown as LocalArchivePolicy;
+    expect(localArchivePolicyFingerprint(shuffled)).toBe(once);
+    expect(once).toMatch(/^lap1:[0-9a-f]{64}$/);
+  });
+
+  test("the defaults and an explicit restatement of them agree", () => {
+    // A caller who passes the defaults back in must not miss their own warm cache.
+    expect(localArchivePolicyFingerprint(resolveLocalArchivePolicy()))
+      .toBe(localArchivePolicyFingerprint({ ...DEFAULT_LOCAL_ARCHIVE_POLICY }));
+  });
+
+  test("a warm permissive verdict cannot answer a stricter same-version policy", () => {
+    // F-001 end to end, through live acquisition rather than the key function:
+    // warm the store with a policy that accepts this archive, then observe the
+    // exact same bytes under a policy that forbids it while declaring the same
+    // version. The second run must reach preflight and hold, not read the first
+    // run's "accepted" back out of the cache.
+    const entries = new Map<string, ArchivePreflightResult>();
+    const lookups: string[] = [];
+    const store: ArchiveManifestStore = {
+      get: (key) => {
+        lookups.push(key.policyFingerprint);
+        return entries.get(JSON.stringify(key));
+      },
+      put: (key, value) => { entries.set(JSON.stringify(key), value); },
+    };
+
+    const parent = tmp();
+    const root = path.join(parent, "src");
+    fs.mkdirSync(root, { recursive: true });
+    // 512 KiB of one repeated byte deflates around a thousand to one: accepted
+    // under a ratio ceiling of 100000, refused under one of 10.
+    writeRawZip(path.join(root, "Case.zip"), [{ name: "bomb.txt", content: "A".repeat(512 * 1024) }]);
+
+    const observe = (policy: Partial<LocalArchivePolicy>) => {
+      const observation = acquireLocalSource({
+        path: path.join(root, "Case.zip"),
+        archivePolicy: policy,
+        archiveManifests: store,
+      });
+      try {
+        const archive = observation.archives[0];
+        return { expanded: archive.expanded, holdCodes: archive.holds.map((hold) => hold.code) };
+      } finally {
+        observation.dispose();
+      }
+    };
+
+    const permissive = observe({ maxCompressionRatio: 100000 });
+    expect(permissive.expanded).toBe(true);
+    expect(permissive.holdCodes).toEqual([]);
+    expect(entries.size).toBe(1);
+
+    const strict = observe({ maxCompressionRatio: 10 });
+    expect(strict.expanded).toBe(false);
+    expect(strict.holdCodes).toContain("archive.compression_ratio_exceeded");
+
+    // The two runs asked different questions, so they asked under different keys
+    // and the stricter one wrote its own verdict rather than reusing the entry.
+    expect(entries.size).toBe(2);
+    expect(lookups).toHaveLength(2);
+    expect(lookups[0]).not.toBe(lookups[1]);
+    // And the versions really were identical, which is what made this reachable.
+    expect(resolveLocalArchivePolicy({ maxCompressionRatio: 100000 }).version)
+      .toBe(resolveLocalArchivePolicy({ maxCompressionRatio: 10 }).version);
+  });
+
+  test("an unchanged policy still reuses its own warm verdict", () => {
+    // The fingerprint must not defeat the cache it is protecting: the same
+    // resolved policy over the same bytes is the same question, and answering it
+    // from the store is the whole point of having one.
+    const entries = new Map<string, ArchivePreflightResult>();
+    let hits = 0;
+    const store: ArchiveManifestStore = {
+      get: (key) => {
+        const found = entries.get(JSON.stringify(key));
+        if (found !== undefined) hits += 1;
+        return found;
+      },
+      put: (key, value) => { entries.set(JSON.stringify(key), value); },
+    };
+
+    const parent = tmp();
+    const root = path.join(parent, "src");
+    fs.mkdirSync(root, { recursive: true });
+    writeRawZip(path.join(root, "Case.zip"), [{ name: "note.txt", content: "plain text" }]);
+
+    for (let run = 0; run < 2; run++) {
+      const observation = acquireLocalSource({
+        path: path.join(root, "Case.zip"),
+        archivePolicy: { maxCompressionRatio: 200 },
+        archiveManifests: store,
+      });
+      try {
+        expect(observation.archives[0].expanded).toBe(true);
+      } finally {
+        observation.dispose();
+      }
+    }
+    expect(entries.size).toBe(1);
+    expect(hits).toBe(1);
+  });
+});
+
 describe("archive reader", () => {
   test("central-directory metadata is read without a subprocess", () => {
     const root = tmp();
@@ -532,12 +688,222 @@ describe("zip64 central-directory records", () => {
     expect(bytes.readUInt16LE(extraLengthAt)).toBe(4 + 24);
     bytes.writeUInt16LE(4 + 8, extraLengthAt);
     bytes.writeUInt16LE(8, centralOffset + 46 + bytes.readUInt16LE(centralOffset + 28) + 2);
-    fs.writeFileSync(path.join(root, "ok.zip"), bytes);
+    // Drop the 16 bytes the shortened payload no longer declares and shrink the
+    // directory's declared size to match. The subject here is a truncated zip64
+    // payload, not a directory with unconsumed bytes after its last record --
+    // readZipCentralDirectory now rejects the latter outright, which would fail
+    // this test for a reason it is not about.
+    const eocd = bytes.subarray(eocdOffset);
+    eocd.writeUInt32LE(eocd.readUInt32LE(12) - 16, 12);
+    fs.writeFileSync(path.join(root, "ok.zip"), Buffer.concat([bytes.subarray(0, eocdOffset - 16), eocd]));
 
     const directory = readZipCentralDirectory(path.join(root, "ok.zip"));
     // The first placeholder resolved; the two the payload could not cover stayed put.
     expect(directory.entries[0].uncompressedSize).toBe("plain".length);
     expect(directory.entries[0].compressedSize).toBe(0xffffffff);
     expect(directory.entries[0].localHeaderOffset).toBe(0xffffffff);
+  });
+
+  /**
+   * Build a valid archive, corrupt its bytes, and report both what the reader
+   * says and what the live acquisition seam does with it.
+   *
+   * Both halves matter. A reader that throws while the seam still claims members
+   * has moved the defect rather than closed it, so every case below asserts the
+   * refusal *and* the absence of claims.
+   */
+  function corruptedArchive(
+    members: ZipMemberSpec[],
+    corrupt: (bytes: Buffer) => Buffer,
+  ): { read: () => unknown; outcome: HeldOutcome } {
+    const parent = tmp();
+    const root = path.join(parent, "src");
+    fs.mkdirSync(root, { recursive: true });
+    const archivePath = path.join(root, "Case.zip");
+    writeRawZip(archivePath, members);
+    fs.writeFileSync(archivePath, corrupt(fs.readFileSync(archivePath)));
+
+    const beforeSource = treeSnapshot(root);
+    const beforeParent = treeSnapshot(parent);
+    const observation = acquireLocalSource({ path: archivePath });
+    try {
+      const archive = observation.archives[0];
+      return {
+        read: () => readZipCentralDirectory(archivePath),
+        outcome: {
+          expanded: archive.expanded,
+          holdCodes: archive.holds.map((hold) => hold.code),
+          memberCount: archive.memberCount,
+          claimedMembers: observation.virtualArtifacts.map((member) => member.virtualSourcePath),
+          sourceUnchanged: JSON.stringify(treeSnapshot(root)) === JSON.stringify(beforeSource),
+          parentUnchanged: JSON.stringify(treeSnapshot(parent)) === JSON.stringify(beforeParent),
+        },
+      };
+    } finally {
+      observation.dispose();
+    }
+  }
+
+  /** Overwrite the EOCD's declared total-entry count, leaving the records alone. */
+  function declareEntryCount(bytes: Buffer, count: number): Buffer {
+    const eocdOffset = bytes.length - 22;
+    bytes.writeUInt16LE(count, eocdOffset + 8);
+    bytes.writeUInt16LE(count, eocdOffset + 10);
+    return bytes;
+  }
+
+  test("a directory declaring more entries than it carries is refused", () => {
+    // Reading stopped when the records ran out and returned the short list as if
+    // it were the archive. Every member the declaration accounts for and the
+    // directory does not is a member preflight would never have seen.
+    const { read, outcome } = corruptedArchive(
+      [{ name: "a.md", content: "# A\n" }],
+      (bytes) => declareEntryCount(bytes, 3),
+    );
+    expect(read).toThrow(/declares 3 entries but 1 could be parsed/);
+    expectHeld(outcome, "archive.format_unreadable");
+  });
+
+  test("a directory declaring fewer entries than it carries is refused", () => {
+    // The mirror case: members present but unaccounted for. Refusing both keeps
+    // the count an equality rather than a floor.
+    const { read, outcome } = corruptedArchive(
+      [{ name: "a.md", content: "# A\n" }, { name: "b.md", content: "# B\n" }],
+      (bytes) => declareEntryCount(bytes, 1),
+    );
+    expect(read).toThrow(/declares 1 entries but 2 could be parsed/);
+    expectHeld(outcome, "archive.format_unreadable");
+  });
+
+  test("bytes trailing the last central-directory record are refused", () => {
+    // The parse loop exits when fewer than a fixed header's bytes remain, so
+    // padding after the final record used to be discarded in silence. The
+    // declared byte span must be consumed exactly, not merely covered.
+    const { read, outcome } = corruptedArchive(
+      [{ name: "a.md", content: "# A\n" }],
+      (bytes) => {
+        const eocdOffset = bytes.length - 22;
+        const eocd = Buffer.from(bytes.subarray(eocdOffset));
+        eocd.writeUInt32LE(eocd.readUInt32LE(12) + 8, 12);
+        return Buffer.concat([bytes.subarray(0, eocdOffset), Buffer.alloc(8), eocd]);
+      },
+    );
+    expect(read).toThrow(/declares \d+ bytes but \d+ were consumed/);
+    expectHeld(outcome, "archive.format_unreadable");
+  });
+
+  test("an incomplete final central-directory record is refused", () => {
+    // Fewer than CENTRAL_FIXED_SIZE trailing bytes: too short to parse as a
+    // record, and previously too short to notice.
+    const { read, outcome } = corruptedArchive(
+      [{ name: "a.md", content: "# A\n" }],
+      (bytes) => {
+        const eocdOffset = bytes.length - 22;
+        const eocd = Buffer.from(bytes.subarray(eocdOffset));
+        eocd.writeUInt32LE(eocd.readUInt32LE(12) + 10, 12);
+        return Buffer.concat([bytes.subarray(0, eocdOffset), Buffer.alloc(10), eocd]);
+      },
+    );
+    expect(read).toThrow(/declares \d+ bytes but \d+ were consumed/);
+    expectHeld(outcome, "archive.format_unreadable");
+  });
+
+  test("a deflated member is bounded by the decompressor, not by the bytes it emits", () => {
+    // The module documents deflate as synchronously buffered whole under a
+    // ceiling zlib enforces. This is that claim, tested directly: the ceiling has
+    // to stop the inflate itself, because a check on emitted chunks would run
+    // only after the full output had already been allocated.
+    const root = tmp();
+    const archivePath = path.join(root, "big.zip");
+    writeRawZip(archivePath, [{ name: "big.txt", content: "A".repeat(512 * 1024) }]);
+    const entry = readZipCentralDirectory(archivePath).entries[0];
+    expect(entry.compressionMethod).toBe(8);
+
+    const chunks: Buffer[] = [];
+    expect(() => streamZipMember(
+      archivePath,
+      entry,
+      { maxUncompressedBytes: 4096 },
+      (chunk) => { chunks.push(chunk); },
+    )).toThrow(ZipBudgetExceededError);
+    // Nothing reached the sink: the refusal happened inside the inflate, before
+    // any chunk existed to hand on.
+    expect(chunks).toEqual([]);
+
+    // And the same member under a sufficient ceiling still round-trips, so the
+    // bound is a ceiling rather than a ban on deflated members.
+    const ok: Buffer[] = [];
+    const result = streamZipMember(
+      archivePath,
+      entry,
+      { maxUncompressedBytes: 1024 * 1024 },
+      (chunk) => { ok.push(chunk); },
+    );
+    expect(result.bytesWritten).toBe(512 * 1024);
+    expect(Buffer.concat(ok).toString()).toBe("A".repeat(512 * 1024));
+  });
+});
+
+describe("archive bytes bound to the snapshot", () => {
+  test("an archive whose staged bytes contradict the snapshot digest is held with no member claimed", () => {
+    // F-002. Hashing and staging are two reads of one path, and everything
+    // downstream -- the preflight verdict, the member digests, the cache entry
+    // keyed on those bytes -- describes whichever read won. The divergence is
+    // produced here through the incremental seam that carries a previous run's
+    // digest forward on an unchanged stat, which is the real path by which a
+    // snapshot digest and the staged bytes come to disagree. Monkey-patching
+    // node:fs is not available: it is an ES module namespace and cannot be spied.
+    const root = tmp();
+    const archive = path.join(root, "Case.zip");
+    writeRawZip(archive, [{ name: "original.txt", content: "original bytes" }]);
+    const stats = fs.statSync(archive, { bigint: true });
+
+    // A prior run's record whose stat matches exactly but whose digest is wrong.
+    const stale = new Map([["Case.zip", {
+      content_hash: `sha256:${"f".repeat(64)}`,
+      size_bytes: Number(stats.size),
+      mtime_ms: Number(stats.mtimeMs),
+      mtime_ns: stats.mtimeNs.toString(),
+    }]]);
+
+    const observation = acquireLocalSource({ path: archive, knownHashes: stale });
+    try {
+      const observed = observation.archives[0];
+      expect(observed.holds.map((hold) => hold.message))
+        .toContain("archive bytes changed between hashing and staging; no member is claimed");
+      expect(observed.expanded).toBe(false);
+      expect(observed.memberCount).toBe(0);
+      // The whole point: no member is claimed out of an archive whose identity is
+      // in doubt, and the observation says so rather than reporting a clean read.
+      expect(observation.virtualArtifacts).toEqual([]);
+      expect(observation.stable).toBe(false);
+      expect(observation.diagnostics.map((d) => d.code))
+        .toContain("local-source.source_changed_during_observation");
+    } finally {
+      observation.dispose();
+    }
+  });
+
+  test("a nested member archive carries no snapshot expectation to violate", () => {
+    // Members are produced by this run rather than observed on disk, so there is
+    // no prior digest to hold them to and the check must not invent one.
+    const root = tmp();
+    const innerPath = path.join(root, "inner.zip");
+    writeRawZip(innerPath, [{ name: "leaf.txt", content: "leaf" }]);
+    const inner = fs.readFileSync(innerPath);
+    fs.rmSync(innerPath);
+    writeRawZip(path.join(root, "Outer.zip"), [{ name: "inner.zip", content: inner }]);
+
+    const observation = acquireLocalSource({ path: root });
+    try {
+      expect(observation.archives.length).toBeGreaterThan(1);
+      for (const observed of observation.archives) {
+        expect(observed.holds.map((hold) => hold.message))
+          .not.toContain("archive bytes changed between hashing and staging; no member is claimed");
+      }
+      expect(observation.virtualArtifacts.some((m) => m.virtualSourcePath.includes("leaf.txt"))).toBe(true);
+    } finally {
+      observation.dispose();
+    }
   });
 });

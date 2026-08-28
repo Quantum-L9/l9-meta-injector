@@ -64,14 +64,29 @@ export interface CorpusCache {
  *
  * An outer ZIP that has not changed does not need decompressing again merely to
  * rediscover member paths and hashes a previous run already established from
- * exactly those bytes. The reader and policy versions are in the key because both
- * decide what is admitted: a stricter policy is a different question about the
- * same archive, and must not be answered from the looser one's cache.
+ * exactly those bytes. What makes that reuse safe is that the question being
+ * asked is the same, and the question is the *resolved policy*, not its version
+ * string. Two runs share `version: "1"` while permitting compression ratios of
+ * 200 and 10; answering the stricter one out of the looser one's entry admits an
+ * archive the operator has just forbidden. So the policy version no longer
+ * contributes to identity at all -- not alongside the fingerprint, not as a
+ * fallback -- because a key it can influence is a key that can carry that
+ * confusion.
+ *
+ * The fingerprint is required. While callers were being rewired it was optional,
+ * and an absent one produced a nonce-carrying key that could never be satisfied
+ * -- safe, but only discoverable as a cache that silently never hit. Every caller
+ * now supplies it, so the parameter is mandatory and the unqualified branch is
+ * gone: omitting the fingerprint is a compile-time error rather than a runtime
+ * miss, and there is no longer any path that yields a key without one. The
+ * policy version is not a parameter at all, so it cannot be passed, defaulted,
+ * or fallen back to.
  */
 export declare function archiveManifestKey(input: {
     archiveContentHash: string;
     archiveReaderVersion: string;
-    archivePolicyVersion: string;
+    /** Fingerprint of the fully resolved policy. Required: see above. */
+    archivePolicyFingerprint: string;
 }): string;
 export declare function rawIdentityKey(input: {
     contentHash: string;

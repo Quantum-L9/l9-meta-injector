@@ -70,8 +70,14 @@ export interface ZipMemberStreamResult {
  * sink never sees the excess. That is the runtime accounting a declared-size
  * check alone cannot provide.
  *
- * Stored members are read incrementally, so an uncompressed archive of any size
- * costs one chunk of memory. Deflated members are bounded by the same ceiling,
- * which the caller derives from the archive policy rather than from the archive.
+ * The two paths do not cost the same memory, and the difference is deliberate.
+ * A stored member is read incrementally, so an uncompressed archive of any size
+ * costs one chunk. A deflated member is inflated synchronously and held whole:
+ * peak cost is its compressed bytes plus its inflated bytes, and the chunking
+ * below is a delivery detail, not evidence of streaming. What bounds that is
+ * `maxUncompressedBytes`, enforced inside zlib, together with the archive- and
+ * member-level ceilings the caller derives from the archive policy. Within
+ * those ceilings the buffering is bounded; there is no size at which this
+ * becomes a streaming inflate. Raising them raises real peak memory.
  */
 export declare function streamZipMember(archivePath: string, entry: ZipCentralEntry, limits: ZipMemberStreamLimits, sink: (chunk: Buffer) => void): ZipMemberStreamResult;

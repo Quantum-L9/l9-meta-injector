@@ -11,6 +11,9 @@
 // rather than depending on these numbers, so tightening a default can never
 // silently invalidate a security test.
 
+import * as crypto from "node:crypto";
+import { compareCodePoints } from "./ordering";
+
 /** Contract version recorded in the acquisition manifest and packet diagnostics. */
 export const LOCAL_ARCHIVE_POLICY_VERSION = "1";
 
@@ -64,6 +67,32 @@ export function resolveLocalArchivePolicy(overrides?: Partial<LocalArchivePolicy
     ...overrides,
     version: overrides?.version ?? LOCAL_ARCHIVE_POLICY_VERSION,
   };
+}
+
+/**
+ * Deterministic fingerprint of a fully resolved archive policy.
+ *
+ * A cached admission verdict is only reusable for a policy that would judge the
+ * archive the same way, and the version string cannot carry that. Two runs share
+ * `version: "1"` while one allows a compression ratio of 200 and the other 10;
+ * replaying the looser run's verdict under the stricter policy admits an archive
+ * the operator has just finished forbidding. Identity therefore has to be the
+ * resolved values themselves.
+ *
+ * Every own enumerable field is included, sorted by key, so the fingerprint does
+ * not depend on the order overrides were merged in, and a field added to
+ * LocalArchivePolicy later enters the identity on its own rather than being
+ * quietly excluded until someone remembers to list it here.
+ */
+export function localArchivePolicyFingerprint(policy: LocalArchivePolicy): string {
+  // compareCodePoints, not a bare sort() and emphatically not localeCompare: this
+  // ordering reaches a hash, and src/ordering.ts is the module that exists because
+  // locale-aware ordering varies with the runtime's ICU data, so the same policy
+  // could fingerprint two ways on two machines.
+  const fields = [...Object.keys(policy)]
+    .sort(compareCodePoints)
+    .map((key) => [key, (policy as unknown as Record<string, unknown>)[key]]);
+  return `lap1:${crypto.createHash("sha256").update(JSON.stringify(fields), "utf8").digest("hex")}`;
 }
 
 /**

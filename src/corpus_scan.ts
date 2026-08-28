@@ -1061,12 +1061,12 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
     get: (key) => cache.get<ArchivePreflightResult>("archive_manifest", archiveManifestKey({
       archiveContentHash: key.archiveContentHash,
       archiveReaderVersion: key.readerVersion,
-      archivePolicyVersion: key.policyVersion,
+      archivePolicyFingerprint: key.policyFingerprint,
     })),
     put: (key, value) => cache.put("archive_manifest", archiveManifestKey({
       archiveContentHash: key.archiveContentHash,
       archiveReaderVersion: key.readerVersion,
-      archivePolicyVersion: key.policyVersion,
+      archivePolicyFingerprint: key.policyFingerprint,
     }), value),
   };
   // ── 0. may this run claim continuity with a previous one? ───────────────

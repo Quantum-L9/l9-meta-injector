@@ -15,6 +15,7 @@ import {
   writeArchiveSidecar,
 } from "../src/archives";
 import { sidecarPathFor } from "../src/comment";
+import { UNIX_SYMLINK, treeSnapshot, writeRawZip } from "./helpers/zip_fixtures";
 
 function tmp(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "l9-archives-"));
@@ -259,5 +260,78 @@ describe("writeArchiveSidecar", () => {
     const sc = writeArchiveSidecar(zipPath, extractDir, 1);
     expect(sc).toBe(sidecarPathFor(zipPath));
     expect(fs.readFileSync(sc, "utf8")).toMatch(/^---\n/);
+  });
+
+  // T-05 / F-006: localFiles is a mutating surface, so "held" has to mean held
+  // *before* anything is written or removed. These assert the archive is refused
+  // and the source tree is byte-identical afterwards -- a refusal reported in a
+  // return value after the extraction directory was already destroyed would not
+  // be a refusal.
+  describe("hostile archives are held before any source-tree materialization", () => {
+    function refuses(name: string, members: Parameters<typeof writeRawZip>[1], pattern: RegExp): void {
+      const root = tmp();
+      const zipPath = path.join(root, name);
+      writeRawZip(zipPath, members);
+      const before = treeSnapshot(root);
+
+      expect(() => extractZip(zipPath, extractDirFor(zipPath))).toThrow(pattern);
+      expect(fs.existsSync(extractDirFor(zipPath))).toBe(false);
+      expect(treeSnapshot(root)).toEqual(before);
+    }
+
+    test("a traversal member is refused", () => {
+      refuses("traverse.zip", [{ name: "../escape.txt", content: "no" }], /unsafe zip member|path_traversal/);
+    });
+
+    test("a symlink member is refused", () => {
+      refuses(
+        "link.zip",
+        [{ name: "link", content: "/etc/passwd", unixMode: UNIX_SYMLINK, stored: true }],
+        /refusing to extract|entry_type/,
+      );
+    });
+
+    test("a case-only collision is refused", () => {
+      refuses(
+        "collide.zip",
+        [{ name: "A.md", content: "one" }, { name: "a.md", content: "two" }],
+        /refusing to extract|collision/,
+      );
+    });
+
+    test("an existing tool-owned extraction survives a refused archive", () => {
+      // The ordering claim, made falsifiable: a held archive must not cost the
+      // operator the extraction they already had.
+      const root = tmp();
+      const zipPath = path.join(root, "Held.zip");
+      writeRawZip(zipPath, [{ name: "ok.md", content: "# fine\n" }]);
+      const extractDir = extractDirFor(zipPath);
+      extractZip(zipPath, extractDir);
+      expect(fs.existsSync(path.join(extractDir, "ok.md"))).toBe(true);
+      const before = treeSnapshot(root);
+
+      // Same archive path, now hostile.
+      writeRawZip(zipPath, [{ name: "link", content: "/etc/passwd", unixMode: UNIX_SYMLINK, stored: true }]);
+      const afterRewrite = treeSnapshot(root);
+      expect(() => extractZip(zipPath, extractDir)).toThrow(/refusing to extract/);
+      // The archive's own bytes changed; everything this tool had written did not.
+      expect(treeSnapshot(root)).toEqual(afterRewrite);
+      expect(fs.existsSync(path.join(extractDir, "ok.md"))).toBe(true);
+      expect(Object.keys(before).length).toBeGreaterThan(0);
+    });
+
+    test("an accepted archive still materializes members with verified bytes", () => {
+      // The negative cases above must not be passing because everything is refused.
+      const root = tmp();
+      const zipPath = path.join(root, "Good.zip");
+      writeRawZip(zipPath, [
+        { name: "a.md", content: "# alpha\n" },
+        { name: "nested/b.txt", content: "beta" },
+      ]);
+      const extractDir = extractDirFor(zipPath);
+      expect(extractZip(zipPath, extractDir)).toBe(2);
+      expect(fs.readFileSync(path.join(extractDir, "a.md"), "utf8")).toBe("# alpha\n");
+      expect(fs.readFileSync(path.join(extractDir, "nested/b.txt"), "utf8")).toBe("beta");
+    });
   });
 });

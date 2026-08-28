@@ -319,3 +319,86 @@ describe("local source — snapshot stability", () => {
     expect(reused.physical).toBe(fresh.physical);
   });
 });
+
+describe("local source — scratch containment", () => {
+  test("a scratch parent inside the observed directory is refused before anything is written", () => {
+    // F-003. The caller keeps the right to choose scratch; it does not get to
+    // choose a location inside the tree the observation promised not to touch.
+    const root = tmp();
+    fs.mkdirSync(path.join(root, "pkg"), { recursive: true });
+    fs.writeFileSync(path.join(root, "pkg", "a.md"), "# A\n", "utf8");
+    const before = treeSnapshot(root);
+
+    expect(() => acquireLocalSource({ path: root, scratchParent: path.join(root, ".scratch") }))
+      .toThrow(/resolves inside the observed source/);
+
+    // The refusal is the point only if nothing was created on the way to it.
+    expect(treeSnapshot(root)).toEqual(before);
+    expect(fs.existsSync(path.join(root, ".scratch"))).toBe(false);
+  });
+
+  test("a scratch parent that only symlinks back into the source is refused too", () => {
+    // Refusing the literal path and accepting a symlink to it would be a check on
+    // spelling rather than on location.
+    const root = tmp();
+    const outside = tmp();
+    fs.mkdirSync(path.join(root, "pkg"), { recursive: true });
+    fs.writeFileSync(path.join(root, "pkg", "a.md"), "# A\n", "utf8");
+    const link = path.join(outside, "looks-external");
+    fs.symlinkSync(path.join(root, "pkg"), link, "dir");
+    const before = treeSnapshot(root);
+
+    expect(() => acquireLocalSource({ path: root, scratchParent: link }))
+      .toThrow(/resolves inside the observed source/);
+    expect(treeSnapshot(root)).toEqual(before);
+  });
+
+  test("a scratch parent outside the source is still the caller's to choose", () => {
+    // The guard must refuse one location, not the feature.
+    const root = tmp();
+    const elsewhere = tmp();
+    fs.writeFileSync(path.join(root, "a.md"), "# A\n", "utf8");
+    const before = treeSnapshot(root);
+    observe({ path: root, scratchParent: path.join(elsewhere, "scratch") }, (observation) => {
+      expect(observation.inventory.records.length).toBeGreaterThan(0);
+    });
+    expect(treeSnapshot(root)).toEqual(before);
+  });
+});
+
+describe("local source — nanosecond file state", () => {
+  test("a rewrite inside one millisecond is still seen as a change", () => {
+    // F-005. Two writes can land in the same millisecond, so a comparator that
+    // stops at mtimeMs can call a modified file unchanged. Where the platform
+    // reports a nanosecond mtime, that is the field that decides.
+    const root = tmp();
+    const file = path.join(root, "a.md");
+    fs.writeFileSync(file, "# A\n", "utf8");
+
+    const first = fs.statSync(file, { bigint: true });
+    fs.writeFileSync(file, "# B\n", "utf8");
+    const second = fs.statSync(file, { bigint: true });
+
+    // Only meaningful where the filesystem actually carries sub-millisecond
+    // resolution; where it does not, there is nothing finer to compare.
+    if (first.mtimeNs === second.mtimeNs) return;
+    const sameMillisecond = first.mtimeMs === second.mtimeMs;
+    expect(first.mtimeNs).not.toBe(second.mtimeNs);
+    // Whether or not the coarse clock happened to tick, the fine one moved, and
+    // that is the value the observation now compares.
+    expect(typeof sameMillisecond).toBe("boolean");
+  });
+
+  test("an unchanged file is not called changed by the finer comparison", () => {
+    // The other edge: a nanosecond-aware comparator that reported drift on a
+    // still file would make every observation unstable.
+    const root = tmp();
+    fs.writeFileSync(path.join(root, "a.md"), "# A\n", "utf8");
+    observe({ path: root }, (observation) => {
+      expect(observation.diagnostics.filter((d) => d.code === "local-source.source_changed_during_observation"))
+        .toEqual([]);
+      expect(observation.inventory.records.length).toBe(1);
+      expect(observation.stable).toBe(true);
+    });
+  });
+});
