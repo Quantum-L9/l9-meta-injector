@@ -12,7 +12,7 @@ import * as path from "node:path";
 import { describe, expect, test } from "vitest";
 import { acquireLocalSource } from "../src/local_source";
 import { canonicalMemberPath, memberCollisionKey, preflightArchive } from "../src/archive_preflight";
-import { DEFAULT_LOCAL_ARCHIVE_POLICY, resolveLocalArchivePolicy } from "../src/local_archive_policy";
+import { DEFAULT_LOCAL_ARCHIVE_POLICY, localArchivePolicyFingerprint, resolveLocalArchivePolicy } from "../src/local_archive_policy";
 import { ZipBudgetExceededError, readZipCentralDirectory, streamZipMember } from "../src/zip_reader";
 import { UNIX_FIFO, UNIX_SYMLINK, treeSnapshot, writeRawZip } from "./helpers/zip_fixtures";
 import type { ZipMemberSpec } from "./helpers/zip_fixtures";
@@ -285,6 +285,52 @@ describe("archive budgets", () => {
     // A caller override never silently loosens an unrelated limit.
     expect(resolveLocalArchivePolicy({ maxMemberCount: 3 }).maxCompressionRatio)
       .toBe(DEFAULT_LOCAL_ARCHIVE_POLICY.maxCompressionRatio);
+  });
+});
+
+describe("resolved-policy fingerprint", () => {
+  test("is stable for the same resolved policy regardless of override order", () => {
+    const a = resolveLocalArchivePolicy({ maxMemberCount: 5, maxCompressionRatio: 12 });
+    const b = resolveLocalArchivePolicy({ maxCompressionRatio: 12, maxMemberCount: 5 });
+    expect(localArchivePolicyFingerprint(a)).toBe(localArchivePolicyFingerprint(b));
+    // And stable across calls, so it can serve as a cache identity at all.
+    expect(localArchivePolicyFingerprint(a)).toBe(localArchivePolicyFingerprint(a));
+  });
+
+  test("every field of the resolved policy contributes to the identity", () => {
+    // The point of F-001: a field that does not reach the fingerprint is a field
+    // whose tightening can be silently ignored by a warm cache. Asserted over the
+    // whole policy rather than a chosen few, so a new field is covered when it is
+    // added instead of when someone remembers to extend this test.
+    const base = resolveLocalArchivePolicy();
+    const baseline = localArchivePolicyFingerprint(base);
+    const seen = new Map<string, string>();
+    for (const key of Object.keys(base) as (keyof typeof base)[]) {
+      const current = base[key];
+      const altered = typeof current === "number"
+        ? { ...base, [key]: current + 1 }
+        : { ...base, [key]: `${String(current)}-x` };
+      const moved = localArchivePolicyFingerprint(altered);
+      expect(moved, `changing ${String(key)} left the fingerprint unchanged`).not.toBe(baseline);
+      const collided = seen.get(moved);
+      expect(collided, `${String(key)} and ${collided} produced the same fingerprint`).toBeUndefined();
+      seen.set(moved, String(key));
+    }
+    expect(seen.size).toBe(Object.keys(base).length);
+  });
+
+  test("a stricter policy at the same contract version has a different identity", () => {
+    // The exact confusion F-001 describes: same declared version, different rules.
+    const permissive = resolveLocalArchivePolicy({ maxCompressionRatio: 200 });
+    const strict = resolveLocalArchivePolicy({ maxCompressionRatio: 10 });
+    expect(permissive.version).toBe(strict.version);
+    expect(localArchivePolicyFingerprint(permissive)).not.toBe(localArchivePolicyFingerprint(strict));
+  });
+
+  test("the defaults and an explicit restatement of them agree", () => {
+    // A caller who passes the defaults back in must not miss their own warm cache.
+    expect(localArchivePolicyFingerprint(resolveLocalArchivePolicy()))
+      .toBe(localArchivePolicyFingerprint({ ...DEFAULT_LOCAL_ARCHIVE_POLICY }));
   });
 });
 

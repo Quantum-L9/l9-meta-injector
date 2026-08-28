@@ -290,15 +290,15 @@
     },
     {
       "path": "dist/local_archive_policy.d.ts",
-      "git_blob_sha1": "a7f93fa81b659fd300a13fa3bf2224dd4cfcd7e9"
+      "git_blob_sha1": "7dc926198b410ffa2632487aafda16c8bcd15102"
     },
     {
       "path": "dist/local_archive_policy.js",
-      "git_blob_sha1": "c0da7c7b9b0589b8ebc831bd65ed1e072027f30d"
+      "git_blob_sha1": "9ee626602de9f0a63f11e18cb34b38f971baa385"
     },
     {
       "path": "dist/local_archive_policy.js.map",
-      "git_blob_sha1": "a06b5ff6159528c1a06e55ce5bd2b1edb2481f0e"
+      "git_blob_sha1": "1179d4b5f5683fd8d7dc0c5e5f2d2c599bc2f530"
     },
     {
       "path": "dist/local_source_model.d.ts",
@@ -778,7 +778,7 @@
     },
     {
       "path": "src/local_archive_policy.ts",
-      "git_blob_sha1": "bf101aea76063ab4387c5fc96bcb643e84e1ab25"
+      "git_blob_sha1": "811de2a3fb66afa9a525a61ece82eaf534cef6d1"
     },
     {
       "path": "src/local_source_model.ts",
@@ -922,7 +922,7 @@
     },
     {
       "path": "tests/local_source_archive_security.test.ts",
-      "git_blob_sha1": "4f545ee64692edf94a08711bd3d7ad62d9e442a9"
+      "git_blob_sha1": "1c9c0f1142867d5b8b404e27bb4fa2570c479267"
     },
     {
       "path": "tests/local_source_cli.test.ts",
