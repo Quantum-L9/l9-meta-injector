@@ -35,7 +35,6 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EXPANDABLE_ARCHIVE_EXTS = exports.EXTRACTED_DIR_SUFFIX = void 0;
 exports.extractDirFor = extractDirFor;
-exports.resolveUnzipBinary = resolveUnzipBinary;
 exports.listZipMembers = listZipMembers;
 exports.extractionRefusalReason = extractionRefusalReason;
 exports.extractZip = extractZip;
@@ -56,8 +55,16 @@ exports.expandArchivesUnderRoot = expandArchivesUnderRoot;
 // .zip archives under the scan root are expanded into sibling *.l9extracted/
 // directories, members become ordinary inject targets, and each archive gets an
 // inventory-style sidecar (<zip>.l9meta.yaml). Nested zips are expanded up to
-// maxDepth. Extraction uses a fixed-path system `unzip` binary (macOS/Linux);
-// missing unzip fails closed with an explicit error.
+// maxDepth.
+//
+// This module coordinates placement; it does not decide what a ZIP is. Reading,
+// admission and extraction belong to the canonical primitives -- `zip_reader`,
+// `archive_preflight` and the resolved `local_archive_policy` -- the same ones
+// the read-only observation path uses. It previously shelled out to a system
+// `unzip`, which made it a second archive authority: a subprocess decides for
+// itself what a member path means and how many bytes to write, so the two paths
+// could disagree about which archives are safe, and the mutating one was the
+// weaker of the two. There is now one decision authority and two output modes.
 //
 // Two invariants this module now holds unconditionally, legacy or not:
 //
@@ -76,16 +83,16 @@ exports.expandArchivesUnderRoot = expandArchivesUnderRoot;
 const crypto = __importStar(require("node:crypto"));
 const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
-const node_child_process_1 = require("node:child_process");
 const comment_1 = require("./comment");
 const yaml_serialize_1 = require("./yaml_serialize");
 const local_source_1 = require("./local_source");
+const archive_preflight_1 = require("./archive_preflight");
+const local_archive_policy_1 = require("./local_archive_policy");
+const zip_reader_1 = require("./zip_reader");
 /** Directory-name suffix for an expanded archive (sibling of the .zip). */
 exports.EXTRACTED_DIR_SUFFIX = ".l9extracted";
 /** Archive extensions expanded in local-files mode (v1: zip only). */
 exports.EXPANDABLE_ARCHIVE_EXTS = new Set([".zip"]);
-/** Fixed absolute unzip paths — avoid PATH lookup (Sonar S4036). */
-const UNZIP_CANDIDATES = ["/usr/bin/unzip", "/bin/unzip"];
 function isExpandableArchive(filePath) {
     return exports.EXPANDABLE_ARCHIVE_EXTS.has(path.extname(filePath).toLowerCase());
 }
@@ -106,37 +113,23 @@ function extractDirFor(zipPath) {
     const base = path.basename(zipPath, path.extname(zipPath));
     return path.join(dir, base + exports.EXTRACTED_DIR_SUFFIX);
 }
-/** Resolve a fixed-path unzip binary; never consult $PATH. */
-function resolveUnzipBinary() {
-    for (const candidate of UNZIP_CANDIDATES) {
-        try {
-            if (fs.existsSync(candidate) && fs.statSync(candidate).isFile())
-                return candidate;
-        }
-        catch {
-            // try next candidate
-        }
-    }
-    throw new Error("local-files mode requires unzip at /usr/bin/unzip or /bin/unzip (macOS/Linux). " +
-        "Install unzip or run without --local-files / localFiles.");
-}
-function runUnzip(args) {
-    const unzip = resolveUnzipBinary();
-    return (0, node_child_process_1.execFileSync)(unzip, args, { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
-}
-function assertSafeZipMember(zipPath, name) {
-    const normalized = name.replace(/\\/g, "/");
-    if (normalized.startsWith("/") || normalized.split("/").includes("..")) {
-        throw new Error(`refusing to extract unsafe zip member path from ${zipPath}: ${name}`);
-    }
-}
-/** List member paths inside a zip; reject Zip-Slip (`..` / absolute) names. */
+/**
+ * List member paths inside a zip, rejecting Zip-Slip (`..` / absolute) names.
+ *
+ * Read from the central directory rather than from `unzip -Z1`. The names a
+ * subprocess prints are already its own interpretation of the bytes, so taking
+ * them as input meant trusting a second parser about what a member is even
+ * called. Directory entries keep a trailing separator so callers can still tell
+ * them from files.
+ */
 function listZipMembers(zipPath) {
-    const out = runUnzip(["-Z1", zipPath]);
-    const members = out.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
-    for (const name of members)
-        assertSafeZipMember(zipPath, name);
-    return members;
+    return (0, zip_reader_1.readZipCentralDirectory)(zipPath).entries.map((entry) => {
+        const canonical = (0, archive_preflight_1.canonicalMemberPath)(entry.name);
+        if (canonical.startsWith("/") || canonical.split("/").includes("..")) {
+            throw new Error(`refusing to extract unsafe zip member path from ${zipPath}: ${entry.name}`);
+        }
+        return entry.kind === "directory" ? `${canonical}/` : canonical;
+    });
 }
 /**
  * Reason an existing extraction directory may not be replaced, or null when it may.
@@ -172,31 +165,81 @@ function writeExtractionOwnership(extractDir, zipPath) {
     fs.writeFileSync(path.join(extractDir, local_source_1.LEGACY_EXTRACTION_OWNER_FILE), JSON.stringify({ owner: "l9-meta-injector.local-files", archive: path.basename(zipPath) }, null, 2), "utf8");
 }
 /**
- * Refresh extractDir and unzip allowed members into it.
- * When `allowedMembers` is set, only those paths are extracted (omit filter).
- * Returns the number of non-directory members actually extracted.
+ * Refresh extractDir and materialize allowed members into it.
+ *
+ * When `allowedMembers` is set, only those canonical paths are written (omit
+ * filter). Returns the number of members actually extracted.
  *
  * Throws rather than deleting when the target exists and is not provably this
- * tool's own output.
+ * tool's own output, and refuses the whole archive when canonical preflight
+ * holds it. Admission is decided before the directory is refreshed, so a hostile
+ * archive never reaches the point of removing anything.
  */
 function extractZip(zipPath, extractDir, allowedMembers) {
     const refusal = extractionRefusalReason(extractDir);
     if (refusal !== null)
         throw new Error(`local-files: ${refusal}`);
-    const members = listZipMembers(zipPath);
-    const files = members.filter((m) => !m.endsWith("/"));
-    const toExtract = allowedMembers
-        ? files.filter((m) => allowedMembers.includes(m))
-        : files;
+    const policy = (0, local_archive_policy_1.resolveLocalArchivePolicy)();
+    const preflight = (0, archive_preflight_1.preflightArchive)({
+        directory: (0, zip_reader_1.readZipCentralDirectory)(zipPath),
+        policy,
+        depth: 0,
+        archiveCompressedBytes: fs.statSync(zipPath).size,
+    });
+    // Admission is decided before the directory is refreshed. Traversal was already
+    // checked this early, but symlink members, entry-type violations, collisions and
+    // the resource ceilings were not checked here at all: an archive that is held
+    // now would previously have removed the operator's existing extraction and then
+    // expanded whatever the subprocess was willing to accept.
+    if (!preflight.accepted) {
+        const reasons = preflight.holds
+            .map((hold) => (hold.memberPath ? `${hold.code} (${hold.memberPath})` : hold.code))
+            .join(", ");
+        throw new Error(`local-files: refusing to extract ${path.basename(zipPath)}: ${reasons}`);
+    }
+    const selected = allowedMembers
+        ? preflight.members.filter((member) => allowedMembers.includes(member.canonicalPath))
+        : preflight.members;
     if (fs.existsSync(extractDir))
         fs.rmSync(extractDir, { recursive: true, force: true });
     fs.mkdirSync(extractDir, { recursive: true });
     writeExtractionOwnership(extractDir, zipPath);
-    if (toExtract.length === 0)
-        return 0;
-    // Pass member names explicitly so omitted paths (SKILL.md, *.log, …) never land on disk.
-    runUnzip(["-q", "-o", "-d", extractDir, zipPath, ...toExtract]);
-    return toExtract.length;
+    let expandedBytes = 0;
+    for (const member of selected) {
+        expandedBytes += writeMember(zipPath, extractDir, member, policy, expandedBytes);
+    }
+    return selected.length;
+}
+/**
+ * Write one preflight-approved member and return the bytes it produced.
+ *
+ * The ceiling handed to the reader is the smaller of what the member and the
+ * archive have left, so the decompressor itself stops a member that produces
+ * more than it declared -- the runtime accounting a declared-size check cannot
+ * provide. CRC is verified against the central directory before the bytes are
+ * allowed to stand.
+ */
+function writeMember(zipPath, extractDir, member, policy, expandedBytes) {
+    const target = path.join(extractDir, member.canonicalPath);
+    // Defence in depth: preflight already rejects traversal, but the write is the
+    // irreversible step and it should not depend on an earlier check being right.
+    const resolvedRoot = path.resolve(extractDir);
+    if (path.resolve(target) !== resolvedRoot && !path.resolve(target).startsWith(resolvedRoot + path.sep)) {
+        throw new Error(`local-files: refusing to write outside the extraction directory: ${member.canonicalPath}`);
+    }
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    const ceiling = Math.min(policy.maxSingleMemberUncompressedBytes, Math.max(0, policy.maxTotalUncompressedBytesPerArchive - expandedBytes));
+    const handle = fs.openSync(target, "w");
+    try {
+        const result = (0, zip_reader_1.streamZipMember)(zipPath, member.entry, { maxUncompressedBytes: ceiling }, (chunk) => { fs.writeSync(handle, chunk); });
+        if (result.crc32 !== member.entry.crc32) {
+            throw new Error(`local-files: extracted bytes for ${member.canonicalPath} do not match the CRC in the central directory`);
+        }
+        return result.bytesWritten;
+    }
+    finally {
+        fs.closeSync(handle);
+    }
 }
 function walkFiles(dir, out) {
     if (!fs.existsSync(dir))
