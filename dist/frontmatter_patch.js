@@ -283,6 +283,133 @@ function looksLikeDuplicateBlock(raw, start) {
     }
     return false;
 }
+/** Locates the closing fence and applies the whole-header validations. */
+function readHeaderBounds(raw, lines) {
+    const first = lines[0];
+    if (first.eol === "") {
+        return { ok: false, failure: issue(raw, "FRONTMATTER_CLOSING_FENCE_MISSING", "frontmatter opening fence has no closing fence", { line: 1 }) };
+    }
+    let closeIndex = -1;
+    for (let i = 1; i < lines.length; i++) {
+        if (lines[i].text === "---") {
+            closeIndex = i;
+            break;
+        }
+    }
+    if (closeIndex === -1) {
+        return { ok: false, failure: issue(raw, "FRONTMATTER_CLOSING_FENCE_MISSING", "frontmatter closing fence must be an exact '---' line") };
+    }
+    const close = lines[closeIndex];
+    const headerLines = lines.slice(1, closeIndex);
+    const headerNewlines = new Set(headerLines.concat([first, close]).map((line) => line.eol).filter(Boolean));
+    if (headerNewlines.size > 1) {
+        return { ok: false, failure: issue(raw, "FRONTMATTER_MIXED_NEWLINES", "frontmatter header mixes LF and CRLF line endings") };
+    }
+    if (headerLines.some((line) => line.text.includes("\t"))) {
+        return { ok: false, failure: issue(raw, "FRONTMATTER_TAB_CHARACTER", "frontmatter header contains a tab character") };
+    }
+    if (looksLikeDuplicateBlock(raw, close.fullEnd)) {
+        return { ok: false, failure: issue(raw, "FRONTMATTER_DUPLICATE_BLOCK", "a second leading frontmatter-like block follows the first") };
+    }
+    return { ok: true, value: { close, headerLines, headerNewlines } };
+}
+/** The inline form: `key: value` on a single line, scalar or opaque. */
+function readScalarField(raw, headerLines, index, key, scalarToken) {
+    const line = headerLines[index];
+    const parsed = parseSafeScalar(scalarToken.valueText);
+    // A value the canonical parser declines is not automatically a broken document.
+    // A single-line plain scalar keeps its exact bytes and is carried as `opaque`.
+    const opaque = !parsed.ok && isOpaqueScalar(scalarToken.valueText);
+    if (!parsed.ok && !opaque) {
+        return { ok: false, failure: issue(raw, "FRONTMATTER_COMPLEX_YAML", `unsupported value for '${key}'`, { line: line.number, key }) };
+    }
+    const following = index + 1 < headerLines.length ? headerLines[index + 1] : null;
+    if (following && /^\s+\S/.test(following.text) && !/^\s*#/.test(following.text)) {
+        return { ok: false, failure: issue(raw, "FRONTMATTER_COMPLEX_YAML", `multiline or nested value under '${key}' is not supported`, { line: following.number, key }) };
+    }
+    const tailStart = line.start + line.text.indexOf(":") + 1;
+    const field = {
+        key,
+        value: parsed.ok ? parsed.value : undefined,
+        kind: parsed.ok ? "scalar" : "opaque",
+        start: line.start,
+        end: line.fullEnd,
+        valueStart: tailStart + scalarToken.valueOffset,
+        valueEnd: tailStart + scalarToken.valueEndOffset,
+        commentSuffix: scalarToken.commentSuffix,
+    };
+    // An opaque value is never interpreted, so it never enters the parsed metadata.
+    return parsed.ok
+        ? { ok: true, field, meta: { value: parsed.value }, next: index + 1 }
+        : { ok: true, field, next: index + 1 };
+}
+/** Reads the `- item` lines of one block, rejecting anything not safely patchable. */
+function collectSequenceItems(raw, block, key) {
+    const reject = (message, line) => ({
+        ok: false,
+        failure: issue(raw, "FRONTMATTER_COMPLEX_YAML", message, { line, key }),
+    });
+    const items = [];
+    const itemIndexes = [];
+    let indent = "";
+    for (let k = 0; k < block.length; k++) {
+        const blockLine = block[k];
+        if (blockLine.text === "" || /^\s*#/.test(blockLine.text))
+            continue;
+        const itemMatch = blockLine.text.match(/^(\s+)-\s+(.+)$/);
+        if (!itemMatch)
+            return reject(`nested map or multiline value under '${key}' is not supported`, blockLine.number);
+        if (!indent)
+            indent = itemMatch[1];
+        if (itemMatch[1] !== indent)
+            return reject(`inconsistent sequence indentation under '${key}'`, blockLine.number);
+        const itemToken = splitInlineComment(itemMatch[2]);
+        if (itemToken.commentSuffix.includes("#"))
+            return reject(`inline comments on sequence items under '${key}' are not safely patchable`, blockLine.number);
+        const parsed = parseSafeScalar(itemToken.valueText);
+        if (!parsed.ok || Array.isArray(parsed.value))
+            return reject(`unsupported sequence item under '${key}'`, blockLine.number);
+        items.push(parsed.value);
+        itemIndexes.push(k);
+    }
+    return { ok: true, value: { items, itemIndexes, indent } };
+}
+/** The block form: `key:` followed by an indented scalar sequence. */
+function readSequenceField(raw, headerLines, index, key, scalarToken) {
+    const line = headerLines[index];
+    let next = index + 1;
+    const block = [];
+    while (next < headerLines.length && (/^\s/.test(headerLines[next].text) || headerLines[next].text === "")) {
+        block.push(headerLines[next]);
+        next += 1;
+    }
+    const collected = collectSequenceItems(raw, block, key);
+    if (!collected.ok)
+        return collected;
+    const { items, itemIndexes, indent } = collected.value;
+    if (items.length === 0) {
+        return { ok: false, failure: issue(raw, "FRONTMATTER_COMPLEX_YAML", `empty or nested block under '${key}' is not supported`, { line: line.number, key }) };
+    }
+    const firstItem = itemIndexes[0];
+    const lastItem = itemIndexes[itemIndexes.length - 1];
+    for (let k = firstItem; k <= lastItem; k++) {
+        if (block[k].text === "" || /^\s*#/.test(block[k].text)) {
+            return { ok: false, failure: issue(raw, "FRONTMATTER_COMPLEX_YAML", `interleaved comments inside sequence '${key}' are not safely patchable`, { line: block[k].number, key }) };
+        }
+    }
+    const field = {
+        key,
+        value: items,
+        kind: "sequence",
+        start: line.start,
+        end: block.length ? block[block.length - 1].fullEnd : line.fullEnd,
+        sequenceIndent: indent,
+        sequencePrefix: block.slice(0, firstItem).map((entry) => raw.slice(entry.start, entry.fullEnd)).join(""),
+        sequenceSuffix: block.slice(lastItem + 1).map((entry) => raw.slice(entry.start, entry.fullEnd)).join(""),
+        commentSuffix: scalarToken.commentSuffix,
+    };
+    return { ok: true, field, meta: { value: items }, next };
+}
 function inspectFrontMatterDocument(raw) {
     const bom = raw.startsWith("\uFEFF") ? "\uFEFF" : "";
     const start = bom.length;
@@ -308,26 +435,10 @@ function inspectFrontMatterDocument(raw) {
             closingEnd: start,
         };
     }
-    if (first.eol === "")
-        return issue(raw, "FRONTMATTER_CLOSING_FENCE_MISSING", "frontmatter opening fence has no closing fence", { line: 1 });
-    let closeIndex = -1;
-    for (let i = 1; i < lines.length; i++) {
-        if (lines[i].text === "---") {
-            closeIndex = i;
-            break;
-        }
-    }
-    if (closeIndex === -1)
-        return issue(raw, "FRONTMATTER_CLOSING_FENCE_MISSING", "frontmatter closing fence must be an exact '---' line");
-    const close = lines[closeIndex];
-    const headerLines = lines.slice(1, closeIndex);
-    const headerNewlines = new Set(headerLines.concat([first, close]).map((line) => line.eol).filter(Boolean));
-    if (headerNewlines.size > 1)
-        return issue(raw, "FRONTMATTER_MIXED_NEWLINES", "frontmatter header mixes LF and CRLF line endings");
-    if (headerLines.some((line) => line.text.includes("\t")))
-        return issue(raw, "FRONTMATTER_TAB_CHARACTER", "frontmatter header contains a tab character");
-    if (looksLikeDuplicateBlock(raw, close.fullEnd))
-        return issue(raw, "FRONTMATTER_DUPLICATE_BLOCK", "a second leading frontmatter-like block follows the first");
+    const bounds = readHeaderBounds(raw, lines);
+    if (!bounds.ok)
+        return bounds.failure;
+    const { close, headerLines, headerNewlines } = bounds.value;
     const meta = Object.create(null);
     const fields = [];
     const seen = new Set();
@@ -349,90 +460,16 @@ function inspectFrontMatterDocument(raw) {
         if (seen.has(key))
             return issue(raw, "FRONTMATTER_DUPLICATE_KEY", `duplicate frontmatter key '${key}'`, { line: line.number, key });
         seen.add(key);
-        const tail = match[2];
-        const scalarToken = splitInlineComment(tail);
-        if (scalarToken.valueText.trim() !== "") {
-            const parsed = parseSafeScalar(scalarToken.valueText);
-            // A value the canonical parser declines is not automatically a broken document.
-            // A single-line plain scalar keeps its exact bytes and is carried as `opaque`.
-            const opaque = !parsed.ok && isOpaqueScalar(scalarToken.valueText);
-            if (!parsed.ok && !opaque)
-                return issue(raw, "FRONTMATTER_COMPLEX_YAML", `unsupported value for '${key}'`, { line: line.number, key });
-            if (i + 1 < headerLines.length && /^\s+\S/.test(headerLines[i + 1].text) && !/^\s*#/.test(headerLines[i + 1].text)) {
-                return issue(raw, "FRONTMATTER_COMPLEX_YAML", `multiline or nested value under '${key}' is not supported`, { line: headerLines[i + 1].number, key });
-            }
-            const colon = line.text.indexOf(":");
-            const tailStart = line.start + colon + 1;
-            fields.push({
-                key,
-                value: parsed.ok ? parsed.value : undefined,
-                kind: parsed.ok ? "scalar" : "opaque",
-                start: line.start,
-                end: line.fullEnd,
-                valueStart: tailStart + scalarToken.valueOffset,
-                valueEnd: tailStart + scalarToken.valueEndOffset,
-                commentSuffix: scalarToken.commentSuffix,
-            });
-            // An opaque value is never interpreted, so it never enters the parsed metadata.
-            if (parsed.ok)
-                meta[key] = parsed.value;
-            i += 1;
-            continue;
-        }
-        let j = i + 1;
-        const block = [];
-        while (j < headerLines.length && (/^\s/.test(headerLines[j].text) || headerLines[j].text === "")) {
-            block.push(headerLines[j]);
-            j += 1;
-        }
-        const items = [];
-        const itemIndexes = [];
-        let indent = "";
-        for (let k = 0; k < block.length; k++) {
-            const blockLine = block[k];
-            if (blockLine.text === "" || /^\s*#/.test(blockLine.text))
-                continue;
-            const itemMatch = blockLine.text.match(/^(\s+)-\s+(.+)$/);
-            if (!itemMatch)
-                return issue(raw, "FRONTMATTER_COMPLEX_YAML", `nested map or multiline value under '${key}' is not supported`, { line: blockLine.number, key });
-            if (!indent)
-                indent = itemMatch[1];
-            if (itemMatch[1] !== indent)
-                return issue(raw, "FRONTMATTER_COMPLEX_YAML", `inconsistent sequence indentation under '${key}'`, { line: blockLine.number, key });
-            const itemToken = splitInlineComment(itemMatch[2]);
-            if (itemToken.commentSuffix.includes("#"))
-                return issue(raw, "FRONTMATTER_COMPLEX_YAML", `inline comments on sequence items under '${key}' are not safely patchable`, { line: blockLine.number, key });
-            const parsed = parseSafeScalar(itemToken.valueText);
-            if (!parsed.ok || Array.isArray(parsed.value))
-                return issue(raw, "FRONTMATTER_COMPLEX_YAML", `unsupported sequence item under '${key}'`, { line: blockLine.number, key });
-            items.push(parsed.value);
-            itemIndexes.push(k);
-        }
-        if (items.length === 0)
-            return issue(raw, "FRONTMATTER_COMPLEX_YAML", `empty or nested block under '${key}' is not supported`, { line: line.number, key });
-        const firstItem = itemIndexes[0];
-        const lastItem = itemIndexes[itemIndexes.length - 1];
-        for (let k = firstItem; k <= lastItem; k++) {
-            if (block[k].text === "" || /^\s*#/.test(block[k].text)) {
-                return issue(raw, "FRONTMATTER_COMPLEX_YAML", `interleaved comments inside sequence '${key}' are not safely patchable`, { line: block[k].number, key });
-            }
-        }
-        const prefix = block.slice(0, firstItem).map((entry) => raw.slice(entry.start, entry.fullEnd)).join("");
-        const suffix = block.slice(lastItem + 1).map((entry) => raw.slice(entry.start, entry.fullEnd)).join("");
-        const end = block.length ? block[block.length - 1].fullEnd : line.fullEnd;
-        fields.push({
-            key,
-            value: items,
-            kind: "sequence",
-            start: line.start,
-            end,
-            sequenceIndent: indent,
-            sequencePrefix: prefix,
-            sequenceSuffix: suffix,
-            commentSuffix: scalarToken.commentSuffix,
-        });
-        meta[key] = items;
-        i = j;
+        const scalarToken = splitInlineComment(match[2]);
+        const read = scalarToken.valueText.trim() !== ""
+            ? readScalarField(raw, headerLines, i, key, scalarToken)
+            : readSequenceField(raw, headerLines, i, key, scalarToken);
+        if (!read.ok)
+            return read.failure;
+        fields.push(read.field);
+        if (read.meta)
+            meta[key] = read.meta.value;
+        i = read.next;
     }
     return {
         safe: true,
