@@ -670,7 +670,7 @@
     },
     {
       "path": "scripts/topology-conformance.js",
-      "git_blob_sha1": "c69363133afc2637aa7226dc50c379fd157a5955"
+      "git_blob_sha1": "c4320571939b65b8926a48b06395f213ca607486"
     },
     {
       "path": "src/archive_preflight.ts",

@@ -22,6 +22,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const cp = require("node:child_process");
+const { gitBinary } = require("./lib/git-binary");
 
 const REPO = path.resolve(__dirname, "..");
 // Two committed bundles: the inventory-only packet, and the packet the structured
@@ -86,40 +87,7 @@ function compareCodeUnits(a, b) {
   return a < b ? -1 : 1;
 }
 
-/**
- * Absolute path to the `git` executable, resolved once.
- *
- * Spawning the bare name "git" makes the OS consult PATH at exec time, so a
- * writable directory earlier in PATH decides which binary runs. Resolving to an
- * absolute path up front removes that lookup from every later call, and pinning
- * the result means a PATH edited midway through a run cannot swap the binary
- * between two calls that are meant to describe the same repository.
- *
- * Fails closed: a git that cannot be found is an error here rather than a
- * confusing failure inside the first command that needed it.
- */
-function resolveGitBinary() {
-  const isWindows = process.platform === "win32";
-  const names = isWindows ? ["git.exe", "git.cmd"] : ["git"];
-  const entries = (process.env.PATH || "").split(path.delimiter).filter(Boolean);
-  for (const dir of entries) {
-    for (const name of names) {
-      const candidate = path.join(dir, name);
-      try {
-        if (fs.statSync(candidate).isFile()) {
-          fs.accessSync(candidate, fs.constants.X_OK);
-          return candidate;
-        }
-      } catch {
-        // Not this directory; keep looking.
-      }
-    }
-  }
-  fail("cannot locate a git executable on PATH");
-  return "git";
-}
-
-const GIT_BINARY = resolveGitBinary();
+const GIT_BINARY = gitBinary(fail);
 
 function gitRevision(checkout) {
   const result = cp.spawnSync(GIT_BINARY, ["rev-parse", "HEAD"], { cwd: checkout, encoding: "utf8" });
