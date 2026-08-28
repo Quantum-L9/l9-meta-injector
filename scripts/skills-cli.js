@@ -24,7 +24,14 @@ if (!authority?.trim()) {
   console.error("skills-cli: --authority is required; skills mode must not bypass repository authority");
   process.exit(2);
 }
-if (/[\u0000\r\n]/.test(authority)) {
+// NUL, CR and LF are rejected because --authority is interpolated into paths and
+// into log lines; a newline there forges a second record and a NUL truncates a
+// path. Expressed as an explicit code-point test rather than a regex character
+// class holding those control characters: the check is the point, and a linter
+// reading the class says "remove this control character", which would delete the
+// validation rather than the risk.
+const FORBIDDEN_AUTHORITY_CODES = new Set([0x00, 0x0d, 0x0a]);
+if ([...authority].some((ch) => FORBIDDEN_AUTHORITY_CODES.has(ch.codePointAt(0)))) {
   console.error("skills-cli: --authority contains a forbidden control character");
   process.exit(2);
 }

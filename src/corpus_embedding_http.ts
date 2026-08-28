@@ -32,6 +32,7 @@
 // numbers. Whether a cosine between two of them means anything is settled in
 // `corpus_fusion.ts`, and the answer there is still "it is a candidate".
 import { EmbeddingModelConfiguration, EmbeddingProvider, EmbeddingResult } from "./corpus_embeddings";
+import { compareCodePoints } from "./ordering";
 
 /** The provider name an operator passes to `--embedding-provider`. */
 export const HTTP_JSON_PROVIDER = "http-json";
@@ -146,7 +147,7 @@ export function extractVector(payload: unknown): number[] {
   }
 
   throw new EmbeddingProviderError(
-    `embedding response carries no numeric vector; keys were [${Object.keys(record).sort().join(", ")}]`,
+    `embedding response carries no numeric vector; keys were [${Object.keys(record).sort(compareCodePoints).join(", ")}]`,
   );
 }
 

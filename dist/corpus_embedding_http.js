@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.HttpJsonEmbeddingProvider = exports.EmbeddingProviderError = exports.DEFAULT_EMBEDDING_MAX_RESPONSE_BYTES = exports.DEFAULT_EMBEDDING_TIMEOUT_MS = exports.HTTP_JSON_TOKEN_ENV = exports.HTTP_JSON_PROVIDER = void 0;
 exports.isLoopbackEndpoint = isLoopbackEndpoint;
 exports.extractVector = extractVector;
+const ordering_1 = require("./ordering");
 /** The provider name an operator passes to `--embedding-provider`. */
 exports.HTTP_JSON_PROVIDER = "http-json";
 /** Environment variable carrying the bearer token, when the server wants one. */
@@ -90,7 +91,7 @@ function extractVector(payload) {
         if (value !== null)
             return value;
     }
-    throw new EmbeddingProviderError(`embedding response carries no numeric vector; keys were [${Object.keys(record).sort().join(", ")}]`);
+    throw new EmbeddingProviderError(`embedding response carries no numeric vector; keys were [${Object.keys(record).sort(ordering_1.compareCodePoints).join(", ")}]`);
 }
 /** The model revision the server reported, when it reported one. */
 function extractRevision(payload) {

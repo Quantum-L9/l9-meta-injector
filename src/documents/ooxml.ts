@@ -23,6 +23,7 @@ import {
 } from "../zip_reader";
 import { DecoderBudget, DecoderDiagnostic } from "./decoder";
 import { XmlError, parseXml } from "./xml";
+import { compareCodePoints } from "../ordering";
 
 /** An OOXML container, opened and bounded, with its parts addressable by name. */
 export interface OoxmlContainer {
@@ -181,7 +182,7 @@ export function openOoxml(archivePath: string, budget: DecoderBudget): OoxmlCont
     entries,
     diagnostics,
     readPart,
-    partNames: () => [...entries.keys()].sort(),
+    partNames: () => [...entries.keys()].sort(compareCodePoints),
   };
 }
 
