@@ -13,7 +13,7 @@ import { describe, expect, test } from "vitest";
 import { acquireLocalSource } from "../src/local_source";
 import { canonicalMemberPath, memberCollisionKey, preflightArchive } from "../src/archive_preflight";
 import { DEFAULT_LOCAL_ARCHIVE_POLICY, resolveLocalArchivePolicy } from "../src/local_archive_policy";
-import { readZipCentralDirectory } from "../src/zip_reader";
+import { ZipBudgetExceededError, readZipCentralDirectory, streamZipMember } from "../src/zip_reader";
 import { UNIX_FIFO, UNIX_SYMLINK, treeSnapshot, writeRawZip } from "./helpers/zip_fixtures";
 import type { ZipMemberSpec } from "./helpers/zip_fixtures";
 import type { LocalArchivePolicy } from "../src/local_archive_policy";
@@ -532,12 +532,158 @@ describe("zip64 central-directory records", () => {
     expect(bytes.readUInt16LE(extraLengthAt)).toBe(4 + 24);
     bytes.writeUInt16LE(4 + 8, extraLengthAt);
     bytes.writeUInt16LE(8, centralOffset + 46 + bytes.readUInt16LE(centralOffset + 28) + 2);
-    fs.writeFileSync(path.join(root, "ok.zip"), bytes);
+    // Drop the 16 bytes the shortened payload no longer declares and shrink the
+    // directory's declared size to match. The subject here is a truncated zip64
+    // payload, not a directory with unconsumed bytes after its last record --
+    // readZipCentralDirectory now rejects the latter outright, which would fail
+    // this test for a reason it is not about.
+    const eocd = bytes.subarray(eocdOffset);
+    eocd.writeUInt32LE(eocd.readUInt32LE(12) - 16, 12);
+    fs.writeFileSync(path.join(root, "ok.zip"), Buffer.concat([bytes.subarray(0, eocdOffset - 16), eocd]));
 
     const directory = readZipCentralDirectory(path.join(root, "ok.zip"));
     // The first placeholder resolved; the two the payload could not cover stayed put.
     expect(directory.entries[0].uncompressedSize).toBe("plain".length);
     expect(directory.entries[0].compressedSize).toBe(0xffffffff);
     expect(directory.entries[0].localHeaderOffset).toBe(0xffffffff);
+  });
+
+  /**
+   * Build a valid archive, corrupt its bytes, and report both what the reader
+   * says and what the live acquisition seam does with it.
+   *
+   * Both halves matter. A reader that throws while the seam still claims members
+   * has moved the defect rather than closed it, so every case below asserts the
+   * refusal *and* the absence of claims.
+   */
+  function corruptedArchive(
+    members: ZipMemberSpec[],
+    corrupt: (bytes: Buffer) => Buffer,
+  ): { read: () => unknown; outcome: HeldOutcome } {
+    const parent = tmp();
+    const root = path.join(parent, "src");
+    fs.mkdirSync(root, { recursive: true });
+    const archivePath = path.join(root, "Case.zip");
+    writeRawZip(archivePath, members);
+    fs.writeFileSync(archivePath, corrupt(fs.readFileSync(archivePath)));
+
+    const beforeSource = treeSnapshot(root);
+    const beforeParent = treeSnapshot(parent);
+    const observation = acquireLocalSource({ path: archivePath });
+    try {
+      const archive = observation.archives[0];
+      return {
+        read: () => readZipCentralDirectory(archivePath),
+        outcome: {
+          expanded: archive.expanded,
+          holdCodes: archive.holds.map((hold) => hold.code),
+          memberCount: archive.memberCount,
+          claimedMembers: observation.virtualArtifacts.map((member) => member.virtualSourcePath),
+          sourceUnchanged: JSON.stringify(treeSnapshot(root)) === JSON.stringify(beforeSource),
+          parentUnchanged: JSON.stringify(treeSnapshot(parent)) === JSON.stringify(beforeParent),
+        },
+      };
+    } finally {
+      observation.dispose();
+    }
+  }
+
+  /** Overwrite the EOCD's declared total-entry count, leaving the records alone. */
+  function declareEntryCount(bytes: Buffer, count: number): Buffer {
+    const eocdOffset = bytes.length - 22;
+    bytes.writeUInt16LE(count, eocdOffset + 8);
+    bytes.writeUInt16LE(count, eocdOffset + 10);
+    return bytes;
+  }
+
+  test("a directory declaring more entries than it carries is refused", () => {
+    // Reading stopped when the records ran out and returned the short list as if
+    // it were the archive. Every member the declaration accounts for and the
+    // directory does not is a member preflight would never have seen.
+    const { read, outcome } = corruptedArchive(
+      [{ name: "a.md", content: "# A\n" }],
+      (bytes) => declareEntryCount(bytes, 3),
+    );
+    expect(read).toThrow(/declares 3 entries but 1 could be parsed/);
+    expectHeld(outcome, "archive.format_unreadable");
+  });
+
+  test("a directory declaring fewer entries than it carries is refused", () => {
+    // The mirror case: members present but unaccounted for. Refusing both keeps
+    // the count an equality rather than a floor.
+    const { read, outcome } = corruptedArchive(
+      [{ name: "a.md", content: "# A\n" }, { name: "b.md", content: "# B\n" }],
+      (bytes) => declareEntryCount(bytes, 1),
+    );
+    expect(read).toThrow(/declares 1 entries but 2 could be parsed/);
+    expectHeld(outcome, "archive.format_unreadable");
+  });
+
+  test("bytes trailing the last central-directory record are refused", () => {
+    // The parse loop exits when fewer than a fixed header's bytes remain, so
+    // padding after the final record used to be discarded in silence. The
+    // declared byte span must be consumed exactly, not merely covered.
+    const { read, outcome } = corruptedArchive(
+      [{ name: "a.md", content: "# A\n" }],
+      (bytes) => {
+        const eocdOffset = bytes.length - 22;
+        const eocd = Buffer.from(bytes.subarray(eocdOffset));
+        eocd.writeUInt32LE(eocd.readUInt32LE(12) + 8, 12);
+        return Buffer.concat([bytes.subarray(0, eocdOffset), Buffer.alloc(8), eocd]);
+      },
+    );
+    expect(read).toThrow(/declares \d+ bytes but \d+ were consumed/);
+    expectHeld(outcome, "archive.format_unreadable");
+  });
+
+  test("an incomplete final central-directory record is refused", () => {
+    // Fewer than CENTRAL_FIXED_SIZE trailing bytes: too short to parse as a
+    // record, and previously too short to notice.
+    const { read, outcome } = corruptedArchive(
+      [{ name: "a.md", content: "# A\n" }],
+      (bytes) => {
+        const eocdOffset = bytes.length - 22;
+        const eocd = Buffer.from(bytes.subarray(eocdOffset));
+        eocd.writeUInt32LE(eocd.readUInt32LE(12) + 10, 12);
+        return Buffer.concat([bytes.subarray(0, eocdOffset), Buffer.alloc(10), eocd]);
+      },
+    );
+    expect(read).toThrow(/declares \d+ bytes but \d+ were consumed/);
+    expectHeld(outcome, "archive.format_unreadable");
+  });
+
+  test("a deflated member is bounded by the decompressor, not by the bytes it emits", () => {
+    // The module documents deflate as synchronously buffered whole under a
+    // ceiling zlib enforces. This is that claim, tested directly: the ceiling has
+    // to stop the inflate itself, because a check on emitted chunks would run
+    // only after the full output had already been allocated.
+    const root = tmp();
+    const archivePath = path.join(root, "big.zip");
+    writeRawZip(archivePath, [{ name: "big.txt", content: "A".repeat(512 * 1024) }]);
+    const entry = readZipCentralDirectory(archivePath).entries[0];
+    expect(entry.compressionMethod).toBe(8);
+
+    const chunks: Buffer[] = [];
+    expect(() => streamZipMember(
+      archivePath,
+      entry,
+      { maxUncompressedBytes: 4096 },
+      (chunk) => { chunks.push(chunk); },
+    )).toThrow(ZipBudgetExceededError);
+    // Nothing reached the sink: the refusal happened inside the inflate, before
+    // any chunk existed to hand on.
+    expect(chunks).toEqual([]);
+
+    // And the same member under a sufficient ceiling still round-trips, so the
+    // bound is a ceiling rather than a ban on deflated members.
+    const ok: Buffer[] = [];
+    const result = streamZipMember(
+      archivePath,
+      entry,
+      { maxUncompressedBytes: 1024 * 1024 },
+      (chunk) => { ok.push(chunk); },
+    );
+    expect(result.bytesWritten).toBe(512 * 1024);
+    expect(Buffer.concat(ok).toString()).toBe("A".repeat(512 * 1024));
   });
 });

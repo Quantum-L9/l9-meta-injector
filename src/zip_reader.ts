@@ -8,7 +8,9 @@
 // extractor stops mid-member the moment a byte budget is exceeded.
 //
 // Scope: ZIP only, stored (0) and deflate (8). Node's zlib supplies raw inflate,
-// so this adds no dependency. Zip64 central-directory records are understood so a
+// so this adds no dependency. Stored members stream a chunk at a time; deflated
+// members are inflated synchronously and held whole, bounded by the extraction
+// ceiling rather than by streaming. See `streamZipMember` for that contract. Zip64 central-directory records are understood so a
 // large archive is read correctly rather than silently truncated.
 import * as fs from "node:fs";
 import * as zlib from "node:zlib";
@@ -335,6 +337,25 @@ export function readZipCentralDirectory(archivePath: string): ZipDirectory {
       entries.push(parsed.entry);
       cursor = parsed.next;
     }
+
+    // The loop above stops when fewer than a fixed header's bytes remain, which
+    // is not the same as having read the directory. Both of the archive's own
+    // completeness claims have to be met, or the member list is a prefix of the
+    // truth and everything downstream — preflight, classification, the byte
+    // budget — is deciding over a subset while believing it holds the whole.
+    //
+    // Failing closed is the only safe direction here: an attacker who can make
+    // the reader stop early chooses which members preflight never sees.
+    if (entries.length !== eocd.entryCount) {
+      throw new ZipFormatError(
+        `central directory declares ${eocd.entryCount} entries but ${entries.length} could be parsed`,
+      );
+    }
+    if (cursor !== central.length) {
+      throw new ZipFormatError(
+        `central directory declares ${central.length} bytes but ${cursor} were consumed`,
+      );
+    }
     return { entries, declaredEntryCount: eocd.entryCount, zip64: eocd.zip64 };
   } finally {
     fs.closeSync(fd);
@@ -387,19 +408,6 @@ export interface ZipMemberStreamResult {
   crc32: number;
 }
 
-/**
- * Read one member and hand its bytes to `sink` in chunks.
- *
- * `maxUncompressedBytes` is enforced by the decompressor itself, not by trusting
- * the central directory: a member that understates its uncompressed size still
- * cannot produce more than the ceiling, because zlib aborts at the limit and the
- * sink never sees the excess. That is the runtime accounting a declared-size
- * check alone cannot provide.
- *
- * Stored members are read incrementally, so an uncompressed archive of any size
- * costs one chunk of memory. Deflated members are bounded by the same ceiling,
- * which the caller derives from the archive policy rather than from the archive.
- */
 /** Read a stored (uncompressed) member incrementally, one chunk at a time. */
 function readStoredMember(
   fd: number,
@@ -421,7 +429,15 @@ function readStoredMember(
   }
 }
 
-/** Inflate a deflated member under a ceiling zlib itself enforces. */
+/**
+ * Inflate a deflated member whole, under a ceiling zlib itself enforces.
+ *
+ * `inflateRawSync` is a synchronous, whole-output call: the compressed bytes are
+ * read entirely and the inflated result exists entirely before the first chunk is
+ * emitted. `maxOutputLength` is what makes that safe — zlib aborts at the limit,
+ * so a member that lies about its uncompressed size still cannot allocate past
+ * the ceiling, and the sink never sees a byte of the excess.
+ */
 function readDeflatedMember(
   fd: number,
   entry: ZipCentralEntry,
@@ -467,9 +483,15 @@ function memberDataStart(fd: number, entry: ZipCentralEntry): number {
  * sink never sees the excess. That is the runtime accounting a declared-size
  * check alone cannot provide.
  *
- * Stored members are read incrementally, so an uncompressed archive of any size
- * costs one chunk of memory. Deflated members are bounded by the same ceiling,
- * which the caller derives from the archive policy rather than from the archive.
+ * The two paths do not cost the same memory, and the difference is deliberate.
+ * A stored member is read incrementally, so an uncompressed archive of any size
+ * costs one chunk. A deflated member is inflated synchronously and held whole:
+ * peak cost is its compressed bytes plus its inflated bytes, and the chunking
+ * below is a delivery detail, not evidence of streaming. What bounds that is
+ * `maxUncompressedBytes`, enforced inside zlib, together with the archive- and
+ * member-level ceilings the caller derives from the archive policy. Within
+ * those ceilings the buffering is bounded; there is no size at which this
+ * becomes a streaming inflate. Raising them raises real peak memory.
  */
 export function streamZipMember(
   archivePath: string,
