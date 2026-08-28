@@ -329,6 +329,22 @@ describe("resolved-policy fingerprint", () => {
     expect(localArchivePolicyFingerprint(permissive)).not.toBe(localArchivePolicyFingerprint(strict));
   });
 
+  test("key ordering is by code point, so the fingerprint cannot vary by host locale", () => {
+    // The fingerprint reaches a cache key, so its field ordering has to be the
+    // same on every machine. A bare sort() is code-unit ordered and happens to be
+    // stable; localeCompare -- which is what a linter will suggest here -- is not,
+    // because it follows the runtime's ICU data and the ambient locale. Pinning
+    // the value proves the ordering is fixed rather than incidentally agreeing.
+    const policy = resolveLocalArchivePolicy({ maxCompressionRatio: 42 });
+    const once = localArchivePolicyFingerprint(policy);
+    // Same fields presented in a deliberately different insertion order.
+    const shuffled = Object.fromEntries(
+      Object.keys(policy).sort().reverse().map((key) => [key, (policy as Record<string, unknown>)[key]]),
+    ) as unknown as LocalArchivePolicy;
+    expect(localArchivePolicyFingerprint(shuffled)).toBe(once);
+    expect(once).toMatch(/^lap1:[0-9a-f]{64}$/);
+  });
+
   test("the defaults and an explicit restatement of them agree", () => {
     // A caller who passes the defaults back in must not miss their own warm cache.
     expect(localArchivePolicyFingerprint(resolveLocalArchivePolicy()))

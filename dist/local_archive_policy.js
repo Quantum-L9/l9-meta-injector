@@ -49,6 +49,7 @@ exports.ArchiveSessionBudget = exports.DEFAULT_LOCAL_ARCHIVE_POLICY = exports.LO
 exports.resolveLocalArchivePolicy = resolveLocalArchivePolicy;
 exports.localArchivePolicyFingerprint = localArchivePolicyFingerprint;
 const crypto = __importStar(require("node:crypto"));
+const ordering_1 = require("./ordering");
 /** Contract version recorded in the acquisition manifest and packet diagnostics. */
 exports.LOCAL_ARCHIVE_POLICY_VERSION = "1";
 /**
@@ -92,8 +93,12 @@ function resolveLocalArchivePolicy(overrides) {
  * quietly excluded until someone remembers to list it here.
  */
 function localArchivePolicyFingerprint(policy) {
-    const fields = Object.keys(policy)
-        .sort()
+    // compareCodePoints, not a bare sort() and emphatically not localeCompare: this
+    // ordering reaches a hash, and src/ordering.ts is the module that exists because
+    // locale-aware ordering varies with the runtime's ICU data, so the same policy
+    // could fingerprint two ways on two machines.
+    const fields = [...Object.keys(policy)]
+        .sort(ordering_1.compareCodePoints)
         .map((key) => [key, policy[key]]);
     return `lap1:${crypto.createHash("sha256").update(JSON.stringify(fields), "utf8").digest("hex")}`;
 }

@@ -12,6 +12,7 @@
 // silently invalidate a security test.
 
 import * as crypto from "node:crypto";
+import { compareCodePoints } from "./ordering";
 
 /** Contract version recorded in the acquisition manifest and packet diagnostics. */
 export const LOCAL_ARCHIVE_POLICY_VERSION = "1";
@@ -84,8 +85,12 @@ export function resolveLocalArchivePolicy(overrides?: Partial<LocalArchivePolicy
  * quietly excluded until someone remembers to list it here.
  */
 export function localArchivePolicyFingerprint(policy: LocalArchivePolicy): string {
-  const fields = Object.keys(policy)
-    .sort()
+  // compareCodePoints, not a bare sort() and emphatically not localeCompare: this
+  // ordering reaches a hash, and src/ordering.ts is the module that exists because
+  // locale-aware ordering varies with the runtime's ICU data, so the same policy
+  // could fingerprint two ways on two machines.
+  const fields = [...Object.keys(policy)]
+    .sort(compareCodePoints)
     .map((key) => [key, (policy as unknown as Record<string, unknown>)[key]]);
   return `lap1:${crypto.createHash("sha256").update(JSON.stringify(fields), "utf8").digest("hex")}`;
 }
