@@ -8,11 +8,11 @@ Phase C (manifest-driven): copy -> inject headers / sidecars -> reports.
 
 import argparse
 import csv
+import datetime
 import hashlib
 import os
 import shutil
 import sys
-import datetime
 
 TEXT_EXT = {".md", ".txt", ".yaml", ".yml", ".py", ".json", ".toml", ".ini", ".cfg"}
 
@@ -196,8 +196,7 @@ def phase_c(source, output, move_map, copy_files, inject):
                 fh.write(HEADER.format(**meta) + "\n" + body)
         elif inject:
             with open(dp + ".l9meta.yaml", "w") as fh:
-                for k, v in meta.items():
-                    fh.write(f"{k}: {v}\n")
+                fh.writelines(f"{k}: {v}\n" for k, v in meta.items())
     with open(
         _contained(output, os.path.join("00_MANIFESTS", "dedup_report.csv")),
         "w",
