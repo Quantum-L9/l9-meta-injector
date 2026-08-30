@@ -8,11 +8,11 @@ Phase C (manifest-driven): copy -> inject headers / sidecars -> reports.
 
 import argparse
 import csv
+import datetime
 import hashlib
 import os
 import shutil
 import sys
-import datetime
 
 TEXT_EXT = {".md", ".txt", ".yaml", ".yml", ".py", ".json", ".toml", ".ini", ".cfg"}
 
@@ -132,7 +132,11 @@ def phase_b(source, output, threshold):
 
 
 def manifest_gate(move_map):
-    if not os.path.exists(move_map):
+    # --from-manifest is operator-supplied and is opened directly, so it is
+    # resolved before use rather than after: a symlinked or ``../`` manifest path
+    # should be rejected as a path, not discovered as a surprising read.
+    move_map = os.path.realpath(move_map)
+    if not os.path.isfile(move_map):
         sys.exit("[GATE] FAIL: move_map.csv missing")
     with open(move_map) as fh:
         rows = list(csv.DictReader(fh))
@@ -192,16 +196,17 @@ def phase_c(source, output, move_map, copy_files, inject):
                 fh.write(HEADER.format(**meta) + "\n" + body)
         elif inject:
             with open(dp + ".l9meta.yaml", "w") as fh:
-                for k, v in meta.items():
-                    fh.write(f"{k}: {v}\n")
+                fh.writelines(f"{k}: {v}\n" for k, v in meta.items())
     with open(
-        os.path.join(output, "00_MANIFESTS", "dedup_report.csv"), "w", newline=""
+        _contained(output, os.path.join("00_MANIFESTS", "dedup_report.csv")),
+        "w",
+        newline="",
     ) as fh:
         w = csv.writer(fh)
         w.writerow(["content_hash", "dedup_status", "source_path"])
         for r in rows:
             w.writerow([r["content_hash"], r["dedup_status"], r["source_path"]])
-    with open(os.path.join(output, "CHANGE_SUMMARY.md"), "w") as fh:
+    with open(_contained(output, "CHANGE_SUMMARY.md"), "w") as fh:
         fh.write(f"# Change Summary\n\nCopied {copied} files. Source untouched.\n")
     print(f"[C] copied {copied} files -> {output} (source immutable)")
 

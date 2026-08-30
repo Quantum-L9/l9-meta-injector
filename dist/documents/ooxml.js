@@ -22,6 +22,7 @@ exports.noteExternalRelationships = noteExternalRelationships;
 //   - macro parts are noted and never executed.
 const zip_reader_1 = require("../zip_reader");
 const xml_1 = require("./xml");
+const ordering_1 = require("../ordering");
 class OoxmlError extends Error {
     constructor(code, message) {
         super(message);
@@ -160,7 +161,7 @@ function openOoxml(archivePath, budget) {
         entries,
         diagnostics,
         readPart,
-        partNames: () => [...entries.keys()].sort(),
+        partNames: () => [...entries.keys()].sort(ordering_1.compareCodePoints),
     };
 }
 /**

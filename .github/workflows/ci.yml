@@ -27,7 +27,7 @@ jobs:
         with:
           node-version: "20"
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - run: npm run validate
       - name: Verify validation left the checkout clean
         shell: bash

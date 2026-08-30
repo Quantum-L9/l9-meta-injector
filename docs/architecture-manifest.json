@@ -6,7 +6,7 @@
   "entries": [
     {
       "path": ".github/workflows/ci.yml",
-      "git_blob_sha1": "0dcc981c449ab11c262600819c7d1e6adda791c2"
+      "git_blob_sha1": "ba916b03c5544e111585abcb6a8e8ec23411bedd"
     },
     {
       "path": "CHANGELOG.md",
@@ -670,7 +670,7 @@
     },
     {
       "path": "scripts/topology-conformance.js",
-      "git_blob_sha1": "afb18a5cecff2b84824ed5e503453112d2aec737"
+      "git_blob_sha1": "c4320571939b65b8926a48b06395f213ca607486"
     },
     {
       "path": "src/archive_preflight.ts",

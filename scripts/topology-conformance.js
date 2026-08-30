@@ -22,6 +22,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const cp = require("node:child_process");
+const { gitBinary } = require("./lib/git-binary");
 
 const REPO = path.resolve(__dirname, "..");
 // Two committed bundles: the inventory-only packet, and the packet the structured
@@ -71,8 +72,25 @@ function fail(message) {
   process.exit(1);
 }
 
+/**
+ * Order two strings by UTF-16 code unit, explicitly.
+ *
+ * A bare `.sort()` already does this, but it does not *say* so, and the obvious
+ * "fix" a linter suggests -- `localeCompare` -- would be wrong here: it follows
+ * the runtime's ICU data and the ambient locale, so the canonical digest below
+ * could differ between two machines looking at identical checkouts. Same
+ * contract as `src/ordering.ts`, restated locally because this script runs
+ * before and independently of the TypeScript build.
+ */
+function compareCodeUnits(a, b) {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
+}
+
+const GIT_BINARY = gitBinary(fail);
+
 function gitRevision(checkout) {
-  const result = cp.spawnSync("git", ["rev-parse", "HEAD"], { cwd: checkout, encoding: "utf8" });
+  const result = cp.spawnSync(GIT_BINARY, ["rev-parse", "HEAD"], { cwd: checkout, encoding: "utf8" });
   if (result.status !== 0) fail(`cannot resolve the topology revision: ${result.stderr || result.stdout}`);
   return result.stdout.trim();
 }
@@ -135,7 +153,7 @@ function checkoutDigest(root) {
   };
   walk(root);
   const canonical = Object.keys(entries)
-    .sort()
+    .sort(compareCodeUnits)
     .map((key) => `${key} ${entries[key]}`)
     .join("\n");
   return {
@@ -147,7 +165,7 @@ function checkoutDigest(root) {
 /** Paths whose digest entry differs between two checkout digests. */
 function mutatedCheckoutPaths(before, after) {
   const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
-  return [...keys].filter((key) => before[key] !== after[key]).sort();
+  return [...keys].filter((key) => before[key] !== after[key]).sort(compareCodeUnits);
 }
 
 /** Remove the bytecode caches the interpreter writes for its own reasons. */

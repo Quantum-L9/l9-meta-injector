@@ -20,6 +20,7 @@ const cp = require("node:child_process");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
+const { gitBinary } = require("./lib/git-binary");
 
 const REPO = path.resolve(__dirname, "..");
 const REPORT = path.join(REPO, "CURRENT_VALIDATION_REPORT.md");
@@ -44,8 +45,10 @@ function fail(message) {
   process.exit(1);
 }
 
+const GIT_BINARY = gitBinary(fail);
+
 function git(args) {
-  const result = cp.spawnSync("git", args, { cwd: REPO, encoding: "utf8" });
+  const result = cp.spawnSync(GIT_BINARY, args, { cwd: REPO, encoding: "utf8" });
   if (result.status !== 0) {
     fail(`git ${args.join(" ")} failed: ${(result.stderr || result.stdout || "").trim()}`);
   }
