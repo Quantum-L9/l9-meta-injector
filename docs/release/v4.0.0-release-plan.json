@@ -4,18 +4,20 @@
   "tag": "v4.0.0",
   "release_date": "2026-08-01",
   "github_release": {
-    "status": "blocked_pending_exact_checkout_and_authorization",
-    "required_ref": "final 40-character commit SHA",
+    "status": "released",
+    "required_ref": "56dadb0ee72f1a5da3e98dbf4f99e5e014d47e3b",
+    "resolved_commit": "56dadb0ee72f1a5da3e98dbf4f99e5e014d47e3b",
     "mutable_refs_forbidden": true
   },
   "npm_publication": {
-    "status": "blocked_pending_history_and_owner_approval",
+    "status": "not_required_github_released",
     "required": false
   },
   "consumer_migration": {
     "repository": "Quantum-L9/l9-deploy",
     "base_revision": "51d4cdb33b6b1196cc250898fd0735299bf0cf4e",
-    "status": "blocked_pending_final_release_sha_and_exact_checkout"
+    "pin_commit": "56dadb0ee72f1a5da3e98dbf4f99e5e014d47e3b",
+    "status": "pin_available_legacy_injector_still_present"
   },
   "required_gates": [
     "npm ci",
@@ -30,10 +32,10 @@
     "l9-deploy release-prepare"
   ],
   "publication_authority": {
-    "commit": false,
-    "push": false,
-    "tag": false,
-    "release": false,
+    "commit": true,
+    "push": true,
+    "tag": true,
+    "release": true,
     "npm_publish": false
   }
 }

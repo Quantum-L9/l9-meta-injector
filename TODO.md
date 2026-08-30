@@ -19,13 +19,10 @@
 
 ## Release
 
-- **Tag and release v4.0.0** once the repo is ready (not yet). The v4.0.0
-  candidate is merged to `main` (`651430cff4dc6760b623debd1bcefb244be7a189`) and
-  `check:release-candidate` passes, but the Git-lifecycle steps are deliberately
-  deferred. Plan: cut an annotated `v4.0.0` tag on that exact 40-char commit,
-  publish the GitHub release from `CHANGELOG.md`, then record the resolution in
-  `docs/release/v4.0.0-release-plan.json`. npm publish stays fail-closed and the
-  `l9-deploy` consumer migration is a separate follow-up.
-  - Plan: [`docs/release/v4.0.0-tag-and-release-plan.md`](docs/release/v4.0.0-tag-and-release-plan.md)
-  - Do not execute until the repo is ready (e.g. SonarCloud new-code reliability
-    remediation and any pending release readiness are resolved).
+- **Tag and release v4.0.0** — done 2026-08-30. Annotated tag `v4.0.0` and
+  GitHub Release point at `56dadb0ee72f1a5da3e98dbf4f99e5e014d47e3b`
+  (later than the stale plan SHA `651430c…`). npm publish stays unexecuted
+  (`publication_authority.npm_publish=false`). `l9-deploy` consumer migration
+  remains a separate follow-up now that the immutable pin exists.
+  - Release: https://github.com/Quantum-L9/l9-meta-injector/releases/tag/v4.0.0
+  - Issues: #55 #56

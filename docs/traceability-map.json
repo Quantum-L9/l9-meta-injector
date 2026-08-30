@@ -127,7 +127,7 @@
       "validators": [
         "npm run check:publication"
       ],
-      "stability": "blocked_pending_history_check"
+      "stability": "approved"
     },
     {
       "capability": "repository_model_egress",

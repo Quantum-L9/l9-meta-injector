@@ -514,7 +514,7 @@
     },
     {
       "path": "docs/package-publication-decision.json",
-      "git_blob_sha1": "80c1d4ca8ea3f602628becb346b8578f85f62bff"
+      "git_blob_sha1": "51aeedb20074e8bf632834c434405153cfbf122a"
     },
     {
       "path": "docs/public-api-contract.json",
@@ -542,7 +542,7 @@
     },
     {
       "path": "docs/traceability-map.json",
-      "git_blob_sha1": "793a6e877ffbece8728b080723784791c9061671"
+      "git_blob_sha1": "589a2bdae82e246a4dd6353619dadb4412ce4001"
     },
     {
       "path": "fixtures/local-source/expected-bundle/manifest.json",
