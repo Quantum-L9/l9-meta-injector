@@ -258,7 +258,21 @@ describe("corpus intelligence packet", () => {
       expect(bytes.length, entry.path).toBe(entry.size_bytes);
     }
     const readBack = JSON.parse(fs.readFileSync(path.join(root, "packet.json"), "utf8"));
-    expect(readBack).toEqual(JSON.parse(JSON.stringify(packet)));
+    /* A null field is written as nothing, because the consumer canonicalizes
+     * through `model_dump(mode="json", exclude_none=True)` and would otherwise
+     * compute a different semantic hash from the same packet. Every nullable
+     * field on its side defaults to None, so the omission parses back to the
+     * value that was dropped. */
+    expect(readBack.lineage.root_packet_id).toBeUndefined();
+    expect("root_packet_id" in readBack.lineage).toBe(false);
+    expect(packet.lineage.root_packet_id).toBeNull();
+
+    // Everything else survives byte for byte. Compared against the packet with
+    // its nulls dropped rather than against the packet as built, so this stays
+    // an assertion about the writer instead of a restatement of it.
+    const withoutNulls = (value: unknown): unknown =>
+      JSON.parse(JSON.stringify(value, (_key, item) => (item === null ? undefined : item)));
+    expect(readBack).toEqual(withoutNulls(packet));
     fs.rmSync(outDir, { recursive: true, force: true });
   });
 
