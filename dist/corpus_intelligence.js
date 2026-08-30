@@ -62,7 +62,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.CorpusIntelligenceError = exports.CORPUS_PAYLOAD_FIELDS = exports.CORPUS_INTELLIGENCE_MANIFEST_VERSION = exports.CORPUS_INTELLIGENCE_PRODUCER_NAME = exports.CORPUS_INTELLIGENCE_PACKET_VERSION = exports.CORPUS_INTELLIGENCE_PACKET_TYPE = void 0;
+exports.CorpusIntelligenceError = exports.CORPUS_PAYLOAD_FIELDS = exports.CORPUS_INTELLIGENCE_DIRECTORY = exports.CORPUS_INTELLIGENCE_MANIFEST_VERSION = exports.CORPUS_INTELLIGENCE_PRODUCER_NAME = exports.CORPUS_INTELLIGENCE_PACKET_VERSION = exports.CORPUS_INTELLIGENCE_PACKET_TYPE = void 0;
 exports.corpusPayloadPath = corpusPayloadPath;
 exports.validateCorpusIntelligencePacket = validateCorpusIntelligencePacket;
 exports.buildCorpusIntelligencePacket = buildCorpusIntelligencePacket;
@@ -76,6 +76,15 @@ exports.CORPUS_INTELLIGENCE_PACKET_TYPE = "l9.corpus-intelligence";
 exports.CORPUS_INTELLIGENCE_PACKET_VERSION = "1.0.0";
 exports.CORPUS_INTELLIGENCE_PRODUCER_NAME = "l9-meta-injector.corpus-intelligence";
 exports.CORPUS_INTELLIGENCE_MANIFEST_VERSION = "1.0.0";
+/**
+ * Where the bundle lives inside a published corpus generation.
+ *
+ * Named here rather than in the CLI because it is the one part of the
+ * generation's layout that is contract rather than projection: a consumer
+ * looking for the canonical packet looks here, and moving it is a breaking
+ * change to be versioned, not a directory rename.
+ */
+exports.CORPUS_INTELLIGENCE_DIRECTORY = "corpus-intelligence";
 const JSON_MEDIA_TYPE = "application/json";
 const PACKET_RELATIVE_PATH = "packet.json";
 const MANIFEST_RELATIVE_PATH = "manifest.json";
@@ -142,6 +151,31 @@ const SCHEMA_HASH = (0, repository_model_1.semanticHash)({
     packet_version: exports.CORPUS_INTELLIGENCE_PACKET_VERSION,
     payload_fields: [...exports.CORPUS_PAYLOAD_FIELDS],
 });
+// ───────────────────────────── serialization ─────────────────────────────
+/**
+ * Serialize one document exactly as it will exist on disk, and hash those bytes.
+ *
+ * One helper, because the packet's `payload_hashes` and the bundle manifest's
+ * per-file `content_hash` must be the *same* number: the consumer reads a
+ * payload file, hashes its exact bytes, and compares against the hash the packet
+ * declared. Computing the declared hash any other way — over the parsed value,
+ * over canonical JSON without the trailing newline, or through `semanticHash`,
+ * which strips volatile keys before hashing — produces a packet whose payload
+ * can never be read back, and the failure surfaces downstream as a corrupted
+ * bundle rather than as the producer defect it is.
+ */
+function canonicalDocument(value) {
+    // The consumer reads canonical JSON with a single trailing newline.
+    const contents = `${(0, repository_model_1.canonicalJson)(value)}\n`;
+    return {
+        contents,
+        entry: {
+            media_type: JSON_MEDIA_TYPE,
+            content_hash: (0, repository_model_1.sha256TextPrefixed)(contents),
+            size_bytes: Buffer.byteLength(contents, "utf8"),
+        },
+    };
+}
 // ───────────────────────────── helpers ─────────────────────────────
 function requireText(value, context) {
     if (typeof value !== "string" || value.length === 0) {
@@ -317,7 +351,7 @@ function buildCorpusIntelligencePacket(input) {
     const payload_hashes = {};
     for (const field of exports.CORPUS_PAYLOAD_FIELDS) {
         payload_refs[field] = corpusPayloadPath(field);
-        payload_hashes[field] = (0, repository_model_1.semanticHash)(payload[field]);
+        payload_hashes[field] = canonicalDocument(payload[field]).entry.content_hash;
     }
     const shell = {
         packet_type: exports.CORPUS_INTELLIGENCE_PACKET_TYPE,
@@ -365,18 +399,6 @@ function buildCorpusIntelligencePacket(input) {
         throw new CorpusIntelligenceError(`corpus-intelligence: refusing to emit a packet that is not referentially sound:\n  - ${errors.join("\n  - ")}`);
     }
     return { packet, payload };
-}
-function canonicalDocument(value) {
-    // The consumer reads canonical JSON with a single trailing newline.
-    const contents = `${(0, repository_model_1.canonicalJson)(value)}\n`;
-    return {
-        contents,
-        entry: {
-            media_type: JSON_MEDIA_TYPE,
-            content_hash: (0, repository_model_1.sha256TextPrefixed)(contents),
-            size_bytes: Buffer.byteLength(contents, "utf8"),
-        },
-    };
 }
 /**
  * Render the packet and its payload as an integrity-bound bundle.

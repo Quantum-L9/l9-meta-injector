@@ -1,8 +1,17 @@
-import { type CanonicalValue } from "./repository_model";
+import { type CanonicalValue, CanonicalFloat } from "./repository_model";
 export declare const CORPUS_INTELLIGENCE_PACKET_TYPE = "l9.corpus-intelligence";
 export declare const CORPUS_INTELLIGENCE_PACKET_VERSION = "1.0.0";
 export declare const CORPUS_INTELLIGENCE_PRODUCER_NAME = "l9-meta-injector.corpus-intelligence";
 export declare const CORPUS_INTELLIGENCE_MANIFEST_VERSION = "1.0.0";
+/**
+ * Where the bundle lives inside a published corpus generation.
+ *
+ * Named here rather than in the CLI because it is the one part of the
+ * generation's layout that is contract rather than projection: a consumer
+ * looking for the canonical packet looks here, and moving it is a breaking
+ * change to be versioned, not a directory rename.
+ */
+export declare const CORPUS_INTELLIGENCE_DIRECTORY = "corpus-intelligence";
 /**
  * Payload domains, in the order a reader meets them.
  *
@@ -96,7 +105,15 @@ export interface ExactDuplicateRelation {
 }
 export interface PairMethodScore {
     method: string;
-    score: number;
+    /**
+     * A measurement in [0,1], typed as a float rather than a number.
+     *
+     * The consumer's field is a float and CPython renders one as `1.0` where this
+     * runtime renders `1`. A categorical signal that fired scores exactly 1, so
+     * the ambiguous case is the common one; the marker removes the ambiguity at
+     * the type level instead of leaving it to whoever writes the next producer.
+     */
+    score: CanonicalFloat;
 }
 export interface SemanticPairRelation {
     relation_id: string;
