@@ -5,6 +5,10 @@
 // fails a whole corpus run downstream. These tests hold that line here, where
 // the run that caused it is still in hand.
 
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -17,6 +21,8 @@ import {
   buildCorpusIntelligenceBundle,
   buildCorpusIntelligencePacket,
   corpusPayloadPath,
+  validateCorpusIntelligencePacket,
+  writeCorpusIntelligenceBundle,
 } from "../src/corpus_intelligence";
 
 const ARTIFACT_A = "artifact:aaa";
@@ -232,5 +238,57 @@ describe("corpus intelligence packet", () => {
       expect(file, entry.path).toBeDefined();
       expect(entry.size_bytes).toBe(Buffer.byteLength(file!.contents, "utf8"));
     }
+  });
+
+  it("writes a bundle a consumer can read back, hash for hash", () => {
+    const { packet, payload } = buildCorpusIntelligencePacket(input());
+    const bundle = buildCorpusIntelligenceBundle(packet, payload, {
+      createdAt: "2026-03-01T00:00:00.000Z",
+    });
+    const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "cip-"));
+    const root = writeCorpusIntelligenceBundle(bundle, path.join(outDir, "bundle"));
+
+    const manifest = JSON.parse(fs.readFileSync(path.join(root, "manifest.json"), "utf8"));
+    expect(manifest.packet_id).toBe(packet.packet_id);
+    // The consumer verifies every manifest-listed file against its own bytes
+    // before reading any of them, so the same check runs here.
+    for (const entry of manifest.files) {
+      const bytes = fs.readFileSync(path.join(root, entry.path));
+      expect(bytes.length, entry.path).toBe(entry.size_bytes);
+    }
+    const readBack = JSON.parse(fs.readFileSync(path.join(root, "packet.json"), "utf8"));
+    expect(readBack).toEqual(JSON.parse(JSON.stringify(packet)));
+    fs.rmSync(outDir, { recursive: true, force: true });
+  });
+
+  it("refuses to overwrite an existing bundle", () => {
+    const { packet, payload } = buildCorpusIntelligencePacket(input());
+    const bundle = buildCorpusIntelligenceBundle(packet, payload, {
+      createdAt: "2026-03-01T00:00:00.000Z",
+    });
+    const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "cip-"));
+    const target = path.join(outDir, "bundle");
+    writeCorpusIntelligenceBundle(bundle, target);
+    // A packet bundle is identified by its own hashes; rewriting one in place
+    // would let two different analyses share a directory and a manifest.
+    expect(() => writeCorpusIntelligenceBundle(bundle, target)).toThrow(CorpusIntelligenceError);
+    fs.rmSync(outDir, { recursive: true, force: true });
+  });
+
+  it("reports every integrity failure, not just the first", () => {
+    const payload = emptyPayload();
+    payload.exact_duplicate_relations.push({
+      relation_id: "relation:1",
+      duplicate_cluster_id: "cluster:1",
+      artifact_a_id: "artifact:absent-one",
+      artifact_b_id: "artifact:absent-two",
+      content_hash: `sha256:${"3".repeat(64)}`,
+    });
+    // Built without the validator so the packet exists to validate; a caller
+    // wanting the full list rather than the first refusal needs this surface.
+    const { packet } = buildCorpusIntelligencePacket(input());
+    const errors = validateCorpusIntelligencePacket(packet, payload, [root()]);
+    expect(errors.length).toBeGreaterThanOrEqual(2);
+    expect(errors.every((message) => message.includes("no input packet carries"))).toBe(true);
   });
 });
