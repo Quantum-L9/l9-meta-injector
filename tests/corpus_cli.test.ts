@@ -176,6 +176,7 @@ describe("corpus mode", () => {
       "corpus-candidates.json",
       "corpus-coverage.json",
       "corpus-index.json",
+      "corpus-intelligence",
       "corpus-report.md",
       "corpus-snapshot.json",
       "document-index.json",
@@ -190,6 +191,43 @@ describe("corpus mode", () => {
       "semantic-relations.json",
       "topic-candidates.json",
     ]);
+
+    // The canonical packet ships with the generation it describes, complete:
+    // every payload domain has its own file, because "found none" and "never
+    // ran" are different statements and a missing file cannot tell them apart.
+    const cip = path.join(generation(f), "corpus-intelligence");
+    expect(fs.readdirSync(cip).sort()).toEqual(["manifest.json", "packet.json", "payload"]);
+    expect(fs.readdirSync(path.join(cip, "payload")).sort()).toEqual([
+      "consolidation-candidates.json",
+      "document-work-signals.json",
+      "exact-duplicate-relations.json",
+      "project-candidates.json",
+      "readiness-evidence.json",
+      "reasoning-candidates.json",
+      "reasoning-evidence-pack-refs.json",
+      "semantic-pair-relations.json",
+      "topic-candidates.json",
+    ]);
+    // The manifest binds every member by hash. Recomputing them here is what
+    // proves the bundle describes the bytes it shipped rather than the bytes
+    // the emitter believed it had written.
+    const manifest = JSON.parse(fs.readFileSync(path.join(cip, "manifest.json"), "utf8"));
+    for (const entry of manifest.files) {
+      const bytes = fs.readFileSync(path.join(cip, entry.path));
+      const digest = `sha256:${crypto.createHash("sha256").update(bytes).digest("hex")}`;
+      expect(digest, `manifest hash for ${entry.path}`).toBe(entry.content_hash);
+      expect(bytes.length, `manifest size for ${entry.path}`).toBe(entry.size_bytes);
+    }
+    // The packet's declared payload hashes are the same numbers, so a consumer
+    // reading one payload file can verify it without the manifest.
+    const packet = JSON.parse(fs.readFileSync(path.join(cip, "packet.json"), "utf8"));
+    expect(manifest.packet_id).toBe(packet.packet_id);
+    expect(manifest.semantic_hash).toBe(packet.semantic_hash);
+    for (const [field, reference] of Object.entries(packet.payload_refs)) {
+      const bytes = fs.readFileSync(path.join(cip, String(reference)));
+      const digest = `sha256:${crypto.createHash("sha256").update(bytes).digest("hex")}`;
+      expect(digest, `payload hash for ${field}`).toBe(packet.payload_hashes[field]);
+    }
 
     // Every root keeps its own bundle, acquisition manifest and document index,
     // under a directory named after the key the operator declared.

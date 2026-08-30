@@ -5,6 +5,7 @@
 // fails a whole corpus run downstream. These tests hold that line here, where
 // the run that caused it is still in hand.
 
+import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -273,6 +274,53 @@ describe("corpus intelligence packet", () => {
     // would let two different analyses share a directory and a manifest.
     expect(() => writeCorpusIntelligenceBundle(bundle, target)).toThrow(CorpusIntelligenceError);
     fs.rmSync(outDir, { recursive: true, force: true });
+  });
+
+  it("declares each payload hash as the hash of the bytes the bundle writes", () => {
+    /* The consumer reads a payload file, hashes its exact bytes, and compares
+     * against the hash the packet declared. So the declared hash is not a
+     * summary of the payload's meaning — it is the content hash of one file,
+     * trailing newline included.
+     *
+     * This was wrong: the declared hash was computed with `semanticHash`, which
+     * hashes the canonical form with no trailing newline *and* strips volatile
+     * keys before hashing. Both differences are silent here and fatal there —
+     * every emitted bundle would have failed its payload check downstream, and
+     * the volatile-key stripping would have made a payload record carrying a
+     * field named `created_at` or `packet_id` unreadable in a way no amount of
+     * staring at the two hashes would explain.
+     *
+     * The digest below is taken independently rather than through the module's
+     * own helper: a test that reused the helper would agree with any mistake
+     * the helper made.
+     */
+    const { packet, payload } = buildCorpusIntelligencePacket(input());
+    const bundle = buildCorpusIntelligenceBundle(packet, payload, {
+      createdAt: "2026-03-01T00:00:00.000Z",
+    });
+    for (const field of CORPUS_PAYLOAD_FIELDS) {
+      const file = bundle.files.find((entry) => entry.path === corpusPayloadPath(field));
+      expect(file, `bundle is missing ${field}`).toBeDefined();
+      const digest =
+        "sha256:" + crypto.createHash("sha256").update(Buffer.from(file!.contents, "utf8")).digest("hex");
+      expect(packet.payload_hashes[field], `payload_hashes.${field}`).toBe(digest);
+      expect(file!.contents.endsWith("\n")).toBe(true);
+    }
+  });
+
+  it("moves a payload hash when a volatile-named field inside it changes", () => {
+    /* `semanticHash` would strip these before hashing, so two payloads that
+     * differ only in such a field would claim one hash while writing two
+     * different files. The bundle would then fail its own manifest check on
+     * whichever file was not the one hashed.
+     */
+    const withValue = (value: string): string => {
+      const payload = emptyPayload();
+      payload.reasoning_evidence_pack_refs.push(value);
+      const built = buildCorpusIntelligencePacket({ ...input(), payload });
+      return built.packet.payload_hashes.reasoning_evidence_pack_refs;
+    };
+    expect(withValue("pack:one")).not.toBe(withValue("pack:two"));
   });
 
   it("reports every integrity failure, not just the first", () => {

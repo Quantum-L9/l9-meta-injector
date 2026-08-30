@@ -34,6 +34,7 @@ import * as path from "node:path";
 import { compareCodePoints } from "./ordering";
 import {
   type CanonicalValue,
+  CanonicalFloat,
   canonicalJson,
   semanticHash,
   sha256TextPrefixed,
@@ -43,6 +44,16 @@ export const CORPUS_INTELLIGENCE_PACKET_TYPE = "l9.corpus-intelligence";
 export const CORPUS_INTELLIGENCE_PACKET_VERSION = "1.0.0";
 export const CORPUS_INTELLIGENCE_PRODUCER_NAME = "l9-meta-injector.corpus-intelligence";
 export const CORPUS_INTELLIGENCE_MANIFEST_VERSION = "1.0.0";
+
+/**
+ * Where the bundle lives inside a published corpus generation.
+ *
+ * Named here rather than in the CLI because it is the one part of the
+ * generation's layout that is contract rather than projection: a consumer
+ * looking for the canonical packet looks here, and moving it is a breaking
+ * change to be versioned, not a directory rename.
+ */
+export const CORPUS_INTELLIGENCE_DIRECTORY = "corpus-intelligence";
 
 const JSON_MEDIA_TYPE = "application/json";
 const PACKET_RELATIVE_PATH = "packet.json";
@@ -205,7 +216,15 @@ export interface ExactDuplicateRelation {
 
 export interface PairMethodScore {
   method: string;
-  score: number;
+  /**
+   * A measurement in [0,1], typed as a float rather than a number.
+   *
+   * The consumer's field is a float and CPython renders one as `1.0` where this
+   * runtime renders `1`. A categorical signal that fired scores exactly 1, so
+   * the ambiguous case is the common one; the marker removes the ambiguity at
+   * the type level instead of leaving it to whoever writes the next producer.
+   */
+  score: CanonicalFloat;
 }
 
 export interface SemanticPairRelation {
@@ -320,6 +339,36 @@ const SCHEMA_HASH = semanticHash({
   packet_version: CORPUS_INTELLIGENCE_PACKET_VERSION,
   payload_fields: [...CORPUS_PAYLOAD_FIELDS],
 });
+
+// ───────────────────────────── serialization ─────────────────────────────
+
+/**
+ * Serialize one document exactly as it will exist on disk, and hash those bytes.
+ *
+ * One helper, because the packet's `payload_hashes` and the bundle manifest's
+ * per-file `content_hash` must be the *same* number: the consumer reads a
+ * payload file, hashes its exact bytes, and compares against the hash the packet
+ * declared. Computing the declared hash any other way — over the parsed value,
+ * over canonical JSON without the trailing newline, or through `semanticHash`,
+ * which strips volatile keys before hashing — produces a packet whose payload
+ * can never be read back, and the failure surfaces downstream as a corrupted
+ * bundle rather than as the producer defect it is.
+ */
+function canonicalDocument(value: unknown): {
+  contents: string;
+  entry: Omit<CorpusBundleFile, "path">;
+} {
+  // The consumer reads canonical JSON with a single trailing newline.
+  const contents = `${canonicalJson(value)}\n`;
+  return {
+    contents,
+    entry: {
+      media_type: JSON_MEDIA_TYPE,
+      content_hash: sha256TextPrefixed(contents),
+      size_bytes: Buffer.byteLength(contents, "utf8"),
+    },
+  };
+}
 
 // ───────────────────────────── build input ─────────────────────────────
 
@@ -567,7 +616,7 @@ export function buildCorpusIntelligencePacket(
   const payload_hashes: Record<string, string> = {};
   for (const field of CORPUS_PAYLOAD_FIELDS) {
     payload_refs[field] = corpusPayloadPath(field);
-    payload_hashes[field] = semanticHash(payload[field] as unknown);
+    payload_hashes[field] = canonicalDocument(payload[field]).entry.content_hash;
   }
 
   const shell: CorpusIntelligencePacket = {
@@ -643,22 +692,6 @@ export interface CorpusIntelligenceBundle {
     artifact_hash: string;
     files: CorpusBundleFile[];
     created_at: string;
-  };
-}
-
-function canonicalDocument(value: unknown): {
-  contents: string;
-  entry: Omit<CorpusBundleFile, "path">;
-} {
-  // The consumer reads canonical JSON with a single trailing newline.
-  const contents = `${canonicalJson(value)}\n`;
-  return {
-    contents,
-    entry: {
-      media_type: JSON_MEDIA_TYPE,
-      content_hash: sha256TextPrefixed(contents),
-      size_bytes: Buffer.byteLength(contents, "utf8"),
-    },
   };
 }
 
