@@ -7,32 +7,32 @@
   "evidence": [
     {
       "id": "npm_registry_history",
-      "status": "unknown",
-      "result": "An authenticated npm registry-history check has not been executed for 4.0.0."
+      "status": "verified",
+      "result": "2026-08-30 registry GET https://registry.npmjs.org/l9-meta-injector and https://registry.npmjs.org/@quantum-l9/l9-meta-injector both returned HTTP 404. Name and version 4.0.0 are unclaimed. npm publish was not executed."
     },
     {
       "id": "constellation_consumer_inventory",
-      "status": "unknown",
-      "result": "The l9-deploy migration is modeled, but an organization-wide consumer inventory remains incomplete."
+      "status": "verified",
+      "result": "2026-08-30 GitHub org code search over Quantum-L9 found no consumer package.json dependency on l9-meta-injector. Hits are this repository, Cursor-Governance WIP/docs, and .github policy class self_governed. Modeled consumer Quantum-L9/l9-deploy still ships scripts/inject-l9-meta.py and is not an npm consumer."
     },
     {
       "id": "github_release_validation",
-      "status": "unknown",
-      "result": "The exact-checkout build, packed-consumer, Action, and release-archive gates have not run on the final release commit."
+      "status": "verified",
+      "result": "Exact commit 56dadb0ee72f1a5da3e98dbf4f99e5e014d47e3b: npm ci, npm run validate (packed-consumer OK sha256=4fe5bd831fb9407d359a3208bb2b02c94f7d18a75f799013853d650894b13ab3, release-candidate PASS), npm run lint. Annotated tag v4.0.0 peels to that SHA. GitHub Release https://github.com/Quantum-L9/l9-meta-injector/releases/tag/v4.0.0 is non-draft and non-prerelease."
     },
     {
       "id": "l9_deploy_migration_validation",
-      "status": "unknown",
-      "result": "The migration runner requires the final immutable 40-character release commit and exact l9-deploy checkout."
+      "status": "not_applicable_with_reason",
+      "result": "ADR-029: GitHub tag consumption is sufficient for l9-deploy; npm is optional. Immutable pin is 56dadb0ee72f1a5da3e98dbf4f99e5e014d47e3b (tag v4.0.0). Applying the Python-injector replacement remains a separate l9-deploy change, not a meta-injector publication blocker."
     },
     {
       "id": "distribution_owner_approval",
-      "status": "unknown",
-      "result": "No npm publication approval is recorded for 4.0.0."
+      "status": "not_applicable_with_reason",
+      "result": "npm_publication.required is false. Operator authorized the GitHub tag and Release for issue #55. npm publish was not granted and was not executed. publication_authority.npm_publish remains false."
     }
   ],
   "resolution": {
     "approve_when": "Every evidence item is verified or not_applicable_with_reason and status is changed to approved.",
-    "implementation_effect": "GitHub commit/tag consumption may proceed after its own release gates and authorization; npm publish remains separately blocked."
+    "implementation_effect": "GitHub commit/tag consumption is authorized at v4.0.0 / 56dadb0ee72f1a5da3e98dbf4f99e5e014d47e3b. npm publish remains separately blocked by publication_authority.npm_publish=false."
   }
 }
