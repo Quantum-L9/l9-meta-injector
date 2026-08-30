@@ -402,11 +402,11 @@
     },
     {
       "path": "dist/repository_model.js",
-      "git_blob_sha1": "3562d54f3ceaa5a75beb680f3aadea1a49eedb53"
+      "git_blob_sha1": "1d1b03973b98c290f459b1d97a51c278294533e1"
     },
     {
       "path": "dist/repository_model.js.map",
-      "git_blob_sha1": "968eeb7d16b6e5780a127c719cc60c17e98c47d1"
+      "git_blob_sha1": "e425ff70e8abb367682350f24833fd0135ce477a"
     },
     {
       "path": "dist/zip_reader.d.ts",
@@ -822,7 +822,7 @@
     },
     {
       "path": "src/repository_model.ts",
-      "git_blob_sha1": "5e967363e49bed93ae76a72ddfff5bf7c31c2506"
+      "git_blob_sha1": "de48e7f8bb081e2366f060dc3e3020a1150bed73"
     },
     {
       "path": "src/schema.ts",

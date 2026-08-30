@@ -137,8 +137,19 @@ function canonicalize(value) {
         const out = {};
         for (const key of Object.keys(source).sort(ordering_1.compareCodePoints)) {
             const item = source[key];
-            if (item === undefined)
-                continue; // an absent field, not a null one
+            // Absent and null are one thing here, because they are one thing on the
+            // other side: the consumer canonicalizes through `model_dump(mode="json",
+            // exclude_none=True)`, so a field it holds as `None` is not in the
+            // document it hashes. Emitting `"root_packet_id":null` where the consumer
+            // emits nothing is a different string, a different digest, and a bundle
+            // rejected after every one of its byte-level hashes has verified.
+            //
+            // Safe because every nullable field in the consumer's models defaults to
+            // `None`: an omitted field parses back to exactly the value that was
+            // dropped. A nullable field without that default would already make the
+            // consumer unable to read its own bundles.
+            if (item === undefined || item === null)
+                continue;
             out[key] = canonicalize(item);
         }
         return out;
