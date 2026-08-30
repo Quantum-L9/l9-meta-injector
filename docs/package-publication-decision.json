@@ -2,7 +2,7 @@
   "schema": "l9.package-publication-decision/v1",
   "package_name": "l9-meta-injector",
   "package_version": "4.0.0",
-  "status": "approved",
+  "status": "blocked_pending_history_check",
   "publication_command": "npm publish",
   "evidence": [
     {

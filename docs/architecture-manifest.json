@@ -514,7 +514,7 @@
     },
     {
       "path": "docs/package-publication-decision.json",
-      "git_blob_sha1": "51aeedb20074e8bf632834c434405153cfbf122a"
+      "git_blob_sha1": "3ac2598c3b13bf49013e19a0c928418b2157c3bc"
     },
     {
       "path": "docs/public-api-contract.json",
@@ -950,7 +950,7 @@
     },
     {
       "path": "tests/publication_readiness.test.ts",
-      "git_blob_sha1": "8e432396f86df86741226e2ad7cfe3fde83bec83"
+      "git_blob_sha1": "fe47895c9b2b4823a34279c5ae6f99793f898135"
     },
     {
       "path": "tests/repository_model.test.ts",
