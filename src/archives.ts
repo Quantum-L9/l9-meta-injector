@@ -247,8 +247,14 @@ export function extractZip(
   // candidate to be removed while the operator's existing extraction is
   // untouched. Only a complete, verified candidate is swapped into place.
   const candidate = `${extractDir}.candidate-${crypto.randomUUID().slice(0, 8)}`;
-  fs.mkdirSync(candidate, { recursive: false });
+  // The candidate is removed on failure only when this run created it. If a
+  // directory already exists at the candidate path — a stale leftover, or a
+  // user directory that happens to share the name — mkdir fails and the
+  // pre-existing directory is never touched.
+  let candidateCreated = false;
   try {
+    fs.mkdirSync(candidate, { recursive: false });
+    candidateCreated = true;
     let expandedBytes = 0;
     for (const member of selected) {
       expandedBytes += writeMember(
@@ -259,7 +265,7 @@ export function extractZip(
     writeExtractionOwnership(candidate, zipPath);
     swapCandidateIntoPlace(candidate, extractDir);
   } catch (error) {
-    fs.rmSync(candidate, { recursive: true, force: true });
+    if (candidateCreated) fs.rmSync(candidate, { recursive: true, force: true });
     throw error;
   }
   return selected.length;

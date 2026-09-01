@@ -3,7 +3,7 @@ import * as os from "os";
 import * as path from "path";
 import { execFileSync } from "child_process";
 import { createHash } from "crypto";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { runPipelineAsync } from "../src/pipeline";
 import { findFiles } from "../src/retrieval";
 import { PipelineConfig } from "../src/schema";
@@ -16,6 +16,15 @@ import {
 } from "../src/archives";
 import { sidecarPathFor } from "../src/comment";
 import { UNIX_SYMLINK, treeSnapshot, writeRawZip } from "./helpers/zip_fixtures";
+
+// Candidate directories are named from randomUUID; a fixed value makes the
+// pre-existing-candidate collision test deterministic. Every other test in this
+// file only ever extracts into a fresh tmp root, so the fixed suffix cannot
+// collide across tests.
+vi.mock("node:crypto", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:crypto")>();
+  return { ...actual, randomUUID: () => "deadbeef-0000-4000-8000-000000000000" };
+});
 
 function tmp(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "l9-archives-"));
@@ -305,6 +314,22 @@ describe("archives — local-files expansion", () => {
     expect(marker.archive).toBe("V2.zip");
     expect(marker.archive_sha256).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect(typeof marker.created_at).toBe("string");
+  });
+
+  test("a pre-existing candidate-named directory is never deleted", () => {
+    // The candidate name is generated, but generation is not ownership: if a
+    // directory already sits at the candidate path, extraction must fail
+    // without removing it — the destructive-by-name class this path forbids.
+    const root = tmp();
+    const zipPath = path.join(root, "Collide.zip");
+    writeRawZip(zipPath, [{ name: "a.md", content: "# a\n" }]);
+    const extractDir = extractDirFor(zipPath);
+    const candidate = `${extractDir}.candidate-deadbeef`;
+    fs.mkdirSync(candidate, { recursive: true });
+    fs.writeFileSync(path.join(candidate, "USER_DATA"), "irreplaceable\n");
+
+    expect(() => extractZip(zipPath, extractDir)).toThrow(/EEXIST|already exists/);
+    expect(fs.readFileSync(path.join(candidate, "USER_DATA"), "utf8")).toBe("irreplaceable\n");
   });
 
   test("a spoofed owner prefix never grants destructive authority", () => {
