@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quantum-l9.github.io/l9-meta-injector/schemas/local-files-extraction-v2.schema.json",
+  "title": "l9-meta-injector.local-files-extraction/v2 ownership marker",
+  "description": "The marker a materialized extraction directory carries. Destructive replace authority requires this exact schema and owner; a legacy or foreign marker never authorizes removal.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "owner", "archive", "archive_sha256", "created_at"],
+  "properties": {
+    "schema": { "const": "l9-meta-injector.local-files-extraction/v2" },
+    "owner": { "const": "l9-meta-injector.local-files" },
+    "archive": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Basename of the archive the directory was extracted from."
+    },
+    "archive_sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "Digest of the exact archive bytes the extraction was produced from."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the candidate completed, ISO 8601."
+    }
+  }
+}

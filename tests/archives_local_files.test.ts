@@ -214,6 +214,78 @@ describe("archives — local-files expansion", () => {
     expect(leftovers).toEqual([]);
   });
 
+  test("an empty unmarked sibling directory is never replaced", () => {
+    // Emptiness is not ownership: a user directory that happens to be empty and
+    // named like an extraction target is still user data.
+    const root = tmp();
+    const zipPath = path.join(root, "Empty.zip");
+    writeRawZip(zipPath, [{ name: "a.md", content: "# a\n" }]);
+    const extractDir = extractDirFor(zipPath);
+    fs.mkdirSync(extractDir, { recursive: true });
+
+    const result = expandArchivesUnderRoot(root, { dryRun: false, verbose: false });
+    expect(result.archives[0].heldReason).toMatch(/empty.*user data/);
+    expect(fs.existsSync(extractDir)).toBe(true);
+    expect(() => extractZip(zipPath, extractDir)).toThrow(/never replaced/);
+  });
+
+  test("a legacy v1 marker without the v2 schema is refused for refresh", () => {
+    const root = tmp();
+    const zipPath = path.join(root, "Legacy.zip");
+    writeRawZip(zipPath, [{ name: "a.md", content: "# a\n" }]);
+    const extractDir = extractDirFor(zipPath);
+    expect(extractZip(zipPath, extractDir)).toBe(1);
+
+    // Simulate a directory produced by an older release: owner only, no schema.
+    fs.writeFileSync(
+      path.join(extractDir, ".l9extracted-owner.json"),
+      JSON.stringify({ owner: "l9-meta-injector.local-files", archive: "Legacy.zip" }, null, 2),
+      "utf8",
+    );
+    const before = treeSnapshot(root);
+
+    expect(() => extractZip(zipPath, extractDir)).toThrow(/legacy ownership marker/);
+    expect(treeSnapshot(root)).toEqual(before);
+  });
+
+  test("the marker written is the v2 schema bound to the exact archive bytes", () => {
+    const root = tmp();
+    const zipPath = path.join(root, "V2.zip");
+    writeRawZip(zipPath, [{ name: "a.md", content: "# a\n" }]);
+    const extractDir = extractDirFor(zipPath);
+    expect(extractZip(zipPath, extractDir)).toBe(1);
+
+    const marker = JSON.parse(
+      fs.readFileSync(path.join(extractDir, ".l9extracted-owner.json"), "utf8"),
+    ) as Record<string, unknown>;
+    expect(marker.schema).toBe("l9-meta-injector.local-files-extraction/v2");
+    expect(marker.owner).toBe("l9-meta-injector.local-files");
+    expect(marker.archive).toBe("V2.zip");
+    expect(marker.archive_sha256).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(typeof marker.created_at).toBe("string");
+  });
+
+  test("a spoofed owner prefix never grants destructive authority", () => {
+    // The old predicate accepted any owner starting with `l9-meta-injector.`, so
+    // `l9-meta-injector.evil` was tool-owned authority. Exact match only.
+    const root = tmp();
+    const zipPath = path.join(root, "Spoof.zip");
+    writeRawZip(zipPath, [{ name: "a.md", content: "# a\n" }]);
+    const extractDir = extractDirFor(zipPath);
+    fs.mkdirSync(extractDir, { recursive: true });
+    fs.writeFileSync(path.join(extractDir, "IMPORTANT_USER_DATA"), "irreplaceable\n");
+    fs.writeFileSync(
+      path.join(extractDir, ".l9extracted-owner.json"),
+      JSON.stringify({ owner: "l9-meta-injector.evil", archive: "Spoof.zip" }, null, 2),
+      "utf8",
+    );
+    const before = treeSnapshot(root);
+
+    expect(() => extractZip(zipPath, extractDir)).toThrow(/never removed/);
+    expect(treeSnapshot(root)).toEqual(before);
+    expect(fs.readFileSync(path.join(extractDir, "IMPORTANT_USER_DATA"), "utf8")).toBe("irreplaceable\n");
+  });
+
   test("listZipMembers rejects Zip-Slip paths", () => {
     const root = tmp();
     const evil = path.join(root, "evil.zip");

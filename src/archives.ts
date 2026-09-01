@@ -43,7 +43,13 @@ import * as path from "node:path";
 import { sidecarPathFor } from "./comment";
 import { serializeYamlObject } from "./yaml_serialize";
 import type { OmitMatcher } from "./omit";
-import { LEGACY_EXTRACTION_OWNER_FILE, hasLegacyExtractionOwnership } from "./local_source";
+import {
+  EXTRACTION_OWNER_ID,
+  LEGACY_EXTRACTION_OWNER_FILE,
+  LOCAL_FILES_EXTRACTION_SCHEMA,
+  hasExtractionOwnershipV2,
+  hasLegacyExtractionOwnership,
+} from "./local_source";
 import { canonicalMemberPath } from "./archive_preflight";
 import { ArchiveExecutionContext } from "./archive_execution";
 import type { LocalArchivePolicy } from "./local_archive_policy";
@@ -152,19 +158,46 @@ export function extractionRefusalReason(extractDir: string): string | null {
   }
   if (stat.isSymbolicLink()) return `extraction target is a symbolic link: ${extractDir}`;
   if (!stat.isDirectory()) return `extraction target exists and is not a directory: ${extractDir}`;
-  if (fs.readdirSync(extractDir).length === 0) return null;
-  if (hasLegacyExtractionOwnership(extractDir)) return null;
+  if (hasExtractionOwnershipV2(extractDir)) return null;
+  if (fs.readdirSync(extractDir).length === 0) {
+    return (
+      `extraction target exists, is empty, and carries no v2 ownership marker, ` +
+      `so it is treated as user data and never replaced: ${extractDir}`
+    );
+  }
+  if (hasLegacyExtractionOwnership(extractDir)) {
+    return (
+      `extraction target carries a legacy ownership marker without the v2 schema, ` +
+      `so it is never replaced; remove it manually to re-extract: ${extractDir}`
+    );
+  }
   return (
     `extraction target already exists and carries no ${LEGACY_EXTRACTION_OWNER_FILE} ownership marker, ` +
     `so it is treated as user data and never removed: ${extractDir}`
   );
 }
 
-/** Record that this tool owns an extraction directory, so a later run may refresh it. */
+/**
+ * Record that this tool owns an extraction directory, so a later run may refresh it.
+ *
+ * The marker is the v2 schema: it binds the directory to the exact archive bytes
+ * it was extracted from, and destructive authority requires the exact schema and
+ * owner, never a prefix match.
+ */
 function writeExtractionOwnership(extractDir: string, zipPath: string): void {
   fs.writeFileSync(
     path.join(extractDir, LEGACY_EXTRACTION_OWNER_FILE),
-    JSON.stringify({ owner: "l9-meta-injector.local-files", archive: path.basename(zipPath) }, null, 2),
+    JSON.stringify(
+      {
+        schema: LOCAL_FILES_EXTRACTION_SCHEMA,
+        owner: EXTRACTION_OWNER_ID,
+        archive: path.basename(zipPath),
+        archive_sha256: contentHashFile(zipPath),
+        created_at: new Date().toISOString(),
+      },
+      null,
+      2,
+    ),
     "utf8",
   );
 }
