@@ -293,7 +293,7 @@ export function buildCorpusDocumentSignals(input: DocumentSignalsInput): CorpusD
       // One example per format-and-locator-kind pair, chosen by the lowest
       // block id so the choice is a property of the corpus rather than of the
       // order the filesystem happened to be walked in.
-      const key = `${document.format} ${kind}`;
+      const key = `${document.format}\u001f${kind}`;
       const existing = examples.get(key);
       if (existing === undefined || compareCodePoints(block.block_id, existing.block_id) < 0) {
         examples.set(key, {
