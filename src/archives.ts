@@ -209,15 +209,62 @@ export function extractZip(
 
   const selected = context.planMembers(allowedMembers);
 
-  if (fs.existsSync(extractDir)) fs.rmSync(extractDir, { recursive: true, force: true });
-  fs.mkdirSync(extractDir, { recursive: true });
-  writeExtractionOwnership(extractDir, zipPath);
-
-  let expandedBytes = 0;
-  for (const member of selected) {
-    expandedBytes += writeMember(zipPath, extractDir, member, context.policy, context.budget.remainingBytes(), expandedBytes);
+  // Materialize into a same-directory candidate, never into the live target. A
+  // member that fails mid-write, a CRC mismatch, or a budget stop leaves the
+  // candidate to be removed while the operator's existing extraction is
+  // untouched. Only a complete, verified candidate is swapped into place.
+  const candidate = `${extractDir}.candidate-${crypto.randomUUID().slice(0, 8)}`;
+  fs.mkdirSync(candidate, { recursive: false });
+  try {
+    let expandedBytes = 0;
+    for (const member of selected) {
+      expandedBytes += writeMember(
+        zipPath, candidate, member, context.policy, context.budget.remainingBytes(), expandedBytes,
+      );
+    }
+    // The marker proves ownership only once every member has landed.
+    writeExtractionOwnership(candidate, zipPath);
+    swapCandidateIntoPlace(candidate, extractDir);
+  } catch (error) {
+    fs.rmSync(candidate, { recursive: true, force: true });
+    throw error;
   }
   return selected.length;
+}
+
+/**
+ * Replace `extractDir` with the completed candidate.
+ *
+ * A directory rename cannot replace a non-empty directory, so when the target
+ * exists it is first moved aside to a backup path and restored if the candidate
+ * rename fails. Ownership was re-verified immediately before this call, and the
+ * backup is removed only after the swap succeeded, so the live target is never
+ * the half-written one and a failed swap leaves the previous extraction in place.
+ */
+function swapCandidateIntoPlace(candidate: string, extractDir: string): void {
+  const hadPrevious = fs.existsSync(extractDir);
+  const backup = hadPrevious ? `${extractDir}.previous-${crypto.randomUUID().slice(0, 8)}` : null;
+  if (backup !== null) {
+    // Admission ran before the candidate was written; re-check right before the
+    // swap so a concurrent change to the target is not clobbered.
+    const refusal = extractionRefusalReason(extractDir);
+    if (refusal !== null) throw new Error(`local-files: ${refusal}`);
+    fs.renameSync(extractDir, backup);
+  }
+  try {
+    fs.renameSync(candidate, extractDir);
+  } catch (error) {
+    if (backup !== null) {
+      try {
+        fs.renameSync(backup, extractDir);
+      } catch {
+        // Both directories remain on disk; nothing was lost, and the error below
+        // names the failure.
+      }
+    }
+    throw error;
+  }
+  if (backup !== null) fs.rmSync(backup, { recursive: true, force: true });
 }
 
 /**

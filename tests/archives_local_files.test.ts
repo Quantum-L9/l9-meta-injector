@@ -58,6 +58,27 @@ function makeZip(zipPath: string, stagingDir: string, members: Record<string, st
   execFileSync("zip", ["-q", "-r", zipPath, ...names], { cwd: stagingDir });
 }
 
+/**
+ * Flip one byte of a member's stored data in place, so the central directory's
+ * CRC no longer matches the bytes the extractor will produce.
+ */
+function corruptStoredMember(zipPath: string, memberName: string): void {
+  const bytes = fs.readFileSync(zipPath);
+  const name = Buffer.from(memberName, "utf8");
+  for (let i = 0; i + 30 <= bytes.length; i++) {
+    if (bytes.readUInt32LE(i) !== 0x04034b50) continue;
+    const nameLength = bytes.readUInt16LE(i + 26);
+    const extraLength = bytes.readUInt16LE(i + 28);
+    const stored = bytes.subarray(i + 30, i + 30 + nameLength);
+    if (!stored.equals(name)) continue;
+    const dataStart = i + 30 + nameLength + extraLength;
+    bytes[dataStart] = bytes[dataStart] ^ 0xff;
+    fs.writeFileSync(zipPath, bytes);
+    return;
+  }
+  throw new Error(`member ${memberName} not found in ${zipPath}`);
+}
+
 describe("archives — local-files expansion", () => {
   test("default findFiles excludes .zip (repo mode)", () => {
     const root = tmp();
@@ -138,6 +159,59 @@ describe("archives — local-files expansion", () => {
     const second = expandArchivesUnderRoot(root, { dryRun: false, verbose: false });
     expect(second.archives[0].heldReason).toBeUndefined();
     expect(second.archives[0].memberCount).toBe(1);
+  });
+
+  test("refresh materializes through a candidate swap and leaves no candidate or backup behind", () => {
+    const root = tmp();
+    const zipPath = path.join(root, "Swap.zip");
+    writeRawZip(zipPath, [
+      { name: "old.md", content: "# old\n" },
+      { name: "nested/keep.txt", content: "keep" },
+    ]);
+    const extractDir = extractDirFor(zipPath);
+    expect(extractZip(zipPath, extractDir)).toBe(2);
+    expect(fs.existsSync(path.join(extractDir, "old.md"))).toBe(true);
+
+    // Second run with a different member set: the old members must disappear,
+    // the new one must appear, and no candidate/backup directory may remain.
+    writeRawZip(zipPath, [{ name: "new.md", content: "# new\n" }]);
+    expect(extractZip(zipPath, extractDir)).toBe(1);
+    expect(fs.existsSync(path.join(extractDir, "new.md"))).toBe(true);
+    expect(fs.existsSync(path.join(extractDir, "old.md"))).toBe(false);
+    expect(fs.existsSync(path.join(extractDir, "nested", "keep.txt"))).toBe(false);
+    const leftovers = fs
+      .readdirSync(root)
+      .filter((name) => name.includes("candidate-") || name.includes("previous-"));
+    expect(leftovers).toEqual([]);
+  });
+
+  test("a member that fails mid-write leaves the previous extraction intact and no candidate behind", () => {
+    const root = tmp();
+    const zipPath = path.join(root, "Crc.zip");
+    writeRawZip(zipPath, [
+      { name: "good.md", content: "# good\n" },
+      { name: "bad.txt", content: "data", stored: true },
+    ]);
+    const extractDir = extractDirFor(zipPath);
+    expect(extractZip(zipPath, extractDir)).toBe(2);
+
+    // Corrupt the stored bytes of bad.txt: preflight still accepts (the declared
+    // sizes are unchanged) but the CRC check fails during materialization.
+    corruptStoredMember(zipPath, "bad.txt");
+    const before = treeSnapshot(root);
+
+    expect(() => extractZip(zipPath, extractDir)).toThrow(/CRC|integrity/);
+
+    // The previous extraction is byte-identical — the member that existed from
+    // the first run still carries its original bytes, never the corrupted ones —
+    // and no candidate directory remains.
+    expect(fs.existsSync(path.join(extractDir, "good.md"))).toBe(true);
+    expect(fs.readFileSync(path.join(extractDir, "bad.txt"), "utf8")).toBe("data");
+    expect(treeSnapshot(root)).toEqual(before);
+    const leftovers = fs
+      .readdirSync(root)
+      .filter((name) => name.includes("candidate-") || name.includes("previous-"));
+    expect(leftovers).toEqual([]);
   });
 
   test("listZipMembers rejects Zip-Slip paths", () => {
