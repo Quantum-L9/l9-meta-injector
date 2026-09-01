@@ -43,11 +43,11 @@ import {
   canonicalMemberPath,
   preflightArchive,
 } from "./archive_preflight";
+import { resolveArchiveExecution } from "./archive_execution";
 import {
   ArchiveSessionBudget,
   LocalArchivePolicy,
   localArchivePolicyFingerprint,
-  resolveLocalArchivePolicy,
 } from "./local_archive_policy";
 import { ZipBudgetExceededError, readZipCentralDirectory, streamZipMember } from "./zip_reader";
 
@@ -1626,8 +1626,9 @@ export function acquireLocalSource(input: LocalSourceAcquireInput): LocalSourceO
   }
   const sourceKind = resolveSourceKind(absoluteSource, input.sourceKind ?? "auto");
   const sourceName = input.name && input.name.length > 0 ? input.name : path.basename(absoluteSource);
-  const policy = resolveLocalArchivePolicy(input.archivePolicy);
-  const budget = new ArchiveSessionBudget(policy, Date.now(), () => Date.now());
+  // The single resolution point shared with the materialization path: one policy
+  // and one session budget judge every archive, on both paths.
+  const { policy, budget } = resolveArchiveExecution(input.archivePolicy);
   const omitRoot = sourceKind === "directory" ? absoluteSource : path.dirname(absoluteSource);
   const omit = buildAcquisitionOmit(input, omitRoot);
 

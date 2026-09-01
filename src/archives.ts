@@ -44,8 +44,9 @@ import { sidecarPathFor } from "./comment";
 import { serializeYamlObject } from "./yaml_serialize";
 import type { OmitMatcher } from "./omit";
 import { LEGACY_EXTRACTION_OWNER_FILE, hasLegacyExtractionOwnership } from "./local_source";
-import { canonicalMemberPath, preflightArchive } from "./archive_preflight";
-import { resolveLocalArchivePolicy } from "./local_archive_policy";
+import { canonicalMemberPath } from "./archive_preflight";
+import { ArchiveExecutionContext } from "./archive_execution";
+import type { LocalArchivePolicy } from "./local_archive_policy";
 import { readZipCentralDirectory, streamZipMember } from "./zip_reader";
 import type { PreflightMember } from "./archive_preflight";
 
@@ -171,6 +172,10 @@ function writeExtractionOwnership(extractDir: string, zipPath: string): void {
 /**
  * Refresh extractDir and materialize allowed members into it.
  *
+ * Admission runs through a shared `ArchiveExecutionContext`, so the archive is
+ * preflighted once, against the resolved policy, at the depth its caller
+ * actually occupies in the tree — never a hard-coded 0.
+ *
  * When `allowedMembers` is set, only those canonical paths are written (omit
  * filter). Returns the number of members actually extracted.
  *
@@ -183,32 +188,26 @@ export function extractZip(
   zipPath: string,
   extractDir: string,
   allowedMembers?: string[],
+  options?: { depth?: number; policy?: Partial<LocalArchivePolicy> },
 ): number {
+  const context = new ArchiveExecutionContext({
+    zipPath,
+    extractDir,
+    depth: options?.depth ?? 0,
+    policy: options?.policy,
+  });
   const refusal = extractionRefusalReason(extractDir);
   if (refusal !== null) throw new Error(`local-files: ${refusal}`);
-
-  const policy = resolveLocalArchivePolicy();
-  const preflight = preflightArchive({
-    directory: readZipCentralDirectory(zipPath),
-    policy,
-    depth: 0,
-    archiveCompressedBytes: fs.statSync(zipPath).size,
-  });
   // Admission is decided before the directory is refreshed. Traversal was already
   // checked this early, but symlink members, entry-type violations, collisions and
   // the resource ceilings were not checked here at all: an archive that is held
   // now would previously have removed the operator's existing extraction and then
   // expanded whatever the subprocess was willing to accept.
-  if (!preflight.accepted) {
-    const reasons = preflight.holds
-      .map((hold) => (hold.memberPath ? `${hold.code} (${hold.memberPath})` : hold.code))
-      .join(", ");
-    throw new Error(`local-files: refusing to extract ${path.basename(zipPath)}: ${reasons}`);
+  if (!context.preflight.accepted) {
+    throw new Error(`local-files: refusing to extract ${path.basename(zipPath)}: ${context.holdReasons()}`);
   }
 
-  const selected = allowedMembers
-    ? preflight.members.filter((member) => allowedMembers.includes(member.canonicalPath))
-    : preflight.members;
+  const selected = context.planMembers(allowedMembers);
 
   if (fs.existsSync(extractDir)) fs.rmSync(extractDir, { recursive: true, force: true });
   fs.mkdirSync(extractDir, { recursive: true });
@@ -216,7 +215,7 @@ export function extractZip(
 
   let expandedBytes = 0;
   for (const member of selected) {
-    expandedBytes += writeMember(zipPath, extractDir, member, policy, expandedBytes);
+    expandedBytes += writeMember(zipPath, extractDir, member, context.policy, context.budget.remainingBytes(), expandedBytes);
   }
   return selected.length;
 }
@@ -234,7 +233,8 @@ function writeMember(
   zipPath: string,
   extractDir: string,
   member: PreflightMember,
-  policy: ReturnType<typeof resolveLocalArchivePolicy>,
+  policy: LocalArchivePolicy,
+  sessionRemainingBytes: number,
   expandedBytes: number,
 ): number {
   const target = path.join(extractDir, member.canonicalPath);
@@ -249,6 +249,7 @@ function writeMember(
   const ceiling = Math.min(
     policy.maxSingleMemberUncompressedBytes,
     Math.max(0, policy.maxTotalUncompressedBytesPerArchive - expandedBytes),
+    Math.max(0, sessionRemainingBytes - expandedBytes),
   );
   const handle = fs.openSync(target, "w");
   try {
@@ -442,7 +443,7 @@ function expandOneArchive(
     return { zipPath, extractDir, memberCount: 0, nestedDepth: depth, heldReason: refusal };
   }
 
-  const memberCount = extractZip(zipPath, extractDir, omit ? allowed : undefined);
+  const memberCount = extractZip(zipPath, extractDir, omit ? allowed : undefined, { depth });
   const sidecarPath = writeArchiveSidecar(zipPath, extractDir, memberCount, {
     nested_depth: depth,
     expanded_at: new Date().toISOString(),
