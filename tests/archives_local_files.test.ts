@@ -79,6 +79,19 @@ function corruptStoredMember(zipPath: string, memberName: string): void {
   throw new Error(`member ${memberName} not found in ${zipPath}`);
 }
 
+/** Patch one u16 field inside the trailing EOCD record of a writeRawZip archive. */
+function patchEocdU16(zipPath: string, offsetInEocd: number, value: number): void {
+  const bytes = fs.readFileSync(zipPath);
+  const eocd = bytes.length - 22;
+  if (bytes.readUInt32LE(eocd) !== 0x06054b50) throw new Error("EOCD not at expected position");
+  bytes.writeUInt16LE(value, eocd + offsetInEocd);
+  fs.writeFileSync(zipPath, bytes);
+}
+
+function appendTrailingBytes(zipPath: string, extra: string): void {
+  fs.appendFileSync(zipPath, extra, "utf8");
+}
+
 describe("archives — local-files expansion", () => {
   test("default findFiles excludes .zip (repo mode)", () => {
     const root = tmp();
@@ -422,6 +435,51 @@ z.close()
     const pipe = await runPipelineAsync({ ...cfg(root, out, true) });
     expect(pipe.injected.every((r) => !r.sourcePath.toLowerCase().endsWith("skill.md"))).toBe(true);
     expect(pipe.injected.some((r) => r.sourcePath.endsWith("notes.md"))).toBe(true);
+  });
+});
+
+describe("zip framing rejects", () => {
+  function framingZip(root: string): string {
+    const zipPath = path.join(root, "Framing.zip");
+    writeRawZip(zipPath, [{ name: "a.md", content: "# a\n" }]);
+    return zipPath;
+  }
+
+  test("trailing bytes after the end-of-central-directory record are rejected", () => {
+    const root = tmp();
+    const zipPath = framingZip(root);
+    appendTrailingBytes(zipPath, "JUNK");
+    expect(() => listZipMembers(zipPath)).toThrow(/does not reach the end of the archive/);
+  });
+
+  test("a comment length that does not account for the remaining bytes is rejected", () => {
+    const root = tmp();
+    const zipPath = framingZip(root);
+    // Claims a 3-byte comment that was never written.
+    patchEocdU16(zipPath, 20, 3);
+    expect(() => listZipMembers(zipPath)).toThrow(/does not reach the end of the archive/);
+  });
+
+  test("a multi-disk archive is rejected", () => {
+    const root = tmp();
+    const zipPath = framingZip(root);
+    patchEocdU16(zipPath, 4, 1); // disk number of this disk: 1
+    expect(() => listZipMembers(zipPath)).toThrow(/multi-disk/);
+  });
+
+  test("an on-disk entry count that disagrees with the total is rejected", () => {
+    const root = tmp();
+    const zipPath = framingZip(root);
+    patchEocdU16(zipPath, 8, 0); // entries on this disk: 0, total: 1
+    expect(() => listZipMembers(zipPath)).toThrow(/multi-disk/);
+  });
+
+  test("a well-formed comment reaching exactly EOF is accepted", () => {
+    const root = tmp();
+    const zipPath = framingZip(root);
+    patchEocdU16(zipPath, 20, 3);
+    appendTrailingBytes(zipPath, "abc");
+    expect(listZipMembers(zipPath)).toEqual(["a.md"]);
   });
 });
 
