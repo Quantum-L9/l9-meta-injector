@@ -67,29 +67,20 @@ const REPORT_RELATIVE = "CURRENT_VALIDATION_REPORT.md";
  * worse — a report generated after the commit is never committed, and one that
  * excuses a single mismatch excuses the case it exists to catch.
  *
- * So the binding is a digest over `git ls-files -s` — mode, blob sha and path
- * for every tracked file — plus the porcelain status, with this report itself
- * removed from both. Committing the report moves neither. Changing one byte of
- * source moves both, and `--check` fails.
+ * The binding is a digest over the actual bytes of every tracked and untracked
+ * file, with this report itself excluded. A previous version bound the digest
+ * to `git ls-files -s` index blobs plus the porcelain status class, which has
+ * one hole the byte binding closes: a second edit of an already-dirty file
+ * rewrites no index blob and changes no status class, so the old digest could
+ * not see it. Hashing the bytes on disk means every edit moves the digest,
+ * dirty or not. Non-file entries are recorded by kind, a vanished path as
+ * `missing` — never silently dropped.
  *
  * HEAD is recorded beside it because a reader wants to know which commit the run
  * happened at. It is not what the check compares, and the report says so.
  */
 function treeState() {
   const head = git(["rev-parse", "HEAD"]);
-  // Both lists are parsed into `<status> <path>` and rebuilt, rather than
-  // filtered as raw lines.
-  //
-  // Porcelain's layout is `XY <path>` where an unstaged modification leaves X a
-  // space — and `git()` trims the whole output, so whichever path sorts first
-  // loses that leading space. Filtering the report's own line by suffix then
-  // *changed the text of a different line*, because removing the first entry
-  // promoted another one into the trimmed position. Rebuilding from the parsed
-  // columns is immune to where a line happens to sit.
-  const parseTracked = (line) => {
-    const tab = line.indexOf("\t");
-    return tab < 0 ? null : { meta: line.slice(0, tab), path: line.slice(tab + 1) };
-  };
   const parseStatus = (line) => {
     // The status is the first two columns; the path follows one space. A leading
     // space may have been trimmed, in which case the columns are one short.
@@ -101,22 +92,39 @@ function treeState() {
     return { meta: status, path: arrow < 0 ? body : body.slice(arrow + 4) };
   };
 
-  const tracked = git(["ls-files", "-s"])
+  const trackedPaths = git(["ls-files"])
     .split(/\r?\n/)
-    .map((line) => (line.length === 0 ? null : parseTracked(line)))
-    .filter((entry) => entry !== null && entry.path !== REPORT_RELATIVE)
-    .map((entry) => `${entry.meta}\t${entry.path}`)
-    .sort();
+    .filter((line) => line.length > 0 && line !== REPORT_RELATIVE);
   const porcelain = git(["status", "--porcelain", "--untracked-files=all"])
     .split(/\r?\n/)
     .map((line) => (line.length === 0 ? null : parseStatus(line)))
-    .filter((entry) => entry !== null && entry.path !== REPORT_RELATIVE)
-    .map((entry) => `${entry.meta} ${entry.path}`)
-    .sort();
-  const digest = crypto
-    .createHash("sha256")
-    .update(`${tracked.join("\n")}\n--\n${porcelain.join("\n")}\n`)
-    .digest("hex");
+    .filter((entry) => entry !== null && entry.path !== REPORT_RELATIVE);
+
+  // One union of paths, one content pass. Porcelain entries overlay the tracked
+  // plane so a modified file's line records its working-tree status.
+  const paths = new Map(trackedPaths.map((p) => [p, "tracked"]));
+  for (const entry of porcelain) paths.set(entry.path, entry.meta);
+
+  const lines = [];
+  for (const [relative, meta] of paths) {
+    const absolute = path.join(REPO, relative);
+    let stats = null;
+    try {
+      stats = fs.lstatSync(absolute);
+    } catch {
+      // Recorded as missing below; a deleted path must move the digest.
+    }
+    let descriptor;
+    if (stats === null) descriptor = "missing";
+    else if (stats.isSymbolicLink()) descriptor = `link:${fs.readlinkSync(absolute)}`;
+    else if (stats.isDirectory()) descriptor = "dir";
+    else if (stats.isFile()) {
+      descriptor = crypto.createHash("sha256").update(fs.readFileSync(absolute)).digest("hex");
+    } else descriptor = "special";
+    lines.push(`${meta}\t${relative}\t${descriptor}`);
+  }
+  lines.sort();
+  const digest = crypto.createHash("sha256").update(`${lines.join("\n")}\n`).digest("hex");
   return { head, clean: porcelain.length === 0, digest: `sha256:${digest}` };
 }
 
@@ -169,10 +177,11 @@ function renderReport(state, results, generatedAt) {
 This report is written by \`scripts/validation-report.js\`, which runs each
 command below and records the exit code it received rather than a claim about it.
 
-It is bound to the **tree digest**, not to the commit id: a digest over every
-tracked file's mode, blob hash and path, plus the working-tree status, with this
-report itself excluded from both. Committing the report therefore does not
-invalidate it, and changing one byte of anything else does.
+It is bound to the **tree digest**, not to the commit id: a digest over the
+actual bytes of every tracked and untracked file, with this report itself
+excluded. Committing the report therefore does not invalidate it, and changing
+one byte of anything else does — including a second edit of a file that was
+already dirty.
 \`npm run validate:report -- --check\` recomputes the digest and fails when it has
 moved, so a report written against an earlier tree cannot be presented as
 evidence for this one. The commit above is recorded because a reader wants to

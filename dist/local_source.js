@@ -33,9 +33,10 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ARCHIVE_READER_VERSION = exports.LEGACY_EXTRACTION_SUFFIX = exports.LEGACY_EXTRACTION_OWNER_FILE = exports.GENERATED_ARTIFACT_OMIT_PATTERNS = exports.SCRATCH_OWNER_ID = exports.SCRATCH_OWNER_FILE = exports.ARCHIVE_MEMBER_SEPARATOR = void 0;
+exports.ARCHIVE_READER_VERSION = exports.EXTRACTION_OWNER_ID = exports.LOCAL_FILES_EXTRACTION_SCHEMA = exports.LEGACY_EXTRACTION_SUFFIX = exports.LEGACY_EXTRACTION_OWNER_FILE = exports.GENERATED_ARTIFACT_OMIT_PATTERNS = exports.SCRATCH_OWNER_ID = exports.SCRATCH_OWNER_FILE = exports.ARCHIVE_MEMBER_SEPARATOR = void 0;
 exports.removeOwnedScratch = removeOwnedScratch;
 exports.hasLegacyExtractionOwnership = hasLegacyExtractionOwnership;
+exports.hasExtractionOwnershipV2 = hasExtractionOwnershipV2;
 exports.isLegacyGeneratedExtraction = isLegacyGeneratedExtraction;
 exports.hashFileStreaming = hashFileStreaming;
 exports.physicalManifestDigest = physicalManifestDigest;
@@ -74,6 +75,7 @@ const ordering_1 = require("./ordering");
 const encoding_1 = require("./encoding");
 const omit_1 = require("./omit");
 const archive_preflight_1 = require("./archive_preflight");
+const archive_execution_1 = require("./archive_execution");
 const local_archive_policy_1 = require("./local_archive_policy");
 const zip_reader_1 = require("./zip_reader");
 /** Separator between an archive path and a member path in a virtual locator. */
@@ -106,6 +108,10 @@ exports.GENERATED_ARTIFACT_OMIT_PATTERNS = [
 /** Marker a tool-owned legacy extraction directory carries. */
 exports.LEGACY_EXTRACTION_OWNER_FILE = ".l9extracted-owner.json";
 exports.LEGACY_EXTRACTION_SUFFIX = ".l9extracted";
+/** Schema id stamped on the v2 extraction-ownership marker. */
+exports.LOCAL_FILES_EXTRACTION_SCHEMA = "l9-meta-injector.local-files-extraction/v2";
+/** Exact owner id the materialization path stamps and the destructive path accepts. */
+exports.EXTRACTION_OWNER_ID = "l9-meta-injector.local-files";
 /** Version of the ZIP reader whose output an archive manifest describes. */
 exports.ARCHIVE_READER_VERSION = "1.0.0";
 /**
@@ -206,7 +212,26 @@ function removeOwnedScratch(root, token) {
 function hasLegacyExtractionOwnership(directory) {
     try {
         const marker = JSON.parse(fs.readFileSync(path.join(directory, exports.LEGACY_EXTRACTION_OWNER_FILE), "utf8"));
-        return typeof marker.owner === "string" && marker.owner.startsWith("l9-meta-injector.");
+        // Exact id only: a prefix match would let an attacker-chosen owner such as
+        // `l9-meta-injector.evil` borrow this package's authority. This predicate
+        // decides exclusion from observation, not destruction; the destructive path
+        // additionally requires the v2 schema.
+        return typeof marker.owner === "string" && marker.owner === exports.EXTRACTION_OWNER_ID;
+    }
+    catch {
+        return false;
+    }
+}
+/**
+ * True when a directory carries the v2 ownership marker, exact owner and all.
+ *
+ * This is the predicate the destructive replace path consults: a marker without
+ * the v2 schema field is a legacy or foreign file and never authorizes removal.
+ */
+function hasExtractionOwnershipV2(directory) {
+    try {
+        const marker = JSON.parse(fs.readFileSync(path.join(directory, exports.LEGACY_EXTRACTION_OWNER_FILE), "utf8"));
+        return marker.schema === exports.LOCAL_FILES_EXTRACTION_SCHEMA && marker.owner === exports.EXTRACTION_OWNER_ID;
     }
     catch {
         return false;
@@ -1254,8 +1279,9 @@ function acquireLocalSource(input) {
     }
     const sourceKind = resolveSourceKind(absoluteSource, input.sourceKind ?? "auto");
     const sourceName = input.name && input.name.length > 0 ? input.name : path.basename(absoluteSource);
-    const policy = (0, local_archive_policy_1.resolveLocalArchivePolicy)(input.archivePolicy);
-    const budget = new local_archive_policy_1.ArchiveSessionBudget(policy, Date.now(), () => Date.now());
+    // The single resolution point shared with the materialization path: one policy
+    // and one session budget judge every archive, on both paths.
+    const { policy, budget } = (0, archive_execution_1.resolveArchiveExecution)(input.archivePolicy);
     const omitRoot = sourceKind === "directory" ? absoluteSource : path.dirname(absoluteSource);
     const omit = buildAcquisitionOmit(input, omitRoot);
     const diagnostics = [];

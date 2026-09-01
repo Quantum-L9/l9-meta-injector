@@ -70,6 +70,24 @@ describe("the tree the report is bound to", () => {
     }
     expect(reporter.treeState().digest).toBe(before);
   });
+
+  it("moves on a second edit of an already-dirty file", () => {
+    // The stop condition the index-bound digest could not catch: once a file is
+    // dirty, its index blob and status class stop changing, so `ls-files -s` plus
+    // porcelain saw nothing new. Bytes on disk see every edit.
+    const before = reporter.treeState().digest;
+    const probe = path.join(REPO, "src", ".validation-report-probe.ts");
+    try {
+      fs.writeFileSync(probe, "export const probe = 1;\n", "utf8");
+      const first = reporter.treeState().digest;
+      expect(first).not.toBe(before);
+      fs.writeFileSync(probe, "export const probe = 2;\n", "utf8");
+      expect(reporter.treeState().digest).not.toBe(first);
+    } finally {
+      fs.rmSync(probe, { force: true });
+    }
+    expect(reporter.treeState().digest).toBe(before);
+  });
 });
 
 describe("what the report says", () => {

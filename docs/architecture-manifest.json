@@ -314,15 +314,15 @@
     },
     {
       "path": "dist/local_source.d.ts",
-      "git_blob_sha1": "6ec8a6df5218365868f8ec993975457b070464ef"
+      "git_blob_sha1": "435b54491a80ca866a0f476a57aa5f3646eddcf2"
     },
     {
       "path": "dist/local_source.js",
-      "git_blob_sha1": "ce6d6ee6c60ff63acbfff7f6b3f197f9121dbba4"
+      "git_blob_sha1": "c6c926be431ecf28355d7c5498726824bb375411"
     },
     {
       "path": "dist/local_source.js.map",
-      "git_blob_sha1": "1dddbea356893856f4e17c2a523515e0717310e4"
+      "git_blob_sha1": "0c8866980f01d0844ffd9b9ff0e302036550ca17"
     },
     {
       "path": "dist/ordering.d.ts",
@@ -786,7 +786,7 @@
     },
     {
       "path": "src/local_source.ts",
-      "git_blob_sha1": "cb087e06d5b6d027dec83bcfacdbd86c0a0f3703"
+      "git_blob_sha1": "271b4be8837f8b0149d44fc2b1bd3c26c05138b1"
     },
     {
       "path": "src/meta_v3.ts",
