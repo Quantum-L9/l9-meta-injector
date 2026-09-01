@@ -1,9 +1,9 @@
 # Current validation report
 
-**Generated at commit:** `de151f3adeccf2d97d85c040f46c97446fd5ea05`
+**Generated at commit:** `4eab4e97cd06a01bd0b4d9ec0e2014474033bb85`
 **Working tree:** **dirty** — this report describes uncommitted changes
-**Bound to tree:** `sha256:fd83db0048bfbabfea323d054df4aa73004a411b1f31218791ef072b383432f6`
-**Generated:** 2026-09-01T19:05:06.792Z
+**Bound to tree:** `sha256:84a9af00c2b46b8e8932afbbb8e7ca263bab386a256a4219658480fbc353fe54`
+**Generated:** 2026-09-01T19:18:05.555Z
 
 This report is written by `scripts/validation-report.js`, which runs each
 command below and records the exit code it received rather than a claim about it.
@@ -23,45 +23,13 @@ know where the run happened; it is not what the check compares.
 | Command | Exit | Result | Covers |
 |---|---:|---|---|
 | `npm run lint` | 0 | pass | ESLint over src and tests |
-| `npm run validate` | 1 | **FAIL** | the aggregate gate |
-
-## Failures
-
-### `npm run validate` — exit 1
-
-```
-[l9-meta-injector] local-files: expanded 2 archive(s) under /var/folders/y0/0lghf1112pj1747ldqz7zd4r0000gn/T/l9-archives-SNJEUX
-[l9-meta-injector] coverage: scanned=4 injected=4 skipped-binary=0 skipped-noninjectable=0 archives-expanded=2 verify-failed=0 report=/var/folders/y0/0lghf1112pj1747ldqz7zd4r0000gn/T/l9-archives-G7d0kA/coverage-report.json
-[l9-meta-injector] coverage: scanned=2 injected=1 skipped-binary=0 skipped-noninjectable=1 archives-expanded=0 verify-failed=0 report=/var/folders/y0/0lghf1112pj1747ldqz7zd4r0000gn/T/l9-cov-1788289497069-8he7lpsd6j8/coverage-report.json
-[l9-meta-injector] coverage: scanned=1 injected=0 skipped-binary=0 skipped-noninjectable=1 archives-expanded=0 verify-failed=0 report=/var/folders/y0/0lghf1112pj1747ldqz7zd4r0000gn/T/l9-cov-1788289497096-yr62ts0pj1k/coverage-report.json
-[l9-meta-injector] verification FAILED for 1/1 file(s):
-  - /var/folders/y0/0lghf1112pj1747ldqz7zd4r0000gn/T/l9-verify-1788289499293-con5l14xj6v/prompts/Prompt-Incomplete.md: Prompt schema 'role' is Unknown; Prompt schema 'objective' is Unknown; Prompt schema 'input_variables' is Unknown; Prompt schema 'output_format' is Unknown; Prompt schema 'model_target' is Unknown
-[l9-meta-injector] llm http_error (status 429): rate limited [0ms]
-[l9-meta-injector] llm parse_error (status 200): Unexpected token [0ms]
-[l9-meta-injector] llm timeout: aborted [0ms]
-[l9-meta-injector] llm network_error: ECONNREFUSED [0ms]
-[l9-meta-injector] llm network_error: refusing to send credential to non-https baseUrl [0ms]
-[l9-meta-injector] llm network_error: refusing to send credential to non-https baseUrl [0ms]
-[l9-meta-injector] llm network_error: refusing to send credential to non-https baseUrl [0ms]
-[l9-meta-injector] llm network_error: refusing to send credential to non-https baseUrl [0ms]
-[l9-meta-injector] llm network_error: network error [0ms]
-dist-integrity: FAILED: dist is dirty before validation
-  dirty:  M dist/archives.d.ts
-  dirty:  M dist/archives.js
-  dirty:  M dist/archives.js.map
-  dirty:  M dist/local_source.d.ts
-  dirty:  M dist/local_source.js
-  dirty:  M dist/local_source.js.map
-  dirty: ?? dist/archive_execution.d.ts
-  dirty: ?? dist/archive_execution.js
-  dirty: ?? dist/archive_execution.js.map
-```
+| `npm run validate` | 0 | pass | the aggregate gate |
 
 ## Verdict
 
-**RED**
+**green**
 
-At least one command failed. The tail of its output is above; this tree is not green.
+Every command above exited zero on the tree named at the top of this file.
 
 ## What this report does not say
 

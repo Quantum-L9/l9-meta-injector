@@ -95,6 +95,20 @@ refused if its resolved path is the observed directory or lies inside it. An out
 written beside the source would mutate what was just observed, and the next run would
 then observe this run's output as if it were user content.
 
+## local-files materialization (ADR-045)
+
+`PipelineConfig.localFiles` extraction is not a CLI entrypoint, but it does write
+into the target repository, so its placement is stated here:
+
+- The final extraction directory is the archive's sibling `<stem>.l9extracted`, as
+  before. What changed is the mechanism: members are written into
+  `<stem>.l9extracted.candidate-<hex>` first, and the candidate is renamed into
+  place; on a refresh, the previous directory is moved aside to
+  `<stem>.l9extracted.previous-<hex>` and removed only after the swap succeeded.
+- Both auxiliary names are transient. A failed materialization removes its
+  candidate and leaves the previous extraction in place; a completed one leaves
+  neither.
+
 ## Rules
 
 - Do not change a default in code without changing this document in the same commit.

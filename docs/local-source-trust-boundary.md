@@ -108,9 +108,13 @@ times, observation wall clock, usernames and hostnames never cross it.
 - **Resource limits are policy, not isolation.** They bound this process's work. They
   are not a sandbox, and they do not bound what a consumer later does with the packet.
 - **The legacy path is different.** `PipelineConfig.localFiles` materializes into the
-  source tree by design. It is hardened against name-based deletion and dry-run
-  mutation, but it is not covered by the guarantees above. Use `local-source` for
-  anything you do not intend to modify.
+  source tree by design. Since ADR-045 it is hardened further: materialization goes
+  through a same-directory candidate with an atomic swap, destructive replace
+  requires the exact v2 ownership marker (`l9-meta-injector.local-files-extraction/v2`,
+  exact owner id — never a prefix match), an empty unmarked or legacy v1-marked
+  target is refused as user data, and dry-run runs the same admission as a real
+  run. It is still not covered by the read-only guarantees above. Use
+  `local-source` for anything you do not intend to modify.
 
 ## The cache is inside the boundary, not outside it
 

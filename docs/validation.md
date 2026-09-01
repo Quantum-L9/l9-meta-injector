@@ -36,3 +36,11 @@ All gates report PASS / FAIL / SKIPPED / Unknown. No fake validation.
 - source_mutation true on folder-artifact -> HALT
 - Manifest gate fails -> HALT before any write
 - Output nested inside source -> HALT
+
+## Tree digest (ADR-045)
+
+`CURRENT_VALIDATION_REPORT.md` binds to a digest over the actual bytes of every
+tracked and untracked file, with the report itself excluded. Every edit moves
+the digest — including a second edit of a file that was already dirty.
+`npm run validate:report -- --check` fails when the report was written against
+a different tree.

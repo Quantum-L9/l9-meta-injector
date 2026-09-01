@@ -414,11 +414,11 @@
     },
     {
       "path": "dist/zip_reader.js",
-      "git_blob_sha1": "f4aaa960101993b55f4ef70a5f63d2fbd8ce6559"
+      "git_blob_sha1": "edfd231c508db3d9a3e07a20bd51191bcec1ebd9"
     },
     {
       "path": "dist/zip_reader.js.map",
-      "git_blob_sha1": "f413f25eb77126b2c62bda23fa85baab1a3ccdfc"
+      "git_blob_sha1": "4a88cb67999b0378934f9df0cf225a9efa121099"
     },
     {
       "path": "docs/architecture-authority.json",
@@ -430,7 +430,7 @@
     },
     {
       "path": "docs/contracts.md",
-      "git_blob_sha1": "06423a10c908c7ce661f4781fca139aaff97b761"
+      "git_blob_sha1": "27badedf9353bb97a5cb28465aa3cfa9002855da"
     },
     {
       "path": "docs/corpus-archaeology.md",
@@ -442,7 +442,7 @@
     },
     {
       "path": "docs/decision_log.md",
-      "git_blob_sha1": "4103a8d821c5bd1cdea96e899f1aadb9590d7877"
+      "git_blob_sha1": "66e2ee9fc7416d704c3c8798b4050736548e32cf"
     },
     {
       "path": "docs/decisions/036-read-only-local-source-acquisition.md",
@@ -490,7 +490,7 @@
     },
     {
       "path": "docs/local-source-trust-boundary.md",
-      "git_blob_sha1": "e35233545f2cd7d34394d7747a91525dc604f44e"
+      "git_blob_sha1": "8544f4884ee0b3e659cdc941ee364ef57e129e05"
     },
     {
       "path": "docs/manifest.md",
@@ -506,7 +506,7 @@
     },
     {
       "path": "docs/output-placement-contract.md",
-      "git_blob_sha1": "360a212544f66224ee3ea007e12b9750b2e56b80"
+      "git_blob_sha1": "e6650f4f75977bfe33041feffbd430e848130d06"
     },
     {
       "path": "docs/package-contract.json",
@@ -830,7 +830,7 @@
     },
     {
       "path": "src/zip_reader.ts",
-      "git_blob_sha1": "2de1657b34b4dfccfea5162790a327b53664cd79"
+      "git_blob_sha1": "b3006c6c46f2aa7ce7549df39ac88e00de3705cb"
     },
     {
       "path": "tests/architecture_authority.test.ts",
