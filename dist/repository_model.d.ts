@@ -5,7 +5,23 @@ export { compareCodePoints } from "./ordering";
 export declare const REPOSITORY_MODEL_PACKET_TYPE = "l9.repository-model";
 export declare const REPOSITORY_MODEL_PACKET_VERSION = "1.1.0";
 export declare const REPOSITORY_MODEL_PRODUCER_NAME = "l9-meta-injector.repository-model";
-export type CanonicalValue = string | number | boolean | null | CanonicalValue[] | {
+/**
+ * A number the contract calls a measurement rather than a count.
+ *
+ * This runtime has one numeric type; CPython has two, and renders them
+ * differently — a score of exactly `1` is `1` here and `1.0` there. Nothing
+ * about the value says which it is, so the distinction is carried explicitly
+ * rather than guessed from whether the value happens to be integral. Guessing
+ * would be right for `0.85` and wrong for `1`, and `1` is the value a
+ * categorical signal carries when it fires.
+ */
+export declare class CanonicalFloat {
+    readonly value: number;
+    constructor(value: number);
+}
+/** Mark a number as a float measurement. */
+export declare function canonicalFloat(value: number): CanonicalFloat;
+export type CanonicalValue = string | number | boolean | null | CanonicalFloat | CanonicalValue[] | {
     [key: string]: CanonicalValue;
 };
 /** Canonical JSON text for any packet-shaped value. */

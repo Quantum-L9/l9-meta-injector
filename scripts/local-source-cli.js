@@ -512,6 +512,8 @@ async function runCorpusMode(cli) {
   const httpEmbeddings = requireBuilt(path.join(repo, "dist", "corpus_embedding_http.js"));
   const repositoryModel = requireBuilt(path.join(repo, "dist", "public", "repository_model.js"));
   const ordering = requireBuilt(path.join(repo, "dist", "ordering.js"));
+  const corpusIntelligence = requireBuilt(path.join(repo, "dist", "corpus_intelligence.js"));
+  const corpusIntelligenceInput = requireBuilt(path.join(repo, "dist", "corpus_intelligence_input.js"));
   const { version } = require(path.join(repo, "package.json"));
 
   let specs;
@@ -805,6 +807,40 @@ async function runCorpusMode(cli) {
   } finally {
     fs.rmSync(bundleScratch, { recursive: true, force: true });
   }
+  // The canonical packet, emitted from the generation this run just computed.
+  //
+  // This is the contract boundary. Every other file here is a projection whose
+  // layout is this repository's business; the bundle below is what a consumer
+  // is entitled to read, and it is versioned, hash-bound and validated before it
+  // is written. It is built in memory from `result` rather than by re-reading
+  // the files above, so it cannot describe a generation different from the one
+  // it ships beside.
+  //
+  // A packet that fails its own referential validation fails the run. Publishing
+  // the generation without it would leave a consumer to fall back to reading the
+  // directory, which is the arrangement this packet exists to end.
+  const corpusIntelligenceCreatedAt = new Date().toISOString();
+  try {
+    const built = corpusIntelligence.buildCorpusIntelligencePacket(
+      corpusIntelligenceInput.corpusIntelligenceInput(result, {
+        producerVersion: version,
+        createdAt: corpusIntelligenceCreatedAt,
+      }),
+    );
+    const bundle = corpusIntelligence.buildCorpusIntelligenceBundle(built.packet, built.payload, {
+      createdAt: corpusIntelligenceCreatedAt,
+    });
+    for (const file of bundle.files) {
+      outputs.push({
+        path: `${corpusIntelligence.CORPUS_INTELLIGENCE_DIRECTORY}/${file.path}`,
+        contents: file.contents,
+      });
+    }
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error));
+    return;
+  }
+
   // The index names every other document, so it is built once the output set is
   // final — including the ones this run decided not to write.
   const indexModule = requireBuilt(path.join(repo, "dist", "corpus_index.js"));

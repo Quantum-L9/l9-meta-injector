@@ -218,7 +218,7 @@ export function buildProjectCandidates(input: BuildProjectCandidatesInput): Proj
   const containers = new Map<string, ProjectCandidateContainer>();
   for (const marker of input.markers) {
     const containerPath = projectContainerForMarker(marker.root_relative_path);
-    const slot = `${marker.root_id} ${containerPath}`;
+    const slot = `${marker.root_id}\u001f${containerPath}`;
     const existing = containers.get(slot) ?? {
       root_id: marker.root_id,
       container_path: containerPath,
@@ -262,7 +262,7 @@ export function buildProjectCandidates(input: BuildProjectCandidatesInput): Proj
     const owner = bucket.find((container) =>
       isUnderContainer(container.container_path, member.root_relative_path));
     if (owner === undefined) continue;
-    const slot = `${owner.root_id} ${owner.container_path}`;
+    const slot = `${owner.root_id}\u001f${owner.container_path}`;
     const members = assignment.get(slot);
     if (members === undefined) assignment.set(slot, [member.virtual_source_id]);
     else members.push(member.virtual_source_id);
@@ -293,7 +293,7 @@ export function buildProjectCandidates(input: BuildProjectCandidatesInput): Proj
     );
     const memberIds = new Set<string>();
     for (const container of orderedContainers) {
-      for (const id of assignment.get(`${container.root_id} ${container.container_path}`) ?? []) {
+      for (const id of assignment.get(`${container.root_id}\u001f${container.container_path}`) ?? []) {
         memberIds.add(id);
       }
       container.marker_ids.sort(compareCodePoints);

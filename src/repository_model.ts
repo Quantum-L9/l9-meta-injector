@@ -54,7 +54,37 @@ const DEFAULT_GENERATED_AT = "1970-01-01T00:00:00.000Z";
 // object keys sorted by code point, no separator whitespace, absent fields omitted,
 // and a fixed set of volatile keys removed before hashing.
 
-export type CanonicalValue = string | number | boolean | null | CanonicalValue[] | { [key: string]: CanonicalValue };
+/**
+ * A number the contract calls a measurement rather than a count.
+ *
+ * This runtime has one numeric type; CPython has two, and renders them
+ * differently — a score of exactly `1` is `1` here and `1.0` there. Nothing
+ * about the value says which it is, so the distinction is carried explicitly
+ * rather than guessed from whether the value happens to be integral. Guessing
+ * would be right for `0.85` and wrong for `1`, and `1` is the value a
+ * categorical signal carries when it fires.
+ */
+export class CanonicalFloat {
+  constructor(readonly value: number) {
+    if (!Number.isFinite(value)) {
+      throw new Error(`repository-model: a float measurement must be finite, got ${String(value)}`);
+    }
+  }
+}
+
+/** Mark a number as a float measurement. */
+export function canonicalFloat(value: number): CanonicalFloat {
+  return new CanonicalFloat(value);
+}
+
+export type CanonicalValue =
+  | string
+  | number
+  | boolean
+  | null
+  | CanonicalFloat
+  | CanonicalValue[]
+  | { [key: string]: CanonicalValue };
 
 const VOLATILE_KEYS: ReadonlySet<string> = new Set([
   "created_at", "checked_at", "generated_at", "committed_at", "frozen_at",
@@ -65,22 +95,37 @@ const VOLATILE_KEYS: ReadonlySet<string> = new Set([
 
 function canonicalize(value: unknown): CanonicalValue {
   if (value === null) return null;
+  // Ahead of the object branch: a marker is an instance, and destructuring one
+  // key by key would canonicalize it as `{"value":0.85}`.
+  if (value instanceof CanonicalFloat) return value;
   if (Array.isArray(value)) return value.map((item) => canonicalize(item));
   if (typeof value === "object") {
     const source = value as Record<string, unknown>;
     const out: Record<string, CanonicalValue> = {};
     for (const key of Object.keys(source).sort(compareCodePoints)) {
       const item = source[key];
-      if (item === undefined) continue; // an absent field, not a null one
+      // Absent and null are one thing here, because they are one thing on the
+      // other side: the consumer canonicalizes through `model_dump(mode="json",
+      // exclude_none=True)`, so a field it holds as `None` is not in the
+      // document it hashes. Emitting `"root_packet_id":null` where the consumer
+      // emits nothing is a different string, a different digest, and a bundle
+      // rejected after every one of its byte-level hashes has verified.
+      //
+      // Safe because every nullable field in the consumer's models defaults to
+      // `None`: an omitted field parses back to exactly the value that was
+      // dropped. A nullable field without that default would already make the
+      // consumer unable to read its own bundles.
+      if (item === undefined || item === null) continue;
       out[key] = canonicalize(item);
     }
     return out;
   }
   if (typeof value === "number") {
-    // The consumer rejects NaN/Infinity, and float repr differs between runtimes.
-    // Keeping the packet integer-only removes that divergence class entirely.
-    if (!Number.isFinite(value) || !Number.isInteger(value)) {
-      throw new Error(`repository-model: only finite integer numbers are canonical, got ${String(value)}`);
+    // NaN and Infinity have no JSON form and the consumer rejects both
+    // (`json.dumps(..., allow_nan=False)`). Finite floats are canonical, and
+    // `renderNumber` below is what makes them safe to cross the boundary.
+    if (!Number.isFinite(value)) {
+      throw new Error(`repository-model: only finite numbers are canonical, got ${String(value)}`);
     }
     return value;
   }
@@ -88,11 +133,91 @@ function canonicalize(value: unknown): CanonicalValue {
   throw new Error(`repository-model: unsupported canonical value of type ${typeof value}`);
 }
 
+/**
+ * Serialize a number exactly as the consumer's `json.dumps` would.
+ *
+ * The packet was integer-only, and that was not conservatism: a float's decimal
+ * *formatting* differs between this runtime and CPython even when the value and
+ * its shortest round-trip digits are identical. `1.0` renders as `1` here and
+ * `1.0` there; `1e-7` renders as `1e-7` here and `1e-07` there. Two sides that
+ * hash the same packet then compute different digests, and the consumer rejects
+ * a bundle whose bytes it has already verified.
+ *
+ * Integer-only avoided that by making the divergence unreachable. It also made
+ * the Corpus Intelligence packet unemittable, because its pair scores are
+ * measurements in [0,1] — and the value a categorical signal carries when it
+ * fires is exactly `1`, the worst case above.
+ *
+ * So the formatting is reproduced instead of avoided. CPython's `repr` (which
+ * `json.dumps` uses) is: shortest digits that round-trip — which this runtime
+ * already agrees on — laid out in decimal when the decimal exponent is in
+ * `(-4, 16]` and in exponential form otherwise, with `.0` appended to anything
+ * that would otherwise read as an integer and an exponent padded to two digits.
+ * The thresholds are CPython's, not this runtime's, which is the whole point:
+ * this runtime switches to exponential at different magnitudes.
+ *
+ * Integers are untouched, so no packet that predates this renders differently.
+ * `tests/canonical_float_parity.test.ts` checks the agreement differentially
+ * against a real `json.dumps`, over the boundaries and a large random sample,
+ * rather than trusting this description of the rules.
+ */
+function renderNumber(value: number): string {
+  // A plain number is a count. CPython would hold it as an `int`, which prints
+  // its exact digits at every magnitude — unlike this runtime, which switches to
+  // exponential notation past 1e21. `BigInt` gives those digits directly.
+  if (Number.isInteger(value) && !Object.is(value, -0)) return BigInt(value).toString();
+  return renderFloat(value);
+}
+
+/**
+ * Render a float exactly as CPython's `json.dumps` would.
+ *
+ * CPython's shortest-repr layout: decimal notation when the decimal exponent is
+ * in `(-4, 16]` and exponential otherwise, `.0` appended to anything that would
+ * otherwise read as an integer, and an exponent padded to two digits. The
+ * thresholds are CPython's, not this runtime's — this runtime stays decimal from
+ * 1e-6 to 1e21, which is a wider window, and every value in the gap between the
+ * two windows is a divergence.
+ *
+ * The digits themselves need no translation: both runtimes emit the shortest
+ * decimal that round-trips the double, and agree on it.
+ */
+function renderFloat(value: number): string {
+  const negative = value < 0 || Object.is(value, -0);
+  const magnitude = Math.abs(value);
+  if (magnitude === 0) return negative ? "-0.0" : "0.0";
+
+  // `toExponential()` with no argument yields the shortest digits that uniquely
+  // identify the double.
+  const [mantissa, exponentText] = magnitude.toExponential().split("e");
+  const digits = mantissa.replace(".", "");
+  // `decpt` positions the decimal point: value = 0.<digits> x 10^decpt.
+  const decpt = Number(exponentText) + 1;
+
+  let rendered: string;
+  if (decpt <= -4 || decpt > 16) {
+    const exponent = decpt - 1;
+    const sign = exponent < 0 ? "-" : "+";
+    const padded = String(Math.abs(exponent)).padStart(2, "0");
+    const fraction = digits.length > 1 ? `.${digits.slice(1)}` : "";
+    rendered = `${digits[0]}${fraction}e${sign}${padded}`;
+  } else if (decpt <= 0) {
+    rendered = `0.${"0".repeat(-decpt)}${digits}`;
+  } else if (decpt >= digits.length) {
+    // Would read as an integer, so CPython appends `.0` to keep it a float.
+    rendered = `${digits}${"0".repeat(decpt - digits.length)}.0`;
+  } else {
+    rendered = `${digits.slice(0, decpt)}.${digits.slice(decpt)}`;
+  }
+  return negative ? `-${rendered}` : rendered;
+}
+
 /** Render already-canonical data. Written by hand so key order can never be re-sorted by the engine. */
 function render(value: CanonicalValue): string {
   if (value === null) return "null";
   if (typeof value === "boolean") return value ? "true" : "false";
-  if (typeof value === "number") return String(value);
+  if (value instanceof CanonicalFloat) return renderFloat(value.value);
+  if (typeof value === "number") return renderNumber(value);
   if (typeof value === "string") return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map((item) => render(item)).join(",")}]`;
   const keys = Object.keys(value).sort(compareCodePoints);
@@ -105,6 +230,7 @@ export function canonicalJson(value: unknown): string {
 }
 
 function stripVolatile(value: CanonicalValue): CanonicalValue {
+  if (value instanceof CanonicalFloat) return value;
   if (Array.isArray(value)) return value.map((item) => stripVolatile(item));
   if (value !== null && typeof value === "object") {
     const out: Record<string, CanonicalValue> = {};
