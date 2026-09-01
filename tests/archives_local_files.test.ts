@@ -214,6 +214,35 @@ describe("archives — local-files expansion", () => {
     expect(leftovers).toEqual([]);
   });
 
+  test("dry-run reports the same preflight refusal as a real run", () => {
+    const root = tmp();
+    const zipPath = path.join(root, "DryHostile.zip");
+    writeRawZip(zipPath, [{ name: "link", content: "/etc/passwd", unixMode: UNIX_SYMLINK, stored: true }]);
+    const before = treeSnapshot(root);
+
+    const result = expandArchivesUnderRoot(root, { dryRun: true, verbose: false });
+
+    // The same hold a real run would refuse with, not a "would extract" promise.
+    expect(result.archives[0].heldReason).toMatch(/refusing to extract.*entry_symlink/);
+    expect(treeSnapshot(root)).toEqual(before);
+    expect(fs.existsSync(extractDirFor(zipPath))).toBe(false);
+  });
+
+  test("dry-run reports the ownership refusal for an existing unmarked target", () => {
+    const root = tmp();
+    const zipPath = path.join(root, "DryTarget.zip");
+    writeRawZip(zipPath, [{ name: "a.md", content: "# a\n" }]);
+    const extractDir = extractDirFor(zipPath);
+    fs.mkdirSync(extractDir, { recursive: true });
+    fs.writeFileSync(path.join(extractDir, "USER_DATA"), "irreplaceable\n");
+    const before = treeSnapshot(root);
+
+    const result = expandArchivesUnderRoot(root, { dryRun: true, verbose: false });
+
+    expect(result.archives[0].heldReason).toMatch(/user data/);
+    expect(treeSnapshot(root)).toEqual(before);
+  });
+
   test("an empty unmarked sibling directory is never replaced", () => {
     // Emptiness is not ownership: a user directory that happens to be empty and
     // named like an extraction target is still user data.

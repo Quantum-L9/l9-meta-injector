@@ -492,13 +492,29 @@ function expandOneArchive(
   const allowed = filterAllowedMembers(absRoot, extractDir, members, omit);
 
   // Dry run is a promise of zero source-tree mutation, and sibling extraction is
-  // a source-tree mutation. The archive is still listed and reported, so a dry run
-  // states exactly what a real run would materialize.
+  // a source-tree mutation. But a dry run must run the same admission as a real
+  // run: the same preflight, the same ownership refusal, the same hold text —
+  // otherwise "what a real run would do" is a claim the code did not check.
   if (opts.dryRun) {
+    const context = new ArchiveExecutionContext({ zipPath, extractDir, depth });
+    const refusal = extractionRefusalReason(extractDir);
+    if (refusal !== null) {
+      return { zipPath, extractDir, memberCount: 0, nestedDepth: depth, heldReason: refusal };
+    }
+    if (!context.preflight.accepted) {
+      return {
+        zipPath,
+        extractDir,
+        memberCount: 0,
+        nestedDepth: depth,
+        heldReason: `refusing to extract ${path.basename(zipPath)}: ${context.holdReasons()}`,
+      };
+    }
+    const selected = context.planMembers(allowed);
     if (opts.verbose) {
       process.stderr.write(
         `[l9-meta-injector] local-files: dry-run would extract ${zipPath} → ${extractDir} ` +
-          `(depth=${depth}, members=${allowed.length}/${members.length})\n`,
+          `(depth=${depth}, members=${selected.length}/${members.length})\n`,
       );
     }
     return {
@@ -506,7 +522,7 @@ function expandOneArchive(
       extractDir,
       memberCount: 0,
       nestedDepth: depth,
-      heldReason: `dry-run: ${allowed.length} member(s) would be extracted to ${extractDir}`,
+      heldReason: `dry-run: ${selected.length} member(s) would be extracted to ${extractDir}`,
     };
   }
 
