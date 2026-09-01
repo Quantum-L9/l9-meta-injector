@@ -71,6 +71,29 @@ describe("the tree the report is bound to", () => {
     expect(reporter.treeState().digest).toBe(before);
   });
 
+  it("does not move when a file's tracked status changes without its bytes changing", () => {
+    // The digest binds bytes, not status classes: staging a file changes
+    // porcelain from `??` to `A ` without changing a byte, and a binding that
+    // moved there would be invalidated by the very commit that carries the
+    // report.
+    const { spawnSync } = require("node:child_process");
+    const { gitBinary } = require("../scripts/lib/git-binary");
+    const git = gitBinary(() => {});
+    const before = reporter.treeState().digest;
+    const probe = path.join(REPO, "src", ".validation-report-probe.ts");
+    try {
+      fs.writeFileSync(probe, "export const probe = 3;\n", "utf8");
+      const untracked = reporter.treeState().digest;
+      expect(untracked).not.toBe(before);
+      spawnSync(git, ["add", "--", "src/.validation-report-probe.ts"], { cwd: REPO });
+      expect(reporter.treeState().digest).toBe(untracked);
+      spawnSync(git, ["rm", "--cached", "--quiet", "--", "src/.validation-report-probe.ts"], { cwd: REPO });
+    } finally {
+      fs.rmSync(probe, { force: true });
+    }
+    expect(reporter.treeState().digest).toBe(before);
+  });
+
   it("moves on a second edit of an already-dirty file", () => {
     // The stop condition the index-bound digest could not catch: once a file is
     // dirty, its index blob and status class stop changing, so `ls-files -s` plus

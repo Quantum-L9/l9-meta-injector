@@ -76,37 +76,49 @@ const REPORT_RELATIVE = "CURRENT_VALIDATION_REPORT.md";
  * dirty or not. Non-file entries are recorded by kind, a vanished path as
  * `missing` — never silently dropped.
  *
+ * Working-tree status decides the `clean` flag only; it never participates in
+ * the digest, because staging or committing a file changes its status class
+ * without changing a byte, and a binding that moved when the report's own
+ * commit landed would be one nobody could satisfy.
+ *
  * HEAD is recorded beside it because a reader wants to know which commit the run
  * happened at. It is not what the check compares, and the report says so.
  */
 function treeState() {
   const head = git(["rev-parse", "HEAD"]);
-  const parseStatus = (line) => {
-    // The status is the first two columns; the path follows one space. A leading
-    // space may have been trimmed, in which case the columns are one short.
-    const trimmedLead = !line.startsWith(" ") && !/^[A-Z?!]{2} /.test(line);
-    const status = trimmedLead ? ` ${line.slice(0, 1)}` : line.slice(0, 2);
-    const body = trimmedLead ? line.slice(2) : line.slice(3);
-    // `R  old -> new` names two paths; the destination is the one that matters.
-    const arrow = body.indexOf(" -> ");
-    return { meta: status, path: arrow < 0 ? body : body.slice(arrow + 4) };
-  };
-
   const trackedPaths = git(["ls-files"])
     .split(/\r?\n/)
     .filter((line) => line.length > 0 && line !== REPORT_RELATIVE);
-  const porcelain = git(["status", "--porcelain", "--untracked-files=all"])
+
+  // Porcelain is read without the shared `git()` helper, which trims output and
+  // would eat the leading space of the first record's status column. The status
+  // codes themselves only decide `clean`; the paths feed the content pass.
+  const statusRun = cp.spawnSync(GIT_BINARY, ["status", "--porcelain", "--untracked-files=all"], {
+    cwd: REPO,
+    encoding: "utf8",
+  });
+  if (statusRun.status !== 0) {
+    fail(`git status --porcelain failed: ${(statusRun.stderr || statusRun.stdout || "").trim()}`);
+  }
+  const porcelain = statusRun.stdout
     .split(/\r?\n/)
-    .map((line) => (line.length === 0 ? null : parseStatus(line)))
+    .map((line) => {
+      if (line.length === 0) return null;
+      const body = line.slice(3);
+      // `R  old -> new` names two paths; the destination is the one that matters.
+      const arrow = body.indexOf(" -> ");
+      return { path: arrow < 0 ? body : body.slice(arrow + 4) };
+    })
     .filter((entry) => entry !== null && entry.path !== REPORT_RELATIVE);
 
-  // One union of paths, one content pass. Porcelain entries overlay the tracked
-  // plane so a modified file's line records its working-tree status.
-  const paths = new Map(trackedPaths.map((p) => [p, "tracked"]));
-  for (const entry of porcelain) paths.set(entry.path, entry.meta);
+  // One union of paths, one content pass. The porcelain plane contributes the
+  // untracked and modified paths; its status codes decide `clean` and nothing
+  // else.
+  const paths = new Set(trackedPaths);
+  for (const entry of porcelain) paths.add(entry.path);
 
   const lines = [];
-  for (const [relative, meta] of paths) {
+  for (const relative of paths) {
     const absolute = path.join(REPO, relative);
     let stats = null;
     try {
@@ -121,7 +133,7 @@ function treeState() {
     else if (stats.isFile()) {
       descriptor = crypto.createHash("sha256").update(fs.readFileSync(absolute)).digest("hex");
     } else descriptor = "special";
-    lines.push(`${meta}\t${relative}\t${descriptor}`);
+    lines.push(`${relative}\t${descriptor}`);
   }
   lines.sort();
   const digest = crypto.createHash("sha256").update(`${lines.join("\n")}\n`).digest("hex");
