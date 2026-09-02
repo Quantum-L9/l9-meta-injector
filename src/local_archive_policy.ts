@@ -103,13 +103,14 @@ export function resolveLocalArchivePolicy(overrides?: Partial<LocalArchivePolicy
 /**
  * Deterministic fingerprint of a fully resolved archive policy.
  *
- * The informational policy version is intentionally excluded. Cache identity is
- * the semantic resolved limits themselves, matching ADR-044: changing a version
- * label alone must not answer a different archive-admission question.
+ * Every resolved field contributes, including the contract version. The numeric
+ * ceilings are the direct admission semantics; the version is a conservative
+ * semantic epoch. A version bump therefore invalidates warm verdicts even when
+ * the currently visible numeric limits happen to be unchanged, which is safer
+ * than replaying a verdict across an intentionally revised policy contract.
  */
 export function localArchivePolicyFingerprint(policy: LocalArchivePolicy): string {
   const fields = [...Object.keys(policy)]
-    .filter((key) => key !== "version")
     .sort(compareCodePoints)
     .map((key) => [key, (policy as unknown as Record<string, unknown>)[key]]);
   return `lap1:${crypto.createHash("sha256").update(JSON.stringify(fields), "utf8").digest("hex")}`;
