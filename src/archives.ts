@@ -218,9 +218,13 @@ export function extractZip(
   zipPath: string,
   extractDir: string,
   allowedMembers?: string[],
-  options?: { depth?: number; policy?: Partial<LocalArchivePolicy> },
+  options?: {
+    depth?: number;
+    policy?: Partial<LocalArchivePolicy>;
+    resolution?: ArchiveExecutionResolution;
+  },
 ): number {
-  const resolution = resolveArchiveExecution(options?.policy);
+  const resolution = options?.resolution ?? resolveArchiveExecution(options?.policy);
   const context = new ArchiveExecutionContext({
     zipPath,
     extractDir,
