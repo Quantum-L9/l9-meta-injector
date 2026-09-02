@@ -95,7 +95,7 @@ The ownership marker schema is
 - owning archive basename;
 - SHA-256 of the immutable staged archive bytes that produced the extraction;
 - canonical reader version;
-- semantic resolved-policy fingerprint;
+- resolved-policy fingerprint;
 - creation timestamp.
 
 Destructive replacement requires a complete valid v2 marker and a marker archive
@@ -110,9 +110,13 @@ be finite and in their valid positive/non-negative domains; compression ratio
 must be finite and positive. `NaN`, infinities, negative limits, fractional
 counts, and equivalent nonsensical ceilings fail closed.
 
-The policy `version` is informational and does not contribute to the semantic
-policy fingerprint, matching ADR-044. The fingerprint describes the resolved
-rules, not their label.
+The resolved-policy fingerprint includes every policy field. Resource values are
+the direct admission semantics, while `version` is treated as a conservative
+policy-contract epoch. A version change therefore invalidates warm admission
+verdicts even if the currently visible numeric limits happen to be identical.
+This amends ADR-044's earlier choice to exclude version while retaining its core
+invariant: the version is never sufficient by itself and the full resolved
+policy remains fingerprinted.
 
 ### Dry-run equivalence
 
@@ -141,6 +145,8 @@ non-report tree.
 - Tightening a session ceiling may cause a later archive in a run to be held even
   when that archive is locally valid. This is intentional acquisition-wide
   resource governance.
+- A policy contract-version bump causes a conservative archive-manifest cache
+  miss even if its numeric limits are unchanged.
 - Package runtime support remains Node `>=18`; test worker parallelism therefore
   falls back to `os.cpus().length` where `os.availableParallelism()` is absent.
 - `v4.0.0` remains immutable historical release state. This convergence is a
