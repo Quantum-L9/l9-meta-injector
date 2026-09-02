@@ -184,11 +184,33 @@ function locateEocd(fd, fileSize) {
         centralDirectoryOffset: tail.readUInt32LE(eocdOffset + 16),
         zip64: false,
     };
+    // Framing: the record's comment must carry exactly to EOF. A signature found
+    // inside trailing garbage, or a comment length that does not account for every
+    // remaining byte, means the archive has bytes this reader cannot explain, and
+    // the central directory is not what the tail alone suggests.
+    const commentLength = tail.readUInt16LE(eocdOffset + 20);
+    const recordEnd = searchStart + eocdOffset + EOCD_MIN_SIZE + commentLength;
+    if (recordEnd !== fileSize) {
+        throw new ZipFormatError("end-of-central-directory comment does not reach the end of the archive");
+    }
+    // Framing: multi-disk (split) archives spread members across several files.
+    // This reader has no access to the other disks, so a split archive would be
+    // silently half-read; it is rejected instead of parsed as if complete.
+    const diskNumber = tail.readUInt16LE(eocdOffset + 4);
+    const centralDirectoryDisk = tail.readUInt16LE(eocdOffset + 6);
+    const entriesOnDisk = tail.readUInt16LE(eocdOffset + 8);
+    if (diskNumber !== 0 || centralDirectoryDisk !== 0 || entriesOnDisk !== classic.entryCount) {
+        throw new ZipFormatError("multi-disk (split) ZIP archives are not supported");
+    }
     const needsZip64 = classic.entryCount === U16_MAX
         || classic.centralDirectorySize === U32_MAX
         || classic.centralDirectoryOffset === U32_MAX;
     const locatorOffset = eocdOffset - ZIP64_LOCATOR_SIZE;
     const hasLocator = locatorOffset >= 0 && tail.readUInt32LE(locatorOffset) === ZIP64_LOCATOR_SIGNATURE;
+    if (hasLocator && tail.readUInt32LE(locatorOffset + 4) !== 0) {
+        // The Zip64 locator's disk field must be zero for a single-disk archive.
+        throw new ZipFormatError("multi-disk (split) ZIP archives are not supported");
+    }
     const resolved = needsZip64 && hasLocator ? readZip64Eocd(fd, tail, locatorOffset) : classic;
     if (resolved.centralDirectoryOffset + resolved.centralDirectorySize > fileSize) {
         throw new ZipFormatError("central directory extends past the end of the archive");

@@ -87,7 +87,7 @@ const comment_1 = require("./comment");
 const yaml_serialize_1 = require("./yaml_serialize");
 const local_source_1 = require("./local_source");
 const archive_preflight_1 = require("./archive_preflight");
-const local_archive_policy_1 = require("./local_archive_policy");
+const archive_execution_1 = require("./archive_execution");
 const zip_reader_1 = require("./zip_reader");
 /** Directory-name suffix for an expanded archive (sibling of the .zip). */
 exports.EXTRACTED_DIR_SUFFIX = ".l9extracted";
@@ -153,19 +153,41 @@ function extractionRefusalReason(extractDir) {
         return `extraction target is a symbolic link: ${extractDir}`;
     if (!stat.isDirectory())
         return `extraction target exists and is not a directory: ${extractDir}`;
-    if (fs.readdirSync(extractDir).length === 0)
+    if ((0, local_source_1.hasExtractionOwnershipV2)(extractDir))
         return null;
-    if ((0, local_source_1.hasLegacyExtractionOwnership)(extractDir))
-        return null;
+    if (fs.readdirSync(extractDir).length === 0) {
+        return (`extraction target exists, is empty, and carries no v2 ownership marker, ` +
+            `so it is treated as user data and never replaced: ${extractDir}`);
+    }
+    if ((0, local_source_1.hasLegacyExtractionOwnership)(extractDir)) {
+        return (`extraction target carries a legacy ownership marker without the v2 schema, ` +
+            `so it is never replaced; remove it manually to re-extract: ${extractDir}`);
+    }
     return (`extraction target already exists and carries no ${local_source_1.LEGACY_EXTRACTION_OWNER_FILE} ownership marker, ` +
         `so it is treated as user data and never removed: ${extractDir}`);
 }
-/** Record that this tool owns an extraction directory, so a later run may refresh it. */
+/**
+ * Record that this tool owns an extraction directory, so a later run may refresh it.
+ *
+ * The marker is the v2 schema: it binds the directory to the exact archive bytes
+ * it was extracted from, and destructive authority requires the exact schema and
+ * owner, never a prefix match.
+ */
 function writeExtractionOwnership(extractDir, zipPath) {
-    fs.writeFileSync(path.join(extractDir, local_source_1.LEGACY_EXTRACTION_OWNER_FILE), JSON.stringify({ owner: "l9-meta-injector.local-files", archive: path.basename(zipPath) }, null, 2), "utf8");
+    fs.writeFileSync(path.join(extractDir, local_source_1.LEGACY_EXTRACTION_OWNER_FILE), JSON.stringify({
+        schema: local_source_1.LOCAL_FILES_EXTRACTION_SCHEMA,
+        owner: local_source_1.EXTRACTION_OWNER_ID,
+        archive: path.basename(zipPath),
+        archive_sha256: contentHashFile(zipPath),
+        created_at: new Date().toISOString(),
+    }, null, 2), "utf8");
 }
 /**
  * Refresh extractDir and materialize allowed members into it.
+ *
+ * Admission runs through a shared `ArchiveExecutionContext`, so the archive is
+ * preflighted once, against the resolved policy, at the depth its caller
+ * actually occupies in the tree — never a hard-coded 0.
  *
  * When `allowedMembers` is set, only those canonical paths are written (omit
  * filter). Returns the number of members actually extracted.
@@ -175,40 +197,90 @@ function writeExtractionOwnership(extractDir, zipPath) {
  * holds it. Admission is decided before the directory is refreshed, so a hostile
  * archive never reaches the point of removing anything.
  */
-function extractZip(zipPath, extractDir, allowedMembers) {
+function extractZip(zipPath, extractDir, allowedMembers, options) {
+    const context = new archive_execution_1.ArchiveExecutionContext({
+        zipPath,
+        extractDir,
+        depth: options?.depth ?? 0,
+        policy: options?.policy,
+    });
     const refusal = extractionRefusalReason(extractDir);
     if (refusal !== null)
         throw new Error(`local-files: ${refusal}`);
-    const policy = (0, local_archive_policy_1.resolveLocalArchivePolicy)();
-    const preflight = (0, archive_preflight_1.preflightArchive)({
-        directory: (0, zip_reader_1.readZipCentralDirectory)(zipPath),
-        policy,
-        depth: 0,
-        archiveCompressedBytes: fs.statSync(zipPath).size,
-    });
     // Admission is decided before the directory is refreshed. Traversal was already
     // checked this early, but symlink members, entry-type violations, collisions and
     // the resource ceilings were not checked here at all: an archive that is held
     // now would previously have removed the operator's existing extraction and then
     // expanded whatever the subprocess was willing to accept.
-    if (!preflight.accepted) {
-        const reasons = preflight.holds
-            .map((hold) => (hold.memberPath ? `${hold.code} (${hold.memberPath})` : hold.code))
-            .join(", ");
-        throw new Error(`local-files: refusing to extract ${path.basename(zipPath)}: ${reasons}`);
+    if (!context.preflight.accepted) {
+        throw new Error(`local-files: refusing to extract ${path.basename(zipPath)}: ${context.holdReasons()}`);
     }
-    const selected = allowedMembers
-        ? preflight.members.filter((member) => allowedMembers.includes(member.canonicalPath))
-        : preflight.members;
-    if (fs.existsSync(extractDir))
-        fs.rmSync(extractDir, { recursive: true, force: true });
-    fs.mkdirSync(extractDir, { recursive: true });
-    writeExtractionOwnership(extractDir, zipPath);
-    let expandedBytes = 0;
-    for (const member of selected) {
-        expandedBytes += writeMember(zipPath, extractDir, member, policy, expandedBytes);
+    const selected = context.planMembers(allowedMembers);
+    // Materialize into a same-directory candidate, never into the live target. A
+    // member that fails mid-write, a CRC mismatch, or a budget stop leaves the
+    // candidate to be removed while the operator's existing extraction is
+    // untouched. Only a complete, verified candidate is swapped into place.
+    const candidate = `${extractDir}.candidate-${crypto.randomUUID().slice(0, 8)}`;
+    // The candidate is removed on failure only when this run created it. If a
+    // directory already exists at the candidate path — a stale leftover, or a
+    // user directory that happens to share the name — mkdir fails and the
+    // pre-existing directory is never touched.
+    let candidateCreated = false;
+    try {
+        fs.mkdirSync(candidate, { recursive: false });
+        candidateCreated = true;
+        let expandedBytes = 0;
+        for (const member of selected) {
+            expandedBytes += writeMember(zipPath, candidate, member, context.policy, context.budget.remainingBytes(), expandedBytes);
+        }
+        // The marker proves ownership only once every member has landed.
+        writeExtractionOwnership(candidate, zipPath);
+        swapCandidateIntoPlace(candidate, extractDir);
+    }
+    catch (error) {
+        if (candidateCreated)
+            fs.rmSync(candidate, { recursive: true, force: true });
+        throw error;
     }
     return selected.length;
+}
+/**
+ * Replace `extractDir` with the completed candidate.
+ *
+ * A directory rename cannot replace a non-empty directory, so when the target
+ * exists it is first moved aside to a backup path and restored if the candidate
+ * rename fails. Ownership was re-verified immediately before this call, and the
+ * backup is removed only after the swap succeeded, so the live target is never
+ * the half-written one and a failed swap leaves the previous extraction in place.
+ */
+function swapCandidateIntoPlace(candidate, extractDir) {
+    const hadPrevious = fs.existsSync(extractDir);
+    const backup = hadPrevious ? `${extractDir}.previous-${crypto.randomUUID().slice(0, 8)}` : null;
+    if (backup !== null) {
+        // Admission ran before the candidate was written; re-check right before the
+        // swap so a concurrent change to the target is not clobbered.
+        const refusal = extractionRefusalReason(extractDir);
+        if (refusal !== null)
+            throw new Error(`local-files: ${refusal}`);
+        fs.renameSync(extractDir, backup);
+    }
+    try {
+        fs.renameSync(candidate, extractDir);
+    }
+    catch (error) {
+        if (backup !== null) {
+            try {
+                fs.renameSync(backup, extractDir);
+            }
+            catch {
+                // Both directories remain on disk; nothing was lost, and the error below
+                // names the failure.
+            }
+        }
+        throw error;
+    }
+    if (backup !== null)
+        fs.rmSync(backup, { recursive: true, force: true });
 }
 /**
  * Write one preflight-approved member and return the bytes it produced.
@@ -219,7 +291,7 @@ function extractZip(zipPath, extractDir, allowedMembers) {
  * provide. CRC is verified against the central directory before the bytes are
  * allowed to stand.
  */
-function writeMember(zipPath, extractDir, member, policy, expandedBytes) {
+function writeMember(zipPath, extractDir, member, policy, sessionRemainingBytes, expandedBytes) {
     const target = path.join(extractDir, member.canonicalPath);
     // Defence in depth: preflight already rejects traversal, but the write is the
     // irreversible step and it should not depend on an earlier check being right.
@@ -228,7 +300,7 @@ function writeMember(zipPath, extractDir, member, policy, expandedBytes) {
         throw new Error(`local-files: refusing to write outside the extraction directory: ${member.canonicalPath}`);
     }
     fs.mkdirSync(path.dirname(target), { recursive: true });
-    const ceiling = Math.min(policy.maxSingleMemberUncompressedBytes, Math.max(0, policy.maxTotalUncompressedBytesPerArchive - expandedBytes));
+    const ceiling = Math.min(policy.maxSingleMemberUncompressedBytes, Math.max(0, policy.maxTotalUncompressedBytesPerArchive - expandedBytes), Math.max(0, sessionRemainingBytes - expandedBytes));
     const handle = fs.openSync(target, "w");
     try {
         const result = (0, zip_reader_1.streamZipMember)(zipPath, member.entry, { maxUncompressedBytes: ceiling }, (chunk) => { fs.writeSync(handle, chunk); });
@@ -354,19 +426,35 @@ function expandOneArchive(absRoot, zipPath, depth, opts, omit) {
     const members = listZipMembers(zipPath).filter((m) => !m.endsWith("/"));
     const allowed = filterAllowedMembers(absRoot, extractDir, members, omit);
     // Dry run is a promise of zero source-tree mutation, and sibling extraction is
-    // a source-tree mutation. The archive is still listed and reported, so a dry run
-    // states exactly what a real run would materialize.
+    // a source-tree mutation. But a dry run must run the same admission as a real
+    // run: the same preflight, the same ownership refusal, the same hold text —
+    // otherwise "what a real run would do" is a claim the code did not check.
     if (opts.dryRun) {
+        const context = new archive_execution_1.ArchiveExecutionContext({ zipPath, extractDir, depth });
+        const refusal = extractionRefusalReason(extractDir);
+        if (refusal !== null) {
+            return { zipPath, extractDir, memberCount: 0, nestedDepth: depth, heldReason: refusal };
+        }
+        if (!context.preflight.accepted) {
+            return {
+                zipPath,
+                extractDir,
+                memberCount: 0,
+                nestedDepth: depth,
+                heldReason: `refusing to extract ${path.basename(zipPath)}: ${context.holdReasons()}`,
+            };
+        }
+        const selected = context.planMembers(allowed);
         if (opts.verbose) {
             process.stderr.write(`[l9-meta-injector] local-files: dry-run would extract ${zipPath} → ${extractDir} ` +
-                `(depth=${depth}, members=${allowed.length}/${members.length})\n`);
+                `(depth=${depth}, members=${selected.length}/${members.length})\n`);
         }
         return {
             zipPath,
             extractDir,
             memberCount: 0,
             nestedDepth: depth,
-            heldReason: `dry-run: ${allowed.length} member(s) would be extracted to ${extractDir}`,
+            heldReason: `dry-run: ${selected.length} member(s) would be extracted to ${extractDir}`,
         };
     }
     if (opts.verbose) {
@@ -378,7 +466,7 @@ function expandOneArchive(absRoot, zipPath, depth, opts, omit) {
         process.stderr.write(`[l9-meta-injector] local-files: refusing to expand ${zipPath}: ${refusal}\n`);
         return { zipPath, extractDir, memberCount: 0, nestedDepth: depth, heldReason: refusal };
     }
-    const memberCount = extractZip(zipPath, extractDir, omit ? allowed : undefined);
+    const memberCount = extractZip(zipPath, extractDir, omit ? allowed : undefined, { depth });
     const sidecarPath = writeArchiveSidecar(zipPath, extractDir, memberCount, {
         nested_depth: depth,
         expanded_at: new Date().toISOString(),

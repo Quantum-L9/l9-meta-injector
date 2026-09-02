@@ -1,4 +1,5 @@
 import type { OmitMatcher } from "./omit";
+import type { LocalArchivePolicy } from "./local_archive_policy";
 /** Directory-name suffix for an expanded archive (sibling of the .zip). */
 export declare const EXTRACTED_DIR_SUFFIX = ".l9extracted";
 /** Archive extensions expanded in local-files mode (v1: zip only). */
@@ -59,6 +60,10 @@ export declare function extractionRefusalReason(extractDir: string): string | nu
 /**
  * Refresh extractDir and materialize allowed members into it.
  *
+ * Admission runs through a shared `ArchiveExecutionContext`, so the archive is
+ * preflighted once, against the resolved policy, at the depth its caller
+ * actually occupies in the tree — never a hard-coded 0.
+ *
  * When `allowedMembers` is set, only those canonical paths are written (omit
  * filter). Returns the number of members actually extracted.
  *
@@ -67,7 +72,10 @@ export declare function extractionRefusalReason(extractDir: string): string | nu
  * holds it. Admission is decided before the directory is refreshed, so a hostile
  * archive never reaches the point of removing anything.
  */
-export declare function extractZip(zipPath: string, extractDir: string, allowedMembers?: string[]): number;
+export declare function extractZip(zipPath: string, extractDir: string, allowedMembers?: string[], options?: {
+    depth?: number;
+    policy?: Partial<LocalArchivePolicy>;
+}): number;
 /** Discover expandable archives under root (does not enter existing *.l9extracted dirs). */
 export declare function findArchives(root: string, omit?: OmitMatcher): {
     archives: string[];

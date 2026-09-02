@@ -3,7 +3,7 @@ import * as os from "os";
 import * as path from "path";
 import { execFileSync } from "child_process";
 import { createHash } from "crypto";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { runPipelineAsync } from "../src/pipeline";
 import { findFiles } from "../src/retrieval";
 import { PipelineConfig } from "../src/schema";
@@ -16,6 +16,15 @@ import {
 } from "../src/archives";
 import { sidecarPathFor } from "../src/comment";
 import { UNIX_SYMLINK, treeSnapshot, writeRawZip } from "./helpers/zip_fixtures";
+
+// Candidate directories are named from randomUUID; a fixed value makes the
+// pre-existing-candidate collision test deterministic. Every other test in this
+// file only ever extracts into a fresh tmp root, so the fixed suffix cannot
+// collide across tests.
+vi.mock("node:crypto", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:crypto")>();
+  return { ...actual, randomUUID: () => "deadbeef-0000-4000-8000-000000000000" };
+});
 
 function tmp(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "l9-archives-"));
@@ -56,6 +65,40 @@ function makeZip(zipPath: string, stagingDir: string, members: Record<string, st
   }
   const names = Object.keys(members);
   execFileSync("zip", ["-q", "-r", zipPath, ...names], { cwd: stagingDir });
+}
+
+/**
+ * Flip one byte of a member's stored data in place, so the central directory's
+ * CRC no longer matches the bytes the extractor will produce.
+ */
+function corruptStoredMember(zipPath: string, memberName: string): void {
+  const bytes = fs.readFileSync(zipPath);
+  const name = Buffer.from(memberName, "utf8");
+  for (let i = 0; i + 30 <= bytes.length; i++) {
+    if (bytes.readUInt32LE(i) !== 0x04034b50) continue;
+    const nameLength = bytes.readUInt16LE(i + 26);
+    const extraLength = bytes.readUInt16LE(i + 28);
+    const stored = bytes.subarray(i + 30, i + 30 + nameLength);
+    if (!stored.equals(name)) continue;
+    const dataStart = i + 30 + nameLength + extraLength;
+    bytes[dataStart] = bytes[dataStart] ^ 0xff;
+    fs.writeFileSync(zipPath, bytes);
+    return;
+  }
+  throw new Error(`member ${memberName} not found in ${zipPath}`);
+}
+
+/** Patch one u16 field inside the trailing EOCD record of a writeRawZip archive. */
+function patchEocdU16(zipPath: string, offsetInEocd: number, value: number): void {
+  const bytes = fs.readFileSync(zipPath);
+  const eocd = bytes.length - 22;
+  if (bytes.readUInt32LE(eocd) !== 0x06054b50) throw new Error("EOCD not at expected position");
+  bytes.writeUInt16LE(value, eocd + offsetInEocd);
+  fs.writeFileSync(zipPath, bytes);
+}
+
+function appendTrailingBytes(zipPath: string, extra: string): void {
+  fs.appendFileSync(zipPath, extra, "utf8");
 }
 
 describe("archives — local-files expansion", () => {
@@ -138,6 +181,176 @@ describe("archives — local-files expansion", () => {
     const second = expandArchivesUnderRoot(root, { dryRun: false, verbose: false });
     expect(second.archives[0].heldReason).toBeUndefined();
     expect(second.archives[0].memberCount).toBe(1);
+  });
+
+  test("refresh materializes through a candidate swap and leaves no candidate or backup behind", () => {
+    const root = tmp();
+    const zipPath = path.join(root, "Swap.zip");
+    writeRawZip(zipPath, [
+      { name: "old.md", content: "# old\n" },
+      { name: "nested/keep.txt", content: "keep" },
+    ]);
+    const extractDir = extractDirFor(zipPath);
+    expect(extractZip(zipPath, extractDir)).toBe(2);
+    expect(fs.existsSync(path.join(extractDir, "old.md"))).toBe(true);
+
+    // Second run with a different member set: the old members must disappear,
+    // the new one must appear, and no candidate/backup directory may remain.
+    writeRawZip(zipPath, [{ name: "new.md", content: "# new\n" }]);
+    expect(extractZip(zipPath, extractDir)).toBe(1);
+    expect(fs.existsSync(path.join(extractDir, "new.md"))).toBe(true);
+    expect(fs.existsSync(path.join(extractDir, "old.md"))).toBe(false);
+    expect(fs.existsSync(path.join(extractDir, "nested", "keep.txt"))).toBe(false);
+    const leftovers = fs
+      .readdirSync(root)
+      .filter((name) => name.includes("candidate-") || name.includes("previous-"));
+    expect(leftovers).toEqual([]);
+  });
+
+  test("a member that fails mid-write leaves the previous extraction intact and no candidate behind", () => {
+    const root = tmp();
+    const zipPath = path.join(root, "Crc.zip");
+    writeRawZip(zipPath, [
+      { name: "good.md", content: "# good\n" },
+      { name: "bad.txt", content: "data", stored: true },
+    ]);
+    const extractDir = extractDirFor(zipPath);
+    expect(extractZip(zipPath, extractDir)).toBe(2);
+
+    // Corrupt the stored bytes of bad.txt: preflight still accepts (the declared
+    // sizes are unchanged) but the CRC check fails during materialization.
+    corruptStoredMember(zipPath, "bad.txt");
+    const before = treeSnapshot(root);
+
+    expect(() => extractZip(zipPath, extractDir)).toThrow(/CRC|integrity/);
+
+    // The previous extraction is byte-identical — the member that existed from
+    // the first run still carries its original bytes, never the corrupted ones —
+    // and no candidate directory remains.
+    expect(fs.existsSync(path.join(extractDir, "good.md"))).toBe(true);
+    expect(fs.readFileSync(path.join(extractDir, "bad.txt"), "utf8")).toBe("data");
+    expect(treeSnapshot(root)).toEqual(before);
+    const leftovers = fs
+      .readdirSync(root)
+      .filter((name) => name.includes("candidate-") || name.includes("previous-"));
+    expect(leftovers).toEqual([]);
+  });
+
+  test("dry-run reports the same preflight refusal as a real run", () => {
+    const root = tmp();
+    const zipPath = path.join(root, "DryHostile.zip");
+    writeRawZip(zipPath, [{ name: "link", content: "/etc/passwd", unixMode: UNIX_SYMLINK, stored: true }]);
+    const before = treeSnapshot(root);
+
+    const result = expandArchivesUnderRoot(root, { dryRun: true, verbose: false });
+
+    // The same hold a real run would refuse with, not a "would extract" promise.
+    expect(result.archives[0].heldReason).toMatch(/refusing to extract.*entry_symlink/);
+    expect(treeSnapshot(root)).toEqual(before);
+    expect(fs.existsSync(extractDirFor(zipPath))).toBe(false);
+  });
+
+  test("dry-run reports the ownership refusal for an existing unmarked target", () => {
+    const root = tmp();
+    const zipPath = path.join(root, "DryTarget.zip");
+    writeRawZip(zipPath, [{ name: "a.md", content: "# a\n" }]);
+    const extractDir = extractDirFor(zipPath);
+    fs.mkdirSync(extractDir, { recursive: true });
+    fs.writeFileSync(path.join(extractDir, "USER_DATA"), "irreplaceable\n");
+    const before = treeSnapshot(root);
+
+    const result = expandArchivesUnderRoot(root, { dryRun: true, verbose: false });
+
+    expect(result.archives[0].heldReason).toMatch(/user data/);
+    expect(treeSnapshot(root)).toEqual(before);
+  });
+
+  test("an empty unmarked sibling directory is never replaced", () => {
+    // Emptiness is not ownership: a user directory that happens to be empty and
+    // named like an extraction target is still user data.
+    const root = tmp();
+    const zipPath = path.join(root, "Empty.zip");
+    writeRawZip(zipPath, [{ name: "a.md", content: "# a\n" }]);
+    const extractDir = extractDirFor(zipPath);
+    fs.mkdirSync(extractDir, { recursive: true });
+
+    const result = expandArchivesUnderRoot(root, { dryRun: false, verbose: false });
+    expect(result.archives[0].heldReason).toMatch(/empty.*user data/);
+    expect(fs.existsSync(extractDir)).toBe(true);
+    expect(() => extractZip(zipPath, extractDir)).toThrow(/never replaced/);
+  });
+
+  test("a legacy v1 marker without the v2 schema is refused for refresh", () => {
+    const root = tmp();
+    const zipPath = path.join(root, "Legacy.zip");
+    writeRawZip(zipPath, [{ name: "a.md", content: "# a\n" }]);
+    const extractDir = extractDirFor(zipPath);
+    expect(extractZip(zipPath, extractDir)).toBe(1);
+
+    // Simulate a directory produced by an older release: owner only, no schema.
+    fs.writeFileSync(
+      path.join(extractDir, ".l9extracted-owner.json"),
+      JSON.stringify({ owner: "l9-meta-injector.local-files", archive: "Legacy.zip" }, null, 2),
+      "utf8",
+    );
+    const before = treeSnapshot(root);
+
+    expect(() => extractZip(zipPath, extractDir)).toThrow(/legacy ownership marker/);
+    expect(treeSnapshot(root)).toEqual(before);
+  });
+
+  test("the marker written is the v2 schema bound to the exact archive bytes", () => {
+    const root = tmp();
+    const zipPath = path.join(root, "V2.zip");
+    writeRawZip(zipPath, [{ name: "a.md", content: "# a\n" }]);
+    const extractDir = extractDirFor(zipPath);
+    expect(extractZip(zipPath, extractDir)).toBe(1);
+
+    const marker = JSON.parse(
+      fs.readFileSync(path.join(extractDir, ".l9extracted-owner.json"), "utf8"),
+    ) as Record<string, unknown>;
+    expect(marker.schema).toBe("l9-meta-injector.local-files-extraction/v2");
+    expect(marker.owner).toBe("l9-meta-injector.local-files");
+    expect(marker.archive).toBe("V2.zip");
+    expect(marker.archive_sha256).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(typeof marker.created_at).toBe("string");
+  });
+
+  test("a pre-existing candidate-named directory is never deleted", () => {
+    // The candidate name is generated, but generation is not ownership: if a
+    // directory already sits at the candidate path, extraction must fail
+    // without removing it — the destructive-by-name class this path forbids.
+    const root = tmp();
+    const zipPath = path.join(root, "Collide.zip");
+    writeRawZip(zipPath, [{ name: "a.md", content: "# a\n" }]);
+    const extractDir = extractDirFor(zipPath);
+    const candidate = `${extractDir}.candidate-deadbeef`;
+    fs.mkdirSync(candidate, { recursive: true });
+    fs.writeFileSync(path.join(candidate, "USER_DATA"), "irreplaceable\n");
+
+    expect(() => extractZip(zipPath, extractDir)).toThrow(/EEXIST|already exists/);
+    expect(fs.readFileSync(path.join(candidate, "USER_DATA"), "utf8")).toBe("irreplaceable\n");
+  });
+
+  test("a spoofed owner prefix never grants destructive authority", () => {
+    // The old predicate accepted any owner starting with `l9-meta-injector.`, so
+    // `l9-meta-injector.evil` was tool-owned authority. Exact match only.
+    const root = tmp();
+    const zipPath = path.join(root, "Spoof.zip");
+    writeRawZip(zipPath, [{ name: "a.md", content: "# a\n" }]);
+    const extractDir = extractDirFor(zipPath);
+    fs.mkdirSync(extractDir, { recursive: true });
+    fs.writeFileSync(path.join(extractDir, "IMPORTANT_USER_DATA"), "irreplaceable\n");
+    fs.writeFileSync(
+      path.join(extractDir, ".l9extracted-owner.json"),
+      JSON.stringify({ owner: "l9-meta-injector.evil", archive: "Spoof.zip" }, null, 2),
+      "utf8",
+    );
+    const before = treeSnapshot(root);
+
+    expect(() => extractZip(zipPath, extractDir)).toThrow(/never removed/);
+    expect(treeSnapshot(root)).toEqual(before);
+    expect(fs.readFileSync(path.join(extractDir, "IMPORTANT_USER_DATA"), "utf8")).toBe("irreplaceable\n");
   });
 
   test("listZipMembers rejects Zip-Slip paths", () => {
@@ -247,6 +460,51 @@ z.close()
     const pipe = await runPipelineAsync({ ...cfg(root, out, true) });
     expect(pipe.injected.every((r) => !r.sourcePath.toLowerCase().endsWith("skill.md"))).toBe(true);
     expect(pipe.injected.some((r) => r.sourcePath.endsWith("notes.md"))).toBe(true);
+  });
+});
+
+describe("zip framing rejects", () => {
+  function framingZip(root: string): string {
+    const zipPath = path.join(root, "Framing.zip");
+    writeRawZip(zipPath, [{ name: "a.md", content: "# a\n" }]);
+    return zipPath;
+  }
+
+  test("trailing bytes after the end-of-central-directory record are rejected", () => {
+    const root = tmp();
+    const zipPath = framingZip(root);
+    appendTrailingBytes(zipPath, "JUNK");
+    expect(() => listZipMembers(zipPath)).toThrow(/does not reach the end of the archive/);
+  });
+
+  test("a comment length that does not account for the remaining bytes is rejected", () => {
+    const root = tmp();
+    const zipPath = framingZip(root);
+    // Claims a 3-byte comment that was never written.
+    patchEocdU16(zipPath, 20, 3);
+    expect(() => listZipMembers(zipPath)).toThrow(/does not reach the end of the archive/);
+  });
+
+  test("a multi-disk archive is rejected", () => {
+    const root = tmp();
+    const zipPath = framingZip(root);
+    patchEocdU16(zipPath, 4, 1); // disk number of this disk: 1
+    expect(() => listZipMembers(zipPath)).toThrow(/multi-disk/);
+  });
+
+  test("an on-disk entry count that disagrees with the total is rejected", () => {
+    const root = tmp();
+    const zipPath = framingZip(root);
+    patchEocdU16(zipPath, 8, 0); // entries on this disk: 0, total: 1
+    expect(() => listZipMembers(zipPath)).toThrow(/multi-disk/);
+  });
+
+  test("a well-formed comment reaching exactly EOF is accepted", () => {
+    const root = tmp();
+    const zipPath = framingZip(root);
+    patchEocdU16(zipPath, 20, 3);
+    appendTrailingBytes(zipPath, "abc");
+    expect(listZipMembers(zipPath)).toEqual(["a.md"]);
   });
 });
 

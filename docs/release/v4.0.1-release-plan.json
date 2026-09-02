@@ -1,0 +1,55 @@
+{
+  "schema": "l9.meta-injector-release-plan/v1",
+  "release_version": "4.0.1",
+  "tag": "v4.0.1",
+  "release_date": "planned",
+  "github_release": {
+    "status": "planned",
+    "required_ref": "to be resolved at merge: integrated main revision carrying the convergence work",
+    "resolved_commit": null,
+    "mutable_refs_forbidden": true
+  },
+  "npm_publication": {
+    "status": "not_required_github_released",
+    "required": false
+  },
+  "consumer_migration": {
+    "repository": "Quantum-L9/l9-deploy",
+    "base_revision": "to be resolved at merge",
+    "pin_commit": null,
+    "status": "planned"
+  },
+  "scope": {
+    "contract": "l9-meta-injector-main-convergence-v1",
+    "base": "4c28c5708c4ad336cd7eae910b1c6915ea8c5d04",
+    "deliverables": [
+      "src/archive_execution.ts — ArchiveExecutionContext, shared admission for both archive paths",
+      "transactional materialization: same-directory candidate, atomic swap, marker after completion",
+      "ownership marker schema l9-meta-injector.local-files-extraction/v2 with exact-match destructive authority",
+      "dry-run runs the same preflight and hold reasons as real mode",
+      "EOCD comment-to-EOF and multi-disk framing rejects",
+      "validation digest bound to actual file bytes",
+      "docs/decisions/045-archive-execution-and-transactional-materialization.md",
+      "FINAL_FINDINGS.md"
+    ]
+  },
+  "required_gates": [
+    "npm ci",
+    "npm run build",
+    "npm run manifest:update",
+    "npm run validate",
+    "npm run validate:report",
+    "npm run lint",
+    "npm pack and packed CLI smoke",
+    "l9-deploy migration apply/check",
+    "l9-deploy make validate",
+    "l9-deploy release-prepare"
+  ],
+  "publication_authority": {
+    "commit": true,
+    "push": true,
+    "tag": true,
+    "release": true,
+    "npm_publish": false
+  }
+}

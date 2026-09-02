@@ -1,21 +1,6 @@
 #!/usr/bin/env node
 "use strict";
 // validation-report.js — run the gate, then write down what it did.
-//
-//   node scripts/validation-report.js            # run and write CURRENT_VALIDATION_REPORT.md
-//   node scripts/validation-report.js --check    # verify the committed report is not stale
-//
-// The repository already had a `VALIDATION_REPORT.md`. It was dated, hand-written
-// and unbound: nothing tied it to a commit, so it went on describing a green gate
-// through every subsequent change, and a reader had no way to tell whether the
-// tree it described was the tree in front of them. A report like that is worse
-// than none — it answers the question "is this green" with a yes that was true
-// once.
-//
-// So this script does not accept a claim. It runs each command, records the exit
-// code it actually got, and binds the report to a digest of the tree it ran over.
-// `--check` recomputes the digest and fails when it has moved, which is what
-// makes stale reuse a build failure rather than a matter of remembering.
 const cp = require("node:child_process");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
@@ -25,16 +10,8 @@ const { gitBinary } = require("./lib/git-binary");
 const REPO = path.resolve(__dirname, "..");
 const REPORT = path.join(REPO, "CURRENT_VALIDATION_REPORT.md");
 const LABEL = "validation-report";
+const REPORT_RELATIVE = "CURRENT_VALIDATION_REPORT.md";
 
-/**
- * The commands the report covers, in the order a contributor runs them.
- *
- * `npm run validate` is the aggregate gate and subsumes typecheck, tests, the
- * API and authority checks, the manifest check, dist parity, selfpack and the
- * packed-consumer proof. It is listed once rather than expanded into the eleven
- * things it runs: a table that claimed eleven independent passes from one
- * invocation would be inflating its own evidence.
- */
 const COMMANDS = [
   { id: "lint", argv: ["npm", "run", "lint"], note: "ESLint over src and tests" },
   { id: "validate", argv: ["npm", "run", "validate"], note: "the aggregate gate" },
@@ -55,80 +32,91 @@ function git(args) {
   return result.stdout.trim();
 }
 
-/** The report names itself, and must not be part of what it is bound to. */
-const REPORT_RELATIVE = "CURRENT_VALIDATION_REPORT.md";
+function gitNul(args) {
+  const result = cp.spawnSync(GIT_BINARY, args, { cwd: REPO, encoding: "utf8" });
+  if (result.status !== 0) {
+    fail(`git ${args.join(" ")} failed: ${(result.stderr || result.stdout || "").trim()}`);
+  }
+  return result.stdout.split("\0").filter((entry) => entry.length > 0);
+}
 
 /**
- * What the tree the gate ran over actually was.
+ * What the validation evidence is bound to.
  *
- * Bound to the *content* rather than to a commit id, and deliberately so. A
- * report bound to HEAD is invalidated by the commit that carries it: generate,
- * commit, and the report now names its own parent. The obvious workarounds are
- * worse — a report generated after the commit is never committed, and one that
- * excuses a single mismatch excuses the case it exists to catch.
- *
- * So the binding is a digest over `git ls-files -s` — mode, blob sha and path
- * for every tracked file — plus the porcelain status, with this report itself
- * removed from both. Committing the report moves neither. Changing one byte of
- * source moves both, and `--check` fails.
- *
- * HEAD is recorded beside it because a reader wants to know which commit the run
- * happened at. It is not what the check compares, and the report says so.
+ * Paths come from NUL-delimited Git output, never Git's quoted display form, so
+ * tabs, quotes and embedded newlines remain the real filesystem path. Identity
+ * binds the actual bytes plus the executable bit Git can version. The report is
+ * the sole exclusion so committing the report does not invalidate itself.
  */
 function treeState() {
   const head = git(["rev-parse", "HEAD"]);
-  // Both lists are parsed into `<status> <path>` and rebuilt, rather than
-  // filtered as raw lines.
-  //
-  // Porcelain's layout is `XY <path>` where an unstaged modification leaves X a
-  // space — and `git()` trims the whole output, so whichever path sorts first
-  // loses that leading space. Filtering the report's own line by suffix then
-  // *changed the text of a different line*, because removing the first entry
-  // promoted another one into the trimmed position. Rebuilding from the parsed
-  // columns is immune to where a line happens to sit.
-  const parseTracked = (line) => {
-    const tab = line.indexOf("\t");
-    return tab < 0 ? null : { meta: line.slice(0, tab), path: line.slice(tab + 1) };
-  };
-  const parseStatus = (line) => {
-    // The status is the first two columns; the path follows one space. A leading
-    // space may have been trimmed, in which case the columns are one short.
-    const trimmedLead = !line.startsWith(" ") && !/^[A-Z?!]{2} /.test(line);
-    const status = trimmedLead ? ` ${line.slice(0, 1)}` : line.slice(0, 2);
-    const body = trimmedLead ? line.slice(2) : line.slice(3);
-    // `R  old -> new` names two paths; the destination is the one that matters.
-    const arrow = body.indexOf(" -> ");
-    return { meta: status, path: arrow < 0 ? body : body.slice(arrow + 4) };
-  };
+  const tracked = gitNul(["ls-files", "-z"]);
+  const untracked = gitNul(["ls-files", "--others", "--exclude-standard", "-z"]);
+  const paths = new Set([...tracked, ...untracked].filter((entry) => entry !== REPORT_RELATIVE));
 
-  const tracked = git(["ls-files", "-s"])
-    .split(/\r?\n/)
-    .map((line) => (line.length === 0 ? null : parseTracked(line)))
-    .filter((entry) => entry !== null && entry.path !== REPORT_RELATIVE)
-    .map((entry) => `${entry.meta}\t${entry.path}`)
-    .sort();
-  const porcelain = git(["status", "--porcelain", "--untracked-files=all"])
-    .split(/\r?\n/)
-    .map((line) => (line.length === 0 ? null : parseStatus(line)))
-    .filter((entry) => entry !== null && entry.path !== REPORT_RELATIVE)
-    .map((entry) => `${entry.meta} ${entry.path}`)
-    .sort();
-  const digest = crypto
-    .createHash("sha256")
-    .update(`${tracked.join("\n")}\n--\n${porcelain.join("\n")}\n`)
-    .digest("hex");
-  return { head, clean: porcelain.length === 0, digest: `sha256:${digest}` };
+  const statusRun = cp.spawnSync(
+    GIT_BINARY,
+    [
+      "status",
+      "--porcelain=v1",
+      "-z",
+      "--untracked-files=all",
+      "--",
+      ".",
+      `:(exclude)${REPORT_RELATIVE}`,
+    ],
+    { cwd: REPO, encoding: "utf8" },
+  );
+  if (statusRun.status !== 0) {
+    fail(`git status --porcelain failed: ${(statusRun.stderr || statusRun.stdout || "").trim()}`);
+  }
+
+  const ordered = [...paths].sort();
+  const digest = crypto.createHash("sha256");
+  for (const relative of ordered) {
+    const absolute = path.join(REPO, relative);
+    let stats = null;
+    try {
+      stats = fs.lstatSync(absolute);
+    } catch {
+      // A tracked path deleted from disk is still part of the bound tree.
+    }
+
+    let descriptor;
+    if (stats === null) {
+      descriptor = "missing";
+    } else if (stats.isSymbolicLink()) {
+      descriptor = `link:${fs.readlinkSync(absolute)}`;
+    } else if (stats.isDirectory()) {
+      descriptor = "dir";
+    } else if (stats.isFile()) {
+      const bytes = crypto.createHash("sha256").update(fs.readFileSync(absolute)).digest("hex");
+      const executable = (stats.mode & 0o111) !== 0 ? "x" : "-";
+      descriptor = `file:${executable}:${bytes}`;
+    } else {
+      descriptor = `special:${stats.mode & 0o170000}`;
+    }
+
+    // NUL framing makes path/descriptor boundaries unambiguous even when the
+    // path itself contains tabs or newlines. POSIX paths cannot contain NUL.
+    digest.update(relative, "utf8");
+    digest.update("\0");
+    digest.update(descriptor, "utf8");
+    digest.update("\0");
+  }
+
+  return {
+    head,
+    clean: statusRun.stdout.length === 0,
+    digest: `sha256:${digest.digest("hex")}`,
+  };
 }
 
-/** Run one command and report what happened, whatever that was. */
 function run(command) {
   const started = Date.now();
   const result = cp.spawnSync(command.argv[0], command.argv.slice(1), {
     cwd: REPO,
     encoding: "utf8",
-    // Tells `tests/validation_report.test.ts` that this is the run producing the
-    // report, so it does not fail on the absence of the file about to be
-    // written. Set here and nowhere else; every other invocation is strict.
     env: { ...process.env, CI: "true", L9_VALIDATION_REPORT_RUN: "1" },
   });
   const status = result.status === null ? -1 : result.status;
@@ -139,8 +127,6 @@ function run(command) {
     exit_code: status,
     passed: status === 0,
     duration_ms: Date.now() - started,
-    // Kept for the failure path only. A passing command's output is noise; a
-    // failing one's last lines are the whole reason to read the report.
     tail: status === 0
       ? ""
       : `${result.stdout || ""}${result.stderr || ""}`.trim().split(/\r?\n/).slice(-25).join("\n"),
@@ -169,14 +155,14 @@ function renderReport(state, results, generatedAt) {
 This report is written by \`scripts/validation-report.js\`, which runs each
 command below and records the exit code it received rather than a claim about it.
 
-It is bound to the **tree digest**, not to the commit id: a digest over every
-tracked file's mode, blob hash and path, plus the working-tree status, with this
-report itself excluded from both. Committing the report therefore does not
-invalidate it, and changing one byte of anything else does.
-\`npm run validate:report -- --check\` recomputes the digest and fails when it has
-moved, so a report written against an earlier tree cannot be presented as
-evidence for this one. The commit above is recorded because a reader wants to
-know where the run happened; it is not what the check compares.
+It is bound to the **tree digest**, not to the commit id: a NUL-framed digest over
+every tracked and untracked path's actual bytes/type and executable bit, with
+this report itself excluded. Committing the report therefore does not invalidate
+it, and changing one byte, executable mode, or unusual Git path changes the
+digest — including a second edit of a file that was already dirty.
+\`npm run validate:report -- --check\` recomputes the digest and also requires the
+non-report tree to be clean, so stale evidence cannot be carried over a dirty
+checkout.
 
 ## Commands
 
@@ -196,8 +182,8 @@ ${verdict === "green"
 
 - It is not a publication authorization. \`npm run check:publication\` is a
   separate gate and remains fail-closed on its own evidence.
-- It is not a statement about any other commit. Re-run it on the tree you mean
-  to make a claim about.
+- It is not a statement about any other tree. Re-run it on the tree you mean to
+  make a claim about.
 - \`[l9-meta-injector] verification FAILED for 1/1 file(s)\` lines inside the
   Vitest output are fail-closed negative-path fixtures asserting their own
   refusal, not failures; the exit codes in the table are the authority.
@@ -211,6 +197,9 @@ function main() {
   if (check) {
     if (!fs.existsSync(REPORT)) {
       fail(`${path.basename(REPORT)} is missing; run \`npm run validate:report\``);
+    }
+    if (!state.clean) {
+      fail(`${path.basename(REPORT)} cannot validate a dirty non-report tree`);
     }
     const contents = fs.readFileSync(REPORT, "utf8");
     const head = /\*\*Generated at commit:\*\* `([0-9a-f]{40})`/.exec(contents);
@@ -237,9 +226,6 @@ function main() {
     return run(command);
   });
 
-  // Re-read the tree after the run. `npm run validate` regenerates nothing on a
-  // clean tree, and if it did the report must be bound to the tree that came out
-  // of it rather than the one that went in.
   const after = treeState();
   const generatedAt = new Date().toISOString();
   fs.writeFileSync(REPORT, renderReport(after, results, generatedAt), "utf8");

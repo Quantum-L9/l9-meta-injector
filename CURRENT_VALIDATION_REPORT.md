@@ -1,17 +1,18 @@
 # Current validation report
 
-**Generated at commit:** `c3dc66d2c9c98b2168b324c1197170eb240e8a4a`
+**Generated at commit:** `926af9fec3ae0f031f45da0d7b1449993a64a8ce`
 **Working tree:** clean apart from this report
-**Bound to tree:** `sha256:54c534fb2e92c048763bbf78b77e0a470289e52e66e2fe20a3f7e9ac6f8a80f4`
-**Generated:** 2026-09-01T15:56:01.209Z
+**Bound to tree:** `sha256:02c8da452206665ef1affaa6b51f04c9d66afd0426b6790bb546918cb5142272`
+**Generated:** 2026-09-01T19:35:51.558Z
 
 This report is written by `scripts/validation-report.js`, which runs each
 command below and records the exit code it received rather than a claim about it.
 
-It is bound to the **tree digest**, not to the commit id: a digest over every
-tracked file's mode, blob hash and path, plus the working-tree status, with this
-report itself excluded from both. Committing the report therefore does not
-invalidate it, and changing one byte of anything else does.
+It is bound to the **tree digest**, not to the commit id: a digest over the
+actual bytes of every tracked and untracked file, with this report itself
+excluded. Committing the report therefore does not invalidate it, and changing
+one byte of anything else does — including a second edit of a file that was
+already dirty.
 `npm run validate:report -- --check` recomputes the digest and fails when it has
 moved, so a report written against an earlier tree cannot be presented as
 evidence for this one. The commit above is recorded because a reader wants to

@@ -43,11 +43,11 @@ import {
   canonicalMemberPath,
   preflightArchive,
 } from "./archive_preflight";
+import { resolveArchiveExecution } from "./archive_execution";
 import {
   ArchiveSessionBudget,
   LocalArchivePolicy,
   localArchivePolicyFingerprint,
-  resolveLocalArchivePolicy,
 } from "./local_archive_policy";
 import { ZipBudgetExceededError, readZipCentralDirectory, streamZipMember } from "./zip_reader";
 
@@ -87,6 +87,10 @@ export const GENERATED_ARTIFACT_OMIT_PATTERNS: readonly string[] = [
 /** Marker a tool-owned legacy extraction directory carries. */
 export const LEGACY_EXTRACTION_OWNER_FILE = ".l9extracted-owner.json";
 export const LEGACY_EXTRACTION_SUFFIX = ".l9extracted";
+/** Schema id stamped on the v2 extraction-ownership marker. */
+export const LOCAL_FILES_EXTRACTION_SCHEMA = "l9-meta-injector.local-files-extraction/v2";
+/** Exact owner id the materialization path stamps and the destructive path accepts. */
+export const EXTRACTION_OWNER_ID = "l9-meta-injector.local-files";
 
 export type LocalSourceKind = "file" | "directory" | "archive";
 export type RequestedSourceKind = LocalSourceKind | "auto";
@@ -370,7 +374,28 @@ export function hasLegacyExtractionOwnership(directory: string): boolean {
     const marker = JSON.parse(
       fs.readFileSync(path.join(directory, LEGACY_EXTRACTION_OWNER_FILE), "utf8"),
     ) as { owner?: unknown };
-    return typeof marker.owner === "string" && marker.owner.startsWith("l9-meta-injector.");
+    // Exact id only: a prefix match would let an attacker-chosen owner such as
+    // `l9-meta-injector.evil` borrow this package's authority. This predicate
+    // decides exclusion from observation, not destruction; the destructive path
+    // additionally requires the v2 schema.
+    return typeof marker.owner === "string" && marker.owner === EXTRACTION_OWNER_ID;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * True when a directory carries the v2 ownership marker, exact owner and all.
+ *
+ * This is the predicate the destructive replace path consults: a marker without
+ * the v2 schema field is a legacy or foreign file and never authorizes removal.
+ */
+export function hasExtractionOwnershipV2(directory: string): boolean {
+  try {
+    const marker = JSON.parse(
+      fs.readFileSync(path.join(directory, LEGACY_EXTRACTION_OWNER_FILE), "utf8"),
+    ) as { schema?: unknown; owner?: unknown };
+    return marker.schema === LOCAL_FILES_EXTRACTION_SCHEMA && marker.owner === EXTRACTION_OWNER_ID;
   } catch {
     return false;
   }
@@ -1626,8 +1651,9 @@ export function acquireLocalSource(input: LocalSourceAcquireInput): LocalSourceO
   }
   const sourceKind = resolveSourceKind(absoluteSource, input.sourceKind ?? "auto");
   const sourceName = input.name && input.name.length > 0 ? input.name : path.basename(absoluteSource);
-  const policy = resolveLocalArchivePolicy(input.archivePolicy);
-  const budget = new ArchiveSessionBudget(policy, Date.now(), () => Date.now());
+  // The single resolution point shared with the materialization path: one policy
+  // and one session budget judge every archive, on both paths.
+  const { policy, budget } = resolveArchiveExecution(input.archivePolicy);
   const omitRoot = sourceKind === "directory" ? absoluteSource : path.dirname(absoluteSource);
   const omit = buildAcquisitionOmit(input, omitRoot);
 

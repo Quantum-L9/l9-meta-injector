@@ -1,7 +1,7 @@
 # Architecture
 
-**As-built package generation:** 3
-**Package version:** 3.0.0
+**As-built package generation:** 4
+**Package version:** 4.0.0
 
 ## Authority
 
@@ -33,7 +33,7 @@ retrieval -> extraction -> classification -> normalization
           -> deduplication -> placement -> MetaV3 -> indexes
 ```
 
-When `PipelineConfig.localFiles` is set (ADR-016), archive **materialization** runs before retrieval: `.zip` files become sibling `*.l9extracted/` trees plus `<zip>.l9meta.yaml` sidecars, then members follow the normal path. Default mode never extracts. This path mutates the source by design and is not the observation path; canonical local-source observation is read-only (ADR-036, below). Since ADR-036 it refuses to replace an extraction target without ownership evidence, and its dry run performs zero source mutation.
+When `PipelineConfig.localFiles` is set (ADR-016/044/045), archive **materialization** runs before retrieval. One acquisition-wide `ArchiveExecutionResolution` owns the validated archive policy and `ArchiveSessionBudget`; every top-level and nested ZIP is copied and hashed once into a tool-owned immutable staged snapshot, parsed and preflighted at its real depth, and accepted members are written into a same-parent candidate before a verified transactional swap into the sibling `*.l9extracted/` target. The v2 ownership marker is written only after every selected member passes runtime byte ceilings and CRC verification, and records the archive digest, canonical reader version, and resolved-policy fingerprint. `<zip>.l9meta.yaml` sidecars consume that staged identity rather than re-reading live archive bytes. Default mode never extracts. This path mutates the source by design and is not the observation path; canonical local-source observation is read-only (ADR-036, below). Dry-run executes the same staging, parser, preflight, ownership, depth and run-budget reasoning while performing zero source-tree mutation. No system `unzip` binary participates.
 
 Inventory and pipeline apply a shared omit layer (ADR-017): built-in protect for `SKILL.md`, noise skips for bytecode/logs, optional `.l9metaignore` / `--omit`. Cursor-native skill edits go through `runSkillsPipelineAsync` only.
 
@@ -86,21 +86,27 @@ ceilings; no subprocess participates anywhere, and no dependency was added. A st
 member is read incrementally; a deflated member is decompressed synchronously into a
 bounded buffer, refused the moment it exceeds its allowance rather than after. The
 bound is the safety property, not the buffering strategy: the reader is not a
-streaming decompressor and does not claim to be. The central directory is accepted
-only when the parsed entry count and the consumed byte span both match what the EOCD
-declared, so a truncated or padded directory yields no member rather than a partial
-one. `src/archive_preflight.ts` judges every member — path shape, entry type,
-encryption, compression method, exact duplicates, and case- and Unicode-folded
-collisions — before any byte is written, and one violation holds the whole archive
-rather than yielding a partial view. `src/local_archive_policy.ts` bounds size, member
-count, expansion, ratio, depth, path length and time, checked both against declared
-metadata and against the bytes actually produced.
+streaming decompressor and does not claim to be. EOCD search validates candidate
+framing while scanning backward, so signature-shaped bytes inside a legal ZIP comment
+cannot shadow the real end record. The selected EOCD or Zip64 record must be adjacent
+to the complete declared central-directory span, and split/multi-disk archives are
+rejected. The central directory is accepted only when parsed entry count and consumed
+byte span both match what the terminal records declared, so truncated, padded, or
+prefix-hidden directories yield no member rather than a partial one.
+`src/archive_preflight.ts` judges every member — path shape, entry type, encryption,
+compression method, exact duplicates, and case- and Unicode-folded collisions — before
+any byte is written, and one violation holds the whole archive rather than yielding a
+partial view. `src/local_archive_policy.ts` validates all caller-provided ceilings and
+bounds size, member count, expansion, ratio, depth, path length and time, checked both
+against declared metadata and against bytes actually produced. Its policy fingerprint
+covers every resolved field, including the explicit policy-contract version as a
+conservative cache epoch.
 
-These three modules are the only authority on what a ZIP contains and whether its
-members may be written. Both output modes consume them: read-only observation, which
-stages into a tool-owned scratch root, and the opt-in `localFiles` materialization,
-which writes the sibling `.l9extracted` directory the operator asked for. The output
-modes differ deliberately; the archive verdict does not (ADR-044).
+These modules, composed through `src/archive_execution.ts`, are the archive authority.
+Both output modes consume the same resolved policy, reader and preflight semantics:
+read-only observation stages into tool-owned scratch, while opt-in `localFiles`
+materialization commits a transactional sibling `.l9extracted` directory. The output
+modes differ deliberately; the archive admission rules do not (ADR-044/045).
 
 Identity is `file:sha256:…`, `archive:sha256:…`, or `fs:sha256:…` over a canonical
 manifest of repository-relative paths, entry kinds, content hashes and literal symlink
