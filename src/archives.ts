@@ -19,11 +19,17 @@ import {
 import { canonicalMemberPath } from "./archive_preflight";
 import {
   ArchiveExecutionContext,
+  ArchiveExecutionHeldError,
   ArchiveExecutionResolution,
   resolveArchiveExecution,
 } from "./archive_execution";
 import type { LocalArchivePolicy } from "./local_archive_policy";
-import { readZipCentralDirectory, streamZipMember } from "./zip_reader";
+import {
+  ZipBudgetExceededError,
+  ZipFormatError,
+  readZipCentralDirectory,
+  streamZipMember,
+} from "./zip_reader";
 import type { PreflightMember } from "./archive_preflight";
 
 /** Directory-name suffix for an expanded archive (sibling of the .zip). */
@@ -60,6 +66,22 @@ export interface ExpandArchivesResult {
   extractedRoots: string[];
   /** Relative paths of archives skipped by omit. */
   omittedArchives: string[];
+}
+
+class ArchiveIntegrityError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ArchiveIntegrityError";
+  }
+}
+
+/** Convert only expected archive/input refusals into held records. */
+function expectedArchiveHoldReason(error: unknown): string | null {
+  if (error instanceof ArchiveIntegrityError) return `archive.integrity_failed: ${error.message}`;
+  if (error instanceof ArchiveExecutionHeldError) return `archive.resource_refused: ${error.message}`;
+  if (error instanceof ZipBudgetExceededError) return `archive.resource_refused: ${error.message}`;
+  if (error instanceof ZipFormatError) return `archive.format_unreadable: ${error.message}`;
+  return null;
 }
 
 function isExpandableArchive(filePath: string): boolean {
@@ -219,14 +241,12 @@ function materializeArchiveContext(
   const refusal = extractionRefusalReason(context.extractDir, context.zipPath);
   if (refusal !== null) throw new Error(`local-files: ${refusal}`);
   if (!context.preflight.accepted) {
-    throw new Error(
-      `local-files: refusing to extract ${path.basename(context.zipPath)}: ${context.holdReasons()}`,
+    throw new ArchiveExecutionHeldError(
+      `refusing to extract ${path.basename(context.zipPath)}: ${context.holdReasons()}`,
     );
   }
   const sessionRefusal = context.sessionRefusalReason();
-  if (sessionRefusal !== null) {
-    throw new Error(`local-files: refusing to extract ${path.basename(context.zipPath)}: ${sessionRefusal}`);
-  }
+  if (sessionRefusal !== null) throw new ArchiveExecutionHeldError(sessionRefusal);
 
   const selected = context.planMembers(allowedMembers);
   const candidate = `${context.extractDir}.candidate-${crypto.randomUUID().slice(0, 8)}`;
@@ -269,6 +289,39 @@ function swapCandidateIntoPlace(candidate: string, extractDir: string, zipPath: 
   if (backup !== null) fs.rmSync(backup, { recursive: true, force: true });
 }
 
+/**
+ * Stream one staged member through byte ceilings, deadline and CRC verification.
+ * The sink is optional so dry-run can exercise the exact runtime integrity path
+ * without materializing anything in the source tree.
+ */
+function streamVerifiedMember(
+  context: ArchiveExecutionContext,
+  member: PreflightMember,
+  expandedBytes: number,
+  sink?: (chunk: Buffer) => void,
+): number {
+  const ceiling = Math.min(
+    context.policy.maxSingleMemberUncompressedBytes,
+    Math.max(0, context.policy.maxTotalUncompressedBytesPerArchive - expandedBytes),
+    Math.max(0, context.budget.remainingBytes() - expandedBytes),
+  );
+  const result = streamZipMember(
+    context.stagedZipPath,
+    member.entry,
+    { maxUncompressedBytes: ceiling },
+    (chunk) => {
+      context.assertProcessingWithinBudget();
+      sink?.(chunk);
+    },
+  );
+  if (result.crc32 !== member.entry.crc32) {
+    throw new ArchiveIntegrityError(
+      `extracted bytes for ${member.canonicalPath} do not match the CRC in the central directory`,
+    );
+  }
+  return result.bytesWritten;
+}
+
 /** Write one preflight-approved member from the immutable staged ZIP. */
 function writeMember(
   context: ArchiveExecutionContext,
@@ -283,31 +336,28 @@ function writeMember(
   }
   fs.mkdirSync(path.dirname(target), { recursive: true });
 
-  const ceiling = Math.min(
-    context.policy.maxSingleMemberUncompressedBytes,
-    Math.max(0, context.policy.maxTotalUncompressedBytesPerArchive - expandedBytes),
-    Math.max(0, context.budget.remainingBytes() - expandedBytes),
-  );
   const handle = fs.openSync(target, "w");
   try {
-    const result = streamZipMember(
-      context.stagedZipPath,
-      member.entry,
-      { maxUncompressedBytes: ceiling },
-      (chunk) => {
-        context.assertProcessingWithinBudget();
-        fs.writeSync(handle, chunk);
-      },
+    return streamVerifiedMember(
+      context,
+      member,
+      expandedBytes,
+      (chunk) => { fs.writeSync(handle, chunk); },
     );
-    if (result.crc32 !== member.entry.crc32) {
-      throw new Error(
-        `local-files: extracted bytes for ${member.canonicalPath} do not match the CRC in the central directory`,
-      );
-    }
-    return result.bytesWritten;
   } finally {
     fs.closeSync(handle);
   }
+}
+
+function verifyMembersWithoutMaterializing(
+  context: ArchiveExecutionContext,
+  selected: PreflightMember[],
+): number {
+  let expandedBytes = 0;
+  for (const member of selected) {
+    expandedBytes += streamVerifiedMember(context, member, expandedBytes);
+  }
+  return expandedBytes;
 }
 
 function walkFiles(dir: string, out: string[]): void {
@@ -456,13 +506,9 @@ function expandOneArchive(
   try {
     context = new ArchiveExecutionContext({ zipPath, extractDir, depth, resolution });
   } catch (error) {
-    return {
-      zipPath,
-      extractDir,
-      memberCount: 0,
-      nestedDepth: depth,
-      heldReason: `archive.format_unreadable: ${error instanceof Error ? error.message : String(error)}`,
-    };
+    const heldReason = expectedArchiveHoldReason(error);
+    if (heldReason === null) throw error;
+    return { zipPath, extractDir, memberCount: 0, nestedDepth: depth, heldReason };
   }
 
   try {
@@ -489,8 +535,14 @@ function expandOneArchive(
     const selected = context.planMembers(omit ? allowed : undefined);
 
     if (opts.dryRun) {
-      const wouldBytes = selected.reduce((sum, member) => sum + member.entry.uncompressedSize, 0);
-      context.recordSuccess(wouldBytes);
+      try {
+        const verifiedBytes = verifyMembersWithoutMaterializing(context, selected);
+        context.recordSuccess(verifiedBytes);
+      } catch (error) {
+        const heldReason = expectedArchiveHoldReason(error);
+        if (heldReason === null) throw error;
+        return { zipPath, extractDir, memberCount: 0, nestedDepth: depth, heldReason };
+      }
       if (opts.verbose) {
         process.stderr.write(
           `[l9-meta-injector] local-files: dry-run would extract ${zipPath} → ${extractDir} ` +
@@ -513,7 +565,14 @@ function expandOneArchive(
       );
     }
 
-    const materialized = materializeArchiveContext(context, omit ? allowed : undefined);
+    let materialized: { memberCount: number; expandedBytes: number };
+    try {
+      materialized = materializeArchiveContext(context, omit ? allowed : undefined);
+    } catch (error) {
+      const heldReason = expectedArchiveHoldReason(error);
+      if (heldReason === null) throw error;
+      return { zipPath, extractDir, memberCount: 0, nestedDepth: depth, heldReason };
+    }
     const sidecarPath = writeArchiveSidecar(zipPath, extractDir, materialized.memberCount, {
       content_hash: context.archiveSha256,
       size_bytes: context.archiveCompressedBytes,
