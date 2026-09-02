@@ -276,11 +276,14 @@ export interface PipelineConfig {
    *  operator-defined fields the schema declares. */
   metaSchema?: MetaSchema;
   /**
-   * Local-files mode (non-repo trees): before scan, expand `.zip` archives under `root`
-   * into sibling `*.l9extracted/` directories, write `<zip>.l9meta.yaml` sidecars (unless
-   * `dryRun`), and let the normal inject path annotate extracted members. Default repo
-   * mode leaves archives untouched (`skip-binary`). Requires the system `unzip` binary.
-   * See ADR-016.
+   * Local-files mode (non-repo trees): before scan, discover `.zip` archives under `root`,
+   * stage each archive to immutable tool-owned bytes, run the canonical ZIP reader/preflight
+   * under one acquisition-wide policy/session budget, and materialize accepted members into
+   * transactional sibling `*.l9extracted/` directories. Real runs write `<zip>.l9meta.yaml`
+   * sidecars and feed extracted members through the normal injection path. Dry-run executes
+   * the same admission and budget reasoning with zero source-tree mutation. No system
+   * `unzip` binary is required. Default repo mode leaves archives untouched (`skip-binary`).
+   * See ADR-016, ADR-044, and ADR-045.
    */
   localFiles?: boolean;
   /** Extra gitignore-style omit patterns (built-ins + `.l9metaignore` always apply). */
