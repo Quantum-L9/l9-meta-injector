@@ -60,36 +60,56 @@ export const DEFAULT_LOCAL_ARCHIVE_POLICY: LocalArchivePolicy = Object.freeze({
   maxProcessingMs: 5 * 60 * 1000,
 });
 
+const POSITIVE_INTEGER_FIELDS: ReadonlyArray<keyof LocalArchivePolicy> = [
+  "maxArchiveCompressedBytes",
+  "maxMemberCount",
+  "maxSingleMemberUncompressedBytes",
+  "maxTotalUncompressedBytesPerArchive",
+  "maxTotalUncompressedBytesPerSession",
+  "maxNestedArchiveCount",
+  "maxPathLength",
+  "maxProcessingMs",
+];
+
+/** Validate caller-controlled resource ceilings before any archive is read. */
+export function validateLocalArchivePolicy(policy: LocalArchivePolicy): LocalArchivePolicy {
+  if (typeof policy.version !== "string" || policy.version.length === 0) {
+    throw new Error("local archive policy version must be a non-empty string");
+  }
+  for (const field of POSITIVE_INTEGER_FIELDS) {
+    const value = policy[field];
+    if (typeof value !== "number" || !Number.isFinite(value) || !Number.isInteger(value) || value <= 0) {
+      throw new Error(`local archive policy ${String(field)} must be a positive finite integer`);
+    }
+  }
+  if (!Number.isFinite(policy.maxNestedDepth) || !Number.isInteger(policy.maxNestedDepth) || policy.maxNestedDepth < 0) {
+    throw new Error("local archive policy maxNestedDepth must be a non-negative finite integer");
+  }
+  if (!Number.isFinite(policy.maxCompressionRatio) || policy.maxCompressionRatio <= 0) {
+    throw new Error("local archive policy maxCompressionRatio must be a positive finite number");
+  }
+  return policy;
+}
+
 /** Merge caller overrides onto the defaults, keeping the version explicit. */
 export function resolveLocalArchivePolicy(overrides?: Partial<LocalArchivePolicy>): LocalArchivePolicy {
-  return {
+  return validateLocalArchivePolicy({
     ...DEFAULT_LOCAL_ARCHIVE_POLICY,
     ...overrides,
     version: overrides?.version ?? LOCAL_ARCHIVE_POLICY_VERSION,
-  };
+  });
 }
 
 /**
  * Deterministic fingerprint of a fully resolved archive policy.
  *
- * A cached admission verdict is only reusable for a policy that would judge the
- * archive the same way, and the version string cannot carry that. Two runs share
- * `version: "1"` while one allows a compression ratio of 200 and the other 10;
- * replaying the looser run's verdict under the stricter policy admits an archive
- * the operator has just finished forbidding. Identity therefore has to be the
- * resolved values themselves.
- *
- * Every own enumerable field is included, sorted by key, so the fingerprint does
- * not depend on the order overrides were merged in, and a field added to
- * LocalArchivePolicy later enters the identity on its own rather than being
- * quietly excluded until someone remembers to list it here.
+ * The informational policy version is intentionally excluded. Cache identity is
+ * the semantic resolved limits themselves, matching ADR-044: changing a version
+ * label alone must not answer a different archive-admission question.
  */
 export function localArchivePolicyFingerprint(policy: LocalArchivePolicy): string {
-  // compareCodePoints, not a bare sort() and emphatically not localeCompare: this
-  // ordering reaches a hash, and src/ordering.ts is the module that exists because
-  // locale-aware ordering varies with the runtime's ICU data, so the same policy
-  // could fingerprint two ways on two machines.
   const fields = [...Object.keys(policy)]
+    .filter((key) => key !== "version")
     .sort(compareCodePoints)
     .map((key) => [key, (policy as unknown as Record<string, unknown>)[key]]);
   return `lap1:${crypto.createHash("sha256").update(JSON.stringify(fields), "utf8").digest("hex")}`;
@@ -120,14 +140,21 @@ export class ArchiveSessionBudget {
     return Math.max(0, this.policy.maxTotalUncompressedBytesPerSession - this.expandedBytes);
   }
 
+  /** Wall-clock-only refusal, safe to call during member streaming. */
+  processingRefusalReason(): string | null {
+    if (this.nowMs() - this.startedAtMs > this.policy.maxProcessingMs) {
+      return `acquisition exceeded the ${this.policy.maxProcessingMs}ms processing budget`;
+    }
+    return null;
+  }
+
   /** Reason this archive may not be expanded, or null when it may. */
   refuseReason(declaredUncompressedBytes: number): string | null {
     if (this.expandedArchives >= this.policy.maxNestedArchiveCount) {
       return `session archive count limit of ${this.policy.maxNestedArchiveCount} reached`;
     }
-    if (this.nowMs() - this.startedAtMs > this.policy.maxProcessingMs) {
-      return `acquisition exceeded the ${this.policy.maxProcessingMs}ms processing budget`;
-    }
+    const processing = this.processingRefusalReason();
+    if (processing !== null) return processing;
     if (this.expandedBytes + declaredUncompressedBytes > this.policy.maxTotalUncompressedBytesPerSession) {
       return `session expansion budget of ${this.policy.maxTotalUncompressedBytesPerSession} bytes would be exceeded`;
     }
@@ -135,6 +162,9 @@ export class ArchiveSessionBudget {
   }
 
   recordArchive(expandedBytes: number): void {
+    if (!Number.isFinite(expandedBytes) || expandedBytes < 0) {
+      throw new Error("archive session accounting requires a non-negative finite byte count");
+    }
     this.expandedArchives++;
     this.expandedBytes += expandedBytes;
   }
