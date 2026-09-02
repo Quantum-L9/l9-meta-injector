@@ -1,41 +1,28 @@
 // archive_execution.ts — one shared admission context for every archive path.
-//
-// Both archive paths in this package — the read-only observation path
-// (`local_source.ts`) and the legacy mutating local-files materialization path
-// (`archives.ts`) — used to resolve the archive policy and the session budget
-// independently, and the materialization path preflighted every archive at depth
-// 0 even when it was a nested member. Two independent resolutions is exactly the
-// divergence this module exists to remove: every archive is judged against one
-// policy, one budget, and the archive's real depth.
-//
-// `resolveArchiveExecution` is the single resolution point both paths share.
-// `ArchiveExecutionContext` wraps it for the materialization path with the
-// archive's own facts: the central directory is read once, preflighted once at
-// the real depth, and the verdict is carried with the resolved policy and
-// budget. The context never writes; materialization happens in `archives.ts`
-// against the candidate the context describes.
+import * as crypto from "node:crypto";
 import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { ArchivePreflightResult, PreflightMember, preflightArchive } from "./archive_preflight";
 import {
   ArchiveSessionBudget,
   LocalArchivePolicy,
+  localArchivePolicyFingerprint,
   resolveLocalArchivePolicy,
 } from "./local_archive_policy";
 import { ZipDirectory, readZipCentralDirectory } from "./zip_reader";
 
-/** Policy and budget, resolved once, shared by every archive path. */
+/** Version of the canonical ZIP reader whose verdict this context carries. */
+export const ARCHIVE_READER_VERSION = "1.0.0";
+const STAGE_CHUNK_BYTES = 64 * 1024;
+
+/** Policy and acquisition-wide budget, resolved once per run. */
 export interface ArchiveExecutionResolution {
   policy: LocalArchivePolicy;
   budget: ArchiveSessionBudget;
 }
 
-/**
- * The single resolution point for archive policy and session budget.
- *
- * Both the observation path and the materialization path call this, so a caller
- * override, a default change, or a budget rule can never be applied by one path
- * and missed by the other.
- */
+/** Single resolution point shared by observation and materialization paths. */
 export function resolveArchiveExecution(
   overrides?: Partial<LocalArchivePolicy>,
   nowMs?: () => number,
@@ -46,21 +33,27 @@ export function resolveArchiveExecution(
 }
 
 export interface ArchiveExecutionContextInput {
+  /** Live source path. It is copied once and never read again by admission/extraction. */
   zipPath: string;
   extractDir: string;
   /** Real nesting depth of this archive; the outermost archive is 0. */
   depth: number;
+  /** Run-scoped resolution. Every archive in one acquisition must share this object. */
+  resolution?: ArchiveExecutionResolution;
+  /** Convenience for standalone callers that are not already inside an acquisition. */
   policy?: Partial<LocalArchivePolicy>;
   nowMs?: () => number;
+  /** Tool-owned scratch parent. Defaults outside the source tree. */
+  stagingParent?: string;
 }
 
 /**
- * Admission facts for one archive about to be materialized.
+ * Admission facts for one archive.
  *
- * Reading the central directory and running preflight are both construction
- * concerns: a context that exists is a context whose archive has been read and
- * judged at the depth its caller actually occupies in the tree, never a
- * hard-coded 0.
+ * Construction stages and hashes the source in one streaming pass, then all ZIP
+ * parsing, preflight and materialization read only the staged path. This closes
+ * the live-path TOCTOU window: the verdict and the bytes written always describe
+ * the same immutable snapshot.
  */
 export class ArchiveExecutionContext {
   readonly zipPath: string;
@@ -69,40 +62,114 @@ export class ArchiveExecutionContext {
   readonly policy: LocalArchivePolicy;
   readonly budget: ArchiveSessionBudget;
   readonly archiveCompressedBytes: number;
+  readonly archiveSha256: string;
+  readonly readerVersion = ARCHIVE_READER_VERSION;
+  readonly policyFingerprint: string;
+  readonly stagedZipPath: string;
   readonly centralDirectory: ZipDirectory;
   readonly preflight: ArchivePreflightResult;
-  private readonly nowMs: () => number;
+  private readonly stagingRoot: string;
+  private disposed = false;
 
   constructor(input: ArchiveExecutionContextInput) {
+    if (input.resolution !== undefined && input.policy !== undefined) {
+      throw new Error("archive execution accepts either a shared resolution or policy overrides, not both");
+    }
     this.zipPath = input.zipPath;
     this.extractDir = input.extractDir;
     this.depth = input.depth;
-    this.nowMs = input.nowMs ?? (() => Date.now());
-    const resolution = resolveArchiveExecution(input.policy, this.nowMs);
+    const resolution = input.resolution ?? resolveArchiveExecution(input.policy, input.nowMs);
     this.policy = resolution.policy;
     this.budget = resolution.budget;
-    this.archiveCompressedBytes = fs.statSync(this.zipPath).size;
-    this.centralDirectory = readZipCentralDirectory(this.zipPath);
-    this.preflight = preflightArchive({
-      directory: this.centralDirectory,
-      policy: this.policy,
-      depth: this.depth,
-      archiveCompressedBytes: this.archiveCompressedBytes,
-    });
+    this.policyFingerprint = localArchivePolicyFingerprint(this.policy);
+
+    const stagingParent = input.stagingParent ?? os.tmpdir();
+    this.stagingRoot = fs.mkdtempSync(path.join(stagingParent, "l9-meta-injector-archive-"));
+    this.stagedZipPath = path.join(this.stagingRoot, "snapshot.zip");
+
+    const hash = crypto.createHash("sha256");
+    let sizeBytes = 0;
+    const source = fs.openSync(this.zipPath, "r");
+    const target = fs.openSync(this.stagedZipPath, "wx");
+    try {
+      const buffer = Buffer.alloc(STAGE_CHUNK_BYTES);
+      for (;;) {
+        const deadline = this.budget.processingRefusalReason();
+        if (deadline !== null) throw new Error(`local-files: ${deadline}`);
+        const count = fs.readSync(source, buffer, 0, buffer.length, null);
+        if (count === 0) break;
+        if (sizeBytes + count > this.policy.maxArchiveCompressedBytes) {
+          throw new Error(
+            `local-files: archive exceeds the ${this.policy.maxArchiveCompressedBytes}-byte staging limit`,
+          );
+        }
+        const chunk = buffer.subarray(0, count);
+        hash.update(chunk);
+        let written = 0;
+        while (written < chunk.length) {
+          written += fs.writeSync(target, chunk, written, chunk.length - written);
+        }
+        sizeBytes += count;
+      }
+    } catch (error) {
+      try { fs.closeSync(source); } catch {}
+      try { fs.closeSync(target); } catch {}
+      fs.rmSync(this.stagingRoot, { recursive: true, force: true });
+      throw error;
+    }
+    fs.closeSync(source);
+    fs.closeSync(target);
+
+    this.archiveCompressedBytes = sizeBytes;
+    this.archiveSha256 = `sha256:${hash.digest("hex")}`;
+    try {
+      this.centralDirectory = readZipCentralDirectory(this.stagedZipPath);
+      this.preflight = preflightArchive({
+        directory: this.centralDirectory,
+        policy: this.policy,
+        depth: this.depth,
+        archiveCompressedBytes: this.archiveCompressedBytes,
+      });
+    } catch (error) {
+      this.dispose();
+      throw error;
+    }
   }
 
-  /** File members eligible for materialization, narrowed to `allowedMembers`. */
+  /** File members eligible for materialization, narrowed in O(n) time. */
   planMembers(allowedMembers?: string[]): PreflightMember[] {
-    return allowedMembers
-      ? this.preflight.members.filter((member) => allowedMembers.includes(member.canonicalPath))
-      : this.preflight.members;
+    if (allowedMembers === undefined) return this.preflight.members;
+    const allowed = new Set(allowedMembers);
+    return this.preflight.members.filter((member) => allowed.has(member.canonicalPath));
   }
 
-  /** The single refusal sentence every path reports, or null when accepted. */
+  /** Run-scoped refusal after archive-local preflight has accepted. */
+  sessionRefusalReason(): string | null {
+    return this.budget.refuseReason(this.preflight.declaredUncompressedBytes);
+  }
+
+  /** Fail closed when wall-clock time expires during member streaming. */
+  assertProcessingWithinBudget(): void {
+    const refusal = this.budget.processingRefusalReason();
+    if (refusal !== null) throw new Error(`local-files: ${refusal}`);
+  }
+
+  /** Consume acquisition-wide accounting only after a verified archive succeeds. */
+  recordSuccess(expandedBytes: number): void {
+    this.budget.recordArchive(expandedBytes);
+  }
+
+  /** The single archive-local refusal sentence every path reports, or null. */
   holdReasons(): string | null {
     if (this.preflight.accepted) return null;
     return this.preflight.holds
       .map((hold) => (hold.memberPath ? `${hold.code} (${hold.memberPath})` : hold.code))
       .join(", ");
+  }
+
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    fs.rmSync(this.stagingRoot, { recursive: true, force: true });
   }
 }
