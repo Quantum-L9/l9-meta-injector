@@ -16,6 +16,19 @@ import { ZipDirectory, readZipCentralDirectory } from "./zip_reader";
 export const ARCHIVE_READER_VERSION = "1.0.0";
 const STAGE_CHUNK_BYTES = 64 * 1024;
 
+/**
+ * Expected refusal caused by archive/resource policy, not a host/tool failure.
+ * The local-files orchestrator converts only this class (plus canonical ZIP
+ * format/budget errors) into ArchiveRecord.heldReason; filesystem and invariant
+ * failures continue to throw so they cannot masquerade as hostile input.
+ */
+export class ArchiveExecutionHeldError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ArchiveExecutionHeldError";
+  }
+}
+
 /** Policy and acquisition-wide budget, resolved once per run. */
 export interface ArchiveExecutionResolution {
   policy: LocalArchivePolicy;
@@ -89,18 +102,20 @@ export class ArchiveExecutionContext {
 
     const hash = crypto.createHash("sha256");
     let sizeBytes = 0;
-    const source = fs.openSync(this.zipPath, "r");
-    const target = fs.openSync(this.stagedZipPath, "wx");
+    let source: number | null = null;
+    let target: number | null = null;
     try {
+      source = fs.openSync(this.zipPath, "r");
+      target = fs.openSync(this.stagedZipPath, "wx");
       const buffer = Buffer.alloc(STAGE_CHUNK_BYTES);
       for (;;) {
         const deadline = this.budget.processingRefusalReason();
-        if (deadline !== null) throw new Error(`local-files: ${deadline}`);
+        if (deadline !== null) throw new ArchiveExecutionHeldError(deadline);
         const count = fs.readSync(source, buffer, 0, buffer.length, null);
         if (count === 0) break;
         if (sizeBytes + count > this.policy.maxArchiveCompressedBytes) {
-          throw new Error(
-            `local-files: archive exceeds the ${this.policy.maxArchiveCompressedBytes}-byte staging limit`,
+          throw new ArchiveExecutionHeldError(
+            `archive exceeds the ${this.policy.maxArchiveCompressedBytes}-byte staging limit`,
           );
         }
         const chunk = buffer.subarray(0, count);
@@ -112,13 +127,13 @@ export class ArchiveExecutionContext {
         sizeBytes += count;
       }
     } catch (error) {
-      try { fs.closeSync(source); } catch {}
-      try { fs.closeSync(target); } catch {}
+      if (source !== null) try { fs.closeSync(source); } catch {}
+      if (target !== null) try { fs.closeSync(target); } catch {}
       fs.rmSync(this.stagingRoot, { recursive: true, force: true });
       throw error;
     }
-    fs.closeSync(source);
-    fs.closeSync(target);
+    if (source !== null) fs.closeSync(source);
+    if (target !== null) fs.closeSync(target);
 
     this.archiveCompressedBytes = sizeBytes;
     this.archiveSha256 = `sha256:${hash.digest("hex")}`;
@@ -148,10 +163,10 @@ export class ArchiveExecutionContext {
     return this.budget.refuseReason(this.preflight.declaredUncompressedBytes);
   }
 
-  /** Fail closed when wall-clock time expires during member streaming. */
+  /** Fail closed when wall-clock time expires during staging/member streaming. */
   assertProcessingWithinBudget(): void {
     const refusal = this.budget.processingRefusalReason();
-    if (refusal !== null) throw new Error(`local-files: ${refusal}`);
+    if (refusal !== null) throw new ArchiveExecutionHeldError(refusal);
   }
 
   /** Consume acquisition-wide accounting only after a verified archive succeeds. */
