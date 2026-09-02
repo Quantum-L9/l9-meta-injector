@@ -12,17 +12,19 @@ import { defineConfig } from "vitest/config";
 // that pass in isolation. The tests are heavy, not slow by accident — the
 // budget is raised suite-wide rather than annotated per test.
 //
-// `maxWorkers` is capped at half the machine's parallelism for the same reason:
-// under full parallel load the ten-thousand-artifact corpus test starves
-// sibling workers long enough for Vitest's internal worker RPC to time out
-// ("[vitest-worker]: Timeout calling onTaskUpdate"), an unhandled error that
-// also passes in isolation. Half the workers trades wall time for a stable run.
+// `availableParallelism` was added after the earliest Node 18 releases while
+// package.json supports all Node >=18. Fall back to `cpus().length` so the
+// stability cap does not narrow the declared runtime contract.
+const parallelism = typeof os.availableParallelism === "function"
+  ? os.availableParallelism()
+  : Math.max(1, os.cpus().length);
+
 export default defineConfig({
   test: {
     globals: true,
     environment: "node",
     include: ["tests/**/*.test.ts"],
     testTimeout: 30_000,
-    maxWorkers: Math.max(1, Math.floor(os.availableParallelism() / 2)),
+    maxWorkers: Math.max(1, Math.floor(parallelism / 2)),
   },
 });
