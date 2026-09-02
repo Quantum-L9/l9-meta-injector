@@ -166,7 +166,9 @@ function findEocdOffset(tail: Buffer, searchStart: number, fileSize: number): nu
     const recordEnd = searchStart + i + EOCD_MIN_SIZE + commentLength;
     if (recordEnd === fileSize) return i;
   }
-  throw new ZipFormatError("end-of-central-directory record not found or does not terminate at EOF");
+  throw new ZipFormatError(
+    "end-of-central-directory record not found or its comment does not reach the end of the archive",
+  );
 }
 
 /** Read and fully frame the Zip64 EOCD record addressed by its locator. */
