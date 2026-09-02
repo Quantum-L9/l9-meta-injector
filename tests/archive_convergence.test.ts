@@ -62,6 +62,23 @@ function appendPrefixHidingFakeEocd(zipPath: string): void {
   setZipComment(zipPath, Buffer.concat([prefix, fake, suffix]));
 }
 
+function corruptStoredMember(zipPath: string, memberName: string): void {
+  const bytes = fs.readFileSync(zipPath);
+  const name = Buffer.from(memberName, "utf8");
+  for (let i = 0; i + 30 <= bytes.length; i++) {
+    if (bytes.readUInt32LE(i) !== 0x04034b50) continue;
+    const nameLength = bytes.readUInt16LE(i + 26);
+    const extraLength = bytes.readUInt16LE(i + 28);
+    const stored = bytes.subarray(i + 30, i + 30 + nameLength);
+    if (!stored.equals(name)) continue;
+    const dataStart = i + 30 + nameLength + extraLength;
+    bytes[dataStart] = bytes[dataStart] ^ 0xff;
+    fs.writeFileSync(zipPath, bytes);
+    return;
+  }
+  throw new Error(`member ${memberName} not found in ${zipPath}`);
+}
+
 describe("archive convergence invariants", () => {
   test("a legal ZIP comment may contain EOCD signature bytes without shadowing the real record", () => {
     const root = tmp();
@@ -70,8 +87,6 @@ describe("archive convergence invariants", () => {
 
     const comment = Buffer.alloc(48, 0x41);
     comment.writeUInt32LE(EOCD_SIGNATURE, 8);
-    // The signature-shaped bytes are followed by enough data to look tempting,
-    // but their own encoded comment length does not reach physical EOF.
     comment.writeUInt16LE(0, 28);
     setZipComment(zipPath, comment);
 
@@ -125,6 +140,36 @@ describe("archive convergence invariants", () => {
     expect(result.archives[1].heldReason).toMatch(/archive count limit of 1 reached/);
     expect(fs.existsSync(extractDirFor(a))).toBe(false);
     expect(fs.existsSync(extractDirFor(b))).toBe(false);
+  });
+
+  test("dry-run detects runtime CRC failure without materializing a target", () => {
+    const root = tmp();
+    const zipPath = path.join(root, "dry-crc.zip");
+    writeRawZip(zipPath, [{ name: "bad.txt", content: "data", stored: true }]);
+    corruptStoredMember(zipPath, "bad.txt");
+
+    const result = expandArchivesUnderRoot(root, { dryRun: true, verbose: false });
+
+    expect(result.archives[0].heldReason).toMatch(/archive\.integrity_failed.*CRC/);
+    expect(fs.existsSync(extractDirFor(zipPath))).toBe(false);
+  });
+
+  test("real runtime integrity refusal preserves the previous extraction and continues as a held archive", () => {
+    const root = tmp();
+    const zipPath = path.join(root, "real-crc.zip");
+    writeRawZip(zipPath, [{ name: "bad.txt", content: "data", stored: true }]);
+    const first = expandArchivesUnderRoot(root, { dryRun: false, verbose: false });
+    expect(first.archives[0].heldReason).toBeUndefined();
+    const target = extractDirFor(zipPath);
+    expect(fs.readFileSync(path.join(target, "bad.txt"), "utf8")).toBe("data");
+
+    corruptStoredMember(zipPath, "bad.txt");
+    const second = expandArchivesUnderRoot(root, { dryRun: false, verbose: false });
+
+    expect(second.archives[0].heldReason).toMatch(/archive\.integrity_failed.*CRC/);
+    expect(fs.readFileSync(path.join(target, "bad.txt"), "utf8")).toBe("data");
+    expect(fs.readdirSync(root).some((name) => name.includes("candidate-") || name.includes("previous-")))
+      .toBe(false);
   });
 
   test("invalid programmatic policy values fail closed before archive execution", () => {
