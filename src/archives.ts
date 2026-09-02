@@ -379,13 +379,23 @@ export function writeArchiveSidecar(
   extras: Record<string, unknown> = {},
 ): string {
   const sidecar = sidecarPathFor(zipPath);
+  // A caller that already admitted an immutable snapshot supplies its hash and
+  // size in `extras`. Prefer those values without touching the live ZIP again;
+  // otherwise a source swap after extraction could make the sidecar describe
+  // different bytes or fail after the transactional tree had already committed.
+  const suppliedHash = extras.content_hash;
+  const suppliedSize = extras.size_bytes;
+  const contentHash = typeof suppliedHash === "string" ? suppliedHash : contentHashFile(zipPath);
+  const sizeBytes = typeof suppliedSize === "number" && Number.isFinite(suppliedSize)
+    ? suppliedSize
+    : fs.statSync(zipPath).size;
   const obj: Record<string, unknown> = {
     schema: "l9.archive-sidecar/v1",
     artifact_type: "archive",
     source_path: zipPath,
     file_name: path.basename(zipPath),
-    content_hash: contentHashFile(zipPath),
-    size_bytes: fs.statSync(zipPath).size,
+    content_hash: contentHash,
+    size_bytes: sizeBytes,
     extracted_to: extractDir,
     member_count: memberCount,
     injectable: false,
