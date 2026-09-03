@@ -18,11 +18,11 @@
     },
     {
       "path": "dist/archive_preflight.js",
-      "git_blob_sha1": "efb4750784f0f2d834afe38dafb2c01123e3e104"
+      "git_blob_sha1": "a432921cfedf3e821a2c20e4a315223463718c25"
     },
     {
       "path": "dist/archive_preflight.js.map",
-      "git_blob_sha1": "d60ab8c4f137170e1a4c382318ce70a14878a989"
+      "git_blob_sha1": "5a3a1ebe85a22ae4eb343a9226582a0b3f5391cc"
     },
     {
       "path": "dist/corpus_analysis.d.ts",
@@ -318,11 +318,11 @@
     },
     {
       "path": "dist/local_source.js",
-      "git_blob_sha1": "8c5210e0011095406302e3a22f486135a0588d11"
+      "git_blob_sha1": "3cd20d4b1d2efd522798144f1807fa0e90c7487d"
     },
     {
       "path": "dist/local_source.js.map",
-      "git_blob_sha1": "ebb6c604d0c9b82a94b618c46b4b25d3f027caeb"
+      "git_blob_sha1": "5e9407d84481cc1ad2a6fdeabe2f449795b1289f"
     },
     {
       "path": "dist/ordering.d.ts",
@@ -674,7 +674,7 @@
     },
     {
       "path": "src/archive_preflight.ts",
-      "git_blob_sha1": "04e4f091c885db474dfb583b1fa770a6ee1e35f4"
+      "git_blob_sha1": "f8ddbde903045fc65659ddf9a0064cd1509b3dfb"
     },
     {
       "path": "src/corpus_analysis.ts",
@@ -774,7 +774,7 @@
     },
     {
       "path": "src/inventory.ts",
-      "git_blob_sha1": "0cde31e28353a661db171246eb0773b2ff2e63ae"
+      "git_blob_sha1": "390ccd208d710ae680b20ba4a86b26f65d8f42bb"
     },
     {
       "path": "src/local_archive_policy.ts",
@@ -786,7 +786,7 @@
     },
     {
       "path": "src/local_source.ts",
-      "git_blob_sha1": "75a681853f1be061ab97881ba53a6aca39d209dc"
+      "git_blob_sha1": "b6ad4f0a4a40b48daa3be444b91e91b61e1e512b"
     },
     {
       "path": "src/meta_v3.ts",
