@@ -179,6 +179,19 @@ function isCandidate(relativePath: string): boolean {
 interface WalkResult {
   files: string[];
   gaps: AuthorityConflict[];
+  /** `.l9/meta-authority.yaml` documents found below the repository root. */
+  nestedAuthorities: string[];
+}
+
+const AUTHORITY_DIRECTORY_NAME = ".l9";
+const AUTHORITY_FILE_NAME = "meta-authority.yaml";
+
+function nestedAuthorityConflict(relativePath: string): AuthorityConflict {
+  return {
+    code: "META_AUTHORITY_CONFLICT",
+    message: "nested authority declaration competes with the root .l9/meta-authority.yaml; one repository has one authority",
+    path: relativePath,
+  };
 }
 
 function scanGap(relativePath: string, message: string): AuthorityConflict {
@@ -192,6 +205,7 @@ function scanGap(relativePath: string, message: string): AuthorityConflict {
 function walkFiles(root: string, excluded: Set<string>): WalkResult {
   const files: string[] = [];
   const gaps: AuthorityConflict[] = [];
+  const nestedAuthorities: string[] = [];
   const walk = (directory: string): void => {
     let entries: fs.Dirent[];
     try {
@@ -210,6 +224,14 @@ function walkFiles(root: string, excluded: Set<string>): WalkResult {
       }
       if (entry.isDirectory()) {
         if (excluded.has(entry.name)) continue;
+        if (entry.name === AUTHORITY_DIRECTORY_NAME && directory !== root) {
+          const candidate = path.join(full, AUTHORITY_FILE_NAME);
+          try {
+            if (fs.lstatSync(candidate).isFile()) nestedAuthorities.push(toPosix(path.relative(root, candidate)));
+          } catch {
+            // No document inside the nested `.l9`: nothing competes.
+          }
+        }
         walk(full);
       } else if (entry.isFile() && isCandidate(relative)) {
         files.push(full);
@@ -218,7 +240,7 @@ function walkFiles(root: string, excluded: Set<string>): WalkResult {
   };
   walk(root);
   files.sort(compareCodePoints);
-  return { files, gaps };
+  return { files, gaps, nestedAuthorities: nestedAuthorities.sort(compareCodePoints) };
 }
 
 /**
@@ -415,6 +437,7 @@ export function scanRepositoryAuthority(root: string, options: AuthorityScanOpti
   const policy = options.legacyPolicy;
   const conflicts = [
     ...scanGaps,
+    ...walked.nestedAuthorities.map(nestedAuthorityConflict),
     ...deduped.map((item) => conflictFor(item, policy)).filter((item): item is AuthorityConflict => item !== null),
   ];
   const notices = deduped

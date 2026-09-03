@@ -15,6 +15,8 @@ import { compareCodePoints } from "./ordering";
 
 export const FILE_TRANSACTION_SCHEMA = "l9.file-transaction/v1" as const;
 export const TRANSACTION_DIRECTORY = ".l9/.transactions" as const;
+/** Paths no transaction may target: the authority document and the journal root. */
+const PROTECTED_TRANSACTION_PATHS: ReadonlySet<string> = new Set([".l9/meta-authority.yaml", TRANSACTION_DIRECTORY]);
 
 export interface FileMutationIntent {
   /** Canonical repository-relative POSIX path. */
@@ -112,7 +114,14 @@ function normalizeRelativePath(value: string): string {
   }
   const parts = value.split("/");
   if (parts.some((part) => !part || part === "." || part === "..")) throw new Error(`transaction path contains unsafe segment: ${value}`);
-  return parts.join("/");
+  const normalized = parts.join("/");
+  // The transaction primitive never writes Git internals, the authority that licenses it,
+  // or its own journal directory, whatever a caller plans (ADR-047).
+  if (parts.includes(".git")) throw new Error(`transaction path targets Git internal state: ${value}`);
+  if (PROTECTED_TRANSACTION_PATHS.has(normalized) || normalized.startsWith(`${TRANSACTION_DIRECTORY}/`)) {
+    throw new Error(`transaction path targets protected repository state: ${value}`);
+  }
+  return normalized;
 }
 
 function ensureRoot(rootInput: string): string {
@@ -324,6 +333,9 @@ function stageEntries(ctx: TransactionContext, entries: PreparedEntry[], intents
     const mode = entry.originalMode ?? intents.find((item) => normalizeRelativePath(item.path) === entry.path)?.mode ?? 0o644;
     const fd = fs.openSync(entry.temp, "wx", mode);
     try {
+      // `open` applies the process umask to `mode`; the recorded original mode (or the
+      // intent's mode) is the contract, so it is restored on the descriptor before commit.
+      fs.fchmodSync(fd, mode);
       fs.writeFileSync(fd, entry.bytes);
       fs.fsyncSync(fd);
     } finally {

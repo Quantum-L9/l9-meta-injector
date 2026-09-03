@@ -51,6 +51,8 @@ const node_crypto_1 = require("node:crypto");
 const ordering_1 = require("./ordering");
 exports.FILE_TRANSACTION_SCHEMA = "l9.file-transaction/v1";
 exports.TRANSACTION_DIRECTORY = ".l9/.transactions";
+/** Paths no transaction may target: the authority document and the journal root. */
+const PROTECTED_TRANSACTION_PATHS = new Set([".l9/meta-authority.yaml", exports.TRANSACTION_DIRECTORY]);
 function hashBytes(bytes) {
     return (0, node_crypto_1.createHash)("sha256").update(bytes).digest("hex");
 }
@@ -66,7 +68,15 @@ function normalizeRelativePath(value) {
     const parts = value.split("/");
     if (parts.some((part) => !part || part === "." || part === ".."))
         throw new Error(`transaction path contains unsafe segment: ${value}`);
-    return parts.join("/");
+    const normalized = parts.join("/");
+    // The transaction primitive never writes Git internals, the authority that licenses it,
+    // or its own journal directory, whatever a caller plans (ADR-047).
+    if (parts.includes(".git"))
+        throw new Error(`transaction path targets Git internal state: ${value}`);
+    if (PROTECTED_TRANSACTION_PATHS.has(normalized) || normalized.startsWith(`${exports.TRANSACTION_DIRECTORY}/`)) {
+        throw new Error(`transaction path targets protected repository state: ${value}`);
+    }
+    return normalized;
 }
 function ensureRoot(rootInput) {
     const root = path.resolve(rootInput);
@@ -288,6 +298,9 @@ function stageEntries(ctx, entries, intents, createdDirectories) {
         const mode = entry.originalMode ?? intents.find((item) => normalizeRelativePath(item.path) === entry.path)?.mode ?? 0o644;
         const fd = fs.openSync(entry.temp, "wx", mode);
         try {
+            // `open` applies the process umask to `mode`; the recorded original mode (or the
+            // intent's mode) is the contract, so it is restored on the descriptor before commit.
+            fs.fchmodSync(fd, mode);
             fs.writeFileSync(fd, entry.bytes);
             fs.fsyncSync(fd);
         }

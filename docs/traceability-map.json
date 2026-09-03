@@ -393,6 +393,24 @@
         "npm run validate"
       ],
       "stability": "stable"
+    },
+    {
+      "capability": "repository_mode_scope_and_fail_closed_reporting",
+      "source": "src/glob.ts and src/retrieval.ts and src/file_transaction.ts and src/check.ts and src/authority_scan.ts and src/extract.ts",
+      "public_entrypoint": "runCheckAsync, runApplyAsync",
+      "tests": [
+        "tests/discovery_glob_scope.test.ts",
+        "tests/file_transaction_mode_and_protected_paths.test.ts",
+        "tests/check_archive_inspection.test.ts",
+        "tests/check_unreadable_entry.test.ts",
+        "tests/authority_nested_declaration.test.ts",
+        "tests/apply_bom_frontmatter.test.ts"
+      ],
+      "validators": [
+        "npm test",
+        "npm run validate"
+      ],
+      "stability": "stable"
     }
   ]
 }

@@ -100,6 +100,12 @@ longer than any filesystem stores — before any byte is written, and one violat
 holds the whole archive rather than yielding a partial view. The path-conflict rule is
 judged once after the whole directory is known, so both central-directory orders
 receive the same verdict; the reader version is `1.1.0` (ADR-046).
+`src/glob.ts` is the one pattern language for every path scope: the discovery scope
+(`--glob`, `PipelineConfig.glob`) and the authority's `inline_allow` compile through the
+same function, so the files a run chooses and the files the authority licenses are named
+in one dialect. The scope is validated before any directory is read and a pattern the
+dialect cannot express is refused rather than silently matching nothing or everything;
+a file outside it is recorded as `glob_filtered` (ADR-047).
 `src/archive_formats.ts` is the one owner of which names are archives, which of those
 the reader expands (ZIP), and which byte signatures are recognized. TAR and every
 compressed tarball spelling are classified, hashed and reported as not expanded; a file

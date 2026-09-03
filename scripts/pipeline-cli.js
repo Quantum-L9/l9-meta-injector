@@ -8,7 +8,8 @@
  *   npm run pipeline -- <root> [options]
  *
  * Options:
- *   --glob <pattern>       file glob to scan                         (default: **\/*)
+ *   --glob <pattern>       repository-relative scope: **\/ crosses directories, * stays in a segment;
+ *                          no braces, classes, negation, absolute or .. (default: **\/*)
  *   --out <dir>            manifest/index output dir                 (default: sibling <root>.l9out,
  *                          kept OUTSIDE the scanned root so re-runs never scan/inject their own
  *                          diffs, reports, and indexes)

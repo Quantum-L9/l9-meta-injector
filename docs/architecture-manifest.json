@@ -10,7 +10,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "git_blob_sha1": "e8834ed8d1e84adc51226a7140fb912d0e72a9e0"
+      "git_blob_sha1": "3d6f96563d7bf02d5664fd5308769ffe1293bdcd"
     },
     {
       "path": "dist/archive_preflight.d.ts",
@@ -426,7 +426,7 @@
     },
     {
       "path": "docs/architecture.md",
-      "git_blob_sha1": "85bc3dd2eb7fa0518c8b72311538a911cb3b58e1"
+      "git_blob_sha1": "f9b6af983bd0272279d5c8de5c973b40e3584f7a"
     },
     {
       "path": "docs/contracts.md",
@@ -442,7 +442,7 @@
     },
     {
       "path": "docs/decision_log.md",
-      "git_blob_sha1": "dc089442c88224df731a69632e4e7a2142939146"
+      "git_blob_sha1": "f81f3005a24a69565fcb8899029928c5aa27a154"
     },
     {
       "path": "docs/decisions/036-read-only-local-source-acquisition.md",
@@ -542,7 +542,7 @@
     },
     {
       "path": "docs/traceability-map.json",
-      "git_blob_sha1": "c32920aede5345261a34767f34f81a0ce9faf32a"
+      "git_blob_sha1": "d8375ec5ee0f2038f830bee8c887e27ea1453211"
     },
     {
       "path": "fixtures/local-source/expected-bundle/manifest.json",

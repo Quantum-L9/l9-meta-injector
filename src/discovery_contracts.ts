@@ -15,6 +15,7 @@ export const DISCOVERY_DISPOSITIONS = [
   "hidden_control",
   "generated_artifact",
   "extension_filtered",
+  "glob_filtered",
   "known_binary",
   "binary_detected",
   "unsupported_encoding",

@@ -148,6 +148,15 @@ function isCandidate(relativePath) {
         return true;
     return SUSPICIOUS_NAME.test(base);
 }
+const AUTHORITY_DIRECTORY_NAME = ".l9";
+const AUTHORITY_FILE_NAME = "meta-authority.yaml";
+function nestedAuthorityConflict(relativePath) {
+    return {
+        code: "META_AUTHORITY_CONFLICT",
+        message: "nested authority declaration competes with the root .l9/meta-authority.yaml; one repository has one authority",
+        path: relativePath,
+    };
+}
 function scanGap(relativePath, message) {
     return {
         code: "META_AUTHORITY_SCAN_INCOMPLETE",
@@ -158,6 +167,7 @@ function scanGap(relativePath, message) {
 function walkFiles(root, excluded) {
     const files = [];
     const gaps = [];
+    const nestedAuthorities = [];
     const walk = (directory) => {
         let entries;
         try {
@@ -179,6 +189,16 @@ function walkFiles(root, excluded) {
             if (entry.isDirectory()) {
                 if (excluded.has(entry.name))
                     continue;
+                if (entry.name === AUTHORITY_DIRECTORY_NAME && directory !== root) {
+                    const candidate = path.join(full, AUTHORITY_FILE_NAME);
+                    try {
+                        if (fs.lstatSync(candidate).isFile())
+                            nestedAuthorities.push(toPosix(path.relative(root, candidate)));
+                    }
+                    catch {
+                        // No document inside the nested `.l9`: nothing competes.
+                    }
+                }
                 walk(full);
             }
             else if (entry.isFile() && isCandidate(relative)) {
@@ -188,7 +208,7 @@ function walkFiles(root, excluded) {
     };
     walk(root);
     files.sort(ordering_1.compareCodePoints);
-    return { files, gaps };
+    return { files, gaps, nestedAuthorities: nestedAuthorities.sort(ordering_1.compareCodePoints) };
 }
 /**
  * Apply the repository's declared legacy-writer policy to one piece of evidence.
@@ -380,6 +400,7 @@ function scanRepositoryAuthority(root, options = {}) {
     const policy = options.legacyPolicy;
     const conflicts = [
         ...scanGaps,
+        ...walked.nestedAuthorities.map(nestedAuthorityConflict),
         ...deduped.map((item) => conflictFor(item, policy)).filter((item) => item !== null),
     ];
     const notices = deduped

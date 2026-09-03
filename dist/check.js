@@ -40,6 +40,7 @@ const crypto = __importStar(require("node:crypto"));
 const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
 const archives_1 = require("./archives");
+const archive_formats_1 = require("./archive_formats");
 const discovery_contracts_1 = require("./discovery_contracts");
 const authority_scan_1 = require("./authority_scan");
 const carrier_operation_1 = require("./carrier_operation");
@@ -55,14 +56,31 @@ function hashBytes(value) {
 function snapshotRepository(root) {
     const repositoryRoot = path.resolve(root);
     const snapshot = new Map();
+    const failure = (error) => (error instanceof Error ? error.message : String(error));
     const walk = (directory) => {
-        const entries = fs.readdirSync(directory, { withFileTypes: true });
+        let entries;
+        try {
+            entries = fs.readdirSync(directory, { withFileTypes: true });
+        }
+        catch (error) {
+            // An unreadable directory is evidence the check must report, not a crash that
+            // discards the report; discovery records the same path as a blocking disposition.
+            snapshot.set(toPosix(path.relative(repositoryRoot, directory)) || ".", { kind: "unreadable", mode: 0, error: failure(error) });
+            return;
+        }
         for (const entry of entries.sort((a, b) => (0, ordering_1.compareCodePoints)(a.name, b.name))) {
             if (entry.name === ".git" || entry.name === "node_modules")
                 continue;
             const absolute = path.join(directory, entry.name);
             const relative = toPosix(path.relative(repositoryRoot, absolute));
-            const stat = fs.lstatSync(absolute);
+            let stat;
+            try {
+                stat = fs.lstatSync(absolute);
+            }
+            catch (error) {
+                snapshot.set(relative, { kind: "unreadable", mode: 0, error: failure(error) });
+                continue;
+            }
             if (stat.isSymbolicLink())
                 snapshot.set(relative, { kind: "symlink", mode: stat.mode, target: fs.readlinkSync(absolute) });
             else if (stat.isDirectory()) {
@@ -83,12 +101,31 @@ function snapshotDifferences(before, after) {
         .sort(ordering_1.compareCodePoints)
         .filter((item) => JSON.stringify(before.get(item)) !== JSON.stringify(after.get(item)));
 }
-function inspectArchivesWithoutExtraction(root) {
-    return (0, archives_1.findArchives)(root).archives.map((archivePath) => ({
-        path: toPosix(path.relative(root, archivePath)),
-        kind: "unsupported",
-        message: `archive inspected read-only (${(0, archives_1.listZipMembers)(archivePath).length} member(s)); governed check never extracts archives`,
-    }));
+/**
+ * Every archive the snapshot saw is reported as drift the governed check cannot resolve.
+ * A ZIP is listed read-only; one that is hostile or unreadable is reported with the
+ * reason rather than thrown, because a thrown check loses the whole report; a format the
+ * product never expands is reported by name and never opened (ADR-036, ADR-047).
+ */
+function inspectArchivesWithoutExtraction(root, snapshot) {
+    const drift = [];
+    for (const [relative, entry] of snapshot) {
+        if (entry.kind !== "file" || !(0, archive_formats_1.isArchivePath)(relative))
+            continue;
+        if (!(0, archive_formats_1.isExpandableArchivePath)(relative)) {
+            drift.push({ path: relative, kind: "unsupported", message: "archive format is never expanded; governed check reports it and never opens it" });
+            continue;
+        }
+        try {
+            const members = (0, archives_1.listZipMembers)(path.join(root, relative)).length;
+            drift.push({ path: relative, kind: "unsupported", message: `archive inspected read-only (${members} member(s)); governed check never extracts archives` });
+        }
+        catch (error) {
+            const reason = error instanceof Error ? error.message : String(error);
+            drift.push({ path: relative, kind: "unsupported", message: `archive could not be inspected read-only: ${reason}` });
+        }
+    }
+    return drift;
 }
 function authorityFailureResult(conflicts, notices, archiveDrift) {
     const check = {
@@ -112,7 +149,7 @@ async function runCheckAsync(config) {
     const before = snapshotRepository(root);
     try {
         const inspection = (0, authority_scan_1.inspectRepositoryAuthority)(root, { expectedWriter: { repository: carrier_operation_1.CANONICAL_METADATA_WRITER } });
-        const archiveDrift = config.localFiles ? inspectArchivesWithoutExtraction(root) : [];
+        const archiveDrift = config.localFiles ? inspectArchivesWithoutExtraction(root, before) : [];
         if (inspection.conflicts.length > 0 || !inspection.authority) {
             return authorityFailureResult(inspection.conflicts, inspection.notices, archiveDrift);
         }

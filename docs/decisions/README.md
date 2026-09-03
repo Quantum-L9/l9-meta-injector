@@ -33,6 +33,7 @@ Accepted ADRs are not deleted. A replacement ADR links back to the decision it s
 | [ADR-017](017-omit-skill-protect-skills-mode.md) | Omit layer, SKILL.md protect, and Cursor-native skills mode | Accepted |
 | [ADR-018](018-classification-injectability-coverage.md) | Classification injectability gate and coverage report persistence | Accepted |
 | [ADR-046](046-archive-format-authority-and-fidelity-of-direct-mutation.md) | One archive-format authority, order-independent path conflicts, and byte-faithful direct mutation | Accepted |
+| [ADR-047](047-one-glob-dialect-and-fail-closed-repository-modes.md) | One glob dialect, and repository modes that report instead of throw | Accepted |
 
 ## Authority boundary
 
