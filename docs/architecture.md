@@ -94,9 +94,17 @@ rejected. The central directory is accepted only when parsed entry count and con
 byte span both match what the terminal records declared, so truncated, padded, or
 prefix-hidden directories yield no member rather than a partial one.
 `src/archive_preflight.ts` judges every member — path shape, entry type, encryption,
-compression method, exact duplicates, and case- and Unicode-folded collisions — before
-any byte is written, and one violation holds the whole archive rather than yielding a
-partial view. `src/local_archive_policy.ts` validates all caller-provided ceilings and
+compression method, exact duplicates, case- and Unicode-folded collisions, a path
+declared as a file by one member and used as a directory by another, and a component
+longer than any filesystem stores — before any byte is written, and one violation
+holds the whole archive rather than yielding a partial view. The path-conflict rule is
+judged once after the whole directory is known, so both central-directory orders
+receive the same verdict; the reader version is `1.1.0` (ADR-046).
+`src/archive_formats.ts` is the one owner of which names are archives, which of those
+the reader expands (ZIP), and which byte signatures are recognized. TAR and every
+compressed tarball spelling are classified, hashed and reported as not expanded; a file
+whose bytes carry an archive signature its name does not declare is reported by
+signature and still never opened. `src/local_archive_policy.ts` validates all caller-provided ceilings and
 bounds size, member count, expansion, ratio, depth, path length and time, checked both
 against declared metadata and against bytes actually produced. Its policy fingerprint
 covers every resolved field, including the explicit policy-contract version as a

@@ -48,6 +48,7 @@ exports.recoverPendingTransactions = recoverPendingTransactions;
 const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
 const node_crypto_1 = require("node:crypto");
+const ordering_1 = require("./ordering");
 exports.FILE_TRANSACTION_SCHEMA = "l9.file-transaction/v1";
 exports.TRANSACTION_DIRECTORY = ".l9/.transactions";
 function hashBytes(bytes) {
@@ -224,7 +225,7 @@ function rollbackEntries(entries, journalPath, journal, createdDirectories) {
 function prepareEntries(root, intents, id) {
     const seen = new Set();
     const prepared = [];
-    for (const [index, intent] of [...intents].sort((a, b) => a.path.localeCompare(b.path)).entries()) {
+    for (const [index, intent] of [...intents].sort((a, b) => (0, ordering_1.compareCodePoints)(a.path, b.path)).entries()) {
         const relative = normalizeRelativePath(intent.path);
         if (seen.has(relative))
             throw new Error(`duplicate transaction target: ${relative}`);
@@ -447,7 +448,7 @@ function recoverPendingTransactions(rootInput) {
         throw new Error(`transaction journal directory is unsafe: ${directory}`);
     const recovered = [];
     const finalized = [];
-    const journals = fs.readdirSync(directory).filter((name) => name.endsWith(".json")).sort((a, b) => a.localeCompare(b));
+    const journals = fs.readdirSync(directory).filter((name) => name.endsWith(".json")).sort(ordering_1.compareCodePoints);
     for (const name of journals) {
         const journalPath = path.join(directory, name);
         const parsed = JSON.parse(fs.readFileSync(journalPath, "utf8"));

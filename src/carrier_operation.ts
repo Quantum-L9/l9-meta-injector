@@ -14,6 +14,7 @@ import { compileMetadataIndex, METADATA_INDEX_RELATIVE_PATH, type MetadataIndexC
 import { resolveCarrierDecisions, assertCarrierDecisionCoverage, type CarrierSubject } from "./mutation_policy";
 import { runPipelineAsync, type PipelineMetadataSubject, type PipelineResult } from "./pipeline";
 import type { InjectionRecord, PipelineConfig } from "./schema";
+import { compareCodePoints } from "./ordering";
 
 export const CANONICAL_METADATA_WRITER = "Quantum-L9/l9-meta-injector" as const;
 
@@ -128,7 +129,7 @@ function collectInlinePlans(
       if (!sidecar.endsWith(".l9meta.yaml")) throw new Error(`unexpected legacy sidecar target: ${sidecar}`);
     }
   }
-  inlinePlans.sort((a, b) => relativePath(root, a.sourcePath).localeCompare(relativePath(root, b.sourcePath)));
+  inlinePlans.sort((a, b) => compareCodePoints(relativePath(root, a.sourcePath), relativePath(root, b.sourcePath)));
   return inlinePlans;
 }
 
@@ -139,7 +140,7 @@ export function buildCarrierOperationPlan(
   pipeline: PipelineResult,
 ): CarrierOperationPlan {
   const root = path.resolve(rootInput);
-  const subjects = [...pipeline.metadataSubjects].sort((a, b) => a.path.localeCompare(b.path));
+  const subjects = [...pipeline.metadataSubjects].sort((a, b) => compareCodePoints(a.path, b.path));
   const carrierSubjects: CarrierSubject[] = subjects.map(({ path: subjectPath, artifactType, strategy, inlineCarrierBlock }) => ({
     path: subjectPath,
     artifactType,

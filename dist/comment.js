@@ -44,12 +44,14 @@ exports.isProbablyBinary = isProbablyBinary;
 exports.resolveStrategy = resolveStrategy;
 exports.sidecarPathFor = sidecarPathFor;
 exports.frontMatterInner = frontMatterInner;
+exports.detectNewlineConvention = detectNewlineConvention;
 exports.yamlToBlock = yamlToBlock;
 exports.stripInjectedBlock = stripInjectedBlock;
 exports.hasInjectedBlock = hasInjectedBlock;
 exports.extractInjectedYaml = extractInjectedYaml;
 exports.applyCommentInjection = applyCommentInjection;
 const path = __importStar(require("node:path"));
+const archive_formats_1 = require("./archive_formats");
 // Sentinels used to locate a previously-injected block for idempotent re-injection.
 const START = ">>> l9:meta >>>";
 const END = "<<< l9:meta <<<";
@@ -96,7 +98,8 @@ const SIDECAR_EXTS = new Set([".json", ".jsonc", ".json5", ".geojson", ".csv", "
 const BINARY_EXTS = new Set([
     ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".tif", ".tiff",
     ".pdf", ".mp3", ".mp4", ".wav", ".flac", ".ogg", ".mov", ".avi", ".mkv", ".webm",
-    ".zip", ".gz", ".bz2", ".xz", ".tar", ".7z", ".rar",
+    // Every archive extension the package recognizes, expandable or not (one owner).
+    ...archive_formats_1.ARCHIVE_EXTENSIONS,
     ".woff", ".woff2", ".ttf", ".eot", ".otf",
     ".exe", ".dll", ".so", ".dylib", ".class", ".o", ".a", ".lib", ".wasm", ".bin", ".dat",
     // Bytecode / ephemeral noise — skip entirely (no sidecar, no inventory inject).
@@ -142,16 +145,26 @@ function frontMatterInner(yamlFrontMatter) {
 function esc(s) {
     return s.replace(/[.*+?^${}()|[\]\\]/g, String.raw `\$&`);
 }
+/**
+ * The newline convention a text body already uses: whichever the first line
+ * ending is. A file with no line ending yet is treated as LF. The injected block
+ * adopts the file's convention so a CRLF source does not come back with LF
+ * inside its header and CRLF everywhere else.
+ */
+function detectNewlineConvention(text) {
+    const lf = text.indexOf("\n");
+    return lf > 0 && text[lf - 1] === "\r" ? "\r\n" : "\n";
+}
 /** Wrap inner YAML in the comment style for this spec. Returns the block (no trailing newline). */
-function yamlToBlock(yamlInner, spec) {
-    const lines = yamlInner.split("\n");
+function yamlToBlock(yamlInner, spec, newline = "\n") {
+    const lines = yamlInner.split(/\r?\n/);
     if (spec.strategy === "line-comment") {
         const p = spec.linePrefix;
         const out = [`${p} ${START}`, ...lines.map((l) => (l === "" ? p : `${p} ${l}`)), `${p} ${END}`];
-        return out.join("\n");
+        return out.join(newline);
     }
     if (spec.strategy === "block-comment") {
-        return [`${spec.blockOpen} ${BLOCK_START}`, ...lines, `${BLOCK_END} ${spec.blockClose}`].join("\n");
+        return [`${spec.blockOpen} ${BLOCK_START}`, ...lines, `${BLOCK_END} ${spec.blockClose}`].join(newline);
     }
     throw new Error(`yamlToBlock: unsupported strategy ${spec.strategy}`);
 }
@@ -191,29 +204,39 @@ function extractInjectedYaml(raw, spec) {
     const body = m[0];
     if (spec.strategy === "line-comment") {
         const p = spec.linePrefix;
-        return body.split("\n")
+        // Split on either convention: a CRLF file's block would otherwise keep a
+        // trailing `\r` on every value and fail to round-trip on the next run.
+        return body.split(/\r?\n/)
             .filter((l) => !l.includes(START) && !l.includes(END) && l.trimStart().startsWith(p))
             .map((l) => l.replace(new RegExp(String.raw `^\s*${esc(p)} ?`), ""))
             .join("\n").trim();
     }
     // block-comment
-    return body.split("\n")
+    return body.split(/\r?\n/)
         .filter((l) => !l.includes(BLOCK_START) && !l.includes(BLOCK_END))
         .join("\n").trim();
 }
+const BOM = "\uFEFF";
 /**
  * Assemble the injected file for comment strategies, preserving cleanBody verbatim
  * and keeping a shebang (`#!...`) on line 1. Recoverable via stripInjectedBlock.
+ *
+ * A byte-order mark stays at byte 0: the block is inserted after it, never before,
+ * because a BOM in the middle of a file is no longer a BOM. Line endings around
+ * the block follow `newline`, so a CRLF file keeps a single convention.
  */
-function applyCommentInjection(cleanBody, block) {
-    if (cleanBody.startsWith("#!")) {
-        const nl = cleanBody.indexOf("\n");
+function applyCommentInjection(cleanBody, block, newline = "\n") {
+    const bom = cleanBody.startsWith(BOM) ? BOM : "";
+    const body = cleanBody.slice(bom.length);
+    if (body.startsWith("#!")) {
+        const nl = body.indexOf("\n");
         if (nl === -1)
-            return `${cleanBody}\n${block}\n`;
-        const shebang = cleanBody.slice(0, nl);
-        const rest = cleanBody.slice(nl + 1);
-        return `${shebang}\n${block}\n${rest}`;
+            return `${bom}${body}${newline}${block}${newline}`;
+        const hasCr = nl > 0 && body[nl - 1] === "\r";
+        const shebang = body.slice(0, hasCr ? nl - 1 : nl);
+        const rest = body.slice(nl + 1);
+        return `${bom}${shebang}${newline}${block}${newline}${rest}`;
     }
-    return `${block}\n${cleanBody}`;
+    return `${bom}${block}${newline}${body}`;
 }
 //# sourceMappingURL=comment.js.map

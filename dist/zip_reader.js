@@ -112,10 +112,6 @@ function readSafeUInt64LE(buffer, offset, label) {
     return Number(value);
 }
 function decodeMemberName(raw, flags) {
-    // Bit 11 declares UTF-8. Without it the historical encoding is CP437, which this
-    // reader does not transcode: the bytes are decoded as UTF-8 and flagged when that
-    // is lossy, so a name that cannot be represented faithfully is visible rather than
-    // silently mangled into a different path.
     try {
         const name = new TextDecoder("utf-8", { fatal: true }).decode(raw);
         return { name, suspect: (flags & FLAG_UTF8_NAME) === 0 && /[^\x20-\x7e]/.test(name) };
@@ -141,31 +137,56 @@ function entryKindFor(versionMadeBy, externalAttributes, name) {
             }
         }
     }
-    // No usable mode: a trailing separator is the portable directory convention.
     return { kind: name.endsWith("/") ? "directory" : "file", unixMode: null };
 }
-/** Offset of the end-of-central-directory record within the archive tail. */
-function findEocdOffset(tail) {
+/**
+ * Find the real EOCD record, not merely the last signature-shaped bytes.
+ *
+ * ZIP comments are arbitrary bytes and may legally contain PK\x05\x06. A candidate
+ * is therefore considered only when its own declared comment length terminates
+ * exactly at physical EOF. Invalid later candidates are skipped so a legal
+ * signature inside a comment cannot shadow the real record.
+ */
+function findEocdOffset(tail, searchStart, fileSize) {
     for (let i = tail.length - EOCD_MIN_SIZE; i >= 0; i--) {
-        if (tail.readUInt32LE(i) === EOCD_SIGNATURE)
+        if (tail.readUInt32LE(i) !== EOCD_SIGNATURE)
+            continue;
+        const commentLength = tail.readUInt16LE(i + 20);
+        const recordEnd = searchStart + i + EOCD_MIN_SIZE + commentLength;
+        if (recordEnd === fileSize)
             return i;
     }
-    throw new ZipFormatError("end-of-central-directory record not found");
+    throw new ZipFormatError("end-of-central-directory record not found or its comment does not reach the end of the archive");
 }
-/**
- * Read the Zip64 end-of-central-directory record the locator points at.
- *
- * Consulted only when the 32-bit record stored placeholder values, which is how a
- * large archive reports counts and offsets that do not fit in the classic record.
- */
-function readZip64Eocd(fd, tail, locatorOffset) {
+/** Read and fully frame the Zip64 EOCD record addressed by its locator. */
+function readZip64Eocd(fd, tail, locatorOffset, locatorAbsoluteOffset) {
+    const locatorDisk = tail.readUInt32LE(locatorOffset + 4);
+    const totalDisks = tail.readUInt32LE(locatorOffset + 16);
+    if (locatorDisk !== 0 || totalDisks !== 1) {
+        throw new ZipFormatError("multi-disk (split) ZIP archives are not supported");
+    }
     const recordOffset = readSafeUInt64LE(tail, locatorOffset + 8, "zip64 end-of-central-directory offset");
-    const record = readExact(fd, 56, recordOffset);
-    if (record.readUInt32LE(0) !== ZIP64_EOCD_SIGNATURE) {
+    const prefix = readExact(fd, 12, recordOffset);
+    if (prefix.readUInt32LE(0) !== ZIP64_EOCD_SIGNATURE) {
         throw new ZipFormatError("zip64 end-of-central-directory record signature is invalid");
     }
+    const payloadSize = readSafeUInt64LE(prefix, 4, "zip64 end-of-central-directory size");
+    if (payloadSize < 44)
+        throw new ZipFormatError("zip64 end-of-central-directory record is truncated");
+    const totalRecordSize = 12 + payloadSize;
+    if (recordOffset + totalRecordSize !== locatorAbsoluteOffset) {
+        throw new ZipFormatError("zip64 end-of-central-directory record does not terminate at its locator");
+    }
+    const record = readExact(fd, totalRecordSize, recordOffset);
+    const diskNumber = record.readUInt32LE(16);
+    const centralDirectoryDisk = record.readUInt32LE(20);
+    const entriesOnDisk = readSafeUInt64LE(record, 24, "zip64 entries on disk");
+    const entryCount = readSafeUInt64LE(record, 32, "zip64 entry count");
+    if (diskNumber !== 0 || centralDirectoryDisk !== 0 || entriesOnDisk !== entryCount) {
+        throw new ZipFormatError("multi-disk (split) ZIP archives are not supported");
+    }
     return {
-        entryCount: readSafeUInt64LE(record, 32, "zip64 entry count"),
+        entryCount,
         centralDirectorySize: readSafeUInt64LE(record, 40, "zip64 central-directory size"),
         centralDirectoryOffset: readSafeUInt64LE(record, 48, "zip64 central-directory offset"),
         zip64: true,
@@ -177,25 +198,14 @@ function locateEocd(fd, fileSize) {
     const searchLength = Math.min(fileSize, MAX_EOCD_SEARCH);
     const searchStart = fileSize - searchLength;
     const tail = readExact(fd, searchLength, searchStart);
-    const eocdOffset = findEocdOffset(tail);
+    const eocdOffset = findEocdOffset(tail, searchStart, fileSize);
+    const eocdAbsoluteOffset = searchStart + eocdOffset;
     const classic = {
         entryCount: tail.readUInt16LE(eocdOffset + 10),
         centralDirectorySize: tail.readUInt32LE(eocdOffset + 12),
         centralDirectoryOffset: tail.readUInt32LE(eocdOffset + 16),
         zip64: false,
     };
-    // Framing: the record's comment must carry exactly to EOF. A signature found
-    // inside trailing garbage, or a comment length that does not account for every
-    // remaining byte, means the archive has bytes this reader cannot explain, and
-    // the central directory is not what the tail alone suggests.
-    const commentLength = tail.readUInt16LE(eocdOffset + 20);
-    const recordEnd = searchStart + eocdOffset + EOCD_MIN_SIZE + commentLength;
-    if (recordEnd !== fileSize) {
-        throw new ZipFormatError("end-of-central-directory comment does not reach the end of the archive");
-    }
-    // Framing: multi-disk (split) archives spread members across several files.
-    // This reader has no access to the other disks, so a split archive would be
-    // silently half-read; it is rejected instead of parsed as if complete.
     const diskNumber = tail.readUInt16LE(eocdOffset + 4);
     const centralDirectoryDisk = tail.readUInt16LE(eocdOffset + 6);
     const entriesOnDisk = tail.readUInt16LE(eocdOffset + 8);
@@ -207,30 +217,34 @@ function locateEocd(fd, fileSize) {
         || classic.centralDirectoryOffset === U32_MAX;
     const locatorOffset = eocdOffset - ZIP64_LOCATOR_SIZE;
     const hasLocator = locatorOffset >= 0 && tail.readUInt32LE(locatorOffset) === ZIP64_LOCATOR_SIGNATURE;
-    if (hasLocator && tail.readUInt32LE(locatorOffset + 4) !== 0) {
-        // The Zip64 locator's disk field must be zero for a single-disk archive.
-        throw new ZipFormatError("multi-disk (split) ZIP archives are not supported");
+    if (needsZip64 && !hasLocator) {
+        throw new ZipFormatError("zip64 archive is missing its end-of-central-directory locator");
     }
-    const resolved = needsZip64 && hasLocator ? readZip64Eocd(fd, tail, locatorOffset) : classic;
-    if (resolved.centralDirectoryOffset + resolved.centralDirectorySize > fileSize) {
+    const resolved = needsZip64
+        ? readZip64Eocd(fd, tail, locatorOffset, searchStart + locatorOffset)
+        : classic;
+    const centralEnd = resolved.centralDirectoryOffset + resolved.centralDirectorySize;
+    if (centralEnd > fileSize) {
         throw new ZipFormatError("central directory extends past the end of the archive");
+    }
+    if (resolved.zip64) {
+        const zip64RecordOffset = readSafeUInt64LE(tail, locatorOffset + 8, "zip64 end-of-central-directory offset");
+        if (centralEnd !== zip64RecordOffset) {
+            throw new ZipFormatError("central directory does not terminate at the zip64 end record");
+        }
+    }
+    else if (centralEnd !== eocdAbsoluteOffset) {
+        throw new ZipFormatError("central directory does not terminate at the end-of-central-directory record");
     }
     return resolved;
 }
-/**
- * Locate the Zip64 extended-information field's payload inside an extra-field blob.
- *
- * The blob is a sequence of `(id, size, data)` records from any number of
- * producers, so finding ours is a separate concern from interpreting it.
- */
+/** Locate the Zip64 extended-information field's payload inside an extra-field blob. */
 function findZip64ExtraPayload(extra) {
     let cursor = 0;
     while (cursor + 4 <= extra.length) {
         const headerId = extra.readUInt16LE(cursor);
         const dataSize = extra.readUInt16LE(cursor + 2);
         const dataStart = cursor + 4;
-        // A record that claims more bytes than remain is malformed; stop rather than
-        // read past the blob.
         if (dataStart + dataSize > extra.length)
             return null;
         if (headerId === ZIP64_EXTRA_ID)
@@ -239,14 +253,7 @@ function findZip64ExtraPayload(extra) {
     }
     return null;
 }
-/**
- * Apply the Zip64 extended-information extra field to the placeholder sizes.
- *
- * The payload is a positional list: a 64-bit value appears only for a field whose
- * 32-bit slot held the `0xFFFFFFFF` placeholder, in a fixed order. So the reader
- * walks the list in that order and consumes one value per placeholder it finds,
- * leaving a placeholder in place when the payload ran out.
- */
+/** Apply the Zip64 extended-information extra field to placeholder sizes. */
 function applyZip64Extra(extra, entry) {
     const payload = findZip64ExtraPayload(extra);
     if (payload === null)
@@ -314,13 +321,7 @@ function readCentralEntry(central, cursor, index) {
         next,
     };
 }
-/**
- * Read an archive's central directory.
- *
- * The central directory — not the local headers — is the authority for what an
- * archive claims to contain, so preflight can run over the complete member list
- * before any extraction begins.
- */
+/** Read an archive's central directory. */
 function readZipCentralDirectory(archivePath) {
     const fd = fs.openSync(archivePath, "r");
     try {
@@ -333,14 +334,6 @@ function readZipCentralDirectory(archivePath) {
             entries.push(parsed.entry);
             cursor = parsed.next;
         }
-        // The loop above stops when fewer than a fixed header's bytes remain, which
-        // is not the same as having read the directory. Both of the archive's own
-        // completeness claims have to be met, or the member list is a prefix of the
-        // truth and everything downstream — preflight, classification, the byte
-        // budget — is deciding over a subset while believing it holds the whole.
-        //
-        // Failing closed is the only safe direction here: an attacker who can make
-        // the reader stop early chooses which members preflight never sees.
         if (entries.length !== eocd.entryCount) {
             throw new ZipFormatError(`central directory declares ${eocd.entryCount} entries but ${entries.length} could be parsed`);
         }
@@ -402,15 +395,7 @@ function readStoredMember(fd, entry, dataStart, chunkBytes, emit) {
         remaining -= count;
     }
 }
-/**
- * Inflate a deflated member whole, under a ceiling zlib itself enforces.
- *
- * `inflateRawSync` is a synchronous, whole-output call: the compressed bytes are
- * read entirely and the inflated result exists entirely before the first chunk is
- * emitted. `maxOutputLength` is what makes that safe — zlib aborts at the limit,
- * so a member that lies about its uncompressed size still cannot allocate past
- * the ceiling, and the sink never sees a byte of the excess.
- */
+/** Inflate a deflated member whole, under a ceiling zlib itself enforces. */
 function readDeflatedMember(fd, entry, dataStart, chunkBytes, maxUncompressedBytes, emit) {
     const compressed = readExact(fd, entry.compressedSize, dataStart);
     let inflated;
@@ -435,33 +420,11 @@ function memberDataStart(fd, entry) {
     }
     return entry.localHeaderOffset + LOCAL_FIXED_SIZE + header.readUInt16LE(26) + header.readUInt16LE(28);
 }
-/**
- * Read one member and hand its bytes to `sink` in chunks.
- *
- * `maxUncompressedBytes` is enforced by the decompressor itself, not by trusting
- * the central directory: a member that understates its uncompressed size still
- * cannot produce more than the ceiling, because zlib aborts at the limit and the
- * sink never sees the excess. That is the runtime accounting a declared-size
- * check alone cannot provide.
- *
- * The two paths do not cost the same memory, and the difference is deliberate.
- * A stored member is read incrementally, so an uncompressed archive of any size
- * costs one chunk. A deflated member is inflated synchronously and held whole:
- * peak cost is its compressed bytes plus its inflated bytes, and the chunking
- * below is a delivery detail, not evidence of streaming. What bounds that is
- * `maxUncompressedBytes`, enforced inside zlib, together with the archive- and
- * member-level ceilings the caller derives from the archive policy. Within
- * those ceilings the buffering is bounded; there is no size at which this
- * becomes a streaming inflate. Raising them raises real peak memory.
- */
+/** Read one member and hand its bytes to `sink` in chunks. */
 function streamZipMember(archivePath, entry, limits, sink) {
     if (entry.compressionMethod !== exports.COMPRESSION_STORED && entry.compressionMethod !== exports.COMPRESSION_DEFLATE) {
         throw new ZipFormatError(`unsupported compression method ${entry.compressionMethod} for ${entry.name}`);
     }
-    // An exhausted allowance is a budget outcome, not a malformed archive. Checking it
-    // here keeps the stored and deflated paths reporting the same thing: zlib rejects a
-    // zero `maxOutputLength` as an out-of-range argument, which would otherwise surface
-    // as a format error and misattribute a budget refusal to the archive's contents.
     if (limits.maxUncompressedBytes <= 0) {
         throw new ZipBudgetExceededError(`member ${entry.name} cannot be extracted: the remaining extraction allowance is exhausted`);
     }

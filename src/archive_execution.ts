@@ -12,8 +12,14 @@ import {
 } from "./local_archive_policy";
 import { ZipDirectory, readZipCentralDirectory } from "./zip_reader";
 
-/** Version of the canonical ZIP reader whose verdict this context carries. */
-export const ARCHIVE_READER_VERSION = "1.0.0";
+/**
+ * Version of the canonical ZIP reader and preflight whose verdict this context carries.
+ *
+ * Bumped whenever an admission rule changes, because a warm archive-manifest
+ * verdict is keyed on it: 1.1.0 added the file/directory path-conflict rule, and
+ * an archive accepted under 1.0.0 may be held under 1.1.0.
+ */
+export const ARCHIVE_READER_VERSION = "1.1.0";
 const STAGE_CHUNK_BYTES = 64 * 1024;
 
 /**

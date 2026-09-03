@@ -55,6 +55,7 @@ const metrics_1 = require("./metrics");
 const authority_scan_1 = require("./authority_scan");
 const carrier_operation_1 = require("./carrier_operation");
 const file_transaction_1 = require("./file_transaction");
+const ordering_1 = require("./ordering");
 function sha256(bytes) {
     return (0, node_crypto_1.createHash)("sha256").update(bytes).digest("hex");
 }
@@ -291,7 +292,7 @@ async function runSkillsPipelineAsync(config) {
     }
     let repositoryMutated = false;
     if (!config.dryRun && intents.length > 0) {
-        const ordered = [...intents].sort((left, right) => left.path.localeCompare(right.path));
+        const ordered = [...intents].sort((left, right) => (0, ordering_1.compareCodePoints)(left.path, right.path));
         const transaction = (0, file_transaction_1.executeFileTransaction)(root, ordered, {
             validate: () => validateSkillsCommit(root, ordered),
         });

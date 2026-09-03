@@ -13,6 +13,7 @@ import type {
   MetadataCarrier,
   OperationMode,
 } from "./operation_contracts";
+import { compareCodePoints } from "./ordering";
 
 export const CARRIER_PRECEDENCE: readonly MetadataCarrier[] = [
   "hard_skip",
@@ -383,7 +384,7 @@ export function resolveCarrierDecisions(input: CarrierPolicyInput): CarrierDecis
     seen.add(result.path);
     return result;
   });
-  return decisions.sort((left, right) => left.path.localeCompare(right.path));
+  return decisions.sort((left, right) => compareCodePoints(left.path, right.path));
 }
 
 export function assertCarrierDecisionCoverage(

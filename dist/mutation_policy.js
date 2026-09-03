@@ -11,6 +11,7 @@ exports.INLINE_MANAGED_ARTIFACT_TYPES = exports.CARRIER_PRECEDENCE = void 0;
 exports.resolveCarrierDecision = resolveCarrierDecision;
 exports.resolveCarrierDecisions = resolveCarrierDecisions;
 exports.assertCarrierDecisionCoverage = assertCarrierDecisionCoverage;
+const ordering_1 = require("./ordering");
 exports.CARRIER_PRECEDENCE = [
     "hard_skip",
     "inventory_only",
@@ -287,7 +288,7 @@ function resolveCarrierDecisions(input) {
         seen.add(result.path);
         return result;
     });
-    return decisions.sort((left, right) => left.path.localeCompare(right.path));
+    return decisions.sort((left, right) => (0, ordering_1.compareCodePoints)(left.path, right.path));
 }
 function assertCarrierDecisionCoverage(subjects, decisions) {
     const expected = new Set(subjects.map((subject) => normalizeRelativePath(subject.path)));

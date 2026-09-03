@@ -15,6 +15,7 @@ import {
 } from "./carrier_operation";
 import type { CheckDrift, CheckResult, OperationResult } from "./operation_contracts";
 import type { PipelineConfig } from "./schema";
+import { compareCodePoints } from "./ordering";
 
 export { CANONICAL_METADATA_WRITER } from "./carrier_operation";
 
@@ -45,7 +46,7 @@ function snapshotRepository(root: string): RepositorySnapshot {
   const snapshot: RepositorySnapshot = new Map();
   const walk = (directory: string): void => {
     const entries = fs.readdirSync(directory, { withFileTypes: true });
-    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    for (const entry of entries.sort((a, b) => compareCodePoints(a.name, b.name))) {
       if (entry.name === ".git" || entry.name === "node_modules") continue;
       const absolute = path.join(directory, entry.name);
       const relative = toPosix(path.relative(repositoryRoot, absolute));
@@ -62,7 +63,7 @@ function snapshotRepository(root: string): RepositorySnapshot {
 
 function snapshotDifferences(before: RepositorySnapshot, after: RepositorySnapshot): string[] {
   return [...new Set([...before.keys(), ...after.keys()])]
-    .sort((a, b) => a.localeCompare(b))
+    .sort(compareCodePoints)
     .filter((item) => JSON.stringify(before.get(item)) !== JSON.stringify(after.get(item)));
 }
 
@@ -138,7 +139,7 @@ export async function runCheckAsync(config: CheckConfig): Promise<OperationResul
       ...unsatisfiedAuthorizationDrift(plan),
       ...inlinePlanDrift(plan),
       ...(indexDrift ? [indexDrift] : []),
-    ].sort((a, b) => `${a.path}:${a.kind}`.localeCompare(`${b.path}:${b.kind}`));
+    ].sort((a, b) => compareCodePoints(`${a.path}:${a.kind}`, `${b.path}:${b.kind}`));
 
     const check: CheckResult = {
       passed: drift.length === 0,

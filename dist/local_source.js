@@ -76,8 +76,10 @@ const encoding_1 = require("./encoding");
 const omit_1 = require("./omit");
 const archive_preflight_1 = require("./archive_preflight");
 const archive_execution_1 = require("./archive_execution");
+Object.defineProperty(exports, "ARCHIVE_READER_VERSION", { enumerable: true, get: function () { return archive_execution_1.ARCHIVE_READER_VERSION; } });
 const local_archive_policy_1 = require("./local_archive_policy");
 const zip_reader_1 = require("./zip_reader");
+const archive_formats_1 = require("./archive_formats");
 /** Separator between an archive path and a member path in a virtual locator. */
 exports.ARCHIVE_MEMBER_SEPARATOR = "!/";
 /** Ownership marker written at the root of every scratch directory this module creates. */
@@ -87,11 +89,8 @@ exports.SCRATCH_OWNER_ID = "l9-meta-injector.local-source";
 const HASH_CHUNK_BYTES = 64 * 1024;
 /** How many times a changed file is re-read before the observation is called unstable. */
 const STABILITY_RETRY_LIMIT = 2;
-/** Extensions recognized as archives. v1 expands ZIP only. */
-const ZIP_EXTENSIONS = new Set([".zip"]);
-const KNOWN_UNEXPANDABLE_ARCHIVE_EXTENSIONS = new Set([
-    ".tar", ".tgz", ".gz", ".bz2", ".xz", ".7z", ".rar", ".jar", ".war", ".zst", ".lz4", ".cab", ".iso",
-]);
+// Which names are archives, and which of those v1 opens, is decided in one place:
+// `archive_formats.ts`. This module consumes that authority and adds nothing to it.
 /**
  * Generated artifacts this package itself produces. They are excluded from
  * canonical source observation so a second run never observes the first run's
@@ -112,8 +111,6 @@ exports.LEGACY_EXTRACTION_SUFFIX = ".l9extracted";
 exports.LOCAL_FILES_EXTRACTION_SCHEMA = "l9-meta-injector.local-files-extraction/v2";
 /** Exact owner id the materialization path stamps and the destructive path accepts. */
 exports.EXTRACTION_OWNER_ID = "l9-meta-injector.local-files";
-/** Version of the ZIP reader whose output an archive manifest describes. */
-exports.ARCHIVE_READER_VERSION = "1.0.0";
 /**
  * Resolve a path through symlinks, falling back to the deepest ancestor that
  * exists. A scratch parent is usually about to be created, so it cannot be
@@ -249,7 +246,7 @@ function isLegacyGeneratedExtraction(absoluteDirectory) {
     if (!hasLegacyExtractionOwnership(absoluteDirectory))
         return false;
     const stem = absoluteDirectory.slice(0, -exports.LEGACY_EXTRACTION_SUFFIX.length);
-    return [...ZIP_EXTENSIONS].some((extension) => {
+    return [...archive_formats_1.EXPANDABLE_ARCHIVE_EXTENSIONS].some((extension) => {
         try {
             return fs.lstatSync(stem + extension).isFile();
         }
@@ -529,7 +526,6 @@ function extractMembers(context, task, archiveHash, occurrence, preflight) {
             continue;
         }
         const stagedPath = path.join(stagingRoot, ...member.canonicalPath.split("/"));
-        fs.mkdirSync(path.dirname(stagedPath), { recursive: true });
         const hash = crypto.createHash("sha256");
         // The ceiling handed to the extractor is the smallest of every applicable
         // budget, so a member that lies about its declared size still cannot exceed
@@ -537,6 +533,11 @@ function extractMembers(context, task, archiveHash, occurrence, preflight) {
         const ceiling = Math.min(context.policy.maxSingleMemberUncompressedBytes, Math.max(0, context.policy.maxTotalUncompressedBytesPerArchive - expandedBytes), Math.max(0, remainingSessionBytes - expandedBytes));
         let handle = null;
         try {
+            // Preflight has already refused a member whose path is used as a directory
+            // by another member, so this cannot collide with a staged file. Anything
+            // that still fails here is a host failure and is rethrown below rather than
+            // reported as a property of the archive.
+            fs.mkdirSync(path.dirname(stagedPath), { recursive: true });
             handle = fs.openSync(stagedPath, "w");
             const fd = handle;
             const result = (0, zip_reader_1.streamZipMember)(task.physicalPath, member.entry, { maxUncompressedBytes: ceiling }, (chunk) => {
@@ -569,6 +570,12 @@ function extractMembers(context, task, archiveHash, occurrence, preflight) {
             });
         }
         catch (error) {
+            // Only what the archive itself caused becomes a hold. A scratch write that
+            // fails for a host reason (permissions, a full disk) is not "format
+            // unreadable": reporting it as such would let a broken host masquerade as
+            // hostile input, and the caller disposes the scratch root on the way out.
+            if (!(error instanceof zip_reader_1.ZipBudgetExceededError) && !(error instanceof zip_reader_1.ZipFormatError))
+                throw error;
             const budgetFailure = error instanceof zip_reader_1.ZipBudgetExceededError;
             return {
                 members,
@@ -597,7 +604,7 @@ function discardStaging(context, archiveHash, occurrence) {
     fs.rmSync(stagingRoot, { recursive: true, force: true });
 }
 function isZipPath(value) {
-    return ZIP_EXTENSIONS.has(path.extname(value).toLowerCase());
+    return (0, archive_formats_1.isExpandableArchivePath)(value);
 }
 /**
  * Copy an archive into scratch and hash it in one streaming pass.
@@ -693,12 +700,11 @@ function enqueueNestedArchives(context, task, archiveHash, members, queue) {
             });
             continue;
         }
-        const extension = path.extname(member.memberPath).toLowerCase();
-        if (KNOWN_UNEXPANDABLE_ARCHIVE_EXTENSIONS.has(extension)) {
+        if ((0, archive_formats_1.isKnownUnexpandableArchivePath)(member.memberPath)) {
             context.diagnostics.push({
                 code: "archive.format_not_expanded",
                 severity: "info",
-                message: `${extension} is classified as an archive but v1 expands ZIP only; it is hashed and not opened`,
+                message: `${(0, archive_formats_1.archiveExtensionOf)(member.memberPath)} is classified as an archive but v1 expands ZIP only; it is hashed and not opened`,
                 sourcePath: member.virtualSourcePath,
             });
         }
@@ -712,7 +718,7 @@ function preflightStaged(context, task, staged) {
     const cacheKey = task.depth === 0
         ? {
             archiveContentHash: staged.archiveHash,
-            readerVersion: exports.ARCHIVE_READER_VERSION,
+            readerVersion: archive_execution_1.ARCHIVE_READER_VERSION,
             policyFingerprint: (0, local_archive_policy_1.localArchivePolicyFingerprint)(context.policy),
         }
         : null;
@@ -943,6 +949,50 @@ function priorHashStillApplies(entry, known) {
         return known.mtime_ns === entry.mtimeNs;
     return entry.mtimeMs !== null && known.mtime_ms === entry.mtimeMs;
 }
+/** Read at most `length` leading bytes of a file; empty on any failure. */
+function readPrefix(absolutePath, length) {
+    let fd = null;
+    try {
+        fd = fs.openSync(absolutePath, "r");
+        const buffer = Buffer.alloc(length);
+        const count = fs.readSync(fd, buffer, 0, length, 0);
+        return buffer.subarray(0, count);
+    }
+    catch {
+        return Buffer.alloc(0);
+    }
+    finally {
+        if (fd !== null)
+            fs.closeSync(fd);
+    }
+}
+/**
+ * Report a file whose bytes carry an archive signature its name does not declare.
+ *
+ * An extensionless tarball, or a gzip stream saved as `notes.txt`, used to pass
+ * as an ordinary binary document with no disposition at all. The name still
+ * decides that nothing is opened — v1 expands ZIP only, and never on the strength
+ * of magic bytes — but the fact is recorded on the record and diagnosed, so
+ * unsupported content is never silent. Like the encoding note, this belongs to the
+ * file rather than to how its hash was obtained, so an incremental run records it
+ * exactly as a full run does.
+ */
+function noteArchiveSignature(sourcePath, physicalPath, encoding, unknowns, diagnostics) {
+    // Text that is valid UTF-8 throughout cannot be one of these containers.
+    if (encoding !== null && encoding.status === "utf8")
+        return;
+    const signature = (0, archive_formats_1.sniffArchiveSignature)(readPrefix(physicalPath, archive_formats_1.ARCHIVE_SIGNATURE_PROBE_BYTES));
+    if (signature === null || !(0, archive_formats_1.signatureContradictsName)(sourcePath, signature))
+        return;
+    unknowns.push(`archive_signature:${signature}`);
+    diagnostics.push({
+        code: "local-source.archive_signature_detected",
+        severity: "info",
+        message: `file bytes carry a ${signature} archive signature that its name does not declare; ` +
+            "it is hashed and not opened (v1 expands ZIP only, and never on the strength of magic bytes)",
+        sourcePath,
+    });
+}
 /**
  * Record that a file is not valid UTF-8, when the probe found that.
  *
@@ -986,6 +1036,7 @@ function hashOneEntry(entry, hashMaxBytes, diagnostics, known) {
         const carried = known.content_hash;
         const encoding = (0, encoding_1.probeFileEncoding)(entry.absolutePath);
         noteUnsupportedEncoding(entry, encoding, unknowns, diagnostics);
+        noteArchiveSignature(entry.relativePath, entry.absolutePath, encoding, unknowns, diagnostics);
         return {
             hashed: {
                 entry,
@@ -1016,6 +1067,7 @@ function hashOneEntry(entry, hashMaxBytes, diagnostics, known) {
     }
     const encoding = (0, encoding_1.probeFileEncoding)(entry.absolutePath);
     noteUnsupportedEncoding(entry, encoding, unknowns, diagnostics);
+    noteArchiveSignature(entry.relativePath, entry.absolutePath, encoding, unknowns, diagnostics);
     return {
         hashed: { entry, contentHashHex: attempt.digest.replace("sha256:", ""), encoding, unknowns },
         unstableReason: null,
@@ -1132,12 +1184,11 @@ function planArchiveTasks(hashed, diagnostics) {
             });
             continue;
         }
-        const extension = path.extname(entry.relativePath).toLowerCase();
-        if (KNOWN_UNEXPANDABLE_ARCHIVE_EXTENSIONS.has(extension)) {
+        if ((0, archive_formats_1.isKnownUnexpandableArchivePath)(entry.relativePath)) {
             diagnostics.push({
                 code: "archive.format_not_expanded",
                 severity: "info",
-                message: `${extension} is classified as an archive but v1 expands ZIP only; it is hashed and not opened`,
+                message: `${(0, archive_formats_1.archiveExtensionOf)(entry.relativePath)} is classified as an archive but v1 expands ZIP only; it is hashed and not opened`,
                 sourcePath: entry.relativePath,
             });
         }
@@ -1218,13 +1269,15 @@ function buildRecords(hashed, members, diagnostics) {
         records.push(physicalRecord(hashedEntry));
     }
     for (const member of members) {
+        const unknowns = [];
+        noteArchiveSignature(member.virtualSourcePath, member.stagedPath, null, unknowns, diagnostics);
         records.push(buildLocalRecord({
             relativePath: member.virtualSourcePath,
             absolutePath: member.stagedPath,
             kind: "archive-member",
             sizeBytes: member.sizeBytes,
             contentHash: member.contentHash.replace("sha256:", ""),
-            unknowns: [],
+            unknowns,
         }));
     }
     return records.sort((a, b) => (0, ordering_1.compareCodePoints)(a.relative_path, b.relative_path));
@@ -1305,6 +1358,23 @@ function acquireLocalSource(input) {
     // Before createScratch, which is the first thing here that writes.
     assertScratchOutsideSource(scratchParent, absoluteSource, sourceKind);
     const scratch = createScratch(scratchParent);
+    try {
+        return finishAcquisition({
+            input, absoluteSource, sourceKind, sourceName, policy, budget, omit, diagnostics, omittedPaths,
+            skippedDirs, hashed, hashing, unstableReason, identity, scratch,
+        });
+    }
+    catch (error) {
+        // The scratch root is this run's only footprint. An exception past this point
+        // — a host failure staging a member, an invariant violation — must not leave
+        // it behind, or every crash would leak a directory of staged member bytes.
+        scratch.dispose();
+        throw error;
+    }
+}
+/** Archive expansion and record assembly, once the scratch root exists. */
+function finishAcquisition(tail) {
+    const { input, absoluteSource, sourceKind, sourceName, policy, budget, omit, diagnostics, omittedPaths, skippedDirs, hashed, hashing, unstableReason, identity, scratch, } = tail;
     const archives = [];
     const members = [];
     // Archive expansion. A held archive still contributes its own observation.

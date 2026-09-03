@@ -136,6 +136,39 @@ export interface PipelineResult {
   archives: ArchiveRecord[];
 }
 
+/** Refuse a real run over a tree with a blocking discovery disposition, naming the paths. */
+function assertTreeGovernable(discovery: ReturnType<typeof discoverFiles>): void {
+  if (discovery.summary.blocking === 0) return;
+  const preview = discovery.summary.entries
+    .filter((entry) => entry.disposition === "unreadable" || entry.disposition === "symlink" || entry.disposition === "unsupported_entry")
+    .slice(0, 10)
+    .map((entry) => `${entry.path}: ${entry.disposition}`)
+    .join(", ");
+  throw new Error(`DISCOVERY_INCOMPLETE: apply refused because ${discovery.summary.blocking} path(s) could not be safely governed: ${preview}`);
+}
+
+/**
+ * Anchored, directory-only omit patterns for every output directory that sits
+ * inside the scanned root, after refusing one that *is* the root.
+ */
+function omitPatternsForOutputs(root: string, outputs: string[]): string[] {
+  const patterns: string[] = [];
+  for (const output of outputs) {
+    if (!output) continue;
+    const absolute = path.resolve(output);
+    if (absolute === root) {
+      throw new Error(
+        "pipeline: outDir/indexDir must not equal the root directory (generated reports would be re-scanned and injected); "
+        + "use a sibling such as <root>.l9out",
+      );
+    }
+    const relative = path.relative(root, absolute);
+    if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) continue;
+    patterns.push(`/${relative.split(path.sep).join("/")}/`);
+  }
+  return patterns;
+}
+
 export async function runPipelineAsync(config: PipelineConfig): Promise<PipelineResult> {
   const runStartedAt = new Date().toISOString();
   const root = path.resolve(config.root);
@@ -158,11 +191,18 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
 
   const assistCfg = { ...DEFAULT_ASSIST_CONFIG, enabled: config.llmEnabled };
 
+  // The run's own output must never be its next input. An output directory equal
+  // to the root would scatter reports among the sources; one nested inside the
+  // root was rediscovered on the next run, which then annotated the previous run's
+  // reports and wrote sidecars beside them (MUT-005). inventoryTree already refused
+  // both; the pipeline now applies the same rule.
+  const generatedOutputPatterns = omitPatternsForOutputs(root, [config.outDir, config.indexDir]);
+
   // Shared omit matcher for archive expansion + discovery (ADR-017). Pipeline
   // always protects SKILL.md; noise / .l9metaignore / --omit apply everywhere.
   const omit = buildOmitMatcher({
     root,
-    patterns: config.omitPatterns,
+    patterns: [...(config.omitPatterns ?? []), ...generatedOutputPatterns],
     omitFile: config.omitFile,
     protectSkillMd: true,
     ignoreDirNames: ["node_modules"],
@@ -171,8 +211,18 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
   // Local-files mode (ADR-016): expand archives before discovery so members are
   // ordinary text inject targets. Default repo mode never extracts. Omit applies
   // to archives and members the same way findFiles does.
+  //
+  // A real run refuses a tree it cannot fully govern (a symlink, an unreadable or
+  // unsupported entry) — and it must refuse *before* it materializes anything.
+  // Materializing first and refusing afterwards left sibling extractions and
+  // archive sidecars behind a run that reported it had done nothing. Extracted
+  // members can never add a blocking entry (preflight refuses links and special
+  // entries), so judging the tree before expansion judges the same question.
   let archives: ArchiveRecord[] = [];
   if (config.localFiles) {
+    if (!config.dryRun) {
+      assertTreeGovernable(discoverFiles(root, config.glob, { omit, protectSkillMd: true }));
+    }
     const expanded = expandArchivesUnderRoot(root, {
       dryRun: config.dryRun,
       verbose: config.verbose,
@@ -182,14 +232,7 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
   }
 
   const discovery = discoverFiles(root, config.glob, { omit, protectSkillMd: true });
-  if (!config.dryRun && discovery.summary.blocking > 0) {
-    const preview = discovery.summary.entries
-      .filter((entry) => entry.disposition === "unreadable" || entry.disposition === "symlink" || entry.disposition === "unsupported_entry")
-      .slice(0, 10)
-      .map((entry) => `${entry.path}: ${entry.disposition}`)
-      .join(", ");
-    throw new Error(`DISCOVERY_INCOMPLETE: apply refused because ${discovery.summary.blocking} path(s) could not be safely governed: ${preview}`);
-  }
+  if (!config.dryRun) assertTreeGovernable(discovery);
   const filePaths = discovery.files;
 
   if (config.normalizeFilenames) normalizeFilenames(filePaths, { dryRun: config.dryRun, verbose: config.verbose });

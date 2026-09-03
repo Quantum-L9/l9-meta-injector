@@ -22,6 +22,7 @@ import { injectFile } from "./inject";
 import { emptyDiscoverySummary } from "./discovery_contracts";
 import { verify } from "./verify";
 import type { InjectionRecord, PipelineConfig } from "./schema";
+import { compareCodePoints } from "./ordering";
 
 export interface ApplyConfig extends Omit<PipelineConfig, "dryRun"> {
   dryRun?: false;
@@ -146,7 +147,7 @@ function buildMutationIntents(root: string, plan: CarrierOperationPlan, outDir: 
       mode: 0o644,
     });
   }
-  return intents.sort((left, right) => left.path.localeCompare(right.path));
+  return intents.sort((left, right) => compareCodePoints(left.path, right.path));
 }
 
 function validateCommittedPlan(root: string, plan: CarrierOperationPlan): void {

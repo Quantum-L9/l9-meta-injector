@@ -31,12 +31,14 @@ import {
   streamZipMember,
 } from "./zip_reader";
 import type { PreflightMember } from "./archive_preflight";
+import { EXPANDABLE_ARCHIVE_EXTENSIONS, isExpandableArchivePath } from "./archive_formats";
+import { replaceFileAtomically } from "./durable_write";
 
 /** Directory-name suffix for an expanded archive (sibling of the .zip). */
 export const EXTRACTED_DIR_SUFFIX = ".l9extracted";
 
-/** Archive extensions expanded in local-files mode (v1: zip only). */
-export const EXPANDABLE_ARCHIVE_EXTS = new Set([".zip"]);
+/** Archive extensions expanded in local-files mode (v1: zip only). Owned by `archive_formats.ts`. */
+export const EXPANDABLE_ARCHIVE_EXTS: ReadonlySet<string> = EXPANDABLE_ARCHIVE_EXTENSIONS;
 
 export interface ArchiveRecord {
   zipPath: string;
@@ -85,7 +87,7 @@ function expectedArchiveHoldReason(error: unknown): string | null {
 }
 
 function isExpandableArchive(filePath: string): boolean {
-  return EXPANDABLE_ARCHIVE_EXTS.has(path.extname(filePath).toLowerCase());
+  return isExpandableArchivePath(filePath);
 }
 
 function relPosix(root: string, abs: string): string {
@@ -364,9 +366,18 @@ function verifyMembersWithoutMaterializing(
   return expandedBytes;
 }
 
+/**
+ * Files under an extraction, in code-point order.
+ *
+ * The order decides which nested archive is opened first, and the run-scoped
+ * session budget is consumed in that order: with `readdir` order, which nested
+ * archive was held under an exhausted budget depended on the host filesystem.
+ */
 function walkFiles(dir: string, out: string[]): void {
   if (!fs.existsSync(dir)) return;
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+  const entries = fs.readdirSync(dir, { withFileTypes: true })
+    .sort((a, b) => compareCodePoints(a.name, b.name));
+  for (const entry of entries) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
@@ -456,11 +467,9 @@ export function writeArchiveSidecar(
     expanded_by: "l9-meta-injector.local-files",
     ...extras,
   };
-  fs.writeFileSync(
-    sidecar,
-    serializeYamlObject(obj, { fences: true, trailingNewline: true }),
-    "utf8",
-  );
+  // Staged beside the archive and renamed in, so a crash never leaves a
+  // truncated sidecar that the next run would read as this archive's record.
+  replaceFileAtomically(sidecar, serializeYamlObject(obj, { fences: true, trailingNewline: true }));
   return sidecar;
 }
 

@@ -52,6 +52,7 @@ const node_crypto_1 = require("node:crypto");
 const metadata_index_1 = require("./metadata_index");
 const mutation_policy_1 = require("./mutation_policy");
 const pipeline_1 = require("./pipeline");
+const ordering_1 = require("./ordering");
 exports.CANONICAL_METADATA_WRITER = "Quantum-L9/l9-meta-injector";
 function toPosix(value) {
     return value.split(path.sep).join("/");
@@ -135,12 +136,12 @@ function collectInlinePlans(root, subjects, byPath, planBySource) {
                 throw new Error(`unexpected legacy sidecar target: ${sidecar}`);
         }
     }
-    inlinePlans.sort((a, b) => relativePath(root, a.sourcePath).localeCompare(relativePath(root, b.sourcePath)));
+    inlinePlans.sort((a, b) => (0, ordering_1.compareCodePoints)(relativePath(root, a.sourcePath), relativePath(root, b.sourcePath)));
     return inlinePlans;
 }
 function buildCarrierOperationPlan(mode, rootInput, authority, pipeline) {
     const root = path.resolve(rootInput);
-    const subjects = [...pipeline.metadataSubjects].sort((a, b) => a.path.localeCompare(b.path));
+    const subjects = [...pipeline.metadataSubjects].sort((a, b) => (0, ordering_1.compareCodePoints)(a.path, b.path));
     const carrierSubjects = subjects.map(({ path: subjectPath, artifactType, strategy, inlineCarrierBlock }) => ({
         path: subjectPath,
         artifactType,

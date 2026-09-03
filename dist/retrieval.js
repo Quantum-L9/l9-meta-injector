@@ -46,6 +46,7 @@ const comment_1 = require("./comment");
 const omit_1 = require("./omit");
 const encoding_1 = require("./encoding");
 const discovery_contracts_1 = require("./discovery_contracts");
+const ordering_1 = require("./ordering");
 /** Injector-generated adjacent artifacts must never be rediscovered as inputs. */
 function isGeneratedArtifact(name) {
     return name.endsWith(".inject.log") || name.endsWith(".l9meta.yaml");
@@ -118,7 +119,7 @@ function discoverFiles(root, glob, opts = {}) {
             record(ledger, rel, "directory", "unreadable", `directory enumeration failed: ${error instanceof Error ? error.message : String(error)}`);
             return;
         }
-        entries.sort((a, b) => a.name.localeCompare(b.name));
+        entries.sort((a, b) => (0, ordering_1.compareCodePoints)(a.name, b.name));
         for (const entry of entries) {
             const full = path.join(directory, entry.name);
             const rel = toPosix(path.relative(absRoot, full));
@@ -226,7 +227,7 @@ function discoverFiles(root, glob, opts = {}) {
         }
     };
     walk(absRoot);
-    files.sort((a, b) => a.localeCompare(b));
+    files.sort(ordering_1.compareCodePoints);
     return { files, summary: (0, discovery_contracts_1.summarizeDiscovery)(ledger) };
 }
 /** Backward-compatible file-only discovery wrapper. */

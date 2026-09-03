@@ -66,6 +66,7 @@ const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
 const authority_1 = require("./authority");
 const operation_contracts_1 = require("./operation_contracts");
+const ordering_1 = require("./ordering");
 const DEFAULT_EXCLUDED_DIRECTORIES = new Set([
     ".git",
     ".venv",
@@ -186,7 +187,7 @@ function walkFiles(root, excluded) {
         }
     };
     walk(root);
-    files.sort((a, b) => a.localeCompare(b));
+    files.sort(ordering_1.compareCodePoints);
     return { files, gaps };
 }
 /**
@@ -375,7 +376,7 @@ function scanRepositoryAuthority(root, options = {}) {
         found.push(...collectSurfaceEvidence(surface.relative, surface.content));
     }
     const deduped = [...new Map(found.map((item) => [`${item.path}:${item.kind}:${item.rule}`, item])).values()]
-        .sort((a, b) => `${a.path}:${a.kind}:${a.rule}`.localeCompare(`${b.path}:${b.kind}:${b.rule}`));
+        .sort((a, b) => (0, ordering_1.compareCodePoints)(`${a.path}:${a.kind}:${a.rule}`, `${b.path}:${b.kind}:${b.rule}`));
     const policy = options.legacyPolicy;
     const conflicts = [
         ...scanGaps,
@@ -384,7 +385,7 @@ function scanRepositoryAuthority(root, options = {}) {
     const notices = deduped
         .map((item) => noticeFor(item, policy))
         .filter((item) => item !== null);
-    scannedPaths.sort((a, b) => a.localeCompare(b));
+    scannedPaths.sort(ordering_1.compareCodePoints);
     return { scannedPaths, evidence: deduped, scanGaps, conflicts, notices };
 }
 function inspectRepositoryAuthority(root, options = {}) {

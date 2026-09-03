@@ -43,6 +43,7 @@ const archives_1 = require("./archives");
 const discovery_contracts_1 = require("./discovery_contracts");
 const authority_scan_1 = require("./authority_scan");
 const carrier_operation_1 = require("./carrier_operation");
+const ordering_1 = require("./ordering");
 var carrier_operation_2 = require("./carrier_operation");
 Object.defineProperty(exports, "CANONICAL_METADATA_WRITER", { enumerable: true, get: function () { return carrier_operation_2.CANONICAL_METADATA_WRITER; } });
 function toPosix(value) {
@@ -56,7 +57,7 @@ function snapshotRepository(root) {
     const snapshot = new Map();
     const walk = (directory) => {
         const entries = fs.readdirSync(directory, { withFileTypes: true });
-        for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+        for (const entry of entries.sort((a, b) => (0, ordering_1.compareCodePoints)(a.name, b.name))) {
             if (entry.name === ".git" || entry.name === "node_modules")
                 continue;
             const absolute = path.join(directory, entry.name);
@@ -79,7 +80,7 @@ function snapshotRepository(root) {
 }
 function snapshotDifferences(before, after) {
     return [...new Set([...before.keys(), ...after.keys()])]
-        .sort((a, b) => a.localeCompare(b))
+        .sort(ordering_1.compareCodePoints)
         .filter((item) => JSON.stringify(before.get(item)) !== JSON.stringify(after.get(item)));
 }
 function inspectArchivesWithoutExtraction(root) {
@@ -145,7 +146,7 @@ async function runCheckAsync(config) {
             ...(0, carrier_operation_1.unsatisfiedAuthorizationDrift)(plan),
             ...(0, carrier_operation_1.inlinePlanDrift)(plan),
             ...(indexDrift ? [indexDrift] : []),
-        ].sort((a, b) => `${a.path}:${a.kind}`.localeCompare(`${b.path}:${b.kind}`));
+        ].sort((a, b) => (0, ordering_1.compareCodePoints)(`${a.path}:${a.kind}`, `${b.path}:${b.kind}`));
         const check = {
             passed: drift.length === 0,
             repositoryMutated: false,

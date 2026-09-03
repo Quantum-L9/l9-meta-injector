@@ -13,6 +13,7 @@ import {
   listZipMembers,
 } from "../src/archives";
 import { streamZipMember } from "../src/zip_reader";
+import { ARCHIVE_READER_VERSION } from "../src/archive_execution";
 import { writeRawZip } from "./helpers/zip_fixtures";
 
 const EOCD_SIGNATURE = 0x06054b50;
@@ -265,7 +266,7 @@ describe("archive convergence invariants", () => {
     expect(marker.owner).toBe("l9-meta-injector.local-files");
     expect(marker.archive).toBe("marker.zip");
     expect(marker.archive_sha256).toMatch(/^sha256:[0-9a-f]{64}$/);
-    expect(marker.reader_version).toBe("1.0.0");
+    expect(marker.reader_version).toBe(ARCHIVE_READER_VERSION);
     expect(marker.policy_fingerprint).toMatch(/^lap1:[0-9a-f]{64}$/);
   });
 });

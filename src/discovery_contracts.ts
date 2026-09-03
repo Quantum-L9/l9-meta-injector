@@ -1,3 +1,4 @@
+import { compareCodePoints } from "./ordering";
 /**
  * Read-only filesystem discovery accounting.
  *
@@ -60,9 +61,9 @@ export function emptyDiscoverySummary(): DiscoverySummary {
 
 export function summarizeDiscovery(entries: DiscoveryLedgerEntry[]): DiscoverySummary {
   const sorted = [...entries].sort((a, b) => {
-    const byPath = a.path.localeCompare(b.path);
+    const byPath = compareCodePoints(a.path, b.path);
     if (byPath !== 0) return byPath;
-    return a.disposition.localeCompare(b.disposition);
+    return compareCodePoints(a.disposition, b.disposition);
   });
   const summary = emptyDiscoverySummary();
   summary.entries = sorted;

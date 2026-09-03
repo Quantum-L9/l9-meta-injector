@@ -2,7 +2,23 @@
 
 ## Unreleased
 
+### Fixed
+
+- Archive preflight now holds a ZIP that declares one path as a file and uses it as a directory (`archive.path_conflict`), and one whose path component is longer than any filesystem stores (`archive.path_too_long`). Both verdicts are order-independent; previously `a` before `a/b` threw `EEXIST` out of member staging and leaked the scratch root, and the reverse order was mis-held as an unreadable format. The canonical reader version is `1.1.0` (ADR-046).
+- `acquireLocalSource` disposes its scratch root when an exception escapes archive staging, and rethrows host failures instead of reporting them as `archive.format_unreadable`.
+- `src/archive_formats.ts` is the single owner of archive extensions and byte signatures. The inventory classifier, the strategy resolver, the acquirer and the legacy expander agree on `.tar`, `.tgz`, `.tbz`, `.tbz2`, `.txz`, `.tzst`, `.gz`, `.bz2`, `.xz`, `.zst`, `.lz4`, `.7z`, `.rar`, `.jar`, `.war`, `.cab`, `.iso` and `.zip`; the reader version is declared once. A file whose bytes carry an archive signature its name does not declare is recorded (`archive_signature:<format>`) and diagnosed (`local-source.archive_signature_detected`) instead of passing silently; it is still never opened.
+- Comment injection keeps the file's newline convention, keeps a byte-order mark at byte 0, and reads a CRLF block back without stray carriage returns, so a second run replaces the block instead of stacking one.
+- The injector, its inject log, both inventory sidecars and the archive sidecar write through `replaceFileAtomically`: staged beside the target, synced, renamed in, mode preserved, symlink targets refused. A crash can no longer truncate a source, and injecting into a file hard-linked from outside the governed root no longer rewrites the outside file.
+- `runPipelineAsync` refuses an output or index directory equal to the root and omits one nested inside it, so a second run no longer annotates the first run's reports.
+- A real `localFiles` run judges the tree before it materializes anything: a symlink, unreadable or unsupported entry now refuses the run with `DISCOVERY_INCOMPLETE` and no `*.l9extracted/` directory or archive sidecar left behind. Previously archives were extracted first and the refusal came afterwards.
+- Every ordering on the filesystem, discovery, transaction, carrier, authority and skills paths is code-point (`compareCodePoints`); the inventory walk and the nested-archive walk sort directory entries, so record order and nested-archive budget order no longer depend on the host filesystem or locale.
+- `inventoryTree` records symlinks and special entries (`artifact_type: unknown`, `symlink_not_traversed` / `special_filesystem_entry`) instead of dropping them, and never opens or annotates them.
+- `CURRENT_VALIDATION_REPORT.md` is bound to the tree it describes again; `npm run validate` on a clean checkout of `main` had been failing on the stale binding.
+- `scripts/pipeline-cli.js` and the README no longer claim that `--local-files` requires system `unzip` or extracts during `--dry-run`.
+
 ### Added
+
+- `tests/tarball_rejection_matrix.test.ts` and `tests/helpers/tar_fixtures.ts`: every TAR and compressed-tarball spelling, and every hostile TAR shape (traversal, absolute and drive paths, symlink and hard-link escapes, chained links, devices, FIFOs, setuid, GNU long names, PAX paths, sparse, size lies, duplicates, case and Unicode collisions, bad checksums, truncation, trailing bytes, concatenation, many members, nesting) is proven to be classified, hashed, reported as not expanded, and never written anywhere, on every ingestion surface.
 
 - Added the stable `l9-meta-injector/repository-model` entrypoint, which builds, validates, and emits a deterministic `l9.repository-model` packet bundle from inventory evidence (ADR-030).
 - Added `scripts/repository-model-cli.js` (`npm run repository-model`) for executable packet egress.

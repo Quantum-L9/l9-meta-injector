@@ -35,6 +35,7 @@ import {
   type AuthorityNotice,
   type OperationMode,
 } from "./operation_contracts";
+import { compareCodePoints } from "./ordering";
 
 export type AuthorityEvidenceKind =
   | "writer_script"
@@ -216,7 +217,7 @@ function walkFiles(root: string, excluded: Set<string>): WalkResult {
     }
   };
   walk(root);
-  files.sort((a, b) => a.localeCompare(b));
+  files.sort(compareCodePoints);
   return { files, gaps };
 }
 
@@ -410,7 +411,7 @@ export function scanRepositoryAuthority(root: string, options: AuthorityScanOpti
   }
 
   const deduped = [...new Map(found.map((item) => [`${item.path}:${item.kind}:${item.rule}`, item])).values()]
-    .sort((a, b) => `${a.path}:${a.kind}:${a.rule}`.localeCompare(`${b.path}:${b.kind}:${b.rule}`));
+    .sort((a, b) => compareCodePoints(`${a.path}:${a.kind}:${a.rule}`, `${b.path}:${b.kind}:${b.rule}`));
   const policy = options.legacyPolicy;
   const conflicts = [
     ...scanGaps,
@@ -419,7 +420,7 @@ export function scanRepositoryAuthority(root: string, options: AuthorityScanOpti
   const notices = deduped
     .map((item) => noticeFor(item, policy))
     .filter((item): item is AuthorityNotice => item !== null);
-  scannedPaths.sort((a, b) => a.localeCompare(b));
+  scannedPaths.sort(compareCodePoints);
   return { scannedPaths, evidence: deduped, scanGaps, conflicts, notices };
 }
 

@@ -14,6 +14,7 @@ import {
   DiscoverySummary,
   summarizeDiscovery,
 } from "./discovery_contracts";
+import { compareCodePoints } from "./ordering";
 
 /** Injector-generated adjacent artifacts must never be rediscovered as inputs. */
 function isGeneratedArtifact(name: string): boolean {
@@ -122,7 +123,7 @@ export function discoverFiles(root: string, glob: string, opts: FindFilesOptions
       return;
     }
 
-    entries.sort((a, b) => a.name.localeCompare(b.name));
+    entries.sort((a, b) => compareCodePoints(a.name, b.name));
     for (const entry of entries) {
       const full = path.join(directory, entry.name);
       const rel = toPosix(path.relative(absRoot, full));
@@ -236,7 +237,7 @@ export function discoverFiles(root: string, glob: string, opts: FindFilesOptions
   };
 
   walk(absRoot);
-  files.sort((a, b) => a.localeCompare(b));
+  files.sort(compareCodePoints);
   return { files, summary: summarizeDiscovery(ledger) };
 }
 

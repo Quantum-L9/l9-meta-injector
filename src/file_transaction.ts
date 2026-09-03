@@ -11,6 +11,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
+import { compareCodePoints } from "./ordering";
 
 export const FILE_TRANSACTION_SCHEMA = "l9.file-transaction/v1" as const;
 export const TRANSACTION_DIRECTORY = ".l9/.transactions" as const;
@@ -258,7 +259,7 @@ function rollbackEntries(entries: PreparedEntry[], journalPath: string, journal:
 function prepareEntries(root: string, intents: readonly FileMutationIntent[], id: string): PreparedEntry[] {
   const seen = new Set<string>();
   const prepared: PreparedEntry[] = [];
-  for (const [index, intent] of [...intents].sort((a, b) => a.path.localeCompare(b.path)).entries()) {
+  for (const [index, intent] of [...intents].sort((a, b) => compareCodePoints(a.path, b.path)).entries()) {
     const relative = normalizeRelativePath(intent.path);
     if (seen.has(relative)) throw new Error(`duplicate transaction target: ${relative}`);
     seen.add(relative);
@@ -480,7 +481,7 @@ export function recoverPendingTransactions(rootInput: string): RecoveryResult {
   if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error(`transaction journal directory is unsafe: ${directory}`);
   const recovered: string[] = [];
   const finalized: string[] = [];
-  const journals = fs.readdirSync(directory).filter((name) => name.endsWith(".json")).sort((a, b) => a.localeCompare(b));
+  const journals = fs.readdirSync(directory).filter((name) => name.endsWith(".json")).sort(compareCodePoints);
   for (const name of journals) {
     const journalPath = path.join(directory, name);
     const parsed = JSON.parse(fs.readFileSync(journalPath, "utf8")) as TransactionJournal;
