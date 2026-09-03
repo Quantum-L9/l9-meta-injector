@@ -95,7 +95,7 @@ export function hostileTarCorpus(): Record<string, Buffer> {
   return {
     "traversal.tar": tarBytes([{ name: "../escape.txt", content: "x" }]),
     "absolute.tar": tarBytes([{ name: "/etc/passwd", content: "x" }]),
-    "drive.tar": tarBytes([{ name: "C:\\Windows\\win.ini", content: "x" }]),
+    "drive.tar": tarBytes([{ name: String.raw`C:\Windows\win.ini`, content: "x" }]),
     "symlink-escape.tar": tarBytes([
       { name: "link", type: "2", linkName: "../../outside" },
       { name: "link/inner.txt", content: "x" },

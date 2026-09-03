@@ -252,43 +252,54 @@ function walk(root, omit, skippedDirs, omittedPaths) {
     rec(root);
     return out;
 }
+/**
+ * A link and a device are recorded without being read, so neither carries a
+ * classification derived from content — the same disposition local-source gives them.
+ */
+function unopenedClassification(kind) {
+    return {
+        type: "unknown",
+        confidence: 1,
+        evidence: kind === "symlink" ? "symbolic link, not traversed" : "special filesystem entry, not opened",
+        unknowns: [kind === "symlink" ? "symlink_not_traversed" : "special_filesystem_entry"],
+    };
+}
+/**
+ * Hash a regular file's raw bytes, or record why no hash was produced.
+ *
+ * Bytes, not a utf8-decoded string, so distinct binary payloads never collapse
+ * into one hash through replacement characters. A file whose bytes are an
+ * archive its name does not declare is still not opened — nothing is, on magic
+ * alone — but the fact is put on the record.
+ */
+function hashRegularFile(abs, fileName, size, hashMaxBytes, unknowns) {
+    if (size > hashMaxBytes) {
+        unknowns.push("content_hash_skipped:file_too_large");
+        return null;
+    }
+    const bytes = fs.readFileSync(abs);
+    const signature = (0, archive_formats_1.sniffArchiveSignature)(bytes.subarray(0, archive_formats_1.ARCHIVE_SIGNATURE_PROBE_BYTES));
+    if (signature !== null && (0, archive_formats_1.signatureContradictsName)(fileName, signature)) {
+        unknowns.push(`archive_signature:${signature}`);
+    }
+    return crypto.createHash("sha256").update(bytes).digest("hex");
+}
 function buildRecord(root, abs, isDir, cfg, kind = isDir ? "directory" : "file") {
     const relative = path.relative(root, abs).split(path.sep).join("/") || ".";
     const fileName = path.basename(abs);
     const ext = isDir ? "" : path.extname(abs);
-    const unopened = kind === "symlink" || kind === "special";
-    // A link and a device are recorded without being read, so neither carries a
-    // classification derived from content — the same disposition local-source gives them.
-    const cls = unopened
-        ? {
-            type: "unknown",
-            confidence: 1,
-            evidence: kind === "symlink" ? "symbolic link, not traversed" : "special filesystem entry, not opened",
-            unknowns: [kind === "symlink" ? "symlink_not_traversed" : "special_filesystem_entry"],
-        }
+    const cls = kind === "symlink" || kind === "special"
+        ? unopenedClassification(kind)
         : classifyInventory(relative, fileName, ext, isDir);
     let size = null, modified = null, hash = null;
     const unknowns = [...cls.unknowns];
     try {
         // lstat, never stat: the entry itself is the observation, not what it points at.
         const st = fs.lstatSync(abs);
-        size = isDir || unopened ? null : st.size;
         modified = st.mtime.toISOString();
-        if (!isDir && !unopened && size !== null && size <= cfg.hashMaxBytes) {
-            // Hash the raw BYTES (not a utf8-decoded string) so distinct binary payloads
-            // don't collapse into the same hash via replacement chars — keeps identity and
-            // the dedup view correct for non-UTF8 inputs.
-            const bytes = fs.readFileSync(abs);
-            hash = crypto.createHash("sha256").update(bytes).digest("hex");
-            // A file whose bytes are an archive its name does not declare is still not
-            // opened — nothing is, on magic alone — but the fact is on the record.
-            const signature = (0, archive_formats_1.sniffArchiveSignature)(bytes.subarray(0, archive_formats_1.ARCHIVE_SIGNATURE_PROBE_BYTES));
-            if (signature !== null && (0, archive_formats_1.signatureContradictsName)(fileName, signature)) {
-                unknowns.push(`archive_signature:${signature}`);
-            }
-        }
-        else if (!isDir && !unopened && size !== null) {
-            unknowns.push("content_hash_skipped:file_too_large");
+        if (kind === "file") {
+            size = st.size;
+            hash = hashRegularFile(abs, fileName, size, cfg.hashMaxBytes, unknowns);
         }
     }
     catch (err) {

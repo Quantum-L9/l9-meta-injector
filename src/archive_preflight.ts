@@ -448,8 +448,10 @@ export function preflightArchive(input: ArchivePreflightInput): ArchivePreflight
   };
 
   for (const entry of input.directory.entries) inspectEntry(entry, input.policy, accumulator);
-  accumulator.holds.push(...pathConflictHolds(accumulator));
-  accumulator.holds.push(...expansionHolds(input, accumulator.declaredUncompressedBytes));
+  accumulator.holds.push(
+    ...pathConflictHolds(accumulator),
+    ...expansionHolds(input, accumulator.declaredUncompressedBytes),
+  );
 
   return {
     accepted: accumulator.holds.length === 0,

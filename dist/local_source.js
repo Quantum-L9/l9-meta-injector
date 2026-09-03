@@ -514,6 +514,71 @@ function holdArchive(context, task, contentHash, sizeBytes, holds) {
 function memberStagingRoot(scratchRoot, archiveHash, occurrence) {
     return path.join(scratchRoot, "members", `${occurrence}-${archiveHash.replace("sha256:", "")}`);
 }
+/**
+ * Stream one preflight-approved member into scratch, hashing and CRC-checking it.
+ *
+ * Only what the archive itself caused becomes a hold: a budget overrun or a
+ * format error. A scratch write that fails for a host reason (permissions, a
+ * full disk) is not "format unreadable" — reporting it as such would let a
+ * broken host masquerade as hostile input — so it is rethrown and the caller
+ * disposes the scratch root on the way out.
+ */
+function stageOneMember(task, member, virtualPath, stagedPath, archiveHash, ceiling) {
+    const hash = crypto.createHash("sha256");
+    let handle = null;
+    try {
+        // Preflight has already refused a member whose path is used as a directory
+        // by another member, so this cannot collide with a staged file.
+        fs.mkdirSync(path.dirname(stagedPath), { recursive: true });
+        handle = fs.openSync(stagedPath, "w");
+        const fd = handle;
+        const result = (0, zip_reader_1.streamZipMember)(task.physicalPath, member.entry, { maxUncompressedBytes: ceiling }, (chunk) => {
+            hash.update(chunk);
+            fs.writeSync(fd, chunk);
+        });
+        if (result.crc32 !== member.entry.crc32) {
+            return {
+                observation: null,
+                failure: {
+                    code: "archive.member_integrity_failed",
+                    memberPath: member.canonicalPath,
+                    message: "extracted member bytes do not match the CRC recorded in the central directory",
+                },
+            };
+        }
+        return {
+            observation: {
+                virtualSourcePath: virtualPath,
+                memberPath: member.canonicalPath,
+                contentHash: sha256Prefixed(hash.digest("hex")),
+                sizeBytes: result.bytesWritten,
+                parentArchiveHash: archiveHash,
+                parentArchivePath: task.sourcePath,
+                nestedDepth: task.depth,
+                compressionMethod: member.entry.compressionMethod,
+                crc32: result.crc32,
+                stagedPath,
+            },
+            failure: null,
+        };
+    }
+    catch (error) {
+        if (!(error instanceof zip_reader_1.ZipBudgetExceededError) && !(error instanceof zip_reader_1.ZipFormatError))
+            throw error;
+        return {
+            observation: null,
+            failure: {
+                code: error instanceof zip_reader_1.ZipBudgetExceededError ? "archive.extracted_bytes_exceeded" : "archive.format_unreadable",
+                memberPath: member.canonicalPath,
+                message: error.message,
+            },
+        };
+    }
+    finally {
+        if (handle !== null)
+            fs.closeSync(handle);
+    }
+}
 function extractMembers(context, task, archiveHash, occurrence, preflight) {
     const stagingRoot = memberStagingRoot(context.scratch.root, archiveHash, occurrence);
     const members = [];
@@ -526,71 +591,15 @@ function extractMembers(context, task, archiveHash, occurrence, preflight) {
             continue;
         }
         const stagedPath = path.join(stagingRoot, ...member.canonicalPath.split("/"));
-        const hash = crypto.createHash("sha256");
         // The ceiling handed to the extractor is the smallest of every applicable
         // budget, so a member that lies about its declared size still cannot exceed
         // the per-member, per-archive, or session allowance.
         const ceiling = Math.min(context.policy.maxSingleMemberUncompressedBytes, Math.max(0, context.policy.maxTotalUncompressedBytesPerArchive - expandedBytes), Math.max(0, remainingSessionBytes - expandedBytes));
-        let handle = null;
-        try {
-            // Preflight has already refused a member whose path is used as a directory
-            // by another member, so this cannot collide with a staged file. Anything
-            // that still fails here is a host failure and is rethrown below rather than
-            // reported as a property of the archive.
-            fs.mkdirSync(path.dirname(stagedPath), { recursive: true });
-            handle = fs.openSync(stagedPath, "w");
-            const fd = handle;
-            const result = (0, zip_reader_1.streamZipMember)(task.physicalPath, member.entry, { maxUncompressedBytes: ceiling }, (chunk) => {
-                hash.update(chunk);
-                fs.writeSync(fd, chunk);
-            });
-            if (result.crc32 !== member.entry.crc32) {
-                return {
-                    members,
-                    expandedBytes,
-                    failure: {
-                        code: "archive.member_integrity_failed",
-                        memberPath: member.canonicalPath,
-                        message: "extracted member bytes do not match the CRC recorded in the central directory",
-                    },
-                };
-            }
-            expandedBytes += result.bytesWritten;
-            members.push({
-                virtualSourcePath: virtualPath,
-                memberPath: member.canonicalPath,
-                contentHash: sha256Prefixed(hash.digest("hex")),
-                sizeBytes: result.bytesWritten,
-                parentArchiveHash: archiveHash,
-                parentArchivePath: task.sourcePath,
-                nestedDepth: task.depth,
-                compressionMethod: member.entry.compressionMethod,
-                crc32: result.crc32,
-                stagedPath,
-            });
-        }
-        catch (error) {
-            // Only what the archive itself caused becomes a hold. A scratch write that
-            // fails for a host reason (permissions, a full disk) is not "format
-            // unreadable": reporting it as such would let a broken host masquerade as
-            // hostile input, and the caller disposes the scratch root on the way out.
-            if (!(error instanceof zip_reader_1.ZipBudgetExceededError) && !(error instanceof zip_reader_1.ZipFormatError))
-                throw error;
-            const budgetFailure = error instanceof zip_reader_1.ZipBudgetExceededError;
-            return {
-                members,
-                expandedBytes,
-                failure: {
-                    code: budgetFailure ? "archive.extracted_bytes_exceeded" : "archive.format_unreadable",
-                    memberPath: member.canonicalPath,
-                    message: error instanceof Error ? error.message : String(error),
-                },
-            };
-        }
-        finally {
-            if (handle !== null)
-                fs.closeSync(handle);
-        }
+        const staged = stageOneMember(task, member, virtualPath, stagedPath, archiveHash, ceiling);
+        if (staged.failure !== null)
+            return { members, expandedBytes, failure: staged.failure };
+        expandedBytes += staged.observation.sizeBytes;
+        members.push(staged.observation);
     }
     return { members, expandedBytes, failure: null };
 }
