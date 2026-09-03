@@ -1,9 +1,4 @@
 "use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.BLOCKING_DISCOVERY_DISPOSITIONS = exports.DISCOVERY_DISPOSITIONS = void 0;
-exports.emptyDiscoverySummary = emptyDiscoverySummary;
-exports.summarizeDiscovery = summarizeDiscovery;
-const ordering_1 = require("./ordering");
 /**
  * Read-only filesystem discovery accounting.
  *
@@ -11,6 +6,11 @@ const ordering_1 = require("./ordering");
  * records repository-relative POSIX paths only, so reports remain comparable
  * across checkout locations and operating systems.
  */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.BLOCKING_DISCOVERY_DISPOSITIONS = exports.DISCOVERY_DISPOSITIONS = void 0;
+exports.emptyDiscoverySummary = emptyDiscoverySummary;
+exports.summarizeDiscovery = summarizeDiscovery;
+const ordering_1 = require("./ordering");
 exports.DISCOVERY_DISPOSITIONS = [
     "eligible",
     "traversed_directory",

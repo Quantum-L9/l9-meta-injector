@@ -1,4 +1,3 @@
-import { compareCodePoints } from "./ordering";
 /**
  * Read-only filesystem discovery accounting.
  *
@@ -6,6 +5,8 @@ import { compareCodePoints } from "./ordering";
  * records repository-relative POSIX paths only, so reports remain comparable
  * across checkout locations and operating systems.
  */
+
+import { compareCodePoints } from "./ordering";
 
 export const DISCOVERY_DISPOSITIONS = [
   "eligible",

@@ -42,13 +42,18 @@ describe("replaceFileAtomically", () => {
     expect(fs.readdirSync(root)).toEqual(["a.txt"]);
   });
 
-  test("an existing target keeps its permission bits", () => {
+  test("an existing target keeps its permission bits, whatever the umask", () => {
     const root = tmp();
     const target = path.join(root, "run.sh");
     fs.writeFileSync(target, "#!/bin/sh\n");
-    fs.chmodSync(target, 0o755);
-    replaceFileAtomically(target, "#!/bin/sh\necho hi\n");
-    expect(fs.statSync(target).mode & 0o777).toBe(0o755);
+    fs.chmodSync(target, 0o775);
+    const previous = process.umask(0o077);
+    try {
+      replaceFileAtomically(target, "#!/bin/sh\necho hi\n");
+    } finally {
+      process.umask(previous);
+    }
+    expect(fs.statSync(target).mode & 0o777).toBe(0o775);
   });
 
   test("a new target receives the requested mode", () => {

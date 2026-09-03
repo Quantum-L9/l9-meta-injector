@@ -178,6 +178,9 @@ export function replaceFileAtomically(
   const handle = ops.openSync(staging, "wx", mode);
   let staged = false;
   try {
+    // The mode passed to open is subject to the process umask; an existing
+    // file's bits are restored exactly, on the descriptor about to be synced.
+    if (existing !== null) fs.fchmodSync(handle, mode);
     if (Buffer.isBuffer(contents)) fs.writeFileSync(handle, contents);
     else ops.writeSync(handle, contents);
     ops.fsyncSync(handle);
