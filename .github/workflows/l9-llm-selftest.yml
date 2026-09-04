@@ -36,6 +36,6 @@ jobs:
           llm-base-url: "https://api.openai.com/v1"
           # Cheapest OpenAI model as of 2026-07 ($0.05/M input, $0.40/M output) and explicitly
           # positioned by OpenAI for high-throughput classification/extraction, i.e. exactly this
-          # job. Estimated cost: fractions of a cent per file. See TODO.md re: LLM-Router.
+          # job. Estimated cost: fractions of a cent per file. LLM-Router routing tracked in TODO.md.
           llm-model: "gpt-5-nano"
           llm-api-key: ${{ secrets.OPENAI_API_KEY }}
