@@ -38,8 +38,8 @@ exports.resolveNamespace = resolveNamespace;
 // namespace.ts — Deterministic path → namespace + sharing_scope + primitive_folder
 const path = __importStar(require("node:path"));
 const comment_1 = require("./comment");
-const SHARED_SIGNALS = ["_shared", "shared", "core", "common", "universal"];
-const PRIVATE_SIGNALS = ["l9", "plastos", "legal", "ops", "private"];
+const SHARED_SIGNALS = new Set(["_shared", "shared", "core", "common", "universal"]);
+const PRIVATE_SIGNALS = new Set(["l9", "plastos", "legal", "ops", "private"]);
 function matchGlob(filePath, glob) {
     const norm = filePath.replace(/\\/g, "/");
     // Escape EVERY regex metacharacter first, then re-introduce glob wildcards.
@@ -69,9 +69,9 @@ function deriveSharingScope(filePath) {
     if (!comment_1.FRONTMATTER_EXTS.has(path.extname(filePath).toLowerCase()))
         return "agnostic";
     const parts = filePath.replace(/\\/g, "/").toLowerCase().split("/");
-    if (SHARED_SIGNALS.some((s) => parts.includes(s)))
+    if (parts.some((p) => SHARED_SIGNALS.has(p)))
         return "shared";
-    if (PRIVATE_SIGNALS.some((s) => parts.includes(s)))
+    if (parts.some((p) => PRIVATE_SIGNALS.has(p)))
         return "private";
     return "agnostic";
 }

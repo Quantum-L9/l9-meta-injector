@@ -208,7 +208,8 @@ function walkFiles(root, excluded) {
     };
     walk(root);
     files.sort(ordering_1.compareCodePoints);
-    return { files, gaps, nestedAuthorities: nestedAuthorities.sort(ordering_1.compareCodePoints) };
+    nestedAuthorities.sort(ordering_1.compareCodePoints);
+    return { files, gaps, nestedAuthorities };
 }
 /**
  * Apply the repository's declared legacy-writer policy to one piece of evidence.

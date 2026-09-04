@@ -69,7 +69,7 @@ const SAMPLE_V3: MetaV3 = {
   },
 };
 
-test("v3 declares exactly nine planes", () => expect(META_V3_PLANES.length).toBe(9));
+test("v3 declares exactly nine planes", () => expect(META_V3_PLANES).toHaveLength(9));
 test("v3 plane names are unique", () =>
   expect(new Set(META_V3_PLANES).size).toBe(META_V3_PLANES.length));
 test("v3 canonical plane order", () =>

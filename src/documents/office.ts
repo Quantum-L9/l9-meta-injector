@@ -599,9 +599,8 @@ export const xlsxDecoder: DocumentDecoder = {
               const declared = formula.join("");
               // A formula is carried as the text it declares. Evaluating it would
               // produce a number the operator never wrote down.
-              const rendered = declared.length > 0
-                ? `=${declared}${text.length > 0 ? ` (last saved value: ${text})` : ""}`
-                : text;
+              const savedSuffix = text.length > 0 ? ` (last saved value: ${text})` : "";
+              const rendered = declared.length > 0 ? `=${declared}${savedSuffix}` : text;
               if (declared.length > 0) sawFormula = true;
               if (rendered.trim().length > 0 && reference.length > 0) {
                 builder.add("cell", rendered, {

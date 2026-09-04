@@ -28,8 +28,8 @@ export interface NamespaceConfig {
 // inputs and lets callers pass a minimal object without the IO/threshold fields.
 export type NamespaceInput = Pick<NamespaceConfig, "namespace" | "namespaceGlobs">;
 
-const SHARED_SIGNALS = ["_shared", "shared", "core", "common", "universal"];
-const PRIVATE_SIGNALS = ["l9", "plastos", "legal", "ops", "private"];
+const SHARED_SIGNALS = new Set(["_shared", "shared", "core", "common", "universal"]);
+const PRIVATE_SIGNALS = new Set(["l9", "plastos", "legal", "ops", "private"]);
 
 function matchGlob(filePath: string, glob: string): boolean {
   const norm = filePath.replace(/\\/g, "/");
@@ -59,8 +59,8 @@ function deriveSharingScope(filePath: string): SharingScope {
   // which the assurance gate (verify.ts checkSharingScope) then reports as a false violation.
   if (!FRONTMATTER_EXTS.has(path.extname(filePath).toLowerCase())) return "agnostic";
   const parts = filePath.replace(/\\/g, "/").toLowerCase().split("/");
-  if (SHARED_SIGNALS.some((s) => parts.includes(s))) return "shared";
-  if (PRIVATE_SIGNALS.some((s) => parts.includes(s))) return "private";
+  if (parts.some((p) => SHARED_SIGNALS.has(p))) return "shared";
+  if (parts.some((p) => PRIVATE_SIGNALS.has(p))) return "private";
   return "agnostic";
 }
 

@@ -27,7 +27,7 @@ export interface HttpJsonProviderOptions {
      * Injectable so a test can supply one without touching the environment, not so
      * a caller can pass one from a command line.
      */
-    token?: string | undefined;
+    token?: string;
     /** Injection seam for tests. Defaults to the global `fetch`. */
     fetchImpl?: typeof fetch;
 }

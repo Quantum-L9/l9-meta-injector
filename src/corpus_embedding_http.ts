@@ -87,7 +87,7 @@ export interface HttpJsonProviderOptions {
    * Injectable so a test can supply one without touching the environment, not so
    * a caller can pass one from a command line.
    */
-  token?: string | undefined;
+  token?: string;
   /** Injection seam for tests. Defaults to the global `fetch`. */
   fetchImpl?: typeof fetch;
 }
@@ -237,9 +237,7 @@ export class HttpJsonEmbeddingProvider implements EmbeddingProvider {
       );
     }
 
-    const token = options.token === undefined
-      ? process.env[HTTP_JSON_TOKEN_ENV]
-      : options.token;
+    const token = options.token ?? process.env[HTTP_JSON_TOKEN_ENV];
     if (token !== undefined && token.length > 0 && url.protocol !== "https:") {
       // Loopback or not: a bearer over cleartext is a credential on the wire.
       throw new EmbeddingProviderError(

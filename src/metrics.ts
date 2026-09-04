@@ -31,11 +31,11 @@ const ZERO_PATHS = (): Record<DecisionPath, number> =>
   ({ llm_ok: 0, llm_failed_fallback: 0, no_adapter: 0, heuristic: 0 });
 
 export class MetricsCollector {
-  private latencies: number[] = [];
+  private readonly latencies: number[] = [];
   private llmCalls = 0;
   private llmFailures = 0;
   private injectedFiles = 0;
-  private paths: Record<DecisionPath, number> = ZERO_PATHS();
+  private readonly paths: Record<DecisionPath, number> = ZERO_PATHS();
 
   // Drop-in `onDiagnostic` for makeOpenAIAdapter: aggregates every call outcome.
   // Bound so it can be passed by reference without losing `this`.

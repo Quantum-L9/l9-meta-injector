@@ -127,8 +127,10 @@ function cargoAssertions(lines: string[]): AssertionDraft[] {
     if (!pair) return;
     const value = unquote(pair[2].trim());
     if (section === "package" && pair[1] === "name") {
-      drafts.push(declared("package.name", value, index, line));
-      drafts.push(declared("package.packaging_system", "cargo", index, line));
+      drafts.push(
+        declared("package.name", value, index, line),
+        declared("package.packaging_system", "cargo", index, line),
+      );
     }
     if (section === "dependencies") {
       const name = pair[1].toLowerCase();

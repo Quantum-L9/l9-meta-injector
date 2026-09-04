@@ -240,7 +240,8 @@ function walkFiles(root: string, excluded: Set<string>): WalkResult {
   };
   walk(root);
   files.sort(compareCodePoints);
-  return { files, gaps, nestedAuthorities: nestedAuthorities.sort(compareCodePoints) };
+  nestedAuthorities.sort(compareCodePoints);
+  return { files, gaps, nestedAuthorities };
 }
 
 /**

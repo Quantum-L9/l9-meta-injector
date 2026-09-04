@@ -117,7 +117,7 @@ function resolveLocalArchivePolicy(overrides) {
  * than replaying a verdict across an intentionally revised policy contract.
  */
 function localArchivePolicyFingerprint(policy) {
-    const fields = [...Object.keys(policy)]
+    const fields = Object.keys(policy)
         .sort(ordering_1.compareCodePoints)
         .map((key) => [key, policy[key]]);
     return `lap1:${crypto.createHash("sha256").update(JSON.stringify(fields), "utf8").digest("hex")}`;
