@@ -272,7 +272,7 @@ function decodeLiteral(source) {
                         octal += digit;
                         cursor += 1;
                     }
-                    out += String.fromCharCode(Number.parseInt(octal, 8));
+                    out += String.fromCodePoint(Number.parseInt(octal, 8));
                 }
                 else {
                     out += next;
@@ -296,7 +296,7 @@ function parseToUnicode(cmap) {
         for (let index = 0; index + 3 < hex.length + 1; index += 4) {
             const unit = Number.parseInt(hex.slice(index, index + 4), 16);
             if (Number.isFinite(unit))
-                out += String.fromCharCode(unit);
+                out += String.fromCodePoint(unit);
         }
         return out;
     };
@@ -322,7 +322,7 @@ function parseToUnicode(cmap) {
             const base = Number.parseInt(row[3], 16);
             if (Number.isFinite(low) && Number.isFinite(high) && high - low < 65536) {
                 for (let code = low; code <= high; code += 1) {
-                    mapping.set(code, String.fromCharCode(base + (code - low)));
+                    mapping.set(code, String.fromCodePoint(base + (code - low)));
                 }
             }
             row = rows.exec(range[1]);
@@ -348,7 +348,7 @@ function extractContentText(content, toUnicode) {
                 return out;
         }
         for (let index = 0; index + 1 < clean.length; index += 2) {
-            out += String.fromCharCode(Number.parseInt(clean.slice(index, index + 2), 16));
+            out += String.fromCodePoint(Number.parseInt(clean.slice(index, index + 2), 16));
         }
         return out;
     };

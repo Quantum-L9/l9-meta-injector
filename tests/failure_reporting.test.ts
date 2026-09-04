@@ -202,7 +202,7 @@ describe("ordering and containment", () => {
     const error = new Error("APPLY_POSTCONDITION_FAILED: index differs from planned bytes");
     expect(report.renderThrow("apply-cli", error, {}).join("\n"))
       .toBe("apply-cli: FAILED: APPLY_POSTCONDITION_FAILED: index differs from planned bytes");
-    expect(report.renderThrow("apply-cli", error, { L9_DEBUG: "1" }).length).toBe(2);
+    expect(report.renderThrow("apply-cli", error, { L9_DEBUG: "1" })).toHaveLength(2);
   });
 });
 

@@ -42,7 +42,7 @@ describe("append-union", () => {
     expect(signals).toContain("text chunking");
     expect(signals).toContain("split document");
     expect(signals).toContain("retrieval prep");
-    expect(signals.filter((s) => s === "text chunking").length).toBe(1);
+    expect(signals.filter((s) => s === "text chunking")).toHaveLength(1);
     expect(diffs[0].action).toBe("append-union");
   });
 });
