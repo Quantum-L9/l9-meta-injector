@@ -373,6 +373,44 @@
         "npm run validate"
       ],
       "stability": "stable"
+    },
+    {
+      "capability": "archive_format_authority_and_direct_mutation_fidelity",
+      "source": "src/archive_formats.ts and src/archive_preflight.ts and src/durable_write.ts and src/comment.ts",
+      "public_entrypoint": null,
+      "tests": [
+        "tests/tarball_rejection_matrix.test.ts",
+        "tests/archive_path_conflict.test.ts",
+        "tests/local_source_host_failures.test.ts",
+        "tests/inject_newline_fidelity.test.ts",
+        "tests/direct_write_atomicity.test.ts",
+        "tests/pipeline_output_reingestion.test.ts",
+        "tests/inventory_dispositions.test.ts",
+        "tests/ordering_is_code_point.test.ts"
+      ],
+      "validators": [
+        "npm test",
+        "npm run validate"
+      ],
+      "stability": "stable"
+    },
+    {
+      "capability": "repository_mode_scope_and_fail_closed_reporting",
+      "source": "src/glob.ts and src/retrieval.ts and src/file_transaction.ts and src/check.ts and src/authority_scan.ts and src/extract.ts",
+      "public_entrypoint": "runCheckAsync, runApplyAsync",
+      "tests": [
+        "tests/discovery_glob_scope.test.ts",
+        "tests/file_transaction_mode_and_protected_paths.test.ts",
+        "tests/check_archive_inspection.test.ts",
+        "tests/check_unreadable_entry.test.ts",
+        "tests/authority_nested_declaration.test.ts",
+        "tests/apply_bom_frontmatter.test.ts"
+      ],
+      "validators": [
+        "npm test",
+        "npm run validate"
+      ],
+      "stability": "stable"
     }
   ]
 }

@@ -35,6 +35,7 @@ import {
   type AuthorityNotice,
   type OperationMode,
 } from "./operation_contracts";
+import { compareCodePoints } from "./ordering";
 
 export type AuthorityEvidenceKind =
   | "writer_script"
@@ -178,6 +179,19 @@ function isCandidate(relativePath: string): boolean {
 interface WalkResult {
   files: string[];
   gaps: AuthorityConflict[];
+  /** `.l9/meta-authority.yaml` documents found below the repository root. */
+  nestedAuthorities: string[];
+}
+
+const AUTHORITY_DIRECTORY_NAME = ".l9";
+const AUTHORITY_FILE_NAME = "meta-authority.yaml";
+
+function nestedAuthorityConflict(relativePath: string): AuthorityConflict {
+  return {
+    code: "META_AUTHORITY_CONFLICT",
+    message: "nested authority declaration competes with the root .l9/meta-authority.yaml; one repository has one authority",
+    path: relativePath,
+  };
 }
 
 function scanGap(relativePath: string, message: string): AuthorityConflict {
@@ -191,6 +205,7 @@ function scanGap(relativePath: string, message: string): AuthorityConflict {
 function walkFiles(root: string, excluded: Set<string>): WalkResult {
   const files: string[] = [];
   const gaps: AuthorityConflict[] = [];
+  const nestedAuthorities: string[] = [];
   const walk = (directory: string): void => {
     let entries: fs.Dirent[];
     try {
@@ -209,6 +224,14 @@ function walkFiles(root: string, excluded: Set<string>): WalkResult {
       }
       if (entry.isDirectory()) {
         if (excluded.has(entry.name)) continue;
+        if (entry.name === AUTHORITY_DIRECTORY_NAME && directory !== root) {
+          const candidate = path.join(full, AUTHORITY_FILE_NAME);
+          try {
+            if (fs.lstatSync(candidate).isFile()) nestedAuthorities.push(toPosix(path.relative(root, candidate)));
+          } catch {
+            // No document inside the nested `.l9`: nothing competes.
+          }
+        }
         walk(full);
       } else if (entry.isFile() && isCandidate(relative)) {
         files.push(full);
@@ -216,8 +239,8 @@ function walkFiles(root: string, excluded: Set<string>): WalkResult {
     }
   };
   walk(root);
-  files.sort((a, b) => a.localeCompare(b));
-  return { files, gaps };
+  files.sort(compareCodePoints);
+  return { files, gaps, nestedAuthorities: nestedAuthorities.sort(compareCodePoints) };
 }
 
 /**
@@ -410,16 +433,17 @@ export function scanRepositoryAuthority(root: string, options: AuthorityScanOpti
   }
 
   const deduped = [...new Map(found.map((item) => [`${item.path}:${item.kind}:${item.rule}`, item])).values()]
-    .sort((a, b) => `${a.path}:${a.kind}:${a.rule}`.localeCompare(`${b.path}:${b.kind}:${b.rule}`));
+    .sort((a, b) => compareCodePoints(`${a.path}:${a.kind}:${a.rule}`, `${b.path}:${b.kind}:${b.rule}`));
   const policy = options.legacyPolicy;
   const conflicts = [
     ...scanGaps,
+    ...walked.nestedAuthorities.map(nestedAuthorityConflict),
     ...deduped.map((item) => conflictFor(item, policy)).filter((item): item is AuthorityConflict => item !== null),
   ];
   const notices = deduped
     .map((item) => noticeFor(item, policy))
     .filter((item): item is AuthorityNotice => item !== null);
-  scannedPaths.sort((a, b) => a.localeCompare(b));
+  scannedPaths.sort(compareCodePoints);
   return { scannedPaths, evidence: deduped, scanGaps, conflicts, notices };
 }
 

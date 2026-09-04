@@ -13,6 +13,8 @@ import type {
   MetadataCarrier,
   OperationMode,
 } from "./operation_contracts";
+import { compareCodePoints } from "./ordering";
+import { globToRegExp } from "./glob";
 
 export const CARRIER_PRECEDENCE: readonly MetadataCarrier[] = [
   "hard_skip",
@@ -196,34 +198,6 @@ function posixExtname(value: string): string {
   return index <= 0 ? "" : base.slice(index);
 }
 
-function globToRegExp(pattern: string): RegExp {
-  let source = "^";
-  for (let index = 0; index < pattern.length; index++) {
-    const char = pattern[index];
-    if (char === "*" && pattern[index + 1] === "*") {
-      if (pattern[index + 2] === "/") {
-        source += "(?:.*/)?";
-        index += 2;
-      } else {
-        source += ".*";
-        index += 1;
-      }
-      continue;
-    }
-    if (char === "*") {
-      source += "[^/]*";
-      continue;
-    }
-    if (char === "?") {
-      source += "[^/]";
-      continue;
-    }
-    source += char.replace(/[|\\{}()[\]^$+?.]/g, String.raw`\$&`);
-  }
-  source += "$";
-  return new RegExp(source);
-}
-
 function matchesInlineAllow(relativePath: string, patterns: readonly string[]): string | undefined {
   for (const pattern of patterns) {
     if (globToRegExp(pattern).test(relativePath)) return pattern;
@@ -383,7 +357,7 @@ export function resolveCarrierDecisions(input: CarrierPolicyInput): CarrierDecis
     seen.add(result.path);
     return result;
   });
-  return decisions.sort((left, right) => left.path.localeCompare(right.path));
+  return decisions.sort((left, right) => compareCodePoints(left.path, right.path));
 }
 
 export function assertCarrierDecisionCoverage(

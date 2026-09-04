@@ -46,6 +46,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ArchiveSessionBudget = exports.DEFAULT_LOCAL_ARCHIVE_POLICY = exports.LOCAL_ARCHIVE_POLICY_VERSION = void 0;
+exports.validateLocalArchivePolicy = validateLocalArchivePolicy;
 exports.resolveLocalArchivePolicy = resolveLocalArchivePolicy;
 exports.localArchivePolicyFingerprint = localArchivePolicyFingerprint;
 const crypto = __importStar(require("node:crypto"));
@@ -69,34 +70,53 @@ exports.DEFAULT_LOCAL_ARCHIVE_POLICY = Object.freeze({
     maxPathLength: 1024,
     maxProcessingMs: 5 * 60 * 1000,
 });
+const POSITIVE_INTEGER_FIELDS = [
+    "maxArchiveCompressedBytes",
+    "maxMemberCount",
+    "maxSingleMemberUncompressedBytes",
+    "maxTotalUncompressedBytesPerArchive",
+    "maxTotalUncompressedBytesPerSession",
+    "maxNestedArchiveCount",
+    "maxPathLength",
+    "maxProcessingMs",
+];
+/** Validate caller-controlled resource ceilings before any archive is read. */
+function validateLocalArchivePolicy(policy) {
+    if (typeof policy.version !== "string" || policy.version.length === 0) {
+        throw new Error("local archive policy version must be a non-empty string");
+    }
+    for (const field of POSITIVE_INTEGER_FIELDS) {
+        const value = policy[field];
+        if (typeof value !== "number" || !Number.isFinite(value) || !Number.isInteger(value) || value <= 0) {
+            throw new Error(`local archive policy ${String(field)} must be a positive finite integer`);
+        }
+    }
+    if (!Number.isFinite(policy.maxNestedDepth) || !Number.isInteger(policy.maxNestedDepth) || policy.maxNestedDepth < 0) {
+        throw new Error("local archive policy maxNestedDepth must be a non-negative finite integer");
+    }
+    if (!Number.isFinite(policy.maxCompressionRatio) || policy.maxCompressionRatio <= 0) {
+        throw new Error("local archive policy maxCompressionRatio must be a positive finite number");
+    }
+    return policy;
+}
 /** Merge caller overrides onto the defaults, keeping the version explicit. */
 function resolveLocalArchivePolicy(overrides) {
-    return {
+    return validateLocalArchivePolicy({
         ...exports.DEFAULT_LOCAL_ARCHIVE_POLICY,
         ...overrides,
         version: overrides?.version ?? exports.LOCAL_ARCHIVE_POLICY_VERSION,
-    };
+    });
 }
 /**
  * Deterministic fingerprint of a fully resolved archive policy.
  *
- * A cached admission verdict is only reusable for a policy that would judge the
- * archive the same way, and the version string cannot carry that. Two runs share
- * `version: "1"` while one allows a compression ratio of 200 and the other 10;
- * replaying the looser run's verdict under the stricter policy admits an archive
- * the operator has just finished forbidding. Identity therefore has to be the
- * resolved values themselves.
- *
- * Every own enumerable field is included, sorted by key, so the fingerprint does
- * not depend on the order overrides were merged in, and a field added to
- * LocalArchivePolicy later enters the identity on its own rather than being
- * quietly excluded until someone remembers to list it here.
+ * Every resolved field contributes, including the contract version. The numeric
+ * ceilings are the direct admission semantics; the version is a conservative
+ * semantic epoch. A version bump therefore invalidates warm verdicts even when
+ * the currently visible numeric limits happen to be unchanged, which is safer
+ * than replaying a verdict across an intentionally revised policy contract.
  */
 function localArchivePolicyFingerprint(policy) {
-    // compareCodePoints, not a bare sort() and emphatically not localeCompare: this
-    // ordering reaches a hash, and src/ordering.ts is the module that exists because
-    // locale-aware ordering varies with the runtime's ICU data, so the same policy
-    // could fingerprint two ways on two machines.
     const fields = [...Object.keys(policy)]
         .sort(ordering_1.compareCodePoints)
         .map((key) => [key, policy[key]]);
@@ -123,20 +143,30 @@ class ArchiveSessionBudget {
     remainingBytes() {
         return Math.max(0, this.policy.maxTotalUncompressedBytesPerSession - this.expandedBytes);
     }
+    /** Wall-clock-only refusal, safe to call during member streaming. */
+    processingRefusalReason() {
+        if (this.nowMs() - this.startedAtMs > this.policy.maxProcessingMs) {
+            return `acquisition exceeded the ${this.policy.maxProcessingMs}ms processing budget`;
+        }
+        return null;
+    }
     /** Reason this archive may not be expanded, or null when it may. */
     refuseReason(declaredUncompressedBytes) {
         if (this.expandedArchives >= this.policy.maxNestedArchiveCount) {
             return `session archive count limit of ${this.policy.maxNestedArchiveCount} reached`;
         }
-        if (this.nowMs() - this.startedAtMs > this.policy.maxProcessingMs) {
-            return `acquisition exceeded the ${this.policy.maxProcessingMs}ms processing budget`;
-        }
+        const processing = this.processingRefusalReason();
+        if (processing !== null)
+            return processing;
         if (this.expandedBytes + declaredUncompressedBytes > this.policy.maxTotalUncompressedBytesPerSession) {
             return `session expansion budget of ${this.policy.maxTotalUncompressedBytesPerSession} bytes would be exceeded`;
         }
         return null;
     }
     recordArchive(expandedBytes) {
+        if (!Number.isFinite(expandedBytes) || expandedBytes < 0) {
+            throw new Error("archive session accounting requires a non-negative finite byte count");
+        }
         this.expandedArchives++;
         this.expandedBytes += expandedBytes;
     }

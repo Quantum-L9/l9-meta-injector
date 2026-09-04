@@ -1,6 +1,7 @@
 import { InventoryResult } from "./inventory";
 import { OmitMatcher } from "./omit";
 import { ArchiveHold, ArchivePreflightResult } from "./archive_preflight";
+import { ARCHIVE_READER_VERSION } from "./archive_execution";
 import { LocalArchivePolicy } from "./local_archive_policy";
 /** Separator between an archive path and a member path in a virtual locator. */
 export declare const ARCHIVE_MEMBER_SEPARATOR = "!/";
@@ -130,8 +131,13 @@ export interface ArchiveManifestStore {
     get(key: ArchiveManifestKey): ArchivePreflightResult | undefined;
     put(key: ArchiveManifestKey, value: ArchivePreflightResult): void;
 }
-/** Version of the ZIP reader whose output an archive manifest describes. */
-export declare const ARCHIVE_READER_VERSION = "1.0.0";
+/**
+ * Version of the ZIP reader whose output an archive manifest describes.
+ *
+ * Re-exported from the execution context so there is exactly one place the
+ * number lives; two copies had already drifted into two declarations of "1.0.0".
+ */
+export { ARCHIVE_READER_VERSION };
 /** What a previous run established about one file, and the stat it saw. */
 export interface KnownFileHash {
     /** `sha256:`-prefixed, as a previous run computed it from the exact bytes. */

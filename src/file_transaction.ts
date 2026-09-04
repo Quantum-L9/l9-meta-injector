@@ -11,9 +11,12 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
+import { compareCodePoints } from "./ordering";
 
 export const FILE_TRANSACTION_SCHEMA = "l9.file-transaction/v1" as const;
 export const TRANSACTION_DIRECTORY = ".l9/.transactions" as const;
+/** Paths no transaction may target: the authority document and the journal root. */
+const PROTECTED_TRANSACTION_PATHS: ReadonlySet<string> = new Set([".l9/meta-authority.yaml", TRANSACTION_DIRECTORY]);
 
 export interface FileMutationIntent {
   /** Canonical repository-relative POSIX path. */
@@ -111,7 +114,14 @@ function normalizeRelativePath(value: string): string {
   }
   const parts = value.split("/");
   if (parts.some((part) => !part || part === "." || part === "..")) throw new Error(`transaction path contains unsafe segment: ${value}`);
-  return parts.join("/");
+  const normalized = parts.join("/");
+  // The transaction primitive never writes Git internals, the authority that licenses it,
+  // or its own journal directory, whatever a caller plans (ADR-047).
+  if (parts.includes(".git")) throw new Error(`transaction path targets Git internal state: ${value}`);
+  if (PROTECTED_TRANSACTION_PATHS.has(normalized) || normalized.startsWith(`${TRANSACTION_DIRECTORY}/`)) {
+    throw new Error(`transaction path targets protected repository state: ${value}`);
+  }
+  return normalized;
 }
 
 function ensureRoot(rootInput: string): string {
@@ -258,7 +268,7 @@ function rollbackEntries(entries: PreparedEntry[], journalPath: string, journal:
 function prepareEntries(root: string, intents: readonly FileMutationIntent[], id: string): PreparedEntry[] {
   const seen = new Set<string>();
   const prepared: PreparedEntry[] = [];
-  for (const [index, intent] of [...intents].sort((a, b) => a.path.localeCompare(b.path)).entries()) {
+  for (const [index, intent] of [...intents].sort((a, b) => compareCodePoints(a.path, b.path)).entries()) {
     const relative = normalizeRelativePath(intent.path);
     if (seen.has(relative)) throw new Error(`duplicate transaction target: ${relative}`);
     seen.add(relative);
@@ -323,6 +333,9 @@ function stageEntries(ctx: TransactionContext, entries: PreparedEntry[], intents
     const mode = entry.originalMode ?? intents.find((item) => normalizeRelativePath(item.path) === entry.path)?.mode ?? 0o644;
     const fd = fs.openSync(entry.temp, "wx", mode);
     try {
+      // `open` applies the process umask to `mode`; the recorded original mode (or the
+      // intent's mode) is the contract, so it is restored on the descriptor before commit.
+      fs.fchmodSync(fd, mode);
       fs.writeFileSync(fd, entry.bytes);
       fs.fsyncSync(fd);
     } finally {
@@ -480,7 +493,7 @@ export function recoverPendingTransactions(rootInput: string): RecoveryResult {
   if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error(`transaction journal directory is unsafe: ${directory}`);
   const recovered: string[] = [];
   const finalized: string[] = [];
-  const journals = fs.readdirSync(directory).filter((name) => name.endsWith(".json")).sort((a, b) => a.localeCompare(b));
+  const journals = fs.readdirSync(directory).filter((name) => name.endsWith(".json")).sort(compareCodePoints);
   for (const name of journals) {
     const journalPath = path.join(directory, name);
     const parsed = JSON.parse(fs.readFileSync(journalPath, "utf8")) as TransactionJournal;

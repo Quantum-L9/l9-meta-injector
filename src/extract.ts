@@ -47,12 +47,28 @@ export function extract(body: string): ExtractedFields {
   };
 }
 
-export function splitContent(raw: string): { frontMatter: string | null; body: string; headerConvention: HeaderConvention } {
+const BOM = "\uFEFF";
+
+/**
+ * A byte-order mark is not content: the frontmatter patcher keeps it at byte 0 and
+ * writes the opening fence after it, so header detection must look past it too.
+ * Otherwise a BOM-prefixed file that was just given frontmatter reads as having none,
+ * and the governed apply that produced it fails its own verification (ADR-047).
+ */
+function withoutBom(raw: string): string {
+  return raw.startsWith(BOM) ? raw.slice(BOM.length) : raw;
+}
+
+export function splitContent(input: string): { frontMatter: string | null; body: string; headerConvention: HeaderConvention } {
+  const raw = withoutBom(input);
   if (raw.startsWith("---\n") || raw.startsWith("---\r\n")) {
     const end = raw.indexOf("\n---", 4);
     if (end !== -1) {
       const fm = raw.slice(0, end + 4);
-      const rest = raw.slice(end + 4).replace(/^\n/, "");
+      // The closing fence line may end in CRLF; consuming only "\n" left a stray "\r"
+      // at the head of every CRLF body, so the index hash of a file changed between the
+      // run that injected its header and the next, and check reported the index stale.
+      const rest = raw.slice(end + 4).replace(/^\r?\n/, "");
       return { frontMatter: fm, body: rest, headerConvention: "full-yaml" };
     }
   }
@@ -61,7 +77,8 @@ export function splitContent(raw: string): { frontMatter: string | null; body: s
   return { frontMatter: null, body: raw, headerConvention: "none" };
 }
 
-export function stripExistingFrontMatter(raw: string): string {
+export function stripExistingFrontMatter(input: string): string {
+  const raw = withoutBom(input);
   if (raw.startsWith("---\n") || raw.startsWith("---\r\n")) {
     const end = raw.indexOf("\n---", 4);
     // Strip ALL blank lines between the closing `---` and the body. buildInjection
@@ -69,7 +86,7 @@ export function stripExistingFrontMatter(raw: string): string {
     // full blank separator (not just one newline) or the round-tripped body hash
     // drifts by a leading "\n" on first injection — reporting bodyPreserved=false
     // for a body that was in fact preserved.
-    if (end !== -1) return raw.slice(end + 4).replace(/^\n+/, "");
+    if (end !== -1) return raw.slice(end + 4).replace(/^(?:\r?\n)+/, "");
   }
   return raw;
 }

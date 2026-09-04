@@ -8,7 +8,8 @@
  *   npm run pipeline -- <root> [options]
  *
  * Options:
- *   --glob <pattern>       file glob to scan                         (default: **\/*)
+ *   --glob <pattern>       repository-relative scope: **\/ crosses directories, * stays in a segment;
+ *                          no braces, classes, negation, absolute or .. (default: **\/*)
  *   --out <dir>            manifest/index output dir                 (default: sibling <root>.l9out,
  *                          kept OUTSIDE the scanned root so re-runs never scan/inject their own
  *                          diffs, reports, and indexes)
@@ -27,10 +28,12 @@
  *                          library's per-file change-log default)
  *   --local-files          expand .zip archives under root into sibling *.l9extracted/
  *                          dirs, write <zip>.l9meta.yaml sidecars, and inject metadata into
- *                          extracted members (ADR-016). Default repo mode never extracts.
- *                          Requires the system `unzip` binary. Archive extraction mutates the
- *                          tree even when --dry-run is set; dry-run only suppresses metadata
- *                          injection (headers/sidecars).
+ *                          extracted members (ADR-016/044/045). Default repo mode never
+ *                          extracts. No system `unzip` binary is involved: the package's own
+ *                          ZIP reader and preflight admit every archive. With --dry-run the
+ *                          same admission runs and nothing in the tree is mutated; members
+ *                          that a real run would extract are therefore not previewed as
+ *                          injection targets, only reported as "would extract".
  *   --verbose              emit coverage/metrics diagnostics to stderr on every run
  *   --schema <file>        canonical meta-schema YAML (same mechanism as inventory.js --schema):
  *                          MERGE the schema's resolved fields on top of the engine's classified
@@ -67,8 +70,8 @@ const inventoryPkg = requireBuilt(path.join(REPO, "dist", "public", "inventory.j
 const usage = "usage: node scripts/pipeline-cli.js <root> [--glob PATTERN] [--out DIR] [--index-dir DIR] [--namespace NAME] [--namespace-glob glob=ns] --authority ID [--dry-run] [--fail-on-issues|--no-fail-on-issues] [--near-dup 0..1] [--hash-prefix-length N] [--normalize-filenames] [--write-inject-log] [--local-files] [--verbose] [--schema FILE] [--omit PATTERN] [--omit-file PATH] [--llm] [--llm-base-url URL] [--llm-api-key KEY] [--llm-model NAME] [--llm-allow-insecure]";
 const { root, flag, opt, optAll } = parseCli("pipeline-cli", usage);
 // Default output dir is a SIBLING of root (<root>.l9out), not nested inside it, so running the
-// pipeline never leaves diff/report/index noise in the folder being scanned, and a re-run never
-// re-scans or re-injects its own previous output. Pass --out to override.
+// pipeline never leaves diff/report/index noise in the folder being scanned. An --out inside
+// the root is omitted from discovery on the next run, and --out equal to the root is refused.
 const outDir = path.resolve(opt("--out", `${root}.l9out`));
 const indexDir = path.resolve(opt("--index-dir", outDir));
 const failOnIssues = !flag("--no-fail-on-issues");

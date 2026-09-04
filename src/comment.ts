@@ -6,6 +6,7 @@
 // the injected block is delimited by sentinels so it can be detected and replaced.
 
 import * as path from "node:path";
+import { ARCHIVE_EXTENSIONS } from "./archive_formats";
 
 export type InjectionStrategy =
   | "yaml-frontmatter"
@@ -73,7 +74,8 @@ const SIDECAR_EXTS = new Set([".json", ".jsonc", ".json5", ".geojson", ".csv", "
 const BINARY_EXTS = new Set([
   ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".tif", ".tiff",
   ".pdf", ".mp3", ".mp4", ".wav", ".flac", ".ogg", ".mov", ".avi", ".mkv", ".webm",
-  ".zip", ".gz", ".bz2", ".xz", ".tar", ".7z", ".rar",
+  // Every archive extension the package recognizes, expandable or not (one owner).
+  ...ARCHIVE_EXTENSIONS,
   ".woff", ".woff2", ".ttf", ".eot", ".otf",
   ".exe", ".dll", ".so", ".dylib", ".class", ".o", ".a", ".lib", ".wasm", ".bin", ".dat",
   // Bytecode / ephemeral noise — skip entirely (no sidecar, no inventory inject).
@@ -123,16 +125,29 @@ function esc(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 }
 
+export type NewlineConvention = "\n" | "\r\n";
+
+/**
+ * The newline convention a text body already uses: whichever the first line
+ * ending is. A file with no line ending yet is treated as LF. The injected block
+ * adopts the file's convention so a CRLF source does not come back with LF
+ * inside its header and CRLF everywhere else.
+ */
+export function detectNewlineConvention(text: string): NewlineConvention {
+  const lf = text.indexOf("\n");
+  return lf > 0 && text[lf - 1] === "\r" ? "\r\n" : "\n";
+}
+
 /** Wrap inner YAML in the comment style for this spec. Returns the block (no trailing newline). */
-export function yamlToBlock(yamlInner: string, spec: StrategySpec): string {
-  const lines = yamlInner.split("\n");
+export function yamlToBlock(yamlInner: string, spec: StrategySpec, newline: NewlineConvention = "\n"): string {
+  const lines = yamlInner.split(/\r?\n/);
   if (spec.strategy === "line-comment") {
     const p = spec.linePrefix!;
     const out = [`${p} ${START}`, ...lines.map((l) => (l === "" ? p : `${p} ${l}`)), `${p} ${END}`];
-    return out.join("\n");
+    return out.join(newline);
   }
   if (spec.strategy === "block-comment") {
-    return [`${spec.blockOpen} ${BLOCK_START}`, ...lines, `${BLOCK_END} ${spec.blockClose}`].join("\n");
+    return [`${spec.blockOpen} ${BLOCK_START}`, ...lines, `${BLOCK_END} ${spec.blockClose}`].join(newline);
   }
   throw new Error(`yamlToBlock: unsupported strategy ${spec.strategy}`);
 }
@@ -173,28 +188,39 @@ export function extractInjectedYaml(raw: string, spec: StrategySpec): string | n
   const body = m[0];
   if (spec.strategy === "line-comment") {
     const p = spec.linePrefix!;
-    return body.split("\n")
+    // Split on either convention: a CRLF file's block would otherwise keep a
+    // trailing `\r` on every value and fail to round-trip on the next run.
+    return body.split(/\r?\n/)
       .filter((l) => !l.includes(START) && !l.includes(END) && l.trimStart().startsWith(p))
       .map((l) => l.replace(new RegExp(String.raw`^\s*${esc(p)} ?`), ""))
       .join("\n").trim();
   }
   // block-comment
-  return body.split("\n")
+  return body.split(/\r?\n/)
     .filter((l) => !l.includes(BLOCK_START) && !l.includes(BLOCK_END))
     .join("\n").trim();
 }
 
+const BOM = "\uFEFF";
+
 /**
  * Assemble the injected file for comment strategies, preserving cleanBody verbatim
  * and keeping a shebang (`#!...`) on line 1. Recoverable via stripInjectedBlock.
+ *
+ * A byte-order mark stays at byte 0: the block is inserted after it, never before,
+ * because a BOM in the middle of a file is no longer a BOM. Line endings around
+ * the block follow `newline`, so a CRLF file keeps a single convention.
  */
-export function applyCommentInjection(cleanBody: string, block: string): string {
-  if (cleanBody.startsWith("#!")) {
-    const nl = cleanBody.indexOf("\n");
-    if (nl === -1) return `${cleanBody}\n${block}\n`;
-    const shebang = cleanBody.slice(0, nl);
-    const rest = cleanBody.slice(nl + 1);
-    return `${shebang}\n${block}\n${rest}`;
+export function applyCommentInjection(cleanBody: string, block: string, newline: NewlineConvention = "\n"): string {
+  const bom = cleanBody.startsWith(BOM) ? BOM : "";
+  const body = cleanBody.slice(bom.length);
+  if (body.startsWith("#!")) {
+    const nl = body.indexOf("\n");
+    if (nl === -1) return `${bom}${body}${newline}${block}${newline}`;
+    const hasCr = nl > 0 && body[nl - 1] === "\r";
+    const shebang = body.slice(0, hasCr ? nl - 1 : nl);
+    const rest = body.slice(nl + 1);
+    return `${bom}${shebang}${newline}${block}${newline}${rest}`;
   }
-  return `${block}\n${cleanBody}`;
+  return `${bom}${block}${newline}${body}`;
 }

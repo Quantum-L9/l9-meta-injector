@@ -46,6 +46,8 @@ const comment_1 = require("./comment");
 const omit_1 = require("./omit");
 const encoding_1 = require("./encoding");
 const discovery_contracts_1 = require("./discovery_contracts");
+const ordering_1 = require("./ordering");
+const glob_1 = require("./glob");
 /** Injector-generated adjacent artifacts must never be rediscovered as inputs. */
 function isGeneratedArtifact(name) {
     return name.endsWith(".inject.log") || name.endsWith(".l9meta.yaml");
@@ -85,8 +87,9 @@ function record(ledger, pathName, kind, disposition, reason, sizeBytes) {
     ledger.push({ path: pathName, kind, disposition, reason, ...(sizeBytes === undefined ? {} : { sizeBytes }) });
 }
 function discoverFiles(root, glob, opts = {}) {
-    const extMatch = /\*\.([a-z0-9]+)$/i.exec(glob);
-    const extFilter = extMatch ? `.${extMatch[1].toLowerCase()}` : null;
+    // The scope is validated and compiled before the root is opened: a pattern the dialect
+    // cannot express is refused here rather than matching nothing (or everything) later.
+    const scope = (0, glob_1.compileDiscoveryGlob)(glob);
     const absRoot = path.resolve(root);
     let rootStat;
     try {
@@ -118,7 +121,7 @@ function discoverFiles(root, glob, opts = {}) {
             record(ledger, rel, "directory", "unreadable", `directory enumeration failed: ${error instanceof Error ? error.message : String(error)}`);
             return;
         }
-        entries.sort((a, b) => a.name.localeCompare(b.name));
+        entries.sort((a, b) => (0, ordering_1.compareCodePoints)(a.name, b.name));
         for (const entry of entries) {
             const full = path.join(directory, entry.name);
             const rel = toPosix(path.relative(absRoot, full));
@@ -179,8 +182,15 @@ function discoverFiles(root, glob, opts = {}) {
                 record(ledger, rel, "file", "hidden_control", "hidden control file is reserved for authority scanning", stat.size);
                 continue;
             }
-            if (extFilter && !entry.name.toLowerCase().endsWith(extFilter)) {
-                record(ledger, rel, "file", "extension_filtered", `file does not match requested ${extFilter} filter`, stat.size);
+            if (!scope.matches(rel)) {
+                // A `*.ext` tail that fails on the extension keeps the historical disposition so
+                // existing reports stay comparable; every other mismatch is a path-scope decision.
+                if (scope.extensionFilter && !entry.name.toLowerCase().endsWith(scope.extensionFilter)) {
+                    record(ledger, rel, "file", "extension_filtered", `file does not match requested ${scope.extensionFilter} filter`, stat.size);
+                }
+                else {
+                    record(ledger, rel, "file", "glob_filtered", `file does not match discovery glob ${scope.pattern}`, stat.size);
+                }
                 continue;
             }
             const strategy = (0, comment_1.resolveStrategy)(full, "");
@@ -226,7 +236,7 @@ function discoverFiles(root, glob, opts = {}) {
         }
     };
     walk(absRoot);
-    files.sort((a, b) => a.localeCompare(b));
+    files.sort(ordering_1.compareCodePoints);
     return { files, summary: (0, discovery_contracts_1.summarizeDiscovery)(ledger) };
 }
 /** Backward-compatible file-only discovery wrapper. */

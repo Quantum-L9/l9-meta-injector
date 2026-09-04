@@ -7,6 +7,13 @@ const zip_reader_1 = require("./zip_reader");
 const WINDOWS_DRIVE = /^[A-Za-z]:[\\/]/;
 const NUL = "\u0000";
 /**
+ * Longest single path component, in UTF-8 bytes, any mainstream filesystem will
+ * store. The policy bounds the whole path; without this a member whose one
+ * segment was longer than NAME_MAX passed preflight and failed at the host,
+ * which turned a property of the archive into a host error mid-extraction.
+ */
+const MAX_SEGMENT_BYTES = 255;
+/**
  * Normalize a stored member name to a canonical POSIX path.
  *
  * Backslashes become separators first: a member named `..\escape.txt` is a
@@ -95,6 +102,13 @@ function pathHolds(canonical, raw, policy) {
             message: `member path exceeds the ${policy.maxPathLength}-character limit`,
         });
     }
+    else if (canonical.split("/").some((segment) => Buffer.byteLength(segment, "utf8") > MAX_SEGMENT_BYTES)) {
+        holds.push({
+            code: "archive.path_too_long",
+            memberPath: raw.slice(0, 120),
+            message: `a member path component exceeds ${MAX_SEGMENT_BYTES} bytes, which no supported filesystem can store`,
+        });
+    }
     // Final containment check, independent of the component rules above: resolving
     // the canonical path against a virtual root must stay inside that root.
     if (canonical.length > 0 && !resolvesInsideRoot(canonical)) {
@@ -170,6 +184,7 @@ function collisionHolds(entry, canonical, accumulator) {
         return [];
     const previousExact = accumulator.seenExact.get(canonical);
     if (previousExact !== undefined) {
+        accumulator.duplicates.add(canonical);
         return [{
                 code: "archive.duplicate_member",
                 memberPath: entry.name,
@@ -204,10 +219,54 @@ function fileMemberHolds(entry, policy) {
     }
     return holds;
 }
+/**
+ * Record which canonical paths are used as files and which as directories.
+ *
+ * Every ancestor of a member is a directory by implication, so `a` declared as a
+ * file and `a/b` declared as a file cannot both be materialized on any
+ * filesystem. The exact-duplicate rule does not see this — the two paths differ —
+ * and the outcome used to depend on central-directory order: `a/b` first was held
+ * as an unreadable format, `a` first threw out of extraction. Usage is gathered
+ * here and judged once, after the whole directory is known, so both orders receive
+ * the same verdict from the same rule.
+ */
+function notePathUsage(entry, canonical, accumulator) {
+    if (canonical.length === 0 || canonical.startsWith("/"))
+        return;
+    const segments = canonical.split("/");
+    if (entry.kind === "directory") {
+        accumulator.directoryPaths.add(canonical);
+    }
+    else if (entry.kind === "file" && !accumulator.filePaths.has(canonical)) {
+        accumulator.filePaths.set(canonical, entry.name);
+    }
+    for (let depth = 1; depth < segments.length; depth++) {
+        accumulator.directoryPaths.add(segments.slice(0, depth).join("/"));
+    }
+}
+/** A path declared as a file by one member and used as a directory by another. */
+function pathConflictHolds(accumulator) {
+    const holds = [];
+    for (const [canonical, rawName] of accumulator.filePaths) {
+        if (!accumulator.directoryPaths.has(canonical))
+            continue;
+        // `docs/` beside `docs` is the same path spelled twice and is already held as
+        // an exact duplicate; one defect, one hold.
+        if (accumulator.duplicates.has(canonical))
+            continue;
+        holds.push({
+            code: "archive.path_conflict",
+            memberPath: rawName,
+            message: "member path is declared as a file and used as a directory by another member",
+        });
+    }
+    return holds;
+}
 /** Judge one central-directory entry and fold it into the accumulator. */
 function inspectEntry(entry, policy, accumulator) {
     const canonical = canonicalMemberPath(entry.name);
     accumulator.holds.push(...pathHolds(canonical, entry.name, policy));
+    notePathUsage(entry, canonical, accumulator);
     if (entry.encrypted) {
         accumulator.holds.push({
             code: "archive.member_encrypted",
@@ -266,10 +325,13 @@ function preflightArchive(input) {
         declaredCompressedBytes: 0,
         seenExact: new Map(),
         seenCollision: new Map(),
+        filePaths: new Map(),
+        directoryPaths: new Set(),
+        duplicates: new Set(),
     };
     for (const entry of input.directory.entries)
         inspectEntry(entry, input.policy, accumulator);
-    accumulator.holds.push(...expansionHolds(input, accumulator.declaredUncompressedBytes));
+    accumulator.holds.push(...pathConflictHolds(accumulator), ...expansionHolds(input, accumulator.declaredUncompressedBytes));
     return {
         accepted: accumulator.holds.length === 0,
         holds: accumulator.holds,

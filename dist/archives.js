@@ -43,58 +43,45 @@ exports.writeArchiveSidecar = writeArchiveSidecar;
 exports.expandArchivesUnderRoot = expandArchivesUnderRoot;
 // archives.ts — legacy, opt-in, MUTATING local-files archive expansion.
 //
-// This is not the canonical observation path. Canonical local-source and archive
-// observation lives in `local_source.ts`, is read-only, and stages members into
-// tool-owned scratch (ADR-036). This module remains only for the pre-existing
-// `PipelineConfig.localFiles` materialization workflow, where the operator has
-// explicitly asked for archive members to be written beside their archive and
-// injected in place. It is a materialization surface, not an observation one, and
-// it must never be described as non-destructive.
-//
-// Default (repo) mode never extracts. When PipelineConfig.localFiles is set,
-// .zip archives under the scan root are expanded into sibling *.l9extracted/
-// directories, members become ordinary inject targets, and each archive gets an
-// inventory-style sidecar (<zip>.l9meta.yaml). Nested zips are expanded up to
-// maxDepth.
-//
-// This module coordinates placement; it does not decide what a ZIP is. Reading,
-// admission and extraction belong to the canonical primitives -- `zip_reader`,
-// `archive_preflight` and the resolved `local_archive_policy` -- the same ones
-// the read-only observation path uses. It previously shelled out to a system
-// `unzip`, which made it a second archive authority: a subprocess decides for
-// itself what a member path means and how many bytes to write, so the two paths
-// could disagree about which archives are safe, and the mutating one was the
-// weaker of the two. There is now one decision authority and two output modes.
-//
-// Two invariants this module now holds unconditionally, legacy or not:
-//
-//   - A directory is never removed because of its name. `Foo.l9extracted` may be
-//     a user directory that happens to be named that way, so extraction refuses
-//     to overwrite any existing directory that does not carry this tool's
-//     ownership marker. The previous unconditional recursive delete could destroy
-//     user data that merely sat next to a zip.
-//   - Dry run means zero source-tree mutation. This path previously extracted
-//     even in dry run and only skipped the sidecar, which made "dry run" a claim
-//     the code did not honor.
-//
-// Omit (ADR-017): when an OmitMatcher is supplied, omitted archives are not
-// expanded / sidecared, omitted directories are not walked, and omitted zip
-// members (e.g. SKILL.md, *.log, __pycache__) are not extracted onto disk.
+// Canonical observation lives in local_source.ts. This module owns only the
+// explicitly requested sibling materialization mode. ZIP parsing and admission
+// are shared with the read-only path through ArchiveExecutionContext.
 const crypto = __importStar(require("node:crypto"));
 const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
 const comment_1 = require("./comment");
 const yaml_serialize_1 = require("./yaml_serialize");
+const ordering_1 = require("./ordering");
 const local_source_1 = require("./local_source");
 const archive_preflight_1 = require("./archive_preflight");
 const archive_execution_1 = require("./archive_execution");
 const zip_reader_1 = require("./zip_reader");
+const archive_formats_1 = require("./archive_formats");
+const durable_write_1 = require("./durable_write");
 /** Directory-name suffix for an expanded archive (sibling of the .zip). */
 exports.EXTRACTED_DIR_SUFFIX = ".l9extracted";
-/** Archive extensions expanded in local-files mode (v1: zip only). */
-exports.EXPANDABLE_ARCHIVE_EXTS = new Set([".zip"]);
+/** Archive extensions expanded in local-files mode (v1: zip only). Owned by `archive_formats.ts`. */
+exports.EXPANDABLE_ARCHIVE_EXTS = archive_formats_1.EXPANDABLE_ARCHIVE_EXTENSIONS;
+class ArchiveIntegrityError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = "ArchiveIntegrityError";
+    }
+}
+/** Convert only expected archive/input refusals into held records. */
+function expectedArchiveHoldReason(error) {
+    if (error instanceof ArchiveIntegrityError)
+        return `archive.integrity_failed: ${error.message}`;
+    if (error instanceof archive_execution_1.ArchiveExecutionHeldError)
+        return `archive.resource_refused: ${error.message}`;
+    if (error instanceof zip_reader_1.ZipBudgetExceededError)
+        return `archive.resource_refused: ${error.message}`;
+    if (error instanceof zip_reader_1.ZipFormatError)
+        return `archive.format_unreadable: ${error.message}`;
+    return null;
+}
 function isExpandableArchive(filePath) {
-    return exports.EXPANDABLE_ARCHIVE_EXTS.has(path.extname(filePath).toLowerCase());
+    return (0, archive_formats_1.isExpandableArchivePath)(filePath);
 }
 function relPosix(root, abs) {
     return path.relative(root, abs).split(path.sep).join("/");
@@ -105,7 +92,7 @@ function isOmitted(omit, rel) {
     return omit.shouldOmit(rel) || omit.shouldOmit(rel.endsWith("/") ? rel : `${rel}/`);
 }
 function sortPaths(paths) {
-    return paths.sort((a, b) => a.localeCompare(b));
+    return paths.sort(ordering_1.compareCodePoints);
 }
 /** Sibling extract directory for a zip: `Archive.zip` → `Archive.l9extracted`. */
 function extractDirFor(zipPath) {
@@ -113,15 +100,7 @@ function extractDirFor(zipPath) {
     const base = path.basename(zipPath, path.extname(zipPath));
     return path.join(dir, base + exports.EXTRACTED_DIR_SUFFIX);
 }
-/**
- * List member paths inside a zip, rejecting Zip-Slip (`..` / absolute) names.
- *
- * Read from the central directory rather than from `unzip -Z1`. The names a
- * subprocess prints are already its own interpretation of the bytes, so taking
- * them as input meant trusting a second parser about what a member is even
- * called. Directory entries keep a trailing separator so callers can still tell
- * them from files.
- */
+/** List canonical member paths inside a ZIP. */
 function listZipMembers(zipPath) {
     return (0, zip_reader_1.readZipCentralDirectory)(zipPath).entries.map((entry) => {
         const canonical = (0, archive_preflight_1.canonicalMemberPath)(entry.name);
@@ -131,15 +110,32 @@ function listZipMembers(zipPath) {
         return entry.kind === "directory" ? `${canonical}/` : canonical;
     });
 }
+function readExtractionOwnershipV2(directory) {
+    try {
+        const raw = JSON.parse(fs.readFileSync(path.join(directory, local_source_1.LEGACY_EXTRACTION_OWNER_FILE), "utf8"));
+        if (raw.schema !== local_source_1.LOCAL_FILES_EXTRACTION_SCHEMA || raw.owner !== local_source_1.EXTRACTION_OWNER_ID)
+            return null;
+        if (typeof raw.archive !== "string" || raw.archive.length === 0)
+            return null;
+        if (typeof raw.archive_sha256 !== "string" || !/^sha256:[0-9a-f]{64}$/.test(raw.archive_sha256))
+            return null;
+        if (typeof raw.reader_version !== "string" || raw.reader_version.length === 0)
+            return null;
+        if (typeof raw.policy_fingerprint !== "string" || !/^lap1:[0-9a-f]{64}$/.test(raw.policy_fingerprint))
+            return null;
+        if (typeof raw.created_at !== "string" || Number.isNaN(Date.parse(raw.created_at)))
+            return null;
+        return raw;
+    }
+    catch {
+        return null;
+    }
+}
 /**
  * Reason an existing extraction directory may not be replaced, or null when it may.
- *
- * Ownership must be proven, never inferred from the path. A directory named
- * `Foo.l9extracted` next to `Foo.zip` can be a user directory: without the
- * ownership marker this tool writes, removing it would destroy data this package
- * never created.
+ * Destructive authority is exact provenance, never a suffix or owner-prefix guess.
  */
-function extractionRefusalReason(extractDir) {
+function extractionRefusalReason(extractDir, zipPath) {
     if (!fs.existsSync(extractDir))
         return null;
     let stat;
@@ -153,113 +149,94 @@ function extractionRefusalReason(extractDir) {
         return `extraction target is a symbolic link: ${extractDir}`;
     if (!stat.isDirectory())
         return `extraction target exists and is not a directory: ${extractDir}`;
-    if ((0, local_source_1.hasExtractionOwnershipV2)(extractDir))
+    const marker = readExtractionOwnershipV2(extractDir);
+    if (marker !== null) {
+        if (zipPath !== undefined && marker.archive !== path.basename(zipPath)) {
+            return (`extraction target ownership belongs to ${marker.archive}, not ${path.basename(zipPath)}; ` +
+                `it is never replaced: ${extractDir}`);
+        }
         return null;
+    }
     if (fs.readdirSync(extractDir).length === 0) {
-        return (`extraction target exists, is empty, and carries no v2 ownership marker, ` +
+        return (`extraction target exists, is empty, and carries no valid v2 ownership marker, ` +
             `so it is treated as user data and never replaced: ${extractDir}`);
     }
     if ((0, local_source_1.hasLegacyExtractionOwnership)(extractDir)) {
-        return (`extraction target carries a legacy ownership marker without the v2 schema, ` +
+        return (`extraction target carries a legacy ownership marker without the complete v2 provenance, ` +
             `so it is never replaced; remove it manually to re-extract: ${extractDir}`);
     }
-    return (`extraction target already exists and carries no ${local_source_1.LEGACY_EXTRACTION_OWNER_FILE} ownership marker, ` +
+    return (`extraction target already exists and carries no valid ${local_source_1.LEGACY_EXTRACTION_OWNER_FILE} ownership marker, ` +
         `so it is treated as user data and never removed: ${extractDir}`);
 }
-/**
- * Record that this tool owns an extraction directory, so a later run may refresh it.
- *
- * The marker is the v2 schema: it binds the directory to the exact archive bytes
- * it was extracted from, and destructive authority requires the exact schema and
- * owner, never a prefix match.
- */
-function writeExtractionOwnership(extractDir, zipPath) {
+/** Stamp exact provenance only after every member has verified. */
+function writeExtractionOwnership(extractDir, context) {
     fs.writeFileSync(path.join(extractDir, local_source_1.LEGACY_EXTRACTION_OWNER_FILE), JSON.stringify({
         schema: local_source_1.LOCAL_FILES_EXTRACTION_SCHEMA,
         owner: local_source_1.EXTRACTION_OWNER_ID,
-        archive: path.basename(zipPath),
-        archive_sha256: contentHashFile(zipPath),
+        archive: path.basename(context.zipPath),
+        archive_sha256: context.archiveSha256,
+        reader_version: context.readerVersion,
+        policy_fingerprint: context.policyFingerprint,
         created_at: new Date().toISOString(),
     }, null, 2), "utf8");
 }
 /**
- * Refresh extractDir and materialize allowed members into it.
- *
- * Admission runs through a shared `ArchiveExecutionContext`, so the archive is
- * preflighted once, against the resolved policy, at the depth its caller
- * actually occupies in the tree — never a hard-coded 0.
- *
- * When `allowedMembers` is set, only those canonical paths are written (omit
- * filter). Returns the number of members actually extracted.
- *
- * Throws rather than deleting when the target exists and is not provably this
- * tool's own output, and refuses the whole archive when canonical preflight
- * holds it. Admission is decided before the directory is refreshed, so a hostile
- * archive never reaches the point of removing anything.
+ * Standalone materialization convenience. Multi-archive runs use one shared
+ * resolution and one context per archive through expandArchivesUnderRoot.
  */
 function extractZip(zipPath, extractDir, allowedMembers, options) {
+    const resolution = options?.resolution ?? (0, archive_execution_1.resolveArchiveExecution)(options?.policy);
     const context = new archive_execution_1.ArchiveExecutionContext({
         zipPath,
         extractDir,
         depth: options?.depth ?? 0,
-        policy: options?.policy,
+        resolution,
     });
-    const refusal = extractionRefusalReason(extractDir);
+    try {
+        return materializeArchiveContext(context, allowedMembers).memberCount;
+    }
+    finally {
+        context.dispose();
+    }
+}
+function materializeArchiveContext(context, allowedMembers) {
+    const refusal = extractionRefusalReason(context.extractDir, context.zipPath);
     if (refusal !== null)
         throw new Error(`local-files: ${refusal}`);
-    // Admission is decided before the directory is refreshed. Traversal was already
-    // checked this early, but symlink members, entry-type violations, collisions and
-    // the resource ceilings were not checked here at all: an archive that is held
-    // now would previously have removed the operator's existing extraction and then
-    // expanded whatever the subprocess was willing to accept.
     if (!context.preflight.accepted) {
-        throw new Error(`local-files: refusing to extract ${path.basename(zipPath)}: ${context.holdReasons()}`);
+        throw new archive_execution_1.ArchiveExecutionHeldError(`refusing to extract ${path.basename(context.zipPath)}: ${context.holdReasons()}`);
     }
+    const sessionRefusal = context.sessionRefusalReason();
+    if (sessionRefusal !== null)
+        throw new archive_execution_1.ArchiveExecutionHeldError(sessionRefusal);
     const selected = context.planMembers(allowedMembers);
-    // Materialize into a same-directory candidate, never into the live target. A
-    // member that fails mid-write, a CRC mismatch, or a budget stop leaves the
-    // candidate to be removed while the operator's existing extraction is
-    // untouched. Only a complete, verified candidate is swapped into place.
-    const candidate = `${extractDir}.candidate-${crypto.randomUUID().slice(0, 8)}`;
-    // The candidate is removed on failure only when this run created it. If a
-    // directory already exists at the candidate path — a stale leftover, or a
-    // user directory that happens to share the name — mkdir fails and the
-    // pre-existing directory is never touched.
+    const candidate = `${context.extractDir}.candidate-${crypto.randomUUID().slice(0, 8)}`;
     let candidateCreated = false;
+    let expandedBytes = 0;
     try {
         fs.mkdirSync(candidate, { recursive: false });
         candidateCreated = true;
-        let expandedBytes = 0;
         for (const member of selected) {
-            expandedBytes += writeMember(zipPath, candidate, member, context.policy, context.budget.remainingBytes(), expandedBytes);
+            expandedBytes += writeMember(context, candidate, member, expandedBytes);
         }
-        // The marker proves ownership only once every member has landed.
-        writeExtractionOwnership(candidate, zipPath);
-        swapCandidateIntoPlace(candidate, extractDir);
+        writeExtractionOwnership(candidate, context);
+        swapCandidateIntoPlace(candidate, context.extractDir, context.zipPath);
+        candidateCreated = false;
     }
     catch (error) {
         if (candidateCreated)
             fs.rmSync(candidate, { recursive: true, force: true });
         throw error;
     }
-    return selected.length;
+    context.recordSuccess(expandedBytes);
+    return { memberCount: selected.length, expandedBytes };
 }
-/**
- * Replace `extractDir` with the completed candidate.
- *
- * A directory rename cannot replace a non-empty directory, so when the target
- * exists it is first moved aside to a backup path and restored if the candidate
- * rename fails. Ownership was re-verified immediately before this call, and the
- * backup is removed only after the swap succeeded, so the live target is never
- * the half-written one and a failed swap leaves the previous extraction in place.
- */
-function swapCandidateIntoPlace(candidate, extractDir) {
+/** Replace `extractDir` with a complete candidate and restore on swap failure. */
+function swapCandidateIntoPlace(candidate, extractDir, zipPath) {
     const hadPrevious = fs.existsSync(extractDir);
     const backup = hadPrevious ? `${extractDir}.previous-${crypto.randomUUID().slice(0, 8)}` : null;
     if (backup !== null) {
-        // Admission ran before the candidate was written; re-check right before the
-        // swap so a concurrent change to the target is not clobbered.
-        const refusal = extractionRefusalReason(extractDir);
+        const refusal = extractionRefusalReason(extractDir, zipPath);
         if (refusal !== null)
             throw new Error(`local-files: ${refusal}`);
         fs.renameSync(extractDir, backup);
@@ -272,10 +249,7 @@ function swapCandidateIntoPlace(candidate, extractDir) {
             try {
                 fs.renameSync(backup, extractDir);
             }
-            catch {
-                // Both directories remain on disk; nothing was lost, and the error below
-                // names the failure.
-            }
+            catch { }
         }
         throw error;
     }
@@ -283,40 +257,57 @@ function swapCandidateIntoPlace(candidate, extractDir) {
         fs.rmSync(backup, { recursive: true, force: true });
 }
 /**
- * Write one preflight-approved member and return the bytes it produced.
- *
- * The ceiling handed to the reader is the smaller of what the member and the
- * archive have left, so the decompressor itself stops a member that produces
- * more than it declared -- the runtime accounting a declared-size check cannot
- * provide. CRC is verified against the central directory before the bytes are
- * allowed to stand.
+ * Stream one staged member through byte ceilings, deadline and CRC verification.
+ * The sink is optional so dry-run can exercise the exact runtime integrity path
+ * without materializing anything in the source tree.
  */
-function writeMember(zipPath, extractDir, member, policy, sessionRemainingBytes, expandedBytes) {
+function streamVerifiedMember(context, member, expandedBytes, sink) {
+    const ceiling = Math.min(context.policy.maxSingleMemberUncompressedBytes, Math.max(0, context.policy.maxTotalUncompressedBytesPerArchive - expandedBytes), Math.max(0, context.budget.remainingBytes() - expandedBytes));
+    const result = (0, zip_reader_1.streamZipMember)(context.stagedZipPath, member.entry, { maxUncompressedBytes: ceiling }, (chunk) => {
+        context.assertProcessingWithinBudget();
+        sink?.(chunk);
+    });
+    if (result.crc32 !== member.entry.crc32) {
+        throw new ArchiveIntegrityError(`extracted bytes for ${member.canonicalPath} do not match the CRC in the central directory`);
+    }
+    return result.bytesWritten;
+}
+/** Write one preflight-approved member from the immutable staged ZIP. */
+function writeMember(context, extractDir, member, expandedBytes) {
     const target = path.join(extractDir, member.canonicalPath);
-    // Defence in depth: preflight already rejects traversal, but the write is the
-    // irreversible step and it should not depend on an earlier check being right.
     const resolvedRoot = path.resolve(extractDir);
     if (path.resolve(target) !== resolvedRoot && !path.resolve(target).startsWith(resolvedRoot + path.sep)) {
         throw new Error(`local-files: refusing to write outside the extraction directory: ${member.canonicalPath}`);
     }
     fs.mkdirSync(path.dirname(target), { recursive: true });
-    const ceiling = Math.min(policy.maxSingleMemberUncompressedBytes, Math.max(0, policy.maxTotalUncompressedBytesPerArchive - expandedBytes), Math.max(0, sessionRemainingBytes - expandedBytes));
     const handle = fs.openSync(target, "w");
     try {
-        const result = (0, zip_reader_1.streamZipMember)(zipPath, member.entry, { maxUncompressedBytes: ceiling }, (chunk) => { fs.writeSync(handle, chunk); });
-        if (result.crc32 !== member.entry.crc32) {
-            throw new Error(`local-files: extracted bytes for ${member.canonicalPath} do not match the CRC in the central directory`);
-        }
-        return result.bytesWritten;
+        return streamVerifiedMember(context, member, expandedBytes, (chunk) => { fs.writeSync(handle, chunk); });
     }
     finally {
         fs.closeSync(handle);
     }
 }
+function verifyMembersWithoutMaterializing(context, selected) {
+    let expandedBytes = 0;
+    for (const member of selected) {
+        expandedBytes += streamVerifiedMember(context, member, expandedBytes);
+    }
+    return expandedBytes;
+}
+/**
+ * Files under an extraction, in code-point order.
+ *
+ * The order decides which nested archive is opened first, and the run-scoped
+ * session budget is consumed in that order: with `readdir` order, which nested
+ * archive was held under an exhausted budget depended on the host filesystem.
+ */
 function walkFiles(dir, out) {
     if (!fs.existsSync(dir))
         return;
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const entries = fs.readdirSync(dir, { withFileTypes: true })
+        .sort((a, b) => (0, ordering_1.compareCodePoints)(a.name, b.name));
+    for (const entry of entries) {
         const full = path.join(dir, entry.name);
         if (entry.isDirectory()) {
             if (entry.name.startsWith(".") || entry.name === "node_modules")
@@ -328,13 +319,6 @@ function walkFiles(dir, out) {
         }
     }
 }
-/**
- * Skip a directory during archive discovery.
- *
- * A `.l9extracted` suffix alone is not evidence that this tool produced the
- * directory, so the ownership marker must also be present. Otherwise the
- * directory is ordinary user content and is walked like any other.
- */
 function shouldSkipArchiveDir(name, omit, rel, absolute) {
     if (name.startsWith(".") || name === "node_modules")
         return true;
@@ -342,7 +326,7 @@ function shouldSkipArchiveDir(name, omit, rel, absolute) {
         return true;
     return isOmitted(omit, rel);
 }
-/** Discover expandable archives under root (does not enter existing *.l9extracted dirs). */
+/** Discover expandable archives under root. */
 function findArchives(root, omit) {
     const absRoot = path.resolve(root);
     const archives = [];
@@ -384,20 +368,32 @@ function contentHashFile(filePath) {
 /** Write `<zip>.l9meta.yaml` describing the archive and its extract location. */
 function writeArchiveSidecar(zipPath, extractDir, memberCount, extras = {}) {
     const sidecar = (0, comment_1.sidecarPathFor)(zipPath);
+    // A caller that already admitted an immutable snapshot supplies its hash and
+    // size in `extras`. Prefer those values without touching the live ZIP again;
+    // otherwise a source swap after extraction could make the sidecar describe
+    // different bytes or fail after the transactional tree had already committed.
+    const suppliedHash = extras.content_hash;
+    const suppliedSize = extras.size_bytes;
+    const contentHash = typeof suppliedHash === "string" ? suppliedHash : contentHashFile(zipPath);
+    const sizeBytes = typeof suppliedSize === "number" && Number.isFinite(suppliedSize)
+        ? suppliedSize
+        : fs.statSync(zipPath).size;
     const obj = {
         schema: "l9.archive-sidecar/v1",
         artifact_type: "archive",
         source_path: zipPath,
         file_name: path.basename(zipPath),
-        content_hash: contentHashFile(zipPath),
-        size_bytes: fs.statSync(zipPath).size,
+        content_hash: contentHash,
+        size_bytes: sizeBytes,
         extracted_to: extractDir,
         member_count: memberCount,
         injectable: false,
         expanded_by: "l9-meta-injector.local-files",
         ...extras,
     };
-    fs.writeFileSync(sidecar, (0, yaml_serialize_1.serializeYamlObject)(obj, { fences: true, trailingNewline: true }), "utf8");
+    // Staged beside the archive and renamed in, so a crash never leaves a
+    // truncated sidecar that the next run would read as this archive's record.
+    (0, durable_write_1.replaceFileAtomically)(sidecar, (0, yaml_serialize_1.serializeYamlObject)(obj, { fences: true, trailingNewline: true }));
     return sidecar;
 }
 function filterAllowedMembers(absRoot, extractDir, members, omit) {
@@ -421,17 +417,20 @@ function enqueueNestedZips(absRoot, extractDir, depth, maxDepth, omit, queue, om
         queue.push({ zipPath: f, depth: depth + 1 });
     }
 }
-function expandOneArchive(absRoot, zipPath, depth, opts, omit) {
+function expandOneArchive(absRoot, zipPath, depth, opts, omit, resolution) {
     const extractDir = extractDirFor(zipPath);
-    const members = listZipMembers(zipPath).filter((m) => !m.endsWith("/"));
-    const allowed = filterAllowedMembers(absRoot, extractDir, members, omit);
-    // Dry run is a promise of zero source-tree mutation, and sibling extraction is
-    // a source-tree mutation. But a dry run must run the same admission as a real
-    // run: the same preflight, the same ownership refusal, the same hold text —
-    // otherwise "what a real run would do" is a claim the code did not check.
-    if (opts.dryRun) {
-        const context = new archive_execution_1.ArchiveExecutionContext({ zipPath, extractDir, depth });
-        const refusal = extractionRefusalReason(extractDir);
+    let context;
+    try {
+        context = new archive_execution_1.ArchiveExecutionContext({ zipPath, extractDir, depth, resolution });
+    }
+    catch (error) {
+        const heldReason = expectedArchiveHoldReason(error);
+        if (heldReason === null)
+            throw error;
+        return { zipPath, extractDir, memberCount: 0, nestedDepth: depth, heldReason };
+    }
+    try {
+        const refusal = extractionRefusalReason(extractDir, zipPath);
         if (refusal !== null) {
             return { zipPath, extractDir, memberCount: 0, nestedDepth: depth, heldReason: refusal };
         }
@@ -444,43 +443,76 @@ function expandOneArchive(absRoot, zipPath, depth, opts, omit) {
                 heldReason: `refusing to extract ${path.basename(zipPath)}: ${context.holdReasons()}`,
             };
         }
-        const selected = context.planMembers(allowed);
+        const sessionRefusal = context.sessionRefusalReason();
+        if (sessionRefusal !== null) {
+            return { zipPath, extractDir, memberCount: 0, nestedDepth: depth, heldReason: sessionRefusal };
+        }
+        const members = context.preflight.members.map((member) => member.canonicalPath);
+        const allowed = filterAllowedMembers(absRoot, extractDir, members, omit);
+        const selected = context.planMembers(omit ? allowed : undefined);
+        if (opts.dryRun) {
+            try {
+                const verifiedBytes = verifyMembersWithoutMaterializing(context, selected);
+                context.recordSuccess(verifiedBytes);
+            }
+            catch (error) {
+                const heldReason = expectedArchiveHoldReason(error);
+                if (heldReason === null)
+                    throw error;
+                return { zipPath, extractDir, memberCount: 0, nestedDepth: depth, heldReason };
+            }
+            if (opts.verbose) {
+                process.stderr.write(`[l9-meta-injector] local-files: dry-run would extract ${zipPath} → ${extractDir} ` +
+                    `(depth=${depth}, members=${selected.length}/${members.length})\n`);
+            }
+            return {
+                zipPath,
+                extractDir,
+                memberCount: 0,
+                nestedDepth: depth,
+                heldReason: `dry-run: ${selected.length} member(s) would be extracted to ${extractDir}`,
+            };
+        }
         if (opts.verbose) {
-            process.stderr.write(`[l9-meta-injector] local-files: dry-run would extract ${zipPath} → ${extractDir} ` +
+            process.stderr.write(`[l9-meta-injector] local-files: extracting ${zipPath} → ${extractDir} ` +
                 `(depth=${depth}, members=${selected.length}/${members.length})\n`);
         }
+        let materialized;
+        try {
+            materialized = materializeArchiveContext(context, omit ? allowed : undefined);
+        }
+        catch (error) {
+            const heldReason = expectedArchiveHoldReason(error);
+            if (heldReason === null)
+                throw error;
+            return { zipPath, extractDir, memberCount: 0, nestedDepth: depth, heldReason };
+        }
+        const sidecarPath = writeArchiveSidecar(zipPath, extractDir, materialized.memberCount, {
+            content_hash: context.archiveSha256,
+            size_bytes: context.archiveCompressedBytes,
+            nested_depth: depth,
+            expanded_at: new Date().toISOString(),
+            members_omitted: members.length - allowed.length,
+            archive_reader_version: context.readerVersion,
+            archive_policy_fingerprint: context.policyFingerprint,
+        });
         return {
             zipPath,
             extractDir,
-            memberCount: 0,
+            memberCount: materialized.memberCount,
+            sidecarPath,
             nestedDepth: depth,
-            heldReason: `dry-run: ${selected.length} member(s) would be extracted to ${extractDir}`,
         };
     }
-    if (opts.verbose) {
-        process.stderr.write(`[l9-meta-injector] local-files: extracting ${zipPath} → ${extractDir} ` +
-            `(depth=${depth}, members=${allowed.length}/${members.length})\n`);
+    finally {
+        context.dispose();
     }
-    const refusal = extractionRefusalReason(extractDir);
-    if (refusal !== null) {
-        process.stderr.write(`[l9-meta-injector] local-files: refusing to expand ${zipPath}: ${refusal}\n`);
-        return { zipPath, extractDir, memberCount: 0, nestedDepth: depth, heldReason: refusal };
-    }
-    const memberCount = extractZip(zipPath, extractDir, omit ? allowed : undefined, { depth });
-    const sidecarPath = writeArchiveSidecar(zipPath, extractDir, memberCount, {
-        nested_depth: depth,
-        expanded_at: new Date().toISOString(),
-        members_omitted: members.length - allowed.length,
-    });
-    return { zipPath, extractDir, memberCount, sidecarPath, nestedDepth: depth };
 }
-/**
- * Expand all zips under root (and nested zips inside freshly extracted trees)
- * up to maxDepth. Writes archive sidecars unless dryRun. Honors `opts.omit`.
- */
+/** Expand all ZIPs under root with one acquisition-wide policy and budget. */
 function expandArchivesUnderRoot(root, opts) {
     const absRoot = path.resolve(root);
-    const maxDepth = opts.maxDepth ?? 3;
+    const resolution = (0, archive_execution_1.resolveArchiveExecution)(opts.archivePolicy);
+    const maxDepth = Math.min(opts.maxDepth ?? resolution.policy.maxNestedDepth, resolution.policy.maxNestedDepth);
     const archives = [];
     const extractedRoots = [];
     const omittedArchives = [];
@@ -501,12 +533,11 @@ function expandArchivesUnderRoot(root, opts) {
         const zipRel = relPosix(absRoot, zipPath);
         if (isOmitted(omit, zipRel)) {
             omittedArchives.push(zipRel);
-            if (opts.verbose) {
+            if (opts.verbose)
                 process.stderr.write(`[l9-meta-injector] local-files: omit archive ${zipRel}\n`);
-            }
             continue;
         }
-        const record = expandOneArchive(absRoot, zipPath, depth, opts, omit);
+        const record = expandOneArchive(absRoot, zipPath, depth, opts, omit, resolution);
         archives.push(record);
         if (record.heldReason !== undefined)
             continue;

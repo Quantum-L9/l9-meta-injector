@@ -70,6 +70,8 @@ const meta_schema_1 = require("./meta_schema");
 const omit_1 = require("./omit");
 const encoding_1 = require("./encoding");
 const ordering_1 = require("./ordering");
+const archive_formats_1 = require("./archive_formats");
+const durable_write_1 = require("./durable_write");
 /** Load and validate a canonical meta-schema YAML file. */
 function loadMetaSchema(filePath) {
     return (0, meta_schema_1.toMetaSchema)((0, meta_schema_1.parseCanonicalYaml)(fs.readFileSync(filePath, "utf8")));
@@ -115,7 +117,9 @@ function buildDuplicateClusters(records) {
 }
 const CODE_EXTS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".go", ".rs", ".java", ".c", ".h", ".cpp", ".hpp", ".cc", ".cs", ".rb", ".php", ".swift", ".kt", ".kts", ".scala", ".sh", ".bash", ".zsh", ".lua", ".r", ".jl", ".pl", ".pm", ".dart", ".ex", ".exs", ".ql", ".qls"]);
 const CONFIG_EXTS = new Set([".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", ".properties", ".env", ".lock", ".plist", ".tf", ".tfvars", ".sha256", ".sha1", ".md5"]);
-const ARCHIVE_EXTS = new Set([".zip", ".tar", ".gz", ".tgz", ".bz2", ".xz", ".7z", ".rar", ".jar", ".war"]);
+// One owner for "what is an archive": the acquirer's diagnostics and this
+// classifier's `artifact_type` used to disagree about `.zst`, `.lz4`, `.cab`, `.iso`.
+const ARCHIVE_EXTS = archive_formats_1.ARCHIVE_EXTENSIONS;
 const DOC_EXTS = new Set([".txt", ".rst", ".doc", ".docx", ".rtf", ".odt", ".pages"]);
 /** Extensionless / special basenames → inventory taxonomy (case-insensitive). */
 const BASENAME_TYPES = {
@@ -220,6 +224,10 @@ function walk(root, omit, skippedDirs, omittedPaths) {
             skippedDirs.push(`${dir}: ${err.message}`);
             return;
         }
+        // Code-point order: `readdir` order is whatever the filesystem returns, and
+        // the manifests are written in record order, so an unsorted walk made the
+        // same tree inventory differently on two hosts.
+        entries.sort((a, b) => (0, ordering_1.compareCodePoints)(a.name, b.name));
         for (const e of entries) {
             const abs = path.join(dir, e.name);
             const rel = path.relative(root, abs).split(path.sep).join("/");
@@ -228,36 +236,70 @@ function walk(root, omit, skippedDirs, omittedPaths) {
                 continue;
             }
             if (e.isDirectory()) {
-                out.push({ abs, isDir: true });
+                out.push({ abs, isDir: true, kind: "directory" });
                 rec(abs);
             }
             else if (e.isFile()) {
-                out.push({ abs, isDir: false });
+                out.push({ abs, isDir: false, kind: "file" });
+            }
+            else {
+                // A symlink, FIFO, socket or device used to vanish from the inventory
+                // without a trace. It is recorded, never opened, and never annotated.
+                out.push({ abs, isDir: false, kind: e.isSymbolicLink() ? "symlink" : "special" });
             }
         }
     }
     rec(root);
     return out;
 }
-function buildRecord(root, abs, isDir, cfg) {
+/**
+ * A link and a device are recorded without being read, so neither carries a
+ * classification derived from content — the same disposition local-source gives them.
+ */
+function unopenedClassification(kind) {
+    return {
+        type: "unknown",
+        confidence: 1,
+        evidence: kind === "symlink" ? "symbolic link, not traversed" : "special filesystem entry, not opened",
+        unknowns: [kind === "symlink" ? "symlink_not_traversed" : "special_filesystem_entry"],
+    };
+}
+/**
+ * Hash a regular file's raw bytes, or record why no hash was produced.
+ *
+ * Bytes, not a utf8-decoded string, so distinct binary payloads never collapse
+ * into one hash through replacement characters. A file whose bytes are an
+ * archive its name does not declare is still not opened — nothing is, on magic
+ * alone — but the fact is put on the record.
+ */
+function hashRegularFile(abs, fileName, size, hashMaxBytes, unknowns) {
+    if (size > hashMaxBytes) {
+        unknowns.push("content_hash_skipped:file_too_large");
+        return null;
+    }
+    const bytes = fs.readFileSync(abs);
+    const signature = (0, archive_formats_1.sniffArchiveSignature)(bytes.subarray(0, archive_formats_1.ARCHIVE_SIGNATURE_PROBE_BYTES));
+    if (signature !== null && (0, archive_formats_1.signatureContradictsName)(fileName, signature)) {
+        unknowns.push(`archive_signature:${signature}`);
+    }
+    return crypto.createHash("sha256").update(bytes).digest("hex");
+}
+function buildRecord(root, abs, isDir, cfg, kind = isDir ? "directory" : "file") {
     const relative = path.relative(root, abs).split(path.sep).join("/") || ".";
     const fileName = path.basename(abs);
     const ext = isDir ? "" : path.extname(abs);
-    const cls = classifyInventory(relative, fileName, ext, isDir);
+    const cls = kind === "symlink" || kind === "special"
+        ? unopenedClassification(kind)
+        : classifyInventory(relative, fileName, ext, isDir);
     let size = null, modified = null, hash = null;
     const unknowns = [...cls.unknowns];
     try {
-        const st = fs.statSync(abs);
-        size = isDir ? null : st.size;
+        // lstat, never stat: the entry itself is the observation, not what it points at.
+        const st = fs.lstatSync(abs);
         modified = st.mtime.toISOString();
-        if (!isDir && size !== null && size <= cfg.hashMaxBytes) {
-            // Hash the raw BYTES (not a utf8-decoded string) so distinct binary payloads
-            // don't collapse into the same hash via replacement chars — keeps identity and
-            // the dedup view correct for non-UTF8 inputs.
-            hash = crypto.createHash("sha256").update(fs.readFileSync(abs)).digest("hex");
-        }
-        else if (!isDir && size !== null) {
-            unknowns.push("content_hash_skipped:file_too_large");
+        if (kind === "file") {
+            size = st.size;
+            hash = hashRegularFile(abs, fileName, size, cfg.hashMaxBytes, unknowns);
         }
     }
     catch (err) {
@@ -332,8 +374,8 @@ function inventoryTree(config) {
     const typeDistribution = {};
     let files = 0, folders = 0;
     const schema = config.schema;
-    for (const { abs, isDir } of entries) {
-        const rec = buildRecord(root, abs, isDir, cfg);
+    for (const { abs, isDir, kind } of entries) {
+        const rec = buildRecord(root, abs, isDir, cfg, kind);
         // The meta object written to headers/sidecars: schema-driven when provided, else default.
         let metaObj;
         if (schema) {
@@ -356,6 +398,10 @@ function inventoryTree(config) {
         else
             files++;
         if (cfg.dryRun)
+            continue;
+        // Never annotate through a link or into a device: opening either would read
+        // or write somewhere the operator never named.
+        if (kind === "symlink" || kind === "special")
             continue;
         if (isDir) {
             if (cfg.writeSidecars && cfg.folderSidecars && (0, meta_schema_1.targetIncludes)(schema, "sidecar")) {
@@ -437,7 +483,7 @@ function writeSidecar(abs, obj, unknowns) {
     // A no-op catch here silently drops the metadata AND contradicts the old comment
     // that claimed it was "recorded in manifest" (findings OBS-006 / PRD-002). Record it.
     try {
-        fs.writeFileSync((0, comment_1.sidecarPathFor)(abs), serializeYaml(obj), "utf8");
+        (0, durable_write_1.replaceFileAtomically)((0, comment_1.sidecarPathFor)(abs), serializeYaml(obj));
     }
     catch (err) {
         unknowns?.push(`sidecar_write_failed:${err.message}`);
@@ -463,7 +509,7 @@ function writeFolderSidecar(dir, metaObj, unknowns) {
     if (fs.existsSync(p))
         return;
     try {
-        fs.writeFileSync(p, serializeYaml(metaObj), "utf8");
+        (0, durable_write_1.replaceFileAtomically)(p, serializeYaml(metaObj));
     }
     catch (err) {
         unknowns?.push(`sidecar_write_failed:${err.message}`);

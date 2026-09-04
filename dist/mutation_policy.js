@@ -11,6 +11,8 @@ exports.INLINE_MANAGED_ARTIFACT_TYPES = exports.CARRIER_PRECEDENCE = void 0;
 exports.resolveCarrierDecision = resolveCarrierDecision;
 exports.resolveCarrierDecisions = resolveCarrierDecisions;
 exports.assertCarrierDecisionCoverage = assertCarrierDecisionCoverage;
+const ordering_1 = require("./ordering");
+const glob_1 = require("./glob");
 exports.CARRIER_PRECEDENCE = [
     "hard_skip",
     "inventory_only",
@@ -151,37 +153,9 @@ function posixExtname(value) {
     const index = base.lastIndexOf(".");
     return index <= 0 ? "" : base.slice(index);
 }
-function globToRegExp(pattern) {
-    let source = "^";
-    for (let index = 0; index < pattern.length; index++) {
-        const char = pattern[index];
-        if (char === "*" && pattern[index + 1] === "*") {
-            if (pattern[index + 2] === "/") {
-                source += "(?:.*/)?";
-                index += 2;
-            }
-            else {
-                source += ".*";
-                index += 1;
-            }
-            continue;
-        }
-        if (char === "*") {
-            source += "[^/]*";
-            continue;
-        }
-        if (char === "?") {
-            source += "[^/]";
-            continue;
-        }
-        source += char.replace(/[|\\{}()[\]^$+?.]/g, String.raw `\$&`);
-    }
-    source += "$";
-    return new RegExp(source);
-}
 function matchesInlineAllow(relativePath, patterns) {
     for (const pattern of patterns) {
-        if (globToRegExp(pattern).test(relativePath))
+        if ((0, glob_1.globToRegExp)(pattern).test(relativePath))
             return pattern;
     }
     return undefined;
@@ -287,7 +261,7 @@ function resolveCarrierDecisions(input) {
         seen.add(result.path);
         return result;
     });
-    return decisions.sort((left, right) => left.path.localeCompare(right.path));
+    return decisions.sort((left, right) => (0, ordering_1.compareCodePoints)(left.path, right.path));
 }
 function assertCarrierDecisionCoverage(subjects, decisions) {
     const expected = new Set(subjects.map((subject) => normalizeRelativePath(subject.path)));

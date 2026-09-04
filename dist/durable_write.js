@@ -37,6 +37,7 @@ exports.nodeFileOps = void 0;
 exports.writeFileDurably = writeFileDurably;
 exports.syncDirectory = syncDirectory;
 exports.commitFileDurably = commitFileDurably;
+exports.replaceFileAtomically = replaceFileAtomically;
 // durable_write.ts — staged, synced, renamed, synced.
 //
 // Several places in this package write a file that a later run will read back and
@@ -136,6 +137,75 @@ function commitFileDurably(input) {
         ...(input.between !== undefined ? { between: input.between } : {}),
     });
     ops.renameSync(input.staging, input.target);
+    syncDirectory(directory, ops);
+}
+/**
+ * Replace (or create) a regular file atomically, staging beside it.
+ *
+ * The direct-write mutation paths — comment and frontmatter injection, adjacent
+ * sidecars, the archive sidecar — used `fs.writeFileSync` on the target itself.
+ * That is a truncate followed by a write: a crash, a full disk or a signal
+ * between the two leaves the source file empty or cut short, with no backup and
+ * no journal to recover from. It also writes through the existing inode, so a
+ * target that is a hard link to a file outside the governed root rewrites that
+ * outside file as well.
+ *
+ * Staging a sibling and renaming it in closes both: the target is either the old
+ * bytes or the complete new bytes, and the rename gives the name a fresh inode,
+ * leaving any other link to the old bytes untouched. An existing target keeps its
+ * permission bits; a new target receives `mode` (default 0644).
+ *
+ * The staging name begins with a dot so a crash cannot leave a look-alike input
+ * beside the target, and carries the pid and a counter so concurrent writers do
+ * not collide. A symlink or non-file at the target is refused rather than
+ * replaced: following it would write somewhere the caller never named.
+ */
+let stagingCounter = 0;
+function replaceFileAtomically(target, contents, options = {}) {
+    const ops = options.ops ?? exports.nodeFileOps;
+    let mode = options.mode ?? 0o644;
+    let existing = null;
+    try {
+        existing = fs.lstatSync(target);
+    }
+    catch {
+        existing = null;
+    }
+    if (existing !== null) {
+        if (existing.isSymbolicLink())
+            throw new Error(`refusing to replace a symbolic link in place: ${target}`);
+        if (!existing.isFile())
+            throw new Error(`refusing to replace a non-regular file: ${target}`);
+        mode = existing.mode & 0o777;
+    }
+    const directory = path.dirname(target);
+    const staging = path.join(directory, `.${path.basename(target)}.l9stage-${process.pid}-${(stagingCounter++).toString(36)}`);
+    const handle = ops.openSync(staging, "wx", mode);
+    let staged = false;
+    try {
+        // The mode passed to open is subject to the process umask; an existing
+        // file's bits are restored exactly, on the descriptor about to be synced.
+        if (existing !== null)
+            fs.fchmodSync(handle, mode);
+        if (Buffer.isBuffer(contents))
+            fs.writeFileSync(handle, contents);
+        else
+            ops.writeSync(handle, contents);
+        ops.fsyncSync(handle);
+        staged = true;
+    }
+    finally {
+        ops.closeSync(handle);
+        if (!staged)
+            fs.rmSync(staging, { force: true });
+    }
+    try {
+        ops.renameSync(staging, target);
+    }
+    catch (error) {
+        fs.rmSync(staging, { force: true });
+        throw error;
+    }
     syncDirectory(directory, ops);
 }
 //# sourceMappingURL=durable_write.js.map

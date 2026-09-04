@@ -26,6 +26,7 @@ import {
   type FileMutationIntent,
 } from "./file_transaction";
 import type { AuthorityConflict } from "./operation_contracts";
+import { compareCodePoints } from "./ordering";
 
 function sha256(bytes: Buffer | string): string {
   return createHash("sha256").update(bytes).digest("hex");
@@ -324,7 +325,7 @@ export async function runSkillsPipelineAsync(config: SkillsPipelineConfig): Prom
 
   let repositoryMutated = false;
   if (!config.dryRun && intents.length > 0) {
-    const ordered = [...intents].sort((left, right) => left.path.localeCompare(right.path));
+    const ordered = [...intents].sort((left, right) => compareCodePoints(left.path, right.path));
     const transaction = executeFileTransaction(root, ordered, {
       validate: () => validateSkillsCommit(root, ordered),
     });

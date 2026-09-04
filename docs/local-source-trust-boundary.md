@@ -44,10 +44,13 @@ missed — and the rules are checked first.
 
 **Preflight decides before any byte is written.** `src/archive_preflight.ts` judges the
 complete central directory. A member is refused for an absolute, drive-absolute, UNC,
-traversing, NUL-bearing, over-long, or root-escaping path; for being a symlink, device,
-socket or FIFO; for being encrypted; for using an unsupported compression method; for
-duplicating another member exactly; or for colliding with another member after Unicode
-NFC normalization and a deterministic case fold. Collisions are computed from Unicode
+traversing, NUL-bearing, over-long, or root-escaping path; for a path component longer
+than 255 bytes; for being a symlink, device, socket or FIFO; for being encrypted; for
+using an unsupported compression method; for duplicating another member exactly; for
+being declared as a file while another member uses the same path as a directory; or
+for colliding with another member after Unicode NFC normalization and a deterministic
+case fold. Rules that depend on more than one member are judged after the whole
+directory is read, so the verdict never depends on central-directory order. Collisions are computed from Unicode
 rules rather than from host filesystem behavior, so an archive is judged identically on
 a case-sensitive and a case-insensitive machine.
 
@@ -96,9 +99,23 @@ times, observation wall clock, usernames and hostnames never cross it.
 
 ## Known limits
 
-- **ZIP only, in v1.** `tar`, `tgz`, `gz`, `bz2`, `xz`, `7z`, `rar`, `jar`, `war` and
-  similar are classified as archives, hashed, and reported with
-  `archive.format_not_expanded`. No external tool is consulted to guess at them.
+- **ZIP only, in v1.** `tar`, `tgz`, `tbz`, `tbz2`, `txz`, `tzst`, `gz`, `bz2`, `xz`,
+  `zst`, `lz4`, `7z`, `rar`, `jar`, `war`, `cab` and `iso` are classified as archives,
+  hashed, and reported with `archive.format_not_expanded`. The list lives in
+  `src/archive_formats.ts` and every surface reads it there. No external tool is
+  consulted to guess at them, and no TAR reader exists: a tarball with a traversal
+  member, a symlink or device entry, a lying size, a corrupt checksum or a truncated
+  stream is held closed exactly like a benign one (`tests/tarball_rejection_matrix.test.ts`).
+- **Signatures are reported, not acted on.** A file whose leading bytes carry a
+  ZIP, tar (ustar), gzip, bzip2, xz, zstd, 7z or rar signature that its name does not
+  declare gains `archive_signature:<format>` on its record and a
+  `local-source.archive_signature_detected` diagnostic. Nothing is opened on magic
+  bytes. A pre-POSIX tar without the ustar magic is not detected.
+- **Hidden entries are observed.** Dotfiles and dot-directories under the source are
+  ordinary entries; only `.git`, `node_modules`, this package's own generated
+  artifacts, and omit patterns exclude anything. A host failure while staging a member
+  (permissions, a full disk) is thrown rather than reported as a property of the
+  archive, and the scratch root is disposed on the way out.
 - **Member name encoding.** A member name stored without the UTF-8 flag is decoded as
   UTF-8 and flagged when that is lossy. Historical CP437 names are not transcoded.
 - **Time-of-check to time-of-use on the source root.** The archive is hashed and read

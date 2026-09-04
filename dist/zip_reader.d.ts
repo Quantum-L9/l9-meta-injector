@@ -34,13 +34,7 @@ export interface ZipDirectory {
 export declare class ZipFormatError extends Error {
     constructor(message: string);
 }
-/**
- * Read an archive's central directory.
- *
- * The central directory — not the local headers — is the authority for what an
- * archive claims to contain, so preflight can run over the complete member list
- * before any extraction begins.
- */
+/** Read an archive's central directory. */
 export declare function readZipCentralDirectory(archivePath: string): ZipDirectory;
 /** Incremental CRC-32, matching the checksum a ZIP central directory records. */
 export declare class Crc32 {
@@ -61,23 +55,5 @@ export interface ZipMemberStreamResult {
     bytesWritten: number;
     crc32: number;
 }
-/**
- * Read one member and hand its bytes to `sink` in chunks.
- *
- * `maxUncompressedBytes` is enforced by the decompressor itself, not by trusting
- * the central directory: a member that understates its uncompressed size still
- * cannot produce more than the ceiling, because zlib aborts at the limit and the
- * sink never sees the excess. That is the runtime accounting a declared-size
- * check alone cannot provide.
- *
- * The two paths do not cost the same memory, and the difference is deliberate.
- * A stored member is read incrementally, so an uncompressed archive of any size
- * costs one chunk. A deflated member is inflated synchronously and held whole:
- * peak cost is its compressed bytes plus its inflated bytes, and the chunking
- * below is a delivery detail, not evidence of streaming. What bounds that is
- * `maxUncompressedBytes`, enforced inside zlib, together with the archive- and
- * member-level ceilings the caller derives from the archive policy. Within
- * those ceilings the buffering is bounded; there is no size at which this
- * becomes a streaming inflate. Raising them raises real peak memory.
- */
+/** Read one member and hand its bytes to `sink` in chunks. */
 export declare function streamZipMember(archivePath: string, entry: ZipCentralEntry, limits: ZipMemberStreamLimits, sink: (chunk: Buffer) => void): ZipMemberStreamResult;

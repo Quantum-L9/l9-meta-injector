@@ -6,6 +6,8 @@
  * across checkout locations and operating systems.
  */
 
+import { compareCodePoints } from "./ordering";
+
 export const DISCOVERY_DISPOSITIONS = [
   "eligible",
   "traversed_directory",
@@ -13,6 +15,7 @@ export const DISCOVERY_DISPOSITIONS = [
   "hidden_control",
   "generated_artifact",
   "extension_filtered",
+  "glob_filtered",
   "known_binary",
   "binary_detected",
   "unsupported_encoding",
@@ -60,9 +63,9 @@ export function emptyDiscoverySummary(): DiscoverySummary {
 
 export function summarizeDiscovery(entries: DiscoveryLedgerEntry[]): DiscoverySummary {
   const sorted = [...entries].sort((a, b) => {
-    const byPath = a.path.localeCompare(b.path);
+    const byPath = compareCodePoints(a.path, b.path);
     if (byPath !== 0) return byPath;
-    return a.disposition.localeCompare(b.disposition);
+    return compareCodePoints(a.disposition, b.disposition);
   });
   const summary = emptyDiscoverySummary();
   summary.entries = sorted;

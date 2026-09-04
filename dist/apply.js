@@ -46,6 +46,7 @@ const file_transaction_1 = require("./file_transaction");
 const inject_1 = require("./inject");
 const discovery_contracts_1 = require("./discovery_contracts");
 const verify_1 = require("./verify");
+const ordering_1 = require("./ordering");
 function sha256(bytes) {
     return (0, node_crypto_1.createHash)("sha256").update(bytes).digest("hex");
 }
@@ -160,7 +161,7 @@ function buildMutationIntents(root, plan, outDir) {
             mode: 0o644,
         });
     }
-    return intents.sort((left, right) => left.path.localeCompare(right.path));
+    return intents.sort((left, right) => (0, ordering_1.compareCodePoints)(left.path, right.path));
 }
 function validateCommittedPlan(root, plan) {
     for (const planned of plan.inlinePlans) {

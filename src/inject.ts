@@ -17,8 +17,9 @@ import { parseCanonicalYaml } from "./meta_schema";
 import { inspectFrontMatterDocument, patchManagedFrontMatter } from "./frontmatter_patch";
 import {
   resolveStrategy, StrategySpec, frontMatterInner, yamlToBlock, stripInjectedBlock,
-  extractInjectedYaml, applyCommentInjection, sidecarPathFor,
+  extractInjectedYaml, applyCommentInjection, sidecarPathFor, detectNewlineConvention,
 } from "./comment";
+import { replaceFileAtomically } from "./durable_write";
 
 // Parse the inner YAML of an existing injected header into a plain object.
 // Delegates to the canonical parser (meta_schema.ts) so all parsing rules —
@@ -120,8 +121,11 @@ function buildInjection(filePath: string, finalMeta: NormalizedMeta, ctx: ReadCt
   }
 
   if (ctx.spec.strategy === "line-comment" || ctx.spec.strategy === "block-comment") {
-    const block = yamlToBlock(frontMatterInner(yamlFm), ctx.spec);
-    const newContent = applyCommentInjection(ctx.cleanBody, block);
+    // The block adopts the file's own line-ending convention and sits after any
+    // BOM, so the only bytes that change are the block's (DATA-002).
+    const newline = detectNewlineConvention(ctx.cleanBody);
+    const block = yamlToBlock(frontMatterInner(yamlFm), ctx.spec, newline);
+    const newContent = applyCommentInjection(ctx.cleanBody, block, newline);
     const postBodyHash = contentHash(stripInjectedBlock(newContent, ctx.spec));
     return { targetPath: filePath, newContent, addedLines: block, postBodyHash, strategy: ctx.spec.strategy };
   }
@@ -168,10 +172,12 @@ function writeInjection(filePath: string, built: Built, diffs: FieldDiff[], opts
       if (opts.verbose) process.stderr.write(`[dry-run] ${out.dryRunDiffPath}\n`);
     }
   } else {
-    fs.writeFileSync(built.targetPath, built.newContent, "utf8");
+    // Staged beside the target and renamed in: the source is never truncated
+    // mid-write, and a hard link to it elsewhere keeps its old bytes.
+    replaceFileAtomically(built.targetPath, built.newContent);
     if (opts.writeInjectLog && diffs.some((d) => d.action !== "keep")) {
       out.injectLogPath = filePath + ".inject.log";
-      fs.writeFileSync(out.injectLogPath, diffsToLogYaml(filePath, diffs, new Date().toISOString()), "utf8");
+      replaceFileAtomically(out.injectLogPath, diffsToLogYaml(filePath, diffs, new Date().toISOString()));
     }
     if (opts.verbose) process.stderr.write(`[inject:${built.strategy}] ${built.targetPath}\n`);
   }

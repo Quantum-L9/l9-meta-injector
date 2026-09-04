@@ -14,6 +14,8 @@ import {
   DiscoverySummary,
   summarizeDiscovery,
 } from "./discovery_contracts";
+import { compareCodePoints } from "./ordering";
+import { compileDiscoveryGlob } from "./glob";
 
 /** Injector-generated adjacent artifacts must never be rediscovered as inputs. */
 function isGeneratedArtifact(name: string): boolean {
@@ -89,8 +91,9 @@ function record(
 }
 
 export function discoverFiles(root: string, glob: string, opts: FindFilesOptions = {}): DiscoveryResult {
-  const extMatch = /\*\.([a-z0-9]+)$/i.exec(glob);
-  const extFilter: string | null = extMatch ? `.${extMatch[1].toLowerCase()}` : null;
+  // The scope is validated and compiled before the root is opened: a pattern the dialect
+  // cannot express is refused here rather than matching nothing (or everything) later.
+  const scope = compileDiscoveryGlob(glob);
   const absRoot = path.resolve(root);
   let rootStat: fs.Stats;
   try {
@@ -122,7 +125,7 @@ export function discoverFiles(root: string, glob: string, opts: FindFilesOptions
       return;
     }
 
-    entries.sort((a, b) => a.name.localeCompare(b.name));
+    entries.sort((a, b) => compareCodePoints(a.name, b.name));
     for (const entry of entries) {
       const full = path.join(directory, entry.name);
       const rel = toPosix(path.relative(absRoot, full));
@@ -183,8 +186,14 @@ export function discoverFiles(root: string, glob: string, opts: FindFilesOptions
         record(ledger, rel, "file", "hidden_control", "hidden control file is reserved for authority scanning", stat.size);
         continue;
       }
-      if (extFilter && !entry.name.toLowerCase().endsWith(extFilter)) {
-        record(ledger, rel, "file", "extension_filtered", `file does not match requested ${extFilter} filter`, stat.size);
+      if (!scope.matches(rel)) {
+        // A `*.ext` tail that fails on the extension keeps the historical disposition so
+        // existing reports stay comparable; every other mismatch is a path-scope decision.
+        if (scope.extensionFilter && !entry.name.toLowerCase().endsWith(scope.extensionFilter)) {
+          record(ledger, rel, "file", "extension_filtered", `file does not match requested ${scope.extensionFilter} filter`, stat.size);
+        } else {
+          record(ledger, rel, "file", "glob_filtered", `file does not match discovery glob ${scope.pattern}`, stat.size);
+        }
         continue;
       }
 
@@ -236,7 +245,7 @@ export function discoverFiles(root: string, glob: string, opts: FindFilesOptions
   };
 
   walk(absRoot);
-  files.sort((a, b) => a.localeCompare(b));
+  files.sort(compareCodePoints);
   return { files, summary: summarizeDiscovery(ledger) };
 }
 

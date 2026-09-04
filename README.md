@@ -329,10 +329,11 @@ and is not: [`docs/corpus-cache.md`](docs/corpus-cache.md).
 ### Legacy archive materialization
 
 `npm run pipeline -- <root> --local-files` is a **mutating materialization** workflow,
-not an observation one (ADR-016, hardened by ADR-036). It expands `.zip` archives into
-sibling `*.l9extracted/` directories, writes `<zip>.l9meta.yaml` sidecars, and injects
-the extracted members in place. It requires system `unzip`. Default pipeline mode still
-skips archives.
+not an observation one (ADR-016, hardened by ADR-036, ADR-044 and ADR-045). It expands
+`.zip` archives into sibling `*.l9extracted/` directories, writes `<zip>.l9meta.yaml`
+sidecars, and injects the extracted members in place. No system `unzip` is involved:
+the package's own ZIP reader and preflight admit every archive. Default pipeline mode
+still skips archives, and TAR or compressed tarballs are never expanded on any path.
 
 It now refuses to replace an extraction target that carries no ownership marker — a
 user directory named `Foo.l9extracted` is never deleted — and its dry run performs zero

@@ -56,3 +56,7 @@ export declare function commitFileDurably(input: {
     between?: () => void;
     ops?: DurableFileOps;
 }): void;
+export declare function replaceFileAtomically(target: string, contents: string | Buffer, options?: {
+    mode?: number;
+    ops?: DurableFileOps;
+}): void;

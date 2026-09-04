@@ -87,7 +87,9 @@ interface Classification {
 }
 /** Deterministic, evidence-based classification into the ArtifactInventory taxonomy. */
 export declare function classifyInventory(relPath: string, fileName: string, ext: string, isDir: boolean): Classification;
-export declare function buildRecord(root: string, abs: string, isDir: boolean, cfg: Required<Pick<InventoryConfig, "sourceSystem" | "hashMaxBytes" | "now">>): InventoryRecord;
+/** What a directory entry is, decided without following anything. */
+export type InventoryEntryKind = "file" | "directory" | "symlink" | "special";
+export declare function buildRecord(root: string, abs: string, isDir: boolean, cfg: Required<Pick<InventoryConfig, "sourceSystem" | "hashMaxBytes" | "now">>, kind?: InventoryEntryKind): InventoryRecord;
 /**
  * Run an inventory over a filesystem root.
  *

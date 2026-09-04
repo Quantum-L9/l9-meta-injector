@@ -52,6 +52,7 @@ const llm_1 = require("./llm");
 const meta_schema_1 = require("./meta_schema");
 const frontmatter_patch_1 = require("./frontmatter_patch");
 const comment_1 = require("./comment");
+const durable_write_1 = require("./durable_write");
 // Parse the inner YAML of an existing injected header into a plain object.
 // Delegates to the canonical parser (meta_schema.ts) so all parsing rules —
 // quoted-string escaping, inline lists, depth guards — are applied consistently.
@@ -124,8 +125,11 @@ function buildInjection(filePath, finalMeta, ctx) {
         };
     }
     if (ctx.spec.strategy === "line-comment" || ctx.spec.strategy === "block-comment") {
-        const block = (0, comment_1.yamlToBlock)((0, comment_1.frontMatterInner)(yamlFm), ctx.spec);
-        const newContent = (0, comment_1.applyCommentInjection)(ctx.cleanBody, block);
+        // The block adopts the file's own line-ending convention and sits after any
+        // BOM, so the only bytes that change are the block's (DATA-002).
+        const newline = (0, comment_1.detectNewlineConvention)(ctx.cleanBody);
+        const block = (0, comment_1.yamlToBlock)((0, comment_1.frontMatterInner)(yamlFm), ctx.spec, newline);
+        const newContent = (0, comment_1.applyCommentInjection)(ctx.cleanBody, block, newline);
         const postBodyHash = (0, extract_1.contentHash)((0, comment_1.stripInjectedBlock)(newContent, ctx.spec));
         return { targetPath: filePath, newContent, addedLines: block, postBodyHash, strategy: ctx.spec.strategy };
     }
@@ -160,10 +164,12 @@ function writeInjection(filePath, built, diffs, opts) {
         }
     }
     else {
-        fs.writeFileSync(built.targetPath, built.newContent, "utf8");
+        // Staged beside the target and renamed in: the source is never truncated
+        // mid-write, and a hard link to it elsewhere keeps its old bytes.
+        (0, durable_write_1.replaceFileAtomically)(built.targetPath, built.newContent);
         if (opts.writeInjectLog && diffs.some((d) => d.action !== "keep")) {
             out.injectLogPath = filePath + ".inject.log";
-            fs.writeFileSync(out.injectLogPath, (0, reconcile_fields_1.diffsToLogYaml)(filePath, diffs, new Date().toISOString()), "utf8");
+            (0, durable_write_1.replaceFileAtomically)(out.injectLogPath, (0, reconcile_fields_1.diffsToLogYaml)(filePath, diffs, new Date().toISOString()));
         }
         if (opts.verbose)
             process.stderr.write(`[inject:${built.strategy}] ${built.targetPath}\n`);
