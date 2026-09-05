@@ -98,7 +98,7 @@ const STATUS_TERMS: { object: string; pattern: RegExp }[] = [
 const REPLACEMENT_PATTERNS: RegExp[] = [
   /\b(?:ssot\s+)?replacement\s*:\s*(.+)$/i,
   /\breplaced\s+by\s+(.+)$/i,
-  /\buse\s+\[?([A-Za-z0-9._\-]+\/[A-Za-z0-9._\-]+)\]?\s+instead\b/i,
+  /\buse\s+\[?([A-Za-z0-9._-]+\/[A-Za-z0-9._-]+)\]?\s+instead\b/i,
 ];
 
 /** Self-description claims that assert a current role. */
@@ -179,8 +179,8 @@ export const repositoryStatusExtractor: Extractor = {
 // ─────────────────── python-route-observation/v1 ───────────────────
 
 /** `@app.get("/health")` and friends, including `@router.post(...)`. */
-const ROUTE_DECORATOR = /^\s*@([A-Za-z_][A-Za-z0-9_]*)\.(get|post|put|patch|delete|head|options)\s*\(\s*["']([^"']+)["']/;
-const DEF_LINE = /^\s*(?:async\s+)?def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/;
+const ROUTE_DECORATOR = /^\s*@([A-Za-z_]\w*)\.(get|post|put|patch|delete|head|options)\s*\(\s*["']([^"']+)["']/;
+const DEF_LINE = /^\s*(?:async\s+)?def\s+([A-Za-z_]\w*)\s*\(/;
 
 /** Markers observable inside a handler body. Reported, never interpreted. */
 const BODY_MARKERS: { object: string; pattern: RegExp }[] = [

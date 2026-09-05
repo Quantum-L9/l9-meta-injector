@@ -397,7 +397,7 @@ describe("local source — nanosecond file state", () => {
     observe({ path: root }, (observation) => {
       expect(observation.diagnostics.filter((d) => d.code === "local-source.source_changed_during_observation"))
         .toEqual([]);
-      expect(observation.inventory.records.length).toBe(1);
+      expect(observation.inventory.records).toHaveLength(1);
       expect(observation.stable).toBe(true);
     });
   });

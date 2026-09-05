@@ -356,7 +356,7 @@ function collectSequenceItems(raw, block, key) {
         const blockLine = block[k];
         if (blockLine.text === "" || /^\s*#/.test(blockLine.text))
             continue;
-        const itemMatch = blockLine.text.match(/^(\s+)-\s+(.+)$/);
+        const itemMatch = /^(\s+)-\s+(.+)$/.exec(blockLine.text);
         if (!itemMatch)
             return reject(`nested map or multiline value under '${key}' is not supported`, blockLine.number);
         if (!indent)

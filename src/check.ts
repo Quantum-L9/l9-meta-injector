@@ -58,7 +58,8 @@ function snapshotRepository(root: string): RepositorySnapshot {
       snapshot.set(toPosix(path.relative(repositoryRoot, directory)) || ".", { kind: "unreadable", mode: 0, error: failure(error) });
       return;
     }
-    for (const entry of entries.sort((a, b) => compareCodePoints(a.name, b.name))) {
+    entries.sort((a, b) => compareCodePoints(a.name, b.name));
+    for (const entry of entries) {
       if (entry.name === ".git" || entry.name === "node_modules") continue;
       const absolute = path.join(directory, entry.name);
       const relative = toPosix(path.relative(repositoryRoot, absolute));

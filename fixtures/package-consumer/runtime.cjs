@@ -1,5 +1,5 @@
 "use strict";
-const assert=require("assert");
+const assert=require("node:assert");
 const root=require("l9-meta-injector");
 const inventory=require("l9-meta-injector/inventory");
 const schema=require("l9-meta-injector/schema");

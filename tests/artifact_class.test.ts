@@ -6,7 +6,7 @@ import {
 import { SemanticArtifactClass } from "../src/schema";
 import { classifyWithSemantics } from "../src/classify";
 
-test("exactly 17 semantic classes", () => expect(SEMANTIC_ARTIFACT_CLASSES.length).toBe(17));
+test("exactly 17 semantic classes", () => expect(SEMANTIC_ARTIFACT_CLASSES).toHaveLength(17));
 
 test("semantic classes are unique", () =>
   expect(new Set(SEMANTIC_ARTIFACT_CLASSES).size).toBe(SEMANTIC_ARTIFACT_CLASSES.length));

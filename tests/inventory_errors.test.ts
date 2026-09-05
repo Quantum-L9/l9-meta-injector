@@ -24,7 +24,7 @@ describe("inventory surfaces swallowed errors (OBS-004/006/007, PRD-002)", () =>
     const root = tmp(); const asFile = path.join(root, "not-a-dir");
     fs.writeFileSync(asFile, "x\n");
     const r = inventoryTree({ root: asFile, outDir: tmp(), dryRun: true, now: "2026-01-01T00:00:00.000Z" });
-    expect(r.skippedDirs.length).toBe(1);
+    expect(r.skippedDirs).toHaveLength(1);
     expect(r.skippedDirs[0]).toContain(asFile);
     expect(r.total).toBe(0);
     expect(stderr).toHaveBeenCalled();

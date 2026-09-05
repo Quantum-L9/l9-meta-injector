@@ -42,7 +42,6 @@ const schema_1 = require("./schema");
 const extract_1 = require("./extract");
 const namespace_1 = require("./namespace");
 const yaml_serialize_1 = require("./yaml_serialize");
-Object.defineProperty(exports, "yamlScalar", { enumerable: true, get: function () { return yaml_serialize_1.yamlScalar; } });
 function toPosix(value) {
     return value.split(path.sep).join("/");
 }
@@ -66,6 +65,8 @@ function stableSourcePath(filePath, sourceRoot) {
 function slugTitle(filePath) {
     return path.basename(filePath, path.extname(filePath)).replace(/[-_.]/g, " ").replace(/^Prompt /i, "").trim();
 }
+var yaml_serialize_2 = require("./yaml_serialize");
+Object.defineProperty(exports, "yamlScalar", { enumerable: true, get: function () { return yaml_serialize_2.yamlScalar; } });
 function serializeToYamlFrontMatter(meta) {
     return (0, yaml_serialize_1.serializeYamlObject)(meta);
 }

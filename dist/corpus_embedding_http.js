@@ -164,9 +164,7 @@ class HttpJsonEmbeddingProvider {
         if (options.locality === "remote" && url.protocol !== "https:") {
             throw new EmbeddingProviderError(`a remote http-json provider must use https://, got '${url.protocol}'`);
         }
-        const token = options.token === undefined
-            ? process.env[exports.HTTP_JSON_TOKEN_ENV]
-            : options.token;
+        const token = options.token ?? process.env[exports.HTTP_JSON_TOKEN_ENV];
         if (token !== undefined && token.length > 0 && url.protocol !== "https:") {
             // Loopback or not: a bearer over cleartext is a credential on the wire.
             throw new EmbeddingProviderError(`refusing to send the ${exports.HTTP_JSON_TOKEN_ENV} bearer over a cleartext endpoint`);

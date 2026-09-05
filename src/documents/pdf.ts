@@ -228,7 +228,7 @@ function decodeLiteral(source: string): string {
             octal += digit;
             cursor += 1;
           }
-          out += String.fromCharCode(Number.parseInt(octal, 8));
+          out += String.fromCodePoint(Number.parseInt(octal, 8));
         } else {
           out += next;
         }
@@ -247,14 +247,29 @@ function decodeLiteral(source: string): string {
  */
 function parseToUnicode(cmap: string): Map<number, string> {
   const mapping = new Map<number, string>();
-  const hexToText = (hex: string): string => {
-    let out = "";
-    for (let index = 0; index + 3 < hex.length + 1; index += 4) {
-      const unit = Number.parseInt(hex.slice(index, index + 4), 16);
-      if (Number.isFinite(unit)) out += String.fromCharCode(unit);
-    }
-    return out;
-  };
+    const utf16Units = (hex: string): number[] => {
+      const units: number[] = [];
+      for (let index = 0; index + 3 < hex.length + 1; index += 4) {
+        const unit = Number.parseInt(hex.slice(index, index + 4), 16);
+        if (Number.isFinite(unit)) units.push(unit);
+      }
+      return units;
+    };
+    const unitsToText = (units: number[]): string => {
+      let out = "";
+      for (const unit of units) {
+        if (unit >= 0 && unit <= 0xffff) out += String.fromCharCode(unit);
+        else if (unit >= 0 && unit <= 0x10ffff) out += String.fromCodePoint(unit);
+      }
+      return out;
+    };
+    const hexToText = (hex: string): string => unitsToText(utf16Units(hex));
+    const destTextForOffset = (hex: string, offset: number): string => {
+      const units = utf16Units(hex);
+      if (units.length === 0) return "";
+      units[units.length - 1] += offset;
+      return unitsToText(units);
+    };
 
   const charPattern = /beginbfchar([\s\S]*?)endbfchar/g;
   let block = charPattern.exec(cmap);
@@ -276,10 +291,10 @@ function parseToUnicode(cmap: string): Map<number, string> {
     while (row !== null) {
       const low = Number.parseInt(row[1] as string, 16);
       const high = Number.parseInt(row[2] as string, 16);
-      const base = Number.parseInt(row[3] as string, 16);
+      const destHex = row[3] as string;
       if (Number.isFinite(low) && Number.isFinite(high) && high - low < 65_536) {
         for (let code = low; code <= high; code += 1) {
-          mapping.set(code, String.fromCharCode(base + (code - low)));
+          mapping.set(code, destTextForOffset(destHex, code - low));
         }
       }
       row = rows.exec(range[1] as string);
@@ -306,7 +321,7 @@ function extractContentText(content: string, toUnicode: Map<number, string> | nu
       if (out.length > 0) return out;
     }
     for (let index = 0; index + 1 < clean.length; index += 2) {
-      out += String.fromCharCode(Number.parseInt(clean.slice(index, index + 2), 16));
+      out += String.fromCodePoint(Number.parseInt(clean.slice(index, index + 2), 16));
     }
     return out;
   };

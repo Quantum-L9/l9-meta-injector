@@ -6,7 +6,7 @@ import {
 } from "./schema";
 import { contentHash, estimateTokens } from "./extract";
 import { resolveNamespace, NamespaceConfig } from "./namespace";
-import { serializeYamlObject, yamlScalar } from "./yaml_serialize";
+import { serializeYamlObject } from "./yaml_serialize";
 
 function toPosix(value: string): string {
   return value.split(path.sep).join("/");
@@ -32,7 +32,7 @@ function slugTitle(filePath: string): string {
   return path.basename(filePath, path.extname(filePath)).replace(/[-_.]/g, " ").replace(/^Prompt /i, "").trim();
 }
 
-export { yamlScalar };
+export { yamlScalar } from "./yaml_serialize";
 
 export function serializeToYamlFrontMatter(meta: NormalizedMeta): string {
   return serializeYamlObject(meta as unknown as Record<string, unknown>);

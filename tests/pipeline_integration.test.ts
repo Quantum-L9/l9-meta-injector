@@ -58,7 +58,7 @@ test("pipeline injects headers and produces indexes", async () => {
   };
 
   const result = await runPipelineAsync(cfg);
-  expect(result.scanned.length).toBe(2);
+  expect(result.scanned).toHaveLength(2);
   expect(result.injected.length).toBeGreaterThan(0);
 
   const injectedFile = path.join(skillsDir, "lint_file.md");

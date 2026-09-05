@@ -47,7 +47,7 @@ describe("reconcileFieldsAsync — LLM boolean for description", () => {
     const { merged } = await reconcileFieldsAsync(existing, incoming);
     expect(called).toBe(false); // no LLM call for list fields
     expect((merged.triggers as string[])).toContain("retrieval prep");
-    expect((merged.triggers as string[]).filter(s => s === "text chunking").length).toBe(1);
+    expect((merged.triggers as string[]).filter(s => s === "text chunking")).toHaveLength(1);
   });
 
   it("replace on deprecated without LLM regardless", async () => {

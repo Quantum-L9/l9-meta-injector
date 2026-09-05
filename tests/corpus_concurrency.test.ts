@@ -250,6 +250,9 @@ describe("max_memory_bytes", () => {
     // And the budget is usable again afterwards, rather than stuck negative.
     await budget.reserve(50);
     budget.release(50);
+    // S2699: verify observable post-conditions — peak recorded and no contention
+    expect(budget.peakBytes).toBe(5_000);
+    expect(budget.waits).toBe(0);
   });
 
   it("bounds decoded text held at once during a real scan", async () => {

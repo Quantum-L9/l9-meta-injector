@@ -154,7 +154,7 @@ describe("the candidate delta between two runs", () => {
   it("counts a vanished candidate as removed", async () => {
     const root = baseCorpus();
     const before = await scan(root);
-    expect(before.candidates.exact_duplicate_clusters.length).toBe(1);
+    expect(before.candidates.exact_duplicate_clusters).toHaveLength(1);
 
     // Delete one half of the only duplicate pair: the cluster stops existing.
     fs.rmSync(path.join(root, "copies", "plan.md"));

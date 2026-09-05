@@ -9,11 +9,11 @@ export interface MetricsSnapshot {
     injectedFiles: number;
 }
 export declare class MetricsCollector {
-    private latencies;
+    private readonly latencies;
     private llmCalls;
     private llmFailures;
     private injectedFiles;
-    private paths;
+    private readonly paths;
     readonly onLlmDiagnostic: (d: LlmDiagnostic) => void;
     recordDecision(path: DecisionPath): void;
     recordInject(): void;

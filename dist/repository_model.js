@@ -109,7 +109,7 @@ class CanonicalFloat {
     constructor(value) {
         this.value = value;
         if (!Number.isFinite(value)) {
-            throw new Error(`repository-model: a float measurement must be finite, got ${String(value)}`);
+            throw new TypeError(`repository-model: a float measurement must be finite, got ${String(value)}`);
         }
     }
 }
@@ -159,7 +159,7 @@ function canonicalize(value) {
         // (`json.dumps(..., allow_nan=False)`). Finite floats are canonical, and
         // `renderNumber` below is what makes them safe to cross the boundary.
         if (!Number.isFinite(value)) {
-            throw new Error(`repository-model: only finite numbers are canonical, got ${String(value)}`);
+            throw new TypeError(`repository-model: only finite numbers are canonical, got ${String(value)}`);
         }
         return value;
     }
