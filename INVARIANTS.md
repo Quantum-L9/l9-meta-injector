@@ -171,7 +171,7 @@ Validation must not rewrite tracked files or leave untracked output in the repos
 
 The raw Semgrep process may return findings without terminating the report-production step. The normalized bundle and governed publication path own the final policy result.
 
-**Enforced by:** `.github/workflows/l9-analysis.yml`, pinned L9 Core actions.
+**Enforced by:** the GitHub organization required workflow `Quantum-L9/l9-ci-core` `main` `.github/workflows/org-ci.yml` (`Analyze (central Core)`). No workflow in this repository runs Semgrep or pins a Core or SDK revision (ADR-048).
 
 ### INV-010: Supply-chain jobs use least privilege and immutable references
 
@@ -209,7 +209,7 @@ Accepted ADRs remain in the repository. A changed decision receives a new sequen
 | INV-006 | `npm run check:manifest` |
 | INV-007 | `npm run validate` plus `npm run lint` |
 | INV-008 | `CI / smoke` clean-checkout proof |
-| INV-009 | L9 Analysis normalize/validate/publish chain |
+| INV-009 | Organization CI (Core) `Analyze (central Core)` via the organization ruleset |
 | INV-010 | Workflow pin and permissions review |
 | INV-011 | `npm run check:publication` |
 | INV-012 | Evidence and repository-setting verification |

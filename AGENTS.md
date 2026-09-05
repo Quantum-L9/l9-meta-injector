@@ -63,20 +63,15 @@ Workflow-level blocking means the job has no `continue-on-error`. Whether a cont
 | `L9 Lint and Test (Node)` | `ESLint` | Pull requests; push to `main`; manual | First-party TypeScript lint surface |
 | `L9 Lint and Test (Node)` | `tsc --noEmit` | Pull requests; push to `main`; manual | Strict source type checking |
 | `L9 Lint and Test (Node)` | `Vitest` | Pull requests; push to `main`; manual | One-shot test execution with `CI=true` |
-| `L9 Analysis` | `Analyze (semgrep -> SDK)` | Pull requests; manual | Governance resolution, Semgrep report normalization, canonical bundle validation, artifact production |
-| `L9 Analysis` | `Publish analysis (Core)` | When analysis is enabled | Publishes the governed analysis result/check |
-| `L9 Supply Chain` | `SBOM` | Pull requests; push to `main` | Reusable L9 SBOM workflow |
-| `L9 Supply Chain` | `OpenSSF Scorecard` | Push to `main` only | Reusable L9 Scorecard workflow |
+| `Organization CI (Core)` | `Analyze (central Core)` | Pull requests; push; merge group | Organization-required workflow from `Quantum-L9/l9-ci-core` `main` `.github/workflows/org-ci.yml`: Semgrep analysis, SDK admission, governance, enforcement, publication. Not a file in this repository. |
+
+### Organization-managed L9 CI (2026-09-05)
+
+Organization L9 CI is enforced by the GitHub organization required-workflow ruleset, not by a workflow in this tree. This repository owns only `.l9/ci.json` (`owner`, `repo_class`, `waiver_refs`) and selects no Core or SDK revision. The former copied `l9-analysis.yml` caller and delegating `l9-supply-chain.yml` (both Core SHA pins) were removed. Do not add a copied or delegating L9 organization workflow, an `L9_CORE_REF` or `L9_SDK_REF` pin, or a `uses: Quantum-L9/l9-ci-core/...` reference; a Core change requires no edit here. See ADR-048.
 
 ### Conditional or intentionally non-fatal steps
 
-| Location | Behavior | Correct interpretation |
-|---|---|---|
-| `l9-analysis.yml` Semgrep invocation | Raw `semgrep scan` ends with `|| true` | Preserve provider output even when findings exist; downstream SDK normalization and governed publication determine the result. It is not a blanket finding waiver. |
-| `l9-analysis.yml` jobs | Analysis runs only for pull requests and manual dispatch | No push-to-main analysis job is defined in this workflow. |
-| `l9-supply-chain.yml` Scorecard | `if: github.event_name == 'push'` | Scorecard publication is deliberately default-branch-only. |
-
-No workflow currently uses `continue-on-error: true`.
+None. No workflow in this repository absorbs a provider exit code or gates on the event name, and no workflow currently uses `continue-on-error: true`.
 
 ## Pre-commit
 
@@ -136,7 +131,7 @@ The flat config ignores:
 | Git SHA-1 for architecture entries | `scripts/lib/architecture-authority.js` | Reproduces Git blob object identity for drift detection, not cryptographic security. |
 | Generated and non-TypeScript areas excluded from ESLint | `eslint.config.js` | Initial first-party TypeScript lint boundary; excluded files need their own validator if they become policy-critical. |
 | Historical Python engine excluded from active runtime | `docs/architecture-authority.json` | Retained only for traceability and reference. |
-| Raw Semgrep process exit absorbed | `.github/workflows/l9-analysis.yml` | Allows canonical normalization and policy evaluation to own the final outcome. |
+| Organization L9 analysis workflow absent from the tree | GitHub organization ruleset (`Quantum-L9/l9-ci-core` `main` `.github/workflows/org-ci.yml`) | Central Core owns Semgrep capture, normalization, and policy evaluation; the consumer owns no Core or SDK revision (ADR-048). |
 
 ## Publication
 

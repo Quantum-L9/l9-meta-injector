@@ -270,18 +270,16 @@ Source compiles to committed `dist/`. `check:dist` rebuilds in isolation and com
 
 ## CI/CD architecture
 
-The repository has four active workflows:
+The repository owns two active pull-request workflows, plus the manual `L9 Meta Injector — LLM self-test`:
 
 | Workflow | Jobs | Events | Role |
 |---|---|---|---|
 | `CI` | `smoke` | Pull requests; push to `main` | Canonical aggregate validation and clean-checkout proof |
 | `L9 Lint and Test (Node)` | `ESLint`, `tsc --noEmit`, `Vitest` | Pull requests; push to `main`; manual | Independent first-party Node/TypeScript checks |
-| `L9 Analysis` | `Analyze (semgrep -> SDK)`, `Publish analysis (Core)` | Pull requests; manual | Governed Semgrep capture, normalization, canonical bundle validation, and check publication |
-| `L9 Supply Chain` | `OpenSSF Scorecard`, `SBOM` | Scorecard on push to `main`; SBOM on pull request and push | Reusable supply-chain evidence from pinned L9 Core workflows |
+
+Organization L9 CI is not a workflow in this tree. The GitHub organization required-workflow ruleset runs `Quantum-L9/l9-ci-core` `main` `.github/workflows/org-ci.yml` (`Organization CI (Core)` / `Analyze (central Core)`) on pull requests, pushes, and merge groups. Core owns Semgrep analysis, SDK admission, governance defaults, enforcement, and publication; this repository declares only `.l9/ci.json` and selects no Core or SDK revision (ADR-048). A Core change propagates with no consumer edit.
 
 No workflow job uses `continue-on-error: true`.
-
-The Semgrep provider command intentionally uses `|| true` only at raw report production. This preserves provider output for SDK normalization and policy evaluation; it does not make normalized findings advisory by itself.
 
 Workflow presence does not prove branch-protection required contexts. Required-check settings are external repository configuration and must be inspected separately.
 
