@@ -774,7 +774,7 @@
     },
     {
       "path": "src/inventory.ts",
-      "git_blob_sha1": "d4c577f84371fb5a02aa69275279ee61b83d2bff"
+      "git_blob_sha1": "4c4b04b34d803b60ee58666291eda03d78974190"
     },
     {
       "path": "src/local_archive_policy.ts",
