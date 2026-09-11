@@ -144,7 +144,8 @@ export function projectDarwinSearch(
   if (process.platform !== "darwin") return null;
   try {
     const comment = buildFinderComment(input);
-    if (isInventoryFinderComment(prior.comment)) {
+    const replaceComment = isInventoryFinderComment(prior.comment);
+    if (replaceComment) {
       writeXattrHex(abs, FINDER_COMMENT, toBinaryPlist(stringPlistXml(comment)));
     } else if (prior.comment) {
       writeXattrHex(abs, FINDER_COMMENT, toBinaryPlist(stringPlistXml(prior.comment)));

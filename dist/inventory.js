@@ -64,6 +64,7 @@ const path = __importStar(require("node:path"));
 const crypto = __importStar(require("node:crypto"));
 const extract_1 = require("./extract");
 const comment_1 = require("./comment");
+const frontmatter_patch_1 = require("./frontmatter_patch");
 const inject_1 = require("./inject");
 const schema_1 = require("./schema");
 const yaml_serialize_1 = require("./yaml_serialize");
@@ -401,7 +402,7 @@ function inventoryTree(config) {
             const applied = (0, meta_schema_1.applySchema)((0, schema_1.asRecord)(rec), schema);
             if (applied.missingRequired.length)
                 rec.unknowns.push(...applied.missingRequired.map((n) => `missing_required:${n}`));
-            metaObj = omitSmashedClock({ ...harvest, ...applied.fields });
+            metaObj = omitSmashedClock({ ...sanitizeHarvest(harvest), ...applied.fields });
             // Honor target:"manifest" — attach the schema-shaped meta to the record so it
             // flows into inventory.json (otherwise "manifest" in target would be a no-op).
             if ((0, meta_schema_1.targetIncludes)(schema, "manifest"))
@@ -447,6 +448,12 @@ function inventoryTree(config) {
             const headerMeta = asInjectableMeta(metaObj);
             try {
                 (0, inject_1.injectFile)(abs, headerMeta, { dryRun: false, outDir: config.outDir, verbose: false, writeInjectLog: false });
+                stripSmashedClockFromWritten(abs);
+                applyInventoryClocksToWritten(abs, {
+                    created_at: rec.created_at ?? "Unknown",
+                    modified_at: rec.modified_at ?? "Unknown",
+                    inspected_at: rec.inspected_at ?? "Unknown",
+                });
             }
             catch (err) {
                 // Don't discard the injection error (finding OBS-004): record it, then fall
@@ -548,10 +555,106 @@ function omitSmashedClock(fields) {
     delete out.created_or_detected_at;
     return out;
 }
+/** Prior inventory dumps are not operator meta. Do not re-emit them on the next pass. */
+const HARVEST_DUMP_KEYS = new Set([
+    "artifact_id",
+    "source_system",
+    "absolute_path",
+    "relative_path",
+    "file_name",
+    "extension",
+    "mime_type",
+    "size_bytes",
+    "parent_folder",
+    "depth",
+    "evidence_excerpt",
+    "unknowns",
+    "created_or_detected_at",
+    "content_hash",
+]);
+function sanitizeHarvest(harvest) {
+    const out = {};
+    for (const [key, value] of Object.entries(harvest)) {
+        if (!HARVEST_DUMP_KEYS.has(key))
+            out[key] = value;
+    }
+    return out;
+}
+function applyInventoryClocksToWritten(abs, clocks) {
+    const encoding = (0, encoding_1.probeFileEncoding)(abs);
+    if (encoding.status !== "utf8")
+        return;
+    const raw = fs.readFileSync(abs, "utf8");
+    const spec = (0, comment_1.resolveStrategy)(abs, raw);
+    if (spec.strategy === "yaml-frontmatter") {
+        const patched = (0, frontmatter_patch_1.patchManagedFrontMatter)(raw, clocks);
+        if (patched.safe && patched.content !== raw)
+            (0, durable_write_1.replaceFileAtomically)(abs, patched.content);
+        return;
+    }
+    if (spec.strategy === "line-comment" || spec.strategy === "block-comment") {
+        const yaml = (0, comment_1.extractInjectedYaml)(raw, spec);
+        if (!yaml)
+            return;
+        let parsed;
+        try {
+            parsed = (0, meta_schema_1.parseCanonicalYaml)(yaml);
+        }
+        catch {
+            return;
+        }
+        if (typeof parsed !== "object" || parsed === null)
+            return;
+        const next = omitSmashedClock({ ...parsed, ...clocks });
+        const newline = (0, comment_1.detectNewlineConvention)(raw);
+        const block = (0, comment_1.yamlToBlock)((0, yaml_serialize_1.serializeYamlObject)(next, { fences: false }), spec, newline);
+        const rewritten = (0, comment_1.applyCommentInjection)((0, comment_1.stripInjectedBlock)(raw, spec), block, newline);
+        if (rewritten !== raw)
+            (0, durable_write_1.replaceFileAtomically)(abs, rewritten);
+    }
+}
+function stripSmashedClockFromWritten(abs) {
+    const encoding = (0, encoding_1.probeFileEncoding)(abs);
+    if (encoding.status !== "utf8")
+        return false;
+    const raw = fs.readFileSync(abs, "utf8");
+    const spec = (0, comment_1.resolveStrategy)(abs, raw);
+    if (spec.strategy === "yaml-frontmatter") {
+        const inspected = (0, frontmatter_patch_1.inspectFrontMatterDocument)(raw);
+        if (!inspected.safe)
+            return false;
+        const field = inspected.fields.find((entry) => entry.key === "created_or_detected_at");
+        if (!field)
+            return false;
+        (0, durable_write_1.replaceFileAtomically)(abs, raw.slice(0, field.start) + raw.slice(field.end));
+        return true;
+    }
+    if (spec.strategy === "line-comment" || spec.strategy === "block-comment") {
+        const yaml = (0, comment_1.extractInjectedYaml)(raw, spec);
+        if (!yaml)
+            return false;
+        let parsed;
+        try {
+            parsed = (0, meta_schema_1.parseCanonicalYaml)(yaml);
+        }
+        catch {
+            return false;
+        }
+        if (typeof parsed !== "object" || parsed === null || !Object.prototype.hasOwnProperty.call(parsed, "created_or_detected_at")) {
+            return false;
+        }
+        const stripped = omitSmashedClock(parsed);
+        const newline = (0, comment_1.detectNewlineConvention)(raw);
+        const block = (0, comment_1.yamlToBlock)((0, yaml_serialize_1.serializeYamlObject)(stripped, { fences: false }), spec, newline);
+        (0, durable_write_1.replaceFileAtomically)(abs, (0, comment_1.applyCommentInjection)((0, comment_1.stripInjectedBlock)(raw, spec), block, newline));
+        return true;
+    }
+    return false;
+}
 function annotationFields(rec, harvest) {
+    const kept = sanitizeHarvest(harvest);
+    const harvestedTitle = typeof kept.title === "string" && kept.title.trim() ? kept.title : rec.file_name;
     return omitSmashedClock({
-        id: rec.artifact_id,
-        title: rec.file_name,
         artifact_type: "source",
         mcp_primitive: "resource",
         callable: false,
@@ -559,14 +662,16 @@ function annotationFields(rec, harvest) {
         injectable: true,
         namespace: "inventory",
         sharing_scope: "agnostic",
-        source_path: rec.relative_path,
-        content_hash: rec.content_hash ?? "Unknown",
         token_cost_estimate: 0,
         authority: "inventory",
+        evidence: rec.evidence_excerpt ?? "Unknown",
+        ...kept,
+        id: rec.artifact_id,
+        title: harvestedTitle,
+        source_path: rec.relative_path,
+        content_hash: rec.content_hash ?? "Unknown",
         inventory_type: rec.artifact_type,
         classification_confidence: rec.classification_confidence,
-        evidence: rec.evidence_excerpt ?? "Unknown",
-        ...harvest,
         created_at: rec.created_at ?? "Unknown",
         modified_at: rec.modified_at ?? "Unknown",
         inspected_at: rec.inspected_at ?? "Unknown",

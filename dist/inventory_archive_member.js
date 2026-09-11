@@ -131,8 +131,9 @@ function admitTarBytes(tar) {
 }
 function upsertArchiveRootMeta(abs, yaml) {
     const kind = inventoryRewriteKind(path.basename(abs));
-    if (kind === null)
+    if (kind === null) {
         return { rewritten: false, hold: "archive.rewrite_not_admitted" };
+    }
     if (kind === "zip") {
         const admit = admitZip(abs);
         if (admit)

@@ -18,6 +18,7 @@ const EOCD_SIGNATURE = 0x06054b50;
 const LOCAL_FIXED = 30;
 const CENTRAL_FIXED = 46;
 const FLAG_DATA_DESCRIPTOR = 0x0008;
+const DATA_DESCRIPTOR_SIGNATURE = 0x08074b50;
 const FLAG_UTF8_NAME = 0x0800;
 const U16_MAX = 0xffff;
 const U32_MAX = 0xffffffff;
@@ -33,7 +34,6 @@ export function holdZipRewrite(directory: ZipDirectory): string | null {
   if (directory.zip64) return "archive.zip64";
   for (const entry of directory.entries) {
     if (entry.encrypted) return "archive.member_encrypted";
-    if ((entry.generalPurposeFlags & FLAG_DATA_DESCRIPTOR) !== 0) return "archive.data_descriptor";
     if (entry.compressedSize > U32_MAX || entry.uncompressedSize > U32_MAX || entry.localHeaderOffset > U32_MAX) {
       return "archive.zip64";
     }
@@ -59,7 +59,11 @@ function copyLocalRecord(fd: number, entry: ZipCentralEntry): Buffer {
   }
   const nameLen = header.readUInt16LE(26);
   const extraLen = header.readUInt16LE(28);
-  const total = LOCAL_FIXED + nameLen + extraLen + entry.compressedSize;
+  let total = LOCAL_FIXED + nameLen + extraLen + entry.compressedSize;
+  if ((entry.generalPurposeFlags & FLAG_DATA_DESCRIPTOR) !== 0) {
+    const peek = readExact(fd, 4, entry.localHeaderOffset + total);
+    total += peek.readUInt32LE(0) === DATA_DESCRIPTOR_SIGNATURE ? 16 : 12;
+  }
   return readExact(fd, total, entry.localHeaderOffset);
 }
 
@@ -181,6 +185,8 @@ export function injectZipRootMeta(archivePath: string, yaml: string): { ok: true
       }));
       offset += blob.length;
     }
+  } catch (err) {
+    return { ok: false, hold: `archive.zip_copy_failed:${(err as Error).message}` };
   } finally {
     fs.closeSync(fd);
   }

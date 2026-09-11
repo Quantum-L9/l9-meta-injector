@@ -85,7 +85,9 @@ We choose **Option C**.
 ## Consequences
 
 - A second live inventory updates `inspected_at` and therefore the archive content hash.
-- Zip64 archives hold until a writer can emit Zip64.
+- Zip64 archives hold until a writer can emit Zip64. ZIP members that use a
+  data-descriptor trailer (signed `PK\\x07\\x08` or the 12-byte form) are copied
+  with that trailer; they are not a rewrite hold.
 - Hostile TAR shapes continue to be refused for rewrite; they still receive a sidecar.
 - Public inventory contract changes: `created_at` meaning and new `inspected_at`.
 - Architecture authority must name the inventory archive-member owner without changing

@@ -93,7 +93,9 @@ export type ArchiveMemberResult =
 
 export function upsertArchiveRootMeta(abs: string, yaml: string): ArchiveMemberResult {
   const kind = inventoryRewriteKind(path.basename(abs));
-  if (kind === null) return { rewritten: false, hold: "archive.rewrite_not_admitted" };
+  if (kind === null) {
+    return { rewritten: false, hold: "archive.rewrite_not_admitted" };
+  }
 
   if (kind === "zip") {
     const admit = admitZip(abs);

@@ -8,6 +8,7 @@ import { harvestExistingMeta } from "../src/inventory_existing_meta";
 import { buildTarArchive } from "../src/tar_writer";
 import { peekTarRootMeta, readTarArchive } from "../src/tar_reader";
 import { buildZipBuffer, peekZipRootMeta, injectZipRootMeta } from "../src/zip_writer";
+import * as zlib from "node:zlib";
 import { inventoryRewriteKind } from "../src/inventory_archive_member";
 import { buildFinderComment, buildFinderTags, isInventoryFinderComment, versionTokenFromFileName } from "../src/inventory_darwin_search";
 import { gzipTar, hostileTarCorpus } from "./helpers/tar_fixtures";
@@ -83,6 +84,42 @@ describe("three clocks", () => {
     }
     expect(result.records.every((r) => r.inspected_at === "2026-09-11T12:00:00.000Z")).toBe(true);
   });
+
+  test("re-inventory drops leftover created_or_detected_at from an existing header", () => {
+    const root = tmp();
+    fs.writeFileSync(path.join(root, "note.md"), [
+      "---",
+      "title: note.md",
+      "created_or_detected_at: \"2026-09-11T16:22:12.503Z\"",
+      "---",
+      "# body\n",
+    ].join("\n"));
+    inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false, now: "2026-09-11T18:00:00.000Z" });
+    inventoryTree({ root, outDir: path.join(tmp(), "out2"), folderSidecars: false, now: "2026-09-11T19:00:00.000Z" });
+    const md = fs.readFileSync(path.join(root, "note.md"), "utf8");
+    expect(md).toContain("inspected_at:");
+    expect(md).toContain("2026-09-11T19:00:00.000Z");
+    expect(md).toContain("# body");
+    expect(md).not.toContain("created_or_detected_at:");
+  });
+
+  test("re-inventory drops leftover created_or_detected_at from a comment header", () => {
+    const root = tmp();
+    fs.writeFileSync(path.join(root, "mod.py"), [
+      "# >>> l9:meta >>>",
+      "# title: mod.py",
+      "# created_or_detected_at: \"2026-09-11T16:22:12.503Z\"",
+      "# <<< l9:meta <<<",
+      "print(1)\n",
+    ].join("\n"));
+    inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false, now: "2026-09-11T18:00:00.000Z" });
+    inventoryTree({ root, outDir: path.join(tmp(), "out2"), folderSidecars: false, now: "2026-09-11T19:00:00.000Z" });
+    const py = fs.readFileSync(path.join(root, "mod.py"), "utf8");
+    expect(py).toContain("inspected_at:");
+    expect(py).toContain("2026-09-11T19:00:00.000Z");
+    expect(py).toContain("print(1)");
+    expect(py).not.toContain("created_or_detected_at:");
+  });
 });
 
 describe("harvest-first", () => {
@@ -119,6 +156,30 @@ describe("harvest-first", () => {
     expect(member).toContain("inspected_at:");
     expect(fs.readFileSync(path.join(root, "pack.zip.l9meta.yaml"), "utf8")).toContain("title: PackedTitle");
   });
+
+  test("does not re-emit a prior inventory dump's absolute_path into the sidecar", () => {
+    const root = tmp();
+    const zip = buildZipBuffer([{ name: "readme.txt", data: Buffer.from("hello\n") }]);
+    fs.writeFileSync(path.join(root, "pack.zip"), zip);
+    fs.writeFileSync(path.join(root, "pack.zip.l9meta.yaml"), [
+      "---",
+      "title: OperatorTitle",
+      "artifact_id: inv-old",
+      "absolute_path: /Users/someone/L9 live drive/pack.zip",
+      "relative_path: pack.zip",
+      "file_name: pack.zip",
+      "unknowns: []",
+      "created_or_detected_at: \"2026-09-11T16:22:12.503Z\"",
+      "---",
+      "",
+    ].join("\n"));
+    inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false, now: "2026-09-11T18:00:00.000Z" });
+    const sidecar = fs.readFileSync(path.join(root, "pack.zip.l9meta.yaml"), "utf8");
+    expect(sidecar).toContain("title: OperatorTitle");
+    expect(sidecar).not.toContain("/Users/someone");
+    expect(sidecar).not.toContain("absolute_path:");
+    expect(sidecar).not.toContain("created_or_detected_at:");
+  });
 });
 
 describe("archive member inject", () => {
@@ -142,6 +203,20 @@ describe("archive member inject", () => {
     const peeked = peekTarRootMeta(zlib.gunzipSync(gz));
     expect(peeked?.toString("utf8")).toContain("inventory_type: archive");
     expect(result.records.some((r) => r.file_name.endsWith(".l9meta.yaml"))).toBe(false);
+  });
+
+  test("zip members that use a data-descriptor trailer still receive a root meta member", () => {
+    const root = tmp();
+    const zipPath = path.join(root, "dd.zip");
+    fs.writeFileSync(zipPath, zipWithDataDescriptor("readme.txt", Buffer.from("hello\n")));
+    const result = inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false, now: "2026-09-11T18:00:00.000Z" });
+    const member = peekZipRootMeta(zipPath);
+    expect(member).toContain("2026-09-11T18:00:00.000Z");
+    expect(member).toContain("inspected_at:");
+    expect(fs.existsSync(path.join(root, "dd.zip.l9meta.yaml"))).toBe(true);
+    expect(result.records.find((row) => row.file_name === "dd.zip")?.unknowns ?? []).not.toContain(
+      "archive_rewrite_held:archive.data_descriptor",
+    );
   });
 
   test("hostile tar is held and still gets an adjacent sidecar", () => {
@@ -195,6 +270,39 @@ describe("Darwin comment/tag builders", () => {
     expect(readFinderTags(human)).toEqual(expect.arrayContaining(["l9", "archive", "zip"]));
   });
 });
+
+function zipWithDataDescriptor(name: string, data: Buffer): Buffer {
+  const crc = zlib.crc32(data) >>> 0;
+  const nameBytes = Buffer.from(name, "utf8");
+  const local = Buffer.alloc(30);
+  local.writeUInt32LE(0x04034b50, 0);
+  local.writeUInt16LE(20, 4);
+  local.writeUInt16LE(0x0008, 6);
+  local.writeUInt16LE(nameBytes.length, 26);
+  const desc = Buffer.alloc(16);
+  desc.writeUInt32LE(0x08074b50, 0);
+  desc.writeUInt32LE(crc, 4);
+  desc.writeUInt32LE(data.length, 8);
+  desc.writeUInt32LE(data.length, 12);
+  const central = Buffer.alloc(46);
+  central.writeUInt32LE(0x02014b50, 0);
+  central.writeUInt16LE(20, 4);
+  central.writeUInt16LE(20, 6);
+  central.writeUInt16LE(0x0008, 8);
+  central.writeUInt32LE(crc, 16);
+  central.writeUInt32LE(data.length, 20);
+  central.writeUInt32LE(data.length, 24);
+  central.writeUInt16LE(nameBytes.length, 28);
+  const localBlob = Buffer.concat([local, nameBytes, data, desc]);
+  const cd = Buffer.concat([central, nameBytes]);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(1, 8);
+  eocd.writeUInt16LE(1, 10);
+  eocd.writeUInt32LE(cd.length, 12);
+  eocd.writeUInt32LE(localBlob.length, 16);
+  return Buffer.concat([localBlob, cd, eocd]);
+}
 
 function writeFinderComment(abs: string, value: string): void {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "l9-plist-test-"));

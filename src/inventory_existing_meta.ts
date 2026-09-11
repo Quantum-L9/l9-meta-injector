@@ -64,8 +64,12 @@ export function mergeHarvested(...layers: Record<string, unknown>[]): Record<str
 }
 
 export function harvestExistingMeta(abs: string, isDir: boolean): Record<string, unknown> {
-  if (isDir) return harvestFolder(abs);
+  if (isDir) {
+    return harvestFolder(abs);
+  }
   const member = peekArchiveRootMeta(abs);
   const fromMember = member ? parseMetaYaml(member) : {};
-  return mergeHarvested(fromMember, harvestSidecar(abs), harvestInline(abs));
+  const sidecar = harvestSidecar(abs);
+  const inline = harvestInline(abs);
+  return mergeHarvested(fromMember, sidecar, inline);
 }

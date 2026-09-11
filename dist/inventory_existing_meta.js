@@ -103,10 +103,13 @@ function mergeHarvested(...layers) {
     return out;
 }
 function harvestExistingMeta(abs, isDir) {
-    if (isDir)
+    if (isDir) {
         return harvestFolder(abs);
+    }
     const member = (0, inventory_archive_member_1.peekArchiveRootMeta)(abs);
     const fromMember = member ? parseMetaYaml(member) : {};
-    return mergeHarvested(fromMember, harvestSidecar(abs), harvestInline(abs));
+    const sidecar = harvestSidecar(abs);
+    const inline = harvestInline(abs);
+    return mergeHarvested(fromMember, sidecar, inline);
 }
 //# sourceMappingURL=inventory_existing_meta.js.map

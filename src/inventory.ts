@@ -23,7 +23,16 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
 import { contentHash } from "./extract";
-import { resolveStrategy, sidecarPathFor } from "./comment";
+import {
+  applyCommentInjection,
+  detectNewlineConvention,
+  extractInjectedYaml,
+  resolveStrategy,
+  sidecarPathFor,
+  stripInjectedBlock,
+  yamlToBlock,
+} from "./comment";
+import { inspectFrontMatterDocument, patchManagedFrontMatter } from "./frontmatter_patch";
 import { injectFile } from "./inject";
 import { NormalizedMeta, asRecord } from "./schema";
 import { serializeYamlObject } from "./yaml_serialize";
@@ -454,7 +463,7 @@ export function inventoryTree(config: InventoryConfig): InventoryResult {
     if (schema) {
       const applied = applySchema(asRecord(rec), schema);
       if (applied.missingRequired.length) rec.unknowns.push(...applied.missingRequired.map((n) => `missing_required:${n}`));
-      metaObj = omitSmashedClock({ ...harvest, ...applied.fields });
+      metaObj = omitSmashedClock({ ...sanitizeHarvest(harvest), ...applied.fields });
       // Honor target:"manifest" — attach the schema-shaped meta to the record so it
       // flows into inventory.json (otherwise "manifest" in target would be a no-op).
       if (targetIncludes(schema, "manifest")) rec.meta = applied.fields;
@@ -495,6 +504,12 @@ export function inventoryTree(config: InventoryConfig): InventoryResult {
       const headerMeta = asInjectableMeta(metaObj);
       try {
         injectFile(abs, headerMeta, { dryRun: false, outDir: config.outDir, verbose: false, writeInjectLog: false });
+        stripSmashedClockFromWritten(abs);
+        applyInventoryClocksToWritten(abs, {
+          created_at: rec.created_at ?? "Unknown",
+          modified_at: rec.modified_at ?? "Unknown",
+          inspected_at: rec.inspected_at ?? "Unknown",
+        });
       } catch (err) {
         // Don't discard the injection error (finding OBS-004): record it, then fall
         // back to a sidecar if the schema allows one.
@@ -584,10 +599,90 @@ function omitSmashedClock(fields: Record<string, unknown>): Record<string, unkno
   return out;
 }
 
+/** Prior inventory dumps are not operator meta. Do not re-emit them on the next pass. */
+const HARVEST_DUMP_KEYS = new Set([
+  "artifact_id",
+  "source_system",
+  "absolute_path",
+  "relative_path",
+  "file_name",
+  "extension",
+  "mime_type",
+  "size_bytes",
+  "parent_folder",
+  "depth",
+  "evidence_excerpt",
+  "unknowns",
+  "created_or_detected_at",
+  "content_hash",
+]);
+
+function sanitizeHarvest(harvest: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(harvest)) {
+    if (!HARVEST_DUMP_KEYS.has(key)) out[key] = value;
+  }
+  return out;
+}
+
+function applyInventoryClocksToWritten(abs: string, clocks: Record<string, unknown>): void {
+  const encoding = probeFileEncoding(abs);
+  if (encoding.status !== "utf8") return;
+  const raw = fs.readFileSync(abs, "utf8");
+  const spec = resolveStrategy(abs, raw);
+  if (spec.strategy === "yaml-frontmatter") {
+    const patched = patchManagedFrontMatter(raw, clocks);
+    if (patched.safe && patched.content !== raw) replaceFileAtomically(abs, patched.content);
+    return;
+  }
+  if (spec.strategy === "line-comment" || spec.strategy === "block-comment") {
+    const yaml = extractInjectedYaml(raw, spec);
+    if (!yaml) return;
+    let parsed: unknown;
+    try { parsed = parseCanonicalYaml(yaml); } catch { return; }
+    if (typeof parsed !== "object" || parsed === null) return;
+    const next = omitSmashedClock({ ...(parsed as Record<string, unknown>), ...clocks });
+    const newline = detectNewlineConvention(raw);
+    const block = yamlToBlock(serializeYamlObject(next, { fences: false }), spec, newline);
+    const rewritten = applyCommentInjection(stripInjectedBlock(raw, spec), block, newline);
+    if (rewritten !== raw) replaceFileAtomically(abs, rewritten);
+  }
+}
+
+function stripSmashedClockFromWritten(abs: string): boolean {
+  const encoding = probeFileEncoding(abs);
+  if (encoding.status !== "utf8") return false;
+  const raw = fs.readFileSync(abs, "utf8");
+  const spec = resolveStrategy(abs, raw);
+  if (spec.strategy === "yaml-frontmatter") {
+    const inspected = inspectFrontMatterDocument(raw);
+    if (!inspected.safe) return false;
+    const field = inspected.fields.find((entry) => entry.key === "created_or_detected_at");
+    if (!field) return false;
+    replaceFileAtomically(abs, raw.slice(0, field.start) + raw.slice(field.end));
+    return true;
+  }
+  if (spec.strategy === "line-comment" || spec.strategy === "block-comment") {
+    const yaml = extractInjectedYaml(raw, spec);
+    if (!yaml) return false;
+    let parsed: unknown;
+    try { parsed = parseCanonicalYaml(yaml); } catch { return false; }
+    if (typeof parsed !== "object" || parsed === null || !Object.prototype.hasOwnProperty.call(parsed, "created_or_detected_at")) {
+      return false;
+    }
+    const stripped = omitSmashedClock(parsed as Record<string, unknown>);
+    const newline = detectNewlineConvention(raw);
+    const block = yamlToBlock(serializeYamlObject(stripped, { fences: false }), spec, newline);
+    replaceFileAtomically(abs, applyCommentInjection(stripInjectedBlock(raw, spec), block, newline));
+    return true;
+  }
+  return false;
+}
+
 function annotationFields(rec: InventoryRecord, harvest: Record<string, unknown>): Record<string, unknown> {
+  const kept = sanitizeHarvest(harvest);
+  const harvestedTitle = typeof kept.title === "string" && kept.title.trim() ? kept.title : rec.file_name;
   return omitSmashedClock({
-    id: rec.artifact_id,
-    title: rec.file_name,
     artifact_type: "source",
     mcp_primitive: "resource",
     callable: false,
@@ -595,14 +690,16 @@ function annotationFields(rec: InventoryRecord, harvest: Record<string, unknown>
     injectable: true,
     namespace: "inventory",
     sharing_scope: "agnostic",
-    source_path: rec.relative_path,
-    content_hash: rec.content_hash ?? "Unknown",
     token_cost_estimate: 0,
     authority: "inventory",
+    evidence: rec.evidence_excerpt ?? "Unknown",
+    ...kept,
+    id: rec.artifact_id,
+    title: harvestedTitle,
+    source_path: rec.relative_path,
+    content_hash: rec.content_hash ?? "Unknown",
     inventory_type: rec.artifact_type,
     classification_confidence: rec.classification_confidence,
-    evidence: rec.evidence_excerpt ?? "Unknown",
-    ...harvest,
     created_at: rec.created_at ?? "Unknown",
     modified_at: rec.modified_at ?? "Unknown",
     inspected_at: rec.inspected_at ?? "Unknown",
