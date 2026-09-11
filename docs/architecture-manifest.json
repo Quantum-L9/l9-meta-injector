@@ -882,7 +882,7 @@
     },
     {
       "path": "tests/corpus_scale.test.ts",
-      "git_blob_sha1": "588c875f1cb5056847634de1a271eb9fc657deea"
+      "git_blob_sha1": "92a9654697b7eb33e2a3a40447086cd912c9e7a9"
     },
     {
       "path": "tests/corpus_semantic_candidates.test.ts",
