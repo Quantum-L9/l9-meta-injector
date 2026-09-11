@@ -4,8 +4,11 @@
  * and produce an inventory: classify every file AND folder, and emit a manifest
  * (JSON + CSV + MD).
  *
- * THIS COMMAND MODIFIES THE SOURCE BY DEFAULT. It appends metadata headers to text
- * files and writes `.l9meta.yaml` sidecars beside binaries and folders. It never
+ * THIS COMMAND MODIFIES THE SOURCE BY DEFAULT. It harvests existing meta first,
+ * writes three clocks (`created_at`, `modified_at`, `inspected_at`), appends
+ * metadata headers to text files, writes `.l9meta.yaml` sidecars beside
+ * comment-less text and every recognized archive, and injects a root
+ * `.l9meta.yaml` member into admitted ZIP/TAR containers. It never
  * moves, renames, or deletes, but that is not the same as read-only:
  *
  *   observation     classify + hash; source untouched      --dry-run

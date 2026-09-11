@@ -108,9 +108,12 @@ dialect cannot express is refused rather than silently matching nothing or every
 a file outside it is recorded as `glob_filtered` (ADR-047).
 `src/archive_formats.ts` is the one owner of which names are archives, which of those
 the reader expands (ZIP), and which byte signatures are recognized. TAR and every
-compressed tarball spelling are classified, hashed and reported as not expanded; a file
-whose bytes carry an archive signature its name does not declare is reported by
-signature and still never opened. `src/local_archive_policy.ts` validates all caller-provided ceilings and
+compressed tarball spelling are classified, hashed and reported as not expanded by
+observation; a file whose bytes carry an archive signature its name does not declare is
+reported by signature and still never opened. Inventory annotation may open admitted
+ZIP and TAR containers solely to upsert a root `.l9meta.yaml` member and always writes
+an adjacent sidecar (ADR-049). That rewrite set is not expansion: `.tar` is not added
+to `EXPANDABLE_ARCHIVE_EXTENSIONS`. `src/local_archive_policy.ts` validates all caller-provided ceilings and
 bounds size, member count, expansion, ratio, depth, path length and time, checked both
 against declared metadata and against bytes actually produced. Its policy fingerprint
 covers every resolved field, including the explicit policy-contract version as a

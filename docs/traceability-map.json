@@ -33,10 +33,11 @@
     },
     {
       "capability": "inventory_mode",
-      "source": "src/inventory.ts and src/public/inventory.ts",
+      "source": "src/inventory.ts and src/public/inventory.ts and src/inventory_archive_member.ts",
       "public_entrypoint": "l9-meta-injector/inventory",
       "tests": [
         "tests/inventory.test.ts",
+        "tests/inventory_drive_meta.test.ts",
         "tests/public_api_runtime.test.ts"
       ],
       "validators": [

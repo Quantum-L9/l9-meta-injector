@@ -55,6 +55,23 @@ describe("archive extension authority is shared", () => {
     }
   });
 
+  test("inventory writes an adjacent sidecar for zip and tar.gz without rewriting archive bytes", () => {
+    const root = tmp();
+    const zipBytes = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0, 1, 2, 3]);
+    const gzBytes = Buffer.from([0x1f, 0x8b, 0x08, 0x00, 0, 0, 0, 0, 0, 3, 1, 2, 3]);
+    fs.writeFileSync(path.join(root, "pack.zip"), zipBytes);
+    fs.writeFileSync(path.join(root, "pack.tar.gz"), gzBytes);
+    const result = inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false });
+    expect(fs.readFileSync(path.join(root, "pack.zip"))).toEqual(zipBytes);
+    expect(fs.readFileSync(path.join(root, "pack.tar.gz"))).toEqual(gzBytes);
+    expect(fs.existsSync(path.join(root, "pack.zip.l9meta.yaml"))).toBe(true);
+    expect(fs.existsSync(path.join(root, "pack.tar.gz.l9meta.yaml"))).toBe(true);
+    const zipMeta = fs.readFileSync(path.join(root, "pack.zip.l9meta.yaml"), "utf8");
+    expect(zipMeta).toContain("inventory_type: archive");
+    expect(zipMeta).toContain("title: pack.zip");
+    expect(result.records.filter((r) => r.artifact_type === "archive")).toHaveLength(2);
+  });
+
   test("the record and the diagnostic about it tell one story", () => {
     const root = tmp();
     for (const name of ["a.tar.zst", "b.lz4", "c.cab", "d.iso", "e.jar"]) fs.writeFileSync(path.join(root, name), Buffer.from([0, 1, 2]));

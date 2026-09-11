@@ -54,7 +54,9 @@
     "corpus_archaeology": "docs/corpus-archaeology.md",
     "semantic_candidates": "docs/semantic-candidates.md",
     "work_intelligence": "src/extractors/work_intelligence.ts",
-    "ordering": "src/ordering.ts"
+    "ordering": "src/ordering.ts",
+    "inventory": "src/inventory.ts",
+    "inventory_archive_member": "src/inventory_archive_member.ts"
   },
   "distribution": {
     "model": "committed_dist_mirror",

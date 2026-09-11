@@ -124,8 +124,11 @@ describe("inventoryTree — non-destructive filesystem inventory", () => {
     expect(fs.readFileSync(path.join(root, "src", "app.ts"), "utf8")).toContain("// >>> l9:meta >>>");
     // body preserved
     expect(fs.readFileSync(path.join(root, "src", "app.ts"), "utf8").trimEnd().endsWith("export const x = 1;")).toBe(true);
-    // JSON (sidecar strategy) gets a sidecar; binaries/pdf are skip-binary — no sidecar (ADR-017)
+    // JSON (sidecar strategy) gets a sidecar; recognized archives get an adjacent
+    // sidecar without rewriting archive bytes; other binaries/pdf stay skip-binary.
     expect(fs.existsSync(path.join(root, "config.json.l9meta.yaml"))).toBe(true);
+    expect(fs.existsSync(path.join(root, "bundle.zip.l9meta.yaml"))).toBe(true);
+    expect(fs.readFileSync(path.join(root, "bundle.zip"))).toEqual(Buffer.from("PK fake zip\n"));
     expect(fs.existsSync(path.join(root, "blob.bin.l9meta.yaml"))).toBe(false);
     expect(fs.existsSync(path.join(root, "paper.pdf.l9meta.yaml"))).toBe(false);
     expect(fs.readFileSync(path.join(root, "blob.bin"))).toEqual(Buffer.from([0, 1, 2, 0, 3])); // untouched bytes
