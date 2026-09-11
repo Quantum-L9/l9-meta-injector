@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (retrospective)
+Accepted (retrospective); the L9 Analysis and L9 Supply Chain contexts are amended by [ADR-048](048-organization-managed-l9-ci.md)
 
 ## Date
 

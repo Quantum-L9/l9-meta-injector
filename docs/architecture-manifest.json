@@ -294,11 +294,11 @@
     },
     {
       "path": "dist/local_archive_policy.js",
-      "git_blob_sha1": "c9012d98590782c08d8589325a270d0f7d6c53c1"
+      "git_blob_sha1": "f16b4bbf224ffae67498d6ee1007388ebd7b61d9"
     },
     {
       "path": "dist/local_archive_policy.js.map",
-      "git_blob_sha1": "aef1788e9a9cedbb30ca3adba94cb579b9bfc1df"
+      "git_blob_sha1": "2db235d8e7503fd63a8d5a181e657ce65953eee1"
     },
     {
       "path": "dist/local_source_model.d.ts",
@@ -402,11 +402,11 @@
     },
     {
       "path": "dist/repository_model.js",
-      "git_blob_sha1": "1d1b03973b98c290f459b1d97a51c278294533e1"
+      "git_blob_sha1": "a8db39c7b0bc029abdc75a2a5da1b9d06fe6cdff"
     },
     {
       "path": "dist/repository_model.js.map",
-      "git_blob_sha1": "e425ff70e8abb367682350f24833fd0135ce477a"
+      "git_blob_sha1": "4346f53c218aae4dd1279a59a02f9f4b66e3cb5d"
     },
     {
       "path": "dist/zip_reader.d.ts",
@@ -426,7 +426,7 @@
     },
     {
       "path": "docs/architecture.md",
-      "git_blob_sha1": "f9b6af983bd0272279d5c8de5c973b40e3584f7a"
+      "git_blob_sha1": "a349710b79b3c6f3092a5ef871cd50b05f1cb934"
     },
     {
       "path": "docs/contracts.md",
@@ -442,7 +442,7 @@
     },
     {
       "path": "docs/decision_log.md",
-      "git_blob_sha1": "f81f3005a24a69565fcb8899029928c5aa27a154"
+      "git_blob_sha1": "b8e85d3f24a26ae54351f5b72405347bfe131d2f"
     },
     {
       "path": "docs/decisions/036-read-only-local-source-acquisition.md",
@@ -570,7 +570,7 @@
     },
     {
       "path": "fixtures/package-consumer/deep-import.cjs",
-      "git_blob_sha1": "22cc8fc593a0d671b97c3223024a6cd9dba02ef4"
+      "git_blob_sha1": "57e5e797ff9c4906671142edc1b8e90d41bc9a37"
     },
     {
       "path": "fixtures/package-consumer/package.json",
@@ -578,7 +578,7 @@
     },
     {
       "path": "fixtures/package-consumer/runtime.cjs",
-      "git_blob_sha1": "47467667d632e032b19753369f8e7d06de67c40d"
+      "git_blob_sha1": "db56fd712f3317dc8e53196042f3d7944bb9f111"
     },
     {
       "path": "fixtures/package-consumer/tsconfig.json",
@@ -778,7 +778,7 @@
     },
     {
       "path": "src/local_archive_policy.ts",
-      "git_blob_sha1": "2218881fa1149db11e1349ed98b5318709b013dd"
+      "git_blob_sha1": "ce69a891819dd8c4d085f29e1a70cf341d02a87a"
     },
     {
       "path": "src/local_source_model.ts",
@@ -822,7 +822,7 @@
     },
     {
       "path": "src/repository_model.ts",
-      "git_blob_sha1": "de48e7f8bb081e2366f060dc3e3020a1150bed73"
+      "git_blob_sha1": "797150c011163860945832d2189ff8e1093c413e"
     },
     {
       "path": "src/schema.ts",
@@ -938,7 +938,7 @@
     },
     {
       "path": "tests/local_source_safety.test.ts",
-      "git_blob_sha1": "d3322d0b811199a35a13df98d5d158898fe1b506"
+      "git_blob_sha1": "49fa333ce7027e1efbcee049b574d7913bb25d0a"
     },
     {
       "path": "tests/public_api_runtime.test.ts",

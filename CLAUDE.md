@@ -45,11 +45,9 @@ After changing `src/`, keep `dist/` in the same commit. Do not hand-edit generat
 - `L9 Lint and Test (Node) / ESLint`: pull requests, pushes to `main`, and manual dispatch.
 - `L9 Lint and Test (Node) / tsc --noEmit`: strict source type checking.
 - `L9 Lint and Test (Node) / Vitest`: one-shot tests with `CI=true`.
-- `L9 Analysis`: pull requests and manual dispatch; resolves governance, captures Semgrep output, normalizes and validates the bundle, then publishes the governed result.
-- `L9 Supply Chain / SBOM`: pull requests and pushes to `main`.
-- `L9 Supply Chain / OpenSSF Scorecard`: pushes to `main` only.
+- `Organization CI (Core) / Analyze (central Core)`: not a file in this repository. The GitHub organization required-workflow ruleset runs `Quantum-L9/l9-ci-core` `main` `.github/workflows/org-ci.yml` on pull requests, pushes, and merge groups. It owns Semgrep analysis, SDK admission, governance, and publication. This repository declares only `.l9/ci.json` and selects no Core or SDK revision.
 
-The raw Semgrep command uses `|| true` so provider output can be normalized. This does not waive findings. No workflow job uses `continue-on-error: true`.
+Never add a copied or delegating L9 organization workflow, an `L9_CORE_REF` or `L9_SDK_REF` pin, or a `uses: Quantum-L9/l9-ci-core/...` reference. Core changes propagate with no edit here. No workflow job uses `continue-on-error: true`.
 
 Required branch-protection contexts are repository settings outside the tree. Verify them; do not infer them from workflow presence.
 
