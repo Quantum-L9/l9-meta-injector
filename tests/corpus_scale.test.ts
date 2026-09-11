@@ -28,7 +28,7 @@ function tmp(prefix = "l9-corpus-scale-"): string {
 }
 afterAll(() => {
   for (const dir of scratch) fs.rmSync(dir, { recursive: true, force: true });
-});
+}, 120_000);
 
 /**
  * The archive budget this corpus needs.
