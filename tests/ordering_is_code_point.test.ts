@@ -33,9 +33,15 @@ describe("code-point ordering on the seam", () => {
 
   test("discovery orders entries by code point, so upper case sorts before lower case", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "l9-order-"));
-    for (const name of ["b.md", "B.md", "a.md", "_.md"]) fs.writeFileSync(path.join(root, name), "#\n");
+    // Write uppercase first so a case-insensitive volume keeps `B.md` rather than
+    // collapsing the pair onto `b.md`. APFS default cannot store both.
+    const intended = ["B.md", "_.md", "a.md", "b.md"];
+    for (const name of intended) fs.writeFileSync(path.join(root, name), "#\n");
+    const onDisk = new Set(fs.readdirSync(root));
+    const expected = intended.filter((name) => onDisk.has(name)).sort(compareCodePoints);
     const files = discoverFiles(root, "**/*").files.map((f) => path.basename(f));
     expect(files).toEqual([...files].sort(compareCodePoints));
-    expect(files).toEqual(["B.md", "_.md", "a.md", "b.md"]);
+    expect(files).toEqual(expected);
+    expect(files[0]).toBe("B.md");
   });
 });
