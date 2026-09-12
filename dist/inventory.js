@@ -535,12 +535,21 @@ function asInjectableMeta(fields) {
 function writeFolderSidecar(dir, metaObj, unknowns) {
     const p = path.join(dir, ".l9meta.yaml");
     if (fs.existsSync(p)) {
+        const original = fs.readFileSync(p, "utf8");
+        let parsed;
         try {
-            (0, meta_schema_1.parseCanonicalYaml)(fs.readFileSync(p, "utf8"));
+            parsed = (0, meta_schema_1.parseCanonicalYaml)(original);
         }
         catch {
             unknowns?.push("folder_sidecar_unreadable");
             return;
+        }
+        if (typeof parsed === "object" && parsed !== null) {
+            const roundTripped = serializeYaml(parsed);
+            if (roundTripped !== original) {
+                unknowns?.push("folder_sidecar_lossy_roundtrip");
+                return;
+            }
         }
     }
     try {
@@ -685,7 +694,19 @@ function harvestedStringList(value) {
     return [];
 }
 function annotateArchive(abs, rec, metaObj, harvest) {
-    const yaml = serializeYaml(metaObj);
+    const embeddedMeta = { ...metaObj };
+    delete embeddedMeta.content_hash;
+    delete embeddedMeta.modified_at;
+    delete embeddedMeta.created_at;
+    const yaml = serializeYaml(embeddedMeta);
+    const newHash = crypto.createHash("sha256").update(yaml, "utf8").digest("hex");
+    const existing = (0, inventory_archive_member_1.peekArchiveRootMeta)(abs);
+    if (existing !== null) {
+        const existingHash = crypto.createHash("sha256").update(existing, "utf8").digest("hex");
+        if (newHash === existingHash) {
+            return;
+        }
+    }
     const darwinPrior = (0, inventory_darwin_search_1.harvestDarwinSearch)(abs);
     const member = (0, inventory_archive_member_1.upsertArchiveRootMeta)(abs, yaml);
     if (!member.rewritten)

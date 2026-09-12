@@ -49,7 +49,7 @@ import {
 } from "./archive_formats";
 import { replaceFileAtomically } from "./durable_write";
 import { harvestExistingMeta } from "./inventory_existing_meta";
-import { inventoryRewriteKind, upsertArchiveRootMeta } from "./inventory_archive_member";
+import { inventoryRewriteKind, upsertArchiveRootMeta, peekArchiveRootMeta } from "./inventory_archive_member";
 import { harvestDarwinSearch, projectDarwinSearch } from "./inventory_darwin_search";
 
 export type InventoryArtifactType =
@@ -583,10 +583,19 @@ function asInjectableMeta(fields: Record<string, unknown>): NormalizedMeta {
 function writeFolderSidecar(dir: string, metaObj: Record<string, unknown>, unknowns?: string[]): void {
   const p = path.join(dir, ".l9meta.yaml");
   if (fs.existsSync(p)) {
-    try { parseCanonicalYaml(fs.readFileSync(p, "utf8")); }
+    const original = fs.readFileSync(p, "utf8");
+    let parsed: unknown;
+    try { parsed = parseCanonicalYaml(original); }
     catch {
       unknowns?.push("folder_sidecar_unreadable");
       return;
+    }
+    if (typeof parsed === "object" && parsed !== null) {
+      const roundTripped = serializeYaml(parsed as Record<string, unknown>);
+      if (roundTripped !== original) {
+        unknowns?.push("folder_sidecar_lossy_roundtrip");
+        return;
+      }
     }
   }
   try { replaceFileAtomically(p, serializeYaml(metaObj)); }
@@ -718,7 +727,19 @@ function annotateArchive(
   metaObj: Record<string, unknown>,
   harvest: Record<string, unknown>,
 ): void {
-  const yaml = serializeYaml(metaObj);
+  const embeddedMeta = { ...metaObj };
+  delete embeddedMeta.content_hash;
+  delete embeddedMeta.modified_at;
+  delete embeddedMeta.created_at;
+  const yaml = serializeYaml(embeddedMeta);
+  const newHash = crypto.createHash("sha256").update(yaml, "utf8").digest("hex");
+  const existing = peekArchiveRootMeta(abs);
+  if (existing !== null) {
+    const existingHash = crypto.createHash("sha256").update(existing, "utf8").digest("hex");
+    if (newHash === existingHash) {
+      return;
+    }
+  }
   const darwinPrior = harvestDarwinSearch(abs);
   const member = upsertArchiveRootMeta(abs, yaml);
   if (!member.rewritten) rec.unknowns.push(`archive_rewrite_held:${member.hold}`);

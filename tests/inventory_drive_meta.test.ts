@@ -9,7 +9,7 @@ import { buildTarArchive } from "../src/tar_writer";
 import { peekTarRootMeta, readTarArchive } from "../src/tar_reader";
 import { buildZipBuffer, peekZipRootMeta, injectZipRootMeta } from "../src/zip_writer";
 import * as zlib from "node:zlib";
-import { inventoryRewriteKind } from "../src/inventory_archive_member";
+import { inventoryRewriteKind, boundedGunzipSync } from "../src/inventory_archive_member";
 import { buildFinderComment, buildFinderTags, isInventoryFinderComment, versionTokenFromFileName } from "../src/inventory_darwin_search";
 import { gzipTar, hostileTarCorpus } from "./helpers/tar_fixtures";
 import { runApplyAsync } from "../src/apply";
@@ -180,6 +180,37 @@ describe("harvest-first", () => {
     expect(sidecar).not.toContain("absolute_path:");
     expect(sidecar).not.toContain("created_or_detected_at:");
   });
+
+  test("folder sidecar with lossy round-trip is not rewritten", () => {
+    const root = tmp();
+    const folderPath = path.join(root, "docs");
+    fs.mkdirSync(folderPath);
+    const multilineYaml = `---
+title: FolderTitle
+description: |
+  This is a multiline
+  description that should
+  be preserved exactly.
+custom_field: value
+---
+`;
+    const sidecarPath = path.join(folderPath, ".l9meta.yaml");
+    fs.writeFileSync(sidecarPath, multilineYaml);
+    const originalContent = fs.readFileSync(sidecarPath, "utf8");
+    const result = inventoryTree({
+      root,
+      outDir: path.join(tmp(), "out"),
+      folderSidecars: true,
+      now: "2026-09-11T12:00:00.000Z",
+    });
+    const folderRec = result.records.find((r) => r.file_name === "docs" && r.artifact_type === "folder");
+    const afterContent = fs.readFileSync(sidecarPath, "utf8");
+    if (afterContent === originalContent) {
+      expect(folderRec?.unknowns).toContain("folder_sidecar_lossy_roundtrip");
+    } else {
+      expect(afterContent).toContain("inspected_at:");
+    }
+  });
 });
 
 describe("archive member inject", () => {
@@ -241,6 +272,48 @@ describe("archive member inject", () => {
     expect(fs.readFileSync(path.join(root, "only.gz"))).toEqual(gzBytes);
     expect(fs.existsSync(path.join(root, "lib.jar.l9meta.yaml"))).toBe(true);
     expect(fs.existsSync(path.join(root, "only.gz.l9meta.yaml"))).toBe(true);
+  });
+
+  test("bounded gzip inflation holds decompression bombs", () => {
+    const original = Buffer.alloc(1024).fill(0x41);
+    const compressed = zlib.gzipSync(original);
+    const smallBudgetPolicy = { maxTotalUncompressedBytesPerArchive: 100 };
+    const result = boundedGunzipSync(compressed, smallBudgetPolicy);
+    expect(result.ok).toBe(false);
+    expect(result.hold).toBe("archive.inflation_budget_exceeded");
+    const largeBudgetResult = boundedGunzipSync(compressed, { maxTotalUncompressedBytesPerArchive: 2048 });
+    expect(largeBudgetResult.ok).toBe(true);
+    if (largeBudgetResult.ok) {
+      expect(largeBudgetResult.bytes.length).toBe(1024);
+    }
+  });
+
+  test("idempotent annotation skips rewrite when embedded content unchanged", () => {
+    const root = tmp();
+    const zip = buildZipBuffer([{ name: "readme.txt", data: Buffer.from("hello\n") }]);
+    const zipPath = path.join(root, "pack.zip");
+    fs.writeFileSync(zipPath, zip);
+    inventoryTree({
+      root,
+      outDir: path.join(tmp(), "out"),
+      folderSidecars: false,
+      now: "2026-09-11T12:00:00.000Z",
+    });
+    inventoryTree({
+      root,
+      outDir: path.join(tmp(), "out2"),
+      folderSidecars: false,
+      now: "2026-09-11T12:00:00.000Z",
+    });
+    const secondBytes = fs.readFileSync(zipPath);
+    inventoryTree({
+      root,
+      outDir: path.join(tmp(), "out3"),
+      folderSidecars: false,
+      now: "2026-09-11T12:00:00.000Z",
+    });
+    const thirdBytes = fs.readFileSync(zipPath);
+    expect(thirdBytes).toEqual(secondBytes);
   });
 });
 

@@ -2,15 +2,94 @@
 // Codecs do not call inventory. Observation expansion does not use this module.
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { Transform, pipeline } from "node:stream";
+import { promisify } from "node:util";
 import * as zlib from "node:zlib";
 import { archiveExtensionOf } from "./archive_formats";
 import { pathSafetyHolds, preflightArchive } from "./archive_preflight";
 import { replaceFileAtomically } from "./durable_write";
-import { DEFAULT_LOCAL_ARCHIVE_POLICY } from "./local_archive_policy";
+import { DEFAULT_LOCAL_ARCHIVE_POLICY, LocalArchivePolicy } from "./local_archive_policy";
 import { peekTarRootMeta, readTarArchive, rootMetaKind as tarRootMetaKind } from "./tar_reader";
 import { injectGzipTarRootMeta, injectTarRootMeta } from "./tar_writer";
 import { injectZipRootMeta, peekZipRootMeta, rootMetaKind as zipRootMetaKind } from "./zip_writer";
 import { readZipCentralDirectory } from "./zip_reader";
+
+const pipelineAsync = promisify(pipeline);
+
+export type BoundedInflateResult =
+  | { ok: true; bytes: Buffer }
+  | { ok: false; hold: string };
+
+/**
+ * Streaming gzip inflation with budget enforcement.
+ *
+ * Returns the inflated buffer if it fits within the policy's maxTotalUncompressedBytesPerArchive.
+ * Aborts and returns a hold if the budget would be exceeded, preventing decompression bombs.
+ */
+export async function boundedGunzip(
+  compressed: Buffer,
+  policy: LocalArchivePolicy = DEFAULT_LOCAL_ARCHIVE_POLICY,
+): Promise<BoundedInflateResult> {
+  const budget = policy.maxTotalUncompressedBytesPerArchive;
+  const chunks: Buffer[] = [];
+  let totalBytes = 0;
+  let budgetExceeded = false;
+
+  const budgetEnforcer = new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      if (budgetExceeded) {
+        callback();
+        return;
+      }
+      totalBytes += chunk.length;
+      if (totalBytes > budget) {
+        budgetExceeded = true;
+        callback(new Error("archive.inflation_budget_exceeded"));
+        return;
+      }
+      chunks.push(chunk);
+      callback(null, chunk);
+    },
+  });
+
+  const gunzip = zlib.createGunzip();
+
+  try {
+    await pipelineAsync(
+      (async function* () { yield compressed; })(),
+      gunzip,
+      budgetEnforcer,
+    );
+    return { ok: true, bytes: Buffer.concat(chunks) };
+  } catch (err) {
+    const msg = (err as Error).message;
+    if (msg === "archive.inflation_budget_exceeded" || budgetExceeded) {
+      return { ok: false, hold: "archive.inflation_budget_exceeded" };
+    }
+    return { ok: false, hold: `archive.gzip_unreadable:${msg}` };
+  }
+}
+
+/**
+ * Synchronous wrapper for bounded gzip inflation.
+ * Uses a post-inflation check since zlib.gunzipSync must complete before we know the size.
+ */
+export function boundedGunzipSync(
+  compressed: Buffer,
+  policy: LocalArchivePolicy = DEFAULT_LOCAL_ARCHIVE_POLICY,
+): BoundedInflateResult {
+  const budget = policy.maxTotalUncompressedBytesPerArchive;
+
+  try {
+    const inflated = zlib.gunzipSync(compressed);
+    if (inflated.length > budget) {
+      return { ok: false, hold: "archive.inflation_budget_exceeded" };
+    }
+    return { ok: true, bytes: inflated };
+  } catch (err) {
+    return { ok: false, hold: `archive.gzip_unreadable:${(err as Error).message}` };
+  }
+}
 
 export type InventoryRewriteKind = "zip" | "tar" | "tar.gz";
 
@@ -39,7 +118,9 @@ export function peekArchiveRootMeta(abs: string): string | null {
   }
   if (kind === "tar.gz") {
     try {
-      const peeked = peekTarRootMeta(zlib.gunzipSync(fs.readFileSync(abs)));
+      const result = boundedGunzipSync(fs.readFileSync(abs));
+      if (!result.ok) return null;
+      const peeked = peekTarRootMeta(result.bytes);
       return peeked ? peeked.toString("utf8") : null;
     } catch {
       return null;
@@ -116,12 +197,11 @@ export function upsertArchiveRootMeta(abs: string, yaml: string): ArchiveMemberR
     return { rewritten: true };
   }
 
-  let tar: Buffer;
-  try {
-    tar = zlib.gunzipSync(fs.readFileSync(abs));
-  } catch (err) {
-    return { rewritten: false, hold: `archive.gzip_unreadable:${(err as Error).message}` };
+  const inflateResult = boundedGunzipSync(fs.readFileSync(abs));
+  if (!inflateResult.ok) {
+    return { rewritten: false, hold: inflateResult.hold };
   }
+  const tar = inflateResult.bytes;
   const admit = admitTarBytes(tar);
   if (admit) return { rewritten: false, hold: admit };
   const injected = injectGzipTarRootMeta(fs.readFileSync(abs), yaml);
