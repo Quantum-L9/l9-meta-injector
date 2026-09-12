@@ -96,7 +96,7 @@ function toBinaryPlist(xml) {
     const file = path.join(dir, "x.plist");
     try {
         fs.writeFileSync(file, xml, "utf8");
-        (0, node_child_process_1.execFileSync)("plutil", ["-convert", "binary1", file], { stdio: "pipe" });
+        (0, node_child_process_1.execFileSync)("/usr/bin/plutil", ["-convert", "binary1", file], { stdio: "pipe" });
         return fs.readFileSync(file);
     }
     finally {
@@ -105,7 +105,7 @@ function toBinaryPlist(xml) {
 }
 function readXattrHex(abs, key) {
     try {
-        const hex = (0, node_child_process_1.execFileSync)("xattr", ["-px", key, abs], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+        const hex = (0, node_child_process_1.execFileSync)("/usr/bin/xattr", ["-px", key, abs], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
         if (!hex)
             return null;
         return Buffer.from(hex.replace(/\s+/g, ""), "hex");
@@ -115,14 +115,14 @@ function readXattrHex(abs, key) {
     }
 }
 function writeXattrHex(abs, key, bytes) {
-    (0, node_child_process_1.execFileSync)("xattr", ["-wx", key, bytes.toString("hex"), abs], { stdio: "pipe" });
+    (0, node_child_process_1.execFileSync)("/usr/bin/xattr", ["-wx", key, bytes.toString("hex"), abs], { stdio: "pipe" });
 }
 function plistStringFromBinary(bytes) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "l9-plist-"));
     const file = path.join(dir, "x.plist");
     try {
         fs.writeFileSync(file, bytes);
-        (0, node_child_process_1.execFileSync)("plutil", ["-convert", "xml1", file], { stdio: "pipe" });
+        (0, node_child_process_1.execFileSync)("/usr/bin/plutil", ["-convert", "xml1", file], { stdio: "pipe" });
         const xml = fs.readFileSync(file, "utf8");
         const match = xml.match(/<string>([\s\S]*?)<\/string>/);
         return match ? match[1].replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&") : null;
@@ -145,7 +145,7 @@ function existingTags(abs) {
     const file = path.join(dir, "x.plist");
     try {
         fs.writeFileSync(file, bytes);
-        (0, node_child_process_1.execFileSync)("plutil", ["-convert", "xml1", file], { stdio: "pipe" });
+        (0, node_child_process_1.execFileSync)("/usr/bin/plutil", ["-convert", "xml1", file], { stdio: "pipe" });
         const xml = fs.readFileSync(file, "utf8");
         return [...xml.matchAll(/<string>([\s\S]*?)<\/string>/g)].map((m) => m[1].split("\n")[0]).filter(Boolean);
     }

@@ -8,7 +8,7 @@ export function injectTarRootMeta(tarBytes: Buffer, yaml: string): { ok: true; b
   if (!read.ok) return read;
   const kept: Buffer[] = [];
   for (const member of read.members) {
-    if (rootMetaKind(member.name) === "canonical") continue;
+    if (rootMetaKind(member.name) !== null) continue;
     kept.push(member.rawRecord);
   }
   const meta = encodeTarEntry({ name: ".l9meta.yaml", content: yaml, mode: 0o644, type: "0" });
@@ -33,5 +33,5 @@ export function buildTarArchive(members: Array<{ name: string; content: string |
 }
 
 export function keptMembers(members: TarMember[]): TarMember[] {
-  return members.filter((m) => rootMetaKind(m.name) !== "canonical");
+  return members.filter((m) => rootMetaKind(m.name) === null);
 }

@@ -23,6 +23,10 @@ export interface ZipCentralEntry {
     unixMode: number | null;
     /** Index in central-directory order. Preserved so ordering is reproducible. */
     index: number;
+    /** DOS last-modification time, for byte-exact round-trip in writers. */
+    modTime: number;
+    /** DOS last-modification date, for byte-exact round-trip in writers. */
+    modDate: number;
 }
 export interface ZipDirectory {
     entries: ZipCentralEntry[];

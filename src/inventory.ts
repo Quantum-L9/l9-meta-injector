@@ -567,9 +567,9 @@ function writeSidecar(abs: string, obj: Record<string, unknown>, unknowns?: stri
   catch (err) { unknowns?.push(`sidecar_write_failed:${(err as Error).message}`); }
 }
 
-// Write a folder's .l9meta.yaml non-destructively: if one already exists (possibly
-// user-authored), merge so existing keys win and only missing keys are added,
-// rather than blindly clobbering it. Mirrors the read/merge intent of injectFile.
+// Write a folder's .l9meta.yaml. If one already exists (possibly
+// user-authored), a parseability check is performed before rewriting it.
+// Note: this does NOT merge — the entire file is rewritten if parseable.
 // Boundary: a schema-driven header carries arbitrary operator-defined fields, not
 // the NormalizedMeta identity block. injectFile serializes meta as a generic
 // key/value bag, so this single documented cast is the one place that deliberately

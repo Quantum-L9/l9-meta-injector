@@ -124,6 +124,8 @@ function writeCentral(entry) {
     header.writeUInt16LE(20, 6);
     header.writeUInt16LE(entry.flags, 8);
     header.writeUInt16LE(entry.method, 10);
+    header.writeUInt16LE(entry.modTime, 12);
+    header.writeUInt16LE(entry.modDate, 14);
     header.writeUInt32LE(entry.crc32, 16);
     header.writeUInt32LE(entry.compressedSize, 20);
     header.writeUInt32LE(entry.uncompressedSize, 24);
@@ -144,6 +146,13 @@ function writeEocd(entryCount, centralSize, centralOffset) {
     eocd.writeUInt32LE(centralOffset, 16);
     return eocd;
 }
+/** Convert a JS Date to DOS file time (2-second resolution, 1980-2107 range). */
+function dosTimeNow() {
+    const d = new Date();
+    const modTime = ((d.getSeconds() >> 1) & 0x1f) | ((d.getMinutes() & 0x3f) << 5) | ((d.getHours() & 0x1f) << 11);
+    const modDate = (d.getDate() & 0x1f) | (((d.getMonth() + 1) & 0x0f) << 5) | (((d.getFullYear() - 1980) & 0x7f) << 9);
+    return { modTime, modDate };
+}
 function buildZipBuffer(members) {
     const locals = [];
     const centrals = [];
@@ -161,6 +170,7 @@ function buildZipBuffer(members) {
             localHeaderOffset: offset,
             externalAttributes: (0o100644 << 16) >>> 0,
             versionMadeBy: (3 << 8),
+            ...dosTimeNow(),
         }));
         offset += local.length;
     }
@@ -185,7 +195,7 @@ function injectZipRootMeta(archivePath, yaml) {
     const fd = fs.openSync(archivePath, "r");
     try {
         for (const entry of directory.entries) {
-            if (rootMetaKind(entry.name) === "canonical")
+            if (rootMetaKind(entry.name) !== null)
                 continue;
             const blob = copyLocalRecord(fd, entry);
             locals.push(blob);
@@ -199,6 +209,8 @@ function injectZipRootMeta(archivePath, yaml) {
                 localHeaderOffset: offset,
                 externalAttributes: entry.externalAttributes,
                 versionMadeBy: entry.versionMadeBy,
+                modTime: entry.modTime,
+                modDate: entry.modDate,
             }));
             offset += blob.length;
         }
@@ -221,6 +233,7 @@ function injectZipRootMeta(archivePath, yaml) {
         localHeaderOffset: offset,
         externalAttributes: (0o100644 << 16) >>> 0,
         versionMadeBy: (3 << 8),
+        ...dosTimeNow(),
     }));
     offset += metaLocal.length;
     const central = Buffer.concat(centrals);

@@ -47,7 +47,7 @@ function injectTarRootMeta(tarBytes, yaml) {
         return read;
     const kept = [];
     for (const member of read.members) {
-        if ((0, tar_reader_1.rootMetaKind)(member.name) === "canonical")
+        if ((0, tar_reader_1.rootMetaKind)(member.name) !== null)
             continue;
         kept.push(member.rawRecord);
     }
@@ -72,6 +72,6 @@ function buildTarArchive(members) {
     return (0, tar_format_1.encodeTarArchive)(members.map((m) => ({ name: m.name, content: m.content })));
 }
 function keptMembers(members) {
-    return members.filter((m) => (0, tar_reader_1.rootMetaKind)(m.name) !== "canonical");
+    return members.filter((m) => (0, tar_reader_1.rootMetaKind)(m.name) === null);
 }
 //# sourceMappingURL=tar_writer.js.map
