@@ -410,15 +410,15 @@
     },
     {
       "path": "dist/zip_reader.d.ts",
-      "git_blob_sha1": "49bf49a86bc5739190fb7f57f9e014da9f40747b"
+      "git_blob_sha1": "5015cbe1093977d08397f6bb22052778ac20afdf"
     },
     {
       "path": "dist/zip_reader.js",
-      "git_blob_sha1": "c8b232b2ea8c202f2dd98be15a4caaa2c1ed9c8b"
+      "git_blob_sha1": "7bd8eb9708f618246536e5cd6aca2a9e4a0b3a87"
     },
     {
       "path": "dist/zip_reader.js.map",
-      "git_blob_sha1": "14da87d62b9ea125230a7bc3d3ac8df9b39ce632"
+      "git_blob_sha1": "59a26ee0b88ecf4ffd6cb92214a8c6dc18bef419"
     },
     {
       "path": "docs/architecture-authority.json",
@@ -774,7 +774,7 @@
     },
     {
       "path": "src/inventory.ts",
-      "git_blob_sha1": "4c4b04b34d803b60ee58666291eda03d78974190"
+      "git_blob_sha1": "f4966988606b6a0ef107c9761661b764e044b625"
     },
     {
       "path": "src/local_archive_policy.ts",
@@ -830,7 +830,7 @@
     },
     {
       "path": "src/zip_reader.ts",
-      "git_blob_sha1": "4a33163fb3439880d6c774d93894f083d30c49c4"
+      "git_blob_sha1": "013a2ddb806f90dac82f9d51c6ac239414ff0e7e"
     },
     {
       "path": "tests/architecture_authority.test.ts",
