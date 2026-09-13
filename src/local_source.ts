@@ -697,6 +697,7 @@ function buildLocalRecord(draft: RecordDraft): InventoryRecord {
     evidence_excerpt: draft.evidenceOverride ?? classified.evidence,
     unknowns: draft.unknowns,
     created_at: null,
+    inspected_at: null,
   };
 }
 

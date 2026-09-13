@@ -52,6 +52,8 @@ export declare function canonicalMemberPath(name: string): string;
  * than resolved by whichever one happened to be written last.
  */
 export declare function memberCollisionKey(canonicalPath: string): string;
+/** Path-safety holds for one member name. Shared by ZIP preflight and TAR inventory admit. */
+export declare function pathSafetyHolds(raw: string, policy: LocalArchivePolicy): ArchiveHold[];
 export interface ArchivePreflightInput {
     directory: ZipDirectory;
     policy: LocalArchivePolicy;

@@ -8,6 +8,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, test } from "vitest";
 import { compareCodePoints } from "../src/ordering";
+import { normalizeFilename } from "../src/normalize_filename";
 import { discoverFiles } from "../src/retrieval";
 import * as os from "node:os";
 
@@ -31,11 +32,27 @@ describe("code-point ordering on the seam", () => {
     expect(offenders).toEqual([]);
   });
 
-  test("discovery orders entries by code point, so upper case sorts before lower case", () => {
+  test("discovery orders snake_case entries by code point", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "l9-order-"));
-    for (const name of ["b.md", "B.md", "a.md", "_.md"]) fs.writeFileSync(path.join(root, name), "#\n");
+    // Probes must already satisfy normalizeFilename (INV: .md stems are snake_case).
+    // B.md / b.md / _.md are not: B.md → b.md, _.md → .md, and B.md/b.md collide
+    // on case-insensitive APFS so the old pair could not exist as two files.
+    const intended = [
+      "code_point_order_alpha.md",
+      "code_point_order_mu.md",
+      "code_point_order_zeta.md",
+    ];
+    for (const name of intended) {
+      expect(normalizeFilename(path.join(root, name)).changed).toBe(false);
+      fs.writeFileSync(path.join(root, name), "#\n");
+    }
     const files = discoverFiles(root, "**/*").files.map((f) => path.basename(f));
+    expect(files).toHaveLength(intended.length);
     expect(files).toEqual([...files].sort(compareCodePoints));
-    expect(files).toEqual(["B.md", "_.md", "a.md", "b.md"]);
+    expect(files).toEqual([
+      "code_point_order_alpha.md",
+      "code_point_order_mu.md",
+      "code_point_order_zeta.md",
+    ]);
   });
 });

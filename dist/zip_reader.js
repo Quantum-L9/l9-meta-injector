@@ -317,6 +317,8 @@ function readCentralEntry(central, cursor, index) {
             encrypted: (generalPurposeFlags & (FLAG_ENCRYPTED | FLAG_STRONG_ENCRYPTION)) !== 0,
             unixMode: classified.unixMode,
             index,
+            modTime: central.readUInt16LE(cursor + 12),
+            modDate: central.readUInt16LE(cursor + 14),
         },
         next,
     };

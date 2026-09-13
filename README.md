@@ -343,9 +343,14 @@ Prefer `local-source` for anything you do not intend to modify.
 `npm run skills -- <root> --llm …` runs Cursor-native skill mode (ADR-017).
 
 **`npm run inventory` is not read-only.** Unlike the Action's `mode: inventory`, the
-direct CLI defaults to annotation: it appends metadata headers to text files and writes
-`.l9meta.yaml` sidecars beside binaries and folders. Pass `--dry-run` for observation
-only, or use `npm run local-source` when the source must not be touched.
+direct CLI defaults to annotation: it harvests existing meta first, writes three clocks
+(`created_at`, `modified_at`, `inspected_at`), appends metadata headers to text files,
+writes `.l9meta.yaml` sidecars beside comment-less text and **every recognized archive**,
+and when rewrite is admitted injects a root `.l9meta.yaml` member inside `.zip` / `.tar` /
+`.tar.gz` / `.tgz`. On macOS it also projects a concise Finder Comment and Tags for
+search. This is not apply: it does not require `.l9/meta-authority.yaml`. Pass
+`--dry-run` for observation only, or use `npm run local-source` when the source must
+not be touched.
 
 Pipeline coverage: every run (including dry-run) writes `coverage-report.json` under `--out-dir` with skipped binary/non-injectable paths and classification details (ADR-018). `skipped-noninjectable` is taxonomy-gated; weak keyword false positives are demoted so in-scope prose injects.
 

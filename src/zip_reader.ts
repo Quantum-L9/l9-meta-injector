@@ -74,6 +74,10 @@ export interface ZipCentralEntry {
   unixMode: number | null;
   /** Index in central-directory order. Preserved so ordering is reproducible. */
   index: number;
+  /** DOS last-modification time, for byte-exact round-trip in writers. */
+  modTime: number;
+  /** DOS last-modification date, for byte-exact round-trip in writers. */
+  modDate: number;
 }
 
 export interface ZipDirectory {
@@ -353,6 +357,8 @@ function readCentralEntry(
       encrypted: (generalPurposeFlags & (FLAG_ENCRYPTED | FLAG_STRONG_ENCRYPTION)) !== 0,
       unixMode: classified.unixMode,
       index,
+      modTime: central.readUInt16LE(cursor + 12),
+      modDate: central.readUInt16LE(cursor + 14),
     },
     next,
   };

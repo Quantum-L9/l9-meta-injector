@@ -2,8 +2,9 @@
 //
 // This mode ANNOTATES by default. It classifies every file and folder under a root,
 // and unless told otherwise it also appends metadata headers to text files (through
-// the filetype-aware injector) and writes `.l9meta.yaml` sidecars for binaries and
-// folders, alongside a manifest (JSON + CSV + MD) in the ArtifactInventory shape.
+// the filetype-aware injector) and writes `.l9meta.yaml` sidecars for comment-less
+// text, recognized archives (adjacent `<archive>.l9meta.yaml`), and folders,
+// alongside a manifest (JSON + CSV + MD) in the ArtifactInventory shape.
 //
 // Three distinct behaviors are worth naming, because conflating them is how a
 // "read-only" claim becomes false:
@@ -22,9 +23,18 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
 import { contentHash } from "./extract";
-import { resolveStrategy, sidecarPathFor } from "./comment";
+import {
+  applyCommentInjection,
+  detectNewlineConvention,
+  extractInjectedYaml,
+  resolveStrategy,
+  sidecarPathFor,
+  stripInjectedBlock,
+  yamlToBlock,
+} from "./comment";
+import { inspectFrontMatterDocument, patchManagedFrontMatter } from "./frontmatter_patch";
 import { injectFile } from "./inject";
-import { NormalizedMeta, asRecord, coerceNormalizedMeta } from "./schema";
+import { NormalizedMeta, asRecord } from "./schema";
 import { serializeYamlObject } from "./yaml_serialize";
 import { MetaSchema, applySchema, targetIncludes, parseCanonicalYaml, toMetaSchema } from "./meta_schema";
 import { buildOmitMatcher, OmitMatcher } from "./omit";
@@ -33,10 +43,14 @@ import { compareCodePoints } from "./ordering";
 import {
   ARCHIVE_EXTENSIONS,
   ARCHIVE_SIGNATURE_PROBE_BYTES,
+  archiveExtensionOf,
   signatureContradictsName,
   sniffArchiveSignature,
 } from "./archive_formats";
 import { replaceFileAtomically } from "./durable_write";
+import { harvestExistingMeta } from "./inventory_existing_meta";
+import { inventoryRewriteKind, upsertArchiveRootMeta, peekArchiveRootMeta } from "./inventory_archive_member";
+import { harvestDarwinSearch, projectDarwinSearch } from "./inventory_darwin_search";
 
 export type InventoryArtifactType =
   | "spec" | "code" | "schema" | "prompt" | "research_markdown" | "research_pdf"
@@ -61,7 +75,10 @@ export interface InventoryRecord {
   classification_confidence: number;
   evidence_excerpt: string | null;
   unknowns: string[];
+  /** Filesystem birthtime when the OS has a real one; never forged from mtime. */
   created_at: string | null;
+  /** This inventory inspection (`cfg.now`). */
+  inspected_at: string | null;
   meta?: Record<string, unknown>; // schema-shaped fields, present when a schema targets "manifest"
 }
 
@@ -310,6 +327,13 @@ function unopenedClassification(kind: "symlink" | "special"): Classification {
  * archive its name does not declare is still not opened — nothing is, on magic
  * alone — but the fact is put on the record.
  */
+/** Birthtime only when the OS recorded one. Linux often reports ctime here — that is not birth. */
+function filesystemCreatedAt(st: fs.Stats): string | null {
+  if (!st.birthtimeMs || st.birthtimeMs <= 0) return null;
+  if (process.platform === "linux" && st.birthtimeMs === st.ctimeMs) return null;
+  return st.birthtime.toISOString();
+}
+
 function hashRegularFile(abs: string, fileName: string, size: number, hashMaxBytes: number, unknowns: string[]): string | null {
   if (size > hashMaxBytes) {
     unknowns.push("content_hash_skipped:file_too_large");
@@ -329,6 +353,7 @@ export function buildRecord(
   isDir: boolean,
   cfg: Required<Pick<InventoryConfig, "sourceSystem" | "hashMaxBytes" | "now">>,
   kind: InventoryEntryKind = isDir ? "directory" : "file",
+  harvest: Record<string, unknown> = {},
 ): InventoryRecord {
   const relative = path.relative(root, abs).split(path.sep).join("/") || ".";
   const fileName = path.basename(abs);
@@ -336,12 +361,17 @@ export function buildRecord(
   const cls = kind === "symlink" || kind === "special"
     ? unopenedClassification(kind)
     : classifyInventory(relative, fileName, ext, isDir);
-  let size: number | null = null, modified: string | null = null, hash: string | null = null;
+  let size: number | null = null, modified: string | null = null, hash: string | null = null, created: string | null = null;
   const unknowns = [...cls.unknowns];
+  const harvestedType = harvest.inventory_type ?? harvest.artifact_type;
+  if (typeof harvestedType === "string" && harvestedType !== cls.type) {
+    unknowns.push(`harvested_type:${harvestedType}`);
+  }
   try {
     // lstat, never stat: the entry itself is the observation, not what it points at.
     const st = fs.lstatSync(abs);
     modified = st.mtime.toISOString();
+    created = filesystemCreatedAt(st);
     if (kind === "file") {
       size = st.size;
       hash = hashRegularFile(abs, fileName, size, cfg.hashMaxBytes, unknowns);
@@ -367,7 +397,8 @@ export function buildRecord(
     classification_confidence: cls.confidence,
     evidence_excerpt: cls.evidence,
     unknowns,
-    created_at: cfg.now,
+    created_at: created,
+    inspected_at: cfg.now,
   };
 }
 
@@ -410,7 +441,7 @@ export function inventoryTree(config: InventoryConfig): InventoryResult {
 
   const omit = buildOmitMatcher({
     root,
-    patterns: config.omitPatterns,
+    patterns: [...(config.omitPatterns ?? []), "**/*.l9meta.yaml", "**/.l9meta.yaml"],
     omitFile: config.omitFile,
     protectSkillMd: true,
     ignoreDirNames,
@@ -425,18 +456,19 @@ export function inventoryTree(config: InventoryConfig): InventoryResult {
 
   const schema = config.schema;
   for (const { abs, isDir, kind } of entries) {
-    const rec = buildRecord(root, abs, isDir, cfg, kind);
+    const harvest = kind === "symlink" || kind === "special" ? {} : harvestExistingMeta(abs, isDir);
+    const rec = buildRecord(root, abs, isDir, cfg, kind, harvest);
     // The meta object written to headers/sidecars: schema-driven when provided, else default.
     let metaObj: Record<string, unknown>;
     if (schema) {
       const applied = applySchema(asRecord(rec), schema);
       if (applied.missingRequired.length) rec.unknowns.push(...applied.missingRequired.map((n) => `missing_required:${n}`));
-      metaObj = applied.fields;
+      metaObj = omitSmashedClock({ ...sanitizeHarvest(harvest), ...applied.fields });
       // Honor target:"manifest" — attach the schema-shaped meta to the record so it
       // flows into inventory.json (otherwise "manifest" in target would be a no-op).
       if (targetIncludes(schema, "manifest")) rec.meta = applied.fields;
     } else {
-      metaObj = asRecord(rec);
+      metaObj = annotationFields(rec, harvest);
     }
     records.push(rec);
     typeDistribution[rec.artifact_type] = (typeDistribution[rec.artifact_type] || 0) + 1;
@@ -455,31 +487,44 @@ export function inventoryTree(config: InventoryConfig): InventoryResult {
     }
 
     // Files: text files get an inline header via the filetype-aware injector;
-    // comment-less text formats get a metadata sidecar. Binary / skip-binary
-    // never gets a sidecar (ADR-017 / edge-filetype policy).
+    // comment-less text formats get a metadata sidecar. Recognized archives
+    // always get an adjacent `<archive>.l9meta.yaml`. Admitted zip/tar/gz also
+    // receive a root `.l9meta.yaml` member (ADR-049). Other binaries stay skip-binary.
     const read = safeRead(abs);
     if (read.error) rec.unknowns.push(`read_failed:${read.error}`);
     const raw = read.text;
     const strategy = raw === null ? "skip-binary" : resolveStrategy(abs, raw).strategy;
+    const isRecognizedArchive = ARCHIVE_EXTENSIONS.has(archiveExtensionOf(abs));
     const canHeader = raw !== null && (strategy === "yaml-frontmatter" || strategy === "line-comment" || strategy === "block-comment");
     if (cfg.injectHeaders && canHeader && targetIncludes(schema, "file_header")) {
       // With a schema, the header intentionally carries only the schema's fields
       // (tests assert built-in fields like mcp_primitive are absent), so it isn't a
       // structural NormalizedMeta. injectFile consumes meta as a generic field bag;
       // asInjectableMeta marks that single, deliberate boundary rather than casting inline.
-      const headerMeta = schema ? asInjectableMeta(metaObj) : recordAsMeta(rec);
+      const headerMeta = asInjectableMeta(metaObj);
       try {
         injectFile(abs, headerMeta, { dryRun: false, outDir: config.outDir, verbose: false, writeInjectLog: false });
+        stripSmashedClockFromWritten(abs);
+        applyInventoryClocksToWritten(abs, {
+          created_at: rec.created_at ?? "Unknown",
+          modified_at: rec.modified_at ?? "Unknown",
+          inspected_at: rec.inspected_at ?? "Unknown",
+        });
       } catch (err) {
         // Don't discard the injection error (finding OBS-004): record it, then fall
         // back to a sidecar if the schema allows one.
         rec.unknowns.push(`header_injection_failed:${(err as Error).message}`);
         if (cfg.writeSidecars && targetIncludes(schema, "sidecar")) writeSidecar(abs, metaObj, rec.unknowns);
       }
-    } else if (cfg.writeSidecars && strategy !== "skip-binary" && targetIncludes(schema, "sidecar")) {
-      // Sidecar when the strategy is sidecar, OR when headers were skipped (e.g. schema
-      // targets sidecar only). Never for skip-binary / unreadable binaries (ADR-017).
+    } else if (
+      cfg.writeSidecars
+      && targetIncludes(schema, "sidecar")
+      && (isRecognizedArchive || strategy !== "skip-binary")
+    ) {
       writeSidecar(abs, metaObj, rec.unknowns);
+    }
+    if (isRecognizedArchive) {
+      annotateArchive(abs, rec, metaObj, harvest);
     }
   }
 
@@ -522,9 +567,9 @@ function writeSidecar(abs: string, obj: Record<string, unknown>, unknowns?: stri
   catch (err) { unknowns?.push(`sidecar_write_failed:${(err as Error).message}`); }
 }
 
-// Write a folder's .l9meta.yaml non-destructively: if one already exists (possibly
-// user-authored), merge so existing keys win and only missing keys are added,
-// rather than blindly clobbering it. Mirrors the read/merge intent of injectFile.
+// Write a folder's .l9meta.yaml. If one already exists (possibly
+// user-authored), a parseability check is performed before rewriting it.
+// Note: this does NOT merge — the entire file is rewritten if parseable.
 // Boundary: a schema-driven header carries arbitrary operator-defined fields, not
 // the NormalizedMeta identity block. injectFile serializes meta as a generic
 // key/value bag, so this single documented cast is the one place that deliberately
@@ -537,20 +582,116 @@ function asInjectableMeta(fields: Record<string, unknown>): NormalizedMeta {
 
 function writeFolderSidecar(dir: string, metaObj: Record<string, unknown>, unknowns?: string[]): void {
   const p = path.join(dir, ".l9meta.yaml");
-  // Non-destructive: never rewrite an existing folder sidecar. Round-tripping a
-  // user-authored file through the constrained canonical parser could corrupt it
-  // (escapes, nested maps), so leave any existing sidecar exactly as-is.
-  if (fs.existsSync(p)) return;
+  if (fs.existsSync(p)) {
+    const original = fs.readFileSync(p, "utf8");
+    let parsed: unknown;
+    try { parsed = parseCanonicalYaml(original); }
+    catch {
+      unknowns?.push("folder_sidecar_unreadable");
+      return;
+    }
+    if (typeof parsed === "object" && parsed !== null) {
+      const roundTripped = serializeYaml(parsed as Record<string, unknown>);
+      if (roundTripped !== original) {
+        unknowns?.push("folder_sidecar_lossy_roundtrip");
+        return;
+      }
+    }
+  }
   try { replaceFileAtomically(p, serializeYaml(metaObj)); }
   catch (err) { unknowns?.push(`sidecar_write_failed:${(err as Error).message}`); }
 }
 
-// Map an InventoryRecord onto the minimal header the injector serializes. The injector
-// preserves the file body and reconciles fields; inventory only needs the identity block.
-function recordAsMeta(rec: InventoryRecord): NormalizedMeta {
-  return coerceNormalizedMeta({
-    id: rec.artifact_id,
-    title: rec.file_name,
+function omitSmashedClock(fields: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...fields };
+  delete out.created_or_detected_at;
+  return out;
+}
+
+/** Prior inventory dumps are not operator meta. Do not re-emit them on the next pass. */
+const HARVEST_DUMP_KEYS = new Set([
+  "artifact_id",
+  "source_system",
+  "absolute_path",
+  "relative_path",
+  "file_name",
+  "extension",
+  "mime_type",
+  "size_bytes",
+  "parent_folder",
+  "depth",
+  "evidence_excerpt",
+  "unknowns",
+  "created_or_detected_at",
+  "content_hash",
+]);
+
+function sanitizeHarvest(harvest: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(harvest)) {
+    if (!HARVEST_DUMP_KEYS.has(key)) out[key] = value;
+  }
+  return out;
+}
+
+function applyInventoryClocksToWritten(abs: string, clocks: Record<string, unknown>): void {
+  const encoding = probeFileEncoding(abs);
+  if (encoding.status !== "utf8") return;
+  const raw = fs.readFileSync(abs, "utf8");
+  const spec = resolveStrategy(abs, raw);
+  if (spec.strategy === "yaml-frontmatter") {
+    const patched = patchManagedFrontMatter(raw, clocks);
+    if (patched.safe && patched.content !== raw) replaceFileAtomically(abs, patched.content);
+    return;
+  }
+  if (spec.strategy === "line-comment" || spec.strategy === "block-comment") {
+    const yaml = extractInjectedYaml(raw, spec);
+    if (!yaml) return;
+    let parsed: unknown;
+    try { parsed = parseCanonicalYaml(yaml); } catch { return; }
+    if (typeof parsed !== "object" || parsed === null) return;
+    const next = omitSmashedClock({ ...(parsed as Record<string, unknown>), ...clocks });
+    const newline = detectNewlineConvention(raw);
+    const block = yamlToBlock(serializeYamlObject(next, { fences: false }), spec, newline);
+    const rewritten = applyCommentInjection(stripInjectedBlock(raw, spec), block, newline);
+    if (rewritten !== raw) replaceFileAtomically(abs, rewritten);
+  }
+}
+
+function stripSmashedClockFromWritten(abs: string): boolean {
+  const encoding = probeFileEncoding(abs);
+  if (encoding.status !== "utf8") return false;
+  const raw = fs.readFileSync(abs, "utf8");
+  const spec = resolveStrategy(abs, raw);
+  if (spec.strategy === "yaml-frontmatter") {
+    const inspected = inspectFrontMatterDocument(raw);
+    if (!inspected.safe) return false;
+    const field = inspected.fields.find((entry) => entry.key === "created_or_detected_at");
+    if (!field) return false;
+    replaceFileAtomically(abs, raw.slice(0, field.start) + raw.slice(field.end));
+    return true;
+  }
+  if (spec.strategy === "line-comment" || spec.strategy === "block-comment") {
+    const yaml = extractInjectedYaml(raw, spec);
+    if (!yaml) return false;
+    let parsed: unknown;
+    try { parsed = parseCanonicalYaml(yaml); } catch { return false; }
+    if (typeof parsed !== "object" || parsed === null || !Object.prototype.hasOwnProperty.call(parsed, "created_or_detected_at")) {
+      return false;
+    }
+    const stripped = omitSmashedClock(parsed as Record<string, unknown>);
+    const newline = detectNewlineConvention(raw);
+    const block = yamlToBlock(serializeYamlObject(stripped, { fences: false }), spec, newline);
+    replaceFileAtomically(abs, applyCommentInjection(stripInjectedBlock(raw, spec), block, newline));
+    return true;
+  }
+  return false;
+}
+
+function annotationFields(rec: InventoryRecord, harvest: Record<string, unknown>): Record<string, unknown> {
+  const kept = sanitizeHarvest(harvest);
+  const harvestedTitle = typeof kept.title === "string" && kept.title.trim() ? kept.title : rec.file_name;
+  return omitSmashedClock({
     artifact_type: "source",
     mcp_primitive: "resource",
     callable: false,
@@ -558,18 +699,59 @@ function recordAsMeta(rec: InventoryRecord): NormalizedMeta {
     injectable: true,
     namespace: "inventory",
     sharing_scope: "agnostic",
-    source_path: rec.relative_path,
-    content_hash: rec.content_hash ?? "Unknown",
     token_cost_estimate: 0,
     authority: "inventory",
-    created_or_detected_at: rec.created_at ?? "Unknown",
-    // inventory-specific fields ride along; reconcile/serialize keep them verbatim
+    evidence: rec.evidence_excerpt ?? "Unknown",
+    ...kept,
+    id: rec.artifact_id,
+    title: harvestedTitle,
+    source_path: rec.relative_path,
+    content_hash: rec.content_hash ?? "Unknown",
     inventory_type: rec.artifact_type,
     classification_confidence: rec.classification_confidence,
-    evidence: rec.evidence_excerpt ?? "Unknown",
-    // Validated narrowing (QTE-005): this literal carries the full identity block,
-    // so coerce rather than blind-cast — drift throws at the boundary.
+    created_at: rec.created_at ?? "Unknown",
+    modified_at: rec.modified_at ?? "Unknown",
+    inspected_at: rec.inspected_at ?? "Unknown",
   });
+}
+
+function harvestedStringList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map((item) => String(item));
+  if (typeof value === "string" && value.trim()) return [value];
+  return [];
+}
+
+function annotateArchive(
+  abs: string,
+  rec: InventoryRecord,
+  metaObj: Record<string, unknown>,
+  harvest: Record<string, unknown>,
+): void {
+  const embeddedMeta = { ...metaObj };
+  delete embeddedMeta.content_hash;
+  delete embeddedMeta.modified_at;
+  delete embeddedMeta.created_at;
+  const yaml = serializeYaml(embeddedMeta);
+  const newHash = crypto.createHash("sha256").update(yaml, "utf8").digest("hex");
+  const existing = peekArchiveRootMeta(abs);
+  if (existing !== null) {
+    const existingHash = crypto.createHash("sha256").update(existing, "utf8").digest("hex");
+    if (newHash === existingHash) {
+      return;
+    }
+  }
+  const darwinPrior = harvestDarwinSearch(abs);
+  const member = upsertArchiveRootMeta(abs, yaml);
+  if (!member.rewritten) rec.unknowns.push(`archive_rewrite_held:${member.hold}`);
+  const kind = inventoryRewriteKind(rec.file_name) ?? (archiveExtensionOf(abs).replace(".", "") || "archive");
+  const darwinKind = kind === "tar.gz" ? "tar.gz" : kind;
+  const err = projectDarwinSearch(abs, {
+    fileName: rec.file_name,
+    kind: darwinKind,
+    harvestedTitle: typeof harvest.title === "string" ? harvest.title : null,
+    harvestedTags: harvestedStringList(harvest.tags),
+  }, darwinPrior);
+  if (err) rec.unknowns.push(err);
 }
 
 function writeManifests(outDir: string, root: string, records: InventoryRecord[], dist: Record<string, number>, duplicates: DuplicateCluster[], now: string, _dryRun: boolean): { json: string; csv: string; md: string; duplicates: string } {
@@ -583,7 +765,7 @@ function writeManifests(outDir: string, root: string, records: InventoryRecord[]
   const totalWasted = duplicates.reduce((a, d) => a + d.wasted_bytes, 0);
   fs.writeFileSync(dupPath, JSON.stringify({ generatedAt: now, root, clusters: duplicates.length, totalWastedBytes: totalWasted, duplicates }, null, 2), "utf8");
 
-  const cols: (keyof InventoryRecord)[] = ["relative_path", "file_name", "extension", "artifact_type", "size_bytes", "modified_at", "content_hash", "depth", "classification_confidence", "evidence_excerpt", "unknowns"];
+  const cols: (keyof InventoryRecord)[] = ["relative_path", "file_name", "extension", "artifact_type", "size_bytes", "created_at", "modified_at", "inspected_at", "content_hash", "depth", "classification_confidence", "evidence_excerpt", "unknowns"];
   const rows = [cols.join(",")];
   for (const r of records) rows.push(cols.map((c) => csvCell(Array.isArray(r[c]) ? (r[c] as string[]).join("; ") : r[c])).join(","));
   fs.writeFileSync(csvPath, rows.join("\n") + "\n", "utf8");

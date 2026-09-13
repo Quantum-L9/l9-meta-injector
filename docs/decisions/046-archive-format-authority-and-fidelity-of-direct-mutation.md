@@ -4,6 +4,11 @@
 
 Accepted
 
+Amended by [ADR-049](049-inventory-archive-member-annotation.md): inventory annotation
+may open admitted ZIP and TAR containers to upsert a root `.l9meta.yaml` member.
+Observation expansion remains ZIP-only; TAR is still never expanded by `local-source`
+or `localFiles`.
+
 ## Date
 
 2026-09-02

@@ -194,6 +194,11 @@ function pathHolds(canonical: string, raw: string, policy: LocalArchivePolicy): 
   return holds;
 }
 
+/** Path-safety holds for one member name. Shared by ZIP preflight and TAR inventory admit. */
+export function pathSafetyHolds(raw: string, policy: LocalArchivePolicy): ArchiveHold[] {
+  return pathHolds(canonicalMemberPath(raw), raw, policy);
+}
+
 function entryKindHold(entry: ZipCentralEntry): ArchiveHold | null {
   switch (entry.kind) {
     case "symlink":

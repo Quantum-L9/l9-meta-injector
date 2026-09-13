@@ -469,6 +469,7 @@ function buildLocalRecord(draft) {
         evidence_excerpt: draft.evidenceOverride ?? classified.evidence,
         unknowns: draft.unknowns,
         created_at: null,
+        inspected_at: null,
     };
 }
 function holdArchive(context, task, contentHash, sizeBytes, holds) {

@@ -18,7 +18,10 @@ export interface InventoryRecord {
     classification_confidence: number;
     evidence_excerpt: string | null;
     unknowns: string[];
+    /** Filesystem birthtime when the OS has a real one; never forged from mtime. */
     created_at: string | null;
+    /** This inventory inspection (`cfg.now`). */
+    inspected_at: string | null;
     meta?: Record<string, unknown>;
 }
 export interface InventoryConfig {
@@ -89,7 +92,7 @@ interface Classification {
 export declare function classifyInventory(relPath: string, fileName: string, ext: string, isDir: boolean): Classification;
 /** What a directory entry is, decided without following anything. */
 export type InventoryEntryKind = "file" | "directory" | "symlink" | "special";
-export declare function buildRecord(root: string, abs: string, isDir: boolean, cfg: Required<Pick<InventoryConfig, "sourceSystem" | "hashMaxBytes" | "now">>, kind?: InventoryEntryKind): InventoryRecord;
+export declare function buildRecord(root: string, abs: string, isDir: boolean, cfg: Required<Pick<InventoryConfig, "sourceSystem" | "hashMaxBytes" | "now">>, kind?: InventoryEntryKind, harvest?: Record<string, unknown>): InventoryRecord;
 /**
  * Run an inventory over a filesystem root.
  *

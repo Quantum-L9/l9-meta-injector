@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.canonicalMemberPath = canonicalMemberPath;
 exports.memberCollisionKey = memberCollisionKey;
+exports.pathSafetyHolds = pathSafetyHolds;
 exports.preflightArchive = preflightArchive;
 const zip_reader_1 = require("./zip_reader");
 const WINDOWS_DRIVE = /^[A-Za-z]:[\\/]/;
@@ -119,6 +120,10 @@ function pathHolds(canonical, raw, policy) {
         });
     }
     return holds;
+}
+/** Path-safety holds for one member name. Shared by ZIP preflight and TAR inventory admit. */
+function pathSafetyHolds(raw, policy) {
+    return pathHolds(canonicalMemberPath(raw), raw, policy);
 }
 function entryKindHold(entry) {
     switch (entry.kind) {

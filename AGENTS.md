@@ -17,7 +17,7 @@ The TypeScript pipeline is the sole active engine. Do not treat the historical P
 | Import | Stability | Purpose |
 |---|---|---|
 | `l9-meta-injector` | Stable | Full orchestration through `runPipelineAsync` |
-| `l9-meta-injector/inventory` | Stable | Standalone inventory |
+| `l9-meta-injector/inventory` | Stable | Standalone inventory (drive annotation: harvest-first, three clocks, archive sidecar + in-archive member; Darwin search projection) |
 | `l9-meta-injector/schema` | Stable | Metadata contracts |
 | `l9-meta-injector/advanced` | Experimental | Low-level composition primitives |
 | `l9-meta-injector/advanced/llm` | Experimental | LLM adapter controls |
