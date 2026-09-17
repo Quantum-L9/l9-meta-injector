@@ -2,24 +2,22 @@
 "use strict";
 const fs = require("node:fs");
 const path = require("node:path");
+const identity = require("./lib/release-identity.js");
 
 const REPO = path.resolve(__dirname, "..");
 const pkg = JSON.parse(fs.readFileSync(path.join(REPO, "package.json"), "utf8"));
 const lock = JSON.parse(fs.readFileSync(path.join(REPO, "package-lock.json"), "utf8"));
 const dispatch = fs.readFileSync(path.join(REPO, "scripts/lib/operation-dispatch.js"), "utf8");
 const errors = [];
-const semver = /^(\d+)\.(\d+)\.(\d+)$/;
-const match = semver.exec(pkg.version);
+const derived = identity.parseVersion(pkg.version) ? identity.releaseIdentity(pkg.version) : null;
 
-if (!match) {
+if (!derived) {
   errors.push(`package version is not plain SemVer: ${pkg.version}`);
 }
 
-const exactTag = match ? `v${pkg.version}` : null;
-const majorTag = match ? `v${match[1]}` : null;
-const planPath = exactTag
-  ? path.join(REPO, "docs", "release", `${exactTag}-release-plan.json`)
-  : null;
+const exactTag = derived ? derived.exactTag : null;
+const majorTag = derived ? derived.majorTag : null;
+const planPath = derived ? path.join(REPO, derived.planPath) : null;
 let plan = null;
 
 if (planPath && fs.existsSync(planPath)) {
@@ -46,13 +44,11 @@ if (plan) {
     errors.push("release plan identity mismatch");
   }
 
-  if (plan.schema === "l9.meta-injector-release-plan/v2") {
+  if (plan.schema === identity.PLAN_SCHEMA) {
     if (plan.maintained_major_tag !== majorTag) errors.push("maintained major tag mismatch");
-    if (plan.consumer_ref !== `Quantum-L9/l9-meta-injector@${majorTag}`) {
-      errors.push("consumer ref mismatch");
-    }
+    if (plan.consumer_ref !== derived.consumerRef) errors.push("consumer ref mismatch");
   } else if (plan.github_release?.status !== "released") {
-    errors.push("new release candidates must use l9.meta-injector-release-plan/v2");
+    errors.push(`new release candidates must use ${identity.PLAN_SCHEMA}`);
   }
 }
 
