@@ -2,21 +2,19 @@
 
 ## Status
 
-Accepted for implementation; publication remains separately authorized.
+Superseded by [ADR-050](050-package-version-authority-and-maintained-major-action-tag.md).
+
+The historical `v4.0.0` release facts and provenance recorded here remain valid. ADR-050 supersedes the consumer-pin and ongoing release-identity policy.
 
 ## Decision
 
-The breaking carrier, transaction, and frontmatter changes converge in `v4.0.0`.
-A consumer must pin the final 40-character release commit. GitHub commit/tag consumption
-is sufficient for `l9-deploy`; npm publication is optional and remains blocked until its
-independent evidence and owner-approval contract is satisfied.
+The breaking carrier, transaction, and frontmatter changes converged in `v4.0.0`.
+At that release, consumers were required to pin the final 40-character release commit. GitHub commit/tag consumption was sufficient for `l9-deploy`; npm publication remained optional and separately authorized.
 
-`l9-deploy` must declare one canonical writer, remove its Python injector/verifier, route
-local checks through the packed CLI, route CI through the exact-SHA composite Action, and
-materialize one canonical metadata index before merge.
+That exact-SHA consumer rule is no longer the active downstream contract. ADR-050 establishes exact SemVer releases for provenance and maintained-major tags for compatible consumer automation.
 
-## Consequences
+## Historical consequences
 
-- No consumer migration can be rendered against `main`, a branch, or a guessed release SHA.
-- Open consumer pull requests must be reconciled before applying the pinned migration.
-- A release candidate may be validated without authorizing a tag, GitHub release, or npm publish.
+- `v4.0.0` remains bound to its exact release commit.
+- npm publication remains a separate authorization.
+- The prior requirement to edit downstream consumers for every compatible release is superseded by ADR-050.
