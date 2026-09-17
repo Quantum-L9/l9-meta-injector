@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 4.1.0 - 2026-09-17
+
 ### Fixed
 
 - Archive preflight now holds a ZIP that declares one path as a file and uses it as a directory (`archive.path_conflict`), and one whose path component is longer than any filesystem stores (`archive.path_too_long`). Both verdicts are order-independent; previously `a` before `a/b` threw `EEXIST` out of member staging and leaked the scratch root, and the reverse order was mis-held as an unreadable format. The canonical reader version is `1.1.0` (ADR-046).

@@ -51,5 +51,7 @@
     "tag": true,
     "release": true,
     "npm_publish": false
-  }
+  },
+  "status": "superseded",
+  "superseded_by": "v4.1.0"
 }

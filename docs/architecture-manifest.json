@@ -10,7 +10,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "git_blob_sha1": "3d6f96563d7bf02d5664fd5308769ffe1293bdcd"
+      "git_blob_sha1": "caf0bc9d048252121dbe6a427fde44e4288da8b1"
     },
     {
       "path": "dist/archive_preflight.d.ts",
@@ -442,7 +442,7 @@
     },
     {
       "path": "docs/decision_log.md",
-      "git_blob_sha1": "584c468d2c7905cfa3a97d65cbf8a236dc4c56c6"
+      "git_blob_sha1": "cbb3bda26e324108bb025342292df5f39bf2388d"
     },
     {
       "path": "docs/decisions/036-read-only-local-source-acquisition.md",
@@ -514,11 +514,11 @@
     },
     {
       "path": "docs/package-publication-decision.json",
-      "git_blob_sha1": "3ac2598c3b13bf49013e19a0c928418b2157c3bc"
+      "git_blob_sha1": "885ddb3625bb07878ec1aefc628acb2d15adb468"
     },
     {
       "path": "docs/public-api-contract.json",
-      "git_blob_sha1": "3d3edf187983a6c04766acdb9bc06b89e63d421d"
+      "git_blob_sha1": "b8c9129868e6b7690d4c846a205dbf33544ec92b"
     },
     {
       "path": "docs/public-api.md",
@@ -606,15 +606,15 @@
     },
     {
       "path": "package-lock.json",
-      "git_blob_sha1": "ec6d05c22d1cc1a4a2a52def8c08a67c9f00c0dc"
+      "git_blob_sha1": "ed1cca22183d28e96b25f0b8f985293db8a218c8"
     },
     {
       "path": "package.json",
-      "git_blob_sha1": "80dc64b9d963921a94de8a3b6aad29a34e994d0b"
+      "git_blob_sha1": "dbab57da85bfc88cfc96bc131159c3b7491e79fa"
     },
     {
       "path": "README.md",
-      "git_blob_sha1": "27bdccfd59913024cc5d516020db267fff921ad4"
+      "git_blob_sha1": "f25c4d342750f00a4576a027a025d9ba97bf027a"
     },
     {
       "path": "scripts/check-architecture-authority.js",
@@ -950,7 +950,7 @@
     },
     {
       "path": "tests/publication_readiness.test.ts",
-      "git_blob_sha1": "fe47895c9b2b4823a34279c5ae6f99793f898135"
+      "git_blob_sha1": "3abee3a661273d96ab5f43aa4abfce3201267477"
     },
     {
       "path": "tests/repository_model.test.ts",
