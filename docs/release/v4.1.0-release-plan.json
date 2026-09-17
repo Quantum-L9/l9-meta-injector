@@ -1,0 +1,38 @@
+{
+  "schema": "l9.meta-injector-release-plan/v2",
+  "release_version": "4.1.0",
+  "tag": "v4.1.0",
+  "maintained_major_tag": "v4",
+  "consumer_ref": "Quantum-L9/l9-meta-injector@v4",
+  "release_date": "planned",
+  "github_release": {
+    "status": "planned",
+    "required_ref": "validated main revision after merge",
+    "resolved_commit": null
+  },
+  "npm_publication": {
+    "status": "not_required",
+    "required": false
+  },
+  "propagation": {
+    "same_major": "after exact release publication, move v4 to the validated release commit",
+    "breaking_major": "create a new maintained major tag; never move v4 across a major boundary"
+  },
+  "required_gates": [
+    "npm ci",
+    "npm run lint",
+    "npm run validate",
+    "clean working tree",
+    "GitHub PR checks",
+    "exact GitHub Release",
+    "maintained-major tag update",
+    "real @v4 consumer smoke"
+  ],
+  "publication_authority": {
+    "commit": true,
+    "push": true,
+    "tag": true,
+    "release": true,
+    "npm_publish": false
+  }
+}
