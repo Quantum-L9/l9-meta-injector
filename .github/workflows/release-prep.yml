@@ -3,8 +3,7 @@ on:
   push:
     branches:
       - 'release/v*.*.*'
-permissions:
-  contents: write
+permissions: {}
 concurrency:
   group: release-prep-${{ github.ref }}
   cancel-in-progress: true
@@ -13,16 +12,23 @@ jobs:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: write
     steps:
+      # persist-credentials: false keeps the write-scoped token out of
+      # .git/config, so dependency lifecycle code, the generators and the test
+      # suite all run with no credential on disk. Only the final push step is
+      # handed the token.
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           ref: ${{ github.ref_name }}
           fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version-file: package.json
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - name: Generate release state
         shell: bash
         run: |
@@ -62,4 +68,13 @@ jobs:
             exit 1
           fi
       - name: Push validated release state
-        run: git push origin "HEAD:${GITHUB_REF_NAME}"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The token is passed as a one-shot push argument rather than written
+          # into the remote, so it never lands in .git/config.
+          git push \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            "HEAD:refs/heads/${GITHUB_REF_NAME}"
