@@ -28,6 +28,12 @@ if (planPath && fs.existsSync(planPath)) {
   errors.push(`release plan is missing: docs/release/${exactTag}-release-plan.json`);
 }
 
+const publication = JSON.parse(
+  fs.readFileSync(path.join(REPO, "docs/package-publication-decision.json"), "utf8"),
+);
+if (publication.package_version !== pkg.version) {
+  errors.push("publication decision version mismatch");
+}
 if (lock.version !== pkg.version || lock.packages?.[""]?.version !== pkg.version) {
   errors.push("package-lock version mismatch");
 }
