@@ -220,6 +220,8 @@ const AUTHORITY_CRITICAL_PATHS = [
   "scripts/lib/public-api.js",
   "scripts/lib/architecture-authority.js",
   "scripts/lib/dist-integrity.js",
+  "scripts/lib/release-identity.js",
+  "scripts/release-identity-cli.js",
   "tests/public_api_runtime.test.ts",
   "tests/public_api_types.test.ts",
   "tests/publication_readiness.test.ts",
