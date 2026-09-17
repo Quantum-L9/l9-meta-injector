@@ -1,9 +1,16 @@
 #!/usr/bin/env node
 "use strict";
-const fs=require("node:fs");const path=require("node:path");
-const R=path.resolve(__dirname,"..");const version=process.argv[2];const m=/^(\d+)\.(\d+)\.(\d+)$/.exec(version||"");if(!m)throw new Error("usage: prepare-release X.Y.Z");
-const major=m[1],exact=`v${version}`,majorTag=`v${major}`,read=p=>fs.readFileSync(path.join(R,p),"utf8"),write=(p,s)=>{fs.mkdirSync(path.dirname(path.join(R,p)),{recursive:true});fs.writeFileSync(path.join(R,p),s)};
-for(const p of ["package.json","package-lock.json"]){const j=JSON.parse(read(p));j.version=version;if(j.packages?.[""])j.packages[""].version=version;write(p,JSON.stringify(j,null,2)+"\n")}
+const fs=require("node:fs");const path=require("node:path");const identity=require("./lib/release-identity.js");
+const R=path.resolve(__dirname,"..");const read=p=>fs.readFileSync(path.join(R,p),"utf8"),write=(p,s)=>{fs.mkdirSync(path.dirname(path.join(R,p)),{recursive:true});fs.writeFileSync(path.join(R,p),s)};
+// package.json#version is the authority (ADR-050). This script derives release
+// state from it and never writes it. The release branch is an assertion input,
+// not a value source — deriving the version from the branch name and writing
+// that into package.json made the branch the de facto authority. Assert first,
+// so a mismatch changes nothing on disk.
+const version=JSON.parse(read("package.json")).version;const id=identity.releaseIdentity(version);const exact=id.exactTag,majorTag=id.majorTag;
+const branchAt=process.argv.indexOf("--branch");try{identity.assertBranchMatchesVersion(branchAt===-1?process.env.GITHUB_REF_NAME:process.argv[branchAt+1],version)}catch(error){console.error(`prepare-release: BLOCKED\n  - ${error.message}`);process.exit(1)}
+// The lockfile version is derived state, so it is written; package.json is not.
+for(const p of ["package-lock.json"]){const j=JSON.parse(read(p));j.version=version;if(j.packages?.[""])j.packages[""].version=version;write(p,JSON.stringify(j,null,2)+"\n")}
 for(const p of ["docs/package-publication-decision.json","docs/public-api-contract.json"]){const j=JSON.parse(read(p));if(Object.hasOwn(j,"package_version"))j.package_version=version;write(p,JSON.stringify(j,null,2)+"\n")}
 let old=read("docs/decisions/029-v4-release-and-consumer-migration.md");if(!old.includes("Superseded by ADR-050")){old=old.replace("## Status\n\nAccepted for implementation; publication remains separately authorized.","## Status\n\nSuperseded by ADR-050. Historical release decision retained for traceability.");write("docs/decisions/029-v4-release-and-consumer-migration.md",old)}
 const adr=`# ADR-050: One release version authority with maintained major consumer tags\n\n## Status\n\nAccepted. Supersedes ADR-029 for active consumer versioning.\n\n## Decision\n\n\`package.json#version\` is the sole persisted semantic-version authority. Release preparation derives the lockfile version, exact tag \`vX.Y.Z\`, release-plan identity, and maintained major tag \`vX\` from it. Exact GitHub Releases preserve immutable provenance; GitHub Action consumers use \`Quantum-L9/l9-meta-injector@vX\`.\n\nAfter a validated release is created, automation advances only that release's matching major tag. Patch and minor releases therefore propagate to existing consumers without downstream version-bump pull requests. A new major tag never rewrites the prior major line. npm publication remains separately authorized.\n\n## Consequences\n\n- No current release version may be hardcoded in release validation.\n- \`@main\` and raw commit SHA are not the canonical consumer interface for this package.\n- Exact release commit SHA remains evidence for audit and rollback.\n- Release automation must fail closed before moving a maintained major tag.\n\n## Supersedes\n\nADR-029 for active release consumption and migration policy.\n`;write("docs/decisions/050-release-version-authority-and-major-tags.md",adr);

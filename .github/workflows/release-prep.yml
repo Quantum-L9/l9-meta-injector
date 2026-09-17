@@ -23,9 +23,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#release/v}"
-          node scripts/prepare-release.js "$VERSION"
+          # The branch name is asserted against package.json#version, never read
+          # as one. prepare-release fails closed before writing on a mismatch.
+          node scripts/prepare-release.js --branch "$GITHUB_REF_NAME"
           npm run manifest:update
+          VERSION="$(node scripts/release-identity-cli.js emit --field version)"
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add -A
