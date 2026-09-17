@@ -232,7 +232,7 @@ Accepted ADRs remain in the repository. A changed decision receives a new sequen
 
 `package.json#version` is the sole persisted semantic-version authority. The lockfile, exact release tag, release plan, GitHub Release, and maintained major tag are derived from it or validated against it. Consumers use `Quantum-L9/l9-meta-injector@vX`; patch and minor releases advance only that matching major tag after validation. Exact commit identity remains release provenance, and npm publication remains separately authorized.
 
-**Enforced by:** `scripts/prepare-release.js`, `scripts/check-release-candidate.js`, release workflows, and the real post-release `@vX` consumer smoke.
+**Enforced by:** `scripts/lib/release-identity.js`, `scripts/prepare-release.js`, `scripts/check-release-candidate.js`, and the release workflows, whose consumer acceptance runs against the release commit before the maintained major tag advances.
 
 ### INV-024: A corpus says what it observed, under which rules, and how it knows
 
