@@ -56,6 +56,44 @@ if (plan) {
   }
 }
 
+// --- one current package identity -------------------------------------------
+//
+// ADR-050 makes package.json#version the sole persisted authority, so every
+// other current-facing statement of the package version has to be derived from
+// it or absent. Proving that once by hand is what let AGENTS.md sit two majors
+// behind and the package contract a full release behind; this asserts it on
+// every run instead.
+const JSON_AUTHORITIES = [
+  ["docs/package-contract.json", (doc) => doc.package_version],
+  ["docs/public-api-contract.json", (doc) => doc.package_version],
+  ["docs/package-publication-decision.json", (doc) => doc.package_version],
+];
+for (const [relative, pick] of JSON_AUTHORITIES) {
+  const found = pick(JSON.parse(fs.readFileSync(path.join(REPO, relative), "utf8")));
+  if (found !== pkg.version) {
+    errors.push(`${relative} states version ${found}, not ${pkg.version}`);
+  }
+}
+
+// A regex that stops matching is itself a failure: a reworded document must not
+// drop silently out of enforcement.
+const TEXT_AUTHORITIES = [
+  ["docs/architecture.md", /^\*\*Package version:\*\* (\d+\.\d+\.\d+)$/m],
+];
+for (const [relative, pattern] of TEXT_AUTHORITIES) {
+  const found = pattern.exec(fs.readFileSync(path.join(REPO, relative), "utf8"));
+  if (!found) errors.push(`${relative} no longer states a package version where one is enforced`);
+  else if (found[1] !== pkg.version) {
+    errors.push(`${relative} states version ${found[1]}, not ${pkg.version}`);
+  }
+}
+
+// The agent guide states repository identity and must not pin a version at all,
+// since nothing derives it there.
+const agents = fs.readFileSync(path.join(REPO, "AGENTS.md"), "utf8");
+const pinned = /l9-meta-injector@(\d+\.\d+\.\d+)/.exec(agents);
+if (pinned) errors.push(`AGENTS.md pins package version ${pinned[1]}; identity belongs to package.json`);
+
 if (!dispatch.includes('actionPath: path.resolve(__dirname, "..", ".."),')) {
   errors.push("packed CLI action root is incorrect");
 }

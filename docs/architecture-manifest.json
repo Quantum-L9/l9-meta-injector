@@ -426,7 +426,7 @@
     },
     {
       "path": "docs/architecture.md",
-      "git_blob_sha1": "9cf3612a4c62a92b8a9d54b5aff41d410ba2134e"
+      "git_blob_sha1": "c76d4df62a999be737dbcab8a9e907dca2706209"
     },
     {
       "path": "docs/contracts.md",
@@ -510,7 +510,7 @@
     },
     {
       "path": "docs/package-contract.json",
-      "git_blob_sha1": "8c7e05ec25adaf54866f43cf1fe59412729c175d"
+      "git_blob_sha1": "8dd875eb0ab40473490d34215a3fe0603fc2128e"
     },
     {
       "path": "docs/package-publication-decision.json",
@@ -526,7 +526,7 @@
     },
     {
       "path": "docs/release-checklist.md",
-      "git_blob_sha1": "a2c0f79fc8df65cbbcc55c7726e9688dcdd5cb1b"
+      "git_blob_sha1": "5fa08151fb0e6a397f10a9fa3fdcbec195a4337b"
     },
     {
       "path": "docs/schemas/architecture-authority.schema.json",
@@ -646,7 +646,7 @@
     },
     {
       "path": "scripts/lib/dist-integrity.js",
-      "git_blob_sha1": "8f9ca67aa8d52124ac0db82f9c9d15867c2ef779"
+      "git_blob_sha1": "09b341143421fff35309697223f16e671cca3c18"
     },
     {
       "path": "scripts/lib/public-api.js",

@@ -23,7 +23,7 @@
 
 ## Version and migration
 
-- [ ] `package.json`, lockfile, API contract, package contract, and changelog all report `4.0.0`.
+- [ ] `package.json`, lockfile, API contract, package contract, and changelog all report the same version, as `npm run check:release-candidate` proves.
 - [ ] `docs/migrations/v3-to-v4.md` covers the breaking v4 operation/carrier/frontmatter changes.
 
 ## Publication

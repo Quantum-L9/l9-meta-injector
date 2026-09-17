@@ -10,6 +10,20 @@ function fail(message) {
   error.code = "L9_DIST_INTEGRITY";
   throw error;
 }
+
+// ADR-050: package.json#version is the sole persisted semantic-version
+// authority, and no current release version may be hardcoded in release
+// validation. This check used to require the literal version of the release
+// current when it was written, which quietly inverted the rule — the package
+// contract could not be advanced with the package, so it was left behind.
+let packageVersion = null;
+function authorityVersion() {
+  if (packageVersion === null) {
+    const repo = path.resolve(__dirname, "..", "..");
+    packageVersion = JSON.parse(fs.readFileSync(path.join(repo, "package.json"), "utf8")).version;
+  }
+  return packageVersion;
+}
 function posix(value) { return value.split(path.sep).join("/"); }
 function isPlainObject(value) { return typeof value === "object" && value !== null && !Array.isArray(value); }
 function sha256File(file) {
@@ -141,7 +155,7 @@ function validatePackageContract(contract) {
   if (contract.schema !== "l9.package-contract/v2") errors.push("packageContract.schema is invalid");
   if (contract.repository !== "Quantum-L9/l9-meta-injector") errors.push("packageContract.repository is invalid");
   if (contract.package_name !== "l9-meta-injector") errors.push("packageContract.package_name is invalid");
-  if (contract.package_version !== "4.0.0") errors.push("packageContract.package_version is invalid");
+  if (contract.package_version !== authorityVersion()) errors.push("packageContract.package_version is invalid");
   if (contract.api_contract !== "docs/public-api-contract.json") errors.push("packageContract.api_contract is invalid");
   if (!isPlainObject(contract.entrypoints) || Object.keys(contract.entrypoints).length === 0) {
     errors.push("packageContract.entrypoints must be a non-empty object");
