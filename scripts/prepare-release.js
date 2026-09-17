@@ -19,6 +19,12 @@ let log=read("docs/decision_log.md");if(!log.includes("ADR-050")){const row="| 5
 const date=new Date().toISOString().slice(0,10);
 let ch=read("CHANGELOG.md");if(!ch.includes(`## ${version} - `))ch=ch.replace("## Unreleased","## Unreleased\n\n## "+version+" - "+date);write("CHANGELOG.md",ch);
 let rm=read("README.md").replaceAll("Quantum-L9/l9-meta-injector@main",`Quantum-L9/l9-meta-injector@${majorTag}`);write("README.md",rm);
-const stale="docs/release/v4.0.1-release-plan.json";if(fs.existsSync(path.join(R,stale))){const j=JSON.parse(read(stale));j.status="superseded";j.superseded_by=exact;write(stale,JSON.stringify(j,null,2)+"\n")}
+// The predecessor is derived, never named. A hardcoded path re-stamps the same
+// old plan at every later release — superseding v4.0.1 again at 4.1.1 would
+// overwrite its correct superseded_by and leave the plan actually being
+// replaced un-superseded forever.
+const planDir=identity.planDirectory();const known=fs.existsSync(path.join(R,planDir))?fs.readdirSync(path.join(R,planDir)).map(f=>identity.planPathPattern().exec(f)).filter(Boolean).map(m=>m[1]):[];
+const previous=identity.predecessorVersion(known,version);
+if(previous){const stale=identity.releaseIdentity(previous).planPath;const j=JSON.parse(read(stale));if(j.status!=="superseded"||j.superseded_by!==exact){j.status="superseded";j.superseded_by=exact;write(stale,JSON.stringify(j,null,2)+"\n")}}
 const plan={schema:"l9.meta-injector-release-plan/v2",release_version:version,tag:exact,maintained_major_tag:majorTag,consumer_ref:`Quantum-L9/l9-meta-injector@${majorTag}`,release_commit:"resolved-at-release",github_release:{status:"candidate"},npm_publication:{required:false,status:"separately-authorized"}};write(`docs/release/${exact}-release-plan.json`,JSON.stringify(plan,null,2)+"\n");
 console.log(`prepared ${exact} -> ${majorTag}`);
