@@ -1,0 +1,40 @@
+name: Release Prep
+on:
+  push:
+    branches:
+      - 'release/v*.*.*'
+permissions:
+  contents: write
+jobs:
+  prepare:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: package.json
+          cache: npm
+      - run: npm ci
+      - name: Prepare version from release branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#release/v}"
+          node scripts/prepare-release.js "$VERSION"
+          npm run manifest:update
+          npm run lint
+          npm run validate
+      - name: Commit generated release state
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet && git diff --cached --quiet; then exit 0; fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "release: prepare ${GITHUB_REF_NAME#release/v}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
