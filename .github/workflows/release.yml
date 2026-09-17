@@ -1,0 +1,79 @@
+name: GitHub Release
+on:
+  push:
+    branches: [main]
+    paths:
+      - package.json
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      exact_tag: ${{ steps.meta.outputs.exact_tag }}
+      major_tag: ${{ steps.meta.outputs.major_tag }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: package.json
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run validate
+      - id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./package.json').version")"
+          MAJOR="${VERSION%%.*}"
+          EXACT_TAG="v${VERSION}"
+          MAJOR_TAG="v${MAJOR}"
+          test -f "docs/release/${EXACT_TAG}-release-plan.json"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "exact_tag=${EXACT_TAG}" >> "$GITHUB_OUTPUT"
+          echo "major_tag=${MAJOR_TAG}" >> "$GITHUB_OUTPUT"
+      - name: Create exact release and advance maintained major tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXACT_TAG: ${{ steps.meta.outputs.exact_tag }}
+          MAJOR_TAG: ${{ steps.meta.outputs.major_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git rev-parse "refs/tags/${EXACT_TAG}" >/dev/null 2>&1; then
+            test "$(git rev-list -n1 "${EXACT_TAG}")" = "$GITHUB_SHA"
+          else
+            git tag "${EXACT_TAG}" "$GITHUB_SHA"
+            git push origin "refs/tags/${EXACT_TAG}"
+          fi
+          if ! gh release view "${EXACT_TAG}" >/dev/null 2>&1; then
+            gh release create "${EXACT_TAG}" --verify-tag --title "${EXACT_TAG}" --generate-notes
+          fi
+          git tag -f "${MAJOR_TAG}" "$GITHUB_SHA"
+          git push origin "refs/tags/${MAJOR_TAG}" --force
+          test "$(git ls-remote origin "refs/tags/${EXACT_TAG}" | cut -f1)" = "$GITHUB_SHA"
+          test "$(git ls-remote origin "refs/tags/${MAJOR_TAG}" | cut -f1)" = "$GITHUB_SHA"
+  smoke-v4:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - name: Consume maintained major tag
+        id: meta
+        uses: Quantum-L9/l9-meta-injector@v4
+        with:
+          mode: inventory
+          root: .
+          upload-artifact: 'false'
+      - name: Assert consumer output
+        shell: bash
+        run: |
+          test "${{ steps.meta.outputs.resolved-mode }}" = "inventory"
+          test -n "${{ steps.meta.outputs.scanned }}"
