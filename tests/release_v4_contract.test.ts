@@ -3,6 +3,7 @@ import * as path from "node:path";
 import { describe, expect, it, test } from "vitest";
 
 const identity = require("../scripts/lib/release-identity.js");
+const releaseState = require("../scripts/lib/release-state.js");
 
 const ROOT = path.resolve(__dirname, "..");
 const read = (relative: string) => fs.readFileSync(path.join(ROOT, relative), "utf8");
@@ -113,6 +114,7 @@ const AUTOMATION = [
   "scripts/prepare-release.js",
   "scripts/check-release-candidate.js",
   "scripts/lib/release-identity.js",
+  "scripts/lib/release-state.js",
   "scripts/release-identity-cli.js",
   ".github/workflows/release.yml",
   ".github/workflows/release-prep.yml",
@@ -129,6 +131,115 @@ test.each(AUTOMATION)("%s hardcodes no release version or consumer line", (relat
     .join("\n");
   expect(body).not.toMatch(/\b\d+\.\d+\.\d+\b/);
   expect(body).not.toMatch(/l9-meta-injector@v\d/);
+});
+
+// --- publication is restart-safe --------------------------------------------
+//
+// The exact tag, the GitHub Release and the maintained major pointer are three
+// separate side effects, created in that order. Every boundary between them is
+// a state a rerun can land in, and a rerun must be able to finish the job from
+// any of them. Treating "the exact tag exists" as "the release is complete"
+// stranded the release at the first boundary: the rerun skipped acceptance and
+// publication entirely, leaving an immutable tag with no Release and a stale
+// pointer, recoverable only by hand.
+
+const HEAD = "1111111111111111111111111111111111111111";
+const OTHER = "2222222222222222222222222222222222222222";
+const RELEASING = "4.1.0";
+
+describe("release state machine", () => {
+  test.each([
+    {
+      boundary: "nothing published yet",
+      observed: { exactTagSha: null, majorTagSha: null, majorTagVersion: null, releaseExists: false },
+      expect: { createExact: true, createRelease: true, advanceMajor: true, workPending: true },
+    },
+    {
+      boundary: "exact tag only, rerun must continue",
+      observed: { exactTagSha: HEAD, majorTagSha: null, majorTagVersion: null, releaseExists: false },
+      expect: { createExact: false, createRelease: true, advanceMajor: true, workPending: true },
+    },
+    {
+      boundary: "exact tag and Release, pointer still stale",
+      observed: { exactTagSha: HEAD, majorTagSha: OTHER, majorTagVersion: "4.0.0", releaseExists: true },
+      expect: { createExact: false, createRelease: false, advanceMajor: true, workPending: true },
+    },
+    {
+      boundary: "Release missing but pointer already moved",
+      observed: { exactTagSha: HEAD, majorTagSha: HEAD, majorTagVersion: RELEASING, releaseExists: false },
+      expect: { createExact: false, createRelease: true, advanceMajor: false, workPending: true },
+    },
+    {
+      boundary: "fully published, rerun is a clean no-op",
+      observed: { exactTagSha: HEAD, majorTagSha: HEAD, majorTagVersion: RELEASING, releaseExists: true },
+      expect: { createExact: false, createRelease: false, advanceMajor: false, workPending: false },
+    },
+  ])("$boundary", ({ observed, expect: wanted }) => {
+    const decision = releaseState.releaseDecision({
+      headSha: HEAD,
+      version: RELEASING,
+      ...observed,
+    });
+    expect(decision.isReleaseCommit).toBe(true);
+    expect(decision.createExact).toBe(wanted.createExact);
+    expect(decision.createRelease).toBe(wanted.createRelease);
+    expect(decision.advanceMajor).toBe(wanted.advanceMajor);
+    expect(decision.workPending).toBe(wanted.workPending);
+  });
+
+  it("treats an exact tag at another commit as not a release", () => {
+    const decision = releaseState.releaseDecision({
+      headSha: HEAD,
+      exactTagSha: OTHER,
+      majorTagSha: OTHER,
+      majorTagVersion: RELEASING,
+      version: RELEASING,
+      releaseExists: true,
+    });
+    expect(decision.isReleaseCommit).toBe(false);
+    expect(decision.workPending).toBe(false);
+    // Immutable provenance is never moved to make a rerun tidy.
+    expect(decision.createExact).toBe(false);
+  });
+
+  it("refuses to move the maintained major tag backwards", () => {
+    const decision = releaseState.releaseDecision({
+      headSha: HEAD,
+      exactTagSha: null,
+      majorTagSha: OTHER,
+      majorTagVersion: "5.0.0",
+      version: RELEASING,
+      releaseExists: false,
+    });
+    expect(decision.majorVerdict).toBe("regress");
+    expect(decision.advanceMajor).toBe(false);
+  });
+
+  it("creates a new major line rather than leasing over the prior one", () => {
+    const decision = releaseState.releaseDecision({
+      headSha: HEAD,
+      exactTagSha: null,
+      majorTagSha: null,
+      majorTagVersion: null,
+      version: "5.0.0",
+      releaseExists: false,
+    });
+    expect(decision.majorVerdict).toBe("create");
+    expect(decision.advanceMajor).toBe(true);
+  });
+
+  it("holds a pointer that already names this release", () => {
+    const decision = releaseState.releaseDecision({
+      headSha: HEAD,
+      exactTagSha: HEAD,
+      majorTagSha: OTHER,
+      majorTagVersion: RELEASING,
+      version: RELEASING,
+      releaseExists: true,
+    });
+    expect(decision.majorVerdict).toBe("hold");
+    expect(decision.workPending).toBe(false);
+  });
 });
 
 // --- the committed tree still agrees with its own version authority ---------

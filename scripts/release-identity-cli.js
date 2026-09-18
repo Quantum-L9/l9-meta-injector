@@ -10,6 +10,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const identity = require("./lib/release-identity.js");
+const { releaseDecision } = require("./lib/release-state.js");
 
 const REPO = path.resolve(__dirname, "..");
 
@@ -80,6 +81,42 @@ function compare(argv) {
   process.stdout.write(`${order === -1 ? "advance" : order === 0 ? "equal" : "regress"}\n`);
 }
 
+// Reports what a release push still has to do, as $GITHUB_OUTPUT fields. The
+// three publication side effects are reported separately so a rerun after a
+// partial publication can finish the job instead of concluding it is done.
+function decide(argv) {
+  const empty = (value) => (value === undefined || value === null || value === "" ? null : value);
+  let decision;
+  try {
+    decision = releaseDecision({
+      headSha: flag(argv, "--head"),
+      exactTagSha: empty(flag(argv, "--exact-tag-sha")),
+      majorTagSha: empty(flag(argv, "--major-tag-sha")),
+      majorTagVersion: empty(flag(argv, "--major-tag-version")),
+      version: readPackageVersion(),
+      releaseExists: flag(argv, "--release-exists") === "true",
+    });
+  } catch (error) {
+    return fail(error.message);
+  }
+
+  if (decision.majorVerdict === "regress") return fail(decision.reason);
+
+  const fields = {
+    is_release_commit: String(decision.isReleaseCommit),
+    create_exact: String(decision.createExact),
+    create_release: String(decision.createRelease),
+    advance_major: String(decision.advanceMajor),
+    major_verdict: decision.majorVerdict,
+    work_pending: String(decision.workPending),
+  };
+  const lines = Object.entries(fields).map(([key, value]) => `${key}=${value}`);
+  const target = process.env.GITHUB_OUTPUT;
+  if (target) fs.appendFileSync(target, `${lines.join("\n")}\n`);
+  else process.stdout.write(`${lines.join("\n")}\n`);
+  process.stdout.write(`release-identity: ${decision.reason}\n`);
+}
+
 // Asserts a release branch agrees with the version authority, or exits 1.
 function assertBranch(argv) {
   const ref = flag(argv, "--branch");
@@ -95,4 +132,5 @@ const [command, ...argv] = process.argv.slice(2);
 if (command === "emit") emit(argv);
 else if (command === "compare") compare(argv);
 else if (command === "assert-branch") assertBranch(argv);
-else fail("usage: release-identity-cli.js emit|compare|assert-branch [...]");
+else if (command === "decide") decide(argv);
+else fail("usage: release-identity-cli.js emit|compare|assert-branch|decide [...]");

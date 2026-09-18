@@ -642,7 +642,7 @@
     },
     {
       "path": "scripts/lib/architecture-authority.js",
-      "git_blob_sha1": "1cf49ef9beebab166897a78ca6d62b02e9985adb"
+      "git_blob_sha1": "bdb923507af291b301518d5e08b080d59938bfc1"
     },
     {
       "path": "scripts/lib/dist-integrity.js",
@@ -657,12 +657,16 @@
       "git_blob_sha1": "487b5cb224c1fa00526a812a0d8914fda91cbc07"
     },
     {
+      "path": "scripts/lib/release-state.js",
+      "git_blob_sha1": "0ee370a951157610576a013648227f6a70227abc"
+    },
+    {
       "path": "scripts/local-source-cli.js",
       "git_blob_sha1": "bfea91bc607a06dbcde0e1b0ae4f55aac950f08d"
     },
     {
       "path": "scripts/release-identity-cli.js",
-      "git_blob_sha1": "deeef2fcba0de77fb92dc75aa6d69e247dd5fe83"
+      "git_blob_sha1": "e467d7b306e31c7fda6f3a3c8b1ce15c9a046e84"
     },
     {
       "path": "scripts/repository-model-cli.js",
