@@ -526,7 +526,7 @@
     },
     {
       "path": "docs/release-checklist.md",
-      "git_blob_sha1": "5fa08151fb0e6a397f10a9fa3fdcbec195a4337b"
+      "git_blob_sha1": "a1ead116097cf905edc9974a389168c0a57f0dd7"
     },
     {
       "path": "docs/schemas/architecture-authority.schema.json",
@@ -654,7 +654,7 @@
     },
     {
       "path": "scripts/lib/release-identity.js",
-      "git_blob_sha1": "487b5cb224c1fa00526a812a0d8914fda91cbc07"
+      "git_blob_sha1": "a64f00e663d944ba32f8be70bf7ee6b0a0eaf5ba"
     },
     {
       "path": "scripts/lib/release-state.js",

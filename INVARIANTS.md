@@ -230,7 +230,7 @@ Accepted ADRs remain in the repository. A changed decision receives a new sequen
 
 ### INV-023: Release identity has one version authority and one maintained major consumer line
 
-`package.json#version` is the sole persisted semantic-version authority. The lockfile, exact release tag, release plan, GitHub Release, and maintained major tag are derived from it or validated against it. Consumers use `Quantum-L9/l9-meta-injector@vX`; patch and minor releases advance only that matching major tag after validation. Exact commit identity remains release provenance, and npm publication remains separately authorized.
+`package.json#version` is the sole persisted semantic-version authority. The lockfile, exact release tag, release plan, GitHub Release, and maintained major tag are derived from it or validated against it. Consumers use `Quantum-L9/l9-meta-injector@vX`; patch and minor releases advance only that matching major tag after validation. Exact commit identity remains release provenance: the immutable exact tag and its GitHub Release are the durable released evidence, while a release plan records only what was prepared. npm publication remains separately authorized.
 
 **Enforced by:** `scripts/lib/release-identity.js`, `scripts/prepare-release.js`, `scripts/check-release-candidate.js`, and the release workflows, whose consumer acceptance runs against the release commit before the maintained major tag advances.
 

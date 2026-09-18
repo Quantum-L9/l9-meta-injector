@@ -1,10 +1,10 @@
 {
   "schema": "l9.meta-injector-release-plan/v2",
+  "record_kind": "preparation",
   "release_version": "4.1.0",
   "tag": "v4.1.0",
   "maintained_major_tag": "v4",
   "consumer_ref": "Quantum-L9/l9-meta-injector@v4",
-  "release_commit": "resolved-at-release",
   "github_release": {
     "status": "candidate"
   },

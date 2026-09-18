@@ -103,6 +103,36 @@ describe("predecessor plan", () => {
   });
 });
 
+// --- a release plan records preparation, not release ------------------------
+//
+// The v2 plan shipped with a release_commit placeholder and a candidate status
+// that nothing could ever resolve: no automation writes back to a plan, and
+// main is protected, so after a real release the repository would still have
+// claimed "resolved-at-release". Durable released evidence is the immutable
+// exact tag and its GitHub Release. The v1 plans keep their own released
+// semantics; they are historical records and are not rewritten.
+
+describe("release plan lifecycle", () => {
+  const pkg = JSON.parse(read("package.json"));
+  const plan = JSON.parse(read(identity.releaseIdentity(pkg.version).planPath));
+
+  it("is a preparation record", () => {
+    expect(plan.schema).toBe(identity.PLAN_SCHEMA);
+    expect(plan.record_kind).toBe("preparation");
+    expect(plan.github_release.status).toBe("candidate");
+  });
+
+  it("records no commit it cannot resolve", () => {
+    expect(Object.hasOwn(plan, "release_commit")).toBe(false);
+  });
+
+  it("leaves historical v1 released evidence intact", () => {
+    const historical = JSON.parse(read("docs/release/v4.0.0-release-plan.json"));
+    expect(historical.github_release.status).toBe("released");
+    expect(historical.github_release.resolved_commit).toMatch(/^[0-9a-f]{40}$/);
+  });
+});
+
 // --- no candidate-specific constants in generic release automation ----------
 //
 // Release prep and release publication are triggered generically, by any

@@ -16,6 +16,7 @@ After a validated release is created, automation advances only that release's ma
 - `@main` and raw commit SHA are not the canonical consumer interface for this package.
 - Exact release commit SHA remains evidence for audit and rollback.
 - Release automation must fail closed before moving a maintained major tag.
+- A release plan is a preparation record; the immutable exact tag and its GitHub Release are the durable evidence that a release happened.
 
 ## Supersedes
 

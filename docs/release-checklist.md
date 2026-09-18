@@ -2,7 +2,7 @@
 
 ## Source and API
 
-- [ ] Exact release commit recorded.
+- [ ] Exact release commit recorded — the immutable `vX.Y.Z` tag and its GitHub Release are that record. A release plan states only what was prepared and never claims released state.
 - [ ] `npm ci` completed from the committed lockfile.
 - [ ] `npm run check:api` passed.
 - [ ] Root runtime exports match the stable orchestration inventory.

@@ -47,6 +47,20 @@ if (plan) {
   if (plan.schema === identity.PLAN_SCHEMA) {
     if (plan.maintained_major_tag !== majorTag) errors.push("maintained major tag mismatch");
     if (plan.consumer_ref !== derived.consumerRef) errors.push("consumer ref mismatch");
+
+    // A plan states what was prepared. It cannot state what was released,
+    // because nothing writes back to it after publication — so a plan claiming
+    // released state, or carrying a commit placeholder that nothing resolves,
+    // is contradictory evidence rather than weak evidence.
+    if (plan.record_kind !== "preparation") {
+      errors.push(`release plan record_kind must be "preparation"`);
+    }
+    if (Object.hasOwn(plan, "release_commit")) {
+      errors.push("release plan must not record a release commit; the exact tag and its GitHub Release are the released evidence");
+    }
+    if (plan.github_release?.status !== "candidate") {
+      errors.push(`release plan github_release.status must be "candidate"`);
+    }
   } else if (plan.github_release?.status !== "released") {
     errors.push(`new release candidates must use ${identity.PLAN_SCHEMA}`);
   }
