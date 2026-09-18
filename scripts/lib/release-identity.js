@@ -141,6 +141,32 @@ function assertBranchMatchesVersion(ref, version) {
   }
 }
 
+// Any consumer reference to this action, whatever it currently points at.
+// Matching a pattern rather than one literal ref is the difference between a
+// projection that works at every major transition and a one-time migration:
+// the previous rewrite searched for the pre-v1 `@main` form, which stopped
+// existing the moment the first projection ran, so it silently became dead
+// code and a future major would have left every documented consumer behind.
+const CONSUMER_REF_PATTERN = new RegExp(`${REPOSITORY}@(?:main|v\\d+)`, "g");
+
+/** Every consumer reference in `text`, in order of appearance. */
+function findConsumerRefs(text) {
+  return String(text).match(CONSUMER_REF_PATTERN) || [];
+}
+
+/**
+ * Point every consumer reference in `text` at the maintained major line.
+ *
+ * Idempotent: re-projecting the same major changes nothing, which is what lets
+ * release preparation run repeatedly on an already-prepared branch.
+ *
+ * @param {string} text document body, e.g. README.md
+ * @param {string} majorTag the derived `vX`
+ */
+function projectConsumerRefs(text, majorTag) {
+  return String(text).replace(CONSUMER_REF_PATTERN, `${REPOSITORY}@${majorTag}`);
+}
+
 /** Matches a release-plan filename, capturing its version. */
 function planPathPattern() {
   return PLAN_FILE_PATTERN;
@@ -187,4 +213,6 @@ module.exports = {
   planPathPattern,
   planDirectory,
   predecessorVersion,
+  findConsumerRefs,
+  projectConsumerRefs,
 };

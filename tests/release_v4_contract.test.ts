@@ -133,6 +133,46 @@ test.each(AUTOMATION)("%s hardcodes no release version or consumer line", (relat
   expect(body).not.toMatch(/l9-meta-injector@v\d/);
 });
 
+// --- README consumer refs follow the maintained major -----------------------
+//
+// README holds the canonical action examples, so they are what a consumer
+// copies. Projecting them was written as a one-time `@main` migration, which
+// stopped matching the moment it ran once: a future major would have advertised
+// the previous line forever. These run against the real README bytes, because
+// the defect is precisely that the real document stops matching.
+
+describe("README consumer projection", () => {
+  const readme = read("README.md");
+
+  it("states at least one consumer reference to project", () => {
+    expect(identity.findConsumerRefs(readme).length).toBeGreaterThan(0);
+  });
+
+  test.each([
+    { version: "4.1.1", majorTag: "v4", note: "next patch keeps the line" },
+    { version: "4.2.0", majorTag: "v4", note: "next minor keeps the line" },
+    { version: "5.0.0", majorTag: "v5", note: "a new major moves it" },
+    { version: "10.0.0", majorTag: "v10", note: "a two-digit major still parses" },
+  ])("$note ($version -> $majorTag)", ({ version, majorTag }) => {
+    const derived = identity.releaseIdentity(version);
+    expect(derived.majorTag).toBe(majorTag);
+    const projected = identity.projectConsumerRefs(readme, derived.majorTag);
+    const refs = identity.findConsumerRefs(projected);
+    expect(refs.length).toBe(identity.findConsumerRefs(readme).length);
+    for (const ref of refs) expect(ref).toBe(derived.consumerRef);
+  });
+
+  it("is idempotent, so repeated preparation changes nothing", () => {
+    const once = identity.projectConsumerRefs(readme, "v5");
+    expect(identity.projectConsumerRefs(once, "v5")).toBe(once);
+  });
+
+  it("still migrates the pre-maintained-major @main form", () => {
+    const legacy = `uses: ${identity.REPOSITORY}@main`;
+    expect(identity.projectConsumerRefs(legacy, "v7")).toBe(`uses: ${identity.REPOSITORY}@v7`);
+  });
+});
+
 // --- publication is restart-safe --------------------------------------------
 //
 // The exact tag, the GitHub Release and the maintained major pointer are three

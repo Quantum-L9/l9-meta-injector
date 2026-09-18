@@ -21,7 +21,7 @@ let inv=read("INVARIANTS.md");inv=inv.replace(/### INV-023:[\s\S]*?(?=### INV-02
 let log=read("docs/decision_log.md");if(!log.includes("ADR-050")){const row="| 50 | One release version authority with maintained major consumer tags | [ADR-050](decisions/050-release-version-authority-and-major-tags.md) | Exact releases preserve provenance while the validated major tag advances patch/minor consumers automatically. |\n";const lines=log.split("\n");const i=lines.findIndex(x=>x.startsWith("| 49 |"));if(i<0)throw new Error("ADR-049 row not found");lines.splice(i+1,0,row.trimEnd());log=lines.join("\n");write("docs/decision_log.md",log)}
 const date=new Date().toISOString().slice(0,10);
 let ch=read("CHANGELOG.md");if(!ch.includes(`## ${version} - `))ch=ch.replace("## Unreleased","## Unreleased\n\n## "+version+" - "+date);write("CHANGELOG.md",ch);
-let rm=read("README.md").replaceAll("Quantum-L9/l9-meta-injector@main",`Quantum-L9/l9-meta-injector@${majorTag}`);write("README.md",rm);
+write("README.md",identity.projectConsumerRefs(read("README.md"),majorTag));
 // The predecessor is derived, never named. A hardcoded path re-stamps the same
 // old plan at every later release — superseding v4.0.1 again at 4.1.1 would
 // overwrite its correct superseded_by and leave the plan actually being

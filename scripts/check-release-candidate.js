@@ -84,6 +84,21 @@ for (const [relative, pattern] of TEXT_AUTHORITIES) {
   }
 }
 
+// README carries the canonical consumer examples, which are the public face of
+// the maintained major line. They were projected by a one-time migration and
+// validated by nothing, so a future major would have advertised the previous
+// line indefinitely.
+const readmeRefs = identity.findConsumerRefs(fs.readFileSync(path.join(REPO, "README.md"), "utf8"));
+if (readmeRefs.length === 0) {
+  errors.push("README.md states no consumer reference where one is enforced");
+} else if (derived) {
+  for (const ref of new Set(readmeRefs)) {
+    if (ref !== derived.consumerRef) {
+      errors.push(`README.md points consumers at ${ref}, not ${derived.consumerRef}`);
+    }
+  }
+}
+
 // The agent guide states repository identity and must not pin a version at all,
 // since nothing derives it there.
 const agents = fs.readFileSync(path.join(REPO, "AGENTS.md"), "utf8");
