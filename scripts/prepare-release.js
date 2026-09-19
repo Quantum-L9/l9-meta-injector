@@ -1,0 +1,38 @@
+#!/usr/bin/env node
+"use strict";
+const fs=require("node:fs");const path=require("node:path");const identity=require("./lib/release-identity.js");
+const R=path.resolve(__dirname,"..");const read=p=>fs.readFileSync(path.join(R,p),"utf8"),write=(p,s)=>{fs.mkdirSync(path.dirname(path.join(R,p)),{recursive:true});fs.writeFileSync(path.join(R,p),s)};
+// package.json#version is the authority (ADR-050). This script derives release
+// state from it and never writes it. The release branch is an assertion input,
+// not a value source — deriving the version from the branch name and writing
+// that into package.json made the branch the de facto authority. Assert first,
+// so a mismatch changes nothing on disk.
+const version=JSON.parse(read("package.json")).version;const id=identity.releaseIdentity(version);const exact=id.exactTag,majorTag=id.majorTag;
+const branchAt=process.argv.indexOf("--branch");try{identity.assertBranchMatchesVersion(branchAt===-1?process.env.GITHUB_REF_NAME:process.argv[branchAt+1],version)}catch(error){console.error(`prepare-release: BLOCKED\n  - ${error.message}`);process.exit(1)}
+// The lockfile version is derived state, so it is written; package.json is not.
+for(const p of ["package-lock.json"]){const j=JSON.parse(read(p));j.version=version;if(j.packages?.[""])j.packages[""].version=version;write(p,JSON.stringify(j,null,2)+"\n")}
+for(const p of ["docs/package-publication-decision.json","docs/public-api-contract.json","docs/package-contract.json"]){const j=JSON.parse(read(p));if(Object.hasOwn(j,"package_version"))j.package_version=version;write(p,JSON.stringify(j,null,2)+"\n")}
+// docs/architecture.md states the as-built package version. It was outside the
+// derived set, so it drifted a full release behind the authority.
+let arch=read("docs/architecture.md");arch=arch.replace(/^\*\*Package version:\*\* .+$/m,`**Package version:** ${version}`);write("docs/architecture.md",arch);
+let old=read("docs/decisions/029-v4-release-and-consumer-migration.md");if(!old.includes("Superseded by ADR-050")){old=old.replace("## Status\n\nAccepted for implementation; publication remains separately authorized.","## Status\n\nSuperseded by ADR-050. Historical release decision retained for traceability.");write("docs/decisions/029-v4-release-and-consumer-migration.md",old)}
+const adr=`# ADR-050: One release version authority with maintained major consumer tags\n\n## Status\n\nAccepted. Supersedes ADR-029 for active consumer versioning.\n\n## Decision\n\n\`package.json#version\` is the sole persisted semantic-version authority. Release preparation derives the lockfile version, exact tag \`vX.Y.Z\`, release-plan identity, and maintained major tag \`vX\` from it. Exact GitHub Releases preserve immutable provenance; GitHub Action consumers use \`Quantum-L9/l9-meta-injector@vX\`.\n\nAfter a validated release is created, automation advances only that release's matching major tag. Patch and minor releases therefore propagate to existing consumers without downstream version-bump pull requests. A new major tag never rewrites the prior major line. npm publication remains separately authorized.\n\n## Consequences\n\n- No current release version may be hardcoded in release validation.\n- \`@main\` and raw commit SHA are not the canonical consumer interface for this package.\n- Exact release commit SHA remains evidence for audit and rollback.\n- Release automation must fail closed before moving a maintained major tag.\n- A release plan is a preparation record; the immutable exact tag and its GitHub Release are the durable evidence that a release happened.\n\n## Supersedes\n\nADR-029 for active release consumption and migration policy.\n`;write("docs/decisions/050-release-version-authority-and-major-tags.md",adr);
+let inv=read("INVARIANTS.md");inv=inv.replace(/### INV-023:[\s\S]*?(?=### INV-024:)/,`### INV-023: Release identity has one version authority and one maintained major consumer line\n\n\`package.json#version\` is the sole persisted semantic-version authority. The lockfile, exact release tag, release plan, GitHub Release, and maintained major tag are derived from it or validated against it. Consumers use \`Quantum-L9/l9-meta-injector@vX\`; patch and minor releases advance only that matching major tag after validation. Exact commit identity remains release provenance: the immutable exact tag and its GitHub Release are the durable released evidence, while a release plan records only what was prepared. npm publication remains separately authorized.\n\n**Enforced by:** \`scripts/lib/release-identity.js\`, \`scripts/prepare-release.js\`, \`scripts/check-release-candidate.js\`, and the release workflows, whose consumer acceptance runs against the release commit before the maintained major tag advances.\n\n`);inv=inv.replace("Release identity, immutable-ref, packed-CLI, and consumer single-writer migration tests","Release identity, single-version-authority, maintained-major-tag, packed-CLI, and consumer smoke tests");write("INVARIANTS.md",inv);
+let log=read("docs/decision_log.md");if(!log.includes("ADR-050")){const row="| 50 | One release version authority with maintained major consumer tags | [ADR-050](decisions/050-release-version-authority-and-major-tags.md) | Exact releases preserve provenance while the validated major tag advances patch/minor consumers automatically. |\n";const lines=log.split("\n");const i=lines.findIndex(x=>x.startsWith("| 49 |"));if(i<0)throw new Error("ADR-049 row not found");lines.splice(i+1,0,row.trimEnd());log=lines.join("\n");write("docs/decision_log.md",log)}
+const date=new Date().toISOString().slice(0,10);
+let ch=read("CHANGELOG.md");if(!ch.includes(`## ${version} - `))ch=ch.replace("## Unreleased","## Unreleased\n\n## "+version+" - "+date);write("CHANGELOG.md",ch);
+write("README.md",identity.projectConsumerRefs(read("README.md"),majorTag));
+// The predecessor is derived, never named. A hardcoded path re-stamps the same
+// old plan at every later release — superseding v4.0.1 again at 4.1.1 would
+// overwrite its correct superseded_by and leave the plan actually being
+// replaced un-superseded forever.
+const planDir=identity.planDirectory();const known=fs.existsSync(path.join(R,planDir))?fs.readdirSync(path.join(R,planDir)).map(f=>identity.planPathPattern().exec(f)).filter(Boolean).map(m=>m[1]):[];
+const previous=identity.predecessorVersion(known,version);
+if(previous){const stale=identity.releaseIdentity(previous).planPath;const j=JSON.parse(read(stale));if(j.status!=="superseded"||j.superseded_by!==exact){j.status="superseded";j.superseded_by=exact;write(stale,JSON.stringify(j,null,2)+"\n")}}
+// A plan records what is prepared, not what was released. It carried a
+// release_commit placeholder that nothing could ever resolve: no automation
+// writes back to it, and main is protected, so the field stayed
+// "resolved-at-release" forever while the release itself was real. Durable
+// released evidence is the immutable exact tag and its GitHub Release.
+const plan={schema:identity.PLAN_SCHEMA,record_kind:"preparation",release_version:version,tag:exact,maintained_major_tag:majorTag,consumer_ref:id.consumerRef,github_release:{status:"candidate"},npm_publication:{required:false,status:"separately-authorized"}};write(`docs/release/${exact}-release-plan.json`,JSON.stringify(plan,null,2)+"\n");
+console.log(`prepared ${exact} -> ${majorTag}`);

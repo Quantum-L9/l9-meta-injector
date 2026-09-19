@@ -2,7 +2,7 @@
 
 ## Source and API
 
-- [ ] Exact release commit recorded.
+- [ ] Exact release commit recorded — the immutable `vX.Y.Z` tag and its GitHub Release are that record. A release plan states only what was prepared and never claims released state.
 - [ ] `npm ci` completed from the committed lockfile.
 - [ ] `npm run check:api` passed.
 - [ ] Root runtime exports match the stable orchestration inventory.
@@ -23,7 +23,7 @@
 
 ## Version and migration
 
-- [ ] `package.json`, lockfile, API contract, package contract, and changelog all report `4.0.0`.
+- [ ] `package.json`, lockfile, API contract, package contract, and changelog all report the same version, as `npm run check:release-candidate` proves.
 - [ ] `docs/migrations/v3-to-v4.md` covers the breaking v4 operation/carrier/frontmatter changes.
 
 ## Publication

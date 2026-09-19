@@ -223,16 +223,16 @@ Accepted ADRs remain in the repository. A changed decision receives a new sequen
 | INV-020 | Shared carrier-plan, no-sidecar dispatch, authorized-inline, and exact SKILL.md tests |
 | INV-021 | Multi-file transaction, rollback, concurrent-drift, validation-failure, and recovery tests |
 | INV-022 | Frontmatter byte-preservation, idempotency, unsafe-YAML refusal, and carrier-extension tests |
-| INV-023 | Release identity, immutable-ref, packed-CLI, and consumer single-writer migration tests |
+| INV-023 | Release identity, single-version-authority, maintained-major-tag, packed-CLI, and consumer smoke tests |
 | INV-024 | Corpus source-versus-analysis identity, verification-class, and partial-corpus tests |
 | INV-025 | Document decoding, reported work, generational publication, and bound evidence tests |
 | INV-026 | Block-bound work-signal, per-format decoder-identity, and reuse-parity tests |
 
-### INV-023: Releases and consumer migrations use immutable identity
+### INV-023: Release identity has one version authority and one maintained major consumer line
 
-Package, lockfile, changelog, release plan, and packed executable must agree on one semantic version. Consumer automation pins the final 40-character release commit and removes every competing writer before canonical apply. npm publication is a separate authorization and may remain blocked without blocking GitHub commit consumption.
+`package.json#version` is the sole persisted semantic-version authority. The lockfile, exact release tag, release plan, GitHub Release, and maintained major tag are derived from it or validated against it. Consumers use `Quantum-L9/l9-meta-injector@vX`; patch and minor releases advance only that matching major tag after validation. Exact commit identity remains release provenance: the immutable exact tag and its GitHub Release are the durable released evidence, while a release plan records only what was prepared. npm publication remains separately authorized.
 
-**Enforced by:** `scripts/check-release-candidate.js`, release contract tests, the PR-5 exact-checkout runner, and the l9-deploy migration installer.
+**Enforced by:** `scripts/lib/release-identity.js`, `scripts/prepare-release.js`, `scripts/check-release-candidate.js`, and the release workflows, whose consumer acceptance runs against the release commit before the maintained major tag advances.
 
 ### INV-024: A corpus says what it observed, under which rules, and how it knows
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted for implementation; publication remains separately authorized.
+Superseded by ADR-050. Historical release decision retained for traceability.
 
 ## Decision
 

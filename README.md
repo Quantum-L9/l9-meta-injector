@@ -38,7 +38,7 @@ consumable as a **GitHub composite action** — it runs directly against the pin
 # (Setting `dry-run: "false"` turns this into annotation: it then writes metadata
 # headers and sidecars into the checkout.) Safe as a first drop-in.
 - uses: actions/checkout@v4
-- uses: Quantum-L9/l9-meta-injector@main
+- uses: Quantum-L9/l9-meta-injector@v4
   with:
     mode: inventory
 ```
@@ -47,7 +47,7 @@ consumable as a **GitHub composite action** — it runs directly against the pin
 # Real CI gate: inject + verify metadata, fail the job on verification drift
 # (e.g. sharing_scope mismatches against the given namespace).
 - uses: actions/checkout@v4
-- uses: Quantum-L9/l9-meta-injector@main
+- uses: Quantum-L9/l9-meta-injector@v4
   with:
     mode: pipeline
     namespace: my-repo
@@ -57,7 +57,7 @@ consumable as a **GitHub composite action** — it runs directly against the pin
 ```yaml
 # Cursor-native skills mode: material-improve SKILL.md description (Use when …).
 - uses: actions/checkout@v4
-- uses: Quantum-L9/l9-meta-injector@main
+- uses: Quantum-L9/l9-meta-injector@v4
   with:
     mode: skills
     llm: "true"
@@ -71,7 +71,7 @@ consumable as a **GitHub composite action** — it runs directly against the pin
 # read the secrets context directly, so the calling workflow passes its own secret in
 # as an input — never hardcode a key in `with:`.
 - uses: actions/checkout@v4
-- uses: Quantum-L9/l9-meta-injector@main
+- uses: Quantum-L9/l9-meta-injector@v4
   with:
     mode: pipeline
     namespace: my-repo

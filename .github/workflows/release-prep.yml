@@ -1,0 +1,80 @@
+name: Release Prep
+on:
+  push:
+    branches:
+      - 'release/v*.*.*'
+permissions: {}
+concurrency:
+  group: release-prep-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  prepare:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      # persist-credentials: false keeps the write-scoped token out of
+      # .git/config, so dependency lifecycle code, the generators and the test
+      # suite all run with no credential on disk. Only the final push step is
+      # handed the token.
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: package.json
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Generate release state
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The branch name is asserted against package.json#version, never read
+          # as one. prepare-release fails closed before writing on a mismatch.
+          node scripts/prepare-release.js --branch "$GITHUB_REF_NAME"
+          npm run manifest:update
+          VERSION="$(node scripts/release-identity-cli.js emit --field version)"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          # An already-prepared branch stages nothing. That is the ordinary
+          # re-push case, not a failure: an unconditional `git commit` exits 1
+          # here and, under `set -e`, skipped report regeneration, lint,
+          # validate, the clean-tree proof and the push along with it.
+          if git diff --cached --quiet; then
+            echo "release state for ${VERSION} is already prepared; nothing to commit"
+          else
+            git commit -m "release: prepare ${VERSION}"
+          fi
+      - name: Regenerate revision-bound validation evidence
+        run: |
+          npm run validate:report
+          git add CURRENT_VALIDATION_REPORT.md
+          git commit -m "release: bind validation report" || true
+      - name: Prove clean release candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run lint
+          npm run validate
+          status="$(git status --porcelain --untracked-files=all)"
+          if [[ -n "$status" ]]; then
+            printf '%s\n' "$status"
+            echo "release preparation left the checkout dirty" >&2
+            exit 1
+          fi
+      - name: Push validated release state
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The token is passed as a one-shot push argument rather than written
+          # into the remote, so it never lands in .git/config.
+          git push \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            "HEAD:refs/heads/${GITHUB_REF_NAME}"

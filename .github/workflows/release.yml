@@ -1,0 +1,218 @@
+name: GitHub Release
+on:
+  push:
+    branches: [main]
+    paths:
+      - package.json
+permissions: {}
+# Repo-wide, and never cancelled: two pushes to main that both touch
+# package.json would otherwise race each other to the maintained major tag,
+# and a run cancelled between creating the exact tag and advancing the major
+# one leaves the release half-published.
+concurrency:
+  group: release-tag-authority
+  cancel-in-progress: false
+jobs:
+  # Decides what this push still has to do, holding no write authority. A push
+  # to package.json is not necessarily a release: a dependency bump or a keyword
+  # edit reaches this workflow too. Equally, a rerun after a partial publication
+  # is not nothing to do — the three side effects are observed separately.
+  candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      exact_tag: ${{ steps.meta.outputs.exact_tag }}
+      major_tag: ${{ steps.meta.outputs.major_tag }}
+      work_pending: ${{ steps.decide.outputs.work_pending }}
+      create_exact: ${{ steps.decide.outputs.create_exact }}
+      create_release: ${{ steps.decide.outputs.create_release }}
+      advance_major: ${{ steps.decide.outputs.advance_major }}
+      prev_major_sha: ${{ steps.decide.outputs.prev_major_sha }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: package.json
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run lint
+      - run: npm run validate
+      - id: meta
+        name: Derive release identity from the version authority
+        run: node scripts/release-identity-cli.js emit --require-plan
+      - id: decide
+        name: Decide what this release still has to publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXACT_TAG: ${{ steps.meta.outputs.exact_tag }}
+          MAJOR_TAG: ${{ steps.meta.outputs.major_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ORIGIN="https://github.com/${GITHUB_REPOSITORY}.git"
+          EXACT_REMOTE="$(git ls-remote "$ORIGIN" "refs/tags/${EXACT_TAG}" | cut -f1)"
+          MAJOR_REMOTE="$(git ls-remote "$ORIGIN" "refs/tags/${MAJOR_TAG}" | cut -f1)"
+
+          # The version recorded in the commit the maintained major tag points
+          # at. Reading it out of that commit keeps the monotonicity comparison
+          # derived from the authority at both ends, naming no release line.
+          MAJOR_VERSION=""
+          if [ -n "$MAJOR_REMOTE" ]; then
+            git fetch --no-tags --depth=1 "$ORIGIN" "+refs/tags/${MAJOR_TAG}:refs/l9/prev-major"
+            MAJOR_VERSION="$(git show refs/l9/prev-major:package.json | node -p "JSON.parse(require('node:fs').readFileSync(0, 'utf8')).version")"
+          fi
+
+          RELEASE_EXISTS=false
+          if gh release view "${EXACT_TAG}" >/dev/null 2>&1; then RELEASE_EXISTS=true; fi
+
+          # The rule itself lives in scripts/lib/release-state.js so that every
+          # partial-publication boundary is exercisable by test.
+          node scripts/release-identity-cli.js decide \
+            --head "$GITHUB_SHA" \
+            --exact-tag-sha "$EXACT_REMOTE" \
+            --major-tag-sha "$MAJOR_REMOTE" \
+            --major-tag-version "$MAJOR_VERSION" \
+            --release-exists "$RELEASE_EXISTS"
+
+          echo "prev_major_sha=${MAJOR_REMOTE}" >> "$GITHUB_OUTPUT"
+
+  # Consumer acceptance, before the pointer moves. `uses:` cannot take a
+  # needs.* expression, so a derived @vX reference is impossible there; `./`
+  # runs the exact bytes the maintained major tag is about to point at, which
+  # is the property that matters and costs no hardcoded release line.
+  accept:
+    needs: candidate
+    if: needs.candidate.outputs.work_pending == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Consume the release candidate through the action interface
+        id: meta
+        uses: ./
+        with:
+          mode: inventory
+          root: .
+          upload-artifact: 'false'
+      - name: Assert consumer output
+        env:
+          RESOLVED_MODE: ${{ steps.meta.outputs.resolved-mode }}
+          SCANNED: ${{ steps.meta.outputs.scanned }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RESOLVED_MODE" = "inventory"
+          test -n "$SCANNED"
+
+  # Every operation is separately conditional, so a rerun after a partial
+  # publication finishes exactly the part that is missing and no-ops the rest.
+  publish:
+    needs: [candidate, accept]
+    if: needs.candidate.outputs.work_pending == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Create the exact release tag
+        if: needs.candidate.outputs.create_exact == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          EXACT_TAG: ${{ needs.candidate.outputs.exact_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          WRITE_REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          # Create-only. The server rejects an ordinary push to an existing ref,
+          # so this push is itself the check that exact provenance is never
+          # overwritten.
+          git tag "${EXACT_TAG}" "$GITHUB_SHA"
+          git push "$WRITE_REMOTE" "refs/tags/${EXACT_TAG}"
+      - name: Create the GitHub Release
+        if: needs.candidate.outputs.create_release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXACT_TAG: ${{ needs.candidate.outputs.exact_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Reachable on a rerun where the tag already exists and only the
+          # Release is missing, which is the boundary that used to strand.
+          if ! gh release view "${EXACT_TAG}" >/dev/null 2>&1; then
+            gh release create "${EXACT_TAG}" --verify-tag --title "${EXACT_TAG}" --generate-notes
+          fi
+      - name: Advance the maintained major tag
+        if: needs.candidate.outputs.advance_major == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          MAJOR_TAG: ${{ needs.candidate.outputs.major_tag }}
+          PREV_MAJOR_SHA: ${{ needs.candidate.outputs.prev_major_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          WRITE_REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if [ -z "$PREV_MAJOR_SHA" ]; then
+            # A new major line: create it. A new major never rewrites a prior one.
+            git tag "${MAJOR_TAG}" "$GITHUB_SHA"
+            git push "$WRITE_REMOTE" "refs/tags/${MAJOR_TAG}"
+          else
+            # The lease expectation is the same SHA the monotonicity proof read,
+            # so read-verify-write is one compare-and-swap: a racing writer that
+            # moved the tag in between loses this push rather than having its
+            # release silently overwritten.
+            git tag --force "${MAJOR_TAG}" "$GITHUB_SHA"
+            git push --force-with-lease="refs/tags/${MAJOR_TAG}:${PREV_MAJOR_SHA}" \
+              "$WRITE_REMOTE" "refs/tags/${MAJOR_TAG}"
+          fi
+      - name: Prove the published refs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXACT_TAG: ${{ needs.candidate.outputs.exact_tag }}
+          MAJOR_TAG: ${{ needs.candidate.outputs.major_tag }}
+          ADVANCE_MAJOR: ${{ needs.candidate.outputs.advance_major }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ORIGIN="https://github.com/${GITHUB_REPOSITORY}.git"
+          test "$(git ls-remote "$ORIGIN" "refs/tags/${EXACT_TAG}" | cut -f1)" = "$GITHUB_SHA"
+          gh release view "${EXACT_TAG}" >/dev/null
+          if [ "$ADVANCE_MAJOR" = "true" ]; then
+            test "$(git ls-remote "$ORIGIN" "refs/tags/${MAJOR_TAG}" | cut -f1)" = "$GITHUB_SHA"
+          fi
+      - name: Return the maintained major tag after a failed advance
+        if: failure() && needs.candidate.outputs.advance_major == 'true' && needs.candidate.outputs.prev_major_sha != ''
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          MAJOR_TAG: ${{ needs.candidate.outputs.major_tag }}
+          PREV_MAJOR_SHA: ${{ needs.candidate.outputs.prev_major_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ORIGIN="https://github.com/${GITHUB_REPOSITORY}.git"
+          WRITE_REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          CURRENT="$(git ls-remote "$ORIGIN" "refs/tags/${MAJOR_TAG}" | cut -f1)"
+          # Only undo this run's own advance, and only while it is still in place.
+          if [ "$CURRENT" = "$GITHUB_SHA" ]; then
+            git fetch --no-tags --depth=1 "$ORIGIN" "$PREV_MAJOR_SHA"
+            git tag --force "${MAJOR_TAG}" "$PREV_MAJOR_SHA"
+            git push --force-with-lease="refs/tags/${MAJOR_TAG}:${GITHUB_SHA}" \
+              "$WRITE_REMOTE" "refs/tags/${MAJOR_TAG}"
+            echo "::warning::${MAJOR_TAG} returned to ${PREV_MAJOR_SHA} after a failed advance"
+          fi
