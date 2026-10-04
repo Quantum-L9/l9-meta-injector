@@ -146,6 +146,7 @@ describe("inventoryTree — non-destructive filesystem inventory", () => {
     expect(rec.source_system).toBe("dropbox");
     expect(rec.artifact_type).toBe("schema");
     expect(rec.classification_confidence).toBeGreaterThan(0);
-    expect(rec.unknowns).toEqual([]);
+    expect(rec.unknowns).toContain("clock_skew:modified_at_after_inspected_at");
+    if (rec.created_at) expect(rec.unknowns).toContain("clock_skew:created_at_after_inspected_at");
   });
 });

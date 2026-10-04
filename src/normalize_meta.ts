@@ -1,7 +1,7 @@
 // normalize_meta.ts - Build NormalizedMeta header as a pure transform.
 import * as path from "node:path";
 import {
-  ClassifyResult, ExtractedFields, ExecutableRetrievalMeta, PromptMeta, DoctrineMeta,
+  ArtifactType, ClassifyResult, ExtractedFields, ExecutableRetrievalMeta, PromptMeta, DoctrineMeta,
   ArtifactMeta, NormalizedMeta, UNKNOWN, PRIMITIVE_TAXONOMY, McpPrimitive,
 } from "./schema";
 import { contentHash, estimateTokens } from "./extract";
@@ -34,6 +34,30 @@ function slugTitle(filePath: string): string {
 
 export { yamlScalar } from "./yaml_serialize";
 
+/** Taxonomy fields that must stay a single derived unit. */
+export interface TaxonomyProjection {
+  artifact_type: ArtifactType;
+  mcp_primitive: McpPrimitive;
+  callable: boolean;
+  retrievable: boolean;
+  injectable: boolean;
+}
+
+/**
+ * Project the four MCP/capability fields from one artifact type.
+ * `retrievable` follows `injectable`, matching the historical `buildMeta` rule.
+ */
+export function projectPrimitiveTaxonomy(artifactType: ArtifactType): TaxonomyProjection {
+  const tax = PRIMITIVE_TAXONOMY[artifactType] ?? PRIMITIVE_TAXONOMY.unknown;
+  return {
+    artifact_type: tax.type,
+    mcp_primitive: tax.mcpPrimitive,
+    callable: tax.callable,
+    retrievable: tax.injectable,
+    injectable: tax.injectable,
+  };
+}
+
 export function serializeToYamlFrontMatter(meta: NormalizedMeta): string {
   return serializeYamlObject(meta as unknown as Record<string, unknown>);
 }
@@ -49,17 +73,17 @@ export function buildMeta(
   sourceRoot?: string,
 ): NormalizedMeta {
   const sourcePath = stableSourcePath(filePath, sourceRoot);
-  const tax = PRIMITIVE_TAXONOMY[cr.artifactType] ?? PRIMITIVE_TAXONOMY["unknown"];
+  const tax = projectPrimitiveTaxonomy(cr.artifactType);
   const { namespace, sharingScope, idStem } = resolveNamespace(sourcePath, nsCfg, cr.artifactType);
   const timestamp = detectedAt.trim() || UNKNOWN;
 
   const base = {
     id: idStem,
     title: slugTitle(sourcePath),
-    artifact_type: cr.artifactType,
-    mcp_primitive: tax.mcpPrimitive as McpPrimitive,
+    artifact_type: tax.artifact_type,
+    mcp_primitive: tax.mcp_primitive,
     callable: tax.callable,
-    retrievable: tax.injectable,
+    retrievable: tax.retrievable,
     injectable: tax.injectable,
     namespace,
     sharing_scope: sharingScope,

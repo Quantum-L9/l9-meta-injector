@@ -112,7 +112,10 @@ compressed tarball spelling are classified, hashed and reported as not expanded 
 observation; a file whose bytes carry an archive signature its name does not declare is
 reported by signature and still never opened. Inventory annotation may open admitted
 ZIP and TAR containers solely to upsert a root `.l9meta.yaml` member and always writes
-an adjacent sidecar (ADR-049). That rewrite set is not expansion: `.tar` is not added
+an adjacent sidecar (ADR-049). Inventory header fields on that path are derived from
+`classify`, `PRIMITIVE_TAXONOMY`, `resolveNamespace`, and `estimateTokens`, or written
+as `Unknown`; UTF-8 `content_hash` is the body without the managed carrier (ADR-051).
+That rewrite set is not expansion: `.tar` is not added
 to `EXPANDABLE_ARCHIVE_EXTENSIONS`. `src/local_archive_policy.ts` validates all caller-provided ceilings and
 bounds size, member count, expansion, ratio, depth, path length and time, checked both
 against declared metadata and against bytes actually produced. Its policy fingerprint

@@ -22,7 +22,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
-import { contentHash } from "./extract";
+import { contentHash, estimateTokens } from "./extract";
 import {
   applyCommentInjection,
   detectNewlineConvention,
@@ -33,8 +33,11 @@ import {
   yamlToBlock,
 } from "./comment";
 import { inspectFrontMatterDocument, patchManagedFrontMatter } from "./frontmatter_patch";
-import { injectFile } from "./inject";
-import { NormalizedMeta, asRecord } from "./schema";
+import { injectFile, managedCarrierFreeBody } from "./inject";
+import { ArtifactType, NormalizedMeta, SharingScope, UNKNOWN, asRecord } from "./schema";
+import { projectPrimitiveTaxonomy } from "./normalize_meta";
+import { classify } from "./classify";
+import { resolveNamespace } from "./namespace";
 import { serializeYamlObject } from "./yaml_serialize";
 import { MetaSchema, applySchema, targetIncludes, parseCanonicalYaml, toMetaSchema } from "./meta_schema";
 import { buildOmitMatcher, OmitMatcher } from "./omit";
@@ -347,6 +350,19 @@ function hashRegularFile(abs: string, fileName: string, size: number, hashMaxByt
   return crypto.createHash("sha256").update(bytes).digest("hex");
 }
 
+/** UTF-8 text eligible for classify / token estimate / carrier-free hashing. */
+function tryReadUtf8Body(abs: string, size: number, hashMaxBytes: number): string | null {
+  if (size > hashMaxBytes) return null;
+  const encoding = probeFileEncoding(abs);
+  if (encoding.status !== "utf8") return null;
+  return fs.readFileSync(abs, "utf8");
+}
+
+function noteClockSkew(unknowns: string[], created: string | null, modified: string | null, inspected: string): void {
+  if (created && created > inspected) unknowns.push("clock_skew:created_at_after_inspected_at");
+  if (modified && modified > inspected) unknowns.push("clock_skew:modified_at_after_inspected_at");
+}
+
 export function buildRecord(
   root: string,
   abs: string,
@@ -374,11 +390,16 @@ export function buildRecord(
     created = filesystemCreatedAt(st);
     if (kind === "file") {
       size = st.size;
-      hash = hashRegularFile(abs, fileName, size, cfg.hashMaxBytes, unknowns);
+      const isArchive = ARCHIVE_EXTENSIONS.has(archiveExtensionOf(abs));
+      const utf8Body = isArchive ? null : tryReadUtf8Body(abs, size, cfg.hashMaxBytes);
+      hash = utf8Body !== null
+        ? contentHash(managedCarrierFreeBody(abs, utf8Body))
+        : hashRegularFile(abs, fileName, size, cfg.hashMaxBytes, unknowns);
     }
   } catch (err) {
     unknowns.push(`stat_failed:${(err as Error).message}`);
   }
+  noteClockSkew(unknowns, created, modified, cfg.now);
   const parent = path.dirname(relative);
   return {
     artifact_id: idFor(relative),
@@ -458,6 +479,10 @@ export function inventoryTree(config: InventoryConfig): InventoryResult {
   for (const { abs, isDir, kind } of entries) {
     const harvest = kind === "symlink" || kind === "special" ? {} : harvestExistingMeta(abs, isDir);
     const rec = buildRecord(root, abs, isDir, cfg, kind, harvest);
+    const isArchive = !isDir && ARCHIVE_EXTENSIONS.has(archiveExtensionOf(abs));
+    const body = kind === "file" && !isArchive && rec.size_bytes !== null
+      ? tryReadUtf8Body(abs, rec.size_bytes, cfg.hashMaxBytes)
+      : null;
     // The meta object written to headers/sidecars: schema-driven when provided, else default.
     let metaObj: Record<string, unknown>;
     if (schema) {
@@ -468,7 +493,7 @@ export function inventoryTree(config: InventoryConfig): InventoryResult {
       // flows into inventory.json (otherwise "manifest" in target would be a no-op).
       if (targetIncludes(schema, "manifest")) rec.meta = applied.fields;
     } else {
-      metaObj = annotationFields(rec, harvest);
+      metaObj = annotationFields(rec, harvest, { body });
     }
     records.push(rec);
     typeDistribution[rec.artifact_type] = (typeDistribution[rec.artifact_type] || 0) + 1;
@@ -503,7 +528,13 @@ export function inventoryTree(config: InventoryConfig): InventoryResult {
       // asInjectableMeta marks that single, deliberate boundary rather than casting inline.
       const headerMeta = asInjectableMeta(metaObj);
       try {
-        injectFile(abs, headerMeta, { dryRun: false, outDir: config.outDir, verbose: false, writeInjectLog: false });
+        injectFile(abs, headerMeta, {
+          dryRun: false,
+          outDir: config.outDir,
+          verbose: false,
+          writeInjectLog: false,
+          reconcileExisting: false,
+        });
         stripSmashedClockFromWritten(abs);
         applyInventoryClocksToWritten(abs, {
           created_at: rec.created_at ?? "Unknown",
@@ -688,30 +719,118 @@ function stripSmashedClockFromWritten(abs: string): boolean {
   return false;
 }
 
-function annotationFields(rec: InventoryRecord, harvest: Record<string, unknown>): Record<string, unknown> {
-  const kept = sanitizeHarvest(harvest);
+/**
+ * Exact literals the pre-ADR-051 inventory header stamped on every file.
+ * A harvested value equal to its legacy literal is discarded so a re-run
+ * migrates rather than preserving the placeholder forever.
+ */
+const LEGACY_INVENTORY_PLACEHOLDERS: Readonly<Record<string, unknown>> = {
+  artifact_type: "source",
+  mcp_primitive: "resource",
+  callable: false,
+  retrievable: true,
+  injectable: true,
+  namespace: "inventory",
+  sharing_scope: "agnostic",
+  token_cost_estimate: 0,
+  authority: "inventory",
+};
+
+const ALWAYS_DERIVED_ANNOTATION_KEYS = [
+  "artifact_type",
+  "mcp_primitive",
+  "callable",
+  "retrievable",
+  "injectable",
+  "token_cost_estimate",
+] as const;
+
+const ARTIFACT_TYPE_VALUES = new Set<string>([
+  "skill", "playbook", "kernel", "context", "prompt",
+  "doctrine", "test", "script", "source", "unknown",
+]);
+
+const SHARING_SCOPE_VALUES = new Set<string>(["private", "shared", "agnostic"]);
+
+function isLegacyPlaceholder(key: string, value: unknown): boolean {
+  return Object.prototype.hasOwnProperty.call(LEGACY_INVENTORY_PLACEHOLDERS, key)
+    && Object.is(LEGACY_INVENTORY_PLACEHOLDERS[key], value);
+}
+
+function harvestedOperatorString(value: unknown, key: string): string | undefined {
+  if (typeof value !== "string" || value.trim() === "") return undefined;
+  if (isLegacyPlaceholder(key, value)) return undefined;
+  return value;
+}
+
+function asArtifactType(value: unknown): ArtifactType | undefined {
+  if (typeof value !== "string" || !ARTIFACT_TYPE_VALUES.has(value)) return undefined;
+  if (isLegacyPlaceholder("artifact_type", value)) return undefined;
+  return value as ArtifactType;
+}
+
+function asSharingScope(value: unknown): SharingScope | undefined {
+  if (typeof value !== "string" || !SHARING_SCOPE_VALUES.has(value)) return undefined;
+  if (isLegacyPlaceholder("sharing_scope", value)) return undefined;
+  return value as SharingScope;
+}
+
+function annotationFields(
+  rec: InventoryRecord,
+  harvest: Record<string, unknown>,
+  ctx: { body: string | null },
+): Record<string, unknown> {
+  const rawHarvest = sanitizeHarvest(harvest);
+  const harvestedType = asArtifactType(rawHarvest.artifact_type);
+  const harvestedNamespace = harvestedOperatorString(rawHarvest.namespace, "namespace");
+  const harvestedAuthority = harvestedOperatorString(rawHarvest.authority, "authority");
+  const harvestedScope = asSharingScope(rawHarvest.sharing_scope);
+  const kept = { ...rawHarvest };
+  for (const [key, value] of Object.entries(kept)) {
+    if (isLegacyPlaceholder(key, value)) delete kept[key];
+  }
+  for (const key of ALWAYS_DERIVED_ANNOTATION_KEYS) delete kept[key];
+
+  const derivable = ctx.body !== null;
+  const classified = derivable ? classify(rec.relative_path, ctx.body ?? "", "none").artifactType : undefined;
+  const artifactType = harvestedType ?? classified;
+  const tax = artifactType !== undefined
+    ? projectPrimitiveTaxonomy(artifactType)
+    : {
+      artifact_type: UNKNOWN,
+      mcp_primitive: UNKNOWN,
+      callable: UNKNOWN,
+      retrievable: UNKNOWN,
+      injectable: UNKNOWN,
+    };
+  const sharingScope = harvestedScope
+    ?? (derivable
+      ? resolveNamespace(rec.relative_path, { namespace: "l9" }, artifactType).sharingScope
+      : undefined)
+    ?? UNKNOWN;
+  const tokens = derivable && ctx.body !== null ? estimateTokens(ctx.body) : UNKNOWN;
   const harvestedTitle = typeof kept.title === "string" && kept.title.trim() ? kept.title : rec.file_name;
   return omitSmashedClock({
-    artifact_type: "source",
-    mcp_primitive: "resource",
-    callable: false,
-    retrievable: true,
-    injectable: true,
-    namespace: "inventory",
-    sharing_scope: "agnostic",
-    token_cost_estimate: 0,
-    authority: "inventory",
-    evidence: rec.evidence_excerpt ?? "Unknown",
+    artifact_type: tax.artifact_type,
+    mcp_primitive: tax.mcp_primitive,
+    callable: tax.callable,
+    retrievable: tax.retrievable,
+    injectable: tax.injectable,
+    namespace: harvestedNamespace ?? UNKNOWN,
+    sharing_scope: sharingScope,
+    token_cost_estimate: tokens,
+    authority: harvestedAuthority ?? UNKNOWN,
+    evidence: rec.evidence_excerpt ?? UNKNOWN,
     ...kept,
     id: rec.artifact_id,
     title: harvestedTitle,
     source_path: rec.relative_path,
-    content_hash: rec.content_hash ?? "Unknown",
+    content_hash: rec.content_hash ?? UNKNOWN,
     inventory_type: rec.artifact_type,
     classification_confidence: rec.classification_confidence,
-    created_at: rec.created_at ?? "Unknown",
-    modified_at: rec.modified_at ?? "Unknown",
-    inspected_at: rec.inspected_at ?? "Unknown",
+    created_at: rec.created_at ?? UNKNOWN,
+    modified_at: rec.modified_at ?? UNKNOWN,
+    inspected_at: rec.inspected_at ?? UNKNOWN,
   });
 }
 

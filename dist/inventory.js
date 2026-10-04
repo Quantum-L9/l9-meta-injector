@@ -67,6 +67,9 @@ const comment_1 = require("./comment");
 const frontmatter_patch_1 = require("./frontmatter_patch");
 const inject_1 = require("./inject");
 const schema_1 = require("./schema");
+const normalize_meta_1 = require("./normalize_meta");
+const classify_1 = require("./classify");
+const namespace_1 = require("./namespace");
 const yaml_serialize_1 = require("./yaml_serialize");
 const meta_schema_1 = require("./meta_schema");
 const omit_1 = require("./omit");
@@ -297,6 +300,21 @@ function hashRegularFile(abs, fileName, size, hashMaxBytes, unknowns) {
     }
     return crypto.createHash("sha256").update(bytes).digest("hex");
 }
+/** UTF-8 text eligible for classify / token estimate / carrier-free hashing. */
+function tryReadUtf8Body(abs, size, hashMaxBytes) {
+    if (size > hashMaxBytes)
+        return null;
+    const encoding = (0, encoding_1.probeFileEncoding)(abs);
+    if (encoding.status !== "utf8")
+        return null;
+    return fs.readFileSync(abs, "utf8");
+}
+function noteClockSkew(unknowns, created, modified, inspected) {
+    if (created && created > inspected)
+        unknowns.push("clock_skew:created_at_after_inspected_at");
+    if (modified && modified > inspected)
+        unknowns.push("clock_skew:modified_at_after_inspected_at");
+}
 function buildRecord(root, abs, isDir, cfg, kind = isDir ? "directory" : "file", harvest = {}) {
     const relative = path.relative(root, abs).split(path.sep).join("/") || ".";
     const fileName = path.basename(abs);
@@ -317,12 +335,17 @@ function buildRecord(root, abs, isDir, cfg, kind = isDir ? "directory" : "file",
         created = filesystemCreatedAt(st);
         if (kind === "file") {
             size = st.size;
-            hash = hashRegularFile(abs, fileName, size, cfg.hashMaxBytes, unknowns);
+            const isArchive = archive_formats_1.ARCHIVE_EXTENSIONS.has((0, archive_formats_1.archiveExtensionOf)(abs));
+            const utf8Body = isArchive ? null : tryReadUtf8Body(abs, size, cfg.hashMaxBytes);
+            hash = utf8Body !== null
+                ? (0, extract_1.contentHash)((0, inject_1.managedCarrierFreeBody)(abs, utf8Body))
+                : hashRegularFile(abs, fileName, size, cfg.hashMaxBytes, unknowns);
         }
     }
     catch (err) {
         unknowns.push(`stat_failed:${err.message}`);
     }
+    noteClockSkew(unknowns, created, modified, cfg.now);
     const parent = path.dirname(relative);
     return {
         artifact_id: idFor(relative),
@@ -396,6 +419,10 @@ function inventoryTree(config) {
     for (const { abs, isDir, kind } of entries) {
         const harvest = kind === "symlink" || kind === "special" ? {} : (0, inventory_existing_meta_1.harvestExistingMeta)(abs, isDir);
         const rec = buildRecord(root, abs, isDir, cfg, kind, harvest);
+        const isArchive = !isDir && archive_formats_1.ARCHIVE_EXTENSIONS.has((0, archive_formats_1.archiveExtensionOf)(abs));
+        const body = kind === "file" && !isArchive && rec.size_bytes !== null
+            ? tryReadUtf8Body(abs, rec.size_bytes, cfg.hashMaxBytes)
+            : null;
         // The meta object written to headers/sidecars: schema-driven when provided, else default.
         let metaObj;
         if (schema) {
@@ -409,7 +436,7 @@ function inventoryTree(config) {
                 rec.meta = applied.fields;
         }
         else {
-            metaObj = annotationFields(rec, harvest);
+            metaObj = annotationFields(rec, harvest, { body });
         }
         records.push(rec);
         typeDistribution[rec.artifact_type] = (typeDistribution[rec.artifact_type] || 0) + 1;
@@ -447,7 +474,13 @@ function inventoryTree(config) {
             // asInjectableMeta marks that single, deliberate boundary rather than casting inline.
             const headerMeta = asInjectableMeta(metaObj);
             try {
-                (0, inject_1.injectFile)(abs, headerMeta, { dryRun: false, outDir: config.outDir, verbose: false, writeInjectLog: false });
+                (0, inject_1.injectFile)(abs, headerMeta, {
+                    dryRun: false,
+                    outDir: config.outDir,
+                    verbose: false,
+                    writeInjectLog: false,
+                    reconcileExisting: false,
+                });
                 stripSmashedClockFromWritten(abs);
                 applyInventoryClocksToWritten(abs, {
                     created_at: rec.created_at ?? "Unknown",
@@ -660,30 +693,113 @@ function stripSmashedClockFromWritten(abs) {
     }
     return false;
 }
-function annotationFields(rec, harvest) {
-    const kept = sanitizeHarvest(harvest);
+/**
+ * Exact literals the pre-ADR-051 inventory header stamped on every file.
+ * A harvested value equal to its legacy literal is discarded so a re-run
+ * migrates rather than preserving the placeholder forever.
+ */
+const LEGACY_INVENTORY_PLACEHOLDERS = {
+    artifact_type: "source",
+    mcp_primitive: "resource",
+    callable: false,
+    retrievable: true,
+    injectable: true,
+    namespace: "inventory",
+    sharing_scope: "agnostic",
+    token_cost_estimate: 0,
+    authority: "inventory",
+};
+const ALWAYS_DERIVED_ANNOTATION_KEYS = [
+    "artifact_type",
+    "mcp_primitive",
+    "callable",
+    "retrievable",
+    "injectable",
+    "token_cost_estimate",
+];
+const ARTIFACT_TYPE_VALUES = new Set([
+    "skill", "playbook", "kernel", "context", "prompt",
+    "doctrine", "test", "script", "source", "unknown",
+]);
+const SHARING_SCOPE_VALUES = new Set(["private", "shared", "agnostic"]);
+function isLegacyPlaceholder(key, value) {
+    return Object.prototype.hasOwnProperty.call(LEGACY_INVENTORY_PLACEHOLDERS, key)
+        && Object.is(LEGACY_INVENTORY_PLACEHOLDERS[key], value);
+}
+function harvestedOperatorString(value, key) {
+    if (typeof value !== "string" || value.trim() === "")
+        return undefined;
+    if (isLegacyPlaceholder(key, value))
+        return undefined;
+    return value;
+}
+function asArtifactType(value) {
+    if (typeof value !== "string" || !ARTIFACT_TYPE_VALUES.has(value))
+        return undefined;
+    if (isLegacyPlaceholder("artifact_type", value))
+        return undefined;
+    return value;
+}
+function asSharingScope(value) {
+    if (typeof value !== "string" || !SHARING_SCOPE_VALUES.has(value))
+        return undefined;
+    if (isLegacyPlaceholder("sharing_scope", value))
+        return undefined;
+    return value;
+}
+function annotationFields(rec, harvest, ctx) {
+    const rawHarvest = sanitizeHarvest(harvest);
+    const harvestedType = asArtifactType(rawHarvest.artifact_type);
+    const harvestedNamespace = harvestedOperatorString(rawHarvest.namespace, "namespace");
+    const harvestedAuthority = harvestedOperatorString(rawHarvest.authority, "authority");
+    const harvestedScope = asSharingScope(rawHarvest.sharing_scope);
+    const kept = { ...rawHarvest };
+    for (const [key, value] of Object.entries(kept)) {
+        if (isLegacyPlaceholder(key, value))
+            delete kept[key];
+    }
+    for (const key of ALWAYS_DERIVED_ANNOTATION_KEYS)
+        delete kept[key];
+    const derivable = ctx.body !== null;
+    const classified = derivable ? (0, classify_1.classify)(rec.relative_path, ctx.body ?? "", "none").artifactType : undefined;
+    const artifactType = harvestedType ?? classified;
+    const tax = artifactType !== undefined
+        ? (0, normalize_meta_1.projectPrimitiveTaxonomy)(artifactType)
+        : {
+            artifact_type: schema_1.UNKNOWN,
+            mcp_primitive: schema_1.UNKNOWN,
+            callable: schema_1.UNKNOWN,
+            retrievable: schema_1.UNKNOWN,
+            injectable: schema_1.UNKNOWN,
+        };
+    const sharingScope = harvestedScope
+        ?? (derivable
+            ? (0, namespace_1.resolveNamespace)(rec.relative_path, { namespace: "l9" }, artifactType).sharingScope
+            : undefined)
+        ?? schema_1.UNKNOWN;
+    const tokens = derivable && ctx.body !== null ? (0, extract_1.estimateTokens)(ctx.body) : schema_1.UNKNOWN;
     const harvestedTitle = typeof kept.title === "string" && kept.title.trim() ? kept.title : rec.file_name;
     return omitSmashedClock({
-        artifact_type: "source",
-        mcp_primitive: "resource",
-        callable: false,
-        retrievable: true,
-        injectable: true,
-        namespace: "inventory",
-        sharing_scope: "agnostic",
-        token_cost_estimate: 0,
-        authority: "inventory",
-        evidence: rec.evidence_excerpt ?? "Unknown",
+        artifact_type: tax.artifact_type,
+        mcp_primitive: tax.mcp_primitive,
+        callable: tax.callable,
+        retrievable: tax.retrievable,
+        injectable: tax.injectable,
+        namespace: harvestedNamespace ?? schema_1.UNKNOWN,
+        sharing_scope: sharingScope,
+        token_cost_estimate: tokens,
+        authority: harvestedAuthority ?? schema_1.UNKNOWN,
+        evidence: rec.evidence_excerpt ?? schema_1.UNKNOWN,
         ...kept,
         id: rec.artifact_id,
         title: harvestedTitle,
         source_path: rec.relative_path,
-        content_hash: rec.content_hash ?? "Unknown",
+        content_hash: rec.content_hash ?? schema_1.UNKNOWN,
         inventory_type: rec.artifact_type,
         classification_confidence: rec.classification_confidence,
-        created_at: rec.created_at ?? "Unknown",
-        modified_at: rec.modified_at ?? "Unknown",
-        inspected_at: rec.inspected_at ?? "Unknown",
+        created_at: rec.created_at ?? schema_1.UNKNOWN,
+        modified_at: rec.modified_at ?? schema_1.UNKNOWN,
+        inspected_at: rec.inspected_at ?? schema_1.UNKNOWN,
     });
 }
 function harvestedStringList(value) {

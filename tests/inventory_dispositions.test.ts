@@ -22,7 +22,12 @@ describe("inventory — symlinks and special entries", () => {
     fs.symlinkSync(outside, path.join(root, "link.md"));
     fs.symlinkSync("/nonexistent/target", path.join(root, "dangling"));
     execFileSync("mkfifo", [path.join(root, "pipe")]);
-    const result = inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false });
+    const result = inventoryTree({
+      root,
+      outDir: path.join(tmp(), "out"),
+      folderSidecars: false,
+      now: "2099-01-01T00:00:00.000Z",
+    });
     const byPath = new Map(result.records.map((r) => [r.relative_path, r]));
     expect([...byPath.keys()].sort()).toEqual(["dangling", "link.md", "pipe", "real.md"]);
     expect(byPath.get("link.md")).toMatchObject({ artifact_type: "unknown", content_hash: null, size_bytes: null, unknowns: ["symlink_not_traversed"] });

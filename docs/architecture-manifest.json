@@ -10,7 +10,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "git_blob_sha1": "caf0bc9d048252121dbe6a427fde44e4288da8b1"
+      "git_blob_sha1": "8bbc8bf8b0f0d3d3d1f201fcd6d1ce6e2a60be90"
     },
     {
       "path": "dist/archive_preflight.d.ts",
@@ -426,7 +426,7 @@
     },
     {
       "path": "docs/architecture.md",
-      "git_blob_sha1": "c76d4df62a999be737dbcab8a9e907dca2706209"
+      "git_blob_sha1": "ef5cd9c82cc01573144008048dc08e4746613b3f"
     },
     {
       "path": "docs/contracts.md",
@@ -442,7 +442,7 @@
     },
     {
       "path": "docs/decision_log.md",
-      "git_blob_sha1": "cbb3bda26e324108bb025342292df5f39bf2388d"
+      "git_blob_sha1": "d02d0aefee890dc2c32b04e5112d155f40737f36"
     },
     {
       "path": "docs/decisions/036-read-only-local-source-acquisition.md",
@@ -614,7 +614,7 @@
     },
     {
       "path": "README.md",
-      "git_blob_sha1": "f25c4d342750f00a4576a027a025d9ba97bf027a"
+      "git_blob_sha1": "66ece64d839e51a1414707dc43a020979c6a5ba0"
     },
     {
       "path": "scripts/check-architecture-authority.js",
@@ -786,7 +786,7 @@
     },
     {
       "path": "src/inventory.ts",
-      "git_blob_sha1": "f4966988606b6a0ef107c9761661b764e044b625"
+      "git_blob_sha1": "3c38e84a4d9e152ab379bf72590128b2cff47151"
     },
     {
       "path": "src/local_archive_policy.ts",

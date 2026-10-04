@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted. Header-field and inventory `content_hash` semantics are amended by
+[ADR-051](051-inventory-derived-annotation-fields.md).
 
 Amends [ADR-046](046-archive-format-authority-and-fidelity-of-direct-mutation.md): TAR remains
 outside **observation expansion**. Inventory annotation may open admitted ZIP and TAR

@@ -34,6 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.yamlScalar = void 0;
+exports.projectPrimitiveTaxonomy = projectPrimitiveTaxonomy;
 exports.serializeToYamlFrontMatter = serializeToYamlFrontMatter;
 exports.buildMeta = buildMeta;
 // normalize_meta.ts - Build NormalizedMeta header as a pure transform.
@@ -67,21 +68,35 @@ function slugTitle(filePath) {
 }
 var yaml_serialize_2 = require("./yaml_serialize");
 Object.defineProperty(exports, "yamlScalar", { enumerable: true, get: function () { return yaml_serialize_2.yamlScalar; } });
+/**
+ * Project the four MCP/capability fields from one artifact type.
+ * `retrievable` follows `injectable`, matching the historical `buildMeta` rule.
+ */
+function projectPrimitiveTaxonomy(artifactType) {
+    const tax = schema_1.PRIMITIVE_TAXONOMY[artifactType] ?? schema_1.PRIMITIVE_TAXONOMY.unknown;
+    return {
+        artifact_type: tax.type,
+        mcp_primitive: tax.mcpPrimitive,
+        callable: tax.callable,
+        retrievable: tax.injectable,
+        injectable: tax.injectable,
+    };
+}
 function serializeToYamlFrontMatter(meta) {
     return (0, yaml_serialize_1.serializeYamlObject)(meta);
 }
 function buildMeta(filePath, originalBody, ef, cr, nsCfg, authority, detectedAt, sourceRoot) {
     const sourcePath = stableSourcePath(filePath, sourceRoot);
-    const tax = schema_1.PRIMITIVE_TAXONOMY[cr.artifactType] ?? schema_1.PRIMITIVE_TAXONOMY["unknown"];
+    const tax = projectPrimitiveTaxonomy(cr.artifactType);
     const { namespace, sharingScope, idStem } = (0, namespace_1.resolveNamespace)(sourcePath, nsCfg, cr.artifactType);
     const timestamp = detectedAt.trim() || schema_1.UNKNOWN;
     const base = {
         id: idStem,
         title: slugTitle(sourcePath),
-        artifact_type: cr.artifactType,
-        mcp_primitive: tax.mcpPrimitive,
+        artifact_type: tax.artifact_type,
+        mcp_primitive: tax.mcp_primitive,
         callable: tax.callable,
-        retrievable: tax.injectable,
+        retrievable: tax.retrievable,
         injectable: tax.injectable,
         namespace,
         sharing_scope: sharingScope,

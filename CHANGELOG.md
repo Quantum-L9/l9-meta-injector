@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Changed
+
+- Inventory annotation no longer stamps `namespace: inventory`, `authority: inventory`, or `token_cost_estimate: 0`. Taxonomy fields derive from `classify` and `PRIMITIVE_TAXONOMY`, `sharing_scope` from `resolveNamespace`, and token cost from `estimateTokens`; otherwise the field is `Unknown` (ADR-051).
+- Inventory `content_hash` for UTF-8 regular files is the SHA-256 of the body with the L9 managed carrier removed, so a second run is stable and duplicate clusters still match after annotation.
+
+### Fixed
+
+- Inventory records `clock_skew:<clock>_after_inspected_at` when `created_at` or `modified_at` is later than `inspected_at`, without rewriting the observed clocks.
+- A previously written inventory header whose fields equal the old placeholder literals is migrated on the next run instead of being harvested forever.
+
 ## 4.1.0 - 2026-09-17
 
 ### Fixed
