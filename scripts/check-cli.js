@@ -48,12 +48,6 @@ if (schemaPath) {
   }
 }
 
-const identity = resolveCliHeaderIdentity(pkg, targetRoot, "check-cli", {
-  authority: opt("--authority", null),
-  namespace: process.argv.includes("--namespace") ? opt("--namespace", "") : undefined,
-  unboundNamespaceDefault: path.basename(targetRoot),
-});
-
 const namespaceGlobs = optAll("--namespace-glob").map((pair) => {
   const eq = pair.indexOf("=");
   if (eq < 1 || eq === pair.length - 1) {
@@ -61,6 +55,13 @@ const namespaceGlobs = optAll("--namespace-glob").map((pair) => {
     process.exit(2);
   }
   return { glob: pair.slice(0, eq), namespace: pair.slice(eq + 1) };
+});
+
+const identity = resolveCliHeaderIdentity(pkg, targetRoot, "check-cli", {
+  authority: opt("--authority", null),
+  namespace: process.argv.includes("--namespace") ? opt("--namespace", "") : undefined,
+  unboundNamespaceDefault: path.basename(targetRoot),
+  namespaceGlobs: namespaceGlobs.length ? namespaceGlobs : undefined,
 });
 
 const config = {

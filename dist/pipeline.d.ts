@@ -1,4 +1,5 @@
 import { PipelineConfig, NormalizedMeta, InjectionRecord, VerifyResult } from "./schema";
+import type { ProductDeclaration, SemanticFoundationBinding } from "./schema";
 import { scanFiles } from "./retrieval";
 import type { CarrierInjectionStrategy } from "./mutation_policy";
 import type { DiscoverySummary } from "./discovery_contracts";
@@ -88,5 +89,10 @@ export interface PipelineResult {
     metrics: MetricsSnapshot;
     /** Archives expanded in local-files mode (empty when `localFiles` is off). */
     archives: ArchiveRecord[];
+    /** Present only when the root carries an l9.meta-authority/v2 product binding. */
+    semanticBinding?: {
+        semantic_foundation: SemanticFoundationBinding;
+        product: ProductDeclaration;
+    };
 }
 export declare function runPipelineAsync(config: PipelineConfig): Promise<PipelineResult>;

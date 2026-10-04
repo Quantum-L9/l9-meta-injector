@@ -2,6 +2,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { PipelineConfig, NormalizedMeta, InjectionRecord, VerifyResult, UNKNOWN, asRecord, coerceNormalizedMeta } from "./schema";
+import type { ProductDeclaration, SemanticFoundationBinding } from "./schema";
 import { discoverFiles, scanFiles } from "./retrieval";
 import type { CarrierInjectionStrategy } from "./mutation_policy";
 import type { DiscoverySummary } from "./discovery_contracts";
@@ -135,6 +136,11 @@ export interface PipelineResult {
   metrics: MetricsSnapshot;
   /** Archives expanded in local-files mode (empty when `localFiles` is off). */
   archives: ArchiveRecord[];
+  /** Present only when the root carries an l9.meta-authority/v2 product binding. */
+  semanticBinding?: {
+    semantic_foundation: SemanticFoundationBinding;
+    product: ProductDeclaration;
+  };
 }
 
 /** Refuse a real run over a tree with a blocking discovery disposition, naming the paths. */
@@ -178,6 +184,7 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
     authority: config.authority,
     namespace: config.namespace,
     unboundNamespaceDefault: path.basename(root),
+    namespaceGlobs: config.namespaceGlobs,
   }));
   const nsCfg = toCfg({
     ...config,
@@ -291,7 +298,7 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
     const ef = extract(body);
     const cls = classify(e.sourcePath, body, e.headerConvention);
     classifications.set(e.sourcePath, cls);
-    let meta = buildMeta(e.sourcePath, body, ef, cls, nsCfg, identity.authority, metadataTimestamp, root);
+    let meta = buildMeta(e.sourcePath, body, ef, cls, nsCfg, identity.authority, metadataTimestamp, root, identity);
 
     // assist: LLM fills prose-origin fields only when seed fails "good" predicate
     if (config.llmEnabled) {
@@ -382,7 +389,9 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
     metrics.recordInject();
   }
 
-  const verified = injected.map((r) => verify(r.sourcePath, r.originalBodyHash, r.meta));
+  const verified = injected.map((r) => verify(r.sourcePath, r.originalBodyHash, r.meta, {
+    semanticallyBound: identity.source === "semantic_binding",
+  }));
   // Consume the verification signal at the decision point — a computed VerifyResult
   // that nothing inspects is indistinguishable from no verification at all. Aggregate
   // failures, surface them (independent of dryRun), and expose a gate flag to callers/CI.
@@ -433,8 +442,15 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
     reportPath: coverageReportPath,
     discovery: discovery.summary,
   };
+  const semanticBinding = identity.source === "semantic_binding" && identity.semanticFoundation && identity.product
+    ? { semantic_foundation: identity.semanticFoundation, product: identity.product }
+    : undefined;
   if (config.persistOutputs !== false) {
-    const persistedCoverage = { ...coverage, reportPath: path.basename(coverageReportPath) };
+    const persistedCoverage = {
+      ...coverage,
+      reportPath: path.basename(coverageReportPath),
+      ...(semanticBinding ? { semantic_binding: semanticBinding } : {}),
+    };
     fs.writeFileSync(coverageReportPath, JSON.stringify(persistedCoverage, null, 2));
   }
 
@@ -493,5 +509,9 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
     fs.writeFileSync(path.join(d, "archives-expanded.json"), JSON.stringify(archives, null, 2));
   }
 
-  return { runStartedAt, scanned, metadataSubjects, injected, verified, verification, coverage, placementPlans, metaV3, metrics: metrics.snapshot(), archives };
+  return {
+    runStartedAt, scanned, metadataSubjects, injected, verified, verification, coverage,
+    placementPlans, metaV3, metrics: metrics.snapshot(), archives,
+    ...(semanticBinding ? { semanticBinding } : {}),
+  };
 }

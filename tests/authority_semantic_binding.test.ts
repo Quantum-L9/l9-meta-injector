@@ -13,6 +13,12 @@ import {
 import { isAuthorityConfig, isSupportedAuthoritySchema } from "../src/operation_contracts";
 import { inventoryTree } from "../src/inventory";
 import { runPipelineAsync } from "../src/pipeline";
+import { verify } from "../src/verify";
+import type { PipelineConfig } from "../src/schema";
+
+const dispatch = require("../scripts/lib/operation-dispatch") as {
+  normalizeEnvironment: (env: NodeJS.ProcessEnv) => Record<string, unknown>;
+};
 
 const DIGESTS = {
   "l9.authority-model/global@1": "sha256:ef536f5e233a84fd4a4d24a5fe101e9cf9a78563fafbf1e638faa383208bc451",
@@ -59,6 +65,43 @@ function write(root: string, relative: string, content: string): void {
   const target = path.join(root, relative);
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, content, "utf8");
+}
+
+function pipelineConfig(root: string, overrides: Partial<PipelineConfig> = {}): PipelineConfig {
+  return {
+    root,
+    glob: "**/*",
+    dryRun: true,
+    outDir: path.join(root, ".out"),
+    indexDir: path.join(root, ".out"),
+    nearDupThreshold: 0.9,
+    hashPrefixLength: 16,
+    verbose: false,
+    llmEnabled: false,
+    normalizeFilenames: false,
+    ...overrides,
+  };
+}
+
+function actionEnv(workspace: string, overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+  const actionPath = tempRoot();
+  const runnerTemp = tempRoot();
+  return {
+    GITHUB_WORKSPACE: workspace,
+    GITHUB_ACTION_PATH: actionPath,
+    RUNNER_TEMP: runnerTemp,
+    GITHUB_RUN_ID: "123",
+    GITHUB_ACTION: "test",
+    L9_INPUT_MODE: "check",
+    L9_INPUT_ROOT: ".",
+    L9_INPUT_OUT: ".l9-out",
+    L9_INPUT_AUTHORITY: "",
+    L9_INPUT_DRY_RUN: "",
+    L9_INPUT_FAIL_ON_ISSUES: "true",
+    L9_INPUT_LLM: "false",
+    L9_INPUT_LLM_ALLOW_INSECURE: "false",
+    ...overrides,
+  };
 }
 
 describe("l9.meta-authority/v2 parse", () => {
@@ -119,6 +162,35 @@ describe("resolveHeaderIdentity", () => {
     expect(resolved.source).toBe("semantic_binding");
     expect(resolved.authority).toBe("Example/product");
     expect(resolved.namespace).toBe("example-product");
+    expect(resolved.product?.id).toBe("example-product");
+    expect(resolved.product?.owner).toBe("Example/product");
+    expect(resolved.semanticFoundation?.admission).toBe("candidate");
+    expect(resolved.semanticFoundation?.revision).toBe("31b4f4f699becb1437b4804c308650bbad60c00e");
+  });
+
+  test("bound root refuses a namespace glob that is not product.id", () => {
+    const root = tempRoot();
+    write(root, META_AUTHORITY_RELATIVE_PATH, v2Doc());
+    const refused = resolveHeaderIdentity(root, {
+      namespaceGlobs: [{ glob: "plastos/**", namespace: "plastos" }],
+    });
+    expect(refused.conflicts[0]?.code).toBe("META_AUTHORITY_IDENTITY_MISMATCH");
+    const allowed = resolveHeaderIdentity(root, {
+      namespaceGlobs: [{ glob: "src/**", namespace: "example-product" }],
+    });
+    expect(allowed.conflicts).toEqual([]);
+  });
+
+  test("unbound root ignores namespace globs", () => {
+    const root = tempRoot();
+    const resolved = resolveHeaderIdentity(root, {
+      authority: "Operator/repo",
+      namespaceGlobs: [{ glob: "plastos/**", namespace: "plastos" }],
+    });
+    expect(resolved.conflicts).toEqual([]);
+    expect(resolved.source).toBe("folder");
+    expect(resolved.product).toBeUndefined();
+    expect(resolved.semanticFoundation).toBeUndefined();
   });
 
   test("bound root mismatches a conflicting operator value", () => {
@@ -211,6 +283,113 @@ describe("pipeline and inventory consume the binding", () => {
     const unboundHeader = fs.readFileSync(path.join(unbound, "notes.md"), "utf8");
     expect(unboundHeader).toMatch(/authority:\s*"?Unknown"?/);
     expect(unboundHeader).toMatch(/namespace:\s*"?Unknown"?/);
+  });
+});
+
+describe("binding propagation", () => {
+  test("bound source files stamp product.owner; unbound stamp Unknown", async () => {
+    const bound = tempRoot();
+    write(bound, META_AUTHORITY_RELATIVE_PATH, v2Doc());
+    write(bound, "src/mod.ts", "export const n = 1;\n");
+    const boundResult = await runPipelineAsync(pipelineConfig(bound, { glob: "**/*.ts" }));
+    const boundMeta = boundResult.injected.find((row) => row.meta.artifact_type === "source");
+    expect(boundMeta).toBeDefined();
+    expect((boundMeta?.meta as { owner?: string }).owner).toBe("Example/product");
+    const boundV3 = boundResult.metaV3.find((row) => row.sourcePath === boundMeta?.sourcePath);
+    expect(boundV3?.metaV3.governance.owner).toBe("Example/product");
+
+    const unbound = tempRoot();
+    write(unbound, "src/mod.ts", "export const n = 1;\n");
+    const unboundResult = await runPipelineAsync(pipelineConfig(unbound, {
+      glob: "**/*.ts",
+      authority: "Operator/repo",
+    }));
+    const unboundMeta = unboundResult.injected.find((row) => row.meta.artifact_type === "source");
+    expect((unboundMeta?.meta as { owner?: string }).owner).toBe("Unknown");
+    expect(unboundResult.semanticBinding).toBeUndefined();
+  });
+
+  test("bound glob mismatch is refused by the library, CLI, and Action dispatcher", async () => {
+    const root = tempRoot();
+    write(root, META_AUTHORITY_RELATIVE_PATH, v2Doc());
+    write(root, "notes.md", "# Notes\n\nbody\n");
+    await expect(runPipelineAsync(pipelineConfig(root, {
+      glob: "**/*.md",
+      namespaceGlobs: [{ glob: "plastos/**", namespace: "plastos" }],
+    }))).rejects.toThrow(/META_AUTHORITY_IDENTITY_MISMATCH/);
+
+    const allowed = await runPipelineAsync(pipelineConfig(root, {
+      glob: "**/*.md",
+      namespaceGlobs: [{ glob: "notes.md", namespace: "example-product" }],
+    }));
+    expect(allowed.injected.length).toBeGreaterThan(0);
+
+    const script = path.join(__dirname, "..", "scripts", "pipeline-cli.js");
+    const refused = spawnSync(process.execPath, [
+      script, root, "--dry-run", "--no-fail-on-issues", "--namespace-glob", "plastos/**=plastos",
+    ], { encoding: "utf8" });
+    expect(refused.status).toBe(2);
+    expect(`${refused.stderr}${refused.stdout}`).toMatch(/META_AUTHORITY_IDENTITY_MISMATCH/);
+
+    expect(() => dispatch.normalizeEnvironment(actionEnv(root, {
+      L9_INPUT_NAMESPACE_GLOBS: "plastos/**=plastos",
+    }))).toThrow(/META_AUTHORITY_IDENTITY_MISMATCH/);
+  });
+
+  test("bound shared files pass verify; unbound still report the literal-namespace rule", async () => {
+    const bound = tempRoot();
+    write(bound, META_AUTHORITY_RELATIVE_PATH, v2Doc());
+    write(bound, "docs/shared/x.md", "# Shared\n\nbody\n");
+    const boundResult = await runPipelineAsync(pipelineConfig(bound, { glob: "**/*.md" }));
+    const boundRow = boundResult.injected[0];
+    expect(boundRow.meta.sharing_scope).toBe("shared");
+    expect(boundRow.meta.namespace).toBe("example-product");
+    const boundVerified = verify(boundRow.sourcePath, boundRow.originalBodyHash, boundRow.meta, {
+      semanticallyBound: true,
+    });
+    expect(boundVerified.issues.some((issue) => issue.includes("sharing_scope=shared"))).toBe(false);
+
+    const unbound = tempRoot();
+    write(unbound, "docs/shared/x.md", "# Shared\n\nbody\n");
+    const unboundResult = await runPipelineAsync(pipelineConfig(unbound, {
+      glob: "**/*.md",
+      authority: "Operator/repo",
+    }));
+    const unboundRow = unboundResult.injected[0];
+    const unboundVerified = verify(unboundRow.sourcePath, unboundRow.originalBodyHash, unboundRow.meta);
+    expect(unboundVerified.issues.some((issue) => issue.includes("sharing_scope=shared"))).toBe(true);
+  });
+
+  test("bound runs persist semantic_binding; unbound runs omit it", async () => {
+    const bound = tempRoot();
+    write(bound, META_AUTHORITY_RELATIVE_PATH, v2Doc());
+    write(bound, "notes.md", "# Notes\n\nbody\n");
+    const boundResult = await runPipelineAsync(pipelineConfig(bound, { glob: "**/*.md" }));
+    expect(boundResult.semanticBinding?.product.id).toBe("example-product");
+    expect(boundResult.semanticBinding?.semantic_foundation.admission).toBe("candidate");
+    expect(boundResult.semanticBinding?.semantic_foundation.revision).toBe(
+      "31b4f4f699becb1437b4804c308650bbad60c00e",
+    );
+    expect(Object.keys(boundResult.semanticBinding?.semantic_foundation.ledgers ?? {})).toEqual(
+      expect.arrayContaining(Object.keys(DIGESTS)),
+    );
+    const report = JSON.parse(fs.readFileSync(path.join(bound, ".out", "coverage-report.json"), "utf8")) as {
+      semantic_binding?: { product?: { id?: string }; semantic_foundation?: { admission?: string } };
+    };
+    expect(report.semantic_binding?.product?.id).toBe("example-product");
+    expect(report.semantic_binding?.semantic_foundation?.admission).toBe("candidate");
+
+    const unbound = tempRoot();
+    write(unbound, "notes.md", "# Notes\n\nbody\n");
+    const unboundResult = await runPipelineAsync(pipelineConfig(unbound, {
+      glob: "**/*.md",
+      authority: "Operator/repo",
+    }));
+    expect(unboundResult.semanticBinding).toBeUndefined();
+    const unboundReport = JSON.parse(
+      fs.readFileSync(path.join(unbound, ".out", "coverage-report.json"), "utf8"),
+    ) as { semantic_binding?: unknown };
+    expect(unboundReport.semantic_binding).toBeUndefined();
   });
 });
 

@@ -122,6 +122,7 @@ async function runPipelineAsync(config) {
         authority: config.authority,
         namespace: config.namespace,
         unboundNamespaceDefault: path.basename(root),
+        namespaceGlobs: config.namespaceGlobs,
     }));
     const nsCfg = toCfg({
         ...config,
@@ -232,7 +233,7 @@ async function runPipelineAsync(config) {
         const ef = (0, extract_1.extract)(body);
         const cls = (0, classify_1.classify)(e.sourcePath, body, e.headerConvention);
         classifications.set(e.sourcePath, cls);
-        let meta = (0, normalize_meta_1.buildMeta)(e.sourcePath, body, ef, cls, nsCfg, identity.authority, metadataTimestamp, root);
+        let meta = (0, normalize_meta_1.buildMeta)(e.sourcePath, body, ef, cls, nsCfg, identity.authority, metadataTimestamp, root, identity);
         // assist: LLM fills prose-origin fields only when seed fails "good" predicate
         if (config.llmEnabled) {
             const rec = (0, schema_1.asRecord)(meta);
@@ -318,7 +319,9 @@ async function runPipelineAsync(config) {
         injected.push(record);
         metrics.recordInject();
     }
-    const verified = injected.map((r) => (0, verify_1.verify)(r.sourcePath, r.originalBodyHash, r.meta));
+    const verified = injected.map((r) => (0, verify_1.verify)(r.sourcePath, r.originalBodyHash, r.meta, {
+        semanticallyBound: identity.source === "semantic_binding",
+    }));
     // Consume the verification signal at the decision point — a computed VerifyResult
     // that nothing inspects is indistinguishable from no verification at all. Aggregate
     // failures, surface them (independent of dryRun), and expose a gate flag to callers/CI.
@@ -365,8 +368,15 @@ async function runPipelineAsync(config) {
         reportPath: coverageReportPath,
         discovery: discovery.summary,
     };
+    const semanticBinding = identity.source === "semantic_binding" && identity.semanticFoundation && identity.product
+        ? { semantic_foundation: identity.semanticFoundation, product: identity.product }
+        : undefined;
     if (config.persistOutputs !== false) {
-        const persistedCoverage = { ...coverage, reportPath: path.basename(coverageReportPath) };
+        const persistedCoverage = {
+            ...coverage,
+            reportPath: path.basename(coverageReportPath),
+            ...(semanticBinding ? { semantic_binding: semanticBinding } : {}),
+        };
         fs.writeFileSync(coverageReportPath, JSON.stringify(persistedCoverage, null, 2));
     }
     // Surface coverage when anything was skipped or on verbose runs — otherwise the
@@ -414,6 +424,10 @@ async function runPipelineAsync(config) {
         fs.writeFileSync(path.join(d, "meta-v3-index.json"), JSON.stringify(metaV3, null, 2));
         fs.writeFileSync(path.join(d, "archives-expanded.json"), JSON.stringify(archives, null, 2));
     }
-    return { runStartedAt, scanned, metadataSubjects, injected, verified, verification, coverage, placementPlans, metaV3, metrics: metrics.snapshot(), archives };
+    return {
+        runStartedAt, scanned, metadataSubjects, injected, verified, verification, coverage,
+        placementPlans, metaV3, metrics: metrics.snapshot(), archives,
+        ...(semanticBinding ? { semanticBinding } : {}),
+    };
 }
 //# sourceMappingURL=pipeline.js.map
