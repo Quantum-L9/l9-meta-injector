@@ -578,7 +578,7 @@
     },
     {
       "path": "fixtures/package-consumer/runtime.cjs",
-      "git_blob_sha1": "db56fd712f3317dc8e53196042f3d7944bb9f111"
+      "git_blob_sha1": "54d27abec26e47c4ed26e49bf9eb438131fe4735"
     },
     {
       "path": "fixtures/package-consumer/tsconfig.json",
