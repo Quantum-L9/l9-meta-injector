@@ -5,18 +5,27 @@ export { buildCarrierOperationPlan, planCarrierOperationAsync, metadataIndexDrif
 export { runSkillsPipelineAsync } from "./skills_pipeline";
 export {
   UNKNOWN, PRIMITIVE_TAXONOMY, META_V3_SCHEMA_VERSION, META_V3_PLANES, isPromptMeta,
-  LEGACY_OPERATION_ALIASES, META_AUTHORITY_SCHEMA, OPERATION_MODES,
-  assertAuthorityForOperation, isAuthorityConfig, isSupportedAuthoritySchema,
-  operationRequiresAuthority, resolveOperationMode,
+  LEGACY_OPERATION_ALIASES, META_AUTHORITY_SCHEMA, META_AUTHORITY_SCHEMA_V2, OPERATION_MODES,
+  REQUIRED_SEMANTIC_LEDGERS,
+  assertAuthorityForOperation, isAuthorityConfig, isProductDeclaration,
+  isSemanticFoundationBinding, isSupportedAuthoritySchema,
+  operationRequiresAuthority, resolveOperationMode, semanticBindingErrors,
 } from "./schema";
+export {
+  META_AUTHORITY_RELATIVE_PATH, assertHeaderIdentity, loadRepositoryAuthority,
+  parseAuthorityYaml, resolveHeaderIdentity, verifySemanticFoundation,
+} from "./authority";
 export type {
   Unknown, ArtifactType, McpPrimitive, ArtifactFamily, SharingScope, PrimitiveTaxonomyEntry,
   BaseHeader, ExecutableRetrievalMeta, PromptMeta, DoctrineMeta, ArtifactMeta, NormalizedMeta,
   InjectionRecord, VerifyResult, PipelineConfig, MetaV3SchemaVersion, MetaV3Plane, MetaV3,
   AuthorityConfig, AuthorityConflict, AuthorityConflictCode, AuthorityLegacyPolicy,
   AuthorityWriter, CarrierDecision, CheckDrift, CheckDriftKind, CheckResult,
+  HeaderIdentityRequest, HeaderIdentityResolution, HeaderIdentitySource,
   LegacyOperationMode, MetaAuthoritySchema, MetadataCarrier, OperationMode,
   OperationModeResolution, OperationResult, ApplyResult, ApplyTransactionSummary,
+  ProductDeclaration, ProductKindDeclaration, SemanticAdmissionState,
+  SemanticFoundationBinding,
 } from "./schema";
 export type { PipelineResult, VerificationSummary, CoverageSummary, NonInjectableSkipDetail } from "./pipeline";
 export type { CheckConfig } from "./check";

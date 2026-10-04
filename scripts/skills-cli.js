@@ -6,40 +6,29 @@
  * writes only when material diffs exist. Skills mode requires repository
  * authority and commits through the governed transaction (ADR-033 / INV-018).
  *
- *   node scripts/skills-cli.js <root> --authority ID [options]
- *   npm run skills -- <root> --authority ID [options]
+ *   node scripts/skills-cli.js <root> [--authority ID] [options]
+ *   npm run skills -- <root> [--authority ID] [options]
  */
 "use strict";
 const path = require("node:path");
 const { requireBuilt, parseCli } = require("./lib/cli-args");
+const { resolveCliHeaderIdentity } = require("./lib/header-identity");
 
 const REPO = path.resolve(__dirname, "..");
 const pkg = requireBuilt(path.join(REPO, "dist", "index.js"), "skills-cli");
 
-const usage = "usage: node scripts/skills-cli.js <root> --authority ID [--out DIR] [--dry-run] [--verbose] [--omit PATTERN] [--omit-file PATH] [--llm] [--llm-base-url URL] [--llm-api-key KEY] [--llm-model NAME] [--llm-allow-insecure]";
+const usage = "usage: node scripts/skills-cli.js <root> [--authority ID] [--out DIR] [--dry-run] [--verbose] [--omit PATTERN] [--omit-file PATH] [--llm] [--llm-base-url URL] [--llm-api-key KEY] [--llm-model NAME] [--llm-allow-insecure]";
 const { root, flag, opt, optAll } = parseCli("skills-cli", usage);
 const outDir = path.resolve(opt("--out", `${root}.l9skills`));
-const authority = opt("--authority", null);
-if (!authority?.trim()) {
-  console.error("skills-cli: --authority is required; skills mode must not bypass repository authority");
-  process.exit(2);
-}
-// NUL, CR and LF are rejected because --authority is interpolated into paths and
-// into log lines; a newline there forges a second record and a NUL truncates a
-// path. Expressed as an explicit code-point test rather than a regex character
-// class holding those control characters: the check is the point, and a linter
-// reading the class says "remove this control character", which would delete the
-// validation rather than the risk.
-const FORBIDDEN_AUTHORITY_CODES = new Set([0x00, 0x0d, 0x0a]);
-if ([...authority].some((ch) => FORBIDDEN_AUTHORITY_CODES.has(ch.codePointAt(0)))) {
-  console.error("skills-cli: --authority contains a forbidden control character");
-  process.exit(2);
-}
+const identity = resolveCliHeaderIdentity(pkg, root, "skills-cli", {
+  authority: opt("--authority", null),
+  unboundNamespaceDefault: path.basename(root),
+});
 const llmEnabled = flag("--llm");
 
 const config = {
   root,
-  authority: authority.trim(),
+  authority: identity.authority,
   dryRun: flag("--dry-run"),
   outDir,
   verbose: flag("--verbose"),

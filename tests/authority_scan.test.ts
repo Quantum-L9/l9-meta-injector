@@ -42,7 +42,8 @@ describe("repository authority loading", () => {
   test("fails closed on unknown keys, duplicate keys, and unsupported schemas", () => {
     expect(() => parseAuthorityYaml(`${AUTHORITY}extra: nope\n`)).toThrow("unsupported top-level key");
     expect(() => parseAuthorityYaml(AUTHORITY.replace("schema:", "schema: l9.meta-authority/v1\nschema:"))).toThrow("duplicate key");
-    expect(() => parseAuthorityYaml(AUTHORITY.replace("l9.meta-authority/v1", "l9.meta-authority/v2"))).toThrow("unsupported authority schema");
+    expect(() => parseAuthorityYaml(AUTHORITY.replace("l9.meta-authority/v1", "l9.meta-authority/v0"))).toThrow("unsupported authority schema");
+    expect(() => parseAuthorityYaml(AUTHORITY.replace("l9.meta-authority/v1", "l9.meta-authority/v2"))).toThrow("does not satisfy");
   });
 
   test("accepts a UTF-8 BOM without weakening schema validation", () => {

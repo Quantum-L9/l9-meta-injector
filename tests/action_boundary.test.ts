@@ -148,9 +148,9 @@ describe("input semantics", () => {
   test("requires explicit authority for check, apply, and skills", () => {
     const workspace = tempDir("l9-workspace-");
     const actionPath = tempDir("l9-action-");
-    expect(() => dispatch.normalizeEnvironment(actionEnv(workspace, actionPath, { L9_INPUT_MODE: "check" }))).toThrow(/explicit authority/);
-    expect(() => dispatch.normalizeEnvironment(actionEnv(workspace, actionPath, { L9_INPUT_MODE: "apply" }))).toThrow(/explicit authority/);
-    expect(() => dispatch.normalizeEnvironment(actionEnv(workspace, actionPath, { L9_INPUT_MODE: "skills" }))).toThrow(/explicit authority/);
+    expect(() => dispatch.normalizeEnvironment(actionEnv(workspace, actionPath, { L9_INPUT_MODE: "check" }))).toThrow(/META_AUTHORITY_FILE_MISSING|explicit authority/);
+    expect(() => dispatch.normalizeEnvironment(actionEnv(workspace, actionPath, { L9_INPUT_MODE: "apply" }))).toThrow(/META_AUTHORITY_FILE_MISSING|explicit authority/);
+    expect(() => dispatch.normalizeEnvironment(actionEnv(workspace, actionPath, { L9_INPUT_MODE: "skills" }))).toThrow(/META_AUTHORITY_FILE_MISSING|explicit authority/);
   });
 
   test("forwards --authority into the skills invocation", () => {

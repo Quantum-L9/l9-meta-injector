@@ -1,21 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://schemas.quantum-l9.example/l9/meta-authority/v1",
+  "$id": "https://schemas.quantum-l9.example/l9/meta-authority/v2",
   "title": "L9 metadata authority",
-  "description": "Declares the sole metadata writer and permitted carriers for one repository.",
-  "type": "object",
-  "additionalProperties": false,
-  "required": [
-    "schema",
-    "writer",
-    "default_carrier",
-    "legacy_writers",
-    "inline_allow"
-  ],
-  "properties": {
-    "schema": {
-      "const": "l9.meta-authority/v1"
-    },
+  "description": "Declares the sole metadata writer, permitted carriers, and optional Semantic Foundation citation for one repository.",
+  "$defs": {
     "writer": {
       "type": "object",
       "additionalProperties": false,
@@ -30,12 +18,6 @@
           "minLength": 1
         }
       }
-    },
-    "default_carrier": {
-      "enum": ["central_manifest", "inline_managed"]
-    },
-    "legacy_writers": {
-      "enum": ["forbidden", "migration_only"]
     },
     "inline_allow": {
       "type": "array",
@@ -55,5 +37,66 @@
       },
       "uniqueItems": true
     }
-  }
+  },
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "writer", "default_carrier", "legacy_writers", "inline_allow"],
+      "properties": {
+        "schema": { "const": "l9.meta-authority/v1" },
+        "writer": { "$ref": "#/$defs/writer" },
+        "default_carrier": { "enum": ["central_manifest", "inline_managed"] },
+        "legacy_writers": { "enum": ["forbidden", "migration_only"] },
+        "inline_allow": { "$ref": "#/$defs/inline_allow" },
+        "validation_commands": { "$ref": "#/$defs/validation_commands" }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "writer", "default_carrier", "legacy_writers", "inline_allow", "semantic_foundation", "product"],
+      "properties": {
+        "schema": { "const": "l9.meta-authority/v2" },
+        "writer": { "$ref": "#/$defs/writer" },
+        "default_carrier": { "enum": ["central_manifest", "inline_managed"] },
+        "legacy_writers": { "enum": ["forbidden", "migration_only"] },
+        "inline_allow": { "$ref": "#/$defs/inline_allow" },
+        "validation_commands": { "$ref": "#/$defs/validation_commands" },
+        "semantic_foundation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["repository", "revision", "release", "admission", "ledgers"],
+          "properties": {
+            "repository": { "type": "string", "pattern": "^[^/\\s]+/[^/\\s]+$" },
+            "revision": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+            "release": { "type": "string", "minLength": 1 },
+            "admission": { "enum": ["candidate", "admitted", "Unknown"] },
+            "ledgers": {
+              "type": "object",
+              "minProperties": 1,
+              "additionalProperties": false,
+              "patternProperties": {
+                "^l9\\.[a-z0-9-]+/[a-z0-9-]+@[0-9]+$": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              }
+            }
+          }
+        },
+        "product": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "owner", "kind", "archetype"],
+          "properties": {
+            "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$" },
+            "owner": { "type": "string", "pattern": "^[^/\\s]+/[^/\\s]+$" },
+            "kind": { "enum": ["node", "dependency", "Unknown"] },
+            "archetype": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    }
+  ]
 }

@@ -247,8 +247,8 @@ export interface PipelineConfig {
   glob: string;
   dryRun: boolean;
   outDir: string;
-  namespace: string;
-  authority: string;
+  namespace?: string;
+  authority?: string;
   nearDupThreshold: number;
   hashPrefixLength: number;
   indexDir: string;
@@ -434,13 +434,18 @@ export function isPromptMeta(m: NormalizedMeta | unknown): m is PromptMeta {
 }
 
 export {
-  LEGACY_OPERATION_ALIASES, META_AUTHORITY_SCHEMA, OPERATION_MODES,
-  assertAuthorityForOperation, isAuthorityConfig, isSupportedAuthoritySchema,
-  operationRequiresAuthority, resolveOperationMode,
+  LEGACY_OPERATION_ALIASES, META_AUTHORITY_SCHEMA, META_AUTHORITY_SCHEMA_V2, OPERATION_MODES,
+  REQUIRED_SEMANTIC_LEDGERS,
+  assertAuthorityForOperation, isAuthorityConfig, isProductDeclaration,
+  isSemanticFoundationBinding, isSupportedAuthoritySchema,
+  operationRequiresAuthority, resolveOperationMode, semanticBindingErrors,
 } from "./operation_contracts";
 export type {
   AuthorityConfig, AuthorityConflict, AuthorityConflictCode, AuthorityLegacyPolicy,
   AuthorityWriter, CarrierDecision, CheckDrift, CheckDriftKind, CheckResult,
+  HeaderIdentityRequest, HeaderIdentityResolution, HeaderIdentitySource,
   LegacyOperationMode, MetaAuthoritySchema, MetadataCarrier, OperationMode,
   OperationModeResolution, OperationResult, ApplyResult, ApplyTransactionSummary,
+  ProductDeclaration, ProductKindDeclaration, SemanticAdmissionState,
+  SemanticFoundationBinding,
 } from "./operation_contracts";

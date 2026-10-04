@@ -56,6 +56,7 @@ const comment_1 = require("./comment");
 const frontmatter_patch_1 = require("./frontmatter_patch");
 const archives_1 = require("./archives");
 const omit_1 = require("./omit");
+const authority_1 = require("./authority");
 // classify()'s coarse "high"/"medium"/"low" confidence, numerically scaled to line up
 // with inventoryTree's InventoryRecord.classification_confidence (a 0..1 float), so a
 // meta-schema's `source: classification_confidence` resolves consistently in both modes.
@@ -79,7 +80,7 @@ function inlineCarrierBlockFor(raw) {
     return { code, message, malformed: !(0, frontmatter_patch_1.isPatcherLimitation)(code), ...(line !== undefined ? { line } : {}) };
 }
 function toCfg(config) {
-    return { namespace: config.namespace, authority: config.authority, nearDupThreshold: config.nearDupThreshold, hashPrefixLength: config.hashPrefixLength, outputDir: config.outDir, indexDir: config.indexDir, namespaceGlobs: config.namespaceGlobs };
+    return { namespace: config.namespace ?? "l9", authority: config.authority ?? "", nearDupThreshold: config.nearDupThreshold, hashPrefixLength: config.hashPrefixLength, outputDir: config.outDir, indexDir: config.indexDir, namespaceGlobs: config.namespaceGlobs };
 }
 /** Refuse a real run over a tree with a blocking discovery disposition, naming the paths. */
 function assertTreeGovernable(discovery) {
@@ -117,7 +118,16 @@ async function runPipelineAsync(config) {
     const runStartedAt = new Date().toISOString();
     const root = path.resolve(config.root);
     const metadataTimestamp = config.metadataTimestamp?.trim() || schema_1.UNKNOWN;
-    const nsCfg = toCfg(config);
+    const identity = (0, authority_1.assertHeaderIdentity)((0, authority_1.resolveHeaderIdentity)(root, {
+        authority: config.authority,
+        namespace: config.namespace,
+        unboundNamespaceDefault: path.basename(root),
+    }));
+    const nsCfg = toCfg({
+        ...config,
+        authority: identity.authority,
+        namespace: identity.namespace,
+    });
     // One collector per run aggregates the LLM/IO hotpath signal (OBS-009/OBS-010):
     // decision paths, call counts, failure counts, and p50/p95 latency.
     const metrics = new metrics_1.MetricsCollector();
@@ -222,7 +232,7 @@ async function runPipelineAsync(config) {
         const ef = (0, extract_1.extract)(body);
         const cls = (0, classify_1.classify)(e.sourcePath, body, e.headerConvention);
         classifications.set(e.sourcePath, cls);
-        let meta = (0, normalize_meta_1.buildMeta)(e.sourcePath, body, ef, cls, nsCfg, config.authority, metadataTimestamp, root);
+        let meta = (0, normalize_meta_1.buildMeta)(e.sourcePath, body, ef, cls, nsCfg, identity.authority, metadataTimestamp, root);
         // assist: LLM fills prose-origin fields only when seed fails "good" predicate
         if (config.llmEnabled) {
             const rec = (0, schema_1.asRecord)(meta);

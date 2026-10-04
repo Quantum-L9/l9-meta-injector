@@ -3,6 +3,7 @@
 ## Repository identity
 
 - Package: `l9-meta-injector`; the version authority is `package.json#version` (ADR-050)
+- Org semantics are consumed by citation in `.l9/meta-authority.yaml` (`l9.meta-authority/v2`); do not copy `Quantum-L9/.github/semantics/` (ADR-052)
 - Runtime authority: TypeScript under `src/`
 - Compiled distribution: committed `dist/`
 - Supported Node version: `>=18`; primary CI smoke uses Node 20

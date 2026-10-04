@@ -67,7 +67,8 @@
     "prepack": "npm run check:api && npm run check:authority && npm run check:manifest && npm run check:dist && npm run check:release-candidate",
     "prepublishOnly": "npm run validate && npm run check:publication",
     "check:release-candidate": "node scripts/check-release-candidate.js",
-    "validate:report": "node scripts/validation-report.js"
+    "validate:report": "node scripts/validation-report.js",
+    "semantics:verify": "node scripts/semantics-verify.js"
   },
   "devDependencies": {
     "typescript": "5.9.3",

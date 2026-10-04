@@ -23,6 +23,7 @@ import { resolveStrategy, stripInjectedBlock } from "./comment";
 import { inspectFrontMatterDocument, isPatcherLimitation, type FrontMatterIssueCode } from "./frontmatter_patch";
 import { expandArchivesUnderRoot, ArchiveRecord } from "./archives";
 import { buildOmitMatcher } from "./omit";
+import { assertHeaderIdentity, resolveHeaderIdentity } from "./authority";
 
 // classify()'s coarse "high"/"medium"/"low" confidence, numerically scaled to line up
 // with inventoryTree's InventoryRecord.classification_confidence (a 0..1 float), so a
@@ -48,7 +49,7 @@ function inlineCarrierBlockFor(raw: string): InlineCarrierBlock | undefined {
 }
 
 function toCfg(config: PipelineConfig): NamespaceConfig {
-  return { namespace: config.namespace, authority: config.authority, nearDupThreshold: config.nearDupThreshold, hashPrefixLength: config.hashPrefixLength, outputDir: config.outDir, indexDir: config.indexDir, namespaceGlobs: config.namespaceGlobs };
+  return { namespace: config.namespace ?? "l9", authority: config.authority ?? "", nearDupThreshold: config.nearDupThreshold, hashPrefixLength: config.hashPrefixLength, outputDir: config.outDir, indexDir: config.indexDir, namespaceGlobs: config.namespaceGlobs };
 }
 
 export interface VerificationSummary {
@@ -173,7 +174,16 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
   const runStartedAt = new Date().toISOString();
   const root = path.resolve(config.root);
   const metadataTimestamp = config.metadataTimestamp?.trim() || UNKNOWN;
-  const nsCfg = toCfg(config);
+  const identity = assertHeaderIdentity(resolveHeaderIdentity(root, {
+    authority: config.authority,
+    namespace: config.namespace,
+    unboundNamespaceDefault: path.basename(root),
+  }));
+  const nsCfg = toCfg({
+    ...config,
+    authority: identity.authority,
+    namespace: identity.namespace,
+  });
 
   // One collector per run aggregates the LLM/IO hotpath signal (OBS-009/OBS-010):
   // decision paths, call counts, failure counts, and p50/p95 latency.
@@ -281,7 +291,7 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
     const ef = extract(body);
     const cls = classify(e.sourcePath, body, e.headerConvention);
     classifications.set(e.sourcePath, cls);
-    let meta = buildMeta(e.sourcePath, body, ef, cls, nsCfg, config.authority, metadataTimestamp, root);
+    let meta = buildMeta(e.sourcePath, body, ef, cls, nsCfg, identity.authority, metadataTimestamp, root);
 
     // assist: LLM fills prose-origin fields only when seed fails "good" predicate
     if (config.llmEnabled) {

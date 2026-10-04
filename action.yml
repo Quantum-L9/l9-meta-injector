@@ -23,13 +23,14 @@ inputs:
     required: false
     default: "."
   namespace:
-    description: "Metadata namespace. Defaults to the target repository directory name."
+    description: "Metadata namespace. Defaults to the bound product.id when .l9/meta-authority.yaml is v2, otherwise the target directory name."
     required: false
     default: ""
   authority:
     description: >-
       Explicit metadata authority stamped into check/apply expectations.
-      Required for check and apply; no platform authority is assumed for arbitrary repositories.
+      Required for check and apply unless the target declares l9.meta-authority/v2
+      product.owner; no platform authority is assumed for an unbound repository.
     required: false
     default: ""
   dry-run:

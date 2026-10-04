@@ -70,6 +70,7 @@ const schema_1 = require("./schema");
 const normalize_meta_1 = require("./normalize_meta");
 const classify_1 = require("./classify");
 const namespace_1 = require("./namespace");
+const authority_1 = require("./authority");
 const yaml_serialize_1 = require("./yaml_serialize");
 const meta_schema_1 = require("./meta_schema");
 const omit_1 = require("./omit");
@@ -416,6 +417,11 @@ function inventoryTree(config) {
     const typeDistribution = {};
     let files = 0, folders = 0;
     const schema = config.schema;
+    const identity = (0, authority_1.assertHeaderIdentity)((0, authority_1.resolveHeaderIdentity)(root, {
+        requireAuthorityWhenUnbound: false,
+    }));
+    const boundAuthority = identity.source === "semantic_binding" ? identity.authority : undefined;
+    const boundNamespace = identity.source === "semantic_binding" ? identity.namespace : undefined;
     for (const { abs, isDir, kind } of entries) {
         const harvest = kind === "symlink" || kind === "special" ? {} : (0, inventory_existing_meta_1.harvestExistingMeta)(abs, isDir);
         const rec = buildRecord(root, abs, isDir, cfg, kind, harvest);
@@ -436,7 +442,7 @@ function inventoryTree(config) {
                 rec.meta = applied.fields;
         }
         else {
-            metaObj = annotationFields(rec, harvest, { body });
+            metaObj = annotationFields(rec, harvest, { body, boundAuthority, boundNamespace });
         }
         records.push(rec);
         typeDistribution[rec.artifact_type] = (typeDistribution[rec.artifact_type] || 0) + 1;
@@ -785,10 +791,10 @@ function annotationFields(rec, harvest, ctx) {
         callable: tax.callable,
         retrievable: tax.retrievable,
         injectable: tax.injectable,
-        namespace: harvestedNamespace ?? schema_1.UNKNOWN,
+        namespace: ctx.boundNamespace ?? harvestedNamespace ?? schema_1.UNKNOWN,
         sharing_scope: sharingScope,
         token_cost_estimate: tokens,
-        authority: harvestedAuthority ?? schema_1.UNKNOWN,
+        authority: ctx.boundAuthority ?? harvestedAuthority ?? schema_1.UNKNOWN,
         evidence: rec.evidence_excerpt ?? schema_1.UNKNOWN,
         ...kept,
         id: rec.artifact_id,

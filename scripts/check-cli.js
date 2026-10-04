@@ -12,13 +12,14 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { requireBuilt, parseCli } = require("./lib/cli-args");
+const { resolveCliHeaderIdentity } = require("./lib/header-identity");
 const { renderCheck, renderThrow } = require("./lib/operation-report");
 
 const REPO = path.resolve(__dirname, "..");
 const pkg = requireBuilt(path.join(REPO, "dist", "index.js"), "check-cli");
 const inventoryPkg = requireBuilt(path.join(REPO, "dist", "public", "inventory.js"), "check-cli");
 
-const usage = "usage: node scripts/check-cli.js <root> [--glob PATTERN] [--report FILE] [--namespace NAME] [--namespace-glob glob=ns] --authority ID [--near-dup 0..1] [--hash-prefix-length N] [--local-files] [--verbose] [--schema FILE] [--omit PATTERN] [--omit-file PATH]";
+const usage = "usage: node scripts/check-cli.js <root> [--glob PATTERN] [--report FILE] [--namespace NAME] [--namespace-glob glob=ns] [--authority ID] [--near-dup 0..1] [--hash-prefix-length N] [--local-files] [--verbose] [--schema FILE] [--omit PATTERN] [--omit-file PATH]";
 const { root, flag, opt, optAll } = parseCli("check-cli", usage);
 const targetRoot = path.resolve(root);
 const reportPath = path.resolve(opt(
@@ -47,15 +48,11 @@ if (schemaPath) {
   }
 }
 
-const authority = opt("--authority", null);
-if (!authority?.trim()) {
-  console.error("check-cli: --authority is required; no repository-generic authority is assumed");
-  process.exit(2);
-}
-if ((authority.includes("\u0000") || authority.includes("\r") || authority.includes("\n"))) {
-  console.error("check-cli: --authority contains a forbidden control character");
-  process.exit(2);
-}
+const identity = resolveCliHeaderIdentity(pkg, targetRoot, "check-cli", {
+  authority: opt("--authority", null),
+  namespace: process.argv.includes("--namespace") ? opt("--namespace", "") : undefined,
+  unboundNamespaceDefault: path.basename(targetRoot),
+});
 
 const namespaceGlobs = optAll("--namespace-glob").map((pair) => {
   const eq = pair.indexOf("=");
@@ -70,9 +67,9 @@ const config = {
   root: targetRoot,
   glob: opt("--glob", "**/*"),
   outDir: path.dirname(reportPath),
-  namespace: opt("--namespace", path.basename(targetRoot)),
+  namespace: identity.namespace,
   namespaceGlobs: namespaceGlobs.length ? namespaceGlobs : undefined,
-  authority: authority.trim(),
+  authority: identity.authority,
   nearDupThreshold: Number(opt("--near-dup", "0.9")),
   hashPrefixLength: Number(opt("--hash-prefix-length", "16")),
   indexDir: path.dirname(reportPath),

@@ -3,24 +3,21 @@
 "use strict";
 const path = require("node:path");
 const { requireBuilt, parseCli } = require("./lib/cli-args");
+const { resolveCliHeaderIdentity } = require("./lib/header-identity");
 const { renderApply, renderThrow } = require("./lib/operation-report");
 
 const REPO = path.resolve(__dirname, "..");
 const pkg = requireBuilt(path.join(REPO, "dist", "index.js"), "apply-cli");
 const inventoryPkg = requireBuilt(path.join(REPO, "dist", "public", "inventory.js"), "apply-cli");
-const usage = "usage: node scripts/apply-cli.js <root> [--glob PATTERN] [--out DIR] [--namespace NAME] [--namespace-glob glob=ns] --authority ID [--near-dup 0..1] [--hash-prefix-length N] [--verbose] [--schema FILE] [--omit PATTERN] [--omit-file PATH] [--llm] [--llm-base-url URL] [--llm-api-key KEY] [--llm-model NAME] [--llm-allow-insecure]";
+const usage = "usage: node scripts/apply-cli.js <root> [--glob PATTERN] [--out DIR] [--namespace NAME] [--namespace-glob glob=ns] [--authority ID] [--near-dup 0..1] [--hash-prefix-length N] [--verbose] [--schema FILE] [--omit PATTERN] [--omit-file PATH] [--llm] [--llm-base-url URL] [--llm-api-key KEY] [--llm-model NAME] [--llm-allow-insecure]";
 const { root, flag, opt, optAll } = parseCli("apply-cli", usage);
 const targetRoot = path.resolve(root);
 const outDir = path.resolve(opt("--out", `${targetRoot}.l9out`));
-const authority = opt("--authority", null);
-if (!authority?.trim()) {
-  console.error("apply-cli: --authority is required");
-  process.exit(2);
-}
-if ((authority.includes("\u0000") || authority.includes("\r") || authority.includes("\n"))) {
-  console.error("apply-cli: --authority contains a forbidden control character");
-  process.exit(2);
-}
+const identity = resolveCliHeaderIdentity(pkg, targetRoot, "apply-cli", {
+  authority: opt("--authority", null),
+  namespace: process.argv.includes("--namespace") ? opt("--namespace", "") : undefined,
+  unboundNamespaceDefault: path.basename(targetRoot),
+});
 const namespaceGlobs = optAll("--namespace-glob").map((pair) => {
   const eq = pair.indexOf("=");
   if (eq < 1 || eq === pair.length - 1) {
@@ -40,9 +37,9 @@ const config = {
   root: targetRoot,
   glob: opt("--glob", "**/*"),
   outDir,
-  namespace: opt("--namespace", path.basename(targetRoot)),
+  namespace: identity.namespace,
   namespaceGlobs: namespaceGlobs.length ? namespaceGlobs : undefined,
-  authority: authority.trim(),
+  authority: identity.authority,
   nearDupThreshold: Number(opt("--near-dup", "0.9")),
   hashPrefixLength: Number(opt("--hash-prefix-length", "16")),
   indexDir: outDir,

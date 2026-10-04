@@ -38,6 +38,7 @@ Accepted ADRs are not deleted. A replacement ADR links back to the decision it s
 | [ADR-049](049-inventory-archive-member-annotation.md) | Inventory-only archive member annotation, always-sidecar, and Darwin search projection | Accepted |
 | [ADR-050](050-release-version-authority-and-major-tags.md) | One release version authority with maintained major consumer tags | Accepted |
 | [ADR-051](051-inventory-derived-annotation-fields.md) | Inventory annotation fields are derived or Unknown | Accepted |
+| [ADR-052](052-semantic-foundation-binding.md) | Semantic Foundation is cited by artifact_id and digest; headers derive from the v2 binding | Accepted |
 
 ## Authority boundary
 
