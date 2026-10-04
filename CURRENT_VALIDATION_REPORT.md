@@ -1,9 +1,9 @@
 # Current validation report
 
-**Generated at commit:** `086738ec04104ff12a1ff1e3ec899a5570c7d059`
-**Working tree:** clean apart from this report
-**Bound to tree:** `sha256:dc37ea18b2c2d8f1f1c712959d5bb37e82451ec520a623ac603693f8c391603c`
-**Generated:** 2026-09-18T13:35:44.679Z
+**Generated at commit:** `76823a19a8e9f8d648f2f0bc63a9a4b257500715`
+**Working tree:** **dirty** — this report describes uncommitted changes
+**Bound to tree:** `sha256:e91da209d3d6f5c959f6133613a806fff39f635c8e178080ef96ba0b126962f3`
+**Generated:** 2026-10-04T17:54:34.869Z
 
 This report is written by `scripts/validation-report.js`, which runs each
 command below and records the exit code it received rather than a claim about it.

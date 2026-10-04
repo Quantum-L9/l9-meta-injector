@@ -538,7 +538,7 @@
     },
     {
       "path": "docs/topology-conformance.json",
-      "git_blob_sha1": "82d417dc618700c6099d217a1962e334c423e439"
+      "git_blob_sha1": "807189f96b8e38e9bfbb0349682e8471d5dbfef3"
     },
     {
       "path": "docs/traceability-map.json",
@@ -590,15 +590,15 @@
     },
     {
       "path": "fixtures/repository-model/expected-bundle/manifest.json",
-      "git_blob_sha1": "2326530376c7cae33ac850fbec198143609573e3"
+      "git_blob_sha1": "ac066a9b1e464d954444b5ce338d6754d02e3e2a"
     },
     {
       "path": "fixtures/repository-model/expected-bundle/packet.json",
-      "git_blob_sha1": "effc7ee50c91ca827aaa2a532f7f055ba6cda1eb"
+      "git_blob_sha1": "b5b497de7111e4d37dcf8d708935404392debcc7"
     },
     {
       "path": "fixtures/repository-model/expected-bundle/receipts/validation-receipt.json",
-      "git_blob_sha1": "f7dbd41e0a042dbdca0847539877859e3c9471bc"
+      "git_blob_sha1": "b8ff5e3dbf96f0cc3533a0a079f691c1ebfba951"
     },
     {
       "path": "Makefile",
