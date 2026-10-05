@@ -120,4 +120,3 @@ test("inventory_only stays a metadata subject and is never injected", async () =
   const accounted = result.coverage.injected + result.coverage.skippedBinary + result.coverage.skippedNonInjectable;
   expect(accounted).toBe(result.coverage.scanned);
 }, 15000);
-
