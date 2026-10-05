@@ -23,6 +23,25 @@ describe("keep", () => {
   });
 });
 
+describe("derived fields", () => {
+  it("replaces a stale id, source_path, content_hash, and token estimate", () => {
+    const existing = { id: "l9.source.index", source_path: "index.ts", content_hash: "old", token_cost_estimate: 1, description: "keep me" };
+    const incoming = { id: "l9.source.src_index__ts", source_path: "src/index.ts", content_hash: "new", token_cost_estimate: 2, description: "shorter" };
+    const { merged, diffs } = reconcileFields(existing, incoming);
+    expect(merged.id).toBe(incoming.id);
+    expect(merged.source_path).toBe(incoming.source_path);
+    expect(merged.content_hash).toBe("new");
+    expect(merged.token_cost_estimate).toBe(2);
+    expect(merged.description).toBe(existing.description);
+    expect(diffs.filter((d) => d.field === "id")[0]).toMatchObject({ action: "revise", reason: "derived field recomputed" });
+  });
+
+  it("keeps a derived field when the incoming value is equal", () => {
+    const { diffs } = reconcileFields({ id: "same" }, { id: "same" });
+    expect(diffs[0]).toMatchObject({ action: "keep", reason: "derived field recomputed" });
+  });
+});
+
 describe("revise", () => {
   it("revises when incoming is materially better (>20% larger)", () => {
     const existing = { description: "Does stuff." };

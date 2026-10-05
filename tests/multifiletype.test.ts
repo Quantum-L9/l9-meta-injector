@@ -81,7 +81,7 @@ describe("multi-filetype injection", () => {
     const result = await runPipelineAsync(cfg(root, out));
 
     // every injected/verified file is clean
-    expect(result.verified.length).toBeGreaterThanOrEqual(7);
+    expect(result.verified.length).toBeGreaterThanOrEqual(6);
     expect(result.verified.every((v) => v.yamlValid && v.bodyPreserved && v.taxonomyValid)).toBe(true);
 
     const ts = fs.readFileSync(path.join(root, "app.ts"), "utf8");
@@ -96,9 +96,8 @@ describe("multi-filetype injection", () => {
 
     // shebang must stay on line 1
     const sh = fs.readFileSync(path.join(root, "run.sh"), "utf8");
-    expect(sh.startsWith("#!/usr/bin/env bash\n")).toBe(true);
-    expect(sh).toContain("# >>> l9:meta >>>");
-    expect(sh).toContain("echo hi");
+    expect(sh).toBe(files["run.sh"]);
+    expect(sh).not.toContain("l9:meta");
 
     const css = fs.readFileSync(path.join(root, "style.css"), "utf8");
     expect(css).toContain("/* l9:meta:start");

@@ -1,5 +1,6 @@
 import {
   assertCarrierDecisionCoverage,
+  authorityFreeCarrierTier,
   resolveCarrierDecision,
   resolveCarrierDecisions,
   type CarrierSubject,
@@ -125,5 +126,18 @@ describe("explicit metadata carrier policy", () => {
 
   test.each(["/x", "../x", "a\\b", ".", ""])("rejects unsafe subject path %s", (filePath) => {
     expect(() => resolveCarrierDecision(subject(filePath, "context", "yaml-frontmatter"), authority, "check")).toThrow();
+  });
+});
+
+describe("authority-free carrier tier", () => {
+  test.each([
+    [".git/config", "line-comment", "hard_skip"],
+    ["node_modules/pkg/index.js", "line-comment", "hard_skip"],
+    ["asset.png", "skip-binary", "hard_skip"],
+    ["dist/a.js", "line-comment", "inventory_only"],
+    ["vendor/b.js", "line-comment", "inventory_only"],
+    ["skills/lint_file.md", "yaml-frontmatter", null],
+  ] as const)("%s is %s", (filePath, strategy, carrier) => {
+    expect(authorityFreeCarrierTier({ path: filePath, strategy })?.carrier ?? null).toBe(carrier);
   });
 });

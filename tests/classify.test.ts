@@ -74,7 +74,7 @@ describe("classify — path-pattern signals (high confidence, prose files only)"
 describe("classify — keyword-bag fallback (no path pattern match)", () => {
   it("scores the best-matching type at medium confidence when >=2 keywords hit", () => {
     const r = classify("/repo/docs/notes.md", "This kernel document describes the runtime engine.", "none");
-    expect(r.artifactType).toBe("kernel");
+    expect(r.artifactType).toBe("context");
     expect(r.confidence).toBe("medium");
   });
   it("scores at low confidence when exactly 1 keyword hits", () => {
@@ -87,6 +87,25 @@ describe("classify — keyword-bag fallback (no path pattern match)", () => {
     expect(r.artifactType).toBe("context");
     expect(r.confidence).toBe("low");
     expect(PRIMITIVE_TAXONOMY.context.injectable).toBe(true);
+  });
+});
+
+describe("classify — relative paths and guarded non-prose mapping", () => {
+  it("a top-level skills path is a skill and a decisions path is doctrine", () => {
+    expect(classify("skills/a.md", "plain", "none").artifactType).toBe("skill");
+    expect(classify("docs/decisions/x.md", "plain", "none").artifactType).toBe("doctrine");
+  });
+
+  it.each([
+    ["src/util.py", "source"],
+    ["scripts/x.py", "script"],
+    ["tools/a.sh", "script"],
+    ["examples/a.ts", "source"],
+    ["src/fixtureLoader.ts", "source"],
+    ["scripts/fixtures/a.ts", "test"],
+    ["tests/a.test.ts", "test"],
+  ])("%s → %s", (filePath, expected) => {
+    expect(classify(filePath, "print('hi')\n", "none").artifactType).toBe(expected);
   });
 });
 

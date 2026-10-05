@@ -10,6 +10,7 @@
 
 ### Changed
 
+- **Identity change (ADR-054).** Metadata ids are the repo-relative path with the extension kept behind `__`. A second run recomputes `id`, `source_path`, `content_hash`, and `token_cost_estimate`. Two paths that normalize to one id refuse the run before any write. Dry-run diffs mirror `source_path` under the output directory. Keyword-only skill, playbook, kernel, and doctrine classifications become context. `hard_skip` files are coverage-only; `inventory_only` files stay in the metadata index and are not injected.
 - Inventory annotation no longer stamps `namespace: inventory`, `authority: inventory`, or `token_cost_estimate: 0`. Taxonomy fields derive from `classify` and `PRIMITIVE_TAXONOMY`, `sharing_scope` from `resolveNamespace`, and token cost from `estimateTokens`; otherwise the field is `Unknown` (ADR-051).
 - Inventory `content_hash` for UTF-8 regular files is the SHA-256 of the body with the L9 managed carrier removed, so a second run is stable and duplicate clusters still match after annotation.
 

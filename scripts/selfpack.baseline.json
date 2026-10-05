@@ -2,13 +2,13 @@
   "fixtures": "fixtures",
   "totals": {
     "scanned": 32,
-    "injected": 32,
-    "verified": 32,
-    "verifiedClean": 32
+    "injected": 31,
+    "verified": 31,
+    "verifiedClean": 31
   },
   "strategyDist": {
     "block-comment": 2,
-    "line-comment": 10,
+    "line-comment": 9,
     "sidecar": 13,
     "yaml-frontmatter": 7
   },
@@ -17,16 +17,16 @@
     "doctrine": 1,
     "prompt": 1,
     "skill": 1,
-    "source": 24
+    "source": 23
   },
   "indexes": {
-    "primitiveLibraryEntries": 31,
+    "primitiveLibraryEntries": 30,
     "promptLibraryEntries": 1,
-    "dedupTotalScanned": 32,
-    "dedupUniqueCount": 32,
+    "dedupTotalScanned": 31,
+    "dedupUniqueCount": 31,
     "dedupExactTwins": 0,
-    "verificationEntries": 32,
-    "verificationClean": 32
+    "verificationEntries": 31,
+    "verificationClean": 31
   },
   "idempotency": {
     "rerunFilesChanged": 0
@@ -34,7 +34,7 @@
   "files": [
     {
       "path": "config/settings.yaml",
-      "id": "l9.source.settings",
+      "id": "l9.source.config_settings__yaml",
       "artifact_type": "source",
       "mcp_primitive": "resource",
       "injectable": true,
@@ -46,7 +46,7 @@
     },
     {
       "path": "data/config.json",
-      "id": "l9.source.config",
+      "id": "l9.source.data_config__json",
       "artifact_type": "source",
       "mcp_primitive": "resource",
       "injectable": true,
@@ -58,7 +58,7 @@
     },
     {
       "path": "docs/overview.md",
-      "id": "l9.context.overview",
+      "id": "l9.context.docs_overview__md",
       "artifact_type": "context",
       "mcp_primitive": "resource",
       "injectable": true,
@@ -70,7 +70,7 @@
     },
     {
       "path": "local-source/expected-bundle/manifest.json",
-      "id": "l9.source.manifest",
+      "id": "l9.source.local_source_expected_bundle_manifest__json",
       "artifact_type": "source",
       "mcp_primitive": "resource",
       "injectable": true,
@@ -82,7 +82,7 @@
     },
     {
       "path": "local-source/expected-bundle/packet.json",
-      "id": "l9.source.packet",
+      "id": "l9.source.local_source_expected_bundle_packet__json",
       "artifact_type": "source",
       "mcp_primitive": "resource",
       "injectable": true,
@@ -94,7 +94,7 @@
     },
     {
       "path": "local-source/expected-bundle/receipts/validation-receipt.json",
-      "id": "l9.source.validation_receipt",
+      "id": "l9.source.local_source_expected_bundle_receipts_validation_receipt__json",
       "artifact_type": "source",
       "mcp_primitive": "resource",
       "injectable": true,
@@ -106,7 +106,7 @@
     },
     {
       "path": "local-source/sample-source/Bundle.l9extracted/IMPORTANT_USER_DATA",
-      "id": "l9.source.important_user_data",
+      "id": "l9.source.local_source_sample_source_bundle_l9extracted_important_user_data",
       "artifact_type": "source",
       "mcp_primitive": "resource",
       "injectable": true,
@@ -118,7 +118,7 @@
     },
     {
       "path": "local-source/sample-source/docs/notes.md",
-      "id": "l9.context.notes",
+      "id": "l9.context.local_source_sample_source_docs_notes__md",
       "artifact_type": "context",
       "mcp_primitive": "resource",
       "injectable": true,
@@ -130,7 +130,7 @@
     },
     {
       "path": "local-source/sample-source/package.json",
-      "id": "l9.source.package",
+      "id": "l9.source.local_source_sample_source_package__json",
       "artifact_type": "source",
       "mcp_primitive": "resource",
       "injectable": true,
@@ -142,7 +142,7 @@
     },
     {
       "path": "local-source/sample-source/README.md",
-      "id": "l9.context.readme",
+      "id": "l9.context.local_source_sample_source_readme__md",
       "artifact_type": "context",
       "mcp_primitive": "resource",
       "injectable": true,
@@ -154,7 +154,7 @@
     },
     {
       "path": "local-source/sample-source/src/util.py",
-      "id": "l9.source.util",
+      "id": "l9.source.local_source_sample_source_src_util__py",
       "artifact_type": "source",
       "mcp_primitive": "resource",
       "injectable": true,
@@ -166,7 +166,7 @@
     },
     {
       "path": "notes.txt",
-      "id": "l9.context.notes",
+      "id": "l9.context.notes__txt",
       "artifact_type": "context",
       "mcp_primitive": "resource",
       "injectable": true,
@@ -178,7 +178,7 @@
     },
     {
       "path": "package-consumer/deep-import.cjs",
-      "id": "l9.source.deep_import",
+      "id": "l9.source.package_consumer_deep_import__cjs",
       "artifact_type": "source",
       "mcp_primitive": "resource",
       "injectable": true,
@@ -190,7 +190,7 @@
     },
     {
       "path": "package-consumer/package.json",
-      "id": "l9.source.package",
+      "id": "l9.source.package_consumer_package__json",
       "artifact_type": "source",
       "mcp_primitive": "resource",
       "injectable": true,
@@ -202,7 +202,7 @@
     },
     {
       "path": "package-consumer/runtime.cjs",
-      "id": "l9.source.runtime",
+      "id": "l9.source.package_consumer_runtime__cjs",
       "artifact_type": "source",
       "mcp_primitive": "resource",
       "injectable": true,
@@ -214,7 +214,7 @@
     },
     {
       "path": "package-consumer/tsconfig.json",
-      "id": "l9.source.tsconfig",
+      "id": "l9.source.package_consumer_tsconfig__json",
       "artifact_type": "source",
       "mcp_primitive": "resource",
       "injectable": true,
@@ -226,7 +226,7 @@
     },
     {
       "path": "package-consumer/types.ts",
-      "id": "l9.source.types",
+      "id": "l9.source.package_consumer_types__ts",
       "artifact_type": "source",
       "mcp_primitive": "resource",
       "injectable": true,
@@ -238,7 +238,7 @@
     },
     {
       "path": "prompts/Prompt-LegalAnalysis.md",
-      "id": "l9.prompt.legal_analysis",
+      "id": "l9.prompt.prompts_prompt_legal_analysis__md",
       "artifact_type": "prompt",
       "mcp_primitive": "prompt",
       "injectable": true,
@@ -250,7 +250,7 @@
     },
     {
       "path": "repository-model/expected-bundle/manifest.json",
-      "id": "l9.source.manifest",
+      "id": "l9.source.repository_model_expected_bundle_manifest__json",
       "artifact_type": "source",
       "mcp_primitive": "resource",
       "injectable": true,
@@ -262,7 +262,7 @@
     },
     {
       "path": "repository-model/expected-bundle/packet.json",
-      "id": "l9.source.packet",
+      "id": "l9.source.repository_model_expected_bundle_packet__json",
       "artifact_type": "source",
       "mcp_primitive": "resource",
       "injectable": true,
@@ -274,7 +274,7 @@
     },
     {
       "path": "repository-model/expected-bundle/receipts/validation-receipt.json",
-      "id": "l9.source.validation_receipt",
+      "id": "l9.source.repository_model_expected_bundle_receipts_validation_receipt__json",
       "artifact_type": "source",
       "mcp_primitive": "resource",
       "injectable": true,
@@ -286,7 +286,7 @@
     },
     {
       "path": "repository-model/sample-repo/CODEOWNERS",
-      "id": "l9.source.codeowners",
+      "id": "l9.source.repository_model_sample_repo_codeowners",
       "artifact_type": "source",
       "mcp_primitive": "resource",
       "injectable": true,
@@ -298,7 +298,7 @@
     },
     {
       "path": "repository-model/sample-repo/docs/decisions/adr-001-example.md",
-      "id": "l9.doctrine.adr_001_example",
+      "id": "l9.doctrine.repository_model_sample_repo_docs_decisions_adr_001_example__md",
       "artifact_type": "doctrine",
       "mcp_primitive": "none",
       "injectable": true,
@@ -310,7 +310,7 @@
     },
     {
       "path": "repository-model/sample-repo/package.json",
-      "id": "l9.source.package",
+      "id": "l9.source.repository_model_sample_repo_package__json",
       "artifact_type": "source",
       "mcp_primitive": "resource",
       "injectable": true,
@@ -322,7 +322,7 @@
     },
     {
       "path": "repository-model/sample-repo/README.md",
-      "id": "l9.context.readme",
+      "id": "l9.context.repository_model_sample_repo_readme__md",
       "artifact_type": "context",
       "mcp_primitive": "resource",
       "injectable": true,
@@ -334,7 +334,7 @@
     },
     {
       "path": "repository-model/sample-repo/src/index.ts",
-      "id": "l9.source.index",
+      "id": "l9.source.repository_model_sample_repo_src_index__ts",
       "artifact_type": "source",
       "mcp_primitive": "resource",
       "injectable": true,
@@ -346,19 +346,7 @@
     },
     {
       "path": "repository-model/sample-repo/src/util.py",
-      "id": "l9.source.util",
-      "artifact_type": "source",
-      "mcp_primitive": "resource",
-      "injectable": true,
-      "strategy": "line-comment",
-      "hasSidecar": false,
-      "yamlValid": true,
-      "bodyPreserved": true,
-      "sharingScopeValid": true
-    },
-    {
-      "path": "scripts/run.sh",
-      "id": "l9.source.run",
+      "id": "l9.source.repository_model_sample_repo_src_util__py",
       "artifact_type": "source",
       "mcp_primitive": "resource",
       "injectable": true,
@@ -370,7 +358,7 @@
     },
     {
       "path": "skills/lint_file.md",
-      "id": "l9.skill.lint_file",
+      "id": "l9.skill.skills_lint_file__md",
       "artifact_type": "skill",
       "mcp_primitive": "tool",
       "injectable": true,
@@ -382,7 +370,7 @@
     },
     {
       "path": "src/app.ts",
-      "id": "l9.source.app",
+      "id": "l9.source.src_app__ts",
       "artifact_type": "source",
       "mcp_primitive": "resource",
       "injectable": true,
@@ -394,7 +382,7 @@
     },
     {
       "path": "web/page.html",
-      "id": "l9.source.page",
+      "id": "l9.source.web_page__html",
       "artifact_type": "source",
       "mcp_primitive": "resource",
       "injectable": true,
@@ -406,7 +394,7 @@
     },
     {
       "path": "web/style.css",
-      "id": "l9.source.style",
+      "id": "l9.source.web_style__css",
       "artifact_type": "source",
       "mcp_primitive": "resource",
       "injectable": true,

@@ -355,7 +355,7 @@ text is the body without the managed carrier. This is not apply: it does not req
 `.l9/meta-authority.yaml`. A v2 binding, when present, supplies `authority` and `namespace` (ADR-052). Pass `--dry-run` for observation only, or use
 `npm run local-source` when the source must not be touched.
 
-Pipeline coverage: every run (including dry-run) writes `coverage-report.json` under `--out-dir` with skipped binary/non-injectable paths and classification details (ADR-018). `skipped-noninjectable` is taxonomy-gated; weak keyword false positives are demoted so in-scope prose injects.
+Pipeline coverage: every run (including dry-run) writes `coverage-report.json` under `--out-dir` with skipped binary/non-injectable paths and classification details (ADR-018, amended by ADR-054). `skipped-noninjectable` is taxonomy-gated or a carrier tier: `hard_skip` is coverage-only, and `inventory_only` is indexed and never injected. Weak keyword false positives, including keyword-only skill, playbook, kernel, and doctrine, are demoted so in-scope prose injects. File ids follow the repo-relative path, and a dry-run diff is written at `<out-dir>/<source_path>.diff`.
 
 Outputs: `scanned`, `injected` (`pipeline`/`skills`), `verification-passed` (`pipeline` mode: `true`/`false`/`n-a`).
 

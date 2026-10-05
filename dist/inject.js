@@ -161,7 +161,24 @@ function buildInjection(filePath, finalMeta, ctx) {
         postBodyHash: ctx.originalBodyHash, sidecarPath: sidecar, strategy: ctx.spec.strategy,
     };
 }
-function writeInjection(filePath, built, diffs, opts) {
+/** Mirrored dry-run path. Refuses a source_path that would leave outDir. */
+function containedDiffPath(outDir, sourcePath) {
+    const posix = sourcePath.split(path.sep).join("/");
+    const segments = posix.split("/");
+    if (!posix || posix === "." || posix.startsWith("/") || segments.some((segment) => segment === "" || segment === "." || segment === "..")) {
+        throw new Error(`dry-run diff escapes output directory: ${sourcePath}`);
+    }
+    const leaf = segments[segments.length - 1];
+    segments[segments.length - 1] = `${leaf}.diff`;
+    const diffPath = path.resolve(outDir, ...segments);
+    const root = path.resolve(outDir);
+    const relative = path.relative(root, diffPath);
+    if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+        throw new Error(`dry-run diff escapes output directory: ${sourcePath}`);
+    }
+    return diffPath;
+}
+function writeInjection(filePath, built, diffs, opts, sourcePath) {
     // Capture target state before any write. This keeps the plan truthful in both
     // read-only check mode and future apply mode, where reading after the write
     // would incorrectly report wouldChange=false.
@@ -175,8 +192,8 @@ function writeInjection(filePath, built, diffs, opts) {
     };
     if (opts.dryRun) {
         if (opts.writeDryRunDiff !== false) {
-            fs.mkdirSync(opts.outDir, { recursive: true });
-            out.dryRunDiffPath = path.join(opts.outDir, path.basename(filePath) + ".diff");
+            out.dryRunDiffPath = containedDiffPath(opts.outDir, sourcePath);
+            fs.mkdirSync(path.dirname(out.dryRunDiffPath), { recursive: true });
             const added = built.addedLines.split("\n").map((l) => `+ ${l}`).join("\n");
             const tgt = built.sidecarPath ? built.sidecarPath : filePath;
             fs.writeFileSync(out.dryRunDiffPath, `--- ${filePath}\n+++ ${tgt} (${built.strategy})\n${added}\n`, "utf8");
@@ -235,7 +252,7 @@ async function injectFileAsync(filePath, meta, opts, metrics) {
             : (0, reconcile_fields_1.reconcileFields)(ctx.existingMeta, incomingMeta);
     const finalMeta = finalizeInjectionMeta(meta, merged, opts.reconcileExisting !== false);
     const built = buildInjection(filePath, finalMeta, ctx);
-    const paths = writeInjection(filePath, built, diffs, opts);
+    const paths = writeInjection(filePath, built, diffs, opts, finalMeta.source_path);
     return record(filePath, ctx, built, finalMeta, opts, paths);
 }
 function injectFile(filePath, meta, opts) {
@@ -247,7 +264,7 @@ function injectFile(filePath, meta, opts) {
         : (0, reconcile_fields_1.reconcileFields)(ctx.existingMeta, incomingMeta);
     const finalMeta = finalizeInjectionMeta(meta, merged, opts.reconcileExisting !== false);
     const built = buildInjection(filePath, finalMeta, ctx);
-    const paths = writeInjection(filePath, built, diffs, opts);
+    const paths = writeInjection(filePath, built, diffs, opts, finalMeta.source_path);
     return record(filePath, ctx, built, finalMeta, opts, paths);
 }
 //# sourceMappingURL=inject.js.map

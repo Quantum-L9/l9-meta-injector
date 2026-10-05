@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { PipelineConfig, NormalizedMeta, InjectionRecord, VerifyResult, UNKNOWN, asRecord, coerceNormalizedMeta } from "./schema";
 import type { ProductDeclaration, SemanticFoundationBinding } from "./schema";
 import { discoverFiles, scanFiles } from "./retrieval";
-import type { CarrierInjectionStrategy } from "./mutation_policy";
+import { authorityFreeCarrierTier, type CarrierInjectionStrategy } from "./mutation_policy";
 import type { DiscoverySummary } from "./discovery_contracts";
 import { extract, splitContent } from "./extract";
 import { classify, classifyWithSemantics } from "./classify";
@@ -80,7 +80,7 @@ export interface InlineCarrierBlock {
 /** Per-path detail for a non-injectable skip (OBS-003 / ADR-018). */
 export interface NonInjectableSkipDetail {
   path: string;
-  reason: "taxonomy_non_injectable";
+  reason: "taxonomy_non_injectable" | "carrier_inventory_only" | "carrier_hard_skip";
   artifactType: string;
   confidence: "high" | "medium" | "low";
 }
@@ -144,6 +144,20 @@ export interface PipelineResult {
 }
 
 /** Refuse a real run over a tree with a blocking discovery disposition, naming the paths. */
+function assertUniqueMetadataIds(subjects: readonly PipelineMetadataSubject[]): void {
+  const byId = new Map<string, string[]>();
+  for (const subject of subjects) {
+    const id = String(subject.metadata["id"] ?? "");
+    const paths = byId.get(id) ?? [];
+    paths.push(subject.path);
+    byId.set(id, paths);
+  }
+  const duplicates = [...byId.entries()].filter(([, paths]) => paths.length > 1);
+  if (duplicates.length === 0) return;
+  const detail = duplicates.map(([id, paths]) => `${id}: ${paths.join(", ")}`).join("; ");
+  throw new Error(`DUPLICATE_METADATA_ID: ${duplicates.length} id(s) map to more than one path: ${detail}`);
+}
+
 function assertTreeGovernable(discovery: ReturnType<typeof discoverFiles>): void {
   if (discovery.summary.blocking === 0) return;
   const preview = discovery.summary.entries
@@ -270,6 +284,7 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
   // Files that cannot carry their own inline metadata. They are governed and indexed,
   // but never inline-patched, and their bytes are never touched.
   const inlineCarrierBlocks = new Map<string, InlineCarrierBlock>();
+  const carrierTiers = new Map<string, ReturnType<typeof authorityFreeCarrierTier>>();
 
   for (const e of scanned) {
     const raw = fs.readFileSync(e.sourcePath, "utf8");
@@ -285,6 +300,21 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
     // leading `---` in non-markdown (e.g. YAML document separators) be mistaken for
     // frontmatter and truncate real content, skewing extraction/classification/hash.
     const body = spec.strategy === "yaml-frontmatter" ? splitContent(cleanRaw).body : cleanRaw;
+    const relativePath = relativeSourcePath(root, e.sourcePath);
+    const cls = classify(relativePath, body, e.headerConvention);
+    classifications.set(e.sourcePath, cls);
+    const tier = authorityFreeCarrierTier({ path: relativePath, strategy: spec.strategy });
+    if (tier?.carrier === "hard_skip") {
+      skippedNonInjectablePaths.push(e.sourcePath);
+      skippedNonInjectableDetails.push({
+        path: e.sourcePath,
+        reason: "carrier_hard_skip",
+        artifactType: cls.artifactType,
+        confidence: cls.confidence,
+      });
+      continue;
+    }
+    carrierTiers.set(e.sourcePath, tier);
     bodies.set(e.sourcePath, body);
     // Classify inline-carrier eligibility here, before any mutation planning. A file whose
     // existing frontmatter is outside the patchable subset is still a governed subject —
@@ -296,8 +326,6 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
       : undefined;
     if (inlineCarrierBlock) inlineCarrierBlocks.set(e.sourcePath, inlineCarrierBlock);
     const ef = extract(body);
-    const cls = classify(e.sourcePath, body, e.headerConvention);
-    classifications.set(e.sourcePath, cls);
     let meta = buildMeta(e.sourcePath, body, ef, cls, nsCfg, identity.authority, metadataTimestamp, root, identity);
 
     // assist: LLM fills prose-origin fields only when seed fails "good" predicate
@@ -328,7 +356,7 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
         // already use (examples/meta-schema.example.yaml), so the same schema file is
         // reusable across `inventory` and `pipeline` modes without rewriting `source:`.
         artifact_id: meta.id,
-        relative_path: relativeSourcePath(root, e.sourcePath),
+        relative_path: relativePath,
         evidence_excerpt: cls.signals.join(", ") || UNKNOWN_EXCERPT,
         classification_confidence: CONFIDENCE_NUMERIC[cls.confidence],
         created_at: meta.created_or_detected_at,
@@ -346,7 +374,7 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
 
     metas.set(e.sourcePath, meta);
     metadataSubjects.push({
-      path: relativeSourcePath(root, e.sourcePath),
+      path: relativePath,
       artifactType: meta.artifact_type,
       strategy: spec.strategy,
       contentHash: meta.content_hash,
@@ -354,6 +382,8 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
       ...(inlineCarrierBlock ? { inlineCarrierBlock } : {}),
     });
   }
+
+  assertUniqueMetadataIds(metadataSubjects);
 
   const opts = {
     dryRun: config.dryRun,
@@ -366,7 +396,18 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
 
   for (const e of scanned) {
     const meta = metas.get(e.sourcePath);
-    if (!meta) continue; // binary — already recorded in skippedBinaryPaths
+    if (!meta) continue; // binary or hard_skip — already recorded
+    if (carrierTiers.get(e.sourcePath)?.carrier === "inventory_only") {
+      skippedNonInjectablePaths.push(e.sourcePath);
+      const cls = classifications.get(e.sourcePath);
+      skippedNonInjectableDetails.push({
+        path: e.sourcePath,
+        reason: "carrier_inventory_only",
+        artifactType: cls?.artifactType ?? meta.artifact_type,
+        confidence: cls?.confidence ?? "low",
+      });
+      continue;
+    }
     if (!meta.injectable) {
       skippedNonInjectablePaths.push(e.sourcePath);
       const cls = classifications.get(e.sourcePath);

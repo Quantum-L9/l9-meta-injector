@@ -95,3 +95,29 @@ test("false-positive prose (testing/specification) is injected, not skipped (ADR
   expect(result.coverage.injected).toBe(1);
   expect(result.injected[0].sourcePath).toBe(prosePath);
 }, 15000);
+
+function cfgFor(root: string, out: string, glob: string): PipelineConfig {
+  return {
+    root, glob, dryRun: true, outDir: out, namespace: "l9",
+    authority: "l9.doctrine.platform", nearDupThreshold: 0.9, hashPrefixLength: 16,
+    indexDir: out, verbose: false, llmEnabled: false, normalizeFilenames: false,
+  };
+}
+
+test("inventory_only stays a metadata subject and is never injected", async () => {
+  const root = tmpDir(); const out = tmpDir();
+  fs.mkdirSync(path.join(root, "dist"), { recursive: true });
+  fs.mkdirSync(path.join(root, "skills"), { recursive: true });
+  fs.writeFileSync(path.join(root, "dist", "a.js"), "module.exports = 1;\n");
+  fs.writeFileSync(path.join(root, "skills", "lint_file.md"), SKILL_MD);
+  const result = await runPipelineAsync(cfgFor(root, out, "**/*"));
+  expect(result.metadataSubjects.map((subject) => subject.path).sort()).toEqual(["dist/a.js", "skills/lint_file.md"]);
+  expect(result.metadataSubjects.every((subject) => subject.path !== ".git/config")).toBe(true);
+  expect(result.injected.map((record) => record.sourcePath)).toEqual([path.join(root, "skills", "lint_file.md")]);
+  expect(result.coverage.skipped.nonInjectableDetails).toEqual([
+    expect.objectContaining({ path: path.join(root, "dist", "a.js"), reason: "carrier_inventory_only" }),
+  ]);
+  const accounted = result.coverage.injected + result.coverage.skippedBinary + result.coverage.skippedNonInjectable;
+  expect(accounted).toBe(result.coverage.scanned);
+}, 15000);
+
