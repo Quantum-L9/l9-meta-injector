@@ -1100,8 +1100,23 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
     }
   }
 
-  // Repository-level facts derived from observed paths, each with its own evidence.
+  // The repository itself is an observation: the inventory walked this tree at this
+  // revision and saw exactly these artifacts. The repository record claims
+  // validated-machine authority, and the consumer refuses such a claim that carries
+  // no evidence, so this record exists even when no derived fact below does.
   const repositoryEvidenceRefs: string[] = [];
+  const repositoryObservation = makeEvidence({
+    subjectId: repositoryId,
+    field: "artifact_ids",
+    evidenceClass: "observed",
+    sourceRef: { source_path: ".", source_revision: input.sourceRevision },
+    value: { artifact_count: fileRecords.length, snapshot_semantic_hash: snapshotHash },
+    confidence: REPOSITORY_CONFIDENCE,
+  }, producerVersion, generatedAt);
+  evidence.push(repositoryObservation);
+  repositoryEvidenceRefs.push(repositoryObservation.evidence_id);
+
+  // Repository-level facts derived from observed paths, each with its own evidence.
   const addDerived = (field: string, value: string, sourcePath: string): void => {
     const record = makeEvidence({
       subjectId: repositoryId,

@@ -41,6 +41,7 @@ Accepted ADRs are not deleted. A replacement ADR links back to the decision it s
 | [ADR-052](052-semantic-foundation-binding.md) | Semantic Foundation is cited by artifact_id and digest; headers derive from the v2 binding | Accepted |
 | [ADR-053](053-semantic-binding-propagation.md) | A bound root stamps owner, refuses foreign namespace globs, relaxes the literal-namespace verify rule, and records run provenance | Accepted |
 | [ADR-054](054-pipeline-identity-and-carrier-lifecycle.md) | Pipeline identity is path-derived and duplicate-refusing; classification is boundary-safe; carrier tiers gate the subject lifecycle | Accepted |
+| [ADR-055](055-manifest-interpretation.md) | Package manifests are read, and what they declare is asserted with evidence; every repository record is evidence-backed | Accepted, supersedes the ADR-031/032 manifest deferral |
 
 ## Authority boundary
 

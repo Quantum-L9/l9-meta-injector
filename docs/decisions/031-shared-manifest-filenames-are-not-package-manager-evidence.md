@@ -3,7 +3,9 @@
 ## Status
 
 Accepted. The manifest-interpretation deferral recorded below is resolved by
-[ADR-032](032-deterministic-repository-interpretation-seam.md); the decision itself stands.
+[ADR-032](032-deterministic-repository-interpretation-seam.md), and manifest content is
+now read through that seam under [ADR-055](055-manifest-interpretation.md); the decision
+itself stands.
 
 ## Date
 
