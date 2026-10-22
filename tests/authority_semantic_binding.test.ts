@@ -267,6 +267,24 @@ describe("pipeline and inventory consume the binding", () => {
     })).rejects.toThrow("META_AUTHORITY_FILE_MISSING");
   });
 
+  test("bound inventory migrates a previously harvested authority and namespace", () => {
+    const root = tempRoot();
+    write(root, META_AUTHORITY_RELATIVE_PATH, v2Doc());
+    write(root, "stale.py", [
+      "# >>> l9:meta >>>",
+      "# namespace: foreign-ns",
+      "# authority: Other/owner",
+      "# <<< l9:meta <<<",
+      "print(1)\n",
+    ].join("\n"));
+    inventoryTree({ root, outDir: path.join(root, ".l9inventory"), dryRun: false });
+    const header = fs.readFileSync(path.join(root, "stale.py"), "utf8");
+    expect(header).toMatch(/authority:\s*"?Example\/product"?/);
+    expect(header).toMatch(/namespace:\s*"?example-product"?/);
+    expect(header).not.toContain("Other/owner");
+    expect(header).not.toContain("foreign-ns");
+  });
+
   test("bound inventory emits binding values; unbound stays Unknown", () => {
     const bound = tempRoot();
     write(bound, META_AUTHORITY_RELATIVE_PATH, v2Doc());
