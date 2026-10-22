@@ -1,0 +1,24 @@
+schema: l9.meta-authority/v2
+writer:
+  repository: Quantum-L9/l9-meta-injector
+  ref: v4
+default_carrier: central_manifest
+legacy_writers: forbidden
+inline_allow: []
+semantic_foundation:
+  repository: Quantum-L9/.github
+  revision: 31b4f4f699becb1437b4804c308650bbad60c00e
+  release: v3.6.0
+  admission: candidate
+  ledgers:
+    l9.authority-model/global@1: sha256:ef536f5e233a84fd4a4d24a5fe101e9cf9a78563fafbf1e638faa383208bc451
+    l9.artifact-model/global@1: sha256:21f8bb783d7611ae1b3c60474c6ca31f6096f29d7ef0e94ef81f12e6d2defe09
+    l9.vocabulary/global@1: sha256:75e146e90e9f3e976c75382a5928d04c18531fa076f4096f8e5c5d4f468b0084
+    l9.identity-model/global@1: sha256:b9245eca99501a38976e909e1d151942c1253b2eee2bd6bab9c6382687db4288
+    l9.product-kinds/global@1: sha256:6bc39e7376650601570301fe486bdc6f2897fe461321e92c41250f9426688e7d
+    l9.dependency-archetypes/global@1: sha256:909db431aa0ccc7668ce3f2dcd46addc26df39c8f3e7303925469b47d6a4617d
+product:
+  id: l9-meta-injector
+  owner: Quantum-L9/l9-meta-injector
+  kind: dependency
+  archetype: l9.dependency-archetype/semantic-subsystem@1

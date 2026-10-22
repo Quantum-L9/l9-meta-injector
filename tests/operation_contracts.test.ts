@@ -55,7 +55,7 @@ describe("operation contracts", () => {
 
   test("validates the supported authority schema and structure", () => {
     expect(isSupportedAuthoritySchema(META_AUTHORITY_SCHEMA)).toBe(true);
-    expect(isSupportedAuthoritySchema("l9.meta-authority/v2")).toBe(false);
+    expect(isSupportedAuthoritySchema("l9.meta-authority/v2")).toBe(true);
     expect(isAuthorityConfig(authority)).toBe(true);
     expect(isAuthorityConfig({ ...authority, writer: { repository: "invalid", ref: "v4" } })).toBe(false);
     expect(isAuthorityConfig({ ...authority, schema: "l9.meta-authority/v2" })).toBe(false);

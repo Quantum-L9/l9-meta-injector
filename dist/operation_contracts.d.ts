@@ -19,7 +19,43 @@ export interface OperationModeResolution {
     warning?: string;
 }
 export declare const META_AUTHORITY_SCHEMA: "l9.meta-authority/v1";
-export type MetaAuthoritySchema = typeof META_AUTHORITY_SCHEMA;
+export declare const META_AUTHORITY_SCHEMA_V2: "l9.meta-authority/v2";
+export type MetaAuthoritySchema = typeof META_AUTHORITY_SCHEMA | typeof META_AUTHORITY_SCHEMA_V2;
+export declare const SEMANTIC_LEDGER_ID_RE: RegExp;
+export declare const SEMANTIC_LEDGER_DIGEST_RE: RegExp;
+export declare const SEMANTIC_REVISION_RE: RegExp;
+export declare const PRODUCT_ID_RE: RegExp;
+export declare const PRODUCT_OWNER_RE: RegExp;
+export declare const REQUIRED_SEMANTIC_LEDGERS: readonly ["l9.authority-model/global@1", "l9.artifact-model/global@1", "l9.vocabulary/global@1", "l9.identity-model/global@1", "l9.product-kinds/global@1"];
+export type ProductKindDeclaration = "node" | "dependency" | "Unknown";
+export type SemanticAdmissionState = "candidate" | "admitted" | "Unknown";
+export interface SemanticFoundationBinding {
+    repository: string;
+    revision: string;
+    release: string;
+    admission: SemanticAdmissionState;
+    ledgers: Record<string, string>;
+}
+export interface ProductDeclaration {
+    id: string;
+    owner: string;
+    kind: ProductKindDeclaration;
+    archetype: string;
+}
+export type HeaderIdentitySource = "semantic_binding" | "operator" | "folder";
+export interface HeaderIdentityRequest {
+    authority?: string;
+    namespace?: string;
+    unboundNamespaceDefault?: string;
+    /** Inventory may stamp Unknown when unbound; pipeline/CLI require an operator value. Default true. */
+    requireAuthorityWhenUnbound?: boolean;
+}
+export interface HeaderIdentityResolution {
+    authority: string;
+    namespace: string;
+    source: HeaderIdentitySource;
+    conflicts: AuthorityConflict[];
+}
 export type MetadataCarrier = "hard_skip" | "inventory_only" | "central_manifest" | "inline_managed";
 export type AuthorityLegacyPolicy = "forbidden" | "migration_only";
 export interface AuthorityWriter {
@@ -33,8 +69,10 @@ export interface AuthorityConfig {
     legacy_writers: AuthorityLegacyPolicy;
     inline_allow: string[];
     validation_commands?: string[];
+    semantic_foundation?: SemanticFoundationBinding;
+    product?: ProductDeclaration;
 }
-export type AuthorityConflictCode = "META_AUTHORITY_FILE_MISSING" | "META_AUTHORITY_SCHEMA_UNSUPPORTED" | "META_AUTHORITY_CONFIG_INVALID" | "META_AUTHORITY_SCAN_INCOMPLETE" | "META_AUTHORITY_WRITER_MISMATCH" | "META_AUTHORITY_CONFLICT" | "META_LEGACY_METADATA_PRESENT";
+export type AuthorityConflictCode = "META_AUTHORITY_FILE_MISSING" | "META_AUTHORITY_SCHEMA_UNSUPPORTED" | "META_AUTHORITY_CONFIG_INVALID" | "META_AUTHORITY_SCAN_INCOMPLETE" | "META_AUTHORITY_WRITER_MISMATCH" | "META_AUTHORITY_CONFLICT" | "META_LEGACY_METADATA_PRESENT" | "META_SEMANTIC_BINDING_INVALID" | "META_AUTHORITY_IDENTITY_MISMATCH";
 export interface AuthorityConflict {
     code: AuthorityConflictCode;
     message: string;
@@ -125,6 +163,12 @@ export interface OperationResult {
 export declare function resolveOperationMode(input: string): OperationModeResolution;
 export declare function operationRequiresAuthority(mode: OperationMode): boolean;
 export declare function isSupportedAuthoritySchema(schema: unknown): schema is MetaAuthoritySchema;
+export declare function isProductKindDeclaration(value: unknown): value is ProductKindDeclaration;
+export declare function kindBoundLedgerId(kind: ProductKindDeclaration): string | undefined;
+export declare function archetypePrefixForKind(kind: ProductKindDeclaration): string | undefined;
+export declare function isSemanticFoundationBinding(value: unknown): value is SemanticFoundationBinding;
+export declare function isProductDeclaration(value: unknown): value is ProductDeclaration;
+export declare function semanticBindingErrors(config: AuthorityConfig): string[];
 /**
  * Authority globs are security-sensitive repository-relative POSIX patterns.
  * They are intentionally positive-only: negation and path normalization tricks

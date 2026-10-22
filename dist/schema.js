@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.resolveOperationMode = exports.operationRequiresAuthority = exports.isSupportedAuthoritySchema = exports.isAuthorityConfig = exports.assertAuthorityForOperation = exports.OPERATION_MODES = exports.META_AUTHORITY_SCHEMA = exports.LEGACY_OPERATION_ALIASES = exports.META_V3_PLANES = exports.META_V3_SCHEMA_VERSION = exports.PRIMITIVE_TAXONOMY = exports.UNKNOWN = void 0;
+exports.semanticBindingErrors = exports.resolveOperationMode = exports.operationRequiresAuthority = exports.isSupportedAuthoritySchema = exports.isSemanticFoundationBinding = exports.isProductDeclaration = exports.isAuthorityConfig = exports.assertAuthorityForOperation = exports.REQUIRED_SEMANTIC_LEDGERS = exports.OPERATION_MODES = exports.META_AUTHORITY_SCHEMA_V2 = exports.META_AUTHORITY_SCHEMA = exports.LEGACY_OPERATION_ALIASES = exports.META_V3_PLANES = exports.META_V3_SCHEMA_VERSION = exports.PRIMITIVE_TAXONOMY = exports.UNKNOWN = void 0;
 exports.asRecord = asRecord;
 exports.normalizeMetaRecord = normalizeMetaRecord;
 exports.coerceNormalizedMeta = coerceNormalizedMeta;
@@ -115,10 +115,15 @@ function isPromptMeta(m) {
 var operation_contracts_1 = require("./operation_contracts");
 Object.defineProperty(exports, "LEGACY_OPERATION_ALIASES", { enumerable: true, get: function () { return operation_contracts_1.LEGACY_OPERATION_ALIASES; } });
 Object.defineProperty(exports, "META_AUTHORITY_SCHEMA", { enumerable: true, get: function () { return operation_contracts_1.META_AUTHORITY_SCHEMA; } });
+Object.defineProperty(exports, "META_AUTHORITY_SCHEMA_V2", { enumerable: true, get: function () { return operation_contracts_1.META_AUTHORITY_SCHEMA_V2; } });
 Object.defineProperty(exports, "OPERATION_MODES", { enumerable: true, get: function () { return operation_contracts_1.OPERATION_MODES; } });
+Object.defineProperty(exports, "REQUIRED_SEMANTIC_LEDGERS", { enumerable: true, get: function () { return operation_contracts_1.REQUIRED_SEMANTIC_LEDGERS; } });
 Object.defineProperty(exports, "assertAuthorityForOperation", { enumerable: true, get: function () { return operation_contracts_1.assertAuthorityForOperation; } });
 Object.defineProperty(exports, "isAuthorityConfig", { enumerable: true, get: function () { return operation_contracts_1.isAuthorityConfig; } });
+Object.defineProperty(exports, "isProductDeclaration", { enumerable: true, get: function () { return operation_contracts_1.isProductDeclaration; } });
+Object.defineProperty(exports, "isSemanticFoundationBinding", { enumerable: true, get: function () { return operation_contracts_1.isSemanticFoundationBinding; } });
 Object.defineProperty(exports, "isSupportedAuthoritySchema", { enumerable: true, get: function () { return operation_contracts_1.isSupportedAuthoritySchema; } });
 Object.defineProperty(exports, "operationRequiresAuthority", { enumerable: true, get: function () { return operation_contracts_1.operationRequiresAuthority; } });
 Object.defineProperty(exports, "resolveOperationMode", { enumerable: true, get: function () { return operation_contracts_1.resolveOperationMode; } });
+Object.defineProperty(exports, "semanticBindingErrors", { enumerable: true, get: function () { return operation_contracts_1.semanticBindingErrors; } });
 //# sourceMappingURL=schema.js.map

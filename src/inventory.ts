@@ -38,6 +38,7 @@ import { ArtifactType, NormalizedMeta, SharingScope, UNKNOWN, asRecord } from ".
 import { projectPrimitiveTaxonomy } from "./normalize_meta";
 import { classify } from "./classify";
 import { resolveNamespace } from "./namespace";
+import { assertHeaderIdentity, resolveHeaderIdentity } from "./authority";
 import { serializeYamlObject } from "./yaml_serialize";
 import { MetaSchema, applySchema, targetIncludes, parseCanonicalYaml, toMetaSchema } from "./meta_schema";
 import { buildOmitMatcher, OmitMatcher } from "./omit";
@@ -509,6 +510,11 @@ export function inventoryTree(config: InventoryConfig): InventoryResult {
   let files = 0, folders = 0;
 
   const schema = config.schema;
+  const identity = assertHeaderIdentity(resolveHeaderIdentity(root, {
+    requireAuthorityWhenUnbound: false,
+  }));
+  const boundAuthority = identity.source === "semantic_binding" ? identity.authority : undefined;
+  const boundNamespace = identity.source === "semantic_binding" ? identity.namespace : undefined;
   for (const { abs, isDir, kind } of entries) {
     const harvest = kind === "symlink" || kind === "special" ? {} : harvestExistingMeta(abs, isDir);
     const rec = buildRecord(root, abs, isDir, cfg, kind, harvest);
@@ -526,7 +532,7 @@ export function inventoryTree(config: InventoryConfig): InventoryResult {
       // flows into inventory.json (otherwise "manifest" in target would be a no-op).
       if (targetIncludes(schema, "manifest")) rec.meta = applied.fields;
     } else {
-      metaObj = annotationFields(rec, harvest, { body });
+      metaObj = annotationFields(rec, harvest, { body, boundAuthority, boundNamespace });
     }
     records.push(rec);
     typeDistribution[rec.artifact_type] = (typeDistribution[rec.artifact_type] || 0) + 1;
@@ -811,7 +817,7 @@ function asSharingScope(value: unknown): SharingScope | undefined {
 function annotationFields(
   rec: InventoryRecord,
   harvest: Record<string, unknown>,
-  ctx: { body: string | null },
+  ctx: { body: string | null; boundAuthority?: string; boundNamespace?: string },
 ): Record<string, unknown> {
   const rawHarvest = sanitizeHarvest(harvest);
   const harvestedType = asArtifactType(rawHarvest.artifact_type);
@@ -855,6 +861,12 @@ function annotationFields(
     authority: harvestedAuthority ?? UNKNOWN,
     evidence: rec.evidence_excerpt ?? UNKNOWN,
     ...kept,
+    // A v2 binding is authoritative over whatever an earlier run harvested, so
+    // the bound identity is applied after the harvest spread: adopting a binding
+    // migrates previously annotated files instead of preserving a stale or
+    // foreign authority and namespace forever.
+    ...(ctx.boundNamespace !== undefined ? { namespace: ctx.boundNamespace } : {}),
+    ...(ctx.boundAuthority !== undefined ? { authority: ctx.boundAuthority } : {}),
     id: rec.artifact_id,
     title: harvestedTitle,
     source_path: rec.relative_path,

@@ -9,6 +9,10 @@ The TypeScript pipeline under `src/` is the sole active engine. `runPipelineAsyn
 
 `docs/architecture-authority.json` is the machine-readable authority index. Authority-critical file identities are recorded in `docs/architecture-manifest.json`.
 
+## Semantic authority
+
+Org Semantic Foundation ledgers live in `Quantum-L9/.github` and are not copied here. A repository cites them in `.l9/meta-authority.yaml` (`l9.meta-authority/v2`) by `artifact_id` and sha256 at one immutable revision, and declares its own `product.id`, `product.owner`, `product.kind`, and archetype. `resolveHeaderIdentity` stamps header `authority` from `product.owner` and `namespace` from `product.id`. An unbound root still requires an operator `--authority` and defaults namespace to the folder name. Inventory uses the binding when present and otherwise ADR-051 harvest-or-Unknown. Admission of v3.6.0 is recorded as `candidate`. Offline digest proof is `npm run semantics:verify` (ADR-052).
+
 ## Package boundary
 
 The package exposes six code entrypoints:

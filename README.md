@@ -352,12 +352,30 @@ search. Header fields are derived from the file (`classify`, `PRIMITIVE_TAXONOMY
 `resolveNamespace`, `estimateTokens`) or written as `Unknown`; inventory does not
 stamp `namespace: inventory` or `authority: inventory`, and `content_hash` on UTF-8
 text is the body without the managed carrier. This is not apply: it does not require
-`.l9/meta-authority.yaml`. Pass `--dry-run` for observation only, or use
+`.l9/meta-authority.yaml`. A v2 binding, when present, supplies `authority` and `namespace` (ADR-052). Pass `--dry-run` for observation only, or use
 `npm run local-source` when the source must not be touched.
 
 Pipeline coverage: every run (including dry-run) writes `coverage-report.json` under `--out-dir` with skipped binary/non-injectable paths and classification details (ADR-018). `skipped-noninjectable` is taxonomy-gated; weak keyword false positives are demoted so in-scope prose injects.
 
 Outputs: `scanned`, `injected` (`pipeline`/`skills`), `verification-passed` (`pipeline` mode: `true`/`false`/`n-a`).
+
+## Semantic Foundation binding
+
+This package cites org Semantic Foundation ledgers; it does not copy `Quantum-L9/.github/semantics/`.
+
+A repository may declare `.l9/meta-authority.yaml` with schema `l9.meta-authority/v2`: pin one `Quantum-L9/.github` revision, cite each ledger by `artifact_id` and sha256, and declare `product.id`, `product.owner`, `product.kind`, and archetype. `resolveHeaderIdentity` then stamps header `authority` from `product.owner` and `namespace` from `product.id`. A conflicting `--authority` or `--namespace` fails closed with `META_AUTHORITY_IDENTITY_MISMATCH`. An invalid v2 file fails with `META_SEMANTIC_BINDING_INVALID` and never falls back to the folder name.
+
+An unbound root (no v2 binding) still requires `--authority` and defaults namespace to the directory name. Inventory uses the binding when present; otherwise it keeps the ADR-051 harvest-or-Unknown derivation.
+
+This repository's own declaration is Dependency / `l9.dependency-archetype/semantic-subsystem@1`. Admission of Semantic Foundation v3.6.0 is recorded as `candidate`.
+
+Offline digest proof against an operator-supplied checkout:
+
+```bash
+npm run semantics:verify -- --semantics-root <Quantum-L9/.github checkout at the bound revision>
+```
+
+That command is not part of `npm run validate` (ADR-048, ADR-052).
 
 ## Validation
 

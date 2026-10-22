@@ -1,6 +1,6 @@
 # l9-meta-injector — agent guide
 
-TypeScript metadata-injection toolkit. Source lives under `src/`, tests under `tests/`, and compiled output is committed under `dist/`. The TypeScript pipeline is the sole active engine. `tools/consolidation/` is historical reference material, not a second runtime.
+TypeScript metadata-injection toolkit. Org semantics are cited through `.l9/meta-authority.yaml` v2 (ADR-052); do not copy `Quantum-L9/.github/semantics/`. Source lives under `src/`, tests under `tests/`, and compiled output is committed under `dist/`. The TypeScript pipeline is the sole active engine. `tools/consolidation/` is historical reference material, not a second runtime.
 
 ## Source of truth
 

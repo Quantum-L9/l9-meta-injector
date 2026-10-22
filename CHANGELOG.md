@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Added
+
+- `.l9/meta-authority.yaml` may declare `l9.meta-authority/v2`: cite Semantic Foundation ledgers by `artifact_id` and sha256 at one `Quantum-L9/.github` revision, and declare this product as Dependency / `semantic-subsystem@1`. Pipeline and inventory derive header `authority`/`namespace` from that binding (ADR-052). The bound identity is applied after harvested metadata, so adopting a binding migrates files annotated earlier, and a bound pipeline refuses a `namespaceGlobs` entry that names anything but `product.id` with `META_AUTHORITY_IDENTITY_MISMATCH` instead of letting a per-glob value override the binding.
+- `resolveHeaderIdentity` / `verifySemanticFoundation` and `npm run semantics:verify` (offline; not part of `npm run validate`).
+
 ### Changed
 
 - Inventory annotation no longer stamps `namespace: inventory`, `authority: inventory`, or `token_cost_estimate: 0`. Taxonomy fields derive from `classify` and `PRIMITIVE_TAXONOMY`, `sharing_scope` from `resolveNamespace`, and token cost from `estimateTokens`; otherwise the field is `Unknown` (ADR-051).

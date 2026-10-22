@@ -24,7 +24,59 @@ export interface OperationModeResolution {
 }
 
 export const META_AUTHORITY_SCHEMA = "l9.meta-authority/v1" as const;
-export type MetaAuthoritySchema = typeof META_AUTHORITY_SCHEMA;
+export const META_AUTHORITY_SCHEMA_V2 = "l9.meta-authority/v2" as const;
+export type MetaAuthoritySchema =
+  | typeof META_AUTHORITY_SCHEMA
+  | typeof META_AUTHORITY_SCHEMA_V2;
+
+export const SEMANTIC_LEDGER_ID_RE = /^l9\.[a-z0-9-]+\/[a-z0-9-]+@[0-9]+$/;
+export const SEMANTIC_LEDGER_DIGEST_RE = /^sha256:[0-9a-f]{64}$/;
+export const SEMANTIC_REVISION_RE = /^[0-9a-f]{40}$/;
+export const PRODUCT_ID_RE = /^[a-z0-9][a-z0-9_-]*$/;
+export const PRODUCT_OWNER_RE = /^[^/\s]+\/[^/\s]+$/;
+
+export const REQUIRED_SEMANTIC_LEDGERS = [
+  "l9.authority-model/global@1",
+  "l9.artifact-model/global@1",
+  "l9.vocabulary/global@1",
+  "l9.identity-model/global@1",
+  "l9.product-kinds/global@1",
+] as const;
+
+export type ProductKindDeclaration = "node" | "dependency" | "Unknown";
+export type SemanticAdmissionState = "candidate" | "admitted" | "Unknown";
+
+export interface SemanticFoundationBinding {
+  repository: string;
+  revision: string;
+  release: string;
+  admission: SemanticAdmissionState;
+  ledgers: Record<string, string>;
+}
+
+export interface ProductDeclaration {
+  id: string;
+  owner: string;
+  kind: ProductKindDeclaration;
+  archetype: string;
+}
+
+export type HeaderIdentitySource = "semantic_binding" | "operator" | "folder";
+
+export interface HeaderIdentityRequest {
+  authority?: string;
+  namespace?: string;
+  unboundNamespaceDefault?: string;
+  /** Inventory may stamp Unknown when unbound; pipeline/CLI require an operator value. Default true. */
+  requireAuthorityWhenUnbound?: boolean;
+}
+
+export interface HeaderIdentityResolution {
+  authority: string;
+  namespace: string;
+  source: HeaderIdentitySource;
+  conflicts: AuthorityConflict[];
+}
 
 export type MetadataCarrier =
   | "hard_skip"
@@ -46,6 +98,8 @@ export interface AuthorityConfig {
   legacy_writers: AuthorityLegacyPolicy;
   inline_allow: string[];
   validation_commands?: string[];
+  semantic_foundation?: SemanticFoundationBinding;
+  product?: ProductDeclaration;
 }
 
 export type AuthorityConflictCode =
@@ -55,7 +109,9 @@ export type AuthorityConflictCode =
   | "META_AUTHORITY_SCAN_INCOMPLETE"
   | "META_AUTHORITY_WRITER_MISMATCH"
   | "META_AUTHORITY_CONFLICT"
-  | "META_LEGACY_METADATA_PRESENT";
+  | "META_LEGACY_METADATA_PRESENT"
+  | "META_SEMANTIC_BINDING_INVALID"
+  | "META_AUTHORITY_IDENTITY_MISMATCH";
 
 export interface AuthorityConflict {
   code: AuthorityConflictCode;
@@ -181,7 +237,81 @@ export function operationRequiresAuthority(mode: OperationMode): boolean {
 }
 
 export function isSupportedAuthoritySchema(schema: unknown): schema is MetaAuthoritySchema {
-  return schema === META_AUTHORITY_SCHEMA;
+  return schema === META_AUTHORITY_SCHEMA || schema === META_AUTHORITY_SCHEMA_V2;
+}
+
+export function isProductKindDeclaration(value: unknown): value is ProductKindDeclaration {
+  return value === "node" || value === "dependency" || value === "Unknown";
+}
+
+export function kindBoundLedgerId(kind: ProductKindDeclaration): string | undefined {
+  if (kind === "dependency") return "l9.dependency-archetypes/global@1";
+  if (kind === "node") return "l9.node-archetypes/global@1";
+  return undefined;
+}
+
+export function archetypePrefixForKind(kind: ProductKindDeclaration): string | undefined {
+  if (kind === "dependency") return "l9.dependency-archetype/";
+  if (kind === "node") return "l9.node-archetype/";
+  return undefined;
+}
+
+export function isSemanticFoundationBinding(value: unknown): value is SemanticFoundationBinding {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const candidate = value as Record<string, unknown>;
+  if (!hasOnlyKeys(candidate, ["repository", "revision", "release", "admission", "ledgers"])) return false;
+  if (typeof candidate.repository !== "string" || !PRODUCT_OWNER_RE.test(candidate.repository)) return false;
+  if (typeof candidate.revision !== "string" || !SEMANTIC_REVISION_RE.test(candidate.revision)) return false;
+  if (typeof candidate.release !== "string" || candidate.release.trim().length === 0) return false;
+  if (candidate.admission !== "candidate" && candidate.admission !== "admitted" && candidate.admission !== "Unknown") {
+    return false;
+  }
+  if (typeof candidate.ledgers !== "object" || candidate.ledgers === null || Array.isArray(candidate.ledgers)) {
+    return false;
+  }
+  const ledgers = candidate.ledgers as Record<string, unknown>;
+  const keys = Object.keys(ledgers);
+  if (keys.length === 0) return false;
+  for (const key of keys) {
+    if (!SEMANTIC_LEDGER_ID_RE.test(key)) return false;
+    const digest = ledgers[key];
+    if (typeof digest !== "string" || !SEMANTIC_LEDGER_DIGEST_RE.test(digest)) return false;
+  }
+  return true;
+}
+
+export function isProductDeclaration(value: unknown): value is ProductDeclaration {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const candidate = value as Record<string, unknown>;
+  if (!hasOnlyKeys(candidate, ["id", "owner", "kind", "archetype"])) return false;
+  if (typeof candidate.id !== "string" || !PRODUCT_ID_RE.test(candidate.id)) return false;
+  if (typeof candidate.owner !== "string" || !PRODUCT_OWNER_RE.test(candidate.owner)) return false;
+  if (!isProductKindDeclaration(candidate.kind)) return false;
+  if (typeof candidate.archetype !== "string" || candidate.archetype.trim().length === 0) return false;
+  if (candidate.archetype !== "Unknown") {
+    const prefix = archetypePrefixForKind(candidate.kind);
+    if (!prefix || !candidate.archetype.startsWith(prefix)) return false;
+    if (!SEMANTIC_LEDGER_ID_RE.test(candidate.archetype)) return false;
+  } else if (candidate.kind !== "Unknown") {
+    return false;
+  }
+  return true;
+}
+
+export function semanticBindingErrors(config: AuthorityConfig): string[] {
+  const errors: string[] = [];
+  if (config.schema !== META_AUTHORITY_SCHEMA_V2) return errors;
+  if (!config.semantic_foundation || !config.product) {
+    errors.push("l9.meta-authority/v2 requires semantic_foundation and product");
+    return errors;
+  }
+  const { semantic_foundation: binding, product } = config;
+  for (const id of REQUIRED_SEMANTIC_LEDGERS) {
+    if (!(id in binding.ledgers)) errors.push(`missing required ledger ${id}`);
+  }
+  const bound = kindBoundLedgerId(product.kind);
+  if (bound && !(bound in binding.ledgers)) errors.push(`missing kind-bound ledger ${bound}`);
+  return errors;
 }
 
 function isStringArray(value: unknown): value is string[] {
@@ -212,10 +342,13 @@ function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[])
 export function isAuthorityConfig(value: unknown): value is AuthorityConfig {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const candidate = value as Record<string, unknown>;
-  if (!hasOnlyKeys(candidate, [
+  const v1Keys = [
     "schema", "writer", "default_carrier", "legacy_writers", "inline_allow", "validation_commands",
-  ])) return false;
+  ];
+  const v2Keys = [...v1Keys, "semantic_foundation", "product"];
   if (!isSupportedAuthoritySchema(candidate.schema)) return false;
+  const allowed = candidate.schema === META_AUTHORITY_SCHEMA_V2 ? v2Keys : v1Keys;
+  if (!hasOnlyKeys(candidate, allowed)) return false;
   if (typeof candidate.writer !== "object" || candidate.writer === null || Array.isArray(candidate.writer)) return false;
   const writer = candidate.writer as Record<string, unknown>;
   if (!hasOnlyKeys(writer, ["repository", "ref"])) return false;
@@ -225,7 +358,13 @@ export function isAuthorityConfig(value: unknown): value is AuthorityConfig {
   if (candidate.legacy_writers !== "forbidden" && candidate.legacy_writers !== "migration_only") return false;
   if (!isStringArray(candidate.inline_allow) || !candidate.inline_allow.every(isSafeAuthorityPathPattern)) return false;
   if (candidate.validation_commands !== undefined && !isStringArray(candidate.validation_commands)) return false;
-  return true;
+  if (candidate.schema === META_AUTHORITY_SCHEMA) {
+    return candidate.semantic_foundation === undefined && candidate.product === undefined;
+  }
+  if (!isSemanticFoundationBinding(candidate.semantic_foundation)) return false;
+  if (!isProductDeclaration(candidate.product)) return false;
+  const config = candidate as unknown as AuthorityConfig;
+  return semanticBindingErrors(config).length === 0;
 }
 
 export function assertAuthorityForOperation(
