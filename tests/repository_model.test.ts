@@ -247,6 +247,32 @@ describe("repository model evidence discipline", () => {
     expect(validateRepositoryModelPacket(packet).status).toBe("passed");
   });
 
+  it("stops reporting dependencies as unsupported once a manifest declares one", () => {
+    // The sample repo's package.json declares no dependency, so the coverage
+    // diagnostic stands there. A manifest that declares one yields a declared,
+    // line-cited package.dependency assertion, and the same packet must not also
+    // say dependencies are unsupported by evidence.
+    const sample = observeSample();
+    expect(sample.payload.diagnostics.some(
+      (d) => d.code === "unsupported-by-evidence" && d.details?.field === "dependencies",
+    )).toBe(true);
+
+    const root = path.join(scratch("deps"), "deps-repo");
+    fs.mkdirSync(root, { recursive: true });
+    fs.writeFileSync(path.join(root, "package.json"), '{\n  "name": "deps-repo",\n  "dependencies": {\n    "express": "^4.0.0"\n  }\n}\n');
+    const packet = observeRepositoryModel({
+      root, repositoryName: "deps-repo", sourceRevision: REVISION, producerVersion: PRODUCER_VERSION,
+    });
+    const claim = packet.payload.assertions.find((a) => a.predicate === "package.dependency");
+    expect(claim?.object).toBe("express");
+    expect(claim?.evidence_class).toBe("declared");
+    expect(claim?.subject_id).toBe(packet.payload.repositories[0].repository_id);
+    expect(packet.payload.diagnostics.some(
+      (d) => d.code === "unsupported-by-evidence" && d.details?.field === "dependencies",
+    )).toBe(false);
+    expect(validateRepositoryModelPacket(packet).status).toBe("passed");
+  });
+
   it("preserves unknowns instead of converting absence into certainty", () => {
     const inventory = inventoryTree({ root: SAMPLE_ROOT, outDir: path.join(scratch("unknown"), "out"), dryRun: true });
     const target = inventory.records.find((r) => r.artifact_type !== "folder");

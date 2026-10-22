@@ -68,7 +68,13 @@ failing on it.
 
 ## Decision
 
-We choose **Option B**.
+We choose **Option B**, and the audit behind it corrected the premise: the seam already
+carries a manifest extractor (`manifest/v1`, in `src/extractors/structured.ts`) that
+asserts `package.dependency`, `package.name`, `package.version`,
+`package.packaging_system` and related predicates for `package.json`, `pyproject.toml`
+and `Cargo.toml`, with `evidence_class: declared`, a line range, a bounded excerpt and
+the manifest's content hash. What was wrong was the record and the diagnostics around
+those assertions, not the absence of them.
 
 1. **The repository record is always evidence-backed.** `buildRepositoryModelPacket`
    emits one `observed` evidence record for the repository subject (field
@@ -76,38 +82,36 @@ We choose **Option B**.
    snapshot semantic hash) and references it from the repository record before any
    derived fact. A record that claims `validated-machine` authority therefore never
    carries empty `evidence_refs`.
-2. **Package manifests are read through the interpretation seam.** `package.json`
-   (`dependencies`, `devDependencies`, `peerDependencies`, `optionalDependencies`,
-   `name`, `version`, `bin`, `main`, `exports`) and `pyproject.toml`
-   (`[project] name`, `version`, `dependencies`, `[project.scripts]`) are parsed by a
-   dedicated extractor. Each declared dependency becomes one `package.dependency`
-   assertion whose `evidence_class` is `declared`, whose `source_range` names the
-   manifest line, whose `evidence_excerpt` is that line, and whose
-   `source_content_hash` is the manifest's hash. `package.name` and `package.version`
-   are asserted the same way.
-3. **Declared dependencies become `DEPENDS_ON` relationships** from the repository to
-   `package:<name>` external identities, each citing the assertion's evidence record,
-   and are listed in `unresolved_dependencies` so the consumer can resolve them to
-   upstream repositories by name. Entrypoints declared by `bin`, `main` and
-   `[project.scripts]` populate `entrypoints`.
-4. **The unsupported-by-evidence diagnostics tell the truth.** The `dependencies` and
-   `entrypoints` rows are emitted only when no manifest was observed. `capabilities`,
-   `primary_role` and `owner_ids` remain unsupported: no route, service or ownership
-   evidence exists in this producer.
-5. **The interpretation profile moves to 1.2.0** with the manifest extractor listed
-   in `extractor_versions`. `packet_version` stays 1.1.0.
+2. **Dependency edges are the consumer's projection, not the producer's record.**
+   The consumer projects each `package.dependency` claim into a `DEPENDS_ON` edge to
+   an `ExternalPackage` node it creates itself, and it turns every name in
+   `unresolved_dependencies` that matches no observed repository into a
+   publication-holding unknown. The producer therefore emits neither edges to
+   `package:<name>` targets (the consumer's edge-endpoint invariant would reject a
+   target it did not create) nor package names in `unresolved_dependencies`.
+3. **The unsupported-by-evidence diagnostics tell the truth.** The `dependencies`
+   row is emitted only when no `package.dependency` assertion was made against the
+   repository; a packet never reports a field as unsupported beside its own claim.
+   `entrypoints` stays unsupported until the consumer registers a predicate for it,
+   because an unregistered predicate is kept and flagged as an unknown on the
+   consumer side. `capabilities`, `primary_role` and `owner_ids` remain unsupported:
+   no route, service or ownership evidence exists in this producer.
+4. **The interpretation profile stays at 1.1.0.** No extraction rule changed; the
+   packet's semantic identity moves because the repository evidence and the
+   diagnostics moved.
 
-Other manifest families (`requirements*.txt`, `go.mod`, `Cargo.toml`) are admitted
-future extractors under the same rules and are not read by this decision.
+Entrypoints from `bin`, `main` and `[project.scripts]`, and the `requirements*.txt` and
+`go.mod` manifest families, are the admitted next extractor changes once the consumer's
+predicate registry names them.
 
 ## Consequences
 
-- The sample-repo and local-source golden bundles change: more evidence, more
-  assertions, `DEPENDS_ON` relationships, and two fewer diagnostics where a manifest
-  exists. The topology-conformance record is regenerated against the consumer.
+- The sample-repo and local-source golden bundles change: one more evidence record
+  per repository, and one fewer diagnostic where a manifest declares a dependency.
+  The topology-conformance record is regenerated against the consumer at its
+  current main.
 - A declared dependency is never promoted to `observed`; the consumer's reconciliation
   keeps the distinction, and a manifest that lies produces a declared claim, not a fact.
-- `docs/public-api-contract.json` gains the extractor's exported names where the
-  public surface exposes them; `check:api` gates the change.
-- Follow-up: once the consumer retires `adapt-meta-corpus`, the same extractor feeds
-  the corpus-intelligence packet (separate decision).
+- The public API surface is unchanged; `check:api` still gates the build.
+- Follow-up: a consumer-side `package.entrypoint` predicate, then the producer's
+  entrypoint assertions (separate decision, both repositories).

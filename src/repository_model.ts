@@ -1162,12 +1162,24 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
   };
 
   // Report — rather than invent — everything the inventory could not establish.
+  //
+  // Dependencies are the one field interpretation can answer: a `package.dependency`
+  // assertion against this repository is a declared, line-cited claim the consumer
+  // projects into a DEPENDS_ON relationship itself (ADR-055). The diagnostic is
+  // emitted only while no such claim exists, so a packet never reports a field as
+  // unsupported on the same page it asserts it. Entrypoints wait for a consumer
+  // predicate; the producer does not invent one.
+  const declaresDependencies = (input.interpretation?.assertions ?? []).some(
+    (assertion) => assertion.predicate === "package.dependency" && assertion.subject_id === repositoryId,
+  );
   const unsupported: [string, string][] = [
     ["primary_role", "Repository role is not derivable from inventory evidence; primary_role stays 'unknown'."],
     ["capabilities", "No capability evidence is available to this producer; capabilities is empty by policy."],
     ["entrypoints", "Entrypoints require package-manifest interpretation beyond inventory observation."],
     ["owner_ids", "Ownership is not observable from inventory evidence."],
-    ["dependencies", "Dependency edges require manifest interpretation beyond inventory observation."],
+    ...(declaresDependencies
+      ? []
+      : [["dependencies", "No package manifest declared a dependency; dependency claims require manifest interpretation."] as [string, string]]),
   ];
   for (const [field, message] of unsupported) {
     diagnostics.push({
