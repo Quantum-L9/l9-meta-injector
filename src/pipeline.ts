@@ -341,7 +341,19 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
       }
       // Merge, not replace: schema fields win on name collision, canonical identity
       // fields survive untouched otherwise (coerce re-validates the identity block).
-      meta = coerceNormalizedMeta({ ...asRecord(meta), ...applied.fields });
+      const merged: Record<string, unknown> = { ...asRecord(meta), ...applied.fields };
+      // A bound run's identity comes from the binding, never from the schema: a
+      // schema field named owner, authority or namespace would otherwise make
+      // injected headers, the metadata index and MetaV3 governance claim an
+      // arbitrary identity in place of product.owner / product.id. The owner is
+      // reasserted only where the canonical meta carried one (source, test,
+      // script), so a schema cannot invent the field for other types either.
+      if (identity.source === "semantic_binding") {
+        merged.authority = identity.authority;
+        merged.namespace = identity.namespace;
+        if ("owner" in asRecord(meta)) merged.owner = identity.product?.owner ?? UNKNOWN;
+      }
+      meta = coerceNormalizedMeta(merged);
     }
 
     metas.set(e.sourcePath, meta);

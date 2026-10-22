@@ -15,6 +15,7 @@ import { inventoryTree } from "../src/inventory";
 import { runPipelineAsync } from "../src/pipeline";
 import { verify } from "../src/verify";
 import type { PipelineConfig } from "../src/schema";
+import { toMetaSchema } from "../src/meta_schema";
 
 const dispatch = require("../scripts/lib/operation-dispatch") as {
   normalizeEnvironment: (env: NodeJS.ProcessEnv) => Record<string, unknown>;
@@ -352,6 +353,32 @@ describe("binding propagation", () => {
     expect(() => dispatch.normalizeEnvironment(actionEnv(root, {
       L9_INPUT_NAMESPACE_GLOBS: "plastos/**=plastos",
     }))).toThrow(/META_AUTHORITY_IDENTITY_MISMATCH/);
+  });
+
+  test("bound identity survives a custom meta-schema that collides with owner, authority and namespace", async () => {
+    const bound = tempRoot();
+    write(bound, META_AUTHORITY_RELATIVE_PATH, v2Doc());
+    write(bound, "src/util.ts", "export const x = 1;\n");
+    const metaSchema = toMetaSchema({
+      schema_id: "owner-collision",
+      version: "1.0.0",
+      target: ["file_header"],
+      fields: [
+        { name: "owner", default: "Other/team" },
+        { name: "authority", default: "Other/team" },
+        { name: "namespace", default: "elsewhere" },
+        { name: "team", default: "platform" },
+      ],
+    });
+    const result = await runPipelineAsync(pipelineConfig(bound, { glob: "**/*.ts", metaSchema }));
+    expect(result.injected.length).toBeGreaterThan(0);
+    for (const row of result.injected) {
+      const meta = row.meta as Record<string, unknown>;
+      expect(meta.owner).toBe("Example/product");
+      expect(meta.authority).toBe("Example/product");
+      expect(meta.namespace).toBe("example-product");
+      expect(meta.team).toBe("platform");
+    }
   });
 
   test("bound shared files pass verify; unbound still report the literal-namespace rule", async () => {
