@@ -251,6 +251,27 @@ describe("repository model evidence discipline", () => {
       expect(artifact.source_path).not.toContain(SAMPLE_ROOT);
     }
   });
+
+  it("keeps filesystem clocks out of semantic identity and out of the packet", () => {
+    // The packet pins `now` to the epoch, so every real file's clocks are "after"
+    // it; a copy of the same tree gets fresh clocks again. Neither observation
+    // is about the repository, so neither may move the hash or appear as a
+    // diagnostic. The inventory itself still records the skew.
+    const copy = path.join(scratch("clocks"), "sample-repo");
+    fs.cpSync(SAMPLE_ROOT, copy, { recursive: true });
+    const future = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+    fs.utimesSync(path.join(copy, "README.md"), future, future);
+    const here = observeSample();
+    const there = observeSample(copy);
+    expect(there.semantic_hash).toBe(here.semantic_hash);
+    for (const packet of [here, there]) {
+      expect(packet.payload.diagnostics.some((d) => String(d.details?.unknown ?? "").startsWith("clock_skew:"))).toBe(false);
+      expect(JSON.stringify(packet)).not.toContain("clock_skew");
+    }
+    const inventory = inventoryTree({ root: copy, outDir: path.join(scratch("clocks-out"), "out"), dryRun: true, now: "1970-01-01T00:00:00.000Z" });
+    const readme = inventory.records.find((record) => record.relative_path === "README.md");
+    expect(readme?.unknowns).toContain("clock_skew:modified_at_after_inspected_at");
+  });
 });
 
 describe("repository model producer validation", () => {

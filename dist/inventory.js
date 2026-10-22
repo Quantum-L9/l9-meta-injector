@@ -301,19 +301,53 @@ function hashRegularFile(abs, fileName, size, hashMaxBytes, unknowns) {
     }
     return crypto.createHash("sha256").update(bytes).digest("hex");
 }
-/** UTF-8 text eligible for classify / token estimate / carrier-free hashing. */
+/**
+ * Physical bytes a managed carrier may add on top of the carrier-free body.
+ * `hashMaxBytes` is a ceiling on the content, so a file whose body fits must
+ * stay eligible after annotation pushes its physical size past the ceiling.
+ * Reading is bounded by the ceiling plus this allowance; the final decision is
+ * taken over the carrier-free bytes.
+ */
+const MANAGED_CARRIER_ALLOWANCE_BYTES = 64 * 1024;
+/**
+ * Carrier-free UTF-8 body eligible for classify / token estimate / hashing,
+ * or `null` when the file is not UTF-8 or its content exceeds `hashMaxBytes`.
+ * The managed carrier is removed before the size ceiling and before any
+ * derivation, so a re-run over an annotated tree sees the same body it saw
+ * the first time.
+ */
 function tryReadUtf8Body(abs, size, hashMaxBytes) {
-    if (size > hashMaxBytes)
+    if (size > hashMaxBytes + MANAGED_CARRIER_ALLOWANCE_BYTES)
         return null;
     const encoding = (0, encoding_1.probeFileEncoding)(abs);
     if (encoding.status !== "utf8")
         return null;
-    return fs.readFileSync(abs, "utf8");
+    const body = (0, inject_1.managedCarrierFreeBody)(abs, fs.readFileSync(abs, "utf8"));
+    if (Buffer.byteLength(body, "utf8") > hashMaxBytes)
+        return null;
+    return body;
 }
+/** Epoch milliseconds of an ISO timestamp, or `null` when it does not parse. */
+function instantOf(iso) {
+    if (!iso)
+        return null;
+    const ms = Date.parse(iso);
+    return Number.isNaN(ms) ? null : ms;
+}
+/**
+ * Clock skew is decided on instants, not on string order: `InventoryConfig.now`
+ * may carry an offset or a different precision, and lexicographic comparison is
+ * chronological only when both sides share the same normalized form.
+ */
 function noteClockSkew(unknowns, created, modified, inspected) {
-    if (created && created > inspected)
+    const inspectedAt = instantOf(inspected);
+    if (inspectedAt === null)
+        return;
+    const createdAt = instantOf(created);
+    const modifiedAt = instantOf(modified);
+    if (createdAt !== null && createdAt > inspectedAt)
         unknowns.push("clock_skew:created_at_after_inspected_at");
-    if (modified && modified > inspected)
+    if (modifiedAt !== null && modifiedAt > inspectedAt)
         unknowns.push("clock_skew:modified_at_after_inspected_at");
 }
 function buildRecord(root, abs, isDir, cfg, kind = isDir ? "directory" : "file", harvest = {}) {
@@ -339,7 +373,7 @@ function buildRecord(root, abs, isDir, cfg, kind = isDir ? "directory" : "file",
             const isArchive = archive_formats_1.ARCHIVE_EXTENSIONS.has((0, archive_formats_1.archiveExtensionOf)(abs));
             const utf8Body = isArchive ? null : tryReadUtf8Body(abs, size, cfg.hashMaxBytes);
             hash = utf8Body !== null
-                ? (0, extract_1.contentHash)((0, inject_1.managedCarrierFreeBody)(abs, utf8Body))
+                ? (0, extract_1.contentHash)(utf8Body)
                 : hashRegularFile(abs, fileName, size, cfg.hashMaxBytes, unknowns);
         }
     }
@@ -791,12 +825,18 @@ function annotationFields(rec, harvest, ctx) {
         callable: tax.callable,
         retrievable: tax.retrievable,
         injectable: tax.injectable,
-        namespace: ctx.boundNamespace ?? harvestedNamespace ?? schema_1.UNKNOWN,
+        namespace: harvestedNamespace ?? schema_1.UNKNOWN,
         sharing_scope: sharingScope,
         token_cost_estimate: tokens,
-        authority: ctx.boundAuthority ?? harvestedAuthority ?? schema_1.UNKNOWN,
+        authority: harvestedAuthority ?? schema_1.UNKNOWN,
         evidence: rec.evidence_excerpt ?? schema_1.UNKNOWN,
         ...kept,
+        // A v2 binding is authoritative over whatever an earlier run harvested, so
+        // the bound identity is applied after the harvest spread: adopting a binding
+        // migrates previously annotated files instead of preserving a stale or
+        // foreign authority and namespace forever.
+        ...(ctx.boundNamespace !== undefined ? { namespace: ctx.boundNamespace } : {}),
+        ...(ctx.boundAuthority !== undefined ? { authority: ctx.boundAuthority } : {}),
         id: rec.artifact_id,
         title: harvestedTitle,
         source_path: rec.relative_path,

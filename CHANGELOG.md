@@ -4,9 +4,9 @@
 
 ### Added
 
-- `.l9/meta-authority.yaml` may declare `l9.meta-authority/v2`: cite Semantic Foundation ledgers by `artifact_id` and sha256 at one `Quantum-L9/.github` revision, and declare this product as Dependency / `semantic-subsystem@1`. Pipeline and inventory derive header `authority`/`namespace` from that binding (ADR-052).
+- `.l9/meta-authority.yaml` may declare `l9.meta-authority/v2`: cite Semantic Foundation ledgers by `artifact_id` and sha256 at one `Quantum-L9/.github` revision, and declare this product as Dependency / `semantic-subsystem@1`. Pipeline and inventory derive header `authority`/`namespace` from that binding (ADR-052). The bound identity is applied after harvested metadata, so adopting a binding migrates files annotated earlier, and a bound pipeline refuses a `namespaceGlobs` entry that names anything but `product.id` with `META_AUTHORITY_IDENTITY_MISMATCH` instead of letting a per-glob value override the binding.
 - `resolveHeaderIdentity` / `verifySemanticFoundation` and `npm run semantics:verify` (offline; not part of `npm run validate`).
-- A bound root stamps header `owner` from `product.owner`, refuses a `--namespace-glob` whose namespace is not `product.id`, skips the literal `shared`/`core` verify rule, and records the binding on `PipelineResult.semanticBinding` and `coverage-report.json` `semantic_binding` (ADR-053). Unbound roots stay unchanged.
+- A bound root stamps header `owner` from `product.owner`, refuses a `--namespace-glob` whose namespace is not `product.id`, skips the literal `shared`/`core` verify rule, and records the binding on `PipelineResult.semanticBinding` and `coverage-report.json` `semantic_binding` (ADR-053). Unbound roots stay unchanged. A custom `--schema` targeting `file_header` cannot displace the bound `owner`, `authority` or `namespace`; its other fields are still carried.
 
 ### Changed
 
@@ -16,7 +16,9 @@
 
 ### Fixed
 
-- Inventory records `clock_skew:<clock>_after_inspected_at` when `created_at` or `modified_at` is later than `inspected_at`, without rewriting the observed clocks.
+- Inventory records `clock_skew:<clock>_after_inspected_at` when `created_at` or `modified_at` is later than `inspected_at`, without rewriting the observed clocks. The comparison is made on parsed instants, so an `inspected_at` with a UTC offset or a different precision is judged chronologically rather than by string order.
+- The repository model keeps clock-skew notes out of the semantic hash and out of packet diagnostics. They compare filesystem timestamps with the inventory clock, both of which belong to the checkout; letting them through made the semantic hash change when the same tree was copied to another path.
+- Inventory classifies, estimates tokens for, and size-limits the carrier-free body. A second run over an annotated tree no longer estimates the generated header, and a body within `hashMaxBytes` stays hashed after its header pushes the physical file past the limit.
 - A previously written inventory header whose fields equal the old placeholder literals is migrated on the next run instead of being harvested forever.
 
 ## 4.1.0 - 2026-09-17
