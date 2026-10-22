@@ -4,6 +4,20 @@ import { setAdapter, resetAdapter } from "../src/llm";
 
 afterEach(() => resetAdapter());
 
+describe("reconcileFieldsAsync — derived fields", () => {
+  it("takes the incoming id without asking the LLM", async () => {
+    let calls = 0;
+    setAdapter({ estimateTokens: () => 1, classify: async () => { calls += 1; return "no"; } });
+    const { merged, diffs } = await reconcileFieldsAsync(
+      { id: "l9.source.index" },
+      { id: "l9.source.src_index__ts" },
+    );
+    expect(merged.id).toBe("l9.source.src_index__ts");
+    expect(diffs.find((d) => d.field === "id")).toMatchObject({ action: "revise", reason: "derived field recomputed" });
+    expect(calls).toBe(0);
+  });
+});
+
 describe("reconcileFieldsAsync — LLM boolean for description", () => {
   it("calls LLM for description field when adapter.classify is wired", async () => {
     let calls: string[] = [];

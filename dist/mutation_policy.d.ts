@@ -33,6 +33,15 @@ export interface CarrierPolicyInput {
     mode: OperationMode;
     subjects: readonly CarrierSubject[];
 }
+/**
+ * The first two carrier tiers, without reading repository authority.
+ * `hard_skip` carries no metadata. `inventory_only` is inventoried and never annotated.
+ * Not a public export: `src/public/advanced.ts` does not re-export it.
+ */
+export declare function authorityFreeCarrierTier(input: {
+    path: string;
+    strategy: CarrierInjectionStrategy;
+}): CarrierDecision | null;
 export declare function resolveCarrierDecision(subject: CarrierSubject, authority: AuthorityConfig, mode: OperationMode): CarrierDecision;
 export declare function resolveCarrierDecisions(input: CarrierPolicyInput): CarrierDecision[];
 export declare function assertCarrierDecisionCoverage(subjects: readonly CarrierSubject[], decisions: readonly CarrierDecision[]): void;

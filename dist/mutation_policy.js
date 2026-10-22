@@ -8,6 +8,7 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.INLINE_MANAGED_ARTIFACT_TYPES = exports.CARRIER_PRECEDENCE = void 0;
+exports.authorityFreeCarrierTier = authorityFreeCarrierTier;
 exports.resolveCarrierDecision = resolveCarrierDecision;
 exports.resolveCarrierDecisions = resolveCarrierDecisions;
 exports.assertCarrierDecisionCoverage = assertCarrierDecisionCoverage;
@@ -240,6 +241,19 @@ function inlineOrDefaultDecision(relativePath, basename, subject, authority, mod
     return decision(relativePath, "central_manifest", authority.default_carrier === "inline_managed"
         ? "inline_managed requires an explicit safe inline_allow match"
         : "repository default carrier is central_manifest", `default_carrier:${authority.default_carrier}`);
+}
+/**
+ * The first two carrier tiers, without reading repository authority.
+ * `hard_skip` carries no metadata. `inventory_only` is inventoried and never annotated.
+ * Not a public export: `src/public/advanced.ts` does not re-export it.
+ */
+function authorityFreeCarrierTier(input) {
+    const relativePath = normalizeRelativePath(input.path);
+    const lowerPath = relativePath.toLowerCase();
+    const basename = posixBasename(lowerPath);
+    const subject = { path: relativePath, artifactType: "source", strategy: input.strategy };
+    return hardSkipDecision(relativePath, lowerPath, subject)
+        ?? inventoryOnlyDecision(relativePath, lowerPath, basename);
 }
 function resolveCarrierDecision(subject, authority, mode) {
     const relativePath = normalizeRelativePath(subject.path);

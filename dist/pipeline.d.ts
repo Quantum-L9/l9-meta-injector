@@ -1,7 +1,7 @@
 import { PipelineConfig, NormalizedMeta, InjectionRecord, VerifyResult } from "./schema";
 import type { ProductDeclaration, SemanticFoundationBinding } from "./schema";
 import { scanFiles } from "./retrieval";
-import type { CarrierInjectionStrategy } from "./mutation_policy";
+import { type CarrierInjectionStrategy } from "./mutation_policy";
 import type { DiscoverySummary } from "./discovery_contracts";
 import { PlacementPlan } from "./placement_policy";
 import { MetaV3Record } from "./meta_v3";
@@ -36,7 +36,7 @@ export interface InlineCarrierBlock {
 /** Per-path detail for a non-injectable skip (OBS-003 / ADR-018). */
 export interface NonInjectableSkipDetail {
     path: string;
-    reason: "taxonomy_non_injectable";
+    reason: "taxonomy_non_injectable" | "carrier_inventory_only" | "carrier_hard_skip";
     artifactType: string;
     confidence: "high" | "medium" | "low";
 }

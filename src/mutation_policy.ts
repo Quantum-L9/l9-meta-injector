@@ -331,6 +331,23 @@ function inlineOrDefaultDecision(
   );
 }
 
+/**
+ * The first two carrier tiers, without reading repository authority.
+ * `hard_skip` carries no metadata. `inventory_only` is inventoried and never annotated.
+ * Not a public export: `src/public/advanced.ts` does not re-export it.
+ */
+export function authorityFreeCarrierTier(input: {
+  path: string;
+  strategy: CarrierInjectionStrategy;
+}): CarrierDecision | null {
+  const relativePath = normalizeRelativePath(input.path);
+  const lowerPath = relativePath.toLowerCase();
+  const basename = posixBasename(lowerPath);
+  const subject: CarrierSubject = { path: relativePath, artifactType: "source", strategy: input.strategy };
+  return hardSkipDecision(relativePath, lowerPath, subject)
+    ?? inventoryOnlyDecision(relativePath, lowerPath, basename);
+}
+
 export function resolveCarrierDecision(
   subject: CarrierSubject,
   authority: AuthorityConfig,

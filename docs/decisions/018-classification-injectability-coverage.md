@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted, **amended by [ADR-054](054-pipeline-identity-and-carrier-lifecycle.md)**.
 
 ## Date
 

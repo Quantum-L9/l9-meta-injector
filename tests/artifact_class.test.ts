@@ -25,6 +25,8 @@ test.each<[string, SemanticArtifactClass]>([
   ["package.json", "build_manifest"],
   ["dist/index.js", "build_artifact"],
   ["examples/sample.md", "fixture"],
+  ["src/__fixtures__/sample.ts", "fixture"],
+  ["src/__mocks__/fs.js", "fixture"],
   ["scripts/preflight.sh", "script"],
   ["src/pipeline.ts", "pipeline"],
   ["prompts/prompt-intro.md", "prompt_template"],

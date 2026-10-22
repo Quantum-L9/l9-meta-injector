@@ -85,6 +85,26 @@ describe("QTE-004 — dry-run writes a diff and mutates nothing", () => {
     expect(fs.existsSync(rec.dryRunDiffPath!)).toBe(true);
     expect(fs.readFileSync(rec.dryRunDiffPath!, "utf8")).toMatch(/^\+/m);
   });
+
+  test("nested files land in mirrored diff paths and a parent escape is refused", () => {
+    const root = tmp();
+    const out = tmp();
+    fs.mkdirSync(path.join(root, "src", "a"), { recursive: true });
+    fs.mkdirSync(path.join(root, "src", "b"), { recursive: true });
+    const a = path.join(root, "src", "a", "index.ts");
+    const b = path.join(root, "src", "b", "index.ts");
+    fs.writeFileSync(a, "export const a = 1;\n");
+    fs.writeFileSync(b, "export const b = 2;\n");
+    const meta = (fp: string) => buildMeta(fp, fs.readFileSync(fp, "utf8"), extract(fs.readFileSync(fp, "utf8")), classify(fp, fs.readFileSync(fp, "utf8"), "none"), NS, "l9.auto", "2026-01-01T00:00:00.000Z", root);
+    const recA = injectFile(a, meta(a), OPTS(out, true));
+    const recB = injectFile(b, meta(b), OPTS(out, true));
+    expect(recA.dryRunDiffPath).toBe(path.join(out, "src", "a", "index.ts.diff"));
+    expect(recB.dryRunDiffPath).toBe(path.join(out, "src", "b", "index.ts.diff"));
+    expect(fs.existsSync(recA.dryRunDiffPath!)).toBe(true);
+    expect(fs.existsSync(recB.dryRunDiffPath!)).toBe(true);
+    const escaped = { ...meta(a), source_path: "../secret" };
+    expect(() => injectFile(a, escaped, OPTS(out, true))).toThrow(/escapes output directory/);
+  });
 });
 
 describe("QTE-004 — re-run idempotency and body preservation", () => {

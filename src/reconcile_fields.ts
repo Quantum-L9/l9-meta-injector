@@ -35,6 +35,27 @@ const LIST_UNION_FIELDS = new Set([
 // never intent), so the entry was dead and could never match a reconciled field.
 const LLM_MATERIALITY_FIELDS = new Set(["description"]);
 
+/** Identity and size fields. They follow the current source, not the 20% heuristic. */
+const DERIVED_FIELDS = new Set(["id", "source_path", "content_hash", "token_cost_estimate"]);
+
+function takeDerivedField(
+  field: string,
+  oldVal: unknown,
+  newVal: unknown,
+  merged: MetaRecord,
+  diffs: FieldDiff[],
+): boolean {
+  if (!DERIVED_FIELDS.has(field)) return false;
+  if (JSON.stringify(oldVal) === JSON.stringify(newVal)) {
+    merged[field] = oldVal;
+    diffs.push({ field, action: "keep", oldValue: oldVal, newValue: newVal, reason: "derived field recomputed" });
+  } else {
+    merged[field] = newVal;
+    diffs.push({ field, action: "revise", oldValue: oldVal, newValue: newVal, reason: "derived field recomputed" });
+  }
+  return true;
+}
+
 function hasExplicitDeprecation(existing: MetaRecord): boolean {
   if (existing["deprecated"] === true || existing["deprecated"] === "true") return true;
   if (existing["superseded_by"] && existing["superseded_by"] !== UNKNOWN) return true;
@@ -106,6 +127,8 @@ export async function reconcileFieldsAsync(
       continue;
     }
 
+    if (takeDerivedField(field, oldVal, newVal, merged, diffs)) continue;
+
     if (LIST_UNION_FIELDS.has(field)) {
       const unioned = unionArrays(oldVal, newVal);
       if (JSON.stringify(unioned) === JSON.stringify(oldVal)) {
@@ -170,6 +193,8 @@ export function reconcileFields(
       diffs.push({ field, action: "add", oldValue: undefined, newValue: newVal, reason: "field did not exist" });
       continue;
     }
+
+    if (takeDerivedField(field, oldVal, newVal, merged, diffs)) continue;
 
     if (LIST_UNION_FIELDS.has(field)) {
       const unioned = unionArrays(oldVal, newVal);

@@ -39,6 +39,7 @@ const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
 const schema_1 = require("./schema");
 const retrieval_1 = require("./retrieval");
+const mutation_policy_1 = require("./mutation_policy");
 const extract_1 = require("./extract");
 const classify_1 = require("./classify");
 const normalize_meta_1 = require("./normalize_meta");
@@ -81,6 +82,21 @@ function inlineCarrierBlockFor(raw) {
 }
 function toCfg(config) {
     return { namespace: config.namespace ?? "l9", authority: config.authority ?? "", nearDupThreshold: config.nearDupThreshold, hashPrefixLength: config.hashPrefixLength, outputDir: config.outDir, indexDir: config.indexDir, namespaceGlobs: config.namespaceGlobs };
+}
+/** Refuse a run in which two paths normalize to one metadata id, naming every colliding path. */
+function assertUniqueMetadataIds(subjects) {
+    const byId = new Map();
+    for (const subject of subjects) {
+        const id = String(subject.metadata["id"] ?? "");
+        const paths = byId.get(id) ?? [];
+        paths.push(subject.path);
+        byId.set(id, paths);
+    }
+    const duplicates = [...byId.entries()].filter(([, paths]) => paths.length > 1);
+    if (duplicates.length === 0)
+        return;
+    const detail = duplicates.map(([id, paths]) => `${id}: ${paths.join(", ")}`).join("; ");
+    throw new Error(`DUPLICATE_METADATA_ID: ${duplicates.length} id(s) map to more than one path: ${detail}`);
 }
 /** Refuse a real run over a tree with a blocking discovery disposition, naming the paths. */
 function assertTreeGovernable(discovery) {
@@ -202,6 +218,7 @@ async function runPipelineAsync(config) {
     // Files that cannot carry their own inline metadata. They are governed and indexed,
     // but never inline-patched, and their bytes are never touched.
     const inlineCarrierBlocks = new Map();
+    const carrierTiers = new Map();
     for (const e of scanned) {
         const raw = fs.readFileSync(e.sourcePath, "utf8");
         const spec = (0, comment_1.resolveStrategy)(e.sourcePath, raw);
@@ -219,6 +236,21 @@ async function runPipelineAsync(config) {
         // leading `---` in non-markdown (e.g. YAML document separators) be mistaken for
         // frontmatter and truncate real content, skewing extraction/classification/hash.
         const body = spec.strategy === "yaml-frontmatter" ? (0, extract_1.splitContent)(cleanRaw).body : cleanRaw;
+        const relativePath = relativeSourcePath(root, e.sourcePath);
+        const cls = (0, classify_1.classify)(relativePath, body, e.headerConvention);
+        classifications.set(e.sourcePath, cls);
+        const tier = (0, mutation_policy_1.authorityFreeCarrierTier)({ path: relativePath, strategy: spec.strategy });
+        if (tier?.carrier === "hard_skip") {
+            skippedNonInjectablePaths.push(e.sourcePath);
+            skippedNonInjectableDetails.push({
+                path: e.sourcePath,
+                reason: "carrier_hard_skip",
+                artifactType: cls.artifactType,
+                confidence: cls.confidence,
+            });
+            continue;
+        }
+        carrierTiers.set(e.sourcePath, tier);
         bodies.set(e.sourcePath, body);
         // Classify inline-carrier eligibility here, before any mutation planning. A file whose
         // existing frontmatter is outside the patchable subset is still a governed subject —
@@ -231,8 +263,6 @@ async function runPipelineAsync(config) {
         if (inlineCarrierBlock)
             inlineCarrierBlocks.set(e.sourcePath, inlineCarrierBlock);
         const ef = (0, extract_1.extract)(body);
-        const cls = (0, classify_1.classify)(e.sourcePath, body, e.headerConvention);
-        classifications.set(e.sourcePath, cls);
         let meta = (0, normalize_meta_1.buildMeta)(e.sourcePath, body, ef, cls, nsCfg, identity.authority, metadataTimestamp, root, identity);
         // assist: LLM fills prose-origin fields only when seed fails "good" predicate
         if (config.llmEnabled) {
@@ -262,7 +292,7 @@ async function runPipelineAsync(config) {
                 // already use (examples/meta-schema.example.yaml), so the same schema file is
                 // reusable across `inventory` and `pipeline` modes without rewriting `source:`.
                 artifact_id: meta.id,
-                relative_path: relativeSourcePath(root, e.sourcePath),
+                relative_path: relativePath,
                 evidence_excerpt: cls.signals.join(", ") || UNKNOWN_EXCERPT,
                 classification_confidence: CONFIDENCE_NUMERIC[cls.confidence],
                 created_at: meta.created_or_detected_at,
@@ -290,7 +320,7 @@ async function runPipelineAsync(config) {
         }
         metas.set(e.sourcePath, meta);
         metadataSubjects.push({
-            path: relativeSourcePath(root, e.sourcePath),
+            path: relativePath,
             artifactType: meta.artifact_type,
             strategy: spec.strategy,
             contentHash: meta.content_hash,
@@ -298,6 +328,7 @@ async function runPipelineAsync(config) {
             ...(inlineCarrierBlock ? { inlineCarrierBlock } : {}),
         });
     }
+    assertUniqueMetadataIds(metadataSubjects);
     const opts = {
         dryRun: config.dryRun,
         outDir: config.outDir,
@@ -309,7 +340,18 @@ async function runPipelineAsync(config) {
     for (const e of scanned) {
         const meta = metas.get(e.sourcePath);
         if (!meta)
-            continue; // binary — already recorded in skippedBinaryPaths
+            continue; // binary or hard_skip — already recorded
+        if (carrierTiers.get(e.sourcePath)?.carrier === "inventory_only") {
+            skippedNonInjectablePaths.push(e.sourcePath);
+            const cls = classifications.get(e.sourcePath);
+            skippedNonInjectableDetails.push({
+                path: e.sourcePath,
+                reason: "carrier_inventory_only",
+                artifactType: cls?.artifactType ?? meta.artifact_type,
+                confidence: cls?.confidence ?? "low",
+            });
+            continue;
+        }
         if (!meta.injectable) {
             skippedNonInjectablePaths.push(e.sourcePath);
             const cls = classifications.get(e.sourcePath);

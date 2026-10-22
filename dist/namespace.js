@@ -81,17 +81,43 @@ function derivePrimitiveFolder(filePath) {
     if (dot)
         return dot[1];
     const norm = filePath.replace(/\\/g, "/").toLowerCase();
+    // A leading slash makes a top-level folder (`skills/x.md`) match the same way a
+    // nested one (`repo/skills/x.md`) does. `includes("/skills/")` misses the first.
+    const bounded = `/${norm.replace(/^\/+/, "")}`;
     const segMap = {
         skills: "skill", playbooks: "playbook", kernels: "kernel", contexts: "context",
         prompts: "prompt", doctrines: "doctrine", tests: "test", scripts: "script",
     };
     for (const [seg, prim] of Object.entries(segMap)) {
-        if (norm.includes(`/${seg}/`))
+        if (bounded.includes(`/${seg}/`))
             return prim;
     }
     if (/^prompt-/i.test(path.basename(filePath)))
         return "prompt";
     return "unknown";
+}
+/** Character rules shared with {@link toSnakeStem}, without stripping an extension. */
+function snakeSegment(value) {
+    return value.replace(/([a-z])([A-Z])/g, "$1_$2").replace(/[-\s]+/g, "_")
+        .replace(/[^a-z0-9_]/gi, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toLowerCase();
+}
+/**
+ * Path identity. The final extension is kept behind `__`, which {@link snakeSegment}
+ * cannot emit because it collapses underscore runs. Files that differ only by
+ * extension therefore stay distinct, and `file.md` stays distinct from an
+ * extensionless `file_md`. An absolute input uses the basename, matching
+ * `stableSourcePath`.
+ */
+function identityStem(filePath) {
+    const posix = filePath.replace(/\\/g, "/");
+    const target = path.posix.isAbsolute(posix) ? path.posix.basename(posix) : posix;
+    const baseName = path.posix.basename(target);
+    const extWithDot = path.posix.extname(baseName);
+    const ext = extWithDot.startsWith(".") ? extWithDot.slice(1).toLowerCase() : "";
+    const withoutExt = ext ? target.slice(0, -extWithDot.length) : target;
+    const body = withoutExt.split("/").map(snakeSegment).filter(Boolean).join("_");
+    const extStem = ext ? snakeSegment(ext) : "";
+    return extStem ? `${body}__${extStem}` : body;
 }
 function toSnakeStem(filename) {
     const stem = path.basename(filename, path.extname(filename))
@@ -117,7 +143,7 @@ function resolveNamespace(filePath, cfg, typeHint) {
     let primitiveFolder = derivePrimitiveFolder(filePath);
     if (primitiveFolder === "unknown" && typeHint && typeHint !== "unknown")
         primitiveFolder = typeHint;
-    const stem = toSnakeStem(path.basename(filePath));
+    const stem = identityStem(filePath);
     return { namespace, sharingScope, primitiveFolder, idStem: `${namespace}.${primitiveFolder}.${stem}` };
 }
 //# sourceMappingURL=namespace.js.map

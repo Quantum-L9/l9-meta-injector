@@ -100,20 +100,27 @@ export function classify(filePath: string, body: string, _hc: HeaderConvention):
   // Prompt-*.md
   if (fn.startsWith("prompt-")) return { artifactType: "prompt", family: detectFamily(text), signals: extractSignals(text), confidence: "high" };
 
-  // Non-prose files (code, config, markup, data) are "source" — injectable, but the
-  // prose taxonomy (skill/kernel/test/script/…) and its keyword/path heuristics only
-  // make sense for markdown/txt artifacts and must not be applied to code. (An explicit
-  // dot-convention name like `foo.skill.ts` still wins above.)
+  // Non-prose files stay source unless the semantic class plus a path or shell-extension
+  // guard says test or script. Keyword and prose path heuristics do not apply.
+  // A dot-convention name like `foo.skill.ts` still wins above.
   const ext = path.extname(filePath).toLowerCase();
+  const bounded = `/${norm.replace(/^\/+/, "")}`;
   if (!PROSE_EXTS.has(ext)) {
-    return { artifactType: "source", family: detectFamily(text), signals: extractSignals(text), confidence: "low" };
+    const kind = classifyArtifact(filePath, body).artifactClass;
+    const fixtureSegment = /\/(fixtures?|__fixtures__|mocks?|__mocks__)\//.test(bounded);
+    const scriptSegment = /\/scripts?\//.test(bounded);
+    const shell = ext === ".sh" || ext === ".bash" || ext === ".zsh";
+    let artifactType: ArtifactType = "source";
+    if (kind === "test_suite" || (kind === "fixture" && fixtureSegment)) artifactType = "test";
+    else if (kind === "script" && (shell || scriptSegment)) artifactType = "script";
+    return { artifactType, family: detectFamily(text), signals: extractSignals(text), confidence: "low" };
   }
 
   // --- markdown/txt only, below ---
 
-  // Path segment
+  // Path segment. The leading slash matches a top-level folder (`skills/a.md`).
   for (const ts of TYPE_SIGNALS) {
-    if (ts.pathPatterns.some((p) => norm.includes(`/${p}/`))) {
+    if (ts.pathPatterns.some((p) => bounded.includes(`/${p}/`))) {
       return { artifactType: ts.type, family: detectFamily(text), signals: extractSignals(text), confidence: "high" };
     }
   }
@@ -130,6 +137,10 @@ export function classify(filePath: string, body: string, _hc: HeaderConvention):
   }
 
   if (score === 0) best = "context";
+
+  // Keyword-only promotion to an executable prose type is capped. Dot-convention,
+  // prompt-, and path tiers already returned above.
+  if (best === "skill" || best === "playbook" || best === "kernel" || best === "doctrine") best = "context";
 
   const conf = score >= 2 ? "medium" : "low";
   return { artifactType: best, family: detectFamily(text), signals: extractSignals(text), confidence: conf };

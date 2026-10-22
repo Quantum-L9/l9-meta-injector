@@ -25,6 +25,26 @@ describe("resolveNamespace", () => {
   it("dot-convention skill detection", () => expect(resolveNamespace("/path/l9.skill.lint_file.md", base).primitiveFolder).toBe("skill"));
   it("Prompt- prefix → prompt primitive", () => expect(resolveNamespace("/path/Prompt-AuditAgent.md", base).primitiveFolder).toBe("prompt"));
   it("idStem format is ns.primitive.stem", () => expect(resolveNamespace("/repos/l9/skills/lint_file.md", base).idStem).toMatch(/^l9\.skill\.[a-z0-9_]+$/));
+  it("a top-level skills folder is a skill primitive", () => {
+    expect(resolveNamespace("skills/lint_file.md", base).primitiveFolder).toBe("skill");
+  });
+  it("keeps the extension so files that differ only by extension stay distinct", () => {
+    expect(resolveNamespace("config.ts", base, "source").idStem).toBe("l9.source.config__ts");
+    expect(resolveNamespace("config.json", base, "source").idStem).toBe("l9.source.config__json");
+    expect(resolveNamespace("notes.md", base, "context").idStem).toBe("l9.context.notes__md");
+    expect(resolveNamespace("notes.txt", base, "context").idStem).toBe("l9.context.notes__txt");
+  });
+  it("still collapses hyphen and underscore into one stem", () => {
+    expect(resolveNamespace("a-b.md", base).idStem).toBe(resolveNamespace("a_b.md", base).idStem);
+  });
+  it("nested index files stay unique and an absolute path uses the basename", () => {
+    expect(resolveNamespace("src/index.ts", base, "source").idStem).toBe("l9.source.src_index__ts");
+    expect(resolveNamespace("lib/index.ts", base, "source").idStem).toBe("l9.source.lib_index__ts");
+    expect(resolveNamespace("/repos/l9/src/index.ts", base, "source").idStem).toBe("l9.source.index__ts");
+  });
+  it("a stem does not change when the call is repeated", () => {
+    expect(resolveNamespace("src/app.ts", base).idStem).toBe(resolveNamespace("src/app.ts", base).idStem);
+  });
 });
 
 describe("toSnakeStem", () => {
