@@ -430,11 +430,21 @@ export function resolveHeaderIdentity(root: string, request: HeaderIdentityReque
         loaded.path,
       ));
     }
+    for (const rule of request.namespaceGlobs ?? []) {
+      if (rule.namespace === authority.product.id) continue;
+      conflicts.push(conflict(
+        "META_AUTHORITY_IDENTITY_MISMATCH",
+        `namespace glob '${rule.glob}' maps to '${rule.namespace}', which does not match bound product.id '${authority.product.id}'`,
+        loaded.path,
+      ));
+    }
     return {
       authority: authority.product.owner,
       namespace: authority.product.id,
       source: "semantic_binding",
       conflicts,
+      product: authority.product,
+      semanticFoundation: authority.semantic_foundation,
     };
   }
 

@@ -363,9 +363,11 @@ Outputs: `scanned`, `injected` (`pipeline`/`skills`), `verification-passed` (`pi
 
 This package cites org Semantic Foundation ledgers; it does not copy `Quantum-L9/.github/semantics/`.
 
-A repository may declare `.l9/meta-authority.yaml` with schema `l9.meta-authority/v2`: pin one `Quantum-L9/.github` revision, cite each ledger by `artifact_id` and sha256, and declare `product.id`, `product.owner`, `product.kind`, and archetype. `resolveHeaderIdentity` then stamps header `authority` from `product.owner` and `namespace` from `product.id`. A conflicting `--authority` or `--namespace` fails closed with `META_AUTHORITY_IDENTITY_MISMATCH`. An invalid v2 file fails with `META_SEMANTIC_BINDING_INVALID` and never falls back to the folder name.
+A repository may declare `.l9/meta-authority.yaml` with schema `l9.meta-authority/v2`: pin one `Quantum-L9/.github` revision, cite each ledger by `artifact_id` and sha256, and declare `product.id`, `product.owner`, `product.kind`, and archetype. `resolveHeaderIdentity` then stamps header `authority` from `product.owner` and `namespace` from `product.id`. Source, test, and script headers stamp `owner` from `product.owner`. A conflicting `--authority`, `--namespace`, or `--namespace-glob` whose namespace is not `product.id` fails closed with `META_AUTHORITY_IDENTITY_MISMATCH`. An invalid v2 file fails with `META_SEMANTIC_BINDING_INVALID` and never falls back to the folder name.
 
-An unbound root (no v2 binding) still requires `--authority` and defaults namespace to the directory name. Inventory uses the binding when present; otherwise it keeps the ADR-051 harvest-or-Unknown derivation.
+A bound run records the cited foundation and product on `PipelineResult.semanticBinding` and, when reports are persisted, as the top-level `semantic_binding` key of `coverage-report.json`.
+
+An unbound root (no v2 binding) still requires `--authority` and defaults namespace to the directory name. Inventory uses the binding when present; otherwise it keeps the ADR-051 harvest-or-Unknown derivation. Unbound `owner` stays `Unknown`.
 
 This repository's own declaration is Dependency / `l9.dependency-archetype/semantic-subsystem@1`. Admission of Semantic Foundation v3.6.0 is recorded as `candidate`.
 

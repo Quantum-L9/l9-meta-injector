@@ -158,12 +158,18 @@ function assertNamespaceGlob(pair) {
   return value;
 }
 
+function parseNamespaceGlobRule(pair) {
+  const value = assertNamespaceGlob(pair);
+  const index = value.indexOf("=");
+  return { glob: value.slice(0, index), namespace: value.slice(index + 1) };
+}
+
 function sanitizeSegment(value, fallback) {
   const clean = String(value ?? "").replace(/[^A-Za-z0-9_.-]+/g, "-").replace(/^-+|-+$/g, "");
   return clean || fallback;
 }
 
-function resolveDispatchIdentity(targetRoot, authorityRaw, namespaceRaw, mode) {
+function resolveDispatchIdentity(targetRoot, authorityRaw, namespaceRaw, mode, namespaceGlobs) {
   let pkg;
   try {
     pkg = require(path.join(__dirname, "..", "..", "dist", "index.js"));
@@ -178,6 +184,7 @@ function resolveDispatchIdentity(targetRoot, authorityRaw, namespaceRaw, mode) {
     namespace: namespaceRaw || undefined,
     unboundNamespaceDefault: path.basename(targetRoot),
     requireAuthorityWhenUnbound: mode === "check" || mode === "apply" || mode === "skills",
+    namespaceGlobs,
   });
   if (result.conflicts.length) {
     fail(result.conflicts.map((item) => `${item.code}: ${item.message}`).join("; "));
@@ -244,12 +251,13 @@ function normalizeEnvironment(rawEnv) {
 
   const namespaceRaw = String(env.L9_INPUT_NAMESPACE ?? "").trim();
   const authorityRaw = assertText("authority", String(env.L9_INPUT_AUTHORITY ?? "").trim(), { allowEmpty: true }).trim();
-  const identity = resolveDispatchIdentity(targetRoot, authorityRaw, namespaceRaw, modeResolution.mode);
+  const namespaceGlobRules = parseRepeatedValues(env.L9_INPUT_NAMESPACE_GLOBS).map(parseNamespaceGlobRule);
+  const identity = resolveDispatchIdentity(targetRoot, authorityRaw, namespaceRaw, modeResolution.mode, namespaceGlobRules);
   const namespace = assertText("namespace", identity.namespace);
   const authority = assertText("authority", identity.authority, { allowEmpty: modeResolution.mode === "inventory" }).trim();
   const glob = assertText("glob", String(env.L9_INPUT_GLOB ?? "**/*").trim() || "**/*");
   const omitPatterns = parseCsvPatterns(env.L9_INPUT_OMIT);
-  const namespaceGlobs = parseRepeatedValues(env.L9_INPUT_NAMESPACE_GLOBS).map(assertNamespaceGlob);
+  const namespaceGlobs = namespaceGlobRules.map((rule) => `${rule.glob}=${rule.namespace}`);
   const nearDupThreshold = parseNumber("near-dup", env.L9_INPUT_NEAR_DUP, 0.9, (n) => n >= 0 && n <= 1, "between 0 and 1");
   const hashPrefixLength = parseNumber("hash-prefix-length", env.L9_INPUT_HASH_PREFIX_LENGTH, 16, (n) => Number.isInteger(n) && n >= 8 && n <= 64, "an integer from 8 to 64");
 
@@ -382,11 +390,12 @@ function parseCommandLine(argv, env = process.env) {
   const llmAllowInsecure = parseBoolean("llm-allow-insecure", values.get("--llm-allow-insecure"), false);
   const namespaceRaw = values.get("--namespace") ?? "";
   const authorityRaw = assertText("authority", values.get("--authority") ?? "", { allowEmpty: true }).trim();
-  const identity = resolveDispatchIdentity(targetRoot, authorityRaw, namespaceRaw, modeResolution.mode);
+  const namespaceGlobRules = (repeated.get("--namespace-glob") ?? []).map(parseNamespaceGlobRule);
+  const identity = resolveDispatchIdentity(targetRoot, authorityRaw, namespaceRaw, modeResolution.mode, namespaceGlobRules);
   const namespace = assertText("namespace", identity.namespace);
   const authority = assertText("authority", identity.authority, { allowEmpty: modeResolution.mode === "inventory" }).trim();
   const glob = assertText("glob", values.get("--glob") ?? "**/*");
-  const namespaceGlobs = (repeated.get("--namespace-glob") ?? []).map(assertNamespaceGlob);
+  const namespaceGlobs = namespaceGlobRules.map((rule) => `${rule.glob}=${rule.namespace}`);
   const nearDupThreshold = parseNumber("near-dup", values.get("--near-dup"), 0.9, (n) => n >= 0 && n <= 1, "between 0 and 1");
   const hashPrefixLength = parseNumber("hash-prefix-length", values.get("--hash-prefix-length"), 16, (n) => Number.isInteger(n) && n >= 8 && n <= 64, "an integer from 8 to 64");
   let reportPath;

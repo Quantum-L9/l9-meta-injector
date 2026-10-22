@@ -6,6 +6,7 @@
 
 - `.l9/meta-authority.yaml` may declare `l9.meta-authority/v2`: cite Semantic Foundation ledgers by `artifact_id` and sha256 at one `Quantum-L9/.github` revision, and declare this product as Dependency / `semantic-subsystem@1`. Pipeline and inventory derive header `authority`/`namespace` from that binding (ADR-052). The bound identity is applied after harvested metadata, so adopting a binding migrates files annotated earlier, and a bound pipeline refuses a `namespaceGlobs` entry that names anything but `product.id` with `META_AUTHORITY_IDENTITY_MISMATCH` instead of letting a per-glob value override the binding.
 - `resolveHeaderIdentity` / `verifySemanticFoundation` and `npm run semantics:verify` (offline; not part of `npm run validate`).
+- A bound root stamps header `owner` from `product.owner`, refuses a `--namespace-glob` whose namespace is not `product.id`, skips the literal `shared`/`core` verify rule, and records the binding on `PipelineResult.semanticBinding` and `coverage-report.json` `semantic_binding` (ADR-053). Unbound roots stay unchanged. A custom `--schema` targeting `file_header` cannot displace the bound `owner`, `authority` or `namespace`; its other fields are still carried.
 
 ### Changed
 

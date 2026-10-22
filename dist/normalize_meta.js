@@ -85,7 +85,7 @@ function projectPrimitiveTaxonomy(artifactType) {
 function serializeToYamlFrontMatter(meta) {
     return (0, yaml_serialize_1.serializeYamlObject)(meta);
 }
-function buildMeta(filePath, originalBody, ef, cr, nsCfg, authority, detectedAt, sourceRoot) {
+function buildMeta(filePath, originalBody, ef, cr, nsCfg, authority, detectedAt, sourceRoot, identity) {
     const sourcePath = stableSourcePath(filePath, sourceRoot);
     const tax = projectPrimitiveTaxonomy(cr.artifactType);
     const { namespace, sharingScope, idStem } = (0, namespace_1.resolveNamespace)(sourcePath, nsCfg, cr.artifactType);
@@ -110,7 +110,7 @@ function buildMeta(filePath, originalBody, ef, cr, nsCfg, authority, detectedAt,
         return { ...base, governs: schema_1.UNKNOWN, decision_drivers: schema_1.UNKNOWN, applies_to_domains: schema_1.UNKNOWN };
     }
     if (cr.artifactType === "test" || cr.artifactType === "script" || cr.artifactType === "source") {
-        return { ...base, owner: schema_1.UNKNOWN };
+        return { ...base, owner: identity?.product?.owner ?? schema_1.UNKNOWN };
     }
     const executable = {
         ...base,

@@ -102,6 +102,7 @@ const identity = resolveCliHeaderIdentity(pkg, root, "pipeline-cli", {
   authority: opt("--authority", null),
   namespace: process.argv.includes("--namespace") ? opt("--namespace", "") : undefined,
   unboundNamespaceDefault: path.basename(root),
+  namespaceGlobs: namespaceGlobs.length ? namespaceGlobs : undefined,
 });
 
 const llmEnabled = flag("--llm");

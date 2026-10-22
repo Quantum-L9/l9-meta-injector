@@ -69,6 +69,8 @@ export interface HeaderIdentityRequest {
   unboundNamespaceDefault?: string;
   /** Inventory may stamp Unknown when unbound; pipeline/CLI require an operator value. Default true. */
   requireAuthorityWhenUnbound?: boolean;
+  /** Operator per-path namespace overrides. A bound root admits only its own `product.id`. */
+  namespaceGlobs?: Array<{ glob: string; namespace: string }>;
 }
 
 export interface HeaderIdentityResolution {
@@ -76,6 +78,10 @@ export interface HeaderIdentityResolution {
   namespace: string;
   source: HeaderIdentitySource;
   conflicts: AuthorityConflict[];
+  /** Present only when `source` is `semantic_binding`. */
+  product?: ProductDeclaration;
+  /** Present only when `source` is `semantic_binding`. */
+  semanticFoundation?: SemanticFoundationBinding;
 }
 
 export type MetadataCarrier =

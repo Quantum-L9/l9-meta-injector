@@ -158,7 +158,9 @@ function validateCommittedPlan(root: string, plan: CarrierOperationPlan): void {
     if (actualHash !== planned.expectedContentHash) {
       throw new Error(`APPLY_POSTCONDITION_FAILED: ${relativePath(root, planned.sourcePath)} hash mismatch`);
     }
-    const verified = verify(planned.sourcePath, planned.originalBodyHash, planned.meta);
+    const verified = verify(planned.sourcePath, planned.originalBodyHash, planned.meta, {
+      semanticallyBound: plan.authority.product !== undefined,
+    });
     if (verified.issues.length > 0) {
       throw new Error(`APPLY_VERIFICATION_FAILED: ${relativePath(root, planned.sourcePath)}: ${verified.issues.join("; ")}`);
     }

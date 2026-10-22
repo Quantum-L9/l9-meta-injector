@@ -2,6 +2,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { PipelineConfig, NormalizedMeta, InjectionRecord, VerifyResult, UNKNOWN, asRecord, coerceNormalizedMeta } from "./schema";
+import type { ProductDeclaration, SemanticFoundationBinding } from "./schema";
 import { discoverFiles, scanFiles } from "./retrieval";
 import type { CarrierInjectionStrategy } from "./mutation_policy";
 import type { DiscoverySummary } from "./discovery_contracts";
@@ -135,6 +136,11 @@ export interface PipelineResult {
   metrics: MetricsSnapshot;
   /** Archives expanded in local-files mode (empty when `localFiles` is off). */
   archives: ArchiveRecord[];
+  /** Present only when the root carries an l9.meta-authority/v2 product binding. */
+  semanticBinding?: {
+    semantic_foundation: SemanticFoundationBinding;
+    product: ProductDeclaration;
+  };
 }
 
 /** Refuse a real run over a tree with a blocking discovery disposition, naming the paths. */
@@ -178,20 +184,8 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
     authority: config.authority,
     namespace: config.namespace,
     unboundNamespaceDefault: path.basename(root),
+    namespaceGlobs: config.namespaceGlobs,
   }));
-  // A v2-bound root stamps every header with product.id. A per-glob override
-  // naming anything else would bypass the top-level mismatch check that already
-  // rejects a conflicting --namespace, so it is refused rather than silently
-  // dropped; a glob that restates product.id is harmless and stays.
-  if (identity.source === "semantic_binding") {
-    const foreign = (config.namespaceGlobs ?? []).find((rule) => rule.namespace !== identity.namespace);
-    if (foreign !== undefined) {
-      throw new Error(
-        `META_AUTHORITY_IDENTITY_MISMATCH: namespace glob '${foreign.glob}' names '${foreign.namespace}', `
-        + `which does not match bound product.id '${identity.namespace}'`,
-      );
-    }
-  }
   const nsCfg = toCfg({
     ...config,
     authority: identity.authority,
@@ -304,7 +298,7 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
     const ef = extract(body);
     const cls = classify(e.sourcePath, body, e.headerConvention);
     classifications.set(e.sourcePath, cls);
-    let meta = buildMeta(e.sourcePath, body, ef, cls, nsCfg, identity.authority, metadataTimestamp, root);
+    let meta = buildMeta(e.sourcePath, body, ef, cls, nsCfg, identity.authority, metadataTimestamp, root, identity);
 
     // assist: LLM fills prose-origin fields only when seed fails "good" predicate
     if (config.llmEnabled) {
@@ -347,7 +341,19 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
       }
       // Merge, not replace: schema fields win on name collision, canonical identity
       // fields survive untouched otherwise (coerce re-validates the identity block).
-      meta = coerceNormalizedMeta({ ...asRecord(meta), ...applied.fields });
+      const merged: Record<string, unknown> = { ...asRecord(meta), ...applied.fields };
+      // A bound run's identity comes from the binding, never from the schema: a
+      // schema field named owner, authority or namespace would otherwise make
+      // injected headers, the metadata index and MetaV3 governance claim an
+      // arbitrary identity in place of product.owner / product.id. The owner is
+      // reasserted only where the canonical meta carried one (source, test,
+      // script), so a schema cannot invent the field for other types either.
+      if (identity.source === "semantic_binding") {
+        merged.authority = identity.authority;
+        merged.namespace = identity.namespace;
+        if ("owner" in asRecord(meta)) merged.owner = identity.product?.owner ?? UNKNOWN;
+      }
+      meta = coerceNormalizedMeta(merged);
     }
 
     metas.set(e.sourcePath, meta);
@@ -395,7 +401,9 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
     metrics.recordInject();
   }
 
-  const verified = injected.map((r) => verify(r.sourcePath, r.originalBodyHash, r.meta));
+  const verified = injected.map((r) => verify(r.sourcePath, r.originalBodyHash, r.meta, {
+    semanticallyBound: identity.source === "semantic_binding",
+  }));
   // Consume the verification signal at the decision point — a computed VerifyResult
   // that nothing inspects is indistinguishable from no verification at all. Aggregate
   // failures, surface them (independent of dryRun), and expose a gate flag to callers/CI.
@@ -446,8 +454,15 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
     reportPath: coverageReportPath,
     discovery: discovery.summary,
   };
+  const semanticBinding = identity.source === "semantic_binding" && identity.semanticFoundation && identity.product
+    ? { semantic_foundation: identity.semanticFoundation, product: identity.product }
+    : undefined;
   if (config.persistOutputs !== false) {
-    const persistedCoverage = { ...coverage, reportPath: path.basename(coverageReportPath) };
+    const persistedCoverage = {
+      ...coverage,
+      reportPath: path.basename(coverageReportPath),
+      ...(semanticBinding ? { semantic_binding: semanticBinding } : {}),
+    };
     fs.writeFileSync(coverageReportPath, JSON.stringify(persistedCoverage, null, 2));
   }
 
@@ -506,5 +521,9 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
     fs.writeFileSync(path.join(d, "archives-expanded.json"), JSON.stringify(archives, null, 2));
   }
 
-  return { runStartedAt, scanned, metadataSubjects, injected, verified, verification, coverage, placementPlans, metaV3, metrics: metrics.snapshot(), archives };
+  return {
+    runStartedAt, scanned, metadataSubjects, injected, verified, verification, coverage,
+    placementPlans, metaV3, metrics: metrics.snapshot(), archives,
+    ...(semanticBinding ? { semanticBinding } : {}),
+  };
 }

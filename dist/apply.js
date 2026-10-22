@@ -173,7 +173,9 @@ function validateCommittedPlan(root, plan) {
         if (actualHash !== planned.expectedContentHash) {
             throw new Error(`APPLY_POSTCONDITION_FAILED: ${relativePath(root, planned.sourcePath)} hash mismatch`);
         }
-        const verified = (0, verify_1.verify)(planned.sourcePath, planned.originalBodyHash, planned.meta);
+        const verified = (0, verify_1.verify)(planned.sourcePath, planned.originalBodyHash, planned.meta, {
+            semanticallyBound: plan.authority.product !== undefined,
+        });
         if (verified.issues.length > 0) {
             throw new Error(`APPLY_VERIFICATION_FAILED: ${relativePath(root, planned.sourcePath)}: ${verified.issues.join("; ")}`);
         }

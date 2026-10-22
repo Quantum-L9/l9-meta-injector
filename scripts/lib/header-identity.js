@@ -7,6 +7,7 @@ function resolveCliHeaderIdentity(pkg, root, label, argv) {
     authority: authorityRaw || undefined,
     namespace: namespaceRaw || undefined,
     unboundNamespaceDefault: argv.unboundNamespaceDefault,
+    namespaceGlobs: argv.namespaceGlobs,
   });
   if (result.conflicts.length) {
     for (const item of result.conflicts) {

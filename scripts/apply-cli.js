@@ -13,11 +13,6 @@ const usage = "usage: node scripts/apply-cli.js <root> [--glob PATTERN] [--out D
 const { root, flag, opt, optAll } = parseCli("apply-cli", usage);
 const targetRoot = path.resolve(root);
 const outDir = path.resolve(opt("--out", `${targetRoot}.l9out`));
-const identity = resolveCliHeaderIdentity(pkg, targetRoot, "apply-cli", {
-  authority: opt("--authority", null),
-  namespace: process.argv.includes("--namespace") ? opt("--namespace", "") : undefined,
-  unboundNamespaceDefault: path.basename(targetRoot),
-});
 const namespaceGlobs = optAll("--namespace-glob").map((pair) => {
   const eq = pair.indexOf("=");
   if (eq < 1 || eq === pair.length - 1) {
@@ -25,6 +20,12 @@ const namespaceGlobs = optAll("--namespace-glob").map((pair) => {
     process.exit(2);
   }
   return { glob: pair.slice(0, eq), namespace: pair.slice(eq + 1) };
+});
+const identity = resolveCliHeaderIdentity(pkg, targetRoot, "apply-cli", {
+  authority: opt("--authority", null),
+  namespace: process.argv.includes("--namespace") ? opt("--namespace", "") : undefined,
+  unboundNamespaceDefault: path.basename(targetRoot),
+  namespaceGlobs: namespaceGlobs.length ? namespaceGlobs : undefined,
 });
 let metaSchema;
 const schemaPath = opt("--schema", null);

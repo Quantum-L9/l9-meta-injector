@@ -122,18 +122,8 @@ async function runPipelineAsync(config) {
         authority: config.authority,
         namespace: config.namespace,
         unboundNamespaceDefault: path.basename(root),
+        namespaceGlobs: config.namespaceGlobs,
     }));
-    // A v2-bound root stamps every header with product.id. A per-glob override
-    // naming anything else would bypass the top-level mismatch check that already
-    // rejects a conflicting --namespace, so it is refused rather than silently
-    // dropped; a glob that restates product.id is harmless and stays.
-    if (identity.source === "semantic_binding") {
-        const foreign = (config.namespaceGlobs ?? []).find((rule) => rule.namespace !== identity.namespace);
-        if (foreign !== undefined) {
-            throw new Error(`META_AUTHORITY_IDENTITY_MISMATCH: namespace glob '${foreign.glob}' names '${foreign.namespace}', `
-                + `which does not match bound product.id '${identity.namespace}'`);
-        }
-    }
     const nsCfg = toCfg({
         ...config,
         authority: identity.authority,
@@ -243,7 +233,7 @@ async function runPipelineAsync(config) {
         const ef = (0, extract_1.extract)(body);
         const cls = (0, classify_1.classify)(e.sourcePath, body, e.headerConvention);
         classifications.set(e.sourcePath, cls);
-        let meta = (0, normalize_meta_1.buildMeta)(e.sourcePath, body, ef, cls, nsCfg, identity.authority, metadataTimestamp, root);
+        let meta = (0, normalize_meta_1.buildMeta)(e.sourcePath, body, ef, cls, nsCfg, identity.authority, metadataTimestamp, root, identity);
         // assist: LLM fills prose-origin fields only when seed fails "good" predicate
         if (config.llmEnabled) {
             const rec = (0, schema_1.asRecord)(meta);
@@ -283,7 +273,20 @@ async function runPipelineAsync(config) {
             }
             // Merge, not replace: schema fields win on name collision, canonical identity
             // fields survive untouched otherwise (coerce re-validates the identity block).
-            meta = (0, schema_1.coerceNormalizedMeta)({ ...(0, schema_1.asRecord)(meta), ...applied.fields });
+            const merged = { ...(0, schema_1.asRecord)(meta), ...applied.fields };
+            // A bound run's identity comes from the binding, never from the schema: a
+            // schema field named owner, authority or namespace would otherwise make
+            // injected headers, the metadata index and MetaV3 governance claim an
+            // arbitrary identity in place of product.owner / product.id. The owner is
+            // reasserted only where the canonical meta carried one (source, test,
+            // script), so a schema cannot invent the field for other types either.
+            if (identity.source === "semantic_binding") {
+                merged.authority = identity.authority;
+                merged.namespace = identity.namespace;
+                if ("owner" in (0, schema_1.asRecord)(meta))
+                    merged.owner = identity.product?.owner ?? schema_1.UNKNOWN;
+            }
+            meta = (0, schema_1.coerceNormalizedMeta)(merged);
         }
         metas.set(e.sourcePath, meta);
         metadataSubjects.push({
@@ -329,7 +332,9 @@ async function runPipelineAsync(config) {
         injected.push(record);
         metrics.recordInject();
     }
-    const verified = injected.map((r) => (0, verify_1.verify)(r.sourcePath, r.originalBodyHash, r.meta));
+    const verified = injected.map((r) => (0, verify_1.verify)(r.sourcePath, r.originalBodyHash, r.meta, {
+        semanticallyBound: identity.source === "semantic_binding",
+    }));
     // Consume the verification signal at the decision point — a computed VerifyResult
     // that nothing inspects is indistinguishable from no verification at all. Aggregate
     // failures, surface them (independent of dryRun), and expose a gate flag to callers/CI.
@@ -376,8 +381,15 @@ async function runPipelineAsync(config) {
         reportPath: coverageReportPath,
         discovery: discovery.summary,
     };
+    const semanticBinding = identity.source === "semantic_binding" && identity.semanticFoundation && identity.product
+        ? { semantic_foundation: identity.semanticFoundation, product: identity.product }
+        : undefined;
     if (config.persistOutputs !== false) {
-        const persistedCoverage = { ...coverage, reportPath: path.basename(coverageReportPath) };
+        const persistedCoverage = {
+            ...coverage,
+            reportPath: path.basename(coverageReportPath),
+            ...(semanticBinding ? { semantic_binding: semanticBinding } : {}),
+        };
         fs.writeFileSync(coverageReportPath, JSON.stringify(persistedCoverage, null, 2));
     }
     // Surface coverage when anything was skipped or on verbose runs — otherwise the
@@ -425,6 +437,10 @@ async function runPipelineAsync(config) {
         fs.writeFileSync(path.join(d, "meta-v3-index.json"), JSON.stringify(metaV3, null, 2));
         fs.writeFileSync(path.join(d, "archives-expanded.json"), JSON.stringify(archives, null, 2));
     }
-    return { runStartedAt, scanned, metadataSubjects, injected, verified, verification, coverage, placementPlans, metaV3, metrics: metrics.snapshot(), archives };
+    return {
+        runStartedAt, scanned, metadataSubjects, injected, verified, verification, coverage,
+        placementPlans, metaV3, metrics: metrics.snapshot(), archives,
+        ...(semanticBinding ? { semanticBinding } : {}),
+    };
 }
 //# sourceMappingURL=pipeline.js.map

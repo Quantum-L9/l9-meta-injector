@@ -7,6 +7,7 @@ import {
 import { contentHash, estimateTokens } from "./extract";
 import { resolveNamespace, NamespaceConfig } from "./namespace";
 import { serializeYamlObject } from "./yaml_serialize";
+import type { HeaderIdentityResolution } from "./operation_contracts";
 
 function toPosix(value: string): string {
   return value.split(path.sep).join("/");
@@ -71,6 +72,7 @@ export function buildMeta(
   authority: string,
   detectedAt: string,
   sourceRoot?: string,
+  identity?: HeaderIdentityResolution,
 ): NormalizedMeta {
   const sourcePath = stableSourcePath(filePath, sourceRoot);
   const tax = projectPrimitiveTaxonomy(cr.artifactType);
@@ -98,7 +100,7 @@ export function buildMeta(
     return { ...base, governs: UNKNOWN, decision_drivers: UNKNOWN, applies_to_domains: UNKNOWN } as DoctrineMeta;
   }
   if (cr.artifactType === "test" || cr.artifactType === "script" || cr.artifactType === "source") {
-    return { ...base, owner: UNKNOWN } as ArtifactMeta;
+    return { ...base, owner: identity?.product?.owner ?? UNKNOWN } as ArtifactMeta;
   }
 
   const executable: ExecutableRetrievalMeta = {

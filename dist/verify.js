@@ -83,14 +83,16 @@ function metaHeaderValid(filePath, content, issues) {
     return false;
 }
 function isPromptMeta(m) { return m.artifact_type === "prompt"; }
-function checkSharingScope(meta) {
+function checkSharingScope(meta, semanticallyBound) {
     const issues = [];
+    if (semanticallyBound)
+        return issues;
     if (meta.sharing_scope === "shared" && meta.namespace !== "shared" && meta.namespace !== "core") {
         issues.push(`sharing_scope=shared but namespace=${meta.namespace}; shared primitives must live in shared/ or core/ paths`);
     }
     return issues;
 }
-function verify(filePath, origHash, meta) {
+function verify(filePath, origHash, meta, options) {
     const issues = [];
     const content = fs.readFileSync(filePath, "utf8");
     const spec = (0, comment_1.resolveStrategy)(filePath, content);
@@ -109,7 +111,7 @@ function verify(filePath, origHash, meta) {
         issues.push("callable=true but mcp_primitive=none");
         taxonomyValid = false;
     }
-    const scopeIssues = checkSharingScope(meta);
+    const scopeIssues = checkSharingScope(meta, options?.semanticallyBound === true);
     scopeIssues.forEach((i) => issues.push(i));
     const sharingScopeValid = scopeIssues.length === 0;
     let promptSchemaComplete = true;
