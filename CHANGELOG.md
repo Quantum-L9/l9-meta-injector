@@ -4,7 +4,7 @@
 
 ### Changed
 
-- `.github/dependabot.yml` ignores major-version updates of `typescript`, `typescript-eslint`, `eslint` and `@types/node`. The first grouped branch (#108) paired TypeScript 7 with typescript-eslint 8, whose peer range stops at 5.x, and could not install; majors of those four are deliberate changes with their own branch (ADR-056 amendment). Minor and patch updates still land through the `dev-tooling` group and `npm run deps:rebind`.
+- `.github/dependabot.yml` limits both version-update groups to minor and patch updates, so a major version of any package arrives as its own individual pull request instead of inside a group. The first grouped branch (#108) paired TypeScript 7 with typescript-eslint 8, whose peer range stops at 5.x, and could not install, which also blocked the minor and patch updates sharing it (ADR-056 amendment). Minor and patch updates still land through the groups and `npm run deps:rebind`.
 
 ## 4.2.0 - 2026-10-22
 

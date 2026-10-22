@@ -100,10 +100,13 @@ run (`devEngines.runtime` is Node 22); an ESLint major carries a configuration
 migration. None of these is a rebind, and a group that mixes them with the
 patch and minor updates it was created for cannot land at all.
 
-`.github/dependabot.yml` therefore ignores `version-update:semver-major` for
-those four packages. Minor and patch updates of all four still arrive through
-the `dev-tooling` group and one `npm run deps:rebind`. A major update of any of
-them is a deliberate change with its own branch, its own decision when the
-public toolchain contract moves, and the usual two commits. #108 is closed as
-not landable in that shape; Dependabot recreates the group under the amended
-configuration.
+`.github/dependabot.yml` therefore limits both version-update groups
+(`dev-tooling` and the `transitive` wildcard) to `minor` and `patch` updates.
+Dependabot still opens a pull request for every major it sees, but as an
+individual branch rather than inside a group, so a major stays visible, is
+decided on its own (with its own decision when the public toolchain contract
+moves) and cannot hold the group's minor and patch updates hostage. An
+`ignore` rule was considered and rejected because it would hide majors from
+Dependabot altogether. Minor and patch updates still arrive through the groups
+and one `npm run deps:rebind`. #108 is closed as not landable in that shape;
+Dependabot recreates the group under the amended configuration.

@@ -10,7 +10,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "git_blob_sha1": "07ae77156ca8d062a034eb86881d0e204092dd26"
+      "git_blob_sha1": "44feb9b252d2783817e0a2e4cf2d24273c655c46"
     },
     {
       "path": "dist/archive_preflight.d.ts",

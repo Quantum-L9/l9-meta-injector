@@ -10,27 +10,20 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 3
-    # Major versions of the toolchain are deliberate changes, not a group bump:
-    # the first grouped branch (#108) proposed typescript 7 beside
-    # typescript-eslint 8, whose peer range stops at 5.x, so `npm ci` failed on
-    # ERESOLVE before any check ran; @types/node tracks the Node line
-    # devEngines.runtime declares (22); an eslint major carries a config
-    # migration. Minor and patch updates of all four still land through the
-    # dev-tooling group and one rebind.
-    ignore:
-      - dependency-name: "typescript"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "typescript-eslint"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "eslint"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "@types/node"
-        update-types: ["version-update:semver-major"]
+    # Both version-update groups take minor and patch updates only, so a major
+    # version of anything arrives as its own individual pull request and is
+    # decided on its own (ADR-056 amendment). The first grouped branch (#108)
+    # showed why: it put typescript 7 beside typescript-eslint 8, whose peer
+    # range stops at 5.x, so `npm ci` failed on ERESOLVE before any check ran,
+    # and the minor and patch updates sharing that branch could not land either.
     groups:
       # The test and build toolchain moves together: vitest pins vite, and the
       # TypeScript/ESLint pair is validated as one gate.
       dev-tooling:
         applies-to: version-updates
+        update-types:
+          - "minor"
+          - "patch"
         patterns:
           - "vitest"
           - "@vitest/*"
@@ -40,9 +33,13 @@ updates:
           - "typescript-eslint"
           - "@types/node"
       # Everything else is transitive to the toolchain above; this package
-      # declares no runtime dependencies.
+      # declares no runtime dependencies. Minor and patch only as well, so the
+      # wildcard does not recapture a major the group above left out.
       transitive:
         applies-to: version-updates
+        update-types:
+          - "minor"
+          - "patch"
         patterns:
           - "*"
       # Security updates arrive as one branch too, so one rebind closes them.
