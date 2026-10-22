@@ -1,5 +1,6 @@
 {
   "schema": "l9.ci-consumer/v1",
+  "owner": "Quantum-L9/platform",
   "repo_class": "typescript",
   "waiver_refs": []
 }

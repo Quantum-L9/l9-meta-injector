@@ -222,6 +222,57 @@ describe("repository model evidence discipline", () => {
     for (const ref of refs) expect(ids.has(ref)).toBe(true);
   });
 
+  it("backs every repository record with an observation even when nothing is derivable", () => {
+    // A tree with one plain text file yields no language, package manager, workflow,
+    // ADR or governance fact. The repository record still claims validated-machine
+    // authority, and the consumer refuses such a claim without evidence, so the
+    // inventory walk itself is recorded as an observed evidence record.
+    const root = path.join(scratch("bare"), "bare-repo");
+    fs.mkdirSync(root, { recursive: true });
+    fs.writeFileSync(path.join(root, "notes.txt"), "nothing derivable here\n");
+    const packet = observeRepositoryModel({
+      root, repositoryName: "bare-repo", sourceRevision: REVISION, producerVersion: PRODUCER_VERSION,
+    });
+    const repository = packet.payload.repositories[0];
+    expect(repository.confidence.authority).toBe("validated-machine");
+    expect(repository.evidence_refs.length).toBeGreaterThan(0);
+    const ids = new Set(packet.payload.evidence.map((e) => e.evidence_id));
+    for (const ref of repository.evidence_refs) expect(ids.has(ref)).toBe(true);
+    const observation = packet.payload.evidence.find(
+      (e) => e.subject_id === repository.repository_id && e.evidence_class === "observed" && e.field === "artifact_ids",
+    );
+    expect(observation?.source_ref.source_path).toBe(".");
+    expect(observation?.source_ref.source_revision).toBe(REVISION);
+    expect(observation?.value).toEqual({ artifact_count: 1, snapshot_semantic_hash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/) });
+    expect(validateRepositoryModelPacket(packet).status).toBe("passed");
+  });
+
+  it("stops reporting dependencies as unsupported once a manifest declares one", () => {
+    // The sample repo's package.json declares no dependency, so the coverage
+    // diagnostic stands there. A manifest that declares one yields a declared,
+    // line-cited package.dependency assertion, and the same packet must not also
+    // say dependencies are unsupported by evidence.
+    const sample = observeSample();
+    expect(sample.payload.diagnostics.some(
+      (d) => d.code === "unsupported-by-evidence" && d.details?.field === "dependencies",
+    )).toBe(true);
+
+    const root = path.join(scratch("deps"), "deps-repo");
+    fs.mkdirSync(root, { recursive: true });
+    fs.writeFileSync(path.join(root, "package.json"), '{\n  "name": "deps-repo",\n  "dependencies": {\n    "express": "^4.0.0"\n  }\n}\n');
+    const packet = observeRepositoryModel({
+      root, repositoryName: "deps-repo", sourceRevision: REVISION, producerVersion: PRODUCER_VERSION,
+    });
+    const claim = packet.payload.assertions.find((a) => a.predicate === "package.dependency");
+    expect(claim?.object).toBe("express");
+    expect(claim?.evidence_class).toBe("declared");
+    expect(claim?.subject_id).toBe(packet.payload.repositories[0].repository_id);
+    expect(packet.payload.diagnostics.some(
+      (d) => d.code === "unsupported-by-evidence" && d.details?.field === "dependencies",
+    )).toBe(false);
+    expect(validateRepositoryModelPacket(packet).status).toBe("passed");
+  });
+
   it("preserves unknowns instead of converting absence into certainty", () => {
     const inventory = inventoryTree({ root: SAMPLE_ROOT, outDir: path.join(scratch("unknown"), "out"), dryRun: true });
     const target = inventory.records.find((r) => r.artifact_type !== "folder");

@@ -297,7 +297,7 @@ function parseSemanticFoundation(lines: string[], start: number): Record<string,
         if (assertIndent(ledgerLine) !== 4) {
           fail("META_SEMANTIC_BINDING_INVALID", `ledger entries must use four spaces at line ${index + 1}`);
         }
-        const ledgerMatch = /^(l9\.[a-z0-9-]+\/[a-z0-9-]+@[0-9]+):\s*(.+)$/.exec(ledgerLine.trim());
+        const ledgerMatch = /^(l9\.[a-z0-9-]+\/[a-z0-9-]+@\d+):\s*(.+)$/.exec(ledgerLine.trim());
         if (!ledgerMatch || !SEMANTIC_LEDGER_ID_RE.test(ledgerMatch[1])) {
           fail("META_SEMANTIC_BINDING_INVALID", `invalid ledger key at line ${index + 1}`);
         }
@@ -402,11 +402,7 @@ export function resolveHeaderIdentity(root: string, request: HeaderIdentityReque
       authority: operatorAuthority ?? "",
       namespace: operatorNamespace ?? folderNamespace,
       source: "operator",
-      conflicts: bindingConflicts.map((item) =>
-        item.code === "META_AUTHORITY_CONFIG_INVALID" && loaded.authority === undefined
-          ? item
-          : item,
-      ),
+      conflicts: bindingConflicts,
     };
   }
 

@@ -758,8 +758,22 @@ function buildRepositoryModelPacket(input) {
             });
         }
     }
-    // Repository-level facts derived from observed paths, each with its own evidence.
+    // The repository itself is an observation: the inventory walked this tree at this
+    // revision and saw exactly these artifacts. The repository record claims
+    // validated-machine authority, and the consumer refuses such a claim that carries
+    // no evidence, so this record exists even when no derived fact below does.
     const repositoryEvidenceRefs = [];
+    const repositoryObservation = makeEvidence({
+        subjectId: repositoryId,
+        field: "artifact_ids",
+        evidenceClass: "observed",
+        sourceRef: { source_path: ".", source_revision: input.sourceRevision },
+        value: { artifact_count: fileRecords.length, snapshot_semantic_hash: snapshotHash },
+        confidence: REPOSITORY_CONFIDENCE,
+    }, producerVersion, generatedAt);
+    evidence.push(repositoryObservation);
+    repositoryEvidenceRefs.push(repositoryObservation.evidence_id);
+    // Repository-level facts derived from observed paths, each with its own evidence.
     const addDerived = (field, value, sourcePath) => {
         const record = makeEvidence({
             subjectId: repositoryId,
@@ -808,12 +822,22 @@ function buildRepositoryModelPacket(input) {
         confidence: REPOSITORY_CONFIDENCE,
     };
     // Report — rather than invent — everything the inventory could not establish.
+    //
+    // Dependencies are the one field interpretation can answer: a `package.dependency`
+    // assertion against this repository is a declared, line-cited claim the consumer
+    // projects into a DEPENDS_ON relationship itself (ADR-055). The diagnostic is
+    // emitted only while no such claim exists, so a packet never reports a field as
+    // unsupported on the same page it asserts it. Entrypoints wait for a consumer
+    // predicate; the producer does not invent one.
+    const declaresDependencies = (input.interpretation?.assertions ?? []).some((assertion) => assertion.predicate === "package.dependency" && assertion.subject_id === repositoryId);
     const unsupported = [
         ["primary_role", "Repository role is not derivable from inventory evidence; primary_role stays 'unknown'."],
         ["capabilities", "No capability evidence is available to this producer; capabilities is empty by policy."],
         ["entrypoints", "Entrypoints require package-manifest interpretation beyond inventory observation."],
         ["owner_ids", "Ownership is not observable from inventory evidence."],
-        ["dependencies", "Dependency edges require manifest interpretation beyond inventory observation."],
+        ...(declaresDependencies
+            ? []
+            : [["dependencies", "No package manifest declared a dependency; dependency claims require manifest interpretation."]]),
     ];
     for (const [field, message] of unsupported) {
         diagnostics.push({

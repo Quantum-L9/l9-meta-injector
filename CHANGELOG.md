@@ -1,14 +1,21 @@
 # l9-meta-injector CHANGELOG
 
-## Unreleased
+## 4.2.0 - 2026-10-22
+
+Minor release: the public API surface is additive and `packet_version` stays 1.1.0. One change is breaking for a narrower audience: consumers that compare metadata `id` values across versions see every id move (ADR-054, below).
 
 ### Added
 
 - `.l9/meta-authority.yaml` may declare `l9.meta-authority/v2`: cite Semantic Foundation ledgers by `artifact_id` and sha256 at one `Quantum-L9/.github` revision, and declare this product as Dependency / `semantic-subsystem@1`. Pipeline and inventory derive header `authority`/`namespace` from that binding (ADR-052). The bound identity is applied after harvested metadata, so adopting a binding migrates files annotated earlier, and a bound pipeline refuses a `namespaceGlobs` entry that names anything but `product.id` with `META_AUTHORITY_IDENTITY_MISMATCH` instead of letting a per-glob value override the binding.
 - `resolveHeaderIdentity` / `verifySemanticFoundation` and `npm run semantics:verify` (offline; not part of `npm run validate`).
 - A bound root stamps header `owner` from `product.owner`, refuses a `--namespace-glob` whose namespace is not `product.id`, skips the literal `shared`/`core` verify rule, and records the binding on `PipelineResult.semanticBinding` and `coverage-report.json` `semantic_binding` (ADR-053). Unbound roots stay unchanged. A custom `--schema` targeting `file_header` cannot displace the bound `owner`, `authority` or `namespace`; its other fields are still carried.
+- `Topology conformance` workflow: every pull request and push to `main` checks out `Quantum-L9/l9-constellation-topology` read-only at the revision `docs/topology-conformance.json` binds to, proves the committed golden bundles still match the record and are accepted by that consumer, and compiles a local-source packet of this repository under the consumer's profile, failing unless its validation receipt passes. A weekly run checks the consumer's `main` so drift is visible before a release pins it.
+- `.github/dependabot.yml` groups npm updates, and `npm run deps:rebind` lands a dependency group as one validated commit pair (ADR-056).
 
 ### Changed
+
+- The test toolchain is vitest 5.0.5 with vite 8 and `@types/node` 22; `devEngines.runtime` declares Node 22.12 for working on this repository and `CI / smoke` runs on Node 22. `engines.node` stays `>=18` for consumers. The bump closes seven npm advisories, two critical (tinypool, `@vitest/mocker`), and supersedes Dependabot #101–#106.
+- Every repository record in a Repository Model Packet cites an observed inventory-walk evidence record, so a record claiming `validated-machine` authority never carries empty `evidence_refs` (ADR-055). The `dependencies` coverage diagnostic is emitted only when no manifest declared a dependency. Both golden bundles and `docs/topology-conformance.json` are rebound to the consumer at `fe85ed9`.
 
 - **Identity change (ADR-054).** Metadata ids are the repo-relative path with the extension kept behind `__`. A second run recomputes `id`, `source_path`, `content_hash`, and `token_cost_estimate`. Two paths that normalize to one id refuse the run before any write. Dry-run diffs mirror `source_path` under the output directory. Keyword-only skill, playbook, kernel, and doctrine classifications become context. `hard_skip` files are coverage-only; `inventory_only` files stay in the metadata index and are not injected.
 - Inventory annotation no longer stamps `namespace: inventory`, `authority: inventory`, or `token_cost_estimate: 0`. Taxonomy fields derive from `classify` and `PRIMITIVE_TAXONOMY`, `sharing_scope` from `resolveNamespace`, and token cost from `estimateTokens`; otherwise the field is `Unknown` (ADR-051).
@@ -21,6 +28,8 @@
 - Inventory classifies, estimates tokens for, and size-limits the carrier-free body. A second run over an annotated tree no longer estimates the generated header, and a body within `hashMaxBytes` stays hashed after its header pushes the physical file past the limit.
 - A previously written inventory header whose fields equal the old placeholder literals is migrated on the next run instead of being harvested forever.
 - The semantic classifier recognizes Jest's `__fixtures__/` and `__mocks__/` directories as fixtures, so JavaScript and TypeScript test-support files under them classify as `test` instead of injectable `source`.
+- `resolveHeaderIdentity` returned binding conflicts through a conditional that produced the same value on both branches; the conflicts are returned directly. The ledger-id patterns use the digit shorthand.
+- `CODEOWNERS` names the repository owner for source, `dist/`, decisions, contracts, CI and dependency files; the one-shot `pr89-closure.yml` workflow (`contents: write`) is removed; `.l9/ci.json` declares the `owner` the organization consumer schema admits, as AGENTS.md already described; the CI tables in AGENTS.md and `docs/architecture.md` list every workflow in the tree.
 
 ## 4.1.0 - 2026-09-17
 

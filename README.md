@@ -386,7 +386,9 @@ npm ci
 npm run validate
 ```
 
-The canonical gate covers typing, tests, the exact API contract, architecture authority, deterministic manifest, committed distribution parity, selfpack, and an installed-tarball consumer.
+The canonical gate covers typing, tests, the exact API contract, architecture authority, deterministic manifest, committed distribution parity, selfpack, and an installed-tarball consumer. Developing this repository needs Node `>=22.12` (vitest 5); the published package still runs on Node `>=18`.
+
+Consumer alignment is proved separately: `npm run topology:conformance` runs the committed golden bundles through the real `Quantum-L9/l9-constellation-topology` consumer named in `docs/topology-conformance.json`, and the `Topology conformance` workflow does the same on every pull request, plus a packet of this tree. A dependency update is landed with `npm run deps:rebind` (ADR-056).
 
 `npm run validate:report` runs the gate and writes `CURRENT_VALIDATION_REPORT.md`,
 recording the exit code each command actually returned and binding the result to a digest

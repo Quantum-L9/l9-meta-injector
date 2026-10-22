@@ -6,7 +6,7 @@
 - Org semantics are consumed by citation in `.l9/meta-authority.yaml` (`l9.meta-authority/v2`); do not copy `Quantum-L9/.github/semantics/` (ADR-052)
 - Runtime authority: TypeScript under `src/`
 - Compiled distribution: committed `dist/`
-- Supported Node version: `>=18`; primary CI smoke uses Node 20
+- Supported Node version: `>=18` for consumers (`engines.node`); developing and testing this repository needs Node `>=22.12` (`devEngines.runtime`, required by vitest 5), and `CI / smoke` runs on Node 22
 - Historical reference implementation: `tools/consolidation/` and `docs/legacy/consolidation-v1/`
 - Canonical validation command: `npm run validate`
 - Publication gate: `npm run check:publication`
@@ -64,7 +64,12 @@ Workflow-level blocking means the job has no `continue-on-error`. Whether a cont
 | `L9 Lint and Test (Node)` | `ESLint` | Pull requests; push to `main`; manual | First-party TypeScript lint surface |
 | `L9 Lint and Test (Node)` | `tsc --noEmit` | Pull requests; push to `main`; manual | Strict source type checking |
 | `L9 Lint and Test (Node)` | `Vitest` | Pull requests; push to `main`; manual | One-shot test execution with `CI=true` |
+| `Topology conformance` | `conformance` | Pull requests; push to `main`; weekly schedule; manual | Checks out `Quantum-L9/l9-constellation-topology` read-only at the revision `docs/topology-conformance.json` binds to (the schedule uses its `main`), proves the golden bundles still match the record and are accepted by the consumer, and compiles a local-source packet of this tree under the consumer's profile. Fails on any drift or a failed validation receipt. |
+| `Release prep` | `prepare` | Push to `release/v*.*.*` | Prepares release state and binds the validation report for a release candidate branch |
+| `Release` | `release` | Push to `main` touching `package.json` | Lint and validate, then create the exact tag and GitHub Release and move the major tag (ADR-050); a version whose tag already exists is a no-op |
 | `Organization CI (Core)` | `Analyze (central Core)` | Pull requests; push; merge group | Organization-required workflow from `Quantum-L9/l9-ci-core` `main` `.github/workflows/org-ci.yml`: Semgrep analysis, SDK admission, governance, enforcement, publication. Not a file in this repository. |
+
+`L9 Meta Injector — LLM self-test` is manual only. Dependency updates are grouped by `.github/dependabot.yml` and landed with `npm run deps:rebind` (ADR-056).
 
 ### Organization-managed L9 CI (2026-09-05)
 

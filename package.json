@@ -1,6 +1,6 @@
 {
   "name": "l9-meta-injector",
-  "version": "4.1.0",
+  "version": "4.2.0",
   "description": "L9 meta-injection toolkit for prompt, skill, and kernel metadata",
   "license": "UNLICENSED",
   "author": "Quantum-L9",
@@ -28,6 +28,13 @@
   ],
   "engines": {
     "node": ">=18"
+  },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": ">=22.12.0",
+      "onFail": "error"
+    }
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -68,14 +75,15 @@
     "prepublishOnly": "npm run validate && npm run check:publication",
     "check:release-candidate": "node scripts/check-release-candidate.js",
     "validate:report": "node scripts/validation-report.js",
+    "deps:rebind": "node scripts/deps-rebind.js",
     "semantics:verify": "node scripts/semantics-verify.js"
   },
   "devDependencies": {
-    "typescript": "5.9.3",
-    "@types/node": "20.19.43",
+    "@types/node": "22.20.5",
     "eslint": "^9.39.5",
+    "typescript": "5.9.3",
     "typescript-eslint": "^8.65.0",
-    "vitest": "^3.2.7"
+    "vitest": "5.0.5"
   },
   "exports": {
     ".": {

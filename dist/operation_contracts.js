@@ -26,7 +26,7 @@ exports.LEGACY_OPERATION_ALIASES = {
 };
 exports.META_AUTHORITY_SCHEMA = "l9.meta-authority/v1";
 exports.META_AUTHORITY_SCHEMA_V2 = "l9.meta-authority/v2";
-exports.SEMANTIC_LEDGER_ID_RE = /^l9\.[a-z0-9-]+\/[a-z0-9-]+@[0-9]+$/;
+exports.SEMANTIC_LEDGER_ID_RE = /^l9\.[a-z0-9-]+\/[a-z0-9-]+@\d+$/;
 exports.SEMANTIC_LEDGER_DIGEST_RE = /^sha256:[0-9a-f]{64}$/;
 exports.SEMANTIC_REVISION_RE = /^[0-9a-f]{40}$/;
 exports.PRODUCT_ID_RE = /^[a-z0-9][a-z0-9_-]*$/;

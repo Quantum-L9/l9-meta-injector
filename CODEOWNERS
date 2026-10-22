@@ -1,0 +1,24 @@
+# Review ownership for Quantum-L9/l9-meta-injector.
+#
+# The repository owner reviews everything; the rows below name the surfaces whose
+# change requires that review even when a broader rule would route elsewhere.
+# Keep this file at the repository root: GitHub reads it from the root, docs/, or
+# .github/, and one location avoids two files disagreeing.
+
+*                       @cryptoxdog
+
+# Runtime source and its committed build output move together (ADR-012).
+/src/                   @cryptoxdog
+/dist/                  @cryptoxdog
+
+# Decisions, contracts and the authority binding are the repository's law.
+/docs/decisions/        @cryptoxdog
+/docs/*.json            @cryptoxdog
+/.l9/                   @cryptoxdog
+/INVARIANTS.md          @cryptoxdog
+/AGENTS.md              @cryptoxdog
+
+# CI, dependency policy and release automation.
+/.github/               @cryptoxdog
+/package.json           @cryptoxdog
+/package-lock.json      @cryptoxdog

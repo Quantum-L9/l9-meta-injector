@@ -1,7 +1,7 @@
 # Architecture
 
 **As-built package generation:** 4
-**Package version:** 4.1.0
+**Package version:** 4.2.0
 
 ## Authority
 
@@ -280,12 +280,17 @@ Source compiles to committed `dist/`. `check:dist` rebuilds in isolation and com
 
 ## CI/CD architecture
 
-The repository owns two active pull-request workflows, plus the manual `L9 Meta Injector — LLM self-test`:
+The repository owns three active pull-request workflows, two release workflows, and the manual `L9 Meta Injector — LLM self-test`:
 
 | Workflow | Jobs | Events | Role |
 |---|---|---|---|
-| `CI` | `smoke` | Pull requests; push to `main` | Canonical aggregate validation and clean-checkout proof |
+| `CI` | `smoke` | Pull requests; push to `main` | Canonical aggregate validation and clean-checkout proof, on Node 22 |
 | `L9 Lint and Test (Node)` | `ESLint`, `tsc --noEmit`, `Vitest` | Pull requests; push to `main`; manual | Independent first-party Node/TypeScript checks |
+| `Topology conformance` | `conformance` | Pull requests; push to `main`; weekly; manual | The real `Quantum-L9/l9-constellation-topology` consumer, checked out read-only at the revision `docs/topology-conformance.json` binds to, accepts the golden bundles and a packet of this tree (ADR-055); the weekly run targets the consumer's `main` |
+| `Release prep` | `prepare` | Push to `release/v*.*.*` | Release-candidate preparation and report binding |
+| `Release` | `release` | Push to `main` touching `package.json` | Exact tag, GitHub Release and major-tag move (ADR-050) |
+
+Dependency updates arrive grouped through `.github/dependabot.yml` and are landed by a maintainer with `npm run deps:rebind`, because the validation report is bound to the whole tree (ADR-056).
 
 Organization L9 CI is not a workflow in this tree. The GitHub organization required-workflow ruleset runs `Quantum-L9/l9-ci-core` `main` `.github/workflows/org-ci.yml` (`Organization CI (Core)` / `Analyze (central Core)`) on pull requests, pushes, and merge groups. Core owns Semgrep analysis, SDK admission, governance defaults, enforcement, and publication; this repository declares only `.l9/ci.json` and selects no Core or SDK revision (ADR-048). A Core change propagates with no consumer edit.
 

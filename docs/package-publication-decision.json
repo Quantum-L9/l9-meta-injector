@@ -1,38 +1,38 @@
 {
   "schema": "l9.package-publication-decision/v1",
   "package_name": "l9-meta-injector",
-  "package_version": "4.1.0",
+  "package_version": "4.2.0",
   "status": "blocked_pending_history_check",
   "publication_command": "npm publish",
   "evidence": [
     {
       "id": "npm_registry_history",
       "status": "verified",
-      "result": "2026-08-30 registry GET https://registry.npmjs.org/l9-meta-injector and https://registry.npmjs.org/@quantum-l9/l9-meta-injector both returned HTTP 404. Name and version 4.0.0 are unclaimed. npm publish was not executed."
+      "result": "2026-10-22 registry GET https://registry.npmjs.org/l9-meta-injector and https://registry.npmjs.org/@quantum-l9%2Fl9-meta-injector both returned HTTP 404. The name is unclaimed and no version of this package has ever been published. npm publish was not executed. (Earlier probe 2026-08-30 found the same for 4.0.0.)"
     },
     {
       "id": "constellation_consumer_inventory",
       "status": "verified",
-      "result": "2026-08-30 GitHub org code search over Quantum-L9 found no consumer package.json dependency on l9-meta-injector. Hits are this repository, Cursor-Governance WIP/docs, and .github policy class self_governed. Modeled consumer Quantum-L9/l9-deploy still ships scripts/inject-l9-meta.py and is not an npm consumer."
+      "result": "2026-10-22: the only constellation consumer observed is Quantum-L9/l9-constellation-topology, whose .github/workflows/compile.yml (at fe85ed919596ce628f96368430b1ae9e09af0b17) checks this repository out by git ref (meta_ref, default v4) and runs scripts/repository-model-cli.js; it declares no npm dependency on l9-meta-injector. The 2026-08-30 org code search found no consumer package.json dependency either; Quantum-L9/l9-deploy still ships scripts/inject-l9-meta.py and is not an npm consumer."
     },
     {
       "id": "github_release_validation",
-      "status": "verified",
-      "result": "Exact commit 56dadb0ee72f1a5da3e98dbf4f99e5e014d47e3b: npm ci, npm run validate (packed-consumer OK sha256=4fe5bd831fb9407d359a3208bb2b02c94f7d18a75f799013853d650894b13ab3, release-candidate PASS), npm run lint. Annotated tag v4.0.0 peels to that SHA. GitHub Release https://github.com/Quantum-L9/l9-meta-injector/releases/tag/v4.0.0 is non-draft and non-prerelease."
+      "status": "pending",
+      "result": "v4.2.0 is prepared by docs/release/v4.2.0-release-plan.json (github_release.status candidate). release.yml creates the exact tag, the GitHub Release and moves v4 after the version-bump commit merges to main; record the exact commit, the packed-consumer digest and the Release URL here once that run has completed. Prior released evidence: v4.0.0 at 56dadb0ee72f1a5da3e98dbf4f99e5e014d47e3b and v4.1.0 at 63fd3695947fcdc34d894a93a48ed2a07579628e, both non-draft, non-prerelease."
     },
     {
       "id": "l9_deploy_migration_validation",
       "status": "not_applicable_with_reason",
-      "result": "ADR-029: GitHub tag consumption is sufficient for l9-deploy; npm is optional. Immutable pin is 56dadb0ee72f1a5da3e98dbf4f99e5e014d47e3b (tag v4.0.0). Applying the Python-injector replacement remains a separate l9-deploy change, not a meta-injector publication blocker."
+      "result": "ADR-029: GitHub tag consumption is sufficient for l9-deploy; npm is optional. The maintained consumer line is Quantum-L9/l9-meta-injector@v4 (ADR-050). Applying the Python-injector replacement remains a separate l9-deploy change, not a meta-injector publication blocker."
     },
     {
       "id": "distribution_owner_approval",
       "status": "not_applicable_with_reason",
-      "result": "npm_publication.required is false. Operator authorized the GitHub tag and Release for issue #55. npm publish was not granted and was not executed. publication_authority.npm_publish remains false."
+      "result": "npm_publication.required is false for 4.2.0 (docs/release/v4.2.0-release-plan.json). No distribution-owner approval for npm publication was recorded as of 2026-10-22; GitHub tag consumption remains the only channel. publication_authority.npm_publish remains false."
     }
   ],
   "resolution": {
-    "approve_when": "Every evidence item is verified or not_applicable_with_reason and status is changed to approved.",
-    "implementation_effect": "GitHub commit/tag consumption is authorized at v4.0.0 / 56dadb0ee72f1a5da3e98dbf4f99e5e014d47e3b. npm publish remains separately blocked by publication_authority.npm_publish=false."
+    "approve_when": "Every evidence item is verified or not_applicable_with_reason, github_release_validation records the v4.2.0 Release, the distribution owner records npm approval, and status is changed to approved.",
+    "implementation_effect": "GitHub commit/tag consumption is authorized through the maintained major tag v4; v4.2.0 becomes the exact released evidence when release.yml completes on main. npm publish remains separately blocked by publication_authority.npm_publish=false."
   }
 }
