@@ -123,6 +123,13 @@ async function runPipelineAsync(config) {
         namespace: config.namespace,
         unboundNamespaceDefault: path.basename(root),
     }));
+    // A v2-bound root stamps every header with product.id. A per-glob override
+    // would bypass the top-level mismatch check that already rejects a
+    // conflicting --namespace, so it is refused rather than silently dropped.
+    if (identity.source === "semantic_binding" && (config.namespaceGlobs?.length ?? 0) > 0) {
+        throw new Error(`META_AUTHORITY_IDENTITY_MISMATCH: namespaceGlobs cannot override bound product.id '${identity.namespace}'; `
+            + "a root bound through l9.meta-authority/v2 takes its namespace from the binding");
+    }
     const nsCfg = toCfg({
         ...config,
         authority: identity.authority,

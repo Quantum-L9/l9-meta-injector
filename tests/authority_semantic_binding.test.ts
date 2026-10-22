@@ -195,6 +195,43 @@ describe("pipeline and inventory consume the binding", () => {
     })).rejects.toThrow("META_AUTHORITY_FILE_MISSING");
   });
 
+  test("bound pipeline refuses a per-glob namespace override", async () => {
+    const root = tempRoot();
+    write(root, META_AUTHORITY_RELATIVE_PATH, v2Doc());
+    write(root, "notes.md", "# Notes\n\nbody\n");
+    await expect(runPipelineAsync({
+      root,
+      glob: "**/*.md",
+      dryRun: true,
+      outDir: path.join(root, ".out"),
+      indexDir: path.join(root, ".out"),
+      nearDupThreshold: 0.9,
+      hashPrefixLength: 16,
+      verbose: false,
+      llmEnabled: false,
+      normalizeFilenames: false,
+      namespaceGlobs: [{ glob: "**/*.md", namespace: "elsewhere" }],
+    })).rejects.toThrow("META_AUTHORITY_IDENTITY_MISMATCH");
+  });
+
+  test("bound inventory migrates a previously harvested authority and namespace", () => {
+    const root = tempRoot();
+    write(root, META_AUTHORITY_RELATIVE_PATH, v2Doc());
+    write(root, "stale.py", [
+      "# >>> l9:meta >>>",
+      "# namespace: foreign-ns",
+      "# authority: Other/owner",
+      "# <<< l9:meta <<<",
+      "print(1)\n",
+    ].join("\n"));
+    inventoryTree({ root, outDir: path.join(root, ".l9inventory"), dryRun: false });
+    const header = fs.readFileSync(path.join(root, "stale.py"), "utf8");
+    expect(header).toMatch(/authority:\s*"?Example\/product"?/);
+    expect(header).toMatch(/namespace:\s*"?example-product"?/);
+    expect(header).not.toContain("Other/owner");
+    expect(header).not.toContain("foreign-ns");
+  });
+
   test("bound inventory emits binding values; unbound stays Unknown", () => {
     const bound = tempRoot();
     write(bound, META_AUTHORITY_RELATIVE_PATH, v2Doc());

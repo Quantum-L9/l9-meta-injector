@@ -825,12 +825,18 @@ function annotationFields(rec, harvest, ctx) {
         callable: tax.callable,
         retrievable: tax.retrievable,
         injectable: tax.injectable,
-        namespace: ctx.boundNamespace ?? harvestedNamespace ?? schema_1.UNKNOWN,
+        namespace: harvestedNamespace ?? schema_1.UNKNOWN,
         sharing_scope: sharingScope,
         token_cost_estimate: tokens,
-        authority: ctx.boundAuthority ?? harvestedAuthority ?? schema_1.UNKNOWN,
+        authority: harvestedAuthority ?? schema_1.UNKNOWN,
         evidence: rec.evidence_excerpt ?? schema_1.UNKNOWN,
         ...kept,
+        // A v2 binding is authoritative over whatever an earlier run harvested, so
+        // the bound identity is applied after the harvest spread: adopting a binding
+        // migrates previously annotated files instead of preserving a stale or
+        // foreign authority and namespace forever.
+        ...(ctx.boundNamespace !== undefined ? { namespace: ctx.boundNamespace } : {}),
+        ...(ctx.boundAuthority !== undefined ? { authority: ctx.boundAuthority } : {}),
         id: rec.artifact_id,
         title: harvestedTitle,
         source_path: rec.relative_path,
