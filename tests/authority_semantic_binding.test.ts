@@ -212,6 +212,21 @@ describe("pipeline and inventory consume the binding", () => {
       normalizeFilenames: false,
       namespaceGlobs: [{ glob: "**/*.md", namespace: "elsewhere" }],
     })).rejects.toThrow("META_AUTHORITY_IDENTITY_MISMATCH");
+    const restated = await runPipelineAsync({
+      root,
+      glob: "**/*.md",
+      dryRun: true,
+      outDir: path.join(root, ".out"),
+      indexDir: path.join(root, ".out"),
+      nearDupThreshold: 0.9,
+      hashPrefixLength: 16,
+      verbose: false,
+      llmEnabled: false,
+      normalizeFilenames: false,
+      namespaceGlobs: [{ glob: "**/*.md", namespace: "example-product" }],
+    });
+    expect(restated.injected.length).toBeGreaterThan(0);
+    for (const row of restated.injected) expect(row.meta.namespace).toBe("example-product");
   });
 
   test("bound inventory migrates a previously harvested authority and namespace", () => {
