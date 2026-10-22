@@ -26,6 +26,8 @@
 - Inventory classifies, estimates tokens for, and size-limits the carrier-free body. A second run over an annotated tree no longer estimates the generated header, and a body within `hashMaxBytes` stays hashed after its header pushes the physical file past the limit.
 - A previously written inventory header whose fields equal the old placeholder literals is migrated on the next run instead of being harvested forever.
 - The semantic classifier recognizes Jest's `__fixtures__/` and `__mocks__/` directories as fixtures, so JavaScript and TypeScript test-support files under them classify as `test` instead of injectable `source`.
+- `resolveHeaderIdentity` returned binding conflicts through a conditional that produced the same value on both branches; the conflicts are returned directly. The ledger-id patterns use the digit shorthand.
+- `CODEOWNERS` names the repository owner for source, `dist/`, decisions, contracts, CI and dependency files; the one-shot `pr89-closure.yml` workflow (`contents: write`) is removed; `.l9/ci.json` declares the `owner` the organization consumer schema admits, as AGENTS.md already described; the CI tables in AGENTS.md and `docs/architecture.md` list every workflow in the tree.
 
 ## 4.1.0 - 2026-09-17
 

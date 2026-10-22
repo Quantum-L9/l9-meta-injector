@@ -6,11 +6,11 @@
   "entries": [
     {
       "path": ".github/workflows/ci.yml",
-      "git_blob_sha1": "ba916b03c5544e111585abcb6a8e8ec23411bedd"
+      "git_blob_sha1": "f9e769deb60bcf8dfe6c64db68c89a50a8857f1b"
     },
     {
       "path": "CHANGELOG.md",
-      "git_blob_sha1": "7672a4c2caf84e2b7a1b9310d2c5d206b093a591"
+      "git_blob_sha1": "d464b652655b16ba359aed17e8415bca5a416d54"
     },
     {
       "path": "dist/archive_preflight.d.ts",
@@ -426,7 +426,7 @@
     },
     {
       "path": "docs/architecture.md",
-      "git_blob_sha1": "c5f9befcd809f2e700dbae57c792a334e44e04f4"
+      "git_blob_sha1": "968fa06c37e222b0d8b8bd402a2b51e7b4146cda"
     },
     {
       "path": "docs/contracts.md",
@@ -442,7 +442,7 @@
     },
     {
       "path": "docs/decision_log.md",
-      "git_blob_sha1": "c68c9e23f2401d1f28eddcf7d0faffc230cc73b4"
+      "git_blob_sha1": "7a57561d538140dca50584555e2c3149737900c4"
     },
     {
       "path": "docs/decisions/036-read-only-local-source-acquisition.md",
@@ -606,15 +606,15 @@
     },
     {
       "path": "package-lock.json",
-      "git_blob_sha1": "ed1cca22183d28e96b25f0b8f985293db8a218c8"
+      "git_blob_sha1": "fe80f69c4a292c8bf08bd94d77af0ef5f3df1afd"
     },
     {
       "path": "package.json",
-      "git_blob_sha1": "d9d7d4037929ff9c11cec95d18174acba51837f0"
+      "git_blob_sha1": "9d8b8aafa2ba6fe6770b8bc88d19cd65468a1a08"
     },
     {
       "path": "README.md",
-      "git_blob_sha1": "7df71bda68afc3f48c3dedfb2ea768237cb79f58"
+      "git_blob_sha1": "52f88538b2db72b4e0b71c8eb7b5f16d619edabd"
     },
     {
       "path": "scripts/check-architecture-authority.js",

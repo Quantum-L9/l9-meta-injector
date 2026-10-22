@@ -29,7 +29,7 @@ export type MetaAuthoritySchema =
   | typeof META_AUTHORITY_SCHEMA
   | typeof META_AUTHORITY_SCHEMA_V2;
 
-export const SEMANTIC_LEDGER_ID_RE = /^l9\.[a-z0-9-]+\/[a-z0-9-]+@[0-9]+$/;
+export const SEMANTIC_LEDGER_ID_RE = /^l9\.[a-z0-9-]+\/[a-z0-9-]+@\d+$/;
 export const SEMANTIC_LEDGER_DIGEST_RE = /^sha256:[0-9a-f]{64}$/;
 export const SEMANTIC_REVISION_RE = /^[0-9a-f]{40}$/;
 export const PRODUCT_ID_RE = /^[a-z0-9][a-z0-9_-]*$/;
