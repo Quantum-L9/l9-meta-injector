@@ -88,3 +88,25 @@ We choose **Option C** now and keep **Option D** open behind its credential.
 - Follow-up (separate decision): when a CI-triggering credential exists, a rebind
   workflow for Dependabot branches, bounded to `package.json`,
   `package-lock.json`, `docs/architecture-manifest.json` and the report.
+
+## Amendment 2026-10-22: major versions are not group bumps
+
+The first `dev-tooling` branch Dependabot opened under this decision (#108)
+proposed `typescript` 7.0.2, `@types/node` 26, `eslint` 10 and
+`typescript-eslint` 8.71 together. `typescript-eslint` 8.x declares a peer
+range that stops at TypeScript 5.x, so `npm ci` failed with `ERESOLVE` before
+any check ran; `@types/node` 26 describes a Node line this repository does not
+run (`devEngines.runtime` is Node 22); an ESLint major carries a configuration
+migration. None of these is a rebind, and a group that mixes them with the
+patch and minor updates it was created for cannot land at all.
+
+`.github/dependabot.yml` therefore limits both version-update groups
+(`dev-tooling` and the `transitive` wildcard) to `minor` and `patch` updates.
+Dependabot still opens a pull request for every major it sees, but as an
+individual branch rather than inside a group, so a major stays visible, is
+decided on its own (with its own decision when the public toolchain contract
+moves) and cannot hold the group's minor and patch updates hostage. An
+`ignore` rule was considered and rejected because it would hide majors from
+Dependabot altogether. Minor and patch updates still arrive through the groups
+and one `npm run deps:rebind`. #108 is closed as not landable in that shape;
+Dependabot recreates the group under the amended configuration.

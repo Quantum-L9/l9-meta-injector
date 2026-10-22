@@ -1,5 +1,11 @@
 # l9-meta-injector CHANGELOG
 
+## Unreleased
+
+### Changed
+
+- `.github/dependabot.yml` limits both version-update groups to minor and patch updates, so a major version of any package arrives as its own individual pull request instead of inside a group. The first grouped branch (#108) paired TypeScript 7 with typescript-eslint 8, whose peer range stops at 5.x, and could not install, which also blocked the minor and patch updates sharing it (ADR-056 amendment). Minor and patch updates still land through the groups and `npm run deps:rebind`.
+
 ## 4.2.0 - 2026-10-22
 
 Minor release: the public API surface is additive and `packet_version` stays 1.1.0. One change is breaking for a narrower audience: consumers that compare metadata `id` values across versions see every id move (ADR-054, below).
