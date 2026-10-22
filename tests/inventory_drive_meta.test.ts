@@ -186,6 +186,38 @@ describe("derived annotation fields", () => {
     expect(twice).toContain(`content_hash: ${expected}`);
   });
 
+  test("token_cost_estimate describes the carrier-free body and is stable across two live runs", () => {
+    const root = tmp();
+    fs.writeFileSync(path.join(root, "cfg.yaml"), "name: stable\n");
+    inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false, now: "2099-01-01T00:00:00.000Z" });
+    const once = /token_cost_estimate: (\d+)/.exec(fs.readFileSync(path.join(root, "cfg.yaml"), "utf8"));
+    expect(once).not.toBeNull();
+    inventoryTree({ root, outDir: path.join(tmp(), "out2"), folderSidecars: false, now: "2099-01-01T00:00:00.000Z" });
+    const twice = /token_cost_estimate: (\d+)/.exec(fs.readFileSync(path.join(root, "cfg.yaml"), "utf8"));
+    expect(twice).not.toBeNull();
+    // The second run reads a file that now carries the generated header; the
+    // estimate must still describe the 13-byte body, not the header.
+    expect(twice![1]).toBe(once![1]);
+  });
+
+  test("hashMaxBytes applies to the carrier-free body, so annotation cannot change eligibility", () => {
+    const root = tmp();
+    const body = "x".repeat(100) + "\n";
+    fs.writeFileSync(path.join(root, "cfg.yaml"), body);
+    const expected = contentHash(body);
+    const cfg = { root, folderSidecars: false, hashMaxBytes: 150, now: "2099-01-01T00:00:00.000Z" };
+    const first = inventoryTree({ ...cfg, outDir: path.join(tmp(), "out") });
+    expect(first.records.find((row) => row.file_name === "cfg.yaml")?.content_hash).toBe(expected);
+    expect(fs.statSync(path.join(root, "cfg.yaml")).size).toBeGreaterThan(150);
+    const second = inventoryTree({ ...cfg, outDir: path.join(tmp(), "out2") });
+    const rec = second.records.find((row) => row.file_name === "cfg.yaml");
+    expect(rec?.content_hash).toBe(expected);
+    expect(rec?.unknowns).not.toContain("content_hash_skipped:file_too_large");
+    const header = fs.readFileSync(path.join(root, "cfg.yaml"), "utf8");
+    expect(header).toContain(`content_hash: ${expected}`);
+    expect(header).not.toContain("token_cost_estimate: Unknown");
+  });
+
   test("identical files still cluster as duplicates after annotation", () => {
     const root = tmp();
     const body = "shared body\n";

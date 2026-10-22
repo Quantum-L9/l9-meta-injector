@@ -391,6 +391,19 @@ function sortStrings(values) {
     return [...values].sort(ordering_1.compareCodePoints);
 }
 // ───────────────────────────── builder ─────────────────────────────
+/**
+ * Inventory unknowns that describe the observing machine rather than the
+ * repository. A clock-skew note compares filesystem timestamps with the
+ * inventory's `now`; both belong to the checkout, not to the source, and the
+ * packet already keeps timestamps out of every artifact identity. Letting the
+ * note through would make the semantic hash depend on where and when the tree
+ * was copied, which is exactly what the semantic hash must not do.
+ */
+const NON_SEMANTIC_UNKNOWN_PREFIXES = ["clock_skew:"];
+/** The inventory unknowns that are about the repository, sorted. */
+function semanticUnknowns(record) {
+    return sortStrings(record.unknowns.filter((unknown) => !NON_SEMANTIC_UNKNOWN_PREFIXES.some((prefix) => unknown.startsWith(prefix))));
+}
 /** Deterministic identity of the observation set, independent of where it was checked out. */
 function snapshotSemanticHash(records, sourceRevision) {
     return semanticHash({
@@ -399,7 +412,7 @@ function snapshotSemanticHash(records, sourceRevision) {
             relative_path: record.relative_path,
             artifact_type: record.artifact_type,
             content_hash: record.content_hash ?? schema_1.UNKNOWN,
-            unknowns: sortStrings(record.unknowns),
+            unknowns: semanticUnknowns(record),
         })),
     });
 }
@@ -580,8 +593,9 @@ function buildRepositoryModelPacket(input) {
             evidence_refs: [observation.evidence_id],
             confidence: recordConfidence,
         });
-        // Preserve every inventory unknown as an explicit diagnostic.
-        for (const unknown of sortStrings(record.unknowns)) {
+        // Preserve every inventory unknown about the repository as an explicit
+        // diagnostic. Machine-clock notes stay in the inventory, not in the packet.
+        for (const unknown of semanticUnknowns(record)) {
             diagnostics.push({
                 code: "inventory-unknown",
                 severity: "warning",
