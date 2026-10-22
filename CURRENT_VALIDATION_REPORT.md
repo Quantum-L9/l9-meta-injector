@@ -1,9 +1,9 @@
 # Current validation report
 
-**Generated at commit:** `7ef955657c928b260c146f8babe79889acf89a1d`
+**Generated at commit:** `d4f6b5bd2e3b22aa02bd4ecd3c934f59e15d4658`
 **Working tree:** clean apart from this report
-**Bound to tree:** `sha256:9f2d3971942b32a3793b34117a4870dc8355d8688b06fb0c3d9c4e45e38f2fea`
-**Generated:** 2026-10-22T15:43:42.219Z
+**Bound to tree:** `sha256:6b68dc5be7740c08c233a9eb780de748aa681a3c6a8f2d54946704a937f8c9eb`
+**Generated:** 2026-10-22T15:48:37.502Z
 
 This report is written by `scripts/validation-report.js`, which runs each
 command below and records the exit code it received rather than a claim about it.
@@ -22,45 +22,13 @@ checkout.
 | Command | Exit | Result | Covers |
 |---|---:|---|---|
 | `npm run lint` | 0 | pass | ESLint over src and tests |
-| `npm run validate` | 1 | **FAIL** | the aggregate gate |
-
-## Failures
-
-### `npm run validate` — exit 1
-
-```
-[l9-meta-injector] local-files: expanded 1 archive(s) under /tmp/l9-reingest-DkJeeU
-[l9-meta-injector] coverage: scanned=1 injected=1 skipped-binary=0 skipped-noninjectable=0 archives-expanded=1 verify-failed=1 report=/tmp/l9-reingest-DkJeeU.out/coverage-report.json
-[l9-meta-injector] coverage: scanned=7 injected=6 skipped-binary=0 skipped-noninjectable=1 archives-expanded=0 verify-failed=0 report=/tmp/l9-mft-9InE4z/coverage-report.json
-[l9-meta-injector] local-files: expanded 2 archive(s) under /tmp/l9-archive-convergence-9CrnXb
-[l9-meta-injector] local-files: expanded 2 archive(s) under /tmp/l9-archive-convergence-sOmrih
-[l9-meta-injector] coverage: scanned=2 injected=1 skipped-binary=0 skipped-noninjectable=1 archives-expanded=0 verify-failed=0 report=/tmp/l9-cov-1792683808781-rakcpw451zl/coverage-report.json
-[l9-meta-injector] local-files: expanded 1 archive(s) under /tmp/l9-archive-convergence-56DTbO
-[l9-meta-injector] local-files: expanded 1 archive(s) under /tmp/l9-archive-convergence-QTCTlN
-[l9-meta-injector] local-files: expanded 1 archive(s) under /tmp/l9-archive-convergence-QTCTlN
-[l9-meta-injector] coverage: scanned=1 injected=0 skipped-binary=0 skipped-noninjectable=1 archives-expanded=0 verify-failed=0 report=/tmp/l9-cov-1792683808811-ilpjbgt13md/coverage-report.json
-[l9-meta-injector] coverage: scanned=2 injected=1 skipped-binary=0 skipped-noninjectable=1 archives-expanded=0 verify-failed=1 report=/tmp/l9-cov-1792683808820-9nth1qcih2u/coverage-report.json
-[l9-meta-injector] verification FAILED for 1/1 file(s):
-  - /tmp/l9-verify-1792683809654-n9q1ijnogne/prompts/Prompt-Incomplete.md: Prompt schema 'role' is Unknown; Prompt schema 'objective' is Unknown; Prompt schema 'input_variables' is Unknown; Prompt schema 'output_format' is Unknown; Prompt schema 'model_target' is Unknown
-[l9-meta-injector] local-files: expanded 1 archive(s) under /tmp/l9-path-conflict-KfcGKJ
-[l9-meta-injector] local-files: expanded 1 archive(s) under /tmp/l9-path-conflict-ojCfdL
-[l9-meta-injector] llm network_error: refusing to send credential to non-https baseUrl [0ms]
-[l9-meta-injector] llm network_error: refusing to send credential to non-https baseUrl [0ms]
-[l9-meta-injector] llm network_error: refusing to send credential to non-https baseUrl [0ms]
-[l9-meta-injector] llm network_error: network error [0ms]
-[l9-meta-injector] llm http_error (status 429): rate limited [1ms]
-[l9-meta-injector] llm parse_error (status 200): Unexpected token [0ms]
-[l9-meta-injector] llm timeout: aborted [1ms]
-[l9-meta-injector] llm network_error: ECONNREFUSED [0ms]
-[l9-meta-injector] llm network_error: refusing to send credential to non-https baseUrl [0ms]
-architecture manifest is stale; run npm run manifest:update
-```
+| `npm run validate` | 0 | pass | the aggregate gate |
 
 ## Verdict
 
-**RED**
+**green**
 
-At least one command failed. The tail of its output is above; this tree is not green.
+Every command above exited zero on the tree named at the top of this file.
 
 ## What this report does not say
 
