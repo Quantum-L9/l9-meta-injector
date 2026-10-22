@@ -36,6 +36,8 @@ Accepted ADRs are not deleted. A replacement ADR links back to the decision it s
 | [ADR-047](047-one-glob-dialect-and-fail-closed-repository-modes.md) | One glob dialect, and repository modes that report instead of throw | Accepted |
 | [ADR-048](048-organization-managed-l9-ci.md) | Organization L9 CI is centrally required, and the consumer owns no Core or SDK revision | Accepted |
 | [ADR-049](049-inventory-archive-member-annotation.md) | Inventory-only archive member annotation, always-sidecar, and Darwin search projection | Accepted |
+| [ADR-050](050-release-version-authority-and-major-tags.md) | One release version authority with maintained major consumer tags | Accepted |
+| [ADR-051](051-inventory-derived-annotation-fields.md) | Inventory annotation fields are derived or Unknown | Accepted |
 
 ## Authority boundary
 

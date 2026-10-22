@@ -348,9 +348,12 @@ direct CLI defaults to annotation: it harvests existing meta first, writes three
 writes `.l9meta.yaml` sidecars beside comment-less text and **every recognized archive**,
 and when rewrite is admitted injects a root `.l9meta.yaml` member inside `.zip` / `.tar` /
 `.tar.gz` / `.tgz`. On macOS it also projects a concise Finder Comment and Tags for
-search. This is not apply: it does not require `.l9/meta-authority.yaml`. Pass
-`--dry-run` for observation only, or use `npm run local-source` when the source must
-not be touched.
+search. Header fields are derived from the file (`classify`, `PRIMITIVE_TAXONOMY`,
+`resolveNamespace`, `estimateTokens`) or written as `Unknown`; inventory does not
+stamp `namespace: inventory` or `authority: inventory`, and `content_hash` on UTF-8
+text is the body without the managed carrier. This is not apply: it does not require
+`.l9/meta-authority.yaml`. Pass `--dry-run` for observation only, or use
+`npm run local-source` when the source must not be touched.
 
 Pipeline coverage: every run (including dry-run) writes `coverage-report.json` under `--out-dir` with skipped binary/non-injectable paths and classification details (ADR-018). `skipped-noninjectable` is taxonomy-gated; weak keyword false positives are demoted so in-scope prose injects.
 

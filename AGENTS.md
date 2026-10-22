@@ -141,7 +141,7 @@ Green CI proves implementation and packaging, not authorization to publish. Publ
 
 ## Formatter ownership
 
-Workspace class: `eslint_owned` — Workspaces where ESLint/Prettier config in the repo is authoritative for JS/TS. Python is still Ruff-owned.
+Workspace class: `eslint_owned` — Workspaces where ESLint/Prettier config in the repo is authoritative for JS/TS. Python is still Ruff-owned. Prettier owns Markdown (format-on-save off).
 
 Exactly one formatter owns each language. Do not reformat a file with a tool other than its owner, and do not add config for a competing formatter: the result is a diff that churns on every save.
 
@@ -149,6 +149,7 @@ Exactly one formatter owns each language. Do not reformat a file with a tool oth
 |---|---|---|
 | `javascript`, `javascriptreact`, `typescript`, `typescriptreact`, `json`, `jsonc` | eslint (this repo's own config) | do not add a competing formatter config |
 | `python` | **ruff** | bound by the governed IDE profile |
+| `markdown` | **prettier** | bound by the governed IDE profile |
 
 Generated from `environment/ide/policy.json` in the governance clone by `ops/scripts/adapters/agentdocs.sh`. Edit the policy, not this block.
 

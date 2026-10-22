@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Changed
+
+- Inventory annotation no longer stamps `namespace: inventory`, `authority: inventory`, or `token_cost_estimate: 0`. Taxonomy fields derive from `classify` and `PRIMITIVE_TAXONOMY`, `sharing_scope` from `resolveNamespace`, and token cost from `estimateTokens`; otherwise the field is `Unknown` (ADR-051).
+- Inventory `content_hash` for UTF-8 regular files is the SHA-256 of the body with the L9 managed carrier removed, so a second run is stable and duplicate clusters still match after annotation.
+
+### Fixed
+
+- Inventory records `clock_skew:<clock>_after_inspected_at` when `created_at` or `modified_at` is later than `inspected_at`, without rewriting the observed clocks. The comparison is made on parsed instants, so an `inspected_at` with a UTC offset or a different precision is judged chronologically rather than by string order.
+- The repository model keeps clock-skew notes out of the semantic hash and out of packet diagnostics. They compare filesystem timestamps with the inventory clock, both of which belong to the checkout; letting them through made the semantic hash change when the same tree was copied to another path.
+- Inventory classifies, estimates tokens for, and size-limits the carrier-free body. A second run over an annotated tree no longer estimates the generated header, and a body within `hashMaxBytes` stays hashed after its header pushes the physical file past the limit.
+- A previously written inventory header whose fields equal the old placeholder literals is migrated on the next run instead of being harvested forever.
+
 ## 4.1.0 - 2026-09-17
 
 ### Fixed

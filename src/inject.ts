@@ -45,6 +45,12 @@ export interface InjectOptions {
   writeInjectLog: boolean;
   /** When false, dry-run returns an in-memory plan without creating diff files. */
   writeDryRunDiff?: boolean;
+  /**
+   * When false, write incoming meta as-is. Inventory already harvested and
+   * applied derive-or-Unknown precedence; reconcile would resurrect the
+   * placeholders that pass just discarded.
+   */
+  reconcileExisting?: boolean;
 }
 
 interface ReadCtx {
@@ -53,6 +59,25 @@ interface ReadCtx {
   cleanBody: string;
   originalBodyHash: string;
   existingMeta: MetaRecord;
+}
+
+/**
+ * Body bytes that identity hashes describe: the file with the L9 managed
+ * carrier removed. Frontmatter uses the body after the fences; comment
+ * strategies use `stripInjectedBlock`; sidecar and skip-binary use the raw
+ * text. An unsafe frontmatter document is returned unchanged so inventory
+ * can still hash it; `injectFile` refuses that case separately.
+ */
+export function managedCarrierFreeBody(filePath: string, raw: string): string {
+  const spec = resolveStrategy(filePath, raw);
+  if (spec.strategy === "yaml-frontmatter") {
+    const inspected = inspectFrontMatterDocument(raw);
+    return inspected.safe ? inspected.body : raw;
+  }
+  if (spec.strategy === "line-comment" || spec.strategy === "block-comment") {
+    return stripInjectedBlock(raw, spec);
+  }
+  return raw;
 }
 
 // Read the file and derive the clean body + any prior metadata, per strategy.
@@ -73,16 +98,17 @@ function readForInjection(filePath: string): ReadCtx {
     if (!inspected.safe) {
       throw new Error(`FRONTMATTER_UNSAFE: ${filePath}: ${inspected.issue?.code ?? "unknown"}: ${inspected.issue?.message ?? "unsafe header"}`);
     }
+    const cleanBody = managedCarrierFreeBody(filePath, raw);
     return {
       raw,
       spec,
-      cleanBody: inspected.body,
-      originalBodyHash: contentHash(inspected.body),
+      cleanBody,
+      originalBodyHash: contentHash(cleanBody),
       existingMeta: normalizeMetaRecord(inspected.meta),
     };
   }
   if (spec.strategy === "line-comment" || spec.strategy === "block-comment") {
-    const cleanBody = stripInjectedBlock(raw, spec);
+    const cleanBody = managedCarrierFreeBody(filePath, raw);
     const existingYaml = extractInjectedYaml(raw, spec);
     return { raw, spec, cleanBody, originalBodyHash: contentHash(cleanBody), existingMeta: parseExistingMeta(existingYaml) };
   }
@@ -90,7 +116,8 @@ function readForInjection(filePath: string): ReadCtx {
   let existingMeta: MetaRecord = {};
   const sidecar = sidecarPathFor(filePath);
   if (fs.existsSync(sidecar)) existingMeta = parseExistingMeta(fs.readFileSync(sidecar, "utf8"));
-  return { raw, spec, cleanBody: raw, originalBodyHash: contentHash(raw), existingMeta };
+  const cleanBody = managedCarrierFreeBody(filePath, raw);
+  return { raw, spec, cleanBody, originalBodyHash: contentHash(cleanBody), existingMeta };
 }
 
 interface Built {
@@ -204,16 +231,28 @@ function record(filePath: string, ctx: ReadCtx, built: Built, finalMeta: Normali
   };
 }
 
+function finalizeInjectionMeta(
+  meta: NormalizedMeta,
+  merged: MetaRecord,
+  reconcileExisting: boolean,
+): NormalizedMeta {
+  if (reconcileExisting === false) return meta;
+  return { ...meta, ...merged } as NormalizedMeta;
+}
+
 export async function injectFileAsync(filePath: string, meta: NormalizedMeta, opts: InjectOptions, metrics?: MetricsCollector): Promise<InjectionRecord> {
   const ctx = readForInjection(filePath);
   // Widen the typed producer (NormalizedMeta) onto the shared reconcile-edge record
   // type instead of the untyped Object.fromEntries clone (ICC-005). reconcile reads
   // incoming without mutating it, so an alias is safe.
   const incomingMeta: MetaRecord = asRecord(meta);
-  const { merged, diffs } = getAdapter().classify
-    ? await reconcileFieldsAsync(ctx.existingMeta, incomingMeta, metrics)
-    : reconcileFields(ctx.existingMeta, incomingMeta);
-  const finalMeta = { ...meta, ...merged } as NormalizedMeta;
+  const skipReconcile = opts.reconcileExisting === false;
+  const { merged, diffs } = skipReconcile
+    ? { merged: incomingMeta, diffs: [] }
+    : getAdapter().classify
+      ? await reconcileFieldsAsync(ctx.existingMeta, incomingMeta, metrics)
+      : reconcileFields(ctx.existingMeta, incomingMeta);
+  const finalMeta = finalizeInjectionMeta(meta, merged, opts.reconcileExisting !== false);
   const built = buildInjection(filePath, finalMeta, ctx);
   const paths = writeInjection(filePath, built, diffs, opts);
   return record(filePath, ctx, built, finalMeta, opts, paths);
@@ -221,8 +260,12 @@ export async function injectFileAsync(filePath: string, meta: NormalizedMeta, op
 
 export function injectFile(filePath: string, meta: NormalizedMeta, opts: InjectOptions): InjectionRecord {
   const ctx = readForInjection(filePath);
-  const { merged, diffs } = reconcileFields(ctx.existingMeta, asRecord(meta));
-  const finalMeta = { ...meta, ...merged } as NormalizedMeta;
+  const incomingMeta = asRecord(meta);
+  const skipReconcile = opts.reconcileExisting === false;
+  const { merged, diffs } = skipReconcile
+    ? { merged: incomingMeta, diffs: [] }
+    : reconcileFields(ctx.existingMeta, incomingMeta);
+  const finalMeta = finalizeInjectionMeta(meta, merged, opts.reconcileExisting !== false);
   const built = buildInjection(filePath, finalMeta, ctx);
   const paths = writeInjection(filePath, built, diffs, opts);
   return record(filePath, ctx, built, finalMeta, opts, paths);

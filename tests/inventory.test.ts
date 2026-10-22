@@ -146,6 +146,21 @@ describe("inventoryTree — non-destructive filesystem inventory", () => {
     expect(rec.source_system).toBe("dropbox");
     expect(rec.artifact_type).toBe("schema");
     expect(rec.classification_confidence).toBeGreaterThan(0);
-    expect(rec.unknowns).toEqual([]);
+    expect(rec.unknowns).toContain("clock_skew:modified_at_after_inspected_at");
+    if (rec.created_at) expect(rec.unknowns).toContain("clock_skew:created_at_after_inspected_at");
+  });
+
+  it("buildRecord decides clock skew on instants, not on ISO string order", () => {
+    const root = tmp(); tree(root);
+    const file = path.join(root, "l9_meta.schema.json");
+    const modified = new Date("2026-10-04T00:30:00.000Z");
+    fs.utimesSync(file, modified, modified);
+    // 01:00+02:00 is 23:00Z the previous day: earlier than the modification,
+    // although the string "2026-10-04T00:30:00.000Z" sorts before it.
+    const offset = buildRecord(root, file, false, { sourceSystem: "dropbox", hashMaxBytes: 1e9, now: "2026-10-04T01:00:00+02:00" });
+    expect(offset.unknowns).toContain("clock_skew:modified_at_after_inspected_at");
+    // The same instant written in UTC later than the modification: no skew.
+    const later = buildRecord(root, file, false, { sourceSystem: "dropbox", hashMaxBytes: 1e9, now: "2026-10-04T00:30:00.001Z" });
+    expect(later.unknowns).not.toContain("clock_skew:modified_at_after_inspected_at");
   });
 });

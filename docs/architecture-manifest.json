@@ -10,7 +10,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "git_blob_sha1": "caf0bc9d048252121dbe6a427fde44e4288da8b1"
+      "git_blob_sha1": "5438c114264192bb2772745120623d1a0a30d663"
     },
     {
       "path": "dist/archive_preflight.d.ts",
@@ -402,11 +402,11 @@
     },
     {
       "path": "dist/repository_model.js",
-      "git_blob_sha1": "a8db39c7b0bc029abdc75a2a5da1b9d06fe6cdff"
+      "git_blob_sha1": "78b56ca42ba8513d19b7169f886d943ff5494816"
     },
     {
       "path": "dist/repository_model.js.map",
-      "git_blob_sha1": "4346f53c218aae4dd1279a59a02f9f4b66e3cb5d"
+      "git_blob_sha1": "76078abed286da0bba630a96611b2b4c2f3c16a9"
     },
     {
       "path": "dist/zip_reader.d.ts",
@@ -426,7 +426,7 @@
     },
     {
       "path": "docs/architecture.md",
-      "git_blob_sha1": "c76d4df62a999be737dbcab8a9e907dca2706209"
+      "git_blob_sha1": "ef5cd9c82cc01573144008048dc08e4746613b3f"
     },
     {
       "path": "docs/contracts.md",
@@ -442,7 +442,7 @@
     },
     {
       "path": "docs/decision_log.md",
-      "git_blob_sha1": "cbb3bda26e324108bb025342292df5f39bf2388d"
+      "git_blob_sha1": "d02d0aefee890dc2c32b04e5112d155f40737f36"
     },
     {
       "path": "docs/decisions/036-read-only-local-source-acquisition.md",
@@ -614,7 +614,7 @@
     },
     {
       "path": "README.md",
-      "git_blob_sha1": "f25c4d342750f00a4576a027a025d9ba97bf027a"
+      "git_blob_sha1": "66ece64d839e51a1414707dc43a020979c6a5ba0"
     },
     {
       "path": "scripts/check-architecture-authority.js",
@@ -786,7 +786,7 @@
     },
     {
       "path": "src/inventory.ts",
-      "git_blob_sha1": "f4966988606b6a0ef107c9761661b764e044b625"
+      "git_blob_sha1": "9d8ea2af355643669848381d3c10ff9f85151ee6"
     },
     {
       "path": "src/local_archive_policy.ts",
@@ -834,7 +834,7 @@
     },
     {
       "path": "src/repository_model.ts",
-      "git_blob_sha1": "797150c011163860945832d2189ff8e1093c413e"
+      "git_blob_sha1": "cc74ff4e3c146400d23b0f3f01582f33a69cb9ca"
     },
     {
       "path": "src/schema.ts",
@@ -966,7 +966,7 @@
     },
     {
       "path": "tests/repository_model.test.ts",
-      "git_blob_sha1": "b132aebde1faa272b9cd4a067a79384950a89eea"
+      "git_blob_sha1": "3e6877057001dbd565a50767e53bd7646cc0ff81"
     },
     {
       "path": "tests/semantic_firewall.test.ts",

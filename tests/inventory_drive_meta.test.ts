@@ -4,6 +4,7 @@ import * as path from "node:path";
 import { execFileSync } from "node:child_process";
 import { describe, expect, test } from "vitest";
 import { inventoryTree, buildRecord } from "../src/inventory";
+import { contentHash } from "../src/extract";
 import { harvestExistingMeta } from "../src/inventory_existing_meta";
 import { buildTarArchive } from "../src/tar_writer";
 import { peekTarRootMeta, readTarArchive } from "../src/tar_reader";
@@ -119,6 +120,168 @@ describe("three clocks", () => {
     expect(py).toContain("2026-09-11T19:00:00.000Z");
     expect(py).toContain("print(1)");
     expect(py).not.toContain("created_or_detected_at:");
+  });
+});
+
+describe("derived annotation fields", () => {
+  test("a prompt markdown file derives prompt taxonomy from classify", () => {
+    const root = tmp();
+    fs.mkdirSync(path.join(root, "docs", "prompts"), { recursive: true });
+    fs.writeFileSync(path.join(root, "docs", "prompts", "foo.md"), "# Use when classifying\n");
+    inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false, now: "2099-01-01T00:00:00.000Z" });
+    const md = fs.readFileSync(path.join(root, "docs", "prompts", "foo.md"), "utf8");
+    expect(md).toMatch(/artifact_type:\s*"?prompt"?/);
+    expect(md).toMatch(/mcp_primitive:\s*"?prompt"?/);
+    expect(md).toContain("callable: true");
+    expect(md).toMatch(/namespace:\s*"?Unknown"?/);
+    expect(md).toMatch(/authority:\s*"?Unknown"?/);
+  });
+
+  test("a yaml file derives source taxonomy, a token estimate, and Unknown namespace/authority", () => {
+    const root = tmp();
+    fs.writeFileSync(path.join(root, "cfg.yaml"), "name: sample\n");
+    inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false, now: "2099-01-01T00:00:00.000Z" });
+    const yaml = fs.readFileSync(path.join(root, "cfg.yaml"), "utf8");
+    expect(yaml).toContain("artifact_type: source");
+    expect(yaml).toContain("inventory_type: config");
+    expect(yaml).toContain("namespace: Unknown");
+    expect(yaml).toContain("authority: Unknown");
+    expect(yaml).not.toContain("token_cost_estimate: 0");
+    expect(yaml).not.toContain("token_cost_estimate: Unknown");
+    const token = /token_cost_estimate: (\d+)/.exec(yaml);
+    expect(token).not.toBeNull();
+    expect(Number(token![1])).toBeGreaterThan(0);
+  });
+
+  test("folder and archive sidecars carry Unknown taxonomy and token fields", () => {
+    const root = tmp();
+    fs.mkdirSync(path.join(root, "docs"));
+    fs.writeFileSync(path.join(root, "docs", "a.md"), "# A\n");
+    const zip = buildZipBuffer([{ name: "readme.txt", data: Buffer.from("hello\n") }]);
+    fs.writeFileSync(path.join(root, "pack.zip"), zip);
+    inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: true, now: "2099-01-01T00:00:00.000Z" });
+    const folder = fs.readFileSync(path.join(root, "docs", ".l9meta.yaml"), "utf8");
+    const archive = fs.readFileSync(path.join(root, "pack.zip.l9meta.yaml"), "utf8");
+    for (const text of [folder, archive]) {
+      expect(text).toContain("artifact_type: Unknown");
+      expect(text).toContain("mcp_primitive: Unknown");
+      expect(text).toContain("callable: Unknown");
+      expect(text).toContain("token_cost_estimate: Unknown");
+      expect(text).toContain("namespace: Unknown");
+      expect(text).toContain("authority: Unknown");
+    }
+    expect(archive).toContain("inventory_type: archive");
+  });
+
+  test("content_hash is the carrier-free body hash and is stable across two live runs", () => {
+    const root = tmp();
+    const body = "name: stable\n";
+    fs.writeFileSync(path.join(root, "cfg.yaml"), body);
+    const expected = contentHash(body);
+    inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false, now: "2099-01-01T00:00:00.000Z" });
+    const once = fs.readFileSync(path.join(root, "cfg.yaml"), "utf8");
+    expect(once).toContain(`content_hash: ${expected}`);
+    inventoryTree({ root, outDir: path.join(tmp(), "out2"), folderSidecars: false, now: "2099-01-01T00:00:00.000Z" });
+    const twice = fs.readFileSync(path.join(root, "cfg.yaml"), "utf8");
+    expect(twice).toContain(`content_hash: ${expected}`);
+  });
+
+  test("token_cost_estimate describes the carrier-free body and is stable across two live runs", () => {
+    const root = tmp();
+    fs.writeFileSync(path.join(root, "cfg.yaml"), "name: stable\n");
+    inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false, now: "2099-01-01T00:00:00.000Z" });
+    const once = /token_cost_estimate: (\d+)/.exec(fs.readFileSync(path.join(root, "cfg.yaml"), "utf8"));
+    expect(once).not.toBeNull();
+    inventoryTree({ root, outDir: path.join(tmp(), "out2"), folderSidecars: false, now: "2099-01-01T00:00:00.000Z" });
+    const twice = /token_cost_estimate: (\d+)/.exec(fs.readFileSync(path.join(root, "cfg.yaml"), "utf8"));
+    expect(twice).not.toBeNull();
+    // The second run reads a file that now carries the generated header; the
+    // estimate must still describe the 13-byte body, not the header.
+    expect(twice![1]).toBe(once![1]);
+  });
+
+  test("hashMaxBytes applies to the carrier-free body, so annotation cannot change eligibility", () => {
+    const root = tmp();
+    const body = "x".repeat(100) + "\n";
+    fs.writeFileSync(path.join(root, "cfg.yaml"), body);
+    const expected = contentHash(body);
+    const cfg = { root, folderSidecars: false, hashMaxBytes: 150, now: "2099-01-01T00:00:00.000Z" };
+    const first = inventoryTree({ ...cfg, outDir: path.join(tmp(), "out") });
+    expect(first.records.find((row) => row.file_name === "cfg.yaml")?.content_hash).toBe(expected);
+    expect(fs.statSync(path.join(root, "cfg.yaml")).size).toBeGreaterThan(150);
+    const second = inventoryTree({ ...cfg, outDir: path.join(tmp(), "out2") });
+    const rec = second.records.find((row) => row.file_name === "cfg.yaml");
+    expect(rec?.content_hash).toBe(expected);
+    expect(rec?.unknowns).not.toContain("content_hash_skipped:file_too_large");
+    const header = fs.readFileSync(path.join(root, "cfg.yaml"), "utf8");
+    expect(header).toContain(`content_hash: ${expected}`);
+    expect(header).not.toContain("token_cost_estimate: Unknown");
+  });
+
+  test("identical files still cluster as duplicates after annotation", () => {
+    const root = tmp();
+    const body = "shared body\n";
+    fs.writeFileSync(path.join(root, "a.yaml"), body);
+    fs.writeFileSync(path.join(root, "b.yaml"), body);
+    const result = inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false, now: "2099-01-01T00:00:00.000Z" });
+    expect(result.duplicates).toHaveLength(1);
+    expect(result.duplicates[0]?.count).toBe(2);
+    expect(result.duplicates[0]?.content_hash).toBe(contentHash(body));
+  });
+
+  test("a pre-seeded legacy header is migrated and an operator namespace is preserved", () => {
+    const root = tmp();
+    fs.writeFileSync(path.join(root, "legacy.py"), [
+      "# >>> l9:meta >>>",
+      "# artifact_type: source",
+      "# mcp_primitive: resource",
+      "# callable: false",
+      "# retrievable: true",
+      "# injectable: true",
+      "# namespace: inventory",
+      "# sharing_scope: agnostic",
+      "# token_cost_estimate: 0",
+      "# authority: inventory",
+      "# <<< l9:meta <<<",
+      "print(1)\n",
+    ].join("\n"));
+    fs.writeFileSync(path.join(root, "kept.py"), [
+      "# >>> l9:meta >>>",
+      "# namespace: myns",
+      "# <<< l9:meta <<<",
+      "print(2)\n",
+    ].join("\n"));
+    inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false, now: "2099-01-01T00:00:00.000Z" });
+    const legacy = fs.readFileSync(path.join(root, "legacy.py"), "utf8");
+    expect(legacy).toContain("namespace: Unknown");
+    expect(legacy).toContain("authority: Unknown");
+    expect(legacy).not.toContain("namespace: inventory");
+    expect(legacy).not.toContain("authority: inventory");
+    expect(legacy).not.toContain("token_cost_estimate: 0");
+    const kept = fs.readFileSync(path.join(root, "kept.py"), "utf8");
+    expect(kept).toContain("namespace: myns");
+    expect(kept).toContain("authority: Unknown");
+  });
+
+  test("a future mtime yields a clock-skew diagnostic and leaves the observed value unchanged", () => {
+    const root = tmp();
+    const file = path.join(root, "note.md");
+    fs.writeFileSync(file, "# hi\n");
+    const inspected = new Date().toISOString();
+    const future = new Date(Date.now() + 120_000);
+    fs.utimesSync(file, future, future);
+    const result = inventoryTree({
+      root,
+      outDir: path.join(tmp(), "out"),
+      folderSidecars: false,
+      now: inspected,
+    });
+    const rec = result.records.find((row) => row.file_name === "note.md");
+    expect(rec?.unknowns).toContain("clock_skew:modified_at_after_inspected_at");
+    expect(rec?.modified_at && rec.modified_at > inspected).toBe(true);
+    const md = fs.readFileSync(file, "utf8");
+    expect(md).toContain("modified_at:");
+    expect(md).toContain((rec?.modified_at ?? "").slice(0, 19));
   });
 });
 
