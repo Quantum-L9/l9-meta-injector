@@ -310,7 +310,9 @@ claim of continuity.
 Evidence is bound to what it describes. A validation report names a digest of the
 tree it ran over and is invalid the moment that tree moves; a conformance record
 names the exact bytes of every bundle it accepted; a real-archive acceptance run
-scans the roots an operator declared and never discovers one.
+scans the roots an operator declared and never discovers one. A dependency update
+is a tree change like any other: it is rebound with `npm run deps:rebind`, never
+exempted (ADR-056).
 
 **Enforced by:** `tests/corpus_document_participation.test.ts`,
 `tests/document_decoders.test.ts`, `tests/corpus_candidate_diff.test.ts`,

@@ -42,6 +42,7 @@ Accepted ADRs are not deleted. A replacement ADR links back to the decision it s
 | [ADR-053](053-semantic-binding-propagation.md) | A bound root stamps owner, refuses foreign namespace globs, relaxes the literal-namespace verify rule, and records run provenance | Accepted |
 | [ADR-054](054-pipeline-identity-and-carrier-lifecycle.md) | Pipeline identity is path-derived and duplicate-refusing; classification is boundary-safe; carrier tiers gate the subject lifecycle | Accepted |
 | [ADR-055](055-manifest-interpretation.md) | Every repository record is evidence-backed, and dependency coverage diagnostics defer to the manifest claims the seam already makes | Accepted, supersedes the ADR-031/032 manifest deferral |
+| [ADR-056](056-dependency-updates-and-report-binding.md) | Dependency updates land through one maintainer rebind, and the validation report stays bound to the whole tree | Accepted |
 
 ## Authority boundary
 

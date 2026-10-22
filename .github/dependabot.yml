@@ -1,0 +1,36 @@
+# Dependabot groups npm updates so that one maintainer-run report rebind lands a
+# whole group (ADR-056). Every branch Dependabot opens changes package-lock.json,
+# which moves the tree digest CURRENT_VALIDATION_REPORT.md is bound to; a bot
+# cannot regenerate that report, so fewer, larger branches cost fewer rebinds.
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 3
+    groups:
+      # The test and build toolchain moves together: vitest pins vite, and the
+      # TypeScript/ESLint pair is validated as one gate.
+      dev-tooling:
+        applies-to: version-updates
+        patterns:
+          - "vitest"
+          - "@vitest/*"
+          - "vite"
+          - "typescript"
+          - "eslint"
+          - "typescript-eslint"
+          - "@types/node"
+      # Everything else is transitive to the toolchain above; this package
+      # declares no runtime dependencies.
+      transitive:
+        applies-to: version-updates
+        patterns:
+          - "*"
+      # Security updates arrive as one branch too, so one rebind closes them.
+      security:
+        applies-to: security-updates
+        patterns:
+          - "*"
