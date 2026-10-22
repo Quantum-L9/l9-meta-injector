@@ -10,6 +10,22 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 3
+    # Major versions of the toolchain are deliberate changes, not a group bump:
+    # the first grouped branch (#108) proposed typescript 7 beside
+    # typescript-eslint 8, whose peer range stops at 5.x, so `npm ci` failed on
+    # ERESOLVE before any check ran; @types/node tracks the Node line
+    # devEngines.runtime declares (22); an eslint major carries a config
+    # migration. Minor and patch updates of all four still land through the
+    # dev-tooling group and one rebind.
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "typescript-eslint"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       # The test and build toolchain moves together: vitest pins vite, and the
       # TypeScript/ESLint pair is validated as one gate.
