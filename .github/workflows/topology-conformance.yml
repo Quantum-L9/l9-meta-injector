@@ -39,12 +39,27 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Resolve the consumer revision this run binds to
+      # The consumer is always checked out at a static ref (its default branch) and
+      # pinned afterwards by a plain git command: the checkout ref never comes from
+      # a step output, and this job writes no Actions cache, so a scheduled run on
+      # the default branch cannot poison a cache from the consumer's code (CodeQL
+      # actions/cache-poisoning/poisonable-step).
+      - name: Check out the consumer, read-only
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: Quantum-L9/l9-constellation-topology
+          ref: main
+          fetch-depth: 0
+          path: .l9-topology-consumer
+          persist-credentials: false
+
+      - name: Pin the consumer to the revision this record binds to
         id: consumer
         shell: bash
         run: |
           if [[ "${GITHUB_EVENT_NAME}" == "schedule" ]]; then
-            echo "ref=main" >> "$GITHUB_OUTPUT"
+            # Drift watch: stay on the consumer's main so a consumer rule change
+            # shows up here before a release pins it.
             echo "mode=drift-watch" >> "$GITHUB_OUTPUT"
           else
             rev="$(node -p "require('./docs/topology-conformance.json').consumer.revision")"
@@ -52,22 +67,14 @@ jobs:
               echo "docs/topology-conformance.json does not name a 40-hex consumer revision: $rev" >&2
               exit 1
             fi
-            echo "ref=$rev" >> "$GITHUB_OUTPUT"
+            git -C .l9-topology-consumer switch --detach "$rev"
             echo "mode=record" >> "$GITHUB_OUTPUT"
           fi
-
-      - name: Check out the consumer, read-only
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          repository: Quantum-L9/l9-constellation-topology
-          ref: ${{ steps.consumer.outputs.ref }}
-          path: .l9-topology-consumer
-          persist-credentials: false
+          echo "consumer=$(git -C .l9-topology-consumer rev-parse HEAD)"
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "20"
-          cache: npm
 
       - run: npm ci --ignore-scripts
       - run: npm run build
