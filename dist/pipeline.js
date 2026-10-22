@@ -83,7 +83,7 @@ function inlineCarrierBlockFor(raw) {
 function toCfg(config) {
     return { namespace: config.namespace ?? "l9", authority: config.authority ?? "", nearDupThreshold: config.nearDupThreshold, hashPrefixLength: config.hashPrefixLength, outputDir: config.outDir, indexDir: config.indexDir, namespaceGlobs: config.namespaceGlobs };
 }
-/** Refuse a real run over a tree with a blocking discovery disposition, naming the paths. */
+/** Refuse a run in which two paths normalize to one metadata id, naming every colliding path. */
 function assertUniqueMetadataIds(subjects) {
     const byId = new Map();
     for (const subject of subjects) {
@@ -98,6 +98,7 @@ function assertUniqueMetadataIds(subjects) {
     const detail = duplicates.map(([id, paths]) => `${id}: ${paths.join(", ")}`).join("; ");
     throw new Error(`DUPLICATE_METADATA_ID: ${duplicates.length} id(s) map to more than one path: ${detail}`);
 }
+/** Refuse a real run over a tree with a blocking discovery disposition, naming the paths. */
 function assertTreeGovernable(discovery) {
     if (discovery.summary.blocking === 0)
         return;

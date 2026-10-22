@@ -169,7 +169,10 @@ const RULES = [
     {
         artifactClass: "fixture",
         confidence: "high",
-        test: ({ base, norm }) => /\/(fixtures?|examples?|mocks?)\//.test(norm) || base.includes("fixture") || base.includes("mock")
+        test: ({ base, norm }) => 
+        // Jest's `__fixtures__/` and `__mocks__/` are the same test-support
+        // directories as their bare spellings and classify the same way.
+        /\/(fixtures?|__fixtures__|examples?|mocks?|__mocks__)\//.test(norm) || base.includes("fixture") || base.includes("mock")
             ? "fixture"
             : null,
     },

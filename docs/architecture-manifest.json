@@ -10,7 +10,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "git_blob_sha1": "3c7f08a3a0ed4fe7ed460cea6b477c41ae79b27d"
+      "git_blob_sha1": "7672a4c2caf84e2b7a1b9310d2c5d206b093a591"
     },
     {
       "path": "dist/archive_preflight.d.ts",
@@ -810,7 +810,7 @@
     },
     {
       "path": "src/pipeline.ts",
-      "git_blob_sha1": "8ca1d0e4a6d761988f3cf1afcfe7b92008e9e9f6"
+      "git_blob_sha1": "ed2e39e0d0f7b0c3dd9150e71b44645ec4e4dbc4"
     },
     {
       "path": "src/public/advanced.ts",

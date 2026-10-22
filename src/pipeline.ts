@@ -143,7 +143,7 @@ export interface PipelineResult {
   };
 }
 
-/** Refuse a real run over a tree with a blocking discovery disposition, naming the paths. */
+/** Refuse a run in which two paths normalize to one metadata id, naming every colliding path. */
 function assertUniqueMetadataIds(subjects: readonly PipelineMetadataSubject[]): void {
   const byId = new Map<string, string[]>();
   for (const subject of subjects) {
@@ -158,6 +158,7 @@ function assertUniqueMetadataIds(subjects: readonly PipelineMetadataSubject[]): 
   throw new Error(`DUPLICATE_METADATA_ID: ${duplicates.length} id(s) map to more than one path: ${detail}`);
 }
 
+/** Refuse a real run over a tree with a blocking discovery disposition, naming the paths. */
 function assertTreeGovernable(discovery: ReturnType<typeof discoverFiles>): void {
   if (discovery.summary.blocking === 0) return;
   const preview = discovery.summary.entries

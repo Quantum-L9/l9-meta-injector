@@ -103,6 +103,8 @@ describe("classify — relative paths and guarded non-prose mapping", () => {
     ["examples/a.ts", "source"],
     ["src/fixtureLoader.ts", "source"],
     ["scripts/fixtures/a.ts", "test"],
+    ["src/__fixtures__/a.ts", "test"],
+    ["src/__mocks__/a.js", "test"],
     ["tests/a.test.ts", "test"],
   ])("%s → %s", (filePath, expected) => {
     expect(classify(filePath, "print('hi')\n", "none").artifactType).toBe(expected);
