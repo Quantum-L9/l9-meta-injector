@@ -1,7 +1,7 @@
 {
   "schema": "l9.topology-conformance/v1",
   "repository": "Quantum-L9/l9-meta-injector",
-  "statement": "Every committed Repository Model Packet bundle \u2014 inventory-only and structurally interpreted \u2014 was accepted by the bound l9-constellation-topology consumer without a translation shim.",
+  "statement": "Every committed Repository Model Packet bundle — inventory-only and structurally interpreted — was accepted by the bound l9-constellation-topology consumer without a translation shim.",
   "consumer": {
     "repository": "Quantum-L9/l9-constellation-topology",
     "revision": "17f7453c402eb715790466699c759d98dabd3811",
@@ -15,22 +15,22 @@
     {
       "id": "inventory",
       "bundle": "fixtures/repository-model/expected-bundle",
-      "packet_id": "packet:02f030486d8c3d0498e04888b2814c472aaece152d2442e3184ef3998a5d52c2",
-      "semantic_hash": "sha256:02f030486d8c3d0498e04888b2814c472aaece152d2442e3184ef3998a5d52c2",
+      "packet_id": "packet:3c5563619df758d300d083d5a4ff217cbc161f3e77be134c23acbb70e9a759d7",
+      "semantic_hash": "sha256:3c5563619df758d300d083d5a4ff217cbc161f3e77be134c23acbb70e9a759d7",
       "packet_type": "l9.repository-model",
       "packet_version": "1.1.0",
       "files": [
         {
           "path": "manifest.json",
-          "content_hash": "sha256:076b01d69d80c6cd4243dd517c76aad4cabbaa6630c1c0a99028906f5e3d8c4a"
+          "content_hash": "sha256:8a0b6508c17c73e1d772a0a8eeba345a126709189ba98d194f6fb238acd5b696"
         },
         {
           "path": "packet.json",
-          "content_hash": "sha256:0929ac1d140a77e65ee96ff2aa4ed0db52b9b70065edd622281854545305c687"
+          "content_hash": "sha256:3bd749debe77f39a20c0e9636d435d354be4033655b67b86045fef518edd9681"
         },
         {
           "path": "receipts/validation-receipt.json",
-          "content_hash": "sha256:c67776aa55e8945d91fae5189a133dbcda76aef1db18d21fd760ef68340ceef1"
+          "content_hash": "sha256:595e63b7134f4bddaefdb9fb6a37f75fcda4eac5b57488ce7d5ceec589e2595c"
         }
       ],
       "normalized_counts": {
@@ -38,8 +38,8 @@
         "artifacts": 7,
         "capabilities": 0,
         "relationships": 7,
-        "evidence": 13,
-        "diagnostics": 20
+        "evidence": 19,
+        "diagnostics": 6
       }
     },
     {

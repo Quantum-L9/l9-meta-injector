@@ -10,7 +10,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "git_blob_sha1": "4d12d0243cb33566b732cde521f650fa4a882a64"
+      "git_blob_sha1": "1e98026fb2324c2f75898765fde9aaabfd89283a"
     },
     {
       "path": "dist/archive_preflight.d.ts",
@@ -402,11 +402,11 @@
     },
     {
       "path": "dist/repository_model.js",
-      "git_blob_sha1": "a8db39c7b0bc029abdc75a2a5da1b9d06fe6cdff"
+      "git_blob_sha1": "78b56ca42ba8513d19b7169f886d943ff5494816"
     },
     {
       "path": "dist/repository_model.js.map",
-      "git_blob_sha1": "4346f53c218aae4dd1279a59a02f9f4b66e3cb5d"
+      "git_blob_sha1": "76078abed286da0bba630a96611b2b4c2f3c16a9"
     },
     {
       "path": "dist/zip_reader.d.ts",
@@ -538,7 +538,7 @@
     },
     {
       "path": "docs/topology-conformance.json",
-      "git_blob_sha1": "807189f96b8e38e9bfbb0349682e8471d5dbfef3"
+      "git_blob_sha1": "82d417dc618700c6099d217a1962e334c423e439"
     },
     {
       "path": "docs/traceability-map.json",
@@ -590,15 +590,15 @@
     },
     {
       "path": "fixtures/repository-model/expected-bundle/manifest.json",
-      "git_blob_sha1": "ac066a9b1e464d954444b5ce338d6754d02e3e2a"
+      "git_blob_sha1": "2326530376c7cae33ac850fbec198143609573e3"
     },
     {
       "path": "fixtures/repository-model/expected-bundle/packet.json",
-      "git_blob_sha1": "b5b497de7111e4d37dcf8d708935404392debcc7"
+      "git_blob_sha1": "effc7ee50c91ca827aaa2a532f7f055ba6cda1eb"
     },
     {
       "path": "fixtures/repository-model/expected-bundle/receipts/validation-receipt.json",
-      "git_blob_sha1": "b8ff5e3dbf96f0cc3533a0a079f691c1ebfba951"
+      "git_blob_sha1": "f7dbd41e0a042dbdca0847539877859e3c9471bc"
     },
     {
       "path": "Makefile",
@@ -786,7 +786,7 @@
     },
     {
       "path": "src/inventory.ts",
-      "git_blob_sha1": "92d730a583e77374653cf9f1095f0ce82045c711"
+      "git_blob_sha1": "0efbbabaf928e07f1fff1588dcc0b1ba657a2a6a"
     },
     {
       "path": "src/local_archive_policy.ts",
@@ -834,7 +834,7 @@
     },
     {
       "path": "src/repository_model.ts",
-      "git_blob_sha1": "797150c011163860945832d2189ff8e1093c413e"
+      "git_blob_sha1": "cc74ff4e3c146400d23b0f3f01582f33a69cb9ca"
     },
     {
       "path": "src/schema.ts",
@@ -966,7 +966,7 @@
     },
     {
       "path": "tests/repository_model.test.ts",
-      "git_blob_sha1": "b132aebde1faa272b9cd4a067a79384950a89eea"
+      "git_blob_sha1": "3e6877057001dbd565a50767e53bd7646cc0ff81"
     },
     {
       "path": "tests/semantic_firewall.test.ts",

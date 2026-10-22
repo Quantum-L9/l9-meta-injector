@@ -75,8 +75,11 @@ We choose **Option B**.
    `originalBodyHash`). Binaries, archives, and oversize files keep the raw-byte
    hash. Duplicate clusters therefore still match after annotation.
 6. **Clock skew is a diagnostic, not a rewrite.** If `created_at` or `modified_at`
-   is later than `inspected_at`, the record gains
-   `clock_skew:<clock>_after_inspected_at`. The observed values stay.
+   is later than `inspected_at` (compared as instants, not as strings), the record
+   gains `clock_skew:<clock>_after_inspected_at`. The observed values stay. The
+   note describes the observing machine's clocks, so the repository model leaves
+   it out of the semantic hash and of packet diagnostics: the same tree copied to
+   another path, or inventoried on another day, keeps its identity.
 7. **Legacy placeholders are stripped on harvest.** A documented table holds the
    exact pre-change literals. A harvested value equal to its literal is discarded
    before precedence runs, so an already-annotated tree migrates.
