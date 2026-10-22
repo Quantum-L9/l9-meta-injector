@@ -17,8 +17,8 @@
     },
     {
       "id": "github_release_validation",
-      "status": "pending",
-      "result": "v4.2.0 is prepared by docs/release/v4.2.0-release-plan.json (github_release.status candidate). release.yml creates the exact tag, the GitHub Release and moves v4 after the version-bump commit merges to main; record the exact commit, the packed-consumer digest and the Release URL here once that run has completed. Prior released evidence: v4.0.0 at 56dadb0ee72f1a5da3e98dbf4f99e5e014d47e3b and v4.1.0 at 63fd3695947fcdc34d894a93a48ed2a07579628e, both non-draft, non-prerelease."
+      "status": "verified",
+      "result": "2026-10-22: release.yml run 39812117101 (jobs candidate, accept, publish all succeeded) on the merge commit of PR #107, 953b7cba7a2a694abf02f73d1261a895c2bbc3d3, created tag v4.2.0 at that commit, published the non-draft, non-prerelease GitHub Release https://github.com/Quantum-L9/l9-meta-injector/releases/tag/v4.2.0, and moved v4 from 63fd3695947fcdc34d894a93a48ed2a07579628e to 953b7cba7a2a694abf02f73d1261a895c2bbc3d3 with a lease on the previous sha. The candidate job's packed-consumer proof reported l9-meta-injector-4.2.0.tgz sha256=6caf04ee785f3ab503741a9f70954461344fe371714a5b5632eb49d7e439dcd8 with 6 entrypoints and release-candidate PASS v4.2.0 -> v4. Prior released evidence: v4.0.0 at 56dadb0ee72f1a5da3e98dbf4f99e5e014d47e3b and v4.1.0 at 63fd3695947fcdc34d894a93a48ed2a07579628e."
     },
     {
       "id": "l9_deploy_migration_validation",
