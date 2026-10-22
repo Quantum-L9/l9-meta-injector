@@ -1,6 +1,8 @@
 # l9-meta-injector CHANGELOG
 
-## Unreleased
+## 4.2.0 - 2026-10-22
+
+Minor release: the public API surface is additive and `packet_version` stays 1.1.0. One change is breaking for a narrower audience: consumers that compare metadata `id` values across versions see every id move (ADR-054, below).
 
 ### Added
 
