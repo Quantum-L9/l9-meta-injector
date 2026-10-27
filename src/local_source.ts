@@ -338,9 +338,10 @@ function assertScratchOutsideSource(scratchParent: string, absoluteSource: strin
  * carries this session's token. Nothing is ever removed because of its name.
  */
 function createScratch(parent: string): ScratchHandle {
-  const base = parent.length > 0 ? parent : os.tmpdir();
-  fs.mkdirSync(base, { recursive: true });
-  const root = fs.mkdtempSync(path.join(base, "l9-local-source-"));
+  // `parent` is already normalized by acquireLocalSource and was checked against the
+  // source as given; no second defaulting rule may change where the write lands.
+  fs.mkdirSync(parent, { recursive: true });
+  const root = fs.mkdtempSync(path.join(parent, "l9-local-source-"));
   const token = crypto.randomUUID();
   fs.writeFileSync(
     path.join(root, SCRATCH_OWNER_FILE),
@@ -1959,7 +1960,11 @@ export function acquireLocalSource(input: LocalSourceAcquireInput): LocalSourceO
 
   const identity = deriveSourceIdentity(hashed, sourceKind, unstableReason);
 
-  const scratchParent = input.scratchParent ?? os.tmpdir();
+  // One rule, applied once: absent or empty means the OS temp directory. The value
+  // checked against the source is exactly the value scratch is created under.
+  const scratchParent = input.scratchParent !== undefined && input.scratchParent.length > 0
+    ? input.scratchParent
+    : os.tmpdir();
   // Before createScratch, which is the first thing here that writes.
   assertScratchOutsideSource(scratchParent, absoluteSource, sourceKind);
   const scratch = createScratch(scratchParent);
