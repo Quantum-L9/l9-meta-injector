@@ -164,3 +164,65 @@ describe("inventoryTree — non-destructive filesystem inventory", () => {
     expect(later.unknowns).not.toContain("clock_skew:modified_at_after_inspected_at");
   });
 });
+
+describe("WU-078 nested outDir is excluded by its exact path", () => {
+  const NOW = "2026-01-01T00:00:00.000Z";
+
+  it("REG-WU-078-RC-055-RC055-a: same-named directories elsewhere are still inventoried", () => {
+    const root = tmp();
+    fs.mkdirSync(path.join(root, "docs", "guide"), { recursive: true });
+    fs.writeFileSync(path.join(root, "docs", "guide", "intro.txt"), "intro\n");
+    fs.mkdirSync(path.join(root, "lib", "docs"), { recursive: true });
+    fs.writeFileSync(path.join(root, "lib", "docs", "api.txt"), "api\n");
+    const out = path.join(root, "docs", ".l9out");
+    fs.mkdirSync(out, { recursive: true });
+    fs.writeFileSync(path.join(out, "inventory.json"), "{}");
+    const r = inventoryTree({ root, outDir: out, dryRun: true, now: NOW });
+    const rels = r.records.map((x) => x.relative_path);
+    expect(rels).toContain("docs/guide/intro.txt");
+    expect(rels).toContain("lib/docs/api.txt");
+    expect(rels.some((p) => p.startsWith("docs/.l9out"))).toBe(false);
+    expect(r.omittedPaths).toContain("docs/.l9out");
+    expect(r.omittedPaths).not.toContain("docs");
+    expect(r.omittedPaths).not.toContain("lib/docs");
+  });
+
+  it("REG-WU-078-RC-055-RC055-b: a nested outDir's generated output is never re-inventoried or annotated", () => {
+    const root = tmp();
+    fs.writeFileSync(path.join(root, "x.md"), "# x\n");
+    const out = path.join(root, "out");
+    fs.mkdirSync(out);
+    fs.writeFileSync(path.join(out, "inventory.json"), "{}");
+    for (let run = 0; run < 2; run++) {
+      const r = inventoryTree({ root, outDir: out, dryRun: false, folderSidecars: true, now: NOW });
+      expect(r.records.some((x) => x.relative_path === "out" || x.relative_path.startsWith("out/"))).toBe(false);
+    }
+    expect(fs.readdirSync(out).some((name) => name.endsWith(".l9meta.yaml"))).toBe(false);
+    expect(fs.existsSync(path.join(root, "out.l9meta.yaml"))).toBe(false);
+  });
+
+  it("REG-WU-078-RC-055-RC055-c: the default .l9inventory out dir stays excluded", () => {
+    const root = tmp();
+    fs.writeFileSync(path.join(root, "x.md"), "# x\n");
+    fs.mkdirSync(path.join(root, ".l9inventory"));
+    fs.writeFileSync(path.join(root, ".l9inventory", "inventory.json"), "{}");
+    const r = inventoryTree({ root, outDir: path.join(root, ".l9inventory"), dryRun: true, now: NOW });
+    expect(r.records.some((x) => x.relative_path.startsWith(".l9inventory"))).toBe(false);
+    expect(r.records.some((x) => x.relative_path === "x.md")).toBe(true);
+  });
+
+  it("REG-WU-078-RC-055-RC055-d: glob metacharacters in the outDir path exclude only that directory", () => {
+    const root = tmp();
+    fs.mkdirSync(path.join(root, "a1"));
+    fs.writeFileSync(path.join(root, "a1", "file.txt"), "a1\n");
+    fs.mkdirSync(path.join(root, "a[1]", "out"), { recursive: true });
+    fs.writeFileSync(path.join(root, "a[1]", "keep.txt"), "keep\n");
+    fs.writeFileSync(path.join(root, "a[1]", "out", "inventory.json"), "{}");
+    const r = inventoryTree({ root, outDir: path.join(root, "a[1]", "out"), dryRun: true, now: NOW });
+    const rels = r.records.map((x) => x.relative_path);
+    expect(rels).toContain("a1/file.txt");
+    expect(rels).toContain("a[1]/keep.txt");
+    expect(rels.some((p) => p.startsWith("a[1]/out"))).toBe(false);
+    expect(r.omittedPaths).toContain("a[1]/out");
+  });
+});

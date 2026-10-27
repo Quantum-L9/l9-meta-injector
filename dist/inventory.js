@@ -430,20 +430,27 @@ function inventoryTree(config) {
     if (path.resolve(config.outDir) === root) {
         throw new Error("inventory: outDir must not equal the root directory (generated manifests would be re-inventoried); use a subdirectory such as <root>/.l9inventory");
     }
-    // If the chosen outDir lives inside root, ignore its top-level directory name too,
-    // so a custom --out under root can't re-inventory or mutate its own generated output.
-    const ignoreDirNames = [...ignoreDirs];
+    // If the chosen outDir lives inside root, omit exactly that directory (walk does
+    // not descend an omitted directory), so a custom --out under root can't
+    // re-inventory or mutate its own generated output. An exact root-relative path,
+    // not a basename pattern: `docs/.l9out` must not omit every `docs` in the tree,
+    // and a directory name never needs glob escaping.
     const relOut = path.relative(root, path.resolve(config.outDir));
-    if (relOut && !relOut.startsWith("..") && !path.isAbsolute(relOut)) {
-        ignoreDirNames.push(relOut.split(path.sep)[0]);
-    }
-    const omit = (0, omit_1.buildOmitMatcher)({
+    const outDirRel = relOut && !relOut.startsWith("..") && !path.isAbsolute(relOut)
+        ? relOut.split(path.sep).join("/")
+        : null;
+    const baseOmit = (0, omit_1.buildOmitMatcher)({
         root,
         patterns: [...(config.omitPatterns ?? []), "**/*.l9meta.yaml", "**/.l9meta.yaml"],
         omitFile: config.omitFile,
         protectSkillMd: true,
-        ignoreDirNames,
+        ignoreDirNames: [...ignoreDirs],
     });
+    const omit = outDirRel === null ? baseOmit : {
+        patterns: baseOmit.patterns,
+        sources: baseOmit.sources,
+        shouldOmit: (rel) => rel === outDirRel || baseOmit.shouldOmit(rel),
+    };
     const skippedDirs = [];
     const omittedPaths = [];
     const entries = walk(root, omit, skippedDirs, omittedPaths);
