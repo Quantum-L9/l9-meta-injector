@@ -37,7 +37,9 @@ import {
 
 /** Identity of the block-signal policy. Bumped when these rules change. */
 export const DOCUMENT_BLOCK_PROFILE_ID = "meta-injector-document-block-signals";
-// 1.1.0: a lone CR separates units inside a block (RC-096).
+// 1.1.0: a lone CR separates units inside a block (RC-096); a Milestones section
+// skips body blocks before its first list item, as the Markdown reader does
+// (RC-097). One coordinated bump for this batch (DEC-RC-096).
 export const DOCUMENT_BLOCK_PROFILE_VERSION = "1.1.0";
 /** The single extractor this profile runs, named in every assertion it produces. */
 export const DOCUMENT_BLOCK_EXTRACTOR_ID = "document-block-work-intelligence/v1";
@@ -186,7 +188,15 @@ function milestonesInBlock(block: DocumentBlockView): BlockDraft[] {
   return drafts;
 }
 
-/** The list-item blocks belonging to the section a titular block opened. */
+/**
+ * The list-item blocks belonging to the section a titular block opened.
+ *
+ * Mirrors the Markdown rule (`milestoneSectionBullets`): body blocks before the
+ * first list item are skipped, so `Milestones`, an introductory paragraph and
+ * then the list reads the list; a titular or code block ends the section at any
+ * point; once list items have been seen, the first block that is not another
+ * list item ends it.
+ */
 function milestoneSectionMembers(
   blocks: readonly DocumentBlockView[],
   opener: number,
@@ -194,7 +204,11 @@ function milestoneSectionMembers(
   const members: DocumentBlockView[] = [];
   for (let index = opener + 1; index < blocks.length; index++) {
     const block = blocks[index];
-    if (block.kind !== "list_item") break;
+    if (TITULAR_BLOCK_KINDS.has(block.kind) || block.kind === "code") break;
+    if (block.kind !== "list_item") {
+      if (members.length > 0) break;
+      continue;
+    }
     members.push(block);
   }
   return members;
@@ -204,8 +218,9 @@ function milestoneSectionMembers(
  * Milestones declared as a list under a `Milestones` heading.
  *
  * The Markdown reader recognizes the same shape and stops the section at the next
- * heading; here the section stops at the first block after the list that is not
- * another list item, which is the block-shaped statement of the same rule.
+ * heading; here the section stops at the next titular or code block, or at the
+ * first block after the list that is not another list item, which is the
+ * block-shaped statement of the same rule.
  */
 function milestoneSectionDrafts(blocks: readonly DocumentBlockView[]): BlockDraft[] {
   const drafts: BlockDraft[] = [];
