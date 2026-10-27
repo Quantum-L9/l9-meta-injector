@@ -203,13 +203,9 @@ async function processSkillFile(abs, root, config, assistCfg, metrics) {
     const didChange = diffs.some((d) => d.action === "add" || d.action === "revise");
     if (!didChange)
         return { result: { sourcePath: abs, relativePath: rel, changed: false, diffs } };
-    // dry-run is a read-only preview: report the intended change, plan no mutation.
-    if (config.dryRun) {
-        if (config.verbose) {
-            process.stderr.write(`[l9-meta-injector] skills: ${rel} → ${diffs.map((d) => d.field).join(",")}\n`);
-        }
-        return { result: { sourcePath: abs, relativePath: rel, changed: true, diffs } };
-    }
+    // The real run's eligibility filters run in both modes, so a dry-run preview reports
+    // exactly the result the real run would (RC-025). Both are pure: the discard rule
+    // reads the plan, and patchManagedFrontMatter is a string function that writes nothing.
     if (!hadFrontMatter && !next.description) {
         return { result: { sourcePath: abs, relativePath: rel, changed: false, diffs: [] } };
     }
@@ -225,6 +221,10 @@ async function processSkillFile(abs, root, config, assistCfg, metrics) {
     }
     if (config.verbose) {
         process.stderr.write(`[l9-meta-injector] skills: ${rel} → ${diffs.map((d) => d.field).join(",")}\n`);
+    }
+    // dry-run is a read-only preview: report the intended change, plan no mutation.
+    if (config.dryRun) {
+        return { result: { sourcePath: abs, relativePath: rel, changed: true, diffs } };
     }
     // Route the protected write through the governed transaction rather than a direct
     // fs.writeFileSync. CAS fields come from the exact bytes observed at plan time.
