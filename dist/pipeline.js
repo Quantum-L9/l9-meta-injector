@@ -364,9 +364,22 @@ async function runPipelineAsync(config) {
             continue;
         }
         // The file is governed, but it cannot rewrite itself: leave its bytes alone and let
-        // the carrier policy place its metadata in the central manifest.
-        if (inlineCarrierBlocks.has(e.sourcePath))
+        // the carrier policy place its metadata in the central manifest. The standalone
+        // pipeline writes no central manifest, so coverage names the file and the exact
+        // block instead of dropping it from every bucket (RC-021).
+        const inlineCarrierBlock = inlineCarrierBlocks.get(e.sourcePath);
+        if (inlineCarrierBlock) {
+            skippedNonInjectablePaths.push(e.sourcePath);
+            const cls = classifications.get(e.sourcePath);
+            skippedNonInjectableDetails.push({
+                path: e.sourcePath,
+                reason: "carrier_inline_blocked",
+                artifactType: cls?.artifactType ?? meta.artifact_type,
+                confidence: cls?.confidence ?? "low",
+                inlineCarrierBlock,
+            });
             continue;
+        }
         // Use async inject (LLM boolean reconcile on description/intent) when LLM is enabled
         const record = config.llmEnabled
             ? await (0, inject_1.injectFileAsync)(e.sourcePath, meta, opts, metrics)
@@ -374,8 +387,14 @@ async function runPipelineAsync(config) {
         injected.push(record);
         metrics.recordInject();
     }
+    // In dry-run nothing was written. A record whose planned bytes differ from the current
+    // target (or whose plan cannot prove otherwise) is verified only by the checks that do
+    // not read written bytes; reading the pre-injection file would report the header it is
+    // about to receive as missing (RC-015). A record already holding its planned bytes is
+    // verified in full from disk, exactly as a real run would.
     const verified = injected.map((r) => (0, verify_1.verify)(r.sourcePath, r.originalBodyHash, r.meta, {
         semanticallyBound: identity.source === "semantic_binding",
+        skipWrittenBytesChecks: config.dryRun && r.wouldChange !== false,
     }));
     // Consume the verification signal at the decision point — a computed VerifyResult
     // that nothing inspects is indistinguishable from no verification at all. Aggregate
@@ -390,11 +409,9 @@ async function runPipelineAsync(config) {
         passed: failures.length === 0,
         failures,
     };
-    // Only report verification when there is a written file to verify. In plan mode nothing
-    // has been written, so `verify` necessarily reads the pre-injection bytes and reports a
-    // missing header for every file that is *about* to receive one. Printing that as
-    // "verification FAILED" during a successful governed check or apply is a phantom
-    // failure, and phantom failures make the real ones unreadable.
+    // Only print verification for a real run. Dry-run no longer reports the phantom
+    // header/body failures above, but governed check/apply plan in dry-run and must stay
+    // quiet; their verdict comes from the carrier operation, not from this print.
     if (!verification.passed && !config.dryRun) {
         const preview = failures.slice(0, 5).map((f) => `  - ${f.sourcePath}: ${f.issues.join("; ")}`).join("\n");
         const more = failures.length > 5 ? `\n  … and ${failures.length - 5} more` : "";

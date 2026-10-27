@@ -61,20 +61,34 @@ export function verify(
   filePath: string,
   origHash: string,
   meta: NormalizedMeta,
-  options?: { semanticallyBound?: boolean },
+  options?: {
+    semanticallyBound?: boolean;
+    /**
+     * Skip the two checks that read written bytes — header presence and body-hash
+     * preservation — and run only the meta-derived checks (taxonomy, sharing scope,
+     * prompt schema). For a dry-run record whose planned bytes were never written the
+     * file on disk is the pre-injection state, so those checks would report the
+     * absence of a header that is only *about* to be added (RC-015). Both are then
+     * reported as passing: neither was evaluated against anything written.
+     */
+    skipWrittenBytesChecks?: boolean;
+  },
 ): VerifyResult {
   const issues: string[] = [];
-  const content = fs.readFileSync(filePath, "utf8");
-  const spec = resolveStrategy(filePath, content);
-  const yamlValid = metaHeaderValid(filePath, content, issues);
-
-  // Body preservation: re-derive the clean body from disk and compare its hash to
-  // the body hash captured before injection. A mismatch means injection altered
-  // the body — a hard failure, not a silent pass.
+  let yamlValid = true;
   let bodyPreserved = true;
-  if (origHash) {
-    bodyPreserved = contentHash(recoverBody(content, spec)) === origHash;
-    if (!bodyPreserved) issues.push("Body content changed during injection (hash mismatch)");
+  if (options?.skipWrittenBytesChecks !== true) {
+    const content = fs.readFileSync(filePath, "utf8");
+    const spec = resolveStrategy(filePath, content);
+    yamlValid = metaHeaderValid(filePath, content, issues);
+
+    // Body preservation: re-derive the clean body from disk and compare its hash to
+    // the body hash captured before injection. A mismatch means injection altered
+    // the body — a hard failure, not a silent pass.
+    if (origHash) {
+      bodyPreserved = contentHash(recoverBody(content, spec)) === origHash;
+      if (!bodyPreserved) issues.push("Body content changed during injection (hash mismatch)");
+    }
   }
 
   let taxonomyValid = true;
