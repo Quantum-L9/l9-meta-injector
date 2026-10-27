@@ -71,6 +71,13 @@ export function assertDiscoveryGlob(pattern: string): string {
   if (pattern.startsWith("./")) throw new Error(`discovery glob must not start with ./: ${pattern}`);
   if (pattern.includes("//")) throw new Error(`discovery glob must not contain an empty segment: ${pattern}`);
   const segments = pattern.split("/");
+  // A trailing '/' leaves an empty final segment: the pattern names a directory, can
+  // never match a file, and would let a governed run pass over nothing (RC-010).
+  if (segments.some((segment) => segment === "")) {
+    const directory = pattern.replace(/\/+$/, "");
+    const intended = directory.endsWith("**") ? directory : `${directory}/**`;
+    throw new Error(`discovery glob must not contain an empty segment (a trailing '/' matches no file; use '${intended}'): ${pattern}`);
+  }
   if (segments.some((segment) => segment === "." || segment === "..")) {
     throw new Error(`discovery glob must not contain . or .. segments: ${pattern}`);
   }

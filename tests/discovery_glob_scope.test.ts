@@ -158,3 +158,39 @@ describe("one glob dialect for discovery scope and authority", () => {
     expect(fs.readFileSync(path.join(root, "docs", "a.md"), "utf8")).toBe(PROMPT);
   });
 });
+
+describe("WU-007 trailing-slash scopes are refused (RC-010)", () => {
+  test("REG-WU-007-RC-010-a: a pattern with an empty trailing segment is refused and the intended form suggested", () => {
+    const root = tempRoot();
+    write(root, "docs/a.md");
+    for (const glob of ["docs/", "docs/**/", "**/", "a/b/"]) {
+      expect(() => assertDiscoveryGlob(glob), glob).toThrow(/discovery glob/);
+      expect(() => discoverFiles(root, glob), glob).toThrow(/discovery glob/);
+    }
+    expect(() => assertDiscoveryGlob("docs/")).toThrow("docs/**");
+  });
+
+  test("REG-WU-007-RC-010-b: a governed check and apply refuse 'docs/' and touch nothing", async () => {
+    const root = governedRoot();
+    write(root, "docs/a.md");
+    await expect(runCheckAsync(config(root, "docs/"))).rejects.toThrow(/discovery glob/);
+    await expect(runApplyAsync({ ...config(root, "docs/"), dryRun: false } as never)).rejects.toThrow(/discovery glob/);
+    expect(fs.readFileSync(path.join(root, "docs", "a.md"), "utf8")).toBe(PROMPT);
+    expect(fs.existsSync(path.join(root, ".l9", "metadata-index.jsonl"))).toBe(false);
+  });
+
+  test("REG-WU-007-RC-010-c: directory and file scopes without an empty segment still match as before", () => {
+    const root = tempRoot();
+    write(root, "docs/a.md");
+    write(root, "docs/x/b.md");
+    write(root, "top.md");
+    for (const glob of ["docs/**", "docs/**/*.md", "**/*", "**", "*.md"]) {
+      expect(assertDiscoveryGlob(glob)).toBe(glob);
+    }
+    expect(relative(root, discoverFiles(root, "docs/**").files)).toEqual(["docs/a.md", "docs/x/b.md"]);
+    expect(relative(root, discoverFiles(root, "docs/**/*.md").files)).toEqual(["docs/a.md", "docs/x/b.md"]);
+    expect(relative(root, discoverFiles(root, "**/*").files)).toEqual(["docs/a.md", "docs/x/b.md", "top.md"]);
+    expect(relative(root, discoverFiles(root, "**").files)).toEqual(["docs/a.md", "docs/x/b.md", "top.md"]);
+    expect(relative(root, discoverFiles(root, "*.md").files)).toEqual(["top.md"]);
+  });
+});

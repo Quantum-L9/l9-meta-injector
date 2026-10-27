@@ -67,8 +67,29 @@ async function assistField(fieldName, seedValue, body, config, metrics) {
         metrics?.recordDecision("llm_failed_fallback"); // LLM consulted, no usable answer → keep seed
         return seedValue;
     }
+    // A list-typed field is returned in its declared `string[]` shape. Storing the raw
+    // comma string made the next run's reconcile rewrite it as a list (RC-019).
+    if (LIST_ORIGIN_FIELDS.has(fieldName)) {
+        const items = toItemList(result);
+        if (items.length === 0) {
+            metrics?.recordDecision("llm_failed_fallback");
+            return seedValue;
+        }
+        metrics?.recordDecision("llm_ok");
+        return items;
+    }
     metrics?.recordDecision("llm_ok");
     return result.trim();
+}
+/** Prose-origin fields whose declared type is `string[] | Unknown` (schema.ts). */
+const LIST_ORIGIN_FIELDS = new Set(["activation_signals"]);
+/**
+ * Split a list reply on the delimiters skills' parseSignalList uses (comma, semicolon,
+ * newline): trimmed, non-empty, non-Unknown items, de-duplicated in first-seen order.
+ */
+function toItemList(reply) {
+    const items = reply.split(/[,;\n]/).map((item) => item.trim()).filter((item) => item !== "" && item !== schema_1.UNKNOWN);
+    return [...new Set(items)];
 }
 function buildFieldPrompt(fieldName, body, config) {
     const b = body.length > 1200 ? body.slice(0, 1200) + "\n[truncated]" : body;

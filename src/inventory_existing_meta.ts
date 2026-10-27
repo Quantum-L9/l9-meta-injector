@@ -1,7 +1,7 @@
 // inventory_existing_meta.ts — harvest existing L9 meta before classify (ADR-049).
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { inspectFrontMatterDocument } from "./frontmatter_patch";
+import { frontMatterReconciliationView, inspectFrontMatterDocument } from "./frontmatter_patch";
 import { extractInjectedYaml, resolveStrategy, sidecarPathFor } from "./comment";
 import { parseCanonicalYaml } from "./meta_schema";
 import { probeFileEncoding } from "./encoding";
@@ -23,7 +23,8 @@ function harvestInline(abs: string): Record<string, unknown> {
   const spec = resolveStrategy(abs, raw);
   if (spec.strategy === "yaml-frontmatter") {
     const inspected = inspectFrontMatterDocument(raw);
-    return inspected.safe ? inspected.meta : {};
+    // Opaque values are harvested as their verbatim text, never dropped (RC-004).
+    return inspected.safe ? frontMatterReconciliationView(raw, inspected) : {};
   }
   if (spec.strategy === "line-comment" || spec.strategy === "block-comment") {
     const yaml = extractInjectedYaml(raw, spec);

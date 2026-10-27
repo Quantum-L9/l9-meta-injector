@@ -542,6 +542,34 @@ export function inspectFrontMatterDocument(raw: string): FrontMatterInspection {
   };
 }
 
+/**
+ * The verbatim value text of every `opaque` field, keyed by field name.
+ *
+ * Opaque values never enter `inspection.meta` (ADR-035): their meaning is not
+ * established. Reconciliation still has to *see* them, or a placeholder decided
+ * without them is written over a real user value — `created: 2025-10-28T15:30:00Z`
+ * would lose to `Unknown` while its quoted spelling survives. This view carries the
+ * exact bytes as an uninterpreted string beside `meta`, never inside it.
+ */
+export function opaqueFieldText(raw: string, inspection: FrontMatterInspection): Record<string, string> {
+  const out = Object.create(null) as Record<string, string>;
+  if (!inspection.safe) return out;
+  for (const field of inspection.fields) {
+    if (field.kind !== "opaque" || field.valueStart === undefined || field.valueEnd === undefined) continue;
+    out[field.key] = raw.slice(field.valueStart, field.valueEnd);
+  }
+  return out;
+}
+
+/**
+ * The existing header values a reconciler compares against: parsed `meta` plus the
+ * verbatim text of opaque fields. The two key sets are disjoint by construction.
+ * A fresh object is returned; `inspection.meta` is not modified.
+ */
+export function frontMatterReconciliationView(raw: string, inspection: FrontMatterInspection): Record<string, unknown> {
+  return { ...inspection.meta, ...opaqueFieldText(raw, inspection) };
+}
+
 function failureFromInspection(raw: string, inspection: FrontMatterInspection, managedKeys: string[]): FrontMatterPatchResult {
   return { ...inspection, content: raw, changed: false, managedKeys };
 }
@@ -579,12 +607,15 @@ export function patchManagedFrontMatter(raw: string, managed: Record<string, unk
     if (!field) { missing.push(key); continue; }
     const rendered = renderSafeScalar(managed[key]);
     // An opaque field patches exactly like a scalar: its value byte range is known, and a
-    // managed key's canonical rendering replaces it wholesale. Only *unmanaged* opaque
-    // values are preserved verbatim — they are simply never edited.
+    // managed key's canonical rendering replaces it wholesale. Unmanaged opaque values
+    // are never edited, and a managed opaque value whose verbatim text already equals
+    // the managed value keeps its original bytes — reconciliation saw that text, so
+    // re-spelling it would be a write with no change in value.
     if (field.kind === "scalar" || field.kind === "opaque") {
       if (field.valueStart === undefined || field.valueEnd === undefined) {
         return failureFromInspection(raw, issue(raw, "FRONTMATTER_COMPLEX_YAML", `managed field '${key}' lacks a safe scalar range`, { key }), managedKeys);
       }
+      if (field.kind === "opaque" && managed[key] === raw.slice(field.valueStart, field.valueEnd)) continue;
       edits.push({ start: field.valueStart, end: field.valueEnd, text: rendered });
     } else {
       if (!Array.isArray(managed[key])) {
