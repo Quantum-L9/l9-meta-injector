@@ -1641,6 +1641,7 @@ function verifySnapshotStability(
 function deriveSourceIdentity(
   hashed: HashedEntry[],
   sourceKind: LocalSourceKind,
+  unstableReason: string | null,
 ): { physicalSnapshotHash: string; sourceRevision: string } {
   const manifestEntries: PhysicalManifestEntry[] = hashed.map(({ entry, contentHashHex }) => ({
     path: entry.relativePath,
@@ -1650,6 +1651,15 @@ function deriveSourceIdentity(
   }));
   const physicalSnapshotHash = physicalManifestDigest(manifestEntries);
   const singleFileHash = hashed.length === 1 ? hashed[0].contentHashHex : null;
+  // A `file:` or `archive:` revision names the source's own bytes. When those bytes
+  // could not be read (or exceed the hash budget) there is no such digest, and the
+  // manifest digest under a file scheme would be a revision that describes nothing.
+  // The source is refused instead. A source that moved while it was hashed keeps
+  // its observation so the instability is reported first, as it always was.
+  if (sourceKind !== "directory" && singleFileHash === null && unstableReason === null) {
+    const why = hashed.length === 1 && hashed[0].unknowns.length > 0 ? ` (${hashed[0].unknowns.join(", ")})` : "";
+    throw new Error(`local-source: source bytes could not be read, so no ${sourceKind} revision exists${why}`);
+  }
   const useFileHash = sourceKind !== "directory" && singleFileHash !== null;
   return {
     physicalSnapshotHash,
@@ -1862,7 +1872,7 @@ export function acquireLocalSource(input: LocalSourceAcquireInput): LocalSourceO
     });
   }
 
-  const identity = deriveSourceIdentity(hashed, sourceKind);
+  const identity = deriveSourceIdentity(hashed, sourceKind, unstableReason);
 
   const scratchParent = input.scratchParent ?? os.tmpdir();
   // Before createScratch, which is the first thing here that writes.

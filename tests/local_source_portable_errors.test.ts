@@ -11,7 +11,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { acquireLocalSource, type LocalSourceObservation } from "../src/local_source";
-import { toRepositoryModelLocalSource, withLocalSourceModel } from "../src/local_source_model";
+import { canonicalBlockReason, toRepositoryModelLocalSource, withLocalSourceModel } from "../src/local_source_model";
 import { buildRepositoryModelPacket, type RepositoryModelPacket } from "../src/repository_model";
 import { treeSnapshot, writeRawZip } from "./helpers/zip_fixtures";
 
@@ -233,6 +233,8 @@ describe("host failures while staging an archive are not archive verdicts (RC-04
       const record = observation.inventory.records.find((r) => r.relative_path === "Case.zip");
       expect(record?.content_hash).toBeNull();
       expect(record?.unknowns).toContain("content_hash_unavailable:EACCES");
+      // With RC-046 (WU-035) the unread archive bytes block the canonical packet.
+      expect(canonicalBlockReason(observation)).not.toBeNull();
     } finally {
       observation.dispose();
     }
