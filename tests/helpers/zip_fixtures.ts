@@ -46,6 +46,23 @@ export interface ZipMemberSpec {
    * This is what a real producer does once a value no longer fits in 32 bits.
    */
   zip64?: boolean;
+  /** Raw name bytes written in place of the UTF-8 encoding of `name` (e.g. a legacy code page). */
+  nameBytes?: Buffer;
+  /** Set general-purpose bit 11 (UTF-8 name). Defaults to true. */
+  utf8Flag?: boolean;
+  /** Per-member comment, written in the central-directory record only. */
+  comment?: Buffer | string;
+  /** Extra field written in the central-directory record only (after any Zip64 field). */
+  centralExtra?: Buffer;
+  /** Internal file attributes (central-directory bytes 36..37). */
+  internalAttributes?: number;
+  /** `version needed to extract` written in both headers. Defaults to 20 (45 for Zip64). */
+  versionNeeded?: number;
+}
+
+export interface RawZipOptions {
+  /** Archive (end-of-central-directory) comment. */
+  comment?: Buffer | string;
 }
 
 const U32_MAX = 0xffffffff;
@@ -81,6 +98,10 @@ function crc32(buffer: Buffer): number {
 interface PreparedMember {
   nameBytes: Buffer;
   zip64: boolean;
+  comment: Buffer;
+  centralExtra: Buffer;
+  internalAttributes: number;
+  versionNeeded: number | null;
   data: Buffer;
   crc: number;
   uncompressedSize: number;
@@ -101,21 +122,25 @@ function prepare(spec: ZipMemberSpec): Omit<PreparedMember, "localHeaderOffset">
   const data = stored ? raw : zlib.deflateRawSync(raw);
   const mode = spec.unixMode ?? (isDirectory ? UNIX_DIRECTORY : UNIX_REGULAR);
   return {
-    nameBytes: Buffer.from(spec.name, "utf8"),
+    nameBytes: spec.nameBytes ?? Buffer.from(spec.name, "utf8"),
     zip64: spec.zip64 === true,
+    comment: Buffer.isBuffer(spec.comment) ? spec.comment : Buffer.from(spec.comment ?? "", "utf8"),
+    centralExtra: spec.centralExtra ?? Buffer.alloc(0),
+    internalAttributes: spec.internalAttributes ?? 0,
+    versionNeeded: spec.versionNeeded ?? null,
     data,
     crc: crc32(raw),
     uncompressedSize: spec.declaredUncompressedSize ?? raw.length,
     compressionMethod: spec.compressionMethod ?? (stored ? 0 : 8),
     // Bit 11 marks the name as UTF-8; bit 0 marks encryption.
-    flags: 0x0800 | (spec.encrypted ? 0x0001 : 0),
+    flags: (spec.utf8Flag === false ? 0 : 0x0800) | (spec.encrypted ? 0x0001 : 0),
     externalAttributes: spec.dosHost ? 0 : (mode << 16) >>> 0,
     versionMadeBy: spec.dosHost ? VERSION_MADE_BY_DOS : VERSION_MADE_BY_UNIX,
   };
 }
 
 /** Write a ZIP archive containing exactly the members given, verbatim. */
-export function writeRawZip(archivePath: string, specs: ZipMemberSpec[]): string {
+export function writeRawZip(archivePath: string, specs: ZipMemberSpec[], options: RawZipOptions = {}): string {
   fs.mkdirSync(path.dirname(archivePath), { recursive: true });
   const chunks: Buffer[] = [];
   const prepared: PreparedMember[] = [];
@@ -125,7 +150,7 @@ export function writeRawZip(archivePath: string, specs: ZipMemberSpec[]): string
     const member = prepare(spec);
     const local = Buffer.alloc(30);
     local.writeUInt32LE(LOCAL_SIGNATURE, 0);
-    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(member.versionNeeded ?? 20, 4);
     local.writeUInt16LE(member.flags, 6);
     local.writeUInt16LE(member.compressionMethod, 8);
     local.writeUInt16LE(0, 10);
@@ -144,13 +169,16 @@ export function writeRawZip(archivePath: string, specs: ZipMemberSpec[]): string
   for (const member of prepared) {
     // Zip64 members store placeholders here and the real values in the extra field,
     // in the order uncompressed, compressed, local-header offset.
-    const extra = member.zip64
-      ? zip64ExtraField([member.uncompressedSize, member.data.length, member.localHeaderOffset])
-      : Buffer.alloc(0);
+    const extra = Buffer.concat([
+      member.zip64
+        ? zip64ExtraField([member.uncompressedSize, member.data.length, member.localHeaderOffset])
+        : Buffer.alloc(0),
+      member.centralExtra,
+    ]);
     const central = Buffer.alloc(46);
     central.writeUInt32LE(CENTRAL_SIGNATURE, 0);
     central.writeUInt16LE(member.versionMadeBy, 4);
-    central.writeUInt16LE(member.zip64 ? 45 : 20, 6);
+    central.writeUInt16LE(member.versionNeeded ?? (member.zip64 ? 45 : 20), 6);
     central.writeUInt16LE(member.flags, 8);
     central.writeUInt16LE(member.compressionMethod, 10);
     central.writeUInt16LE(0, 12);
@@ -160,13 +188,13 @@ export function writeRawZip(archivePath: string, specs: ZipMemberSpec[]): string
     central.writeUInt32LE(member.zip64 ? U32_MAX : member.uncompressedSize, 24);
     central.writeUInt16LE(member.nameBytes.length, 28);
     central.writeUInt16LE(extra.length, 30);
-    central.writeUInt16LE(0, 32);
+    central.writeUInt16LE(member.comment.length, 32);
     central.writeUInt16LE(0, 34);
-    central.writeUInt16LE(0, 36);
+    central.writeUInt16LE(member.internalAttributes, 36);
     central.writeUInt32LE(member.externalAttributes, 38);
     central.writeUInt32LE(member.zip64 ? U32_MAX : member.localHeaderOffset, 42);
-    chunks.push(central, member.nameBytes, extra);
-    offset += central.length + member.nameBytes.length + extra.length;
+    chunks.push(central, member.nameBytes, extra, member.comment);
+    offset += central.length + member.nameBytes.length + extra.length + member.comment.length;
   }
 
   const eocd = Buffer.alloc(22);
@@ -177,8 +205,11 @@ export function writeRawZip(archivePath: string, specs: ZipMemberSpec[]): string
   eocd.writeUInt16LE(prepared.length, 10);
   eocd.writeUInt32LE(offset - centralStart, 12);
   eocd.writeUInt32LE(centralStart, 16);
-  eocd.writeUInt16LE(0, 20);
-  chunks.push(eocd);
+  const archiveComment = Buffer.isBuffer(options.comment)
+    ? options.comment
+    : Buffer.from(options.comment ?? "", "utf8");
+  eocd.writeUInt16LE(archiveComment.length, 20);
+  chunks.push(eocd, archiveComment);
 
   fs.writeFileSync(archivePath, Buffer.concat(chunks));
   return archivePath;

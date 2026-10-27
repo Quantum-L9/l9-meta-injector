@@ -27,6 +27,14 @@ export interface ZipCentralEntry {
     modTime: number;
     /** DOS last-modification date, for byte-exact round-trip in writers. */
     modDate: number;
+    /**
+     * Absolute file offset of this entry's original central-directory record, so a
+     * writer can copy it verbatim. A number, not the bytes, so cached preflight
+     * verdicts that carry the entry stay JSON-safe.
+     */
+    centralRecordOffset?: number;
+    /** Length of the original central-directory record: fixed part, name, extra and comment. */
+    centralRecordLength?: number;
 }
 export interface ZipDirectory {
     entries: ZipCentralEntry[];
@@ -34,6 +42,10 @@ export interface ZipDirectory {
     declaredEntryCount: number;
     /** True when the archive used Zip64 records. */
     zip64: boolean;
+    /** Absolute file offset of the archive (EOCD) comment. */
+    eocdCommentOffset?: number;
+    /** Length of the archive (EOCD) comment; 0 when there is none. */
+    eocdCommentLength?: number;
 }
 export declare class ZipFormatError extends Error {
     constructor(message: string);

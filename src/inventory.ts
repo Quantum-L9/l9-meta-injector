@@ -257,7 +257,7 @@ function idFor(relPath: string): string {
 
 function csvCell(v: unknown): string {
   const s = v === null || v === undefined ? "" : String(v);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
 // Sidecar serialization now delegates to the single canonical serializer (ACA-005),
@@ -413,7 +413,10 @@ export function buildRecord(
     : classifyInventory(relative, fileName, ext, isDir);
   let size: number | null = null, modified: string | null = null, hash: string | null = null, created: string | null = null;
   const unknowns = [...cls.unknowns];
-  const harvestedType = harvest.inventory_type ?? harvest.artifact_type;
+  // Compare like with like (ADR-051): only a harvested inventory_type is in the
+  // inventory taxonomy. A front-matter artifact_type is the pipeline taxonomy and
+  // never conflicts with the inventory classification.
+  const harvestedType = harvest.inventory_type;
   if (typeof harvestedType === "string" && harvestedType !== cls.type) {
     unknowns.push(`harvested_type:${harvestedType}`);
   }
@@ -486,21 +489,28 @@ export function inventoryTree(config: InventoryConfig): InventoryResult {
       "inventory: outDir must not equal the root directory (generated manifests would be re-inventoried); use a subdirectory such as <root>/.l9inventory"
     );
   }
-  // If the chosen outDir lives inside root, ignore its top-level directory name too,
-  // so a custom --out under root can't re-inventory or mutate its own generated output.
-  const ignoreDirNames = [...ignoreDirs];
+  // If the chosen outDir lives inside root, omit exactly that directory (walk does
+  // not descend an omitted directory), so a custom --out under root can't
+  // re-inventory or mutate its own generated output. An exact root-relative path,
+  // not a basename pattern: `docs/.l9out` must not omit every `docs` in the tree,
+  // and a directory name never needs glob escaping.
   const relOut = path.relative(root, path.resolve(config.outDir));
-  if (relOut && !relOut.startsWith("..") && !path.isAbsolute(relOut)) {
-    ignoreDirNames.push(relOut.split(path.sep)[0]);
-  }
+  const outDirRel = relOut && !relOut.startsWith("..") && !path.isAbsolute(relOut)
+    ? relOut.split(path.sep).join("/")
+    : null;
 
-  const omit = buildOmitMatcher({
+  const baseOmit = buildOmitMatcher({
     root,
     patterns: [...(config.omitPatterns ?? []), "**/*.l9meta.yaml", "**/.l9meta.yaml"],
     omitFile: config.omitFile,
     protectSkillMd: true,
-    ignoreDirNames,
+    ignoreDirNames: [...ignoreDirs],
   });
+  const omit: OmitMatcher = outDirRel === null ? baseOmit : {
+    patterns: baseOmit.patterns,
+    sources: baseOmit.sources,
+    shouldOmit: (rel: string) => rel === outDirRel || baseOmit.shouldOmit(rel),
+  };
 
   const skippedDirs: string[] = [];
   const omittedPaths: string[] = [];
