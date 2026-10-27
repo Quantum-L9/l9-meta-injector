@@ -260,6 +260,16 @@ candidate exceeds the budget the **complete member id list is preserved**, the
 included evidence is the deterministically-selected subset, and `truncation`
 records exactly what was left out and under which policy.
 
+`maxTotalPackCharacters` bounds every variable-length field a pack carries, not
+only excerpts: each kept assertion's `object`, `source_path` and excerpt, and
+every entry of the per-artifact lists (titles, headings, statuses, kinds, tasks,
+milestones, references, dependencies, supersessions). Items are charged band by
+band in the priority order above, across all selected artifacts. Identity fields,
+the member list and the relationship context are fixed overhead and are not
+charged. Anything left out — by the total budget, the per-artifact excerpt cap or
+a list's own cap — adds its original length to `characters_omitted` and sets
+`truncated`.
+
 Packs never contain raw embedding vectors, secret content, or a dump of the
 corpus.
 
