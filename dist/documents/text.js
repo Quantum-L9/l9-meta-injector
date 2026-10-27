@@ -35,6 +35,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.csvDecoder = exports.textDecoder = exports.CSV_DECODER_VERSION = exports.CSV_DECODER_ID = exports.TEXT_DECODER_VERSION = exports.TEXT_DECODER_ID = void 0;
 exports.readUtf8 = readUtf8;
+exports.decodeTextBlocks = decodeTextBlocks;
 exports.splitCsvLine = splitCsvLine;
 // text.ts — the formats that are already text, and the two that nearly are.
 //
@@ -46,7 +47,9 @@ exports.splitCsvLine = splitCsvLine;
 const fs = __importStar(require("node:fs"));
 const decoder_1 = require("./decoder");
 exports.TEXT_DECODER_ID = "l9.text-decoder";
-exports.TEXT_DECODER_VERSION = "1.0.0";
+// 1.1.0: a leading byte-order mark is not part of line 1, and an ATX closing
+// sequence (`## Status ##`) is not part of the heading text.
+exports.TEXT_DECODER_VERSION = "1.1.0";
 exports.CSV_DECODER_ID = "l9.csv-decoder";
 /**
  * 1.1.0 emits a block per populated cell beside the row block.
@@ -75,26 +78,117 @@ function readUtf8(input) {
     if (!Buffer.from(text, "utf8").equals(bytes)) {
         return { reason: "bytes are not valid UTF-8" };
     }
-    return { text };
+    // A byte-order mark announces the encoding; it is not the first character of
+    // line 1. Left in, it stops `# Title` being a heading and a notebook being
+    // JSON. Stripped only after validity is established on the original bytes.
+    return { text: text.charCodeAt(0) === 0xfeff ? text.slice(1) : text };
+}
+/** Exactly the characters JavaScript's `\s` matches. */
+function isSpace(char) {
+    return char !== undefined && /\s/.test(char);
+}
+/** Characters `.` does not match; content containing one never matched the old expressions. */
+function isLineTerminator(char) {
+    return char === "\n" || char === "\r" || char === "\u2028" || char === "\u2029";
+}
+/**
+ * The content of `line` between `from` and its last non-whitespace character,
+ * or null when there is none or it holds a line terminator. One pass.
+ */
+function trimmedContent(line, from) {
+    let start = from;
+    while (start < line.length && isSpace(line[start]))
+        start += 1;
+    let end = line.length;
+    while (end > start && isSpace(line[end - 1]))
+        end -= 1;
+    if (end <= start)
+        return null;
+    for (let index = start; index < end; index += 1) {
+        if (isLineTerminator(line[index]))
+            return null;
+    }
+    return line.slice(start, end);
+}
+/**
+ * An ATX heading: one to six `#`, whitespace, then content.
+ *
+ * A linear scan rather than `/^(#{1,6})\s+(.*\S)\s*#*\s*$/`, whose `\s+` and
+ * `.*` overlap and try every split of a long whitespace run before failing. A
+ * closing sequence — whitespace then only `#` to the end of the line — is not
+ * part of the text; a `#` with no whitespace before it (`C#`) is.
+ */
+function classifyAtxHeading(line) {
+    let level = 0;
+    while (level < line.length && line[level] === "#")
+        level += 1;
+    if (level < 1 || level > 6 || !isSpace(line[level]))
+        return null;
+    const content = trimmedContent(line, level);
+    if (content === null)
+        return null;
+    let hashes = content.length;
+    while (hashes > 0 && content[hashes - 1] === "#")
+        hashes -= 1;
+    if (hashes < content.length && hashes > 0 && isSpace(content[hashes - 1])) {
+        let end = hashes - 1;
+        while (end > 0 && isSpace(content[end - 1]))
+            end -= 1;
+        if (end > 0)
+            return { level, text: content.slice(0, end) };
+    }
+    return { level, text: content };
+}
+/**
+ * A list item: optional indentation, `-`, `*`, `+` or digits with `.`/`)`,
+ * whitespace, then content. The linear form of
+ * `/^\s*(?:[-*+]|\d+[.)])\s+(.*\S)\s*$/`.
+ */
+function classifyListItem(line) {
+    let index = 0;
+    while (index < line.length && isSpace(line[index]))
+        index += 1;
+    const marker = line[index];
+    if (marker === "-" || marker === "*" || marker === "+") {
+        index += 1;
+    }
+    else {
+        const digits = index;
+        while (index < line.length && line[index] >= "0" && line[index] <= "9")
+            index += 1;
+        if (index === digits || (line[index] !== "." && line[index] !== ")"))
+            return null;
+        index += 1;
+    }
+    if (!isSpace(line[index]))
+        return null;
+    return trimmedContent(line, index);
 }
 const MARKDOWN_EXTENSIONS = new Set([".md", ".markdown", ".mdx"]);
-/** ATX and Setext headings, list items, fenced code, and everything else. */
-function decodeTextBlocks(text, builder, markdown) {
+function lineSpanScope() {
+    return {
+        locate: (start, end) => ({ kind: "line_span", line_start: start, line_end: end }),
+        title: { seen: false },
+        unit: "file",
+    };
+}
+/**
+ * ATX headings, list items, fenced code, and everything else.
+ *
+ * Markdown files and a notebook's Markdown cells both come through here, so a
+ * fence means code in either and a heading means a heading in either.
+ */
+function decodeTextBlocks(text, builder, markdown, scope = lineSpanScope()) {
     const lines = text.split(/\r?\n/);
     let paragraph = [];
     let paragraphStart = 1;
     let fence = null;
     let fenceStart = 1;
     let fenceLines = [];
-    let sawTitle = false;
     const flushParagraph = (endLine) => {
         if (paragraph.length === 0)
             return;
-        builder.add("paragraph", paragraph.join("\n"), {
-            kind: "line_span",
-            line_start: paragraphStart,
-            line_end: endLine,
-        });
+        builder.add("paragraph", paragraph.join("\n"), scope.locate(paragraphStart, endLine));
         paragraph = [];
     };
     for (let index = 0; index < lines.length; index += 1) {
@@ -104,11 +198,7 @@ function decodeTextBlocks(text, builder, markdown) {
             const fenceMatch = /^\s*(```|~~~)/.exec(line);
             if (fence !== null) {
                 if (fenceMatch !== null && line.trim().startsWith(fence)) {
-                    builder.add("code", fenceLines.join("\n"), {
-                        kind: "line_span",
-                        line_start: fenceStart,
-                        line_end: lineNumber,
-                    });
+                    builder.add("code", fenceLines.join("\n"), scope.locate(fenceStart, lineNumber));
                     fence = null;
                     fenceLines = [];
                     continue;
@@ -123,27 +213,21 @@ function decodeTextBlocks(text, builder, markdown) {
                 fenceLines = [];
                 continue;
             }
-            const atx = /^(#{1,6})\s+(.*\S)\s*#*\s*$/.exec(line);
+            const atx = classifyAtxHeading(line);
             if (atx !== null) {
                 flushParagraph(lineNumber - 1);
-                const level = atx[1].length;
-                const heading = atx[2];
                 // The first level-1 heading is the document's title. Later ones are
                 // headings: a file with three `#` sections has one title, not three.
-                const kind = level === 1 && !sawTitle ? "title" : "heading";
+                const kind = atx.level === 1 && !scope.title.seen ? "title" : "heading";
                 if (kind === "title")
-                    sawTitle = true;
-                builder.add(kind, heading, { kind: "line_span", line_start: lineNumber, line_end: lineNumber });
+                    scope.title.seen = true;
+                builder.add(kind, atx.text, scope.locate(lineNumber, lineNumber));
                 continue;
             }
-            const listItem = /^\s*(?:[-*+]|\d+[.)])\s+(.*\S)\s*$/.exec(line);
+            const listItem = classifyListItem(line);
             if (listItem !== null) {
                 flushParagraph(lineNumber - 1);
-                builder.add("list_item", listItem[1], {
-                    kind: "line_span",
-                    line_start: lineNumber,
-                    line_end: lineNumber,
-                });
+                builder.add("list_item", listItem, scope.locate(lineNumber, lineNumber));
                 continue;
             }
         }
@@ -156,15 +240,11 @@ function decodeTextBlocks(text, builder, markdown) {
         paragraph.push(line);
     }
     if (fence !== null) {
-        builder.add("code", fenceLines.join("\n"), {
-            kind: "line_span",
-            line_start: fenceStart,
-            line_end: lines.length,
-        });
+        builder.add("code", fenceLines.join("\n"), scope.locate(fenceStart, lines.length));
         builder.note({
             code: "decoder.malformed",
             severity: "info",
-            message: "a fenced code block was not closed; it was read to the end of the file",
+            message: `a fenced code block was not closed; it was read to the end of the ${scope.unit}`,
         });
     }
     flushParagraph(lines.length);

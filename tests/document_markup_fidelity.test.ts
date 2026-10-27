@@ -723,7 +723,7 @@ describe("WU-062 HTML raw text, block model and named references", () => {
   it("REG-WU-062-RC-122-a: named references decode in text", () => {
     const document = page("<p>Owner:&nbsp;Mel &mdash; status&nbsp;blocked &rsquo;soon&rsquo;</p>");
     expect(document.blocks.map((block) => block.text))
-      .toEqual(["Owner: Mel — status blocked ’soon’"]);
+      .toEqual(["Owner:\u00a0Mel \u2014 status\u00a0blocked \u2019soon\u2019"]);
   });
 
   it("REG-WU-062-RC-122-b: unknown references stay as written and nothing is decoded twice", () => {
@@ -732,12 +732,12 @@ describe("WU-062 HTML raw text, block model and named references", () => {
 
   it("REG-WU-062-RC-122-c: named references decode in attribute values", () => {
     const document = page('<head><meta name="description" content="A&nbsp;B"></head><p>x</p>');
-    expect(document.metadata.description).toBe("A B");
-    expect(tokenizeHtml('<a title="x&mdash;y">')[0]?.attributes.title).toBe("x—y");
+    expect(document.metadata.description).toBe("A\u00a0B");
+    expect(tokenizeHtml('<a title="x&mdash;y">')[0]?.attributes.title).toBe("x\u2014y");
   });
 
   it("REG-WU-062-RC-122-d: numeric references decode as before", () => {
-    expect(page("<p>a&#160;b&#x2014;c</p>").blocks.map((block) => block.text)).toEqual(["a b—c"]);
+    expect(page("<p>a&#160;b&#x2014;c</p>").blocks.map((block) => block.text)).toEqual(["a\u00a0b\u2014c"]);
   });
 });
 
@@ -799,5 +799,153 @@ describe("WU-063 CSV records split after quote-aware parsing", () => {
   it("REG-WU-063-RC-124-e: blank lines are skipped and row numbers stay physical lines", () => {
     const document = decoded(decode(csv("a,b\n\n1,2\n\n\n3,4\n")));
     expect(rowBlocks(document).map((block) => block.locator.kind === "csv_row" && block.locator.row_number)).toEqual([1, 3, 6]);
+  });
+});
+
+// ───────────────────────────── WU-064 ─────────────────────────────
+
+function textFile(source: string, name: string): string {
+  const file = path.join(tmp(), name);
+  fs.writeFileSync(file, source, "utf8");
+  return file;
+}
+
+function notebook(cells: { cell_type: string; source: string[] | string }[], prefix = ""): string {
+  const file = path.join(tmp(), "nb.ipynb");
+  const body = JSON.stringify({
+    cells: cells.map((cell) => ({ ...cell, metadata: {}, ...(cell.cell_type === "code" ? { outputs: [], execution_count: null } : {}) })),
+    metadata: {},
+    nbformat: 4,
+    nbformat_minor: 5,
+  });
+  fs.writeFileSync(file, `${prefix}${body}`, "utf8");
+  return file;
+}
+
+/** The expressions the Markdown classifier used to be, kept as the oracle for ordinary lines. */
+const OLD_ATX = /^(#{1,6})\s+(.*\S)\s*#*\s*$/;
+const OLD_LIST = /^\s*(?:[-*+]|\d+[.)])\s+(.*\S)\s*$/;
+
+describe("WU-064 text and notebook decoders", () => {
+  it("REG-WU-064-RC-125-a: a heading marker followed by a long whitespace run decodes in linear time", () => {
+    const file = textFile(`#${" ".repeat(1_000_000)}`, "spaces.md");
+    const started = Date.now();
+    const blocks = decoded(decode(file)).blocks;
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(blocks.map((block) => [block.kind, block.text])).toEqual([["paragraph", "#"]]);
+  });
+
+  it("REG-WU-064-RC-125-b: a list marker followed by a long tab run decodes in linear time, in Markdown and notebooks", () => {
+    const tabs = `-${"\t".repeat(1_000_000)}`;
+    const started = Date.now();
+    expect(decoded(decode(textFile(tabs, "tabs.md"))).blocks.map((block) => block.kind)).toEqual(["paragraph"]);
+    expect(decoded(decode(notebook([{ cell_type: "markdown", source: tabs }]))).blocks.map((block) => block.kind))
+      .toEqual(["paragraph"]);
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+
+  it("REG-WU-064-RC-125-c: ordinary lines classify exactly as before", () => {
+    const lines = ["# T", "###### x", "####### x", "#x", "- a", "* a", "+ a", "1. a", "1) a", "  - a", "-a", "- ", "# ",
+      "#\u00a0x", "##\tStatus: WIP", "12. twelve", "1.5 not a list", "- - nested"];
+    for (const line of lines) {
+      const atx = OLD_ATX.exec(line);
+      const list = OLD_LIST.exec(line);
+      const expected = atx !== null
+        ? [atx[1]?.length === 1 ? "title" : "heading", atx[2]]
+        : list !== null
+          ? ["list_item", list[1]]
+          : ["paragraph", line.trim()];
+      const blocks = decoded(decode(textFile(`${line}\n`, "line.md"))).blocks;
+      expect(blocks.map((block) => [block.kind, block.text]), JSON.stringify(line)).toEqual([expected]);
+    }
+  });
+
+  it("REG-WU-064-RC-125-d: a checkbox list item in a notebook keeps its checkbox", () => {
+    const blocks = decoded(decode(notebook([{ cell_type: "markdown", source: ["- [ ] finish the retrieval benchmark\n"] }]))).blocks;
+    expect(blocks.map((block) => [block.kind, block.text])).toEqual([["list_item", "[ ] finish the retrieval benchmark"]]);
+  });
+
+  it("REG-WU-064-RC-126-a: a fence in a notebook markdown cell is a code block cited inside the cell", () => {
+    const document = decoded(decode(notebook([
+      { cell_type: "markdown", source: ["## Setup\n", "```bash\n", "# install the deps first\n", "pip install -r req.txt\n", "```\n"] },
+    ])));
+    expect(document.blocks.map((block) => [block.kind, block.text])).toEqual([
+      ["heading", "Setup"],
+      ["code", "# install the deps first\npip install -r req.txt"],
+    ]);
+    expect(document.blocks[1]?.locator).toEqual({
+      kind: "notebook_cell", cell_index: 0, cell_type: "markdown", line_start: 2, line_end: 5,
+    });
+    expect(document.blocks.some((block) => block.kind === "title")).toBe(false);
+  });
+
+  it("REG-WU-064-RC-126-b: an unclosed fence runs to the end of its cell and is noted", () => {
+    const document = decoded(decode(notebook([
+      { cell_type: "markdown", source: ["Intro\n", "```\n", "# not a heading"] },
+      { cell_type: "markdown", source: ["# Later title"] },
+    ])));
+    expect(document.blocks.map((block) => [block.kind, block.text])).toEqual([
+      ["paragraph", "Intro"],
+      ["code", "# not a heading"],
+      ["title", "Later title"],
+    ]);
+    expect(document.blocks[1]?.locator).toMatchObject({ cell_index: 0, line_start: 2, line_end: 3 });
+    const note = document.diagnostics.find((diagnostic) => diagnostic.message.includes("fenced code block"));
+    expect(note?.severity).toBe("info");
+    expect(note?.message).toContain("cell");
+  });
+
+  it("REG-WU-064-RC-126-c: the first level-1 heading across the notebook is its only title", () => {
+    const document = decoded(decode(notebook([
+      { cell_type: "markdown", source: ["# Notebook title\n", "Status: WIP"] },
+      { cell_type: "code", source: ["# a comment, not a heading\n", "x = 1"] },
+      { cell_type: "markdown", source: ["# Second level one\n", "- [ ] finish"] },
+    ])));
+    expect(document.blocks.map((block) => [block.kind, block.text])).toEqual([
+      ["title", "Notebook title"],
+      ["paragraph", "Status: WIP"],
+      ["code", "# a comment, not a heading\nx = 1"],
+      ["heading", "Second level one"],
+      ["list_item", "[ ] finish"],
+    ]);
+  });
+
+  it("REG-WU-064-RC-126-d: the same Markdown as a .md file decodes to the same kinds and texts", () => {
+    const source = "## Setup\n```bash\n# install the deps first\npip install -r req.txt\n```\n";
+    const md = decoded(decode(textFile(source, "setup.md"))).blocks.map((block) => [block.kind, block.text]);
+    const nb = decoded(decode(notebook([{ cell_type: "markdown", source }]))).blocks.map((block) => [block.kind, block.text]);
+    expect(md).toEqual([["heading", "Setup"], ["code", "# install the deps first\npip install -r req.txt"]]);
+    expect(nb).toEqual(md);
+  });
+
+  it("REG-WU-064-RC-127-a: a byte-order mark does not hide the title on line 1", () => {
+    const document = decoded(decode(textFile("\uFEFF# Q3 Plan\n\nBody text\n", "plan.md")));
+    expect(document.blocks[0]).toMatchObject({ kind: "title", text: "Q3 Plan", locator: { line_start: 1, line_end: 1 } });
+    expect(document.metadata.title).toBe("Q3 Plan");
+    expect(document.blocks[1]).toMatchObject({ kind: "paragraph", text: "Body text", locator: { line_start: 3 } });
+  });
+
+  it("REG-WU-064-RC-127-b: an ATX closing sequence is not heading text", () => {
+    const blocks = decoded(decode(textFile("# Plan\n\n## Status ##\n\n### Owner #   \n", "close.md"))).blocks;
+    expect(blocks.map((block) => block.text)).toEqual(["Plan", "Status", "Owner"]);
+  });
+
+  it("REG-WU-064-RC-127-c: a '#' not preceded by whitespace stays in the heading", () => {
+    const blocks = decoded(decode(textFile("## Status#1\n\n# C#\n", "hash.md"))).blocks;
+    expect(blocks.map((block) => block.text)).toEqual(["Status#1", "C#"]);
+  });
+
+  it("REG-WU-064-RC-127-d: a notebook with a byte-order mark decodes", () => {
+    const outcome = decode(notebook([{ cell_type: "markdown", source: ["# Research\n", "Status: WIP"] }], "\uFEFF"));
+    expect(decoded(outcome).blocks.map((block) => block.text)).toEqual(["Research", "Status: WIP"]);
+  });
+
+  it("REG-WU-064-RC-127-e: a byte-order mark does not change a CSV's blocks", () => {
+    const source = "id,status\n1,blocked\n";
+    const plain = decoded(decode(csv(source, "plain.csv")));
+    const marked = decoded(decode(csv(`\uFEFF${source}`, "marked.csv")));
+    expect(marked.blocks.map((block) => [block.kind, block.text, block.locator]))
+      .toEqual(plain.blocks.map((block) => [block.kind, block.text, block.locator]));
+    expect(marked.tables.map((table) => table.rows)).toEqual(plain.tables.map((table) => table.rows));
   });
 });

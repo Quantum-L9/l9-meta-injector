@@ -1,6 +1,6 @@
-import { DecodeInput, DocumentDecoder } from "./decoder";
+import { BlockBuilder, BlockLocator, DecodeInput, DocumentDecoder } from "./decoder";
 export declare const TEXT_DECODER_ID = "l9.text-decoder";
-export declare const TEXT_DECODER_VERSION = "1.0.0";
+export declare const TEXT_DECODER_VERSION = "1.1.0";
 export declare const CSV_DECODER_ID = "l9.csv-decoder";
 /**
  * 1.1.0 emits a block per populated cell beside the row block.
@@ -20,6 +20,24 @@ export declare function readUtf8(input: DecodeInput): {
 } | {
     reason: string;
 };
+/** How a caller places a block read from a span of lines, and what it calls the span. */
+export interface TextBlockScope {
+    /** The locator for lines `start`..`end` (1-based, inclusive) of this text. */
+    locate: (start: number, end: number) => BlockLocator;
+    /** Shared across calls when several texts form one document, as a notebook's cells do. */
+    title: {
+        seen: boolean;
+    };
+    /** What the text is, for diagnostics: "file" or "cell". */
+    unit: string;
+}
+/**
+ * ATX headings, list items, fenced code, and everything else.
+ *
+ * Markdown files and a notebook's Markdown cells both come through here, so a
+ * fence means code in either and a heading means a heading in either.
+ */
+export declare function decodeTextBlocks(text: string, builder: BlockBuilder, markdown: boolean, scope?: TextBlockScope): void;
 export declare const textDecoder: DocumentDecoder;
 /**
  * Split one CSV line, honouring RFC 4180 quoting.
