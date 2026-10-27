@@ -29,7 +29,9 @@ import { stableId } from "./repository_model";
 export const READINESS_EVIDENCE_SCHEMA = "l9.readiness-evidence/v1";
 
 export const READINESS_PROFILE_ID = "l9-meta-injector-readiness-evidence";
-export const READINESS_PROFILE_VERSION = "1.0.0";
+// 1.0.1: a body's archive_count counts physical archives, so two roots'
+// same-path archives are two (RC-090).
+export const READINESS_PROFILE_VERSION = "1.0.1";
 
 /** The complete signal vocabulary. Closed: an unlisted signal is never emitted. */
 export const READINESS_SIGNALS = [

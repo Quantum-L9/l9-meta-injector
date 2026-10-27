@@ -1654,8 +1654,12 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       size_bytes: artifact.sizeBytes,
       is_archive_member: artifact.isArchiveMember,
       // The outermost archive a member sits in, so two members of one ZIP count
-      // as one archive rather than two.
-      archive_id: archiveAncestryOf(artifact.rootRelativePath)[0] ?? null,
+      // as one archive rather than two — named by the root-scoped identity the
+      // snapshot's archives carry, so two roots' `widget/old.zip` are two.
+      archive_id: (() => {
+        const outermost = archiveAncestryOf(artifact.rootRelativePath)[0];
+        return outermost === undefined ? null : virtualSourceId(artifact.rootId, outermost);
+      })(),
       decoded: normalized.get(artifact.virtualSourceId)?.decodes === true,
       unsupported_format: undecodedExtensions.has(artifact.extension),
       // Both readers, because readiness is a question about the document and not
