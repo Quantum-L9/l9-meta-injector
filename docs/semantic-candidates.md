@@ -271,13 +271,13 @@ Writes, in addition to the existing corpus outputs:
 | `--allow-remote-embeddings` | permit a remote provider to receive bounded document text |
 | `--reasoning-pack-max-artifacts N` | members per pack, default `12` |
 | `--reasoning-pack-max-chars N` | characters per pack, default `24000` |
+| `--embedding-pair-threshold F` | cosine at which an embedding pair is offered: a number in `[0, 1]`, default `0.75`; anything else exits `2` |
 
-The similarity thresholds (`0.75` to offer a pair, `0.85` to count it strong) are
-**not** CLI flags. This release ships no embedding provider, so `--embeddings` is
-refused and a threshold flag could not take effect; they are set programmatically
-via `FusionOptions.embeddingStrongThreshold` and `RunEmbeddingsInput.pairThreshold`
-by a caller that supplies its own provider. A flag that cannot change anything is
-worse than no flag.
+The threshold at which an offered embedding pair counts as strong (`0.85`) is
+**not** a CLI flag; it is set programmatically via
+`FusionOptions.embeddingStrongThreshold` by a caller that needs a different one.
+The pair threshold is also settable programmatically, via
+`RunEmbeddingsInput.pairThreshold`.
 
 Single-source mode (`npm run local-source -- <path>`) runs the same pass and
 extends `corpus-index.json` and `corpus-report.md` with it. **Recall differs**:

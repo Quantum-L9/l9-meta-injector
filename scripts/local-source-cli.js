@@ -683,7 +683,9 @@ async function runCorpusMode(cli) {
     }
   }
 
-  const embeddingPairThreshold = numericOpt(cli, "--embedding-pair-threshold");
+  // A cosine, so a fraction in [0, 1]; the integer-budget parser refused every
+  // useful value and accepted integers that suppress every pair.
+  const embeddingPairThreshold = unitIntervalOpt(cli, "--embedding-pair-threshold");
 
   const packBudget = {};
   const packMaxArtifacts = numericOpt(cli, "--reasoning-pack-max-artifacts");
@@ -775,6 +777,9 @@ async function runCorpusMode(cli) {
   // so the per-root bundles land through the same staged-and-renamed commit as
   // every other projection rather than through a second, unguarded write path.
   const bundleScratch = fs.mkdtempSync(path.join(os.tmpdir(), "l9-corpus-bundles-"));
+  // `fail` exits the process at once, which would skip the `finally` that removes
+  // the scratch; the failure is held until cleanup has run, then reported.
+  let bundleFailure = null;
   try {
     for (const root of result.rootPackets) {
       const rootDir = `roots/${root.directory}`;
@@ -802,10 +807,13 @@ async function runCorpusMode(cli) {
       );
     }
   } catch (error) {
-    fail(error instanceof Error ? error.message : String(error));
-    return;
+    bundleFailure = error;
   } finally {
     fs.rmSync(bundleScratch, { recursive: true, force: true });
+  }
+  if (bundleFailure !== null) {
+    fail(bundleFailure instanceof Error ? bundleFailure.message : String(bundleFailure));
+    return;
   }
   // The canonical packet, emitted from the generation this run just computed.
   //
@@ -942,6 +950,9 @@ function main() {
   }
 
   const { packet, observation } = result;
+  // Held rather than reported from inside `catch`: `fail` exits the process at
+  // once, and the staged member bytes must be disposed on every exit path.
+  let failure = null;
   try {
     const emitted = repositoryModel.emitRepositoryModelBundle(packet, {
       outDir: bundleDir,
@@ -1021,10 +1032,11 @@ function main() {
       console.log(`  held: ${archive.sourcePath} — ${archive.holds.map((hold) => hold.code).join(", ")}`);
     }
   } catch (error) {
-    fail(error instanceof Error ? error.message : String(error));
+    failure = error;
   } finally {
     observation.dispose();
   }
+  if (failure !== null) fail(failure instanceof Error ? failure.message : String(failure));
 }
 
 main();
