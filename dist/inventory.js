@@ -359,7 +359,10 @@ function buildRecord(root, abs, isDir, cfg, kind = isDir ? "directory" : "file",
         : classifyInventory(relative, fileName, ext, isDir);
     let size = null, modified = null, hash = null, created = null;
     const unknowns = [...cls.unknowns];
-    const harvestedType = harvest.inventory_type ?? harvest.artifact_type;
+    // Compare like with like (ADR-051): only a harvested inventory_type is in the
+    // inventory taxonomy. A front-matter artifact_type is the pipeline taxonomy and
+    // never conflicts with the inventory classification.
+    const harvestedType = harvest.inventory_type;
     if (typeof harvestedType === "string" && harvestedType !== cls.type) {
         unknowns.push(`harvested_type:${harvestedType}`);
     }

@@ -286,6 +286,27 @@ describe("derived annotation fields", () => {
   });
 });
 
+describe("WU-081 harvested_type compares like taxonomies", () => {
+  test("REG-WU-081-RC-060-RC060-a: a pipeline artifact_type in front matter is not an inventory_type conflict", () => {
+    const root = tmp();
+    fs.writeFileSync(path.join(root, "guide.md"), "---\nartifact_type: doctrine\ntitle: Guide\n---\n# Guide\n");
+    const result = inventoryTree({ root, outDir: path.join(tmp(), "out"), dryRun: true, now: "2026-09-11T12:00:00.000Z" });
+    const record = result.records.find((r) => r.relative_path === "guide.md");
+    expect(record).toBeDefined();
+    expect(record?.unknowns.some((u) => u.startsWith("harvested_type:"))).toBe(false);
+  });
+
+  test("REG-WU-081-RC-060-RC060-b: a differing harvested inventory_type is still diagnosed", () => {
+    const root = tmp();
+    fs.writeFileSync(path.join(root, "notes.md"), "# Notes\n");
+    fs.writeFileSync(path.join(root, "notes.md.l9meta.yaml"), "inventory_type: code\n");
+    const result = inventoryTree({ root, outDir: path.join(tmp(), "out"), dryRun: true, now: "2026-09-11T12:00:00.000Z" });
+    const record = result.records.find((r) => r.relative_path === "notes.md");
+    expect(record?.artifact_type).not.toBe("code");
+    expect(record?.unknowns).toContain("harvested_type:code");
+  });
+});
+
 describe("harvest-first", () => {
   test("reads existing sidecar and folder meta before classify", () => {
     const root = tmp();
