@@ -968,14 +968,19 @@ function buildRepositoryModelPacket(input) {
     // The consumer's semantic view is exactly these fields; `validation` and the
     // identity/volatile fields are excluded on both sides.
     const packetSemanticHash = semanticHash(shell);
-    return {
+    const built = {
         ...shell,
         packet_id: `packet:${packetSemanticHash.slice(SHA_PREFIX.length)}`,
-        validation: { status: "passed", receipt_ref: RECEIPT_RELATIVE_PATH },
+        validation: { status: "not_run" },
         semantic_hash: packetSemanticHash,
         // Informational content identity of the canonical payload bytes.
         artifact_hash: artifactHash(Buffer.from(canonicalJson(payload), "utf8")),
     };
+    // The stamp reports a validation that ran, never a hoped-for outcome. No receipt
+    // exists until the packet is emitted, so none is referenced here; emission adds
+    // the reference beside the receipt it writes. `validation` is outside semantic
+    // identity, so a valid packet's id is unchanged by stamping it.
+    return { ...built, validation: { status: validateRepositoryModelPacket(built).status } };
 }
 // ───────────────────────────── producer-side validation ─────────────────────────────
 function check(checkId, checkClass, rule, ok, message, details = {}) {
@@ -1116,7 +1121,12 @@ function emitRepositoryModelBundle(packet, options) {
     const receipt = buildReceipt(packet, result, producerVersion, generatedAt);
     const packetPath = path.join(bundleRoot, PACKET_RELATIVE_PATH);
     const receiptPath = path.join(bundleRoot, RECEIPT_RELATIVE_PATH);
-    const packetFile = writeCanonicalFile(packetPath, packet);
+    // Stamped from the validation that just passed, and pointing at the receipt
+    // written beside it.
+    const packetFile = writeCanonicalFile(packetPath, {
+        ...packet,
+        validation: { status: result.status, receipt_ref: RECEIPT_RELATIVE_PATH },
+    });
     const receiptFile = writeCanonicalFile(receiptPath, receipt);
     const files = [
         { path: PACKET_RELATIVE_PATH, media_type: JSON_MEDIA_TYPE, ...packetFile },
