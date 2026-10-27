@@ -15,4 +15,5 @@ export type TarReadResult = {
 };
 export declare function readTarArchive(bytes: Buffer): TarReadResult;
 export declare function peekTarRootMeta(bytes: Buffer): Buffer | null;
+/** Root-meta identity is the admission identity (archive_preflight owns the rule). */
 export declare function rootMetaKind(name: string): "canonical" | "legacy" | null;

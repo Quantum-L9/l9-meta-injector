@@ -6,7 +6,7 @@ import { Transform, pipeline } from "node:stream";
 import { promisify } from "node:util";
 import * as zlib from "node:zlib";
 import { archiveExtensionOf } from "./archive_formats";
-import { pathSafetyHolds, preflightArchive } from "./archive_preflight";
+import { canonicalMemberPath, memberCollisionKey, pathSafetyHolds, preflightArchive } from "./archive_preflight";
 import { replaceFileAtomically } from "./durable_write";
 import { DEFAULT_LOCAL_ARCHIVE_POLICY, LocalArchivePolicy } from "./local_archive_policy";
 import { peekTarRootMeta, readTarArchive, rootMetaKind as tarRootMetaKind } from "./tar_reader";
@@ -139,7 +139,8 @@ function admitTarNames(names: string[]): string | null {
   }
   const seen = new Set<string>();
   for (const name of names) {
-    const key = name.replace(/\\/g, "/").replace(/^\.\//, "").normalize("NFC").toLowerCase();
+    // The same identity ZIP preflight uses: canonical path under the collision fold.
+    const key = memberCollisionKey(canonicalMemberPath(name));
     if (seen.has(key)) return "archive.duplicate_member";
     seen.add(key);
   }

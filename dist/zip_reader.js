@@ -236,7 +236,11 @@ function locateEocd(fd, fileSize) {
     else if (centralEnd !== eocdAbsoluteOffset) {
         throw new ZipFormatError("central directory does not terminate at the end-of-central-directory record");
     }
-    return resolved;
+    return {
+        ...resolved,
+        commentOffset: eocdAbsoluteOffset + EOCD_MIN_SIZE,
+        commentLength: tail.readUInt16LE(eocdOffset + 20),
+    };
 }
 /** Locate the Zip64 extended-information field's payload inside an extra-field blob. */
 function findZip64ExtraPayload(extra) {
@@ -277,7 +281,7 @@ function applyZip64Extra(extra, entry) {
     }
 }
 /** Parse one central-directory header at `cursor`, or throw if it is malformed. */
-function readCentralEntry(central, cursor, index) {
+function readCentralEntry(central, cursor, index, centralDirectoryOffset) {
     if (central.readUInt32LE(cursor) !== CENTRAL_SIGNATURE) {
         throw new ZipFormatError(`central-directory header signature is invalid at offset ${cursor}`);
     }
@@ -319,6 +323,8 @@ function readCentralEntry(central, cursor, index) {
             index,
             modTime: central.readUInt16LE(cursor + 12),
             modDate: central.readUInt16LE(cursor + 14),
+            centralRecordOffset: centralDirectoryOffset + cursor,
+            centralRecordLength: next - cursor,
         },
         next,
     };
@@ -332,7 +338,7 @@ function readZipCentralDirectory(archivePath) {
         const entries = [];
         let cursor = 0;
         while (cursor + CENTRAL_FIXED_SIZE <= central.length) {
-            const parsed = readCentralEntry(central, cursor, entries.length);
+            const parsed = readCentralEntry(central, cursor, entries.length, eocd.centralDirectoryOffset);
             entries.push(parsed.entry);
             cursor = parsed.next;
         }
@@ -342,7 +348,13 @@ function readZipCentralDirectory(archivePath) {
         if (cursor !== central.length) {
             throw new ZipFormatError(`central directory declares ${central.length} bytes but ${cursor} were consumed`);
         }
-        return { entries, declaredEntryCount: eocd.entryCount, zip64: eocd.zip64 };
+        return {
+            entries,
+            declaredEntryCount: eocd.entryCount,
+            zip64: eocd.zip64,
+            eocdCommentOffset: eocd.commentOffset,
+            eocdCommentLength: eocd.commentLength,
+        };
     }
     finally {
         fs.closeSync(fd);

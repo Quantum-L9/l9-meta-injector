@@ -1,5 +1,6 @@
 // tar_reader.ts — bounded ustar reader for inventory harvest and rewrite admit (ADR-049).
 // Observation expansion does not use this module (ADR-036 / ADR-046).
+import { rootMetaMemberKind } from "./archive_preflight";
 import { parseOctalField, tarChecksum, TAR_BLOCK_SIZE } from "./tar_format";
 
 export interface TarMember {
@@ -19,10 +20,31 @@ const REGULAR = new Set(["0", "\0", ""]);
 const DIRECTORY = new Set(["5"]);
 const HOSTILE_TYPES = new Set(["1", "2", "3", "4", "6", "7", "L", "K", "x", "g", "S"]);
 
-function readName(header: Buffer): string {
-  const raw = header.subarray(0, 100);
+const POSIX_USTAR_MAGIC = Buffer.from("ustar\0", "latin1");
+const POSIX_USTAR_VERSION = Buffer.from("00", "latin1");
+
+/** A NUL-terminated header field, or the full width when it has no terminator. */
+function readField(header: Buffer, start: number, width: number): Buffer {
+  const raw = header.subarray(start, start + width);
   const end = raw.indexOf(0);
-  return raw.subarray(0, end === -1 ? raw.length : end).toString("utf8");
+  return raw.subarray(0, end === -1 ? raw.length : end);
+}
+
+/**
+ * The member's path. A POSIX ustar header splits a long path into the prefix
+ * field (345, 155 bytes) and the name field, joined by '/'. GNU-magic headers
+ * (`ustar  \0`) keep atime/ctime at 345, so only the POSIX magic and version
+ * enable the join.
+ */
+function readName(header: Buffer): string {
+  const name = readField(header, 0, 100);
+  const posix = header.subarray(257, 263).equals(POSIX_USTAR_MAGIC)
+    && header.subarray(263, 265).equals(POSIX_USTAR_VERSION);
+  if (posix) {
+    const prefix = readField(header, 345, 155);
+    if (prefix.length > 0) return Buffer.concat([prefix, Buffer.from("/"), name]).toString("utf8");
+  }
+  return name.toString("utf8");
 }
 
 export function readTarArchive(bytes: Buffer): TarReadResult {
@@ -73,9 +95,7 @@ export function peekTarRootMeta(bytes: Buffer): Buffer | null {
   return legacy ? legacy.content : null;
 }
 
+/** Root-meta identity is the admission identity (archive_preflight owns the rule). */
 export function rootMetaKind(name: string): "canonical" | "legacy" | null {
-  const normalized = name.replace(/\\/g, "/").replace(/^\.\//, "");
-  if (normalized === ".l9meta.yaml") return "canonical";
-  if (normalized === "l9meta.yaml") return "legacy";
-  return null;
+  return rootMetaMemberKind(name);
 }

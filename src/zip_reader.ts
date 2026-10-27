@@ -78,6 +78,14 @@ export interface ZipCentralEntry {
   modTime: number;
   /** DOS last-modification date, for byte-exact round-trip in writers. */
   modDate: number;
+  /**
+   * Absolute file offset of this entry's original central-directory record, so a
+   * writer can copy it verbatim. A number, not the bytes, so cached preflight
+   * verdicts that carry the entry stay JSON-safe.
+   */
+  centralRecordOffset?: number;
+  /** Length of the original central-directory record: fixed part, name, extra and comment. */
+  centralRecordLength?: number;
 }
 
 export interface ZipDirectory {
@@ -86,6 +94,10 @@ export interface ZipDirectory {
   declaredEntryCount: number;
   /** True when the archive used Zip64 records. */
   zip64: boolean;
+  /** Absolute file offset of the archive (EOCD) comment. */
+  eocdCommentOffset?: number;
+  /** Length of the archive (EOCD) comment; 0 when there is none. */
+  eocdCommentLength?: number;
 }
 
 export class ZipFormatError extends Error {
@@ -155,6 +167,11 @@ interface Eocd {
   zip64: boolean;
 }
 
+interface LocatedEocd extends Eocd {
+  commentOffset: number;
+  commentLength: number;
+}
+
 /**
  * Find the real EOCD record, not merely the last signature-shaped bytes.
  *
@@ -216,7 +233,7 @@ function readZip64Eocd(
   };
 }
 
-function locateEocd(fd: number, fileSize: number): Eocd {
+function locateEocd(fd: number, fileSize: number): LocatedEocd {
   if (fileSize < EOCD_MIN_SIZE) throw new ZipFormatError("file is too small to be a ZIP archive");
   const searchLength = Math.min(fileSize, MAX_EOCD_SEARCH);
   const searchStart = fileSize - searchLength;
@@ -267,7 +284,11 @@ function locateEocd(fd: number, fileSize: number): Eocd {
   } else if (centralEnd !== eocdAbsoluteOffset) {
     throw new ZipFormatError("central directory does not terminate at the end-of-central-directory record");
   }
-  return resolved;
+  return {
+    ...resolved,
+    commentOffset: eocdAbsoluteOffset + EOCD_MIN_SIZE,
+    commentLength: tail.readUInt16LE(eocdOffset + 20),
+  };
 }
 
 /** Locate the Zip64 extended-information field's payload inside an extra-field blob. */
@@ -316,6 +337,7 @@ function readCentralEntry(
   central: Buffer,
   cursor: number,
   index: number,
+  centralDirectoryOffset: number,
 ): { entry: ZipCentralEntry; next: number } {
   if (central.readUInt32LE(cursor) !== CENTRAL_SIGNATURE) {
     throw new ZipFormatError(`central-directory header signature is invalid at offset ${cursor}`);
@@ -359,6 +381,8 @@ function readCentralEntry(
       index,
       modTime: central.readUInt16LE(cursor + 12),
       modDate: central.readUInt16LE(cursor + 14),
+      centralRecordOffset: centralDirectoryOffset + cursor,
+      centralRecordLength: next - cursor,
     },
     next,
   };
@@ -374,7 +398,7 @@ export function readZipCentralDirectory(archivePath: string): ZipDirectory {
     const entries: ZipCentralEntry[] = [];
     let cursor = 0;
     while (cursor + CENTRAL_FIXED_SIZE <= central.length) {
-      const parsed = readCentralEntry(central, cursor, entries.length);
+      const parsed = readCentralEntry(central, cursor, entries.length, eocd.centralDirectoryOffset);
       entries.push(parsed.entry);
       cursor = parsed.next;
     }
@@ -389,7 +413,13 @@ export function readZipCentralDirectory(archivePath: string): ZipDirectory {
         `central directory declares ${central.length} bytes but ${cursor} were consumed`,
       );
     }
-    return { entries, declaredEntryCount: eocd.entryCount, zip64: eocd.zip64 };
+    return {
+      entries,
+      declaredEntryCount: eocd.entryCount,
+      zip64: eocd.zip64,
+      eocdCommentOffset: eocd.commentOffset,
+      eocdCommentLength: eocd.commentLength,
+    };
   } finally {
     fs.closeSync(fd);
   }

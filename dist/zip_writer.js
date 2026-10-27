@@ -41,6 +41,7 @@ exports.peekZipRootMeta = peekZipRootMeta;
 // zip_writer.ts — inventory-only ZIP rewrite: copy member blobs, upsert root .l9meta.yaml (ADR-049).
 // Observation still uses zip_reader only. This module must not become a second engine.
 const fs = __importStar(require("node:fs"));
+const archive_preflight_1 = require("./archive_preflight");
 const zip_reader_1 = require("./zip_reader");
 const LOCAL_SIGNATURE = 0x04034b50;
 const CENTRAL_SIGNATURE = 0x02014b50;
@@ -52,15 +53,20 @@ const DATA_DESCRIPTOR_SIGNATURE = 0x08074b50;
 const FLAG_UTF8_NAME = 0x0800;
 const U16_MAX = 0xffff;
 const U32_MAX = 0xffffffff;
+const CENTRAL_LOCAL_OFFSET_FIELD = 42;
+/** Root-meta identity is the admission identity (archive_preflight owns the rule). */
 function rootMetaKind(name) {
-    const normalized = name.replace(/\\/g, "/").replace(/^\.\//, "");
-    if (normalized === ".l9meta.yaml")
-        return "canonical";
-    if (normalized === "l9meta.yaml")
-        return "legacy";
-    return null;
+    return (0, archive_preflight_1.rootMetaMemberKind)(name);
 }
-function holdZipRewrite(directory) {
+/**
+ * Why a rewrite must not run, or null.
+ *
+ * With `centralRecordOf`, kept members' original central records are also checked:
+ * a record whose local-header offset field is the Zip64 placeholder keeps the real
+ * offset in its Zip64 extra, which patching the fixed field cannot relocate, so it
+ * holds as Zip64 (ADR-049: Zip64 archives hold until a writer can emit Zip64).
+ */
+function holdZipRewrite(directory, centralRecordOf) {
     if (directory.zip64)
         return "archive.zip64";
     for (const entry of directory.entries) {
@@ -68,6 +74,14 @@ function holdZipRewrite(directory) {
             return "archive.member_encrypted";
         if (entry.compressedSize > U32_MAX || entry.uncompressedSize > U32_MAX || entry.localHeaderOffset > U32_MAX) {
             return "archive.zip64";
+        }
+    }
+    if (centralRecordOf) {
+        for (const entry of directory.entries) {
+            if (rootMetaKind(entry.name) !== null)
+                continue;
+            if (centralRecordOf(entry).readUInt32LE(CENTRAL_LOCAL_OFFSET_FIELD) === U32_MAX)
+                return "archive.zip64";
         }
     }
     return null;
@@ -96,6 +110,31 @@ function copyLocalRecord(fd, entry) {
         total += peek.readUInt32LE(0) === DATA_DESCRIPTOR_SIGNATURE ? 16 : 12;
     }
     return readExact(fd, total, entry.localHeaderOffset);
+}
+/** A kept member's original central-directory record, verbatim. */
+function readCentralRecord(fd, entry) {
+    const offset = entry.centralRecordOffset;
+    const length = entry.centralRecordLength;
+    if (offset === undefined || length === undefined || length < CENTRAL_FIXED) {
+        throw new zip_reader_1.ZipFormatError(`central record extent is unknown for ${entry.name}`);
+    }
+    const record = readExact(fd, length, offset);
+    if (record.readUInt32LE(0) !== CENTRAL_SIGNATURE) {
+        throw new zip_reader_1.ZipFormatError(`central-directory header signature is invalid for ${entry.name}`);
+    }
+    const declared = CENTRAL_FIXED + record.readUInt16LE(28) + record.readUInt16LE(30) + record.readUInt16LE(32);
+    if (declared !== length) {
+        throw new zip_reader_1.ZipFormatError(`central record length disagrees with its fields for ${entry.name}`);
+    }
+    return record;
+}
+/** The original record with only the relative-offset-of-local-header field moved. */
+function relocateCentralRecord(record, localHeaderOffset) {
+    if (localHeaderOffset > U32_MAX)
+        throw new zip_reader_1.ZipFormatError("Zip64 emit is out of scope for inventory writer v1");
+    const copy = Buffer.from(record);
+    copy.writeUInt32LE(localHeaderOffset, CENTRAL_LOCAL_OFFSET_FIELD);
+    return copy;
 }
 function crc32(data) {
     const crc = new zip_reader_1.Crc32();
@@ -134,17 +173,20 @@ function writeCentral(entry) {
     header.writeUInt32LE(entry.localHeaderOffset, 42);
     return Buffer.concat([header, nameBytes]);
 }
-function writeEocd(entryCount, centralSize, centralOffset) {
+function writeEocd(entryCount, centralSize, centralOffset, comment = Buffer.alloc(0)) {
     if (entryCount > U16_MAX || centralSize > U32_MAX || centralOffset > U32_MAX) {
         throw new zip_reader_1.ZipFormatError("Zip64 emit is out of scope for inventory writer v1");
     }
+    if (comment.length > U16_MAX)
+        throw new zip_reader_1.ZipFormatError("archive comment exceeds 65535 bytes");
     const eocd = Buffer.alloc(22);
     eocd.writeUInt32LE(EOCD_SIGNATURE, 0);
     eocd.writeUInt16LE(entryCount, 8);
     eocd.writeUInt16LE(entryCount, 10);
     eocd.writeUInt32LE(centralSize, 12);
     eocd.writeUInt32LE(centralOffset, 16);
-    return eocd;
+    eocd.writeUInt16LE(comment.length, 20);
+    return Buffer.concat([eocd, comment]);
 }
 /** Convert a JS Date to DOS file time (2-second resolution, 1980-2107 range). */
 function dosTimeNow() {
@@ -185,35 +227,48 @@ function injectZipRootMeta(archivePath, yaml) {
     catch (err) {
         return { ok: false, hold: `archive.format_unreadable:${err.message}` };
     }
-    const rewriteHold = holdZipRewrite(directory);
-    if (rewriteHold)
-        return { ok: false, hold: rewriteHold };
+    const directoryHold = holdZipRewrite(directory);
+    if (directoryHold)
+        return { ok: false, hold: directoryHold };
     const yamlBytes = Buffer.from(yaml, "utf8");
     const locals = [];
     const centrals = [];
+    let archiveComment;
     let offset = 0;
-    const fd = fs.openSync(archivePath, "r");
+    let fd;
     try {
+        fd = fs.openSync(archivePath, "r");
+    }
+    catch (err) {
+        return { ok: false, hold: `archive.zip_copy_failed:${err.message}` };
+    }
+    try {
+        // Kept members' central records are copied verbatim (name bytes, extra fields,
+        // comments, attributes, version-needed); only the local-header offset moves.
+        const records = new Map();
+        const centralRecordOf = (entry) => {
+            let record = records.get(entry);
+            if (!record) {
+                record = readCentralRecord(fd, entry);
+                records.set(entry, record);
+            }
+            return record;
+        };
+        const recordHold = holdZipRewrite(directory, centralRecordOf);
+        if (recordHold)
+            return { ok: false, hold: recordHold };
         for (const entry of directory.entries) {
             if (rootMetaKind(entry.name) !== null)
                 continue;
             const blob = copyLocalRecord(fd, entry);
             locals.push(blob);
-            centrals.push(writeCentral({
-                name: entry.name,
-                flags: entry.generalPurposeFlags,
-                method: entry.compressionMethod,
-                crc32: entry.crc32,
-                compressedSize: entry.compressedSize,
-                uncompressedSize: entry.uncompressedSize,
-                localHeaderOffset: offset,
-                externalAttributes: entry.externalAttributes,
-                versionMadeBy: entry.versionMadeBy,
-                modTime: entry.modTime,
-                modDate: entry.modDate,
-            }));
+            centrals.push(relocateCentralRecord(centralRecordOf(entry), offset));
             offset += blob.length;
         }
+        const commentLength = directory.eocdCommentLength ?? 0;
+        archiveComment = commentLength > 0 && directory.eocdCommentOffset !== undefined
+            ? readExact(fd, commentLength, directory.eocdCommentOffset)
+            : Buffer.alloc(0);
     }
     catch (err) {
         return { ok: false, hold: `archive.zip_copy_failed:${err.message}` };
@@ -238,7 +293,10 @@ function injectZipRootMeta(archivePath, yaml) {
     offset += metaLocal.length;
     const central = Buffer.concat(centrals);
     try {
-        return { ok: true, bytes: Buffer.concat([...locals, central, writeEocd(centrals.length, central.length, offset)]) };
+        return {
+            ok: true,
+            bytes: Buffer.concat([...locals, central, writeEocd(centrals.length, central.length, offset, archiveComment)]),
+        };
     }
     catch (err) {
         return { ok: false, hold: `archive.zip_write_failed:${err.message}` };

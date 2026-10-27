@@ -164,7 +164,8 @@ function admitTarNames(names) {
     }
     const seen = new Set();
     for (const name of names) {
-        const key = name.replace(/\\/g, "/").replace(/^\.\//, "").normalize("NFC").toLowerCase();
+        // The same identity ZIP preflight uses: canonical path under the collision fold.
+        const key = (0, archive_preflight_1.memberCollisionKey)((0, archive_preflight_1.canonicalMemberPath)(name));
         if (seen.has(key))
             return "archive.duplicate_member";
         seen.add(key);
