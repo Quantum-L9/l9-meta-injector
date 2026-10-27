@@ -270,6 +270,15 @@ export interface LocalSourceObservation {
   stable: boolean;
   /** Tool-owned staging root. Implementation detail; never semantic. */
   scratchRoot: string;
+  /**
+   * The stat each physical file's recorded hash was produced under, keyed by
+   * relative path: the matching before/after bracket of a fresh hash, or the
+   * enumeration stat that validated a carried-over one. Absent for files without
+   * a hash, and for directories, symlinks, special entries and archive members.
+   * Operational only — never part of the physical manifest or any identity — so a
+   * caller that records a stat beside a hash records the right one.
+   */
+  hashingStats: ReadonlyMap<string, { size_bytes: number; mtime_ms: number; mtime_ns?: string }>;
   /** Remove the staging root. Safe to call more than once. */
   dispose(): void;
 }
@@ -338,9 +347,10 @@ function assertScratchOutsideSource(scratchParent: string, absoluteSource: strin
  * carries this session's token. Nothing is ever removed because of its name.
  */
 function createScratch(parent: string): ScratchHandle {
-  const base = parent.length > 0 ? parent : os.tmpdir();
-  fs.mkdirSync(base, { recursive: true });
-  const root = fs.mkdtempSync(path.join(base, "l9-local-source-"));
+  // `parent` is already normalized by acquireLocalSource and was checked against the
+  // source as given; no second defaulting rule may change where the write lands.
+  fs.mkdirSync(parent, { recursive: true });
+  const root = fs.mkdtempSync(path.join(parent, "l9-local-source-"));
   const token = crypto.randomUUID();
   fs.writeFileSync(
     path.join(root, SCRATCH_OWNER_FILE),
@@ -375,6 +385,84 @@ export function removeOwnedScratch(root: string, token: string): void {
   fs.rmSync(root, { recursive: true, force: true });
 }
 
+/** Largest ownership marker that is read at all; a real marker is a few hundred bytes. */
+const EXTRACTION_MARKER_MAX_BYTES = 64 * 1024;
+
+/**
+ * Flags for reading untrusted source content: never follow a final symlink, and
+ * never block on opening a FIFO or device. Where a flag is not defined by the
+ * platform it contributes nothing, and the lstat that precedes every open below
+ * stands in for it.
+ */
+const READ_UNTRUSTED_FLAGS = fs.constants.O_RDONLY
+  | (fs.constants.O_NOFOLLOW ?? 0)
+  | (fs.constants.O_NONBLOCK ?? 0);
+
+/** The opened object is not a regular file, so its bytes are never read. */
+class NotRegularFileError extends Error {
+  readonly code = "ENOTREGULAR";
+  constructor() {
+    super("local-source: not a regular file; it is never read");
+    this.name = "NotRegularFileError";
+  }
+}
+
+/**
+ * Open a path for reading only once it is proved to be a regular file.
+ *
+ * The path is lstat'ed first (a symlink, FIFO or device is refused before any
+ * open), opened without following a final symlink and without blocking, and the
+ * descriptor itself is fstat'ed, so an object swapped in between the lstat and the
+ * open is still refused and closed unread. Throws `NotRegularFileError` for
+ * anything that is not a regular file; filesystem errors propagate unchanged.
+ */
+function openVerifiedRegularFile(absolutePath: string): { fd: number; size: number } {
+  if (!fs.lstatSync(absolutePath).isFile()) throw new NotRegularFileError();
+  const fd = fs.openSync(absolutePath, READ_UNTRUSTED_FLAGS);
+  try {
+    const stats = fs.fstatSync(fd);
+    if (!stats.isFile()) throw new NotRegularFileError();
+    return { fd, size: stats.size };
+  } catch (error) {
+    fs.closeSync(fd);
+    throw error;
+  }
+}
+
+/**
+ * The parsed extraction-ownership marker of `directory`, or null when there is none.
+ *
+ * The marker is untrusted source content, so it is read only from a verified,
+ * non-symlink regular file of bounded size. A symlinked, special, oversize,
+ * unreadable or unparsable marker is no marker: ownership is never inferred from
+ * something this function did not fully and safely read.
+ */
+export function readExtractionOwnershipMarker(directory: string): unknown {
+  let opened: { fd: number; size: number };
+  try {
+    opened = openVerifiedRegularFile(path.join(directory, LEGACY_EXTRACTION_OWNER_FILE));
+  } catch {
+    return null;
+  }
+  try {
+    if (opened.size > EXTRACTION_MARKER_MAX_BYTES) return null;
+    // One byte past the ceiling, so a file that grew after fstat is detected.
+    const buffer = Buffer.alloc(EXTRACTION_MARKER_MAX_BYTES + 1);
+    let length = 0;
+    for (;;) {
+      const count = fs.readSync(opened.fd, buffer, length, buffer.length - length, length);
+      if (count === 0) break;
+      length += count;
+      if (length > EXTRACTION_MARKER_MAX_BYTES) return null;
+    }
+    return JSON.parse(buffer.subarray(0, length).toString("utf8")) as unknown;
+  } catch {
+    return null;
+  } finally {
+    fs.closeSync(opened.fd);
+  }
+}
+
 /**
  * True when a directory carries evidence that this tool created it.
  *
@@ -383,18 +471,12 @@ export function removeOwnedScratch(root: string, token: string): void {
  * exactly how user data gets deleted.
  */
 export function hasLegacyExtractionOwnership(directory: string): boolean {
-  try {
-    const marker = JSON.parse(
-      fs.readFileSync(path.join(directory, LEGACY_EXTRACTION_OWNER_FILE), "utf8"),
-    ) as { owner?: unknown };
-    // Exact id only: a prefix match would let an attacker-chosen owner such as
-    // `l9-meta-injector.evil` borrow this package's authority. This predicate
-    // decides exclusion from observation, not destruction; the destructive path
-    // additionally requires the v2 schema.
-    return typeof marker.owner === "string" && marker.owner === EXTRACTION_OWNER_ID;
-  } catch {
-    return false;
-  }
+  const marker = readExtractionOwnershipMarker(directory) as { owner?: unknown } | null;
+  // Exact id only: a prefix match would let an attacker-chosen owner such as
+  // `l9-meta-injector.evil` borrow this package's authority. This predicate
+  // decides exclusion from observation, not destruction; the destructive path
+  // additionally requires the v2 schema.
+  return marker !== null && typeof marker.owner === "string" && marker.owner === EXTRACTION_OWNER_ID;
 }
 
 /**
@@ -404,14 +486,8 @@ export function hasLegacyExtractionOwnership(directory: string): boolean {
  * the v2 schema field is a legacy or foreign file and never authorizes removal.
  */
 export function hasExtractionOwnershipV2(directory: string): boolean {
-  try {
-    const marker = JSON.parse(
-      fs.readFileSync(path.join(directory, LEGACY_EXTRACTION_OWNER_FILE), "utf8"),
-    ) as { schema?: unknown; owner?: unknown };
-    return marker.schema === LOCAL_FILES_EXTRACTION_SCHEMA && marker.owner === EXTRACTION_OWNER_ID;
-  } catch {
-    return false;
-  }
+  const marker = readExtractionOwnershipMarker(directory) as { schema?: unknown; owner?: unknown } | null;
+  return marker !== null && marker.schema === LOCAL_FILES_EXTRACTION_SCHEMA && marker.owner === EXTRACTION_OWNER_ID;
 }
 
 /**
@@ -442,7 +518,9 @@ function sha256Prefixed(digestHex: string): string {
 /** Stream a file through SHA-256. Bounded memory regardless of file size. */
 export function hashFileStreaming(absolutePath: string): { hash: string; bytes: number } {
   const hash = crypto.createHash("sha256");
-  const fd = fs.openSync(absolutePath, "r");
+  // Only a verified regular file is read: a FIFO would block the open and a
+  // device such as /dev/zero would be read without end.
+  const { fd } = openVerifiedRegularFile(absolutePath);
   try {
     const buffer = Buffer.alloc(HASH_CHUNK_BYTES);
     let position = 0;
@@ -511,6 +589,22 @@ function toPosix(value: string): string {
   return value.split(path.sep).join("/");
 }
 
+/** Token recorded when a failure carries no errno code of its own. */
+const UNKNOWN_ERROR_CODE = "UNKNOWN_ERROR";
+
+/**
+ * The machine-independent part of a filesystem failure: its errno code.
+ *
+ * Node's fs messages repeat the absolute (or scratch) path they failed on.
+ * Anything recorded into an observation — unknowns, skipped directories, holds,
+ * diagnostics — can reach semantic identity, so only the code is recorded; the
+ * repository-relative or virtual path is carried beside it in `sourcePath`.
+ */
+function portableErrorCode(error: unknown): string {
+  const code = (error as NodeJS.ErrnoException | null)?.code;
+  return typeof code === "string" && code.length > 0 ? code : UNKNOWN_ERROR_CODE;
+}
+
 /**
  * Enumerate a directory tree without following symlinks.
  *
@@ -530,7 +624,7 @@ function observeEntry(
     diagnostics.push({
       code: "local-source.entry_unreadable",
       severity: "warning",
-      message: `filesystem entry could not be inspected: ${(error as Error).message}`,
+      message: `filesystem entry could not be inspected (${portableErrorCode(error)})`,
       sourcePath: relativePath,
     });
     return null;
@@ -577,7 +671,7 @@ function enumerateDirectory(
     try {
       names = fs.readdirSync(directory);
     } catch (error) {
-      skippedDirs.push(`${toPosix(path.relative(root, directory)) || "."}: ${(error as Error).message}`);
+      skippedDirs.push(`${toPosix(path.relative(root, directory)) || "."}: ${portableErrorCode(error)}`);
       return;
     }
     for (const name of [...names].sort(compareCodePoints)) {
@@ -940,11 +1034,35 @@ interface StagedArchive {
 }
 
 /**
+ * A failure reading the observed source file while staging it.
+ *
+ * Distinguished from a scratch-side failure because the two mean different
+ * things: the source could not be read a second time (the snapshot no longer
+ * describes it), versus this host could not write its own staging area. Neither
+ * is a property of the archive's format.
+ */
+class SourceReadError extends Error {
+  readonly code: string;
+  constructor(cause: unknown) {
+    const code = portableErrorCode(cause);
+    super(`archive source could not be read for staging (${code})`);
+    this.name = "SourceReadError";
+    this.code = code;
+  }
+}
+
+/**
  * Copy an archive into scratch and hash it in one streaming pass.
  *
  * One pass means the digest describes exactly the bytes preflight and extraction
  * will read, closing the window in which a source file replaced between hashing
  * and parsing would be reported under a digest that no longer matches it.
+ *
+ * Both descriptors are acquired inside the guarded block and each is closed when
+ * it was opened, so a target that cannot be created never leaks the source
+ * descriptor, and the partial staging file is removed on every failure. A read
+ * failure on an observed source file is raised as `SourceReadError`; every
+ * scratch-side failure (mkdir, open, write, rename) propagates unchanged.
  */
 function stageArchive(
   context: ArchiveContext,
@@ -952,18 +1070,33 @@ function stageArchive(
   occurrence: number,
 ): StagedArchive {
   const stagedArchiveDir = path.join(context.scratch.root, "archives");
-  fs.mkdirSync(stagedArchiveDir, { recursive: true });
   const stagingTarget = path.join(stagedArchiveDir, `pending-${occurrence}.zip`);
+  // A top-level archive is read from the observed source; a nested one is read
+  // from a member this run staged, which is scratch and therefore host-side.
+  const readsObservedSource = task.parentArchiveHash === null;
+  const asSourceFailure = (error: unknown): unknown => (readsObservedSource ? new SourceReadError(error) : error);
 
   const hash = crypto.createHash("sha256");
-  const source = fs.openSync(task.physicalPath, "r");
-  const target = fs.openSync(stagingTarget, "w");
+  let source: number | null = null;
+  let target: number | null = null;
   let sizeBytes: number;
   try {
+    try {
+      source = fs.openSync(task.physicalPath, "r");
+    } catch (error) {
+      throw asSourceFailure(error);
+    }
+    fs.mkdirSync(stagedArchiveDir, { recursive: true });
+    target = fs.openSync(stagingTarget, "w");
     const buffer = Buffer.alloc(HASH_CHUNK_BYTES);
     let position = 0;
     for (;;) {
-      const count = fs.readSync(source, buffer, 0, buffer.length, position);
+      let count: number;
+      try {
+        count = fs.readSync(source, buffer, 0, buffer.length, position);
+      } catch (error) {
+        throw asSourceFailure(error);
+      }
       if (count === 0) break;
       if (position + count > context.policy.maxArchiveCompressedBytes) {
         throw new ZipBudgetExceededError(
@@ -976,11 +1109,15 @@ function stageArchive(
     }
     sizeBytes = position;
   } catch (error) {
+    if (target !== null) {
+      fs.closeSync(target);
+      target = null;
+    }
     fs.rmSync(stagingTarget, { force: true });
     throw error;
   } finally {
-    fs.closeSync(source);
-    fs.closeSync(target);
+    if (source !== null) fs.closeSync(source);
+    if (target !== null) fs.closeSync(target);
   }
 
   const archiveHash = sha256Prefixed(hash.digest("hex"));
@@ -990,9 +1127,14 @@ function stageArchive(
   return { stagedPath, archiveHash, sizeBytes };
 }
 
-/** Record an archive that could not even be staged or hashed. */
-function recordUnstageableArchive(context: ArchiveContext, task: ArchiveTask, error: unknown): void {
-  const message = error instanceof Error ? error.message : String(error);
+/**
+ * Record an archive the staging limit stopped before it could be hashed.
+ *
+ * Only a `ZipBudgetExceededError` reaches here: its message is a fact about the
+ * archive's size and carries no host path.
+ */
+function recordUnstageableArchive(context: ArchiveContext, task: ArchiveTask, error: ZipBudgetExceededError): void {
+  const message = error.message;
   context.archives.push({
     sourcePath: task.sourcePath,
     contentHash: "Unknown",
@@ -1097,9 +1239,12 @@ function preflightStaged(
       archiveCompressedBytes: staged.sizeBytes,
     });
   } catch (error) {
+    // Only what the archive's bytes caused is a format verdict. A host failure
+    // reading the staged copy is the host's, and is rethrown.
+    if (!(error instanceof ZipFormatError) && !(error instanceof ZipBudgetExceededError)) throw error;
     holdArchive(context, task, staged.archiveHash, staged.sizeBytes, [{
       code: "archive.format_unreadable",
-      message: `central directory could not be read: ${error instanceof Error ? error.message : String(error)}`,
+      message: `central directory could not be read: ${error.message}`,
     }]);
     return null;
   }
@@ -1138,8 +1283,27 @@ function acquireArchive(context: ArchiveContext, task: ArchiveTask, queue: Archi
   try {
     staged = stageArchive(context, task, occurrence);
   } catch (error) {
-    recordUnstageableArchive(context, task, error);
-    return;
+    // The staging limit is a property of the archive and becomes a hold.
+    if (error instanceof ZipBudgetExceededError) {
+      recordUnstageableArchive(context, task, error);
+      return;
+    }
+    // The snapshot read this file and staging could not read it again: the source
+    // moved under the observation. That is instability, not a format verdict.
+    if (error instanceof SourceReadError) {
+      const reason = `${task.sourcePath}: ${error.message}`;
+      context.sourceChanged.push(reason);
+      context.diagnostics.push({
+        code: "local-source.source_changed_during_observation",
+        severity: "error",
+        message: `SOURCE_CHANGED_DURING_OBSERVATION: ${reason}`,
+        sourcePath: task.sourcePath,
+      });
+      return;
+    }
+    // Everything else is a host failure on the scratch side; acquisition disposes
+    // the scratch root and propagates it.
+    throw error;
   }
 
   // The snapshot hashed this path and staging read it again. If the two reads
@@ -1207,6 +1371,13 @@ function resolveSourceKind(absolutePath: string, requested: RequestedSourceKind)
       `local-source: the source path is a symbolic link and is never followed: ${absolutePath}`,
     );
   }
+  // A FIFO, socket or device has no bytes to identify: reading one would block or
+  // never end. It is refused here, before anything is opened or written.
+  if (entryKindFromStats(stats) === "special") {
+    throw new Error(
+      "local-source: the source path is a device, socket or FIFO, not a regular file, and is never read",
+    );
+  }
   const nonDirectoryKind: LocalSourceKind = isZipPath(absolutePath) ? "archive" : "file";
   const actual: LocalSourceKind = stats.isDirectory() ? "directory" : nonDirectoryKind;
   if (requested === "auto" || requested === undefined) return actual;
@@ -1233,6 +1404,13 @@ function buildAcquisitionOmit(input: LocalSourceAcquireInput, omitRoot: string):
   });
 }
 
+/** The stat a hash was produced under, in the shape a corpus snapshot records it. */
+interface HashingStat {
+  size_bytes: number;
+  mtime_ms: number;
+  mtime_ns?: string;
+}
+
 interface HashedEntry {
   entry: EnumeratedEntry;
   contentHashHex: string | null;
@@ -1240,6 +1418,17 @@ interface HashedEntry {
   unknowns: string[];
   /** True when the hash was carried over rather than computed from the bytes. */
   reused?: boolean;
+  /** Present exactly when `contentHashHex` is: the stat that hash describes. */
+  hashingStat?: HashingStat;
+}
+
+function hashingStatOf(sizeBytes: number, mtimeMs: number, mtimeNs: string | null): HashingStat {
+  return {
+    size_bytes: sizeBytes,
+    // Whole milliseconds, as the corpus snapshot has always recorded them.
+    mtime_ms: Math.trunc(mtimeMs),
+    ...(mtimeNs !== null ? { mtime_ns: mtimeNs } : {}),
+  };
 }
 
 /**
@@ -1271,7 +1460,9 @@ function highResolutionMtime(absolutePath: string): string | null {
  * case that must make the whole observation unstable rather than degrade one entry:
  * a file that moved across its own hash after a bounded retry.
  */
-function hashStableFile(entry: EnumeratedEntry): { digest: string | null; reason: string; changed: boolean } {
+function hashStableFile(
+  entry: EnumeratedEntry,
+): { digest: string | null; reason: string; changed: boolean; stat?: HashingStat } {
   let reason = "";
   for (let attempt = 0; attempt <= STABILITY_RETRY_LIMIT; attempt++) {
     let before: fs.Stats;
@@ -1280,13 +1471,21 @@ function hashStableFile(entry: EnumeratedEntry): { digest: string | null; reason
       before = fs.lstatSync(entry.absolutePath);
       beforeNs = highResolutionMtime(entry.absolutePath);
     } catch (error) {
-      return { digest: null, reason: (error as Error).message, changed: false };
+      return { digest: null, reason: portableErrorCode(error), changed: false };
+    }
+    // Enumerated as a regular file, no longer one: the source changed under the
+    // observation. It is reported as such and never opened.
+    if (!before.isFile()) {
+      return { digest: null, reason: "file is no longer a regular file", changed: true };
     }
     let candidate: string;
     try {
       candidate = hashFileStreaming(entry.absolutePath).hash;
     } catch (error) {
-      return { digest: null, reason: (error as Error).message, changed: false };
+      if (error instanceof NotRegularFileError) {
+        return { digest: null, reason: "file is no longer a regular file", changed: true };
+      }
+      return { digest: null, reason: portableErrorCode(error), changed: false };
     }
     const after = fs.lstatSync(entry.absolutePath);
     const matches = observedFileStateMatches(
@@ -1294,7 +1493,8 @@ function hashStableFile(entry: EnumeratedEntry): { digest: string | null; reason
       { sizeBytes: after.size, mtimeMs: after.mtimeMs, mtimeNs: highResolutionMtime(entry.absolutePath) },
     );
     if (matches) {
-      return { digest: candidate, reason: "", changed: false };
+      // The bracket that held still across the read is the stat this digest describes.
+      return { digest: candidate, reason: "", changed: false, stat: hashingStatOf(before.size, before.mtimeMs, beforeNs) };
     }
     reason = "file changed while it was being hashed";
   }
@@ -1320,7 +1520,7 @@ function priorHashStillApplies(entry: EnumeratedEntry, known: KnownFileHash | un
 function readPrefix(absolutePath: string, length: number): Buffer {
   let fd: number | null = null;
   try {
-    fd = fs.openSync(absolutePath, "r");
+    fd = openVerifiedRegularFile(absolutePath).fd;
     const buffer = Buffer.alloc(length);
     const count = fs.readSync(fd, buffer, 0, length, 0);
     return buffer.subarray(0, count);
@@ -1426,6 +1626,8 @@ function hashOneEntry(
         encoding,
         unknowns,
         reused: true,
+        // The enumeration stat is the one that validated the carried hash.
+        hashingStat: hashingStatOf(entry.sizeBytes as number, entry.mtimeMs as number, entry.mtimeNs),
       },
       unstableReason: null,
     };
@@ -1443,7 +1645,7 @@ function hashOneEntry(
     diagnostics.push({
       code: "local-source.file_unreadable",
       severity: "warning",
-      message: `file could not be hashed: ${attempt.reason}`,
+      message: `file could not be hashed (${attempt.reason})`,
       sourcePath: entry.relativePath,
     });
     return { hashed: { entry, contentHashHex: null, encoding: null, unknowns }, unstableReason: null };
@@ -1453,7 +1655,13 @@ function hashOneEntry(
   noteUnsupportedEncoding(entry, encoding, unknowns, diagnostics);
   noteArchiveSignature(entry.relativePath, entry.absolutePath, encoding, unknowns, diagnostics);
   return {
-    hashed: { entry, contentHashHex: attempt.digest.replace("sha256:", ""), encoding, unknowns },
+    hashed: {
+      entry,
+      contentHashHex: attempt.digest.replace("sha256:", ""),
+      encoding,
+      unknowns,
+      ...(attempt.stat !== undefined ? { hashingStat: attempt.stat } : {}),
+    },
     unstableReason: null,
   };
 }
@@ -1513,7 +1721,9 @@ function enumerateSource(
   return [{
     absolutePath: absoluteSource,
     relativePath: path.basename(absoluteSource),
-    kind: "file",
+    // Derived, not asserted: a source swapped since resolveSourceKind is observed
+    // as what it now is, and hashing reports the change instead of opening it.
+    kind: entryKindFromStats(stats),
     sizeBytes: stats.size,
     mtimeMs: stats.mtimeMs,
     mtimeNs: highResolutionMtime(absoluteSource),
@@ -1555,6 +1765,7 @@ function verifySnapshotStability(
 function deriveSourceIdentity(
   hashed: HashedEntry[],
   sourceKind: LocalSourceKind,
+  unstableReason: string | null,
 ): { physicalSnapshotHash: string; sourceRevision: string } {
   const manifestEntries: PhysicalManifestEntry[] = hashed.map(({ entry, contentHashHex }) => ({
     path: entry.relativePath,
@@ -1564,6 +1775,15 @@ function deriveSourceIdentity(
   }));
   const physicalSnapshotHash = physicalManifestDigest(manifestEntries);
   const singleFileHash = hashed.length === 1 ? hashed[0].contentHashHex : null;
+  // A `file:` or `archive:` revision names the source's own bytes. When those bytes
+  // could not be read (or exceed the hash budget) there is no such digest, and the
+  // manifest digest under a file scheme would be a revision that describes nothing.
+  // The source is refused instead. A source that moved while it was hashed keeps
+  // its observation so the instability is reported first, as it always was.
+  if (sourceKind !== "directory" && singleFileHash === null && unstableReason === null) {
+    const why = hashed.length === 1 && hashed[0].unknowns.length > 0 ? ` (${hashed[0].unknowns.join(", ")})` : "";
+    throw new Error(`local-source: source bytes could not be read, so no ${sourceKind} revision exists${why}`);
+  }
   const useFileHash = sourceKind !== "directory" && singleFileHash !== null;
   return {
     physicalSnapshotHash,
@@ -1577,13 +1797,16 @@ function planArchiveTasks(hashed: HashedEntry[], diagnostics: LocalSourceDiagnos
   for (const { entry, contentHashHex } of hashed) {
     if (entry.kind !== "file") continue;
     if (isZipPath(entry.relativePath)) {
+      // An archive whose bytes the snapshot could not hash is not staged: its
+      // record already carries why, and no digest exists to hold staging to.
+      if (contentHashHex === null) continue;
       queue.push({
         physicalPath: entry.absolutePath,
         sourcePath: entry.relativePath,
         depth: 0,
         parentArchiveHash: null,
         parentArchivePath: null,
-        expectedArchiveHash: contentHashHex === null ? null : sha256Prefixed(contentHashHex),
+        expectedArchiveHash: sha256Prefixed(contentHashHex),
       });
       continue;
     }
@@ -1773,9 +1996,13 @@ export function acquireLocalSource(input: LocalSourceAcquireInput): LocalSourceO
     });
   }
 
-  const identity = deriveSourceIdentity(hashed, sourceKind);
+  const identity = deriveSourceIdentity(hashed, sourceKind, unstableReason);
 
-  const scratchParent = input.scratchParent ?? os.tmpdir();
+  // One rule, applied once: absent or empty means the OS temp directory. The value
+  // checked against the source is exactly the value scratch is created under.
+  const scratchParent = input.scratchParent !== undefined && input.scratchParent.length > 0
+    ? input.scratchParent
+    : os.tmpdir();
   // Before createScratch, which is the first thing here that writes.
   assertScratchOutsideSource(scratchParent, absoluteSource, sourceKind);
   const scratch = createScratch(scratchParent);
@@ -1812,6 +2039,16 @@ interface AcquisitionTail {
 }
 
 /** Archive expansion and record assembly, once the scratch root exists. */
+/** Per-path hashing stats of the physical files that carry a hash. */
+function hashingStatsOf(hashed: HashedEntry[]): Map<string, HashingStat> {
+  const stats = new Map<string, HashingStat>();
+  for (const { entry, contentHashHex, hashingStat } of hashed) {
+    if (entry.kind !== "file" || contentHashHex === null || hashingStat === undefined) continue;
+    stats.set(entry.relativePath, hashingStat);
+  }
+  return stats;
+}
+
 function finishAcquisition(tail: AcquisitionTail): LocalSourceObservation {
   const {
     input, absoluteSource, sourceKind, sourceName, policy, budget, omit, diagnostics, omittedPaths,
@@ -1856,6 +2093,7 @@ function finishAcquisition(tail: AcquisitionTail): LocalSourceObservation {
     diagnostics: [...diagnostics].sort(compareDiagnostics),
     archivePolicy: policy,
     stable: unstableReason === null && archiveSourceChanged.length === 0,
+    hashingStats: hashingStatsOf(hashed),
     scratchRoot: scratch.root,
     dispose: () => scratch.dispose(),
   };

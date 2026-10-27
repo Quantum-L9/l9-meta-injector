@@ -179,6 +179,19 @@ export interface LocalSourceObservation {
     stable: boolean;
     /** Tool-owned staging root. Implementation detail; never semantic. */
     scratchRoot: string;
+    /**
+     * The stat each physical file's recorded hash was produced under, keyed by
+     * relative path: the matching before/after bracket of a fresh hash, or the
+     * enumeration stat that validated a carried-over one. Absent for files without
+     * a hash, and for directories, symlinks, special entries and archive members.
+     * Operational only — never part of the physical manifest or any identity — so a
+     * caller that records a stat beside a hash records the right one.
+     */
+    hashingStats: ReadonlyMap<string, {
+        size_bytes: number;
+        mtime_ms: number;
+        mtime_ns?: string;
+    }>;
     /** Remove the staging root. Safe to call more than once. */
     dispose(): void;
 }
@@ -188,6 +201,15 @@ export interface LocalSourceObservation {
  * `dispose()` a recursive delete of an arbitrary path.
  */
 export declare function removeOwnedScratch(root: string, token: string): void;
+/**
+ * The parsed extraction-ownership marker of `directory`, or null when there is none.
+ *
+ * The marker is untrusted source content, so it is read only from a verified,
+ * non-symlink regular file of bounded size. A symlinked, special, oversize,
+ * unreadable or unparsable marker is no marker: ownership is never inferred from
+ * something this function did not fully and safely read.
+ */
+export declare function readExtractionOwnershipMarker(directory: string): unknown;
 /**
  * True when a directory carries evidence that this tool created it.
  *

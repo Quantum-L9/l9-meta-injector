@@ -112,7 +112,11 @@ function listZipMembers(zipPath) {
 }
 function readExtractionOwnershipV2(directory) {
     try {
-        const raw = JSON.parse(fs.readFileSync(path.join(directory, local_source_1.LEGACY_EXTRACTION_OWNER_FILE), "utf8"));
+        // Untrusted source content with destructive consequence: read only through the
+        // gated reader (verified regular, non-symlink, bounded, non-blocking).
+        const raw = (0, local_source_1.readExtractionOwnershipMarker)(directory);
+        if (raw === null || typeof raw !== "object")
+            return null;
         if (raw.schema !== local_source_1.LOCAL_FILES_EXTRACTION_SCHEMA || raw.owner !== local_source_1.EXTRACTION_OWNER_ID)
             return null;
         if (typeof raw.archive !== "string" || raw.archive.length === 0)

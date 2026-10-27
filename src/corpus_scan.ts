@@ -1350,27 +1350,14 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
           basename,
           extension: extensionOf(basename),
         };
-        if (!artifact.isArchiveMember && record.absolute_path !== null) {
-          try {
-            const stats = fs.statSync(record.absolute_path);
-            // The nanosecond field is recorded when the platform keeps one, so
-            // the next incremental run can revalidate against the finest tick
-            // available rather than a millisecond one it might sit inside.
-            let mtimeNs: string | null = null;
-            try {
-              mtimeNs = fs.statSync(record.absolute_path, { bigint: true }).mtimeNs.toString();
-            } catch {
-              // No high-resolution stat here; the millisecond field still stands.
-            }
-            artifact.statPrecheck = {
-              size_bytes: stats.size,
-              mtime_ms: Math.trunc(stats.mtimeMs),
-              ...(mtimeNs !== null ? { mtime_ns: mtimeNs } : {}),
-            };
-          } catch {
-            // A file that vanished between acquisition and here contributes no
-            // hint. It contributes no identity either: the hash already decided.
-          }
+        if (!artifact.isArchiveMember) {
+          // The stat the recorded hash was produced under, as acquisition saw it.
+          // A fresh stat taken here, after later roots were acquired, could describe
+          // a newer file than the hash does, and the next incremental run would
+          // then carry the stale hash forward indefinitely (RC-063). The nanosecond
+          // field is present when the platform keeps one. No stat, no hint.
+          const hashingStat = entry.observation.hashingStats.get(record.relative_path);
+          if (hashingStat !== undefined) artifact.statPrecheck = { ...hashingStat };
         }
         // The hint is scored against the hash that was just computed, and then
         // discarded. It has no other effect anywhere in this file.
