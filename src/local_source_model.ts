@@ -25,6 +25,7 @@ import {
   acquireLocalSource,
 } from "./local_source";
 import { LocalArchivePolicy } from "./local_archive_policy";
+import { containmentBoundary, isInsideContainer, resolveForContainment } from "./corpus_roots";
 import {
   CorpusIndex,
   NearDuplicateOptions,
@@ -449,17 +450,18 @@ export function buildLocalSourceManifest(
  * the next run would then observe this run's output as if it were user content.
  */
 function resolveOutsideSource(targetPath: string, sourceRoot: string, what: string): string {
-  const absoluteTarget = path.resolve(targetPath);
-  const absoluteSource = path.resolve(sourceRoot);
-  const sourceDirectory = fs.statSync(absoluteSource).isDirectory()
-    ? absoluteSource
-    : path.dirname(absoluteSource);
-  if (absoluteTarget === sourceDirectory || absoluteTarget.startsWith(sourceDirectory + path.sep)) {
+  // Both sides are resolved the way a write would land: through every symlink,
+  // including a dangling one, from the nearest existing ancestor. A lexical
+  // comparison would let a link walk straight through this check.
+  const resolvedTarget = resolveForContainment(targetPath);
+  if (isInsideContainer(containmentBoundary(sourceRoot), resolvedTarget)) {
+    const lexical = path.resolve(targetPath);
     throw new Error(
-      `local-source: refusing to write ${what} inside the observed source tree: ${absoluteTarget}`,
+      `local-source: refusing to write ${what} inside the observed source tree: ${resolvedTarget}`
+      + (resolvedTarget === lexical ? "" : ` (reached through ${lexical})`),
     );
   }
-  return absoluteTarget;
+  return resolvedTarget;
 }
 
 /** Write the acquisition manifest to a tool-owned output location. */

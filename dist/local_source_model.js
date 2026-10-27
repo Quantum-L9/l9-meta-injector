@@ -64,6 +64,7 @@ const path = __importStar(require("node:path"));
 const interpretation_1 = require("./interpretation");
 const extractors_1 = require("./extractors");
 const local_source_1 = require("./local_source");
+const corpus_roots_1 = require("./corpus_roots");
 const corpus_analysis_1 = require("./corpus_analysis");
 const corpus_semantic_run_1 = require("./corpus_semantic_run");
 const corpus_report_1 = require("./corpus_report");
@@ -373,15 +374,16 @@ function buildLocalSourceManifest(observation, options) {
  * the next run would then observe this run's output as if it were user content.
  */
 function resolveOutsideSource(targetPath, sourceRoot, what) {
-    const absoluteTarget = path.resolve(targetPath);
-    const absoluteSource = path.resolve(sourceRoot);
-    const sourceDirectory = fs.statSync(absoluteSource).isDirectory()
-        ? absoluteSource
-        : path.dirname(absoluteSource);
-    if (absoluteTarget === sourceDirectory || absoluteTarget.startsWith(sourceDirectory + path.sep)) {
-        throw new Error(`local-source: refusing to write ${what} inside the observed source tree: ${absoluteTarget}`);
+    // Both sides are resolved the way a write would land: through every symlink,
+    // including a dangling one, from the nearest existing ancestor. A lexical
+    // comparison would let a link walk straight through this check.
+    const resolvedTarget = (0, corpus_roots_1.resolveForContainment)(targetPath);
+    if ((0, corpus_roots_1.isInsideContainer)((0, corpus_roots_1.containmentBoundary)(sourceRoot), resolvedTarget)) {
+        const lexical = path.resolve(targetPath);
+        throw new Error(`local-source: refusing to write ${what} inside the observed source tree: ${resolvedTarget}`
+            + (resolvedTarget === lexical ? "" : ` (reached through ${lexical})`));
     }
-    return absoluteTarget;
+    return resolvedTarget;
 }
 /** Write the acquisition manifest to a tool-owned output location. */
 function writeLocalSourceManifest(manifest, targetPath, sourceRoot) {

@@ -902,6 +902,16 @@ function main() {
   const repositoryModel = requireBuilt(path.join(repo, "dist", "public", "repository_model.js"));
 
   const outDir = path.resolve(cli.opt("--out", path.join(os.tmpdir(), "l9-local-source-out")));
+  // Containment first: the bundle is the first write, so an output directory that
+  // lands inside the source (lexically or through a symlink) is refused before
+  // anything is observed or written.
+  const roots = requireBuilt(path.join(repo, "dist", "corpus_roots.js"));
+  try {
+    roots.assertOutsideRoots(outDir, [target], "the local-source output directory");
+  } catch (error) {
+    fail(`local-source: ${error instanceof Error ? error.message : String(error)}`, 2);
+    return;
+  }
   const bundleDir = path.join(outDir, "bundle");
   const generatedAt = cli.opt("--generated-at", "");
   const hashMaxBytes = numericOpt(cli, "--hash-max-bytes");
