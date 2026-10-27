@@ -492,6 +492,85 @@ export function objectStreamObject(number: number, members: { number: number; bo
   };
 }
 
+/** A font for `fontPagePdf`: its resource name, dictionary and ToUnicode CMap. */
+export interface FixtureFont {
+  /** Resource name without the slash, e.g. `F1`. */
+  name: string;
+  /** Dictionary entries after `/Type /Font`, e.g. `/Subtype /Type0 ...`. */
+  dict: string;
+  /** The ToUnicode CMap's text, written as its own stream object. */
+  toUnicode?: { cmap: string; compressed: boolean };
+  /** A `/ToUnicode` value to write as-is instead (e.g. a dangling reference). */
+  toUnicodeValue?: string;
+}
+
+/** A ToUnicode CMap program around the given body rows. */
+export function cmapProgram(rows: string[]): string {
+  return [
+    "/CIDInit /ProcSet findresource begin",
+    "12 dict begin",
+    "begincmap",
+    "/CMapName /Fixture-UCS def",
+    ...rows,
+    "endcmap",
+    "CMapName currentdict /CMap defineresource pop",
+    "end",
+    "end",
+  ].join("\n");
+}
+
+/**
+ * A one-page PDF whose page selects among `fonts` in `content`.
+ *
+ * Objects: 1 catalog, 2 page tree, 3 page, 4 content; font i is object 10 + 2i
+ * and its CMap 11 + 2i. `inheritResources` states the font resources on the page
+ * tree node rather than the page; `objectStream` puts the catalog, page tree,
+ * page and fonts in an object stream, as a PDF 1.5 writer does.
+ */
+export function fontPagePdf(
+  fonts: FixtureFont[],
+  content: string,
+  options: { inheritResources?: boolean; objectStream?: boolean } = {},
+): Buffer {
+  const fontEntries = fonts.map((font, index) => `/${font.name} ${10 + index * 2} 0 R`).join(" ");
+  const resources = `/Resources << /Font << ${fontEntries} >> >>`;
+  const structural: { number: number; body: string }[] = [
+    { number: 1, body: "<< /Type /Catalog /Pages 2 0 R >>" },
+    {
+      number: 2,
+      body: `<< /Type /Pages /Kids [3 0 R] /Count 1${options.inheritResources === true ? ` ${resources}` : ""} >>`,
+    },
+    {
+      number: 3,
+      body: `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]${options.inheritResources === true ? "" : ` ${resources}`} /Contents 4 0 R >>`,
+    },
+  ];
+  const streams: PdfFixtureObject[] = [flateStreamObject(4, content)];
+  fonts.forEach((font, index) => {
+    const cmapNumber = 11 + index * 2;
+    let toUnicode = "";
+    if (font.toUnicodeValue !== undefined) toUnicode = ` /ToUnicode ${font.toUnicodeValue}`;
+    else if (font.toUnicode !== undefined) toUnicode = ` /ToUnicode ${cmapNumber} 0 R`;
+    structural.push({ number: 10 + index * 2, body: `<< /Type /Font ${font.dict}${toUnicode} >>` });
+    if (font.toUnicode !== undefined) {
+      streams.push(font.toUnicode.compressed
+        ? flateStreamObject(cmapNumber, font.toUnicode.cmap)
+        : plainStreamObject(cmapNumber, font.toUnicode.cmap));
+    }
+  });
+  if (options.objectStream === true) {
+    return buildPdf(
+      [
+        objectStreamObject(50, structural),
+        ...streams,
+        { number: 51, body: "<< /Type /XRef /Size 52 /Root 1 0 R /W [1 2 1] /Length __LENGTH__ >>", stream: Buffer.alloc(0) },
+      ],
+      { trailer: null, version: "1.5" },
+    );
+  }
+  return buildPdf([...structural, ...streams], { trailer: `/Size ${11 + fonts.length * 2} /Root 1 0 R` });
+}
+
 /** Write bytes to a fixture path, creating its directory. */
 export function writeBytes(target: string, bytes: Buffer): string {
   fs.mkdirSync(path.dirname(target), { recursive: true });

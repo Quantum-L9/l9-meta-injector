@@ -20,8 +20,11 @@ import {
 import { runCorpusScan } from "../src/corpus_scan";
 import {
   PdfFixtureObject,
+  FixtureFont,
   buildPdf,
+  cmapProgram,
   flateStreamObject,
+  fontPagePdf,
   multiPagePdf,
   objectStreamObject,
   plainStreamObject,
@@ -189,10 +192,19 @@ describe("WU-057 the PDF decoder's resource bounds", () => {
       const high = (index * 65_536 + 65_535).toString(16).padStart(8, "0");
       return `<${low}> <${high}> <0041>`;
     });
-    const cmap = cmapText(["300 beginbfrange", ...rows, "endbfrange"]);
+    // The rows are 4-byte codes, so the CMap declares a 4-byte codespace and the
+    // page shows a 4-byte code.
+    const cmap = cmapText([
+      "1 begincodespacerange",
+      "<00000000> <FFFFFFFF>",
+      "endcodespacerange",
+      "300 beginbfrange",
+      ...rows,
+      "endbfrange",
+    ]);
 
     const started = Date.now();
-    const outcome = decodePdf(type0Pdf(cmap, "<0001>"));
+    const outcome = decodePdf(type0Pdf(cmap, "<00000001>"));
     const elapsed = Date.now() - started;
     expect(elapsed).toBeLessThan(1000);
     expect(outcome.decoded).toBe(true);
@@ -554,5 +566,203 @@ describe("WU-058 the PDF decoder resolves the object graph", () => {
     const pdf = result.documentSignals.formats.find((entry) => entry.format === "pdf");
     expect(pdf?.decoded_count).toBe(1);
     expect(pdf?.refusals ?? []).toEqual([]);
+  });
+});
+
+/** A Type0 Identity-H font named `name` with the given ToUnicode rows. */
+function cidFont(name: string, rows: string[] | null, compressed = false): FixtureFont {
+  return {
+    name,
+    dict: `/Subtype /Type0 /BaseFont /ABCDEF+Subset${name} /Encoding /Identity-H`,
+    ...(rows === null ? {} : { toUnicode: { cmap: cmapProgram(rows), compressed } }),
+  };
+}
+
+const HELVETICA: FixtureFont = { name: "F2", dict: "/Subtype /Type1 /BaseFont /Helvetica" };
+
+const OK_ROWS = [
+  "1 begincodespacerange",
+  "<0000> <FFFF>",
+  "endcodespacerange",
+  "3 beginbfchar",
+  "<0003> <004F>",
+  "<0004> <004B>",
+  "<0005> <0021>",
+  "endbfchar",
+];
+
+function hasControlCharacters(outcome: DecodeOutcome): boolean {
+  return texts(outcome).some((text) => /[\u0000-\u001f]/.test(text));
+}
+
+describe("WU-059 per-font ToUnicode decoding", () => {
+  it("REG-WU-059-RC-113-113-a: a Flate-compressed ToUnicode CMap is read through its own filter", () => {
+    const outcome = decodePdf(fontPagePdf([cidFont("F1", OK_ROWS, true)], "BT /F1 12 Tf 72 720 Td <000300040005> Tj ET"));
+    expect(outcome.decoded).toBe(true);
+    if (!outcome.decoded) return;
+    expect(texts(outcome)).toEqual(["OK!"]);
+    expect(outcome.document.diagnostics.some((entry) => entry.message.includes("no ToUnicode map"))).toBe(false);
+  });
+
+  it("REG-WU-059-RC-113-113-b: the same CMap uncompressed still reads", () => {
+    const outcome = decodePdf(fontPagePdf([cidFont("F1", OK_ROWS, false)], "BT /F1 12 Tf 72 720 Td <000300040005> Tj ET"));
+    expect(texts(outcome)).toEqual(["OK!"]);
+  });
+
+  it("REG-WU-059-RC-113-113-c: one font's map never rewrites another font's text", () => {
+    const rows = ["3 beginbfchar", "<0001> <0041>", "<0048> <007A>", "<0065> <0071>", "endbfchar"];
+    const content = "BT /F1 12 Tf 72 720 Td <0001> Tj 0 -18 Td /F2 12 Tf (Hello) Tj ET";
+    const outcome = decodePdf(fontPagePdf([cidFont("F1", rows), HELVETICA], content));
+    expect(texts(outcome)).toEqual(["A", "Hello"]);
+  });
+
+  it("REG-WU-059-RC-113-113-d: two subset fonts map the same CID each through their own map", () => {
+    const content = "BT /F1 12 Tf 72 720 Td <0001> Tj 0 -18 Td /F3 12 Tf <0001> Tj ET";
+    const fonts = [
+      cidFont("F1", ["1 beginbfchar", "<0001> <0061>", "endbfchar"]),
+      cidFont("F3", ["1 beginbfchar", "<0001> <0062>", "endbfchar"]),
+    ];
+    expect(texts(decodePdf(fontPagePdf(fonts, content)))).toEqual(["a", "b"]);
+  });
+
+  it("REG-WU-059-RC-113-113-e: a composite font with no usable map yields no glyph IDs as text", () => {
+    const only = decodePdf(fontPagePdf([cidFont("F1", null)], "BT /F1 12 Tf 72 720 Td <000300040005> Tj ET"));
+    expect(only.decoded).toBe(false);
+    if (only.decoded) return;
+    expect(only.reason).toBe("decoder.unsupported_feature");
+    expect(hasControlCharacters(only)).toBe(false);
+
+    const dangling = decodePdf(fontPagePdf(
+      [{ ...cidFont("F1", null), toUnicodeValue: "99 0 R" }],
+      "BT /F1 12 Tf 72 720 Td <000300040005> Tj ET",
+    ));
+    expect(dangling.decoded ? "decoded" : dangling.reason).toBe("decoder.unsupported_feature");
+
+    const mixed = decodePdf(fontPagePdf(
+      [cidFont("F1", null), HELVETICA],
+      "BT /F1 12 Tf 72 720 Td <000300040005> Tj 0 -18 Td /F2 12 Tf (Readable line) Tj ET",
+    ));
+    expect(mixed.decoded).toBe(true);
+    if (!mixed.decoded) return;
+    expect(texts(mixed)).toEqual(["Readable line"]);
+    expect(hasControlCharacters(mixed)).toBe(false);
+    const warning = mixed.document.diagnostics.find((entry) =>
+      entry.code === "decoder.unsupported_feature" && entry.severity === "warning");
+    expect(warning?.message).toContain("/F1");
+  });
+
+  it("REG-WU-059-RC-113-113-f: a simple font's hex string is read one byte per code", () => {
+    const simple: FixtureFont = {
+      name: "F1",
+      dict: "/Subtype /TrueType /BaseFont /Arial",
+      toUnicode: { cmap: cmapProgram(["1 begincodespacerange", "<00> <FF>", "endcodespacerange", "1 beginbfchar", "<48> <0048>", "endbfchar"]), compressed: false },
+    };
+    // A composite font elsewhere on the page maps the two-byte code <4865>; a
+    // reader that splits the simple font's hex into two-byte codes reads "Q".
+    const cid = cidFont("F3", ["1 beginbfchar", "<4865> <0051>", "endbfchar"]);
+    expect(texts(decodePdf(fontPagePdf([simple, cid], "BT /F1 12 Tf 72 720 Td <48656C6C6F> Tj ET")))).toEqual(["Hello"]);
+  });
+
+  it("REG-WU-059-RC-113-113-g: one- and two-byte codes with the same value are both kept", () => {
+    const parsed = pdfInternals.parseToUnicode(cmapProgram([
+      "2 begincodespacerange",
+      "<00> <7F>",
+      "<8000> <FFFF>",
+      "endcodespacerange",
+      "2 beginbfchar",
+      "<48> <0058>",
+      "<0048> <0059>",
+      "endbfchar",
+    ]));
+    expect(parsed.get(0x48, 1)).toBe("X");
+    expect(parsed.get(0x48, 2)).toBe("Y");
+  });
+
+  it("REG-WU-059-RC-113-113-h: a font held in an object stream, with inherited resources, keeps its map", () => {
+    const outcome = decodePdf(fontPagePdf(
+      [cidFont("F1", OK_ROWS, true)],
+      "BT /F1 12 Tf 72 720 Td <000300040005> Tj ET",
+      { inheritResources: true, objectStream: true },
+    ));
+    expect(texts(outcome)).toEqual(["OK!"]);
+  });
+
+  it("REG-WU-059-RC-113-113-i: the writePdf fixture reads as before and still notes its byte encoding", () => {
+    const lines = ["Temporal Knowledge Graphs", "Status: WIP", "Depends on: graphiti"];
+    const outcome = decodePdf(fs.readFileSync(writePdf(path.join(tmp(), "plain.pdf"), lines)));
+    expect(outcome.decoded).toBe(true);
+    if (!outcome.decoded) return;
+    expect(texts(outcome)).toEqual(lines);
+    const note = outcome.document.diagnostics.find((entry) => entry.message.includes("built-in byte encoding"));
+    expect(note?.code).toBe("decoder.unsupported_feature");
+    expect(note?.severity).toBe("info");
+  });
+});
+
+/** One Helvetica page showing `content`, decoded. */
+function decodeContent(content: string): string[] {
+  return texts(decodePdf(fontPagePdf([{ name: "F1", dict: "/Subtype /Type1 /BaseFont /Helvetica" }], content)));
+}
+
+describe("WU-059 the content-stream tokenizer", () => {
+  it("REG-WU-059-RC-115-115-a: a TJ word gap becomes a space", () => {
+    expect(decodeContent("BT /F1 12 Tf 72 720 Td [(Owner:)-333(Mel)-333(Status:)-333(blocked)] TJ ET"))
+      .toEqual(["Owner: Mel Status: blocked"]);
+  });
+
+  it("REG-WU-059-RC-115-115-b: Tm on a new baseline starts a new line", () => {
+    expect(decodeContent("BT /F1 12 Tf 1 0 0 1 72 700 Tm (Owner: Mel) Tj 1 0 0 1 72 680 Tm (Status: blocked) Tj ET"))
+      .toEqual(["Owner: Mel", "Status: blocked"]);
+  });
+
+  it("REG-WU-059-RC-115-115-c: Tm on the same baseline continues the line with one space", () => {
+    expect(decodeContent(
+      "BT /F1 12 Tf 1 0 0 1 72 700 Tm (Owner:) Tj 1 0 0 1 120 700 Tm (Mel) Tj 1 0 0 1 160 700 Tm (Next) Tj ET",
+    )).toEqual(["Owner: Mel Next"]);
+  });
+
+  it("REG-WU-059-RC-115-115-d: kerning smaller than a word gap inserts no space", () => {
+    expect(pdfInternals.extractContentText("BT [(W)120(ord)] TJ ET")).toEqual(["Word"]);
+    expect(pdfInternals.extractContentText("BT [(Wo)-50(rd)] TJ ET")).toEqual(["Word"]);
+  });
+
+  it("REG-WU-059-RC-115-115-e: ' and \" put their string on the line they begin", () => {
+    expect(pdfInternals.extractContentText("BT (A) Tj (B) ' ET")).toEqual(["A", "B"]);
+    expect(pdfInternals.extractContentText("BT (A) Tj 2 2 (B) \" ET")).toEqual(["A", "B"]);
+  });
+
+  it("REG-WU-059-RC-115-115-f: Td-separated writePdf lines decode into identical blocks", () => {
+    const lines = ["Storage Migration Plan", "Status: blocked", "Depends on: vendor (EU) contract \\ v2"];
+    const outcome = decodePdf(fs.readFileSync(writePdf(path.join(tmp(), "lines.pdf"), lines)));
+    expect(outcome.decoded).toBe(true);
+    if (!outcome.decoded) return;
+    expect(outcome.document.blocks.map((block) => [block.kind, block.text])).toEqual([
+      ["title", lines[0]],
+      ["paragraph", lines[1]],
+      ["paragraph", lines[2]],
+    ]);
+  });
+
+  it("REG-WU-059-RC-115-115-g: an unterminated literal costs one pass", () => {
+    const started = Date.now();
+    pdfInternals.extractContentText(`BT (${"\\(".repeat(100_000)}`);
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  it("REG-WU-059-RC-115-115-h: a corpus scan reads a kerned Status declaration as its own claim", async () => {
+    const root = tmp("l9-pdf-corpus-");
+    const content = [
+      "BT /F1 12 Tf",
+      "1 0 0 1 72 700 Tm [(Owner:)-333(Mel)] TJ",
+      "1 0 0 1 72 680 Tm [(Status:)-333(blocked)] TJ",
+      "1 0 0 1 72 660 Tm [(Depends)-333(on:)-333(legal)] TJ",
+      "ET",
+    ].join("\n");
+    writeBytes(path.join(root, "kerned.pdf"), fontPagePdf([{ name: "F1", dict: "/Subtype /Type1 /BaseFont /Helvetica" }], content));
+    const result = await runCorpusScan({ roots: [{ path: root }], producerVersion: "test" });
+    const records = result.documentSignals.block_signals.by_format.flatMap((entry) => entry.records);
+    const status = records.find((record) => record.predicate === "work.status" && record.object === "blocked");
+    expect(status?.format).toBe("pdf");
+    expect(status?.bounded_excerpt).not.toContain("Owner");
   });
 });

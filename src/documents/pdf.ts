@@ -37,7 +37,7 @@ import {
 } from "./decoder";
 
 export const PDF_DECODER_ID = "l9.pdf-decoder";
-export const PDF_DECODER_VERSION = "1.2.0";
+export const PDF_DECODER_VERSION = "1.3.0";
 
 interface PdfObject {
   offset: number;
@@ -722,11 +722,6 @@ function decodeLiteral(source: string): string {
   return out;
 }
 
-/** Code-to-text lookup, as a ToUnicode map or a merge of several answers it. */
-interface CodeLookup {
-  get(code: number): string | undefined;
-}
-
 /** One `bfrange` row: codes `low..high` map to `dest` plus the code's offset. */
 interface CodeRange {
   low: number;
@@ -843,52 +838,113 @@ const destTextForOffset = (hex: string, offset: number): string => {
   return unitsToText(units);
 };
 
+/** The codes of one byte width: `bfchar` entries and flattened `bfrange` rows. */
+interface WidthTable {
+  chars: Map<number, string>;
+  ranges: CodeRange[];
+  segments: CodeSegment[];
+}
+
+/** One `begincodespacerange` row: the codes of `width` bytes from `low` to `high`. */
+interface CodespaceRange {
+  width: number;
+  low: number;
+  high: number;
+}
+
+/** A code written as hex, and how many bytes it occupies. */
+function hexCode(hex: string): { code: number; width: number } {
+  return { code: Number.parseInt(hex, 16), width: Math.max(1, Math.ceil(hex.length / 2)) };
+}
+
 /**
  * A parsed ToUnicode CMap.
  *
+ * Codes are keyed by their byte width as well as their value: `<48>` and
+ * `<0048>` are different codes, and a CMap that declares both keeps both.
  * `bfchar` rows are kept as entries and `bfrange` rows as ranges looked up on
  * demand. A range row overrides a `bfchar` row for the same code, and a later
  * range row overrides an earlier one, as they always have.
  */
-class ToUnicodeMap implements CodeLookup {
-  private readonly segments: CodeSegment[];
+class ToUnicodeMap {
+  private readonly tables = new Map<number, WidthTable>();
+  /** The codespace the CMap declares; empty when it declares none. */
+  readonly codespace: CodespaceRange[] = [];
 
-  constructor(
-    private readonly chars: Map<number, string>,
-    ranges: CodeRange[],
-  ) {
-    this.segments = flattenRanges(ranges);
+  table(width: number): WidthTable {
+    let table = this.tables.get(width);
+    if (table === undefined) {
+      table = { chars: new Map(), ranges: [], segments: [] };
+      this.tables.set(width, table);
+    }
+    return table;
+  }
+
+  /** Flatten every width's range rows once they have all been read. */
+  seal(): void {
+    for (const table of this.tables.values()) table.segments = flattenRanges(table.ranges);
+    this.codespace.sort((a, b) => a.width - b.width);
   }
 
   /** Number of rows that map something; zero means the CMap mapped nothing. */
   get size(): number {
-    return this.chars.size + this.segments.length;
+    let size = 0;
+    for (const table of this.tables.values()) size += table.chars.size + table.segments.length;
+    return size;
   }
 
-  get(code: number): string | undefined {
+  /**
+   * The text for one code of `width` bytes. Without a width, the narrowest
+   * width that maps the code answers.
+   */
+  get(code: number, width?: number): string | undefined {
+    if (width === undefined) {
+      for (const candidate of [...this.tables.keys()].sort((a, b) => a - b)) {
+        const value = this.get(code, candidate);
+        if (value !== undefined) return value;
+      }
+      return undefined;
+    }
+    const table = this.tables.get(width);
+    if (table === undefined) return undefined;
     let low = 0;
-    let high = this.segments.length - 1;
+    let high = table.segments.length - 1;
     while (low <= high) {
       const middle = (low + high) >> 1;
-      const segment = this.segments[middle] as CodeSegment;
+      const segment = table.segments[middle] as CodeSegment;
       if (code < segment.low) high = middle - 1;
       else if (code > segment.high) low = middle + 1;
       else return destTextForOffset(segment.row.dest, code - segment.row.low);
     }
-    return this.chars.get(code);
+    return table.chars.get(code);
   }
-}
 
-/** Several maps answered in order, the first that knows a code winning. */
-class MergedLookup implements CodeLookup {
-  constructor(private readonly maps: ToUnicodeMap[]) {}
-
-  get(code: number): string | undefined {
-    for (const map of this.maps) {
-      const value = map.get(code);
-      if (value !== undefined) return value;
+  /**
+   * Split a shown string's bytes into codes by the codespace, or by
+   * `defaultWidth` when the CMap declares none.
+   */
+  codes(bytes: number[], defaultWidth: number): { code: number; width: number }[] {
+    const out: { code: number; width: number }[] = [];
+    let cursor = 0;
+    while (cursor < bytes.length) {
+      let taken: { code: number; width: number } | null = null;
+      const widths = this.codespace.length > 0 ? this.codespace : [{ width: defaultWidth, low: 0, high: Infinity }];
+      for (const range of widths) {
+        if (cursor + range.width > bytes.length) continue;
+        let code = 0;
+        for (let index = 0; index < range.width; index += 1) code = code * 256 + (bytes[cursor + index] as number);
+        if (code >= range.low && code <= range.high) {
+          taken = { code, width: range.width };
+          break;
+        }
+      }
+      // A byte sequence outside every codespace range consumes the narrowest
+      // width, so the split always advances.
+      const width = taken?.width ?? Math.max(1, Math.min(...widths.map((range) => range.width)));
+      if (taken !== null) out.push(taken);
+      cursor += width;
     }
-    return undefined;
+    return out;
   }
 }
 
@@ -900,97 +956,342 @@ class MergedLookup implements CodeLookup {
  * rather than mojibake.
  */
 function parseToUnicode(cmap: string): ToUnicodeMap {
-  const chars = new Map<number, string>();
+  const map = new ToUnicodeMap();
+  const spacePattern = /begincodespacerange([\s\S]*?)endcodespacerange/g;
+  let space = spacePattern.exec(cmap);
+  while (space !== null) {
+    const rows = /<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>/g;
+    let row = rows.exec(space[1] as string);
+    while (row !== null) {
+      const low = hexCode(row[1] as string);
+      const high = hexCode(row[2] as string);
+      if (Number.isFinite(low.code) && Number.isFinite(high.code) && low.width <= 4) {
+        map.codespace.push({ width: low.width, low: low.code, high: high.code });
+      }
+      row = rows.exec(space[1] as string);
+    }
+    space = spacePattern.exec(cmap);
+  }
+
   const charPattern = /beginbfchar([\s\S]*?)endbfchar/g;
   let block = charPattern.exec(cmap);
   while (block !== null) {
     const pairs = /<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>/g;
     let pair = pairs.exec(block[1] as string);
     while (pair !== null) {
-      chars.set(Number.parseInt(pair[1] as string, 16), unitsToText(utf16Units(pair[2] as string)));
+      const source = hexCode(pair[1] as string);
+      map.table(source.width).chars.set(source.code, unitsToText(utf16Units(pair[2] as string)));
       pair = pairs.exec(block[1] as string);
     }
     block = charPattern.exec(cmap);
   }
 
-  const ranges: CodeRange[] = [];
   const rangePattern = /beginbfrange([\s\S]*?)endbfrange/g;
   let range = rangePattern.exec(cmap);
   while (range !== null) {
     const rows = /<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>/g;
     let row = rows.exec(range[1] as string);
     while (row !== null) {
-      const low = Number.parseInt(row[1] as string, 16);
+      const low = hexCode(row[1] as string);
       const high = Number.parseInt(row[2] as string, 16);
-      if (Number.isFinite(low) && Number.isFinite(high) && high >= low && high - low < 65_536) {
-        ranges.push({ low, high, dest: row[3] as string });
+      if (Number.isFinite(low.code) && Number.isFinite(high) && high >= low.code && high - low.code < 65_536) {
+        map.table(low.width).ranges.push({ low: low.code, high, dest: row[3] as string });
       }
       row = rows.exec(range[1] as string);
     }
     range = rangePattern.exec(cmap);
   }
-  return new ToUnicodeMap(chars, ranges);
+  map.seal();
+  return map;
 }
 
-/** Text-showing operators, turned into the strings they show. */
-function extractContentText(content: string, toUnicode: CodeLookup | null): string[] {
+/** A font as the text it shows needs it: composite or simple, and its own map. */
+interface PdfFont {
+  /** The resource name the content stream selects it by, e.g. `/F1`. */
+  label: string;
+  /** A Type0 font, whose codes are glyph identifiers rather than characters. */
+  composite: boolean;
+  /** The font's own ToUnicode map, when it has a usable one. */
+  map: ToUnicodeMap | null;
+}
+
+/**
+ * What decoding a content stream learned about its fonts, so the document can
+ * say per font what it could and could not read.
+ */
+interface TextFacts {
+  /** Simple fonts without a ToUnicode map, read through their byte encoding. */
+  byteEncoded: Set<string>;
+  /** Composite fonts without a usable map, whose text was not read. */
+  unmapped: Set<string>;
+  /** Fonts selected by `Tf` that the page's resources do not define. */
+  unknown: Set<string>;
+  /** Shown strings dropped because their composite font has no usable map. */
+  droppedRuns: number;
+}
+
+function newTextFacts(): TextFacts {
+  return { byteEncoded: new Set(), unmapped: new Set(), unknown: new Set(), droppedRuns: 0 };
+}
+
+/** A short list of font labels for a diagnostic. */
+function fontList(labels: Set<string>): string {
+  const sorted = [...labels].sort();
+  const shown = sorted.slice(0, 5).join(", ");
+  return sorted.length > 5 ? `${shown} and ${sorted.length - 5} more` : shown;
+}
+
+/** Per-font facts as diagnostics: what was read how, and what was not read. */
+function fontDiagnostics(facts: TextFacts): DecoderDiagnostic[] {
+  const notes: DecoderDiagnostic[] = [];
+  if (facts.unmapped.size > 0) {
+    notes.push({
+      code: "decoder.unsupported_feature",
+      severity: "warning",
+      message:
+        `text in composite font(s) ${fontList(facts.unmapped)} has no usable ToUnicode map; `
+        + "its character IDs cannot be mapped to text and it was not read",
+    });
+  }
+  if (facts.byteEncoded.size > 0) {
+    notes.push({
+      code: "decoder.unsupported_feature",
+      severity: "info",
+      message:
+        `no ToUnicode map was found for font(s) ${fontList(facts.byteEncoded)}; `
+        + "text was read through the font's built-in byte encoding",
+    });
+  }
+  if (facts.unknown.size > 0) {
+    notes.push({
+      code: "decoder.unsupported_feature",
+      severity: "info",
+      message:
+        `font(s) ${fontList(facts.unknown)} are selected by the content but not defined in the page's resources; `
+        + "their text was read as single bytes",
+    });
+  }
+  return notes;
+}
+
+/** One operand on the content-stream stack. */
+type Operand =
+  | { kind: "string"; bytes: number[] }
+  | { kind: "number"; value: number }
+  | { kind: "name"; value: string }
+  | { kind: "array"; items: Operand[] }
+  | { kind: "other" };
+
+/**
+ * A `TJ` adjustment at or below this many thousandths of an em is a word gap.
+ *
+ * pdfTeX and most exporters separate words by about -250 to -333; kerning
+ * inside a word stays well under 150 either way.
+ */
+const TJ_WORD_GAP = -200;
+
+/** Two baselines this close (in text-space units) are the same line. */
+const SAME_BASELINE = 0.5;
+
+const OPERATOR_CHAR = /[^\s()<>[\]{}/%]/;
+
+/**
+ * Text-showing operators, turned into the strings they show.
+ *
+ * The content stream is read as PDF reads it: operands pile onto a stack and
+ * each operator consumes them. That is what lets a `TJ` array's adjustments
+ * become word gaps, a `Tm` on a new baseline start a new line, and `'` and `"`
+ * put their string on the line they begin. Each string is decoded with the font
+ * the most recent `Tf` selected, through that font's own ToUnicode map and code
+ * width; a composite font with no usable map yields no text rather than its raw
+ * glyph identifiers.
+ *
+ * Every branch advances the cursor, so malformed input — unterminated strings
+ * and arrays, stray delimiters, operands with no operator — costs one pass.
+ */
+function extractContentText(
+  content: string,
+  resolveFont: (name: string) => PdfFont | undefined = () => undefined,
+  facts: TextFacts = newTextFacts(),
+): string[] {
   const lines: string[] = [];
   let line: string[] = [];
-  let cursor = 0;
+  let lineY: number | null = null;
+  let font: PdfFont | undefined;
+  const stack: Operand[] = [];
+  const arrays: Operand[][] = [];
 
-  const decodeHex = (hex: string): string => {
-    const clean = hex.replace(/[^0-9A-Fa-f]/g, "");
-    let out = "";
-    if (toUnicode !== null) {
-      for (let index = 0; index + 1 < clean.length; index += 4) {
-        const code = Number.parseInt(clean.slice(index, index + 4), 16);
-        out += toUnicode.get(code) ?? "";
+  const flush = (): void => {
+    const joined = line.join("").trim();
+    if (joined.length > 0) lines.push(joined);
+    line = [];
+  };
+  const space = (): void => {
+    const last = line[line.length - 1];
+    if (last !== undefined && !last.endsWith(" ")) line.push(" ");
+  };
+  const push = (operand: Operand): void => {
+    const open = arrays[arrays.length - 1];
+    if (open !== undefined) open.push(operand);
+    else stack.push(operand);
+  };
+
+  const decodeShown = (bytes: number[]): string => {
+    if (font === undefined || !font.composite) {
+      // A simple font addresses single bytes; a byte its map does not cover
+      // keeps its byte meaning.
+      let out = "";
+      for (const byte of bytes) out += font?.map?.get(byte, 1) ?? font?.map?.get(byte) ?? String.fromCharCode(byte);
+      if (font !== undefined && font.map === null && out.trim().length > 0) facts.byteEncoded.add(font.label);
+      return out;
+    }
+    if (font.map === null) {
+      if (bytes.length > 0) {
+        facts.unmapped.add(font.label);
+        facts.droppedRuns += 1;
       }
-      if (out.length > 0) return out;
+      return "";
     }
-    for (let index = 0; index + 1 < clean.length; index += 2) {
-      out += String.fromCodePoint(Number.parseInt(clean.slice(index, index + 2), 16));
-    }
-    return out;
-  };
-
-  const decodeShown = (raw: string, hex: boolean): string => {
-    if (hex) return decodeHex(raw);
-    const literal = decodeLiteral(raw);
-    if (toUnicode === null) return literal;
-    // A simple font with a ToUnicode map still addresses single bytes.
     let out = "";
-    for (const char of literal) out += toUnicode.get(char.charCodeAt(0)) ?? char;
+    for (const { code, width } of font.map.codes(bytes, 2)) out += font.map.get(code, width) ?? "";
     return out;
   };
+  const show = (operand: Operand | undefined): void => {
+    if (operand?.kind === "string") line.push(decodeShown(operand.bytes));
+  };
 
+  const operate = (operator: string): void => {
+    switch (operator) {
+      case "BT":
+        flush();
+        lineY = 0;
+        break;
+      case "ET":
+      case "T*":
+        flush();
+        break;
+      case "Td":
+      case "TD": {
+        flush();
+        const ty = stack[stack.length - 1];
+        if (lineY !== null && ty?.kind === "number") lineY += ty.value;
+        break;
+      }
+      case "Tm": {
+        const f = stack[stack.length - 1];
+        const y = f?.kind === "number" ? f.value : null;
+        if (y !== null && lineY !== null && Math.abs(y - lineY) < SAME_BASELINE) space();
+        else flush();
+        lineY = y;
+        break;
+      }
+      case "Tf": {
+        const name = stack[stack.length - 2];
+        if (name?.kind === "name") {
+          font = resolveFont(name.value);
+          if (font === undefined) facts.unknown.add(name.value);
+        }
+        break;
+      }
+      case "Tj":
+        show(stack[stack.length - 1]);
+        break;
+      case "'":
+        flush();
+        show(stack[stack.length - 1]);
+        break;
+      case "\"":
+        flush();
+        show(stack[stack.length - 1]);
+        break;
+      case "TJ": {
+        const array = stack[stack.length - 1];
+        if (array?.kind !== "array") break;
+        for (const item of array.items) {
+          if (item.kind === "string") line.push(decodeShown(item.bytes));
+          else if (item.kind === "number" && item.value <= TJ_WORD_GAP) space();
+        }
+        break;
+      }
+      default:
+        break;
+    }
+    stack.length = 0;
+  };
+
+  let cursor = 0;
   while (cursor < content.length) {
     const char = content[cursor] as string;
     if (char === "(") {
       const { raw, end } = scanLiteral(content, cursor);
-      line.push(decodeShown(raw, false));
+      push({ kind: "string", bytes: [...decodeLiteral(raw)].map((part) => part.charCodeAt(0) & 0xff) });
       cursor = end + 1;
       continue;
     }
-    if (char === "<" && content[cursor + 1] !== "<") {
-      const end = content.indexOf(">", cursor);
-      if (end < 0) break;
-      line.push(decodeShown(content.slice(cursor + 1, end), true));
-      cursor = end + 1;
-      continue;
-    }
-    // `Td`, `TD`, `T*` and `'` all move to a new line; `ET` ends a text object.
-    if (/^(T\*|TD|Td|ET|')/.test(content.slice(cursor))) {
-      const joined = line.join("").trim();
-      if (joined.length > 0) lines.push(joined);
-      line = [];
+    if (char === "<" && content[cursor + 1] === "<") {
       cursor += 2;
       continue;
     }
-    cursor += 1;
+    if (char === ">" && content[cursor + 1] === ">") {
+      cursor += 2;
+      continue;
+    }
+    if (char === "<") {
+      const end = content.indexOf(">", cursor);
+      const close = end < 0 ? content.length : end;
+      let hex = content.slice(cursor + 1, close).replace(/[^0-9A-Fa-f]/g, "");
+      if (hex.length % 2 === 1) hex += "0";
+      push({ kind: "string", bytes: [...Buffer.from(hex, "hex")] });
+      cursor = close + 1;
+      continue;
+    }
+    if (char === "[") {
+      arrays.push([]);
+      cursor += 1;
+      continue;
+    }
+    if (char === "]") {
+      const items = arrays.pop();
+      if (items !== undefined) push({ kind: "array", items });
+      cursor += 1;
+      continue;
+    }
+    if (char === "%") {
+      const end = content.indexOf("\n", cursor);
+      cursor = end < 0 ? content.length : end + 1;
+      continue;
+    }
+    if (char === "/") {
+      let end = cursor + 1;
+      while (end < content.length && OPERATOR_CHAR.test(content[end] as string)) end += 1;
+      push({ kind: "name", value: content.slice(cursor, end) });
+      cursor = end;
+      continue;
+    }
+    if (!OPERATOR_CHAR.test(char)) {
+      cursor += 1;
+      continue;
+    }
+    let end = cursor + 1;
+    while (end < content.length && OPERATOR_CHAR.test(content[end] as string)) end += 1;
+    const token = content.slice(cursor, end);
+    cursor = end;
+    if (/^[+-]?(\d+\.?\d*|\.\d+)$/.test(token)) {
+      push({ kind: "number", value: Number.parseFloat(token) });
+      continue;
+    }
+    if (token === "true" || token === "false" || token === "null") {
+      push({ kind: "other" });
+      continue;
+    }
+    // An operator never sits inside an array; one that does closes them.
+    while (arrays.length > 0) {
+      const items = arrays.pop() as Operand[];
+      push({ kind: "array", items });
+    }
+    operate(token);
   }
-  const trailing = line.join("").trim();
-  if (trailing.length > 0) lines.push(trailing);
+  flush();
   return lines;
 }
 
@@ -1061,22 +1362,43 @@ export const pdfDecoder: DocumentDecoder = {
     const builder = new BlockBuilder(documentId, input.budget);
     const diagnostics: DecoderDiagnostic[] = [];
 
-    // One ToUnicode map for the document. Per-font resolution would be more
-    // precise; a single merged map is enough to read the overwhelming majority of
-    // exported documents and never invents a character it has no mapping for.
-    const cmaps: ToUnicodeMap[] = [];
-    for (const [number, object] of objects) {
-      const body = file.objectBody(object);
-      if (!body.includes("/ToUnicode") && !body.includes("beginbfchar") && !body.includes("beginbfrange")) continue;
-      const stream = file.streamBytes(object, number);
-      if (stream.kind !== "ok") continue;
-      const text = stream.bytes.toString("latin1");
-      if (!text.includes("beginbfchar") && !text.includes("beginbfrange")) continue;
-      const parsed = parseToUnicode(text);
-      if (parsed.size === 0) continue;
-      cmaps.push(parsed);
-    }
-    const toUnicode: CodeLookup | null = cmaps.length === 0 ? null : new MergedLookup(cmaps);
+    // Fonts are resolved per page from the page's own (or inherited) resources,
+    // and each font decodes its text through its own ToUnicode map only. A font
+    // object and a CMap stream are each read once per document.
+    const fontCache = new Map<PdfObject, PdfFont>();
+    const cmapCache = new Map<PdfObject, ToUnicodeMap | null>();
+    const facts = newTextFacts();
+    const readCmap = (value: string | undefined): ToUnicodeMap | null => {
+      const target = file.resolve(value);
+      if (target === undefined) return null;
+      const cached = cmapCache.get(target);
+      if (cached !== undefined) return cached;
+      const stream = file.streamBytes(target, referenceNumber(value) as number);
+      const parsed = stream.kind === "ok" ? parseToUnicode(stream.bytes.toString("latin1")) : null;
+      const map = parsed !== null && parsed.size > 0 ? parsed : null;
+      cmapCache.set(target, map);
+      return map;
+    };
+    const readFont = (name: string, value: string | undefined): PdfFont | undefined => {
+      const target = file.resolve(value);
+      if (target !== undefined) {
+        const cached = fontCache.get(target);
+        if (cached !== undefined) return cached;
+      }
+      const dict = file.dictOf(value);
+      if (dict === null) return undefined;
+      const font: PdfFont = {
+        label: target === undefined ? name : `${name} (object ${referenceNumber(value) as number})`,
+        composite: dict.get("Subtype") === "/Type0",
+        map: readCmap(dict.get("ToUnicode")),
+      };
+      if (target !== undefined) fontCache.set(target, font);
+      return font;
+    };
+    const fontResolver = (resources: string | undefined): ((name: string) => PdfFont | undefined) => {
+      const fonts = file.dictOf(file.dictOf(resources)?.get("Font"));
+      return (name) => (fonts === null ? undefined : readFont(name, fonts.get(name.replace(/^\//, ""))));
+    };
 
     // Pages in page-tree order. Only when there is no tree to walk are the page
     // objects read in file order, and the document says that is what happened.
@@ -1109,12 +1431,16 @@ export const pdfDecoder: DocumentDecoder = {
     let pagesWithText = 0;
     let pagesWithoutText = 0;
     let pagesOverBudget = 0;
+    let pagesUnmapped = 0;
     let imageObjects = 0;
     for (const [, object] of objects) {
       if (isImageObject(file.objectBody(object))) imageObjects += 1;
     }
 
-    const readContent = (contents: string | undefined): { lines: string[]; overBudget: boolean } => {
+    const readContent = (
+      contents: string | undefined,
+      resolveFont: (name: string) => PdfFont | undefined,
+    ): { lines: string[]; overBudget: boolean } => {
       const texts: string[] = [];
       let overBudget = false;
       for (const number of file.referencesIn(contents)) {
@@ -1123,7 +1449,7 @@ export const pdfDecoder: DocumentDecoder = {
         const stream = file.streamBytes(target, number);
         if (stream.kind === "over_budget") overBudget = true;
         if (stream.kind !== "ok") continue;
-        texts.push(...extractContentText(stream.bytes.toString("latin1"), toUnicode));
+        texts.push(...extractContentText(stream.bytes.toString("latin1"), resolveFont, facts));
       }
       return { lines: texts, overBudget };
     };
@@ -1132,11 +1458,17 @@ export const pdfDecoder: DocumentDecoder = {
       if (builder.isFull) break;
       const page = pages[index];
       if (page === undefined) continue;
-      const { lines, overBudget } = readContent(file.partsOf(page.object).dict.get("Contents"));
+      const droppedBefore = facts.unmapped.size + facts.droppedRuns;
+      const { lines, overBudget } = readContent(
+        file.partsOf(page.object).dict.get("Contents"),
+        fontResolver(page.resources),
+      );
       if (lines.length === 0) {
         // A page whose content was refused for size is not a page without text;
         // calling it a scan would send an operator to OCR a document that has none.
+        // Nor is a page whose text sat in a font that could not be mapped.
         if (overBudget) pagesOverBudget += 1;
+        else if (facts.unmapped.size + facts.droppedRuns > droppedBefore) pagesUnmapped += 1;
         else pagesWithoutText += 1;
         continue;
       }
@@ -1173,6 +1505,22 @@ export const pdfDecoder: DocumentDecoder = {
       };
     }
 
+    const fontNotes = fontDiagnostics(facts);
+
+    // The text is there, but in a composite font whose codes nothing maps to
+    // characters: unsupported, and said so — never its glyph identifiers.
+    if (pagesWithText === 0 && pagesUnmapped > 0) {
+      const message =
+        `${pagesUnmapped} page(s) show text only in composite font(s) with no usable ToUnicode map; `
+        + "their character IDs cannot be mapped to text";
+      return {
+        decoded: false,
+        reason: "decoder.unsupported_feature",
+        message,
+        diagnostics: [{ code: "decoder.unsupported_feature", severity: "warning", message }, ...fontNotes, ...budgetNotes],
+      };
+    }
+
     // The honest outcome for a scan: no text layer, images present, say so.
     if (pagesWithText === 0) {
       const message = imageObjects > 0
@@ -1199,13 +1547,7 @@ export const pdfDecoder: DocumentDecoder = {
           + `${pagesWithText} page(s) were read`,
       });
     }
-    if (toUnicode === null) {
-      diagnostics.push({
-        code: "decoder.unsupported_feature",
-        severity: "info",
-        message: "no ToUnicode map was found; text was read through the font's built-in byte encoding",
-      });
-    }
+    diagnostics.push(...fontNotes);
     for (const diagnostic of diagnostics) builder.note(diagnostic);
 
     const title = documentTitle(file);
