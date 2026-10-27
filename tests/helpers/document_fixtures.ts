@@ -408,6 +408,127 @@ export function writeEncryptedPdf(target: string): string {
   return target;
 }
 
+/**
+ * One object of a hand-built PDF.
+ *
+ * `body` is the object's text. When `stream` is given, `body` is the stream's
+ * dictionary, and a `__LENGTH__` token in it is replaced by the stream's byte
+ * length, so a fixture can say exactly how its /Length is written.
+ */
+export interface PdfFixtureObject {
+  number: number;
+  body: string;
+  stream?: Buffer;
+}
+
+/**
+ * Assemble a PDF from explicit objects, with a real xref section and trailer.
+ *
+ * `base` appends the objects as an incremental update to an existing file, the
+ * way an editor saves: new definitions after the old ones, a new xref section
+ * and a new trailer. `trailer` is the trailer dictionary's inner text; pass
+ * `null` to write no `trailer` keyword at all (as an xref-stream file does).
+ */
+export function buildPdf(
+  objects: PdfFixtureObject[],
+  options: { trailer: string | null; version?: string; base?: Buffer },
+): Buffer {
+  const chunks: Buffer[] = [];
+  let offset = 0;
+  const push = (buffer: Buffer): void => {
+    chunks.push(buffer);
+    offset += buffer.length;
+  };
+  if (options.base !== undefined) push(options.base);
+  else push(Buffer.from(`%PDF-${options.version ?? "1.4"}\n%\xe2\xe3\xcf\xd3\n`, "latin1"));
+
+  const offsets: { number: number; offset: number }[] = [];
+  for (const object of objects) {
+    offsets.push({ number: object.number, offset });
+    if (object.stream !== undefined) {
+      const dict = object.body.replace("__LENGTH__", String(object.stream.length));
+      push(Buffer.from(`${object.number} 0 obj\n${dict}\nstream\n`, "latin1"));
+      push(object.stream);
+      push(Buffer.from("\nendstream\nendobj\n", "latin1"));
+      continue;
+    }
+    push(Buffer.from(`${object.number} 0 obj\n${object.body}\nendobj\n`, "latin1"));
+  }
+
+  const xrefOffset = offset;
+  const xrefLines = ["xref"];
+  for (const entry of offsets) {
+    xrefLines.push(`${entry.number} 1`, `${String(entry.offset).padStart(10, "0")} 00000 n `);
+  }
+  const trailer = options.trailer === null ? "" : `trailer\n<< ${options.trailer} >>\n`;
+  push(Buffer.from(`${xrefLines.join("\n")}\n${trailer}startxref\n${xrefOffset}\n%%EOF\n`, "latin1"));
+  return Buffer.concat(chunks);
+}
+
+/** Write bytes to a fixture path, creating its directory. */
+export function writeBytes(target: string, bytes: Buffer): string {
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, bytes);
+  return target;
+}
+
+/** A Flate-compressed stream object holding `content`. */
+export function flateStreamObject(number: number, content: string | Buffer, extraDict = ""): PdfFixtureObject {
+  const raw = typeof content === "string" ? Buffer.from(content, "latin1") : content;
+  return {
+    number,
+    body: `<< /Length __LENGTH__ /Filter /FlateDecode${extraDict} >>`,
+    stream: zlib.deflateSync(raw),
+  };
+}
+
+/** An uncompressed stream object holding `content`. */
+export function plainStreamObject(number: number, content: string | Buffer, extraDict = ""): PdfFixtureObject {
+  const raw = typeof content === "string" ? Buffer.from(content, "latin1") : content;
+  return { number, body: `<< /Length __LENGTH__${extraDict} >>`, stream: raw };
+}
+
+/**
+ * A PDF with one page per content stream, every page using one Helvetica font.
+ *
+ * Objects: 1 catalog, 2 page tree, 3 font, then a page and its content stream
+ * for each entry. Each content is a whole content stream, or `{ stream }` to
+ * supply the stream object directly (for a bomb or a corrupt stream).
+ */
+export function multiPagePdf(
+  pages: (string | { object: (number: number) => PdfFixtureObject })[],
+): Buffer {
+  const objects: PdfFixtureObject[] = [
+    { number: 1, body: "<< /Type /Catalog /Pages 2 0 R >>" },
+    {
+      number: 2,
+      body: `<< /Type /Pages /Kids [${pages.map((_, index) => `${4 + index * 2} 0 R`).join(" ")}] /Count ${pages.length} >>`,
+    },
+    { number: 3, body: "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>" },
+  ];
+  pages.forEach((page, index) => {
+    const pageNumber = 4 + index * 2;
+    const contentNumber = pageNumber + 1;
+    objects.push({
+      number: pageNumber,
+      body: `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents ${contentNumber} 0 R >>`,
+    });
+    objects.push(typeof page === "string" ? flateStreamObject(contentNumber, page) : page.object(contentNumber));
+  });
+  return buildPdf(objects, { trailer: `/Size ${3 + pages.length * 2 + 1} /Root 1 0 R` });
+}
+
+/** A content stream that shows each line, as writePdf lays them out. */
+export function textContent(lines: string[]): string {
+  return [
+    "BT",
+    "/F1 12 Tf",
+    "72 720 Td",
+    ...lines.flatMap((line) => [`(${line.replace(/([()\\])/g, "\\$1")}) Tj`, "0 -18 Td"]),
+    "ET",
+  ].join("\n");
+}
+
 function escapeXml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
