@@ -151,15 +151,31 @@ export function extractVector(payload: unknown): number[] {
   );
 }
 
-/** The model revision the server reported, when it reported one. */
-function extractRevision(payload: unknown): string | null {
+/** The first non-empty string among `keys` in a JSON object, trimmed. */
+function stringField(payload: unknown, keys: readonly string[]): string | null {
   if (payload === null || typeof payload !== "object") return null;
   const record = payload as Record<string, unknown>;
-  for (const key of ["model_revision", "model_version", "model"]) {
+  for (const key of keys) {
     const value = record[key];
     if (typeof value === "string" && value.trim().length > 0) return value.trim();
   }
   return null;
+}
+
+/**
+ * The model revision the server reported, when it reported one.
+ *
+ * `model_revision` or `model_version` only. A `model` field names the model,
+ * which is not a revision: reading it as one recorded "toy" as the revision of
+ * model "toy" and claimed a pin nobody stated.
+ */
+function extractRevision(payload: unknown): string | null {
+  return stringField(payload, ["model_revision", "model_version"]);
+}
+
+/** The model name the server reported, when it reported one. Metadata only. */
+function extractReportedModel(payload: unknown): string | null {
+  return stringField(payload, ["model"]);
 }
 
 /** Read a response body under a hard cap, so an endless stream fails fast. */
@@ -324,6 +340,7 @@ export class HttpJsonEmbeddingProvider implements EmbeddingProvider {
     }
     const vector = extractVector(payload);
     const revision = extractRevision(payload);
+    const reportedModel = extractReportedModel(payload);
     if (revision !== null) this.observedRevision = revision;
 
     return {
@@ -332,8 +349,9 @@ export class HttpJsonEmbeddingProvider implements EmbeddingProvider {
       provider_metadata: {
         endpoint_host: new URL(this.endpoint).host,
         locality: this.configuration.locality,
-        ...(revision !== null ? { reported_model: revision } : {}),
+        ...(reportedModel !== null ? { reported_model: reportedModel } : {}),
       },
+      ...(revision !== null ? { observed_model_revision: revision } : {}),
     };
   }
 }

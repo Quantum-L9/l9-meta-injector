@@ -22,6 +22,7 @@ import {
   isLoopbackEndpoint,
 } from "../src/corpus_embedding_http";
 import { runCorpusScan } from "../src/corpus_scan";
+import { runEmbeddings } from "../src/corpus_embeddings";
 
 const servers: http.Server[] = [];
 const scratch: string[] = [];
@@ -94,7 +95,9 @@ describe("the http-json embedding provider", () => {
     const { url, requests } = await serve((_request, response, body) => {
       const input = (JSON.parse(body) as { input: string }).input;
       response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify({ model: "toy-v3", embedding: toyVector(input) }));
+      response.end(JSON.stringify({
+        model: "toy-v3", model_revision: "toy-v3", embedding: toyVector(input),
+      }));
     });
 
     const provider = new HttpJsonEmbeddingProvider({
@@ -108,6 +111,7 @@ describe("the http-json embedding provider", () => {
     expect(provider.configuration.locality).toBe("local");
     // The revision the server reported, learned rather than assumed.
     expect(result.provider_metadata.reported_model).toBe("toy-v3");
+    expect(result.observed_model_revision).toBe("toy-v3");
     expect(provider.reportedRevision).toBe("toy-v3");
 
     // What actually went over the wire: the model name and the text, and no
@@ -118,6 +122,48 @@ describe("the http-json embedding provider", () => {
       input: "content-addressed storage for an archive",
     });
     expect(requests[0]?.auth).toBeUndefined();
+  });
+
+  it("REG-WU-051-RC-085-b: a model name alone is not a revision", async () => {
+    const { url } = await serve((_request, response) => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ model: "toy", embedding: [1, 0, 0] }));
+    });
+    const provider = new HttpJsonEmbeddingProvider({
+      endpoint: url, modelId: "toy", locality: "local",
+    });
+    const result = await provider.embed("text");
+    expect(result.provider_metadata.reported_model).toBe("toy");
+    expect(result.observed_model_revision).toBeUndefined();
+    expect(provider.reportedRevision).toBeNull();
+
+    const run = await runEmbeddings({
+      documents: [{
+        artifact_id: "a", normalized_document_id: "normdoc:a", decoded: true,
+        is_secret_candidate: false, title: "A", body: "text",
+      }],
+      provider, pairThreshold: 0.5,
+    });
+    expect(run.report.reported_model_revision).toBeNull();
+    expect(run.report.model_revision).toBeNull();
+  });
+
+  it("REG-WU-051-RC-085-a: a revision the server reports reaches the run report", async () => {
+    const { url } = await serve((_request, response) => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ model_revision: "toy-v3", embedding: [1, 0, 0] }));
+    });
+    const run = await runEmbeddings({
+      documents: [{
+        artifact_id: "a", normalized_document_id: "normdoc:a", decoded: true,
+        is_secret_candidate: false, title: "A", body: "text",
+      }],
+      provider: new HttpJsonEmbeddingProvider({ endpoint: url, modelId: "toy", locality: "local" }),
+      pairThreshold: 0.5,
+    });
+    expect(run.report.reported_model_revision).toBe("toy-v3");
+    // No configured revision: the identity-bearing field stays absent.
+    expect(run.report.model_revision).toBeNull();
   });
 
   it("reads every response shape a real server emits", async () => {
