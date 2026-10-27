@@ -190,6 +190,43 @@ ${verdict === "green"
 `;
 }
 
+/**
+ * Read a report's verdict from its structure, never from a document-wide token.
+ *
+ * Failure tails quote untrusted command output, which can contain "**green**" or even
+ * a forged "## Verdict" heading. The renderer always places the real Verdict section
+ * after every tail, so only the final "## Verdict" section counts, and it must open
+ * with "**green**". The Commands table (which precedes every tail) is cross-checked:
+ * it must hold at least one row and every row must have exited 0 and passed.
+ *
+ * @param {string} contents
+ * @returns {{ green: boolean, reason: string | null }}
+ */
+function reportVerdict(contents) {
+  const lines = contents.split(/\r?\n/);
+  const verdictAt = lines.lastIndexOf("## Verdict");
+  if (verdictAt === -1) return { green: false, reason: "the report has no Verdict section" };
+  const stated = lines.slice(verdictAt + 1).find((line) => line.trim() !== "");
+  if (stated !== "**green**") return { green: false, reason: `the Verdict section states ${stated === undefined ? "nothing" : stated.trim()}` };
+
+  const commandsAt = lines.indexOf("## Commands");
+  if (commandsAt === -1) return { green: false, reason: "the report has no Commands table" };
+  let cursor = commandsAt + 1;
+  while (cursor < lines.length && lines[cursor].trim() === "") cursor += 1;
+  if (lines[cursor] !== "| Command | Exit | Result | Covers |" || lines[cursor + 1] !== "|---|---:|---|---|") {
+    return { green: false, reason: "the Commands table is malformed" };
+  }
+  let rows = 0;
+  for (cursor += 2; cursor < lines.length && lines[cursor].startsWith("|"); cursor += 1) {
+    const row = /^\| `.*` \| (-?\d+) \| (pass|\*\*FAIL\*\*) \| .* \|$/.exec(lines[cursor]);
+    if (row === null) return { green: false, reason: `the Commands table has a malformed row: ${lines[cursor]}` };
+    if (row[1] !== "0" || row[2] !== "pass") return { green: false, reason: `a command exited ${row[1]}: ${lines[cursor]}` };
+    rows += 1;
+  }
+  if (rows === 0) return { green: false, reason: "the Commands table records no command" };
+  return { green: true, reason: null };
+}
+
 function main() {
   const check = process.argv.includes("--check");
   const state = treeState();
@@ -214,8 +251,9 @@ function main() {
         + "It describes a tree that is not this one; re-run `npm run validate:report`.",
       );
     }
-    if (!/\*\*green\*\*/.test(contents)) {
-      fail(`${path.basename(REPORT)} does not record a green verdict`);
+    const verdict = reportVerdict(contents);
+    if (!verdict.green) {
+      fail(`${path.basename(REPORT)} does not record a green verdict (${verdict.reason})`);
     }
     console.log(`${LABEL}: OK (bound to ${state.head.slice(0, 12)}, tree unchanged)`);
     return;
@@ -246,4 +284,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { renderReport, treeState };
+module.exports = { renderReport, reportVerdict, treeState };
