@@ -5,9 +5,18 @@
 // cannot produce that. Parsing lines also keeps this package dependency-free.
 import { AssertionDraft, InterpretedSourceRange } from "../interpretation";
 
-/** Split preserving 1-based line numbering; no trailing-newline phantom line. */
+/**
+ * Split preserving 1-based line numbering; no trailing-newline phantom line.
+ *
+ * CRLF, LF and a lone CR are each one line terminator, so line numbers are the
+ * ones an editor shows for classic-Mac and mixed-ending files too. One leading
+ * byte-order mark is not content and is dropped, so a first-line heading or
+ * marker reads the same with or without it. The caller's content string (and
+ * any hash of it) is untouched; only the lines handed to an extractor change.
+ */
 export function toLines(content: string): string[] {
-  const lines = content.split(/\r?\n/);
+  const text = content.startsWith("\uFEFF") ? content.slice(1) : content;
+  const lines = text.split(/\r\n|\r|\n/);
   if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
   return lines;
 }
@@ -60,14 +69,20 @@ export function indentOf(line: string): number {
   return width;
 }
 
-/** A `key: value` pair at any indentation, or null when the line is not one. */
+/**
+ * A `key: value` pair at any indentation, or null when the line is not one.
+ *
+ * Only the fixed-structure prefix (indent, list marker, key, `:`) is matched; the
+ * value is taken by slice. A `\s*(.*)$` tail backtracks quadratically when the
+ * line holds a character `.` does not match after a long whitespace run.
+ */
 export function keyValue(line: string): { key: string; value: string; indent: number } | null {
   const withoutComment = stripComment(line);
-  const match = /^(\s*)(-\s+)?([A-Za-z0-9_.\-"']+)\s*:\s*(.*)$/.exec(withoutComment);
+  const match = /^(\s*)(-\s+)?([A-Za-z0-9_.\-"']+)\s*:/.exec(withoutComment);
   if (!match) return null;
   return {
     key: unquote(match[3]),
-    value: unquote(match[4]),
+    value: unquote(withoutComment.slice(match[0].length)),
     indent: indentOf(withoutComment) + (match[2] ? match[2].length : 0),
   };
 }
