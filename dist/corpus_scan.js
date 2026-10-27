@@ -96,7 +96,9 @@ exports.TEXT_DECODER_ID = "utf8-text-decoder";
 exports.TEXT_DECODER_VERSION = "1.0.0";
 /** Decoder that reads a build manifest's declared name out of its body. */
 exports.MANIFEST_DECODER_ID = "manifest-identifier-reader";
-exports.MANIFEST_DECODER_VERSION = "1.0.0";
+// 1.1.0: a pom's identifier is the artifactId directly under <project>, and a
+// JSON manifest's evidence line is its top-level key's, not the first match.
+exports.MANIFEST_DECODER_VERSION = "1.1.0";
 /** Extensions the text decoder claims beyond the lexical-analysis set. */
 /** Extensionless files the text decoder claims by name. */
 const LEXICAL_EXTENSIONS = new Set(corpus_analysis_1.NEAR_DUPLICATE_EXTENSIONS);
@@ -659,6 +661,8 @@ async function runCorpusScan(input) {
     }
     // ── 1. acquire every root, read-only ────────────────────────────────────
     const observations = [];
+    // One entry per failed *mount*. Reconciled against the bound roots below: a
+    // key is missing only when none of its mounts was observed (RC-066).
     const failedRoots = [];
     const disposals = [];
     try {
@@ -701,11 +705,14 @@ async function runCorpusScan(input) {
                 if (input.allowPartialRoots !== true)
                     throw error;
                 const reason = error instanceof Error ? error.message : String(error);
-                failedRoots.push({ rootKey, rootId: (0, corpus_roots_1.corpusRootId)(rootKey), reason, keyDeclared });
-                diagnostics.push({
-                    code: "corpus.root_unreadable",
-                    severity: "error",
-                    message: `root '${rootKey}' could not be observed and is missing from this corpus: ${reason}`,
+                failedRoots.push({
+                    rootKey, rootId: (0, corpus_roots_1.corpusRootId)(rootKey), reason, keyDeclared,
+                    absolutePath: path.resolve(spec.path),
+                    diagnostic: {
+                        code: "corpus.root_unreadable",
+                        severity: "error",
+                        message: `root '${rootKey}' could not be observed and is missing from this corpus: ${reason}`,
+                    },
                 });
                 continue;
             }
@@ -717,8 +724,9 @@ async function runCorpusScan(input) {
                     throw new Error(unstable);
                 failedRoots.push({
                     rootKey, rootId: (0, corpus_roots_1.corpusRootId)(rootKey), reason: unstable, keyDeclared,
+                    absolutePath: path.resolve(spec.path),
+                    diagnostic: { code: "corpus.root_unstable", severity: "error", message: unstable },
                 });
-                diagnostics.push({ code: "corpus.root_unstable", severity: "error", message: unstable });
                 continue;
             }
             const rootId = (0, corpus_roots_1.corpusRootId)(rootKey);
@@ -739,6 +747,27 @@ async function runCorpusScan(input) {
             });
         }
         const bound = (0, corpus_roots_1.bindCorpusRoots)(observations.map((entry) => entry.binding));
+        // A root is its key, not a mount. A failed mount of a key observed through
+        // another mount leaves the root observed and is reported as a warning naming
+        // both; a key with no readable mount is missing once, however many of its
+        // mounts failed.
+        const observedPathById = new Map(bound.roots.map((root) => [root.root_id, root.absolute_path]));
+        const missingRoots = [];
+        for (const failed of failedRoots) {
+            const observedPath = observedPathById.get(failed.rootId);
+            if (observedPath !== undefined) {
+                diagnostics.push({
+                    code: "corpus.root_mount_unobserved",
+                    severity: "warning",
+                    message: `root '${failed.rootKey}' could not be observed through ${failed.absolutePath} `
+                        + `(${failed.reason}); it was observed through ${observedPath}`,
+                });
+                continue;
+            }
+            diagnostics.push(failed.diagnostic);
+            if (!missingRoots.some((missing) => missing.rootId === failed.rootId))
+                missingRoots.push(failed);
+        }
         for (const folded of bound.folded) {
             diagnostics.push({
                 code: "corpus.root_folded",
@@ -1135,8 +1164,12 @@ async function runCorpusScan(input) {
             size_bytes: artifact.sizeBytes,
             is_archive_member: artifact.isArchiveMember,
             // The outermost archive a member sits in, so two members of one ZIP count
-            // as one archive rather than two.
-            archive_id: archiveAncestryOf(artifact.rootRelativePath)[0] ?? null,
+            // as one archive rather than two — named by the root-scoped identity the
+            // snapshot's archives carry, so two roots' `widget/old.zip` are two.
+            archive_id: (() => {
+                const outermost = archiveAncestryOf(artifact.rootRelativePath)[0];
+                return outermost === undefined ? null : (0, corpus_roots_1.virtualSourceId)(artifact.rootId, outermost);
+            })(),
             decoded: normalized.get(artifact.virtualSourceId)?.decodes === true,
             unsupported_format: undecodedExtensions.has(artifact.extension),
             // Both readers, because readiness is a question about the document and not
@@ -1318,7 +1351,7 @@ async function runCorpusScan(input) {
         // missing root, not as an absence. Downstream, "12 project candidates" over a
         // corpus with an unplugged drive is a different claim from the same number
         // over a whole one, and the only way it can be told is if the snapshot says so.
-        for (const failed of failedRoots) {
+        for (const failed of missingRoots) {
             snapshotRoots.push({
                 root_id: failed.rootId,
                 root_key: failed.rootKey,
@@ -1350,14 +1383,14 @@ async function runCorpusScan(input) {
                 : {}),
             corpus_status: corpusStatus,
             verification,
-            missing_root_ids: failedRoots.map((failed) => failed.rootId).sort(ordering_1.compareCodePoints),
+            missing_root_ids: missingRoots.map((failed) => failed.rootId).sort(ordering_1.compareCodePoints),
             roots: snapshotRoots,
             artifacts: snapshotArtifacts,
             archives: orderedArchives,
             counts: {
                 root_count_requested: input.roots.length,
                 root_count_observed: bound.roots.length,
-                root_count_failed: failedRoots.length,
+                root_count_failed: missingRoots.length,
                 root_count: bound.roots.length,
                 artifact_count: artifacts.length,
                 archive_count: archives.length,
@@ -1730,12 +1763,14 @@ async function runCorpusScan(input) {
         const refusals = (...reasons) => reasons.reduce((sum, reason) => sum + (refusalReasons.get(reason) ?? 0), 0);
         const namedRefusals = new Set([
             "decoder.ocr_required", "decoder.encrypted", "decoder.malformed",
-            "not_utf8", "binary", "encoding",
+            "binary", "invalid",
         ]);
         const decodeGap = {
             secret_skipped: skipped.secret,
             oversized: skipped.oversized,
-            encoding_rejected: refusals("not_utf8", "binary", "encoding"),
+            // The text path refuses with an `EncodingStatus`: `binary` and `invalid` are
+            // encoding verdicts; `unreadable` is not, and stays in `other_refusal`.
+            encoding_rejected: refusals("binary", "invalid"),
             ocr_required: refusals("decoder.ocr_required"),
             encrypted: refusals("decoder.encrypted"),
             malformed: refusals("decoder.malformed"),

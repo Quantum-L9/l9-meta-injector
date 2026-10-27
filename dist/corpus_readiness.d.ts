@@ -1,7 +1,7 @@
 /** Schema of the readiness evidence projection. */
 export declare const READINESS_EVIDENCE_SCHEMA = "l9.readiness-evidence/v1";
 export declare const READINESS_PROFILE_ID = "l9-meta-injector-readiness-evidence";
-export declare const READINESS_PROFILE_VERSION = "1.0.0";
+export declare const READINESS_PROFILE_VERSION = "1.0.1";
 /** The complete signal vocabulary. Closed: an unlisted signal is never emitted. */
 export declare const READINESS_SIGNALS: readonly ["artifact.has_source_code", "artifact.has_tests", "artifact.has_build_manifest", "artifact.has_build_definition", "artifact.has_ci_definition", "artifact.has_container_definition", "artifact.has_deployment_definition", "artifact.has_specification", "artifact.has_documentation", "artifact.has_open_tasks", "artifact.has_blockers", "artifact.has_roadmap", "artifact.has_plan"];
 export type ReadinessSignalName = (typeof READINESS_SIGNALS)[number];

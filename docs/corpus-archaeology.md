@@ -309,18 +309,23 @@ Three classes, kept apart everywhere.
 
 A container is a project candidate when it holds a **build manifest** or a **CI
 definition**. A CI definition resolves to the directory holding its
-`.github`/`.circleci`, not to the dot-directory.
+`.github`/`.circleci`, not to the dot-directory; at an archive's member root that
+directory is the archive itself (`x.zip!/`), the same container a manifest beside
+it resolves to. A container that is given no member is not a candidate.
 
 The grouping key is the identifier the manifest **body** declared — `name` in
 `package.json`, `module` in `go.mod`, `[project].name` or `[tool.poetry].name` in
-`pyproject.toml`, `[package].name` in `Cargo.toml`, `<artifactId>` in `pom.xml` —
-recorded with the line it was read from. Containers sharing a declared identifier
+`pyproject.toml`, `[package].name` in `Cargo.toml`, the `<artifactId>` directly
+under `<project>` in `pom.xml` (never a `<parent>`'s or a dependency's) — recorded
+with the line it was read from; for a JSON manifest that is the line of the
+top-level key. Containers sharing a declared identifier
 join into one candidate across roots and disks.
 
 A container with no declared identifier keys on its own directory name, which
 also crosses roots: `OldSSD::archive/widget` and `Backup::widget` join. A
-root-level container with no declared name keys on its root and joins nothing,
-because there is no name to join on that is not a mount point.
+root-level container with no declared name keys on its root, as `root:<root
+label>` — a namespace no directory name or declared identifier can enter — and
+joins nothing, because there is no name to join on that is not a mount point.
 
 Members are assigned to the **innermost** container that claims them, so a
 monorepo does not swallow its own packages.
