@@ -1,6 +1,6 @@
 import { DocumentDecoder } from "./decoder";
 export declare const HTML_DECODER_ID = "l9.html-decoder";
-export declare const HTML_DECODER_VERSION = "1.0.0";
+export declare const HTML_DECODER_VERSION = "1.1.0";
 interface HtmlToken {
     kind: "open" | "close" | "text";
     name: string;

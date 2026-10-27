@@ -24,7 +24,8 @@ import { decodeXmlText } from "./xml";
 import { readUtf8 } from "./text";
 
 export const HTML_DECODER_ID = "l9.html-decoder";
-export const HTML_DECODER_VERSION = "1.0.0";
+// 1.1.0: a `>` inside a quoted attribute value no longer ends the tag.
+export const HTML_DECODER_VERSION = "1.1.0";
 
 /** Elements whose contents are never text. */
 const OPAQUE = new Set(["script", "style", "noscript", "template", "svg", "canvas", "iframe", "object", "embed"]);
@@ -77,6 +78,37 @@ function parseHtmlAttributes(raw: string): Record<string, string> {
 }
 
 /**
+ * The index of the `>` that ends the tag opened at `from`, or -1.
+ *
+ * An attribute value may hold an unescaped `>` when it is quoted. Following the
+ * HTML attribute states, a quote opens a value only where a value may begin —
+ * right after `=`, optionally past whitespace — so the apostrophe in an unquoted
+ * `title=it's` is an ordinary character and does not swallow the rest of the
+ * page. One linear pass.
+ */
+function htmlTagEnd(source: string, from: number): number {
+  let quote = "";
+  let afterEquals = false;
+  for (let index = from; index < source.length; index += 1) {
+    const char = source[index] as string;
+    if (quote.length > 0) {
+      if (char === quote) quote = "";
+      continue;
+    }
+    if (char === ">") return index;
+    if (char === "=") {
+      afterEquals = true;
+    } else if (afterEquals && (char === '"' || char === "'")) {
+      quote = char;
+      afterEquals = false;
+    } else if (!/\s/.test(char)) {
+      afterEquals = false;
+    }
+  }
+  return -1;
+}
+
+/**
  * Tokenize HTML.
  *
  * Deliberately a tokenizer rather than a tree builder: HTML's error recovery
@@ -106,7 +138,7 @@ export function tokenizeHtml(source: string): HtmlToken[] {
       cursor = end < 0 ? source.length : end + 1;
       continue;
     }
-    const close = source.indexOf(">", open);
+    const close = htmlTagEnd(source, open + 1);
     if (close < 0) {
       tokens.push({ kind: "text", name: "", attributes: {}, text: source.slice(open) });
       break;

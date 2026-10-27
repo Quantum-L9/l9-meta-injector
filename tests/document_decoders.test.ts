@@ -387,6 +387,9 @@ describe("container defences", () => {
     const serialized = JSON.stringify(outcome.document);
     expect(serialized).not.toContain("root:");
     expect(serialized).not.toContain("/etc/passwd");
+    // REG-WU-060-RC-123-d: the internal subset is skipped through its own ']>',
+    // so no markup residue reaches the first paragraph.
+    expect(serialized).not.toContain("]>");
   });
 });
 

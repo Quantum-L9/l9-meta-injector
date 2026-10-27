@@ -25,11 +25,15 @@ import { OoxmlContainer, OoxmlError, noteExternalRelationships, openOoxml } from
 import { XmlError, parseXml } from "./xml";
 
 export const DOCX_DECODER_ID = "l9.docx-decoder";
-export const DOCX_DECODER_VERSION = "1.0.0";
+// 1.1.0: text is collected only inside the text-bearing element (w:t, a:t,
+// spreadsheet t/v/f), so space-only runs survive and indentation, field
+// instructions, moved-from text and the second AlternateContent branch do not
+// enter decoded text; a quoted '>' no longer ends a tag.
+export const DOCX_DECODER_VERSION = "1.1.0";
 export const PPTX_DECODER_ID = "l9.pptx-decoder";
-export const PPTX_DECODER_VERSION = "1.0.0";
+export const PPTX_DECODER_VERSION = "1.1.0";
 export const XLSX_DECODER_ID = "l9.xlsx-decoder";
-export const XLSX_DECODER_VERSION = "1.0.0";
+export const XLSX_DECODER_VERSION = "1.1.0";
 
 /** Turn an OOXML failure into the decode outcome it deserves. */
 function ooxmlFailure(error: unknown): DecodeOutcome {
@@ -150,17 +154,51 @@ export const docxDecoder: DocumentDecoder = {
     let cellRuns: string[] = [];
     let tableStartIndex = 0;
     // Word encodes deletions as `w:delText`; reading them would resurrect text
-    // the author removed and present it as current content.
+    // the author removed and present it as current content. A move is a
+    // deletion plus an insertion, so `w:moveFrom` is the deleted half.
     let suppressText = 0;
+    // Visible text lives in `w:t` and nowhere else. Character data in any other
+    // element is either indentation or markup — a field instruction
+    // (`w:instrText`) is the code behind a hyperlink or table of contents, not
+    // what the reader sees.
+    let inText = 0;
+    // `mc:AlternateContent` offers the same content in several encodings, and
+    // a consumer reads exactly one. The first `mc:Choice` is read; a
+    // `mc:Fallback` is read only when no Choice preceded it.
+    const alternates: boolean[] = [];
+    let skipUntilDepth = -1;
 
     try {
       parseXml(xml, input.budget.maxDepth, (event) => {
         if (builder.isFull) return false;
+        if (skipUntilDepth >= 0) {
+          // Inside an unread AlternateContent branch: nothing in it is content.
+          if (event.type === "close" && event.depth === skipUntilDepth) skipUntilDepth = -1;
+          return;
+        }
         if (event.type === "open") {
           switch (event.name) {
+            case "AlternateContent":
+              if (!event.selfClosing) alternates.push(false);
+              return;
+            case "Choice":
+            case "Fallback": {
+              const frame = alternates.length - 1;
+              if (frame < 0 || event.selfClosing) return;
+              if (alternates[frame] === true) {
+                skipUntilDepth = event.depth - 1;
+                return;
+              }
+              alternates[frame] = true;
+              return;
+            }
+            case "t":
+              if (!event.selfClosing) inText += 1;
+              return;
             case "del":
             case "delText":
-              suppressText += 1;
+            case "moveFrom":
+              if (!event.selfClosing) suppressText += 1;
               return;
             case "pStyle":
               style = event.attributes["w:val"] ?? event.attributes.val ?? null;
@@ -192,14 +230,21 @@ export const docxDecoder: DocumentDecoder = {
           }
         }
         if (event.type === "text") {
-          if (suppressText > 0) return;
+          if (suppressText > 0 || inText === 0) return;
           runs.push(event.text);
           return;
         }
         // close
         switch (event.name) {
+          case "AlternateContent":
+            alternates.pop();
+            return;
+          case "t":
+            inText = Math.max(0, inText - 1);
+            return;
           case "del":
           case "delText":
+          case "moveFrom":
             suppressText = Math.max(0, suppressText - 1);
             return;
           case "p": {
@@ -324,11 +369,16 @@ export const pptxDecoder: DocumentDecoder = {
       let inTable = false;
       let tableRows: string[][] = [];
       let tableRow: string[] = [];
+      // Shape text lives in `a:t`; character data anywhere else is indentation.
+      let inText = 0;
       try {
         parseXml(xml, input.budget.maxDepth, (event) => {
           if (builder.isFull) return false;
           if (event.type === "open") {
             switch (event.name) {
+              case "t":
+                if (!event.selfClosing) inText += 1;
+                return;
               case "ph":
                 // A placeholder of type `title` or `ctrTitle` is the slide's title.
                 if (["title", "ctrTitle"].includes(event.attributes.type ?? "")) isTitle = true;
@@ -348,10 +398,13 @@ export const pptxDecoder: DocumentDecoder = {
             }
           }
           if (event.type === "text") {
-            runs.push(event.text);
+            if (inText > 0) runs.push(event.text);
             return;
           }
           switch (event.name) {
+            case "t":
+              inText = Math.max(0, inText - 1);
+              return;
             case "p": {
               const text = runs.join("");
               runs = [];
@@ -449,6 +502,9 @@ function readSharedStrings(container: OoxmlContainer, maxDepth: number): string[
   const strings: string[] = [];
   let runs: string[] = [];
   let depth = 0;
+  // A string item's text is the `t` elements inside it; whitespace between its
+  // runs is indentation.
+  let inText = 0;
   try {
     parseXml(xml, maxDepth, (event) => {
       if (event.type === "open" && event.name === "si") {
@@ -456,7 +512,15 @@ function readSharedStrings(container: OoxmlContainer, maxDepth: number): string[
         runs = [];
         return;
       }
-      if (event.type === "text" && depth > 0) {
+      if (event.type === "open" && event.name === "t" && !event.selfClosing && depth > 0) {
+        inText += 1;
+        return;
+      }
+      if (event.type === "close" && event.name === "t" && inText > 0) {
+        inText -= 1;
+        return;
+      }
+      if (event.type === "text" && depth > 0 && inText > 0) {
         runs.push(event.text);
         return;
       }
@@ -549,6 +613,8 @@ export const xlsxDecoder: DocumentDecoder = {
       let inValue = false;
       let inFormula = false;
       let inInline = false;
+      // An inline string's text is its `t` elements, not the whitespace around them.
+      let inInlineText = 0;
       const rows = new Map<number, string[]>();
 
       try {
@@ -571,13 +637,16 @@ export const xlsxDecoder: DocumentDecoder = {
               case "is":
                 inInline = true;
                 return;
+              case "t":
+                if (inInline && !event.selfClosing) inInlineText += 1;
+                return;
               default:
                 return;
             }
           }
           if (event.type === "text") {
             if (inFormula) formula.push(event.text);
-            else if (inValue || inInline) value.push(event.text);
+            else if (inValue || inInlineText > 0) value.push(event.text);
             return;
           }
           switch (event.name) {
@@ -587,8 +656,12 @@ export const xlsxDecoder: DocumentDecoder = {
             case "f":
               inFormula = false;
               return;
+            case "t":
+              inInlineText = Math.max(0, inInlineText - 1);
+              return;
             case "is":
               inInline = false;
+              inInlineText = 0;
               return;
             case "c": {
               const raw = value.join("");
