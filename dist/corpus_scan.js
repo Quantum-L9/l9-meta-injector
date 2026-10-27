@@ -661,6 +661,8 @@ async function runCorpusScan(input) {
     }
     // ── 1. acquire every root, read-only ────────────────────────────────────
     const observations = [];
+    // One entry per failed *mount*. Reconciled against the bound roots below: a
+    // key is missing only when none of its mounts was observed (RC-066).
     const failedRoots = [];
     const disposals = [];
     try {
@@ -703,11 +705,14 @@ async function runCorpusScan(input) {
                 if (input.allowPartialRoots !== true)
                     throw error;
                 const reason = error instanceof Error ? error.message : String(error);
-                failedRoots.push({ rootKey, rootId: (0, corpus_roots_1.corpusRootId)(rootKey), reason, keyDeclared });
-                diagnostics.push({
-                    code: "corpus.root_unreadable",
-                    severity: "error",
-                    message: `root '${rootKey}' could not be observed and is missing from this corpus: ${reason}`,
+                failedRoots.push({
+                    rootKey, rootId: (0, corpus_roots_1.corpusRootId)(rootKey), reason, keyDeclared,
+                    absolutePath: path.resolve(spec.path),
+                    diagnostic: {
+                        code: "corpus.root_unreadable",
+                        severity: "error",
+                        message: `root '${rootKey}' could not be observed and is missing from this corpus: ${reason}`,
+                    },
                 });
                 continue;
             }
@@ -719,8 +724,9 @@ async function runCorpusScan(input) {
                     throw new Error(unstable);
                 failedRoots.push({
                     rootKey, rootId: (0, corpus_roots_1.corpusRootId)(rootKey), reason: unstable, keyDeclared,
+                    absolutePath: path.resolve(spec.path),
+                    diagnostic: { code: "corpus.root_unstable", severity: "error", message: unstable },
                 });
-                diagnostics.push({ code: "corpus.root_unstable", severity: "error", message: unstable });
                 continue;
             }
             const rootId = (0, corpus_roots_1.corpusRootId)(rootKey);
@@ -741,6 +747,27 @@ async function runCorpusScan(input) {
             });
         }
         const bound = (0, corpus_roots_1.bindCorpusRoots)(observations.map((entry) => entry.binding));
+        // A root is its key, not a mount. A failed mount of a key observed through
+        // another mount leaves the root observed and is reported as a warning naming
+        // both; a key with no readable mount is missing once, however many of its
+        // mounts failed.
+        const observedPathById = new Map(bound.roots.map((root) => [root.root_id, root.absolute_path]));
+        const missingRoots = [];
+        for (const failed of failedRoots) {
+            const observedPath = observedPathById.get(failed.rootId);
+            if (observedPath !== undefined) {
+                diagnostics.push({
+                    code: "corpus.root_mount_unobserved",
+                    severity: "warning",
+                    message: `root '${failed.rootKey}' could not be observed through ${failed.absolutePath} `
+                        + `(${failed.reason}); it was observed through ${observedPath}`,
+                });
+                continue;
+            }
+            diagnostics.push(failed.diagnostic);
+            if (!missingRoots.some((missing) => missing.rootId === failed.rootId))
+                missingRoots.push(failed);
+        }
         for (const folded of bound.folded) {
             diagnostics.push({
                 code: "corpus.root_folded",
@@ -1320,7 +1347,7 @@ async function runCorpusScan(input) {
         // missing root, not as an absence. Downstream, "12 project candidates" over a
         // corpus with an unplugged drive is a different claim from the same number
         // over a whole one, and the only way it can be told is if the snapshot says so.
-        for (const failed of failedRoots) {
+        for (const failed of missingRoots) {
             snapshotRoots.push({
                 root_id: failed.rootId,
                 root_key: failed.rootKey,
@@ -1352,14 +1379,14 @@ async function runCorpusScan(input) {
                 : {}),
             corpus_status: corpusStatus,
             verification,
-            missing_root_ids: failedRoots.map((failed) => failed.rootId).sort(ordering_1.compareCodePoints),
+            missing_root_ids: missingRoots.map((failed) => failed.rootId).sort(ordering_1.compareCodePoints),
             roots: snapshotRoots,
             artifacts: snapshotArtifacts,
             archives: orderedArchives,
             counts: {
                 root_count_requested: input.roots.length,
                 root_count_observed: bound.roots.length,
-                root_count_failed: failedRoots.length,
+                root_count_failed: missingRoots.length,
                 root_count: bound.roots.length,
                 artifact_count: artifacts.length,
                 archive_count: archives.length,
