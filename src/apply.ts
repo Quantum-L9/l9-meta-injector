@@ -224,6 +224,13 @@ export async function runApplyAsync(config: ApplyConfig): Promise<OperationResul
   const transaction = executeFileTransaction(root, intents, {
     validate: () => validateCommittedPlan(root, plan),
   });
+  if (transaction.cleanupPending) {
+    // Bytes are committed; only post-commit cleanup is left for the next run's recovery.
+    warnings.push(
+      `metadata transaction ${transaction.transactionId ?? "unknown"} committed but cleanup is pending `
+      + `(${transaction.cleanupPending.journalPath}); the next apply finalizes it`,
+    );
+  }
   const inlineChanged = transaction.changedPaths.filter((item) => item !== METADATA_INDEX_RELATIVE_PATH);
   const metadataIndexChanged = transaction.changedPaths.includes(METADATA_INDEX_RELATIVE_PATH);
   const repositoryMutated = transaction.changedPaths.length > 0;
