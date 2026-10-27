@@ -218,9 +218,33 @@ function checkRecordIdentities(records, knownArtifactIds, knownNormalizedDocumen
     }
     return problems;
 }
-/** A grouping that does not sum to the whole is a grouping that lost something. */
-function checkGroupTotals(manifest) {
+/**
+ * A grouping that does not sum to the whole is a grouping that lost something —
+ * and a grouping that sums correctly can still be wrong.
+ *
+ * The sums are an internal-consistency check. When the record set parsed whole,
+ * `document_count`, `by_format` and `by_predicate` are also recomputed from the
+ * records with the same tallies the builder uses, and each field that disagrees
+ * is named. Over a short read that recomputation would only restate the record
+ * count failure already reported, so it is skipped.
+ */
+function checkGroupTotals(manifest, records) {
     const problems = [];
+    if (records.length === manifest.record_count) {
+        const documentCount = new Set(records.map((record) => record.artifact_id)).size;
+        if (documentCount !== manifest.document_count) {
+            problems.push(`manifest document_count is ${manifest.document_count} and the payload records name `
+                + `${documentCount} distinct artifact(s)`);
+        }
+        const formats = (0, corpus_analysis_1.canonicalCorpusJson)(tallyFormats(records), 0);
+        if (formats !== (0, corpus_analysis_1.canonicalCorpusJson)(manifest.by_format, 0)) {
+            problems.push(`manifest by_format does not match the payload records: expected ${formats}`);
+        }
+        const predicates = (0, corpus_analysis_1.canonicalCorpusJson)(tallyPredicates(records), 0);
+        if (predicates !== (0, corpus_analysis_1.canonicalCorpusJson)(manifest.by_predicate, 0)) {
+            problems.push(`manifest by_predicate does not match the payload records: expected ${predicates}`);
+        }
+    }
     const formatTotal = manifest.by_format.reduce((sum, entry) => sum + entry.signal_count, 0);
     if (formatTotal !== manifest.record_count) {
         problems.push(`by_format totals ${formatTotal} and the manifest states ${manifest.record_count}`);
@@ -259,7 +283,7 @@ function verifyDocumentWorkSignalExport(input) {
         ...checkPayloadAgainstManifest(manifest, payloadJsonl, records),
         ...reportProblems,
         ...checkRecordIdentities(records, input.knownArtifactIds, input.knownNormalizedDocumentIds),
-        ...checkGroupTotals(manifest),
+        ...checkGroupTotals(manifest, records),
     ];
 }
 //# sourceMappingURL=corpus_work_signal_export.js.map

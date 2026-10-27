@@ -29,9 +29,10 @@ import { stableId } from "./repository_model";
 export const READINESS_EVIDENCE_SCHEMA = "l9.readiness-evidence/v1";
 
 export const READINESS_PROFILE_ID = "l9-meta-injector-readiness-evidence";
-// 1.0.1: a body's archive_count counts physical archives, so two roots'
-// same-path archives are two (RC-090).
-export const READINESS_PROFILE_VERSION = "1.0.1";
+// 1.1.0: a body's archive_count counts physical archives, so two roots'
+// same-path archives are two (RC-090); status conflicts are computed on
+// status classes (RC-091).
+export const READINESS_PROFILE_VERSION = "1.1.0";
 
 /** The complete signal vocabulary. Closed: an unlisted signal is never emitted. */
 export const READINESS_SIGNALS = [
@@ -714,7 +715,19 @@ export function buildBodyOfWorkMetrics(
   // A body whose documents disagree about their own state — one says complete,
   // another says wip — is reported as ambiguous rather than resolved by picking
   // one. Every member that declared a status participates in the disagreement.
-  const distinctStatuses = new Set([...declaredStatuses.values()].flat());
+  //
+  // Disagreement is between status *classes*, the same classes the tallies
+  // above count by: `complete` and `done` agree, `wip` and `active` agree. A
+  // value no class names stays its own class, so it still disagrees with any
+  // other.
+  const statusClass = (value: string): string => {
+    if (WIP_STATUSES.has(value)) return "wip";
+    if (DRAFT_STATUSES.has(value)) return "draft";
+    if (COMPLETE_STATUSES.has(value)) return "complete";
+    if (STATUS_BLOCKED.has(value)) return "blocked";
+    return `unclassified:${value}`;
+  };
+  const distinctStatuses = new Set([...declaredStatuses.values()].flat().map(statusClass));
   if (distinctStatuses.size > 1) {
     metrics.uncertainty.conflicting_status_count = declaredStatuses.size;
   }
