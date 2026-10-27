@@ -170,7 +170,8 @@ const BODY_MARKERS = [
 ];
 exports.pythonRouteObservationExtractor = {
     id: "python-route-observation/v1",
-    // 1.1.0: BOM and lone-CR aware lines (RC-096).
+    // 1.1.0: every route decorator of a stack is recorded (RC-098); BOM and
+    // lone-CR aware lines (RC-096).
     version: "1.1.0",
     matches(sourcePath) {
         return sourcePath.endsWith(".py");
@@ -178,6 +179,12 @@ exports.pythonRouteObservationExtractor = {
     extract(input) {
         const drafts = [];
         const lines = (0, common_1.toLines)(input.content);
+        // The line a decorator stack ends on, once found, so each decorator of the
+        // stack reuses it instead of re-skipping the stack (linear in its height).
+        let stackEnd = -1;
+        // The def whose body was already scanned: every route in a stack shares one
+        // handler, and its markers are one observation, not one per route.
+        let scannedDef = -1;
         for (let index = 0; index < lines.length; index++) {
             const decorator = ROUTE_DECORATOR.exec(lines[index]);
             if (!decorator)
@@ -185,9 +192,10 @@ exports.pythonRouteObservationExtractor = {
             const [, , verb, routePath] = decorator;
             const method = verb.toUpperCase();
             // Find the handler this decorator applies to, skipping stacked decorators.
-            let cursor = index + 1;
+            let cursor = index < stackEnd ? stackEnd : index + 1;
             while (cursor < lines.length && /^\s*@/.test(lines[cursor]))
                 cursor++;
+            stackEnd = cursor;
             const definition = cursor < lines.length ? DEF_LINE.exec(lines[cursor]) : null;
             if (!definition) {
                 // A decorator with no reachable def is not a route observation.
@@ -213,6 +221,11 @@ exports.pythonRouteObservationExtractor = {
                 authority: "source",
                 confidence: "high",
             });
+            // The rest of the stack is read by the outer loop: a later route decorator
+            // above the same def is its own route (RC-098).
+            if (scannedDef === cursor)
+                continue;
+            scannedDef = cursor;
             // Scan the handler body: from the def to the next line at or below its
             // indentation. Markers are reported as present, with no claim about what
             // their presence implies for the endpoint's behavior.
@@ -241,7 +254,6 @@ exports.pythonRouteObservationExtractor = {
                     }
                 }
             }
-            index = cursor;
         }
         return drafts;
     },

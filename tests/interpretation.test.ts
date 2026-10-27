@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { inventoryTree } from "../src/inventory";
 import {
   DEFAULT_MAX_FILE_BYTES,
+  interpretDocumentContent,
   INTERPRETATION_PROFILE_ID,
   INTERPRETATION_PROFILE_VERSION,
   MAX_EXCERPT_LENGTH,
@@ -16,6 +17,7 @@ import {
   type InterpretationResult,
 } from "../src/interpretation";
 import { defaultExtractors } from "../src/extractors";
+import { pythonRouteObservationExtractor } from "../src/extractors/prose";
 
 const SUBJECT = "repo:fixture";
 
@@ -281,6 +283,74 @@ describe("extractors report, never resolve", () => {
     for (const assertion of result.assertions) {
       expect(forbidden.test(assertion.object)).toBe(false);
     }
+  });
+
+  describe("stacked route decorators", () => {
+    const routeDrafts = (content: string) =>
+      pythonRouteObservationExtractor.extract({
+        subjectId: SUBJECT,
+        sourcePath: "app.py",
+        content,
+        contentHash: "sha256:0",
+        pathExists: () => false,
+      });
+    const spans = (drafts: ReturnType<typeof routeDrafts>, predicate: string) =>
+      drafts
+        .filter((draft) => draft.predicate === predicate)
+        .map((draft) => `${draft.object} L${draft.sourceRange.start_line}-${draft.sourceRange.end_line}`);
+
+    it("REG-WU-023-RC-098-a: records every route decorator in a stack", () => {
+      const drafts = routeDrafts('@app.get("/items")\n@app.head("/items")\nasync def list_items():\n    return []\n');
+      expect(spans(drafts, "http.route")).toEqual(["GET /items L1-3", "HEAD /items L2-3"]);
+      expect(spans(drafts, "http.route_handler")).toEqual([
+        "GET /items -> list_items L3-3",
+        "HEAD /items -> list_items L3-3",
+      ]);
+    });
+
+    it("REG-WU-023-RC-098-b: reports a handler's body markers once however many routes share it", () => {
+      const result = interpretDocumentContent({
+        repositorySubjectId: SUBJECT,
+        sourcePath: "app.py",
+        content: '@app.get("/items")\n@app.head("/items")\ndef list_items():\n    # TODO: paginate\n    return []\n',
+        extractors: defaultExtractors(),
+        pathExists: () => false,
+      });
+      const markers = result.assertions.filter((a) => a.predicate === "http.handler_body_marker");
+      expect(markers.map((a) => a.object)).toEqual(["list_items: todo-marker"]);
+      expect(result.assertions.filter((a) => a.predicate === "http.route")).toHaveLength(2);
+      const ids = result.assertions.map((a) => a.assertion_id);
+      expect(new Set(ids).size).toBe(ids.length);
+    });
+
+    it("REG-WU-023-RC-098-c: a non-route decorator between two routes does not hide the second", () => {
+      const drafts = routeDrafts('@app.get("/a")\n@login_required\n@app.post("/a")\ndef h(): ...\n');
+      expect(spans(drafts, "http.route")).toEqual(["GET /a L1-4", "POST /a L3-4"]);
+      expect(spans(drafts, "http.route_handler")).toEqual(["GET /a -> h L4-4", "POST /a -> h L4-4"]);
+    });
+
+    it("REG-WU-023-RC-098-d: single-decorator handlers read as before", () => {
+      const drafts = routeDrafts(
+        [
+          "@app.post('/v1/execute')",
+          "async def execute(payload: dict):",
+          "    # TODO: route to your engine handler",
+          "    return {}",
+          "",
+          "@app.get('/health')",
+          "async def health():",
+          "    return {'status': 'ok'}",
+          "",
+        ].join("\n"),
+      );
+      expect(drafts.map((d) => `${d.predicate} ${d.object} L${d.sourceRange.start_line}-${d.sourceRange.end_line}`)).toEqual([
+        "http.route POST /v1/execute L1-2",
+        "http.route_handler POST /v1/execute -> execute L2-2",
+        "http.handler_body_marker execute: todo-marker L3-3",
+        "http.route GET /health L6-7",
+        "http.route_handler GET /health -> health L7-7",
+      ]);
+    });
   });
 
   it("flags a declared canonical path that is not in the tree", () => {
