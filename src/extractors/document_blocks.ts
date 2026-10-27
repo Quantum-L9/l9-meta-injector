@@ -37,7 +37,8 @@ import {
 
 /** Identity of the block-signal policy. Bumped when these rules change. */
 export const DOCUMENT_BLOCK_PROFILE_ID = "meta-injector-document-block-signals";
-export const DOCUMENT_BLOCK_PROFILE_VERSION = "1.0.0";
+// 1.1.0: a lone CR separates units inside a block (RC-096).
+export const DOCUMENT_BLOCK_PROFILE_VERSION = "1.1.0";
 /** The single extractor this profile runs, named in every assertion it produces. */
 export const DOCUMENT_BLOCK_EXTRACTOR_ID = "document-block-work-intelligence/v1";
 
@@ -134,9 +135,14 @@ export function documentBlockProfileHash(): string {
   });
 }
 
-/** Split a block's text into the units a reader is offered, in order. */
+/**
+ * Split a block's text into the units a reader is offered, in order.
+ *
+ * CRLF, LF and a lone CR each end a unit, the same terminator set `toLines`
+ * uses for line-based documents.
+ */
 function unitsOf(text: string): string[] {
-  return text.split(/\r?\n/);
+  return text.split(/\r\n|\r|\n/);
 }
 
 /** The first line of a block that has any content, or null when it has none. */

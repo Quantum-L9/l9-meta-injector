@@ -370,7 +370,8 @@ exports.manifestExtractor = {
     id: "manifest/v1",
     // 1.1.0: array-of-tables headers end a section, extras groups are not
     // dependency tables, PEP 621 dependency arrays are read, and package.json is
-    // read by depth rather than by line shape (RC-093).
+    // read by depth rather than by line shape (RC-093); BOM and lone-CR aware
+    // lines (RC-096).
     version: "1.1.0",
     matches(sourcePath) {
         return ((0, common_1.basenameIs)(sourcePath, "pyproject.toml") ||
@@ -389,7 +390,8 @@ exports.manifestExtractor = {
 // ───────────────────────────── service-spec/v1 ─────────────────────────────
 exports.serviceSpecExtractor = {
     id: "service-spec/v1",
-    version: "1.0.0",
+    // 1.1.0: BOM and lone-CR aware lines (RC-096); linear key/value reading (RC-094).
+    version: "1.1.0",
     matches(sourcePath) {
         return (0, common_1.basenameIs)(sourcePath, "spec.yaml") || (0, common_1.basenameIs)(sourcePath, "spec.yml");
     },
@@ -436,46 +438,77 @@ exports.serviceSpecExtractor = {
  * Each entry names a canonical predicate object and the phrases that evidence
  * it. The extractor reports only that the contract file states the invariant —
  * never that the repository upholds it.
+ *
+ * A phrase is a sequence of terms that must occur in order within one sentence
+ * (a stretch of the line without a `.`). This is what the patterns used to say
+ * with `X[^.\n]*Y` gaps, but an unanchored gap rescans to the end of the line
+ * from every occurrence of `X`, which is quadratic in the number of occurrences.
+ * Searching each term from where the previous one ended reads each sentence a
+ * bounded number of times; taking the earliest occurrence of every term is
+ * enough, because an earlier end never leaves less room for the terms after it.
  */
 const INVARIANT_RULES = [
     {
         object: "gate-compatible-ingress",
-        patterns: [
-            /\bgate[- ]compatible\b/i,
-            /\bthrough\s+(?:the\s+)?gate\b/i,
-            /\bgate\s+ingress\b/i,
-            /\benters?\s+through\s+gate\b/i,
+        phrases: [
+            [/\bgate[- ]compatible\b/gi],
+            [/\bthrough\s+(?:the\s+)?gate\b/gi],
+            [/\bgate\s+ingress\b/gi],
+            [/\benters?\s+through\s+gate\b/gi],
         ],
     },
     {
         object: "tenant-context-immutable",
-        patterns: [/\btenant[_ ]context\b[^.\n]*\bimmutable\b/i, /\bimmutable\b[^.\n]*\btenant\b/i],
+        phrases: [
+            [/\btenant[_ ]context\b/gi, /\bimmutable\b/gi],
+            [/\bimmutable\b/gi, /\btenant\b/gi],
+        ],
     },
     {
         object: "packets-derived-not-mutated",
-        patterns: [
-            /\bderivation\b[^.\n]*\b(?:not|never)\b[^.\n]*\bmutat/i,
-            /\bderived?\b[^.\n]*\brather\s+than\b[^.\n]*\bmutat/i,
-            /\bderived?,?\s+(?:not|never)\s+mutat/i,
-            /\bnever\s+mutat/i,
+        phrases: [
+            [/\bderivation\b/gi, /\b(?:not|never)\b/gi, /\bmutat/gi],
+            [/\bderived?\b/gi, /\brather\s+than\b/gi, /\bmutat/gi],
+            [/\bderived?,?\s+(?:not|never)\s+mutat/gi],
+            [/\bnever\s+mutat/gi],
         ],
     },
     {
         object: "replay-is-explicit",
-        patterns: [/\breplay\b[^.\n]*\bexplicit\b/i, /\bexplicit\b[^.\n]*\breplay\b/i],
+        phrases: [
+            [/\breplay\b/gi, /\bexplicit\b/gi],
+            [/\bexplicit\b/gi, /\breplay\b/gi],
+        ],
     },
     {
         object: "lineage-is-reconstructable",
-        patterns: [
-            /\blineage\b[^.\n]*\breconstruct/i,
-            /\breconstruct\w*\b[^.\n]*\blineage\b/i,
-            /\blineage\b[^.\n]*\btraceable\b/i,
+        phrases: [
+            [/\blineage\b/gi, /\breconstruct/gi],
+            [/\breconstruct\w*\b/gi, /\blineage\b/gi],
+            [/\blineage\b/gi, /\btraceable\b/gi],
         ],
     },
 ];
+/** True when `terms` occur in order in `sentence`, each after the previous one ended. */
+function phraseOccurs(sentence, terms) {
+    let from = 0;
+    for (const term of terms) {
+        term.lastIndex = from;
+        const match = term.exec(sentence);
+        if (!match)
+            return false;
+        from = match.index + match[0].length;
+    }
+    return true;
+}
+/** True when any phrase of the rule occurs within one sentence of the line. */
+function statesInvariant(sentences, phrases) {
+    return phrases.some((terms) => sentences.some((sentence) => phraseOccurs(sentence, terms)));
+}
 exports.contractInvariantsExtractor = {
     id: "contract-invariants/v1",
-    version: "1.0.0",
+    // 1.1.0: BOM and lone-CR aware lines (RC-096); linear phrase evaluation (RC-094).
+    version: "1.1.0",
     matches(sourcePath) {
         return /^contracts\/.+\.(ya?ml|md)$/.test(sourcePath);
     },
@@ -485,10 +518,12 @@ exports.contractInvariantsExtractor = {
         // One assertion per invariant per file: the first line that evidences it.
         const claimed = new Set();
         lines.forEach((line, index) => {
+            // `[^.\n]` bounded every gap: no phrase spans a `.`.
+            const sentences = line.split(".");
             for (const rule of INVARIANT_RULES) {
                 if (claimed.has(rule.object))
                     continue;
-                if (rule.patterns.some((pattern) => pattern.test(line))) {
+                if (statesInvariant(sentences, rule.phrases)) {
                     claimed.add(rule.object);
                     drafts.push((0, common_1.declared)("contract.invariant", rule.object, index, line));
                 }

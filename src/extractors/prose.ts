@@ -27,7 +27,8 @@ const BULLET_PATH = /^\s*[-*+]\s+`([^`]+)`/;
 
 export const declaredAuthorityExtractor: Extractor = {
   id: "declared-authority/v1",
-  version: "1.0.0",
+  // 1.1.0: BOM and lone-CR aware lines (RC-096).
+  version: "1.1.0",
   matches(sourcePath) {
     return (
       basenameIs(sourcePath, "AGENTS.md") ||
@@ -94,12 +95,30 @@ const STATUS_TERMS: { object: string; pattern: RegExp }[] = [
   { object: "maintenance-only", pattern: /\bmaintenance[- ]only\b/i },
 ];
 
-/** Explicit pointers to a replacement. */
-const REPLACEMENT_PATTERNS: RegExp[] = [
-  /\b(?:ssot\s+)?replacement\s*:\s*(.+)$/i,
-  /\breplaced\s+by\s+(.+)$/i,
-  /\buse\s+\[?([A-Za-z0-9._-]+\/[A-Za-z0-9._-]+)\]?\s+instead\b/i,
+/**
+ * Explicit pointers to a replacement.
+ *
+ * A `tail` pattern matches only its fixed prefix and the pointer is the rest of
+ * the line, taken by slice: a `\s*(.+)$` tail backtracks quadratically when a
+ * character `.` does not match follows a long whitespace run. Each prefix keeps
+ * every character the old pattern required before its tail (`replaced by` keeps
+ * one whitespace character), and a match still needs at least one character
+ * after it, as `(.+)` did. `firstReference` trims the pointer either way.
+ */
+const REPLACEMENT_PATTERNS: { pattern: RegExp; tail: boolean }[] = [
+  { pattern: /\b(?:ssot\s+)?replacement\s*:/i, tail: true },
+  { pattern: /\breplaced\s+by\s/i, tail: true },
+  { pattern: /\buse\s+\[?([A-Za-z0-9._-]+\/[A-Za-z0-9._-]+)\]?\s+instead\b/i, tail: false },
 ];
+
+/** The replacement pointer a line states, or null when no pattern matches it. */
+function replacementPointer(text: string, entry: { pattern: RegExp; tail: boolean }): string | null {
+  const match = entry.pattern.exec(text);
+  if (!match) return null;
+  if (!entry.tail) return match[1];
+  const rest = text.slice(match.index + match[0].length);
+  return rest.length > 0 ? rest : null;
+}
 
 /** Self-description claims that assert a current role. */
 const ROLE_PATTERNS: { object: string; pattern: RegExp }[] = [
@@ -124,7 +143,8 @@ function isAdmonition(line: string): boolean {
 
 export const repositoryStatusExtractor: Extractor = {
   id: "repository-status/v1",
-  version: "1.0.0",
+  // 1.1.0: BOM and lone-CR aware lines (RC-096); linear replacement pointers (RC-094).
+  version: "1.1.0",
   matches(sourcePath) {
     return basenameIs(sourcePath, "README.md");
   },
@@ -143,10 +163,10 @@ export const repositoryStatusExtractor: Extractor = {
             drafts.push(declared("repository.status", term.object, index, line));
           }
         }
-        for (const pattern of REPLACEMENT_PATTERNS) {
-          const match = pattern.exec(line.replace(/^\s*>\s*/, ""));
-          if (match) {
-            const reference = firstReference(match[1]);
+        for (const entry of REPLACEMENT_PATTERNS) {
+          const pointer = replacementPointer(line.replace(/^\s*>\s*/, ""), entry);
+          if (pointer !== null) {
+            const reference = firstReference(pointer);
             if (reference) {
               drafts.push(declared("repository.replaced_by", reference, index, line));
             }
@@ -191,7 +211,8 @@ const BODY_MARKERS: { object: string; pattern: RegExp }[] = [
 
 export const pythonRouteObservationExtractor: Extractor = {
   id: "python-route-observation/v1",
-  version: "1.0.0",
+  // 1.1.0: BOM and lone-CR aware lines (RC-096).
+  version: "1.1.0",
   matches(sourcePath) {
     return sourcePath.endsWith(".py");
   },

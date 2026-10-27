@@ -14,7 +14,8 @@ const AUTHORITY_HEADERS = [
 const BULLET_PATH = /^\s*[-*+]\s+`([^`]+)`/;
 exports.declaredAuthorityExtractor = {
     id: "declared-authority/v1",
-    version: "1.0.0",
+    // 1.1.0: BOM and lone-CR aware lines (RC-096).
+    version: "1.1.0",
     matches(sourcePath) {
         return ((0, common_1.basenameIs)(sourcePath, "AGENTS.md") ||
             (0, common_1.basenameIs)(sourcePath, "CLAUDE.md") ||
@@ -70,12 +71,31 @@ const STATUS_TERMS = [
     { object: "experimental", pattern: /\bexperimental\b/i },
     { object: "maintenance-only", pattern: /\bmaintenance[- ]only\b/i },
 ];
-/** Explicit pointers to a replacement. */
+/**
+ * Explicit pointers to a replacement.
+ *
+ * A `tail` pattern matches only its fixed prefix and the pointer is the rest of
+ * the line, taken by slice: a `\s*(.+)$` tail backtracks quadratically when a
+ * character `.` does not match follows a long whitespace run. Each prefix keeps
+ * every character the old pattern required before its tail (`replaced by` keeps
+ * one whitespace character), and a match still needs at least one character
+ * after it, as `(.+)` did. `firstReference` trims the pointer either way.
+ */
 const REPLACEMENT_PATTERNS = [
-    /\b(?:ssot\s+)?replacement\s*:\s*(.+)$/i,
-    /\breplaced\s+by\s+(.+)$/i,
-    /\buse\s+\[?([A-Za-z0-9._-]+\/[A-Za-z0-9._-]+)\]?\s+instead\b/i,
+    { pattern: /\b(?:ssot\s+)?replacement\s*:/i, tail: true },
+    { pattern: /\breplaced\s+by\s/i, tail: true },
+    { pattern: /\buse\s+\[?([A-Za-z0-9._-]+\/[A-Za-z0-9._-]+)\]?\s+instead\b/i, tail: false },
 ];
+/** The replacement pointer a line states, or null when no pattern matches it. */
+function replacementPointer(text, entry) {
+    const match = entry.pattern.exec(text);
+    if (!match)
+        return null;
+    if (!entry.tail)
+        return match[1];
+    const rest = text.slice(match.index + match[0].length);
+    return rest.length > 0 ? rest : null;
+}
 /** Self-description claims that assert a current role. */
 const ROLE_PATTERNS = [
     { object: "reference-implementation", pattern: /\bthe\s+reference\s+implementation\b/i },
@@ -97,7 +117,8 @@ function isAdmonition(line) {
 }
 exports.repositoryStatusExtractor = {
     id: "repository-status/v1",
-    version: "1.0.0",
+    // 1.1.0: BOM and lone-CR aware lines (RC-096); linear replacement pointers (RC-094).
+    version: "1.1.0",
     matches(sourcePath) {
         return (0, common_1.basenameIs)(sourcePath, "README.md");
     },
@@ -114,10 +135,10 @@ exports.repositoryStatusExtractor = {
                         drafts.push((0, common_1.declared)("repository.status", term.object, index, line));
                     }
                 }
-                for (const pattern of REPLACEMENT_PATTERNS) {
-                    const match = pattern.exec(line.replace(/^\s*>\s*/, ""));
-                    if (match) {
-                        const reference = firstReference(match[1]);
+                for (const entry of REPLACEMENT_PATTERNS) {
+                    const pointer = replacementPointer(line.replace(/^\s*>\s*/, ""), entry);
+                    if (pointer !== null) {
+                        const reference = firstReference(pointer);
                         if (reference) {
                             drafts.push((0, common_1.declared)("repository.replaced_by", reference, index, line));
                         }
@@ -149,7 +170,8 @@ const BODY_MARKERS = [
 ];
 exports.pythonRouteObservationExtractor = {
     id: "python-route-observation/v1",
-    version: "1.0.0",
+    // 1.1.0: BOM and lone-CR aware lines (RC-096).
+    version: "1.1.0",
     matches(sourcePath) {
         return sourcePath.endsWith(".py");
     },

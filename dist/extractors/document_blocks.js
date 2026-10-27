@@ -9,7 +9,8 @@ const repository_model_1 = require("../repository_model");
 const work_intelligence_1 = require("./work_intelligence");
 /** Identity of the block-signal policy. Bumped when these rules change. */
 exports.DOCUMENT_BLOCK_PROFILE_ID = "meta-injector-document-block-signals";
-exports.DOCUMENT_BLOCK_PROFILE_VERSION = "1.0.0";
+// 1.1.0: a lone CR separates units inside a block (RC-096).
+exports.DOCUMENT_BLOCK_PROFILE_VERSION = "1.1.0";
 /** The single extractor this profile runs, named in every assertion it produces. */
 exports.DOCUMENT_BLOCK_EXTRACTOR_ID = "document-block-work-intelligence/v1";
 /**
@@ -45,9 +46,14 @@ function documentBlockProfileHash() {
         leading_admonition_units: work_intelligence_1.LEADING_ADMONITION_UNITS,
     });
 }
-/** Split a block's text into the units a reader is offered, in order. */
+/**
+ * Split a block's text into the units a reader is offered, in order.
+ *
+ * CRLF, LF and a lone CR each end a unit, the same terminator set `toLines`
+ * uses for line-based documents.
+ */
 function unitsOf(text) {
-    return text.split(/\r?\n/);
+    return text.split(/\r\n|\r|\n/);
 }
 /** The first line of a block that has any content, or null when it has none. */
 function firstContentLine(text) {
