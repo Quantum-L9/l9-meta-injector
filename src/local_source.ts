@@ -270,6 +270,15 @@ export interface LocalSourceObservation {
   stable: boolean;
   /** Tool-owned staging root. Implementation detail; never semantic. */
   scratchRoot: string;
+  /**
+   * The stat each physical file's recorded hash was produced under, keyed by
+   * relative path: the matching before/after bracket of a fresh hash, or the
+   * enumeration stat that validated a carried-over one. Absent for files without
+   * a hash, and for directories, symlinks, special entries and archive members.
+   * Operational only — never part of the physical manifest or any identity — so a
+   * caller that records a stat beside a hash records the right one.
+   */
+  hashingStats: ReadonlyMap<string, { size_bytes: number; mtime_ms: number; mtime_ns?: string }>;
   /** Remove the staging root. Safe to call more than once. */
   dispose(): void;
 }
@@ -1395,6 +1404,13 @@ function buildAcquisitionOmit(input: LocalSourceAcquireInput, omitRoot: string):
   });
 }
 
+/** The stat a hash was produced under, in the shape a corpus snapshot records it. */
+interface HashingStat {
+  size_bytes: number;
+  mtime_ms: number;
+  mtime_ns?: string;
+}
+
 interface HashedEntry {
   entry: EnumeratedEntry;
   contentHashHex: string | null;
@@ -1402,6 +1418,17 @@ interface HashedEntry {
   unknowns: string[];
   /** True when the hash was carried over rather than computed from the bytes. */
   reused?: boolean;
+  /** Present exactly when `contentHashHex` is: the stat that hash describes. */
+  hashingStat?: HashingStat;
+}
+
+function hashingStatOf(sizeBytes: number, mtimeMs: number, mtimeNs: string | null): HashingStat {
+  return {
+    size_bytes: sizeBytes,
+    // Whole milliseconds, as the corpus snapshot has always recorded them.
+    mtime_ms: Math.trunc(mtimeMs),
+    ...(mtimeNs !== null ? { mtime_ns: mtimeNs } : {}),
+  };
 }
 
 /**
@@ -1433,7 +1460,9 @@ function highResolutionMtime(absolutePath: string): string | null {
  * case that must make the whole observation unstable rather than degrade one entry:
  * a file that moved across its own hash after a bounded retry.
  */
-function hashStableFile(entry: EnumeratedEntry): { digest: string | null; reason: string; changed: boolean } {
+function hashStableFile(
+  entry: EnumeratedEntry,
+): { digest: string | null; reason: string; changed: boolean; stat?: HashingStat } {
   let reason = "";
   for (let attempt = 0; attempt <= STABILITY_RETRY_LIMIT; attempt++) {
     let before: fs.Stats;
@@ -1464,7 +1493,8 @@ function hashStableFile(entry: EnumeratedEntry): { digest: string | null; reason
       { sizeBytes: after.size, mtimeMs: after.mtimeMs, mtimeNs: highResolutionMtime(entry.absolutePath) },
     );
     if (matches) {
-      return { digest: candidate, reason: "", changed: false };
+      // The bracket that held still across the read is the stat this digest describes.
+      return { digest: candidate, reason: "", changed: false, stat: hashingStatOf(before.size, before.mtimeMs, beforeNs) };
     }
     reason = "file changed while it was being hashed";
   }
@@ -1596,6 +1626,8 @@ function hashOneEntry(
         encoding,
         unknowns,
         reused: true,
+        // The enumeration stat is the one that validated the carried hash.
+        hashingStat: hashingStatOf(entry.sizeBytes as number, entry.mtimeMs as number, entry.mtimeNs),
       },
       unstableReason: null,
     };
@@ -1623,7 +1655,13 @@ function hashOneEntry(
   noteUnsupportedEncoding(entry, encoding, unknowns, diagnostics);
   noteArchiveSignature(entry.relativePath, entry.absolutePath, encoding, unknowns, diagnostics);
   return {
-    hashed: { entry, contentHashHex: attempt.digest.replace("sha256:", ""), encoding, unknowns },
+    hashed: {
+      entry,
+      contentHashHex: attempt.digest.replace("sha256:", ""),
+      encoding,
+      unknowns,
+      ...(attempt.stat !== undefined ? { hashingStat: attempt.stat } : {}),
+    },
     unstableReason: null,
   };
 }
@@ -2001,6 +2039,16 @@ interface AcquisitionTail {
 }
 
 /** Archive expansion and record assembly, once the scratch root exists. */
+/** Per-path hashing stats of the physical files that carry a hash. */
+function hashingStatsOf(hashed: HashedEntry[]): Map<string, HashingStat> {
+  const stats = new Map<string, HashingStat>();
+  for (const { entry, contentHashHex, hashingStat } of hashed) {
+    if (entry.kind !== "file" || contentHashHex === null || hashingStat === undefined) continue;
+    stats.set(entry.relativePath, hashingStat);
+  }
+  return stats;
+}
+
 function finishAcquisition(tail: AcquisitionTail): LocalSourceObservation {
   const {
     input, absoluteSource, sourceKind, sourceName, policy, budget, omit, diagnostics, omittedPaths,
@@ -2045,6 +2093,7 @@ function finishAcquisition(tail: AcquisitionTail): LocalSourceObservation {
     diagnostics: [...diagnostics].sort(compareDiagnostics),
     archivePolicy: policy,
     stable: unstableReason === null && archiveSourceChanged.length === 0,
+    hashingStats: hashingStatsOf(hashed),
     scratchRoot: scratch.root,
     dispose: () => scratch.dispose(),
   };

@@ -179,6 +179,19 @@ export interface LocalSourceObservation {
     stable: boolean;
     /** Tool-owned staging root. Implementation detail; never semantic. */
     scratchRoot: string;
+    /**
+     * The stat each physical file's recorded hash was produced under, keyed by
+     * relative path: the matching before/after bracket of a fresh hash, or the
+     * enumeration stat that validated a carried-over one. Absent for files without
+     * a hash, and for directories, symlinks, special entries and archive members.
+     * Operational only — never part of the physical manifest or any identity — so a
+     * caller that records a stat beside a hash records the right one.
+     */
+    hashingStats: ReadonlyMap<string, {
+        size_bytes: number;
+        mtime_ms: number;
+        mtime_ns?: string;
+    }>;
     /** Remove the staging root. Safe to call more than once. */
     dispose(): void;
 }

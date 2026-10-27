@@ -1053,6 +1053,14 @@ function buildAcquisitionOmit(input, omitRoot) {
         ignoreDirNames: [".git", "node_modules"],
     });
 }
+function hashingStatOf(sizeBytes, mtimeMs, mtimeNs) {
+    return {
+        size_bytes: sizeBytes,
+        // Whole milliseconds, as the corpus snapshot has always recorded them.
+        mtime_ms: Math.trunc(mtimeMs),
+        ...(mtimeNs !== null ? { mtime_ns: mtimeNs } : {}),
+    };
+}
 /**
  * The finest mtime the platform will give for this file, as a decimal string.
  *
@@ -1112,7 +1120,8 @@ function hashStableFile(entry) {
         const after = fs.lstatSync(entry.absolutePath);
         const matches = observedFileStateMatches({ sizeBytes: before.size, mtimeMs: before.mtimeMs, mtimeNs: beforeNs }, { sizeBytes: after.size, mtimeMs: after.mtimeMs, mtimeNs: highResolutionMtime(entry.absolutePath) });
         if (matches) {
-            return { digest: candidate, reason: "", changed: false };
+            // The bracket that held still across the read is the stat this digest describes.
+            return { digest: candidate, reason: "", changed: false, stat: hashingStatOf(before.size, before.mtimeMs, beforeNs) };
         }
         reason = "file changed while it was being hashed";
     }
@@ -1230,6 +1239,8 @@ function hashOneEntry(entry, hashMaxBytes, diagnostics, known) {
                 encoding,
                 unknowns,
                 reused: true,
+                // The enumeration stat is the one that validated the carried hash.
+                hashingStat: hashingStatOf(entry.sizeBytes, entry.mtimeMs, entry.mtimeNs),
             },
             unstableReason: null,
         };
@@ -1255,7 +1266,13 @@ function hashOneEntry(entry, hashMaxBytes, diagnostics, known) {
     noteUnsupportedEncoding(entry, encoding, unknowns, diagnostics);
     noteArchiveSignature(entry.relativePath, entry.absolutePath, encoding, unknowns, diagnostics);
     return {
-        hashed: { entry, contentHashHex: attempt.digest.replace("sha256:", ""), encoding, unknowns },
+        hashed: {
+            entry,
+            contentHashHex: attempt.digest.replace("sha256:", ""),
+            encoding,
+            unknowns,
+            ...(attempt.stat !== undefined ? { hashingStat: attempt.stat } : {}),
+        },
         unstableReason: null,
     };
 }
@@ -1578,6 +1595,16 @@ function acquireLocalSource(input) {
     }
 }
 /** Archive expansion and record assembly, once the scratch root exists. */
+/** Per-path hashing stats of the physical files that carry a hash. */
+function hashingStatsOf(hashed) {
+    const stats = new Map();
+    for (const { entry, contentHashHex, hashingStat } of hashed) {
+        if (entry.kind !== "file" || contentHashHex === null || hashingStat === undefined)
+            continue;
+        stats.set(entry.relativePath, hashingStat);
+    }
+    return stats;
+}
 function finishAcquisition(tail) {
     const { input, absoluteSource, sourceKind, sourceName, policy, budget, omit, diagnostics, omittedPaths, skippedDirs, hashed, hashing, unstableReason, identity, scratch, } = tail;
     const archives = [];
@@ -1618,6 +1645,7 @@ function finishAcquisition(tail) {
         diagnostics: [...diagnostics].sort(compareDiagnostics),
         archivePolicy: policy,
         stable: unstableReason === null && archiveSourceChanged.length === 0,
+        hashingStats: hashingStatsOf(hashed),
         scratchRoot: scratch.root,
         dispose: () => scratch.dispose(),
     };
