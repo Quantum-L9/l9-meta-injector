@@ -109,7 +109,8 @@ function parseExistingFrontMatter(raw) {
             issue: `${inspected.issue?.code ?? "FRONTMATTER_UNSAFE"}: ${inspected.issue?.message ?? "unsafe header"}`,
         };
     }
-    return { meta: inspected.meta, body: inspected.body, hadFrontMatter: inspected.hadFrontMatter };
+    // Opaque values (e.g. `description: Use when: x`) are existing values, not missing ones.
+    return { meta: (0, frontmatter_patch_1.frontMatterReconciliationView)(raw, inspected), body: inspected.body, hadFrontMatter: inspected.hadFrontMatter };
 }
 function parseSignalList(v) {
     if (v === schema_1.UNKNOWN || v === null || v === undefined)

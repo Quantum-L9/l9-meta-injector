@@ -10,7 +10,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { createHash } from "node:crypto";
 import { findFiles } from "./retrieval";
-import { inspectFrontMatterDocument, patchManagedFrontMatter } from "./frontmatter_patch";
+import { frontMatterReconciliationView, inspectFrontMatterDocument, patchManagedFrontMatter } from "./frontmatter_patch";
 import { MetaRecord, UNKNOWN, FieldDiff } from "./schema";
 import { assistField, isGoodValue, hasUseWhenSignal, DEFAULT_ASSIST_CONFIG } from "./assist";
 import type { AssistConfig } from "./assist";
@@ -115,7 +115,8 @@ function parseExistingFrontMatter(raw: string): { meta: MetaRecord; body: string
       issue: `${inspected.issue?.code ?? "FRONTMATTER_UNSAFE"}: ${inspected.issue?.message ?? "unsafe header"}`,
     };
   }
-  return { meta: inspected.meta, body: inspected.body, hadFrontMatter: inspected.hadFrontMatter };
+  // Opaque values (e.g. `description: Use when: x`) are existing values, not missing ones.
+  return { meta: frontMatterReconciliationView(raw, inspected), body: inspected.body, hadFrontMatter: inspected.hadFrontMatter };
 }
 
 function parseSignalList(v: unknown): string[] {

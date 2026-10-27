@@ -113,7 +113,9 @@ function readForInjection(filePath) {
             spec,
             cleanBody,
             originalBodyHash: (0, extract_1.contentHash)(cleanBody),
-            existingMeta: (0, schema_1.normalizeMetaRecord)(inspected.meta),
+            // Opaque values join reconciliation as their verbatim text (RC-004); they still
+            // never enter `inspected.meta` (ADR-035).
+            existingMeta: (0, schema_1.normalizeMetaRecord)((0, frontmatter_patch_1.frontMatterReconciliationView)(raw, inspected)),
         };
     }
     if (spec.strategy === "line-comment" || spec.strategy === "block-comment") {

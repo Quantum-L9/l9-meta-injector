@@ -14,7 +14,7 @@ import { reconcileFields, reconcileFieldsAsync, diffsToLogYaml } from "./reconci
 import { getAdapter } from "./llm";
 import { MetricsCollector } from "./metrics";
 import { parseCanonicalYaml } from "./meta_schema";
-import { inspectFrontMatterDocument, patchManagedFrontMatter } from "./frontmatter_patch";
+import { frontMatterReconciliationView, inspectFrontMatterDocument, patchManagedFrontMatter } from "./frontmatter_patch";
 import {
   resolveStrategy, StrategySpec, frontMatterInner, yamlToBlock, stripInjectedBlock,
   extractInjectedYaml, applyCommentInjection, sidecarPathFor, detectNewlineConvention,
@@ -104,7 +104,9 @@ function readForInjection(filePath: string): ReadCtx {
       spec,
       cleanBody,
       originalBodyHash: contentHash(cleanBody),
-      existingMeta: normalizeMetaRecord(inspected.meta),
+      // Opaque values join reconciliation as their verbatim text (RC-004); they still
+      // never enter `inspected.meta` (ADR-035).
+      existingMeta: normalizeMetaRecord(frontMatterReconciliationView(raw, inspected)),
     };
   }
   if (spec.strategy === "line-comment" || spec.strategy === "block-comment") {
