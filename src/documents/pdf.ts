@@ -2,9 +2,12 @@
 //
 // A PDF is an object graph with a cross-reference index, and its text lives in
 // content streams as operators rather than as a text field. Extracting it means
-// walking the xref (classic tables and xref streams both), inflating object
-// streams, tokenizing content streams, and mapping byte codes through whatever
-// encoding the page's fonts declare.
+// locating the objects, expanding object streams (`/Type /ObjStm`), following the
+// latest trailer's `/Root` down the page tree, inflating content streams,
+// tokenizing them, and mapping byte codes through whatever encoding the page's
+// fonts declare. Objects are located by scanning for their headers rather than by
+// trusting the xref, for the reason `scanObjects` gives; references between them
+// are then resolved through that one object table.
 //
 // The scope here is deliberate and bounded: **native text**. A PDF produced by a
 // word processor, an exporter, or a print-to-PDF has a text layer, and this reads
@@ -34,14 +37,18 @@ import {
 } from "./decoder";
 
 export const PDF_DECODER_ID = "l9.pdf-decoder";
-export const PDF_DECODER_VERSION = "1.1.0";
+export const PDF_DECODER_VERSION = "1.2.0";
 
 interface PdfObject {
   offset: number;
   /** Where this object's extent ends: the next object header in file order. */
   bound: number;
-  /** Set when the object lives inside an object stream. */
-  inStream?: { streamObject: number; index: number };
+  /**
+   * Set when the object lives inside an object stream. Such an object takes its
+   * containing stream's `offset`, so a later stream's definition wins over an
+   * earlier one exactly as a later top-level definition does.
+   */
+  inStream?: { streamObject: number; index: number; body: string };
 }
 
 /** A parsed PDF dictionary. Values stay as raw slices until something needs them. */
@@ -100,6 +107,16 @@ export function parsePdfDict(body: string): PdfDict {
         cursor += 1;
         continue;
       }
+      // Strings are skipped whole: a title may contain `/`, `>>` or `]`.
+      if (char === "(") {
+        cursor = scanLiteral(body, cursor).end + 1;
+        continue;
+      }
+      if (char === "<") {
+        const close = body.indexOf(">", cursor);
+        cursor = close < 0 ? body.length : close + 1;
+        continue;
+      }
       if (char === "/" && depth === 0 && cursor > valueStart) break;
       cursor += 1;
     }
@@ -123,9 +140,49 @@ function dictBody(source: string): string | null {
       depth -= 1;
       if (depth === 0) return source.slice(open + 2, cursor);
       cursor += 1;
+      continue;
+    }
+    if (source[cursor] === "(") {
+      cursor = scanLiteral(source, cursor).end;
+      continue;
+    }
+    if (source[cursor] === "<") {
+      const close = source.indexOf(">", cursor);
+      if (close < 0) return null;
+      cursor = close;
     }
   }
   return null;
+}
+
+/**
+ * A balanced literal string opening at `open`: its raw text and where it closes.
+ *
+ * The one scanner for literal strings, shared by the content-stream tokenizer
+ * and by dictionary values (a document title is one). `end` is the index of the
+ * closing parenthesis, or the end of the source when the string never closes;
+ * every step advances, so an unterminated string costs one pass.
+ */
+function scanLiteral(source: string, open: number): { raw: string; end: number } {
+  let depth = 1;
+  let index = open + 1;
+  let raw = "";
+  while (index < source.length && depth > 0) {
+    const inner = source[index] as string;
+    if (inner === "\\") {
+      raw += inner + (source[index + 1] ?? "");
+      index += 2;
+      continue;
+    }
+    if (inner === "(") depth += 1;
+    if (inner === ")") {
+      depth -= 1;
+      if (depth === 0) break;
+    }
+    raw += inner;
+    index += 1;
+  }
+  return { raw, end: index };
 }
 
 /**
@@ -163,6 +220,8 @@ interface ObjectParts {
   /** The raw body, from `obj` to its matching `endobj` (or the end of its extent). */
   body: string;
   dict: PdfDict;
+  /** Whether the body is a dictionary at all (an integer object is not). */
+  isDict: boolean;
   /** Absolute offset of the first byte of the object's stream data, or -1. */
   streamStart: number;
   /** Absolute offset where the object's body ends. */
@@ -242,6 +301,12 @@ function inflate(raw: Buffer, allowance: InflateAllowance): InflateResult {
   return { kind: "unreadable" };
 }
 
+/** The object number of an `N G R` reference, or null when the value is not one. */
+function referenceNumber(value: string | undefined): number | null {
+  const match = /^(\d+)\s+\d+\s+R$/.exec((value ?? "").trim());
+  return match === null ? null : Number.parseInt(match[1] as string, 10);
+}
+
 /**
  * The bytes and objects of one PDF, with every object read at most once.
  *
@@ -253,7 +318,8 @@ class PdfFile {
   private readonly parts = new Map<PdfObject, ObjectParts>();
   /** Streams that did not decode, kept so a refused stream is not tried twice. */
   private readonly failedStreams = new Map<PdfObject, InflateResult>();
-  readonly budgetNotes: DecoderDiagnostic[] = [];
+  /** What reading the file's structure found worth saying: budget, malformation. */
+  readonly notes: DecoderDiagnostic[] = [];
 
   constructor(
     readonly bytes: Buffer,
@@ -266,11 +332,23 @@ class PdfFile {
   partsOf(object: PdfObject): ObjectParts {
     const cached = this.parts.get(object);
     if (cached !== undefined) return cached;
+    if (object.inStream !== undefined) {
+      const memberDict = dictBody(object.inStream.body);
+      const member: ObjectParts = {
+        body: object.inStream.body,
+        dict: parsePdfDict(memberDict ?? ""),
+        isDict: memberDict !== null,
+        streamStart: -1,
+        bodyEnd: object.offset,
+      };
+      this.parts.set(object, member);
+      return member;
+    }
     const extent = this.text.slice(object.offset, object.bound);
     const start = extent.indexOf("obj");
     let parts: ObjectParts;
     if (start < 0) {
-      parts = { body: "", dict: new Map(), streamStart: -1, bodyEnd: object.offset };
+      parts = { body: "", dict: new Map(), isDict: false, streamStart: -1, bodyEnd: object.offset };
     } else {
       const end = extent.indexOf("endobj", start);
       const body = extent.slice(start + 3, end < 0 ? extent.length : end);
@@ -282,9 +360,11 @@ class PdfFile {
         if (this.bytes[streamStart] === 0x0d) streamStart += 1;
         if (this.bytes[streamStart] === 0x0a) streamStart += 1;
       }
+      const inner = dictBody(body);
       parts = {
         body,
-        dict: parsePdfDict(dictBody(body) ?? ""),
+        dict: parsePdfDict(inner ?? ""),
+        isDict: inner !== null,
         streamStart,
         bodyEnd: bodyStart + body.length,
       };
@@ -310,9 +390,13 @@ class PdfFile {
   private readStream(object: PdfObject, number: number): InflateResult {
     const { dict, streamStart: start, bodyEnd } = this.partsOf(object);
     if (start < 0) return { kind: "unreadable" };
-    const declared = Number.parseInt(dict.get("Length") ?? "", 10);
+    // A direct /Length must be an integer; `N G R` is resolved through the object
+    // table. Anything else — an unresolvable reference, a reference to something
+    // that is not an integer — is no length at all, and the stream is delimited
+    // by its `endstream` instead of by the leading digits of a reference.
+    const declared = this.integerOf(dict.get("Length"));
     let end: number;
-    if (Number.isFinite(declared) && declared > 0 && start + declared <= this.bytes.length) {
+    if (declared !== null && declared > 0 && start + declared <= this.bytes.length) {
       end = start + declared;
     } else {
       // Without a usable /Length the stream ends at the last `endstream` inside
@@ -325,7 +409,7 @@ class PdfFile {
     if (filter.includes("FlateDecode")) {
       const result = inflate(raw, this.allowance);
       if (result.kind === "over_budget" && !result.aggregate) {
-        this.budgetNotes.push({
+        this.notes.push({
           code: "decoder.budget_exceeded",
           severity: "warning",
           message:
@@ -342,6 +426,111 @@ class PdfFile {
     return { kind: "unreadable" };
   }
 
+  /** The object a value refers to, when the value is an indirect reference. */
+  resolve(value: string | undefined): PdfObject | undefined {
+    const number = referenceNumber(value);
+    return number === null ? undefined : this.objects.get(number);
+  }
+
+  /** A dictionary value, given inline or by reference; null when it is neither. */
+  dictOf(value: string | undefined): PdfDict | null {
+    if (value === undefined) return null;
+    const target = this.resolve(value);
+    if (target !== undefined) {
+      const parts = this.partsOf(target);
+      return parts.isDict ? parts.dict : null;
+    }
+    const trimmed = value.trim();
+    if (!trimmed.startsWith("<<")) return null;
+    return parsePdfDict(dictBody(trimmed) ?? "");
+  }
+
+  /** An integer value, given directly or by reference; null when it is not one. */
+  integerOf(value: string | undefined): number | null {
+    if (value === undefined) return null;
+    const target = this.resolve(value);
+    const text = target === undefined ? value.trim() : this.partsOf(target).body.trim();
+    return /^\d+$/.test(text) ? Number.parseInt(text, 10) : null;
+  }
+
+  /** The object numbers an array value lists, given inline or by reference. */
+  referencesIn(value: string | undefined): number[] {
+    if (value === undefined) return [];
+    const target = this.resolve(value);
+    const text = target === undefined ? value : this.partsOf(target).body;
+    if (target !== undefined && !text.trim().startsWith("[")) return [referenceNumber(value) as number];
+    return [...text.matchAll(/(\d+)\s+\d+\s+R/g)].map((match) => Number.parseInt(match[1] as string, 10));
+  }
+
+  /**
+   * Expand every `/Type /ObjStm` into the object table.
+   *
+   * Since PDF 1.5 most objects of an exported document — its catalog, page tree
+   * and fonts included — live inside object streams and nowhere else. A member
+   * takes its stream's file position, so the table's later-wins rule applies to
+   * it as to any other definition.
+   */
+  expandObjectStreams(): void {
+    const streams = [...this.objects.entries()]
+      .filter(([, object]) => object.inStream === undefined && this.partsOf(object).dict.get("Type") === "/ObjStm")
+      .sort((a, b) => a[1].offset - b[1].offset);
+    for (const [number, container] of streams) {
+      const dict = this.partsOf(container).dict;
+      const stream = this.streamBytes(container, number);
+      if (stream.kind === "over_budget") continue;
+      const count = this.integerOf(dict.get("N"));
+      const first = this.integerOf(dict.get("First"));
+      const text = stream.kind === "ok" ? stream.bytes.toString("latin1") : "";
+      const header = first === null ? [] : (text.slice(0, first).match(/\d+/g) ?? []).map(Number);
+      if (stream.kind !== "ok" || count === null || first === null || first > text.length || header.length < count * 2) {
+        this.notes.push({
+          code: "decoder.malformed",
+          severity: "warning",
+          message: `object stream ${number} could not be read; the objects it holds were not found`,
+          part: `object ${number}`,
+        });
+        continue;
+      }
+      for (let index = 0; index < count; index += 1) {
+        const member = header[index * 2] as number;
+        const start = first + (header[index * 2 + 1] as number);
+        const end = index + 1 < count ? first + (header[index * 2 + 3] as number) : text.length;
+        const existing = this.objects.get(member);
+        if (existing !== undefined && existing.offset > container.offset) continue;
+        this.objects.set(member, {
+          offset: container.offset,
+          bound: container.bound,
+          inStream: { streamObject: number, index, body: text.slice(start, Math.max(start, end)) },
+        });
+      }
+    }
+  }
+
+  /**
+   * Trailer dictionaries, latest first.
+   *
+   * A classic file states them after the `trailer` keyword; a file with a
+   * cross-reference stream has no such keyword and states the same keys in the
+   * `/Type /XRef` stream's dictionary. An incremental update appends a newer one.
+   */
+  trailers(): PdfDict[] {
+    if (this.trailerCache !== null) return this.trailerCache;
+    const found: { position: number; dict: PdfDict }[] = [];
+    for (const match of this.text.matchAll(/trailer\s*<</g)) {
+      const inner = dictBody(this.text.slice(match.index, match.index + 64 * 1024));
+      if (inner !== null) found.push({ position: match.index, dict: parsePdfDict(inner) });
+    }
+    for (const object of new Set(this.objects.values())) {
+      if (object.inStream !== undefined) continue;
+      const parts = this.partsOf(object);
+      if (parts.dict.get("Type") === "/XRef") found.push({ position: object.offset, dict: parts.dict });
+    }
+    this.trailerCache = found.sort((a, b) => b.position - a.position).map((entry) => entry.dict);
+    return this.trailerCache;
+  }
+
+  private trailerCache: PdfDict[] | null = null;
+
   /** The aggregate-allowance diagnostic, when the allowance ran out. */
   allowanceNote(): DecoderDiagnostic | null {
     if (this.allowance.skipped === 0) return null;
@@ -353,6 +542,142 @@ class PdfFile {
         + `${this.allowance.skipped} stream(s) were not inflated`,
     };
   }
+}
+
+/** One page located in the document, with the resources it inherits. */
+interface PdfPage {
+  number: number;
+  object: PdfObject;
+  /** The page's `/Resources` value, or the nearest ancestor's. */
+  resources: string | undefined;
+}
+
+/**
+ * The document's pages, in page-tree order.
+ *
+ * A page's number is its position in the tree under the catalog the latest
+ * trailer names — not its position in the file, which an incremental update
+ * rewrites, and not its mere presence, since a page removed from `/Kids` is no
+ * longer part of the document. The walk refuses to revisit a node and to descend
+ * past `maxDepth`, and says so when either stops it. `null` means there was no
+ * tree to walk.
+ */
+function walkPageTree(file: PdfFile, maxDepth: number): PdfPage[] | null {
+  let catalog: PdfDict | null = null;
+  for (const trailer of file.trailers()) {
+    catalog = file.dictOf(trailer.get("Root"));
+    if (catalog !== null) break;
+  }
+  const rootPages = catalog?.get("Pages");
+  if (catalog === null || file.resolve(rootPages) === undefined) return null;
+
+  const pages: PdfPage[] = [];
+  const visited = new Set<number>();
+  let revisited = 0;
+  let tooDeep = 0;
+  const visit = (number: number, depth: number, inherited: string | undefined): void => {
+    if (visited.has(number)) {
+      revisited += 1;
+      return;
+    }
+    visited.add(number);
+    const object = file.objects.get(number);
+    if (object === undefined) return;
+    const parts = file.partsOf(object);
+    if (!parts.isDict) return;
+    const resources = parts.dict.get("Resources") ?? inherited;
+    const type = parts.dict.get("Type");
+    if (type === "/Page") {
+      pages.push({ number, object, resources });
+      return;
+    }
+    if (type !== "/Pages" && !parts.dict.has("Kids")) return;
+    if (depth > maxDepth) {
+      tooDeep += 1;
+      return;
+    }
+    for (const kid of file.referencesIn(parts.dict.get("Kids"))) visit(kid, depth + 1, resources);
+  };
+  visit(referenceNumber(rootPages) as number, 1, undefined);
+
+  if (revisited > 0) {
+    file.notes.push({
+      code: "decoder.malformed",
+      severity: "warning",
+      message: `the page tree refers back to a node it already visited ${revisited} time(s); the cycle was not followed`,
+    });
+  }
+  if (tooDeep > 0) {
+    file.notes.push({
+      code: "decoder.budget_exceeded",
+      severity: "warning",
+      message: `${tooDeep} page-tree node(s) lie deeper than the ${maxDepth}-level ceiling and were not read`,
+    });
+  }
+  return pages;
+}
+
+/** PDFDocEncoding's departures from Latin-1 (PDF 32000-1, Annex D). */
+const PDF_DOC_ENCODING: Record<number, string> = {
+  0x18: "\u02d8", 0x19: "\u02c7", 0x1a: "\u02c6", 0x1b: "\u02d9",
+  0x1c: "\u02dd", 0x1d: "\u02db", 0x1e: "\u02da", 0x1f: "\u02dc",
+  0x80: "\u2022", 0x81: "\u2020", 0x82: "\u2021", 0x83: "\u2026",
+  0x84: "\u2014", 0x85: "\u2013", 0x86: "\u0192", 0x87: "\u2044",
+  0x88: "\u2039", 0x89: "\u203a", 0x8a: "\u2212", 0x8b: "\u2030",
+  0x8c: "\u201e", 0x8d: "\u201c", 0x8e: "\u201d", 0x8f: "\u2018",
+  0x90: "\u2019", 0x91: "\u201a", 0x92: "\u2122", 0x93: "\ufb01",
+  0x94: "\ufb02", 0x95: "\u0141", 0x96: "\u0152", 0x97: "\u0160",
+  0x98: "\u0178", 0x99: "\u017d", 0x9a: "\u0131", 0x9b: "\u0142",
+  0x9c: "\u0153", 0x9d: "\u0161", 0x9e: "\u017e", 0xa0: "\u20ac",
+};
+
+/**
+ * A PDF text string — the type of a document's title — as Unicode.
+ *
+ * `bytes` holds one character per byte. A string is UTF-16BE when it opens with
+ * the FE FF byte-order mark, UTF-8 when it opens with EF BB BF, and
+ * PDFDocEncoding otherwise.
+ */
+function decodeTextString(bytes: string): string {
+  const raw = Buffer.from(bytes, "latin1");
+  if (raw[0] === 0xfe && raw[1] === 0xff) {
+    const body = raw.subarray(2, 2 + ((raw.length - 2) & ~1));
+    const swapped = Buffer.from(body);
+    swapped.swap16();
+    return swapped.toString("utf16le");
+  }
+  if (raw[0] === 0xef && raw[1] === 0xbb && raw[2] === 0xbf) return raw.subarray(3).toString("utf8");
+  let out = "";
+  for (const byte of raw) out += PDF_DOC_ENCODING[byte] ?? String.fromCharCode(byte);
+  return out;
+}
+
+/** A string value — literal `( … )` or hex `< … >` — as its bytes, or null. */
+function stringValue(value: string | undefined): string | null {
+  const trimmed = (value ?? "").trim();
+  if (trimmed.startsWith("(")) return decodeLiteral(scanLiteral(trimmed, 0).raw);
+  if (trimmed.startsWith("<") && !trimmed.startsWith("<<")) {
+    const close = trimmed.indexOf(">");
+    let hex = trimmed.slice(1, close < 0 ? trimmed.length : close).replace(/[^0-9A-Fa-f]/g, "");
+    if (hex.length % 2 === 1) hex += "0";
+    return Buffer.from(hex, "hex").toString("latin1");
+  }
+  return null;
+}
+
+/**
+ * The document's declared title: `/Title` of the `/Info` dictionary the latest
+ * trailer names. A bookmark or annotation that happens to carry a `/Title` is
+ * not the document's title and is never read as one.
+ */
+function documentTitle(file: PdfFile): string | null {
+  for (const trailer of file.trailers()) {
+    if (!trailer.has("Info")) continue;
+    const info = file.dictOf(trailer.get("Info"));
+    const title = stringValue(info?.get("Title"));
+    return title === null ? null : decodeTextString(title);
+  }
+  return null;
 }
 
 /** A PDF literal string, with its escape rules. */
@@ -642,26 +967,9 @@ function extractContentText(content: string, toUnicode: CodeLookup | null): stri
   while (cursor < content.length) {
     const char = content[cursor] as string;
     if (char === "(") {
-      let depth = 1;
-      let index = cursor + 1;
-      let raw = "";
-      while (index < content.length && depth > 0) {
-        const inner = content[index] as string;
-        if (inner === "\\") {
-          raw += inner + (content[index + 1] ?? "");
-          index += 2;
-          continue;
-        }
-        if (inner === "(") depth += 1;
-        if (inner === ")") {
-          depth -= 1;
-          if (depth === 0) break;
-        }
-        raw += inner;
-        index += 1;
-      }
+      const { raw, end } = scanLiteral(content, cursor);
       line.push(decodeShown(raw, false));
-      cursor = index + 1;
+      cursor = end + 1;
       continue;
     }
     if (char === "<" && content[cursor + 1] !== "<") {
@@ -743,6 +1051,7 @@ export const pdfDecoder: DocumentDecoder = {
       };
     }
     const file = new PdfFile(bytes, head, objects, inflateAllowance(input.budget, bytes.length));
+    file.expandObjectStreams();
 
     const documentId = normalizedDocumentId({
       contentHash: input.contentHash,
@@ -769,11 +1078,33 @@ export const pdfDecoder: DocumentDecoder = {
     }
     const toUnicode: CodeLookup | null = cmaps.length === 0 ? null : new MergedLookup(cmaps);
 
-    // Pages in file order. A PDF's page tree can be reordered, but content-stream
-    // order is what a linear read gives and is stable for the same bytes.
-    const pageObjects = [...objects.entries()]
-      .filter(([, object]) => /\/Type\s*\/Page\b/.test(file.objectBody(object)))
-      .sort((a, b) => a[1].offset - b[1].offset);
+    // Pages in page-tree order. Only when there is no tree to walk are the page
+    // objects read in file order, and the document says that is what happened.
+    let pages = walkPageTree(file, input.budget.maxDepth) ?? [];
+    if (pages.length === 0) {
+      pages = [...objects.entries()]
+        .filter(([, object]) => file.partsOf(object).dict.get("Type") === "/Page")
+        .sort((a, b) => a[1].offset - b[1].offset)
+        .map(([number, object]) => ({ number, object, resources: file.partsOf(object).dict.get("Resources") }));
+      if (pages.length > 0) {
+        file.notes.push({
+          code: "decoder.malformed",
+          severity: "info",
+          message:
+            "the page tree could not be resolved from the trailer's /Root; "
+            + `${pages.length} page object(s) were read in file order`,
+        });
+      }
+    }
+    if (pages.length === 0) {
+      const message = "no page could be located in the document's page tree or among its objects";
+      return {
+        decoded: false,
+        reason: "decoder.malformed",
+        message,
+        diagnostics: [{ code: "decoder.malformed", severity: "warning", message }, ...file.notes],
+      };
+    }
 
     let pagesWithText = 0;
     let pagesWithoutText = 0;
@@ -783,12 +1114,10 @@ export const pdfDecoder: DocumentDecoder = {
       if (isImageObject(file.objectBody(object))) imageObjects += 1;
     }
 
-    const readContent = (reference: string): { lines: string[]; overBudget: boolean } => {
+    const readContent = (contents: string | undefined): { lines: string[]; overBudget: boolean } => {
       const texts: string[] = [];
       let overBudget = false;
-      const references = [...reference.matchAll(/(\d+)\s+\d+\s+R/g)].map((match) =>
-        Number.parseInt(match[1] as string, 10));
-      for (const number of references) {
+      for (const number of file.referencesIn(contents)) {
         const target = objects.get(number);
         if (target === undefined) continue;
         const stream = file.streamBytes(target, number);
@@ -799,12 +1128,11 @@ export const pdfDecoder: DocumentDecoder = {
       return { lines: texts, overBudget };
     };
 
-    for (let index = 0; index < pageObjects.length; index += 1) {
+    for (let index = 0; index < pages.length; index += 1) {
       if (builder.isFull) break;
-      const entry = pageObjects[index];
-      if (entry === undefined) continue;
-      const contents = file.partsOf(entry[1]).dict.get("Contents") ?? "";
-      const { lines, overBudget } = readContent(contents);
+      const page = pages[index];
+      if (page === undefined) continue;
+      const { lines, overBudget } = readContent(file.partsOf(page.object).dict.get("Contents"));
       if (lines.length === 0) {
         // A page whose content was refused for size is not a page without text;
         // calling it a scan would send an operator to OCR a document that has none.
@@ -827,7 +1155,7 @@ export const pdfDecoder: DocumentDecoder = {
       }
     }
 
-    const budgetNotes = [...file.budgetNotes];
+    const budgetNotes = [...file.notes];
     const allowanceNote = file.allowanceNote();
     if (allowanceNote !== null) budgetNotes.push(allowanceNote);
 
@@ -848,7 +1176,7 @@ export const pdfDecoder: DocumentDecoder = {
     // The honest outcome for a scan: no text layer, images present, say so.
     if (pagesWithText === 0) {
       const message = imageObjects > 0
-        ? `no text layer was found across ${pageObjects.length || 1} page(s); `
+        ? `no text layer was found across ${pages.length} page(s); `
           + `${imageObjects} image object(s) are present, so this is a scanned document requiring OCR`
         : "no text layer was found and no image objects are present; the document yielded nothing readable";
       return {
@@ -857,6 +1185,7 @@ export const pdfDecoder: DocumentDecoder = {
         message,
         diagnostics: [
           { code: imageObjects > 0 ? "decoder.ocr_required" : "decoder.unsupported_feature", severity: "warning", message },
+          ...budgetNotes,
         ],
       };
     }
@@ -866,7 +1195,7 @@ export const pdfDecoder: DocumentDecoder = {
         code: "decoder.ocr_required",
         severity: "info",
         message:
-          `${pagesWithoutText} of ${pageObjects.length} page(s) carried no text layer and would need OCR; `
+          `${pagesWithoutText} of ${pages.length} page(s) carried no text layer and would need OCR; `
           + `${pagesWithText} page(s) were read`,
       });
     }
@@ -879,14 +1208,14 @@ export const pdfDecoder: DocumentDecoder = {
     }
     for (const diagnostic of diagnostics) builder.note(diagnostic);
 
-    const titleMatch = /\/Title\s*\(([^)]*)\)/.exec(head);
+    const title = documentTitle(file);
     return {
       decoded: true,
       document: buildNormalizedDocument({
         decoder: { id: PDF_DECODER_ID, version: PDF_DECODER_VERSION, format: "pdf" },
         decodeInput: input,
         documentId,
-        metadata: titleMatch !== null ? { title: decodeLiteral(titleMatch[1] as string) } : {},
+        metadata: title !== null && title.length > 0 ? { title } : {},
         builder,
       }),
     };

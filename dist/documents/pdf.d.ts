@@ -1,6 +1,6 @@
 import { DocumentDecoder } from "./decoder";
 export declare const PDF_DECODER_ID = "l9.pdf-decoder";
-export declare const PDF_DECODER_VERSION = "1.1.0";
+export declare const PDF_DECODER_VERSION = "1.2.0";
 /** A parsed PDF dictionary. Values stay as raw slices until something needs them. */
 type PdfDict = Map<string, string>;
 declare function isWhitespace(byte: number): boolean;

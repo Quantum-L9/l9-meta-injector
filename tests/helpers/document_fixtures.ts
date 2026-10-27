@@ -304,6 +304,11 @@ export function writePdf(target: string, lines: string[], options: { title?: str
     `__STREAM__`,
     "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
   ];
+  // A title is stated where a PDF states it: in an Info dictionary the trailer
+  // names, as every producer writes it.
+  if (options.title !== undefined) {
+    objects.push(`<< /Title (${options.title.replace(/([()\\])/g, "\\$1")}) /Producer (l9 fixtures) >>`);
+  }
 
   const chunks: Buffer[] = [];
   let offset = 0;
@@ -330,7 +335,7 @@ export function writePdf(target: string, lines: string[], options: { title?: str
   const xrefOffset = offset;
   const xrefLines = ["xref", `0 ${objects.length + 1}`, "0000000000 65535 f "];
   for (const entry of offsets) xrefLines.push(`${String(entry).padStart(10, "0")} 00000 n `);
-  const info = options.title === undefined ? "" : ` /Title (${options.title.replace(/([()\\])/g, "\\$1")})`;
+  const info = options.title === undefined ? "" : ` /Info ${objects.length} 0 R`;
   push(Buffer.from(
     `${xrefLines.join("\n")}\ntrailer\n<< /Size ${objects.length + 1} /Root 1 0 R${info} >>\n`
     + `startxref\n${xrefOffset}\n%%EOF\n`,
@@ -463,6 +468,28 @@ export function buildPdf(
   const trailer = options.trailer === null ? "" : `trailer\n<< ${options.trailer} >>\n`;
   push(Buffer.from(`${xrefLines.join("\n")}\n${trailer}startxref\n${xrefOffset}\n%%EOF\n`, "latin1"));
   return Buffer.concat(chunks);
+}
+
+/**
+ * A Flate `/Type /ObjStm` object holding `members`, as PDF 1.5 writers emit
+ * them: a header of `number offset` pairs, then the member bodies.
+ */
+export function objectStreamObject(number: number, members: { number: number; body: string }[]): PdfFixtureObject {
+  const bodies: string[] = [];
+  const pairs: string[] = [];
+  let offset = 0;
+  for (const member of members) {
+    pairs.push(`${member.number} ${offset}`);
+    bodies.push(member.body);
+    offset += Buffer.byteLength(member.body, "latin1") + 1;
+  }
+  const header = `${pairs.join(" ")}\n`;
+  const content = Buffer.from(header + bodies.join("\n"), "latin1");
+  return {
+    number,
+    body: `<< /Type /ObjStm /N ${members.length} /First ${Buffer.byteLength(header, "latin1")} /Length __LENGTH__ /Filter /FlateDecode >>`,
+    stream: zlib.deflateSync(content),
+  };
 }
 
 /** Write bytes to a fixture path, creating its directory. */
