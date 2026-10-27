@@ -51,6 +51,7 @@ const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
 const crypto = __importStar(require("node:crypto"));
 const operation_contracts_1 = require("./operation_contracts");
+const ordering_1 = require("./ordering");
 exports.META_AUTHORITY_RELATIVE_PATH = ".l9/meta-authority.yaml";
 class AuthorityParseError extends Error {
     constructor(code, message) {
@@ -518,6 +519,8 @@ function verifySemanticFoundation(binding, semanticsRoot) {
     if (!fs.existsSync(semanticsDir) || !fs.statSync(semanticsDir).isDirectory()) {
         return [conflict("META_SEMANTIC_BINDING_INVALID", `semantics directory missing under ${root}`, semanticsDir)];
     }
+    // Every claimant is kept: a cited id claimed by more than one file does not identify
+    // one ledger, so it is refused rather than resolved by file order (RC-036).
     const byId = new Map();
     for (const name of fs.readdirSync(semanticsDir).sort()) {
         if (!name.endsWith(".yaml"))
@@ -533,12 +536,20 @@ function verifySemanticFoundation(binding, semanticsRoot) {
             if (!match)
                 continue;
             const digest = `sha256:${crypto.createHash("sha256").update(bytes).digest("hex")}`;
-            byId.set(match[1], { path: filePath, digest });
+            const claimants = byId.get(match[1]) ?? [];
+            claimants.push({ path: filePath, digest });
+            byId.set(match[1], claimants);
             break;
         }
     }
     for (const [id, expected] of Object.entries(binding.ledgers)) {
-        const found = byId.get(id);
+        const claimants = byId.get(id) ?? [];
+        if (claimants.length > 1) {
+            const paths = claimants.map((item) => item.path).sort(ordering_1.compareCodePoints);
+            conflicts.push(conflict("META_SEMANTIC_BINDING_INVALID", `cited ledger ${id} is claimed by more than one file under ${semanticsDir}`, semanticsDir, paths));
+            continue;
+        }
+        const found = claimants[0];
         if (!found) {
             conflicts.push(conflict("META_SEMANTIC_BINDING_INVALID", `cited ledger ${id} is not present under ${semanticsDir}`, semanticsDir));
             continue;

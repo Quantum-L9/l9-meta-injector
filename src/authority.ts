@@ -25,6 +25,7 @@ import {
   type HeaderIdentityResolution,
   type SemanticFoundationBinding,
 } from "./operation_contracts";
+import { compareCodePoints } from "./ordering";
 
 export const META_AUTHORITY_RELATIVE_PATH = ".l9/meta-authority.yaml" as const;
 
@@ -553,7 +554,9 @@ export function verifySemanticFoundation(
       semanticsDir,
     )];
   }
-  const byId = new Map<string, { path: string; digest: string }>();
+  // Every claimant is kept: a cited id claimed by more than one file does not identify
+  // one ledger, so it is refused rather than resolved by file order (RC-036).
+  const byId = new Map<string, Array<{ path: string; digest: string }>>();
   for (const name of fs.readdirSync(semanticsDir).sort()) {
     if (!name.endsWith(".yaml")) continue;
     const filePath = path.join(semanticsDir, name);
@@ -565,12 +568,25 @@ export function verifySemanticFoundation(
       const match = ARTIFACT_ID_LINE.exec(line);
       if (!match) continue;
       const digest = `sha256:${crypto.createHash("sha256").update(bytes).digest("hex")}`;
-      byId.set(match[1], { path: filePath, digest });
+      const claimants = byId.get(match[1]) ?? [];
+      claimants.push({ path: filePath, digest });
+      byId.set(match[1], claimants);
       break;
     }
   }
   for (const [id, expected] of Object.entries(binding.ledgers)) {
-    const found = byId.get(id);
+    const claimants = byId.get(id) ?? [];
+    if (claimants.length > 1) {
+      const paths = claimants.map((item) => item.path).sort(compareCodePoints);
+      conflicts.push(conflict(
+        "META_SEMANTIC_BINDING_INVALID",
+        `cited ledger ${id} is claimed by more than one file under ${semanticsDir}`,
+        semanticsDir,
+        paths,
+      ));
+      continue;
+    }
+    const found = claimants[0];
     if (!found) {
       conflicts.push(conflict(
         "META_SEMANTIC_BINDING_INVALID",
