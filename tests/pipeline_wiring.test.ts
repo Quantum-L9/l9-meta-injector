@@ -46,9 +46,11 @@ test("pipeline wires in semantic classifier, placement compiler, and MetaV3 (DWL
   expect(rec.semanticClass).toBe("skill_definition"); // 17-class classifier reached the pipeline
   expect(hasAllPlanes(rec.metaV3)).toBe(true);
   expect(rec.metaV3.lineage.schema_version).toBe(3);
-  // placement plane is fed by the placement compiler
+  // placement plane is fed by the placement compiler; plans are keyed by the
+  // repository-relative path (WU-010 / RC-017), MetaV3 records by the runtime path.
+  const relativeSource = path.relative(root, rec.sourcePath).split(path.sep).join("/");
   expect(rec.metaV3.placement.output_path).toBe(
-    result.placementPlans.find((p) => p.sourcePath === rec.sourcePath)!.targetPath,
+    result.placementPlans.find((p) => p.sourcePath === relativeSource)!.targetPath,
   );
 
   // Both new index artifacts are emitted.

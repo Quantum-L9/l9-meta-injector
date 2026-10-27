@@ -12,7 +12,7 @@ import { buildMeta } from "./normalize_meta";
 import { injectFileAsync, injectFile } from "./inject";
 import { verify } from "./verify";
 import { buildDedupEntries, buildDedupReport, buildPromptLibraryIndex, buildPrimitiveLibraryIndex, dedupReportToMarkdown } from "./compiler";
-import { compilePlacementPlans, PlacementPlan } from "./placement_policy";
+import { compilePlacementPlan, PlacementPlan } from "./placement_policy";
 import { buildMetaV3, MetaV3Record } from "./meta_v3";
 import { assistField, DEFAULT_ASSIST_CONFIG, PROSE_ORIGIN_FIELDS } from "./assist";
 import { normalizeFilenames } from "./normalize_filename";
@@ -548,11 +548,17 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
   const dedupReport = buildDedupReport(dedupEntries, config.nearDupThreshold, config.hashPrefixLength);
 
   // Compile advisory placement plans for the injected artifacts (placement compiler
-  // was previously unreachable outside tests — finding DWL-002).
-  const placementPlans = compilePlacementPlans(
-    injected.map((r) => ({ sourcePath: r.sourcePath, body: bodies.get(r.sourcePath) ?? "" })),
-    { namespace: config.namespace },
-  );
+  // was previously unreachable outside tests — finding DWL-002). Segment rules see the
+  // repository-relative path, never directories above the root (ADR-054 item 5,
+  // RC-017), so plan.sourcePath is repo-relative like metadataSubjects.path. Each plan
+  // carries its record's resolved header namespace, so identity defaults, bound
+  // product ids and namespace globs agree with the header (RC-026).
+  const relativeBySource = new Map(injected.map((r) => [r.sourcePath, relativeSourcePath(root, r.sourcePath)]));
+  const placementPlans = injected.map((r) => compilePlacementPlan(
+    relativeBySource.get(r.sourcePath) ?? relativeSourcePath(root, r.sourcePath),
+    bodies.get(r.sourcePath) ?? "",
+    { namespace: r.meta.namespace },
+  ));
   const planBySource = new Map(placementPlans.map((p) => [p.sourcePath, p]));
 
   // Build a v3 nine-plane record per artifact, driven by the 17-class semantic
@@ -561,12 +567,13 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
   const hcBySource = new Map(scanned.map((e) => [e.sourcePath, e.headerConvention]));
   const metaV3: MetaV3Record[] = injected.map((r) => {
     const body = bodies.get(r.sourcePath) ?? "";
-    const semantic = classifyWithSemantics(r.sourcePath, body, hcBySource.get(r.sourcePath) ?? "none").semantic;
+    const relativePath = relativeBySource.get(r.sourcePath) ?? relativeSourcePath(root, r.sourcePath);
+    const semantic = classifyWithSemantics(relativePath, body, hcBySource.get(r.sourcePath) ?? "none").semantic;
     return {
       sourcePath: r.sourcePath,
       semanticClass: semantic.artifactClass,
       semanticConfidence: semantic.confidence,
-      metaV3: buildMetaV3({ meta: r.meta, semantic, placement: planBySource.get(r.sourcePath), sizeBytes: Buffer.byteLength(body, "utf8") }),
+      metaV3: buildMetaV3({ meta: r.meta, semantic, placement: planBySource.get(relativePath), sizeBytes: Buffer.byteLength(body, "utf8") }),
     };
   });
 
