@@ -405,3 +405,54 @@ describe("a change to the rules rather than the disks", () => {
     expect(diff.analysis.readiness_evidence_changed).toBe(true);
   });
 });
+
+describe("invalidation and analysis-change predicates come from the real inputs", () => {
+  /** The same snapshot with one analysis profile field replaced. */
+  function withProfile(base: CorpusSnapshot, field: string, value: string): CorpusSnapshot {
+    return { ...base, analysis: { ...base.analysis, [field]: value } };
+  }
+
+  it("REG-WU-054-RC-077-a: a pure rename retires the corpus-scoped layers", () => {
+    const diff = buildCorpusDiff(
+      snapshot("one", [artifact("A::a.md", "sha256:a"), artifact("A::b.md", "sha256:b")]),
+      snapshot("two", [artifact("A::a.md", "sha256:a"), artifact("A::c.md", "sha256:b")]),
+    );
+    expect(diff.counts.renamed_candidate).toBe(1);
+    expect(diff.invalidation.corpus_scoped_layers_invalidated).toEqual(CORPUS_SCOPED_LAYERS);
+  });
+
+  it("REG-WU-054-RC-077-b: two paths swapping their bytes retire the corpus-scoped layers", () => {
+    const diff = buildCorpusDiff(
+      snapshot("one", [artifact("A::a.md", "sha256:h1"), artifact("A::b.md", "sha256:h2")]),
+      snapshot("two", [artifact("A::a.md", "sha256:h2"), artifact("A::b.md", "sha256:h1")]),
+    );
+    expect(diff.counts.changed_content).toBe(2);
+    expect(diff.invalidation.corpus_scoped_layers_invalidated).toEqual(CORPUS_SCOPED_LAYERS);
+  });
+
+  it("REG-WU-054-RC-077-c: a change to the document block profile alone is a profile change", () => {
+    const artifacts = [artifact("A::a.md", "sha256:a")];
+    const base = withProfile(snapshot("one", artifacts), "document_block_profile", "blocks:one");
+    const diff = buildCorpusDiff(base, withProfile(base, "document_block_profile", "blocks:two"));
+    expect(diff.source_changed).toBe(false);
+    expect(diff.invalidation.profile_changed).toBe(true);
+    expect(diff.invalidation.corpus_scoped_layers_invalidated).toEqual(CORPUS_SCOPED_LAYERS);
+  });
+
+  it("REG-WU-054-RC-077-d: a candidate profile change alone moves readiness evidence", () => {
+    const artifacts = [artifact("A::a.md", "sha256:a")];
+    const base = snapshot("one", artifacts);
+    const diff = buildCorpusDiff(base, withProfile(base, "semantic_candidate_profile", "cand:two"));
+    expect(diff.source_changed).toBe(false);
+    expect(diff.analysis.readiness_evidence_changed).toBe(true);
+  });
+
+  it("REG-WU-054-RC-077-e: identical snapshots invalidate nothing and change no profile", () => {
+    const artifacts = [artifact("A::a.md", "sha256:a"), artifact("A::b.md", "sha256:b")];
+    const base = withProfile(snapshot("one", artifacts), "document_block_profile", "blocks:one");
+    const diff = buildCorpusDiff(base, base);
+    expect(diff.invalidation.corpus_scoped_layers_invalidated).toEqual([]);
+    expect(diff.invalidation.profile_changed).toBe(false);
+    expect(diff.analysis.readiness_evidence_changed).toBe(false);
+  });
+});
