@@ -235,7 +235,13 @@ async function runPipelineAsync(config) {
         // whole cleanRaw is the body. Running splitContent unconditionally would let a
         // leading `---` in non-markdown (e.g. YAML document separators) be mistaken for
         // frontmatter and truncate real content, skewing extraction/classification/hash.
-        const body = spec.strategy === "yaml-frontmatter" ? (0, extract_1.splitContent)(cleanRaw).body : cleanRaw;
+        //
+        // For frontmatter the hashed/classified body is exactly what the patcher preserves —
+        // the same definition the injector and inventory hash (managedCarrierFreeBody): the
+        // body after a safe header, or the whole document when the leading `---` block is not
+        // patchable frontmatter. The looser splitContent fence would drop that block, so edits
+        // inside it would never change content_hash (RC-022).
+        const body = spec.strategy === "yaml-frontmatter" ? (0, inject_1.managedCarrierFreeBody)(e.sourcePath, raw) : cleanRaw;
         const relativePath = relativeSourcePath(root, e.sourcePath);
         const cls = (0, classify_1.classify)(relativePath, body, e.headerConvention);
         classifications.set(e.sourcePath, cls);

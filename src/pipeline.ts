@@ -6,10 +6,10 @@ import type { ProductDeclaration, SemanticFoundationBinding } from "./schema";
 import { discoverFiles, scanFiles } from "./retrieval";
 import { authorityFreeCarrierTier, type CarrierInjectionStrategy } from "./mutation_policy";
 import type { DiscoverySummary } from "./discovery_contracts";
-import { extract, splitContent } from "./extract";
+import { extract } from "./extract";
 import { classify, classifyWithSemantics } from "./classify";
 import { buildMeta } from "./normalize_meta";
-import { injectFileAsync, injectFile } from "./inject";
+import { injectFileAsync, injectFile, managedCarrierFreeBody } from "./inject";
 import { verify } from "./verify";
 import { buildDedupEntries, buildDedupReport, buildPromptLibraryIndex, buildPrimitiveLibraryIndex, dedupReportToMarkdown } from "./compiler";
 import { compilePlacementPlan, PlacementPlan } from "./placement_policy";
@@ -302,7 +302,13 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
     // whole cleanRaw is the body. Running splitContent unconditionally would let a
     // leading `---` in non-markdown (e.g. YAML document separators) be mistaken for
     // frontmatter and truncate real content, skewing extraction/classification/hash.
-    const body = spec.strategy === "yaml-frontmatter" ? splitContent(cleanRaw).body : cleanRaw;
+    //
+    // For frontmatter the hashed/classified body is exactly what the patcher preserves —
+    // the same definition the injector and inventory hash (managedCarrierFreeBody): the
+    // body after a safe header, or the whole document when the leading `---` block is not
+    // patchable frontmatter. The looser splitContent fence would drop that block, so edits
+    // inside it would never change content_hash (RC-022).
+    const body = spec.strategy === "yaml-frontmatter" ? managedCarrierFreeBody(e.sourcePath, raw) : cleanRaw;
     const relativePath = relativeSourcePath(root, e.sourcePath);
     const cls = classify(relativePath, body, e.headerConvention);
     classifications.set(e.sourcePath, cls);
