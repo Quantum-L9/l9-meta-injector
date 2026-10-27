@@ -91,6 +91,28 @@ interface PreparedMember {
   localHeaderOffset: number;
 }
 
+// A test that writes one large Buffer into many members (a decompression-bomb
+// fixture) would otherwise deflate and checksum it once per member. The result
+// depends only on the bytes, so it is computed once per Buffer instance.
+const deflated = new WeakMap<Buffer, Buffer>();
+const checksums = new WeakMap<Buffer, number>();
+
+function deflateOnce(raw: Buffer): Buffer {
+  const cached = deflated.get(raw);
+  if (cached !== undefined) return cached;
+  const data = zlib.deflateRawSync(raw);
+  deflated.set(raw, data);
+  return data;
+}
+
+function crcOnce(raw: Buffer): number {
+  const cached = checksums.get(raw);
+  if (cached !== undefined) return cached;
+  const crc = crc32(raw);
+  checksums.set(raw, crc);
+  return crc;
+}
+
 function prepare(spec: ZipMemberSpec): Omit<PreparedMember, "localHeaderOffset"> {
   const isDirectory = (spec.unixMode ?? 0) === UNIX_DIRECTORY || spec.name.endsWith("/");
   const declared = Buffer.isBuffer(spec.content)
@@ -98,13 +120,13 @@ function prepare(spec: ZipMemberSpec): Omit<PreparedMember, "localHeaderOffset">
     : Buffer.from(spec.content ?? "", "utf8");
   const raw = isDirectory ? Buffer.alloc(0) : declared;
   const stored = spec.stored === true || raw.length === 0;
-  const data = stored ? raw : zlib.deflateRawSync(raw);
+  const data = stored ? raw : deflateOnce(raw);
   const mode = spec.unixMode ?? (isDirectory ? UNIX_DIRECTORY : UNIX_REGULAR);
   return {
     nameBytes: Buffer.from(spec.name, "utf8"),
     zip64: spec.zip64 === true,
     data,
-    crc: crc32(raw),
+    crc: crcOnce(raw),
     uncompressedSize: spec.declaredUncompressedSize ?? raw.length,
     compressionMethod: spec.compressionMethod ?? (stored ? 0 : 8),
     // Bit 11 marks the name as UTF-8; bit 0 marks encryption.

@@ -88,6 +88,7 @@ exports.DEFAULT_DECODER_BUDGET = {
     maxContainerEntries: 4096,
     maxPartBytes: 32 * 1024 * 1024,
     maxCompressionRatio: 200,
+    maxContainerUncompressedBytes: 8 * 32 * 1024 * 1024,
     maxDepth: 64,
 };
 /**

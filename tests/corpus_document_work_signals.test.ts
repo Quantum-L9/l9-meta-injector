@@ -225,6 +225,42 @@ describe("a project tracker", () => {
   });
 });
 
+describe("a tracker whose tabs were reordered", () => {
+  it("REG-WU-061-RC-118-h: cites the sheet that actually holds the claim", async () => {
+    const quiet = tmp();
+    const root = tmp();
+    fs.writeFileSync(path.join(quiet, "README.md"), "# Notes\n\nNothing tracked here.\n");
+    const sheet = (text: string): string =>
+      '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'
+      + `<row r="1"><c r="A1" t="inlineStr"><is><t>${text}</t></is></c></row></sheetData></worksheet>`;
+    // The second-created sheet (sheet2.xml) was dragged to the first tab.
+    writeRawZip(path.join(root, "tracker.xlsx"), [
+      { name: "[Content_Types].xml", content: "<Types/>" },
+      {
+        name: "xl/workbook.xml",
+        content: '<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>'
+          + '<sheet name="Blocked items" sheetId="2" r:id="rId2"/><sheet name="Overview" sheetId="1" r:id="rId1"/>'
+          + "</sheets></workbook>",
+      },
+      {
+        name: "xl/_rels/workbook.xml.rels",
+        content: '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+          + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
+          + '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>'
+          + "</Relationships>",
+      },
+      { name: "xl/worksheets/sheet1.xml", content: sheet("Quarterly overview") },
+      { name: "xl/worksheets/sheet2.xml", content: sheet("Status: blocked") },
+    ]);
+    const result = await runCorpusScan({ roots: [{ path: quiet }, { path: root }], producerVersion: "test" });
+
+    const status = claim(result, "work.status", "blocked");
+    expect(status?.locatorKind).toBe("spreadsheet_cell");
+    expect(status?.locator.sheet).toBe("Blocked items");
+    expect(status?.locator.cell_or_range).toBe("A1");
+  });
+});
+
 // ───────────────────────── a register is a table ─────────────────────────
 
 describe("a comma-separated register", () => {

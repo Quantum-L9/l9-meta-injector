@@ -138,6 +138,17 @@ export function writePptx(target: string, slides: PptxSlide[]): string {
   ];
   slides.forEach((slide, index) => {
     parts.push({ name: `ppt/slides/slide${index + 1}.xml`, content: slidePart(slide) });
+    // Office ties a slide to its notes through the slide's relationship part,
+    // not through matching numbers, and the decoder resolves it that way.
+    parts.push({
+      name: `ppt/slides/_rels/slide${index + 1}.xml.rels`,
+      content: `${xmlHeader()}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`
+        + (slide.notes === undefined
+          ? ""
+          : '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide" '
+            + `Target="../notesSlides/notesSlide${index + 1}.xml"/>`)
+        + "</Relationships>",
+    });
     if (slide.notes !== undefined) {
       parts.push({ name: `ppt/notesSlides/notesSlide${index + 1}.xml`, content: notesPart(slide.notes) });
     }
@@ -204,9 +215,20 @@ export function writeXlsx(target: string, sheets: XlsxSheet[]): string {
     ),
     {
       name: "xl/workbook.xml",
-      content: `${xmlHeader()}<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheets>`
+      content: `${xmlHeader()}<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" `
+        + 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>'
         + sheets.map((sheet, index) => `<sheet name="${escapeXml(sheet.name)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`).join("")
         + "</sheets></workbook>",
+    },
+    {
+      // Each `<sheet r:id>` names its worksheet part through this relationship
+      // part; Excel always writes it.
+      name: "xl/_rels/workbook.xml.rels",
+      content: `${xmlHeader()}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`
+        + sheets.map((_sheet, index) =>
+          `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" `
+          + `Target="worksheets/sheet${index + 1}.xml"/>`).join("")
+        + "</Relationships>",
     },
     ...sheetParts,
     {

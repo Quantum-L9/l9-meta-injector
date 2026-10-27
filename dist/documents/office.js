@@ -23,11 +23,18 @@ exports.DOCX_DECODER_ID = "l9.docx-decoder";
 // spreadsheet t/v/f), so space-only runs survive and indentation, field
 // instructions, moved-from text and the second AlternateContent branch do not
 // enter decoded text; a quoted '>' no longer ends a tag.
-exports.DOCX_DECODER_VERSION = "1.1.0";
+// 1.2.0: part expansion is capped by compressed size x ratio and by one
+// allowance per container; pptx notes and xlsx sheets are found through their
+// relationship parts; an xlsx cell without `r` is cited at its implied position.
+exports.DOCX_DECODER_VERSION = "1.2.0";
 exports.PPTX_DECODER_ID = "l9.pptx-decoder";
-exports.PPTX_DECODER_VERSION = "1.1.0";
+exports.PPTX_DECODER_VERSION = "1.2.0";
 exports.XLSX_DECODER_ID = "l9.xlsx-decoder";
-exports.XLSX_DECODER_VERSION = "1.1.0";
+exports.XLSX_DECODER_VERSION = "1.2.0";
+/** Relationship types end in a stable name; the namespace before it has changed across Office versions. */
+function relationshipTypeIs(type, name) {
+    return type.endsWith(`/${name}`);
+}
 /** Turn an OOXML failure into the decode outcome it deserves. */
 function ooxmlFailure(error) {
     if (error instanceof ooxml_1.OoxmlError) {
@@ -472,16 +479,47 @@ exports.pptxDecoder = {
                 });
             }
         };
+        // Speaker notes hold the argument behind the slide, which is often where
+        // the actual plan lives. A slide names its notes through its relationship
+        // part; the notes part's number need not match the slide's.
+        const notesBySlide = new Map();
+        const claimedNotes = new Set();
+        for (const slide of slides) {
+            const relationships = (0, ooxml_1.readRelationships)(container, slide, input.budget.maxDepth);
+            if (relationships === null) {
+                notesBySlide.set(slide, null);
+                continue;
+            }
+            const notes = [...relationships.values()].find((relationship) => relationshipTypeIs(relationship.type, "notesSlide"));
+            notesBySlide.set(slide, notes?.part ?? "");
+            if (notes !== undefined)
+                claimedNotes.add(notes.part);
+        }
+        const inferredNotes = [];
         for (const slide of slides) {
             const slideNumber = slideOrder(slide);
             readShapes(slide, slideNumber, null);
-            // Speaker notes hold the argument behind the slide, which is often where
-            // the actual plan lives.
-            const notes = `ppt/notesSlides/notesSlide${slideNumber}.xml`;
-            if (container.entries.has(notes))
+            let notes = notesBySlide.get(slide) ?? null;
+            if (notes === null) {
+                // No relationship part: the numbering is all there is, and a notes
+                // part another slide already claims is not this one's.
+                const guess = `ppt/notesSlides/notesSlide${slideNumber}.xml`;
+                notes = container.entries.has(guess) && !claimedNotes.has(guess) ? guess : "";
+                if (notes.length > 0)
+                    inferredNotes.push(slideNumber);
+            }
+            if (notes.length > 0)
                 readShapes(notes, slideNumber, "note");
             if (builder.isFull)
                 break;
+        }
+        if (inferredNotes.length > 0) {
+            builder.note({
+                code: "decoder.malformed",
+                severity: "warning",
+                message: `slide${inferredNotes.length === 1 ? "" : "s"} ${inferredNotes.join(", ")} declare no relationship part; `
+                    + "their speaker notes were inferred from matching part numbers",
+            });
         }
         for (const diagnostic of container.diagnostics)
             builder.note(diagnostic);
@@ -543,15 +581,32 @@ function readSharedStrings(container, maxDepth) {
     }
     return strings;
 }
-/** Sheet names in workbook order, paired with their part paths. */
+/**
+ * Sheet names in workbook order, paired with their part paths.
+ *
+ * Each `<sheet name r:id>` names its worksheet through
+ * `xl/_rels/workbook.xml.rels`. Tab order, sheet ids and part numbers are
+ * independent of one another, so pairing names with parts by position cites
+ * cells under another sheet's name as soon as a tab is moved. Position is used
+ * only for sheets whose relationship cannot be resolved, and the decoder says
+ * so.
+ */
 function readSheets(container, maxDepth) {
-    const workbook = container.readPart("xl/workbook.xml");
-    const names = [];
+    const workbookPart = "xl/workbook.xml";
+    const workbook = container.readPart(workbookPart);
+    const declared = [];
     if (workbook !== null) {
         try {
             (0, xml_1.parseXml)(workbook, maxDepth, (event) => {
                 if (event.type === "open" && event.name === "sheet") {
-                    names.push(event.attributes.name ?? `Sheet${names.length + 1}`);
+                    // The relationship id is the attribute whose local name is `id` under
+                    // a namespace prefix (`r:id`); prefix bindings are not resolved.
+                    const idAttribute = Object.keys(event.attributes)
+                        .find((attribute) => attribute.includes(":") && (0, xml_1.localName)(attribute) === "id");
+                    declared.push({
+                        name: event.attributes.name ?? `Sheet${declared.length + 1}`,
+                        id: idAttribute === undefined ? null : event.attributes[idAttribute] ?? null,
+                    });
                 }
             });
         }
@@ -568,7 +623,80 @@ function readSheets(container, maxDepth) {
         const right = /sheet(\d+)\.xml$/.exec(b);
         return Number.parseInt(left?.[1] ?? "0", 10) - Number.parseInt(right?.[1] ?? "0", 10);
     });
-    return parts.map((part, index) => ({ name: names[index] ?? `Sheet${index + 1}`, part }));
+    // A workbook that declares no sheets leaves nothing to resolve: every
+    // worksheet part is cited under a positional name, as before.
+    if (declared.length === 0) {
+        if (parts.length > 0) {
+            container.diagnostics.push({
+                code: "decoder.malformed",
+                severity: "warning",
+                message: "workbook declares no sheets; worksheet names were inferred by position",
+                part: workbookPart,
+            });
+        }
+        return parts.map((part, index) => ({ name: `Sheet${index + 1}`, part }));
+    }
+    const relationships = (0, ooxml_1.readRelationships)(container, workbookPart, maxDepth);
+    const resolved = declared.map((sheet) => {
+        if (relationships === null || sheet.id === null)
+            return null;
+        const relationship = relationships.get(sheet.id);
+        if (relationship === undefined)
+            return null;
+        // A chartsheet or dialogsheet is a sheet without cells to read.
+        if (relationship.type.length > 0 && !relationshipTypeIs(relationship.type, "worksheet"))
+            return "other";
+        return { name: sheet.name, part: relationship.part };
+    });
+    const claimed = new Set(resolved.flatMap((entry) => (entry !== null && entry !== "other" ? [entry.part] : [])));
+    const unclaimed = parts.filter((part) => !claimed.has(part));
+    const inferred = [];
+    const sheets = [];
+    resolved.forEach((entry, index) => {
+        if (entry === "other")
+            return;
+        if (entry !== null) {
+            sheets.push(entry);
+            return;
+        }
+        const part = unclaimed.shift();
+        const name = declared[index]?.name ?? `Sheet${index + 1}`;
+        if (part === undefined)
+            return;
+        inferred.push(name);
+        sheets.push({ name, part });
+    });
+    if (inferred.length > 0) {
+        container.diagnostics.push({
+            code: "decoder.malformed",
+            severity: "warning",
+            message: `sheet${inferred.length === 1 ? "" : "s"} ${inferred.map((name) => `'${name}'`).join(", ")} could not be `
+                + "resolved through xl/_rels/workbook.xml.rels; their worksheet parts were inferred by position",
+            part: workbookPart,
+        });
+    }
+    return sheets;
+}
+/** Column letters for a 1-based column index: 1 is `A`, 27 is `AA`. */
+function columnName(index) {
+    let name = "";
+    let remaining = index;
+    while (remaining > 0) {
+        const digit = (remaining - 1) % 26;
+        name = String.fromCharCode(65 + digit) + name;
+        remaining = Math.floor((remaining - 1) / 26);
+    }
+    return name;
+}
+/** The 1-based column of an A1 reference, or null when it is not one. */
+function columnIndex(reference) {
+    const match = /^\$?([A-Za-z]{1,3})\$?\d+$/.exec(reference);
+    if (match === null)
+        return null;
+    let index = 0;
+    for (const letter of match[1].toUpperCase())
+        index = index * 26 + (letter.charCodeAt(0) - 64);
+    return index;
 }
 exports.xlsxDecoder = {
     id: exports.XLSX_DECODER_ID,
@@ -623,6 +751,10 @@ exports.xlsxDecoder = {
             let inInline = false;
             // An inline string's text is its `t` elements, not the whitespace around them.
             let inInlineText = 0;
+            // A cell may omit `r`; its position is then implied by the row it is in
+            // and the cell before it, which is the coordinate the format has.
+            let rowNumber = 0;
+            let lastColumn = 0;
             const rows = new Map();
             try {
                 (0, xml_1.parseXml)(xml, input.budget.maxDepth, (event) => {
@@ -630,12 +762,29 @@ exports.xlsxDecoder = {
                         return false;
                     if (event.type === "open") {
                         switch (event.name) {
-                            case "c":
-                                reference = event.attributes.r ?? "";
+                            case "row": {
+                                const declaredRow = Number.parseInt(event.attributes.r ?? "", 10);
+                                rowNumber = Number.isFinite(declaredRow) && declaredRow > 0 ? declaredRow : rowNumber + 1;
+                                lastColumn = 0;
+                                return;
+                            }
+                            case "c": {
+                                const declaredReference = event.attributes.r;
+                                if (declaredReference === undefined || declaredReference.length === 0) {
+                                    lastColumn += 1;
+                                    reference = `${columnName(lastColumn)}${Math.max(1, rowNumber)}`;
+                                }
+                                else {
+                                    // Malformed references are cited as written, as before.
+                                    reference = declaredReference;
+                                    const column = columnIndex(declaredReference);
+                                    lastColumn = column ?? lastColumn + 1;
+                                }
                                 cellType = event.attributes.t ?? "";
                                 value = [];
                                 formula = [];
                                 return;
+                            }
                             case "v":
                                 inValue = true;
                                 return;
