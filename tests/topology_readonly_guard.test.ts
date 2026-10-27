@@ -20,7 +20,7 @@ import { afterAll, describe, expect, it } from "vitest";
 
 const guard = require("../scripts/topology-conformance.js") as {
   checkoutDigest(root: string): { digest: string; entries: Record<string, string> };
-  dropPycache(root: string): void;
+  dropPycache(root: string, before: Record<string, string>): void;
   mutatedCheckoutPaths(
     before: Record<string, string>,
     after: Record<string, string>,
@@ -111,7 +111,7 @@ describe("the checkout digest", () => {
 });
 
 describe("the bytecode caches an interpreter leaves behind", () => {
-  it("are removed before the comparison rather than tolerated in it", () => {
+  it("are removed before the comparison rather than tolerated in it (REG-WU-073-RC-111-d)", () => {
     const root = fakeCheckout();
     const before = guard.checkoutDigest(root);
 
@@ -123,7 +123,9 @@ describe("the bytecode caches an interpreter leaves behind", () => {
     fs.mkdirSync(nested, { recursive: true });
     fs.writeFileSync(path.join(nested, "__init__.cpython-311.pyc"), "compiled\n", "utf8");
 
-    guard.dropPycache(root);
+    // WU-073: the guard is told what existed before the run, so it can remove only
+    // the caches the run created (REG-WU-073-RC-111-d).
+    guard.dropPycache(root, before.entries);
 
     expect(fs.existsSync(cache)).toBe(false);
     expect(fs.existsSync(nested)).toBe(false);
@@ -134,16 +136,71 @@ describe("the bytecode caches an interpreter leaves behind", () => {
       .toEqual([]);
   });
 
-  it("does not take anything else with them", () => {
+  it("does not take anything else with them (REG-WU-073-RC-111-e)", () => {
     const root = fakeCheckout();
+    const before = guard.checkoutDigest(root);
     // A directory whose name merely contains the word is not a bytecode cache.
     const decoy = path.join(root, "src", "my__pycache__helper");
     fs.mkdirSync(decoy, { recursive: true });
     fs.writeFileSync(path.join(decoy, "keep.py"), "KEEP = 1\n", "utf8");
-    guard.dropPycache(root);
+    guard.dropPycache(root, before.entries);
     expect(fs.existsSync(path.join(decoy, "keep.py"))).toBe(true);
     // And the consumer's own source is untouched by the cleanup.
     expect(fs.existsSync(path.join(root, "src", "l9_constellation_topology", "__init__.py")))
       .toBe(true);
+  });
+});
+
+describe("caches are judged by provenance, not by name (WU-073, RC-111)", () => {
+  function preExistingCache(root: string, relative: string): string {
+    const cache = path.join(root, ...relative.split("/"));
+    fs.mkdirSync(cache, { recursive: true });
+    fs.writeFileSync(path.join(cache, "x.cpython-311.pyc"), "compiled before the run\n", "utf8");
+    return cache;
+  }
+
+  it("REG-WU-073-RC-111-a: pre-existing caches, including a checkout virtualenv's, survive the guard", () => {
+    const root = fakeCheckout();
+    const source = preExistingCache(root, "src/l9_constellation_topology/__pycache__");
+    const venv = preExistingCache(root, ".venv/lib/__pycache__");
+    const before = guard.checkoutDigest(root);
+    guard.dropPycache(root, before.entries);
+    expect(fs.existsSync(path.join(source, "x.cpython-311.pyc"))).toBe(true);
+    expect(fs.existsSync(path.join(venv, "x.cpython-311.pyc"))).toBe(true);
+    expect(guard.mutatedCheckoutPaths(before.entries, guard.checkoutDigest(root).entries)).toEqual([]);
+  });
+
+  it("REG-WU-073-RC-111-b: a run-written regular file named __pycache__ is a reported mutation", () => {
+    const root = fakeCheckout();
+    const before = guard.checkoutDigest(root);
+    fs.writeFileSync(path.join(root, "src", "__pycache__"), "not a cache\n", "utf8");
+    guard.dropPycache(root, before.entries);
+    expect(guard.mutatedCheckoutPaths(before.entries, guard.checkoutDigest(root).entries)).toEqual(["src/__pycache__"]);
+  });
+
+  it("REG-WU-073-RC-111-c: deleting a pre-existing cache is a reported mutation", () => {
+    const root = fakeCheckout();
+    const cache = preExistingCache(root, "src/l9_constellation_topology/__pycache__");
+    const before = guard.checkoutDigest(root);
+    fs.rmSync(cache, { recursive: true, force: true });
+    expect(guard.mutatedCheckoutPaths(before.entries, guard.checkoutDigest(root).entries)).toEqual([
+      "src/l9_constellation_topology/__pycache__/",
+      "src/l9_constellation_topology/__pycache__/x.cpython-311.pyc",
+    ]);
+  });
+
+  it("REG-WU-073-RC-111-c: a new .pyc written into a pre-existing cache is a reported mutation", () => {
+    const root = fakeCheckout();
+    const cache = preExistingCache(root, "src/l9_constellation_topology/__pycache__");
+    const before = guard.checkoutDigest(root);
+    fs.writeFileSync(path.join(cache, "loader.cpython-311.pyc"), "compiled by the run\n", "utf8");
+    guard.dropPycache(root, before.entries);
+    expect(guard.mutatedCheckoutPaths(before.entries, guard.checkoutDigest(root).entries))
+      .toEqual(["src/l9_constellation_topology/__pycache__/loader.cpython-311.pyc"]);
+  });
+
+  it("refuses to clean without the before snapshot that proves provenance", () => {
+    const root = fakeCheckout();
+    expect(() => (guard.dropPycache as unknown as (root: string) => void)(root)).toThrow();
   });
 });
