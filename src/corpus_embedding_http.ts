@@ -178,8 +178,22 @@ function extractReportedModel(payload: unknown): string | null {
   return stringField(payload, ["model"]);
 }
 
-/** Read a response body under a hard cap, so an endless stream fails fast. */
-async function readCapped(response: Response, maxBytes: number): Promise<string> {
+/**
+ * Read a response body under a hard cap, so an endless stream fails fast.
+ *
+ * And under the request's deadline, so a slow one does too: `signal` is the
+ * request's abort signal, still armed while the body is read. A server that
+ * sends its headers and then stalls, or trickles bytes under the cap, used to
+ * keep this pending for ever because the timer was cleared when the headers
+ * arrived. An abort cancels the reader, and the rejection that follows is
+ * reported as the timeout it is.
+ */
+async function readCapped(
+  response: Response,
+  maxBytes: number,
+  signal: AbortSignal,
+  timeoutMessage: string,
+): Promise<string> {
   const declared = response.headers.get("content-length");
   if (declared !== null && Number(declared) > maxBytes) {
     throw new EmbeddingProviderError(
@@ -189,20 +203,41 @@ async function readCapped(response: Response, maxBytes: number): Promise<string>
   const body = response.body;
   if (body === null) return "";
   const reader = body.getReader();
+  const onAbort = (): void => {
+    reader.cancel().catch(() => undefined);
+  };
+  if (signal.aborted) {
+    onAbort();
+    throw new EmbeddingProviderError(timeoutMessage);
+  }
+  signal.addEventListener("abort", onAbort, { once: true });
   const chunks: Uint8Array[] = [];
   let total = 0;
-  for (;;) {
-    const step = await reader.read();
-    if (step.done === true) break;
-    const value = step.value as Uint8Array;
-    total += value.length;
-    if (total > maxBytes) {
-      await reader.cancel();
-      throw new EmbeddingProviderError(
-        `embedding response exceeded the ${maxBytes}-byte cap`,
-      );
+  try {
+    for (;;) {
+      let step: Awaited<ReturnType<typeof reader.read>>;
+      try {
+        step = await reader.read();
+      } catch (error) {
+        if (signal.aborted) throw new EmbeddingProviderError(timeoutMessage);
+        throw error;
+      }
+      // A cancelled reader reports `done`; when the deadline cancelled it, that
+      // is a timeout and not the end of a short body.
+      if (signal.aborted) throw new EmbeddingProviderError(timeoutMessage);
+      if (step.done === true) break;
+      const value = step.value as Uint8Array;
+      total += value.length;
+      if (total > maxBytes) {
+        await reader.cancel();
+        throw new EmbeddingProviderError(
+          `embedding response exceeded the ${maxBytes}-byte cap`,
+        );
+      }
+      chunks.push(value);
     }
-    chunks.push(value);
+  } finally {
+    signal.removeEventListener("abort", onAbort);
   }
   return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).toString("utf8");
 }
@@ -286,8 +321,19 @@ export class HttpJsonEmbeddingProvider implements EmbeddingProvider {
   }
 
   async embed(text: string): Promise<EmbeddingResult> {
+    // One deadline for the whole exchange — connect, headers *and* body — and
+    // cleared on every exit path.
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      return await this.exchange(text, controller.signal);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  private async exchange(text: string, signal: AbortSignal): Promise<EmbeddingResult> {
+    const timeoutMessage = `embedding request timed out after ${this.timeoutMs}ms`;
     let response: Response;
     try {
       response = await this.fetchImpl(this.endpoint, {
@@ -298,7 +344,7 @@ export class HttpJsonEmbeddingProvider implements EmbeddingProvider {
           ...(this.token !== undefined ? { authorization: `Bearer ${this.token}` } : {}),
         },
         body: JSON.stringify({ model: this.configuration.model_id, input: text }),
-        signal: controller.signal,
+        signal,
         // Never followed. A 302 to a public host would turn an operator's local
         // decision into a remote transfer after the fact.
         redirect: "error",
@@ -307,12 +353,8 @@ export class HttpJsonEmbeddingProvider implements EmbeddingProvider {
       const message = error instanceof Error ? error.message : String(error);
       const aborted = error instanceof Error && error.name === "AbortError";
       throw new EmbeddingProviderError(
-        aborted
-          ? `embedding request timed out after ${this.timeoutMs}ms`
-          : `embedding request failed: ${message}`,
+        aborted || signal.aborted ? timeoutMessage : `embedding request failed: ${message}`,
       );
-    } finally {
-      clearTimeout(timer);
     }
 
     if (!response.ok) {
@@ -320,7 +362,8 @@ export class HttpJsonEmbeddingProvider implements EmbeddingProvider {
       // more, so a server echoing the submitted text does not land in a log.
       let excerpt = "";
       try {
-        excerpt = (await readCapped(response, 2_048)).slice(0, 200).replace(/\s+/g, " ").trim();
+        excerpt = (await readCapped(response, 2_048, signal, timeoutMessage))
+          .slice(0, 200).replace(/\s+/g, " ").trim();
       } catch {
         excerpt = "";
       }
@@ -329,7 +372,7 @@ export class HttpJsonEmbeddingProvider implements EmbeddingProvider {
       );
     }
 
-    const raw = await readCapped(response, this.maxResponseBytes);
+    const raw = await readCapped(response, this.maxResponseBytes, signal, timeoutMessage);
     let payload: unknown;
     try {
       payload = JSON.parse(raw);
