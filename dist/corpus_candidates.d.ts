@@ -1,5 +1,5 @@
 export declare const PROJECT_CANDIDATE_METHOD = "container-project-candidate/v1";
-export declare const PROJECT_CANDIDATE_METHOD_VERSION = "1.0.0";
+export declare const PROJECT_CANDIDATE_METHOD_VERSION = "1.1.0";
 export declare const TOPIC_CANDIDATE_METHOD = "lexical-topic-candidate/v1";
 export declare const TOPIC_CANDIDATE_METHOD_VERSION = "1.1.0";
 /** Default salient-vocabulary overlap at which two documents join a topic. */
@@ -65,7 +65,11 @@ export interface ProjectCandidate {
     candidate_id: string;
     method: string;
     algorithm_version: string;
-    /** Declared identifier, or `container:<directory name>` when none was declared. */
+    /**
+     * `project:<declared identifier>`; `container:<directory name>` when none was
+     * declared; `root:<root label>` for a root-level container with no declared
+     * name, a namespace no directory name or declared identifier can enter.
+     */
     project_key: string;
     /** True when the key came from a manifest body rather than a directory name. */
     identifier_is_declared: boolean;

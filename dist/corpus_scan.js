@@ -96,7 +96,9 @@ exports.TEXT_DECODER_ID = "utf8-text-decoder";
 exports.TEXT_DECODER_VERSION = "1.0.0";
 /** Decoder that reads a build manifest's declared name out of its body. */
 exports.MANIFEST_DECODER_ID = "manifest-identifier-reader";
-exports.MANIFEST_DECODER_VERSION = "1.0.0";
+// 1.1.0: a pom's identifier is the artifactId directly under <project>, and a
+// JSON manifest's evidence line is its top-level key's, not the first match.
+exports.MANIFEST_DECODER_VERSION = "1.1.0";
 /** Extensions the text decoder claims beyond the lexical-analysis set. */
 /** Extensionless files the text decoder claims by name. */
 const LEXICAL_EXTENSIONS = new Set(corpus_analysis_1.NEAR_DUPLICATE_EXTENSIONS);

@@ -12,7 +12,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { writeMultiRootCorpus } from "./helpers/multi_root_fixtures";
-import { treeSnapshot } from "./helpers/zip_fixtures";
+import { treeSnapshot, writeRawZip } from "./helpers/zip_fixtures";
 
 const REPO = path.resolve(__dirname, "..");
 const CLI = path.join(REPO, "scripts", "local-source-cli.js");
@@ -704,5 +704,37 @@ describe("an embedding run through the CLI", () => {
       const rendered = fs.readFileSync(path.join(generation(f), "corpus-coverage.json"), "utf8");
       for (const root of f.roots) expect(rendered).not.toContain(root);
     });
+  });
+});
+
+describe("an archive whose member root is a project", () => {
+  it("REG-WU-047-RC-073-e: publishes one project candidate holding the manifest, the CI definition and the source", () => {
+    // No top-level directory inside the archive: the manifest and the CI
+    // definition both sit at the member root, which is the archive itself.
+    const zips = tmp("l9-corpus-cli-archci-");
+    writeRawZip(path.join(zips, "proj.zip"), [
+      { name: "package.json", content: '{\n  "name": "zipped-proj"\n}\n' },
+      { name: ".github/workflows/ci.yml", content: "name: ci\non: [push]\n" },
+      { name: "src/index.ts", content: "export const answer = 42;\n" },
+    ]);
+    const out = path.join(tmp("l9-corpus-cli-archci-out-"), "observation");
+    const result = run(["--root", `${zips}=zips`, "--out", out, "--no-cache"]);
+    expect(result.stderr).toBe("");
+    expect(result.status).toBe(0);
+
+    const current = JSON.parse(fs.readFileSync(path.join(out, "CURRENT.json"), "utf8"));
+    const dir = path.join(out, ...String(current.generation_ref).split("/"));
+    const payload = JSON.parse(fs.readFileSync(
+      path.join(dir, "corpus-intelligence", "payload", "project-candidates.json"), "utf8"));
+    const clusters: { candidate_type: string; member_artifact_ids: string[]; analysis_profile: { profile_id: string } }[] =
+      Array.isArray(payload) ? payload : payload.project_candidates ?? payload.items ?? payload.candidates;
+    const lexical = clusters.filter((cluster) => cluster.analysis_profile.profile_id === "container-project-candidate/v1");
+    expect(lexical).toHaveLength(1);
+    expect(lexical[0].member_artifact_ids).toHaveLength(3);
+
+    const candidates = JSON.parse(fs.readFileSync(path.join(dir, "corpus-candidates.json"), "utf8"));
+    expect(candidates.project_candidates).toHaveLength(1);
+    expect(candidates.project_candidates[0].project_key).toBe("project:zipped-proj");
+    expect(candidates.project_candidates[0].member_count).toBe(3);
   });
 });

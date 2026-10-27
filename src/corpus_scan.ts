@@ -223,7 +223,9 @@ export const TEXT_DECODER_VERSION = "1.0.0";
 
 /** Decoder that reads a build manifest's declared name out of its body. */
 export const MANIFEST_DECODER_ID = "manifest-identifier-reader";
-export const MANIFEST_DECODER_VERSION = "1.0.0";
+// 1.1.0: a pom's identifier is the artifactId directly under <project>, and a
+// JSON manifest's evidence line is its top-level key's, not the first match.
+export const MANIFEST_DECODER_VERSION = "1.1.0";
 
 /** Extensions the text decoder claims beyond the lexical-analysis set. */
 
