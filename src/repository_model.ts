@@ -1228,6 +1228,13 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
     });
   }
   for (const skipped of sortStrings(input.inventory.skippedDirs)) {
+    // Both producers (inventory and local-source acquisition) record an unreadable
+    // directory as `<repository-relative POSIX dir>: <errno code>`, so the entry is
+    // already machine-independent; it is only split here, never scrubbed.
+    const separator = skipped.lastIndexOf(": ");
+    const details: Record<string, CanonicalValue> = separator < 0
+      ? { directory: skipped }
+      : { directory: skipped.slice(0, separator), reason: skipped.slice(separator + 2) };
     diagnostics.push({
       code: "directory-unreadable",
       severity: "error",
@@ -1235,7 +1242,7 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
       stage: OBSERVATION_STAGE,
       category: "coverage",
       subject_id: repositoryId,
-      details: { directory: skipped },
+      details,
     });
   }
   if (input.inventory.omittedPaths.length > 0) {

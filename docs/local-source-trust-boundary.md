@@ -114,8 +114,12 @@ times, observation wall clock, usernames and hostnames never cross it.
 - **Hidden entries are observed.** Dotfiles and dot-directories under the source are
   ordinary entries; only `.git`, `node_modules`, this package's own generated
   artifacts, and omit patterns exclude anything. A host failure while staging a member
-  (permissions, a full disk) is thrown rather than reported as a property of the
-  archive, and the scratch root is disposed on the way out.
+  or an archive (permissions, a full disk) is thrown rather than reported as a property
+  of the archive, and the scratch root is disposed on the way out. An archive whose
+  bytes the snapshot could not read is not staged at all (its record carries
+  `content_hash_unavailable:<CODE>`); one that becomes unreadable between hashing and
+  staging makes the observation unstable. Recorded failures carry the errno code and
+  the repository-relative path, never the host's message or an absolute path.
 - **Member name encoding.** A member name stored without the UTF-8 flag is decoded as
   UTF-8 and flagged when that is lossy. Historical CP437 names are not transcoded.
 - **Time-of-check to time-of-use on the source root.** The archive is hashed and read

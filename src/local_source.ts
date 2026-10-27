@@ -511,6 +511,22 @@ function toPosix(value: string): string {
   return value.split(path.sep).join("/");
 }
 
+/** Token recorded when a failure carries no errno code of its own. */
+const UNKNOWN_ERROR_CODE = "UNKNOWN_ERROR";
+
+/**
+ * The machine-independent part of a filesystem failure: its errno code.
+ *
+ * Node's fs messages repeat the absolute (or scratch) path they failed on.
+ * Anything recorded into an observation — unknowns, skipped directories, holds,
+ * diagnostics — can reach semantic identity, so only the code is recorded; the
+ * repository-relative or virtual path is carried beside it in `sourcePath`.
+ */
+function portableErrorCode(error: unknown): string {
+  const code = (error as NodeJS.ErrnoException | null)?.code;
+  return typeof code === "string" && code.length > 0 ? code : UNKNOWN_ERROR_CODE;
+}
+
 /**
  * Enumerate a directory tree without following symlinks.
  *
@@ -530,7 +546,7 @@ function observeEntry(
     diagnostics.push({
       code: "local-source.entry_unreadable",
       severity: "warning",
-      message: `filesystem entry could not be inspected: ${(error as Error).message}`,
+      message: `filesystem entry could not be inspected (${portableErrorCode(error)})`,
       sourcePath: relativePath,
     });
     return null;
@@ -577,7 +593,7 @@ function enumerateDirectory(
     try {
       names = fs.readdirSync(directory);
     } catch (error) {
-      skippedDirs.push(`${toPosix(path.relative(root, directory)) || "."}: ${(error as Error).message}`);
+      skippedDirs.push(`${toPosix(path.relative(root, directory)) || "."}: ${portableErrorCode(error)}`);
       return;
     }
     for (const name of [...names].sort(compareCodePoints)) {
@@ -940,11 +956,35 @@ interface StagedArchive {
 }
 
 /**
+ * A failure reading the observed source file while staging it.
+ *
+ * Distinguished from a scratch-side failure because the two mean different
+ * things: the source could not be read a second time (the snapshot no longer
+ * describes it), versus this host could not write its own staging area. Neither
+ * is a property of the archive's format.
+ */
+class SourceReadError extends Error {
+  readonly code: string;
+  constructor(cause: unknown) {
+    const code = portableErrorCode(cause);
+    super(`archive source could not be read for staging (${code})`);
+    this.name = "SourceReadError";
+    this.code = code;
+  }
+}
+
+/**
  * Copy an archive into scratch and hash it in one streaming pass.
  *
  * One pass means the digest describes exactly the bytes preflight and extraction
  * will read, closing the window in which a source file replaced between hashing
  * and parsing would be reported under a digest that no longer matches it.
+ *
+ * Both descriptors are acquired inside the guarded block and each is closed when
+ * it was opened, so a target that cannot be created never leaks the source
+ * descriptor, and the partial staging file is removed on every failure. A read
+ * failure on an observed source file is raised as `SourceReadError`; every
+ * scratch-side failure (mkdir, open, write, rename) propagates unchanged.
  */
 function stageArchive(
   context: ArchiveContext,
@@ -952,18 +992,33 @@ function stageArchive(
   occurrence: number,
 ): StagedArchive {
   const stagedArchiveDir = path.join(context.scratch.root, "archives");
-  fs.mkdirSync(stagedArchiveDir, { recursive: true });
   const stagingTarget = path.join(stagedArchiveDir, `pending-${occurrence}.zip`);
+  // A top-level archive is read from the observed source; a nested one is read
+  // from a member this run staged, which is scratch and therefore host-side.
+  const readsObservedSource = task.parentArchiveHash === null;
+  const asSourceFailure = (error: unknown): unknown => (readsObservedSource ? new SourceReadError(error) : error);
 
   const hash = crypto.createHash("sha256");
-  const source = fs.openSync(task.physicalPath, "r");
-  const target = fs.openSync(stagingTarget, "w");
+  let source: number | null = null;
+  let target: number | null = null;
   let sizeBytes: number;
   try {
+    try {
+      source = fs.openSync(task.physicalPath, "r");
+    } catch (error) {
+      throw asSourceFailure(error);
+    }
+    fs.mkdirSync(stagedArchiveDir, { recursive: true });
+    target = fs.openSync(stagingTarget, "w");
     const buffer = Buffer.alloc(HASH_CHUNK_BYTES);
     let position = 0;
     for (;;) {
-      const count = fs.readSync(source, buffer, 0, buffer.length, position);
+      let count: number;
+      try {
+        count = fs.readSync(source, buffer, 0, buffer.length, position);
+      } catch (error) {
+        throw asSourceFailure(error);
+      }
       if (count === 0) break;
       if (position + count > context.policy.maxArchiveCompressedBytes) {
         throw new ZipBudgetExceededError(
@@ -976,11 +1031,15 @@ function stageArchive(
     }
     sizeBytes = position;
   } catch (error) {
+    if (target !== null) {
+      fs.closeSync(target);
+      target = null;
+    }
     fs.rmSync(stagingTarget, { force: true });
     throw error;
   } finally {
-    fs.closeSync(source);
-    fs.closeSync(target);
+    if (source !== null) fs.closeSync(source);
+    if (target !== null) fs.closeSync(target);
   }
 
   const archiveHash = sha256Prefixed(hash.digest("hex"));
@@ -990,9 +1049,14 @@ function stageArchive(
   return { stagedPath, archiveHash, sizeBytes };
 }
 
-/** Record an archive that could not even be staged or hashed. */
-function recordUnstageableArchive(context: ArchiveContext, task: ArchiveTask, error: unknown): void {
-  const message = error instanceof Error ? error.message : String(error);
+/**
+ * Record an archive the staging limit stopped before it could be hashed.
+ *
+ * Only a `ZipBudgetExceededError` reaches here: its message is a fact about the
+ * archive's size and carries no host path.
+ */
+function recordUnstageableArchive(context: ArchiveContext, task: ArchiveTask, error: ZipBudgetExceededError): void {
+  const message = error.message;
   context.archives.push({
     sourcePath: task.sourcePath,
     contentHash: "Unknown",
@@ -1097,9 +1161,12 @@ function preflightStaged(
       archiveCompressedBytes: staged.sizeBytes,
     });
   } catch (error) {
+    // Only what the archive's bytes caused is a format verdict. A host failure
+    // reading the staged copy is the host's, and is rethrown.
+    if (!(error instanceof ZipFormatError) && !(error instanceof ZipBudgetExceededError)) throw error;
     holdArchive(context, task, staged.archiveHash, staged.sizeBytes, [{
       code: "archive.format_unreadable",
-      message: `central directory could not be read: ${error instanceof Error ? error.message : String(error)}`,
+      message: `central directory could not be read: ${error.message}`,
     }]);
     return null;
   }
@@ -1138,8 +1205,27 @@ function acquireArchive(context: ArchiveContext, task: ArchiveTask, queue: Archi
   try {
     staged = stageArchive(context, task, occurrence);
   } catch (error) {
-    recordUnstageableArchive(context, task, error);
-    return;
+    // The staging limit is a property of the archive and becomes a hold.
+    if (error instanceof ZipBudgetExceededError) {
+      recordUnstageableArchive(context, task, error);
+      return;
+    }
+    // The snapshot read this file and staging could not read it again: the source
+    // moved under the observation. That is instability, not a format verdict.
+    if (error instanceof SourceReadError) {
+      const reason = `${task.sourcePath}: ${error.message}`;
+      context.sourceChanged.push(reason);
+      context.diagnostics.push({
+        code: "local-source.source_changed_during_observation",
+        severity: "error",
+        message: `SOURCE_CHANGED_DURING_OBSERVATION: ${reason}`,
+        sourcePath: task.sourcePath,
+      });
+      return;
+    }
+    // Everything else is a host failure on the scratch side; acquisition disposes
+    // the scratch root and propagates it.
+    throw error;
   }
 
   // The snapshot hashed this path and staging read it again. If the two reads
@@ -1280,13 +1366,13 @@ function hashStableFile(entry: EnumeratedEntry): { digest: string | null; reason
       before = fs.lstatSync(entry.absolutePath);
       beforeNs = highResolutionMtime(entry.absolutePath);
     } catch (error) {
-      return { digest: null, reason: (error as Error).message, changed: false };
+      return { digest: null, reason: portableErrorCode(error), changed: false };
     }
     let candidate: string;
     try {
       candidate = hashFileStreaming(entry.absolutePath).hash;
     } catch (error) {
-      return { digest: null, reason: (error as Error).message, changed: false };
+      return { digest: null, reason: portableErrorCode(error), changed: false };
     }
     const after = fs.lstatSync(entry.absolutePath);
     const matches = observedFileStateMatches(
@@ -1443,7 +1529,7 @@ function hashOneEntry(
     diagnostics.push({
       code: "local-source.file_unreadable",
       severity: "warning",
-      message: `file could not be hashed: ${attempt.reason}`,
+      message: `file could not be hashed (${attempt.reason})`,
       sourcePath: entry.relativePath,
     });
     return { hashed: { entry, contentHashHex: null, encoding: null, unknowns }, unstableReason: null };
@@ -1577,13 +1663,16 @@ function planArchiveTasks(hashed: HashedEntry[], diagnostics: LocalSourceDiagnos
   for (const { entry, contentHashHex } of hashed) {
     if (entry.kind !== "file") continue;
     if (isZipPath(entry.relativePath)) {
+      // An archive whose bytes the snapshot could not hash is not staged: its
+      // record already carries why, and no digest exists to hold staging to.
+      if (contentHashHex === null) continue;
       queue.push({
         physicalPath: entry.absolutePath,
         sourcePath: entry.relativePath,
         depth: 0,
         parentArchiveHash: null,
         parentArchivePath: null,
-        expectedArchiveHash: contentHashHex === null ? null : sha256Prefixed(contentHashHex),
+        expectedArchiveHash: sha256Prefixed(contentHashHex),
       });
       continue;
     }

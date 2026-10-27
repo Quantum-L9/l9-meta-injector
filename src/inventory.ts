@@ -270,19 +270,43 @@ function serializeYaml(rec: Record<string, unknown>): string {
 /** What a directory entry is, decided without following anything. */
 export type InventoryEntryKind = "file" | "directory" | "symlink" | "special";
 
+/** Token recorded when a failure carries no errno code of its own. */
+const UNKNOWN_ERROR_CODE = "UNKNOWN_ERROR";
+
+/**
+ * The machine-independent part of a filesystem failure: its errno code.
+ *
+ * A Node fs error message repeats the absolute path it failed on, so recording
+ * the message would make an inventory (and every packet built from it) depend on
+ * where the tree happens to be checked out. The code is the portable reason; the
+ * repository-relative path is carried beside it by the caller.
+ */
+function portableErrorCode(err: unknown): string {
+  const code = (err as NodeJS.ErrnoException | null)?.code;
+  return typeof code === "string" && code.length > 0 ? code : UNKNOWN_ERROR_CODE;
+}
+
 function walk(
   root: string,
   omit: OmitMatcher,
   skippedDirs: string[],
   omittedPaths: string[],
+  skippedDetails: string[],
 ): Array<{ abs: string; isDir: boolean; kind: InventoryEntryKind }> {
   const out: Array<{ abs: string; isDir: boolean; kind: InventoryEntryKind }> = [];
   function rec(dir: string) {
     let entries: fs.Dirent[];
     // An unreadable directory must not silently drop its whole subtree from the
     // inventory (finding OBS-007): record it so the coverage gap is observable.
+    // The recorded entry is `<repository-relative POSIX dir, or .>: <errno code>`;
+    // the host message (absolute path included) is kept only for the operator.
     try { entries = fs.readdirSync(dir, { withFileTypes: true }); }
-    catch (err) { skippedDirs.push(`${dir}: ${(err as Error).message}`); return; }
+    catch (err) {
+      const relativeDir = path.relative(root, dir).split(path.sep).join("/") || ".";
+      skippedDirs.push(`${relativeDir}: ${portableErrorCode(err)}`);
+      skippedDetails.push(`${relativeDir}: ${(err as Error).message}`);
+      return;
+    }
     // Code-point order: `readdir` order is whatever the filesystem returns, and
     // the manifests are written in record order, so an unsorted walk made the
     // same tree inventory differently on two hosts.
@@ -431,7 +455,7 @@ export function buildRecord(
         : hashRegularFile(abs, fileName, size, cfg.hashMaxBytes, unknowns);
     }
   } catch (err) {
-    unknowns.push(`stat_failed:${(err as Error).message}`);
+    unknowns.push(`stat_failed:${portableErrorCode(err)}`);
   }
   noteClockSkew(unknowns, created, modified, cfg.now);
   const parent = path.dirname(relative);
@@ -503,8 +527,9 @@ export function inventoryTree(config: InventoryConfig): InventoryResult {
   });
 
   const skippedDirs: string[] = [];
+  const skippedDetails: string[] = [];
   const omittedPaths: string[] = [];
-  const entries = walk(root, omit, skippedDirs, omittedPaths);
+  const entries = walk(root, omit, skippedDirs, omittedPaths, skippedDetails);
   const records: InventoryRecord[] = [];
   const typeDistribution: Record<string, number> = {};
   let files = 0, folders = 0;
@@ -599,7 +624,7 @@ export function inventoryTree(config: InventoryConfig): InventoryResult {
   }
 
   if (skippedDirs.length) {
-    process.stderr.write(`[l9-meta-injector] inventory: ${skippedDirs.length} unreadable director(ies) skipped:\n${skippedDirs.map((d) => `  - ${d}`).join("\n")}\n`);
+    process.stderr.write(`[l9-meta-injector] inventory: ${skippedDirs.length} unreadable director(ies) skipped:\n${skippedDetails.map((d) => `  - ${d}`).join("\n")}\n`);
   }
   const duplicates = buildDuplicateClusters(records);
   const manifestPaths = writeManifests(config.outDir, root, records, typeDistribution, duplicates, cfg.now, cfg.dryRun);
