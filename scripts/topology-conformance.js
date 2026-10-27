@@ -109,10 +109,12 @@ function sha256(file) {
  * a cache directory, an adapter that persists something on load. Any of those is
  * a mutation of somebody else's repository performed by this one.
  *
- * `.git` is excluded — its object store and index legitimately change when git
- * itself is asked for a revision — and so is `__pycache__`, which the
- * interpreter creates for its own reasons and which the guard below removes
- * before comparing. Everything else must be byte-identical.
+ * Only `.git` is excluded — its object store and index legitimately change when
+ * git itself is asked for a revision. `__pycache__` entries are digested like
+ * everything else: a cache that existed before the run must still be there,
+ * byte-identical, and a run-created entry of that name that is not a cache
+ * directory the guard below removed is a reported mutation. Everything else must
+ * be byte-identical.
  */
 function checkoutDigest(root) {
   const crypto = require("node:crypto");
@@ -125,7 +127,7 @@ function checkoutDigest(root) {
       return;
     }
     for (const entry of listing.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
-      if (entry.name === ".git" || entry.name === "__pycache__") continue;
+      if (entry.name === ".git") continue;
       const absolute = path.join(directory, entry.name);
       const relative = path.relative(root, absolute).split(path.sep).join("/");
       let stats;
@@ -168,8 +170,21 @@ function mutatedCheckoutPaths(before, after) {
   return [...keys].filter((key) => before[key] !== after[key]).sort(compareCodeUnits);
 }
 
-/** Remove the bytecode caches the interpreter writes for its own reasons. */
-function dropPycache(root) {
+/**
+ * Remove the bytecode cache directories this run created, and only those.
+ *
+ * Provenance, not the name, decides: a `__pycache__` directory recorded in the
+ * `before` snapshot (the entries of `checkoutDigest` taken before the run) is the
+ * consumer's own content and is never touched, wherever it lives (an in-checkout
+ * virtualenv included). Without that snapshot nothing is removed.
+ *
+ * @param {string} root
+ * @param {Record<string, string>} before
+ */
+function dropPycache(root, before) {
+  if (before === null || typeof before !== "object") {
+    throw new Error("dropPycache requires the checkout entries recorded before the run");
+  }
   const walk = (directory) => {
     let listing;
     try {
@@ -182,7 +197,10 @@ function dropPycache(root) {
       const absolute = path.join(directory, entry.name);
       if (entry.name === ".git") continue;
       if (entry.name === "__pycache__") {
-        fs.rmSync(absolute, { recursive: true, force: true });
+        const relative = path.relative(root, absolute).split(path.sep).join("/");
+        if (!Object.prototype.hasOwnProperty.call(before, `${relative}/`)) {
+          fs.rmSync(absolute, { recursive: true, force: true });
+        }
         continue;
       }
       walk(absolute);
@@ -219,10 +237,12 @@ function main() {
     if (!fs.existsSync(bundleRoot)) fail(`golden bundle missing: ${bundleRoot}`);
     const packet = JSON.parse(fs.readFileSync(path.join(bundleRoot, "packet.json"), "utf8"));
 
+    // Bytecode writes are suppressed outright, so the consumer checkout (and any
+    // cache it already holds) is not rewritten by importing it.
     const probe = cp.spawnSync(python, [scriptFile, bundleRoot], {
       cwd: checkout,
       encoding: "utf8",
-      env: { ...process.env, PYTHONPATH: sourceRoot },
+      env: { ...process.env, PYTHONPATH: sourceRoot, PYTHONDONTWRITEBYTECODE: "1" },
     });
     if (probe.status !== 0) {
       process.stderr.write(probe.stdout || "");
@@ -252,10 +272,11 @@ function main() {
   }
   fs.rmSync(scratch, { recursive: true, force: true });
 
-  // The consumer's tree, after. Bytecode caches the interpreter wrote are the
-  // one permitted difference and are removed rather than tolerated, so what
+  // The consumer's tree, after. Bytecode cache directories the interpreter
+  // created despite the suppression above are the one permitted difference and
+  // are removed rather than tolerated; pre-existing caches are left alone. What
   // remains is a mutation this harness caused.
-  dropPycache(checkout);
+  dropPycache(checkout, checkoutBefore.entries);
   const checkoutAfter = checkoutDigest(checkout);
   const mutated = mutatedCheckoutPaths(checkoutBefore.entries, checkoutAfter.entries);
   // Deliberately not recorded in `docs/topology-conformance.json`. The digests

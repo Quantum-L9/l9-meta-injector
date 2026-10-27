@@ -106,7 +106,17 @@ const LEGACY_MARKERS = [
     { value: "L9_META", rule: "legacy-marker-l9-meta" },
     { value: "l9:meta:start", rule: "canonical-block-marker" },
 ];
-const WRITE_SIGNAL = /(?:writeFileSync|writeFile\s*\(|write_text\s*\(|write_bytes\s*\(|fs\.write|yaml\.safe_dump|json\.dump|open\s*\([^)]*["']w|>\s*["']?[^\n]*meta)/i;
+/**
+ * Write signals, evaluated in linear time (RC-029). The literal primitives are a regex
+ * whose every alternative starts with a fixed word, so a global scan is linear. The two
+ * open-ended signals are not regexes: a redirect is "a `>` before a later `meta` on the
+ * same line" and an `open(` is "a quote-`w` before the next `)`", both found with
+ * forward pointers instead of an unanchored greedy pattern rescanned from every start.
+ */
+const LITERAL_WRITE_SIGNAL = /writeFileSync|writeFile\s*\(|write_text\s*\(|write_bytes\s*\(|fs\.write|yaml\.safe_dump|json\.dump/gi;
+const OPEN_CALL = /open\s*\(/gi;
+const QUOTE_W = /["'][wW]/g;
+const META_WORD = /meta/i;
 const WRITER_INVOCATION = /(?:^|[\s"'`])(?:python(?:3)?\s+|node\s+|bash\s+|sh\s+)?(?:\.\/)?[^\s"'`]*(?:inject|verify)[-_]?l9[-_]?meta[^\s"'`]*/im;
 const CANONICAL_INVOCATION = /Quantum-L9\/l9-meta-injector@[0-9a-f]{40}|(?:^|[\s"'`])l9-meta-injector(?:[\s"'`/:]|$)/im;
 /**
@@ -312,22 +322,71 @@ function legacyMarkerEvidence(relative, content) {
     }
     return found;
 }
-function lineAt(content, index) {
-    const start = content.lastIndexOf("\n", index) + 1;
-    const endAt = content.indexOf("\n", index);
-    return content.slice(start, endAt === -1 ? content.length : endAt);
+/** Start offset of every line, so a position maps to its line without rescanning. */
+function lineStarts(content) {
+    const starts = [0];
+    for (let index = content.indexOf("\n"); index !== -1; index = content.indexOf("\n", index + 1))
+        starts.push(index + 1);
+    return starts;
 }
-/** Every write-signal position in the surface, so each can be judged in its own context. */
-function writeSignalIndexes(content) {
-    const scanner = new RegExp(WRITE_SIGNAL.source, "gi");
-    const found = [];
-    let match;
-    while ((match = scanner.exec(content)) !== null) {
-        found.push(match.index);
-        if (scanner.lastIndex === match.index)
-            scanner.lastIndex += 1;
+function lineText(content, starts, line) {
+    const end = line + 1 < starts.length ? starts[line + 1] - 1 : content.length;
+    return content.slice(starts[line], end);
+}
+/** Next match of a global regex at or after `from`, or -1. */
+function nextMatch(pattern, content, from) {
+    pattern.lastIndex = from;
+    const match = pattern.exec(content);
+    return match ? match.index : -1;
+}
+/**
+ * The first write-signal position on each line that carries one, in line order.
+ *
+ * Every pass is a single forward walk over the content, so the cost is O(file bytes)
+ * whatever the input (RC-029). The reported position is on the same line as before the
+ * rewrite, so evidence line numbers do not move. A multi-line `open(\n path,\n "w")` is
+ * still a signal on its `open(` line; a `>` whose `meta` sits on a later line is not,
+ * since only the `>` line's own metadata token could ever have qualified it.
+ */
+function writeSignalLines(content, starts) {
+    const firstOnLine = new Map();
+    const positions = [];
+    const literal = new RegExp(LITERAL_WRITE_SIGNAL.source, "gi");
+    for (let match = literal.exec(content); match !== null; match = literal.exec(content)) {
+        positions.push(match.index);
+        if (literal.lastIndex === match.index)
+            literal.lastIndex += 1;
     }
-    return found;
+    const opener = new RegExp(OPEN_CALL.source, "gi");
+    const quoteW = new RegExp(QUOTE_W.source, "g");
+    let nextQuoteW = -2;
+    let nextClose = -2;
+    for (let match = opener.exec(content); match !== null; match = opener.exec(content)) {
+        const after = match.index + match[0].length;
+        // Both pointers only ever move forward, so all `open(` occurrences together scan
+        // the content once.
+        if (nextQuoteW !== -1 && nextQuoteW < after)
+            nextQuoteW = nextMatch(quoteW, content, after);
+        if (nextClose !== -1 && nextClose < after)
+            nextClose = content.indexOf(")", after);
+        if (nextQuoteW !== -1 && (nextClose === -1 || nextQuoteW < nextClose))
+            positions.push(match.index);
+    }
+    for (let line = 0; line < starts.length; line++) {
+        const text = lineText(content, starts, line);
+        const redirect = text.indexOf(">");
+        if (redirect !== -1 && META_WORD.test(text.slice(redirect + 1)))
+            positions.push(starts[line] + redirect);
+    }
+    positions.sort((a, b) => a - b);
+    let line = 0;
+    for (const position of positions) {
+        while (line + 1 < starts.length && starts[line + 1] <= position)
+            line += 1;
+        if (!firstOnLine.has(line))
+            firstOnLine.set(line, position);
+    }
+    return firstOnLine;
 }
 /**
  * Locate a write that is specifically an L9 *metadata* write.
@@ -335,41 +394,58 @@ function writeSignalIndexes(content) {
  * Qualifying evidence is either a write on a line that also names the L9 metadata surface,
  * or — for a file whose own name claims to inject/verify/generate/sync L9 metadata — any
  * write at all. A generic write with an unrelated L9 marker elsewhere in the file does not
- * qualify, which is exactly the historical-marker false positive this repairs.
+ * qualify, which is exactly the historical-marker false positive this repairs. Each line
+ * carrying a signal is judged once.
  */
-function findMetadataWriteIndex(relative, content) {
-    const indexes = writeSignalIndexes(content);
-    if (indexes.length === 0)
+function findMetadataWriteIndex(relative, content, starts) {
+    const signals = writeSignalLines(content, starts);
+    if (signals.size === 0)
         return null;
-    for (const index of indexes) {
-        const line = lineAt(content, index);
+    for (const [line, index] of signals) {
+        const text = lineText(content, starts, line);
         // `l9-meta-injector` itself contains an L9 metadata token. A line that invokes the
         // canonical writer and redirects its output is this package doing its job, not a
         // competitor, and must never be reported as one.
-        if (CANONICAL_INVOCATION.test(line))
+        if (CANONICAL_INVOCATION.test(text))
             continue;
-        if (L9_METADATA_TOKEN.test(line))
+        if (L9_METADATA_TOKEN.test(text))
             return index;
     }
     const basename = path.posix.basename(relative);
     if (SUSPICIOUS_NAME.test(basename) && L9_METADATA_FILENAME.test(basename))
-        return indexes[0];
+        return signals.values().next().value ?? null;
+    return null;
+}
+/**
+ * The first competing-writer invocation that is not on a canonical line (RC-028).
+ *
+ * Every line is considered, so a canonical `l9-meta-injector` line that merely names a
+ * legacy script exempts only itself and never masks a live invocation further down.
+ */
+function findWriterInvocationIndex(content, starts) {
+    for (let line = 0; line < starts.length; line++) {
+        const text = lineText(content, starts, line);
+        const match = WRITER_INVOCATION.exec(text);
+        // A canonical `l9-meta-injector` reference on the same line is this package, not a
+        // competitor, so it must never be reported as a competing invocation.
+        if (match && !CANONICAL_INVOCATION.test(text))
+            return starts[line] + match.index;
+    }
     return null;
 }
 /** Collect every authority-relevant evidence item from one scanned control surface. */
 function collectSurfaceEvidence(relative, content) {
     const found = [];
+    const starts = lineStarts(content);
     const canonicalMatch = CANONICAL_INVOCATION.exec(content);
     if (canonicalMatch?.index !== undefined) {
         found.push(evidence(relative, "canonical_invocation", "canonical-l9-meta-injector-invocation", content, canonicalMatch.index));
     }
-    const invocationMatch = WRITER_INVOCATION.exec(content);
-    // A canonical `l9-meta-injector` reference on the same line is this package, not a
-    // competitor, so it must never be reported as a competing invocation.
-    if (invocationMatch?.index !== undefined && !CANONICAL_INVOCATION.test(lineAt(content, invocationMatch.index))) {
-        found.push(evidence(relative, "writer_invocation", "legacy-writer-invocation", content, invocationMatch.index));
+    const invocationIndex = findWriterInvocationIndex(content, starts);
+    if (invocationIndex !== null) {
+        found.push(evidence(relative, "writer_invocation", "legacy-writer-invocation", content, invocationIndex));
     }
-    const metadataWriteIndex = findMetadataWriteIndex(relative, content);
+    const metadataWriteIndex = findMetadataWriteIndex(relative, content, starts);
     if (metadataWriteIndex !== null) {
         found.push(evidence(relative, "writer_script", "l9-metadata-write-signal", content, metadataWriteIndex));
     }

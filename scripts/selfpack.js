@@ -7,11 +7,13 @@
  * distills a DETERMINISTIC summary (volatile fields like timestamps and content
  * hashes excluded) and diffs it against a committed baseline.
  *
- *   npm run selfpack            # verify current output matches fixtures/selfpack.baseline.json
- *   npm run selfpack -- --update  (or SELFPACK_UPDATE=1)  # re-baseline after an intended change
+ *   npm run selfpack            # verify current output matches scripts/selfpack.baseline.json
+ *   npm run selfpack:update     # (or --update / SELFPACK_UPDATE=1) re-baseline after an intended change
  *
  * Exit code 0 = matches baseline; 1 = drift (prints a readable diff); 2 = hard failure
- * (missing index output / pipeline error). CI runs this as a smoke step.
+ * (missing committed baseline / missing index output / pipeline error). A missing
+ * baseline is never recreated from the output under test unless an update is
+ * explicitly requested, so the gate cannot pass vacuously. CI runs this as a smoke step.
  */
 "use strict";
 const fs = require("node:fs");
@@ -148,11 +150,15 @@ async function main() {
 
   const rendered = JSON.stringify(summary, null, 2) + "\n";
 
-  if (UPDATE || !fs.existsSync(BASELINE)) {
+  const baselineExists = fs.existsSync(BASELINE);
+  if (UPDATE) {
     fs.writeFileSync(BASELINE, rendered, "utf8");
-    console.log(`selfpack: baseline ${UPDATE ? "updated" : "created"} → ${rel(REPO, BASELINE)}`);
+    console.log(`selfpack: baseline ${baselineExists ? "updated" : "created"} → ${rel(REPO, BASELINE)}`);
     printHighlights(summary);
     return;
+  }
+  if (!baselineExists) {
+    fail(`missing committed baseline ${rel(REPO, BASELINE)}; create it deliberately with: npm run selfpack:update`);
   }
 
   const baseline = fs.readFileSync(BASELINE, "utf8");
@@ -162,9 +168,9 @@ async function main() {
     return;
   }
 
-  console.error("selfpack: DRIFT — output differs from baseline (fixtures/selfpack.baseline.json).");
+  console.error(`selfpack: DRIFT — output differs from baseline (${rel(REPO, BASELINE)}).`);
   printLineDiff(baseline, rendered);
-  console.error('\nIf this change is intended/an improvement, re-baseline with:  npm run selfpack -- --update');
+  console.error('\nIf this change is intended/an improvement, re-baseline with:  npm run selfpack:update');
   process.exit(1);
 }
 

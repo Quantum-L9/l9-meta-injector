@@ -27,11 +27,15 @@ function gitBinary(onMissing) {
   if (cached !== null) return cached;
   const names = process.platform === "win32" ? ["git.exe", "git.cmd"] : ["git"];
   for (const dir of (process.env.PATH || "").split(path.delimiter).filter(Boolean)) {
+    // A relative entry ('.', 'bin') resolves against the cwd of whichever process
+    // later spawns the result, which is the PATH hijack this module exists to remove.
+    if (!path.isAbsolute(dir)) continue;
     for (const name of names) {
       const candidate = path.join(dir, name);
       try {
         if (!fs.statSync(candidate).isFile()) continue;
         fs.accessSync(candidate, fs.constants.X_OK);
+        if (!path.isAbsolute(candidate)) continue;
         cached = candidate;
         return cached;
       } catch {

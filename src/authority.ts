@@ -25,6 +25,7 @@ import {
   type HeaderIdentityResolution,
   type SemanticFoundationBinding,
 } from "./operation_contracts";
+import { compareCodePoints } from "./ordering";
 
 export const META_AUTHORITY_RELATIVE_PATH = ".l9/meta-authority.yaml" as const;
 
@@ -323,6 +324,80 @@ function conflict(code: AuthorityConflictCode, message: string, filePath: string
   return { code, message, path: filePath, evidence };
 }
 
+/**
+ * Check every path component from the repository root down to the authority document
+ * without following links (RC-031). The document is read only when no component below
+ * the root is a symbolic link (dangling or not), every intermediate is a real directory,
+ * the leaf is a regular file, and its realpath lies inside realpath(root). Only ENOENT
+ * on a component means the document is missing; every other failure is a configuration
+ * error. The root itself may be reached through a link.
+ */
+function authorityPathConflict(repositoryRoot: string, authorityPath: string, relative: string): AuthorityConflict | null {
+  // The root is not an authority path component: a root that is absent or is not a
+  // directory simply holds no authority document, exactly as before.
+  try {
+    if (!fs.statSync(repositoryRoot).isDirectory()) {
+      return conflict("META_AUTHORITY_FILE_MISSING", `missing ${META_AUTHORITY_RELATIVE_PATH}`, authorityPath);
+    }
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ENOTDIR") {
+      return conflict("META_AUTHORITY_FILE_MISSING", `missing ${META_AUTHORITY_RELATIVE_PATH}`, authorityPath);
+    }
+    return conflict(
+      "META_AUTHORITY_CONFIG_INVALID",
+      `unable to inspect repository root: ${error instanceof Error ? error.message : String(error)}`,
+      authorityPath,
+    );
+  }
+  const segments = relative.split(path.sep);
+  let cursor = repositoryRoot;
+  for (const [index, segment] of segments.entries()) {
+    cursor = path.join(cursor, segment);
+    const component = path.relative(repositoryRoot, cursor).split(path.sep).join("/") || ".";
+    const leaf = index === segments.length - 1;
+    let stat: fs.Stats;
+    try {
+      stat = fs.lstatSync(cursor);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        return conflict("META_AUTHORITY_FILE_MISSING", `missing ${META_AUTHORITY_RELATIVE_PATH}`, authorityPath);
+      }
+      return conflict(
+        "META_AUTHORITY_CONFIG_INVALID",
+        `unable to inspect authority path component ${component}: ${error instanceof Error ? error.message : String(error)}`,
+        authorityPath,
+      );
+    }
+    if (stat.isSymbolicLink()) {
+      return conflict(
+        "META_AUTHORITY_CONFIG_INVALID",
+        leaf ? "authority file must not be a symbolic link" : `authority path component must not be a symbolic link: ${component}`,
+        authorityPath,
+      );
+    }
+    if (!leaf && !stat.isDirectory()) {
+      return conflict("META_AUTHORITY_CONFIG_INVALID", `authority path component is not a directory: ${component}`, authorityPath);
+    }
+    if (leaf && !stat.isFile()) {
+      return conflict("META_AUTHORITY_CONFIG_INVALID", "authority path is not a regular file", authorityPath);
+    }
+  }
+  try {
+    const contained = path.relative(fs.realpathSync(repositoryRoot), fs.realpathSync(authorityPath));
+    if (!contained || contained.startsWith("..") || path.isAbsolute(contained)) {
+      return conflict("META_AUTHORITY_CONFIG_INVALID", "authority path escapes repository root", authorityPath);
+    }
+  } catch (error) {
+    return conflict(
+      "META_AUTHORITY_CONFIG_INVALID",
+      `unable to resolve authority path: ${error instanceof Error ? error.message : String(error)}`,
+      authorityPath,
+    );
+  }
+  return null;
+}
+
 export function loadRepositoryAuthority(root: string, options: AuthorityLoadOptions = {}): AuthorityLoadResult {
   const repositoryRoot = path.resolve(root);
   const authorityPath = path.resolve(repositoryRoot, options.authorityPath ?? META_AUTHORITY_RELATIVE_PATH);
@@ -333,27 +408,10 @@ export function loadRepositoryAuthority(root: string, options: AuthorityLoadOpti
       conflicts: [conflict("META_AUTHORITY_CONFIG_INVALID", "authority path escapes repository root", authorityPath)],
     };
   }
-  if (!fs.existsSync(authorityPath)) {
-    return {
-      path: authorityPath,
-      conflicts: [conflict("META_AUTHORITY_FILE_MISSING", `missing ${META_AUTHORITY_RELATIVE_PATH}`, authorityPath)],
-    };
-  }
+  const pathConflict = authorityPathConflict(repositoryRoot, authorityPath, relative);
+  if (pathConflict) return { path: authorityPath, conflicts: [pathConflict] };
 
   try {
-    const stat = fs.lstatSync(authorityPath);
-    if (stat.isSymbolicLink()) {
-      return {
-        path: authorityPath,
-        conflicts: [conflict("META_AUTHORITY_CONFIG_INVALID", "authority file must not be a symbolic link", authorityPath)],
-      };
-    }
-    if (!stat.isFile()) {
-      return {
-        path: authorityPath,
-        conflicts: [conflict("META_AUTHORITY_CONFIG_INVALID", "authority path is not a regular file", authorityPath)],
-      };
-    }
     const authority = parseAuthorityYaml(fs.readFileSync(authorityPath, "utf8"));
     const expected = options.expectedWriter;
     const mismatches: string[] = [];
@@ -496,7 +554,9 @@ export function verifySemanticFoundation(
       semanticsDir,
     )];
   }
-  const byId = new Map<string, { path: string; digest: string }>();
+  // Every claimant is kept: a cited id claimed by more than one file does not identify
+  // one ledger, so it is refused rather than resolved by file order (RC-036).
+  const byId = new Map<string, Array<{ path: string; digest: string }>>();
   for (const name of fs.readdirSync(semanticsDir).sort()) {
     if (!name.endsWith(".yaml")) continue;
     const filePath = path.join(semanticsDir, name);
@@ -508,12 +568,25 @@ export function verifySemanticFoundation(
       const match = ARTIFACT_ID_LINE.exec(line);
       if (!match) continue;
       const digest = `sha256:${crypto.createHash("sha256").update(bytes).digest("hex")}`;
-      byId.set(match[1], { path: filePath, digest });
+      const claimants = byId.get(match[1]) ?? [];
+      claimants.push({ path: filePath, digest });
+      byId.set(match[1], claimants);
       break;
     }
   }
   for (const [id, expected] of Object.entries(binding.ledgers)) {
-    const found = byId.get(id);
+    const claimants = byId.get(id) ?? [];
+    if (claimants.length > 1) {
+      const paths = claimants.map((item) => item.path).sort(compareCodePoints);
+      conflicts.push(conflict(
+        "META_SEMANTIC_BINDING_INVALID",
+        `cited ledger ${id} is claimed by more than one file under ${semanticsDir}`,
+        semanticsDir,
+        paths,
+      ));
+      continue;
+    }
+    const found = claimants[0];
     if (!found) {
       conflicts.push(conflict(
         "META_SEMANTIC_BINDING_INVALID",
