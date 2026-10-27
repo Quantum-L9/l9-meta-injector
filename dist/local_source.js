@@ -73,6 +73,7 @@ const os = __importStar(require("node:os"));
 const path = __importStar(require("node:path"));
 const inventory_1 = require("./inventory");
 const ordering_1 = require("./ordering");
+const corpus_roots_1 = require("./corpus_roots");
 const encoding_1 = require("./encoding");
 const omit_1 = require("./omit");
 const archive_preflight_1 = require("./archive_preflight");
@@ -153,7 +154,9 @@ function assertScratchOutsideSource(scratchParent, absoluteSource, sourceKind) {
     // the tree the observation promises not to write into.
     const boundary = sourceKind === "directory" ? realSource : path.dirname(realSource);
     const realParent = realPathOrNearest(scratchParent);
-    if (realParent === boundary || realParent.startsWith(boundary + path.sep)) {
+    // isInsideContainer, not `boundary + path.sep`: a file source directly under
+    // `/` has boundary `/`, and `//` is a prefix no path has (RC-058).
+    if ((0, corpus_roots_1.isInsideContainer)(boundary, realParent)) {
         throw new Error("scratch parent resolves inside the observed source and would write into a read-only tree: "
             + `${scratchParent} resolves to ${realParent}, inside ${boundary}`);
     }

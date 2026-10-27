@@ -35,6 +35,7 @@ import {
   classifyInventory,
 } from "./inventory";
 import { compareCodePoints } from "./ordering";
+import { isInsideContainer } from "./corpus_roots";
 import { EncodingProbe, probeFileEncoding } from "./encoding";
 import { OmitMatcher, buildOmitMatcher } from "./omit";
 import {
@@ -331,7 +332,9 @@ function assertScratchOutsideSource(scratchParent: string, absoluteSource: strin
   // the tree the observation promises not to write into.
   const boundary = sourceKind === "directory" ? realSource : path.dirname(realSource);
   const realParent = realPathOrNearest(scratchParent);
-  if (realParent === boundary || realParent.startsWith(boundary + path.sep)) {
+  // isInsideContainer, not `boundary + path.sep`: a file source directly under
+  // `/` has boundary `/`, and `//` is a prefix no path has (RC-058).
+  if (isInsideContainer(boundary, realParent)) {
     throw new Error(
       "scratch parent resolves inside the observed source and would write into a read-only tree: "
       + `${scratchParent} resolves to ${realParent}, inside ${boundary}`,
