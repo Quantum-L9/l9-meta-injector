@@ -597,3 +597,146 @@ describe("WU-061 OOXML relationships, bounded decompression, implied cell refere
     expect(cellAt(outcome, "seven")).toMatchObject({ cell_or_range: "C7" });
   });
 });
+
+// ───────────────────────────── WU-062 ─────────────────────────────
+
+function page(source: string) {
+  return decoded(decode(html(source)));
+}
+
+function blockAt(document: ReturnType<typeof page>, text: string) {
+  return document.blocks.find((block) => block.text === text);
+}
+
+describe("WU-062 HTML raw text, block model and named references", () => {
+  it("REG-WU-062-RC-120-a: a '<' inside a script does not swallow the page after it", () => {
+    const document = page(
+      "<script>for (var i=0;i<n;i++){go(i);}</script><h1>Q3 Plan</h1><p>Status: blocked on legal</p>",
+    );
+    expect(blockAt(document, "Q3 Plan")?.kind).toBe("title");
+    expect(blockAt(document, "Status: blocked on legal")?.kind).toBe("paragraph");
+    const serialized = JSON.stringify(document);
+    expect(serialized).not.toContain("go(i)");
+    expect(serialized).not.toContain("i++");
+  });
+
+  it("REG-WU-062-RC-120-b: a '<' inside a stylesheet does not swallow the page after it", () => {
+    const document = page('<style>a[x="<"]{}</style><p>Kept</p>');
+    expect(blockAt(document, "Kept")).toBeDefined();
+    expect(JSON.stringify(document)).not.toContain("a[x");
+  });
+
+  it("REG-WU-062-RC-120-c: an end tag inside a script string does not corrupt node paths", () => {
+    const document = page('<html><body><div><script>var s="</div>";</script><p>Kept</p></div></body></html>');
+    expect(blockAt(document, "Kept")?.locator).toMatchObject({ kind: "html_node", node_path: "html/body/div/p" });
+  });
+
+  it("REG-WU-062-RC-120-d: the raw-text end tag is matched case-insensitively, with trailing space", () => {
+    const document = page("<SCRIPT>if(a<b){}</SCRIPT ><p>Kept</p>");
+    expect(blockAt(document, "Kept")).toBeDefined();
+    expect(JSON.stringify(document)).not.toContain("if(a");
+  });
+
+  it("REG-WU-062-RC-120-e: a '<' inside the title is title text", () => {
+    const document = page("<title>a < b</title><p>x</p>");
+    expect(document.metadata.title).toBe("a < b");
+    expect(blockAt(document, "x")?.locator).toMatchObject({ kind: "html_node", node_path: "p" });
+  });
+
+  it("REG-WU-062-RC-120-f: an unterminated script is diagnosed rather than silently emptying the page", () => {
+    const outcome = decode(html("<script>var a=1;<p>never</p>"));
+    const document = decoded(outcome);
+    expect(blockAt(document, "never")).toBeUndefined();
+    const warning = document.diagnostics.find((diagnostic) => diagnostic.severity === "warning");
+    expect(warning?.message).toContain("script");
+    expect(warning?.message).toContain("never closed");
+  });
+
+  it("REG-WU-062-RC-120-g: a page whose script and style hold no '<' decodes as it did", () => {
+    const document = page(
+      "<html><head><title>T</title><style>body { color: red; }</style></head>"
+      + "<body><p>Prose</p><script>document.title = 'never run';</script></body></html>",
+    );
+    expect(document.blocks.map((block) => block.text)).toEqual(["T", "Prose"]);
+    expect(JSON.stringify(document)).not.toContain("never run");
+  });
+
+  it("REG-WU-062-RC-120-h: raw-text scanning stays linear", () => {
+    const started = Date.now();
+    const long = tokenizeHtml(`<script>${"x".repeat(1_000_000)}`);
+    expect(long.length).toBeLessThanOrEqual(2);
+    const many = tokenizeHtml("<script>".repeat(100_000));
+    expect(many.length).toBeLessThanOrEqual(2);
+    const closed = tokenizeHtml("<script>a<b</script>".repeat(100_000));
+    expect(closed.length).toBe(300_000);
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+
+  it("REG-WU-062-RC-121-a: text directly inside a div is a paragraph", () => {
+    const document = page("<body><div>Status: blocked on legal</div><div>Owner: Mel</div></body>");
+    expect(blockAt(document, "Status: blocked on legal")).toMatchObject({
+      kind: "paragraph",
+      locator: { kind: "html_node", node_path: "body/div" },
+    });
+    expect(blockAt(document, "Owner: Mel")).toMatchObject({
+      kind: "paragraph",
+      locator: { kind: "html_node", node_path: "body/div" },
+    });
+  });
+
+  it("REG-WU-062-RC-121-b: bare body text around a block is kept, in order", () => {
+    const document = page("<body>Bare text<p>Para</p>Tail text</body>");
+    expect(document.blocks.map((block) => block.text)).toEqual(["Bare text", "Para", "Tail text"]);
+  });
+
+  it("REG-WU-062-RC-121-c: a line break separates lines", () => {
+    const document = page("<p>Owner: Mel<br>Status: blocked</p>");
+    expect(document.blocks.map((block) => block.text)).toEqual(["Owner: Mel\nStatus: blocked"]);
+    expect(tokenizeHtml("<td>a<br>b</td>").length).toBeGreaterThan(0);
+    const cells = page("<table><tr><td>a<br>b</td></tr></table>");
+    expect(cells.tables[0]?.rows).toEqual([["a\nb"]]);
+  });
+
+  it("REG-WU-062-RC-121-d: a cell whose text is inside nested blocks still fills the table", () => {
+    const document = page(
+      "<table><tr><th><p>Item</p></th><th><p>Status</p></th></tr>"
+      + "<tr><td><p>Contract</p></td><td><p>Blocked</p></td></tr></table>",
+    );
+    expect(document.tables[0]?.rows).toEqual([["Item", "Status"], ["Contract", "Blocked"]]);
+  });
+
+  it("REG-WU-062-RC-121-e: whitespace-only body text yields nothing", () => {
+    const document = page("<body>   \n  </body>");
+    expect(document.blocks).toEqual([]);
+    expect(document.diagnostics).toEqual([]);
+  });
+
+  it("REG-WU-062-RC-121-f: tables of plain cells and the page title decode as they did", () => {
+    const document = page(
+      "<html><head><title>Ingest Specification</title></head><body>"
+      + "<table><tr><td>field</td><td>type</td></tr><tr><td>root_id</td><td>string</td></tr></table></body></html>",
+    );
+    expect(document.tables[0]?.rows).toEqual([["field", "type"], ["root_id", "string"]]);
+    expect(document.metadata.title).toBe("Ingest Specification");
+  });
+
+  it("REG-WU-062-RC-122-a: named references decode in text", () => {
+    const document = page("<p>Owner:&nbsp;Mel &mdash; status&nbsp;blocked &rsquo;soon&rsquo;</p>");
+    expect(document.blocks.map((block) => block.text))
+      .toEqual(["Owner: Mel — status blocked ’soon’"]);
+  });
+
+  it("REG-WU-062-RC-122-b: unknown references stay as written and nothing is decoded twice", () => {
+    expect(page("<p>&foo; &amp;nbsp;</p>").blocks.map((block) => block.text)).toEqual(["&foo; &nbsp;"]);
+  });
+
+  it("REG-WU-062-RC-122-c: named references decode in attribute values", () => {
+    const document = page('<head><meta name="description" content="A&nbsp;B"></head><p>x</p>');
+    expect(document.metadata.description).toBe("A B");
+    expect(tokenizeHtml('<a title="x&mdash;y">')[0]?.attributes.title).toBe("x—y");
+  });
+
+  it("REG-WU-062-RC-122-d: numeric references decode as before", () => {
+    expect(page("<p>a&#160;b&#x2014;c</p>").blocks.map((block) => block.text)).toEqual(["a b—c"]);
+  });
+});
