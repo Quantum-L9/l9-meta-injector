@@ -257,7 +257,7 @@ function idFor(relPath: string): string {
 
 function csvCell(v: unknown): string {
   const s = v === null || v === undefined ? "" : String(v);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
 // Sidecar serialization now delegates to the single canonical serializer (ACA-005),

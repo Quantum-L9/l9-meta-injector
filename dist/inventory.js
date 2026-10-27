@@ -212,7 +212,7 @@ function idFor(relPath) {
 }
 function csvCell(v) {
     const s = v === null || v === undefined ? "" : String(v);
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 // Sidecar serialization now delegates to the single canonical serializer (ACA-005),
 // replacing the always-JSON-quoted copy. Output is bare-when-safe and still

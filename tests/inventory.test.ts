@@ -226,3 +226,60 @@ describe("WU-078 nested outDir is excluded by its exact path", () => {
     expect(r.omittedPaths).toContain("a[1]/out");
   });
 });
+
+/** RFC 4180 reader; like common readers it ends an unquoted record at CRLF, LF or a lone CR. */
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]!;
+    if (quoted) {
+      if (ch === '"' && text[i + 1] === '"') { cell += '"'; i++; }
+      else if (ch === '"') quoted = false;
+      else cell += ch;
+    } else if (ch === '"') {
+      quoted = true;
+    } else if (ch === ",") {
+      row.push(cell); cell = "";
+    } else if (ch === "\r" || ch === "\n") {
+      if (ch === "\r" && text[i + 1] === "\n") i++;
+      row.push(cell); cell = "";
+      rows.push(row); row = [];
+    } else {
+      cell += ch;
+    }
+  }
+  if (cell !== "" || row.length) { row.push(cell); rows.push(row); }
+  return rows;
+}
+
+describe("WU-082 inventory.csv quoting", () => {
+  it("REG-WU-082-RC-061-RC061-a: a carriage return in a value is quoted", () => {
+    const root = tmp();
+    fs.writeFileSync(path.join(root, "odd\rname.bin"), Buffer.from([1]));
+    fs.writeFileSync(path.join(root, "z.bin"), Buffer.from([2]));
+    const out = tmp();
+    inventoryTree({ root, outDir: out, dryRun: true, now: "2026-01-01T00:00:00.000Z" });
+    const rows = parseCsv(fs.readFileSync(path.join(out, "inventory.csv"), "utf8"));
+    const data = rows.slice(1);
+    expect(data).toHaveLength(2);
+    expect(data[0]![0]).toBe("odd\rname.bin");
+    expect(data[1]![0]).toBe("z.bin");
+  });
+
+  it("REG-WU-082-RC-061-RC061-b: comma, quote and LF values stay quoted", () => {
+    const root = tmp();
+    const names = ["a,b.bin", "l\nf.bin", 'q"t.bin'];
+    for (const name of names) fs.writeFileSync(path.join(root, name), Buffer.from([3]));
+    const out = tmp();
+    inventoryTree({ root, outDir: out, dryRun: true, now: "2026-01-01T00:00:00.000Z" });
+    const text = fs.readFileSync(path.join(out, "inventory.csv"), "utf8");
+    expect(text).toContain('"a,b.bin"');
+    expect(text).toContain('"l\nf.bin"');
+    expect(text).toContain('"q""t.bin"');
+    const rows = parseCsv(text).slice(1);
+    expect(rows.map((r) => r[0]).sort()).toEqual([...names].sort());
+  });
+});
