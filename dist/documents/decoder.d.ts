@@ -176,6 +176,8 @@ export interface DecoderBudget {
      * `maxPartBytes`.
      */
     maxCompressionRatio: number;
+    /** Largest total uncompressed bytes all the parts of one OOXML container may produce. */
+    maxContainerUncompressedBytes: number;
     /** Deepest nesting a structured format may use before it is refused. */
     maxDepth: number;
 }

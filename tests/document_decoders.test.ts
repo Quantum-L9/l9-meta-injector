@@ -165,6 +165,10 @@ describe("a PowerPoint deck", () => {
     // Slide 10 must not sort before slide 2, which a string sort would do.
     const second = outcome.document.blocks.find((block) => block.text === "Next");
     if (second?.locator.kind === "pptx_shape") expect(second.locator.slide_number).toBe(2);
+    // Notes are found through each slide's relationship, so nothing is inferred.
+    expect(outcome.document.diagnostics.some(
+      (diagnostic) => diagnostic.message.includes("inferred"),
+    )).toBe(false);
   });
 });
 
@@ -205,6 +209,11 @@ describe("a spreadsheet", () => {
     expect(outcome.document.diagnostics.some(
       (diagnostic) => diagnostic.message.includes("were not evaluated"),
     )).toBe(true);
+    // REG-WU-061-RC-118-g: a conformant workbook resolves each sheet through
+    // its relationship, so nothing about the pairing is inferred.
+    expect(outcome.document.diagnostics.some(
+      (diagnostic) => diagnostic.message.includes("inferred"),
+    )).toBe(false);
   });
 });
 
@@ -387,6 +396,9 @@ describe("container defences", () => {
     const serialized = JSON.stringify(outcome.document);
     expect(serialized).not.toContain("root:");
     expect(serialized).not.toContain("/etc/passwd");
+    // REG-WU-060-RC-123-d: the internal subset is skipped through its own ']>',
+    // so no markup residue reaches the first paragraph.
+    expect(serialized).not.toContain("]>");
   });
 });
 

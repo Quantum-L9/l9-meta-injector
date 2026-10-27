@@ -33,6 +33,12 @@ export declare function localName(name: string): string;
 /**
  * Walk an XML document, handing each event to `visit`.
  *
+ * Every text node is delivered, whitespace-only ones included. Whether a run of
+ * whitespace is content (a space-only `<w:t>`) or indentation between elements
+ * is a question only the caller can answer, because only the caller knows which
+ * elements carry text; deciding it here fused words that a formatting boundary
+ * had split into separate runs.
+ *
  * Returning `false` from `visit` stops the walk, which is how a caller that has
  * filled its budget stops paying for the rest of a part.
  */

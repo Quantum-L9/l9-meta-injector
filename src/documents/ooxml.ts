@@ -13,6 +13,12 @@
 //     name is refused rather than normalized into something safe-looking;
 //   - a symlink or special entry is refused: an Office part is a file;
 //   - external relationships are recorded as diagnostics and never fetched;
+//   - an internal relationship is resolved to a part name only when the result
+//     is a contained part this container actually holds;
+//   - each part's produced bytes are capped at runtime by the part ceiling, by
+//     its compressed size times the ratio ceiling, and by what remains of one
+//     allowance shared by every part of the document — a declared size is a
+//     claim, not a bound;
 //   - macro parts are noted and never executed.
 import {
   ZipBudgetExceededError,
@@ -33,6 +39,11 @@ export interface OoxmlContainer {
   readPart(name: string): string | null;
   /** Part names present, in code-point order. */
   partNames(): string[];
+  /**
+   * Parts not read because the container's decompression allowance was spent,
+   * in the order they were asked for.
+   */
+  skippedForAllowance(): string[];
 }
 
 export class OoxmlError extends Error {
@@ -140,41 +151,67 @@ export function openOoxml(archivePath: string, budget: DecoderBudget): OoxmlCont
     throw new OoxmlError("malformed", "container holds no readable parts");
   }
 
+  // Bytes produced (or spent being refused) across every part of this
+  // container. Without it the only bound on one document's decompression work
+  // is entry count times the part ceiling.
+  let produced = 0;
+  const skipped = new Set<string>();
+
   const readPart = (name: string): string | null => {
     const entry = entries.get(name);
     if (entry === undefined) return null;
-    // The declared ratio is checked before decompressing, and the ceiling is
-    // then enforced by the decompressor itself, so an entry that lies about its
-    // uncompressed size still cannot produce more than the ceiling.
-    if (entry.compressedSize > 0) {
-      const ratio = entry.uncompressedSize / entry.compressedSize;
-      if (ratio > budget.maxCompressionRatio) {
-        diagnostics.push({
-          code: "decoder.budget_exceeded",
-          severity: "warning",
-          message:
-            `part '${name}' declares a compression ratio of ${Math.round(ratio)}:1, above the `
-            + `${budget.maxCompressionRatio}:1 ceiling, and was not expanded`,
-          part: name,
-        });
-        return null;
-      }
+    // Nothing comes out of zero compressed bytes. Streaming with a ceiling of
+    // zero would be refused as exhausted, which an empty part is not.
+    if (entry.compressedSize === 0) return "";
+    const remaining = budget.maxContainerUncompressedBytes - produced;
+    if (remaining <= 0) {
+      skipped.add(name);
+      return null;
     }
-    const chunks: Buffer[] = [];
-    try {
-      streamZipMember(archivePath, entry, { maxUncompressedBytes: budget.maxPartBytes }, (chunk) => {
-        chunks.push(Buffer.from(chunk));
-      });
-    } catch (error) {
-      const budgeted = error instanceof ZipBudgetExceededError;
+    // The declared ratio is a cheap early refusal. It is not the bound: an
+    // entry can declare any size it likes, so the ceiling the decompressor
+    // enforces is derived from what the entry cannot lie about.
+    const ratio = entry.uncompressedSize / entry.compressedSize;
+    if (ratio > budget.maxCompressionRatio) {
       diagnostics.push({
-        code: budgeted ? "decoder.budget_exceeded" : "decoder.malformed",
+        code: "decoder.budget_exceeded",
         severity: "warning",
-        message: `part '${name}' could not be read: ${error instanceof Error ? error.message : String(error)}`,
+        message:
+          `part '${name}' declares a compression ratio of ${Math.round(ratio)}:1, above the `
+          + `${budget.maxCompressionRatio}:1 ceiling, and was not expanded`,
         part: name,
       });
       return null;
     }
+    const ratioCeiling = Math.floor(entry.compressedSize * budget.maxCompressionRatio);
+    const ceiling = Math.min(budget.maxPartBytes, ratioCeiling, remaining);
+    const chunks: Buffer[] = [];
+    let partBytes = 0;
+    try {
+      if (ceiling <= 0) {
+        throw new ZipBudgetExceededError(`member ${name} has no extraction ceiling left to expand into`);
+      }
+      streamZipMember(archivePath, entry, { maxUncompressedBytes: ceiling }, (chunk) => {
+        partBytes += chunk.length;
+        chunks.push(Buffer.from(chunk));
+      });
+    } catch (error) {
+      const budgeted = error instanceof ZipBudgetExceededError;
+      // A refused expansion still did the work up to its ceiling.
+      produced += budgeted ? Math.max(ceiling, partBytes) : partBytes;
+      diagnostics.push({
+        code: budgeted ? "decoder.budget_exceeded" : "decoder.malformed",
+        severity: "warning",
+        message: budgeted
+          ? `part '${name}' would expand past ${ceiling} bytes — the least of the ${budget.maxPartBytes}-byte part `
+            + `ceiling, ${budget.maxCompressionRatio}x its ${entry.compressedSize} compressed bytes, and what this `
+            + "container may still expand — and was not read"
+          : `part '${name}' could not be read: ${error instanceof Error ? error.message : String(error)}`,
+        part: name,
+      });
+      return null;
+    }
+    produced += partBytes;
     return Buffer.concat(chunks).toString("utf8");
   };
 
@@ -183,7 +220,118 @@ export function openOoxml(archivePath: string, budget: DecoderBudget): OoxmlCont
     diagnostics,
     readPart,
     partNames: () => [...entries.keys()].sort(compareCodePoints),
+    skippedForAllowance: () => [...skipped],
   };
+}
+
+/** One internal relationship, resolved to the part it names. */
+export interface OoxmlRelationship {
+  id: string;
+  type: string;
+  /** The contained part name the target resolves to. */
+  part: string;
+}
+
+/** The relationship part that describes `sourcePart`: `xl/workbook.xml` → `xl/_rels/workbook.xml.rels`. */
+export function relationshipPartName(sourcePart: string): string {
+  const slash = sourcePart.lastIndexOf("/");
+  const directory = slash < 0 ? "" : sourcePart.slice(0, slash + 1);
+  return `${directory}_rels/${sourcePart.slice(slash + 1)}.rels`;
+}
+
+/**
+ * Resolve a relationship target against the directory of its source part.
+ *
+ * A target starting with `/` is package-absolute. `.` and `..` segments are
+ * applied, and a `..` that would climb above the package root makes the target
+ * unresolvable rather than clamped — clamping would turn an escape into some
+ * other part that happens to exist. Null when the target is not a contained
+ * part name.
+ */
+export function resolveRelationshipTarget(sourcePart: string, target: string): string | null {
+  if (target.length === 0 || target.includes("\\") || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(target)) return null;
+  const slash = sourcePart.lastIndexOf("/");
+  const base = target.startsWith("/") || slash < 0 ? [] : sourcePart.slice(0, slash).split("/");
+  const segments = [...base];
+  for (const segment of target.split("/")) {
+    if (segment === "" || segment === ".") continue;
+    if (segment === "..") {
+      if (segments.length === 0) return null;
+      segments.pop();
+      continue;
+    }
+    segments.push(segment);
+  }
+  const resolved = segments.join("/");
+  return isSafePartName(resolved) ? resolved : null;
+}
+
+/**
+ * The internal relationships `sourcePart` declares, keyed by `Id`.
+ *
+ * Null when the source part has no relationship part, which a caller treats as
+ * "nothing was declared" rather than as an empty declaration. An external
+ * relationship is skipped — it is noted elsewhere and never followed — and a
+ * target that escapes the container or names a part this container does not
+ * hold is ignored with a diagnostic on the container. Nothing is read here but
+ * the relationship part itself.
+ */
+export function readRelationships(
+  container: OoxmlContainer,
+  sourcePart: string,
+  maxDepth: number,
+): Map<string, OoxmlRelationship> | null {
+  const relsPart = relationshipPartName(sourcePart);
+  if (!container.entries.has(relsPart)) return null;
+  const xml = container.readPart(relsPart);
+  if (xml === null) return null;
+  const relationships = new Map<string, OoxmlRelationship>();
+  try {
+    parseXml(xml, maxDepth, (event) => {
+      if (event.type !== "open" || event.name !== "Relationship") return;
+      if (event.attributes.TargetMode === "External") return;
+      const id = event.attributes.Id ?? "";
+      const target = event.attributes.Target ?? "";
+      if (id.length === 0) return;
+      const resolved = resolveRelationshipTarget(sourcePart, target);
+      let held = resolved !== null && container.entries.has(resolved) ? resolved : null;
+      if (held === null) {
+        const unescaped = resolveRelationshipTarget(sourcePart, safeDecodeUri(target));
+        if (unescaped !== null && container.entries.has(unescaped)) held = unescaped;
+      }
+      if (held === null) {
+        container.diagnostics.push({
+          code: "decoder.malformed",
+          severity: "warning",
+          message: resolved === null
+            ? `relationship '${id}' targets '${target}', which is not a part inside this container; it was not read`
+            : `relationship '${id}' targets '${target}', a part this container does not hold`,
+          part: relsPart,
+        });
+        return;
+      }
+      relationships.set(id, { id, type: event.attributes.Type ?? "", part: held });
+    });
+  } catch (error) {
+    if (!(error instanceof XmlError)) throw error;
+    container.diagnostics.push({
+      code: "decoder.malformed",
+      severity: "warning",
+      message: `relationship part '${relsPart}' could not be parsed: ${error.message}`,
+      part: relsPart,
+    });
+    return null;
+  }
+  return relationships;
+}
+
+/** `%20` in a target is a space in the part name; a malformed escape is left as written. */
+function safeDecodeUri(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
 }
 
 /**
@@ -198,6 +346,9 @@ export function noteExternalRelationships(
   budget: DecoderBudget,
 ): DecoderDiagnostic[] {
   const notes: DecoderDiagnostic[] = [];
+  // Decoders copy the container's diagnostics before calling this, so what
+  // reading the relationship parts adds is returned here instead of lost.
+  const before = container.diagnostics.length;
   for (const name of container.partNames()) {
     if (!name.endsWith(".rels")) continue;
     const xml = container.readPart(name);
@@ -223,6 +374,17 @@ export function noteExternalRelationships(
         part: name,
       });
     }
+  }
+  notes.unshift(...container.diagnostics.slice(before));
+  const skipped = container.skippedForAllowance();
+  if (skipped.length > 0) {
+    notes.push({
+      code: "decoder.budget_exceeded",
+      severity: "warning",
+      message:
+        `${skipped.length} part${skipped.length === 1 ? " was" : "s were"} not read: the container's `
+        + `${budget.maxContainerUncompressedBytes}-byte decompression allowance was spent`,
+    });
   }
   return notes;
 }
