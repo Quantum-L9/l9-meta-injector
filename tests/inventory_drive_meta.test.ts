@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { execFileSync } from "node:child_process";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { inventoryTree, buildRecord } from "../src/inventory";
 import { contentHash } from "../src/extract";
 import { harvestExistingMeta } from "../src/inventory_existing_meta";
@@ -10,7 +10,8 @@ import { buildTarArchive } from "../src/tar_writer";
 import { peekTarRootMeta, readTarArchive } from "../src/tar_reader";
 import { buildZipBuffer, peekZipRootMeta, injectZipRootMeta } from "../src/zip_writer";
 import * as zlib from "node:zlib";
-import { inventoryRewriteKind, boundedGunzipSync } from "../src/inventory_archive_member";
+import { inventoryRewriteKind, boundedGunzip, boundedGunzipSync } from "../src/inventory_archive_member";
+import { DEFAULT_LOCAL_ARCHIVE_POLICY } from "../src/local_archive_policy";
 import { buildFinderComment, buildFinderTags, isInventoryFinderComment, versionTokenFromFileName } from "../src/inventory_darwin_search";
 import { gzipTar, hostileTarCorpus } from "./helpers/tar_fixtures";
 import { runApplyAsync } from "../src/apply";
@@ -449,6 +450,87 @@ describe("archive member inject", () => {
     if (largeBudgetResult.ok) {
       expect(largeBudgetResult.bytes.length).toBe(1024);
     }
+  });
+
+  describe("WU-077 bounded gunzip stops at the budget", () => {
+    const MiB = 1024 * 1024;
+    // The ESM namespace of a builtin mirrors module.exports only after
+    // syncBuiltinESMExports(), so the spy is installed on module.exports and synced.
+    const zlibExports = require("node:zlib") as typeof import("node:zlib");
+    const { syncBuiltinESMExports } = require("node:module") as typeof import("node:module");
+    function spyGunzipSync(): ReturnType<typeof vi.spyOn> {
+      const spy = vi.spyOn(zlibExports, "gunzipSync");
+      syncBuiltinESMExports();
+      return spy;
+    }
+    function restore(spy: ReturnType<typeof vi.spyOn>): void {
+      spy.mockRestore();
+      syncBuiltinESMExports();
+    }
+
+    test("REG-WU-077-RC-054-RC054-a: an over-budget gzip is cut off by maxOutputLength at the budget", () => {
+      const bomb = zlib.gzipSync(Buffer.alloc(64 * MiB));
+      const spy = spyGunzipSync();
+      try {
+        const result = boundedGunzipSync(bomb, { ...DEFAULT_LOCAL_ARCHIVE_POLICY, maxTotalUncompressedBytesPerArchive: MiB });
+        expect(result).toEqual({ ok: false, hold: "archive.inflation_budget_exceeded" });
+        expect(spy).toHaveBeenCalled();
+        for (const call of spy.mock.calls) {
+          expect((call[1] as zlib.ZlibOptions | undefined)?.maxOutputLength).toBe(MiB);
+        }
+      } finally {
+        restore(spy);
+      }
+    });
+
+    test("REG-WU-077-RC-054-RC054-b: output exactly equal to the budget is accepted", () => {
+      const exact = zlib.gzipSync(Buffer.alloc(4096, 0x61));
+      const result = boundedGunzipSync(exact, { ...DEFAULT_LOCAL_ARCHIVE_POLICY, maxTotalUncompressedBytesPerArchive: 4096 });
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.bytes.length).toBe(4096);
+      expect(boundedGunzipSync(exact, { ...DEFAULT_LOCAL_ARCHIVE_POLICY, maxTotalUncompressedBytesPerArchive: 4095 }))
+        .toEqual({ ok: false, hold: "archive.inflation_budget_exceeded" });
+    });
+
+    test("REG-WU-077-RC-054-RC054-c: the async variant settles for every size", { timeout: 5_000 }, async () => {
+      const policy = { ...DEFAULT_LOCAL_ARCHIVE_POLICY, maxTotalUncompressedBytesPerArchive: 2 * MiB };
+      for (const size of [1024, 64 * 1024, MiB]) {
+        const result = await boundedGunzip(zlib.gzipSync(Buffer.alloc(size, 0x62)), policy);
+        expect(result.ok).toBe(true);
+        if (result.ok) expect(result.bytes.length).toBe(size);
+      }
+      const over = await boundedGunzip(zlib.gzipSync(Buffer.alloc(4 * MiB)), policy);
+      expect(over).toEqual({ ok: false, hold: "archive.inflation_budget_exceeded" });
+    });
+
+    test("REG-WU-077-RC-054-RC054-d: corrupt gzip is an unreadable hold in both variants", async () => {
+      const corrupt = Buffer.from([0x1f, 0x8b, 0x08, 0x00, 0xde, 0xad, 0xbe, 0xef, 0x00, 0x03, 0xff, 0xff]);
+      const sync = boundedGunzipSync(corrupt);
+      expect(sync.ok).toBe(false);
+      if (!sync.ok) expect(sync.hold).toMatch(/^archive\.gzip_unreadable:/);
+      const async = await boundedGunzip(corrupt);
+      expect(async.ok).toBe(false);
+      if (!async.ok) expect(async.hold).toMatch(/^archive\.gzip_unreadable:/);
+    });
+
+    test("REG-WU-077-RC-054-RC054-e: inventory inflates .tar.gz only under maxOutputLength equal to the budget", () => {
+      const root = tmp();
+      const tar = buildTarArchive([{ name: "readme.txt", content: "hello\n" }]);
+      fs.writeFileSync(path.join(root, "pack.tar.gz"), gzipTar(tar));
+      const spy = spyGunzipSync();
+      try {
+        const result = inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false, dryRun: true });
+        expect(result.records.some((r) => r.file_name === "pack.tar.gz")).toBe(true);
+        expect(spy).toHaveBeenCalled();
+        for (const call of spy.mock.calls) {
+          expect((call[1] as zlib.ZlibOptions | undefined)?.maxOutputLength).toBe(
+            DEFAULT_LOCAL_ARCHIVE_POLICY.maxTotalUncompressedBytesPerArchive,
+          );
+        }
+      } finally {
+        restore(spy);
+      }
+    });
   });
 
   test("idempotent annotation skips rewrite when embedded content unchanged", () => {

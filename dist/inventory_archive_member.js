@@ -41,10 +41,9 @@ exports.upsertArchiveRootMeta = upsertArchiveRootMeta;
 exports.isCanonicalMetaMemberName = isCanonicalMetaMemberName;
 // inventory_archive_member.ts — one inventory orchestrator for ZIP/TAR member inject (ADR-049).
 // Codecs do not call inventory. Observation expansion does not use this module.
+const node_buffer_1 = require("node:buffer");
 const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
-const node_stream_1 = require("node:stream");
-const node_util_1 = require("node:util");
 const zlib = __importStar(require("node:zlib"));
 const archive_formats_1 = require("./archive_formats");
 const archive_preflight_1 = require("./archive_preflight");
@@ -54,62 +53,53 @@ const tar_reader_1 = require("./tar_reader");
 const tar_writer_1 = require("./tar_writer");
 const zip_writer_1 = require("./zip_writer");
 const zip_reader_1 = require("./zip_reader");
-const pipelineAsync = (0, node_util_1.promisify)(node_stream_1.pipeline);
+const INFLATION_BUDGET_HOLD = "archive.inflation_budget_exceeded";
 /**
- * Streaming gzip inflation with budget enforcement.
- *
- * Returns the inflated buffer if it fits within the policy's maxTotalUncompressedBytesPerArchive.
- * Aborts and returns a hold if the budget would be exceeded, preventing decompression bombs.
+ * zlib's own output ceiling for a budget. zlib stops inflating once the output
+ * would exceed `maxOutputLength`, so a decompression bomb never materializes
+ * past the budget. The value must lie in [1, buffer.constants.MAX_LENGTH].
  */
-async function boundedGunzip(compressed, policy = local_archive_policy_1.DEFAULT_LOCAL_ARCHIVE_POLICY) {
-    const budget = policy.maxTotalUncompressedBytesPerArchive;
-    const chunks = [];
-    let totalBytes = 0;
-    let budgetExceeded = false;
-    const budgetEnforcer = new node_stream_1.Transform({
-        transform(chunk, _encoding, callback) {
-            if (budgetExceeded) {
-                callback();
-                return;
-            }
-            totalBytes += chunk.length;
-            if (totalBytes > budget) {
-                budgetExceeded = true;
-                callback(new Error("archive.inflation_budget_exceeded"));
-                return;
-            }
-            chunks.push(chunk);
-            callback(null, chunk);
-        },
-    });
-    const gunzip = zlib.createGunzip();
-    try {
-        await pipelineAsync((async function* () { yield compressed; })(), gunzip, budgetEnforcer);
-        return { ok: true, bytes: Buffer.concat(chunks) };
+function gunzipOptions(budget) {
+    return { maxOutputLength: Math.max(1, Math.min(budget, node_buffer_1.constants.MAX_LENGTH)) };
+}
+function inflateVerdict(err, inflated, budget) {
+    if (err) {
+        if (err.code === "ERR_BUFFER_TOO_LARGE")
+            return { ok: false, hold: INFLATION_BUDGET_HOLD };
+        return { ok: false, hold: `archive.gzip_unreadable:${err.message}` };
     }
-    catch (err) {
-        const msg = err.message;
-        if (msg === "archive.inflation_budget_exceeded" || budgetExceeded) {
-            return { ok: false, hold: "archive.inflation_budget_exceeded" };
-        }
-        return { ok: false, hold: `archive.gzip_unreadable:${msg}` };
-    }
+    const bytes = inflated ?? Buffer.alloc(0);
+    // Belt for a budget below zlib's minimum ceiling of one byte.
+    if (bytes.length > budget)
+        return { ok: false, hold: INFLATION_BUDGET_HOLD };
+    return { ok: true, bytes };
 }
 /**
- * Synchronous wrapper for bounded gzip inflation.
- * Uses a post-inflation check since zlib.gunzipSync must complete before we know the size.
+ * Bounded gzip inflation. Output above the policy's
+ * maxTotalUncompressedBytesPerArchive is refused while inflating; output exactly
+ * at the budget is accepted. Always settles.
  */
+function boundedGunzip(compressed, policy = local_archive_policy_1.DEFAULT_LOCAL_ARCHIVE_POLICY) {
+    const budget = policy.maxTotalUncompressedBytesPerArchive;
+    return new Promise((resolve) => {
+        try {
+            zlib.gunzip(compressed, gunzipOptions(budget), (err, inflated) => {
+                resolve(inflateVerdict(err, inflated, budget));
+            });
+        }
+        catch (err) {
+            resolve(inflateVerdict(err, undefined, budget));
+        }
+    });
+}
+/** Synchronous bounded gzip inflation; same verdicts as `boundedGunzip`. */
 function boundedGunzipSync(compressed, policy = local_archive_policy_1.DEFAULT_LOCAL_ARCHIVE_POLICY) {
     const budget = policy.maxTotalUncompressedBytesPerArchive;
     try {
-        const inflated = zlib.gunzipSync(compressed);
-        if (inflated.length > budget) {
-            return { ok: false, hold: "archive.inflation_budget_exceeded" };
-        }
-        return { ok: true, bytes: inflated };
+        return inflateVerdict(null, zlib.gunzipSync(compressed, gunzipOptions(budget)), budget);
     }
     catch (err) {
-        return { ok: false, hold: `archive.gzip_unreadable:${err.message}` };
+        return inflateVerdict(err, undefined, budget);
     }
 }
 const HOLD_EXTENSIONS = new Set([".jar", ".war", ".gz"]);
