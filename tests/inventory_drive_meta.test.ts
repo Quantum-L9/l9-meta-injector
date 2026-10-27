@@ -610,6 +610,35 @@ describe("Darwin comment/tag builders", () => {
   });
 });
 
+// REG-WU-079-RC-057-RC057-c needs a real macOS host: real `plutil -convert xml1`
+// escaping, real `xattr -px` output and Finder's tag store. It runs only when
+// process.platform === "darwin"; every CI workflow is ubuntu-latest, so macOS
+// closure of WU-079 is outstanding until this case is run on a Mac.
+describe("WU-079 Darwin tag projection on a real macOS host", () => {
+  test.skipIf(process.platform !== "darwin")("REG-WU-079-RC-057-RC057-c: a Finder tag 'R&D' survives two live inventories once", () => {
+    const root = tmp();
+    const zipPath = path.join(root, "tagged.zip");
+    fs.writeFileSync(zipPath, buildZipBuffer([{ name: "readme.txt", data: Buffer.from("hello\n") }]));
+    writeFinderTags(zipPath, ["R&D"]);
+    inventoryTree({ root, outDir: path.join(tmp(), "out1"), folderSidecars: false });
+    inventoryTree({ root, outDir: path.join(tmp(), "out2"), folderSidecars: false });
+    const tags = readFinderTags(zipPath).map((t) => t.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&"));
+    expect(tags.filter((t) => t === "R&D")).toHaveLength(1);
+    expect(tags.some((t) => t.includes("&amp;"))).toBe(false);
+  });
+});
+
+function writeFinderTags(abs: string, tags: string[]): void {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "l9-plist-test-"));
+  const file = path.join(dir, "x.plist");
+  const esc = (v: string): string => v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const items = tags.map((t) => `<string>${esc(t)}\n0</string>`).join("");
+  fs.writeFileSync(file, `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><array>${items}</array></plist>\n`);
+  execFileSync("plutil", ["-convert", "binary1", file], { stdio: "pipe" });
+  execFileSync("xattr", ["-wx", "com.apple.metadata:_kMDItemUserTags", fs.readFileSync(file).toString("hex"), abs], { stdio: "pipe" });
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
 function zipWithDataDescriptor(name: string, data: Buffer): Buffer {
   const crc = zlib.crc32(data) >>> 0;
   const nameBytes = Buffer.from(name, "utf8");
