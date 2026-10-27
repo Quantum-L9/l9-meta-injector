@@ -29,7 +29,9 @@ export const CSV_DECODER_ID = "l9.csv-decoder";
  * while the identical table in a worksheet was understood, purely because the
  * worksheet decoder emits cells and this one did not.
  */
-export const CSV_DECODER_VERSION = "1.1.0";
+// 1.2.0: a record ends at a newline outside quotes, so a quoted cell that
+// spans lines stays one cell and its row cites the line the record starts on.
+export const CSV_DECODER_VERSION = "1.2.0";
 
 /** Read a file as UTF-8, refusing bytes that are not valid UTF-8. */
 export function readUtf8(input: DecodeInput): { text: string } | { reason: string } {
@@ -264,10 +266,44 @@ function addCsvCellBlocks(
 }
 
 /**
- * One block per non-empty row, plus one per populated cell, and the rows read.
+ * The records of a delimited file, each with the physical line it starts on.
  *
- * The row number is the line number in the file, so a row is citable at the place
- * an operator would look for it even though blank lines are skipped.
+ * A newline ends a record only outside quotes. Quote state is the parity of the
+ * `"` characters since the record began — the same toggling `splitCsvLine`
+ * applies, with `""` toggling twice — so the two agree on where a quoted field
+ * ends. A quote still open at end of file leaves the rest as one record, so no
+ * content is dropped, and is reported.
+ */
+function csvRecords(text: string): { records: { text: string; line: number }[]; unterminatedAt: number | null } {
+  const records: { text: string; line: number }[] = [];
+  let start = 0;
+  let startLine = 1;
+  let line = 1;
+  let quoted = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (char === '"') {
+      quoted = !quoted;
+      continue;
+    }
+    if (char !== "\n") continue;
+    line += 1;
+    if (quoted) continue;
+    const end = index > start && text[index - 1] === "\r" ? index - 1 : index;
+    records.push({ text: text.slice(start, end), line: startLine });
+    start = index + 1;
+    startLine = line;
+  }
+  if (start < text.length) records.push({ text: text.slice(start), line: startLine });
+  return { records, unterminatedAt: quoted ? startLine : null };
+}
+
+/**
+ * One block per non-empty record, plus one per populated cell, and the rows read.
+ *
+ * The row number is the line number in the file a record starts on, so a row is
+ * citable at the place an operator would look for it even though blank lines are
+ * skipped and a quoted cell may span several lines.
  */
 function addCsvRowBlocks(
   builder: BlockBuilder,
@@ -276,9 +312,18 @@ function addCsvRowBlocks(
 ): string[][] {
   const rows: string[][] = [];
   let header: string[] = [];
-  const lines = text.split(/\r?\n/);
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index] as string;
+  const { records, unterminatedAt } = csvRecords(text);
+  if (unterminatedAt !== null) {
+    builder.note({
+      code: "decoder.malformed",
+      severity: "info",
+      message: `a quoted field opened in the record starting on line ${unterminatedAt} is never closed; `
+        + "the rest of the file was read as that record",
+    });
+  }
+  for (const record of records) {
+    const line = record.text;
+    const rowNumber = record.line;
     if (line.trim().length === 0) continue;
     const cells = splitCsvLine(line, delimiter);
     if (rows.length === 0) header = cells;
@@ -289,8 +334,8 @@ function addCsvRowBlocks(
     const label = labelled
       ? cells.map((cell, column) => `${header[column]}: ${cell}`).join("; ")
       : cells.join(" | ");
-    builder.add("cell", label, { kind: "csv_row", row_number: index + 1 });
-    if (!builder.isFull && labelled) addCsvCellBlocks(builder, header, cells, index + 1);
+    builder.add("cell", label, { kind: "csv_row", row_number: rowNumber });
+    if (!builder.isFull && labelled) addCsvCellBlocks(builder, header, cells, rowNumber);
     if (builder.isFull) break;
   }
   return rows;

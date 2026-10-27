@@ -740,3 +740,64 @@ describe("WU-062 HTML raw text, block model and named references", () => {
     expect(page("<p>a&#160;b&#x2014;c</p>").blocks.map((block) => block.text)).toEqual(["a b—c"]);
   });
 });
+
+// ───────────────────────────── WU-063 ─────────────────────────────
+
+function csv(source: string, name = "register.csv"): string {
+  const file = path.join(tmp(), name);
+  fs.writeFileSync(file, source, "utf8");
+  return file;
+}
+
+function rowBlocks(document: ReturnType<typeof decoded>) {
+  return document.blocks.filter((block) =>
+    block.kind === "cell" && block.locator.kind === "csv_row" && block.locator.column === undefined);
+}
+
+describe("WU-063 CSV records split after quote-aware parsing", () => {
+  it("REG-WU-063-RC-124-a: a quoted newline stays inside its cell and the record keeps its starting line", () => {
+    const document = decoded(decode(csv('id,blocker,status\n1,"Waiting on legal,\nthen procurement",blocked\n2,none,done\n')));
+    const rows = rowBlocks(document);
+    const second = rows.find((block) => block.locator.kind === "csv_row" && block.locator.row_number === 2);
+    expect(second?.text).toBe("id: 1; blocker: Waiting on legal,\nthen procurement; status: blocked");
+    expect(document.blocks.some((block) => block.text === "status: blocked")).toBe(true);
+    const third = rows.find((block) => block.text.startsWith("id: 2"));
+    expect(third?.locator).toMatchObject({ kind: "csv_row", row_number: 4 });
+    expect(rows.map((block) => block.locator.kind === "csv_row" && block.locator.row_number)).toEqual([1, 2, 4]);
+    expect(document.tables[0]?.rows).toEqual([
+      ["id", "blocker", "status"],
+      ["1", "Waiting on legal,\nthen procurement", "blocked"],
+      ["2", "none", "done"],
+    ]);
+  });
+
+  it("REG-WU-063-RC-124-b: CRLF line endings keep the embedded break and the status", () => {
+    const document = decoded(decode(csv('id,blocker,status\r\n1,"Waiting on legal,\r\nthen procurement",blocked\r\n2,none,done\r\n')));
+    const cell = document.blocks.find((block) => block.locator.kind === "csv_row" && block.locator.column === "blocker"
+      && block.locator.row_number === 2);
+    expect(cell?.text).toMatch(/^blocker: Waiting on legal,\r?\nthen procurement$/);
+    expect(document.blocks.some((block) => block.text === "status: blocked")).toBe(true);
+    const third = rowBlocks(document).find((block) => block.text.startsWith("id: 2"));
+    expect(third?.locator).toMatchObject({ row_number: 4 });
+  });
+
+  it("REG-WU-063-RC-124-c: an unterminated quote at end of file keeps the rest in one record and says so", () => {
+    const document = decoded(decode(csv('id,note\n1,"never closed\n2,still inside\n')));
+    const rows = rowBlocks(document);
+    expect(rows).toHaveLength(2);
+    expect(rows[1]?.text).toBe("id: 1; note: never closed\n2,still inside");
+    const note = document.diagnostics.find((diagnostic) => diagnostic.message.includes("quote"));
+    expect(note?.severity).toBe("info");
+  });
+
+  it("REG-WU-063-RC-124-d: a quoted single-line cell is one cell as before", () => {
+    const document = decoded(decode(csv('item,blocker\nlaunch,"Blocked by: procurement, legal"\n')));
+    expect(document.tables[0]?.rows[1]).toEqual(["launch", "Blocked by: procurement, legal"]);
+    expect(document.blocks.some((block) => block.text === "blocker: Blocked by: procurement, legal")).toBe(true);
+  });
+
+  it("REG-WU-063-RC-124-e: blank lines are skipped and row numbers stay physical lines", () => {
+    const document = decoded(decode(csv("a,b\n\n1,2\n\n\n3,4\n")));
+    expect(rowBlocks(document).map((block) => block.locator.kind === "csv_row" && block.locator.row_number)).toEqual([1, 3, 6]);
+  });
+});
