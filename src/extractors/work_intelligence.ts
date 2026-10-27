@@ -92,30 +92,77 @@ function findFrontmatter(lines: string[]): [number, number] {
   return [-1, -1];
 }
 
-const FENCE = /^\s{0,3}(`{3,}|~{3,})/;
+/**
+ * How far a fence may be indented and still be one.
+ *
+ * CommonMark allows 0-3 spaces at the top level and more inside list-item
+ * content. This module has no container parser, so the bound is the one the
+ * task and label readers already accept (`CHECKBOX`, `LIST_PREFIX`): a fence the
+ * readers would otherwise see into is a fence the exclusion recognises.
+ */
+const FENCE_MAX_INDENT = 8;
+
+interface FenceLine {
+  character: "`" | "~";
+  length: number;
+  /** What follows the fence run on the line (the info string, for an opener). */
+  rest: string;
+}
+
+/** The fence run a line starts with, or null. A scan, so linear on any line. */
+function fenceLine(line: string): FenceLine | null {
+  let position = 0;
+  while (position < line.length && position <= FENCE_MAX_INDENT && /\s/.test(line[position])) position++;
+  if (position > FENCE_MAX_INDENT) return null;
+  const character = line[position];
+  if (character !== "`" && character !== "~") return null;
+  let end = position;
+  while (end < line.length && line[end] === character) end++;
+  if (end - position < 3) return null;
+  return { character, length: end - position, rest: line.slice(end) };
+}
+
+/** True when `text` holds nothing but spaces and tabs. */
+function onlySpacesAndTabs(text: string): boolean {
+  for (const character of text) {
+    if (character !== " " && character !== "\t") return false;
+  }
+  return true;
+}
 
 /**
  * Which lines sit inside a fenced code block.
  *
- * A closing fence must use the same character as the one that opened it, so a
- * ``` block containing ~~~ stays open. Frontmatter is skipped: its `---` lines
- * are not fences, and its body is read as structured values elsewhere.
+ * Delimited as CommonMark delimits them: a backtick opener whose info string
+ * carries a backtick is not an opener, and a block closes only on a run of the
+ * same character at least as long as the opener with nothing but whitespace after
+ * it — so a ```` block wrapping a ``` example, a ```js line inside a ``` block, or
+ * a ``` block containing ~~~ all stay open. An unclosed fence runs to the end of
+ * the document. Frontmatter is skipped: its `---` lines are not fences, and its
+ * body is read as structured values elsewhere.
  */
 function markFencedCode(lines: string[], frontmatterEnd: number): boolean[] {
   const fenced: boolean[] = new Array(lines.length).fill(false);
-  let fence: string | null = null;
+  let open: FenceLine | null = null;
   for (let index = 0; index < lines.length; index++) {
     if (frontmatterEnd >= 0 && index <= frontmatterEnd + 1) continue;
-    const match = FENCE.exec(lines[index]);
-    if (fence === null) {
-      if (match) {
-        fence = match[1][0];
+    const fence = fenceLine(lines[index]);
+    if (open === null) {
+      if (fence && !(fence.character === "`" && fence.rest.includes("`"))) {
+        open = fence;
         fenced[index] = true;
       }
       continue;
     }
     fenced[index] = true;
-    if (match?.[1].startsWith(fence)) fence = null;
+    if (
+      fence &&
+      fence.character === open.character &&
+      fence.length >= open.length &&
+      onlySpacesAndTabs(fence.rest)
+    ) {
+      open = null;
+    }
   }
   return fenced;
 }
@@ -549,7 +596,7 @@ function draft(
  */
 export const documentStructureExtractor: Extractor = {
   id: "document-structure/v1",
-  // 1.1.0: BOM and lone-CR aware lines (RC-096).
+  // 1.1.0: CommonMark fence delimiting (RC-095); BOM and lone-CR aware lines (RC-096).
   version: "1.1.0",
   subjectScope: "artifact",
   matches: isSupportedTextDocument,
@@ -592,7 +639,12 @@ const BLOCKQUOTE_STATUS = /^\s{0,3}>\s*(?:\*\*|__)?\[?([A-Za-z]+)\]?(?:\*\*|__)?
 /** Where a title stops saying what the document is and starts qualifying it. */
 const TITLE_SEGMENT = / [—–|] | - |[:(]/u;
 
-/** Status markers a title carries, with the reason each one counts. */
+/**
+ * Status markers a title carries, with the reason each one counts.
+ *
+ * Distinct statuses in first-seen order: `[WIP] Rollout Plan - WIP` states one
+ * status twice (bracket and suffix), which is one claim, not two.
+ */
 function titleStatuses(text: string): string[] {
   const found: string[] = [];
   for (const match of text.matchAll(/[[(]\s*([A-Za-z][A-Za-z ]{0,20}?)\s*[\])]/g)) {
@@ -609,7 +661,7 @@ function titleStatuses(text: string): string[] {
     const status = statusValue(suffix[1]);
     if (status !== null && BARE_TITLE_STATUS.has(status)) found.push(status);
   }
-  return found;
+  return [...new Set(found)];
 }
 
 /**
@@ -871,7 +923,8 @@ export const LEADING_ADMONITION_UNITS = LEADING_ADMONITION_LINES;
  */
 export const workIntelligenceExtractor: Extractor = {
   id: "work-intelligence/v1",
-  // 1.1.0: BOM and lone-CR aware lines (RC-096); linear list-item reading (RC-094).
+  // 1.1.0: CommonMark fence delimiting (RC-095); distinct title statuses
+  // (RC-099); BOM and lone-CR aware lines (RC-096); linear list-item reading (RC-094).
   version: "1.1.0",
   subjectScope: "artifact",
   matches: isSupportedTextDocument,
