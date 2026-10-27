@@ -35,6 +35,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ARCHIVE_READER_VERSION = exports.EXTRACTION_OWNER_ID = exports.LOCAL_FILES_EXTRACTION_SCHEMA = exports.LEGACY_EXTRACTION_SUFFIX = exports.LEGACY_EXTRACTION_OWNER_FILE = exports.GENERATED_ARTIFACT_OMIT_PATTERNS = exports.SCRATCH_OWNER_ID = exports.SCRATCH_OWNER_FILE = exports.ARCHIVE_MEMBER_SEPARATOR = void 0;
 exports.removeOwnedScratch = removeOwnedScratch;
+exports.readExtractionOwnershipMarker = readExtractionOwnershipMarker;
 exports.hasLegacyExtractionOwnership = hasLegacyExtractionOwnership;
 exports.hasExtractionOwnershipV2 = hasExtractionOwnershipV2;
 exports.isLegacyGeneratedExtraction = isLegacyGeneratedExtraction;
@@ -199,6 +200,88 @@ function removeOwnedScratch(root, token) {
         return;
     fs.rmSync(root, { recursive: true, force: true });
 }
+/** Largest ownership marker that is read at all; a real marker is a few hundred bytes. */
+const EXTRACTION_MARKER_MAX_BYTES = 64 * 1024;
+/**
+ * Flags for reading untrusted source content: never follow a final symlink, and
+ * never block on opening a FIFO or device. Where a flag is not defined by the
+ * platform it contributes nothing, and the lstat that precedes every open below
+ * stands in for it.
+ */
+const READ_UNTRUSTED_FLAGS = fs.constants.O_RDONLY
+    | (fs.constants.O_NOFOLLOW ?? 0)
+    | (fs.constants.O_NONBLOCK ?? 0);
+/** The opened object is not a regular file, so its bytes are never read. */
+class NotRegularFileError extends Error {
+    constructor() {
+        super("local-source: not a regular file; it is never read");
+        this.code = "ENOTREGULAR";
+        this.name = "NotRegularFileError";
+    }
+}
+/**
+ * Open a path for reading only once it is proved to be a regular file.
+ *
+ * The path is lstat'ed first (a symlink, FIFO or device is refused before any
+ * open), opened without following a final symlink and without blocking, and the
+ * descriptor itself is fstat'ed, so an object swapped in between the lstat and the
+ * open is still refused and closed unread. Throws `NotRegularFileError` for
+ * anything that is not a regular file; filesystem errors propagate unchanged.
+ */
+function openVerifiedRegularFile(absolutePath) {
+    if (!fs.lstatSync(absolutePath).isFile())
+        throw new NotRegularFileError();
+    const fd = fs.openSync(absolutePath, READ_UNTRUSTED_FLAGS);
+    try {
+        const stats = fs.fstatSync(fd);
+        if (!stats.isFile())
+            throw new NotRegularFileError();
+        return { fd, size: stats.size };
+    }
+    catch (error) {
+        fs.closeSync(fd);
+        throw error;
+    }
+}
+/**
+ * The parsed extraction-ownership marker of `directory`, or null when there is none.
+ *
+ * The marker is untrusted source content, so it is read only from a verified,
+ * non-symlink regular file of bounded size. A symlinked, special, oversize,
+ * unreadable or unparsable marker is no marker: ownership is never inferred from
+ * something this function did not fully and safely read.
+ */
+function readExtractionOwnershipMarker(directory) {
+    let opened;
+    try {
+        opened = openVerifiedRegularFile(path.join(directory, exports.LEGACY_EXTRACTION_OWNER_FILE));
+    }
+    catch {
+        return null;
+    }
+    try {
+        if (opened.size > EXTRACTION_MARKER_MAX_BYTES)
+            return null;
+        // One byte past the ceiling, so a file that grew after fstat is detected.
+        const buffer = Buffer.alloc(EXTRACTION_MARKER_MAX_BYTES + 1);
+        let length = 0;
+        for (;;) {
+            const count = fs.readSync(opened.fd, buffer, length, buffer.length - length, length);
+            if (count === 0)
+                break;
+            length += count;
+            if (length > EXTRACTION_MARKER_MAX_BYTES)
+                return null;
+        }
+        return JSON.parse(buffer.subarray(0, length).toString("utf8"));
+    }
+    catch {
+        return null;
+    }
+    finally {
+        fs.closeSync(opened.fd);
+    }
+}
 /**
  * True when a directory carries evidence that this tool created it.
  *
@@ -207,17 +290,12 @@ function removeOwnedScratch(root, token) {
  * exactly how user data gets deleted.
  */
 function hasLegacyExtractionOwnership(directory) {
-    try {
-        const marker = JSON.parse(fs.readFileSync(path.join(directory, exports.LEGACY_EXTRACTION_OWNER_FILE), "utf8"));
-        // Exact id only: a prefix match would let an attacker-chosen owner such as
-        // `l9-meta-injector.evil` borrow this package's authority. This predicate
-        // decides exclusion from observation, not destruction; the destructive path
-        // additionally requires the v2 schema.
-        return typeof marker.owner === "string" && marker.owner === exports.EXTRACTION_OWNER_ID;
-    }
-    catch {
-        return false;
-    }
+    const marker = readExtractionOwnershipMarker(directory);
+    // Exact id only: a prefix match would let an attacker-chosen owner such as
+    // `l9-meta-injector.evil` borrow this package's authority. This predicate
+    // decides exclusion from observation, not destruction; the destructive path
+    // additionally requires the v2 schema.
+    return marker !== null && typeof marker.owner === "string" && marker.owner === exports.EXTRACTION_OWNER_ID;
 }
 /**
  * True when a directory carries the v2 ownership marker, exact owner and all.
@@ -226,13 +304,8 @@ function hasLegacyExtractionOwnership(directory) {
  * the v2 schema field is a legacy or foreign file and never authorizes removal.
  */
 function hasExtractionOwnershipV2(directory) {
-    try {
-        const marker = JSON.parse(fs.readFileSync(path.join(directory, exports.LEGACY_EXTRACTION_OWNER_FILE), "utf8"));
-        return marker.schema === exports.LOCAL_FILES_EXTRACTION_SCHEMA && marker.owner === exports.EXTRACTION_OWNER_ID;
-    }
-    catch {
-        return false;
-    }
+    const marker = readExtractionOwnershipMarker(directory);
+    return marker !== null && marker.schema === exports.LOCAL_FILES_EXTRACTION_SCHEMA && marker.owner === exports.EXTRACTION_OWNER_ID;
 }
 /**
  * True when `directory` is a legacy extraction of an archive that sits beside it.
@@ -262,7 +335,9 @@ function sha256Prefixed(digestHex) {
 /** Stream a file through SHA-256. Bounded memory regardless of file size. */
 function hashFileStreaming(absolutePath) {
     const hash = crypto.createHash("sha256");
-    const fd = fs.openSync(absolutePath, "r");
+    // Only a verified regular file is read: a FIFO would block the open and a
+    // device such as /dev/zero would be read without end.
+    const { fd } = openVerifiedRegularFile(absolutePath);
     try {
         const buffer = Buffer.alloc(HASH_CHUNK_BYTES);
         let position = 0;
@@ -946,6 +1021,11 @@ function resolveSourceKind(absolutePath, requested) {
     if (stats.isSymbolicLink()) {
         throw new Error(`local-source: the source path is a symbolic link and is never followed: ${absolutePath}`);
     }
+    // A FIFO, socket or device has no bytes to identify: reading one would block or
+    // never end. It is refused here, before anything is opened or written.
+    if (entryKindFromStats(stats) === "special") {
+        throw new Error("local-source: the source path is a device, socket or FIFO, not a regular file, and is never read");
+    }
     const nonDirectoryKind = isZipPath(absolutePath) ? "archive" : "file";
     const actual = stats.isDirectory() ? "directory" : nonDirectoryKind;
     if (requested === "auto" || requested === undefined)
@@ -1013,11 +1093,19 @@ function hashStableFile(entry) {
         catch (error) {
             return { digest: null, reason: portableErrorCode(error), changed: false };
         }
+        // Enumerated as a regular file, no longer one: the source changed under the
+        // observation. It is reported as such and never opened.
+        if (!before.isFile()) {
+            return { digest: null, reason: "file is no longer a regular file", changed: true };
+        }
         let candidate;
         try {
             candidate = hashFileStreaming(entry.absolutePath).hash;
         }
         catch (error) {
+            if (error instanceof NotRegularFileError) {
+                return { digest: null, reason: "file is no longer a regular file", changed: true };
+            }
             return { digest: null, reason: portableErrorCode(error), changed: false };
         }
         const after = fs.lstatSync(entry.absolutePath);
@@ -1050,7 +1138,7 @@ function priorHashStillApplies(entry, known) {
 function readPrefix(absolutePath, length) {
     let fd = null;
     try {
-        fd = fs.openSync(absolutePath, "r");
+        fd = openVerifiedRegularFile(absolutePath).fd;
         const buffer = Buffer.alloc(length);
         const count = fs.readSync(fd, buffer, 0, length, 0);
         return buffer.subarray(0, count);
@@ -1217,7 +1305,9 @@ function enumerateSource(absoluteSource, sourceKind, omit, diagnostics, omittedP
     return [{
             absolutePath: absoluteSource,
             relativePath: path.basename(absoluteSource),
-            kind: "file",
+            // Derived, not asserted: a source swapped since resolveSourceKind is observed
+            // as what it now is, and hashing reports the change instead of opening it.
+            kind: entryKindFromStats(stats),
             sizeBytes: stats.size,
             mtimeMs: stats.mtimeMs,
             mtimeNs: highResolutionMtime(absoluteSource),

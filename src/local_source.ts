@@ -375,6 +375,84 @@ export function removeOwnedScratch(root: string, token: string): void {
   fs.rmSync(root, { recursive: true, force: true });
 }
 
+/** Largest ownership marker that is read at all; a real marker is a few hundred bytes. */
+const EXTRACTION_MARKER_MAX_BYTES = 64 * 1024;
+
+/**
+ * Flags for reading untrusted source content: never follow a final symlink, and
+ * never block on opening a FIFO or device. Where a flag is not defined by the
+ * platform it contributes nothing, and the lstat that precedes every open below
+ * stands in for it.
+ */
+const READ_UNTRUSTED_FLAGS = fs.constants.O_RDONLY
+  | (fs.constants.O_NOFOLLOW ?? 0)
+  | (fs.constants.O_NONBLOCK ?? 0);
+
+/** The opened object is not a regular file, so its bytes are never read. */
+class NotRegularFileError extends Error {
+  readonly code = "ENOTREGULAR";
+  constructor() {
+    super("local-source: not a regular file; it is never read");
+    this.name = "NotRegularFileError";
+  }
+}
+
+/**
+ * Open a path for reading only once it is proved to be a regular file.
+ *
+ * The path is lstat'ed first (a symlink, FIFO or device is refused before any
+ * open), opened without following a final symlink and without blocking, and the
+ * descriptor itself is fstat'ed, so an object swapped in between the lstat and the
+ * open is still refused and closed unread. Throws `NotRegularFileError` for
+ * anything that is not a regular file; filesystem errors propagate unchanged.
+ */
+function openVerifiedRegularFile(absolutePath: string): { fd: number; size: number } {
+  if (!fs.lstatSync(absolutePath).isFile()) throw new NotRegularFileError();
+  const fd = fs.openSync(absolutePath, READ_UNTRUSTED_FLAGS);
+  try {
+    const stats = fs.fstatSync(fd);
+    if (!stats.isFile()) throw new NotRegularFileError();
+    return { fd, size: stats.size };
+  } catch (error) {
+    fs.closeSync(fd);
+    throw error;
+  }
+}
+
+/**
+ * The parsed extraction-ownership marker of `directory`, or null when there is none.
+ *
+ * The marker is untrusted source content, so it is read only from a verified,
+ * non-symlink regular file of bounded size. A symlinked, special, oversize,
+ * unreadable or unparsable marker is no marker: ownership is never inferred from
+ * something this function did not fully and safely read.
+ */
+export function readExtractionOwnershipMarker(directory: string): unknown {
+  let opened: { fd: number; size: number };
+  try {
+    opened = openVerifiedRegularFile(path.join(directory, LEGACY_EXTRACTION_OWNER_FILE));
+  } catch {
+    return null;
+  }
+  try {
+    if (opened.size > EXTRACTION_MARKER_MAX_BYTES) return null;
+    // One byte past the ceiling, so a file that grew after fstat is detected.
+    const buffer = Buffer.alloc(EXTRACTION_MARKER_MAX_BYTES + 1);
+    let length = 0;
+    for (;;) {
+      const count = fs.readSync(opened.fd, buffer, length, buffer.length - length, length);
+      if (count === 0) break;
+      length += count;
+      if (length > EXTRACTION_MARKER_MAX_BYTES) return null;
+    }
+    return JSON.parse(buffer.subarray(0, length).toString("utf8")) as unknown;
+  } catch {
+    return null;
+  } finally {
+    fs.closeSync(opened.fd);
+  }
+}
+
 /**
  * True when a directory carries evidence that this tool created it.
  *
@@ -383,18 +461,12 @@ export function removeOwnedScratch(root: string, token: string): void {
  * exactly how user data gets deleted.
  */
 export function hasLegacyExtractionOwnership(directory: string): boolean {
-  try {
-    const marker = JSON.parse(
-      fs.readFileSync(path.join(directory, LEGACY_EXTRACTION_OWNER_FILE), "utf8"),
-    ) as { owner?: unknown };
-    // Exact id only: a prefix match would let an attacker-chosen owner such as
-    // `l9-meta-injector.evil` borrow this package's authority. This predicate
-    // decides exclusion from observation, not destruction; the destructive path
-    // additionally requires the v2 schema.
-    return typeof marker.owner === "string" && marker.owner === EXTRACTION_OWNER_ID;
-  } catch {
-    return false;
-  }
+  const marker = readExtractionOwnershipMarker(directory) as { owner?: unknown } | null;
+  // Exact id only: a prefix match would let an attacker-chosen owner such as
+  // `l9-meta-injector.evil` borrow this package's authority. This predicate
+  // decides exclusion from observation, not destruction; the destructive path
+  // additionally requires the v2 schema.
+  return marker !== null && typeof marker.owner === "string" && marker.owner === EXTRACTION_OWNER_ID;
 }
 
 /**
@@ -404,14 +476,8 @@ export function hasLegacyExtractionOwnership(directory: string): boolean {
  * the v2 schema field is a legacy or foreign file and never authorizes removal.
  */
 export function hasExtractionOwnershipV2(directory: string): boolean {
-  try {
-    const marker = JSON.parse(
-      fs.readFileSync(path.join(directory, LEGACY_EXTRACTION_OWNER_FILE), "utf8"),
-    ) as { schema?: unknown; owner?: unknown };
-    return marker.schema === LOCAL_FILES_EXTRACTION_SCHEMA && marker.owner === EXTRACTION_OWNER_ID;
-  } catch {
-    return false;
-  }
+  const marker = readExtractionOwnershipMarker(directory) as { schema?: unknown; owner?: unknown } | null;
+  return marker !== null && marker.schema === LOCAL_FILES_EXTRACTION_SCHEMA && marker.owner === EXTRACTION_OWNER_ID;
 }
 
 /**
@@ -442,7 +508,9 @@ function sha256Prefixed(digestHex: string): string {
 /** Stream a file through SHA-256. Bounded memory regardless of file size. */
 export function hashFileStreaming(absolutePath: string): { hash: string; bytes: number } {
   const hash = crypto.createHash("sha256");
-  const fd = fs.openSync(absolutePath, "r");
+  // Only a verified regular file is read: a FIFO would block the open and a
+  // device such as /dev/zero would be read without end.
+  const { fd } = openVerifiedRegularFile(absolutePath);
   try {
     const buffer = Buffer.alloc(HASH_CHUNK_BYTES);
     let position = 0;
@@ -1293,6 +1361,13 @@ function resolveSourceKind(absolutePath: string, requested: RequestedSourceKind)
       `local-source: the source path is a symbolic link and is never followed: ${absolutePath}`,
     );
   }
+  // A FIFO, socket or device has no bytes to identify: reading one would block or
+  // never end. It is refused here, before anything is opened or written.
+  if (entryKindFromStats(stats) === "special") {
+    throw new Error(
+      "local-source: the source path is a device, socket or FIFO, not a regular file, and is never read",
+    );
+  }
   const nonDirectoryKind: LocalSourceKind = isZipPath(absolutePath) ? "archive" : "file";
   const actual: LocalSourceKind = stats.isDirectory() ? "directory" : nonDirectoryKind;
   if (requested === "auto" || requested === undefined) return actual;
@@ -1368,10 +1443,18 @@ function hashStableFile(entry: EnumeratedEntry): { digest: string | null; reason
     } catch (error) {
       return { digest: null, reason: portableErrorCode(error), changed: false };
     }
+    // Enumerated as a regular file, no longer one: the source changed under the
+    // observation. It is reported as such and never opened.
+    if (!before.isFile()) {
+      return { digest: null, reason: "file is no longer a regular file", changed: true };
+    }
     let candidate: string;
     try {
       candidate = hashFileStreaming(entry.absolutePath).hash;
     } catch (error) {
+      if (error instanceof NotRegularFileError) {
+        return { digest: null, reason: "file is no longer a regular file", changed: true };
+      }
       return { digest: null, reason: portableErrorCode(error), changed: false };
     }
     const after = fs.lstatSync(entry.absolutePath);
@@ -1406,7 +1489,7 @@ function priorHashStillApplies(entry: EnumeratedEntry, known: KnownFileHash | un
 function readPrefix(absolutePath: string, length: number): Buffer {
   let fd: number | null = null;
   try {
-    fd = fs.openSync(absolutePath, "r");
+    fd = openVerifiedRegularFile(absolutePath).fd;
     const buffer = Buffer.alloc(length);
     const count = fs.readSync(fd, buffer, 0, length, 0);
     return buffer.subarray(0, count);
@@ -1599,7 +1682,9 @@ function enumerateSource(
   return [{
     absolutePath: absoluteSource,
     relativePath: path.basename(absoluteSource),
-    kind: "file",
+    // Derived, not asserted: a source swapped since resolveSourceKind is observed
+    // as what it now is, and hashing reports the change instead of opening it.
+    kind: entryKindFromStats(stats),
     sizeBytes: stats.size,
     mtimeMs: stats.mtimeMs,
     mtimeNs: highResolutionMtime(absoluteSource),

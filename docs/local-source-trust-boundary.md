@@ -120,6 +120,14 @@ times, observation wall clock, usernames and hostnames never cross it.
   `content_hash_unavailable:<CODE>`); one that becomes unreadable between hashing and
   staging makes the observation unstable. Recorded failures carry the errno code and
   the repository-relative path, never the host's message or an absolute path.
+- **Only regular files are opened.** A source path that is a FIFO, socket or device
+  is refused before anything is opened or written. Every file read (hashing, prefix
+  sniffing, the `.l9extracted-owner.json` marker) lstat's the path, opens it
+  without following a final symlink and without blocking, and fstat's the
+  descriptor; anything that is not a regular file is never read. A marker that is
+  a symlink, special file, unparsable, or larger than 64 KiB grants no ownership. A
+  file that turns into something else between enumeration and hashing makes the
+  observation unstable.
 - **Member name encoding.** A member name stored without the UTF-8 flag is decoded as
   UTF-8 and flagged when that is lossy. Historical CP437 names are not transcoded.
 - **Time-of-check to time-of-use on the source root.** The archive is hashed and read

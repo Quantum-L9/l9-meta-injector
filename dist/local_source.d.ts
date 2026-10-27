@@ -189,6 +189,15 @@ export interface LocalSourceObservation {
  */
 export declare function removeOwnedScratch(root: string, token: string): void;
 /**
+ * The parsed extraction-ownership marker of `directory`, or null when there is none.
+ *
+ * The marker is untrusted source content, so it is read only from a verified,
+ * non-symlink regular file of bounded size. A symlinked, special, oversize,
+ * unreadable or unparsable marker is no marker: ownership is never inferred from
+ * something this function did not fully and safely read.
+ */
+export declare function readExtractionOwnershipMarker(directory: string): unknown;
+/**
  * True when a directory carries evidence that this tool created it.
  *
  * A directory is not tool-owned merely because its name ends in `.l9extracted`.
