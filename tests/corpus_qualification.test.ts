@@ -470,6 +470,29 @@ describe("the source", () => {
       /refusing to write the output inside an observed root/,
     );
   });
+
+  it("REG-WU-080-RC-058-RC058-a: a filesystem root contains every path on it", async () => {
+    const { isInsideContainer } = await import("../src/corpus_roots");
+    const root = path.parse(process.cwd()).root;
+    expect(isInsideContainer(root, path.join(root, "tmp", "x"))).toBe(true);
+    expect(isInsideContainer(root, root)).toBe(true);
+  });
+
+  it("REG-WU-080-RC-058-RC058-b: a root of the filesystem root refuses every write", async () => {
+    const { assertOutsideRoots } = await import("../src/corpus_roots");
+    const root = path.parse(process.cwd()).root;
+    expect(() => assertOutsideRoots(path.join(os.tmpdir(), "l9-cache"), [root], "cache")).toThrow(
+      /refusing to write cache inside an observed root/,
+    );
+  });
+
+  it("REG-WU-080-RC-058-RC058-c: '/a' contains itself and not '/ab'", async () => {
+    const { isInsideContainer } = await import("../src/corpus_roots");
+    const a = path.join(path.parse(process.cwd()).root, "a");
+    expect(isInsideContainer(a, `${a}b`)).toBe(false);
+    expect(isInsideContainer(a, a)).toBe(true);
+    expect(isInsideContainer(a, path.join(a, "b"))).toBe(true);
+  });
 });
 
 describe("cache keys", () => {
