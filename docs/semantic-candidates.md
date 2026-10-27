@@ -168,6 +168,9 @@ Ambiguity is flagged rather than resolved: `conflicting_status`,
 `multiple_declared_project_names`, `ambiguous_supersession`,
 `mixed_version_lineage`, `weakly_connected_members`.
 
+`weakly_connected_members` has one rule for topic and project candidates: no
+pair inside the member set is `strong`. Adding a weaker pair can never clear it.
+
 ### `CONSOLIDATION_CANDIDATE`
 
 A person may want to look at these together.
@@ -176,6 +179,25 @@ Admitted on an exact-duplicate cluster, a near-duplicate edge, a declared
 supersession, or a project candidate holding genuine version lineage — meaning a
 near-duplicate edge or a supersession *among its members*, not merely two
 different files.
+
+A supersession counts only when the declaration resolves from one member to
+another: the pair builder records the declaring assertion in that pair's
+`evidence_refs`, and that structured fact — never the wording of a reference
+detail — is what admits it. A member superseding a file outside the group admits
+nothing, and `supersession_assertion_ids` lists only declarations that resolve
+between two of the candidate's members.
+
+Its `confidence_class` is computed by the same rule as topic and project
+candidates: the strongest class among the pairs inside the member set (`weak`
+when none is scored).
+
+### Facts every candidate states about its members
+
+`cross_archive` is true when the members sit under more than one archive
+ancestry; `cross_root` is true when they come from more than one root. Fusion
+computes both from the members for all three candidate kinds, and the packet
+translation refuses a semantic candidate missing either one, or its
+`confidence_class`, rather than supplying a default.
 
 The record carries `unique_content_variant_count`, which is the number that
 decides whether anyone needs to read anything: a group whose members are all

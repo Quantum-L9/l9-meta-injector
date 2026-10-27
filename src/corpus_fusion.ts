@@ -35,7 +35,7 @@ import type { EvidenceFamily, PairSignal, PairSignalKind, SemanticPair } from ".
 import type { ArtifactFeatureView } from "./corpus_semantics";
 
 export const FUSION_PROFILE_ID = "semantic-fusion/v1";
-export const FUSION_PROFILE_VERSION = "1.0.0";
+export const FUSION_PROFILE_VERSION = "1.1.0";
 
 export const TOPIC_CANDIDATE_SCHEMA = "l9.topic-candidates/v1";
 export const PROJECT_CANDIDATE_SCHEMA = "l9.project-candidates/v1";
@@ -281,6 +281,8 @@ export interface TopicCandidate {
   semantic_signal_count: number;
   explicit_reference_count: number;
   cross_archive: boolean;
+  /** True when the members come from more than one root. */
+  cross_root: boolean;
   confidence_class: ConfidenceClass;
   ambiguity_class: string[];
   representative_keyphrases: string[];
@@ -302,6 +304,8 @@ export interface ProjectCandidate {
   open_task_count: number;
   milestone_count: number;
   cross_archive: boolean;
+  /** True when the members come from more than one root. */
+  cross_root: boolean;
   confidence_class: ConfidenceClass;
   ambiguity_class: string[];
   analysis_profile: CandidateAnalysisProfile;
@@ -316,6 +320,15 @@ export interface ConsolidationCandidate {
   supersession_assertion_ids: string[];
   project_candidate_ids: string[];
   cross_archive: boolean;
+  /** True when the members come from more than one root. */
+  cross_root: boolean;
+  /**
+   * The strongest class among the pairs inside the member set — the rule topic
+   * and project candidates use. A group with no scored pair inside it (an exact
+   * duplicate cluster blocking never paired, say) resolves to `weak` by that
+   * same rule, not by a default.
+   */
+  confidence_class: ConfidenceClass;
   content_hash_count: number;
   /** Distinct content hashes: 1 means every member is byte-identical. */
   unique_content_variant_count: number;
@@ -382,6 +395,17 @@ function crossArchive(members: readonly string[], byId: Map<string, ArtifactFeat
     ancestries.add(view.archive_ancestry.join("/"));
   }
   return ancestries.size > 1;
+}
+
+/** True when the members' views name more than one root. Mirrors `crossArchive`. */
+function crossRoot(members: readonly string[], byId: Map<string, ArtifactFeatureView>): boolean {
+  const roots = new Set<string>();
+  for (const id of members) {
+    const view = byId.get(id);
+    if (view === undefined) continue;
+    roots.add(view.root_id);
+  }
+  return roots.size > 1;
 }
 
 function signalCount(
@@ -472,8 +496,12 @@ export function buildTopicCandidates(input: BuildCandidatesInput): TopicCandidat
       semantic_signal_count: signalCount(within.pairs, (s) => s.kind === "embedding_similarity"),
       explicit_reference_count: signalCount(within.pairs, (s) => s.kind === "explicit_reference"),
       cross_archive: crossArchive(members, context.byId),
+      cross_root: crossRoot(members, context.byId),
       confidence_class: strongestClass(within.classifications),
-      ambiguity_class: within.classifications.every((entry) => entry.confidence_class === "moderate")
+      // The project rule, stated once for both kinds: weakly connected means no
+      // pair inside the member set is strong. Testing "every pair is moderate"
+      // instead made the flag non-monotone — adding a *weaker* pair cleared it.
+      ambiguity_class: within.classifications.every((entry) => entry.confidence_class !== "strong")
         ? [AMBIGUITY_WEAKLY_CONNECTED]
         : [],
       representative_keyphrases: [...keyphrases.entries()]
@@ -567,6 +595,7 @@ export function buildProjectCandidates(input: BuildCandidatesInput): ProjectCand
       open_task_count: openTasks,
       milestone_count: milestones,
       cross_archive: crossArchive(members, context.byId),
+      cross_root: crossRoot(members, context.byId),
       confidence_class: strongestClass(within.classifications),
       ambiguity_class: [...new Set(ambiguity)].sort(compareCodePoints),
       analysis_profile: context.profile,
@@ -620,13 +649,26 @@ export function buildConsolidationCandidates(
     record(`cluster:${clusterId}`, members, CONSOLIDATION_EVIDENCE_EXACT_DUPLICATE);
   }
 
+  // Every supersession declaration any view made, by assertion id. The pair
+  // builder records a declaration's assertion id in a pair's evidence_refs only
+  // when that declaration resolves from one pair member to the other, so a pair
+  // is a supersession pair exactly when its evidence_refs meet this set. That is
+  // the structured fact; the free-text detail is not, because it also carries
+  // reference targets an author chose — a path that merely spells the word is
+  // not a supersession.
+  const supersessionAssertionIds = new Set<string>();
+  for (const view of input.views) {
+    for (const declaration of view.supersession_declarations) {
+      supersessionAssertionIds.add(declaration.assertion_id);
+    }
+  }
+  const resolvedSupersessions = (pair: SemanticPair): string[] =>
+    pair.evidence_refs.filter((ref) => supersessionAssertionIds.has(ref));
+
   // Near-duplicate and declared-supersession pairs.
   for (const pair of input.pairs) {
     const hasNear = pair.signals.some((signal) => signal.kind === "near_duplicate");
-    const hasSupersession = pair.signals.some(
-      (signal) => signal.kind === "explicit_reference"
-        && signal.detail.some((entry) => entry.includes("supersede")),
-    );
+    const hasSupersession = resolvedSupersessions(pair).length > 0;
     if (!hasNear && !hasSupersession) continue;
     record(
       `pair:${pair.pair_id}`,
@@ -642,7 +684,8 @@ export function buildConsolidationCandidates(
   // would make every multi-file project a consolidation candidate, which is a
   // false-positive generator rather than a finding. What is needed is evidence
   // of a lineage: a near-duplicate edge between members, or a member declaring
-  // it supersedes another.
+  // it supersedes another *member* — a declaration that resolves inside the
+  // project. A member superseding something outside it is no lineage here.
   const projectByKey = new Map<string, string>();
   for (const project of input.projectCandidates) {
     const members = new Set(project.member_artifact_ids);
@@ -656,9 +699,8 @@ export function buildConsolidationCandidates(
     const hasVersionLineage = input.pairs.some(
       (pair) => members.has(pair.artifact_a_id)
         && members.has(pair.artifact_b_id)
-        && pair.signals.some((signal) => signal.kind === "near_duplicate"),
-    ) || project.member_artifact_ids.some(
-      (id) => (context.byId.get(id)?.supersession_declarations.length ?? 0) > 0,
+        && (pair.signals.some((signal) => signal.kind === "near_duplicate")
+          || resolvedSupersessions(pair).length > 0),
     );
     if (!hasVersionLineage) continue;
 
@@ -687,10 +729,6 @@ export function buildConsolidationCandidates(
     for (const view of views) {
       for (const id of view.near_duplicate_candidate_ids) nearIds.add(id);
     }
-    const supersessionIds = new Set<string>();
-    for (const view of views) {
-      for (const declaration of view.supersession_declarations) supersessionIds.add(declaration.assertion_id);
-    }
     const statuses = new Set<string>();
     for (const view of views) {
       for (const status of view.statuses) statuses.add(status);
@@ -698,8 +736,13 @@ export function buildConsolidationCandidates(
 
     const within = pairsWithin(members, context.classifications, context.pairById);
     const evidenceRefs = new Set<string>();
+    // Only declarations that resolve between two members of this candidate: a
+    // member superseding something outside the group is not a supersession the
+    // group holds.
+    const supersessionIds = new Set<string>();
     for (const pair of within.pairs) {
       for (const ref of pair.evidence_refs) evidenceRefs.add(ref);
+      for (const ref of resolvedSupersessions(pair)) supersessionIds.add(ref);
     }
 
     const sortedStatuses = [...statuses].sort(compareCodePoints);
@@ -724,6 +767,8 @@ export function buildConsolidationCandidates(
       supersession_assertion_ids: [...supersessionIds].sort(compareCodePoints),
       project_candidate_ids: projectId === undefined ? [] : [projectId],
       cross_archive: crossArchive(members, context.byId),
+      cross_root: crossRoot(members, context.byId),
+      confidence_class: strongestClass(within.classifications),
       content_hash_count: hashes.size,
       unique_content_variant_count: hashes.size,
       work_statuses: sortedStatuses,

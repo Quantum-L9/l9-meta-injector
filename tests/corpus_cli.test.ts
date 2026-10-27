@@ -380,6 +380,43 @@ describe("corpus mode", () => {
 });
 
 describe("semantic candidate discovery", () => {
+  it("REG-WU-048-RC-074-e: every semantic packet cluster states cross_root from its members' roots", () => {
+    const f = fixture();
+    expect(run(argsFor(f)).status).toBe(0);
+    const read = (...parts: string[]) =>
+      JSON.parse(fs.readFileSync(path.join(generation(f), ...parts), "utf8"));
+
+    const documents = read("document-index.json");
+    const rootOf = new Map<string, string>(
+      documents.documents.map((entry: { artifact_id: string; root_id: string }) =>
+        [entry.artifact_id, entry.root_id]),
+    );
+    const upstream = new Map<string, string[]>();
+    for (const name of ["topic-candidates.json", "project-candidates.json", "consolidation-candidates.json"]) {
+      for (const candidate of read(name).candidates) {
+        upstream.set(candidate.candidate_id, candidate.member_artifact_ids);
+      }
+    }
+    expect(upstream.size).toBeGreaterThan(0);
+
+    let spanning = 0;
+    for (const name of ["topic-candidates.json", "project-candidates.json", "consolidation-candidates.json"]) {
+      const clusters: { candidate_id: string; upstream_candidate_id: string; cross_root: boolean }[] =
+        read("corpus-intelligence", "payload", name);
+      for (const cluster of clusters) {
+        const members = upstream.get(cluster.upstream_candidate_id);
+        if (members === undefined) continue; // a lexical project candidate
+        const roots = new Set(members.map((id: string) => rootOf.get(id)));
+        expect(roots.has(undefined), `${cluster.candidate_id} member without a root`).toBe(false);
+        const spans = roots.size > 1;
+        if (spans) spanning += 1;
+        expect(cluster.cross_root, cluster.candidate_id).toBe(spans);
+      }
+    }
+    // OldSSD and Backup hold a byte-identical widget-api/PLAN.md.
+    expect(spanning).toBeGreaterThan(0);
+  });
+
   it("emits the candidate documents, the reasoning queue and the document index", () => {
     const f = fixture();
     expect(run(argsFor(f)).status).toBe(0);
