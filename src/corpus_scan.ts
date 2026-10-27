@@ -2287,12 +2287,14 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       reasons.reduce((sum, reason) => sum + (refusalReasons.get(reason) ?? 0), 0);
     const namedRefusals = new Set([
       "decoder.ocr_required", "decoder.encrypted", "decoder.malformed",
-      "not_utf8", "binary", "encoding",
+      "binary", "invalid",
     ]);
     const decodeGap = {
       secret_skipped: skipped.secret,
       oversized: skipped.oversized,
-      encoding_rejected: refusals("not_utf8", "binary", "encoding"),
+      // The text path refuses with an `EncodingStatus`: `binary` and `invalid` are
+      // encoding verdicts; `unreadable` is not, and stays in `other_refusal`.
+      encoding_rejected: refusals("binary", "invalid"),
       ocr_required: refusals("decoder.ocr_required"),
       encrypted: refusals("decoder.encrypted"),
       malformed: refusals("decoder.malformed"),
