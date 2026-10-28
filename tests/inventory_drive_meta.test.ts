@@ -762,3 +762,88 @@ describe("apply and local-source isolation", () => {
     expect(fs.existsSync(path.join(root, "pack.zip.l9meta.yaml"))).toBe(false);
   });
 });
+
+describe("WU-076 RC-053: the record and sidecar describe the archive bytes left on disk", () => {
+  const NOW = "2026-09-11T12:00:00.000Z";
+  const sha256 = (bytes: Buffer): string => require("node:crypto").createHash("sha256").update(bytes).digest("hex") as string;
+  const sidecarHash = (abs: string): string | undefined =>
+    /^content_hash: "?([0-9a-f]{64})"?$/m.exec(fs.readFileSync(`${abs}.l9meta.yaml`, "utf8"))?.[1];
+  function expectTruthful(result: ReturnType<typeof inventoryTree>, root: string, name: string): void {
+    const abs = path.join(root, name);
+    const bytes = fs.readFileSync(abs);
+    const rec = result.records.find((r) => r.relative_path === name);
+    expect(rec?.content_hash, `${name} record hash`).toBe(sha256(bytes));
+    expect(rec?.size_bytes, `${name} record size`).toBe(bytes.length);
+    expect(rec?.modified_at, `${name} record mtime`).toBe(fs.lstatSync(abs).mtime.toISOString());
+    expect(sidecarHash(abs), `${name} sidecar hash`).toBe(sha256(bytes));
+    const manifest = JSON.parse(fs.readFileSync(result.manifestPaths.json, "utf8")) as { records: Array<{ relative_path: string; content_hash: string }> };
+    expect(manifest.records.find((r) => r.relative_path === name)?.content_hash, `${name} inventory.json hash`).toBe(sha256(bytes));
+  }
+
+  test("REG-WU-076-RC-053-RC053-a: rewritten zip and tar are recorded with their post-rewrite hash and size", () => {
+    const root = tmp();
+    fs.writeFileSync(path.join(root, "pack.zip"), buildZipBuffer([{ name: "readme.txt", data: Buffer.from("hello\n") }]));
+    fs.writeFileSync(path.join(root, "pack.tar"), buildTarArchive([{ name: "readme.txt", content: "hello\n" }]));
+    const result = inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false, now: NOW });
+    expect(peekZipRootMeta(path.join(root, "pack.zip"))).toContain("inspected_at:");
+    expect(peekTarRootMeta(fs.readFileSync(path.join(root, "pack.tar")))).not.toBeNull();
+    expectTruthful(result, root, "pack.zip");
+    expectTruthful(result, root, "pack.tar");
+  });
+
+  test("REG-WU-076-RC-053-RC053-b: a rewritten tar.gz is recorded with its post-rewrite hash", () => {
+    const root = tmp();
+    fs.writeFileSync(path.join(root, "pack.tar.gz"), gzipTar(buildTarArchive([{ name: "readme.txt", content: "hello\n" }])));
+    const result = inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false, now: NOW });
+    expectTruthful(result, root, "pack.tar.gz");
+  });
+
+  test("REG-WU-076-RC-053-RC053-c: held archives keep their bytes and their observed hash", () => {
+    const root = tmp();
+    const held: Record<string, Buffer> = {
+      "bad.tar": hostileTarCorpus()["traversal.tar"]!,
+      "lib.jar": buildZipBuffer([{ name: "A.class", data: Buffer.from([1, 2, 3]) }]),
+      "only.gz": Buffer.from([0x1f, 0x8b, 0x08, 0x00, 0, 0, 0, 0, 0, 3]),
+      "fake.zip": Buffer.from("not a zip at all\n"),
+    };
+    for (const [name, bytes] of Object.entries(held)) fs.writeFileSync(path.join(root, name), bytes);
+    const result = inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false, now: NOW });
+    for (const [name, bytes] of Object.entries(held)) {
+      expect(fs.readFileSync(path.join(root, name)), name).toEqual(bytes);
+      const rec = result.records.find((r) => r.relative_path === name);
+      expect(rec?.content_hash, name).toBe(sha256(bytes));
+      expect(sidecarHash(path.join(root, name)), name).toBe(sha256(bytes));
+      expect(rec?.unknowns.some((u) => u.startsWith("archive_rewrite_held:")), name).toBe(true);
+    }
+  });
+
+  test("REG-WU-076-RC-053-RC053-d: a rewritten archive and its sidecar converge on the second run", () => {
+    const root = tmp();
+    const zipPath = path.join(root, "pack.zip");
+    fs.writeFileSync(zipPath, buildZipBuffer([{ name: "readme.txt", data: Buffer.from("hello\n") }]));
+    const first = inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false, now: NOW });
+    const zipAfterFirst = fs.readFileSync(zipPath);
+    const sidecarAfterFirst = fs.readFileSync(`${zipPath}.l9meta.yaml`, "utf8");
+    const second = inventoryTree({ root, outDir: path.join(tmp(), "out2"), folderSidecars: false, now: NOW });
+    expect(fs.readFileSync(zipPath)).toEqual(zipAfterFirst);
+    expect(fs.readFileSync(`${zipPath}.l9meta.yaml`, "utf8")).toBe(sidecarAfterFirst);
+    expect(second.records.find((r) => r.relative_path === "pack.zip")?.content_hash)
+      .toBe(first.records.find((r) => r.relative_path === "pack.zip")?.content_hash);
+    expectTruthful(second, root, "pack.zip");
+  });
+
+  test("REG-WU-076-RC-053-RC053-e: identical zips at different paths stop clustering once their members differ", () => {
+    const root = tmp();
+    const zip = buildZipBuffer([{ name: "readme.txt", data: Buffer.from("hello\n") }]);
+    fs.mkdirSync(path.join(root, "copy"));
+    fs.writeFileSync(path.join(root, "pack.zip"), zip);
+    fs.writeFileSync(path.join(root, "copy", "pack.zip"), zip);
+    const result = inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false, now: NOW });
+    const a = fs.readFileSync(path.join(root, "pack.zip"));
+    const b = fs.readFileSync(path.join(root, "copy", "pack.zip"));
+    expect(sha256(a)).not.toBe(sha256(b));
+    expect(result.duplicates.filter((d) => d.paths.includes("pack.zip"))).toEqual([]);
+    expectTruthful(result, root, "pack.zip");
+    expectTruthful(result, root, "copy/pack.zip");
+  });
+});

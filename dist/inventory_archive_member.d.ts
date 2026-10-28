@@ -23,5 +23,12 @@ export type ArchiveMemberResult = {
     rewritten: false;
     hold: string;
 };
+/**
+ * Upsert the archive's root `.l9meta.yaml` member. Every outcome is a result:
+ * admission holds, codec holds, and filesystem failures while reading or
+ * replacing the archive (`archive.rewrite_io_failed:<errno>`) all return
+ * `{ rewritten: false, hold }` so the caller records them on the archive's own
+ * record and the inventory walk continues (RC-056).
+ */
 export declare function upsertArchiveRootMeta(abs: string, yaml: string): ArchiveMemberResult;
 export declare function isCanonicalMetaMemberName(name: string): boolean;
