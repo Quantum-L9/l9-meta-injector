@@ -240,16 +240,23 @@ async function processSkillFile(abs, root, config, assistCfg, metrics) {
 }
 async function runSkillsPipelineAsync(config) {
     const metrics = new metrics_1.MetricsCollector();
+    // The run's adapter is scoped to this run (ADR-064, RC-018) and the process-global
+    // adapter is never changed. Complete credentials scope an OpenAI adapter; a disabled
+    // LLM scopes the local adapter; llmEnabled without complete credentials opens no scope,
+    // so the adapter the caller installed with setAdapter is the one consulted.
     if (config.llmEnabled && config.llmBaseUrl && config.llmApiKey && config.llmModel) {
-        (0, llm_1.setAdapter)((0, llm_1.makeOpenAIAdapter)({
+        const adapter = (0, llm_1.makeOpenAIAdapter)({
             baseUrl: config.llmBaseUrl, apiKey: config.llmApiKey, model: config.llmModel,
             onDiagnostic: metrics.onLlmDiagnostic,
             allowInsecure: config.llmAllowInsecure,
-        }));
+        });
+        return (0, llm_1.runWithAdapter)(adapter, () => runSkillsPipelineInScope(config, metrics));
     }
-    else if (!config.llmEnabled) {
-        (0, llm_1.resetAdapter)();
-    }
+    if (!config.llmEnabled)
+        return (0, llm_1.runWithAdapter)(llm_1.localAdapter, () => runSkillsPipelineInScope(config, metrics));
+    return runSkillsPipelineInScope(config, metrics);
+}
+async function runSkillsPipelineInScope(config, metrics) {
     const root = path.resolve(config.root);
     fs.mkdirSync(config.outDir, { recursive: true });
     // Repository authority is mandatory before any protected SKILL.md mutation

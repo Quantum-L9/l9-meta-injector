@@ -16,7 +16,7 @@ import { compilePlacementPlan, PlacementPlan } from "./placement_policy";
 import { buildMetaV3, MetaV3Record } from "./meta_v3";
 import { assistField, DEFAULT_ASSIST_CONFIG, PROSE_ORIGIN_FIELDS } from "./assist";
 import { normalizeFilenames } from "./normalize_filename";
-import { makeOpenAIAdapter, setAdapter, resetAdapter } from "./llm";
+import { localAdapter, makeOpenAIAdapter, runWithAdapter } from "./llm";
 import { applySchema, targetIncludes } from "./meta_schema";
 import { MetricsCollector, MetricsSnapshot } from "./metrics";
 import { NamespaceConfig } from "./namespace";
@@ -194,6 +194,23 @@ function omitPatternsForOutputs(root: string, outputs: string[]): string[] {
 }
 
 export async function runPipelineAsync(config: PipelineConfig): Promise<PipelineResult> {
+  // One collector per run aggregates the LLM/IO hotpath signal (OBS-009/OBS-010):
+  // decision paths, call counts, failure counts, and p50/p95 latency.
+  const metrics = new MetricsCollector();
+  // The run's adapter is scoped to this run (ADR-064, RC-018): the OpenAI adapter when
+  // credentials are complete, otherwise the local adapter. The process-global adapter a
+  // caller may have installed is neither read nor changed.
+  const adapter = config.llmEnabled && config.llmBaseUrl && config.llmApiKey && config.llmModel
+    ? makeOpenAIAdapter({
+      baseUrl: config.llmBaseUrl, apiKey: config.llmApiKey, model: config.llmModel,
+      onDiagnostic: metrics.onLlmDiagnostic,
+      allowInsecure: config.llmAllowInsecure,
+    })
+    : localAdapter;
+  return runWithAdapter(adapter, () => runPipelineInScope(config, metrics));
+}
+
+async function runPipelineInScope(config: PipelineConfig, metrics: MetricsCollector): Promise<PipelineResult> {
   const runStartedAt = new Date().toISOString();
   const root = path.resolve(config.root);
   const metadataTimestamp = config.metadataTimestamp?.trim() || UNKNOWN;
@@ -208,20 +225,6 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
     authority: identity.authority,
     namespace: identity.namespace,
   });
-
-  // One collector per run aggregates the LLM/IO hotpath signal (OBS-009/OBS-010):
-  // decision paths, call counts, failure counts, and p50/p95 latency.
-  const metrics = new MetricsCollector();
-
-  if (config.llmEnabled && config.llmBaseUrl && config.llmApiKey && config.llmModel) {
-    setAdapter(makeOpenAIAdapter({
-      baseUrl: config.llmBaseUrl, apiKey: config.llmApiKey, model: config.llmModel,
-      onDiagnostic: metrics.onLlmDiagnostic,
-      allowInsecure: config.llmAllowInsecure,
-    }));
-  } else {
-    resetAdapter();
-  }
 
   const assistCfg = { ...DEFAULT_ASSIST_CONFIG, enabled: config.llmEnabled };
 

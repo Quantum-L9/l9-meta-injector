@@ -131,6 +131,22 @@ function omitPatternsForOutputs(root, outputs) {
     return patterns;
 }
 async function runPipelineAsync(config) {
+    // One collector per run aggregates the LLM/IO hotpath signal (OBS-009/OBS-010):
+    // decision paths, call counts, failure counts, and p50/p95 latency.
+    const metrics = new metrics_1.MetricsCollector();
+    // The run's adapter is scoped to this run (ADR-064, RC-018): the OpenAI adapter when
+    // credentials are complete, otherwise the local adapter. The process-global adapter a
+    // caller may have installed is neither read nor changed.
+    const adapter = config.llmEnabled && config.llmBaseUrl && config.llmApiKey && config.llmModel
+        ? (0, llm_1.makeOpenAIAdapter)({
+            baseUrl: config.llmBaseUrl, apiKey: config.llmApiKey, model: config.llmModel,
+            onDiagnostic: metrics.onLlmDiagnostic,
+            allowInsecure: config.llmAllowInsecure,
+        })
+        : llm_1.localAdapter;
+    return (0, llm_1.runWithAdapter)(adapter, () => runPipelineInScope(config, metrics));
+}
+async function runPipelineInScope(config, metrics) {
     const runStartedAt = new Date().toISOString();
     const root = path.resolve(config.root);
     const metadataTimestamp = config.metadataTimestamp?.trim() || schema_1.UNKNOWN;
@@ -145,19 +161,6 @@ async function runPipelineAsync(config) {
         authority: identity.authority,
         namespace: identity.namespace,
     });
-    // One collector per run aggregates the LLM/IO hotpath signal (OBS-009/OBS-010):
-    // decision paths, call counts, failure counts, and p50/p95 latency.
-    const metrics = new metrics_1.MetricsCollector();
-    if (config.llmEnabled && config.llmBaseUrl && config.llmApiKey && config.llmModel) {
-        (0, llm_1.setAdapter)((0, llm_1.makeOpenAIAdapter)({
-            baseUrl: config.llmBaseUrl, apiKey: config.llmApiKey, model: config.llmModel,
-            onDiagnostic: metrics.onLlmDiagnostic,
-            allowInsecure: config.llmAllowInsecure,
-        }));
-    }
-    else {
-        (0, llm_1.resetAdapter)();
-    }
     const assistCfg = { ...assist_1.DEFAULT_ASSIST_CONFIG, enabled: config.llmEnabled };
     // The run's own output must never be its next input. An output directory equal
     // to the root would scatter reports among the sources; one nested inside the
