@@ -88,15 +88,17 @@ authority-pattern validation, carrier matrix tests, precedence tests,
 ### INV-019: Central metadata index bytes are canonical and self-excluding
 
 The repository metadata index is `.l9/metadata-index.jsonl`. Every non-`hard_skip`
-record is canonical JSON, sorted by repository-relative POSIX path, recursively
-sorts metadata keys, requires a lowercase SHA-256 content hash, contains no
-absolute paths or run-time report fields, and ends with one newline. Normal
+record is canonical JSON, sorted by repository-relative POSIX path in code-point
+order, recursively sorts metadata keys, requires a lowercase SHA-256 content hash,
+contains no absolute paths or run-time report fields, and ends with one newline.
+Producer and parser enforce the shipped record schema: exactly its six keys, and no
+path with a control character, a leading `.` or more than 4096 characters (ADR-058). Normal
 discovery records `.l9` as generated state and never descends into it. Unchanged
 index bytes are not rewritten. Adjacent sidecars and inject logs are disabled by
 default and require explicit opt-in.
 
 **Enforced by:** `src/metadata_index.ts`, `src/retrieval.ts`, metadata-index
-schema validation, dual-order determinism tests, symlink-containment tests, and
+schema-conformance tests, dual-order determinism tests, symlink-containment tests, and
 idempotent write tests.
 
 ### INV-020: Governed check and apply share one carrier plan
@@ -105,10 +107,15 @@ Check and apply must consume the same path-sorted carrier decisions and canonica
 metadata-index compilation. `central_manifest` and `inventory_only` never create
 adjacent sidecars or source annotations. `inline_managed` requires an explicitly
 authorized YAML-frontmatter subject whose target is the source path. Skills mode
-recognizes only the canonical `SKILL.md` basename.
+recognizes only the canonical `SKILL.md` basename. A scoped run (its discovery
+ledger records `glob_filtered`/`extension_filtered` files) merges with the existing
+index: records of scope-filtered paths are carried forward byte for byte, apply
+compare-and-swaps against the index bytes the merge read, and an index that cannot
+be parsed is reported by check and refused by apply rather than discarded (ADR-058).
 
 **Enforced by:** `src/carrier_operation.ts`, `src/apply.ts`, carrier-operation
-tests, exact-skill-entrypoint tests, and apply-dispatch source-contract tests.
+tests, scoped-index merge tests, exact-skill-entrypoint tests, and apply-dispatch
+source-contract tests.
 
 ### INV-021: Apply is whole-run transactional
 

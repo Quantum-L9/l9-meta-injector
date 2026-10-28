@@ -34,6 +34,13 @@ export interface CompileMetadataIndexInput {
     authority: AuthorityConfig;
     mode: OperationMode;
     subjects: readonly ManagedMetadataSubject[];
+    /**
+     * Existing index records carried forward verbatim (ADR-058). A scoped governed run
+     * passes the records of paths its discovery ledger marked scope-filtered; they are
+     * merged with the records compiled from `subjects` and validated as one index.
+     * Carrier decisions still cover `subjects` only.
+     */
+    preservedRecords?: readonly MetadataIndexRecord[];
 }
 export interface WriteMetadataIndexOptions {
     dryRun?: boolean;

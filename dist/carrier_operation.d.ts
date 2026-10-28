@@ -19,6 +19,17 @@ export interface CarrierOperationPlan {
     subjects: PipelineMetadataSubject[];
     carrierDecisions: CarrierDecision[];
     metadataIndex: MetadataIndexCompilation;
+    /**
+     * The existing index a scoped run merged with (ADR-058), or null for an unscoped run,
+     * which never reads it. Apply binds the index intent's compare-and-swap to this base.
+     * `unmergeableReason` is set when the base cannot be preserved: check reports it as a
+     * conflict and apply refuses before any write.
+     */
+    metadataIndexBase: {
+        exists: boolean;
+        sha256?: string;
+        unmergeableReason?: string;
+    } | null;
     inlinePlans: InjectionRecord[];
 }
 export interface PlanCarrierOperationInput {
