@@ -30,7 +30,7 @@ import {
   toPortableAssertions,
 } from "../src/interpretation";
 import { defaultExtractors } from "../src/extractors";
-import { canonicalJson } from "../src/repository_model";
+import { canonicalJson, emitRepositoryModelBundle } from "../src/repository_model";
 
 const scratch: string[] = [];
 function tmp(prefix = "l9-identity-"): string {
@@ -311,11 +311,17 @@ describe("a root inside a corpus", () => {
     const packet = result.rootPackets[0]?.packet;
     expect(packet?.packet_id).toBe(golden.packet_id);
     expect(packet?.semantic_hash).toBe(golden.semantic_hash);
-    // Compared canonically: the committed file is canonical JSON and the
-    // in-memory packet carries insertion order, which is a difference in
-    // serialization rather than in the packet.
-    expect(canonicalJson(packet as unknown as Record<string, unknown>))
-      .toBe(canonicalJson(golden as unknown as Record<string, unknown>));
+    // A built-but-unemitted packet carries no receipt_ref (RC-035, WU-030); the
+    // receipt exists only once the bundle is emitted. So the corpus root packet is
+    // compared as the bundle the corpus writes for it (local-source-cli emits
+    // every root packet through emitRepositoryModelBundle), byte for byte.
+    expect(packet?.validation).toEqual({ status: "passed" });
+    const emitted = path.join(tmp(), "bundle");
+    emitRepositoryModelBundle(packet!, { outDir: emitted });
+    for (const relative of ["packet.json", "manifest.json", "receipts/validation-receipt.json"]) {
+      expect(fs.readFileSync(path.join(emitted, relative), "utf8"))
+        .toBe(fs.readFileSync(path.join(GOLDEN, relative), "utf8"));
+    }
 
     // And the snapshot cites exactly that packet, so the corpus points at the
     // artifact the consumer accepts rather than at a description of one.
