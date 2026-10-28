@@ -1772,7 +1772,10 @@ async function runCorpusScan(input) {
             - decodeGap.secret_skipped - decodeGap.oversized - decodeGap.encoding_rejected
             - decodeGap.ocr_required - decodeGap.encrypted - decodeGap.malformed
             - decodeGap.other_refusal;
-        const interpretationEligible = artifacts.filter((artifact) => interpretEnabled && extractors.some((extractor) => extractor.matches(artifact.rootRelativePath)));
+        // Eligibility is a property of the artifact and the extractors, not of the
+        // switch: a disabled pass is reported as not run below, never as a pass over
+        // an empty eligible set (ADR-068).
+        const interpretationEligible = artifacts.filter((artifact) => extractors.some((extractor) => extractor.matches(artifact.rootRelativePath)));
         const lexicalEligible = artifacts.filter((artifact) => isLexicallyAnalyzable(artifact.rootRelativePath)
             || (0, documents_1.isProseDocumentFormat)(registry.forPath(artifact.rootRelativePath)?.format ?? ""));
         const encryptedCount = active.reduce((sum, entry) => sum
@@ -1916,7 +1919,10 @@ async function runCorpusScan(input) {
             },
             exact_hash_coverage: (0, corpus_coverage_1.coverageRatio)(artifacts.filter((artifact) => artifact.contentHash !== null).length, artifacts.length),
             normalized_document_coverage: (0, corpus_coverage_1.coverageRatio)(decodedIds.size, decodableIds.size),
-            interpretation_coverage: (0, corpus_coverage_1.coverageRatio)(interpretationEligible.filter((artifact) => interpreted.has(artifact.virtualSourceId)).length, interpretationEligible.length),
+            interpretation_enabled: interpretEnabled,
+            interpretation_coverage: interpretEnabled
+                ? (0, corpus_coverage_1.coverageRatio)(interpretationEligible.filter((artifact) => interpreted.has(artifact.virtualSourceId)).length, interpretationEligible.length)
+                : null,
             lexical_analysis_coverage: (0, corpus_coverage_1.coverageRatio)(lexicalEligible.filter((artifact) => lexical.has(artifact.virtualSourceId)).length, lexicalEligible.length),
             // A real ratio when a pass ran, and null — not zero — when none did. Zero
             // would read as "the model was asked and answered nothing".

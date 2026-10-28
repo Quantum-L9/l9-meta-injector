@@ -2329,8 +2329,11 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       - decodeGap.secret_skipped - decodeGap.oversized - decodeGap.encoding_rejected
       - decodeGap.ocr_required - decodeGap.encrypted - decodeGap.malformed
       - decodeGap.other_refusal;
+    // Eligibility is a property of the artifact and the extractors, not of the
+    // switch: a disabled pass is reported as not run below, never as a pass over
+    // an empty eligible set (ADR-068).
     const interpretationEligible = artifacts.filter(
-      (artifact) => interpretEnabled && extractors.some((extractor) => extractor.matches(artifact.rootRelativePath)),
+      (artifact) => extractors.some((extractor) => extractor.matches(artifact.rootRelativePath)),
     );
     const lexicalEligible = artifacts.filter(
       (artifact) => isLexicallyAnalyzable(artifact.rootRelativePath)
@@ -2498,10 +2501,13 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
         artifacts.length,
       ),
       normalized_document_coverage: coverageRatio(decodedIds.size, decodableIds.size),
-      interpretation_coverage: coverageRatio(
-        interpretationEligible.filter((artifact) => interpreted.has(artifact.virtualSourceId)).length,
-        interpretationEligible.length,
-      ),
+      interpretation_enabled: interpretEnabled,
+      interpretation_coverage: interpretEnabled
+        ? coverageRatio(
+          interpretationEligible.filter((artifact) => interpreted.has(artifact.virtualSourceId)).length,
+          interpretationEligible.length,
+        )
+        : null,
       lexical_analysis_coverage: coverageRatio(
         lexicalEligible.filter((artifact) => lexical.has(artifact.virtualSourceId)).length,
         lexicalEligible.length,

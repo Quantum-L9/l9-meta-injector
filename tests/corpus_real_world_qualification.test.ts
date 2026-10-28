@@ -34,6 +34,7 @@ import {
 } from "../src/corpus_scan";
 import { renderCorpusSnapshot } from "../src/corpus_snapshot";
 import { renderCorpusCoverage } from "../src/corpus_coverage";
+import { defaultDecoderRegistry } from "../src/documents";
 import {
   lockReadOnly,
   mutatedPaths,
@@ -186,6 +187,7 @@ describe("a real mixed corpus on three read-only roots", () => {
     expect(report.corpus.root_count).toBe(3);
     expect(report.corpus.archive_count).toBeGreaterThanOrEqual(7);
     expect(report.corpus.archive_member_count).toBeGreaterThanOrEqual(13);
+    // REG-WU-049-RC-089-c: counted from root-relative basenames, still >= 15.
     expect(report.corpus.distinct_extension_count).toBeGreaterThanOrEqual(15);
     expect(report.roots).toHaveLength(3);
     expect(report.roots.map((root) => root.root_label).sort())
@@ -230,7 +232,18 @@ describe("a real mixed corpus on three read-only roots", () => {
     expect(report.cache_hit_ratio_second_run.layers.length).toBeGreaterThan(0);
 
     // 4. decoder_coverage
-    expect(report.decoder_coverage.text_decoder_id).toBe("utf8-text-decoder");
+    // The decoders the run actually used, not one stale text-decoder name
+    // (REG-WU-049-RC-088-a; ADR-068).
+    expect(report.decoder_coverage.decoder_profiles)
+      .toEqual([...cold.snapshot.analysis.document_decoder_profiles].sort());
+    for (const entry of defaultDecoderRegistry().profile()) {
+      expect(report.decoder_coverage.decoder_profiles).toContain(entry);
+    }
+    expect(report.decoder_coverage.interpretation_enabled).toBe(true);
+    // REG-WU-049-RC-088-c: the ratios are the coverage projection's, unchanged.
+    expect(report.decoder_coverage.normalized_document).toEqual(coverage.normalized_document_coverage);
+    expect(report.decoder_coverage.interpretation).toEqual(coverage.interpretation_coverage);
+    expect(report.decoder_coverage.lexical_analysis).toEqual(coverage.lexical_analysis_coverage);
     expect(report.decoder_coverage.normalized_document.covered).toBeGreaterThan(0);
     expect(report.decoder_coverage.interpretation.covered).toBeGreaterThan(0);
     expect(report.decoder_coverage.lexical_analysis.covered).toBeGreaterThan(0);

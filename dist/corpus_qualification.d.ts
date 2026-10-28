@@ -1,7 +1,14 @@
 import type { CoverageRatio, FormatCount } from "./corpus_coverage";
 import type { CorpusScanResult } from "./corpus_scan";
-/** Schema of the real-corpus qualification report. */
-export declare const CORPUS_QUALIFICATION_SCHEMA = "l9.corpus-qualification-report/v1";
+/**
+ * Schema of the real-corpus qualification report.
+ *
+ * v2 (ADR-068): `decoder_coverage` names every decoder profile the run used in
+ * `decoder_profiles` instead of one stale text-decoder identity, and states
+ * `interpretation_enabled` with a null `interpretation` ratio when the pass did
+ * not run.
+ */
+export declare const CORPUS_QUALIFICATION_SCHEMA = "l9.corpus-qualification-report/v2";
 /** One root, named by identity alone. */
 export interface QualificationRoot {
     root_id: string;
@@ -10,12 +17,19 @@ export interface QualificationRoot {
     source_kind: string;
     source_revision: string;
 }
-/** What the decoders opened, and under which decoder identity. */
+/** What the decoders opened, and under which decoder identities. */
 export interface DecoderCoverage {
-    text_decoder_id: string;
-    text_decoder_version: string;
+    /**
+     * `id@version` of every decoder the run could decode with, sorted — the run's
+     * own `snapshot.analysis.document_decoder_profiles`. The ratios below span
+     * every one of them, so no single decoder is named as their identity.
+     */
+    decoder_profiles: string[];
     normalized_document: CoverageRatio;
-    interpretation: CoverageRatio;
+    /** Whether the interpretation pass ran. */
+    interpretation_enabled: boolean;
+    /** Null when interpretation did not run, rather than a ratio over nothing. */
+    interpretation: CoverageRatio | null;
     lexical_analysis: CoverageRatio;
     embedding_when_enabled: CoverageRatio | null;
     embedding_enabled: boolean;

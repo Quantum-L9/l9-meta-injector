@@ -356,6 +356,67 @@ function lexicalProjectClusters(result, identities) {
     }))
         .sort((a, b) => (0, ordering_1.compareCodePoints)(a.candidate_id, b.candidate_id));
 }
+/**
+ * The deterministic topic candidates, as clusters (ADR-068).
+ *
+ * The same carry-across as `lexicalProjectClusters`: the lexical topic pass
+ * groups documents by shared salient vocabulary and is written to
+ * `corpus-candidates.json` whether or not the semantic pass runs. Leaving it
+ * behind the boundary made a run without semantic analysis publish an empty
+ * topic domain beside a topic it had computed. Each cluster names the lexical
+ * pass in its own `analysis_profile`, so it is never read as a semantic topic.
+ */
+function lexicalTopicClusters(result, identities) {
+    const analysis = result.candidates.analysis_profile;
+    const profile = {
+        profile_id: analysis.topic_candidate_method,
+        profile_version: analysis.topic_candidate_version,
+        profile_hash: analysis.candidate_profile_hash,
+    };
+    return result.candidates.topic_candidates
+        .map((candidate) => ({
+        candidate_id: candidate.candidate_id,
+        candidate_type: "TOPIC_CANDIDATE",
+        member_artifact_ids: sortedUnique(candidate.member_ids.map((member) => translate(member, identities))),
+        supporting_relation_ids: [],
+        evidence_refs: [],
+        // Shared vocabulary over a threshold is a grouping rule, not a graded
+        // similarity judgement. `weak` is the vocabulary's floor, as for the
+        // lexical project candidates.
+        confidence_class: "weak",
+        ambiguity_flags: [],
+        cross_root: candidate.spans_roots,
+        cross_archive: containersCrossArchive(candidate.member_paths.map((memberPath) => ({ container_path: memberPath }))),
+        analysis_profile: profile,
+        upstream_candidate_id: candidate.candidate_id,
+    }))
+        .sort((a, b) => (0, ordering_1.compareCodePoints)(a.candidate_id, b.candidate_id));
+}
+/**
+ * Which payload domains no pass of this run populated (ADR-068).
+ *
+ * A domain is declared not run only when every pass that fills it was skipped.
+ * Project candidates always have the lexical pass, and topic candidates have it
+ * unless topic candidates were switched off, so those two are declared only
+ * when nothing could have filled them. Duplicates, readiness and work signals
+ * are not optional passes.
+ */
+function domainsNotRun(result) {
+    if (result.semantic !== null)
+        return [];
+    const reason = "semantic analysis was not run for this corpus run";
+    const statements = [
+        { domain: "semantic_pair_relations", reason },
+    ];
+    if (!result.candidates.analysis_profile.topic_candidates_enabled) {
+        statements.push({
+            domain: "topic_candidates",
+            reason: "semantic analysis and lexical topic candidates were not run for this corpus run",
+        });
+    }
+    statements.push({ domain: "consolidation_candidates", reason }, { domain: "reasoning_candidates", reason }, { domain: "reasoning_evidence_pack_refs", reason });
+    return statements;
+}
 const READINESS_FIELDS = [
     ["implementation", "source_artifact_count", "source_artifact_count"],
     ["implementation", "manifest_count", "build_manifest_count"],
@@ -549,9 +610,12 @@ function corpusIntelligenceInput(result, options) {
             .sort((a, b) => (0, ordering_1.compareCodePoints)(a.signal_id, b.signal_id)),
         exact_duplicate_relations: duplicateRelations(result, identities),
         semantic_pair_relations: pairRelations(result, identities, profile),
-        topic_candidates: semantic === null
-            ? []
-            : candidateClusters(semantic.topics.candidates, "TOPIC_CANDIDATE", identities, profile),
+        topic_candidates: [
+            ...lexicalTopicClusters(result, identities),
+            ...(semantic === null
+                ? []
+                : candidateClusters(semantic.topics.candidates, "TOPIC_CANDIDATE", identities, profile)),
+        ].sort((a, b) => (0, ordering_1.compareCodePoints)(a.candidate_id, b.candidate_id)),
         project_candidates: [
             ...lexicalProjectClusters(result, identities),
             ...(semantic === null
@@ -572,6 +636,7 @@ function corpusIntelligenceInput(result, options) {
         roots: roots(result),
         coverage: coverage(result),
         payload,
+        domainsNotRun: domainsNotRun(result),
         producerVersion: options.producerVersion,
         profile: {
             id: profile.profile_id,

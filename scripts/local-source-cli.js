@@ -304,7 +304,12 @@ function reportCorpusRun(context) {
   console.log(`  archives         ${coverage.archive_count}, ${coverage.archive_member_count} member(s)`);
   console.log(`  exact hashes     ${coverage.exact_hash_coverage.covered}/${coverage.exact_hash_coverage.eligible}`);
   console.log(`  decoded          ${coverage.normalized_document_coverage.covered}/${coverage.normalized_document_coverage.eligible}`);
-  console.log(`  interpreted      ${coverage.interpretation_coverage.covered}/${coverage.interpretation_coverage.eligible}`);
+  // A pass that did not run has no completeness figure to print (ADR-068).
+  if (coverage.interpretation_enabled === true) {
+    console.log(`  interpreted      ${coverage.interpretation_coverage.covered}/${coverage.interpretation_coverage.eligible}`);
+  } else {
+    console.log("  interpreted      disabled (--no-interpret); not run");
+  }
   console.log(`  lexical          ${coverage.lexical_analysis_coverage.covered}/${coverage.lexical_analysis_coverage.eligible}`);
   // The two states are reported differently on purpose. "Not enabled" is a claim
   // that nothing left the machine; an enabled run has to say what it sent, to

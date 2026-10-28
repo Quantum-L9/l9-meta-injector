@@ -261,7 +261,7 @@ describe("corpus mode", () => {
 
     expect(snapshot.schema).toBe("l9.corpus-snapshot/v1");
     expect(candidates.schema).toBe("l9.corpus-candidates/v1");
-    expect(coverage.schema).toBe("l9.corpus-coverage/v1");
+    expect(coverage.schema).toBe("l9.corpus-coverage/v2");
     expect(signals.schema).toBe("l9.document-signals/v1");
     expect(signals.corpus_source_snapshot_id).toBe(snapshot.corpus_source_snapshot_id);
     // Decoding that reaches nothing is not a result. The signals document says
@@ -499,6 +499,55 @@ describe("semantic candidate discovery", () => {
     // The document index is not part of the semantic pass and still lands.
     expect(written).toContain("document-index.json");
     expect(written).toContain("corpus-candidates.json");
+  });
+
+  it("REG-WU-049-RC-076-a: states in the packet which domains a run without semantic analysis did not run", () => {
+    const f = fixture();
+    expect(run(argsFor(f, ["--no-semantic-analysis"])).status).toBe(0);
+    const cip = path.join(generation(f), "corpus-intelligence");
+    const packet = JSON.parse(fs.readFileSync(path.join(cip, "packet.json"), "utf8"));
+    expect(packet.packet_version).toBe("1.1.0");
+    const declared = packet.domains_not_run.map((entry: { domain: string }) => entry.domain);
+    expect(declared).toEqual([
+      "semantic_pair_relations",
+      "consolidation_candidates",
+      "reasoning_candidates",
+      "reasoning_evidence_pack_refs",
+    ]);
+    for (const domain of ["exact_duplicate_relations", "project_candidates", "readiness_evidence", "document_work_signals"]) {
+      expect(declared).not.toContain(domain);
+    }
+    // The lexical topic pass did run, and what it found crosses the boundary.
+    const candidates = JSON.parse(fs.readFileSync(path.join(generation(f), "corpus-candidates.json"), "utf8"));
+    const topics = JSON.parse(fs.readFileSync(path.join(cip, "payload", "topic-candidates.json"), "utf8"));
+    expect(topics.length).toBe(candidates.topic_candidates.length);
+    expect(topics.length).toBeGreaterThan(0);
+    for (const cluster of topics) {
+      expect(cluster.analysis_profile.profile_id).toBe(candidates.analysis_profile.topic_candidate_method);
+    }
+    // Every domain file is still written, empty when not run.
+    expect(fs.readdirSync(path.join(cip, "payload")).length).toBe(9);
+  });
+
+  it("REG-WU-049-RC-076-b: a default run declares every domain as run", () => {
+    const f = fixture();
+    expect(run(argsFor(f)).status).toBe(0);
+    const packet = JSON.parse(
+      fs.readFileSync(path.join(generation(f), "corpus-intelligence", "packet.json"), "utf8"),
+    );
+    expect(packet.domains_not_run).toEqual([]);
+    expect(Object.keys(packet.payload_refs).length).toBe(9);
+  });
+
+  it("REG-WU-049-RC-086-d: --no-interpret prints interpretation as not run, never as 0/0", () => {
+    const f = fixture();
+    const result = run(argsFor(f, ["--no-interpret"]));
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("interpreted      disabled (--no-interpret); not run");
+    expect(result.stdout).not.toMatch(/interpreted\s+0\/0/);
+    const coverage = JSON.parse(fs.readFileSync(path.join(generation(f), "corpus-coverage.json"), "utf8"));
+    expect(coverage.interpretation_enabled).toBe(false);
+    expect(coverage.interpretation_coverage).toBeNull();
   });
 
   it("keeps every mount point out of the semantic documents", () => {

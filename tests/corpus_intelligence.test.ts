@@ -90,6 +90,7 @@ function input(payload = emptyPayload()): BuildCorpusIntelligenceInput {
       coverage_gap_count: 0,
     },
     payload,
+    domainsNotRun: [],
     producerVersion: "3.0.0",
     profile: { id: "l9-meta-injector-corpus-intelligence", version: "1.0.0", hash: "sha256:def" },
     createdAt: "2026-03-01T00:00:00.000Z",

@@ -1,6 +1,10 @@
 import { type CanonicalValue, CanonicalFloat } from "./repository_model";
 export declare const CORPUS_INTELLIGENCE_PACKET_TYPE = "l9.corpus-intelligence";
-export declare const CORPUS_INTELLIGENCE_PACKET_VERSION = "1.0.0";
+/**
+ * 1.1.0 adds `domains_not_run` (ADR-068): a payload domain no pass populated is
+ * stated as not run, so an empty array means found-nothing and nothing else.
+ */
+export declare const CORPUS_INTELLIGENCE_PACKET_VERSION = "1.1.0";
 export declare const CORPUS_INTELLIGENCE_PRODUCER_NAME = "l9-meta-injector.corpus-intelligence";
 export declare const CORPUS_INTELLIGENCE_MANIFEST_VERSION = "1.0.0";
 /**
@@ -18,7 +22,8 @@ export declare const CORPUS_INTELLIGENCE_DIRECTORY = "corpus-intelligence";
  * Every one is serialized to its own file and its own hash. An empty array
  * means the producer found nothing of that kind, which is a different statement
  * from a domain that was never run — so every domain is always written, even
- * empty.
+ * empty, and a domain that was never run is named in the packet's
+ * `domains_not_run` (ADR-068) rather than left for a reader to infer.
  */
 export declare const CORPUS_PAYLOAD_FIELDS: readonly ["document_work_signals", "exact_duplicate_relations", "semantic_pair_relations", "topic_candidates", "project_candidates", "consolidation_candidates", "readiness_evidence", "reasoning_candidates", "reasoning_evidence_pack_refs"];
 export type CorpusPayloadField = (typeof CORPUS_PAYLOAD_FIELDS)[number];
@@ -184,6 +189,18 @@ export interface CorpusIntelligencePayload {
     reasoning_candidates: ReasoningCandidateRequest[];
     reasoning_evidence_pack_refs: string[];
 }
+/**
+ * One payload domain no pass of this run populated, and why.
+ *
+ * A domain is listed only when *every* pass that fills it was skipped; a domain
+ * one pass filled (lexical project or topic candidates, say, beside a skipped
+ * semantic pass) ran, and each of its entries names the pass that produced it
+ * in its own `analysis_profile`.
+ */
+export interface CorpusDomainNotRun {
+    domain: CorpusPayloadField;
+    reason: string;
+}
 export interface CorpusIntelligenceInputs {
     repository_model_packets: CorpusPacketRef[];
 }
@@ -206,6 +223,8 @@ export interface CorpusIntelligencePacket {
         status: "passed" | "failed" | "not_run" | "blocked";
         receipt_ref?: string;
     };
+    /** Payload domains no pass populated, in `CORPUS_PAYLOAD_FIELDS` order. Empty when all ran. */
+    domains_not_run: CorpusDomainNotRun[];
     schema_hash: string;
     semantic_hash: string;
     artifact_hash?: string;
@@ -258,6 +277,11 @@ export interface BuildCorpusIntelligenceInput {
     roots: readonly CorpusIntelligenceRootInput[];
     coverage: CorpusCoverage;
     payload: CorpusIntelligencePayload;
+    /**
+     * Payload domains no pass of this run populated. Required rather than
+     * defaulted: an absent statement would claim every pass ran.
+     */
+    domainsNotRun: readonly CorpusDomainNotRun[];
     producerVersion: string;
     profile: {
         id: string;
