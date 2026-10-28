@@ -34,6 +34,64 @@ Correctness remediation of the bf66978 audit (plan `l9-meta-injector-remediation
 - Authority and transactions: the transaction journal's bookkeeping and commit/rollback use compare-and-swap (WU-004); the authority scan evaluates every invocation in linear time (WU-025); authority loading refuses symlinked path components and broken links (WU-026); semantic-foundation verification refuses duplicate `artifact_id` claims (WU-027).
 - Scripts: `gitBinary` resolves absolute paths only (WU-069); selfpack fails when its baseline is missing (WU-071); the validation-report verdict is parsed structurally (WU-072); the topology read-only guard removes only its own interpreter output (WU-073).
 
+### Wave 2 — decision-blocked units (ADR-057..073)
+
+The repository owner adopted the plan's recommended option for every blocking decision. Each decision is recorded in the ADR named with its entry.
+
+#### Breaking or consumer-coordinated
+
+- **Corpus-intelligence packet 1.1.0 (ADR-068).** `domains_not_run` names the payload domains that no pass populated, and lexical topic candidates are now carried. `l9.corpus-coverage/v2` adds `interpretation_enabled`; `interpretation_coverage` is null when interpretation is off, and the CLI says so instead of printing 0/0. `l9.corpus-qualification-report/v2` replaces `text_decoder_id`/`text_decoder_version` with `decoder_coverage.decoder_profiles` and adds `interpretation_enabled`. `l9-constellation-topology` must accept the new packet version and the `domains_not_run` field before it can ingest these bundles (WU-049).
+- **Corpus-mode index schema (ADR-067).** A `--root` run's `corpus-index.json` now declares `l9.corpus-mode-index/v1` instead of `l9.corpus-index/v1`. Single-root output is unchanged (WU-043).
+- **Action `mode: apply` with `fail-on-issues: 'false'` (ADR-069).** This combination, or `--no-fail-on-issues`, is now an input error (exit 2). `action.yml` documented it as advisory verification, which was never implemented. ADR-069 leaves the v4-versus-v5 versioning call to the owner (WU-066).
+- **Publication decision schema v2 (ADR-070).** The decision now carries `approved_version`. `check:publication` requires the three ADR-015 evidence ids and a verified owner approval bound to the package version. Preparing a new version resets an approval to blocked (WU-068).
+
+#### Changed
+
+- **Comment carriers (ADR-057).**
+  - Headers are placed after mandatory prologues: an XML declaration, a bare `<?php` line, a Python or Ruby encoding cookie, CSS `@charset`, and Dockerfile parser directives.
+  - PHP templates, and XML or `@charset` prologues that do not end their line, use a sidecar.
+  - Blocks misplaced by earlier versions are repaired once on the next write.
+  - `.ql` and `.sass` use `//` line comments (WU-001).
+- **Metadata ids (ADR-071).** Non-ASCII path characters are kept as `u<hex>` tokens instead of being erased. Ids for non-ASCII paths change once, and `check` reports them stale until `apply` rewrites them. ASCII ids are unchanged (WU-016).
+- **Metadata index (ADR-058).**
+  - Records are ordered by code point. ASCII and most BMP paths keep their order.
+  - Glob `?` matches one code point.
+  - The index writer and parser enforce the record schema.
+  - A governed path the index cannot represent is held at discovery as `unsupported_entry`, so `check` reports it and `apply` refuses (WU-006).
+- **Omit patterns (ADR-058).** A pattern with a slash anywhere but the end is anchored at the root, as in gitignore. `dir/file` no longer matches nested copies; migrate with `**/dir/file` (WU-006).
+- **Repository model (ADR-062).** Package managers, governance references and ADR references come only from the repository root (governance also from `.github/` and `docs/`). Repository-scoped claims from nested files and archive members are filed against their own artifact. `package.json` alone no longer implies npm. Interpretation profile 1.2.0 (WU-029).
+- **Corpus cache (ADR-059).** The cache epoch is `l9.corpus-cache-entry/v2`, so the first run after upgrade is cold. The decoder-declared dialect (Markdown, TSV) enters `normalized_document_id` and its cache key. Text decoder 1.2.0, CSV decoder 1.3.0 (WU-038, WU-039).
+- **Archive reader 1.2.0 (ADR-061).** Cached archive verdicts are recomputed once (WU-032).
+- **Direct CLIs (ADR-069).** The inventory, pipeline, check, apply, skills and repository-model CLIs reject unknown options, missing values, duplicate options, out-of-range `--near-dup`/`--hash-prefix-length` values and malformed `--namespace-glob` pairs with exit 2, before doing any work (WU-066).
+- **Authority scan (ADR-072).**
+  - Symlinked control directories are reported as `META_AUTHORITY_SCAN_INCOMPLETE`.
+  - A nested `.l9/meta-authority.yaml` under `docs/`, `tests/`, `fixtures/`, `build/`, `dist/`, `coverage/`, `reports/` or a caller-excluded directory is a conflict.
+  - `.git`, `node_modules`, `.venv` and `__pycache__` are not searched (WU-024).
+- **Corpus generations (ADR-066).** Retention keeps the N most recently published generations. `CURRENT.json` gains `previous_generation_ids`. Publishing takes an exclusive `.corpus-publish.lock` in the output root (WU-042).
+- **Inventory (ADR-065).** `inventory.md` reports duplicate clusters as same carrier-free content and no longer reports "recoverable" bytes (WU-075).
+
+#### Fixed
+
+- **Carrier values (ADR-057).** Values are escaped so they cannot end or break the host comment (`--`, `*/`, `#{`, CR, U+2028/2029, the end sentinel). A value that cannot be escaped refuses with `CARRIER_UNREPRESENTABLE`. Managed blocks are recognised only at the head position, so sentinel text in a file body is preserved. A shebang or `<?php` line without a trailing newline round-trips exactly (WU-001, WU-002).
+- **Narrow YAML readers (ADR-057).** The meta-schema, authority, extractor and frontmatter-patcher readers match YAML for the subset they accept, or refuse. `parseAuthorityYaml` refuses plain `null`/`~`/booleans, `key:value` without a space, a plain value containing `: `, and an empty block list (WU-017).
+- **Scoped runs (ADR-058).** A `--glob`-scoped `apply` merges with the existing `.l9/metadata-index.jsonl` instead of dropping out-of-scope records. A scoped run over an unparseable index refuses with `METADATA_INDEX_UNMERGEABLE`, and apply's compare-and-swap binds to the index the plan merged with (WU-005).
+- **Inventory re-runs (ADR-060).**
+  - Live re-runs converge: carrier clocks are carried while content is unchanged, and byte-identical carriers and sidecars are not rewritten.
+  - Hand-authored sidecars are held with a diagnostic.
+  - An I/O failure during an archive rewrite becomes a recorded hold (WU-074).
+  - A rewritten archive is re-observed before its sidecar is written (WU-076).
+- **Archive admission (ADR-061).**
+  - A member whose declared extent does not fit, or that produces a byte count other than it declares, is held instead of crashing the run.
+  - A file and a directory whose names differ only by case or Unicode normalization hold the archive with `archive.path_conflict`.
+  - Typeless Unix-mode entries are classified by name (WU-032).
+- **Member locators (ADR-063).** A locator that another record could also spell holds the archive with `archive.locator_ambiguous`. Archive ancestry comes from the parent chain (WU-034).
+- **Corpus derive stage (ADR-059).** Bytes are verified against the acquisition hash before anything is derived or cached. A file changed or unreadable mid-scan is reported per file and never cached (WU-038). The indexed near-duplicate and topic passes equal their exhaustive references at boundary thresholds (WU-041).
+- **Document index.** Artifacts refused before decoding report that reason, the claiming decoder and `byte_length: null` (WU-050).
+- **Pipeline (ADR-073).** A `DUPLICATE_METADATA_ID` refusal caused by files already in the tree happens before archive expansion and filename normalization, so a refused run leaves the tree unchanged (WU-011).
+- **LLM adapter (ADR-064).** Each pipeline and skills run uses its own LLM adapter, endpoint, credential and metrics, so concurrent runs no longer mix and a run no longer resets the caller's adapter (WU-014).
+- **Action outputs.** Outputs come only from each child's own summary line, so a crashed check or apply reports `verification-passed=false`. Paths containing NUL, CR or LF are refused (WU-065).
+- **Release versions.** Versions with leading zeros are rejected, and exact consumer pins such as `@v4.1.0` are no longer rewritten (WU-070).
+
 ## 4.2.0 - 2026-10-22
 
 Minor release: the public API surface is additive and `packet_version` stays 1.1.0. One change is breaking for a narrower audience: consumers that compare metadata `id` values across versions see every id move (ADR-054, below).
