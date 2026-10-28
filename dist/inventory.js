@@ -88,10 +88,19 @@ function loadMetaSchema(filePath) {
 /**
  * Group records by content_hash to surface duplicate clusters across the whole tree.
  *
- * Equivalence is byte equality and nothing else: two records belong to the same
- * cluster when both carry a known content hash and those hashes are identical.
- * Names, locations and sizes never decide membership, which is what lets a
- * physical file and an archive member land in one cluster.
+ * Equivalence is content_hash equality and nothing else: two records belong to
+ * the same cluster when both carry a known content hash and those hashes are
+ * identical. Names, locations and sizes never decide membership, which is what
+ * lets a physical file and an archive member land in one cluster.
+ *
+ * What a cluster means is therefore what the producer's hash covers. Inventory
+ * hashes a UTF-8 file's carrier-free content: the L9 managed header and, for a
+ * YAML front-matter document, the whole front-matter block are the metadata
+ * carrier and lie outside the hash (ADR-051 item 5, ADR-065). An inventory
+ * cluster says "same carrier-free content", not "byte-identical": its members'
+ * headers or front matter may differ, so it is not a list of copies that can be
+ * deleted without losing metadata. Binaries, archives and oversize files keep
+ * the raw-byte hash, where a cluster is byte equality.
  *
  * Ordering is code-point throughout. `localeCompare` used to decide both the
  * path order and the shortest-path tie-break, which made the emitted cluster —
@@ -1086,9 +1095,9 @@ function writeManifests(outDir, root, records, dist, duplicates, now, _dryRun) {
     for (const r of records)
         rows.push(cols.map((c) => csvCell(Array.isArray(r[c]) ? r[c].join("; ") : r[c])).join(","));
     fs.writeFileSync(csvPath, rows.join("\n") + "\n", "utf8");
-    const md = [`# Inventory — ${root}`, ``, `Generated: ${now}  |  Total entries: ${records.length}  |  Duplicate clusters: ${duplicates.length}  |  Recoverable: ${totalWasted} bytes`, ``, `## Type distribution`, ``, ...Object.entries(dist).sort((a, b) => b[1] - a[1]).map(([k, v]) => `- **${k}**: ${v}`)];
+    const md = [`# Inventory — ${root}`, ``, `Generated: ${now}  |  Total entries: ${records.length}  |  Duplicate clusters: ${duplicates.length}  |  Repeated content: ${totalWasted} bytes`, ``, `## Type distribution`, ``, ...Object.entries(dist).sort((a, b) => b[1] - a[1]).map(([k, v]) => `- **${k}**: ${v}`)];
     if (duplicates.length) {
-        md.push(``, `## Duplicate clusters (consolidated dedup view)`, ``, `Files sharing a content hash across the tree. Read-only — nothing is deleted.`, ``, `| # | count | wasted bytes | keeper | other paths |`, `|---|---|---|---|---|`);
+        md.push(``, `## Duplicate clusters (same carrier-free content)`, ``, `Files sharing a content_hash across the tree. For text files the hash excludes the metadata carrier — the L9 header and any YAML front matter (ADR-051, ADR-065) — so members have the same carrier-free content, while their headers or front matter may differ. Compare that metadata before removing a copy. Read-only — nothing is deleted.`, ``, `| # | count | repeated bytes | keeper | other paths |`, `|---|---|---|---|---|`);
         duplicates.slice(0, 100).forEach((d, i) => md.push(`| ${i + 1} | ${d.count} | ${d.wasted_bytes} | \`${d.keeper}\` | ${d.paths.filter((p) => p !== d.keeper).join("<br>")} |`));
     }
     md.push(``, `## Entries`, ``, `| path | type | conf | size | evidence |`, `|---|---|---|---|---|`, ...records.slice(0, 500).map((r) => `| ${r.relative_path} | ${r.artifact_type} | ${r.classification_confidence} | ${r.size_bytes ?? ""} | ${r.evidence_excerpt ?? ""} |`));
