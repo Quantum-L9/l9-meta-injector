@@ -26,7 +26,7 @@ make the next run read this run's output as user content.
 |---|---|
 | `archive_manifest` | archive content hash, reader version, archive policy version |
 | `raw_identity` | exact content hash |
-| `normalized_document` | exact content hash, decoder id, decoder version |
+| `normalized_document` | exact content hash, decoder id, decoder version, decoder-declared dialect |
 | `interpretation` | normalized document identity, source path, interpretation profile |
 | `lexical_features` | normalized document identity, lexical profile |
 | `embedding` | normalized document identity, chunk profile, provider, model, revision |
@@ -35,7 +35,11 @@ make the next run read this run's output as user content.
 Every key names the rules as well as the bytes. A stricter archive policy is a
 different question about the same archive and must not be answered out of the
 looser policy's entry; a decoder revision produces a different document from the
-same bytes and must not be served the old one.
+same bytes and must not be served the old one. A decoder whose reading depends on
+the name as well as the bytes declares the dialect it reads a path in — Markdown
+for `.md`, `.markdown` and `.mdx`, tab-separated for `.tsv` — and that dialect
+enters the key and the normalized document id, so identical bytes at `a.md` and
+`b.txt` are two documents. Decoders that declare no dialect key exactly as before.
 
 ## What a cached interpretation does not carry
 

@@ -188,21 +188,38 @@ function isTextFamilyFormat(format) {
     return format === "text" || format === "markdown";
 }
 /**
- * The identity of a decoded document: `H(content_hash, decoder_id, version)`.
+ * The dialect the decoder that read a document declared for its path.
+ *
+ * Asked of the registry by path, as the derive stage does when it builds the
+ * cache key, and only honoured when that decoder is the one the record names —
+ * so the published id and the key cannot disagree about which dialect they mean.
+ */
+function decoderDialectOf(registry, rootRelativePath, decoderId) {
+    const decoder = registry.forPath(rootRelativePath);
+    if (decoder === undefined || decoder.id !== decoderId)
+        return undefined;
+    return decoder.dialectFor?.(rootRelativePath);
+}
+/**
+ * The identity of a decoded document: `H(content_hash, decoder_id, version[, dialect])`.
  *
  * Derived from the decoder that actually read the bytes. Naming a fixed decoder
  * here instead would give every `.docx` in a corpus an id that says the text
  * decoder produced it, and that id is the join key between the document index,
  * the cache and every piece of block-bound evidence — three places that would
- * then disagree about which decoding they mean.
+ * then disagree about which decoding they mean. The decoder's declared dialect
+ * enters for the same reason (ADR-059): a `.md` and a `.txt` holding identical
+ * bytes are two decoded documents.
  */
-function normalizedDocumentIdOf(contentHash, record) {
-    if (contentHash === null)
+function normalizedDocumentIdOf(artifact, record, registry) {
+    if (artifact.contentHash === null)
         return null;
+    const dialect = decoderDialectOf(registry, artifact.rootRelativePath, record?.decoder_id);
     return (0, corpus_cache_1.normalizedDocumentKey)({
-        contentHash,
+        contentHash: artifact.contentHash,
         decoderId: record?.decoder_id ?? exports.TEXT_DECODER_ID,
         decoderVersion: record?.decoder_version ?? exports.TEXT_DECODER_VERSION,
+        ...(dialect !== undefined ? { dialect } : {}),
     });
 }
 function termCounts(tokens) {
@@ -263,10 +280,14 @@ async function deriveDocumentLayers(artifact, context) {
     // read by different code into different documents, and a decoder revision must
     // invalidate its own entries without touching anyone else's.
     const decoder = registry.forPath(artifact.rootRelativePath);
+    // …and so does the dialect that decoder declares for the path: a `.md` and a
+    // `.txt` are read by one decoder into two different documents (ADR-059).
+    const dialect = decoder?.dialectFor?.(artifact.rootRelativePath);
     const documentKey = (0, corpus_cache_1.normalizedDocumentKey)({
         contentHash,
         decoderId: decoder?.id ?? exports.TEXT_DECODER_ID,
         decoderVersion: decoder?.version ?? exports.TEXT_DECODER_VERSION,
+        ...(dialect !== undefined ? { dialect } : {}),
     });
     const lexicalKey = (0, corpus_cache_1.lexicalFeaturesKey)({
         normalizedDocumentIdentity: documentKey,
@@ -1089,7 +1110,7 @@ async function runCorpusScan(input) {
                 subjectId: (0, repository_model_1.repositoryModelArtifactId)(`repo:${rootKey}`, artifact.rootRelativePath),
                 sourcePath: artifact.rootRelativePath,
                 sourceContentHash: artifact.contentHash,
-                normalizedDocumentId: normalizedDocumentIdOf(artifact.contentHash, record),
+                normalizedDocumentId: normalizedDocumentIdOf(artifact, record, registry),
                 decoderId: record.decoder_id,
                 decoderVersion: record.decoder_version,
                 format: record.format,
@@ -1596,7 +1617,7 @@ async function runCorpusScan(input) {
                             },
                         }
                         : {}),
-                    normalizedDocumentId: normalizedDocumentIdOf(artifact.contentHash, record),
+                    normalizedDocumentId: normalizedDocumentIdOf(artifact, record, registry),
                 };
             }),
         });
@@ -2097,7 +2118,7 @@ async function runCorpusScan(input) {
             payloadJsonl: documentWorkSignals.payloadJsonl,
             knownArtifactIds: new Set(artifacts.map((artifact) => artifact.virtualSourceId)),
             knownNormalizedDocumentIds: new Set(artifacts
-                .map((artifact) => normalizedDocumentIdOf(artifact.contentHash, normalized.get(artifact.virtualSourceId)))
+                .map((artifact) => normalizedDocumentIdOf(artifact, normalized.get(artifact.virtualSourceId), registry))
                 .filter((id) => id !== null)),
             reportSignalCount: documentSignals.block_signals.signal_count,
         });

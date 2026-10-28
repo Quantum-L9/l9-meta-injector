@@ -49,7 +49,10 @@ const decoder_1 = require("./decoder");
 exports.TEXT_DECODER_ID = "l9.text-decoder";
 // 1.1.0: a leading byte-order mark is not part of line 1, and an ATX closing
 // sequence (`## Status ##`) is not part of the heading text.
-exports.TEXT_DECODER_VERSION = "1.1.0";
+// 1.2.0: the Markdown dialect is declared (`dialectFor`) and enters the
+// normalized document id and cache key (ADR-059), so a `.md` and a `.txt` with
+// identical bytes are two documents and an entry keyed without it is never served.
+exports.TEXT_DECODER_VERSION = "1.2.0";
 exports.CSV_DECODER_ID = "l9.csv-decoder";
 /**
  * 1.1.0 emits a block per populated cell beside the row block.
@@ -64,7 +67,10 @@ exports.CSV_DECODER_ID = "l9.csv-decoder";
  */
 // 1.2.0: a record ends at a newline outside quotes, so a quoted cell that
 // spans lines stays one cell and its row cites the line the record starts on.
-exports.CSV_DECODER_VERSION = "1.2.0";
+// 1.3.0: the tab-separated dialect is declared (`dialectFor`) and enters the
+// normalized document id and cache key (ADR-059), so a `.csv` and a `.tsv` with
+// identical bytes are two documents and an entry keyed without it is never served.
+exports.CSV_DECODER_VERSION = "1.3.0";
 /** Read a file as UTF-8, refusing bytes that are not valid UTF-8. */
 function readUtf8(input) {
     if (input.sizeBytes > input.budget.maxSourceBytes) {
@@ -165,6 +171,26 @@ function classifyListItem(line) {
     return trimmedContent(line, index);
 }
 const MARKDOWN_EXTENSIONS = new Set([".md", ".markdown", ".mdx"]);
+/** Lowercased extension of a source path's last segment, with its dot, or "". */
+function extensionOfSourcePath(sourcePath) {
+    const basename = sourcePath.slice(sourcePath.lastIndexOf("/") + 1).toLowerCase();
+    const dot = basename.lastIndexOf(".");
+    return dot > 0 ? basename.slice(dot) : "";
+}
+/**
+ * The text decoder's dialect for a path: `markdown`, or none for plain text.
+ *
+ * The one place the text decoder looks at a name. The decoder branches on it
+ * and the corpus keys on it, so the two cannot disagree about which document
+ * a set of bytes became.
+ */
+function textDialectFor(sourcePath) {
+    return MARKDOWN_EXTENSIONS.has(extensionOfSourcePath(sourcePath)) ? "markdown" : undefined;
+}
+/** The CSV decoder's dialect for a path: `tsv`, or none for comma-separated. */
+function csvDialectFor(sourcePath) {
+    return extensionOfSourcePath(sourcePath) === ".tsv" ? "tsv" : undefined;
+}
 function lineSpanScope() {
     return {
         locate: (start, end) => ({ kind: "line_span", line_start: start, line_end: end }),
@@ -265,6 +291,7 @@ exports.textDecoder = {
         "dockerfile", "containerfile", "gemfile", "jenkinsfile", "makefile", "procfile",
         "readme", "license", "changelog", "notice", "authors", "codeowners",
     ],
+    dialectFor: textDialectFor,
     decode(input) {
         const read = readUtf8(input);
         if ("reason" in read) {
@@ -275,15 +302,15 @@ exports.textDecoder = {
                 diagnostics: [{ code: "decoder.malformed", severity: "warning", message: read.reason }],
             };
         }
+        const dialect = textDialectFor(input.sourcePath);
         const documentId = (0, decoder_1.normalizedDocumentId)({
             contentHash: input.contentHash,
             decoderId: exports.TEXT_DECODER_ID,
             decoderVersion: exports.TEXT_DECODER_VERSION,
+            ...(dialect !== undefined ? { dialect } : {}),
         });
         const builder = new decoder_1.BlockBuilder(documentId, input.budget);
-        const basename = input.sourcePath.slice(input.sourcePath.lastIndexOf("/") + 1).toLowerCase();
-        const dot = basename.lastIndexOf(".");
-        const markdown = dot > 0 && MARKDOWN_EXTENSIONS.has(basename.slice(dot));
+        const markdown = dialect === "markdown";
         decodeTextBlocks(read.text, builder, markdown);
         const title = builder.finish().blocks.find((block) => block.kind === "title");
         return {
@@ -445,6 +472,7 @@ exports.csvDecoder = {
     version: exports.CSV_DECODER_VERSION,
     format: "csv",
     extensions: [".csv", ".tsv"],
+    dialectFor: csvDialectFor,
     decode(input) {
         const read = readUtf8(input);
         if ("reason" in read) {
@@ -455,13 +483,15 @@ exports.csvDecoder = {
                 diagnostics: [{ code: "decoder.malformed", severity: "warning", message: read.reason }],
             };
         }
+        const dialect = csvDialectFor(input.sourcePath);
         const documentId = (0, decoder_1.normalizedDocumentId)({
             contentHash: input.contentHash,
             decoderId: exports.CSV_DECODER_ID,
             decoderVersion: exports.CSV_DECODER_VERSION,
+            ...(dialect !== undefined ? { dialect } : {}),
         });
         const builder = new decoder_1.BlockBuilder(documentId, input.budget);
-        const delimiter = input.sourcePath.toLowerCase().endsWith(".tsv") ? "\t" : ",";
+        const delimiter = dialect === "tsv" ? "\t" : ",";
         const rows = addCsvRowBlocks(builder, read.text, delimiter);
         if (rows.length > 0) {
             builder.addTable(rows, { kind: "csv_row", row_number: 1 });

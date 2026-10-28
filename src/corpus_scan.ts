@@ -601,23 +601,45 @@ export function isTextFamilyFormat(format: string): boolean {
 }
 
 /**
- * The identity of a decoded document: `H(content_hash, decoder_id, version)`.
+ * The dialect the decoder that read a document declared for its path.
+ *
+ * Asked of the registry by path, as the derive stage does when it builds the
+ * cache key, and only honoured when that decoder is the one the record names —
+ * so the published id and the key cannot disagree about which dialect they mean.
+ */
+function decoderDialectOf(
+  registry: DecoderRegistry,
+  rootRelativePath: string,
+  decoderId: string | undefined,
+): string | undefined {
+  const decoder = registry.forPath(rootRelativePath);
+  if (decoder === undefined || decoder.id !== decoderId) return undefined;
+  return decoder.dialectFor?.(rootRelativePath);
+}
+
+/**
+ * The identity of a decoded document: `H(content_hash, decoder_id, version[, dialect])`.
  *
  * Derived from the decoder that actually read the bytes. Naming a fixed decoder
  * here instead would give every `.docx` in a corpus an id that says the text
  * decoder produced it, and that id is the join key between the document index,
  * the cache and every piece of block-bound evidence — three places that would
- * then disagree about which decoding they mean.
+ * then disagree about which decoding they mean. The decoder's declared dialect
+ * enters for the same reason (ADR-059): a `.md` and a `.txt` holding identical
+ * bytes are two decoded documents.
  */
 function normalizedDocumentIdOf(
-  contentHash: string | null,
+  artifact: { contentHash: string | null; rootRelativePath: string },
   record: { decoder_id: string; decoder_version: string } | undefined,
+  registry: DecoderRegistry,
 ): string | null {
-  if (contentHash === null) return null;
+  if (artifact.contentHash === null) return null;
+  const dialect = decoderDialectOf(registry, artifact.rootRelativePath, record?.decoder_id);
   return normalizedDocumentKey({
-    contentHash,
+    contentHash: artifact.contentHash,
     decoderId: record?.decoder_id ?? TEXT_DECODER_ID,
     decoderVersion: record?.decoder_version ?? TEXT_DECODER_VERSION,
+    ...(dialect !== undefined ? { dialect } : {}),
   });
 }
 
@@ -723,10 +745,14 @@ async function deriveDocumentLayers(
   // read by different code into different documents, and a decoder revision must
   // invalidate its own entries without touching anyone else's.
   const decoder = registry.forPath(artifact.rootRelativePath);
+  // …and so does the dialect that decoder declares for the path: a `.md` and a
+  // `.txt` are read by one decoder into two different documents (ADR-059).
+  const dialect = decoder?.dialectFor?.(artifact.rootRelativePath);
   const documentKey = normalizedDocumentKey({
     contentHash,
     decoderId: decoder?.id ?? TEXT_DECODER_ID,
     decoderVersion: decoder?.version ?? TEXT_DECODER_VERSION,
+    ...(dialect !== undefined ? { dialect } : {}),
   });
   const lexicalKey = lexicalFeaturesKey({
     normalizedDocumentIdentity: documentKey,
@@ -1575,7 +1601,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
         subjectId: repositoryModelArtifactId(`repo:${rootKey}`, artifact.rootRelativePath),
         sourcePath: artifact.rootRelativePath,
         sourceContentHash: artifact.contentHash,
-        normalizedDocumentId: normalizedDocumentIdOf(artifact.contentHash, record),
+        normalizedDocumentId: normalizedDocumentIdOf(artifact, record, registry),
         decoderId: record.decoder_id,
         decoderVersion: record.decoder_version,
         format: record.format,
@@ -2141,7 +2167,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
               },
             }
             : {}),
-          normalizedDocumentId: normalizedDocumentIdOf(artifact.contentHash, record),
+          normalizedDocumentId: normalizedDocumentIdOf(artifact, record, registry),
         };
       }),
     });
@@ -2705,8 +2731,9 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       knownNormalizedDocumentIds: new Set(
         artifacts
           .map((artifact) => normalizedDocumentIdOf(
-            artifact.contentHash,
+            artifact,
             normalized.get(artifact.virtualSourceId),
+            registry,
           ))
           .filter((id): id is string => id !== null),
       ),

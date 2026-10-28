@@ -104,12 +104,16 @@ export declare function rawIdentityKey(input: {
  *
  * The decoder is part of the key because two decoders reading the same bytes
  * legitimately produce different text, and a cache that conflated them would
- * serve one decoder's output under the other's name.
+ * serve one decoder's output under the other's name. The dialect the decoder
+ * declared for the source path is part of it for the same reason: one decoder
+ * reading identical bytes as Markdown and as plain text produces two documents
+ * (ADR-059). It is included only when declared, so no other key moves.
  */
 export declare function normalizedDocumentKey(input: {
     contentHash: string;
     decoderId: string;
     decoderVersion: string;
+    dialect?: string;
 }): string;
 export declare function interpretationKey(input: {
     normalizedDocumentIdentity: string;

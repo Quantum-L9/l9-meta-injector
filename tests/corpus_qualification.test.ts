@@ -323,10 +323,12 @@ describe("a corrupt cache entry", () => {
     // revision invalidates its own entries and this test keeps pointing at the
     // entry the run really wrote.
     const planDecoder = defaultDecoderRegistry().forPath("PLAN.md");
+    const planDialect = planDecoder?.dialectFor?.("PLAN.md");
     const documentKey = normalizedDocumentKey({
       contentHash: plan?.content_hash as string,
       decoderId: planDecoder?.id as string,
       decoderVersion: planDecoder?.version as string,
+      ...(planDialect !== undefined ? { dialect: planDialect } : {}),
     });
     expect(cache.corrupt("normalized_document", documentKey)).toBe(true);
 
@@ -514,6 +516,16 @@ describe("cache keys", () => {
     expect(
       normalizedDocumentKey({ contentHash, decoderId: TEXT_DECODER_ID, decoderVersion: "9.9.9" }),
     ).not.toBe(documentKey);
+    // REG-WU-039-RC-067-d: a decoder-declared dialect is a rule applied to the
+    // bytes, so it separates keys; absent, the key is the dialect-free one.
+    expect(
+      normalizedDocumentKey({ contentHash, decoderId: TEXT_DECODER_ID, decoderVersion: TEXT_DECODER_VERSION, dialect: "markdown" }),
+    ).not.toBe(documentKey);
+    expect(
+      normalizedDocumentKey({ contentHash, decoderId: TEXT_DECODER_ID, decoderVersion: TEXT_DECODER_VERSION, dialect: "markdown" }),
+    ).toBe(
+      normalizedDocumentKey({ contentHash, decoderId: TEXT_DECODER_ID, decoderVersion: TEXT_DECODER_VERSION, dialect: "markdown" }),
+    );
     expect(
       lexicalFeaturesKey({ normalizedDocumentIdentity: documentKey, lexicalProfileHash: "p1" }),
     ).not.toBe(lexicalFeaturesKey({ normalizedDocumentIdentity: documentKey, lexicalProfileHash: "p2" }));
