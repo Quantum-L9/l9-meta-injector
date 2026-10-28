@@ -28,8 +28,33 @@ import { commitFileDurably } from "./durable_write";
 import { compareCodePoints } from "./ordering";
 import { sha256TextPrefixed, stableId } from "./repository_model";
 
-/** Schema every persisted cache entry declares. */
-export const CORPUS_CACHE_ENTRY_SCHEMA = "l9.corpus-cache-entry/v1";
+/**
+ * Schema every persisted cache entry declares — and the cache's epoch.
+ *
+ * v2 (ADR-059): entries written before the derive stage verified the bytes it
+ * read against the content hash may hold layers derived from bytes other than
+ * the ones their key names, or an `unreadable` refusal that described the
+ * filesystem rather than the bytes. Those entries live under keys the fix does
+ * not change, so the epoch is what retires them.
+ */
+export const CORPUS_CACHE_ENTRY_SCHEMA = "l9.corpus-cache-entry/v2";
+
+/**
+ * Epochs this release recognises and will not trust.
+ *
+ * An entry of a previous epoch is not damaged; it was written under rules that
+ * no longer hold. It is a miss counted as stale — like an entry another producer
+ * version wrote — and discarded quietly, rather than reported as corrupt once
+ * per entry on the first run after an upgrade.
+ */
+const PREVIOUS_CORPUS_CACHE_ENTRY_SCHEMAS: ReadonlySet<string> = new Set(["l9.corpus-cache-entry/v1"]);
+
+/** True when an entry was written by another producer version or a previous epoch. */
+function isStaleEntry(entry: unknown, producerVersion: string): boolean {
+  const record = entry as Partial<CorpusCacheEntry> | null;
+  if (record?.producer_version !== producerVersion) return true;
+  return typeof record.schema === "string" && PREVIOUS_CORPUS_CACHE_ENTRY_SCHEMAS.has(record.schema);
+}
 
 /** Environment variable that overrides the default cache location. */
 export const CORPUS_CACHE_ENV = "L9_CORPUS_CACHE";
@@ -79,7 +104,7 @@ export interface CorpusCacheLayerStats {
   writes: number;
   /** Entries discarded because they failed their own integrity check. */
   corrupt: number;
-  /** Entries ignored because a different producer version wrote them. */
+  /** Entries ignored because a different producer version, or a previous cache epoch, wrote them. */
   stale_producer: number;
 }
 
@@ -349,7 +374,7 @@ export class MemoryCorpusCache implements CorpusCache {
       this.accounting.bump(layer, "misses");
       return undefined;
     }
-    if (entry.producer_version !== this.producerVersion) {
+    if (isStaleEntry(entry, this.producerVersion)) {
       this.accounting.bump(layer, "stale_producer");
       this.accounting.bump(layer, "misses");
       this.entries.delete(slot);
@@ -510,8 +535,7 @@ export class FileCorpusCache implements CorpusCache {
       this.discard(file);
       return undefined;
     }
-    const producerVersion = (parsed as Partial<CorpusCacheEntry> | null)?.producer_version;
-    if (producerVersion !== this.producerVersion) {
+    if (isStaleEntry(parsed, this.producerVersion)) {
       this.accounting.bump(layer, "stale_producer");
       this.accounting.bump(layer, "misses");
       this.discard(file);

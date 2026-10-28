@@ -77,8 +77,32 @@ const corpus_roots_1 = require("./corpus_roots");
 const durable_write_1 = require("./durable_write");
 const ordering_1 = require("./ordering");
 const repository_model_1 = require("./repository_model");
-/** Schema every persisted cache entry declares. */
-exports.CORPUS_CACHE_ENTRY_SCHEMA = "l9.corpus-cache-entry/v1";
+/**
+ * Schema every persisted cache entry declares — and the cache's epoch.
+ *
+ * v2 (ADR-059): entries written before the derive stage verified the bytes it
+ * read against the content hash may hold layers derived from bytes other than
+ * the ones their key names, or an `unreadable` refusal that described the
+ * filesystem rather than the bytes. Those entries live under keys the fix does
+ * not change, so the epoch is what retires them.
+ */
+exports.CORPUS_CACHE_ENTRY_SCHEMA = "l9.corpus-cache-entry/v2";
+/**
+ * Epochs this release recognises and will not trust.
+ *
+ * An entry of a previous epoch is not damaged; it was written under rules that
+ * no longer hold. It is a miss counted as stale — like an entry another producer
+ * version wrote — and discarded quietly, rather than reported as corrupt once
+ * per entry on the first run after an upgrade.
+ */
+const PREVIOUS_CORPUS_CACHE_ENTRY_SCHEMAS = new Set(["l9.corpus-cache-entry/v1"]);
+/** True when an entry was written by another producer version or a previous epoch. */
+function isStaleEntry(entry, producerVersion) {
+    const record = entry;
+    if (record?.producer_version !== producerVersion)
+        return true;
+    return typeof record.schema === "string" && PREVIOUS_CORPUS_CACHE_ENTRY_SCHEMAS.has(record.schema);
+}
 /** Environment variable that overrides the default cache location. */
 exports.CORPUS_CACHE_ENV = "L9_CORPUS_CACHE";
 exports.CORPUS_CACHE_LAYERS = [
@@ -302,7 +326,7 @@ class MemoryCorpusCache {
             this.accounting.bump(layer, "misses");
             return undefined;
         }
-        if (entry.producer_version !== this.producerVersion) {
+        if (isStaleEntry(entry, this.producerVersion)) {
             this.accounting.bump(layer, "stale_producer");
             this.accounting.bump(layer, "misses");
             this.entries.delete(slot);
@@ -447,8 +471,7 @@ class FileCorpusCache {
             this.discard(file);
             return undefined;
         }
-        const producerVersion = parsed?.producer_version;
-        if (producerVersion !== this.producerVersion) {
+        if (isStaleEntry(parsed, this.producerVersion)) {
             this.accounting.bump(layer, "stale_producer");
             this.accounting.bump(layer, "misses");
             this.discard(file);

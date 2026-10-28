@@ -62,6 +62,7 @@ exports.renderReadinessEvidence = renderReadinessEvidence;
 // Nothing in this file writes to an observed root, executes anything it finds,
 // installs anything, or calls a model. A scan of a corpus leaves the corpus
 // byte-for-byte as it was.
+const crypto = __importStar(require("node:crypto"));
 const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
 const corpus_analysis_1 = require("./corpus_analysis");
@@ -143,6 +144,16 @@ function normalizeHash(value) {
     if (value === null || value.length === 0)
         return null;
     return value.startsWith("sha256:") ? value : `sha256:${value}`;
+}
+/**
+ * The errno code of a failed read, or a generic word when there is none.
+ *
+ * Only the code: an error message carries the absolute path, and a diagnostic
+ * names the document by its corpus path instead.
+ */
+function errorCode(error) {
+    const code = error?.code;
+    return typeof code === "string" && code.length > 0 ? code : "read failed";
 }
 function basenameOf(rootRelativePath) {
     return rootRelativePath.slice(rootRelativePath.lastIndexOf("/") + 1).toLowerCase();
@@ -231,6 +242,10 @@ function assertUsableRootKey(rootKey, rootPath) {
             + "which would make a corpus path ambiguous");
     }
 }
+/** Undecoded reason of a document whose bytes moved after they were hashed. */
+const CHANGED_DURING_SCAN_REASON = "changed_during_scan";
+/** Undecoded reason of a document this run could not read. Never cached. */
+const UNREADABLE_REASON = "unreadable";
 /**
  * Establish one document's derived layers, opening it only if it has to.
  *
@@ -242,7 +257,7 @@ function assertUsableRootKey(rootKey, rootPath) {
  */
 async function deriveDocumentLayers(artifact, context) {
     const { cache, session, memory, extractors, candidateProfile, interpretProfile, interpretEnabled, maxFileBytes, rootPathsById, rootKeyById, registry, into, } = context;
-    const { normalized, lexical, interpreted, manifestIdentifiers, skipped } = into;
+    const { normalized, lexical, interpreted, manifestIdentifiers, skipped, diagnostics } = into;
     const contentHash = artifact.contentHash;
     // The decoder that claims this path decides the key. A `.docx` and a `.md` are
     // read by different code into different documents, and a decoder revision must
@@ -339,25 +354,109 @@ async function deriveDocumentLayers(artifact, context) {
         session?.completeDecoder(documentKey);
         return;
     }
+    // A refusal that describes this run rather than these bytes: the file could
+    // not be read, or what was read is not what was hashed. It is recorded for the
+    // run — so coverage still accounts for the document — named in a diagnostic,
+    // and never cached, so the next run tries again. A cached document record
+    // already in hand stays: it was derived from bytes that matched this hash.
+    const refuseForThisRun = (reason, message) => {
+        if (reason === UNREADABLE_REASON)
+            skipped.unreadable += 1;
+        if (documentHit === undefined) {
+            normalized.set(artifact.virtualSourceId, {
+                decodes: false,
+                reason,
+                byte_length: artifact.sizeBytes ?? 0,
+                normalized_content_hash: null,
+                token_count: 0,
+                format: decoder?.format ?? "unknown",
+                decoder_id: decoder?.id ?? exports.TEXT_DECODER_ID,
+                decoder_version: decoder?.version ?? exports.TEXT_DECODER_VERSION,
+                block_count: 0,
+            });
+        }
+        diagnostics.push({
+            code: reason === UNREADABLE_REASON
+                ? "corpus.document_unreadable"
+                : "corpus.document_changed_during_scan",
+            severity: "warning",
+            message,
+            corpus_path: artifact.corpusPath,
+        });
+    };
+    const changedMessage = "the file's bytes no longer match the content hash recorded when it was "
+        + "acquired; nothing was derived from them or cached for it, and the next run reads it again";
     const absolute = artifact.absolutePath;
     if (absolute === null) {
-        skipped.unreadable += 1;
+        refuseForThisRun(UNREADABLE_REASON, "the document has no readable path in this run and was not decoded");
         return;
     }
     const reserve = artifact.sizeBytes ?? 0;
     await memory.reserve(reserve);
     try {
+        // Every layer below is filed under keys computed from `contentHash`, so every
+        // layer is derived from bytes shown to *be* those bytes. The file was hashed
+        // earlier in the run; between then and now it is a mutable path on a disk
+        // somebody may be editing, and a decode of whatever it holds now would be
+        // cached — permanently — as the decoding of what it held then.
+        //
+        // Whole-file formats are read once, and that one buffer is hashed, probed and
+        // decoded: there is no second read for the bytes to change between.
+        //
+        // Container formats are read by their decoder, part by part, from the path —
+        // pulling a whole `.xlsx` into memory to hand it over would trade the
+        // concurrency for a memory spike. So the file is hashed immediately before the
+        // decode and its size and mtime are required unchanged across it. That is
+        // evidence rather than proof, the same standard acquisition holds a file to
+        // while hashing it.
+        //
+        // The read is also the seam `max_parallel_decoders` bounds. With the read
+        // inside a synchronous decoder there is nothing to overlap in a
+        // single-threaded runtime; reading here puts N reads genuinely in flight,
+        // which on a spinning disk or a network mount is the difference the operator
+        // was reaching for.
+        const wholeFile = decoder === undefined || WHOLE_FILE_FORMATS.has(decoder.format);
+        let bytes;
+        let containerStat;
+        if (wholeFile) {
+            try {
+                bytes = await fs.promises.readFile(absolute);
+            }
+            catch (error) {
+                refuseForThisRun(UNREADABLE_REASON, `the document could not be read (${errorCode(error)}) and was not decoded`);
+                return;
+            }
+            const observed = `sha256:${crypto.createHash("sha256").update(bytes).digest("hex")}`;
+            if (observed !== contentHash) {
+                refuseForThisRun(CHANGED_DURING_SCAN_REASON, changedMessage);
+                return;
+            }
+        }
+        else {
+            let verified;
+            try {
+                containerStat = fs.statSync(absolute, { bigint: true });
+                verified = (0, local_source_1.hashFileStreaming)(absolute).hash === contentHash;
+            }
+            catch (error) {
+                refuseForThisRun(UNREADABLE_REASON, `the document could not be read (${errorCode(error)}) and was not decoded`);
+                return;
+            }
+            if (!verified) {
+                refuseForThisRun(CHANGED_DURING_SCAN_REASON, changedMessage);
+                return;
+            }
+        }
         // A decoder that reads text still needs the bytes to be text; one that reads
         // a container does not, and probing a `.docx` for UTF-8 would reject every
-        // Word document in the corpus.
+        // Word document in the corpus. The probe reads the verified buffer, so its
+        // verdict — binary or invalid — is a fact about these bytes and is cached as
+        // one. A read failure never reaches this point.
         const textFamily = decoder === undefined || isTextFamilyFormat(decoder.format);
         if (textFamily) {
-            const encoding = (0, encoding_1.probeFileEncoding)(absolute);
+            const encoding = (0, encoding_1.probeBufferEncoding)(bytes);
             if (encoding.status !== "utf8") {
-                if (encoding.status === "unreadable")
-                    skipped.unreadable += 1;
-                else
-                    skipped.encoding += 1;
+                skipped.encoding += 1;
                 const record = {
                     decodes: false,
                     reason: encoding.status,
@@ -378,29 +477,6 @@ async function deriveDocumentLayers(artifact, context) {
             skipped.unreadable += 1;
             return;
         }
-        // Read the bytes here, asynchronously, for the formats whose decoders
-        // consume the whole file.
-        //
-        // This is the seam `max_parallel_decoders` bounds. With the read inside a
-        // synchronous decoder there is nothing to overlap in a single-threaded
-        // runtime, and the budget would govern only how many pipelines happened to
-        // be between awaits — a number nobody sets a flag for. Reading here puts N
-        // reads genuinely in flight, which on a spinning disk or a network mount is
-        // the difference the operator was reaching for.
-        //
-        // Container formats are excluded on purpose: their readers stream parts out
-        // by offset, and pulling a whole `.xlsx` into memory to hand it over would
-        // trade the concurrency for a memory spike and a second copy of every file.
-        let bytes;
-        if (WHOLE_FILE_FORMATS.has(decoder.format)) {
-            try {
-                bytes = await fs.promises.readFile(absolute);
-            }
-            catch {
-                skipped.unreadable += 1;
-                return;
-            }
-        }
         const outcome = decoder.decode({
             artifactId: artifact.virtualSourceId,
             contentHash,
@@ -410,6 +486,23 @@ async function deriveDocumentLayers(artifact, context) {
             sizeBytes: artifact.sizeBytes ?? 0,
             budget: documents_1.DEFAULT_DECODER_BUDGET,
         });
+        // The container's bytes have to have held still for the whole decode, or
+        // what the decoder read is not what was just verified — and that applies to
+        // a refusal as much as to a document.
+        if (containerStat !== undefined) {
+            let after;
+            try {
+                after = fs.statSync(absolute, { bigint: true });
+            }
+            catch (error) {
+                refuseForThisRun(UNREADABLE_REASON, `the document could not be read (${errorCode(error)}) and was not decoded`);
+                return;
+            }
+            if (after.size !== containerStat.size || after.mtimeNs !== containerStat.mtimeNs) {
+                refuseForThisRun(CHANGED_DURING_SCAN_REASON, changedMessage);
+                return;
+            }
+        }
         if (!outcome.decoded) {
             // A refusal is a typed fact with a reason, never an empty document. A
             // scanned PDF and a PDF with nothing in it are different findings.
@@ -442,10 +535,10 @@ async function deriveDocumentLayers(artifact, context) {
         // what `document-signals.json` carries.
         let text;
         if (textFamily) {
-            // The bytes are already in hand from the read above; decoding them again
-            // beats a second trip to the filesystem for the same file.
+            // The bytes are already in hand from the verified read above; decoding
+            // them again beats a second trip to the filesystem for the same file.
             if (bytes === undefined) {
-                skipped.unreadable += 1;
+                refuseForThisRun(UNREADABLE_REASON, "the document's bytes were not read and it was not decoded");
                 return;
             }
             text = bytes.toString("utf8");
@@ -961,7 +1054,7 @@ async function runCorpusScan(input) {
             rootPathsById,
             rootKeyById,
             registry,
-            into: { normalized, lexical, interpreted, manifestIdentifiers, skipped },
+            into: { normalized, lexical, interpreted, manifestIdentifiers, skipped, diagnostics },
         }));
         // ── 4a. what the decoded documents say about themselves ───────────────
         //

@@ -1,5 +1,13 @@
-/** Schema every persisted cache entry declares. */
-export declare const CORPUS_CACHE_ENTRY_SCHEMA = "l9.corpus-cache-entry/v1";
+/**
+ * Schema every persisted cache entry declares — and the cache's epoch.
+ *
+ * v2 (ADR-059): entries written before the derive stage verified the bytes it
+ * read against the content hash may hold layers derived from bytes other than
+ * the ones their key names, or an `unreadable` refusal that described the
+ * filesystem rather than the bytes. Those entries live under keys the fix does
+ * not change, so the epoch is what retires them.
+ */
+export declare const CORPUS_CACHE_ENTRY_SCHEMA = "l9.corpus-cache-entry/v2";
 /** Environment variable that overrides the default cache location. */
 export declare const CORPUS_CACHE_ENV = "L9_CORPUS_CACHE";
 export declare const CORPUS_CACHE_LAYERS: readonly ["archive_manifest", "raw_identity", "normalized_document", "interpretation", "lexical_features", "embedding", "candidate_analysis"];
@@ -28,7 +36,7 @@ export interface CorpusCacheLayerStats {
     writes: number;
     /** Entries discarded because they failed their own integrity check. */
     corrupt: number;
-    /** Entries ignored because a different producer version wrote them. */
+    /** Entries ignored because a different producer version, or a previous cache epoch, wrote them. */
     stale_producer: number;
 }
 export interface CorpusCacheDiagnostic {

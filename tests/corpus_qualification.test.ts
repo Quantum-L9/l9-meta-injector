@@ -16,6 +16,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import {
+  CORPUS_CACHE_ENTRY_SCHEMA,
   MemoryCorpusCache,
   cacheEntryDefect,
   interpretationKey,
@@ -342,7 +343,7 @@ describe("a corrupt cache entry", () => {
 
   it("is detected by its own payload hash rather than by a heuristic", () => {
     const entry = {
-      schema: "l9.corpus-cache-entry/v1",
+      schema: CORPUS_CACHE_ENTRY_SCHEMA,
       layer: "lexical_features" as const,
       key: "lexical:abc",
       payload_hash: `sha256:${"0".repeat(64)}`,

@@ -60,7 +60,32 @@ Every entry declares its schema, layer, key, producer version and a hash of its
 own payload. On read the payload hash is recomputed and the key components are
 validated. An entry that fails, or is not valid JSON at all, is discarded,
 recomputed, and reported as a diagnostic — never used and never silently ignored.
-An entry written by a different producer version is a miss.
+An entry written by a different producer version or cache epoch is a miss.
+
+The epoch is the entry schema, `l9.corpus-cache-entry/v2` since
+[ADR-059](decisions/059-corpus-cache-epoch-v2-and-decoder-dialect-identity.md).
+An entry of a previous epoch is not damaged, it was written under rules that no
+longer hold, so it is counted under `stale_producer` and discarded quietly rather
+than reported once per entry as corrupt. The epoch moves when entries stored
+under keys that are still current can no longer be trusted, which is the one case
+a key change cannot retire.
+
+## What a derived layer is derived from
+
+Every derived layer is filed under keys computed from the content hash step 1
+recorded, so every derived layer is derived from bytes verified to have that hash.
+A whole-file format is read once and that buffer is hashed, probed for UTF-8 and
+decoded. A container format (`docx`, `pptx`, `xlsx`), which its decoder reads part
+by part from the path, is hashed immediately before the decode and its size and
+mtime are required unchanged across it.
+
+A document whose bytes no longer match is not decoded, nothing is cached for it,
+and the run names it (`corpus.document_changed_during_scan`, reason
+`changed_during_scan`). A document that cannot be read is treated the same way
+(`corpus.document_unreadable`, reason `unreadable`): an I/O failure describes the
+filesystem at one moment, not the bytes, so it is recorded for that run only and
+the next run tries again. Only outcomes the bytes decide — binary, invalid UTF-8,
+a decoder's refusal of verified bytes — are cached.
 
 Entries are written to a sibling file and renamed. A rename is atomic on a single
 filesystem, so an interrupted write cannot leave a half-written entry that a later

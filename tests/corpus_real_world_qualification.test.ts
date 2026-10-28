@@ -370,4 +370,18 @@ describe("the coverage projection of the same run", () => {
     expect(coverage.reasoning_handoff.reasoning_eligible_candidate_count).toBe(report.reasoning_eligible_count);
     expect(coverage.corpus.archive_count).toBe(report.corpus.archive_count);
   });
+
+  it("REG-WU-038-RC-062-g: reconciles every eligible document cold and warm, with nothing unaccounted", async () => {
+    const { cold, warm } = await qualify("memory");
+    for (const run of [cold, warm]) {
+      const documents = run.coverage.documents;
+      const gap = documents.decode_gap;
+      expect(gap.unaccounted).toBe(0);
+      expect(documents.decoder_eligible_count - documents.normalized_document_count).toBe(
+        gap.secret_skipped + gap.oversized + gap.encoding_rejected + gap.ocr_required
+        + gap.encrypted + gap.malformed + gap.other_refusal + gap.unaccounted,
+      );
+      expect(run.diagnostics.some((d) => d.code === "corpus.document_changed_during_scan")).toBe(false);
+    }
+  });
 });

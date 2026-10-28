@@ -147,6 +147,43 @@ describe("a file-backed cache", () => {
     expect(cache.diagnostics()[0].message).toContain("payload_hash does not describe");
   });
 
+  it("REG-WU-038-RC-062-e: treats an entry of the previous cache epoch as a stale miss, not a corrupt one", () => {
+    const root = tmp();
+    const cache = new FileCorpusCache({ root, producerVersion: "v1" });
+    // An entry exactly as the previous epoch wrote it: same producer version,
+    // a payload hash that describes its payload, only the schema differs.
+    const payload = { decodes: false, reason: "unreadable" };
+    const file = cacheEntryPath(root, "normalized_document", "normdoc:old");
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({
+      schema: "l9.corpus-cache-entry/v1",
+      layer: "normalized_document",
+      key: "normdoc:old",
+      payload_hash: cachePayloadHash(payload),
+      producer_version: "v1",
+      payload,
+    }), "utf8");
+
+    expect(cache.get("normalized_document", "normdoc:old")).toBeUndefined();
+    expect(fs.existsSync(file)).toBe(false);
+    expect(cache.stats().stale_producer).toBe(1);
+    expect(cache.stats().misses).toBe(1);
+    expect(cache.stats().corrupt).toBe(0);
+    expect(cache.diagnostics()).toEqual([]);
+
+    // The in-memory cache applies the same epoch rule to an entry it holds.
+    const memory = new MemoryCorpusCache("v1");
+    memory.put("normalized_document", "normdoc:old", payload);
+    const entries = (memory as unknown as { entries: Map<string, { schema: string }> }).entries;
+    const slot = entries.get("normalized_document/normdoc:old");
+    expect(slot).toBeDefined();
+    entries.set("normalized_document/normdoc:old", { ...(slot as { schema: string }), schema: "l9.corpus-cache-entry/v1" });
+    expect(memory.get("normalized_document", "normdoc:old")).toBeUndefined();
+    expect(memory.stats().stale_producer).toBe(1);
+    expect(memory.stats().corrupt).toBe(0);
+    expect(memory.diagnostics()).toEqual([]);
+  });
+
   it("discards an entry that is not JSON at all", () => {
     const root = tmp();
     const cache = new FileCorpusCache({ root, producerVersion: "v1" });
