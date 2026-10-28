@@ -2,6 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { NUMERIC_OPTION_BOUNDS, isNamespaceGlobPair, parseOptionArgv } = require("./cli-args");
 
 const OPERATION_MODES = Object.freeze(["inventory", "check", "apply", "skills"]);
 const LEGACY_OPERATION_ALIASES = Object.freeze({ pipeline: "apply" });
@@ -45,6 +46,12 @@ function parseNumber(name, raw, defaultValue, predicate, expectation) {
     fail(`${name} must be ${expectation}, got '${raw}'`);
   }
   return value;
+}
+
+/** parseNumber with the bounds the direct CLIs share (scripts/lib/cli-args.js). */
+function parseBoundedNumber(name, raw, defaultValue) {
+  const bounds = NUMERIC_OPTION_BOUNDS[`--${name}`];
+  return parseNumber(name, raw, defaultValue, bounds.predicate, bounds.expectation);
 }
 
 function resolveMode(raw) {
@@ -162,10 +169,7 @@ function parseRepeatedValues(raw) {
 
 function assertNamespaceGlob(pair) {
   const value = assertText("namespace-glob", pair);
-  const index = value.indexOf("=");
-  if (index < 1 || index === value.length - 1) {
-    fail(`namespace-glob '${value}' must use glob=namespace`);
-  }
+  if (!isNamespaceGlobPair(value)) fail(`namespace-glob '${value}' must use glob=namespace`);
   return value;
 }
 
@@ -215,6 +219,12 @@ function assertModeShape(config) {
   }
   if (mode === "apply" && config.dryRun) {
     fail("apply does not accept dry-run=true; use check for read-only drift evaluation");
+  }
+  // apply refuses only on repository authority conflicts; it has no verification-only
+  // failure an advisory mode could downgrade, so false would be accepted and ignored
+  // (ADR-069 amending ADR-022).
+  if (mode === "apply" && config.failOnIssues === false) {
+    fail("fail-on-issues=false is forbidden for apply: apply fails only on authority conflicts, which are always fatal");
   }
   if ((mode === "inventory" || mode === "skills") && config.failOnIssues === false) {
     fail(`fail-on-issues is not supported for ${mode}`);
@@ -269,8 +279,8 @@ function normalizeEnvironment(rawEnv) {
   const glob = assertText("glob", String(env.L9_INPUT_GLOB ?? "**/*").trim() || "**/*");
   const omitPatterns = parseCsvPatterns(env.L9_INPUT_OMIT);
   const namespaceGlobs = namespaceGlobRules.map((rule) => `${rule.glob}=${rule.namespace}`);
-  const nearDupThreshold = parseNumber("near-dup", env.L9_INPUT_NEAR_DUP, 0.9, (n) => n >= 0 && n <= 1, "between 0 and 1");
-  const hashPrefixLength = parseNumber("hash-prefix-length", env.L9_INPUT_HASH_PREFIX_LENGTH, 16, (n) => Number.isInteger(n) && n >= 8 && n <= 64, "an integer from 8 to 64");
+  const nearDupThreshold = parseBoundedNumber("near-dup", env.L9_INPUT_NEAR_DUP, 0.9);
+  const hashPrefixLength = parseBoundedNumber("hash-prefix-length", env.L9_INPUT_HASH_PREFIX_LENGTH, 16);
 
   const runnerTempRaw = String(env.RUNNER_TEMP ?? "").trim();
   let reportPath;
@@ -320,20 +330,16 @@ const VALUE_OPTIONS = Object.freeze([
   "--llm-base-url", "--llm-model", "--llm-api-key",
 ]);
 
-const BOOLEAN_OPTION_SET = new Set(BOOLEAN_OPTIONS);
-const REPEATABLE_OPTION_SET = new Set(REPEATABLE_OPTIONS);
-const VALUE_OPTION_SET = new Set(VALUE_OPTIONS);
-/** `--no-dry-run` → `--dry-run`. The negation is the only way to express `false` on argv. */
-const NEGATED_BOOLEAN_OPTIONS = new Map(
-  BOOLEAN_OPTIONS.map((option) => [`--no-${option.slice(2)}`, option]),
-);
-
-function isKnownOptionToken(token) {
-  return BOOLEAN_OPTION_SET.has(token)
-    || REPEATABLE_OPTION_SET.has(token)
-    || VALUE_OPTION_SET.has(token)
-    || NEGATED_BOOLEAN_OPTIONS.has(token);
-}
+/** The dispatcher's option declaration, parsed by the shared strict core (ADR-069). */
+const DISPATCH_OPTION_SPEC = Object.freeze({
+  boolean: BOOLEAN_OPTIONS,
+  value: VALUE_OPTIONS,
+  repeatable: REPEATABLE_OPTIONS,
+  negatable: true,
+  // Values are validated after parsing with the Action-input wording (parseNumber,
+  // parseNamespaceGlobRule), so the dispatcher's messages are unchanged.
+  validateValues: false,
+});
 
 /**
  * Parse `--flag` / `--opt value` argv into option readers.
@@ -342,42 +348,11 @@ function isKnownOptionToken(token) {
  * following argv element, so `--dry-run --out reports` keeps `--out` an option rather
  * than swallowing it as the boolean's value. `--no-<flag>` is the explicit false form.
  * A value option whose value is itself a known option token is rejected loudly instead
- * of being mis-parsed into a plausible-looking configuration.
+ * of being mis-parsed into a plausible-looking configuration. One definition: the
+ * direct CLIs parse through the same core (scripts/lib/cli-args.js).
  */
 function parseArgOptions(args) {
-  const values = new Map();
-  const repeated = new Map();
-  while (args.length) {
-    const option = args.shift();
-
-    if (BOOLEAN_OPTION_SET.has(option)) {
-      if (values.has(option)) fail(`${option} may be specified only once`);
-      values.set(option, "true");
-      continue;
-    }
-    const negated = NEGATED_BOOLEAN_OPTIONS.get(option);
-    if (negated !== undefined) {
-      if (values.has(negated)) fail(`${negated} may be specified only once`);
-      values.set(negated, "false");
-      continue;
-    }
-
-    if (!(VALUE_OPTION_SET.has(option) || REPEATABLE_OPTION_SET.has(option))) {
-      fail(`unknown option '${option}'`);
-    }
-    if (!args.length) fail(`${option} requires a value`);
-    if (isKnownOptionToken(args[0])) fail(`${option} requires a value, got option '${args[0]}'`);
-    const value = args.shift();
-    if (REPEATABLE_OPTION_SET.has(option)) {
-      const list = repeated.get(option) ?? [];
-      list.push(value);
-      repeated.set(option, list);
-    } else {
-      if (values.has(option)) fail(`${option} may be specified only once`);
-      values.set(option, value);
-    }
-  }
-  return { values, repeated };
+  return parseOptionArgv(args, DISPATCH_OPTION_SPEC, fail);
 }
 
 function parseCommandLine(argv, env = process.env) {
@@ -407,8 +382,8 @@ function parseCommandLine(argv, env = process.env) {
   const authority = assertText("authority", identity.authority, { allowEmpty: modeResolution.mode === "inventory" }).trim();
   const glob = assertText("glob", values.get("--glob") ?? "**/*");
   const namespaceGlobs = namespaceGlobRules.map((rule) => `${rule.glob}=${rule.namespace}`);
-  const nearDupThreshold = parseNumber("near-dup", values.get("--near-dup"), 0.9, (n) => n >= 0 && n <= 1, "between 0 and 1");
-  const hashPrefixLength = parseNumber("hash-prefix-length", values.get("--hash-prefix-length"), 16, (n) => Number.isInteger(n) && n >= 8 && n <= 64, "an integer from 8 to 64");
+  const nearDupThreshold = parseBoundedNumber("near-dup", values.get("--near-dup"), 0.9);
+  const hashPrefixLength = parseBoundedNumber("hash-prefix-length", values.get("--hash-prefix-length"), 16);
   let reportPath;
   if (modeResolution.mode === "check") {
     const temp = realDirectory("temporary directory", env.RUNNER_TEMP || require("node:os").tmpdir());
@@ -475,7 +450,6 @@ function resolveScriptAndArgs(config, scripts) {
     const args = [...commonArgs(config), "--authority", config.authority, "--out", config.outDir,
       "--near-dup", String(config.nearDupThreshold), "--hash-prefix-length", String(config.hashPrefixLength),
       ...llmArgs(config)];
-    if (!config.failOnIssues) args.push("--no-fail-on-issues");
     return { script: path.join(scripts, "apply-cli.js"), args };
   }
   const args = [config.targetRoot, "--authority", config.authority, "--out", config.outDir, ...llmArgs(config)];

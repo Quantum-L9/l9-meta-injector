@@ -41,8 +41,9 @@ inputs:
     default: ""
   fail-on-issues:
     description: >-
-      Exact boolean. check always fails on drift; apply may set false for advisory
-      verification. Unsupported combinations fail closed.
+      Exact boolean; only 'true' (the default) is accepted. check fails on drift and
+      apply fails on repository authority conflicts, both always; no mode has an
+      advisory form, so 'false' fails closed as an input error for every mode.
     required: false
     default: "true"
   out:
