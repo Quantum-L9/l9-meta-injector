@@ -16,9 +16,11 @@ import { MetricsCollector } from "./metrics";
 import { parseCanonicalYaml } from "./meta_schema";
 import { frontMatterReconciliationView, inspectFrontMatterDocument, patchManagedFrontMatter } from "./frontmatter_patch";
 import {
-  resolveStrategy, StrategySpec, frontMatterInner, yamlToBlock, stripInjectedBlock,
+  resolveStrategy, StrategySpec, yamlToBlock, stripInjectedBlock,
   extractInjectedYaml, applyCommentInjection, sidecarPathFor, detectNewlineConvention,
+  carrierForbiddenSequences,
 } from "./comment";
+import { serializeYamlObject } from "./yaml_serialize";
 import { replaceFileAtomically } from "./durable_write";
 
 // Parse the inner YAML of an existing injected header into a plain object.
@@ -153,7 +155,10 @@ function buildInjection(filePath: string, finalMeta: NormalizedMeta, ctx: ReadCt
     // The block adopts the file's own line-ending convention and sits after any
     // BOM, so the only bytes that change are the block's (DATA-002).
     const newline = detectNewlineConvention(ctx.cleanBody);
-    const block = yamlToBlock(frontMatterInner(yamlFm), ctx.spec, newline);
+    // Values are escaped for this carrier so none can end or invalidate the host
+    // comment (ADR-057); benign values serialize exactly as in `yamlFm`.
+    const inner = serializeYamlObject(asRecord(finalMeta), { fences: false, forbidden: carrierForbiddenSequences(ctx.spec) });
+    const block = yamlToBlock(inner, ctx.spec, newline);
     const newContent = applyCommentInjection(ctx.cleanBody, block, newline, ctx.spec);
     const postBodyHash = contentHash(stripInjectedBlock(newContent, ctx.spec));
     return { targetPath: filePath, newContent, addedLines: block, postBodyHash, strategy: ctx.spec.strategy };

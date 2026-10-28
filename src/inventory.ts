@@ -25,6 +25,7 @@ import * as crypto from "node:crypto";
 import { contentHash, estimateTokens } from "./extract";
 import {
   applyCommentInjection,
+  carrierForbiddenSequences,
   detectNewlineConvention,
   extractInjectedYaml,
   resolveStrategy,
@@ -757,7 +758,7 @@ function applyInventoryClocksToWritten(abs: string, clocks: Record<string, unkno
     if (typeof parsed !== "object" || parsed === null) return;
     const next = omitSmashedClock({ ...(parsed as Record<string, unknown>), ...clocks });
     const newline = detectNewlineConvention(raw);
-    const block = yamlToBlock(serializeYamlObject(next, { fences: false }), spec, newline);
+    const block = yamlToBlock(serializeYamlObject(next, { fences: false, forbidden: carrierForbiddenSequences(spec) }), spec, newline);
     const rewritten = applyCommentInjection(stripInjectedBlock(raw, spec), block, newline, spec);
     if (rewritten !== raw) replaceFileAtomically(abs, rewritten);
   }
@@ -786,7 +787,7 @@ function stripSmashedClockFromWritten(abs: string): boolean {
     }
     const stripped = omitSmashedClock(parsed as Record<string, unknown>);
     const newline = detectNewlineConvention(raw);
-    const block = yamlToBlock(serializeYamlObject(stripped, { fences: false }), spec, newline);
+    const block = yamlToBlock(serializeYamlObject(stripped, { fences: false, forbidden: carrierForbiddenSequences(spec) }), spec, newline);
     replaceFileAtomically(abs, applyCommentInjection(stripInjectedBlock(raw, spec), block, newline, spec));
     return true;
   }

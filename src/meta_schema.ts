@@ -51,7 +51,17 @@ const SCALAR = (raw: string): unknown => {
   if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) {
     // Double-quoted: unescape the standard YAML escape sequences so values like
     // Windows paths ("C:\\tmp") or embedded \n/\" round-trip correctly.
-    return s.slice(1, -1).replace(/\\(["\\/nrt])/g, (_m, c) => unescapeDoubleQuotedChar(c));
+    // `\xNN` / `\uXXXX` / `\UXXXXXXXX` are the standard YAML escapes the serializer
+    // uses to keep carrier-forbidden sequences out of host comments (ADR-057).
+    return s.slice(1, -1).replace(
+      /\\(?:x([0-9A-Fa-f]{2})|u([0-9A-Fa-f]{4})|U([0-9A-Fa-f]{8})|(["\\/nrt]))/g,
+      (_m: string, x?: string, u?: string, big?: string, c?: string) => {
+        const hex = x ?? u ?? big;
+        if (hex === undefined) return unescapeDoubleQuotedChar(c ?? "");
+        const code = Number.parseInt(hex, 16);
+        return code > 0x10ffff ? _m : String.fromCodePoint(code);
+      },
+    );
   }
   if (s.length >= 2 && s.startsWith("'") && s.endsWith("'")) {
     // Single-quoted: the only escape is a doubled quote ('').
@@ -74,12 +84,16 @@ const indentOf = (line: string): number => line.length - line.replace(/^ +/, "")
 
 // Drop a trailing `# comment` and surrounding space, but only when the `#` is
 // whitespace-preceded AND not inside a single/double-quoted string — so a value
-// like `description: "hello # world"` is preserved intact.
+// like `description: "hello # world"` is preserved intact. Backslash escapes are
+// honoured inside double quotes.
 const strip = (line: string): string => {
   let inSingle = false;
   let inDouble = false;
   for (let i = 0; i < line.length; i++) {
     const c = line[i];
+    // A backslash escapes the next character inside double quotes, so an escaped
+    // quote does not close the string (ADR-057, RC-005).
+    if (c === "\\" && inDouble) { i++; continue; }
     if (c === "'" && !inDouble) inSingle = !inSingle;
     else if (c === '"' && !inSingle) inDouble = !inDouble;
     else if (c === "#" && !inSingle && !inDouble && (i === 0 || /\s/.test(line[i - 1]))) {

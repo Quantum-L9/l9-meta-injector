@@ -181,9 +181,35 @@ export function detectNewlineConvention(text: string): NewlineConvention {
   return lf > 0 && text[lf - 1] === "\r" ? "\r\n" : "\n";
 }
 
-/** Wrap inner YAML in the comment style for this spec. Returns the block (no trailing newline). */
+/**
+ * Character sequences a carrier cannot hold inside its block (ADR-057, RC-003): the
+ * block's own END sentinel text for every carrier; `--` inside `<!-- -->` (XML forbids
+ * it in comments, and it covers `-->`); `*\/` and Sass interpolation `#{` inside
+ * `/* *\/`; and the line terminators a line comment does not survive (CR, NEL, LS, PS —
+ * LF is always escaped by the serializer). Callers pass this set to
+ * `serializeYamlObject({ forbidden })` before `yamlToBlock`.
+ */
+export function carrierForbiddenSequences(spec: StrategySpec): string[] {
+  if (spec.strategy === "line-comment") return [END, "\r", "\u0085", "\u2028", "\u2029"];
+  if (spec.strategy === "block-comment") {
+    if (spec.blockOpen === "<!--") return [BLOCK_END, "--"];
+    if (spec.blockOpen === "/*") return [BLOCK_END, "*/", "#{"];
+    return [BLOCK_END, spec.blockClose ?? ""].filter((seq) => seq !== "");
+  }
+  return [];
+}
+
+/**
+ * Wrap inner YAML in the comment style for this spec. Returns the block (no trailing newline).
+ * Inner YAML that still holds a carrier-forbidden sequence is refused rather than
+ * written as a broken host file (CARRIER_UNREPRESENTABLE).
+ */
 export function yamlToBlock(yamlInner: string, spec: StrategySpec, newline: NewlineConvention = "\n"): string {
   const lines = yamlInner.split(/\r?\n/);
+  const hazard = carrierForbiddenSequences(spec).find((seq) => lines.some((line) => line.includes(seq)));
+  if (hazard !== undefined) {
+    throw new Error(`CARRIER_UNREPRESENTABLE: the ${spec.strategy} block cannot hold ${JSON.stringify(hazard)}; serialize with carrierForbiddenSequences(spec)`);
+  }
   if (spec.strategy === "line-comment") {
     const p = spec.linePrefix!;
     const out = [`${p} ${START}`, ...lines.map((l) => (l === "" ? p : `${p} ${l}`)), `${p} ${END}`];

@@ -34,7 +34,20 @@ export type NewlineConvention = "\n" | "\r\n";
  * inside its header and CRLF everywhere else.
  */
 export declare function detectNewlineConvention(text: string): NewlineConvention;
-/** Wrap inner YAML in the comment style for this spec. Returns the block (no trailing newline). */
+/**
+ * Character sequences a carrier cannot hold inside its block (ADR-057, RC-003): the
+ * block's own END sentinel text for every carrier; `--` inside `<!-- -->` (XML forbids
+ * it in comments, and it covers `-->`); `*\/` and Sass interpolation `#{` inside
+ * `/* *\/`; and the line terminators a line comment does not survive (CR, NEL, LS, PS —
+ * LF is always escaped by the serializer). Callers pass this set to
+ * `serializeYamlObject({ forbidden })` before `yamlToBlock`.
+ */
+export declare function carrierForbiddenSequences(spec: StrategySpec): string[];
+/**
+ * Wrap inner YAML in the comment style for this spec. Returns the block (no trailing newline).
+ * Inner YAML that still holds a carrier-forbidden sequence is refused rather than
+ * written as a broken host file (CARRIER_UNREPRESENTABLE).
+ */
 export declare function yamlToBlock(yamlInner: string, spec: StrategySpec, newline?: NewlineConvention): string;
 /** Remove a previously-injected comment block, returning the clean body verbatim. */
 export declare function stripInjectedBlock(raw: string, spec: StrategySpec): string;

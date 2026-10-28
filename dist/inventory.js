@@ -718,7 +718,7 @@ function applyInventoryClocksToWritten(abs, clocks) {
             return;
         const next = omitSmashedClock({ ...parsed, ...clocks });
         const newline = (0, comment_1.detectNewlineConvention)(raw);
-        const block = (0, comment_1.yamlToBlock)((0, yaml_serialize_1.serializeYamlObject)(next, { fences: false }), spec, newline);
+        const block = (0, comment_1.yamlToBlock)((0, yaml_serialize_1.serializeYamlObject)(next, { fences: false, forbidden: (0, comment_1.carrierForbiddenSequences)(spec) }), spec, newline);
         const rewritten = (0, comment_1.applyCommentInjection)((0, comment_1.stripInjectedBlock)(raw, spec), block, newline, spec);
         if (rewritten !== raw)
             (0, durable_write_1.replaceFileAtomically)(abs, rewritten);
@@ -756,7 +756,7 @@ function stripSmashedClockFromWritten(abs) {
         }
         const stripped = omitSmashedClock(parsed);
         const newline = (0, comment_1.detectNewlineConvention)(raw);
-        const block = (0, comment_1.yamlToBlock)((0, yaml_serialize_1.serializeYamlObject)(stripped, { fences: false }), spec, newline);
+        const block = (0, comment_1.yamlToBlock)((0, yaml_serialize_1.serializeYamlObject)(stripped, { fences: false, forbidden: (0, comment_1.carrierForbiddenSequences)(spec) }), spec, newline);
         (0, durable_write_1.replaceFileAtomically)(abs, (0, comment_1.applyCommentInjection)((0, comment_1.stripInjectedBlock)(raw, spec), block, newline, spec));
         return true;
     }

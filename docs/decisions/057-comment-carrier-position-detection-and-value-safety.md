@@ -155,6 +155,40 @@ the unanchored match; both contradicted the documented promise not to corrupt fi
 a bug fix with release notes. The release itself requires separate authority
 (INV-023); this ADR does not confer it.
 
+**DEC-RC-003: Option A, with Option C as the defensive fallback.** (Alternatives:
+A carrier-aware escaping with standard YAML double-quote escapes; B sidecar fallback per
+value, rejected because verify/strip/extract derive the strategy from the file alone and
+an inline-to-sidecar flip would leave a stale block; C refuse the file.)
+
+- `carrierForbiddenSequences(spec)` in `src/comment.ts` declares what each carrier
+  cannot hold: every carrier's own END sentinel text; `--` for `<!-- -->` (covers
+  `-->`); `*/` and Sass interpolation `#{` for `/* */` (applied to CSS and LESS too,
+  which only costs an escape); CR, U+0085, U+2028 and U+2029 for line comments (LF is
+  always escaped).
+- `serializeYamlObject(obj, { forbidden })` double-quotes any string containing a
+  forbidden sequence and writes the first character of every occurrence as a standard
+  YAML escape (`\x2D`, `\x2A`, `\x23`, ` `, …). No escape spelling contains a
+  forbidden sequence, so the emitted block is free of them. Without the option the
+  output is unchanged for every other caller (sidecars, frontmatter display).
+- `parseCanonicalYaml` accepts `\xNN`, `\uXXXX` and `\UXXXXXXXX` inside double quotes,
+  so extraction returns the exact original value. A hand-written quoted value holding a
+  bare `\x41` is now read as `A`; the serializer itself never emits a bare backslash
+  (it writes `\\`).
+- `inject.buildInjection` and the two `inventory.ts` block rewrites pass the spec's set.
+- Fallback C: a key (keys are bare in the canonical subset) or a JSON-inlined value
+  that contains a forbidden sequence cannot be escaped; the serializer throws
+  `CARRIER_UNREPRESENTABLE` and nothing is written. `yamlToBlock` performs the same
+  check on the inner YAML it is given, so no caller can write a broken block. The
+  pipeline's metadata keys are fixed identifiers that cannot hit this; inventory header
+  writes record the refusal per file through their existing error path.
+
+**RC-005 (serializer/parser complement), decided with DEC-RC-003.** `yamlScalar` quotes
+every string the canonical `SCALAR` reader would not read back as the same string —
+integer and decimal patterns, `~`, `null`/`true`/`false`, bracket/brace forms, edge
+whitespace — and any containing LF, CR, TAB, U+2028 or U+2029, which it escapes. The
+parser's comment stripper honours backslash escapes inside double quotes, so `"a\" # b"`
+is no longer truncated. Benign values are byte-identical to the previous output.
+
 ## Consequences
 
 - **On-disk carrier bytes.** Files annotated by an earlier version that carry a
@@ -172,6 +206,13 @@ a bug fix with release notes. The release itself requires separate authority
   Body text already deleted by earlier runs cannot be recovered.
 - **Governed path unchanged.** Carrier decisions and the metadata index are identical:
   every affected extension is `central_manifest` under ADR-024, by the same rule.
-- Regression evidence: `tests/carrier_position.test.ts` (REG-WU-001-*), including
+- **Escaped values (WU-002).** Existing headers and sidecars holding numeric-looking or
+  `~` strings, raw `--`/`*/`/`#{`, a lone CR or a line separator are rewritten once on
+  the next run (for example `title: 2024` becomes `title: "2024"`); a second run writes
+  nothing. A title that already flipped from `~` to `null` cannot be recovered
+  automatically. `yamlScalar` gains an optional `forbidden` argument and
+  `SerializeYamlOptions` an optional `forbidden` field (additive, `./advanced`).
+- Regression evidence: `tests/carrier_value_safety.test.ts` (REG-WU-002-*),
+  `tests/carrier_position.test.ts` (REG-WU-001-*), including
   legacy byte-0 files for every prologue language and `.ql`/`.sass`, inject∘strip
   identity and idempotent re-runs.
