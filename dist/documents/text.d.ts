@@ -1,6 +1,6 @@
 import { BlockBuilder, BlockLocator, DecodeInput, DocumentDecoder } from "./decoder";
 export declare const TEXT_DECODER_ID = "l9.text-decoder";
-export declare const TEXT_DECODER_VERSION = "1.1.0";
+export declare const TEXT_DECODER_VERSION = "1.2.0";
 export declare const CSV_DECODER_ID = "l9.csv-decoder";
 /**
  * 1.1.0 emits a block per populated cell beside the row block.
@@ -13,7 +13,7 @@ export declare const CSV_DECODER_ID = "l9.csv-decoder";
  * while the identical table in a worksheet was understood, purely because the
  * worksheet decoder emits cells and this one did not.
  */
-export declare const CSV_DECODER_VERSION = "1.2.0";
+export declare const CSV_DECODER_VERSION = "1.3.0";
 /** Read a file as UTF-8, refusing bytes that are not valid UTF-8. */
 export declare function readUtf8(input: DecodeInput): {
     text: string;

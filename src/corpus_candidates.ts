@@ -638,6 +638,22 @@ function roundTopicScore(value: number): number {
   return Math.round(value * 1e6) / 1e6;
 }
 
+/**
+ * A threshold as every identity and key renders it: rounded, then six places.
+ *
+ * Rounded first, because `toFixed` and `Math.round` disagree on half-way inputs;
+ * rendering the raw value would let two thresholds that compare identically
+ * carry different names, or two that compare differently carry one.
+ */
+export function canonicalThresholdText(value: number): string {
+  return roundTopicScore(value).toFixed(6);
+}
+
+/** The threshold in micro-units: the integer every topic bound is computed from. */
+function thresholdMicros(canonicalThreshold: number): number {
+  return Math.round(canonicalThreshold * 1e6);
+}
+
 /** One topic candidate from its members. Shared by the indexed and zero paths. */
 function buildTopicCandidate(
   members: readonly { document: TopicDocumentInput; terms: Set<string> }[],
@@ -665,7 +681,7 @@ function buildTopicCandidate(
       algorithm_id: TOPIC_CANDIDATE_METHOD,
       algorithm_version: TOPIC_CANDIDATE_METHOD_VERSION,
       member_ids: [...memberIds].sort(compareCodePoints),
-      threshold: threshold.toFixed(6),
+      threshold: canonicalThresholdText(threshold),
     }),
     method: TOPIC_CANDIDATE_METHOD,
     algorithm_version: TOPIC_CANDIDATE_METHOD_VERSION,
@@ -725,10 +741,15 @@ export interface TopicCandidateResult {
  * have to sit past a point where fewer than that many remain.
  *
  * So this is a filter, not a sample. No qualifying pair is lost.
+ *
+ * `t` is the canonical threshold the comparison uses, and `ceil(t * |X|)` is
+ * taken in integer micro-units rather than from a floating-point product, which
+ * can land a hair above an integer and shorten the prefix by one.
  */
 export function topicPrefixLength(setSize: number, threshold: number): number {
   if (setSize === 0) return 0;
-  return Math.max(1, setSize - Math.ceil(roundTopicScore(threshold) * setSize) + 1);
+  const required = Math.ceil((thresholdMicros(roundTopicScore(threshold)) * setSize) / 1e6);
+  return Math.max(1, setSize - required + 1);
 }
 
 /**
@@ -762,7 +783,11 @@ export function topicPrefixLength(setSize: number, threshold: number): number {
  * rather than asserted.
  */
 export function buildTopicCandidates(input: BuildTopicCandidatesInput): TopicCandidateResult {
-  const threshold = input.threshold ?? DEFAULT_TOPIC_THRESHOLD;
+  // Canonicalised once (ADR-059, DEC-RC-071 A): the comparison, both bounds, the
+  // candidate ids and the reported threshold all use this one value, so a
+  // threshold given to more than six places behaves as the rounding its identity
+  // already claimed.
+  const threshold = roundTopicScore(input.threshold ?? DEFAULT_TOPIC_THRESHOLD);
   const eligible = input.documents.filter((document) => document.token_count >= TOPIC_MIN_TOKENS);
   // `Math.max` rather than the bare product: at zero eligible documents the
   // expression is `-0`, which serializes as `-0` and reads as a different number
@@ -875,8 +900,8 @@ export function buildTopicCandidates(input: BuildTopicCandidatesInput): TopicCan
         }
         // Size bound: `other` was visited earlier so its set is no larger, and a
         // pair can only reach the threshold when the smaller is at least `t` of
-        // the larger.
-        if (features[other].terms.size < roundTopicScore(threshold) * size) continue;
+        // the larger — compared in integers, never as a float product.
+        if (features[other].terms.size * 1e6 < thresholdMicros(threshold) * size) continue;
         evaluated += 1;
         if (jaccardOfSets(feature.terms, features[other].terms) < threshold) continue;
         union(other, index);
@@ -942,7 +967,7 @@ export function buildTopicCandidates(input: BuildTopicCandidatesInput): TopicCan
 export function buildTopicCandidatesExhaustive(
   input: BuildTopicCandidatesInput,
 ): TopicCandidate[] {
-  const threshold = input.threshold ?? DEFAULT_TOPIC_THRESHOLD;
+  const threshold = roundTopicScore(input.threshold ?? DEFAULT_TOPIC_THRESHOLD);
   const eligible = input.documents.filter((document) => document.token_count >= TOPIC_MIN_TOKENS);
   if (eligible.length < 2) return [];
   if (roundTopicScore(threshold) <= 0) {
@@ -1008,7 +1033,7 @@ export function candidateProfileHash(input: {
   nearDuplicateThreshold: number;
 }): string {
   return stableId("candidate-profile", {
-    near_duplicate_threshold: input.nearDuplicateThreshold.toFixed(6),
+    near_duplicate_threshold: canonicalThresholdText(input.nearDuplicateThreshold),
     project_method: PROJECT_CANDIDATE_METHOD,
     project_method_version: PROJECT_CANDIDATE_METHOD_VERSION,
     topic_df_ceiling: TOPIC_DOCUMENT_FREQUENCY_CEILING.toFixed(6),
@@ -1019,6 +1044,6 @@ export function candidateProfileHash(input: {
     topic_min_tokens: TOPIC_MIN_TOKENS,
     topic_salient_terms: TOPIC_SALIENT_TERMS,
     topic_stopwords: [...TOPIC_STOPWORDS].sort(compareCodePoints),
-    topic_threshold: input.topicThreshold.toFixed(6),
+    topic_threshold: canonicalThresholdText(input.topicThreshold),
   });
 }

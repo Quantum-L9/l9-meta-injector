@@ -26,7 +26,7 @@ make the next run read this run's output as user content.
 |---|---|
 | `archive_manifest` | archive content hash, reader version, archive policy version |
 | `raw_identity` | exact content hash |
-| `normalized_document` | exact content hash, decoder id, decoder version |
+| `normalized_document` | exact content hash, decoder id, decoder version, decoder-declared dialect |
 | `interpretation` | normalized document identity, source path, interpretation profile |
 | `lexical_features` | normalized document identity, lexical profile |
 | `embedding` | normalized document identity, chunk profile, provider, model, revision |
@@ -35,7 +35,11 @@ make the next run read this run's output as user content.
 Every key names the rules as well as the bytes. A stricter archive policy is a
 different question about the same archive and must not be answered out of the
 looser policy's entry; a decoder revision produces a different document from the
-same bytes and must not be served the old one.
+same bytes and must not be served the old one. A decoder whose reading depends on
+the name as well as the bytes declares the dialect it reads a path in — Markdown
+for `.md`, `.markdown` and `.mdx`, tab-separated for `.tsv` — and that dialect
+enters the key and the normalized document id, so identical bytes at `a.md` and
+`b.txt` are two documents. Decoders that declare no dialect key exactly as before.
 
 ## What a cached interpretation does not carry
 
@@ -60,7 +64,32 @@ Every entry declares its schema, layer, key, producer version and a hash of its
 own payload. On read the payload hash is recomputed and the key components are
 validated. An entry that fails, or is not valid JSON at all, is discarded,
 recomputed, and reported as a diagnostic — never used and never silently ignored.
-An entry written by a different producer version is a miss.
+An entry written by a different producer version or cache epoch is a miss.
+
+The epoch is the entry schema, `l9.corpus-cache-entry/v2` since
+[ADR-059](decisions/059-corpus-cache-epoch-v2-and-decoder-dialect-identity.md).
+An entry of a previous epoch is not damaged, it was written under rules that no
+longer hold, so it is counted under `stale_producer` and discarded quietly rather
+than reported once per entry as corrupt. The epoch moves when entries stored
+under keys that are still current can no longer be trusted, which is the one case
+a key change cannot retire.
+
+## What a derived layer is derived from
+
+Every derived layer is filed under keys computed from the content hash step 1
+recorded, so every derived layer is derived from bytes verified to have that hash.
+A whole-file format is read once and that buffer is hashed, probed for UTF-8 and
+decoded. A container format (`docx`, `pptx`, `xlsx`), which its decoder reads part
+by part from the path, is hashed immediately before the decode and its size and
+mtime are required unchanged across it.
+
+A document whose bytes no longer match is not decoded, nothing is cached for it,
+and the run names it (`corpus.document_changed_during_scan`, reason
+`changed_during_scan`). A document that cannot be read is treated the same way
+(`corpus.document_unreadable`, reason `unreadable`): an I/O failure describes the
+filesystem at one moment, not the bytes, so it is recorded for that run only and
+the next run tries again. Only outcomes the bytes decide — binary, invalid UTF-8,
+a decoder's refusal of verified bytes — are cached.
 
 Entries are written to a sibling file and renamed. A rename is atomic on a single
 filesystem, so an interrupted write cannot leave a half-written entry that a later

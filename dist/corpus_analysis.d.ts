@@ -98,12 +98,15 @@ export declare function nearDuplicateCandidatesExhaustive(documents: NearDuplica
 /**
  * The prefix of a shingle set that a qualifying partner must intersect.
  *
- * For Jaccard at threshold `t`, a pair can only reach `t` if it shares at least
- * `ceil(t * |X|)` shingles with the smaller of the two sets. Under any fixed
- * global order over shingles, two sets that share that many elements must both
- * contain one of the first `|X| - ceil(t * |X|) + 1` of them — otherwise the
- * shared elements would all have to sit past a point where fewer than that many
- * elements remain. So indexing only that prefix loses no qualifying pair.
+ * For Jaccard at least `L`, a pair shares at least `ceil(L * |X|)` shingles with
+ * either set, because the union is no smaller than `|X|`. Under any fixed global
+ * order over shingles, two sets that share that many elements must both contain
+ * one of the first `|X| - ceil(L * |X|) + 1` of them — otherwise the shared
+ * elements would all have to sit past a point where fewer than that many elements
+ * remain. So indexing only that prefix loses no qualifying pair.
+ *
+ * `L` is the lowest score the rounded qualifying test admits (see
+ * `admittedJaccardNumerator`), and the ceiling is taken in integer arithmetic.
  */
 export declare function prefixLength(setSize: number, threshold: number): number;
 /**
@@ -118,7 +121,9 @@ export declare function prefixLength(setSize: number, threshold: number): number
  *     only each document's prefix is indexed, because a qualifying pair must
  *     intersect there.
  *
- * The tests hold this to the bounded all-pairs reference above at six thresholds.
+ * `tests/corpus_candidate_thresholds.test.ts` holds this to the all-pairs
+ * reference above at the six reference thresholds, the default, and at
+ * thresholds where a pair's score sits exactly on, or rounds onto, the threshold.
  * Rarest-first matters for cost rather than correctness: it puts the shingles
  * every document in a corpus shares — a boilerplate heading, a licence block —
  * at the end of the order, where they are never indexed and so never generate a

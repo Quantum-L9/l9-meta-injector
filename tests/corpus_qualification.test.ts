@@ -16,6 +16,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import {
+  CORPUS_CACHE_ENTRY_SCHEMA,
   MemoryCorpusCache,
   cacheEntryDefect,
   interpretationKey,
@@ -216,6 +217,64 @@ describe("incremental invalidation", () => {
     expect(paths).not.toContain("Corpus::notes/one.md");
   });
 
+  // A byte-only change that leaves the normalized text alone (CRLF and LF) moves a
+  // pair between "exact duplicate" and "near-duplicate candidate". The analysis
+  // reads each document's exact content hash to decide that, so the hash is part
+  // of the analysis key.
+  const lineEndingPair = (root: string, bEndings: "lf" | "crlf"): void => {
+    const text = planDocument("Routing");
+    fs.writeFileSync(path.join(root, "a.md"), text, "utf8");
+    fs.writeFileSync(path.join(root, "b.md"), bEndings === "lf" ? text : text.replace(/\n/g, "\r\n"), "utf8");
+  };
+  const nearAndExact = (result: CorpusScanResult) => ({
+    near: result.candidates.near_duplicate_candidates.map((c) => `${c.source_path_a} ~ ${c.source_path_b} ${c.score}`),
+    exact: result.candidates.exact_duplicate_clusters.length,
+  });
+
+  it("REG-WU-041-RC-068-a: reports the exact cluster, not a stale candidate, once CRLF becomes LF", async () => {
+    const root = path.join(tmp(), "Lines");
+    fs.mkdirSync(root, { recursive: true });
+    lineEndingPair(root, "crlf");
+    const cache = new MemoryCorpusCache("qualification");
+    const first = await scan([{ path: root }], { cache });
+    expect(nearAndExact(first)).toEqual({ near: ["Lines::a.md ~ Lines::b.md 1"], exact: 0 });
+
+    lineEndingPair(root, "lf");
+    const warm = await scan([{ path: root }], { cache });
+    const cold = await scan([{ path: root }]);
+    expect(nearAndExact(warm)).toEqual({ near: [], exact: 1 });
+    expect(nearAndExact(cold)).toEqual(nearAndExact(warm));
+    expect(renderCorpusCandidates(warm.candidates)).toBe(renderCorpusCandidates(cold.candidates));
+  });
+
+  it("REG-WU-041-RC-068-b: reports the candidate, not a lost one, once LF becomes CRLF", async () => {
+    const root = path.join(tmp(), "Lines");
+    fs.mkdirSync(root, { recursive: true });
+    lineEndingPair(root, "lf");
+    const cache = new MemoryCorpusCache("qualification");
+    const first = await scan([{ path: root }], { cache });
+    expect(nearAndExact(first)).toEqual({ near: [], exact: 1 });
+
+    lineEndingPair(root, "crlf");
+    const warm = await scan([{ path: root }], { cache });
+    const cold = await scan([{ path: root }]);
+    expect(nearAndExact(warm)).toEqual({ near: ["Lines::a.md ~ Lines::b.md 1"], exact: 0 });
+    expect(nearAndExact(cold)).toEqual(nearAndExact(warm));
+    expect(renderCorpusCandidates(warm.candidates)).toBe(renderCorpusCandidates(cold.candidates));
+  });
+
+  it("REG-WU-041-RC-068-c: fully reuses the candidate analysis of an unchanged corpus", async () => {
+    const root = path.join(tmp(), "Lines");
+    fs.mkdirSync(root, { recursive: true });
+    lineEndingPair(root, "crlf");
+    const cache = new MemoryCorpusCache("qualification");
+    await scan([{ path: root }], { cache });
+    const again = await scan([{ path: root }], { cache });
+    const analysis = again.cacheStats.layers.find((layer) => layer.layer === "candidate_analysis");
+    expect(analysis?.misses).toBe(0);
+    expect(analysis?.hits).toBeGreaterThan(0);
+  });
+
   it("reports an added archive, its members, and a removed archive", async () => {
     const corpus = writeMultiRootCorpus(tmp());
     const roots = [{ path: corpus.archives, name: "ArchiveZips" }];
@@ -322,10 +381,12 @@ describe("a corrupt cache entry", () => {
     // revision invalidates its own entries and this test keeps pointing at the
     // entry the run really wrote.
     const planDecoder = defaultDecoderRegistry().forPath("PLAN.md");
+    const planDialect = planDecoder?.dialectFor?.("PLAN.md");
     const documentKey = normalizedDocumentKey({
       contentHash: plan?.content_hash as string,
       decoderId: planDecoder?.id as string,
       decoderVersion: planDecoder?.version as string,
+      ...(planDialect !== undefined ? { dialect: planDialect } : {}),
     });
     expect(cache.corrupt("normalized_document", documentKey)).toBe(true);
 
@@ -342,7 +403,7 @@ describe("a corrupt cache entry", () => {
 
   it("is detected by its own payload hash rather than by a heuristic", () => {
     const entry = {
-      schema: "l9.corpus-cache-entry/v1",
+      schema: CORPUS_CACHE_ENTRY_SCHEMA,
       layer: "lexical_features" as const,
       key: "lexical:abc",
       payload_hash: `sha256:${"0".repeat(64)}`,
@@ -513,6 +574,16 @@ describe("cache keys", () => {
     expect(
       normalizedDocumentKey({ contentHash, decoderId: TEXT_DECODER_ID, decoderVersion: "9.9.9" }),
     ).not.toBe(documentKey);
+    // REG-WU-039-RC-067-d: a decoder-declared dialect is a rule applied to the
+    // bytes, so it separates keys; absent, the key is the dialect-free one.
+    expect(
+      normalizedDocumentKey({ contentHash, decoderId: TEXT_DECODER_ID, decoderVersion: TEXT_DECODER_VERSION, dialect: "markdown" }),
+    ).not.toBe(documentKey);
+    expect(
+      normalizedDocumentKey({ contentHash, decoderId: TEXT_DECODER_ID, decoderVersion: TEXT_DECODER_VERSION, dialect: "markdown" }),
+    ).toBe(
+      normalizedDocumentKey({ contentHash, decoderId: TEXT_DECODER_ID, decoderVersion: TEXT_DECODER_VERSION, dialect: "markdown" }),
+    );
     expect(
       lexicalFeaturesKey({ normalizedDocumentIdentity: documentKey, lexicalProfileHash: "p1" }),
     ).not.toBe(lexicalFeaturesKey({ normalizedDocumentIdentity: documentKey, lexicalProfileHash: "p2" }));

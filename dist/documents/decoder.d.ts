@@ -196,21 +196,38 @@ export interface DocumentDecoder {
      * by nobody, which is a coverage gap that looks like a decoder failure.
      */
     filenames?: readonly string[];
+    /**
+     * The dialect this decoder reads a source path in, or undefined for none.
+     *
+     * Declared by a decoder whose output depends on the name as well as the bytes:
+     * the text decoder reads `.md` as Markdown and `.txt` as plain text, the CSV
+     * decoder splits `.tsv` on tabs. The decoder consults this and nothing else
+     * when it branches on the name, and the corpus puts the same answer into the
+     * normalized document's identity and cache key — so identical bytes read in
+     * two dialects are two documents, and identical bytes read in one are one.
+     */
+    dialectFor?(sourcePath: string): string | undefined;
     decode(input: DecodeInput): DecodeOutcome;
 }
 /**
  * Identity of a normalized document.
  *
- * Bound to the exact bytes and to the decoder that read them, and to nothing
- * else. Two artifacts holding identical bytes produce one normalized document
+ * Bound to the exact bytes, to the decoder that read them and to the dialect
+ * that decoder declared for them (ADR-059), and to nothing else. Two artifacts
+ * holding identical bytes read in one dialect produce one normalized document
  * identity, which is what lets the cache serve one to both; a decoder revision
  * produces a different one, which is what stops last release's reading being
  * presented as this release's.
+ *
+ * The dialect is hashed only when the decoder declares one, so the identity of
+ * every document read by a decoder without dialects is unchanged by its
+ * existence.
  */
 export declare function normalizedDocumentId(input: {
     contentHash: string;
     decoderId: string;
     decoderVersion: string;
+    dialect?: string;
 }): string;
 /** Identity of one block within a document. */
 export declare function blockId(normalizedDocumentIdValue: string, ordinal: number): string;
