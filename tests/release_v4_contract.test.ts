@@ -331,3 +331,63 @@ describe("committed release state", () => {
     expect(plan.consumer_ref).toBe(derived.consumerRef);
   });
 });
+
+// --- SemVer-strict grammar and boundary-safe consumer refs (RC-107) ---------
+//
+// The version grammar claimed "plain SemVer" but admitted leading zeros, so
+// `4.02.0` parsed as 4.2.0 and distinct tag strings compared equal. The
+// consumer-ref pattern had no right boundary, so an exact pin `@v4.1.0` was
+// matched as `@v4` and projected to the nonexistent `@v5.1.0`.
+
+describe("release grammar is SemVer-strict (RC-107)", () => {
+  test.each(["4.02.0", "04.2.0", "4.2.00"])("REG-WU-070-RC-107-a: %s is not plain SemVer", (value) => {
+    expect(identity.parseVersion(value)).toBe(null);
+    expect(() => identity.releaseIdentity(value)).toThrow(/is not plain SemVer/);
+    expect(() => identity.compareVersions(value, "4.2.0")).toThrow(/is not plain SemVer/);
+  });
+
+  test.each([
+    ["0.0.0", { major: 0, minor: 0, patch: 0 }],
+    ["10.0.0", { major: 10, minor: 0, patch: 0 }],
+    ["4.10.20", { major: 4, minor: 10, patch: 20 }],
+  ])("REG-WU-070-RC-107-b: %s parses", (value, parts) => {
+    expect(identity.parseVersion(value)).toEqual(parts);
+  });
+
+  test("REG-WU-070-RC-107-f: a leading-zero release branch is rejected, not mistaken for another version", () => {
+    expect(identity.parseReleaseBranch("release/v4.02.0")).toBe(null);
+    expect(identity.planPathPattern().exec("v4.02.0-release-plan.json")).toBe(null);
+    expect(identity.planPathPattern().exec("v4.10.0-release-plan.json")?.[1]).toBe("4.10.0");
+    // The plan directory's real history stays canonical under the stricter grammar.
+    for (const file of fs.readdirSync(path.join(ROOT, "docs/release")).filter((f) => f.endsWith("-release-plan.json"))) {
+      expect(identity.planPathPattern().exec(file), file).not.toBe(null);
+    }
+    expect(identity.parseReleaseBranch("release/v4.2.0")).toBe("4.2.0");
+  });
+});
+
+describe("consumer-ref projection respects the major boundary (RC-107)", () => {
+  const repo = "Quantum-L9/l9-meta-injector";
+
+  test("REG-WU-070-RC-107-c: an exact pin is left untouched", () => {
+    const text = `uses: x@v1\nuses: ${repo}@v4.1.0\n`;
+    expect(identity.projectConsumerRefs(text, "v5")).toBe(text);
+    expect(identity.projectConsumerRefs(`see ${repo}@v4_beta`, "v5")).toBe(`see ${repo}@v4_beta`);
+    // A sentence-final period is a boundary, not the start of an exact pin.
+    expect(identity.projectConsumerRefs(`Pin ${repo}@v4.`, "v5")).toBe(`Pin ${repo}@v5.`);
+  });
+
+  test("REG-WU-070-RC-107-d: findConsumerRefs never truncates an exact pin to its major", () => {
+    expect(identity.findConsumerRefs(`- uses: ${repo}@v4.1.0\n`)).toEqual([]);
+  });
+
+  test.each(["\n", " ", "\"", "'", "`", ")", ""])("REG-WU-070-RC-107-e: @v4 and @main followed by %j project to @v5 idempotently", (tail) => {
+    for (const ref of ["v4", "main"]) {
+      const text = `uses: ${repo}@${ref}${tail}`;
+      const once = identity.projectConsumerRefs(text, "v5");
+      expect(once).toBe(`uses: ${repo}@v5${tail}`);
+      expect(identity.projectConsumerRefs(once, "v5")).toBe(once);
+      expect(identity.findConsumerRefs(text)).toEqual([`${repo}@${ref}`]);
+    }
+  });
+});
