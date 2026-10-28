@@ -4,6 +4,8 @@
 
 Accepted
 
+Amended by [ADR-062](062-repository-level-fact-scope-and-shared-manifest-evidence.md): repository-level facts and repository-subject claims derive only from root-level paths.
+
 ## Date
 
 2026-08-15

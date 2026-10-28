@@ -7,6 +7,8 @@ acquisition) and [ADR-037](037-corpus-intelligence-artifact-scope-and-duplicate-
 (artifact-scoped evidence and duplicate topology). Neither is superseded: both
 still describe how a single source is observed and how its index is projected.
 
+Amended by [ADR-059](059-corpus-cache-epoch-v2-and-decoder-dialect-identity.md): the cache epoch is `l9.corpus-cache-entry/v2`, and derived layers are cached only from bytes verified against the acquisition hash.
+
 ## Date
 
 2026-08-23

@@ -7,6 +7,8 @@ Accepted. Supersedes the deferral of content-based manifest interpretation recor
 by [ADR-032](032-deterministic-repository-interpretation-seam.md); both decisions
 otherwise stand.
 
+Amended by [ADR-062](062-repository-level-fact-scope-and-shared-manifest-evidence.md): repository-subject claims come only from root-level paths; Decision item 4 (interpretation profile 1.1.0) is superseded for that change only.
+
 ## Date
 
 2026-10-22

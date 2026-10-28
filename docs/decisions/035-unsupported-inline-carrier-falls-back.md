@@ -4,6 +4,8 @@
 
 Accepted
 
+Amended by [ADR-057](057-comment-carrier-position-detection-and-value-safety.md): the fall-back-instead-of-abort principle also covers files whose language leaves no inert comment position.
+
 ## Date
 
 2026-08-16

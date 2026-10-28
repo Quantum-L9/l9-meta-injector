@@ -1,6 +1,7 @@
 # ADR-025: Materialize deterministic metadata in one central JSONL index
 
 - **Status:** Accepted
+- **Amended by:** [ADR-058](058-scoped-governed-runs-and-canonical-metadata-index-ordering-validation.md) — a scoped run merges with the existing index, and records are code-point ordered and schema-enforced.
 - **Date:** 2026-08-01
 
 ## Context

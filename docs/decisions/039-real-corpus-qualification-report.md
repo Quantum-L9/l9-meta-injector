@@ -8,6 +8,8 @@ superseded: ADR-038 still describes what the corpus layer computes, and this
 decision only adds a way to say what it computed on a corpus that was not
 designed to make it look good.
 
+Amended by [ADR-068](068-not-run-versus-found-empty-in-corpus-packet-and-reports.md): the qualification report's `decoder_coverage` and extension count are corrected under `l9.corpus-qualification-report/v2`.
+
 ## Date
 
 2026-08-23
