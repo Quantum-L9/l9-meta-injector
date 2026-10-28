@@ -75,7 +75,7 @@ Full semantics: `docs/corpus-intelligence.md`.
 
 ## Publication
 
-`docs/package-publication-decision.json` governs publication readiness. Unresolved registry history, constellation consumption, or approval blocks `npm publish` without blocking local validation or `npm pack`.
+`docs/package-publication-decision.json` governs publication readiness. Unresolved registry history, constellation consumption, or approval blocks `npm publish` without blocking local validation or `npm pack`. `npm run check:publication` requires the evidence ids `npm_registry_history`, `constellation_consumer_inventory` and `distribution_owner_approval` exactly once each, a `verified` `distribution_owner_approval`, and `approved_version` (`l9.package-publication-decision/v2`) equal to `package.json#version`; release preparation of a different version resets an approval (ADR-070).
 
 ## Invariants
 

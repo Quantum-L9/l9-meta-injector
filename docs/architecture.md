@@ -22,7 +22,7 @@ l9-meta-injector                  stable orchestration root
 l9-meta-injector/inventory        stable standalone inventory
 l9-meta-injector/schema           stable metadata contracts
 l9-meta-injector/advanced         experimental composition primitives
-l9-meta-injector/advanced/llm     experimental process-global adapter controls
+l9-meta-injector/advanced/llm     experimental process-global default adapter; each run uses its own scoped adapter (ADR-064)
 l9-meta-injector/repository-model stable repository model packet egress
 ```
 

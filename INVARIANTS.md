@@ -192,7 +192,7 @@ Reusable workflows and external actions remain pinned to full commit SHAs. Job p
 
 A package may build, validate, and pack while publication remains blocked. `npm publish` must fail closed until every required external evidence item is resolved and owner approval is recorded.
 
-**Enforced by:** `prepublishOnly`, `npm run check:publication`, `docs/package-publication-decision.json`.
+**Enforced by:** `prepublishOnly`, `npm run check:publication` (`scripts/check-publication-readiness.js`, ADR-070: the required evidence ids `npm_registry_history`, `constellation_consumer_inventory` and `distribution_owner_approval` exactly once each, `distribution_owner_approval` `verified` and never waivable, and `approved_version` equal to `package.json#version`), `docs/package-publication-decision.json`.
 
 ### INV-012: Unknown is not approval
 
