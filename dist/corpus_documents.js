@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.UNDECODED_REASON_NOT_ELIGIBLE = exports.DOCUMENT_INDEX_SCHEMA = void 0;
+exports.UNDECODED_REASON_UNREADABLE = exports.UNDECODED_REASON_OVERSIZED = exports.UNDECODED_REASON_SECRET_PATH = exports.UNDECODED_REASON_NOT_ELIGIBLE = exports.DOCUMENT_INDEX_SCHEMA = void 0;
 exports.summarizeDocuments = summarizeDocuments;
 exports.buildDocumentIndex = buildDocumentIndex;
 exports.renderDocumentIndex = renderDocumentIndex;
@@ -54,8 +54,41 @@ exports.DOCUMENT_INDEX_SCHEMA = "l9.document-index/v2";
  * operator is looking at.
  */
 exports.UNDECODED_REASON_NOT_ELIGIBLE = "no_decoder_claims_this_artifact";
+/** Refused before decoding because its path looks like a credential's. */
+exports.UNDECODED_REASON_SECRET_PATH = "secret_path";
+/** Refused before decoding because it exceeds the decode size budget. */
+exports.UNDECODED_REASON_OVERSIZED = "oversized";
+/** Refused before decoding because its source bytes could not be read. */
+exports.UNDECODED_REASON_UNREADABLE = "unreadable";
 function entryFor(artifact, decoderId, decoderVersion) {
     const normalized = artifact.normalized;
+    const refused = artifact.refusedBeforeDecoding;
+    if (refused !== undefined && normalized === undefined) {
+        // Claimed by a decoder and never opened: the refusal is the reason, the
+        // claiming decoder is the decoder, and there is no byte length to report
+        // because no byte was read.
+        return {
+            artifact_id: artifact.artifactId,
+            root_id: artifact.rootId,
+            corpus_path: artifact.corpusPath,
+            root_relative_path: artifact.rootRelativePath,
+            content_hash: artifact.contentHash,
+            normalized_document_id: artifact.normalizedDocumentId ?? null,
+            decoder_id: refused.decoderId,
+            decoder_version: refused.decoderVersion,
+            format: null,
+            block_count: null,
+            structured_locator_type: null,
+            structured_locator_types: [],
+            decoded: false,
+            undecoded_reason: refused.reason,
+            byte_length: null,
+            token_count: null,
+            normalized_content_hash: null,
+            is_archive_member: artifact.isArchiveMember,
+            archive_ancestry: [...(artifact.archiveAncestry ?? [])],
+        };
+    }
     const decoded = normalized?.decodes === true;
     const locatorKinds = [...new Set(normalized?.locator_kinds ?? [])].sort(ordering_1.compareCodePoints);
     return {

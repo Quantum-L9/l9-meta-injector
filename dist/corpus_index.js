@@ -77,7 +77,7 @@ function coverageFor(coverage, signals) {
 const KNOWN_DOCUMENTS = [
     { name: "snapshot", path: "corpus-snapshot.json", schema: "l9.corpus-snapshot/v1" },
     { name: "diff", path: "corpus-diff.json", schema: "l9.corpus-diff/v1" },
-    { name: "coverage", path: "corpus-coverage.json", schema: "l9.corpus-coverage/v1" },
+    { name: "coverage", path: "corpus-coverage.json", schema: "l9.corpus-coverage/v2" },
     { name: "readiness_evidence", path: "readiness-evidence.json", schema: "l9.readiness-evidence/v1" },
     { name: "candidates", path: "corpus-candidates.json", schema: "l9.corpus-candidates/v1" },
     { name: "document_index", path: "document-index.json", schema: "l9.document-index/v2" },
