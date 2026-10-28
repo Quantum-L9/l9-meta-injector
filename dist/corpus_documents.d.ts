@@ -131,6 +131,17 @@ export interface DocumentIndexArtifactInput {
     };
     /** Identity of the decoded document, when one exists. */
     normalizedDocumentId?: string | null;
+    /**
+     * A decision not to open the artifact at all, made before any decoder ran
+     * (a secret-shaped path, the size budget, an unreadable source), and the
+     * decoder that claims its path. Absent when the scan did open it, or when the
+     * artifact never reached the derive stage.
+     */
+    refusedBeforeDecoding?: {
+        reason: string;
+        decoderId: string;
+        decoderVersion: string;
+    };
 }
 export interface BuildDocumentIndexInput {
     corpusSourceSnapshotId: string;
@@ -156,6 +167,12 @@ export interface BuildDocumentIndexInput {
  * operator is looking at.
  */
 export declare const UNDECODED_REASON_NOT_ELIGIBLE = "no_decoder_claims_this_artifact";
+/** Refused before decoding because its path looks like a credential's. */
+export declare const UNDECODED_REASON_SECRET_PATH = "secret_path";
+/** Refused before decoding because it exceeds the decode size budget. */
+export declare const UNDECODED_REASON_OVERSIZED = "oversized";
+/** Refused before decoding because its source bytes could not be read. */
+export declare const UNDECODED_REASON_UNREADABLE = "unreadable";
 /**
  * Summarize a set of index entries.
  *

@@ -188,7 +188,13 @@ import {
   acquireLocalSource,
 } from "./local_source";
 import { compareCodePoints } from "./ordering";
-import { buildDocumentIndex, summarizeDocuments } from "./corpus_documents";
+import {
+  UNDECODED_REASON_OVERSIZED,
+  UNDECODED_REASON_SECRET_PATH,
+  UNDECODED_REASON_UNREADABLE,
+  buildDocumentIndex,
+  summarizeDocuments,
+} from "./corpus_documents";
 import { runSemanticAnalysis } from "./corpus_semantic_run";
 import type { DocumentIndex, DocumentIndexSummary } from "./corpus_documents";
 import type { SemanticAnalysisResult } from "./corpus_semantic_run";
@@ -659,6 +665,20 @@ interface DerivedLayers {
   manifestIdentifiers: Map<string, DeclaredIdentifier | null>;
   /** Documents the scan deliberately did not decode, by reason. */
   skipped: { secret: number; oversized: number; encoding: number; unreadable: number };
+  /**
+   * Artifacts refused before any decoder ran, by id, with the decoder that
+   * claims the path. In memory only: a refusal is a decision about a path and
+   * is never cached under a content key.
+   */
+  refused: Map<string, RefusedBeforeDecoding>;
+}
+
+/** One pre-decode refusal, as the document index and signals report it. */
+interface RefusedBeforeDecoding {
+  reason: string;
+  format: string;
+  decoderId: string;
+  decoderVersion: string;
 }
 
 interface DeriveDocumentContext {
@@ -693,7 +713,7 @@ async function deriveDocumentLayers(
     cache, session, memory, extractors, candidateProfile, interpretProfile,
     interpretEnabled, maxFileBytes, rootPathsById, rootKeyById, registry, into,
   } = context;
-  const { normalized, lexical, interpreted, manifestIdentifiers, skipped } = into;
+  const { normalized, lexical, interpreted, manifestIdentifiers, skipped, refused } = into;
   const contentHash = artifact.contentHash as string;
   // The decoder that claims this path decides the key. A `.docx` and a `.md` are
   // read by different code into different documents, and a decoder revision must
@@ -737,15 +757,28 @@ async function deriveDocumentLayers(
   const wantsInterpretation = interpretEnabled
     && extractors.some((extractor) => extractor.matches(artifact.rootRelativePath));
   const wantsIdentifier = readsDeclaredIdentifier(artifact.basename);
+  // Record a refusal made before decoding, against the decoder that claims the
+  // path, unless a decoding record already stands for this artifact.
+  const refuse = (reason: string): void => {
+    if (normalized.has(artifact.virtualSourceId)) return;
+    refused.set(artifact.virtualSourceId, {
+      reason,
+      format: decoder?.format ?? "unknown",
+      decoderId: decoder?.id ?? TEXT_DECODER_ID,
+      decoderVersion: decoder?.version ?? TEXT_DECODER_VERSION,
+    });
+  };
 
   // Eligibility first: a refusal to open a file is a decision about the file,
   // not about its bytes, so it is never cached under a content key.
   if (isSecretCandidatePath(artifact.rootRelativePath)) {
     skipped.secret += 1;
+    refuse(UNDECODED_REASON_SECRET_PATH);
     return;
   }
   if (artifact.sizeBytes !== null && artifact.sizeBytes > maxFileBytes) {
     skipped.oversized += 1;
+    refuse(UNDECODED_REASON_OVERSIZED);
     return;
   }
 
@@ -794,6 +827,7 @@ async function deriveDocumentLayers(
   const absolute = artifact.absolutePath;
   if (absolute === null) {
     skipped.unreadable += 1;
+    refuse(UNDECODED_REASON_UNREADABLE);
     return;
   }
   const reserve = artifact.sizeBytes ?? 0;
@@ -827,6 +861,7 @@ async function deriveDocumentLayers(
 
     if (decoder === undefined) {
       skipped.unreadable += 1;
+      refuse(UNDECODED_REASON_UNREADABLE);
       return;
     }
 
@@ -849,6 +884,7 @@ async function deriveDocumentLayers(
         bytes = await fs.promises.readFile(absolute);
       } catch {
         skipped.unreadable += 1;
+        refuse(UNDECODED_REASON_UNREADABLE);
         return;
       }
     }
@@ -900,6 +936,7 @@ async function deriveDocumentLayers(
       // beats a second trip to the filesystem for the same file.
       if (bytes === undefined) {
         skipped.unreadable += 1;
+        refuse(UNDECODED_REASON_UNREADABLE);
         return;
       }
       text = bytes.toString("utf8");
@@ -1412,6 +1449,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
     const lexical = new Map<string, LexicalFeatureRecord>();
     const interpreted = new Map<string, InterpretationRecord>();
     const skipped = { secret: 0, oversized: 0, encoding: 0, unreadable: 0 };
+    const refused = new Map<string, RefusedBeforeDecoding>();
     const manifestIdentifiers = new Map<string, DeclaredIdentifier | null>();
 
     const memory = new MemoryBudget(budgets.max_memory_bytes);
@@ -1440,7 +1478,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
         rootPathsById,
         rootKeyById,
         registry,
-        into: { normalized, lexical, interpreted, manifestIdentifiers, skipped },
+        into: { normalized, lexical, interpreted, manifestIdentifiers, skipped, refused },
       }));
 
     // ── 4a. what the decoded documents say about themselves ───────────────
@@ -2040,6 +2078,18 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
             }
             : {}),
           normalizedDocumentId: normalizedDocumentIdOf(artifact.contentHash, record),
+          ...(() => {
+            const refusal = refused.get(artifact.virtualSourceId);
+            return refusal === undefined
+              ? {}
+              : {
+                refusedBeforeDecoding: {
+                  reason: refusal.reason,
+                  decoderId: refusal.decoderId,
+                  decoderVersion: refusal.decoderVersion,
+                },
+              };
+          })(),
         };
       }),
     });
@@ -2251,19 +2301,35 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       corpusSourceSnapshotId: sourceSnapshotId,
       corpusAnalysisId: analysisIdentity.corpus_analysis_id,
       decoderProfiles: registry.profile(),
-      documents: [...normalized.entries()].map(([artifactId, record]) => ({
-        virtual_source_id: artifactId,
-        format: record.format,
-        decoder_id: record.decoder_id,
-        decoder_version: record.decoder_version,
-        decoded: record.decodes,
-        reason: record.reason,
-        blocks: (record.blocks ?? []).map((block) => ({
-          block_id: block.block_id,
-          kind: block.kind,
-          locator: block.locator,
+      documents: [
+        ...[...normalized.entries()].map(([artifactId, record]) => ({
+          virtual_source_id: artifactId,
+          format: record.format,
+          decoder_id: record.decoder_id,
+          decoder_version: record.decoder_version,
+          decoded: record.decodes,
+          reason: record.reason,
+          blocks: (record.blocks ?? []).map((block) => ({
+            block_id: block.block_id,
+            kind: block.kind,
+            locator: block.locator,
+          })),
         })),
-      })),
+        // Claimed and refused before decoding: eligible for the claiming
+        // decoder's format, with the refusal as its reason.
+        ...[...refused.entries()]
+          .filter(([artifactId]) => !normalized.has(artifactId))
+          .sort(([a], [b]) => compareCodePoints(a, b))
+          .map(([artifactId, refusal]) => ({
+            virtual_source_id: artifactId,
+            format: refusal.format,
+            decoder_id: refusal.decoderId,
+            decoder_version: refusal.decoderVersion,
+            decoded: false,
+            reason: refusal.reason,
+            blocks: [],
+          })),
+      ],
       blockProfile: {
         profile_id: DOCUMENT_BLOCK_PROFILE_ID,
         profile_version: DOCUMENT_BLOCK_PROFILE_VERSION,
