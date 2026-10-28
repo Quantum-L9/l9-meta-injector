@@ -65,6 +65,7 @@ import {
   TopicCandidate,
   buildProjectCandidates,
   buildTopicCandidates,
+  canonicalThresholdText,
   candidateProfileHash,
   readDeclaredIdentifier,
   readsDeclaredIdentifier,
@@ -1825,9 +1826,17 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
     const featureIdentities = lexicalDocuments.map(
       (document) => `${document.artifactId} ${document.sourcePath} ${document.normalizedContentHash}`,
     );
+    // The near-duplicate pass also reads each document's exact content hash:
+    // byte-identical files are an exact-duplicate fact and never a candidate. A
+    // byte-only change that leaves the normalized text alone (CRLF and LF) flips
+    // that, so the hash is part of this key. The topic pass never reads it, and
+    // adding it there would only invalidate an analysis that has not changed.
+    const nearFeatureIdentities = lexicalDocuments.map(
+      (document) => `${document.artifactId} ${document.sourcePath} ${document.normalizedContentHash} ${document.contentHash}`,
+    );
 
     const nearKey = candidateAnalysisKey({
-      inputFeatureIdentities: [...featureIdentities, `near:${nearDuplicateThreshold.toFixed(6)}`],
+      inputFeatureIdentities: [...nearFeatureIdentities, `near:${canonicalThresholdText(nearDuplicateThreshold)}`],
       candidateProfileHash: candidateProfile,
     });
     const nearCandidates = nearDuplicatesEnabled
@@ -1837,7 +1846,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
     if (nearDuplicatesEnabled) session?.completeAnalysis(nearKey);
 
     const topicKey = candidateAnalysisKey({
-      inputFeatureIdentities: [...featureIdentities, `topic:${topicThreshold.toFixed(6)}`],
+      inputFeatureIdentities: [...featureIdentities, `topic:${canonicalThresholdText(topicThreshold)}`],
       candidateProfileHash: candidateProfile,
     });
     const rootByArtifact = new Map(artifacts.map((artifact) => [artifact.virtualSourceId, artifact.rootId]));

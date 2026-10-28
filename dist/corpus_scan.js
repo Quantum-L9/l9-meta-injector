@@ -1313,8 +1313,14 @@ async function runCorpusScan(input) {
         // renamed is a different input to this analysis: keying on content alone would
         // serve back candidates naming artifacts the current snapshot does not have.
         const featureIdentities = lexicalDocuments.map((document) => `${document.artifactId} ${document.sourcePath} ${document.normalizedContentHash}`);
+        // The near-duplicate pass also reads each document's exact content hash:
+        // byte-identical files are an exact-duplicate fact and never a candidate. A
+        // byte-only change that leaves the normalized text alone (CRLF and LF) flips
+        // that, so the hash is part of this key. The topic pass never reads it, and
+        // adding it there would only invalidate an analysis that has not changed.
+        const nearFeatureIdentities = lexicalDocuments.map((document) => `${document.artifactId} ${document.sourcePath} ${document.normalizedContentHash} ${document.contentHash}`);
         const nearKey = (0, corpus_cache_1.candidateAnalysisKey)({
-            inputFeatureIdentities: [...featureIdentities, `near:${nearDuplicateThreshold.toFixed(6)}`],
+            inputFeatureIdentities: [...nearFeatureIdentities, `near:${(0, corpus_candidates_1.canonicalThresholdText)(nearDuplicateThreshold)}`],
             candidateProfileHash: candidateProfile,
         });
         const nearCandidates = nearDuplicatesEnabled
@@ -1323,7 +1329,7 @@ async function runCorpusScan(input) {
         if (nearDuplicatesEnabled)
             session?.completeAnalysis(nearKey);
         const topicKey = (0, corpus_cache_1.candidateAnalysisKey)({
-            inputFeatureIdentities: [...featureIdentities, `topic:${topicThreshold.toFixed(6)}`],
+            inputFeatureIdentities: [...featureIdentities, `topic:${(0, corpus_candidates_1.canonicalThresholdText)(topicThreshold)}`],
             candidateProfileHash: candidateProfile,
         });
         const rootByArtifact = new Map(artifacts.map((artifact) => [artifact.virtualSourceId, artifact.rootId]));

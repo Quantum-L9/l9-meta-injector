@@ -271,19 +271,43 @@ function nearDuplicateCandidatesExhaustive(documents, threshold) {
     return out.sort(compareCandidates);
 }
 /**
+ * Twice the lowest Jaccard, in micro-units, that the qualifying test admits.
+ *
+ * A pair qualifies when its score *rounded to six places* reaches the threshold
+ * rounded to six places, and `round6(J) >= t6` holds for every `J` down to
+ * `t6 - 0.5e-6`. The exact filters below are therefore derived from that
+ * half-unit-lowered bound — never from `t6` itself, which would be stricter than
+ * the test and drop a pair the exhaustive reference reports. Kept as the integer
+ * `2 * t_micro - 1` (over `2e6`) so no bound is ever a floating-point product: at
+ * `t = 0.56`, `0.56 * 50` is `28.000000000000004`, and a strict comparison
+ * against it rejects the partner of size 28 that sits exactly on the threshold.
+ */
+function admittedJaccardNumerator(threshold) {
+    return 2 * Math.round(threshold * 10 ** SCORE_PRECISION) - 1;
+}
+/** The denominator `admittedJaccardNumerator` is over: two micro-units per unit. */
+const ADMITTED_JACCARD_DENOMINATOR = 2 * 10 ** SCORE_PRECISION;
+/**
  * The prefix of a shingle set that a qualifying partner must intersect.
  *
- * For Jaccard at threshold `t`, a pair can only reach `t` if it shares at least
- * `ceil(t * |X|)` shingles with the smaller of the two sets. Under any fixed
- * global order over shingles, two sets that share that many elements must both
- * contain one of the first `|X| - ceil(t * |X|) + 1` of them — otherwise the
- * shared elements would all have to sit past a point where fewer than that many
- * elements remain. So indexing only that prefix loses no qualifying pair.
+ * For Jaccard at least `L`, a pair shares at least `ceil(L * |X|)` shingles with
+ * either set, because the union is no smaller than `|X|`. Under any fixed global
+ * order over shingles, two sets that share that many elements must both contain
+ * one of the first `|X| - ceil(L * |X|) + 1` of them — otherwise the shared
+ * elements would all have to sit past a point where fewer than that many elements
+ * remain. So indexing only that prefix loses no qualifying pair.
+ *
+ * `L` is the lowest score the rounded qualifying test admits (see
+ * `admittedJaccardNumerator`), and the ceiling is taken in integer arithmetic.
  */
 function prefixLength(setSize, threshold) {
     if (setSize === 0)
         return 0;
-    return Math.max(1, setSize - Math.ceil(roundScore(threshold) * setSize) + 1);
+    const numerator = admittedJaccardNumerator(threshold) * setSize;
+    const required = Math.ceil(numerator / ADMITTED_JACCARD_DENOMINATOR);
+    // `Math.ceil` of an integer quotient is exact while the product stays below
+    // 2^53, i.e. for any set under ~4.5e9 shingles.
+    return Math.max(1, setSize - required + 1);
 }
 /**
  * The same qualifying pairs, reached through a shingle index.
@@ -297,7 +321,9 @@ function prefixLength(setSize, threshold) {
  *     only each document's prefix is indexed, because a qualifying pair must
  *     intersect there.
  *
- * The tests hold this to the bounded all-pairs reference above at six thresholds.
+ * `tests/corpus_candidate_thresholds.test.ts` holds this to the all-pairs
+ * reference above at the six reference thresholds, the default, and at
+ * thresholds where a pair's score sits exactly on, or rounds onto, the threshold.
  * Rarest-first matters for cost rather than correctness: it puts the shingles
  * every document in a corpus shares — a boilerplate heading, a licence block —
  * at the end of the order, where they are never indexed and so never generate a
@@ -324,6 +350,7 @@ function nearDuplicateCandidates(documents, threshold) {
     const postings = new Map();
     const out = [];
     const seen = new Set();
+    const admittedNumerator = admittedJaccardNumerator(threshold);
     for (let position = 0; position < ordered.length; position++) {
         const current = ordered[position].document;
         const size = current.shingles.size;
@@ -342,8 +369,9 @@ function nearDuplicateCandidates(documents, threshold) {
                 seen.add(other);
                 const partner = ordered[other].document;
                 // Size bound: `partner` is no larger than `current`, so a pair can only
-                // reach the threshold when the smaller set is at least `t` of the larger.
-                if (partner.shingles.size < roundScore(threshold) * size)
+                // reach the threshold when the smaller set is at least `L` of the larger
+                // — compared in integers, so no float product can overshoot.
+                if (ADMITTED_JACCARD_DENOMINATOR * partner.shingles.size < admittedNumerator * size)
                     continue;
                 if (pairIneligible(current, partner))
                     continue;
