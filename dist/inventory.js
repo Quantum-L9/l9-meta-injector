@@ -368,6 +368,35 @@ function noteClockSkew(unknowns, created, modified, inspected) {
     if (modifiedAt !== null && modifiedAt > inspectedAt)
         unknowns.push("clock_skew:modified_at_after_inspected_at");
 }
+/** A complete ISO-8601 instant with an explicit zone, as inventory writes them. */
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+function isCarriedInstant(value) {
+    return typeof value === "string" && ISO_INSTANT.test(value) && instantOf(value) !== null;
+}
+/**
+ * The created_at / modified_at an annotation writes (ADR-060).
+ *
+ * While the carrier-free content is unchanged — the harvested content hash
+ * (the carrier field `hashKey`: `content_hash` for the built-in fields, or the
+ * schema field sourced from `content_hash`) equals the one just computed — each
+ * harvested clock that is a parseable
+ * instant (or, for created_at, exactly `Unknown`) is carried, so a carrier keeps
+ * describing the artifact as it was when its content last changed rather than
+ * the mtime and birthtime of the tool's own previous write. Anything else — no
+ * content hash, a different hash, a clock that does not parse — falls back to
+ * the lstat observation. The record itself keeps the observation (ADR-051 item 6).
+ */
+function carrierClocks(rec, harvest, hashKey) {
+    const observed = { created_at: rec.created_at, modified_at: rec.modified_at };
+    if (rec.content_hash === null || hashKey === undefined || harvest[hashKey] !== rec.content_hash)
+        return observed;
+    const created = harvest.created_at;
+    const modified = harvest.modified_at;
+    return {
+        created_at: isCarriedInstant(created) || created === schema_1.UNKNOWN ? created : observed.created_at,
+        modified_at: isCarriedInstant(modified) ? modified : observed.modified_at,
+    };
+}
 function buildRecord(root, abs, isDir, cfg, kind = isDir ? "directory" : "file", harvest = {}) {
     const relative = path.relative(root, abs).split(path.sep).join("/") || ".";
     const fileName = path.basename(abs);
@@ -485,6 +514,11 @@ function inventoryTree(config) {
     }));
     const boundAuthority = identity.source === "semantic_binding" ? identity.authority : undefined;
     const boundNamespace = identity.source === "semantic_binding" ? identity.namespace : undefined;
+    // The carrier field that holds the content hash: the anchor clocks are carried against.
+    // A schema with no field sourced from content_hash has none, so its clocks are observed.
+    const contentHashKey = schema
+        ? schema.fields.find((field) => field.source === "content_hash")?.name
+        : "content_hash";
     for (const { abs, isDir, kind } of entries) {
         const harvest = kind === "symlink" || kind === "special" ? {} : (0, inventory_existing_meta_1.harvestExistingMeta)(abs, isDir);
         const rec = buildRecord(root, abs, isDir, cfg, kind, harvest);
@@ -492,20 +526,25 @@ function inventoryTree(config) {
         const body = kind === "file" && !isArchive && rec.size_bytes !== null
             ? tryReadUtf8Body(abs, rec.size_bytes, cfg.hashMaxBytes)
             : null;
+        // Carriers carry the artifact's clocks; the record keeps the observation (ADR-060).
+        const clocks = carrierClocks(rec, harvest, contentHashKey);
         // The meta object written to headers/sidecars: schema-driven when provided, else default.
         let metaObj;
         if (schema) {
-            const applied = (0, meta_schema_1.applySchema)((0, schema_1.asRecord)(rec), schema);
-            if (applied.missingRequired.length)
-                rec.unknowns.push(...applied.missingRequired.map((n) => `missing_required:${n}`));
-            metaObj = omitSmashedClock({ ...sanitizeHarvest(harvest), ...applied.fields });
+            const observed = (0, meta_schema_1.applySchema)((0, schema_1.asRecord)(rec), schema);
+            if (observed.missingRequired.length)
+                rec.unknowns.push(...observed.missingRequired.map((n) => `missing_required:${n}`));
+            const carried = clocks.created_at === rec.created_at && clocks.modified_at === rec.modified_at
+                ? observed
+                : (0, meta_schema_1.applySchema)((0, schema_1.asRecord)({ ...rec, ...clocks }), schema);
+            metaObj = omitSmashedClock({ ...sanitizeHarvest(harvest), ...carried.fields });
             // Honor target:"manifest" — attach the schema-shaped meta to the record so it
             // flows into inventory.json (otherwise "manifest" in target would be a no-op).
             if ((0, meta_schema_1.targetIncludes)(schema, "manifest"))
-                rec.meta = applied.fields;
+                rec.meta = observed.fields;
         }
         else {
-            metaObj = annotationFields(rec, harvest, { body, boundAuthority, boundNamespace });
+            metaObj = annotationFields(rec, harvest, { body, clocks, boundAuthority, boundNamespace });
         }
         records.push(rec);
         typeDistribution[rec.artifact_type] = (typeDistribution[rec.artifact_type] || 0) + 1;
@@ -552,9 +591,9 @@ function inventoryTree(config) {
                 });
                 stripSmashedClockFromWritten(abs);
                 applyInventoryClocksToWritten(abs, {
-                    created_at: rec.created_at ?? "Unknown",
-                    modified_at: rec.modified_at ?? "Unknown",
-                    inspected_at: rec.inspected_at ?? "Unknown",
+                    created_at: clocks.created_at ?? schema_1.UNKNOWN,
+                    modified_at: clocks.modified_at ?? schema_1.UNKNOWN,
+                    inspected_at: rec.inspected_at ?? schema_1.UNKNOWN,
                 });
             }
             catch (err) {
@@ -612,19 +651,84 @@ function safeRead(abs) {
             fs.closeSync(fd);
     }
 }
-function writeSidecar(abs, obj, unknowns) {
+const FILE_SIDECAR_CODES = {
+    unreadable: "sidecar_unreadable",
+    lossy: "sidecar_lossy_roundtrip",
+    readFailed: "sidecar_read_failed",
+};
+const FOLDER_SIDECAR_CODES = {
+    unreadable: "folder_sidecar_unreadable",
+    lossy: "folder_sidecar_lossy_roundtrip",
+    readFailed: "folder_sidecar_read_failed",
+};
+/**
+ * The one preservation policy for `.l9meta.yaml` carriers, file and folder alike
+ * (RC-051). An existing regular file is replaced only when the canonical parser
+ * reads it and re-serializing it reproduces its bytes exactly — that is, when it
+ * is in the format this tool writes. A file the parser rejects, or one whose
+ * comments, layout or fences would not survive a rewrite, is held, so a
+ * hand-authored sidecar is never silently replaced by derived fields. A read
+ * failure is recorded, not thrown. Only a regular file is inspected: anything
+ * else at the path goes on to the write, whose refusal is recorded as
+ * `sidecar_write_failed:*`.
+ */
+function inspectExistingSidecar(p, codes) {
+    let st;
+    try {
+        st = fs.lstatSync(p);
+    }
+    catch (err) {
+        const code = portableErrorCode(err);
+        return code === "ENOENT" ? { state: "absent" } : { state: "held", diagnostic: `${codes.readFailed}:${code}` };
+    }
+    if (!st.isFile())
+        return { state: "non_regular" };
+    let original;
+    try {
+        original = fs.readFileSync(p, "utf8");
+    }
+    catch (err) {
+        return { state: "held", diagnostic: `${codes.readFailed}:${portableErrorCode(err)}` };
+    }
+    let parsed;
+    try {
+        parsed = (0, meta_schema_1.parseCanonicalYaml)(original);
+    }
+    catch {
+        return { state: "held", diagnostic: codes.unreadable };
+    }
+    if (typeof parsed === "object" && parsed !== null) {
+        const record = parsed;
+        if (serializeYaml(record) !== original)
+            return { state: "held", diagnostic: codes.lossy };
+        return { state: "tool_format", original, parsed: record };
+    }
+    return { state: "tool_format", original, parsed: null };
+}
+/** Replace a sidecar, recording (not throwing) a refused or failed write. */
+function replaceSidecar(p, content, unknowns) {
     // A no-op catch here silently drops the metadata AND contradicts the old comment
     // that claimed it was "recorded in manifest" (findings OBS-006 / PRD-002). Record it.
     try {
-        (0, durable_write_1.replaceFileAtomically)((0, comment_1.sidecarPathFor)(abs), serializeYaml(obj));
+        (0, durable_write_1.replaceFileAtomically)(p, content);
     }
     catch (err) {
         unknowns?.push(`sidecar_write_failed:${err.message}`);
     }
 }
-// Write a folder's .l9meta.yaml. If one already exists (possibly
-// user-authored), a parseability check is performed before rewriting it.
-// Note: this does NOT merge — the entire file is rewritten if parseable.
+function writeSidecar(abs, obj, unknowns) {
+    const p = (0, comment_1.sidecarPathFor)(abs);
+    const existing = inspectExistingSidecar(p, FILE_SIDECAR_CODES);
+    if (existing.state === "held") {
+        unknowns?.push(existing.diagnostic);
+        return;
+    }
+    const next = serializeYaml(obj);
+    // Same bytes: nothing to write, and replacing would only move the inode (ADR-060).
+    if (existing.state === "tool_format" && existing.original === next)
+        return;
+    replaceSidecar(p, next, unknowns);
+}
 // Boundary: a schema-driven header carries arbitrary operator-defined fields, not
 // the NormalizedMeta identity block. injectFile serializes meta as a generic
 // key/value bag, so this single documented cast is the one place that deliberately
@@ -634,32 +738,37 @@ function writeSidecar(abs, obj, unknowns) {
 function asInjectableMeta(fields) {
     return fields;
 }
+/** Carrier fields a folder sidecar may differ in without being rewritten (ADR-060). */
+const FOLDER_CLOCK_KEYS = ["created_at", "modified_at"];
+function withoutFolderClocks(fields) {
+    const out = { ...fields };
+    for (const key of FOLDER_CLOCK_KEYS)
+        delete out[key];
+    return out;
+}
+// Write a folder's .l9meta.yaml. An existing one (possibly user-authored) is
+// held unless it is in the tool's own format (`inspectExistingSidecar`).
+// Note: this does NOT merge — a tool-format file is rewritten whole.
 function writeFolderSidecar(dir, metaObj, unknowns) {
     const p = path.join(dir, ".l9meta.yaml");
-    if (fs.existsSync(p)) {
-        const original = fs.readFileSync(p, "utf8");
-        let parsed;
-        try {
-            parsed = (0, meta_schema_1.parseCanonicalYaml)(original);
-        }
-        catch {
-            unknowns?.push("folder_sidecar_unreadable");
+    const existing = inspectExistingSidecar(p, FOLDER_SIDECAR_CODES);
+    if (existing.state === "held") {
+        unknowns?.push(existing.diagnostic);
+        return;
+    }
+    const next = serializeYaml(metaObj);
+    if (existing.state === "tool_format") {
+        if (existing.original === next)
+            return;
+        // A folder has no content anchor to carry clocks against, and every write
+        // inside it moves its mtime. A tool-format sidecar that differs only in the
+        // filesystem clocks is kept, as an archive member is (ADR-049 / ADR-060).
+        if (existing.parsed !== null
+            && serializeYaml(withoutFolderClocks(existing.parsed)) === serializeYaml(withoutFolderClocks(metaObj))) {
             return;
         }
-        if (typeof parsed === "object" && parsed !== null) {
-            const roundTripped = serializeYaml(parsed);
-            if (roundTripped !== original) {
-                unknowns?.push("folder_sidecar_lossy_roundtrip");
-                return;
-            }
-        }
     }
-    try {
-        (0, durable_write_1.replaceFileAtomically)(p, serializeYaml(metaObj));
-    }
-    catch (err) {
-        unknowns?.push(`sidecar_write_failed:${err.message}`);
-    }
+    replaceSidecar(p, next, unknowns);
 }
 function omitSmashedClock(fields) {
     const out = { ...fields };
@@ -786,6 +895,18 @@ const ALWAYS_DERIVED_ANNOTATION_KEYS = [
     "injectable",
     "token_cost_estimate",
 ];
+/** Keys `annotationFields` emits after the harvest spread, in emission order. */
+const TRAILING_ANNOTATION_KEYS = [
+    "id",
+    "title",
+    "source_path",
+    "content_hash",
+    "inventory_type",
+    "classification_confidence",
+    "created_at",
+    "modified_at",
+    "inspected_at",
+];
 const ARTIFACT_TYPE_VALUES = new Set([
     "skill", "playbook", "kernel", "context", "prompt",
     "doctrine", "test", "script", "source", "unknown",
@@ -818,6 +939,7 @@ function asSharingScope(value) {
 }
 function annotationFields(rec, harvest, ctx) {
     const rawHarvest = sanitizeHarvest(harvest);
+    const harvestedTitle = typeof rawHarvest.title === "string" && rawHarvest.title.trim() ? rawHarvest.title : rec.file_name;
     const harvestedType = asArtifactType(rawHarvest.artifact_type);
     const harvestedNamespace = harvestedOperatorString(rawHarvest.namespace, "namespace");
     const harvestedAuthority = harvestedOperatorString(rawHarvest.authority, "authority");
@@ -828,6 +950,11 @@ function annotationFields(rec, harvest, ctx) {
             delete kept[key];
     }
     for (const key of ALWAYS_DERIVED_ANNOTATION_KEYS)
+        delete kept[key];
+    // Keys this function sets after the spread are removed from it, so a harvested
+    // copy cannot pin their position: the emitted key order is the same whether or
+    // not an earlier run left a header behind (ADR-060).
+    for (const key of TRAILING_ANNOTATION_KEYS)
         delete kept[key];
     const derivable = ctx.body !== null;
     const classified = derivable ? (0, classify_1.classify)(rec.relative_path, ctx.body ?? "", "none").artifactType : undefined;
@@ -847,7 +974,6 @@ function annotationFields(rec, harvest, ctx) {
             : undefined)
         ?? schema_1.UNKNOWN;
     const tokens = derivable && ctx.body !== null ? (0, extract_1.estimateTokens)(ctx.body) : schema_1.UNKNOWN;
-    const harvestedTitle = typeof kept.title === "string" && kept.title.trim() ? kept.title : rec.file_name;
     return omitSmashedClock({
         artifact_type: tax.artifact_type,
         mcp_primitive: tax.mcp_primitive,
@@ -872,8 +998,8 @@ function annotationFields(rec, harvest, ctx) {
         content_hash: rec.content_hash ?? schema_1.UNKNOWN,
         inventory_type: rec.artifact_type,
         classification_confidence: rec.classification_confidence,
-        created_at: rec.created_at ?? schema_1.UNKNOWN,
-        modified_at: rec.modified_at ?? schema_1.UNKNOWN,
+        created_at: ctx.clocks.created_at ?? schema_1.UNKNOWN,
+        modified_at: ctx.clocks.modified_at ?? schema_1.UNKNOWN,
         inspected_at: rec.inspected_at ?? schema_1.UNKNOWN,
     });
 }

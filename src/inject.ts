@@ -220,8 +220,11 @@ function writeInjection(filePath: string, built: Built, diffs: FieldDiff[], opts
     }
   } else {
     // Staged beside the target and renamed in: the source is never truncated
-    // mid-write, and a hard link to it elsewhere keeps its old bytes.
-    replaceFileAtomically(built.targetPath, built.newContent);
+    // mid-write, and a hard link to it elsewhere keeps its old bytes. A target
+    // whose bytes already equal the rendering is left alone (ADR-060): replacing
+    // it would change nothing but its inode, mtime and birthtime, which is how an
+    // annotation used to describe its own previous write instead of the file.
+    if (out.wouldChange) replaceFileAtomically(built.targetPath, built.newContent);
     if (opts.writeInjectLog && diffs.some((d) => d.action !== "keep")) {
       out.injectLogPath = filePath + ".inject.log";
       replaceFileAtomically(out.injectLogPath, diffsToLogYaml(filePath, diffs, new Date().toISOString()));
