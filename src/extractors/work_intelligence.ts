@@ -486,7 +486,51 @@ function headings(view: DocumentView): Heading[] {
 /** A frontmatter mapping key. Anchored on both ends, so it cannot backtrack. */
 const FRONTMATTER_KEY = /^[A-Za-z][A-Za-z0-9_-]*$/;
 
-/** Frontmatter `key: value` scalars, in document order. */
+/**
+ * A frontmatter value without its YAML comment: the first `#` that is preceded by
+ * whitespace (or starts the value) and lies outside a quoted scalar. A quote opens
+ * a quoted scalar only where a scalar or flow-list item begins, so a mid-word
+ * apostrophe is plain text (RC-024). One left-to-right pass that remembers the last
+ * significant character, so it is linear on any input.
+ */
+function withoutYamlComment(value: string): string {
+  let quote = "";
+  let previous = "";
+  let flowDepth = 0;
+  for (let i = 0; i < value.length; i++) {
+    const char = value[i];
+    if (quote === '"') {
+      if (char === "\\") i++;
+      else if (char === '"') { quote = ""; previous = char; }
+      continue;
+    }
+    if (quote === "'") {
+      if (char === "'" && value[i + 1] === "'") i++;
+      else if (char === "'") { quote = ""; previous = char; }
+      continue;
+    }
+    if (char === "#" && (i === 0 || WHITESPACE.test(value[i - 1]))) return value.slice(0, i).trimEnd();
+    if (WHITESPACE.test(char)) continue;
+    const startsScalar = previous === "" || previous === "[" || (flowDepth > 0 && previous === ",");
+    if ((char === "'" || char === '"') && startsScalar) quote = char;
+    else if (char === "[" && startsScalar) flowDepth++;
+    else if (char === "]" && flowDepth > 0) flowDepth--;
+    previous = char;
+  }
+  return value;
+}
+
+/**
+ * A YAML block-scalar header (`|`, `>`, with optional indentation and chomping
+ * indicators). It announces a value on the following lines and is never the value.
+ */
+const BLOCK_SCALAR_HEADER = /^[|>](?:[1-9][+-]?|[+-][1-9]?)?$/;
+
+/**
+ * Frontmatter `key: value` scalars, in document order. A trailing YAML comment is
+ * not part of the value, and a key whose value is a block scalar is skipped rather
+ * than read as its header (RC-024).
+ */
 function frontmatterFields(view: DocumentView): { index: number; key: string; value: string }[] {
   const out: { index: number; key: string; value: string }[] = [];
   if (view.frontmatterStart < 0) return out;
@@ -499,7 +543,9 @@ function frontmatterFields(view: DocumentView): { index: number; key: string; va
     if (colon < 0) continue;
     const key = line.slice(0, colon).trimEnd();
     if (!FRONTMATTER_KEY.test(key)) continue;
-    out.push({ index, key: key.toLowerCase(), value: line.slice(colon + 1).trim() });
+    const value = withoutYamlComment(line.slice(colon + 1).trim());
+    if (BLOCK_SCALAR_HEADER.test(value)) continue;
+    out.push({ index, key: key.toLowerCase(), value });
   }
   return out;
 }
@@ -596,7 +642,8 @@ function draft(
  */
 export const documentStructureExtractor: Extractor = {
   id: "document-structure/v1",
-  // 1.1.0: CommonMark fence delimiting (RC-095); BOM and lone-CR aware lines (RC-096).
+  // 1.1.0: CommonMark fence delimiting (RC-095); BOM and lone-CR aware lines (RC-096);
+  // frontmatter comments and block-scalar headers are not values (RC-024).
   version: "1.1.0",
   subjectScope: "artifact",
   matches: isSupportedTextDocument,
@@ -924,7 +971,8 @@ export const LEADING_ADMONITION_UNITS = LEADING_ADMONITION_LINES;
 export const workIntelligenceExtractor: Extractor = {
   id: "work-intelligence/v1",
   // 1.1.0: CommonMark fence delimiting (RC-095); distinct title statuses
-  // (RC-099); BOM and lone-CR aware lines (RC-096); linear list-item reading (RC-094).
+  // (RC-099); BOM and lone-CR aware lines (RC-096); linear list-item reading (RC-094);
+  // frontmatter comments and block-scalar headers are not values (RC-024).
   version: "1.1.0",
   subjectScope: "artifact",
   matches: isSupportedTextDocument,

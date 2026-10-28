@@ -189,6 +189,37 @@ whitespace — and any containing LF, CR, TAB, U+2028 or U+2029, which it escape
 parser's comment stripper honours backslash escapes inside double quotes, so `"a\" # b"`
 is no longer truncated. Benign values are byte-identical to the previous output.
 
+**RC-024 (WU-017): the narrow YAML lexers read their subset as YAML does, or refuse.**
+The carrier parser's comment stripper is one of four hand-written YAML-subset lexers
+(F-104, F-105, F-106). Each keeps its own grammar — a lenient operator schema
+(`meta_schema.ts`), a fail-closed authority file (`authority.ts`, ADR-020, INV-014), a
+best-effort extractor (`extractors/work_intelligence.ts`) and the byte-preserving
+frontmatter patcher (`frontmatter_patch.ts`, INV-022) — so no shared lexer module is
+introduced, but all four now apply one rule: a quote character opens a quoted scalar
+only where a scalar or flow-list item begins, `''` escapes a quote inside single
+quotes, and a backslash escapes the next character inside double quotes. A mid-word
+apostrophe (`it's`, `maintainer's-v4`) therefore no longer hides a trailing
+`# comment`. In addition:
+
+- `parseAuthorityYaml` refuses, with the existing `META_AUTHORITY_CONFIG_INVALID`, plain
+  `null`/`~`/`true`/`false` tokens (in any YAML core-schema spelling), a key not followed
+  by a space or the end of the line (`schema:l9.meta-authority/v1`), a plain value
+  containing `: ` or ending in `:`, and a block-list key with no items (YAML reads it as
+  null; an empty list is written `[]`). Quoted, those values remain ordinary strings.
+- The work-intelligence and document-structure extractors drop an unquoted
+  `# comment` from a frontmatter scalar and skip a block-scalar header (`|`, `>`, with
+  indentation/chomping indicators) instead of asserting it as a value. Their version
+  stays `1.1.0`: the remediation's earlier extractor changes (RC-094/095/096/099)
+  already moved both to `1.1.0`, unreleased, and this change ships in the same version.
+- **DEC-RC-024: Option B** (alternatives: A fix only the three audited lexers, leaving
+  the patcher reading the same bytes differently; B also fix the frontmatter patcher's
+  `splitInlineComment` with byte-preservation tests; C record the patcher divergence
+  and defer). The patcher adopts the same quote-at-start rule in a separate commit, so
+  every in-repository reader agrees on a frontmatter scalar. A managed key's value
+  range now ends before an inline comment, so a managed patch preserves the user's
+  comment byte for byte; existing metadata for such files reads without the comment,
+  and reconciliation may report a revision once.
+
 ## Consequences
 
 - **On-disk carrier bytes.** Files annotated by an earlier version that carry a
@@ -212,7 +243,16 @@ is no longer truncated. Benign values are byte-identical to the previous output.
   nothing. A title that already flipped from `~` to `null` cannot be recovered
   automatically. `yamlScalar` gains an optional `forbidden` argument and
   `SerializeYamlOptions` an optional `forbidden` field (additive, `./advanced`).
-- Regression evidence: `tests/carrier_value_safety.test.ts` (REG-WU-002-*),
+- **Authority narrowing (WU-017).** A consumer authority file that used plain
+  `null`/`~`/bool values, `key:value` without a space, `: ` inside a plain value or an
+  empty block list now fails with `META_AUTHORITY_CONFIG_INVALID` (fail closed, no
+  mutation, ADR-020); none exists in this repository or its fixtures. Operator schema
+  descriptions/defaults with an apostrophe lose the comment text that used to leak into
+  them, and extractor assertion sets change only for commented or block-scalar
+  frontmatter.
+- Regression evidence: `tests/narrow_yaml_lexers.test.ts` (REG-WU-017-*),
+  `tests/frontmatter_patch.test.ts` (DEC-RC-024-B),
+  `tests/carrier_value_safety.test.ts` (REG-WU-002-*),
   `tests/carrier_position.test.ts` (REG-WU-001-*), including
   legacy byte-0 files for every prologue language and `.ql`/`.sass`, inject∘strip
   identity and idempotent re-runs.

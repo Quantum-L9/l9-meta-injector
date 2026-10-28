@@ -54,28 +54,55 @@ function fail(code: AuthorityConflictCode, message: string): never {
   throw new AuthorityParseError(code, message);
 }
 
+const isBlank = (char: string | undefined): boolean => char === " " || char === "\t";
+
+/**
+ * Whether a scalar (or a flow-list item) begins at `index`. Only there does a quote
+ * open a quoted scalar: a mid-word apostrophe (`maintainer's`) is plain text in
+ * YAML and must not hide a trailing comment (RC-024).
+ */
+function scalarStartsAt(line: string, index: number, inFlow: boolean): boolean {
+  let j = index - 1;
+  while (j >= 0 && isBlank(line[j])) j--;
+  if (j < 0) return true;
+  const previous = line[j];
+  if (previous === ":" || previous === "[") return true;
+  if (previous === ",") return inFlow;
+  if (previous === "-" && j < index - 1) {
+    let k = j - 1;
+    while (k >= 0 && isBlank(line[k])) k--;
+    return k < 0;
+  }
+  return false;
+}
+
 function stripInlineComment(line: string): string {
-  let single = false;
-  let double = false;
-  let escaped = false;
+  let quote: "'" | '"' | null = null;
+  let flowDepth = 0;
   for (let i = 0; i < line.length; i++) {
     const char = line[i];
-    if (escaped) {
-      escaped = false;
+    if (quote === '"') {
+      if (char === "\\") i++;
+      else if (char === '"') quote = null;
       continue;
     }
-    if (char === "\\" && double) {
-      escaped = true;
+    if (quote === "'") {
+      if (char === "'" && line[i + 1] === "'") i++;
+      else if (char === "'") quote = null;
       continue;
     }
-    if (char === "'" && !double) single = !single;
-    else if (char === '"' && !single) double = !double;
-    else if (char === "#" && !single && !double && (i === 0 || /\s/.test(line[i - 1]))) {
+    if ((char === "'" || char === '"') && scalarStartsAt(line, i, flowDepth > 0)) quote = char;
+    else if (char === "[" && scalarStartsAt(line, i, flowDepth > 0)) flowDepth++;
+    else if (char === "]" && flowDepth > 0) flowDepth--;
+    else if (char === "#" && (i === 0 || /\s/.test(line[i - 1]))) {
       return line.slice(0, i).trimEnd();
     }
   }
   return line.trimEnd();
 }
+
+/** YAML 1.2 core-schema null and bool tokens: never a plain string in YAML. */
+const NON_STRING_PLAIN = /^(?:null|Null|NULL|~|true|True|TRUE|false|False|FALSE)$/;
 
 function scalar(raw: string): string {
   const value = raw.trim();
@@ -99,6 +126,14 @@ function scalar(raw: string): string {
   if (/^[\[\]{}&*!>|%@`]/.test(value)) {
     fail("META_AUTHORITY_CONFIG_INVALID", `unsupported YAML scalar '${value}'`);
   }
+  // A plain null/bool token is not a string in YAML, and ': ' (or a trailing ':')
+  // inside a plain value starts a nested mapping; both are outside the grammar.
+  if (NON_STRING_PLAIN.test(value)) {
+    fail("META_AUTHORITY_CONFIG_INVALID", `plain '${value}' is a YAML null or bool, not a string; quote it`);
+  }
+  if (value.includes(": ") || value.endsWith(":")) {
+    fail("META_AUTHORITY_CONFIG_INVALID", `plain scalar '${value}' contains a mapping separator; quote it`);
+  }
   return value;
 }
 
@@ -114,28 +149,43 @@ function parseInlineList(raw: string): string[] {
   let current = "";
   let single = false;
   let double = false;
-  let escaped = false;
-  for (const char of body) {
-    if (escaped) {
+  for (let i = 0; i < body.length; i++) {
+    const char = body[i];
+    if (double) {
       current += char;
-      escaped = false;
+      if (char === "\\") {
+        current += body[i + 1] ?? "";
+        i++;
+      } else if (char === '"') {
+        double = false;
+      }
       continue;
     }
-    if (char === "\\" && double) {
+    if (single) {
       current += char;
-      escaped = true;
+      if (char === "'" && body[i + 1] === "'") {
+        current += "'";
+        i++;
+      } else if (char === "'") {
+        single = false;
+      }
       continue;
     }
-    if (char === "'" && !double) single = !single;
-    else if (char === '"' && !single) double = !double;
-    if (char === "," && !single && !double) {
+    // A quote opens a quoted item only where the item begins (RC-024).
+    if ((char === "'" || char === '"') && current.trim() === "") {
+      if (char === "'") single = true;
+      else double = true;
+      current += char;
+      continue;
+    }
+    if (char === ",") {
       items.push(scalar(current));
       current = "";
     } else {
       current += char;
     }
   }
-  if (single || double || escaped) {
+  if (single || double) {
     fail("META_AUTHORITY_CONFIG_INVALID", "unterminated quote in inline list");
   }
   items.push(scalar(current));
@@ -163,10 +213,11 @@ export function parseAuthorityYaml(text: string): AuthorityConfig {
     if (assertIndent(line) !== 0) {
       fail("META_AUTHORITY_CONFIG_INVALID", `unexpected indentation at line ${index + 1}`);
     }
-    const match = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(line);
+    // A key ends at ':' followed by a space or the end of the line, as in YAML.
+    const match = /^([A-Za-z_][\w-]*):(?: +(.*))?$/.exec(line);
     if (!match) fail("META_AUTHORITY_CONFIG_INVALID", `invalid mapping at line ${index + 1}`);
     const key = match[1];
-    const rest = match[2];
+    const rest = match[2] ?? "";
     if (seen.has(key)) fail("META_AUTHORITY_CONFIG_INVALID", `duplicate key '${key}'`);
     seen.add(key);
 
@@ -179,7 +230,7 @@ export function parseAuthorityYaml(text: string): AuthorityConfig {
         if (assertIndent(child) !== 2) {
           fail("META_AUTHORITY_CONFIG_INVALID", `writer entries must use two spaces at line ${index + 1}`);
         }
-        const childMatch = /^([A-Za-z_][\w-]*):\s*(.+)$/.exec(child.trim());
+        const childMatch = /^([A-Za-z_][\w-]*): +(.+)$/.exec(child.trim());
         if (!childMatch) fail("META_AUTHORITY_CONFIG_INVALID", `invalid writer entry at line ${index + 1}`);
         const childKey = childMatch[1];
         if (childKey !== "repository" && childKey !== "ref") {
@@ -209,6 +260,9 @@ export function parseAuthorityYaml(text: string): AuthorityConfig {
         values.push(scalar(child.trim().slice(2)));
         index++;
       }
+      // YAML reads `key:` with no items as null, not as an empty list; an empty
+      // list is written `key: []` (RC-024).
+      if (values.length === 0) fail("META_AUTHORITY_CONFIG_INVALID", `${key} has no list items; write '${key}: []' for an empty list`);
       result[key] = values;
       continue;
     }
@@ -232,7 +286,7 @@ export function parseAuthorityYaml(text: string): AuthorityConfig {
         if (assertIndent(child) !== 2) {
           fail("META_AUTHORITY_CONFIG_INVALID", `product entries must use two spaces at line ${index + 1}`);
         }
-        const childMatch = /^([A-Za-z_][\w-]*):\s*(.+)$/.exec(child.trim());
+        const childMatch = /^([A-Za-z_][\w-]*): +(.+)$/.exec(child.trim());
         if (!childMatch) fail("META_AUTHORITY_CONFIG_INVALID", `invalid product entry at line ${index + 1}`);
         const childKey = childMatch[1];
         if (!["id", "owner", "kind", "archetype"].includes(childKey)) {
@@ -281,10 +335,10 @@ function parseSemanticFoundation(lines: string[], start: number): Record<string,
       fail("META_SEMANTIC_BINDING_INVALID", `semantic_foundation entries must use two spaces at line ${index + 1}`);
     }
     const child = lines[index];
-    const childMatch = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(child.trim());
+    const childMatch = /^([A-Za-z_][\w-]*):(?: +(.*))?$/.exec(child.trim());
     if (!childMatch) fail("META_SEMANTIC_BINDING_INVALID", `invalid semantic_foundation entry at line ${index + 1}`);
     const childKey = childMatch[1];
-    const rest = childMatch[2];
+    const rest = childMatch[2] ?? "";
     if (childKey in block) fail("META_SEMANTIC_BINDING_INVALID", `duplicate semantic_foundation key '${childKey}'`);
     if (!["repository", "revision", "release", "admission", "ledgers"].includes(childKey)) {
       fail("META_SEMANTIC_BINDING_INVALID", `unsupported semantic_foundation key '${childKey}'`);
@@ -298,7 +352,7 @@ function parseSemanticFoundation(lines: string[], start: number): Record<string,
         if (assertIndent(ledgerLine) !== 4) {
           fail("META_SEMANTIC_BINDING_INVALID", `ledger entries must use four spaces at line ${index + 1}`);
         }
-        const ledgerMatch = /^(l9\.[a-z0-9-]+\/[a-z0-9-]+@\d+):\s*(.+)$/.exec(ledgerLine.trim());
+        const ledgerMatch = /^(l9\.[a-z0-9-]+\/[a-z0-9-]+@\d+): +(.+)$/.exec(ledgerLine.trim());
         if (!ledgerMatch || !SEMANTIC_LEDGER_ID_RE.test(ledgerMatch[1])) {
           fail("META_SEMANTIC_BINDING_INVALID", `invalid ledger key at line ${index + 1}`);
         }
