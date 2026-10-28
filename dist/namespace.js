@@ -96,9 +96,36 @@ function derivePrimitiveFolder(filePath) {
         return "prompt";
     return "unknown";
 }
-/** Character rules shared with {@link toSnakeStem}, without stripping an extension. */
+/**
+ * Represent every non-ASCII code point as the ASCII token `u<lowercase hex>`, set off
+ * by `_` (ADR-071). The code point is lower-cased first, so case folding matches the
+ * ASCII rules (`É` and `é` are one token); a lower-case form that is ASCII stays a
+ * plain character.
+ */
+function encodeNonAscii(value) {
+    let encoded = "";
+    for (const char of value) {
+        if (char.charCodeAt(0) < 0x80) {
+            encoded += char;
+            continue;
+        }
+        for (const folded of char.toLowerCase()) {
+            const codePoint = folded.codePointAt(0) ?? 0;
+            encoded += codePoint < 0x80 ? folded : `_u${codePoint.toString(16)}_`;
+        }
+    }
+    return encoded;
+}
+/**
+ * Identity segment rules. ASCII follows the {@link toSnakeStem} character rules, without
+ * stripping an extension. Non-ASCII is represented instead of erased (ADR-071, amending
+ * ADR-054 item 1): the segment is NFC-normalised so composed and decomposed spellings
+ * agree, whitespace stays a separator, and each remaining non-ASCII code point becomes an
+ * ASCII token, so ids keep to `[a-z0-9_]` and ASCII-only segments are unchanged.
+ */
 function snakeSegment(value) {
-    return value.replace(/([a-z])([A-Z])/g, "$1_$2").replace(/[-\s]+/g, "_")
+    const separated = value.normalize("NFC").replace(/([a-z])([A-Z])/g, "$1_$2").replace(/[-\s]+/g, "_");
+    return encodeNonAscii(separated)
         .replace(/[^a-z0-9_]/gi, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toLowerCase();
 }
 /**
