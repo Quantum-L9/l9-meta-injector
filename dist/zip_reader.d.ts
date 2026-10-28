@@ -50,6 +50,16 @@ export interface ZipDirectory {
 export declare class ZipFormatError extends Error {
     constructor(message: string);
 }
+/**
+ * A member produced more or fewer bytes than its central directory declares.
+ *
+ * A subclass of `ZipFormatError`, so every classifier that already holds a
+ * format error holds this fail-closed; classifiers that distinguish integrity
+ * failures (a CRC mismatch) refine it to their integrity code (ADR-061).
+ */
+export declare class ZipSizeMismatchError extends ZipFormatError {
+    constructor(message: string);
+}
 /** Read an archive's central directory. */
 export declare function readZipCentralDirectory(archivePath: string): ZipDirectory;
 /** Incremental CRC-32, matching the checksum a ZIP central directory records. */
@@ -59,7 +69,12 @@ export declare class Crc32 {
     digest(): number;
 }
 export interface ZipMemberStreamLimits {
-    /** Hard ceiling on bytes produced for this member. Exceeding it aborts the read. */
+    /**
+     * Hard ceiling on bytes produced for this member. Exceeding it aborts the read
+     * with `ZipBudgetExceededError`. The member's declared uncompressed size bounds
+     * what is emitted as well: producing more (inside this ceiling) or fewer bytes
+     * than declared is a `ZipSizeMismatchError`.
+     */
     maxUncompressedBytes: number;
     /** Chunk size used for stored members and for the sink. */
     chunkBytes?: number;

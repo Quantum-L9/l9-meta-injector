@@ -659,10 +659,17 @@ function stageOneMember(task, member, virtualPath, stagedPath, archiveHash, ceil
     catch (error) {
         if (!(error instanceof zip_reader_1.ZipBudgetExceededError) && !(error instanceof zip_reader_1.ZipFormatError))
             throw error;
+        // A member whose produced bytes contradict its declared size is the same
+        // class of defect as a CRC mismatch: the bytes do not match the metadata.
+        const code = error instanceof zip_reader_1.ZipBudgetExceededError
+            ? "archive.extracted_bytes_exceeded"
+            : error instanceof zip_reader_1.ZipSizeMismatchError
+                ? "archive.member_integrity_failed"
+                : "archive.format_unreadable";
         return {
             observation: null,
             failure: {
-                code: error instanceof zip_reader_1.ZipBudgetExceededError ? "archive.extracted_bytes_exceeded" : "archive.format_unreadable",
+                code,
                 memberPath: member.canonicalPath,
                 message: error.message,
             },

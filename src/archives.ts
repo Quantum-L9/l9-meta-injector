@@ -28,6 +28,7 @@ import type { LocalArchivePolicy } from "./local_archive_policy";
 import {
   ZipBudgetExceededError,
   ZipFormatError,
+  ZipSizeMismatchError,
   readZipCentralDirectory,
   streamZipMember,
 } from "./zip_reader";
@@ -83,6 +84,9 @@ function expectedArchiveHoldReason(error: unknown): string | null {
   if (error instanceof ArchiveIntegrityError) return `archive.integrity_failed: ${error.message}`;
   if (error instanceof ArchiveExecutionHeldError) return `archive.resource_refused: ${error.message}`;
   if (error instanceof ZipBudgetExceededError) return `archive.resource_refused: ${error.message}`;
+  // Produced bytes contradicting the declared size is an integrity failure, like
+  // a CRC mismatch; it subclasses ZipFormatError, so it is tested first (ADR-061).
+  if (error instanceof ZipSizeMismatchError) return `archive.integrity_failed: ${error.message}`;
   if (error instanceof ZipFormatError) return `archive.format_unreadable: ${error.message}`;
   return null;
 }

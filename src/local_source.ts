@@ -51,7 +51,13 @@ import {
   LocalArchivePolicy,
   localArchivePolicyFingerprint,
 } from "./local_archive_policy";
-import { ZipBudgetExceededError, ZipFormatError, readZipCentralDirectory, streamZipMember } from "./zip_reader";
+import {
+  ZipBudgetExceededError,
+  ZipFormatError,
+  ZipSizeMismatchError,
+  readZipCentralDirectory,
+  streamZipMember,
+} from "./zip_reader";
 import {
   ARCHIVE_SIGNATURE_PROBE_BYTES,
   ArchiveSignature,
@@ -960,10 +966,17 @@ function stageOneMember(
     };
   } catch (error) {
     if (!(error instanceof ZipBudgetExceededError) && !(error instanceof ZipFormatError)) throw error;
+    // A member whose produced bytes contradict its declared size is the same
+    // class of defect as a CRC mismatch: the bytes do not match the metadata.
+    const code = error instanceof ZipBudgetExceededError
+      ? "archive.extracted_bytes_exceeded"
+      : error instanceof ZipSizeMismatchError
+        ? "archive.member_integrity_failed"
+        : "archive.format_unreadable";
     return {
       observation: null,
       failure: {
-        code: error instanceof ZipBudgetExceededError ? "archive.extracted_bytes_exceeded" : "archive.format_unreadable",
+        code,
         memberPath: member.canonicalPath,
         message: error.message,
       },

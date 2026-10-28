@@ -273,11 +273,21 @@ interface PreflightAccumulator {
   declaredCompressedBytes: number;
   seenExact: Map<string, string>;
   seenCollision: Map<string, string>;
-  /** Canonical paths declared by file members, with the raw name that declared each. */
+  /**
+   * Collision keys of paths declared by file members, with the raw name of the
+   * first member that declared each. Keyed by `memberCollisionKey`, the same fold
+   * the collision rule uses, so a conflict one filesystem would merge is seen.
+   */
   filePaths: Map<string, string>;
-  /** Canonical paths already reported as exact duplicates; not reported a second way. */
+  /**
+   * Collision keys already reported as an exact duplicate or a whole-path fold
+   * collision; a path conflict on the same key is not reported a second way.
+   */
   duplicates: Set<string>;
-  /** Every canonical path some entry uses as a directory: explicit directory entries and all ancestors. */
+  /**
+   * Collision key of every path some entry uses as a directory: explicit
+   * directory entries and all ancestors.
+   */
   directoryPaths: Set<string>;
 }
 
@@ -312,9 +322,10 @@ function collisionHolds(
   accumulator: PreflightAccumulator,
 ): ArchiveHold[] {
   if (canonical.length === 0) return [];
+  const key = memberCollisionKey(canonical);
   const previousExact = accumulator.seenExact.get(canonical);
   if (previousExact !== undefined) {
-    accumulator.duplicates.add(canonical);
+    accumulator.duplicates.add(key);
     return [{
       code: "archive.duplicate_member",
       memberPath: entry.name,
@@ -322,9 +333,11 @@ function collisionHolds(
     }];
   }
   accumulator.seenExact.set(canonical, entry.name);
-  const key = memberCollisionKey(canonical);
   const previousCollision = accumulator.seenCollision.get(key);
-  if (previousCollision !== undefined) return [collisionHold(canonical, previousCollision, entry.name)];
+  if (previousCollision !== undefined) {
+    accumulator.duplicates.add(key);
+    return [collisionHold(canonical, previousCollision, entry.name)];
+  }
   accumulator.seenCollision.set(key, canonical);
   return [];
 }
@@ -361,28 +374,34 @@ function fileMemberHolds(entry: ZipCentralEntry, policy: LocalArchivePolicy): Ar
  * as an unreadable format, `a` first threw out of extraction. Usage is gathered
  * here and judged once, after the whole directory is known, so both orders receive
  * the same verdict from the same rule.
+ *
+ * Usage is keyed by the collision fold, not the exact path (ADR-061): `Docs` as a
+ * file and `docs/readme.txt` cannot both be materialized on a case-insensitive
+ * filesystem, and the verdict must not depend on which host judges it.
  */
 function notePathUsage(entry: ZipCentralEntry, canonical: string, accumulator: PreflightAccumulator): void {
   if (canonical.length === 0 || canonical.startsWith("/")) return;
   const segments = canonical.split("/");
+  const key = memberCollisionKey(canonical);
   if (entry.kind === "directory") {
-    accumulator.directoryPaths.add(canonical);
-  } else if (entry.kind === "file" && !accumulator.filePaths.has(canonical)) {
-    accumulator.filePaths.set(canonical, entry.name);
+    accumulator.directoryPaths.add(key);
+  } else if (entry.kind === "file" && !accumulator.filePaths.has(key)) {
+    accumulator.filePaths.set(key, entry.name);
   }
   for (let depth = 1; depth < segments.length; depth++) {
-    accumulator.directoryPaths.add(segments.slice(0, depth).join("/"));
+    accumulator.directoryPaths.add(memberCollisionKey(segments.slice(0, depth).join("/")));
   }
 }
 
 /** A path declared as a file by one member and used as a directory by another. */
 function pathConflictHolds(accumulator: PreflightAccumulator): ArchiveHold[] {
   const holds: ArchiveHold[] = [];
-  for (const [canonical, rawName] of accumulator.filePaths) {
-    if (!accumulator.directoryPaths.has(canonical)) continue;
+  for (const [key, rawName] of accumulator.filePaths) {
+    if (!accumulator.directoryPaths.has(key)) continue;
     // `docs/` beside `docs` is the same path spelled twice and is already held as
-    // an exact duplicate; one defect, one hold.
-    if (accumulator.duplicates.has(canonical)) continue;
+    // an exact duplicate, and `Docs/` beside `docs` as a case collision; one
+    // defect, one hold.
+    if (accumulator.duplicates.has(key)) continue;
     holds.push({
       code: "archive.path_conflict",
       memberPath: rawName,
