@@ -69,7 +69,15 @@ import {
   sniffArchiveSignature,
 } from "./archive_formats";
 
-/** Separator between an archive path and a member path in a virtual locator. */
+/**
+ * Separator between an archive path and a member path in a virtual locator.
+ *
+ * In-band and unescaped (ADR-036 Decision 3), and legal in both filesystem and
+ * ZIP member names. Locators stay injective because an archive whose expansion
+ * would mint a locator some other record can also spell is held with
+ * `archive.locator_ambiguous` (ADR-063), and no consumer recovers archive
+ * ancestry by splitting on it: `memberArchiveAncestry` reads the parent chain.
+ */
 export const ARCHIVE_MEMBER_SEPARATOR = "!/";
 
 /** Ownership marker written at the root of every scratch directory this module creates. */
@@ -840,6 +848,12 @@ interface ArchiveContext {
   /** Where preflight verdicts are read from and written to, when supplied. */
   manifests?: ArchiveManifestStore;
   /**
+   * Every physical path prefix that precedes a `!/` in some observed physical
+   * entry. An archive whose source path is one of these would mint member
+   * locators that a physical path already spells (ADR-063).
+   */
+  physicalLocatorPrefixes: Set<string>;
+  /**
    * Reasons the archive pass found the source no longer describable by one
    * snapshot. Non-empty makes the whole observation unstable, the same as a file
    * that moved during hashing: an archive whose staged bytes contradict the
@@ -1284,6 +1298,81 @@ function preflightStaged(
 }
 
 /**
+ * Holds for an archive whose expansion would mint an ambiguous member locator.
+ *
+ * A member whose canonical path contains `!/` spells the locator of a member of
+ * a nested archive (`in.zip!/y.txt` beside `in.zip`), and a physical entry under
+ * `<archive>!/` spells the locator of a member of this archive. Either way two
+ * records could share one locator, and with it one artifact id. The archive is
+ * held whole (ADR-036 Decision 5), still hashed and reported (ADR-063).
+ */
+function locatorAmbiguityHolds(
+  context: ArchiveContext,
+  task: ArchiveTask,
+  preflight: ArchivePreflightResult,
+): ArchiveHold[] {
+  const holds: ArchiveHold[] = [];
+  if (context.physicalLocatorPrefixes.has(task.sourcePath)) {
+    holds.push({
+      code: "archive.locator_ambiguous",
+      message:
+        `a physical path under '${task.sourcePath}${ARCHIVE_MEMBER_SEPARATOR}' already spells this archive's ` +
+        "member locators, so its members are not claimed",
+    });
+  }
+  for (const member of preflight.members) {
+    if (!member.canonicalPath.includes(ARCHIVE_MEMBER_SEPARATOR)) continue;
+    holds.push({
+      code: "archive.locator_ambiguous",
+      memberPath: member.canonicalPath,
+      message: `member path contains the locator separator '${ARCHIVE_MEMBER_SEPARATOR}', so its locator is ambiguous`,
+    });
+  }
+  return holds;
+}
+
+/** Physical path prefixes that precede a locator separator in some observed entry. */
+function physicalLocatorPrefixesOf(hashed: HashedEntry[]): Set<string> {
+  const prefixes = new Set<string>();
+  for (const { entry } of hashed) {
+    let at = entry.relativePath.indexOf(ARCHIVE_MEMBER_SEPARATOR);
+    while (at >= 0) {
+      prefixes.add(entry.relativePath.slice(0, at));
+      at = entry.relativePath.indexOf(ARCHIVE_MEMBER_SEPARATOR, at + 1);
+    }
+  }
+  return prefixes;
+}
+
+/**
+ * Enclosing archives of every virtual member, outermost first, keyed by its locator.
+ *
+ * Derived from the observation's parent chain (member -> parent archive -> its
+ * parent archive ...) rather than by splitting the locator, so a physical name
+ * containing `!/` (`notes!/x.md`, `Wow!/b.zip`) is never read as an archive
+ * boundary. A path with no entry is not an archive member and has no ancestry.
+ */
+export function memberArchiveAncestry(
+  observation: Pick<LocalSourceObservation, "archives" | "virtualArtifacts">,
+): Map<string, string[]> {
+  const parentOf = new Map<string, string | null>();
+  for (const archive of observation.archives) parentOf.set(archive.sourcePath, archive.parentArchivePath);
+  const ancestry = new Map<string, string[]>();
+  for (const member of observation.virtualArtifacts) {
+    const chain: string[] = [];
+    const seen = new Set<string>();
+    let current: string | null = member.parentArchivePath;
+    while (current !== null && !seen.has(current)) {
+      seen.add(current);
+      chain.push(current);
+      current = parentOf.get(current) ?? null;
+    }
+    ancestry.set(member.virtualSourcePath, chain.reverse());
+  }
+  return ancestry;
+}
+
+/**
  * Stage, preflight and expand one archive, queueing any nested archive it holds.
  *
  * The archive is read from a staged immutable copy rather than from the live
@@ -1351,6 +1440,14 @@ function acquireArchive(context: ArchiveContext, task: ArchiveTask, queue: Archi
 
   const preflight = preflightStaged(context, task, staged);
   if (preflight === null) return;
+  // Judged after preflight and the cache lookup, so the shared preflight verdict
+  // (and the cache that stores it) is untouched: ambiguity is a property of where
+  // this archive sits in this source, not of the archive's bytes.
+  const ambiguity = locatorAmbiguityHolds(context, task, preflight);
+  if (ambiguity.length > 0) {
+    holdArchive(context, task, staged.archiveHash, staged.sizeBytes, ambiguity);
+    return;
+  }
 
   const extraction = extractMembers(context, task, staged.archiveHash, occurrence, preflight);
   if (extraction.failure !== null) {
@@ -1926,7 +2023,18 @@ function buildRecords(
       unknowns,
     }));
   }
-  return records.sort((a, b) => compareCodePoints(a.relative_path, b.relative_path));
+  records.sort((a, b) => compareCodePoints(a.relative_path, b.relative_path));
+  // Acquisition holds every archive whose expansion could spell an existing
+  // locator (ADR-063), so a repeat here is a producer bug, not hostile input:
+  // fail closed rather than emit two artifacts under one identity.
+  for (let index = 1; index < records.length; index += 1) {
+    if (records[index].relative_path === records[index - 1].relative_path) {
+      throw new Error(
+        `local-source: invariant violated: two records share the locator ${records[index].relative_path}`,
+      );
+    }
+  }
+  return records;
 }
 
 /** Assemble the inventory view the packet builder and interpretation consume. */
@@ -2082,6 +2190,7 @@ function finishAcquisition(tail: AcquisitionTail): LocalSourceObservation {
     const context: ArchiveContext = {
       scratch, policy, budget, omit, diagnostics, archives, members, omittedPaths,
       manifests: input.archiveManifests,
+      physicalLocatorPrefixes: physicalLocatorPrefixesOf(hashed),
       sourceChanged: archiveSourceChanged,
     };
     const queue = planArchiveTasks(hashed, diagnostics);

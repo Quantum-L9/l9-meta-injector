@@ -123,21 +123,17 @@ exports.CANDIDATE_STATEMENT = "Exact duplicates are byte equality and are facts.
 exports.DOCUMENT_COVERAGE_SCHEMA = "l9.document-coverage/v2";
 // ───────────────────────────── helpers ─────────────────────────────
 /**
- * The archives a member sits inside, outermost first.
+ * The archives an artifact sits inside, outermost first.
  *
  * `old.zip!/inner.zip!/draft.md` is two archives deep, and its ancestry is the
- * successive archive prefixes rather than the bare filenames — `inner.zip` alone
- * would collide with an unrelated `inner.zip` in another archive.
+ * successive archive locators rather than the bare filenames — `inner.zip` alone
+ * would collide with an unrelated `inner.zip` in another archive. Read from the
+ * acquisition's member-to-archive parent chain (`memberArchiveAncestry`), never
+ * by splitting the path on `!/`: a physical `notes!/x.md` is inside no archive,
+ * and a physical `Wow!/b.zip`'s members sit in one archive, not two (ADR-063).
  */
-function archiveAncestryOf(rootRelativePath) {
-    const parts = rootRelativePath.split(local_source_1.ARCHIVE_MEMBER_SEPARATOR);
-    if (parts.length < 2)
-        return [];
-    const ancestry = [];
-    for (let i = 0; i < parts.length - 1; i += 1) {
-        ancestry.push(parts.slice(0, i + 1).join(local_source_1.ARCHIVE_MEMBER_SEPARATOR));
-    }
-    return ancestry;
+function archiveAncestryOf(artifact) {
+    return [...artifact.archiveAncestry];
 }
 function normalizeHash(value) {
     if (value === null || value.length === 0)
@@ -851,6 +847,7 @@ async function runCorpusScan(input) {
             const binding = bindingById.get(entry.binding.root_id);
             const observed = new Set();
             const memberPaths = new Set(entry.observation.virtualArtifacts.map((member) => member.virtualSourcePath));
+            const ancestryByPath = (0, local_source_1.memberArchiveAncestry)(entry.observation);
             for (const record of entry.observation.inventory.records) {
                 // Counted per record rather than per artifact: folders are skipped below,
                 // so a run of them at a multiple of the interval would otherwise yield
@@ -875,6 +872,7 @@ async function runCorpusScan(input) {
                     sizeBytes: record.size_bytes,
                     artifactType: record.artifact_type,
                     isArchiveMember: memberPaths.has(rootRelativePath),
+                    archiveAncestry: ancestryByPath.get(rootRelativePath) ?? [],
                     basename,
                     extension: extensionOf(basename),
                 };
@@ -1153,7 +1151,7 @@ async function runCorpusScan(input) {
             // as one archive rather than two — named by the root-scoped identity the
             // snapshot's archives carry, so two roots' `widget/old.zip` are two.
             archive_id: (() => {
-                const outermost = archiveAncestryOf(artifact.rootRelativePath)[0];
+                const outermost = archiveAncestryOf(artifact)[0];
                 return outermost === undefined ? null : (0, corpus_roots_1.virtualSourceId)(artifact.rootId, outermost);
             })(),
             decoded: normalized.get(artifact.virtualSourceId)?.decodes === true,
@@ -1491,7 +1489,7 @@ async function runCorpusScan(input) {
                     contentHash: artifact.contentHash,
                     sizeBytes: artifact.sizeBytes,
                     isArchiveMember: artifact.isArchiveMember,
-                    archiveAncestry: archiveAncestryOf(artifact.rootRelativePath),
+                    archiveAncestry: archiveAncestryOf(artifact),
                     ...(record !== undefined
                         ? {
                             normalized: {
@@ -1622,7 +1620,7 @@ async function runCorpusScan(input) {
                     content_hash: artifact.contentHash,
                     normalized_document_id: document?.normalized_document_id ?? null,
                     is_archive_member: artifact.isArchiveMember,
-                    archive_ancestry: archiveAncestryOf(artifact.rootRelativePath),
+                    archive_ancestry: archiveAncestryOf(artifact),
                     assertions: [
                         ...(interpreted.get(artifact.virtualSourceId)?.assertions ?? []),
                         ...(blockSignals.get(artifact.virtualSourceId) ?? []),

@@ -47,7 +47,13 @@ export type ArchiveHoldCode =
   | "archive.extracted_bytes_exceeded"
   | "archive.member_integrity_failed"
   | "archive.format_unreadable"
-  | "archive.format_not_expanded";
+  | "archive.format_not_expanded"
+  /**
+   * Expanding the archive would mint a virtual member locator that another
+   * record can also spell (ADR-063). Raised by local-source acquisition, never
+   * by `preflightArchive`, whose verdict depends only on the archive's bytes.
+   */
+  | "archive.locator_ambiguous";
 
 export interface ArchiveHold {
   code: ArchiveHoldCode;
