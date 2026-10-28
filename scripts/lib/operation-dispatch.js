@@ -86,6 +86,17 @@ function realDirectory(label, candidate) {
     fail(`${label} cannot be inspected: ${resolved}`);
   }
   if (!stat.isDirectory()) fail(`${label} must be a directory: ${resolved}`);
+  assertResolvedPath(label, resolved);
+  return resolved;
+}
+
+/**
+ * A resolved path is checked again after canonicalization: the raw input can be clean
+ * while a symlink target name carries NUL/CR/LF, and every resolved path ends up in a
+ * single-line GITHUB_OUTPUT value or a child argv element (RC-105).
+ */
+function assertResolvedPath(label, resolved) {
+  if (hasControlChar(resolved)) fail(`${label} resolves to a path containing a forbidden control character`);
   return resolved;
 }
 
@@ -129,11 +140,11 @@ function resolveFutureContainedPath(parent, input, label) {
   }
 
   if (fs.existsSync(lexical)) {
-    const actual = fs.realpathSync(lexical);
+    const actual = assertResolvedPath(label, fs.realpathSync(lexical));
     if (!isWithin(parent, actual)) fail(`${label} resolves outside its containment root: ${input}`);
     if (!fs.statSync(actual).isDirectory()) fail(`${label} must be a directory path: ${input}`);
   }
-  return lexical;
+  return assertResolvedPath(label, lexical);
 }
 
 function parseCsvPatterns(raw) {
@@ -497,20 +508,43 @@ function buildInvocation(config) {
   };
 }
 
-function parseSummary(mode, text) {
-  const inventoryMatch = text.match(/(?:^|\n)inventory:\s+(\d+)\s+entries/m);
-  const scan = /(?:scanned|considered)=(\d+)/g;
-  let match;
-  let scanned = inventoryMatch ? inventoryMatch[1] : "0";
-  while ((match = scan.exec(text)) !== null) scanned = match[1];
-  const change = /(?:injected|changed)=(\d+)/g;
-  let injected = "0";
-  while ((match = change.exec(text)) !== null) injected = match[1];
-  const passedMatches = [...text.matchAll(/passed=(true|false)/g)];
-  const verificationPassed = passedMatches.length
-    ? passedMatches.at(-1)[1]
-    : "n-a";
-  return { scanned, injected, verificationPassed };
+/**
+ * Each child's summary record, as a whole-line, anchored grammar. The summary is the
+ * child's FIRST stdout line: the engine never writes stdout and every repository-influenced
+ * line (drift paths, conflict messages, manifest paths) is printed after it, so the first
+ * line matching the grammar cannot be forged by repository content (RC-100, ADR-022).
+ */
+const SUMMARY_GRAMMARS = Object.freeze({
+  inventory: /^inventory: (\d+) entries \((\d+) files, (\d+) folders\)$/,
+  check: /^check-cli: scanned=(\d+) planned=(\d+) drift=(\d+) authorityConflicts=(\d+) passed=(true|false)$/,
+  apply: /^apply-cli: scanned=(\d+) planned=(\d+) changed=(\d+) inlineChanged=(\d+) metadataIndexChanged=(\d+) passed=(true|false)$/,
+  skills: /^skills-cli: considered=(\d+) changed=(\d+) unchanged=(\d+) authorityResolved=(true|false) repositoryMutated=(true|false)$/,
+});
+
+/** Mode-fixed output projection of a matched summary; `null` means the summary is absent. */
+const SUMMARY_OUTPUTS = Object.freeze({
+  inventory: (m) => ({ scanned: m ? m[1] : "0", injected: "0", verificationPassed: "n-a" }),
+  check: (m) => ({ scanned: m ? m[1] : "0", injected: "0", verificationPassed: m ? m[5] : "false" }),
+  apply: (m) => (m
+    ? { scanned: m[1], injected: m[3], verificationPassed: m[6] }
+    : { scanned: "0", injected: "0", verificationPassed: "false" }),
+  skills: (m) => ({ scanned: m ? m[1] : "0", injected: m ? m[2] : "0", verificationPassed: "n-a" }),
+});
+
+/**
+ * Derive the Action outputs from a child's stdout. Only the child's own summary line is
+ * read; stderr is never consulted. A check/apply child that printed no summary (it crashed)
+ * reports verification_passed=false, never n-a or true.
+ */
+function parseSummary(mode, stdout) {
+  const grammar = SUMMARY_GRAMMARS[mode];
+  if (!grammar) throw new Error(`no summary grammar for mode '${mode}'`);
+  let match = null;
+  for (const line of String(stdout ?? "").split("\n")) {
+    match = grammar.exec(line);
+    if (match) break;
+  }
+  return SUMMARY_OUTPUTS[mode](match);
 }
 
 module.exports = {
@@ -521,6 +555,7 @@ module.exports = {
   REPEATABLE_OPTIONS,
   VALUE_OPTIONS,
   buildInvocation,
+  hasControlChar,
   parseArgOptions,
   isWithin,
   normalizeEnvironment,
