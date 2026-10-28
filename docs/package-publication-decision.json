@@ -1,8 +1,9 @@
 {
-  "schema": "l9.package-publication-decision/v1",
+  "schema": "l9.package-publication-decision/v2",
   "package_name": "l9-meta-injector",
   "package_version": "4.2.0",
   "status": "blocked_pending_history_check",
+  "approved_version": null,
   "publication_command": "npm publish",
   "evidence": [
     {
@@ -33,6 +34,7 @@
   ],
   "resolution": {
     "approve_when": "Every evidence item is verified or not_applicable_with_reason, github_release_validation records the v4.2.0 Release, the distribution owner records npm approval, and status is changed to approved.",
+    "approval_rule": "ADR-070: check:publication requires npm_registry_history, constellation_consumer_inventory and distribution_owner_approval exactly once each (github_release_validation and l9_deploy_migration_validation are allowed optional ids; any other id blocks), distribution_owner_approval with status verified (never waivable), and approved_version equal to package.json#version. Only a recorded owner approval sets approved_version; release preparation of a different version resets status to blocked_pending_history_check.",
     "implementation_effect": "GitHub commit/tag consumption is authorized through the maintained major tag v4; v4.2.0 becomes the exact released evidence when release.yml completes on main. npm publish remains separately blocked by publication_authority.npm_publish=false."
   }
 }
