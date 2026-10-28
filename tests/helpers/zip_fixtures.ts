@@ -38,6 +38,12 @@ export interface ZipMemberSpec {
   compressionMethod?: number;
   /** Override the declared uncompressed size, so metadata can lie. */
   declaredUncompressedSize?: number;
+  /**
+   * Override the compressed size declared by the central directory (and by the
+   * Zip64 extra field when `zip64` is set), so a member's declared data extent
+   * can lie. The local header and the data written are left honest.
+   */
+  declaredCompressedSize?: number;
   /** Omit the Unix host marker so the reader falls back to the name convention. */
   dosHost?: boolean;
   /**
@@ -105,6 +111,8 @@ interface PreparedMember {
   data: Buffer;
   crc: number;
   uncompressedSize: number;
+  /** Compressed size the central directory declares; normally `data.length`. */
+  declaredCompressedSize: number;
   compressionMethod: number;
   flags: number;
   externalAttributes: number;
@@ -153,6 +161,7 @@ function prepare(spec: ZipMemberSpec): Omit<PreparedMember, "localHeaderOffset">
     data,
     crc: crcOnce(raw),
     uncompressedSize: spec.declaredUncompressedSize ?? raw.length,
+    declaredCompressedSize: spec.declaredCompressedSize ?? data.length,
     compressionMethod: spec.compressionMethod ?? (stored ? 0 : 8),
     // Bit 11 marks the name as UTF-8; bit 0 marks encryption.
     flags: (spec.utf8Flag === false ? 0 : 0x0800) | (spec.encrypted ? 0x0001 : 0),
@@ -193,7 +202,7 @@ export function writeRawZip(archivePath: string, specs: ZipMemberSpec[], options
     // in the order uncompressed, compressed, local-header offset.
     const extra = Buffer.concat([
       member.zip64
-        ? zip64ExtraField([member.uncompressedSize, member.data.length, member.localHeaderOffset])
+        ? zip64ExtraField([member.uncompressedSize, member.declaredCompressedSize, member.localHeaderOffset])
         : Buffer.alloc(0),
       member.centralExtra,
     ]);
@@ -206,7 +215,7 @@ export function writeRawZip(archivePath: string, specs: ZipMemberSpec[], options
     central.writeUInt16LE(0, 12);
     central.writeUInt16LE(0, 14);
     central.writeUInt32LE(member.crc, 16);
-    central.writeUInt32LE(member.zip64 ? U32_MAX : member.data.length, 20);
+    central.writeUInt32LE(member.zip64 ? U32_MAX : member.declaredCompressedSize, 20);
     central.writeUInt32LE(member.zip64 ? U32_MAX : member.uncompressedSize, 24);
     central.writeUInt16LE(member.nameBytes.length, 28);
     central.writeUInt16LE(extra.length, 30);

@@ -231,6 +231,9 @@ function semanticProjectionFor(result, index) {
         existing.push(assertion);
         bySubject.set(assertion.subject_id, existing);
     }
+    // Ancestry comes from the observation's parent chain, never from splitting a
+    // path on `!/`: a physical `notes!/x.md` is inside no archive (ADR-063).
+    const ancestryByPath = (0, local_source_1.memberArchiveAncestry)(result.observation);
     const analysis = (0, corpus_semantic_run_1.runSemanticAnalysis)({
         // A single source has no corpus around it, so its own physical snapshot is
         // both halves of the identity: there is no multi-root source identity to
@@ -245,7 +248,7 @@ function semanticProjectionFor(result, index) {
             content_hash: artifact.content_hash,
             normalized_document_id: null,
             is_archive_member: artifact.is_archive_member,
-            archive_ancestry: archiveAncestryOf(artifact.source_path),
+            archive_ancestry: [...(ancestryByPath.get(artifact.source_path) ?? [])],
             assertions: (bySubject.get(artifact.artifact_id) ?? []).map((assertion) => ({
                 assertion_id: assertion.assertion_id,
                 predicate: assertion.predicate,
@@ -292,16 +295,6 @@ function semanticProjectionFor(result, index) {
         candidate_ids_by_artifact: Object.fromEntries(analysis.candidateIdsByArtifact),
         candidate_statement: analysis.topics.candidate_statement,
     };
-}
-/** Enclosing archives of a virtual member locator, outermost first. */
-function archiveAncestryOf(sourcePath) {
-    const parts = sourcePath.split("!/");
-    if (parts.length < 2)
-        return [];
-    const ancestry = [];
-    for (let i = 0; i < parts.length - 1; i += 1)
-        ancestry.push(parts.slice(0, i + 1).join("!/"));
-    return ancestry;
 }
 /**
  * Replace any manifest value that resembles a credential.

@@ -181,11 +181,11 @@ import {
 import { LocalArchivePolicy } from "./local_archive_policy";
 import type { ArchivePreflightResult } from "./archive_preflight";
 import {
-  ARCHIVE_MEMBER_SEPARATOR,
   ArchiveManifestStore,
   KnownFileHash,
   LocalSourceObservation,
   acquireLocalSource,
+  memberArchiveAncestry,
 } from "./local_source";
 import { compareCodePoints } from "./ordering";
 import {
@@ -482,6 +482,8 @@ interface ScanArtifact {
   sizeBytes: number | null;
   artifactType: string;
   isArchiveMember: boolean;
+  /** Enclosing archives, outermost first, from the acquisition's parent chain. Empty for a file on disk. */
+  archiveAncestry: readonly string[];
   basename: string;
   extension: string;
   statPrecheck?: { size_bytes: number; mtime_ms: number; mtime_ns?: string };
@@ -534,20 +536,17 @@ interface PortableInterpretationRecord {
 // ───────────────────────────── helpers ─────────────────────────────
 
 /**
- * The archives a member sits inside, outermost first.
+ * The archives an artifact sits inside, outermost first.
  *
  * `old.zip!/inner.zip!/draft.md` is two archives deep, and its ancestry is the
- * successive archive prefixes rather than the bare filenames — `inner.zip` alone
- * would collide with an unrelated `inner.zip` in another archive.
+ * successive archive locators rather than the bare filenames — `inner.zip` alone
+ * would collide with an unrelated `inner.zip` in another archive. Read from the
+ * acquisition's member-to-archive parent chain (`memberArchiveAncestry`), never
+ * by splitting the path on `!/`: a physical `notes!/x.md` is inside no archive,
+ * and a physical `Wow!/b.zip`'s members sit in one archive, not two (ADR-063).
  */
-function archiveAncestryOf(rootRelativePath: string): string[] {
-  const parts = rootRelativePath.split(ARCHIVE_MEMBER_SEPARATOR);
-  if (parts.length < 2) return [];
-  const ancestry: string[] = [];
-  for (let i = 0; i < parts.length - 1; i += 1) {
-    ancestry.push(parts.slice(0, i + 1).join(ARCHIVE_MEMBER_SEPARATOR));
-  }
-  return ancestry;
+function archiveAncestryOf(artifact: ScanArtifact): string[] {
+  return [...artifact.archiveAncestry];
 }
 
 
@@ -1362,6 +1361,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       const memberPaths = new Set(
         entry.observation.virtualArtifacts.map((member) => member.virtualSourcePath),
       );
+      const ancestryByPath = memberArchiveAncestry(entry.observation);
       for (const record of entry.observation.inventory.records) {
         // Counted per record rather than per artifact: folders are skipped below,
         // so a run of them at a multiple of the interval would otherwise yield
@@ -1384,6 +1384,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
           sizeBytes: record.size_bytes,
           artifactType: record.artifact_type,
           isArchiveMember: memberPaths.has(rootRelativePath),
+          archiveAncestry: ancestryByPath.get(rootRelativePath) ?? [],
           basename,
           extension: extensionOf(basename),
         };
@@ -1682,7 +1683,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       // as one archive rather than two — named by the root-scoped identity the
       // snapshot's archives carry, so two roots' `widget/old.zip` are two.
       archive_id: (() => {
-        const outermost = archiveAncestryOf(artifact.rootRelativePath)[0];
+        const outermost = archiveAncestryOf(artifact)[0];
         return outermost === undefined ? null : virtualSourceId(artifact.rootId, outermost);
       })(),
       decoded: normalized.get(artifact.virtualSourceId)?.decodes === true,
@@ -2065,7 +2066,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
           contentHash: artifact.contentHash,
           sizeBytes: artifact.sizeBytes,
           isArchiveMember: artifact.isArchiveMember,
-          archiveAncestry: archiveAncestryOf(artifact.rootRelativePath),
+          archiveAncestry: archiveAncestryOf(artifact),
           ...(record !== undefined
             ? {
               normalized: {
@@ -2212,7 +2213,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
           content_hash: artifact.contentHash,
           normalized_document_id: document?.normalized_document_id ?? null,
           is_archive_member: artifact.isArchiveMember,
-          archive_ancestry: archiveAncestryOf(artifact.rootRelativePath),
+          archive_ancestry: archiveAncestryOf(artifact),
           assertions: [
             ...(interpreted.get(artifact.virtualSourceId)?.assertions ?? []),
             ...(blockSignals.get(artifact.virtualSourceId) ?? []),

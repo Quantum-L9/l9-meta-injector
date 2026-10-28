@@ -76,6 +76,10 @@ function expectedArchiveHoldReason(error) {
         return `archive.resource_refused: ${error.message}`;
     if (error instanceof zip_reader_1.ZipBudgetExceededError)
         return `archive.resource_refused: ${error.message}`;
+    // Produced bytes contradicting the declared size is an integrity failure, like
+    // a CRC mismatch; it subclasses ZipFormatError, so it is tested first (ADR-061).
+    if (error instanceof zip_reader_1.ZipSizeMismatchError)
+        return `archive.integrity_failed: ${error.message}`;
     if (error instanceof zip_reader_1.ZipFormatError)
         return `archive.format_unreadable: ${error.message}`;
     return null;

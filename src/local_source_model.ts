@@ -23,6 +23,7 @@ import {
   LocalSourceAcquireInput,
   LocalSourceObservation,
   acquireLocalSource,
+  memberArchiveAncestry,
 } from "./local_source";
 import { LocalArchivePolicy } from "./local_archive_policy";
 import { containmentBoundary, isInsideContainer, resolveForContainment } from "./corpus_roots";
@@ -262,6 +263,9 @@ function semanticProjectionFor(
     bySubject.set(assertion.subject_id, existing);
   }
 
+  // Ancestry comes from the observation's parent chain, never from splitting a
+  // path on `!/`: a physical `notes!/x.md` is inside no archive (ADR-063).
+  const ancestryByPath = memberArchiveAncestry(result.observation);
   const analysis = runSemanticAnalysis({
     // A single source has no corpus around it, so its own physical snapshot is
     // both halves of the identity: there is no multi-root source identity to
@@ -276,7 +280,7 @@ function semanticProjectionFor(
       content_hash: artifact.content_hash,
       normalized_document_id: null,
       is_archive_member: artifact.is_archive_member,
-      archive_ancestry: archiveAncestryOf(artifact.source_path),
+      archive_ancestry: [...(ancestryByPath.get(artifact.source_path) ?? [])],
       assertions: (bySubject.get(artifact.artifact_id) ?? []).map((assertion) => ({
         assertion_id: assertion.assertion_id,
         predicate: assertion.predicate,
@@ -327,15 +331,6 @@ function semanticProjectionFor(
     candidate_ids_by_artifact: Object.fromEntries(analysis.candidateIdsByArtifact),
     candidate_statement: analysis.topics.candidate_statement,
   };
-}
-
-/** Enclosing archives of a virtual member locator, outermost first. */
-function archiveAncestryOf(sourcePath: string): string[] {
-  const parts = sourcePath.split("!/");
-  if (parts.length < 2) return [];
-  const ancestry: string[] = [];
-  for (let i = 0; i < parts.length - 1; i += 1) ancestry.push(parts.slice(0, i + 1).join("!/"));
-  return ancestry;
 }
 
 // ───────────────────────────── acquisition manifest ─────────────────────────────
