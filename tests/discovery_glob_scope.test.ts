@@ -318,3 +318,36 @@ describe("WU-005 scoped governed runs merge with the repository-wide metadata in
     expect(indexPaths(root)).toEqual(["docs/a.md"]);
   });
 });
+
+describe("WU-006 '?' matches one code point in every matcher (RC-012)", () => {
+  test("REG-WU-006-RC-012-c: discovery, authority and omit '?' match an astral character and never '/'", async () => {
+    const { buildOmitMatcher } = await import("../src/omit");
+    const scope = compileDiscoveryGlob("?.md");
+    const authority = globToRegExp("?.md");
+    const omit = buildOmitMatcher({ root: tempRoot(), patterns: ["/?.md"], protectSkillMd: false });
+    for (const [candidate, expected] of [["\u{1F600}.md", true], ["é.md", true], ["a/b.md", false], ["ab.md", false]] as const) {
+      expect(scope.matches(candidate), candidate).toBe(expected);
+      expect(authority.test(candidate), candidate).toBe(expected);
+      expect(omit.shouldOmit(candidate), candidate).toBe(expected);
+    }
+  });
+
+  test("REG-WU-006-RC-012-d: ASCII glob behaviour is unchanged, including the case-insensitive scope", () => {
+    expect(compileDiscoveryGlob("docs/?.MD").matches("docs/a.md")).toBe(true);
+    expect(globToRegExp("docs/?.MD").test("docs/a.md")).toBe(false);
+    expect(globToRegExp("docs/**/*.md").test("docs/x/y.md")).toBe(true);
+    expect(globToRegExp("docs/(a)+.md").test("docs/(a)+.md")).toBe(true);
+    expect(globToRegExp("{a,b}.md").test("{a,b}.md")).toBe(true);
+  });
+});
+
+describe("WU-006 a governed path the index schema cannot represent (RC-013)", () => {
+  test("REG-WU-006-RC-013-d (producer half): apply refuses a TAB-named governed file at planning, before any write", async () => {
+    const root = governedRoot();
+    write(root, "src/tab\there.ts", "export const value = 1;\n");
+    write(root, "docs/a.md");
+    await expect(runApplyAsync({ ...config(root, "**/*"), dryRun: false } as never)).rejects.toThrow(/control character/);
+    expect(fs.existsSync(path.join(root, ".l9", "metadata-index.jsonl"))).toBe(false);
+    expect(fs.readFileSync(path.join(root, "docs", "a.md"), "utf8")).toBe(PROMPT);
+  });
+});

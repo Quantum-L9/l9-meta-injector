@@ -11,7 +11,7 @@
  *
  * Dialect: `**` followed by `/` matches zero or more directories, `**` elsewhere matches
  * across separators, `*` matches within one segment, `?` matches one non-separator
- * character, every other character is literal. Brace alternation, character classes and
+ * code point (the matchers compile with the `u` flag, ADR-058), every other character is literal. Brace alternation, character classes and
  * negation are not part of the dialect: the authority treats them as literals
  * (fail-closed, a pattern that never matches grants nothing), and the discovery scope
  * refuses them explicitly, because a scope that silently matched nothing — or
@@ -49,7 +49,7 @@ export function globToRegExpSource(pattern: string): string {
 
 /** Case-sensitive matcher used by the repository authority (`inline_allow`). */
 export function globToRegExp(pattern: string): RegExp {
-  return new RegExp(globToRegExpSource(pattern));
+  return new RegExp(globToRegExpSource(pattern), "u");
 }
 
 const UNSUPPORTED_SCOPE_SYNTAX = /[{}[\]!]/;
@@ -98,7 +98,7 @@ export interface DiscoveryGlob {
 /** Compile a validated discovery-scope glob into a whole-path matcher. */
 export function compileDiscoveryGlob(pattern: string): DiscoveryGlob {
   const validated = assertDiscoveryGlob(pattern);
-  const expression = new RegExp(globToRegExpSource(validated), "i");
+  const expression = new RegExp(globToRegExpSource(validated), "iu");
   const extMatch = /^\*\.([a-z0-9]+)$/i.exec(validated.slice(validated.lastIndexOf("/") + 1));
   return {
     pattern: validated,

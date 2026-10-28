@@ -49,6 +49,7 @@ exports.parseMetadataIndex = parseMetadataIndex;
 const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
 const node_crypto_1 = require("node:crypto");
+const ordering_1 = require("./ordering");
 const mutation_policy_1 = require("./mutation_policy");
 exports.METADATA_INDEX_SCHEMA = "l9.metadata-index/v1";
 exports.METADATA_INDEX_RELATIVE_PATH = ".l9/metadata-index.jsonl";
@@ -66,6 +67,12 @@ const FORBIDDEN_VOLATILE_KEYS = new Set([
     "run_started_at",
     "runtime_timestamp",
 ]);
+/** The record keys `schemas/metadata-index-record.schema.json` allows (additionalProperties: false). */
+const RECORD_KEYS = ["artifact_type", "carrier", "content_hash", "metadata", "path", "schema"];
+const MAX_PATH_CODE_POINTS = 4096;
+// The schema's path pattern forbids exactly these characters.
+const CONTROL_CHARACTER = /[\u0001-\u001F\u007F]/u;
+/** Canonical repository-relative POSIX structure, required of every subject path. */
 function normalizeRelativePath(value) {
     if (value.includes("\u0000"))
         throw new Error("metadata index path contains NUL");
@@ -81,6 +88,20 @@ function normalizeRelativePath(value) {
         throw new Error(`metadata index path contains a non-canonical segment: ${value}`);
     }
     return segments.join("/");
+}
+/**
+ * The record schema's remaining `path` rules (pattern and maxLength), required of every
+ * materialized record: no control character, no leading '.', at most 4096 code points.
+ */
+function assertRecordPath(pathName) {
+    if (CONTROL_CHARACTER.test(pathName)) {
+        throw new Error(`metadata index path contains a control character (U+0001-U+001F, U+007F): ${JSON.stringify(pathName)}`);
+    }
+    if (pathName.startsWith("."))
+        throw new Error(`metadata index path must not start with '.': ${pathName}`);
+    if ([...pathName].length > MAX_PATH_CODE_POINTS) {
+        throw new Error(`metadata index path exceeds ${MAX_PATH_CODE_POINTS} characters: ${pathName.slice(0, 64)}...`);
+    }
 }
 function isPlainObject(value) {
     if (typeof value !== "object" || value === null || Array.isArray(value))
@@ -146,6 +167,7 @@ function toRecord(subject, decision) {
     }
     if (decision.carrier === "hard_skip")
         return undefined;
+    assertRecordPath(pathName);
     assertContentHash(subject.contentHash, pathName);
     const metadata = canonicalize(subject.metadata, `metadata:${pathName}`, new Set());
     if (!isPlainObject(metadata))
@@ -173,14 +195,24 @@ function byCodeUnit(a, b) {
         return 1;
     return 0;
 }
+/** Records are in code-point path order, like every other identity-bearing order (ADR-058). */
 function comparePath(left, right) {
-    return byCodeUnit(left.path, right.path);
+    return (0, ordering_1.compareCodePoints)(left.path, right.path);
+}
+function assertRecordKeys(record) {
+    const keys = Object.keys(record).sort(byCodeUnit);
+    if (keys.length !== RECORD_KEYS.length || keys.some((key, index) => key !== RECORD_KEYS[index])) {
+        const pathName = typeof record.path === "string" ? record.path : "<unknown>";
+        throw new Error(`metadata index record for ${pathName} must have exactly the keys ${RECORD_KEYS.join(", ")}; got ${keys.join(", ")}`);
+    }
 }
 function serializeMetadataIndex(records) {
     const seen = new Set();
     const sorted = [...records].sort(comparePath);
     for (const record of sorted) {
+        assertRecordKeys(record);
         const pathName = normalizeRelativePath(record.path);
+        assertRecordPath(pathName);
         if (seen.has(pathName))
             throw new Error(`duplicate metadata index path: ${pathName}`);
         seen.add(pathName);

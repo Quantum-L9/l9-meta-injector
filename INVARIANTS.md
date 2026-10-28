@@ -88,15 +88,17 @@ authority-pattern validation, carrier matrix tests, precedence tests,
 ### INV-019: Central metadata index bytes are canonical and self-excluding
 
 The repository metadata index is `.l9/metadata-index.jsonl`. Every non-`hard_skip`
-record is canonical JSON, sorted by repository-relative POSIX path, recursively
-sorts metadata keys, requires a lowercase SHA-256 content hash, contains no
-absolute paths or run-time report fields, and ends with one newline. Normal
+record is canonical JSON, sorted by repository-relative POSIX path in code-point
+order, recursively sorts metadata keys, requires a lowercase SHA-256 content hash,
+contains no absolute paths or run-time report fields, and ends with one newline.
+Producer and parser enforce the shipped record schema: exactly its six keys, and no
+path with a control character, a leading `.` or more than 4096 characters (ADR-058). Normal
 discovery records `.l9` as generated state and never descends into it. Unchanged
 index bytes are not rewritten. Adjacent sidecars and inject logs are disabled by
 default and require explicit opt-in.
 
 **Enforced by:** `src/metadata_index.ts`, `src/retrieval.ts`, metadata-index
-schema validation, dual-order determinism tests, symlink-containment tests, and
+schema-conformance tests, dual-order determinism tests, symlink-containment tests, and
 idempotent write tests.
 
 ### INV-020: Governed check and apply share one carrier plan
