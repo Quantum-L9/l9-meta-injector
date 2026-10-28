@@ -775,3 +775,36 @@ describe("an archive whose member root is a project", () => {
     expect(candidates.project_candidates[0].member_count).toBe(3);
   });
 });
+
+describe("corpus-mode index schema id (RC-070, ADR-067)", () => {
+  it("REG-WU-043-RC-070-a: the corpus-mode and single-root index schema constants differ, in dist as in src", async () => {
+    const analysis = await import("../src/corpus_analysis");
+    const corpusIndex = await import("../src/corpus_index");
+    expect(corpusIndex.CORPUS_INDEX_SCHEMA).not.toBe(analysis.CORPUS_INDEX_SCHEMA);
+    expect(analysis.CORPUS_INDEX_SCHEMA).toBe("l9.corpus-index/v1");
+    expect(corpusIndex.CORPUS_INDEX_SCHEMA).toBe("l9.corpus-mode-index/v1");
+    const builtAnalysis = JSON.stringify(fs.readFileSync(path.join(REPO, "dist", "corpus_analysis.js"), "utf8")
+      .match(/CORPUS_INDEX_SCHEMA = "([^"]+)"/)?.[1]);
+    const builtIndex = JSON.stringify(fs.readFileSync(path.join(REPO, "dist", "corpus_index.js"), "utf8")
+      .match(/CORPUS_INDEX_SCHEMA = "([^"]+)"/)?.[1]);
+    expect(builtAnalysis).toBe(JSON.stringify(analysis.CORPUS_INDEX_SCHEMA));
+    expect(builtIndex).toBe(JSON.stringify(corpusIndex.CORPUS_INDEX_SCHEMA));
+  });
+
+  it("REG-WU-043-RC-070-b: a corpus run's index declares the corpus-mode id and every work-signal artifact_id resolves in document-index.json", () => {
+    const f = fixture();
+    // A document that states work, so the machine projection carries records to join.
+    fs.writeFileSync(path.join(f.roots[0], "register.csv"), "owner,status,depends on\nmel,blocked,vendor.md\n");
+    const result = run(argsFor(f));
+    expect(result.status, result.stderr).toBe(0);
+    const index = JSON.parse(fs.readFileSync(path.join(generation(f), "corpus-index.json"), "utf8"));
+    expect(index.schema).toBe("l9.corpus-mode-index/v1");
+    expect(index.repository_model).toBeUndefined();
+    const documents = JSON.parse(fs.readFileSync(path.join(generation(f), "document-index.json"), "utf8"));
+    const known = new Set<string>(documents.documents.map((entry: { artifact_id: string }) => entry.artifact_id));
+    const records = fs.readFileSync(path.join(generation(f), "document-work-signals.jsonl"), "utf8")
+      .split("\n").filter((line) => line.length > 0).map((line) => JSON.parse(line) as { artifact_id: string });
+    expect(records.length).toBeGreaterThan(0);
+    for (const record of records) expect(known.has(record.artifact_id), record.artifact_id).toBe(true);
+  });
+});

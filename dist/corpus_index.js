@@ -21,7 +21,14 @@ exports.renderCorpusIndexReport = renderCorpusIndexReport;
 // thirty files or thirty thousand.
 const corpus_analysis_1 = require("./corpus_analysis");
 const ordering_1 = require("./ordering");
-exports.CORPUS_INDEX_SCHEMA = "l9.corpus-index/v1";
+/**
+ * The corpus-mode table of contents' own schema id (ADR-067).
+ *
+ * Distinct from the single-root `l9.corpus-index/v1` that `corpus_analysis.ts`
+ * owns: the two documents share a file name, `corpus-index.json`, but not a
+ * shape, so they must not share an id a consumer dispatches on.
+ */
+exports.CORPUS_INDEX_SCHEMA = "l9.corpus-mode-index/v1";
 exports.CORPUS_INDEX_STATEMENT = "This index names what was observed and where each document was written. It contains no "
     + "ranking, no priority and no recommendation, and the order of any list in it carries none.";
 /**
