@@ -62,6 +62,7 @@ exports.parsePdfDict = parsePdfDict;
 // encoding.
 const fs = __importStar(require("node:fs"));
 const zlib = __importStar(require("node:zlib"));
+const ordering_1 = require("../ordering");
 const decoder_1 = require("./decoder");
 exports.PDF_DECODER_ID = "l9.pdf-decoder";
 exports.PDF_DECODER_VERSION = "1.3.0";
@@ -998,7 +999,7 @@ function newTextFacts() {
 }
 /** A short list of font labels for a diagnostic. */
 function fontList(labels) {
-    const sorted = [...labels].sort();
+    const sorted = [...labels].sort(ordering_1.compareCodePoints);
     const shown = sorted.slice(0, 5).join(", ");
     return sorted.length > 5 ? `${shown} and ${sorted.length - 5} more` : shown;
 }

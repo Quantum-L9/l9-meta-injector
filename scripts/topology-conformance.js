@@ -182,7 +182,9 @@ function mutatedCheckoutPaths(before, after) {
  * @param {Record<string, string>} before
  */
 function dropPycache(root, before) {
-  if (before === null || typeof before !== "object") {
+  // A runtime guard for JavaScript callers: the JSDoc type promises a record, but
+  // a missing snapshot must refuse rather than let every __pycache__ look new.
+  if (!before || typeof before !== "object") {
     throw new Error("dropPycache requires the checkout entries recorded before the run");
   }
   const walk = (directory) => {

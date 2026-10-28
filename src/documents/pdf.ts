@@ -25,6 +25,7 @@
 // encoding.
 import * as fs from "node:fs";
 import * as zlib from "node:zlib";
+import { compareCodePoints } from "../ordering";
 import {
   BlockBuilder,
   DecodeInput,
@@ -1036,7 +1037,7 @@ function newTextFacts(): TextFacts {
 
 /** A short list of font labels for a diagnostic. */
 function fontList(labels: Set<string>): string {
-  const sorted = [...labels].sort();
+  const sorted = [...labels].sort(compareCodePoints);
   const shown = sorted.slice(0, 5).join(", ");
   return sorted.length > 5 ? `${shown} and ${sorted.length - 5} more` : shown;
 }
