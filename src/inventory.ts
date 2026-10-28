@@ -596,30 +596,67 @@ export function inventoryTree(config: InventoryConfig): InventoryResult {
   const contentHashKey = schema
     ? schema.fields.find((field) => field.source === "content_hash")?.name
     : "content_hash";
+  /**
+   * The meta object written to headers/sidecars — schema-driven when provided,
+   * else the built-in fields — and the clocks it carries. Records the schema's
+   * missing required fields and its manifest meta on the record.
+   */
+  function deriveCarrier(
+    rec: InventoryRecord,
+    harvest: Record<string, unknown>,
+    body: string | null,
+  ): { clocks: CarrierClocks; metaObj: Record<string, unknown> } {
+    // Carriers carry the artifact's clocks; the record keeps the observation (ADR-060).
+    const clocks = carrierClocks(rec, harvest, contentHashKey);
+    if (!schema) {
+      return { clocks, metaObj: annotationFields(rec, harvest, { body, clocks, boundAuthority, boundNamespace }) };
+    }
+    const observed = applySchema(asRecord(rec), schema);
+    if (observed.missingRequired.length) rec.unknowns.push(...observed.missingRequired.map((n) => `missing_required:${n}`));
+    const carried = clocks.created_at === rec.created_at && clocks.modified_at === rec.modified_at
+      ? observed
+      : applySchema(asRecord({ ...rec, ...clocks }), schema);
+    // Honor target:"manifest" — attach the schema-shaped meta to the record so it
+    // flows into inventory.json (otherwise "manifest" in target would be a no-op).
+    if (targetIncludes(schema, "manifest")) rec.meta = observed.fields;
+    return { clocks, metaObj: omitSmashedClock({ ...sanitizeHarvest(harvest), ...carried.fields }) };
+  }
+
+  /**
+   * Re-observe an archive that annotation just rewrote (RC-053): the record and
+   * the adjacent sidecar must describe the bytes left on disk, not the ones the
+   * member upsert replaced. Diagnostics added since the first observation (read,
+   * schema and annotation notes such as darwin_search_write_failed) are kept;
+   * the observation's own diagnostics are taken from the fresh one. The member
+   * excludes content_hash and the clocks, so this cannot change what was embedded.
+   */
+  function reobserveArchive(
+    abs: string,
+    rec: InventoryRecord,
+    harvest: Record<string, unknown>,
+    observedUnknowns: number,
+  ): { clocks: CarrierClocks; metaObj: Record<string, unknown> } {
+    const fresh = buildRecord(root, abs, false, cfg, "file", harvest);
+    const later = rec.unknowns.slice(observedUnknowns).filter((u) => !u.startsWith("missing_required:"));
+    rec.size_bytes = fresh.size_bytes;
+    rec.modified_at = fresh.modified_at;
+    rec.created_at = fresh.created_at;
+    rec.content_hash = fresh.content_hash;
+    rec.unknowns = [...fresh.unknowns];
+    const derived = deriveCarrier(rec, harvest, null);
+    rec.unknowns.push(...later);
+    return derived;
+  }
+
   for (const { abs, isDir, kind } of entries) {
     const harvest = kind === "symlink" || kind === "special" ? {} : harvestExistingMeta(abs, isDir);
     const rec = buildRecord(root, abs, isDir, cfg, kind, harvest);
+    const observedUnknowns = rec.unknowns.length;
     const isArchive = !isDir && ARCHIVE_EXTENSIONS.has(archiveExtensionOf(abs));
     const body = kind === "file" && !isArchive && rec.size_bytes !== null
       ? tryReadUtf8Body(abs, rec.size_bytes, cfg.hashMaxBytes)
       : null;
-    // Carriers carry the artifact's clocks; the record keeps the observation (ADR-060).
-    const clocks = carrierClocks(rec, harvest, contentHashKey);
-    // The meta object written to headers/sidecars: schema-driven when provided, else default.
-    let metaObj: Record<string, unknown>;
-    if (schema) {
-      const observed = applySchema(asRecord(rec), schema);
-      if (observed.missingRequired.length) rec.unknowns.push(...observed.missingRequired.map((n) => `missing_required:${n}`));
-      const carried = clocks.created_at === rec.created_at && clocks.modified_at === rec.modified_at
-        ? observed
-        : applySchema(asRecord({ ...rec, ...clocks }), schema);
-      metaObj = omitSmashedClock({ ...sanitizeHarvest(harvest), ...carried.fields });
-      // Honor target:"manifest" — attach the schema-shaped meta to the record so it
-      // flows into inventory.json (otherwise "manifest" in target would be a no-op).
-      if (targetIncludes(schema, "manifest")) rec.meta = observed.fields;
-    } else {
-      metaObj = annotationFields(rec, harvest, { body, clocks, boundAuthority, boundNamespace });
-    }
+    let { clocks, metaObj } = deriveCarrier(rec, harvest, body);
     records.push(rec);
     typeDistribution[rec.artifact_type] = (typeDistribution[rec.artifact_type] || 0) + 1;
     if (isDir) folders++; else files++;
@@ -646,6 +683,11 @@ export function inventoryTree(config: InventoryConfig): InventoryResult {
     const strategy = raw === null ? "skip-binary" : resolveStrategy(abs, raw).strategy;
     const isRecognizedArchive = ARCHIVE_EXTENSIONS.has(archiveExtensionOf(abs));
     const canHeader = raw !== null && (strategy === "yaml-frontmatter" || strategy === "line-comment" || strategy === "block-comment");
+    // The member is upserted before any adjacent carrier is written, so a rewrite
+    // is re-observed and the sidecar records the archive's final bytes (RC-053).
+    if (isRecognizedArchive && annotateArchive(abs, rec, metaObj, harvest)) {
+      ({ clocks, metaObj } = reobserveArchive(abs, rec, harvest, observedUnknowns));
+    }
     if (cfg.injectHeaders && canHeader && targetIncludes(schema, "file_header")) {
       // With a schema, the header intentionally carries only the schema's fields
       // (tests assert built-in fields like mcp_primitive are absent), so it isn't a
@@ -678,9 +720,6 @@ export function inventoryTree(config: InventoryConfig): InventoryResult {
       && (isRecognizedArchive || strategy !== "skip-binary")
     ) {
       writeSidecar(abs, metaObj, rec.unknowns);
-    }
-    if (isRecognizedArchive) {
-      annotateArchive(abs, rec, metaObj, harvest);
     }
   }
 
@@ -1079,12 +1118,17 @@ function harvestedStringList(value: unknown): string[] {
   return [];
 }
 
+/**
+ * Upsert the archive's root member and project Darwin search metadata.
+ * Returns whether the archive's bytes were replaced, so the caller can
+ * re-observe it before writing the adjacent sidecar (RC-053).
+ */
 function annotateArchive(
   abs: string,
   rec: InventoryRecord,
   metaObj: Record<string, unknown>,
   harvest: Record<string, unknown>,
-): void {
+): boolean {
   const embeddedMeta = { ...metaObj };
   delete embeddedMeta.content_hash;
   delete embeddedMeta.modified_at;
@@ -1095,7 +1139,7 @@ function annotateArchive(
   if (existing !== null) {
     const existingHash = crypto.createHash("sha256").update(existing, "utf8").digest("hex");
     if (newHash === existingHash) {
-      return;
+      return false;
     }
   }
   const darwinPrior = harvestDarwinSearch(abs);
@@ -1110,6 +1154,7 @@ function annotateArchive(
     harvestedTags: harvestedStringList(harvest.tags),
   }, darwinPrior);
   if (err) rec.unknowns.push(err);
+  return member.rewritten;
 }
 
 function writeManifests(outDir: string, root: string, records: InventoryRecord[], dist: Record<string, number>, duplicates: DuplicateCluster[], now: string, _dryRun: boolean): { json: string; csv: string; md: string; duplicates: string } {
