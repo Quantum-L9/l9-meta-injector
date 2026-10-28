@@ -42,6 +42,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.METADATA_INDEX_RELATIVE_PATH = exports.METADATA_INDEX_SCHEMA = void 0;
+exports.metadataIndexPathProblem = metadataIndexPathProblem;
 exports.serializeMetadataIndex = serializeMetadataIndex;
 exports.compileMetadataIndex = compileMetadataIndex;
 exports.writeMetadataIndex = writeMetadataIndex;
@@ -94,14 +95,26 @@ function normalizeRelativePath(value) {
  * materialized record: no control character, no leading '.', at most 4096 code points.
  */
 function assertRecordPath(pathName) {
+    const problem = metadataIndexPathProblem(pathName);
+    if (problem !== null)
+        throw new Error(problem);
+}
+/**
+ * Why the index schema cannot represent `pathName`, or null when it can.
+ *
+ * Shared with discovery (DEC-RC-013 option B), which holds such a file with a
+ * blocking disposition so `check` reports it instead of the producer throwing.
+ */
+function metadataIndexPathProblem(pathName) {
     if (CONTROL_CHARACTER.test(pathName)) {
-        throw new Error(`metadata index path contains a control character (U+0001-U+001F, U+007F): ${JSON.stringify(pathName)}`);
+        return `metadata index path contains a control character (U+0001-U+001F, U+007F): ${JSON.stringify(pathName)}`;
     }
     if (pathName.startsWith("."))
-        throw new Error(`metadata index path must not start with '.': ${pathName}`);
+        return `metadata index path must not start with '.': ${pathName}`;
     if ([...pathName].length > MAX_PATH_CODE_POINTS) {
-        throw new Error(`metadata index path exceeds ${MAX_PATH_CODE_POINTS} characters: ${pathName.slice(0, 64)}...`);
+        return `metadata index path exceeds ${MAX_PATH_CODE_POINTS} characters: ${pathName.slice(0, 64)}...`;
     }
+    return null;
 }
 function isPlainObject(value) {
     if (typeof value !== "object" || value === null || Array.isArray(value))

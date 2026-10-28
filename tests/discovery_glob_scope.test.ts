@@ -342,12 +342,27 @@ describe("WU-006 '?' matches one code point in every matcher (RC-012)", () => {
 });
 
 describe("WU-006 a governed path the index schema cannot represent (RC-013)", () => {
-  test("REG-WU-006-RC-013-d (producer half): apply refuses a TAB-named governed file at planning, before any write", async () => {
+  test("REG-WU-006-RC-013-d: apply refuses a TAB-named governed file at the discovery gate, before any write", async () => {
     const root = governedRoot();
     write(root, "src/tab\there.ts", "export const value = 1;\n");
     write(root, "docs/a.md");
-    await expect(runApplyAsync({ ...config(root, "**/*"), dryRun: false } as never)).rejects.toThrow(/control character/);
+    await expect(runApplyAsync({ ...config(root, "**/*"), dryRun: false } as never)).rejects.toThrow(/DISCOVERY_INCOMPLETE/);
     expect(fs.existsSync(path.join(root, ".l9", "metadata-index.jsonl"))).toBe(false);
     expect(fs.readFileSync(path.join(root, "docs", "a.md"), "utf8")).toBe(PROMPT);
+  });
+
+  test("REG-WU-006-RC-013-d (check half, DEC-RC-013 option B): check reports the unrepresentable path instead of throwing", async () => {
+    const root = governedRoot();
+    write(root, "src/tab\there.ts", "export const value = 1;\n");
+    const result = await runCheckAsync(config(root, "**/*"));
+    expect(result.passed).toBe(false);
+    expect(result.check?.discovery.blocking).toBe(1);
+    const drift = result.check?.drift.find((item) => item.path === "src/tab\there.ts");
+    expect(drift?.kind).toBe("unsupported");
+    expect(drift?.message).toMatch(/unsupported_entry: metadata index path contains a control character/);
+    // Discovery holds it, so it never reaches the planner as an eligible file.
+    const discovered = discoverFiles(root, "**/*");
+    expect(JSON.stringify(discovered)).toContain("unsupported_entry");
+    expect(JSON.stringify(discovered.files)).not.toContain("tab");
   });
 });

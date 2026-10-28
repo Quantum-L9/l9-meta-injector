@@ -51,6 +51,13 @@ export interface WriteMetadataIndexResult extends MetadataIndexCompilation {
     changed: boolean;
     written: boolean;
 }
+/**
+ * Why the index schema cannot represent `pathName`, or null when it can.
+ *
+ * Shared with discovery (DEC-RC-013 option B), which holds such a file with a
+ * blocking disposition so `check` reports it instead of the producer throwing.
+ */
+export declare function metadataIndexPathProblem(pathName: string): string | null;
 export declare function serializeMetadataIndex(records: readonly MetadataIndexRecord[]): string;
 export declare function compileMetadataIndex(input: CompileMetadataIndexInput): MetadataIndexCompilation;
 export declare function writeMetadataIndex(root: string, input: CompileMetadataIndexInput, options?: WriteMetadataIndexOptions): WriteMetadataIndexResult;

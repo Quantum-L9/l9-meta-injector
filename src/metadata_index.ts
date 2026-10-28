@@ -111,13 +111,25 @@ function normalizeRelativePath(value: string): string {
  * materialized record: no control character, no leading '.', at most 4096 code points.
  */
 function assertRecordPath(pathName: string): void {
+  const problem = metadataIndexPathProblem(pathName);
+  if (problem !== null) throw new Error(problem);
+}
+
+/**
+ * Why the index schema cannot represent `pathName`, or null when it can.
+ *
+ * Shared with discovery (DEC-RC-013 option B), which holds such a file with a
+ * blocking disposition so `check` reports it instead of the producer throwing.
+ */
+export function metadataIndexPathProblem(pathName: string): string | null {
   if (CONTROL_CHARACTER.test(pathName)) {
-    throw new Error(`metadata index path contains a control character (U+0001-U+001F, U+007F): ${JSON.stringify(pathName)}`);
+    return `metadata index path contains a control character (U+0001-U+001F, U+007F): ${JSON.stringify(pathName)}`;
   }
-  if (pathName.startsWith(".")) throw new Error(`metadata index path must not start with '.': ${pathName}`);
+  if (pathName.startsWith(".")) return `metadata index path must not start with '.': ${pathName}`;
   if ([...pathName].length > MAX_PATH_CODE_POINTS) {
-    throw new Error(`metadata index path exceeds ${MAX_PATH_CODE_POINTS} characters: ${pathName.slice(0, 64)}...`);
+    return `metadata index path exceeds ${MAX_PATH_CODE_POINTS} characters: ${pathName.slice(0, 64)}...`;
   }
+  return null;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
