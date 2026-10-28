@@ -131,6 +131,22 @@ function omitPatternsForOutputs(root, outputs) {
     return patterns;
 }
 async function runPipelineAsync(config) {
+    // One collector per run aggregates the LLM/IO hotpath signal (OBS-009/OBS-010):
+    // decision paths, call counts, failure counts, and p50/p95 latency.
+    const metrics = new metrics_1.MetricsCollector();
+    // The run's adapter is scoped to this run (ADR-064, RC-018): the OpenAI adapter when
+    // credentials are complete, otherwise the local adapter. The process-global adapter a
+    // caller may have installed is neither read nor changed.
+    const adapter = config.llmEnabled && config.llmBaseUrl && config.llmApiKey && config.llmModel
+        ? (0, llm_1.makeOpenAIAdapter)({
+            baseUrl: config.llmBaseUrl, apiKey: config.llmApiKey, model: config.llmModel,
+            onDiagnostic: metrics.onLlmDiagnostic,
+            allowInsecure: config.llmAllowInsecure,
+        })
+        : llm_1.localAdapter;
+    return (0, llm_1.runWithAdapter)(adapter, () => runPipelineInScope(config, metrics));
+}
+async function runPipelineInScope(config, metrics) {
     const runStartedAt = new Date().toISOString();
     const root = path.resolve(config.root);
     const metadataTimestamp = config.metadataTimestamp?.trim() || schema_1.UNKNOWN;
@@ -145,19 +161,6 @@ async function runPipelineAsync(config) {
         authority: identity.authority,
         namespace: identity.namespace,
     });
-    // One collector per run aggregates the LLM/IO hotpath signal (OBS-009/OBS-010):
-    // decision paths, call counts, failure counts, and p50/p95 latency.
-    const metrics = new metrics_1.MetricsCollector();
-    if (config.llmEnabled && config.llmBaseUrl && config.llmApiKey && config.llmModel) {
-        (0, llm_1.setAdapter)((0, llm_1.makeOpenAIAdapter)({
-            baseUrl: config.llmBaseUrl, apiKey: config.llmApiKey, model: config.llmModel,
-            onDiagnostic: metrics.onLlmDiagnostic,
-            allowInsecure: config.llmAllowInsecure,
-        }));
-    }
-    else {
-        (0, llm_1.resetAdapter)();
-    }
     const assistCfg = { ...assist_1.DEFAULT_ASSIST_CONFIG, enabled: config.llmEnabled };
     // The run's own output must never be its next input. An output directory equal
     // to the root would scatter reports among the sources; one nested inside the
@@ -174,6 +177,148 @@ async function runPipelineAsync(config) {
         protectSkillMd: true,
         ignoreDirNames: ["node_modules"],
     });
+    // Metadata subjects for a discovered file list. Factored so a local-files real run can
+    // compute ids over the tree as it stands, before archive expansion writes into it, and
+    // again over the expanded tree (RC-020). The pre-expansion pass skips LLM assist —
+    // assist only rewrites prose-origin fields, never `id` — and stays quiet about schema
+    // gaps the full pass reports, so it adds no LLM call, metric or duplicate warning.
+    const buildSubjects = async (scanned, pass) => {
+        const metas = new Map();
+        // Clean body per file (same representation used for hashing/classification),
+        // retained so the dedup compiler can compute near-duplicate similarity.
+        const bodies = new Map();
+        // Coverage accounting: record why files were not injected so a run's coverage
+        // is observable instead of silently dropping skipped files (finding OBS-003).
+        const skippedBinaryPaths = [];
+        const skippedNonInjectablePaths = [];
+        const skippedNonInjectableDetails = [];
+        // Coarse classify result retained so non-injectable skips can report type/confidence.
+        const classifications = new Map();
+        const metadataSubjects = [];
+        // Files that cannot carry their own inline metadata. They are governed and indexed,
+        // but never inline-patched, and their bytes are never touched.
+        const inlineCarrierBlocks = new Map();
+        const carrierTiers = new Map();
+        for (const e of scanned) {
+            const raw = fs.readFileSync(e.sourcePath, "utf8");
+            const spec = (0, comment_1.resolveStrategy)(e.sourcePath, raw);
+            if (spec.strategy === "skip-binary") {
+                skippedBinaryPaths.push(e.sourcePath);
+                continue;
+            } // never annotate binary/media
+            // Strip any previously-injected block so re-runs classify/hash the true body only
+            // (keeps content_hash stable and prevents the injected metadata from skewing classification).
+            const cleanRaw = spec.strategy === "line-comment" || spec.strategy === "block-comment"
+                ? (0, comment_1.stripInjectedBlock)(raw, spec)
+                : raw;
+            // Only frontmatter files carry a `--- … ---` header; for other strategies the
+            // whole cleanRaw is the body. Running splitContent unconditionally would let a
+            // leading `---` in non-markdown (e.g. YAML document separators) be mistaken for
+            // frontmatter and truncate real content, skewing extraction/classification/hash.
+            //
+            // For frontmatter the hashed/classified body is exactly what the patcher preserves —
+            // the same definition the injector and inventory hash (managedCarrierFreeBody): the
+            // body after a safe header, or the whole document when the leading `---` block is not
+            // patchable frontmatter. The looser splitContent fence would drop that block, so edits
+            // inside it would never change content_hash (RC-022).
+            const body = spec.strategy === "yaml-frontmatter" ? (0, inject_1.managedCarrierFreeBody)(e.sourcePath, raw) : cleanRaw;
+            const relativePath = relativeSourcePath(root, e.sourcePath);
+            const cls = (0, classify_1.classify)(relativePath, body, e.headerConvention);
+            classifications.set(e.sourcePath, cls);
+            const tier = (0, mutation_policy_1.authorityFreeCarrierTier)({ path: relativePath, strategy: spec.strategy });
+            if (tier?.carrier === "hard_skip") {
+                skippedNonInjectablePaths.push(e.sourcePath);
+                skippedNonInjectableDetails.push({
+                    path: e.sourcePath,
+                    reason: "carrier_hard_skip",
+                    artifactType: cls.artifactType,
+                    confidence: cls.confidence,
+                });
+                continue;
+            }
+            carrierTiers.set(e.sourcePath, tier);
+            bodies.set(e.sourcePath, body);
+            // Classify inline-carrier eligibility here, before any mutation planning. A file whose
+            // existing frontmatter is outside the patchable subset is still a governed subject —
+            // it simply cannot carry its own metadata, so the carrier policy routes it to the
+            // central manifest. Throwing here instead would abort the whole repository operation
+            // over one file the injector was never going to be able to rewrite safely.
+            const inlineCarrierBlock = spec.strategy === "yaml-frontmatter"
+                ? inlineCarrierBlockFor(raw)
+                : undefined;
+            if (inlineCarrierBlock)
+                inlineCarrierBlocks.set(e.sourcePath, inlineCarrierBlock);
+            const ef = (0, extract_1.extract)(body);
+            let meta = (0, normalize_meta_1.buildMeta)(e.sourcePath, body, ef, cls, nsCfg, identity.authority, metadataTimestamp, root, identity);
+            // assist: LLM fills prose-origin fields only when seed fails "good" predicate
+            if (pass.assist) {
+                const rec = (0, schema_1.asRecord)(meta);
+                for (const field of assistCfg.proseFields) {
+                    if (assist_1.PROSE_ORIGIN_FIELDS.has(field)) {
+                        const improved = await (0, assist_1.assistField)(field, rec[field], body, assistCfg, metrics);
+                        if (improved !== rec[field])
+                            rec[field] = improved;
+                    }
+                }
+                // assist only touches prose fields; the identity block is intact — coerce
+                // (not blind-cast) so any drift is caught at this boundary (QTE-005).
+                meta = (0, schema_1.coerceNormalizedMeta)(rec);
+            }
+            // Optional custom meta-schema (the same canonical-YAML mechanism inventoryTree's
+            // --schema uses): MERGE the schema's resolved fields on top of the canonical
+            // NormalizedMeta identity block, so verify/dedup/placement/MetaV3 below (which all
+            // read known identity-field names) stay correct while the header additionally
+            // carries whatever operator-defined fields the schema declares. Only applies when
+            // the schema actually targets "file_header" — a schema scoped to sidecar/manifest
+            // only must not affect what gets injected here.
+            if (config.metaSchema && (0, meta_schema_1.targetIncludes)(config.metaSchema, "file_header")) {
+                const sourceRecord = {
+                    ...(0, schema_1.asRecord)(meta),
+                    // Aliases matching the InventoryRecord field names inventory --schema files
+                    // already use (examples/meta-schema.example.yaml), so the same schema file is
+                    // reusable across `inventory` and `pipeline` modes without rewriting `source:`.
+                    artifact_id: meta.id,
+                    relative_path: relativePath,
+                    evidence_excerpt: cls.signals.join(", ") || UNKNOWN_EXCERPT,
+                    classification_confidence: CONFIDENCE_NUMERIC[cls.confidence],
+                    created_at: meta.created_or_detected_at,
+                };
+                const applied = (0, meta_schema_1.applySchema)(sourceRecord, config.metaSchema);
+                if (pass.reportSchemaGaps && applied.missingRequired.length) {
+                    process.stderr.write(`[l9-meta-injector] schema '${config.metaSchema.schema_id}': ${e.sourcePath} missing required field(s): ${applied.missingRequired.join(", ")}\n`);
+                }
+                // Merge, not replace: schema fields win on name collision, canonical identity
+                // fields survive untouched otherwise (coerce re-validates the identity block).
+                const merged = { ...(0, schema_1.asRecord)(meta), ...applied.fields };
+                // A bound run's identity comes from the binding, never from the schema: a
+                // schema field named owner, authority or namespace would otherwise make
+                // injected headers, the metadata index and MetaV3 governance claim an
+                // arbitrary identity in place of product.owner / product.id. The owner is
+                // reasserted only where the canonical meta carried one (source, test,
+                // script), so a schema cannot invent the field for other types either.
+                if (identity.source === "semantic_binding") {
+                    merged.authority = identity.authority;
+                    merged.namespace = identity.namespace;
+                    if ("owner" in (0, schema_1.asRecord)(meta))
+                        merged.owner = identity.product?.owner ?? schema_1.UNKNOWN;
+                }
+                meta = (0, schema_1.coerceNormalizedMeta)(merged);
+            }
+            metas.set(e.sourcePath, meta);
+            metadataSubjects.push({
+                path: relativePath,
+                artifactType: meta.artifact_type,
+                strategy: spec.strategy,
+                contentHash: meta.content_hash,
+                metadata: (0, schema_1.asRecord)(meta),
+                ...(inlineCarrierBlock ? { inlineCarrierBlock } : {}),
+            });
+        }
+        return {
+            metas, bodies, skippedBinaryPaths, skippedNonInjectablePaths, skippedNonInjectableDetails,
+            classifications, metadataSubjects, inlineCarrierBlocks, carrierTiers,
+        };
+    };
     // Local-files mode (ADR-016): expand archives before discovery so members are
     // ordinary text inject targets. Default repo mode never extracts. Omit applies
     // to archives and members the same way findFiles does.
@@ -187,7 +332,12 @@ async function runPipelineAsync(config) {
     let archives = [];
     if (config.localFiles) {
         if (!config.dryRun) {
-            assertTreeGovernable((0, retrieval_1.discoverFiles)(root, config.glob, { omit, protectSkillMd: true }));
+            const before = (0, retrieval_1.discoverFiles)(root, config.glob, { omit, protectSkillMd: true });
+            assertTreeGovernable(before);
+            // Every collision among files that already exist is decidable now, so it refuses
+            // before expansion materialises anything (RC-020). Collisions that only extracted
+            // members introduce are caught by the check below, after extraction (ADR-073).
+            assertUniqueMetadataIds((await buildSubjects((0, retrieval_1.scanFiles)(before.files), { assist: false, reportSchemaGaps: false })).metadataSubjects);
         }
         const expanded = (0, archives_1.expandArchivesUnderRoot)(root, {
             dryRun: config.dryRun,
@@ -200,141 +350,13 @@ async function runPipelineAsync(config) {
     if (!config.dryRun)
         assertTreeGovernable(discovery);
     const filePaths = discovery.files;
+    const scanned = (0, retrieval_1.scanFiles)(filePaths);
+    const { metas, bodies, skippedBinaryPaths, skippedNonInjectablePaths, skippedNonInjectableDetails, classifications, metadataSubjects, inlineCarrierBlocks, carrierTiers, } = await buildSubjects(scanned, { assist: config.llmEnabled, reportSchemaGaps: true });
+    assertUniqueMetadataIds(metadataSubjects);
+    // Normalization writes sidecars into the tree (also in dry-run) and changes no path or
+    // id, so it runs only once the run is known not to be refused (RC-020).
     if (config.normalizeFilenames)
         (0, normalize_filename_1.normalizeFilenames)(filePaths, { dryRun: config.dryRun, verbose: config.verbose });
-    const scanned = (0, retrieval_1.scanFiles)(filePaths);
-    const metas = new Map();
-    // Clean body per file (same representation used for hashing/classification),
-    // retained so the dedup compiler can compute near-duplicate similarity.
-    const bodies = new Map();
-    // Coverage accounting: record why files were not injected so a run's coverage
-    // is observable instead of silently dropping skipped files (finding OBS-003).
-    const skippedBinaryPaths = [];
-    const skippedNonInjectablePaths = [];
-    const skippedNonInjectableDetails = [];
-    // Coarse classify result retained so non-injectable skips can report type/confidence.
-    const classifications = new Map();
-    const metadataSubjects = [];
-    // Files that cannot carry their own inline metadata. They are governed and indexed,
-    // but never inline-patched, and their bytes are never touched.
-    const inlineCarrierBlocks = new Map();
-    const carrierTiers = new Map();
-    for (const e of scanned) {
-        const raw = fs.readFileSync(e.sourcePath, "utf8");
-        const spec = (0, comment_1.resolveStrategy)(e.sourcePath, raw);
-        if (spec.strategy === "skip-binary") {
-            skippedBinaryPaths.push(e.sourcePath);
-            continue;
-        } // never annotate binary/media
-        // Strip any previously-injected block so re-runs classify/hash the true body only
-        // (keeps content_hash stable and prevents the injected metadata from skewing classification).
-        const cleanRaw = spec.strategy === "line-comment" || spec.strategy === "block-comment"
-            ? (0, comment_1.stripInjectedBlock)(raw, spec)
-            : raw;
-        // Only frontmatter files carry a `--- … ---` header; for other strategies the
-        // whole cleanRaw is the body. Running splitContent unconditionally would let a
-        // leading `---` in non-markdown (e.g. YAML document separators) be mistaken for
-        // frontmatter and truncate real content, skewing extraction/classification/hash.
-        //
-        // For frontmatter the hashed/classified body is exactly what the patcher preserves —
-        // the same definition the injector and inventory hash (managedCarrierFreeBody): the
-        // body after a safe header, or the whole document when the leading `---` block is not
-        // patchable frontmatter. The looser splitContent fence would drop that block, so edits
-        // inside it would never change content_hash (RC-022).
-        const body = spec.strategy === "yaml-frontmatter" ? (0, inject_1.managedCarrierFreeBody)(e.sourcePath, raw) : cleanRaw;
-        const relativePath = relativeSourcePath(root, e.sourcePath);
-        const cls = (0, classify_1.classify)(relativePath, body, e.headerConvention);
-        classifications.set(e.sourcePath, cls);
-        const tier = (0, mutation_policy_1.authorityFreeCarrierTier)({ path: relativePath, strategy: spec.strategy });
-        if (tier?.carrier === "hard_skip") {
-            skippedNonInjectablePaths.push(e.sourcePath);
-            skippedNonInjectableDetails.push({
-                path: e.sourcePath,
-                reason: "carrier_hard_skip",
-                artifactType: cls.artifactType,
-                confidence: cls.confidence,
-            });
-            continue;
-        }
-        carrierTiers.set(e.sourcePath, tier);
-        bodies.set(e.sourcePath, body);
-        // Classify inline-carrier eligibility here, before any mutation planning. A file whose
-        // existing frontmatter is outside the patchable subset is still a governed subject —
-        // it simply cannot carry its own metadata, so the carrier policy routes it to the
-        // central manifest. Throwing here instead would abort the whole repository operation
-        // over one file the injector was never going to be able to rewrite safely.
-        const inlineCarrierBlock = spec.strategy === "yaml-frontmatter"
-            ? inlineCarrierBlockFor(raw)
-            : undefined;
-        if (inlineCarrierBlock)
-            inlineCarrierBlocks.set(e.sourcePath, inlineCarrierBlock);
-        const ef = (0, extract_1.extract)(body);
-        let meta = (0, normalize_meta_1.buildMeta)(e.sourcePath, body, ef, cls, nsCfg, identity.authority, metadataTimestamp, root, identity);
-        // assist: LLM fills prose-origin fields only when seed fails "good" predicate
-        if (config.llmEnabled) {
-            const rec = (0, schema_1.asRecord)(meta);
-            for (const field of assistCfg.proseFields) {
-                if (assist_1.PROSE_ORIGIN_FIELDS.has(field)) {
-                    const improved = await (0, assist_1.assistField)(field, rec[field], body, assistCfg, metrics);
-                    if (improved !== rec[field])
-                        rec[field] = improved;
-                }
-            }
-            // assist only touches prose fields; the identity block is intact — coerce
-            // (not blind-cast) so any drift is caught at this boundary (QTE-005).
-            meta = (0, schema_1.coerceNormalizedMeta)(rec);
-        }
-        // Optional custom meta-schema (the same canonical-YAML mechanism inventoryTree's
-        // --schema uses): MERGE the schema's resolved fields on top of the canonical
-        // NormalizedMeta identity block, so verify/dedup/placement/MetaV3 below (which all
-        // read known identity-field names) stay correct while the header additionally
-        // carries whatever operator-defined fields the schema declares. Only applies when
-        // the schema actually targets "file_header" — a schema scoped to sidecar/manifest
-        // only must not affect what gets injected here.
-        if (config.metaSchema && (0, meta_schema_1.targetIncludes)(config.metaSchema, "file_header")) {
-            const sourceRecord = {
-                ...(0, schema_1.asRecord)(meta),
-                // Aliases matching the InventoryRecord field names inventory --schema files
-                // already use (examples/meta-schema.example.yaml), so the same schema file is
-                // reusable across `inventory` and `pipeline` modes without rewriting `source:`.
-                artifact_id: meta.id,
-                relative_path: relativePath,
-                evidence_excerpt: cls.signals.join(", ") || UNKNOWN_EXCERPT,
-                classification_confidence: CONFIDENCE_NUMERIC[cls.confidence],
-                created_at: meta.created_or_detected_at,
-            };
-            const applied = (0, meta_schema_1.applySchema)(sourceRecord, config.metaSchema);
-            if (applied.missingRequired.length) {
-                process.stderr.write(`[l9-meta-injector] schema '${config.metaSchema.schema_id}': ${e.sourcePath} missing required field(s): ${applied.missingRequired.join(", ")}\n`);
-            }
-            // Merge, not replace: schema fields win on name collision, canonical identity
-            // fields survive untouched otherwise (coerce re-validates the identity block).
-            const merged = { ...(0, schema_1.asRecord)(meta), ...applied.fields };
-            // A bound run's identity comes from the binding, never from the schema: a
-            // schema field named owner, authority or namespace would otherwise make
-            // injected headers, the metadata index and MetaV3 governance claim an
-            // arbitrary identity in place of product.owner / product.id. The owner is
-            // reasserted only where the canonical meta carried one (source, test,
-            // script), so a schema cannot invent the field for other types either.
-            if (identity.source === "semantic_binding") {
-                merged.authority = identity.authority;
-                merged.namespace = identity.namespace;
-                if ("owner" in (0, schema_1.asRecord)(meta))
-                    merged.owner = identity.product?.owner ?? schema_1.UNKNOWN;
-            }
-            meta = (0, schema_1.coerceNormalizedMeta)(merged);
-        }
-        metas.set(e.sourcePath, meta);
-        metadataSubjects.push({
-            path: relativePath,
-            artifactType: meta.artifact_type,
-            strategy: spec.strategy,
-            contentHash: meta.content_hash,
-            metadata: (0, schema_1.asRecord)(meta),
-            ...(inlineCarrierBlock ? { inlineCarrierBlock } : {}),
-        });
-    }
-    assertUniqueMetadataIds(metadataSubjects);
     const opts = {
         dryRun: config.dryRun,
         outDir: config.outDir,

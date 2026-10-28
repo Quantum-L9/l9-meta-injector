@@ -4,15 +4,32 @@ exports.localAdapter = void 0;
 exports.setAdapter = setAdapter;
 exports.getAdapter = getAdapter;
 exports.resetAdapter = resetAdapter;
+exports.runWithAdapter = runWithAdapter;
 exports.makeOpenAIAdapter = makeOpenAIAdapter;
+// llm.ts — LLM adapter. Local default makes NO external calls.
+const node_async_hooks_1 = require("node:async_hooks");
 exports.localAdapter = {
     estimateTokens(text) { return Math.max(1, Math.ceil(text.length / 4)); },
     classify: undefined,
 };
+// The process-global adapter is the out-of-run default that setAdapter/resetAdapter
+// control. A pipeline or skills run installs its own adapter in an async-context scope
+// instead (ADR-064): every getAdapter() reached from inside the run, across awaits,
+// returns the run's adapter, and nothing outside the run observes it. Concurrent runs
+// therefore never share an endpoint, credential or metrics collector, and a finished
+// run leaves the global exactly as it found it (RC-018).
 let _active = exports.localAdapter;
+const runScope = new node_async_hooks_1.AsyncLocalStorage();
 function setAdapter(a) { _active = a; }
-function getAdapter() { return _active; }
+function getAdapter() { return runScope.getStore() ?? _active; }
 function resetAdapter() { _active = exports.localAdapter; }
+/**
+ * Run `body` with `adapter` as the adapter of this async context. Internal to the
+ * runners; not re-exported from the `./advanced/llm` subpath.
+ */
+function runWithAdapter(adapter, body) {
+    return runScope.run(adapter, body);
+}
 // Warn to stderr on any non-ok outcome so silent LLM degradation is never
 // invisible — this fires regardless of whether a caller-supplied `onDiagnostic`
 // is also present, because a metrics collector aggregates counts but does not

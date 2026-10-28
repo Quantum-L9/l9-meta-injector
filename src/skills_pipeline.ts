@@ -15,7 +15,7 @@ import { MetaRecord, UNKNOWN, FieldDiff } from "./schema";
 import { assistField, isGoodValue, hasUseWhenSignal, DEFAULT_ASSIST_CONFIG } from "./assist";
 import type { AssistConfig } from "./assist";
 import { buildMaterialityPrompt, parseMaterialityReply } from "./materiality";
-import { getAdapter, makeOpenAIAdapter, setAdapter, resetAdapter } from "./llm";
+import { getAdapter, localAdapter, makeOpenAIAdapter, runWithAdapter } from "./llm";
 import { isSkillArtifactPath, buildOmitMatcher } from "./omit";
 import { MetricsCollector, MetricsSnapshot } from "./metrics";
 import { inspectRepositoryAuthority } from "./authority_scan";
@@ -269,16 +269,23 @@ async function processSkillFile(
 
 export async function runSkillsPipelineAsync(config: SkillsPipelineConfig): Promise<SkillsPipelineResult> {
   const metrics = new MetricsCollector();
+  // The run's adapter is scoped to this run (ADR-064, RC-018) and the process-global
+  // adapter is never changed. Complete credentials scope an OpenAI adapter; a disabled
+  // LLM scopes the local adapter; llmEnabled without complete credentials opens no scope,
+  // so the adapter the caller installed with setAdapter is the one consulted.
   if (config.llmEnabled && config.llmBaseUrl && config.llmApiKey && config.llmModel) {
-    setAdapter(makeOpenAIAdapter({
+    const adapter = makeOpenAIAdapter({
       baseUrl: config.llmBaseUrl, apiKey: config.llmApiKey, model: config.llmModel,
       onDiagnostic: metrics.onLlmDiagnostic,
       allowInsecure: config.llmAllowInsecure,
-    }));
-  } else if (!config.llmEnabled) {
-    resetAdapter();
+    });
+    return runWithAdapter(adapter, () => runSkillsPipelineInScope(config, metrics));
   }
+  if (!config.llmEnabled) return runWithAdapter(localAdapter, () => runSkillsPipelineInScope(config, metrics));
+  return runSkillsPipelineInScope(config, metrics);
+}
 
+async function runSkillsPipelineInScope(config: SkillsPipelineConfig, metrics: MetricsCollector): Promise<SkillsPipelineResult> {
   const root = path.resolve(config.root);
   fs.mkdirSync(config.outDir, { recursive: true });
 
