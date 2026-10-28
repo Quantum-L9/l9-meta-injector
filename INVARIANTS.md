@@ -105,10 +105,15 @@ Check and apply must consume the same path-sorted carrier decisions and canonica
 metadata-index compilation. `central_manifest` and `inventory_only` never create
 adjacent sidecars or source annotations. `inline_managed` requires an explicitly
 authorized YAML-frontmatter subject whose target is the source path. Skills mode
-recognizes only the canonical `SKILL.md` basename.
+recognizes only the canonical `SKILL.md` basename. A scoped run (its discovery
+ledger records `glob_filtered`/`extension_filtered` files) merges with the existing
+index: records of scope-filtered paths are carried forward byte for byte, apply
+compare-and-swaps against the index bytes the merge read, and an index that cannot
+be parsed is reported by check and refused by apply rather than discarded (ADR-058).
 
 **Enforced by:** `src/carrier_operation.ts`, `src/apply.ts`, carrier-operation
-tests, exact-skill-entrypoint tests, and apply-dispatch source-contract tests.
+tests, scoped-index merge tests, exact-skill-entrypoint tests, and apply-dispatch
+source-contract tests.
 
 ### INV-021: Apply is whole-run transactional
 

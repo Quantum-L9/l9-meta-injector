@@ -194,3 +194,127 @@ describe("WU-007 trailing-slash scopes are refused (RC-010)", () => {
     expect(relative(root, discoverFiles(root, "*.md").files)).toEqual(["top.md"]);
   });
 });
+
+describe("WU-005 scoped governed runs merge with the repository-wide metadata index (RC-009)", () => {
+  const INDEX = path.join(".l9", "metadata-index.jsonl");
+  const SOURCE = "export const value = 1;\n";
+
+  function fullyApplied(): string {
+    const root = governedRoot();
+    write(root, "docs/a.md");
+    write(root, "other/b.md", PROMPT.replace("Build prompt", "Other prompt"));
+    write(root, "src/x.ts", SOURCE);
+    return root;
+  }
+
+  async function applyAll(root: string, glob = "**/*") {
+    return runApplyAsync({ ...config(root, glob), dryRun: false } as never);
+  }
+
+  function indexPaths(root: string): string[] {
+    return fs.readFileSync(path.join(root, INDEX), "utf8").trimEnd().split("\n").map((line) => (JSON.parse(line) as { path: string }).path);
+  }
+
+  function indexLine(root: string, pathName: string): string | undefined {
+    return fs.readFileSync(path.join(root, INDEX), "utf8").split("\n").find((line) => line.includes(`"path":${JSON.stringify(pathName)}`));
+  }
+
+  test("REG-WU-005-RC-009-a: a scoped check of a fully applied repository passes and touches nothing", async () => {
+    const root = fullyApplied();
+    expect((await applyAll(root)).passed).toBe(true);
+    expect(indexPaths(root)).toEqual(["docs/a.md", "other/b.md", "src/x.ts"]);
+    const before = fs.readFileSync(path.join(root, INDEX));
+    const check = await runCheckAsync(config(root, "docs/**/*.md"));
+    expect(check.check?.drift).toEqual([]);
+    expect(check.passed).toBe(true);
+    expect(check.repositoryMutated).toBe(false);
+    expect(fs.readFileSync(path.join(root, INDEX)).equals(before)).toBe(true);
+  });
+
+  test("REG-WU-005-RC-009-b: a scoped apply of a fully applied repository is a no-op that keeps every record", async () => {
+    const root = fullyApplied();
+    await applyAll(root);
+    const before = fs.readFileSync(path.join(root, INDEX), "utf8");
+    const apply = await applyAll(root, "docs/**/*.md");
+    expect(apply.passed).toBe(true);
+    expect(apply.repositoryMutated).toBe(false);
+    expect(apply.apply?.metadataIndexChanged).toBe(false);
+    expect(fs.readFileSync(path.join(root, INDEX), "utf8")).toBe(before);
+  });
+
+  test("REG-WU-005-RC-009-c: a scoped apply after an in-scope edit changes only that file and its record", async () => {
+    const root = fullyApplied();
+    await applyAll(root);
+    const otherRecord = indexLine(root, "other/b.md");
+    const sourceRecord = indexLine(root, "src/x.ts");
+    const docRecord = indexLine(root, "docs/a.md");
+    const otherBytes = fs.readFileSync(path.join(root, "other", "b.md"), "utf8");
+    const docPath = path.join(root, "docs", "a.md");
+    fs.writeFileSync(docPath, fs.readFileSync(docPath, "utf8").replace("inspect the repository", "inspect the whole repository"));
+
+    const apply = await applyAll(root, "docs/**/*.md");
+    expect(apply.passed).toBe(true);
+    expect(apply.apply?.inlineChanged).toEqual(["docs/a.md"]);
+    expect(apply.apply?.metadataIndexChanged).toBe(true);
+    expect(indexPaths(root)).toEqual(["docs/a.md", "other/b.md", "src/x.ts"]);
+    expect(indexLine(root, "other/b.md")).toBe(otherRecord);
+    expect(indexLine(root, "src/x.ts")).toBe(sourceRecord);
+    expect(indexLine(root, "docs/a.md")).not.toBe(docRecord);
+    expect(fs.readFileSync(path.join(root, "other", "b.md"), "utf8")).toBe(otherBytes);
+
+    const unscoped = await runCheckAsync(config(root, "**/*"));
+    expect(unscoped.check?.drift).toEqual([]);
+    expect(unscoped.passed).toBe(true);
+  });
+
+  test("REG-WU-005-RC-009-d: a scoped apply drops the record of a deleted in-scope file and keeps the rest", async () => {
+    const root = fullyApplied();
+    write(root, "docs/c.md", PROMPT.replace("Build prompt", "Third prompt"));
+    await applyAll(root);
+    const otherRecord = indexLine(root, "other/b.md");
+    const sourceRecord = indexLine(root, "src/x.ts");
+    fs.rmSync(path.join(root, "docs", "a.md"));
+
+    const apply = await applyAll(root, "docs/**/*.md");
+    expect(apply.passed).toBe(true);
+    expect(indexPaths(root)).toEqual(["docs/c.md", "other/b.md", "src/x.ts"]);
+    expect(indexLine(root, "other/b.md")).toBe(otherRecord);
+    expect(indexLine(root, "src/x.ts")).toBe(sourceRecord);
+  });
+
+  test("REG-WU-005-RC-009-e: an unparseable base index is reported by a scoped check, refused by a scoped apply and rebuilt by an unscoped apply", async () => {
+    const root = fullyApplied();
+    await applyAll(root);
+    const corrupt = "{\"not\":\"canonical\" }\n";
+    fs.writeFileSync(path.join(root, INDEX), corrupt);
+    const docBefore = fs.readFileSync(path.join(root, "docs", "a.md"), "utf8");
+
+    const check = await runCheckAsync(config(root, "docs/**/*.md"));
+    expect(check.passed).toBe(false);
+    const indexDrift = check.check?.drift.filter((item) => item.path === ".l9/metadata-index.jsonl") ?? [];
+    expect(indexDrift).toHaveLength(1);
+    expect(indexDrift[0].kind).toBe("conflict");
+    expect(indexDrift[0].message).toMatch(/cannot be parsed/);
+    expect(indexDrift[0].message).toMatch(/unscoped/);
+
+    await expect(applyAll(root, "docs/**/*.md")).rejects.toThrow(/METADATA_INDEX_UNMERGEABLE.*unscoped/);
+    expect(fs.readFileSync(path.join(root, INDEX), "utf8")).toBe(corrupt);
+    expect(fs.readFileSync(path.join(root, "docs", "a.md"), "utf8")).toBe(docBefore);
+
+    const rebuilt = await applyAll(root);
+    expect(rebuilt.passed).toBe(true);
+    expect(indexPaths(root)).toEqual(["docs/a.md", "other/b.md", "src/x.ts"]);
+  });
+
+  test("REG-WU-005-RC-009-f: a scoped run on a fresh repository still plans and writes only the scoped record", async () => {
+    const root = governedRoot();
+    write(root, "docs/a.md");
+    write(root, "other/b.md", PROMPT.replace("Build prompt", "Other prompt"));
+    const check = await runCheckAsync(config(root, "docs/**/*.md"));
+    expect(check.check?.carrierDecisions.map((item) => item.path)).toEqual(["docs/a.md"]);
+    const apply = await applyAll(root, "docs/**/*.md");
+    expect(apply.passed).toBe(true);
+    expect(apply.apply?.inlineChanged).toEqual(["docs/a.md"]);
+    expect(indexPaths(root)).toEqual(["docs/a.md"]);
+  });
+});

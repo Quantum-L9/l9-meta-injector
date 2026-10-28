@@ -204,6 +204,25 @@ function serializeMetadataIndex(records) {
     }
     return sorted.length === 0 ? "" : `${sorted.map((record) => canonicalJson(record)).join("\n")}\n`;
 }
+/** Metadata ids must stay unique across compiled and preserved records (the pipeline only saw the compiled ones). */
+function assertUniqueMergedMetadataIds(subjects, preserved) {
+    const byId = new Map();
+    const add = (id, pathName) => {
+        if (id === undefined)
+            return;
+        const key = String(id);
+        byId.set(key, [...(byId.get(key) ?? []), pathName]);
+    };
+    for (const subject of subjects)
+        add(subject.metadata["id"], subject.path);
+    for (const record of preserved)
+        add(record.metadata["id"], record.path);
+    const duplicates = [...byId.entries()].filter(([, paths]) => paths.length > 1);
+    if (duplicates.length === 0)
+        return;
+    const detail = duplicates.map(([id, paths]) => `${id}: ${paths.join(", ")}`).join("; ");
+    throw new Error(`DUPLICATE_METADATA_ID: ${duplicates.length} id(s) map to more than one path across the merged metadata index: ${detail}`);
+}
 function compileMetadataIndex(input) {
     const carrierDecisions = (0, mutation_policy_1.resolveCarrierDecisions)({
         authority: input.authority,
@@ -220,6 +239,15 @@ function compileMetadataIndex(input) {
         const record = toRecord(subject, decision);
         if (record)
             records.push(record);
+    }
+    const preserved = input.preservedRecords ?? [];
+    if (preserved.length > 0) {
+        assertUniqueMergedMetadataIds(input.subjects, preserved);
+        for (const record of preserved) {
+            if (subjectByPath.has(record.path))
+                throw new Error(`preserved metadata index record overlaps a compiled subject: ${record.path}`);
+            records.push(record);
+        }
     }
     const bytes = serializeMetadataIndex(records);
     return {

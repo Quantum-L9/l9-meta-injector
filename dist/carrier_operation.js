@@ -139,6 +139,44 @@ function collectInlinePlans(root, subjects, byPath, planBySource) {
     inlinePlans.sort((a, b) => (0, ordering_1.compareCodePoints)(relativePath(root, a.sourcePath), relativePath(root, b.sourcePath)));
     return inlinePlans;
 }
+const SCOPE_FILTERED_DISPOSITIONS = new Set(["glob_filtered", "extension_filtered"]);
+/** Paths the run's own discovery ledger recorded as outside the requested scope. */
+function scopeFilteredPaths(pipeline) {
+    return new Set(pipeline.coverage.discovery.entries
+        .filter((entry) => entry.kind === "file" && SCOPE_FILTERED_DISPOSITIONS.has(entry.disposition))
+        .map((entry) => entry.path));
+}
+const UNSCOPED_REBUILD_ADVICE = "a scoped run cannot preserve out-of-scope records; run an unscoped check/apply to rebuild the index";
+/**
+ * Read the existing index for a scoped run. Only the records of scope-filtered paths are
+ * carried forward; every other path's record comes from the current subjects.
+ */
+function readScopedIndexBase(root, outOfScope) {
+    const target = path.join(root, ...metadata_index_1.METADATA_INDEX_RELATIVE_PATH.split("/"));
+    let stat;
+    try {
+        stat = fs.lstatSync(target);
+    }
+    catch (error) {
+        if (error.code === "ENOENT")
+            return { base: { exists: false }, preserved: [] };
+        const reason = error instanceof Error ? error.message : String(error);
+        return { base: { exists: true, unmergeableReason: `existing ${metadata_index_1.METADATA_INDEX_RELATIVE_PATH} cannot be inspected (${reason}); ${UNSCOPED_REBUILD_ADVICE}` }, preserved: [] };
+    }
+    if (stat.isSymbolicLink() || !stat.isFile()) {
+        return { base: { exists: true, unmergeableReason: `existing ${metadata_index_1.METADATA_INDEX_RELATIVE_PATH} is not a regular file; ${UNSCOPED_REBUILD_ADVICE}` }, preserved: [] };
+    }
+    const raw = fs.readFileSync(target);
+    const sha256 = (0, node_crypto_1.createHash)("sha256").update(raw).digest("hex");
+    try {
+        const records = (0, metadata_index_1.parseMetadataIndex)(new TextDecoder("utf-8", { fatal: true }).decode(raw));
+        return { base: { exists: true, sha256 }, preserved: records.filter((record) => outOfScope.has(record.path)) };
+    }
+    catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        return { base: { exists: true, sha256, unmergeableReason: `existing ${metadata_index_1.METADATA_INDEX_RELATIVE_PATH} cannot be parsed (${reason}); ${UNSCOPED_REBUILD_ADVICE}` }, preserved: [] };
+    }
+}
 function buildCarrierOperationPlan(mode, rootInput, authority, pipeline) {
     const root = path.resolve(rootInput);
     const subjects = [...pipeline.metadataSubjects].sort((a, b) => (0, ordering_1.compareCodePoints)(a.path, b.path));
@@ -151,7 +189,16 @@ function buildCarrierOperationPlan(mode, rootInput, authority, pipeline) {
     const carrierDecisions = (0, mutation_policy_1.resolveCarrierDecisions)({ authority, mode, subjects: carrierSubjects });
     (0, mutation_policy_1.assertCarrierDecisionCoverage)(carrierSubjects, carrierDecisions);
     const byPath = decisionMap(carrierDecisions);
-    const metadataIndex = (0, metadata_index_1.compileMetadataIndex)({ authority, mode, subjects });
+    // ADR-058: a scoped run (its ledger recorded scope-filtered files) merges with the
+    // existing index; an unscoped run never reads it and compiles exactly as before.
+    const outOfScope = scopeFilteredPaths(pipeline);
+    const scopedBase = outOfScope.size > 0 ? readScopedIndexBase(root, outOfScope) : null;
+    const metadataIndex = (0, metadata_index_1.compileMetadataIndex)({
+        authority,
+        mode,
+        subjects,
+        ...(scopedBase && scopedBase.preserved.length > 0 ? { preservedRecords: scopedBase.preserved } : {}),
+    });
     assertMetadataIndexParity(metadataIndex, carrierDecisions);
     const planBySource = indexInjectionPlansBySource(root, pipeline.injected);
     const inlinePlans = collectInlinePlans(root, subjects, byPath, planBySource);
@@ -163,6 +210,7 @@ function buildCarrierOperationPlan(mode, rootInput, authority, pipeline) {
         subjects,
         carrierDecisions,
         metadataIndex,
+        metadataIndexBase: scopedBase ? scopedBase.base : null,
         inlinePlans,
     };
 }
@@ -196,6 +244,15 @@ function metadataIndexDrift(plan) {
             kind: "conflict",
             message: "canonical central metadata index is not a regular file",
             expectedHash: plan.metadataIndex.sha256,
+        };
+    }
+    if (plan.metadataIndexBase?.unmergeableReason) {
+        return {
+            path: metadata_index_1.METADATA_INDEX_RELATIVE_PATH,
+            kind: "conflict",
+            message: plan.metadataIndexBase.unmergeableReason,
+            expectedHash: plan.metadataIndex.sha256,
+            ...(plan.metadataIndexBase.sha256 ? { actualHash: plan.metadataIndexBase.sha256 } : {}),
         };
     }
     const actualBytes = fs.readFileSync(target, "utf8");
