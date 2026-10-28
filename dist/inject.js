@@ -152,7 +152,7 @@ function buildInjection(filePath, finalMeta, ctx) {
         // BOM, so the only bytes that change are the block's (DATA-002).
         const newline = (0, comment_1.detectNewlineConvention)(ctx.cleanBody);
         const block = (0, comment_1.yamlToBlock)((0, comment_1.frontMatterInner)(yamlFm), ctx.spec, newline);
-        const newContent = (0, comment_1.applyCommentInjection)(ctx.cleanBody, block, newline);
+        const newContent = (0, comment_1.applyCommentInjection)(ctx.cleanBody, block, newline, ctx.spec);
         const postBodyHash = (0, extract_1.contentHash)((0, comment_1.stripInjectedBlock)(newContent, ctx.spec));
         return { targetPath: filePath, newContent, addedLines: block, postBodyHash, strategy: ctx.spec.strategy };
     }

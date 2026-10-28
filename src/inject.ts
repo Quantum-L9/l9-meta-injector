@@ -154,7 +154,7 @@ function buildInjection(filePath: string, finalMeta: NormalizedMeta, ctx: ReadCt
     // BOM, so the only bytes that change are the block's (DATA-002).
     const newline = detectNewlineConvention(ctx.cleanBody);
     const block = yamlToBlock(frontMatterInner(yamlFm), ctx.spec, newline);
-    const newContent = applyCommentInjection(ctx.cleanBody, block, newline);
+    const newContent = applyCommentInjection(ctx.cleanBody, block, newline, ctx.spec);
     const postBodyHash = contentHash(stripInjectedBlock(newContent, ctx.spec));
     return { targetPath: filePath, newContent, addedLines: block, postBodyHash, strategy: ctx.spec.strategy };
   }
