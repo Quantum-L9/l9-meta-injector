@@ -19,7 +19,14 @@ import type { CorpusCoverage } from "./corpus_coverage";
 import type { CorpusDocumentSignals } from "./corpus_document_signals";
 import type { CorpusSnapshot } from "./corpus_snapshot";
 
-export const CORPUS_INDEX_SCHEMA = "l9.corpus-index/v1";
+/**
+ * The corpus-mode table of contents' own schema id (ADR-067).
+ *
+ * Distinct from the single-root `l9.corpus-index/v1` that `corpus_analysis.ts`
+ * owns: the two documents share a file name, `corpus-index.json`, but not a
+ * shape, so they must not share an id a consumer dispatches on.
+ */
+export const CORPUS_INDEX_SCHEMA = "l9.corpus-mode-index/v1";
 
 /** One root, as the index points at it. */
 export interface CorpusIndexRoot {

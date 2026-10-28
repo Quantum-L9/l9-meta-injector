@@ -48,6 +48,10 @@ packet built with interpretation.
 ## Corpus analysis
 
 `src/corpus_analysis.ts` and `src/corpus_report.ts` are normative for `l9.corpus-index/v1`.
+`src/corpus_index.ts` is normative for `l9.corpus-mode-index/v1`, the table of contents a
+corpus-mode (`--root`) run writes under the same file name, `corpus-index.json`. The two
+shapes differ, so their schema ids differ (ADR-067); a consumer dispatches on `schema`, not
+on the file name.
 They are a projection: every value derives from the acquisition observation, the emitted
 packet, the exact-duplicate clustering, or the near-duplicate analysis, and every artifact,
 assertion, relation endpoint and candidate endpoint must resolve against the packet.

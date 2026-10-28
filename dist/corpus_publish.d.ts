@@ -20,6 +20,15 @@ export interface CorpusCurrent {
         path: string;
         content_hash: string;
     }[];
+    /**
+     * Generations that were current before this one, newest first (ADR-066).
+     *
+     * Written in the same durable rename as the rest of the pointer, so the record of
+     * publication order can never disagree with the switch it describes. Bounded; a
+     * generation that falls off the end counts as unrecorded. Absent in pointers
+     * written by earlier releases, which readers still accept.
+     */
+    previous_generation_ids?: string[];
 }
 /**
  * Identity of an output set: a hash over its paths and its bytes.
@@ -90,6 +99,9 @@ export declare function listGenerations(outDir: string): string[];
  *
  * Order matters at every step and each one is chosen against a specific crash:
  *
+ *  0. Take the output root's exclusive publisher lock (ADR-066), released in a
+ *     `finally` after pruning. Two publishers into one root serialise or the
+ *     second is refused before it writes anything.
  *  1. Write the generation's files, each synced. A crash here leaves an
  *     unreferenced directory that no reader can reach, because `CURRENT.json`
  *     has not moved.
@@ -98,6 +110,9 @@ export declare function listGenerations(outDir: string): string[];
  *     cut that the files it names did not.
  *  3. Switch `CURRENT.json` with one durable rename. This is the instant the
  *     reader's whole view changes, and it is one syscall rather than twelve.
- *  4. Prune, after the switch, never touching what `CURRENT.json` names.
+ *  4. Prune, after the switch, never touching what `CURRENT.json` names when
+ *     re-read at that moment. Retention is by publication order recorded in the
+ *     pointer: unrecorded directories go first, then the oldest recorded ones,
+ *     until `keep` remain (ADR-066).
  */
 export declare function publishCorpusGeneration(input: PublishInput): PublishResult;
