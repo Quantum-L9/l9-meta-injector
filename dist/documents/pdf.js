@@ -213,16 +213,41 @@ function scanLiteral(source, open) {
  * order — superseded definitions included — so reading an object never looks
  * past where the file says the next one starts, and the cost of reading every
  * object is the size of the file rather than the size of the file per object.
+ *
+ * Headers are found lexically: an `N G obj` inside a literal string, a comment
+ * or stream data is text, not a header. Otherwise a string such as
+ * `(see 3 0 obj)` would cut short the object holding it and redefine object 3.
+ * A string or stream that never closes is not skipped, so one damaged object
+ * cannot hide every object after it.
  */
 function scanObjects(text) {
     const objects = new Map();
     const inFileOrder = [];
-    const pattern = /(\d+)\s+(\d+)\s+obj\b/g;
+    const pattern = /(\d+)\s+(\d+)\s+obj\b|\(|%|\bstream\b/g;
+    const lineEnd = /[\r\n]/g;
     let match = pattern.exec(text);
     while (match !== null) {
-        const object = { offset: match.index, bound: text.length };
-        inFileOrder.push(object);
-        objects.set(Number.parseInt(match[1], 10), object);
+        const token = match[0];
+        if (token === "(") {
+            const literal = scanLiteral(text, match.index);
+            if (literal.end < text.length)
+                pattern.lastIndex = literal.end + 1;
+        }
+        else if (token === "%") {
+            lineEnd.lastIndex = match.index;
+            const end = lineEnd.exec(text);
+            pattern.lastIndex = end === null ? text.length : end.index;
+        }
+        else if (token === "stream") {
+            const close = text.indexOf("endstream", match.index + token.length);
+            if (close >= 0)
+                pattern.lastIndex = close + "endstream".length;
+        }
+        else {
+            const object = { offset: match.index, bound: text.length };
+            inFileOrder.push(object);
+            objects.set(Number.parseInt(match[1], 10), object);
+        }
         match = pattern.exec(text);
     }
     for (let index = 0; index + 1 < inFileOrder.length; index += 1) {

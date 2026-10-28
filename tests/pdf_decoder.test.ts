@@ -766,3 +766,61 @@ describe("WU-059 the content-stream tokenizer", () => {
     expect(status?.bounded_excerpt).not.toContain("Owner");
   });
 });
+
+// PR #112 review (Codex P2 on WU-057/058): object headers are found lexically, so
+// an `N G obj` sequence inside a literal string, a comment or stream data is not
+// a header. It must neither cut short the object that contains it nor become a
+// later "definition" of the object number it names.
+describe("object headers inside strings, comments and streams", () => {
+  function pageWith(pageExtra: string, extraObjects: PdfFixtureObject[] = []): Buffer {
+    return buildPdf(
+      [
+        { number: 1, body: "<< /Type /Catalog /Pages 2 0 R >>" },
+        { number: 2, body: "<< /Type /Pages /Kids [3 0 R] /Count 1 >>" },
+        {
+          number: 3,
+          body: `<< ${pageExtra} /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>`,
+        },
+        flateStreamObject(4, "BT /F1 12 Tf 72 720 Td (Lexical headers) Tj ET"),
+        { number: 5, body: "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>" },
+        ...extraObjects,
+      ],
+      { trailer: "/Size 9 /Root 1 0 R" },
+    );
+  }
+
+  it("a literal string naming `99 0 obj` does not truncate the page that contains it", () => {
+    expect(texts(decodePdf(pageWith("/Note (mentions 99 0 obj syntax)")))).toEqual(["Lexical headers"]);
+  });
+
+  it("a later string naming an existing object's number does not replace that object", () => {
+    const bytes = pageWith("", [{ number: 8, body: "<< /Title (see 3 0 obj and 2 0 obj) >>" }]);
+    expect(texts(decodePdf(bytes))).toEqual(["Lexical headers"]);
+  });
+
+  it("raw stream data and comments containing `N 0 obj` are not headers", () => {
+    const bytes = pageWith("", [
+      plainStreamObject(7, Buffer.from("opaque 2 0 obj bytes 3 0 obj", "latin1"), "/Type /XObject /Subtype /Image"),
+      { number: 8, body: "<< /Producer (x) >> % trailing comment 3 0 obj" },
+    ]);
+    expect(texts(decodePdf(bytes))).toEqual(["Lexical headers"]);
+  });
+
+  it("an unterminated string or stream does not hide the objects after it", () => {
+    const bytes = buildPdf(
+      [
+        { number: 9, body: "<< /Broken (never closes >>" },
+        { number: 1, body: "<< /Type /Catalog /Pages 2 0 R >>" },
+        { number: 2, body: "<< /Type /Pages /Kids [3 0 R] /Count 1 >>" },
+        {
+          number: 3,
+          body: "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
+        },
+        flateStreamObject(4, "BT /F1 12 Tf 72 720 Td (Still found) Tj ET"),
+        { number: 5, body: "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>" },
+      ],
+      { trailer: "/Size 10 /Root 1 0 R" },
+    );
+    expect(texts(decodePdf(bytes))).toEqual(["Still found"]);
+  });
+});
