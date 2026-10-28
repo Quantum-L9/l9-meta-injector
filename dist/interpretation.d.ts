@@ -5,8 +5,12 @@ export declare const INTERPRETATION_PROFILE_ID = "meta-injector-repository-inter
  * 1.1.0 adds artifact-scoped assertion subjects and the deterministic
  * work-intelligence extractors. Both change what this profile observes, so the
  * version — and through it every packet's semantic identity — moves with them.
+ *
+ * 1.2.0 files a repository-scoped extractor's claims against the repository only
+ * for a file at the repository root; the same match anywhere else (a fixture, a
+ * sub-package, an archive member) is a claim about that file (ADR-062).
  */
-export declare const INTERPRETATION_PROFILE_VERSION = "1.1.0";
+export declare const INTERPRETATION_PROFILE_VERSION = "1.2.0";
 /**
  * How an assertion was evidenced.
  *

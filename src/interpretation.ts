@@ -35,8 +35,18 @@ export const INTERPRETATION_PROFILE_ID = "meta-injector-repository-interpretatio
  * 1.1.0 adds artifact-scoped assertion subjects and the deterministic
  * work-intelligence extractors. Both change what this profile observes, so the
  * version — and through it every packet's semantic identity — moves with them.
+ *
+ * 1.2.0 files a repository-scoped extractor's claims against the repository only
+ * for a file at the repository root; the same match anywhere else (a fixture, a
+ * sub-package, an archive member) is a claim about that file (ADR-062).
  */
-export const INTERPRETATION_PROFILE_VERSION = "1.1.0";
+export const INTERPRETATION_PROFILE_VERSION = "1.2.0";
+
+/**
+ * Where a repository-scoped extractor's claim is filed, stated in the profile
+ * hash so the profile names the rule it applied.
+ */
+const REPOSITORY_SUBJECT_PATHS = "repository-root";
 
 /**
  * How an assertion was evidenced.
@@ -174,6 +184,21 @@ export function extractorSubjectScope(extractor: Extractor): ExtractorSubjectSco
   return extractor.subjectScope ?? "repository";
 }
 
+/**
+ * The scope a claim is actually filed under, from the extractor's scope and the
+ * path it matched (ADR-062).
+ *
+ * A repository-scoped extractor speaks for the repository only from a file at
+ * the repository root. `tests/fixtures/app/package.json` declares the fixture's
+ * dependencies and `Bundle.zip!/README.md` states the packed project's status;
+ * neither is a statement the repository makes about itself, so both are filed
+ * against their own artifact. Archive members always contain a `/`.
+ */
+function resolvedSubjectScope(extractor: Extractor, sourcePath: string): ExtractorSubjectScope {
+  if (extractorSubjectScope(extractor) === "artifact") return "artifact";
+  return sourcePath.includes("/") ? "artifact" : "repository";
+}
+
 // ───────────────────────────── secret safety ─────────────────────────────
 
 /**
@@ -273,6 +298,7 @@ function profileHash(extractors: Extractor[]): string {
     ordering: "code-point",
     absolute_paths_in_identity: false,
     max_excerpt_length: MAX_EXCERPT_LENGTH,
+    repository_subject_paths: REPOSITORY_SUBJECT_PATHS,
     extractors: extractors
       .map((extractor) => ({
         id: extractor.id,
@@ -411,7 +437,7 @@ export function interpretDocumentContent(input: InterpretDocumentInput): Interpr
   const claiming = extractors.filter((extractor) => extractor.matches(sourcePath));
 
   for (const extractor of claiming) {
-    const subjectId = extractorSubjectScope(extractor) === "artifact"
+    const subjectId = resolvedSubjectScope(extractor, sourcePath) === "artifact"
       ? repositoryModelArtifactId(input.repositorySubjectId, sourcePath)
       : input.repositorySubjectId;
     let drafts: AssertionDraft[];

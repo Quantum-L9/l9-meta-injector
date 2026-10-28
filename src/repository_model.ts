@@ -655,8 +655,13 @@ const LANGUAGE_BY_EXTENSION: Readonly<Record<string, string>> = {
   ".sh": "Shell", ".bash": "Shell", ".sql": "SQL",
 };
 
+/**
+ * Root-level filenames that identify a package manager by themselves. Only a file at the
+ * repository root is evidence about the repository (ADR-062): a lockfile under
+ * `tests/fixtures/` describes that fixture, not the repository that contains it.
+ */
 const PACKAGE_MANAGER_BY_FILENAME: Readonly<Record<string, string>> = {
-  "package.json": "npm", "package-lock.json": "npm", "npm-shrinkwrap.json": "npm",
+  "package-lock.json": "npm", "npm-shrinkwrap.json": "npm",
   "pnpm-lock.yaml": "pnpm", "yarn.lock": "yarn",
   "requirements.txt": "pip", "poetry.lock": "poetry", "uv.lock": "uv", "Pipfile": "pipenv",
   "Cargo.toml": "cargo", "go.mod": "go", "Gemfile": "bundler",
@@ -668,9 +673,11 @@ const PACKAGE_MANAGER_BY_FILENAME: Readonly<Record<string, string>> = {
  * Manifests whose filename alone does not determine a package manager. `pyproject.toml` is
  * shared by Poetry, uv, PDM, Hatch and setuptools; the discriminator (`[tool.poetry]`,
  * `build-backend`, `[tool.uv]`) lives in the file body, which inventory observation does not
- * read. These are recorded as an explicit coverage gap rather than resolved to a guess.
+ * read. `package.json` is shared by npm, pnpm, Yarn and Bun the same way (ADR-062 extends
+ * ADR-031 to it): the lockfile beside it decides. These are recorded as an explicit coverage
+ * gap rather than resolved to a guess.
  */
-const AMBIGUOUS_PACKAGE_MANIFESTS: ReadonlySet<string> = new Set(["pyproject.toml"]);
+const AMBIGUOUS_PACKAGE_MANIFESTS: ReadonlySet<string> = new Set(["package.json", "pyproject.toml"]);
 
 const GOVERNANCE_FILENAMES: ReadonlySet<string> = new Set([
   "CODEOWNERS", "AGENTS.md", "CLAUDE.md", "GOVERNANCE.md", "SECURITY.md",
@@ -688,9 +695,24 @@ function isWorkflowPath(relativePath: string): boolean {
   return /^\.github\/workflows\/[^/]+\.(ya?ml)$/.test(relativePath);
 }
 
+/** A path directly at the repository root; an archive member (`x.zip!/y`) never is. */
+function isRepositoryRootPath(relativePath: string): boolean {
+  return !relativePath.includes("/");
+}
+
+/**
+ * Where GitHub recognizes community-health files: the root, `.github/` and `docs/`.
+ * Governance refs come only from these; a `CODEOWNERS` under `fixtures/` governs nothing
+ * about this repository (ADR-062).
+ */
+function isGovernanceLocation(relativePath: string): boolean {
+  return /^(?:\.github\/|docs\/)?[^/]+$/.test(relativePath);
+}
+
+/** Root-level ADR directories, or an `adr-*.md` at the root or in a root `adr`/`adrs`/`decisions` directory. */
 function isAdrPath(relativePath: string): boolean {
   if (/^docs\/(decisions|adr|adrs)\//.test(relativePath)) return relativePath.endsWith(".md");
-  return /(^|\/)adr-[^/]*\.md$/.test(relativePath);
+  return /^(?:(?:adr|adrs|decisions)\/)?adr-[^/]*\.md$/.test(relativePath);
 }
 
 function sortStrings(values: Iterable<string>): string[] {
@@ -945,14 +967,20 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
     const extension = (record.extension ?? "").toLowerCase();
     const language = LANGUAGE_BY_EXTENSION[extension];
     if (language !== undefined && !languages.has(language)) languages.set(language, relativePath);
-    const manager = PACKAGE_MANAGER_BY_FILENAME[record.file_name];
-    if (manager !== undefined && !packageManagers.has(manager)) packageManagers.set(manager, relativePath);
-    if (AMBIGUOUS_PACKAGE_MANIFESTS.has(record.file_name) && !ambiguousManifests.has(record.file_name)) {
-      ambiguousManifests.set(record.file_name, relativePath);
+    // Repository-level facts are root-anchored (ADR-062). Languages stay an aggregate
+    // over every observed file; workflows are already anchored at `.github/workflows/`.
+    if (isRepositoryRootPath(relativePath)) {
+      const manager = PACKAGE_MANAGER_BY_FILENAME[record.file_name];
+      if (manager !== undefined && !packageManagers.has(manager)) packageManagers.set(manager, relativePath);
+      if (AMBIGUOUS_PACKAGE_MANIFESTS.has(record.file_name) && !ambiguousManifests.has(record.file_name)) {
+        ambiguousManifests.set(record.file_name, relativePath);
+      }
     }
     if (isWorkflowPath(relativePath)) workflows.push(relativePath);
     if (isAdrPath(relativePath)) adrRefs.push(relativePath);
-    if (GOVERNANCE_FILENAMES.has(record.file_name)) governanceRefs.push(relativePath);
+    if (GOVERNANCE_FILENAMES.has(record.file_name) && isGovernanceLocation(relativePath)) {
+      governanceRefs.push(relativePath);
+    }
   }
 
   // Archive provenance. Members already exist as artifacts because acquisition
