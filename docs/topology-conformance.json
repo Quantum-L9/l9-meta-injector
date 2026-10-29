@@ -4,7 +4,7 @@
   "statement": "Both committed Repository Model Packet bundles and a corpus-intelligence packet emitted by the real CLI were accepted by the bound l9-constellation-topology consumer without a translation shim.",
   "consumer": {
     "repository": "Quantum-L9/l9-constellation-topology",
-    "revision": "47c04d43282fa7760602d450258b5df58adde54b",
+    "revision": "dc1374ce24315fd8df2ea41db7139a2892897c2d",
     "entrypoints": [
       "l9_constellation_topology.packets.loader.load_repository_model_bundle",
       "l9_constellation_topology.packets.adapters.repository_model_v1.RepositoryModelV1Adapter.adapt",
