@@ -17,10 +17,13 @@ import {
   buildNormalizedDocument,
   normalizedDocumentId,
 } from "./decoder";
-import { readUtf8 } from "./text";
+import { decodeTextBlocks, readUtf8 } from "./text";
 
 export const NOTEBOOK_DECODER_ID = "l9.ipynb-decoder";
-export const NOTEBOOK_DECODER_VERSION = "1.0.0";
+// 1.1.0: Markdown and raw cells are read by the same block logic as a `.md`
+// file, so a fenced block in a cell is code; a byte-order mark no longer makes
+// the notebook unreadable; ATX closing sequences are not heading text.
+export const NOTEBOOK_DECODER_VERSION = "1.1.0";
 
 /** Notebook `source` is either a string or an array of lines. */
 function sourceToText(source: unknown): string {
@@ -105,7 +108,8 @@ export const notebookDecoder: DocumentDecoder = {
       decoderVersion: NOTEBOOK_DECODER_VERSION,
     });
     const builder = new BlockBuilder(documentId, input.budget);
-    let sawTitle = false;
+    // The first level-1 heading anywhere in the notebook is its title.
+    const title = { seen: false };
 
     for (let cellIndex = 0; cellIndex < cells.length; cellIndex += 1) {
       const cell = cells[cellIndex];
@@ -132,40 +136,8 @@ export const notebookDecoder: DocumentDecoder = {
       }
 
       // Markdown and raw cells carry the prose a notebook is actually about, so
-      // they get the same heading/list structure a Markdown file gets.
-      let paragraph: string[] = [];
-      let paragraphStart = 1;
-      const flush = (endLine: number): void => {
-        if (paragraph.length === 0) return;
-        builder.add("paragraph", paragraph.join("\n"), locate(paragraphStart, endLine));
-        paragraph = [];
-      };
-      for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
-        const line = lines[lineIndex] as string;
-        const lineNumber = lineIndex + 1;
-        const atx = /^(#{1,6})\s+(.*\S)\s*#*\s*$/.exec(line);
-        if (atx !== null) {
-          flush(lineNumber - 1);
-          const level = (atx[1] as string).length;
-          const kind = level === 1 && !sawTitle ? "title" : "heading";
-          if (kind === "title") sawTitle = true;
-          builder.add(kind, atx[2] as string, locate(lineNumber, lineNumber));
-          continue;
-        }
-        const listItem = /^\s*(?:[-*+]|\d+[.)])\s+(.*\S)\s*$/.exec(line);
-        if (listItem !== null) {
-          flush(lineNumber - 1);
-          builder.add("list_item", listItem[1] as string, locate(lineNumber, lineNumber));
-          continue;
-        }
-        if (line.trim().length === 0) {
-          flush(lineNumber - 1);
-          continue;
-        }
-        if (paragraph.length === 0) paragraphStart = lineNumber;
-        paragraph.push(line);
-      }
-      flush(lines.length);
+      // they are read exactly as a Markdown file is, cited inside their cell.
+      decodeTextBlocks(text, builder, true, { locate, title, unit: "cell" });
       if (builder.isFull) break;
     }
 

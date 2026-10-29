@@ -41,6 +41,18 @@ describe("operation contracts", () => {
     expect(() => resolveOperationMode(" ")).toThrow("<empty>");
   });
 
+  test.each(["toString", "constructor", "__proto__", "hasOwnProperty", "valueOf", "isPrototypeOf"])(
+    "REG-WU-008-RC-011-a: rejects the Object.prototype name %s as an alias",
+    (name) => {
+      expect(() => resolveOperationMode(name)).toThrow(/unsupported operation mode/);
+    },
+  );
+
+  test("REG-WU-008-RC-011-b: own aliases and padded canonical modes still resolve", () => {
+    expect(resolveOperationMode("pipeline")).toMatchObject({ mode: "apply", deprecatedAlias: "pipeline" });
+    expect(resolveOperationMode(" apply ")).toEqual({ requested: "apply", mode: "apply" });
+  });
+
   test("requires authority for check, apply, and skills (not inventory)", () => {
     expect(operationRequiresAuthority("inventory")).toBe(false);
     expect(operationRequiresAuthority("skills")).toBe(true);

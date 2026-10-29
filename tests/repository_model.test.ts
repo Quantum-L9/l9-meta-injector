@@ -482,3 +482,19 @@ describe("topology conformance evidence", () => {
     expect(packet.source_snapshot.revision).toMatch(/^fs:sha256:[a-f0-9]{64}$/);
   });
 });
+
+describe("WU-081 repository model semantic unknowns", () => {
+  test("REG-WU-081-RC-060-RC060-c: a pipeline-annotated doc carries no harvested_type before or after live annotation", () => {
+    const root = scratch("rc060");
+    fs.writeFileSync(path.join(root, "guide.md"), "---\nartifact_type: doctrine\ntitle: Guide\n---\n# Guide\n");
+    const observe = (): RepositoryModelPacket => observeRepositoryModel({
+      root,
+      repositoryName: "rc060",
+      sourceRevision: REVISION,
+      producerVersion: PRODUCER_VERSION,
+    });
+    expect(canonicalJson(observe())).not.toContain("harvested_type");
+    inventoryTree({ root, outDir: path.join(scratch("rc060-out"), "out"), dryRun: false, folderSidecars: false, now: "2026-09-11T12:00:00.000Z" });
+    expect(canonicalJson(observe())).not.toContain("harvested_type");
+  });
+});

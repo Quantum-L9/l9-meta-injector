@@ -94,17 +94,20 @@ function checkSharingScope(meta, semanticallyBound) {
 }
 function verify(filePath, origHash, meta, options) {
     const issues = [];
-    const content = fs.readFileSync(filePath, "utf8");
-    const spec = (0, comment_1.resolveStrategy)(filePath, content);
-    const yamlValid = metaHeaderValid(filePath, content, issues);
-    // Body preservation: re-derive the clean body from disk and compare its hash to
-    // the body hash captured before injection. A mismatch means injection altered
-    // the body — a hard failure, not a silent pass.
+    let yamlValid = true;
     let bodyPreserved = true;
-    if (origHash) {
-        bodyPreserved = (0, extract_1.contentHash)(recoverBody(content, spec)) === origHash;
-        if (!bodyPreserved)
-            issues.push("Body content changed during injection (hash mismatch)");
+    if (options?.skipWrittenBytesChecks !== true) {
+        const content = fs.readFileSync(filePath, "utf8");
+        const spec = (0, comment_1.resolveStrategy)(filePath, content);
+        yamlValid = metaHeaderValid(filePath, content, issues);
+        // Body preservation: re-derive the clean body from disk and compare its hash to
+        // the body hash captured before injection. A mismatch means injection altered
+        // the body — a hard failure, not a silent pass.
+        if (origHash) {
+            bodyPreserved = (0, extract_1.contentHash)(recoverBody(content, spec)) === origHash;
+            if (!bodyPreserved)
+                issues.push("Body content changed during injection (hash mismatch)");
+        }
     }
     let taxonomyValid = true;
     if (meta.callable && meta.mcp_primitive === "none") {

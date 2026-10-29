@@ -235,7 +235,13 @@ async function runPipelineAsync(config) {
         // whole cleanRaw is the body. Running splitContent unconditionally would let a
         // leading `---` in non-markdown (e.g. YAML document separators) be mistaken for
         // frontmatter and truncate real content, skewing extraction/classification/hash.
-        const body = spec.strategy === "yaml-frontmatter" ? (0, extract_1.splitContent)(cleanRaw).body : cleanRaw;
+        //
+        // For frontmatter the hashed/classified body is exactly what the patcher preserves —
+        // the same definition the injector and inventory hash (managedCarrierFreeBody): the
+        // body after a safe header, or the whole document when the leading `---` block is not
+        // patchable frontmatter. The looser splitContent fence would drop that block, so edits
+        // inside it would never change content_hash (RC-022).
+        const body = spec.strategy === "yaml-frontmatter" ? (0, inject_1.managedCarrierFreeBody)(e.sourcePath, raw) : cleanRaw;
         const relativePath = relativeSourcePath(root, e.sourcePath);
         const cls = (0, classify_1.classify)(relativePath, body, e.headerConvention);
         classifications.set(e.sourcePath, cls);
@@ -364,9 +370,22 @@ async function runPipelineAsync(config) {
             continue;
         }
         // The file is governed, but it cannot rewrite itself: leave its bytes alone and let
-        // the carrier policy place its metadata in the central manifest.
-        if (inlineCarrierBlocks.has(e.sourcePath))
+        // the carrier policy place its metadata in the central manifest. The standalone
+        // pipeline writes no central manifest, so coverage names the file and the exact
+        // block instead of dropping it from every bucket (RC-021).
+        const inlineCarrierBlock = inlineCarrierBlocks.get(e.sourcePath);
+        if (inlineCarrierBlock) {
+            skippedNonInjectablePaths.push(e.sourcePath);
+            const cls = classifications.get(e.sourcePath);
+            skippedNonInjectableDetails.push({
+                path: e.sourcePath,
+                reason: "carrier_inline_blocked",
+                artifactType: cls?.artifactType ?? meta.artifact_type,
+                confidence: cls?.confidence ?? "low",
+                inlineCarrierBlock,
+            });
             continue;
+        }
         // Use async inject (LLM boolean reconcile on description/intent) when LLM is enabled
         const record = config.llmEnabled
             ? await (0, inject_1.injectFileAsync)(e.sourcePath, meta, opts, metrics)
@@ -374,8 +393,14 @@ async function runPipelineAsync(config) {
         injected.push(record);
         metrics.recordInject();
     }
+    // In dry-run nothing was written. A record whose planned bytes differ from the current
+    // target (or whose plan cannot prove otherwise) is verified only by the checks that do
+    // not read written bytes; reading the pre-injection file would report the header it is
+    // about to receive as missing (RC-015). A record already holding its planned bytes is
+    // verified in full from disk, exactly as a real run would.
     const verified = injected.map((r) => (0, verify_1.verify)(r.sourcePath, r.originalBodyHash, r.meta, {
         semanticallyBound: identity.source === "semantic_binding",
+        skipWrittenBytesChecks: config.dryRun && r.wouldChange !== false,
     }));
     // Consume the verification signal at the decision point — a computed VerifyResult
     // that nothing inspects is indistinguishable from no verification at all. Aggregate
@@ -390,11 +415,9 @@ async function runPipelineAsync(config) {
         passed: failures.length === 0,
         failures,
     };
-    // Only report verification when there is a written file to verify. In plan mode nothing
-    // has been written, so `verify` necessarily reads the pre-injection bytes and reports a
-    // missing header for every file that is *about* to receive one. Printing that as
-    // "verification FAILED" during a successful governed check or apply is a phantom
-    // failure, and phantom failures make the real ones unreadable.
+    // Only print verification for a real run. Dry-run no longer reports the phantom
+    // header/body failures above, but governed check/apply plan in dry-run and must stay
+    // quiet; their verdict comes from the carrier operation, not from this print.
     if (!verification.passed && !config.dryRun) {
         const preview = failures.slice(0, 5).map((f) => `  - ${f.sourcePath}: ${f.issues.join("; ")}`).join("\n");
         const more = failures.length > 5 ? `\n  … and ${failures.length - 5} more` : "";
@@ -450,8 +473,13 @@ async function runPipelineAsync(config) {
     const dedupEntries = (0, compiler_1.buildDedupEntries)(injected, config.hashPrefixLength, bodies);
     const dedupReport = (0, compiler_1.buildDedupReport)(dedupEntries, config.nearDupThreshold, config.hashPrefixLength);
     // Compile advisory placement plans for the injected artifacts (placement compiler
-    // was previously unreachable outside tests — finding DWL-002).
-    const placementPlans = (0, placement_policy_1.compilePlacementPlans)(injected.map((r) => ({ sourcePath: r.sourcePath, body: bodies.get(r.sourcePath) ?? "" })), { namespace: config.namespace });
+    // was previously unreachable outside tests — finding DWL-002). Segment rules see the
+    // repository-relative path, never directories above the root (ADR-054 item 5,
+    // RC-017), so plan.sourcePath is repo-relative like metadataSubjects.path. Each plan
+    // carries its record's resolved header namespace, so identity defaults, bound
+    // product ids and namespace globs agree with the header (RC-026).
+    const relativeBySource = new Map(injected.map((r) => [r.sourcePath, relativeSourcePath(root, r.sourcePath)]));
+    const placementPlans = injected.map((r) => (0, placement_policy_1.compilePlacementPlan)(relativeBySource.get(r.sourcePath) ?? relativeSourcePath(root, r.sourcePath), bodies.get(r.sourcePath) ?? "", { namespace: r.meta.namespace }));
     const planBySource = new Map(placementPlans.map((p) => [p.sourcePath, p]));
     // Build a v3 nine-plane record per artifact, driven by the 17-class semantic
     // classifier (DWL-001) and the placement plan (DWL-002). This is the first live
@@ -459,12 +487,13 @@ async function runPipelineAsync(config) {
     const hcBySource = new Map(scanned.map((e) => [e.sourcePath, e.headerConvention]));
     const metaV3 = injected.map((r) => {
         const body = bodies.get(r.sourcePath) ?? "";
-        const semantic = (0, classify_1.classifyWithSemantics)(r.sourcePath, body, hcBySource.get(r.sourcePath) ?? "none").semantic;
+        const relativePath = relativeBySource.get(r.sourcePath) ?? relativeSourcePath(root, r.sourcePath);
+        const semantic = (0, classify_1.classifyWithSemantics)(relativePath, body, hcBySource.get(r.sourcePath) ?? "none").semantic;
         return {
             sourcePath: r.sourcePath,
             semanticClass: semantic.artifactClass,
             semanticConfidence: semantic.confidence,
-            metaV3: (0, meta_v3_1.buildMetaV3)({ meta: r.meta, semantic, placement: planBySource.get(r.sourcePath), sizeBytes: Buffer.byteLength(body, "utf8") }),
+            metaV3: (0, meta_v3_1.buildMetaV3)({ meta: r.meta, semantic, placement: planBySource.get(relativePath), sizeBytes: Buffer.byteLength(body, "utf8") }),
         };
     });
     if (!config.dryRun && config.persistOutputs !== false) {

@@ -358,18 +358,35 @@ function pairRenames(
  *
  * Deliberately not `corpus_analysis_id`: that binds the source identity too, so
  * every corpus whose bytes changed would also read as a profile change.
+ *
+ * Every other field of the analysis identity is a profile, and every one is
+ * included — derived from the record rather than listed by hand, because a
+ * hand-written list is how `document_block_profile` came to be left out, and a
+ * profile added later would be left out the same way. A field one snapshot has
+ * and the other lacks reads as a change, which it is.
  */
 function analysisProfileFingerprint(snapshot: CorpusSnapshot): string {
-  const analysis = snapshot.analysis;
-  return [
-    analysis.corpus_profile,
-    [...analysis.document_decoder_profiles].sort(compareCodePoints).join(","),
-    analysis.interpretation_profile,
-    analysis.semantic_candidate_profile,
-    analysis.embedding_profile ?? "",
-    analysis.readiness_profile,
-  ].join("|");
+  const analysis = snapshot.analysis as unknown as Record<string, unknown>;
+  const fields = Object.keys(analysis)
+    .filter((key) => key !== "corpus_analysis_id")
+    .sort(compareCodePoints)
+    .map((key) => {
+      const value = analysis[key];
+      const rendered = Array.isArray(value)
+        ? [...(value as string[])].sort(compareCodePoints)
+        : value ?? null;
+      return [key, rendered];
+    });
+  return JSON.stringify(fields);
 }
+
+/** Artifact classifications that change which documents the corpus holds, or where. */
+const MEMBERSHIP_CHANGE_CATEGORIES: ReadonlySet<string> = new Set([
+  "added",
+  "removed",
+  "renamed_candidate",
+  "changed_content",
+]);
 
 /**
  * What changed about the analysis, as distinct from what changed on the disks.
@@ -395,9 +412,10 @@ function analysisDelta(
     candidate_unchanged: delta.candidate_unchanged,
     not_computed_reason: delta.not_computed_reason,
     by_kind: delta.by_kind,
-    // Readiness is recomputed whenever its own profile moves or the corpus does.
-    readiness_evidence_changed: sourceChanged
-      || previous.analysis.readiness_profile !== current.analysis.readiness_profile,
+    // Readiness counts are computed from the corpus through every analysis
+    // profile — a candidate profile moves them as surely as the readiness
+    // profile does — so any profile change or any source change can move them.
+    readiness_evidence_changed: sourceChanged || profileChanged,
     comparable: !analysisChanged && !profileChanged,
   };
 }
@@ -546,9 +564,10 @@ export function buildCorpusDiff(previous: CorpusSnapshot, current: CorpusSnapsho
   // rewritten every time they changed a setting.
   const profileChanged = analysisProfileFingerprint(previous) !== analysisProfileFingerprint(current);
   const sourceChanged = previous.corpus_source_snapshot_id !== current.corpus_source_snapshot_id;
-  const membershipChanged = newHashes.length > 0
-    || retiredHashes.length > 0
-    || previous.artifacts.length !== current.artifacts.length;
+  // From the diff's own classifications. A hash multiset misses a pure rename
+  // (same bytes, new path) and a content swap between two paths, and corpus-
+  // scoped results depend on paths as well as bytes.
+  const membershipChanged = entries.some((entry) => MEMBERSHIP_CHANGE_CATEGORIES.has(entry.category));
 
   // Roots, compared by identity rather than by position. A corpus that gained a
   // drive and a corpus whose drives were listed in another order are not the same

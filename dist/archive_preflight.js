@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.canonicalMemberPath = canonicalMemberPath;
 exports.memberCollisionKey = memberCollisionKey;
+exports.rootMetaMemberKind = rootMetaMemberKind;
 exports.pathSafetyHolds = pathSafetyHolds;
 exports.preflightArchive = preflightArchive;
 const zip_reader_1 = require("./zip_reader");
@@ -47,6 +48,22 @@ function canonicalMemberPath(name) {
  */
 function memberCollisionKey(canonicalPath) {
     return canonicalPath.normalize("NFC").toLowerCase();
+}
+/**
+ * Whether a stored member name is the archive's root metadata carrier.
+ *
+ * Identity is the admission identity: the canonical path under the collision
+ * fold. Anything narrower lets a writer keep `.//.l9meta.yaml` or `.L9META.yaml`
+ * beside the `.l9meta.yaml` it adds, producing an archive its own admit then
+ * holds as a duplicate or collision on every later run.
+ */
+function rootMetaMemberKind(name) {
+    const key = memberCollisionKey(canonicalMemberPath(name));
+    if (key === ".l9meta.yaml")
+        return "canonical";
+    if (key === "l9meta.yaml")
+        return "legacy";
+    return null;
 }
 /** Resolve a canonical member path against an empty virtual root, purely textually. */
 function resolvesInsideRoot(canonical) {

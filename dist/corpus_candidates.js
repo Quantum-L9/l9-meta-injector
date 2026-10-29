@@ -35,7 +35,10 @@ exports.candidateProfileHash = candidateProfileHash;
 const ordering_1 = require("./ordering");
 const repository_model_1 = require("./repository_model");
 exports.PROJECT_CANDIDATE_METHOD = "container-project-candidate/v1";
-exports.PROJECT_CANDIDATE_METHOD_VERSION = "1.0.0";
+// 1.1.0: an archive-root CI definition resolves to the archive as `containerOf`
+// spells it, a container that receives no member is not a candidate, and a
+// root-level container keys in its own `root:` namespace.
+exports.PROJECT_CANDIDATE_METHOD_VERSION = "1.1.0";
 exports.TOPIC_CANDIDATE_METHOD = "lexical-topic-candidate/v1";
 // Bumped when the pass moved from an index over every salient term to one over
 // each document's rarest-first prefix. The bound is exact, so the candidates are
@@ -104,7 +107,10 @@ function projectContainerForMarker(rootRelativePath) {
     const segments = container.split("/");
     for (let index = segments.length - 1; index >= 0; index--) {
         if (segments[index] === ".github" || segments[index] === ".circleci") {
-            return segments.slice(0, index).join("/");
+            const head = segments.slice(0, index).join("/");
+            // An archive's member root is spelled `x.zip!/`, exactly as `containerOf`
+            // spells it, so the CI definition and a manifest beside it are one container.
+            return head.endsWith("!") ? `${head}/` : head;
         }
     }
     return container;
@@ -141,14 +147,16 @@ function isUnderContainer(containerPath, candidate) {
  * A declared identifier joins containers across roots and disks. A container with
  * no declared name can only join others of the same directory name. A root-level
  * container with no declared name joins nothing at all, because the only name it
- * has left is its root, and a root is not a project.
+ * has left is its root, and a root is not a project. Its key therefore lives in
+ * a `root:` namespace of its own: under `container:` a root labelled `alpha`
+ * would join another root's directory named `alpha`.
  */
 function projectGroupKey(input) {
     if (input.declared !== undefined)
         return `project:${input.declared}`;
     if (input.containerName.length > 0)
         return `container:${input.containerName}`;
-    return `container:${input.rootLabel}`;
+    return `root:${input.rootLabel}`;
 }
 /**
  * Group markers into containers, containers into project candidates, and assign
@@ -238,6 +246,11 @@ function buildProjectCandidates(input) {
             container.marker_kinds.sort(ordering_1.compareCodePoints);
             container.declared_identifiers.sort(ordering_1.compareCodePoints);
         }
+        // A project candidate is a grouping of members. One whose containers were
+        // given none (every file claimed by a longer container) states nothing, and
+        // emitting it would hand the packet a cluster that names no member.
+        if (memberIds.size === 0)
+            continue;
         const rootIds = [...new Set(orderedContainers.map((container) => container.root_id))]
             .sort(ordering_1.compareCodePoints);
         candidates.push({
@@ -278,12 +291,166 @@ const TOML_NAME_SECTIONS = {
     "cargo.toml": ["package"],
     "pyproject.toml": ["project", "tool.poetry"],
 };
-/** 1-based line of the first occurrence of a pattern, or 0 when absent. */
-function lineOf(lines, predicate) {
-    for (let index = 0; index < lines.length; index++)
-        if (predicate(lines[index]))
+/** 1-based line of a character offset, counting `\n` as the line break `split` uses. */
+function lineAtOffset(text, offset) {
+    let line = 1;
+    for (let index = text.indexOf("\n"); index >= 0 && index < offset; index = text.indexOf("\n", index + 1)) {
+        line++;
+    }
+    return line;
+}
+/** Offset just past the JSON string literal that opens at `start`, or -1. */
+function jsonStringEnd(text, start) {
+    for (let index = start + 1; index < text.length; index++) {
+        const char = text[index];
+        if (char === "\\")
+            index++;
+        else if (char === '"')
             return index + 1;
-    return 0;
+    }
+    return -1;
+}
+/**
+ * 1-based line of the top-level object's `field` key in already-validated JSON,
+ * or 0 when it cannot be found.
+ *
+ * Depth-aware rather than a line search: `"name":` inside `author` or a string
+ * that mentions it is not the manifest's name. A duplicate top-level key takes
+ * its last occurrence, because that is the one `JSON.parse` returned.
+ */
+function topLevelJsonKeyLine(text, field) {
+    let depth = 0;
+    let found = -1;
+    for (let index = 0; index < text.length; index++) {
+        const char = text[index];
+        if (char === '"') {
+            const end = jsonStringEnd(text, index);
+            if (end < 0)
+                return 0;
+            if (depth === 1) {
+                let next = end;
+                while (next < text.length && /\s/.test(text[next]))
+                    next++;
+                if (text[next] === ":") {
+                    let key;
+                    try {
+                        key = JSON.parse(text.slice(index, end));
+                    }
+                    catch {
+                        key = undefined;
+                    }
+                    if (key === field)
+                        found = index;
+                }
+            }
+            index = end - 1;
+        }
+        else if (char === "{" || char === "[") {
+            depth++;
+        }
+        else if (char === "}" || char === "]") {
+            depth--;
+        }
+    }
+    return found < 0 ? 0 : lineAtOffset(text, found);
+}
+/** Local part of an XML element name: `pom:project` is `project`. */
+function xmlLocalName(qualified) {
+    const colon = qualified.indexOf(":");
+    return colon < 0 ? qualified : qualified.slice(colon + 1);
+}
+/**
+ * The `<artifactId>` that is a direct child of the root `<project>` element.
+ *
+ * A nesting-aware scan rather than a line search: a `<parent>`, a dependency, a
+ * plugin or a profile declares an artifactId too, and in a standard POM the
+ * parent's comes first. Comments, CDATA, processing instructions and
+ * declarations are skipped, so markup quoted inside them is never read as an
+ * element. Anything the scan cannot follow yields `undefined`, never a guess.
+ */
+function pomProjectArtifactId(text) {
+    const stack = [];
+    let index = text.indexOf("<");
+    while (index >= 0) {
+        if (text.startsWith("<!--", index)) {
+            const end = text.indexOf("-->", index + 4);
+            if (end < 0)
+                return undefined;
+            index = text.indexOf("<", end + 3);
+            continue;
+        }
+        if (text.startsWith("<![CDATA[", index)) {
+            const end = text.indexOf("]]>", index + 9);
+            if (end < 0)
+                return undefined;
+            index = text.indexOf("<", end + 3);
+            continue;
+        }
+        if (text.startsWith("<?", index)) {
+            const end = text.indexOf("?>", index + 2);
+            if (end < 0)
+                return undefined;
+            index = text.indexOf("<", end + 2);
+            continue;
+        }
+        if (text.startsWith("<!", index)) {
+            const end = text.indexOf(">", index + 2);
+            if (end < 0)
+                return undefined;
+            index = text.indexOf("<", end + 1);
+            continue;
+        }
+        // A tag: find its `>` outside quoted attribute values.
+        let end = index + 1;
+        let quote = "";
+        for (; end < text.length; end++) {
+            const char = text[end];
+            if (quote !== "") {
+                if (char === quote)
+                    quote = "";
+            }
+            else if (char === '"' || char === "'") {
+                quote = char;
+            }
+            else if (char === ">") {
+                break;
+            }
+        }
+        if (end >= text.length)
+            return undefined;
+        const body = text.slice(index + 1, end);
+        if (body.startsWith("/")) {
+            const name = xmlLocalName(body.slice(1).trim());
+            if (stack.pop() !== name)
+                return undefined;
+            if (stack.length === 0)
+                return undefined;
+        }
+        else {
+            const selfClosing = body.endsWith("/");
+            const nameEnd = body.search(/[\s/]/);
+            const name = xmlLocalName(nameEnd < 0 ? body : body.slice(0, nameEnd));
+            if (name.length === 0)
+                return undefined;
+            if (stack.length === 0 && name !== "project")
+                return undefined;
+            if (!selfClosing) {
+                if (stack.length === 1 && name === "artifactId") {
+                    const close = text.indexOf("<", end + 1);
+                    if (close < 0)
+                        return undefined;
+                    const value = text.slice(end + 1, close).trim();
+                    if (value.length === 0 || !/^<\/(?:[^\s:>]+:)?artifactId\s*>/.test(text.slice(close, close + 64))) {
+                        return undefined;
+                    }
+                    return { identifier: value, line: lineAtOffset(text, index) };
+                }
+                stack.push(name);
+            }
+        }
+        index = text.indexOf("<", end + 1);
+    }
+    return undefined;
 }
 /**
  * Read the name a manifest declares for itself.
@@ -309,11 +476,10 @@ function readDeclaredIdentifier(basename, text) {
         const value = parsed[jsonField];
         if (typeof value !== "string" || value.trim().length === 0)
             return undefined;
-        const quoted = new RegExp(String.raw `"${jsonField}"\s*:`);
         return {
             identifier: value.trim(),
             field: jsonField,
-            line: lineOf(lines, (line) => quoted.test(line)),
+            line: topLevelJsonKeyLine(text, jsonField),
         };
     }
     if (name === "go.mod") {
@@ -325,12 +491,8 @@ function readDeclaredIdentifier(basename, text) {
         return undefined;
     }
     if (name === "pom.xml") {
-        for (let index = 0; index < lines.length; index++) {
-            const match = /<artifactId>([^<]+)<\/artifactId>/.exec(lines[index]);
-            if (match)
-                return { identifier: match[1].trim(), field: "artifactId", line: index + 1 };
-        }
-        return undefined;
+        const own = pomProjectArtifactId(text);
+        return own === undefined ? undefined : { identifier: own.identifier, field: "artifactId", line: own.line };
     }
     const sections = TOML_NAME_SECTIONS[name];
     if (sections !== undefined) {

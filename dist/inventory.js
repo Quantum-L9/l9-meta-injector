@@ -212,7 +212,7 @@ function idFor(relPath) {
 }
 function csvCell(v) {
     const s = v === null || v === undefined ? "" : String(v);
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 // Sidecar serialization now delegates to the single canonical serializer (ACA-005),
 // replacing the always-JSON-quoted copy. Output is bare-when-safe and still
@@ -220,17 +220,35 @@ function csvCell(v) {
 function serializeYaml(rec) {
     return (0, yaml_serialize_1.serializeYamlObject)(rec, { fences: true, trailingNewline: true });
 }
-function walk(root, omit, skippedDirs, omittedPaths) {
+/** Token recorded when a failure carries no errno code of its own. */
+const UNKNOWN_ERROR_CODE = "UNKNOWN_ERROR";
+/**
+ * The machine-independent part of a filesystem failure: its errno code.
+ *
+ * A Node fs error message repeats the absolute path it failed on, so recording
+ * the message would make an inventory (and every packet built from it) depend on
+ * where the tree happens to be checked out. The code is the portable reason; the
+ * repository-relative path is carried beside it by the caller.
+ */
+function portableErrorCode(err) {
+    const code = err?.code;
+    return typeof code === "string" && code.length > 0 ? code : UNKNOWN_ERROR_CODE;
+}
+function walk(root, omit, skippedDirs, omittedPaths, skippedDetails) {
     const out = [];
     function rec(dir) {
         let entries;
         // An unreadable directory must not silently drop its whole subtree from the
         // inventory (finding OBS-007): record it so the coverage gap is observable.
+        // The recorded entry is `<repository-relative POSIX dir, or .>: <errno code>`;
+        // the host message (absolute path included) is kept only for the operator.
         try {
             entries = fs.readdirSync(dir, { withFileTypes: true });
         }
         catch (err) {
-            skippedDirs.push(`${dir}: ${err.message}`);
+            const relativeDir = path.relative(root, dir).split(path.sep).join("/") || ".";
+            skippedDirs.push(`${relativeDir}: ${portableErrorCode(err)}`);
+            skippedDetails.push(`${relativeDir}: ${err.message}`);
             return;
         }
         // Code-point order: `readdir` order is whatever the filesystem returns, and
@@ -359,7 +377,10 @@ function buildRecord(root, abs, isDir, cfg, kind = isDir ? "directory" : "file",
         : classifyInventory(relative, fileName, ext, isDir);
     let size = null, modified = null, hash = null, created = null;
     const unknowns = [...cls.unknowns];
-    const harvestedType = harvest.inventory_type ?? harvest.artifact_type;
+    // Compare like with like (ADR-051): only a harvested inventory_type is in the
+    // inventory taxonomy. A front-matter artifact_type is the pipeline taxonomy and
+    // never conflicts with the inventory classification.
+    const harvestedType = harvest.inventory_type;
     if (typeof harvestedType === "string" && harvestedType !== cls.type) {
         unknowns.push(`harvested_type:${harvestedType}`);
     }
@@ -378,7 +399,7 @@ function buildRecord(root, abs, isDir, cfg, kind = isDir ? "directory" : "file",
         }
     }
     catch (err) {
-        unknowns.push(`stat_failed:${err.message}`);
+        unknowns.push(`stat_failed:${portableErrorCode(err)}`);
     }
     noteClockSkew(unknowns, created, modified, cfg.now);
     const parent = path.dirname(relative);
@@ -430,23 +451,31 @@ function inventoryTree(config) {
     if (path.resolve(config.outDir) === root) {
         throw new Error("inventory: outDir must not equal the root directory (generated manifests would be re-inventoried); use a subdirectory such as <root>/.l9inventory");
     }
-    // If the chosen outDir lives inside root, ignore its top-level directory name too,
-    // so a custom --out under root can't re-inventory or mutate its own generated output.
-    const ignoreDirNames = [...ignoreDirs];
+    // If the chosen outDir lives inside root, omit exactly that directory (walk does
+    // not descend an omitted directory), so a custom --out under root can't
+    // re-inventory or mutate its own generated output. An exact root-relative path,
+    // not a basename pattern: `docs/.l9out` must not omit every `docs` in the tree,
+    // and a directory name never needs glob escaping.
     const relOut = path.relative(root, path.resolve(config.outDir));
-    if (relOut && !relOut.startsWith("..") && !path.isAbsolute(relOut)) {
-        ignoreDirNames.push(relOut.split(path.sep)[0]);
-    }
-    const omit = (0, omit_1.buildOmitMatcher)({
+    const outDirRel = relOut && !relOut.startsWith("..") && !path.isAbsolute(relOut)
+        ? relOut.split(path.sep).join("/")
+        : null;
+    const baseOmit = (0, omit_1.buildOmitMatcher)({
         root,
         patterns: [...(config.omitPatterns ?? []), "**/*.l9meta.yaml", "**/.l9meta.yaml"],
         omitFile: config.omitFile,
         protectSkillMd: true,
-        ignoreDirNames,
+        ignoreDirNames: [...ignoreDirs],
     });
+    const omit = outDirRel === null ? baseOmit : {
+        patterns: baseOmit.patterns,
+        sources: baseOmit.sources,
+        shouldOmit: (rel) => rel === outDirRel || baseOmit.shouldOmit(rel),
+    };
     const skippedDirs = [];
+    const skippedDetails = [];
     const omittedPaths = [];
-    const entries = walk(root, omit, skippedDirs, omittedPaths);
+    const entries = walk(root, omit, skippedDirs, omittedPaths, skippedDetails);
     const records = [];
     const typeDistribution = {};
     let files = 0, folders = 0;
@@ -546,7 +575,7 @@ function inventoryTree(config) {
         }
     }
     if (skippedDirs.length) {
-        process.stderr.write(`[l9-meta-injector] inventory: ${skippedDirs.length} unreadable director(ies) skipped:\n${skippedDirs.map((d) => `  - ${d}`).join("\n")}\n`);
+        process.stderr.write(`[l9-meta-injector] inventory: ${skippedDirs.length} unreadable director(ies) skipped:\n${skippedDetails.map((d) => `  - ${d}`).join("\n")}\n`);
     }
     const duplicates = buildDuplicateClusters(records);
     const manifestPaths = writeManifests(config.outDir, root, records, typeDistribution, duplicates, cfg.now, cfg.dryRun);

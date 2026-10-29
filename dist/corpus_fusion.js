@@ -41,7 +41,7 @@ const ordering_1 = require("./ordering");
 const repository_model_1 = require("./repository_model");
 const corpus_pairs_1 = require("./corpus_pairs");
 exports.FUSION_PROFILE_ID = "semantic-fusion/v1";
-exports.FUSION_PROFILE_VERSION = "1.0.0";
+exports.FUSION_PROFILE_VERSION = "1.1.0";
 exports.TOPIC_CANDIDATE_SCHEMA = "l9.topic-candidates/v1";
 exports.PROJECT_CANDIDATE_SCHEMA = "l9.project-candidates/v1";
 exports.CONSOLIDATION_CANDIDATE_SCHEMA = "l9.consolidation-candidates/v1";
@@ -276,6 +276,17 @@ function crossArchive(members, byId) {
     }
     return ancestries.size > 1;
 }
+/** True when the members' views name more than one root. Mirrors `crossArchive`. */
+function crossRoot(members, byId) {
+    const roots = new Set();
+    for (const id of members) {
+        const view = byId.get(id);
+        if (view === undefined)
+            continue;
+        roots.add(view.root_id);
+    }
+    return roots.size > 1;
+}
 function signalCount(pairs, predicate) {
     let count = 0;
     for (const pair of pairs) {
@@ -347,8 +358,12 @@ function buildTopicCandidates(input) {
             semantic_signal_count: signalCount(within.pairs, (s) => s.kind === "embedding_similarity"),
             explicit_reference_count: signalCount(within.pairs, (s) => s.kind === "explicit_reference"),
             cross_archive: crossArchive(members, context.byId),
+            cross_root: crossRoot(members, context.byId),
             confidence_class: strongestClass(within.classifications),
-            ambiguity_class: within.classifications.every((entry) => entry.confidence_class === "moderate")
+            // The project rule, stated once for both kinds: weakly connected means no
+            // pair inside the member set is strong. Testing "every pair is moderate"
+            // instead made the flag non-monotone — adding a *weaker* pair cleared it.
+            ambiguity_class: within.classifications.every((entry) => entry.confidence_class !== "strong")
                 ? [exports.AMBIGUITY_WEAKLY_CONNECTED]
                 : [],
             representative_keyphrases: [...keyphrases.entries()]
@@ -442,6 +457,7 @@ function buildProjectCandidates(input) {
             open_task_count: openTasks,
             milestone_count: milestones,
             cross_archive: crossArchive(members, context.byId),
+            cross_root: crossRoot(members, context.byId),
             confidence_class: strongestClass(within.classifications),
             ambiguity_class: [...new Set(ambiguity)].sort(ordering_1.compareCodePoints),
             analysis_profile: context.profile,
@@ -486,11 +502,24 @@ function buildConsolidationCandidates(input) {
             continue;
         record(`cluster:${clusterId}`, members, exports.CONSOLIDATION_EVIDENCE_EXACT_DUPLICATE);
     }
+    // Every supersession declaration any view made, by assertion id. The pair
+    // builder records a declaration's assertion id in a pair's evidence_refs only
+    // when that declaration resolves from one pair member to the other, so a pair
+    // is a supersession pair exactly when its evidence_refs meet this set. That is
+    // the structured fact; the free-text detail is not, because it also carries
+    // reference targets an author chose — a path that merely spells the word is
+    // not a supersession.
+    const supersessionAssertionIds = new Set();
+    for (const view of input.views) {
+        for (const declaration of view.supersession_declarations) {
+            supersessionAssertionIds.add(declaration.assertion_id);
+        }
+    }
+    const resolvedSupersessions = (pair) => pair.evidence_refs.filter((ref) => supersessionAssertionIds.has(ref));
     // Near-duplicate and declared-supersession pairs.
     for (const pair of input.pairs) {
         const hasNear = pair.signals.some((signal) => signal.kind === "near_duplicate");
-        const hasSupersession = pair.signals.some((signal) => signal.kind === "explicit_reference"
-            && signal.detail.some((entry) => entry.includes("supersede")));
+        const hasSupersession = resolvedSupersessions(pair).length > 0;
         if (!hasNear && !hasSupersession)
             continue;
         record(`pair:${pair.pair_id}`, [pair.artifact_a_id, pair.artifact_b_id], hasSupersession ? exports.CONSOLIDATION_EVIDENCE_SUPERSESSION : exports.CONSOLIDATION_EVIDENCE_NEAR_DUPLICATE);
@@ -502,7 +531,8 @@ function buildConsolidationCandidates(input) {
     // would make every multi-file project a consolidation candidate, which is a
     // false-positive generator rather than a finding. What is needed is evidence
     // of a lineage: a near-duplicate edge between members, or a member declaring
-    // it supersedes another.
+    // it supersedes another *member* — a declaration that resolves inside the
+    // project. A member superseding something outside it is no lineage here.
     const projectByKey = new Map();
     for (const project of input.projectCandidates) {
         const members = new Set(project.member_artifact_ids);
@@ -513,7 +543,8 @@ function buildConsolidationCandidates(input) {
             continue;
         const hasVersionLineage = input.pairs.some((pair) => members.has(pair.artifact_a_id)
             && members.has(pair.artifact_b_id)
-            && pair.signals.some((signal) => signal.kind === "near_duplicate")) || project.member_artifact_ids.some((id) => (context.byId.get(id)?.supersession_declarations.length ?? 0) > 0);
+            && (pair.signals.some((signal) => signal.kind === "near_duplicate")
+                || resolvedSupersessions(pair).length > 0));
         if (!hasVersionLineage)
             continue;
         const key = `project:${project.candidate_id}`;
@@ -537,11 +568,6 @@ function buildConsolidationCandidates(input) {
             for (const id of view.near_duplicate_candidate_ids)
                 nearIds.add(id);
         }
-        const supersessionIds = new Set();
-        for (const view of views) {
-            for (const declaration of view.supersession_declarations)
-                supersessionIds.add(declaration.assertion_id);
-        }
         const statuses = new Set();
         for (const view of views) {
             for (const status of view.statuses)
@@ -549,9 +575,15 @@ function buildConsolidationCandidates(input) {
         }
         const within = pairsWithin(members, context.classifications, context.pairById);
         const evidenceRefs = new Set();
+        // Only declarations that resolve between two members of this candidate: a
+        // member superseding something outside the group is not a supersession the
+        // group holds.
+        const supersessionIds = new Set();
         for (const pair of within.pairs) {
             for (const ref of pair.evidence_refs)
                 evidenceRefs.add(ref);
+            for (const ref of resolvedSupersessions(pair))
+                supersessionIds.add(ref);
         }
         const sortedStatuses = [...statuses].sort(ordering_1.compareCodePoints);
         const flags = [];
@@ -576,6 +608,8 @@ function buildConsolidationCandidates(input) {
             supersession_assertion_ids: [...supersessionIds].sort(ordering_1.compareCodePoints),
             project_candidate_ids: projectId === undefined ? [] : [projectId],
             cross_archive: crossArchive(members, context.byId),
+            cross_root: crossRoot(members, context.byId),
+            confidence_class: strongestClass(within.classifications),
             content_hash_count: hashes.size,
             unique_content_variant_count: hashes.size,
             work_statuses: sortedStatuses,

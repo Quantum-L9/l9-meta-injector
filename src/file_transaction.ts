@@ -27,7 +27,7 @@ export interface FileMutationIntent {
   expectedHash?: string;
   /** Complete replacement bytes. */
   bytes: string | Buffer;
-  /** Optional mode for a newly-created target. Existing files preserve their mode. */
+  /** Optional mode for a newly-created target. Existing files preserve their permission bits. */
   mode?: number;
 }
 
@@ -38,7 +38,11 @@ export type TransactionFaultStage =
   | "original_backed_up"
   | "target_committed"
   | "before_validation"
-  | "validation_succeeded";
+  | "validation_succeeded"
+  /** After `complete` is durable, before one entry's backup is deleted. */
+  | "backup_cleanup"
+  /** After `complete` is durable, before the journal itself is deleted. */
+  | "journal_cleanup";
 
 export interface TransactionFaultContext {
   stage: TransactionFaultStage;
@@ -56,6 +60,15 @@ export interface ExecuteFileTransactionOptions {
   transactionId?: string;
 }
 
+export interface FileTransactionCleanupPending {
+  /** Repository-relative journal left in state `complete` for recoverPendingTransactions to finalize. */
+  journalPath: string;
+  /** Repository-relative backups kept because they no longer hold the journaled original bytes. */
+  retainedBackups: string[];
+  /** Cleanup steps that failed after `complete`; none of them rolled the transaction back. */
+  errors: string[];
+}
+
 export interface FileTransactionResult {
   transactionId: string | null;
   plannedWrites: number;
@@ -63,6 +76,12 @@ export interface FileTransactionResult {
   changedPaths: string[];
   rolledBack: false;
   journalPath: string | null;
+  /**
+   * Present only when cleanup after the durable `complete` state did not finish.
+   * The validated bytes are committed; the leftover journal is finalized (or, for a
+   * retained backup, refused) by the next recoverPendingTransactions.
+   */
+  cleanupPending?: FileTransactionCleanupPending;
 }
 
 export interface RecoveryResult {
@@ -220,6 +239,44 @@ function removeIfExists(filePath: string): void {
   if (fs.existsSync(filePath)) fs.rmSync(filePath, { force: true });
 }
 
+/** Presence without following a final symlink, so a dangling link still counts. */
+function isPresent(filePath: string): boolean {
+  try {
+    fs.lstatSync(filePath);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+/** True when `filePath` is a regular file whose bytes hash to `expected`. */
+function holdsBytes(filePath: string, expected: string | undefined): boolean {
+  if (expected === undefined) return false;
+  const stat = fs.lstatSync(filePath);
+  return !stat.isSymbolicLink() && stat.isFile() && hashBytes(fs.readFileSync(filePath)) === expected;
+}
+
+/**
+ * Move `source` to `destination` only while `destination` is absent. A hard link
+ * cannot replace an existing name, so a concurrently created destination is
+ * detected rather than overwritten. Where links are unsupported, an immediate
+ * existence re-check precedes the rename; the residual window is documented in
+ * ADR-027, which disclaims a cross-filesystem atomic primitive.
+ */
+function moveNoReplace(source: string, destination: string, label: string): void {
+  try {
+    fs.linkSync(source, destination);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "EEXIST") throw new Error(`TRANSACTION_CONCURRENT_DRIFT: ${label} was created concurrently`);
+    if (isPresent(destination)) throw new Error(`TRANSACTION_CONCURRENT_DRIFT: ${label} was created concurrently`);
+    fs.renameSync(source, destination);
+    return;
+  }
+  fs.rmSync(source, { force: true });
+}
+
 function cleanupEmptyDirectories(created: readonly string[]): void {
   for (const directory of [...created].reverse()) {
     try { fs.rmdirSync(directory); } catch { /* retained because non-empty */ }
@@ -232,15 +289,24 @@ function rollbackEntries(entries: PreparedEntry[], journalPath: string, journal:
   const failures: string[] = [];
   for (const entry of [...entries].reverse()) {
     try {
-      if (fs.existsSync(entry.backup)) {
+      // Compare-and-swap: a target is replaced or deleted only while it is absent or
+      // still holds the transaction's own bytes. Anything else is a user's edit; both
+      // it and the backup are kept and the entry fails with a drift reason.
+      const current = readState(entry.target);
+      const targetIsTransactionOwned = !current.exists || current.hash === entry.newHash;
+      if (isPresent(entry.backup)) {
+        if (!targetIsTransactionOwned) {
+          throw new Error(`TRANSACTION_CONCURRENT_DRIFT: target changed after commit; backup retained at ${entry.backupPath}`);
+        }
         removeIfExists(entry.target);
         fs.renameSync(entry.backup, entry.target);
         fsyncDirectory(path.dirname(entry.target));
-      } else if (!entry.originalExists && fs.existsSync(entry.target)) {
-        const current = readState(entry.target);
-        if (current.hash === entry.newHash || entry.state === "committed" || entry.state === "validated") {
+      } else if (!entry.originalExists && current.exists) {
+        if (current.hash === entry.newHash) {
           fs.rmSync(entry.target, { force: true });
           fsyncDirectory(path.dirname(entry.target));
+        } else if (entry.state === "committed" || entry.state === "validated") {
+          throw new Error("TRANSACTION_CONCURRENT_DRIFT: created target changed after commit; it is kept");
         }
       }
       removeIfExists(entry.temp);
@@ -268,7 +334,7 @@ function rollbackEntries(entries: PreparedEntry[], journalPath: string, journal:
 function prepareEntries(root: string, intents: readonly FileMutationIntent[], id: string): PreparedEntry[] {
   const seen = new Set<string>();
   const prepared: PreparedEntry[] = [];
-  for (const [index, intent] of [...intents].sort((a, b) => compareCodePoints(a.path, b.path)).entries()) {
+  for (const intent of [...intents].sort((a, b) => compareCodePoints(a.path, b.path))) {
     const relative = normalizeRelativePath(intent.path);
     if (seen.has(relative)) throw new Error(`duplicate transaction target: ${relative}`);
     seen.add(relative);
@@ -286,7 +352,9 @@ function prepareEntries(root: string, intents: readonly FileMutationIntent[], id
     const newHash = hashBytes(bytes);
     if (state.exists && state.hash === newHash) continue;
     const basename = path.basename(target);
-    const token = `${id}-${String(index).padStart(4, "0")}`;
+    // Tokens number the compacted prepared entries, the same index space as the
+    // journal, so a skipped no-op never skews a staging name.
+    const token = `${id}-${String(prepared.length).padStart(4, "0")}`;
     prepared.push({
       path: relative,
       target,
@@ -355,12 +423,20 @@ function commitEntries(ctx: TransactionContext, entries: PreparedEntry[]): void 
     if (entry.originalExists) {
       fs.renameSync(entry.target, entry.backup);
       fsyncDirectory(path.dirname(entry.target));
+      // Compare-and-swap at the moment of mutation: the moved original must be the
+      // planned original. Otherwise the concurrent bytes go back to the target, the
+      // entry stays `staged` (not transaction-owned) and the whole run aborts.
+      if (!holdsBytes(entry.backup, entry.originalHash)) {
+        moveNoReplace(entry.backup, entry.target, entry.path);
+        fsyncDirectory(path.dirname(entry.target));
+        throw new Error(`TRANSACTION_CONCURRENT_DRIFT: ${entry.path} bytes changed during commit`);
+      }
       entry.state = "backed_up";
       ctx.journal.entries[index] = journalEntry(entry);
       writeJournal(ctx.journalPath, ctx.journal);
       ctx.options.faultInjector?.({ stage: "original_backed_up", transactionId: ctx.id, path: entry.path, index });
     }
-    fs.renameSync(entry.temp, entry.target);
+    moveNoReplace(entry.temp, entry.target, entry.path);
     fsyncDirectory(path.dirname(entry.target));
     entry.state = "committed";
     ctx.journal.entries[index] = journalEntry(entry);
@@ -430,21 +506,6 @@ export function executeFileTransaction(
     // finish cleanup without rolling a successfully validated transaction back.
     journal.state = "complete";
     writeJournal(journalPath, journal);
-
-    for (const entry of entries) removeIfExists(entry.backup);
-    removeIfExists(journalPath);
-    removeIfExists(`${journalPath}.next`);
-    // The target parent directories remain by design; only ephemeral journal
-    // directories are removed when empty.
-    cleanupEmptyDirectories(createdDirectories.filter((item) => item.startsWith(journalDirectory)));
-    return {
-      transactionId: id,
-      plannedWrites: entries.length,
-      committedWrites: entries.length,
-      changedPaths: entries.map((entry) => entry.path),
-      rolledBack: false,
-      journalPath: path.relative(root, journalPath).split(path.sep).join("/"),
-    };
   } catch (error) {
     try {
       rollbackEntries(entries, journalPath, journal, createdDirectories);
@@ -453,6 +514,61 @@ export function executeFileTransaction(
     }
     throw error;
   }
+
+  // Post-`complete` cleanup is outside the rollback boundary: no failure here may
+  // roll a validated transaction back. It is best-effort; whatever remains is left
+  // under the `complete` journal for recoverPendingTransactions and is reported.
+  const relativeJournalPath = path.relative(root, journalPath).split(path.sep).join("/");
+  const retainedBackups: string[] = [];
+  const cleanupErrors: string[] = [];
+  for (const [index, entry] of entries.entries()) {
+    try {
+      options.faultInjector?.({ stage: "backup_cleanup", transactionId: id, path: entry.path, index });
+      // A backup is deleted only while it still holds the journaled original bytes.
+      if (!isPresent(entry.backup) || holdsBytes(entry.backup, entry.originalHash)) removeIfExists(entry.backup);
+      else retainedBackups.push(entry.backupPath);
+    } catch (error) {
+      cleanupErrors.push(`${entry.path}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  if (retainedBackups.length === 0 && cleanupErrors.length === 0) {
+    try {
+      options.faultInjector?.({ stage: "journal_cleanup", transactionId: id });
+      removeIfExists(journalPath);
+      removeIfExists(`${journalPath}.next`);
+      // The target parent directories remain by design; only ephemeral journal
+      // directories are removed when empty.
+      cleanupEmptyDirectories(createdDirectories.filter((item) => item.startsWith(journalDirectory)));
+    } catch (error) {
+      cleanupErrors.push(`${relativeJournalPath}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  const pending = retainedBackups.length > 0 || cleanupErrors.length > 0;
+  return {
+    transactionId: id,
+    plannedWrites: entries.length,
+    committedWrites: entries.length,
+    changedPaths: entries.map((entry) => entry.path),
+    rolledBack: false,
+    journalPath: relativeJournalPath,
+    ...(pending ? { cleanupPending: { journalPath: relativeJournalPath, retainedBackups, errors: cleanupErrors } } : {}),
+  };
+}
+
+/**
+ * Validate a journaled staging name by shape, not by recomputing it from the entry
+ * position: same directory as the target, basename `.${basename}.l9txn-${id}-NNNN`
+ * with the given suffix. Returns the 4-digit token, or null when the shape differs.
+ * Shape validation accepts journals written before tokens were densely numbered.
+ */
+function stagingToken(journaledPath: unknown, entryPath: string, transactionId: string, suffix: ".tmp" | ".bak"): string | null {
+  if (typeof journaledPath !== "string") return null;
+  const slash = entryPath.lastIndexOf("/");
+  const prefix = `${entryPath.slice(0, slash + 1)}.${entryPath.slice(slash + 1)}.l9txn-${transactionId}-`;
+  if (!journaledPath.startsWith(prefix) || !journaledPath.endsWith(suffix)) return null;
+  const token = journaledPath.slice(prefix.length, journaledPath.length - suffix.length);
+  // At least four digits: the producer pads to four and a larger transaction widens it.
+  return /^\d{4,}$/.test(token) ? token : null;
 }
 
 function journalToPrepared(root: string, journal: TransactionJournal, journalName: string): PreparedEntry[] {
@@ -464,6 +580,7 @@ function journalToPrepared(root: string, journal: TransactionJournal, journalNam
   const allowedJournalStates = new Set(["preparing", "staged", "committing", "validating", "complete", "rolling_back", "rollback_failed"]);
   const allowedEntryStates = new Set<EntryState>(["planned", "staged", "backed_up", "committed", "validated"]);
   if (!allowedJournalStates.has(journal.state)) throw new Error("invalid transaction journal state");
+  const tokens = new Set<string>();
   return journal.entries.map((entry, index) => {
     if (!allowedEntryStates.has(entry.state)) throw new Error(`invalid transaction entry state at ${index}`);
     if (!/^[a-f0-9]{64}$/.test(entry.newHash)) throw new Error(`invalid transaction new hash at ${index}`);
@@ -471,13 +588,13 @@ function journalToPrepared(root: string, journal: TransactionJournal, journalNam
       throw new Error(`invalid transaction original hash at ${index}`);
     }
     const target = absoluteTarget(root, entry.path);
-    const basename = path.basename(target);
-    const token = `${journal.transaction_id}-${String(index).padStart(4, "0")}`;
-    const expectedTemp = path.relative(root, path.join(path.dirname(target), `.${basename}.l9txn-${token}.tmp`)).split(path.sep).join("/");
-    const expectedBackup = path.relative(root, path.join(path.dirname(target), `.${basename}.l9txn-${token}.bak`)).split(path.sep).join("/");
-    if (entry.tempPath !== expectedTemp || entry.backupPath !== expectedBackup) {
+    const entryPath = normalizeRelativePath(entry.path);
+    const tempToken = stagingToken(entry.tempPath, entryPath, journal.transaction_id, ".tmp");
+    const backupToken = stagingToken(entry.backupPath, entryPath, journal.transaction_id, ".bak");
+    if (tempToken === null || tempToken !== backupToken || tokens.has(tempToken)) {
       throw new Error(`transaction journal staging path mismatch at ${index}`);
     }
+    tokens.add(tempToken);
     const temp = absoluteTarget(root, entry.tempPath);
     const backup = absoluteTarget(root, entry.backupPath);
     assertExistingPathSafety(root, target);
@@ -504,6 +621,11 @@ export function recoverPendingTransactions(rootInput: string): RecoveryResult {
         if (!current.exists || current.hash !== entry.newHash) {
           throw new Error(`TRANSACTION_FINALIZATION_FAILED: ${entry.path} does not match completed journal`);
         }
+        if (isPresent(entry.backup) && !holdsBytes(entry.backup, entry.originalHash)) {
+          throw new Error(`TRANSACTION_FINALIZATION_FAILED: backup ${entry.backupPath} for ${entry.path} does not hold the journaled original; it is retained`);
+        }
+      }
+      for (const entry of entries) {
         removeIfExists(entry.backup);
         removeIfExists(entry.temp);
       }

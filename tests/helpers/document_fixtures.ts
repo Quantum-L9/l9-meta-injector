@@ -138,6 +138,17 @@ export function writePptx(target: string, slides: PptxSlide[]): string {
   ];
   slides.forEach((slide, index) => {
     parts.push({ name: `ppt/slides/slide${index + 1}.xml`, content: slidePart(slide) });
+    // Office ties a slide to its notes through the slide's relationship part,
+    // not through matching numbers, and the decoder resolves it that way.
+    parts.push({
+      name: `ppt/slides/_rels/slide${index + 1}.xml.rels`,
+      content: `${xmlHeader()}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`
+        + (slide.notes === undefined
+          ? ""
+          : '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide" '
+            + `Target="../notesSlides/notesSlide${index + 1}.xml"/>`)
+        + "</Relationships>",
+    });
     if (slide.notes !== undefined) {
       parts.push({ name: `ppt/notesSlides/notesSlide${index + 1}.xml`, content: notesPart(slide.notes) });
     }
@@ -204,9 +215,20 @@ export function writeXlsx(target: string, sheets: XlsxSheet[]): string {
     ),
     {
       name: "xl/workbook.xml",
-      content: `${xmlHeader()}<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheets>`
+      content: `${xmlHeader()}<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" `
+        + 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>'
         + sheets.map((sheet, index) => `<sheet name="${escapeXml(sheet.name)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`).join("")
         + "</sheets></workbook>",
+    },
+    {
+      // Each `<sheet r:id>` names its worksheet part through this relationship
+      // part; Excel always writes it.
+      name: "xl/_rels/workbook.xml.rels",
+      content: `${xmlHeader()}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`
+        + sheets.map((_sheet, index) =>
+          `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" `
+          + `Target="worksheets/sheet${index + 1}.xml"/>`).join("")
+        + "</Relationships>",
     },
     ...sheetParts,
     {
@@ -304,6 +326,11 @@ export function writePdf(target: string, lines: string[], options: { title?: str
     `__STREAM__`,
     "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
   ];
+  // A title is stated where a PDF states it: in an Info dictionary the trailer
+  // names, as every producer writes it.
+  if (options.title !== undefined) {
+    objects.push(`<< /Title (${options.title.replace(/([()\\])/g, "\\$1")}) /Producer (l9 fixtures) >>`);
+  }
 
   const chunks: Buffer[] = [];
   let offset = 0;
@@ -330,7 +357,7 @@ export function writePdf(target: string, lines: string[], options: { title?: str
   const xrefOffset = offset;
   const xrefLines = ["xref", `0 ${objects.length + 1}`, "0000000000 65535 f "];
   for (const entry of offsets) xrefLines.push(`${String(entry).padStart(10, "0")} 00000 n `);
-  const info = options.title === undefined ? "" : ` /Title (${options.title.replace(/([()\\])/g, "\\$1")})`;
+  const info = options.title === undefined ? "" : ` /Info ${objects.length} 0 R`;
   push(Buffer.from(
     `${xrefLines.join("\n")}\ntrailer\n<< /Size ${objects.length + 1} /Root 1 0 R${info} >>\n`
     + `startxref\n${xrefOffset}\n%%EOF\n`,
@@ -406,6 +433,228 @@ export function writeEncryptedPdf(target: string): string {
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, body, "latin1");
   return target;
+}
+
+/**
+ * One object of a hand-built PDF.
+ *
+ * `body` is the object's text. When `stream` is given, `body` is the stream's
+ * dictionary, and a `__LENGTH__` token in it is replaced by the stream's byte
+ * length, so a fixture can say exactly how its /Length is written.
+ */
+export interface PdfFixtureObject {
+  number: number;
+  body: string;
+  stream?: Buffer;
+}
+
+/**
+ * Assemble a PDF from explicit objects, with a real xref section and trailer.
+ *
+ * `base` appends the objects as an incremental update to an existing file, the
+ * way an editor saves: new definitions after the old ones, a new xref section
+ * and a new trailer. `trailer` is the trailer dictionary's inner text; pass
+ * `null` to write no `trailer` keyword at all (as an xref-stream file does).
+ */
+export function buildPdf(
+  objects: PdfFixtureObject[],
+  options: { trailer: string | null; version?: string; base?: Buffer },
+): Buffer {
+  const chunks: Buffer[] = [];
+  let offset = 0;
+  const push = (buffer: Buffer): void => {
+    chunks.push(buffer);
+    offset += buffer.length;
+  };
+  if (options.base !== undefined) push(options.base);
+  else push(Buffer.from(`%PDF-${options.version ?? "1.4"}\n%\xe2\xe3\xcf\xd3\n`, "latin1"));
+
+  const offsets: { number: number; offset: number }[] = [];
+  for (const object of objects) {
+    offsets.push({ number: object.number, offset });
+    if (object.stream !== undefined) {
+      const dict = object.body.replace("__LENGTH__", String(object.stream.length));
+      push(Buffer.from(`${object.number} 0 obj\n${dict}\nstream\n`, "latin1"));
+      push(object.stream);
+      push(Buffer.from("\nendstream\nendobj\n", "latin1"));
+      continue;
+    }
+    push(Buffer.from(`${object.number} 0 obj\n${object.body}\nendobj\n`, "latin1"));
+  }
+
+  const xrefOffset = offset;
+  const xrefLines = ["xref"];
+  for (const entry of offsets) {
+    xrefLines.push(`${entry.number} 1`, `${String(entry.offset).padStart(10, "0")} 00000 n `);
+  }
+  const trailer = options.trailer === null ? "" : `trailer\n<< ${options.trailer} >>\n`;
+  push(Buffer.from(`${xrefLines.join("\n")}\n${trailer}startxref\n${xrefOffset}\n%%EOF\n`, "latin1"));
+  return Buffer.concat(chunks);
+}
+
+/**
+ * A Flate `/Type /ObjStm` object holding `members`, as PDF 1.5 writers emit
+ * them: a header of `number offset` pairs, then the member bodies.
+ */
+export function objectStreamObject(number: number, members: { number: number; body: string }[]): PdfFixtureObject {
+  const bodies: string[] = [];
+  const pairs: string[] = [];
+  let offset = 0;
+  for (const member of members) {
+    pairs.push(`${member.number} ${offset}`);
+    bodies.push(member.body);
+    offset += Buffer.byteLength(member.body, "latin1") + 1;
+  }
+  const header = `${pairs.join(" ")}\n`;
+  const content = Buffer.from(header + bodies.join("\n"), "latin1");
+  return {
+    number,
+    body: `<< /Type /ObjStm /N ${members.length} /First ${Buffer.byteLength(header, "latin1")} /Length __LENGTH__ /Filter /FlateDecode >>`,
+    stream: zlib.deflateSync(content),
+  };
+}
+
+/** A font for `fontPagePdf`: its resource name, dictionary and ToUnicode CMap. */
+export interface FixtureFont {
+  /** Resource name without the slash, e.g. `F1`. */
+  name: string;
+  /** Dictionary entries after `/Type /Font`, e.g. `/Subtype /Type0 ...`. */
+  dict: string;
+  /** The ToUnicode CMap's text, written as its own stream object. */
+  toUnicode?: { cmap: string; compressed: boolean };
+  /** A `/ToUnicode` value to write as-is instead (e.g. a dangling reference). */
+  toUnicodeValue?: string;
+}
+
+/** A ToUnicode CMap program around the given body rows. */
+export function cmapProgram(rows: string[]): string {
+  return [
+    "/CIDInit /ProcSet findresource begin",
+    "12 dict begin",
+    "begincmap",
+    "/CMapName /Fixture-UCS def",
+    ...rows,
+    "endcmap",
+    "CMapName currentdict /CMap defineresource pop",
+    "end",
+    "end",
+  ].join("\n");
+}
+
+/**
+ * A one-page PDF whose page selects among `fonts` in `content`.
+ *
+ * Objects: 1 catalog, 2 page tree, 3 page, 4 content; font i is object 10 + 2i
+ * and its CMap 11 + 2i. `inheritResources` states the font resources on the page
+ * tree node rather than the page; `objectStream` puts the catalog, page tree,
+ * page and fonts in an object stream, as a PDF 1.5 writer does.
+ */
+export function fontPagePdf(
+  fonts: FixtureFont[],
+  content: string,
+  options: { inheritResources?: boolean; objectStream?: boolean } = {},
+): Buffer {
+  const fontEntries = fonts.map((font, index) => `/${font.name} ${10 + index * 2} 0 R`).join(" ");
+  const resources = `/Resources << /Font << ${fontEntries} >> >>`;
+  const structural: { number: number; body: string }[] = [
+    { number: 1, body: "<< /Type /Catalog /Pages 2 0 R >>" },
+    {
+      number: 2,
+      body: `<< /Type /Pages /Kids [3 0 R] /Count 1${options.inheritResources === true ? ` ${resources}` : ""} >>`,
+    },
+    {
+      number: 3,
+      body: `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]${options.inheritResources === true ? "" : ` ${resources}`} /Contents 4 0 R >>`,
+    },
+  ];
+  const streams: PdfFixtureObject[] = [flateStreamObject(4, content)];
+  fonts.forEach((font, index) => {
+    const cmapNumber = 11 + index * 2;
+    let toUnicode = "";
+    if (font.toUnicodeValue !== undefined) toUnicode = ` /ToUnicode ${font.toUnicodeValue}`;
+    else if (font.toUnicode !== undefined) toUnicode = ` /ToUnicode ${cmapNumber} 0 R`;
+    structural.push({ number: 10 + index * 2, body: `<< /Type /Font ${font.dict}${toUnicode} >>` });
+    if (font.toUnicode !== undefined) {
+      streams.push(font.toUnicode.compressed
+        ? flateStreamObject(cmapNumber, font.toUnicode.cmap)
+        : plainStreamObject(cmapNumber, font.toUnicode.cmap));
+    }
+  });
+  if (options.objectStream === true) {
+    return buildPdf(
+      [
+        objectStreamObject(50, structural),
+        ...streams,
+        { number: 51, body: "<< /Type /XRef /Size 52 /Root 1 0 R /W [1 2 1] /Length __LENGTH__ >>", stream: Buffer.alloc(0) },
+      ],
+      { trailer: null, version: "1.5" },
+    );
+  }
+  return buildPdf([...structural, ...streams], { trailer: `/Size ${11 + fonts.length * 2} /Root 1 0 R` });
+}
+
+/** Write bytes to a fixture path, creating its directory. */
+export function writeBytes(target: string, bytes: Buffer): string {
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, bytes);
+  return target;
+}
+
+/** A Flate-compressed stream object holding `content`. */
+export function flateStreamObject(number: number, content: string | Buffer, extraDict = ""): PdfFixtureObject {
+  const raw = typeof content === "string" ? Buffer.from(content, "latin1") : content;
+  return {
+    number,
+    body: `<< /Length __LENGTH__ /Filter /FlateDecode${extraDict} >>`,
+    stream: zlib.deflateSync(raw),
+  };
+}
+
+/** An uncompressed stream object holding `content`. */
+export function plainStreamObject(number: number, content: string | Buffer, extraDict = ""): PdfFixtureObject {
+  const raw = typeof content === "string" ? Buffer.from(content, "latin1") : content;
+  return { number, body: `<< /Length __LENGTH__${extraDict} >>`, stream: raw };
+}
+
+/**
+ * A PDF with one page per content stream, every page using one Helvetica font.
+ *
+ * Objects: 1 catalog, 2 page tree, 3 font, then a page and its content stream
+ * for each entry. Each content is a whole content stream, or `{ stream }` to
+ * supply the stream object directly (for a bomb or a corrupt stream).
+ */
+export function multiPagePdf(
+  pages: (string | { object: (number: number) => PdfFixtureObject })[],
+): Buffer {
+  const objects: PdfFixtureObject[] = [
+    { number: 1, body: "<< /Type /Catalog /Pages 2 0 R >>" },
+    {
+      number: 2,
+      body: `<< /Type /Pages /Kids [${pages.map((_, index) => `${4 + index * 2} 0 R`).join(" ")}] /Count ${pages.length} >>`,
+    },
+    { number: 3, body: "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>" },
+  ];
+  pages.forEach((page, index) => {
+    const pageNumber = 4 + index * 2;
+    const contentNumber = pageNumber + 1;
+    objects.push({
+      number: pageNumber,
+      body: `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents ${contentNumber} 0 R >>`,
+    });
+    objects.push(typeof page === "string" ? flateStreamObject(contentNumber, page) : page.object(contentNumber));
+  });
+  return buildPdf(objects, { trailer: `/Size ${3 + pages.length * 2 + 1} /Root 1 0 R` });
+}
+
+/** A content stream that shows each line, as writePdf lays them out. */
+export function textContent(lines: string[]): string {
+  return [
+    "BT",
+    "/F1 12 Tf",
+    "72 720 Td",
+    ...lines.flatMap((line) => [`(${line.replace(/([()\\])/g, "\\$1")}) Tj`, "0 -18 Td"]),
+    "ET",
+  ].join("\n");
 }
 
 function escapeXml(value: string): string {

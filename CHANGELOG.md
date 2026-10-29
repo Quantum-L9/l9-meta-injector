@@ -2,9 +2,37 @@
 
 ## Unreleased
 
+Correctness remediation of the bf66978 audit (plan `l9-meta-injector-remediation-bf66978`, READY work units). Each unit lands as one commit with failing-before / passing-after regression tests named by their `REG-WU-*` ids. Units blocked on owner decisions (ADR-057..071) are not included.
+
 ### Changed
 
+- **Consumer-visible version bumps.** Each bump changes derived ids, cache keys or profile hashes once:
+  - `manifest/v1` extractor and every line extractor: 1.0.0 → 1.1.0. `DOCUMENT_BLOCK_PROFILE_VERSION`: 1.1.0.
+  - `MANIFEST_DECODER_VERSION` and `PROJECT_CANDIDATE_METHOD_VERSION`: 1.1.0, so project candidate ids move.
+  - `FUSION_PROFILE_VERSION`: 1.1.0, so semantic candidate ids move.
+  - `READINESS_PROFILE_VERSION`: 1.1.0.
+  - PDF decoder: 1.0.0 → 1.3.0.
+  - DOCX, PPTX and XLSX decoders: 1.1.0. HTML and CSV decoders: 1.2.0. Text and notebook decoders: 1.1.0.
+- `DecoderBudget` gains `maxContainerUncompressedBytes` (default 256 MiB, 8 × the per-part limit), the aggregate decompression allowance for one OOXML container (WU-061).
+- Inventory excludes a nested custom `outDir` by its exact root-relative path; same-named directories elsewhere are now inventoried (WU-078). Only a harvested `inventory_type` is compared with the classification, so repositories with pipeline-annotated docs see a one-time repository-model snapshot hash change (WU-081).
+- Placement plans carry repository-relative `sourcePath` and the resolved namespace (WU-010). Dry-run verification reports what a real run would verify and accounts for every eligible file; a new coverage reason `carrier_inline_blocked` and optional `inlineCarrierBlock` field name inline-carrier holds (WU-009).
+- The local-source canonical packet is blocked by any unreadable file, directory or entry, and a single-file or archive source whose bytes cannot be hashed is refused at acquisition (WU-035). `LocalSourceObservation` gains an optional `hashingStats` field (WU-040). A built repository-model packet carries `validation.status` and `receipt_ref` only for validation that actually ran (WU-030).
+- Identity-bearing diagnostics carry portable error codes instead of absolute host paths (WU-028).
+- Embedding runs record `reported_model_revision`; a run whose responses report two revisions fails, the pool stops on the first failure, and vectors are validated (WU-051). The HTTP timeout covers the whole request including the body read (WU-052).
+- `FileTransactionResult` gains an optional `cleanupPending`; governed apply reports it as a warning (WU-004).
+- ZIP rewrites preserve each kept member's original central record and the archive comment; a member whose offset needs Zip64 holds as `archive.zip64` (WU-031).
 - `.github/dependabot.yml` limits both version-update groups to minor and patch updates, so a major version of any package arrives as its own individual pull request instead of inside a group. The first grouped branch (#108) paired TypeScript 7 with typescript-eslint 8, whose peer range stops at 5.x, and could not install, which also blocked the minor and patch updates sharing it (ADR-056 amendment). Minor and patch updates still land through the groups and `npm run deps:rebind`.
+
+### Fixed
+
+- Frontmatter: opaque managed values reconcile by their verbatim text, so a real value is not replaced by a placeholder and a second run writes nothing (WU-003). Pipeline `content_hash` covers exactly the body the patcher preserves (WU-012). normalize-filenames sidecars are excluded from discovery and hard-skipped by the carrier policy (WU-013). LLM assist results are normalised to the declared field shape (WU-015). Skills dry-run applies the real-run eligibility filter (WU-018). Operation-mode lookup refuses `Object.prototype` names (WU-008). The discovery-glob validator refuses trailing-slash patterns that can never match, suggesting `dir/**` (WU-007).
+- Extractors: TOML tables and arrays of tables, PEP 621 and nested JSON manifests are read correctly (WU-019); extractor regexes run in linear time and line splitting honours BOM and CR (WU-020); fence exclusion follows CommonMark and duplicate title readings are removed (WU-021); the block reader finds milestone sections as the Markdown reader does (WU-022); stacked route decorators are all recorded (WU-023).
+- Corpus: project containers, declared identifiers (`pom.xml` `artifactId`, JSON top-level keys) and root-level keys are resolved correctly and empty candidates are not emitted (WU-047); `decode_gap.encoding_rejected` counts the statuses actually recorded (WU-044); partial-root failures are keyed by root identity (WU-045); readiness archive identity is unique across roots (WU-046); `stat_precheck` reuses the hashing stat (WU-040); fusion computes `cross_root` and the confidence class and supersedes within a member structurally (WU-048); the reasoning-pack character budget bounds the rendered pack (WU-053); diff invalidation uses the real analysis inputs (WU-054); readiness conflicts compare status classes (WU-055); the work-signal export verifier recomputes manifest counts (WU-056); output containment holds when a root is `/` (WU-080), and the same holds for the local-source scratch-parent check.
+- Documents: the PDF decoder bounds every inflate and the per-document total, stores CMap ranges, and computes object extents once (WU-057); resolves indirect lengths, object streams, the page tree and trailer `/Info` (WU-058); and tokenizes text by operand stack with per-font ToUnicode and positioning (WU-059). XML text nodes are delivered faithfully, DOCX `w:t` runs are harvested, and a markup tag's end is found outside quoted attribute values (WU-060). OOXML parts are located through their `.rels` relationships, PPTX speaker notes included; decompression is bounded per container; XLSX cells without an `r` attribute take their implied reference (WU-061). HTML `script`/`style` (and `noembed`, `noframes`) contents are raw text, the block model is complete, and the HTML 4.01 named references (plus `apos`) decode (WU-062). CSV records split only after quote-aware parsing (WU-063). Text and notebook line classification runs in linear time, notebook fences are respected, a BOM is not content, and ATX closing sequences are stripped (WU-064).
+- Archives and inventory: TAR members join the ustar prefix, and root meta is recognised by one canonical identity (WU-031); gunzip stops at the budget in both variants (WU-077); `inventory.csv` quotes carriage returns (WU-082); the macOS tag projection decodes tags once and plist reads remove their temp directory (WU-079; closure on macOS outstanding).
+- Local source: only verified regular files are opened (WU-033); output containment resolves symlinks and the CLI writes nothing before it passes (WU-036); the validated `scratchParent` is the one used (WU-037); `local-source-cli` cleans up on every exit and accepts thresholds only in [0, 1] (WU-067).
+- Authority and transactions: the transaction journal's bookkeeping and commit/rollback use compare-and-swap (WU-004); the authority scan evaluates every invocation in linear time (WU-025); authority loading refuses symlinked path components and broken links (WU-026); semantic-foundation verification refuses duplicate `artifact_id` claims (WU-027).
+- Scripts: `gitBinary` resolves absolute paths only (WU-069); selfpack fails when its baseline is missing (WU-071); the validation-report verdict is parsed structurally (WU-072); the topology read-only guard removes only its own interpreter output (WU-073).
 
 ## 4.2.0 - 2026-10-22
 

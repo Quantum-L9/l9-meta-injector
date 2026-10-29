@@ -52,6 +52,15 @@ export declare function canonicalMemberPath(name: string): string;
  * than resolved by whichever one happened to be written last.
  */
 export declare function memberCollisionKey(canonicalPath: string): string;
+/**
+ * Whether a stored member name is the archive's root metadata carrier.
+ *
+ * Identity is the admission identity: the canonical path under the collision
+ * fold. Anything narrower lets a writer keep `.//.l9meta.yaml` or `.L9META.yaml`
+ * beside the `.l9meta.yaml` it adds, producing an archive its own admit then
+ * holds as a duplicate or collision on every later run.
+ */
+export declare function rootMetaMemberKind(name: string): "canonical" | "legacy" | null;
 /** Path-safety holds for one member name. Shared by ZIP preflight and TAR inventory admit. */
 export declare function pathSafetyHolds(raw: string, policy: LocalArchivePolicy): ArchiveHold[];
 export interface ArchivePreflightInput {

@@ -13,7 +13,10 @@ import { runSemanticAnalysis } from "../src/corpus_semantic_run";
 import { classifyPair } from "../src/corpus_fusion";
 import { buildFeatureViews } from "../src/corpus_semantics";
 import { buildSemanticPairs, referenceFixtureComparison } from "../src/corpus_pairs";
+import { buildReasoningEvidencePacks } from "../src/corpus_reasoning";
+import type { PackAssertion, ReasoningEvidencePack } from "../src/corpus_reasoning";
 import {
+  artifact,
   consolidationSet,
   crossArchiveVersions,
   exactDuplicates,
@@ -389,6 +392,131 @@ describe("archive context on its own", () => {
     for (const candidate of result.projects.candidates) {
       // Any project candidate here must rest on something other than the archive.
       expect(candidate.confidence_class).not.toBe("weak");
+    }
+  });
+});
+
+describe("the reasoning pack character budget bounds the rendered pack", () => {
+  const ROW = {
+    schema: "test",
+    reasoning_candidate_id: "reasoning:1",
+    candidate_id: "candidate:1",
+    candidate_type: "PROJECT_CANDIDATE",
+    reasoning_type: "CONFLICT_RESOLUTION_ANALYSIS" as const,
+    reason: "test",
+    member_artifact_ids: ["big-a", "big-b"],
+    grounding_refs: {
+      readiness_evidence_ref: "r", corpus_coverage_ref: "c", corpus_snapshot_ref: "s",
+    },
+    routing_profile: {
+      reasoning_routing_profile_id: "p", reasoning_routing_profile_version: "1",
+      reasoning_routing_profile_hash: "h",
+    },
+  };
+
+  function assertion(id: string, index: number, objectLength: number, excerptLength = 40): PackAssertion {
+    return {
+      assertion_id: `assert:${id}:${String(index).padStart(3, "0")}`,
+      predicate: index === 0 ? "work.status" : "work.references",
+      object: "o".repeat(objectLength),
+      source_path: `${id}/doc.md`,
+      evidence_excerpt: "e".repeat(excerptLength),
+      source_content_hash: "sha256:x",
+    };
+  }
+
+  /** Every variable-length character a pack carries for its artifacts. */
+  function charged(pack: ReasoningEvidencePack): number {
+    let total = 0;
+    for (const artifact of pack.artifacts) {
+      for (const excerpt of artifact.excerpts) {
+        total += excerpt.object.length + excerpt.source_path.length + excerpt.evidence_excerpt.length;
+      }
+      for (const list of [
+        artifact.titles, artifact.selected_headings, artifact.statuses, artifact.work_kinds,
+        artifact.tasks_summary.open_terms, artifact.milestones, artifact.explicit_dependencies,
+        artifact.explicit_references, artifact.supersession_assertions,
+      ]) {
+        for (const entry of list) total += entry.length;
+      }
+    }
+    return total;
+  }
+
+  function bigInputs() {
+    const references = Array.from({ length: 400 }, (_, i) => `refs/target-${String(i).padStart(3, "0")}.md`);
+    const artifacts = ["big-a", "big-b"].map((id) => artifact({
+      id, path: `${id}/doc.md`, title: `Big ${id}`, status: "WIP", references,
+    }));
+    const views = buildFeatureViews(artifacts);
+    const assertions = new Map<string, PackAssertion[]>(
+      ["big-a", "big-b"].map((id) => [id, [0, 1, 2].map((i) => assertion(id, i, 5_000))]),
+    );
+    return { views, assertions };
+  }
+
+  it("REG-WU-053-RC-082-a: assertion objects and long lists are charged, and what is left out is counted", () => {
+    const { views, assertions } = bigInputs();
+    const [pack] = buildReasoningEvidencePacks({
+      reasoningCandidates: [ROW], views, pairs: [], assertionsByArtifact: assertions,
+      budget: { maxTotalPackCharacters: 1_000 },
+    });
+    expect(pack).toBeDefined();
+    expect(charged(pack!)).toBeLessThanOrEqual(1_000);
+    expect(pack!.truncation.truncated).toBe(true);
+    // Nothing was cut mid-excerpt (each fits maxExcerptCharacters), so every
+    // omitted character is a whole item: the original total minus what shipped.
+    let original = 0;
+    for (const view of views) {
+      for (const entry of assertions.get(view.artifact_id) ?? []) {
+        original += entry.object.length + entry.source_path.length + entry.evidence_excerpt.length;
+      }
+      for (const list of [
+        view.normalized_title_tokens, view.normalized_heading_tokens, view.statuses, view.kinds,
+        view.task_terms, view.milestone_terms, view.declared_dependencies,
+        view.normalized_reference_targets,
+        view.supersession_declarations.map((d) => `${d.predicate} ${d.object}`),
+      ]) {
+        for (const entry of list) original += entry.length;
+      }
+    }
+    expect(pack!.truncation.characters_omitted).toBe(original - charged(pack!));
+    // The member list stays complete however much evidence was cut.
+    expect(pack!.member_artifact_ids).toEqual(["big-a", "big-b"]);
+  });
+
+  it("REG-WU-053-RC-082-b: excerpts dropped by the per-artifact cap are counted with their lengths", () => {
+    const views = buildFeatureViews([artifact({ id: "ten", path: "ten.md", title: "Ten" })]);
+    const assertions = new Map<string, PackAssertion[]>([
+      ["ten", Array.from({ length: 10 }, (_, i) => assertion("ten", i + 1, 10, 30))],
+    ]);
+    const [pack] = buildReasoningEvidencePacks({
+      reasoningCandidates: [{ ...ROW, member_artifact_ids: ["ten"] }],
+      views, pairs: [], assertionsByArtifact: assertions,
+      budget: { maxExcerptsPerArtifact: 6 },
+    });
+    expect(pack!.artifacts[0]!.excerpts).toHaveLength(6);
+    expect(pack!.truncation.excerpts_omitted).toBe(4);
+    expect(pack!.truncation.truncated).toBe(true);
+    const dropped = (assertions.get("ten") ?? []).slice(6)
+      .reduce((sum, entry) => sum + entry.evidence_excerpt.length, 0);
+    expect(pack!.truncation.characters_omitted).toBeGreaterThanOrEqual(dropped);
+  });
+
+  it("REG-WU-053-RC-082-c: a pack inside its budget is untouched", () => {
+    const result = run(statusConflict());
+    const pack = result.evidencePacks.find((entry) => entry.member_artifact_ids.includes("status-a"));
+    expect(pack).toBeDefined();
+    expect(pack!.truncation).toMatchObject({
+      truncated: false, artifacts_omitted: 0, excerpts_omitted: 0, characters_omitted: 0,
+    });
+    // Every list carries the view's whole content.
+    const byId = new Map(result.views.map((view) => [view.artifact_id, view]));
+    for (const artifact of pack!.artifacts) {
+      const view = byId.get(artifact.artifact_id)!;
+      expect(artifact.statuses).toEqual(view.statuses);
+      expect(artifact.titles).toEqual(view.normalized_title_tokens);
+      expect(artifact.explicit_references).toEqual(view.normalized_reference_targets);
     }
   });
 });

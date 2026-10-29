@@ -17,9 +17,13 @@ import {
 import { compareCodePoints } from "./ordering";
 import { compileDiscoveryGlob } from "./glob";
 
-/** Injector-generated adjacent artifacts must never be rediscovered as inputs. */
+/**
+ * Injector-generated adjacent artifacts must never be rediscovered as inputs. That
+ * includes the `--normalize-filenames` sidecar, which normalizeFilenameWithLog writes
+ * beside the file inside the scanned tree (RC-016).
+ */
 function isGeneratedArtifact(name: string): boolean {
-  return name.endsWith(".inject.log") || name.endsWith(".l9meta.yaml");
+  return name.endsWith(".inject.log") || name.endsWith(".l9meta.yaml") || name.endsWith(".normalize.log.yaml");
 }
 
 function toPosix(value: string): string {

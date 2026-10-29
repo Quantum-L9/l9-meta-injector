@@ -70,6 +70,13 @@ export interface EmbeddingModelConfiguration {
 export interface EmbeddingResult {
   vector: number[];
   provider_metadata: Record<string, string>;
+  /**
+   * The model revision the provider itself reported for this answer, when it
+   * reported one. A model *name* is not a revision and never goes here. Kept
+   * apart from the configured `model_revision`, which is known before the pass
+   * and is the one bound into the analysis identity.
+   */
+  observed_model_revision?: string;
 }
 
 export interface EmbeddingProvider {
@@ -228,15 +235,31 @@ export function vectorDigest(vector: readonly number[]): string {
   return stableId("vector", { values: vector.map((value) => value.toFixed(6)) });
 }
 
-/** Cosine similarity in [-1, 1]. Zero when either vector has no magnitude. */
+/** A vector the pass cannot use: wrong dimension, mixed dimensions, or a non-finite value. */
+export class EmbeddingVectorError extends Error {}
+
+/**
+ * Cosine similarity in [-1, 1]. Zero when either vector has no magnitude.
+ *
+ * Both vectors are scaled by the largest absolute component first. Cosine is
+ * scale-invariant, so the answer is the same, and the squares can no longer
+ * overflow: `[1e200, 1e200]` against itself is 1, not `Infinity / Infinity`.
+ */
 export function cosineSimilarity(a: readonly number[], b: readonly number[]): number {
   if (a.length === 0 || a.length !== b.length) return 0;
+  let scale = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    scale = Math.max(scale, Math.abs(a[i] as number), Math.abs(b[i] as number));
+  }
+  // Zero magnitude scores 0; a non-finite component has no defined cosine and
+  // is refused upstream, so it scores 0 here rather than NaN.
+  if (scale === 0 || !Number.isFinite(scale)) return 0;
   let dot = 0;
   let normA = 0;
   let normB = 0;
   for (let i = 0; i < a.length; i += 1) {
-    const left = a[i] as number;
-    const right = b[i] as number;
+    const left = (a[i] as number) / scale;
+    const right = (b[i] as number) / scale;
     dot += left * right;
     normA += left * left;
     normB += right * right;
@@ -247,13 +270,22 @@ export function cosineSimilarity(a: readonly number[], b: readonly number[]): nu
   return Math.round(clamped * 10 ** SCORE_PRECISION) / 10 ** SCORE_PRECISION;
 }
 
-/** Mean of a document's chunk vectors: one vector per document, for pair scoring. */
+/**
+ * Mean of a document's chunk vectors: one vector per document, for pair scoring.
+ *
+ * Refuses vectors of mixed length. Skipping the odd one out used to divide the
+ * survivors' sum by the full count, which produced a vector no chunk had.
+ */
 export function meanVector(vectors: readonly (readonly number[])[]): number[] {
   if (vectors.length === 0) return [];
   const dimension = (vectors[0] as readonly number[]).length;
   const out = new Array<number>(dimension).fill(0);
   for (const vector of vectors) {
-    if (vector.length !== dimension) continue;
+    if (vector.length !== dimension) {
+      throw new EmbeddingVectorError(
+        `chunk vectors of one document have mixed dimensions (${dimension} and ${vector.length})`,
+      );
+    }
     for (let i = 0; i < dimension; i += 1) out[i] = (out[i] as number) + (vector[i] as number);
   }
   return out.map((value) => value / vectors.length);
@@ -284,6 +316,15 @@ export interface EmbeddingRunReport {
   provider: string | null;
   model_id: string | null;
   model_revision: string | null;
+  /**
+   * The revision the provider itself reported, when it reported one.
+   *
+   * Separate from `model_revision`, which is the configured value known before
+   * the pass and bound into the analysis identity. A revision a server states in
+   * its answers cannot be known until the first answer, so it is recorded beside
+   * the identity rather than inside it. Null when none was reported.
+   */
+  reported_model_revision: string | null;
   dimension: number | null;
   chunk_profile: string;
   reproducibility_class: EmbeddingReproducibilityClass | null;
@@ -375,6 +416,40 @@ export async function runEmbeddings(input: RunEmbeddingsInput): Promise<RunEmbed
   let chunksSent = 0;
   let artifactsSent = 0;
   let cacheHits = 0;
+  /** Distinct revisions the provider reported across the pass. */
+  const observedRevisions = new Set<string>();
+  /**
+   * The run's dimension, fixed by the first vector accepted. Every later vector,
+   * fresh or cached, must match it: a cosine between vectors of different
+   * lengths is not a low score, it is no score.
+   */
+  let runDimension: number | null = null;
+  /**
+   * The first failure, shared by every worker. Once set, no worker starts
+   * another document and no document sends another chunk.
+   */
+  let failure: { error: unknown } | null = null;
+
+  const acceptVector = (vector: readonly number[], artifactId: string, origin: string): void => {
+    if (vector.length === 0) {
+      throw new EmbeddingVectorError(`${origin} vector for '${artifactId}' is empty`);
+    }
+    for (const value of vector) {
+      if (!Number.isFinite(value)) {
+        throw new EmbeddingVectorError(
+          `${origin} vector for '${artifactId}' carries a non-finite component`,
+        );
+      }
+    }
+    if (runDimension === null) {
+      runDimension = vector.length;
+    } else if (vector.length !== runDimension) {
+      throw new EmbeddingVectorError(
+        `${origin} vector for '${artifactId}' has dimension ${vector.length}; `
+        + `the run's dimension is ${runDimension}`,
+      );
+    }
+  };
 
   const ordered = [...embeddable].sort((a, b) => compareCodePoints(a.artifact_id, b.artifact_id));
   const identity: EmbeddingModelIdentity = {
@@ -394,6 +469,7 @@ export async function runEmbeddings(input: RunEmbeddingsInput): Promise<RunEmbed
     });
     const cached = input.cache?.get(key);
     if (cached !== undefined) {
+      acceptVector(cached, document.artifact_id, "cached");
       vectors.set(document.artifact_id, cached);
       cacheHits += 1;
       return;
@@ -413,9 +489,22 @@ export async function runEmbeddings(input: RunEmbeddingsInput): Promise<RunEmbed
     // bound against, and where a partial document cannot be left half-embedded.
     const chunkVectors: number[][] = [];
     for (const chunk of chunks) {
+      // Another worker failed: send nothing more. This document is abandoned
+      // with the run, never recorded half-embedded.
+      if (failure !== null) return;
       const result = await input.provider.embed(chunk.text);
-      chunkVectors.push(result.vector);
       chunksSent += 1;
+      acceptVector(result.vector, document.artifact_id, "provider");
+      chunkVectors.push(result.vector);
+      if (result.observed_model_revision !== undefined) {
+        observedRevisions.add(result.observed_model_revision);
+        if (observedRevisions.size > 1) {
+          throw new EmbeddingVectorError(
+            `the provider reported more than one model revision in one pass: `
+            + `${[...observedRevisions].sort(compareCodePoints).join(", ")}`,
+          );
+        }
+      }
     }
     artifactsSent += 1;
     const mean = meanVector(chunkVectors);
@@ -429,18 +518,34 @@ export async function runEmbeddings(input: RunEmbeddingsInput): Promise<RunEmbed
   // every document, which would issue ten thousand simultaneous requests and
   // make the bound a decoration.
   const width = Math.max(1, Math.floor(input.maxParallelRequests ?? 1));
+  //
+  // A worker never rejects. The first failure is recorded where every worker
+  // sees it; each stops before its next document (and `embedOne` before its
+  // next chunk), and the pass rejects with that first error only once every
+  // worker has returned — so nothing is still talking to the provider when the
+  // caller is told the pass failed.
   let cursor = 0;
   const worker = async (): Promise<void> => {
     for (;;) {
+      if (failure !== null) return;
       const index = cursor;
       cursor += 1;
       if (index >= ordered.length) return;
-      await embedOne(ordered[index] as EmbeddableDocument);
+      try {
+        await embedOne(ordered[index] as EmbeddableDocument);
+      } catch (error) {
+        if (failure === null) failure = { error };
+        return;
+      }
     }
   };
   await Promise.all(
     Array.from({ length: Math.min(width, Math.max(ordered.length, 1)) }, () => worker()),
   );
+  // Read through a function call so the checker does not narrow `failure` to
+  // the `null` it was initialised with: the workers assign it.
+  const failed = ((): { error: unknown } | null => failure)();
+  if (failed !== null) throw failed.error;
 
   const ids = [...vectors.keys()].sort(compareCodePoints);
   // Taken from the sorted set rather than from whichever request finished first,
@@ -471,6 +576,9 @@ export async function runEmbeddings(input: RunEmbeddingsInput): Promise<RunEmbed
       provider: configuration.provider,
       model_id: configuration.model_id,
       model_revision: configuration.model_revision ?? null,
+      reported_model_revision: observedRevisions.size === 1
+        ? ([...observedRevisions][0] as string)
+        : null,
       dimension,
       chunk_profile: chunkProfile,
       reproducibility_class: reproducibilityClassOf(configuration),
@@ -496,6 +604,7 @@ export function disabledEmbeddingReport(): EmbeddingRunReport {
     provider: null,
     model_id: null,
     model_revision: null,
+    reported_model_revision: null,
     dimension: null,
     chunk_profile: embeddingChunkProfileHash(),
     reproducibility_class: null,

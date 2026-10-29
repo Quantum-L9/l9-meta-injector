@@ -18,14 +18,19 @@ describe("inventory surfaces swallowed errors (OBS-004/006/007, PRD-002)", () =>
     expect(r.skippedDirs).toEqual([]);
   });
 
-  test("an unreadable directory is recorded in skippedDirs, not silently dropped (OBS-007)", () => {
+  test("REG-WU-028-RC-032-B04-e: an unreadable directory is recorded in skippedDirs, not silently dropped (OBS-007)", () => {
     // Point the walk root at a FILE: readdirSync throws ENOTDIR, exercising the
     // recorded-skip path deterministically (no permission games, works as root).
     const root = tmp(); const asFile = path.join(root, "not-a-dir");
     fs.writeFileSync(asFile, "x\n");
     const r = inventoryTree({ root: asFile, outDir: tmp(), dryRun: true, now: "2026-01-01T00:00:00.000Z" });
     expect(r.skippedDirs).toHaveLength(1);
-    expect(r.skippedDirs[0]).toContain(asFile);
+    // The entry is the root-relative directory plus the errno code: the absolute
+    // checkout path would make every packet built from this inventory depend on
+    // where the tree lives (RC-032). The operator still gets the full message on stderr.
+    expect(r.skippedDirs).toEqual([".: ENOTDIR"]);
+    expect(r.skippedDirs[0]).not.toContain(asFile);
+    expect(stderr.mock.calls.map((call) => String(call[0])).join("")).toContain(asFile);
     expect(r.total).toBe(0);
     expect(stderr).toHaveBeenCalled();
   });

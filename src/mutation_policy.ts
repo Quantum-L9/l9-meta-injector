@@ -77,6 +77,7 @@ const CENTRAL_MANIFEST_PREFIXES = [
 const GENERATED_SUFFIXES = [
   ".l9meta.yaml",
   ".inject.log",
+  ".normalize.log.yaml",
 ] as const;
 
 const INVENTORY_ONLY_BASENAMES = new Set([

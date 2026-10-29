@@ -164,10 +164,20 @@ export interface DecoderBudget {
     maxBlocks: number;
     /** Largest number of entries an OOXML container may declare. */
     maxContainerEntries: number;
-    /** Largest uncompressed size of one OOXML part. */
+    /**
+     * Largest uncompressed size of one OOXML part, and of one decompressed PDF
+     * stream.
+     */
     maxPartBytes: number;
-    /** Largest uncompressed:compressed ratio tolerated for one OOXML part. */
+    /**
+     * Largest uncompressed:compressed ratio tolerated for one OOXML part. For a
+     * PDF it bounds the document as a whole: all decompressed stream bytes
+     * together may not exceed this multiple of the file's size, nor four times
+     * `maxPartBytes`.
+     */
     maxCompressionRatio: number;
+    /** Largest total uncompressed bytes all the parts of one OOXML container may produce. */
+    maxContainerUncompressedBytes: number;
     /** Deepest nesting a structured format may use before it is refused. */
     maxDepth: number;
 }

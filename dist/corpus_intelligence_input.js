@@ -46,6 +46,7 @@ exports.corpusIntelligenceInput = corpusIntelligenceInput;
 const corpus_intelligence_1 = require("./corpus_intelligence");
 const repository_model_1 = require("./repository_model");
 const ordering_1 = require("./ordering");
+const local_source_1 = require("./local_source");
 /**
  * Formats whose decoded text has lines an operator can open the file and find.
  *
@@ -73,10 +74,29 @@ const CONFIDENCE_CLASSES = new Set(["weak", "moderate", "strong"]);
 function sortedUnique(values) {
     return [...new Set(values)].sort(ordering_1.compareCodePoints);
 }
-function confidenceClass(value) {
-    return typeof value === "string" && CONFIDENCE_CLASSES.has(value)
-        ? value
-        : "weak";
+/**
+ * A confidence class the producer computed, or a refusal.
+ *
+ * This used to map anything absent or unknown to `weak`, which published a
+ * judgement nobody made. Every class reaching the packet is computed upstream
+ * — fusion classifies every pair, and every candidate carries the strongest
+ * class among its pairs — so a missing one is a producer defect to surface.
+ */
+function confidenceClass(value, subject) {
+    if (typeof value === "string" && CONFIDENCE_CLASSES.has(value)) {
+        return value;
+    }
+    const shown = value === undefined ? "absent" : JSON.stringify(value);
+    throw new corpus_intelligence_1.CorpusIntelligenceError(`${subject} has confidence_class ${shown}, not one of weak|moderate|strong; ` +
+        "the producer must compute it and this translation does not default it");
+}
+/** A boolean the producer computed, or a refusal. Never coerced to false. */
+function requiredFlag(value, subject, field) {
+    if (typeof value === "boolean")
+        return value;
+    const shown = value === undefined ? "absent" : JSON.stringify(value);
+    throw new corpus_intelligence_1.CorpusIntelligenceError(`${subject} has ${field} ${shown}, not a boolean; ` +
+        "the producer must compute it and this translation does not default it");
 }
 // ───────────────────────────── identity translation ─────────────────────────────
 /**
@@ -243,7 +263,7 @@ function pairRelations(result, identities, profile) {
             methods: sortedUnique(pair.signals.map((signal) => signal.method)),
             method_scores: scores,
             evidence_refs: sortedUnique(pair.evidence_refs),
-            confidence_class: confidenceClass(classification.get(pair.pair_id)?.confidence_class),
+            confidence_class: confidenceClass(classification.get(pair.pair_id)?.confidence_class, `semantic pair relation '${pair.pair_id}'`),
             analysis_profile: profile,
             upstream_candidate_id: pair.pair_id,
         };
@@ -252,27 +272,45 @@ function pairRelations(result, identities, profile) {
 }
 function candidateClusters(entries, candidateType, identities, profile) {
     return entries
-        .map((entry) => ({
-        candidate_id: entry.candidate_id,
-        candidate_type: candidateType,
-        member_artifact_ids: sortedUnique(entry.member_artifact_ids.map((member) => translate(member, identities))),
-        supporting_relation_ids: sortedUnique([
-            ...(entry.supporting_pair_ids ?? []),
-            ...(entry.exact_duplicate_cluster_ids ?? []),
-            ...(entry.near_duplicate_candidate_ids ?? []),
-        ]),
-        evidence_refs: sortedUnique(entry.evidence_refs ?? []),
-        confidence_class: confidenceClass(entry.confidence_class),
-        ambiguity_flags: sortedUnique([
-            ...(entry.ambiguity_flags ?? []),
-            ...(entry.ambiguity_class ?? []),
-        ]),
-        cross_root: entry.cross_root === true,
-        cross_archive: entry.cross_archive === true,
-        analysis_profile: profile,
-        upstream_candidate_id: entry.candidate_id,
-    }))
+        .map((entry) => {
+        const subject = `${candidateType} '${entry.candidate_id}'`;
+        return {
+            candidate_id: entry.candidate_id,
+            candidate_type: candidateType,
+            member_artifact_ids: sortedUnique(entry.member_artifact_ids.map((member) => translate(member, identities))),
+            supporting_relation_ids: sortedUnique([
+                ...(entry.supporting_pair_ids ?? []),
+                ...(entry.exact_duplicate_cluster_ids ?? []),
+                ...(entry.near_duplicate_candidate_ids ?? []),
+            ]),
+            evidence_refs: sortedUnique(entry.evidence_refs ?? []),
+            confidence_class: confidenceClass(entry.confidence_class, subject),
+            ambiguity_flags: sortedUnique([
+                ...(entry.ambiguity_flags ?? []),
+                ...(entry.ambiguity_class ?? []),
+            ]),
+            cross_root: requiredFlag(entry.cross_root, subject, "cross_root"),
+            cross_archive: requiredFlag(entry.cross_archive, subject, "cross_archive"),
+            analysis_profile: profile,
+            upstream_candidate_id: entry.candidate_id,
+        };
+    })
         .sort((a, b) => (0, ordering_1.compareCodePoints)(a.candidate_id, b.candidate_id));
+}
+/**
+ * Whether a lexical candidate's containers sit under more than one archive
+ * ancestry — the rule fusion's `crossArchive` applies to member views, read
+ * from the archive locators in the container paths. A container outside any
+ * archive has the empty ancestry, so a candidate with one container inside an
+ * archive and one outside spans two.
+ */
+function containersCrossArchive(containers) {
+    const ancestries = new Set();
+    for (const container of containers) {
+        const parts = container.container_path.split(local_source_1.ARCHIVE_MEMBER_SEPARATOR);
+        ancestries.add(parts.slice(0, -1).join(local_source_1.ARCHIVE_MEMBER_SEPARATOR));
+    }
+    return ancestries.size > 1;
 }
 /**
  * The deterministic project candidates, as clusters.
@@ -285,9 +323,10 @@ function candidateClusters(entries, candidateType, identities, profile) {
  * exactly that.
  *
  * Both families are published, each with its own `analysis_profile` so a reader
- * can tell which pass produced a cluster. Nothing here is computed: the lexical
- * candidates are already written to `corpus-candidates.json` and are simply
- * carried across the boundary rather than left behind it.
+ * can tell which pass produced a cluster. Nothing here is computed but the
+ * archive flag, which is read off the container paths the candidate already
+ * carries: the lexical candidates are already written to `corpus-candidates.json`
+ * and are simply carried across the boundary rather than left behind it.
  */
 function lexicalProjectClusters(result, identities) {
     const analysis = result.candidates.analysis_profile;
@@ -311,7 +350,7 @@ function lexicalProjectClusters(result, identities) {
         // reader has to be able to see that.
         ambiguity_flags: candidate.identifier_is_declared ? [] : ["identifier_inferred_from_container"],
         cross_root: candidate.spans_roots,
-        cross_archive: false,
+        cross_archive: containersCrossArchive(candidate.containers),
         analysis_profile: profile,
         upstream_candidate_id: candidate.candidate_id,
     }))

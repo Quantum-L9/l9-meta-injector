@@ -13,7 +13,7 @@ import * as http from "node:http";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import {
   EmbeddingProviderError,
   HTTP_JSON_PROVIDER,
@@ -22,6 +22,7 @@ import {
   isLoopbackEndpoint,
 } from "../src/corpus_embedding_http";
 import { runCorpusScan } from "../src/corpus_scan";
+import { runEmbeddings } from "../src/corpus_embeddings";
 
 const servers: http.Server[] = [];
 const scratch: string[] = [];
@@ -94,7 +95,9 @@ describe("the http-json embedding provider", () => {
     const { url, requests } = await serve((_request, response, body) => {
       const input = (JSON.parse(body) as { input: string }).input;
       response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify({ model: "toy-v3", embedding: toyVector(input) }));
+      response.end(JSON.stringify({
+        model: "toy-v3", model_revision: "toy-v3", embedding: toyVector(input),
+      }));
     });
 
     const provider = new HttpJsonEmbeddingProvider({
@@ -108,6 +111,7 @@ describe("the http-json embedding provider", () => {
     expect(provider.configuration.locality).toBe("local");
     // The revision the server reported, learned rather than assumed.
     expect(result.provider_metadata.reported_model).toBe("toy-v3");
+    expect(result.observed_model_revision).toBe("toy-v3");
     expect(provider.reportedRevision).toBe("toy-v3");
 
     // What actually went over the wire: the model name and the text, and no
@@ -118,6 +122,48 @@ describe("the http-json embedding provider", () => {
       input: "content-addressed storage for an archive",
     });
     expect(requests[0]?.auth).toBeUndefined();
+  });
+
+  it("REG-WU-051-RC-085-b: a model name alone is not a revision", async () => {
+    const { url } = await serve((_request, response) => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ model: "toy", embedding: [1, 0, 0] }));
+    });
+    const provider = new HttpJsonEmbeddingProvider({
+      endpoint: url, modelId: "toy", locality: "local",
+    });
+    const result = await provider.embed("text");
+    expect(result.provider_metadata.reported_model).toBe("toy");
+    expect(result.observed_model_revision).toBeUndefined();
+    expect(provider.reportedRevision).toBeNull();
+
+    const run = await runEmbeddings({
+      documents: [{
+        artifact_id: "a", normalized_document_id: "normdoc:a", decoded: true,
+        is_secret_candidate: false, title: "A", body: "text",
+      }],
+      provider, pairThreshold: 0.5,
+    });
+    expect(run.report.reported_model_revision).toBeNull();
+    expect(run.report.model_revision).toBeNull();
+  });
+
+  it("REG-WU-051-RC-085-a: a revision the server reports reaches the run report", async () => {
+    const { url } = await serve((_request, response) => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ model_revision: "toy-v3", embedding: [1, 0, 0] }));
+    });
+    const run = await runEmbeddings({
+      documents: [{
+        artifact_id: "a", normalized_document_id: "normdoc:a", decoded: true,
+        is_secret_candidate: false, title: "A", body: "text",
+      }],
+      provider: new HttpJsonEmbeddingProvider({ endpoint: url, modelId: "toy", locality: "local" }),
+      pairThreshold: 0.5,
+    });
+    expect(run.report.reported_model_revision).toBe("toy-v3");
+    // No configured revision: the identity-bearing field stays absent.
+    expect(run.report.model_revision).toBeNull();
   });
 
   it("reads every response shape a real server emits", async () => {
@@ -208,6 +254,81 @@ describe("the http-json embedding provider", () => {
       endpoint: url, modelId: "toy", locality: "local", maxResponseBytes: 512,
     });
     await expect(provider.embed("text")).rejects.toThrow(/cap/);
+  });
+
+  it("REG-WU-052-RC-079-a: a server that sends a 200 header and then stalls the body times out", async () => {
+    const { url } = await serve((_request, response) => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.write('{"embedding":[1,');
+      // ...and never another byte.
+    });
+    const provider = new HttpJsonEmbeddingProvider({
+      endpoint: url, modelId: "toy", locality: "local", timeoutMs: 300,
+    });
+    const started = Date.now();
+    await expect(provider.embed("text")).rejects.toThrow("embedding request timed out after 300ms");
+    expect(Date.now() - started).toBeLessThan(300 + 1_500);
+  });
+
+  it("REG-WU-052-RC-079-b: an error status whose body stalls rejects within the deadline", async () => {
+    const { url } = await serve((_request, response) => {
+      response.writeHead(500, { "content-type": "text/plain" });
+      response.write("internal");
+    });
+    const provider = new HttpJsonEmbeddingProvider({
+      endpoint: url, modelId: "toy", locality: "local", timeoutMs: 300,
+    });
+    const started = Date.now();
+    await expect(provider.embed("text")).rejects.toThrow(/answered 500|timed out after 300ms/);
+    expect(Date.now() - started).toBeLessThan(300 + 1_500);
+  });
+
+  it("REG-WU-052-RC-079-c: a fast answer resolves and leaves its deadline timer cleared", async () => {
+    const { url } = await serve((_request, response) => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ embedding: [1, 0, 0] }));
+    });
+    const deadline = 43_210;
+    const armed: unknown[] = [];
+    const cleared = new Set<unknown>();
+    const realSet = globalThis.setTimeout;
+    const realClear = globalThis.clearTimeout;
+    const setSpy = vi.spyOn(globalThis, "setTimeout").mockImplementation(((
+      handler: () => void, ms?: number, ...rest: unknown[]
+    ) => {
+      const id = realSet(handler, ms, ...rest);
+      if (ms === deadline) armed.push(id);
+      return id;
+    }) as typeof setTimeout);
+    const clearSpy = vi.spyOn(globalThis, "clearTimeout").mockImplementation(((id?: unknown) => {
+      cleared.add(id);
+      realClear(id as Parameters<typeof clearTimeout>[0]);
+    }) as typeof clearTimeout);
+    try {
+      const provider = new HttpJsonEmbeddingProvider({
+        endpoint: url, modelId: "toy", locality: "local", timeoutMs: deadline,
+      });
+      const result = await provider.embed("text");
+      expect(result.vector).toEqual([1, 0, 0]);
+    } finally {
+      setSpy.mockRestore();
+      clearSpy.mockRestore();
+    }
+    expect(armed).toHaveLength(1);
+    expect(cleared.has(armed[0])).toBe(true);
+  });
+
+  it("REG-WU-052-RC-079-d: an oversized body still fails on the byte cap", async () => {
+    const { url } = await serve((_request, response) => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.write("[");
+      for (let i = 0; i < 5_000; i += 1) response.write("1,");
+      response.end("1]");
+    });
+    const provider = new HttpJsonEmbeddingProvider({
+      endpoint: url, modelId: "toy", locality: "local", maxResponseBytes: 512, timeoutMs: 5_000,
+    });
+    await expect(provider.embed("text")).rejects.toThrow(/byte cap/);
   });
 
   it("sends the configured bearer, and only over https", async () => {

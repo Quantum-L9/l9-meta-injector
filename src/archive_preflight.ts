@@ -123,6 +123,21 @@ export function memberCollisionKey(canonicalPath: string): string {
   return canonicalPath.normalize("NFC").toLowerCase();
 }
 
+/**
+ * Whether a stored member name is the archive's root metadata carrier.
+ *
+ * Identity is the admission identity: the canonical path under the collision
+ * fold. Anything narrower lets a writer keep `.//.l9meta.yaml` or `.L9META.yaml`
+ * beside the `.l9meta.yaml` it adds, producing an archive its own admit then
+ * holds as a duplicate or collision on every later run.
+ */
+export function rootMetaMemberKind(name: string): "canonical" | "legacy" | null {
+  const key = memberCollisionKey(canonicalMemberPath(name));
+  if (key === ".l9meta.yaml") return "canonical";
+  if (key === "l9meta.yaml") return "legacy";
+  return null;
+}
+
 /** Resolve a canonical member path against an empty virtual root, purely textually. */
 function resolvesInsideRoot(canonical: string): boolean {
   const stack: string[] = [];

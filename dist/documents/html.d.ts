@@ -1,11 +1,20 @@
 import { DocumentDecoder } from "./decoder";
 export declare const HTML_DECODER_ID = "l9.html-decoder";
-export declare const HTML_DECODER_VERSION = "1.0.0";
+export declare const HTML_DECODER_VERSION = "1.2.0";
 interface HtmlToken {
     kind: "open" | "close" | "text";
     name: string;
     attributes: Record<string, string>;
     text: string;
+    /**
+     * Set on the text token holding a raw-text element's contents: the element
+     * it belongs to, and whether its end tag was ever found.
+     */
+    rawText?: {
+        element: string;
+        terminated: boolean;
+        escapable: boolean;
+    };
 }
 /**
  * Tokenize HTML.

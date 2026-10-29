@@ -434,6 +434,52 @@ describe("the manifest is a receipt, not a description", () => {
     expect(problems.some((problem) => problem.includes("the sampled report states 9"))).toBe(true);
   });
 
+  const three = () => built([
+    record(),
+    record({ signal_id: "document_assertion:bbb", block_id: "block:2" }),
+    record({ signal_id: "document_assertion:ccc", block_id: "block:3", artifact_id: "artifact:two" }),
+  ]);
+  const verifyManifest = (
+    exported: ReturnType<typeof built>,
+    manifest: ReturnType<typeof built>["manifest"],
+  ) => verifyDocumentWorkSignalExport({
+    manifest,
+    payloadJsonl: exported.payloadJsonl,
+    knownArtifactIds: new Set(["artifact:one", "artifact:two"]),
+    knownNormalizedDocumentIds: new Set(["normdoc:cc"]),
+    reportSignalCount: manifest.record_count,
+  });
+
+  it("REG-WU-056-RC-092-a: refuses a manifest whose document_count the records do not support", () => {
+    const exported = three();
+    const problems = verifyManifest(exported, { ...exported.manifest, document_count: 999 });
+    expect(problems.some((problem) => problem.includes("document_count"))).toBe(true);
+  });
+
+  it("REG-WU-056-RC-092-b: refuses a by_format that sums correctly and is still wrong", () => {
+    const exported = three();
+    const problems = verifyManifest(exported, {
+      ...exported.manifest,
+      by_format: [{ format: "pptx", document_count: 42, signal_count: 3 }],
+    });
+    expect(problems.some((problem) => problem.includes("by_format"))).toBe(true);
+  });
+
+  it("REG-WU-056-RC-092-c: refuses a by_predicate that sums correctly and is still wrong", () => {
+    const exported = three();
+    const problems = verifyManifest(exported, {
+      ...exported.manifest,
+      by_predicate: [{ predicate: "work.milestone", signal_count: 3 }],
+    });
+    expect(problems.some((problem) => problem.includes("by_predicate"))).toBe(true);
+  });
+
+  it("REG-WU-056-RC-092-d: accepts an honest manifest", () => {
+    const exported = three();
+    expect(exported.manifest.document_count).toBe(2);
+    expect(verifyManifest(exported, exported.manifest)).toEqual([]);
+  });
+
   it("carries the schema, the profile and both hashes", () => {
     const exported = built([record()]);
     expect(exported.manifest.payload_file).toBe("document-work-signals.jsonl");

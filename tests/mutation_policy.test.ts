@@ -36,6 +36,8 @@ describe("explicit metadata carrier policy", () => {
     ["asset.png", "source", "skip-binary"],
     ["notes.md.l9meta.yaml", "source", "line-comment"],
     ["run.inject.log", "source", "sidecar"],
+    // WU-013 / RC-016: normalize-filenames sidecars are injector-generated too.
+    ["docs/My Note.md.normalize.log.yaml", "source", "yaml-frontmatter"],
   ] as const)("hard-skips protected or binary path %s", (filePath, artifactType, strategy) => {
     expect(resolveCarrierDecision(subject(filePath, artifactType, strategy), authority, "apply").carrier).toBe("hard_skip");
   });
