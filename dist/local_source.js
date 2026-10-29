@@ -34,6 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ARCHIVE_READER_VERSION = exports.EXTRACTION_OWNER_ID = exports.LOCAL_FILES_EXTRACTION_SCHEMA = exports.LEGACY_EXTRACTION_SUFFIX = exports.LEGACY_EXTRACTION_OWNER_FILE = exports.GENERATED_ARTIFACT_OMIT_PATTERNS = exports.SCRATCH_OWNER_ID = exports.SCRATCH_OWNER_FILE = exports.ARCHIVE_MEMBER_SEPARATOR = void 0;
+exports.assertScratchOutsideSource = assertScratchOutsideSource;
 exports.removeOwnedScratch = removeOwnedScratch;
 exports.readExtractionOwnershipMarker = readExtractionOwnershipMarker;
 exports.hasLegacyExtractionOwnership = hasLegacyExtractionOwnership;
@@ -156,6 +157,10 @@ function realPathOrNearest(target) {
  *
  * A caller-selected scratch outside the source stays supported; this refuses one
  * location, not the option.
+ *
+ * Exported for the scratch-parent tests, which exercise a file source whose
+ * boundary is the filesystem root directly. Internal: not re-exported from
+ * `src/public` or `src/index.ts`.
  */
 function assertScratchOutsideSource(scratchParent, absoluteSource, sourceKind) {
     const realSource = realPathOrNearest(absoluteSource);
@@ -1697,7 +1702,6 @@ function acquireLocalSource(input) {
         throw error;
     }
 }
-/** Archive expansion and record assembly, once the scratch root exists. */
 /** Per-path hashing stats of the physical files that carry a hash. */
 function hashingStatsOf(hashed) {
     const stats = new Map();
@@ -1708,6 +1712,7 @@ function hashingStatsOf(hashed) {
     }
     return stats;
 }
+/** Archive expansion and record assembly, once the scratch root exists. */
 function finishAcquisition(tail) {
     const { input, absoluteSource, sourceKind, sourceName, policy, budget, omit, diagnostics, omittedPaths, skippedDirs, hashed, hashing, unstableReason, identity, scratch, } = tail;
     const archives = [];

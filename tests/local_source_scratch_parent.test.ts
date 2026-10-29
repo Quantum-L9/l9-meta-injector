@@ -8,7 +8,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { acquireLocalSource } from "../src/local_source";
+import { acquireLocalSource, assertScratchOutsideSource } from "../src/local_source";
 import { treeSnapshot } from "./helpers/zip_fixtures";
 
 const roots: string[] = [];
@@ -66,5 +66,33 @@ describe("one scratch-parent rule (RC-048)", () => {
     expect(() => acquireLocalSource({ path: src, scratchParent: path.join(src, ".scratch") }))
       .toThrow(/resolves inside the observed source/);
     expect(treeSnapshot(src)).toEqual(before);
+  });
+});
+
+describe("a file source directly under the filesystem root (RC-058)", () => {
+  // The boundary of a file source is the directory that holds it. For a file
+  // directly under the root that boundary is the root itself, and a
+  // `boundary + path.sep` prefix check would build `//` (or `C:\\`), a prefix no
+  // path has — refusing nothing. The source file need not exist: its boundary
+  // resolves from the nearest existing ancestor, which is the root.
+  const root = path.parse(os.tmpdir()).root;
+  const rootFileSource = path.join(root, `l9-audit-f14-absent-${process.pid}.md`);
+
+  test("REG-AUDIT-F14-a: the boundary of a root-level file source is the root", () => {
+    expect(fs.existsSync(rootFileSource)).toBe(false);
+    expect(path.dirname(rootFileSource)).toBe(root);
+  });
+
+  test("REG-AUDIT-F14-b: every scratch parent is refused when the boundary resolves to the root", () => {
+    const parents = [
+      tmp(),
+      os.tmpdir(),
+      root,
+      path.join(root, `l9-audit-f14-missing-${process.pid}`, "scratch"),
+    ];
+    for (const parent of parents) {
+      expect(() => assertScratchOutsideSource(parent, rootFileSource, "file"), parent)
+        .toThrow(/resolves inside the observed source/);
+    }
   });
 });

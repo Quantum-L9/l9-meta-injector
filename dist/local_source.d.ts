@@ -204,6 +204,24 @@ export interface LocalSourceObservation {
     dispose(): void;
 }
 /**
+ * Refuse a scratch root that would be created inside the tree being observed.
+ *
+ * Both paths are resolved through symlinks first, so a scratch parent that only
+ * points back into the source is refused on the same footing as one written
+ * inside it directly. The check runs *before* any directory is made: a
+ * containment violation that has already created a directory inside the source
+ * has already broken the read-only guarantee it exists to keep, and reporting it
+ * afterwards would be a diagnostic rather than a defence.
+ *
+ * A caller-selected scratch outside the source stays supported; this refuses one
+ * location, not the option.
+ *
+ * Exported for the scratch-parent tests, which exercise a file source whose
+ * boundary is the filesystem root directly. Internal: not re-exported from
+ * `src/public` or `src/index.ts`.
+ */
+export declare function assertScratchOutsideSource(scratchParent: string, absoluteSource: string, sourceKind: LocalSourceKind): void;
+/**
  * Recursively remove a scratch root, but only after re-reading its ownership
  * marker. Without this check a corrupted or reassigned `scratchRoot` would make
  * `dispose()` a recursive delete of an arbitrary path.
