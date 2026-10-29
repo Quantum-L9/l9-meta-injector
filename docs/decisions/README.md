@@ -63,6 +63,7 @@ Accepted ADRs are not deleted. A replacement ADR links back to the decision it s
 | [ADR-074](074-action-outputs-from-child-summary-and-path-refusal.md) | Action outputs come from the child's own summary line, and output-bound paths refuse NUL/CR/LF | Accepted |
 | [ADR-075](075-release-identity-grammar-and-exact-pin-preservation.md) | Release identity uses the strict SemVer core grammar, and consumer-ref projection leaves exact pins untouched | Accepted |
 | [ADR-076](076-errata-for-adr-058-and-adr-069.md) | Errata for ADR-058 (deleted out-of-scope records) and ADR-069 (README rows) | Accepted |
+| [ADR-077](077-stale-publisher-lock-takeover-guard.md) | Stale publisher-lock takeover runs under an exclusive takeover guard | Accepted |
 
 ## Authority boundary
 
