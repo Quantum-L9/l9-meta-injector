@@ -329,6 +329,21 @@ describe("extractors report, never resolve", () => {
       expect(spans(drafts, "http.route_handler")).toEqual(["GET /a -> h L4-4", "POST /a -> h L4-4"]);
     });
 
+    it("REG-AUDIT-F11-a: same verb and path on two routers yields one route_handler and distinct assertion ids", () => {
+      const result = interpretDocumentContent({
+        repositorySubjectId: SUBJECT,
+        sourcePath: "app.py",
+        content: '@app.get("/x")\n@router.get("/x")\ndef h():\n    return 1\n',
+        extractors: defaultExtractors(),
+        pathExists: () => false,
+      });
+      const handlers = result.assertions.filter((a) => a.predicate === "http.route_handler");
+      expect(handlers.map((a) => a.object)).toEqual(["GET /x -> h"]);
+      expect(result.assertions.filter((a) => a.predicate === "http.route")).toHaveLength(2);
+      const ids = result.assertions.map((a) => a.assertion_id);
+      expect(new Set(ids).size).toBe(ids.length);
+    });
+
     it("REG-WU-023-RC-098-d: single-decorator handlers read as before", () => {
       const drafts = routeDrafts(
         [

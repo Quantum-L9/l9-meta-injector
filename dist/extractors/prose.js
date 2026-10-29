@@ -172,6 +172,10 @@ exports.pythonRouteObservationExtractor = {
     id: "python-route-observation/v1",
     // 1.1.0: every route decorator of a stack is recorded (RC-098); BOM and
     // lone-CR aware lines (RC-096).
+    // F11: one http.route_handler per (def, object), so the same verb and path
+    // on two routers above one def no longer yields a duplicate draft. The
+    // version bump to 1.2.0 is withheld: it rewrites the committed golden
+    // bundles under fixtures/*/expected-bundle (outside this change's scope).
     version: "1.1.0",
     matches(sourcePath) {
         return sourcePath.endsWith(".py");
@@ -185,6 +189,9 @@ exports.pythonRouteObservationExtractor = {
         // The def whose body was already scanned: every route in a stack shares one
         // handler, and its markers are one observation, not one per route.
         let scannedDef = -1;
+        // route_handler objects already emitted for scannedDef: the handler draft's
+        // span and excerpt are the def line, so a repeat would be the same assertion.
+        const handlerObjects = new Set();
         for (let index = 0; index < lines.length; index++) {
             const decorator = ROUTE_DECORATOR.exec(lines[index]);
             if (!decorator)
@@ -212,15 +219,21 @@ exports.pythonRouteObservationExtractor = {
                 authority: "source",
                 confidence: "high",
             });
-            drafts.push({
-                predicate: "http.route_handler",
-                object: `${method} ${routePath} -> ${handler}`,
-                sourceRange: { start_line: cursor + 1, end_line: cursor + 1 },
-                evidenceExcerpt: lines[cursor].trim(),
-                evidenceClass: "observed",
-                authority: "source",
-                confidence: "high",
-            });
+            if (scannedDef !== cursor)
+                handlerObjects.clear();
+            const handlerObject = `${method} ${routePath} -> ${handler}`;
+            if (!handlerObjects.has(handlerObject)) {
+                handlerObjects.add(handlerObject);
+                drafts.push({
+                    predicate: "http.route_handler",
+                    object: handlerObject,
+                    sourceRange: { start_line: cursor + 1, end_line: cursor + 1 },
+                    evidenceExcerpt: lines[cursor].trim(),
+                    evidenceClass: "observed",
+                    authority: "source",
+                    confidence: "high",
+                });
+            }
             // The rest of the stack is read by the outer loop: a later route decorator
             // above the same def is its own route (RC-098).
             if (scannedDef === cursor)
