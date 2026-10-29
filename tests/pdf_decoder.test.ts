@@ -824,3 +824,160 @@ describe("object headers inside strings, comments and streams", () => {
     expect(texts(decodePdf(bytes))).toEqual(["Still found"]);
   });
 });
+
+// Audit of PR #112/#113 (GMP-129): the lexical header scan must cost one pass
+// over the file whatever the file holds, and a damaged object must not hide the
+// objects after it. Every skipped region (a literal string, stream data) ends at
+// the next delimited `endobj` at the latest.
+describe("audit F01-F07: the object-header scan is linear and bounded by endobj", () => {
+  /** The audit's base document: one page showing "Hello", plus `first` and `extra`. */
+  function helloPdf(extra: PdfFixtureObject[] = [], first: PdfFixtureObject[] = [], catalogExtra = ""): Buffer {
+    return buildPdf(
+      [
+        ...first,
+        { number: 1, body: `<< /Type /Catalog /Pages 2 0 R ${catalogExtra}>>` },
+        { number: 2, body: "<< /Type /Pages /Kids [3 0 R] /Count 1 >>" },
+        {
+          number: 3,
+          body: "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
+        },
+        flateStreamObject(4, "BT /F1 12 Tf 72 720 Td (Hello) Tj ET"),
+        { number: 5, body: "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>" },
+        ...extra,
+      ],
+      { trailer: "/Size 10 /Root 1 0 R" },
+    );
+  }
+
+  /** Decode, and say how long it took. */
+  function timed(bytes: Buffer): { texts: string[]; ms: number } {
+    const started = Date.now();
+    const outcome = decodePdf(bytes);
+    return { texts: texts(outcome), ms: Date.now() - started };
+  }
+
+  it("REG-AUDIT-F03-a: an unterminated string ends at its object's endobj, not at a later stray ')'", () => {
+    const bytes = helloPdf(
+      [plainStreamObject(7, Buffer.from("x ) y", "latin1"))],
+      [{ number: 9, body: "<< /Broken (never closes >>" }],
+    );
+    expect(texts(decodePdf(bytes))).toEqual(["Hello"]);
+  });
+
+  it("REG-AUDIT-F06-a: a name containing `stream` is not a stream keyword", () => {
+    expect(texts(decodePdf(helloPdf([], [], "/X /a-stream ")))).toEqual(["Hello"]);
+  });
+
+  it("REG-AUDIT-F01-a: 400,000 unclosed '(' cost one pass", () => {
+    const { texts: shown, ms } = timed(helloPdf([{ number: 8, body: `<< /F ${"(".repeat(400_000)} >>` }]));
+    expect(shown).toEqual(["Hello"]);
+    expect(ms).toBeLessThan(2000);
+  });
+
+  it("REG-AUDIT-F01-b: an unclosed string with no endobj after it neither hides later objects nor costs a pass per '('", () => {
+    // No object in this file has an `endobj`, so nothing bounds the string.
+    const built = helloPdf([], [{ number: 9, body: `<< /Broken ${"(".repeat(200_000)} >>` }]).toString("latin1");
+    const bytes = Buffer.from(built.replaceAll("endobj", ""), "latin1");
+    const { texts: shown, ms } = timed(bytes);
+    expect(shown).toEqual(["Hello"]);
+    expect(ms).toBeLessThan(2000);
+  });
+
+  it("REG-AUDIT-F02-a: 400,000 characters of `stream` words with no endstream cost one pass", () => {
+    const { texts: shown, ms } = timed(helloPdf([{ number: 8, body: `<< /F ${" stream".repeat(400_000 / 7)} >>` }]));
+    expect(shown).toEqual(["Hello"]);
+    expect(ms).toBeLessThan(2000);
+  });
+
+  it("REG-AUDIT-F02-b: stream keywords with no endstream after them cost one pass and hide nothing", () => {
+    // Each `>>\nstream\n` is a real stream keyword; none has an endstream, so
+    // each one's data ends at the object's endobj.
+    const filler = "<< >>\nstream\n".repeat(30_000);
+    const { texts: shown, ms } = timed(helloPdf([], [{ number: 8, body: `[ ${filler} ]` }]));
+    expect(shown).toEqual(["Hello"]);
+    expect(ms).toBeLessThan(2000);
+  });
+
+  it("REG-AUDIT-F07-a: a 400,000-digit run is not backtracked over as an object number", () => {
+    const { texts: shown, ms } = timed(helloPdf([{ number: 8, body: `<< /F ${"1".repeat(400_000)} >>` }]));
+    expect(shown).toEqual(["Hello"]);
+    expect(ms).toBeLessThan(2000);
+  });
+
+  it("REG-AUDIT-F01-c: Codex P2 holds: a closed string naming `99 0 obj` stays inside its object", () => {
+    const bytes = helloPdf([], [], "/Note (mentions 99 0 obj syntax) ");
+    expect(texts(decodePdf(bytes))).toEqual(["Hello"]);
+  });
+});
+
+describe("audit F04: a failed inflate strategy is charged to the aggregate allowance", () => {
+  /** A page whose Flate stream inflates in full and then fails its adler32 check. */
+  function corruptChecksumPage(size: number): { object: (number: number) => PdfFixtureObject } {
+    return {
+      object: (number) => {
+        const compressed = zlib.deflateSync(Buffer.alloc(size, 0x20));
+        compressed[compressed.length - 1] = (compressed[compressed.length - 1] as number) ^ 0xff;
+        return { number, body: "<< /Length __LENGTH__ /Filter /FlateDecode >>", stream: compressed };
+      },
+    };
+  }
+
+  it("REG-AUDIT-F04-a: streams that inflate fully and then fail exhaust the allowance, and that is said", () => {
+    // Every corrupt stream is inflated in full by two of the three strategies
+    // before its checksum fails; that work is charged even though nothing is read.
+    const pages = [textContent(["Plan of record"]), ...Array.from({ length: 12 }, () => corruptChecksumPage(600 * 1024))];
+    const outcome = decodePdf(multiPagePdf(pages), SMALL_STREAMS);
+    expect(outcome.decoded).toBe(true);
+    if (!outcome.decoded) return;
+    expect(texts(outcome)).toEqual(["Plan of record"]);
+    const allowance = outcome.document.diagnostics.find((entry) =>
+      entry.code === "decoder.budget_exceeded" && entry.message.includes("allowance"));
+    expect(allowance?.message).toContain(`allowance of ${4 * MiB} bytes was exhausted`);
+    const skipped = Number(/(\d+) stream\(s\) were not inflated/.exec(allowance?.message ?? "")?.[1]);
+    expect(skipped).toBeGreaterThanOrEqual(5);
+  });
+});
+
+describe("audit F05: a /Contents array is one content stream", () => {
+  it("REG-AUDIT-F05-a: a font selected in the first stream decodes text shown in the second", () => {
+    const bytes = buildPdf(
+      [
+        { number: 1, body: "<< /Type /Catalog /Pages 2 0 R >>" },
+        { number: 2, body: "<< /Type /Pages /Kids [3 0 R] /Count 1 >>" },
+        {
+          number: 3,
+          body: "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents [4 0 R 7 0 R] >>",
+        },
+        flateStreamObject(4, "BT /F1 12 Tf 72 720 Td"),
+        {
+          number: 5,
+          body: "<< /Type /Font /Subtype /Type0 /BaseFont /Sub+Font /Encoding /Identity-H /ToUnicode 6 0 R >>",
+        },
+        plainStreamObject(6, cmapProgram(OK_ROWS)),
+        flateStreamObject(7, "<000300040005> Tj ET"),
+      ],
+      { trailer: "/Size 8 /Root 1 0 R" },
+    );
+    const outcome = decodePdf(bytes);
+    expect(texts(outcome)).toEqual(["OK!"]);
+    expect(hasControlCharacters(outcome)).toBe(false);
+  });
+
+  it("REG-AUDIT-F05-b: streams are joined on a token boundary, so `Tj` and `ET` do not fuse", () => {
+    const bytes = buildPdf(
+      [
+        { number: 1, body: "<< /Type /Catalog /Pages 2 0 R >>" },
+        { number: 2, body: "<< /Type /Pages /Kids [3 0 R] /Count 1 >>" },
+        {
+          number: 3,
+          body: "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents [4 0 R 6 0 R] >>",
+        },
+        flateStreamObject(4, "BT /F1 12 Tf 72 720 Td (Hello) Tj"),
+        { number: 5, body: "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>" },
+        flateStreamObject(6, "ET BT /F1 12 Tf 72 700 Td (World) Tj ET"),
+      ],
+      { trailer: "/Size 7 /Root 1 0 R" },
+    );
+    expect(texts(decodePdf(bytes))).toEqual(["Hello", "World"]);
+  });
+});
