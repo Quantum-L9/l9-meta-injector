@@ -194,6 +194,22 @@ function omitPatternsForOutputs(root: string, outputs: string[]): string[] {
 }
 
 export async function runPipelineAsync(config: PipelineConfig): Promise<PipelineResult> {
+  return runPipelineEntry(config, false);
+}
+
+/**
+ * Internal entry for the index-compiling governed run (`carrier_operation.ts`, which
+ * `check` and `apply` both reach through `planCarrierOperationAsync`). It is the
+ * pipeline with index-governed discovery: an otherwise eligible file whose path the
+ * metadata index cannot represent is held as `unsupported_entry` (DEC-RC-013 B).
+ * Deliberately not re-exported from `src/index.ts` or `src/public`, and no field on
+ * the public `PipelineConfig` carries the flag.
+ */
+export async function runIndexGovernedPipelineAsync(config: PipelineConfig): Promise<PipelineResult> {
+  return runPipelineEntry(config, true);
+}
+
+async function runPipelineEntry(config: PipelineConfig, indexGoverned: boolean): Promise<PipelineResult> {
   // One collector per run aggregates the LLM/IO hotpath signal (OBS-009/OBS-010):
   // decision paths, call counts, failure counts, and p50/p95 latency.
   const metrics = new MetricsCollector();
@@ -207,10 +223,10 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
       allowInsecure: config.llmAllowInsecure,
     })
     : localAdapter;
-  return runWithAdapter(adapter, () => runPipelineInScope(config, metrics));
+  return runWithAdapter(adapter, () => runPipelineInScope(config, metrics, indexGoverned));
 }
 
-async function runPipelineInScope(config: PipelineConfig, metrics: MetricsCollector): Promise<PipelineResult> {
+async function runPipelineInScope(config: PipelineConfig, metrics: MetricsCollector, indexGoverned: boolean): Promise<PipelineResult> {
   const runStartedAt = new Date().toISOString();
   const root = path.resolve(config.root);
   const metadataTimestamp = config.metadataTimestamp?.trim() || UNKNOWN;
@@ -405,7 +421,7 @@ async function runPipelineInScope(config: PipelineConfig, metrics: MetricsCollec
   let archives: ArchiveRecord[] = [];
   if (config.localFiles) {
     if (!config.dryRun) {
-      const before = discoverFiles(root, config.glob, { omit, protectSkillMd: true });
+      const before = discoverFiles(root, config.glob, { omit, protectSkillMd: true }, indexGoverned);
       assertTreeGovernable(before);
       // Every collision among files that already exist is decidable now, so it refuses
       // before expansion materialises anything (RC-020). Collisions that only extracted
@@ -420,7 +436,7 @@ async function runPipelineInScope(config: PipelineConfig, metrics: MetricsCollec
     archives = expanded.archives;
   }
 
-  const discovery = discoverFiles(root, config.glob, { omit, protectSkillMd: true });
+  const discovery = discoverFiles(root, config.glob, { omit, protectSkillMd: true }, indexGoverned);
   if (!config.dryRun) assertTreeGovernable(discovery);
   const filePaths = discovery.files;
 

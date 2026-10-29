@@ -91,7 +91,16 @@ function probeTextFile(filePath) {
 function record(ledger, pathName, kind, disposition, reason, sizeBytes) {
     ledger.push({ path: pathName, kind, disposition, reason, ...(sizeBytes === undefined ? {} : { sizeBytes }) });
 }
-function discoverFiles(root, glob, opts = {}) {
+/**
+ * Deterministic discovery with one terminal disposition per entry.
+ *
+ * `indexGoverned` is internal and is set only by the index-compiling governed run
+ * (`carrier_operation.ts`, through the pipeline's internal governed entry). Such a
+ * run must hold a file that would otherwise be eligible but whose path the metadata
+ * index cannot represent (DEC-RC-013 B). Every other caller — public `findFiles`, a
+ * non-governed `runPipelineAsync` — compiles no index and keeps that file eligible.
+ */
+function discoverFiles(root, glob, opts = {}, indexGoverned = false) {
     // The scope is validated and compiled before the root is opened: a pattern the dialect
     // cannot express is refused here rather than matching nothing (or everything) later.
     const scope = (0, glob_1.compileDiscoveryGlob)(glob);
@@ -198,15 +207,6 @@ function discoverFiles(root, glob, opts = {}) {
                 }
                 continue;
             }
-            // A governed file the metadata index cannot represent (a control character
-            // in its path, or a path past the schema's length) is held here, with the
-            // existing blocking disposition, so check reports it and apply refuses at
-            // the discovery gate rather than the producer throwing (DEC-RC-013 B).
-            const indexProblem = (0, metadata_index_1.metadataIndexPathProblem)(rel);
-            if (indexProblem !== null) {
-                record(ledger, rel, "file", "unsupported_entry", indexProblem, stat.size);
-                continue;
-            }
             const strategy = (0, comment_1.resolveStrategy)(full, "");
             if (strategy.strategy === "skip-binary") {
                 record(ledger, rel, "file", "known_binary", "file extension resolves to skip-binary", stat.size);
@@ -220,14 +220,30 @@ function discoverFiles(root, glob, opts = {}) {
             // and the extension only supplies the reason recorded for a file that
             // passes (OBS-008 keeps a readable known-text file eligible; it does not
             // exempt an undecodable one).
+            //
+            // Known text is decided by the extension's carrier family alone: the carrier a
+            // file ends up using can depend on its content (a PHP template routes to a
+            // sidecar), and discovery has not read the content when it names the reason.
             const ext = path.extname(entry.name).toLowerCase();
-            const knownText = comment_1.FRONTMATTER_EXTS.has(ext) ||
-                strategy.strategy === "line-comment" ||
-                strategy.strategy === "block-comment";
+            const knownText = comment_1.FRONTMATTER_EXTS.has(ext) || (0, comment_1.hasCommentCarrierFamily)(entry.name);
+            // An otherwise eligible file whose path the metadata index cannot represent (a
+            // control character, or a path past the schema's length) is held, in an
+            // index-governed run only, with the existing blocking disposition, so check
+            // reports it and apply refuses at the discovery gate rather than the producer
+            // throwing (DEC-RC-013 B). It is judged after skip-binary and the probe: a file
+            // that would never reach the index is not a reason to block the tree.
+            const admit = (reason, sizeBytes) => {
+                const indexProblem = indexGoverned ? (0, metadata_index_1.metadataIndexPathProblem)(rel) : null;
+                if (indexProblem !== null) {
+                    record(ledger, rel, "file", "unsupported_entry", indexProblem, sizeBytes);
+                    return;
+                }
+                record(ledger, rel, "file", "eligible", reason, sizeBytes);
+                files.push(full);
+            };
             const probe = probeTextFile(full);
             if (knownText && probe.status === "text") {
-                record(ledger, rel, "file", "eligible", "known text extension", stat.size);
-                files.push(full);
+                admit("known text extension", stat.size);
                 continue;
             }
             if (probe.status === "binary") {
@@ -245,8 +261,7 @@ function discoverFiles(root, glob, opts = {}) {
                 record(ledger, rel, "file", "unreadable", probe.reason);
                 continue;
             }
-            record(ledger, rel, "file", "eligible", probe.reason, probe.sizeBytes);
-            files.push(full);
+            admit(probe.reason, probe.sizeBytes);
         }
     };
     walk(absRoot);

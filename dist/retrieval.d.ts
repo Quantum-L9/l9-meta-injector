@@ -15,7 +15,16 @@ export interface DiscoveryResult {
     files: string[];
     summary: DiscoverySummary;
 }
-export declare function discoverFiles(root: string, glob: string, opts?: FindFilesOptions): DiscoveryResult;
+/**
+ * Deterministic discovery with one terminal disposition per entry.
+ *
+ * `indexGoverned` is internal and is set only by the index-compiling governed run
+ * (`carrier_operation.ts`, through the pipeline's internal governed entry). Such a
+ * run must hold a file that would otherwise be eligible but whose path the metadata
+ * index cannot represent (DEC-RC-013 B). Every other caller — public `findFiles`, a
+ * non-governed `runPipelineAsync` — compiles no index and keeps that file eligible.
+ */
+export declare function discoverFiles(root: string, glob: string, opts?: FindFilesOptions, indexGoverned?: boolean): DiscoveryResult;
 /** Backward-compatible file-only discovery wrapper. */
 export declare function findFiles(root: string, glob: string, opts?: FindFilesOptions): string[];
 export declare function scanFiles(filePaths: string[]): ScanEntry[];

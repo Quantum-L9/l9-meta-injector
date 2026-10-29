@@ -23,6 +23,15 @@ export declare const FRONTMATTER_EXTS: Set<string>;
 /** Heuristic: a NUL byte in the first 8 KB means the file is not UTF-8 text. */
 export declare function isProbablyBinary(raw: string): boolean;
 export declare function resolveStrategy(filePath: string, raw: string): StrategySpec;
+/**
+ * Whether the file's extension (or extension-less basename) belongs to a
+ * comment-carrier family — a line- or block-comment language — decided on the
+ * name alone. `resolveStrategy` also consults content (a PHP template with no bare
+ * `<?php` line routes to a sidecar), so discovery uses this to classify a file as
+ * known text independently of what it contains. Internal: not re-exported from
+ * the package's public surfaces.
+ */
+export declare function hasCommentCarrierFamily(filePath: string): boolean;
 export declare function sidecarPathFor(filePath: string): string;
 /** Strip the `---` fences from a serialized frontmatter block, leaving inner YAML lines. */
 export declare function frontMatterInner(yamlFrontMatter: string): string;

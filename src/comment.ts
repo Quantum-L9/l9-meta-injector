@@ -155,6 +155,21 @@ export function resolveStrategy(filePath: string, raw: string): StrategySpec {
   return { strategy: "sidecar" };
 }
 
+/**
+ * Whether the file's extension (or extension-less basename) belongs to a
+ * comment-carrier family — a line- or block-comment language — decided on the
+ * name alone. `resolveStrategy` also consults content (a PHP template with no bare
+ * `<?php` line routes to a sidecar), so discovery uses this to classify a file as
+ * known text independently of what it contains. Internal: not re-exported from
+ * the package's public surfaces.
+ */
+export function hasCommentCarrierFamily(filePath: string): boolean {
+  const ext = path.extname(filePath).toLowerCase();
+  const base = path.basename(filePath).toLowerCase();
+  if (BINARY_EXTS.has(ext)) return false;
+  return LINE_COMMENT[ext] !== undefined || BASENAME_LINE_COMMENT[base] !== undefined || BLOCK_COMMENT[ext] !== undefined;
+}
+
 export function sidecarPathFor(filePath: string): string {
   return filePath + ".l9meta.yaml";
 }

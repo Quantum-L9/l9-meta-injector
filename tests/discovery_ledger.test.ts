@@ -63,4 +63,21 @@ describe("terminal discovery ledger", () => {
     fs.writeFileSync(path.join(root, "b.txt"), "b", "utf8");
     expect(findFiles(root, "**/*.md").map((file) => path.basename(file))).toEqual(["a.md"]);
   });
+
+  test("REG-AUDIT-G15-a: a .php file is eligible with reason 'known text extension', independent of its content", () => {
+    const root = tempRoot();
+    // One PHP template (no bare `<?php` line: its carrier is a sidecar) and one plain
+    // PHP source: both belong to the PHP comment-carrier family by extension.
+    fs.writeFileSync(path.join(root, "page.php"), "<html><?php echo 1; ?></html>\n", "utf8");
+    fs.writeFileSync(path.join(root, "lib.php"), "<?php\nfunction f() {}\n", "utf8");
+    fs.writeFileSync(path.join(root, "data.unknownext"), "plain\n", "utf8");
+    const byPath = new Map(discoverFiles(root, "**/*").summary.entries.map((entry) => [entry.path, entry]));
+    for (const name of ["page.php", "lib.php"]) {
+      expect(byPath.get(name)?.disposition, name).toBe("eligible");
+      expect(byPath.get(name)?.reason, name).toBe("known text extension");
+    }
+    // A text file with no comment-carrier family is still eligible, on its validated bytes.
+    expect(byPath.get("data.unknownext")?.disposition).toBe("eligible");
+    expect(byPath.get("data.unknownext")?.reason).toBe("valid UTF-8 over every byte");
+  });
 });

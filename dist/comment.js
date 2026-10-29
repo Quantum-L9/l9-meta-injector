@@ -46,6 +46,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.FRONTMATTER_EXTS = exports.PROSE_EXTS = void 0;
 exports.isProbablyBinary = isProbablyBinary;
 exports.resolveStrategy = resolveStrategy;
+exports.hasCommentCarrierFamily = hasCommentCarrierFamily;
 exports.sidecarPathFor = sidecarPathFor;
 exports.frontMatterInner = frontMatterInner;
 exports.detectNewlineConvention = detectNewlineConvention;
@@ -157,6 +158,21 @@ function resolveStrategy(filePath, raw) {
         return { strategy: "sidecar" };
     // Unknown text extension: sidecar is the only universally safe option.
     return { strategy: "sidecar" };
+}
+/**
+ * Whether the file's extension (or extension-less basename) belongs to a
+ * comment-carrier family — a line- or block-comment language — decided on the
+ * name alone. `resolveStrategy` also consults content (a PHP template with no bare
+ * `<?php` line routes to a sidecar), so discovery uses this to classify a file as
+ * known text independently of what it contains. Internal: not re-exported from
+ * the package's public surfaces.
+ */
+function hasCommentCarrierFamily(filePath) {
+    const ext = path.extname(filePath).toLowerCase();
+    const base = path.basename(filePath).toLowerCase();
+    if (BINARY_EXTS.has(ext))
+        return false;
+    return LINE_COMMENT[ext] !== undefined || BASENAME_LINE_COMMENT[base] !== undefined || BLOCK_COMMENT[ext] !== undefined;
 }
 function sidecarPathFor(filePath) {
     return filePath + ".l9meta.yaml";

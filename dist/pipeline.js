@@ -34,6 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.runPipelineAsync = runPipelineAsync;
+exports.runIndexGovernedPipelineAsync = runIndexGovernedPipelineAsync;
 // pipeline.ts — Full pipeline: scan → extract → assist → inject (async reconcile) → verify → index
 const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
@@ -131,6 +132,20 @@ function omitPatternsForOutputs(root, outputs) {
     return patterns;
 }
 async function runPipelineAsync(config) {
+    return runPipelineEntry(config, false);
+}
+/**
+ * Internal entry for the index-compiling governed run (`carrier_operation.ts`, which
+ * `check` and `apply` both reach through `planCarrierOperationAsync`). It is the
+ * pipeline with index-governed discovery: an otherwise eligible file whose path the
+ * metadata index cannot represent is held as `unsupported_entry` (DEC-RC-013 B).
+ * Deliberately not re-exported from `src/index.ts` or `src/public`, and no field on
+ * the public `PipelineConfig` carries the flag.
+ */
+async function runIndexGovernedPipelineAsync(config) {
+    return runPipelineEntry(config, true);
+}
+async function runPipelineEntry(config, indexGoverned) {
     // One collector per run aggregates the LLM/IO hotpath signal (OBS-009/OBS-010):
     // decision paths, call counts, failure counts, and p50/p95 latency.
     const metrics = new metrics_1.MetricsCollector();
@@ -144,9 +159,9 @@ async function runPipelineAsync(config) {
             allowInsecure: config.llmAllowInsecure,
         })
         : llm_1.localAdapter;
-    return (0, llm_1.runWithAdapter)(adapter, () => runPipelineInScope(config, metrics));
+    return (0, llm_1.runWithAdapter)(adapter, () => runPipelineInScope(config, metrics, indexGoverned));
 }
-async function runPipelineInScope(config, metrics) {
+async function runPipelineInScope(config, metrics, indexGoverned) {
     const runStartedAt = new Date().toISOString();
     const root = path.resolve(config.root);
     const metadataTimestamp = config.metadataTimestamp?.trim() || schema_1.UNKNOWN;
@@ -332,7 +347,7 @@ async function runPipelineInScope(config, metrics) {
     let archives = [];
     if (config.localFiles) {
         if (!config.dryRun) {
-            const before = (0, retrieval_1.discoverFiles)(root, config.glob, { omit, protectSkillMd: true });
+            const before = (0, retrieval_1.discoverFiles)(root, config.glob, { omit, protectSkillMd: true }, indexGoverned);
             assertTreeGovernable(before);
             // Every collision among files that already exist is decidable now, so it refuses
             // before expansion materialises anything (RC-020). Collisions that only extracted
@@ -346,7 +361,7 @@ async function runPipelineInScope(config, metrics) {
         });
         archives = expanded.archives;
     }
-    const discovery = (0, retrieval_1.discoverFiles)(root, config.glob, { omit, protectSkillMd: true });
+    const discovery = (0, retrieval_1.discoverFiles)(root, config.glob, { omit, protectSkillMd: true }, indexGoverned);
     if (!config.dryRun)
         assertTreeGovernable(discovery);
     const filePaths = discovery.files;

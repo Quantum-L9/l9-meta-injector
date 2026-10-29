@@ -216,7 +216,9 @@ function buildCarrierOperationPlan(mode, rootInput, authority, pipeline) {
 }
 async function planCarrierOperationAsync(input) {
     const root = path.resolve(input.config.root);
-    const pipeline = await (0, pipeline_1.runPipelineAsync)({
+    // The governed run is the sole metadata-index compiler, so it alone discovers with
+    // the index-representability hold (DEC-RC-013 B).
+    const pipeline = await (0, pipeline_1.runIndexGovernedPipelineAsync)({
         ...input.config,
         root,
         dryRun: true,
