@@ -11,7 +11,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test } from "vitest";
 import { injectFile } from "../src/inject";
 import { verify } from "../src/verify";
 import { runPipelineAsync } from "../src/pipeline";
@@ -26,9 +26,17 @@ import {
 } from "../src/comment";
 import type { StrategySpec } from "../src/comment";
 
+const tmpDirs: string[] = [];
+
 function tmp(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "l9-carrier-pos-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "l9-carrier-pos-"));
+  tmpDirs.push(dir);
+  return dir;
 }
+
+afterEach(() => {
+  for (const dir of tmpDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+});
 
 function meta(id: string, title = id) {
   return coerceNormalizedMeta({
