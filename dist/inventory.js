@@ -528,6 +528,14 @@ function inventoryTree(config) {
     const contentHashKey = schema
         ? schema.fields.find((field) => field.source === "content_hash")?.name
         : "content_hash";
+    // Carrier keys an embedded archive member must never hold (G05): the built-in
+    // names plus every schema field sourced from them, so a --schema rename cannot
+    // embed a value the member upsert itself changes.
+    const archiveVolatileKeys = new Set(ARCHIVE_VOLATILE_SOURCES);
+    for (const field of schema?.fields ?? []) {
+        if (field.source !== undefined && ARCHIVE_VOLATILE_SOURCES.has(field.source))
+            archiveVolatileKeys.add(field.name);
+    }
     /**
      * The meta object written to headers/sidecars — schema-driven when provided,
      * else the built-in fields — and the clocks it carries. Records the schema's
@@ -557,7 +565,8 @@ function inventoryTree(config) {
      * member upsert replaced. Diagnostics added since the first observation (read,
      * schema and annotation notes such as darwin_search_write_failed) are kept;
      * the observation's own diagnostics are taken from the fresh one. The member
-     * excludes content_hash and the clocks, so this cannot change what was embedded.
+     * excludes content_hash and the clocks under every carrier name they are written
+     * as (archiveVolatileKeys), so this cannot change what was embedded.
      */
     function reobserveArchive(abs, rec, harvest, observedUnknowns) {
         const fresh = buildRecord(root, abs, false, cfg, "file", harvest);
@@ -611,7 +620,7 @@ function inventoryTree(config) {
         const canHeader = raw !== null && (strategy === "yaml-frontmatter" || strategy === "line-comment" || strategy === "block-comment");
         // The member is upserted before any adjacent carrier is written, so a rewrite
         // is re-observed and the sidecar records the archive's final bytes (RC-053).
-        if (isRecognizedArchive && annotateArchive(abs, rec, metaObj, harvest)) {
+        if (isRecognizedArchive && annotateArchive(abs, rec, metaObj, harvest, archiveVolatileKeys)) {
             ({ clocks, metaObj } = reobserveArchive(abs, rec, harvest, observedUnknowns));
         }
         if (cfg.injectHeaders && canHeader && (0, meta_schema_1.targetIncludes)(schema, "file_header")) {
@@ -1046,16 +1055,22 @@ function harvestedStringList(value) {
         return [value];
     return [];
 }
+/** Record fields whose value the member upsert itself changes (RC-053, G05). */
+const ARCHIVE_VOLATILE_SOURCES = new Set(["content_hash", "created_at", "modified_at"]);
 /**
  * Upsert the archive's root member and project Darwin search metadata.
  * Returns whether the archive's bytes were replaced, so the caller can
  * re-observe it before writing the adjacent sidecar (RC-053).
+ *
+ * `volatileKeys` names every carrier key sourced from content_hash or the
+ * clocks — the built-in names and any --schema rename of them (G05). None is
+ * embedded: each changes when the member is rewritten, so embedding one would
+ * keep the archive from ever reaching a fixed point.
  */
-function annotateArchive(abs, rec, metaObj, harvest) {
+function annotateArchive(abs, rec, metaObj, harvest, volatileKeys) {
     const embeddedMeta = { ...metaObj };
-    delete embeddedMeta.content_hash;
-    delete embeddedMeta.modified_at;
-    delete embeddedMeta.created_at;
+    for (const key of volatileKeys)
+        delete embeddedMeta[key];
     const yaml = serializeYaml(embeddedMeta);
     const newHash = crypto.createHash("sha256").update(yaml, "utf8").digest("hex");
     const existing = (0, inventory_archive_member_1.peekArchiveRootMeta)(abs);
