@@ -4,6 +4,8 @@
 
 Accepted
 
+Amended by [ADR-076](076-errata-for-adr-058-and-adr-069.md): erratum to Consequences — the README `dry-run` / `fail-on-issues` rows were refreshed in `e17bd34`; the note that they are stale is historical.
+
 ## Date
 
 2026-10-28
