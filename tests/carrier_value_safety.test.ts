@@ -197,6 +197,45 @@ describe("WU-002 RC-003 — carrier values cannot break the host comment", () =>
   });
 });
 
+describe("AUDIT G07 — C0 controls and U+007F never reach a carrier raw", () => {
+  const CONTROL = /[\u0000-\u0008\u000B-\u001F\u007F]/;
+
+  test("REG-AUDIT-G07-a: values holding U+0001 and U+007F round-trip and the <!-- --> block holds no raw control", () => {
+    for (const title of ["a\u0001b", "a\u007Fb", "\u0001", "x\u000By\u000Cz\u001F", "\u0000lead", "t\tab"]) {
+      const r = inject("icon.svg", '<svg xmlns="http://www.w3.org/2000/svg"/>\n', title);
+      expect(r.parsed?.title, JSON.stringify(title)).toBe(title);
+      const block = blockText(r.out, "<!--", "l9:meta:end -->");
+      expect(CONTROL.test(block), JSON.stringify(title)).toBe(false);
+      if (HAS_XMLLINT) expect(spawnSync("xmllint", ["--noout", r.file]).status, JSON.stringify(title)).toBe(0);
+    }
+  });
+
+  test("REG-AUDIT-G07-b: every carrier and the plain serializer quote and \\x-escape C0 controls", () => {
+    for (const value of ["a\u0001b", "a\u007Fb", "\u000B", "\u000C"]) {
+      const yaml = serializeYamlObject({ k: value }, { fences: false });
+      expect(CONTROL.test(yaml), JSON.stringify(value)).toBe(false);
+      expect(parseCanonicalYaml(yaml).k, JSON.stringify(value)).toBe(value);
+    }
+    expect(yamlScalar("a\u0001b\u007F")).toBe(String.raw`"a\x01b\x7F"`);
+    const r = inject("a.css", "body{}\n", "x\u0002y");
+    expect(CONTROL.test(blockText(r.out, "/* l9:meta:start", "l9:meta:end */"))).toBe(false);
+    expect(r.parsed?.title).toBe("x\u0002y");
+  });
+
+  test("REG-AUDIT-G07-c: a key holding a control character is refused, never written", () => {
+    expect(() => serializeYamlObject({ "a\u0001b": "x" }, { fences: false })).toThrow(/CARRIER_UNREPRESENTABLE/);
+    expect(() => serializeYamlObject({ "a\u007F": "x" }, { fences: false, forbidden: ["--"] })).toThrow(/CARRIER_UNREPRESENTABLE/);
+  });
+
+  test("REG-AUDIT-G07-d: a second run over a control-bearing value is idempotent", () => {
+    const root = tmp();
+    const first = inject("icon.svg", "<svg/>\n", "a\u0001b", root);
+    const second = inject("icon.svg", "<svg/>\n", "a\u0001b", root);
+    expect(second.rec.wouldChange).toBe(false);
+    expect(second.out).toBe(first.out);
+  });
+});
+
 function pipelineCfg(root: string, out: string): PipelineConfig {
   return {
     root, glob: "**/*", dryRun: false, outDir: out, namespace: "l9",
