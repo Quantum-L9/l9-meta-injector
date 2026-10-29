@@ -443,6 +443,16 @@ describe("topology conformance evidence", () => {
     expect(evidence.result.translation_shim_required).toBe(false);
   });
 
+  it("also records canonical acceptance of the real CLI corpus packet", () => {
+    expect(evidence.corpus.packet_type).toBe("l9.corpus-intelligence");
+    expect(evidence.corpus.packet_version).toBe("1.1.0");
+    expect(evidence.corpus.packet_id).toMatch(/^packet:[0-9a-f]{64}$/);
+    expect(evidence.corpus.semantic_hash).toBe(`sha256:${evidence.corpus.packet_id.slice(7)}`);
+    expect(evidence.corpus.status).toBe("passed");
+    expect(evidence.corpus.translation_shim_required).toBe(false);
+    expect(evidence.consumer.entrypoints).toContain("l9_constellation_topology.packets.corpus_ingress.load_corpus_intelligence");
+  });
+
   it("stays bound to every golden bundle it describes", () => {
     // The record carries one subject per committed bundle. Reading only the first
     // would let a second bundle drift unnoticed, which is exactly what happened

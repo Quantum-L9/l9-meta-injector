@@ -1,13 +1,15 @@
 {
   "schema": "l9.topology-conformance/v1",
   "repository": "Quantum-L9/l9-meta-injector",
-  "statement": "Every committed Repository Model Packet bundle — inventory-only and structurally interpreted — was accepted by the bound l9-constellation-topology consumer without a translation shim.",
+  "statement": "Both committed Repository Model Packet bundles and a corpus-intelligence packet emitted by the real CLI were accepted by the bound l9-constellation-topology consumer without a translation shim.",
   "consumer": {
     "repository": "Quantum-L9/l9-constellation-topology",
-    "revision": "fe85ed919596ce628f96368430b1ae9e09af0b17",
+    "revision": "47c04d43282fa7760602d450258b5df58adde54b",
     "entrypoints": [
       "l9_constellation_topology.packets.loader.load_repository_model_bundle",
-      "l9_constellation_topology.packets.adapters.repository_model_v1.RepositoryModelV1Adapter.adapt"
+      "l9_constellation_topology.packets.adapters.repository_model_v1.RepositoryModelV1Adapter.adapt",
+      "l9_constellation_topology.packets.corpus_ingress.load_corpus_intelligence",
+      "l9_constellation_topology.packets.corpus_validator.validate_corpus_intelligence_packet"
     ],
     "adapter_packet_version": "1.1.0"
   },
@@ -73,6 +75,15 @@
       }
     }
   ],
+  "corpus": {
+    "source_fixture": "fixtures/local-source/sample-source",
+    "packet_id": "packet:c5b473414ec611b076f4eefceede7d41edf26c49325e00e10ff2b818d0f97a00",
+    "semantic_hash": "sha256:c5b473414ec611b076f4eefceede7d41edf26c49325e00e10ff2b818d0f97a00",
+    "packet_type": "l9.corpus-intelligence",
+    "packet_version": "1.1.0",
+    "status": "passed",
+    "translation_shim_required": false
+  },
   "result": {
     "status": "passed",
     "translation_shim_required": false
