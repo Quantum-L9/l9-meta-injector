@@ -67,7 +67,10 @@ const isBlank = (char) => char === " " || char === "\t";
 /**
  * Whether a scalar (or a flow-list item) begins at `index`. Only there does a quote
  * open a quoted scalar: a mid-word apostrophe (`maintainer's`) is plain text in
- * YAML and must not hide a trailing comment (RC-024).
+ * YAML and must not hide a trailing comment (RC-024). A `:` is a mapping separator
+ * only when a blank follows it, and a `[` opens a flow item only when it was itself
+ * counted as a flow opener (`inFlow`), so `x:'a` and `x['a` stay plain (audit G03).
+ * Kept in lockstep with meta_schema.scalarStartsAt.
  */
 function scalarStartsAt(line, index, inFlow) {
     let j = index - 1;
@@ -76,9 +79,9 @@ function scalarStartsAt(line, index, inFlow) {
     if (j < 0)
         return true;
     const previous = line[j];
-    if (previous === ":" || previous === "[")
-        return true;
-    if (previous === ",")
+    if (previous === ":")
+        return j < index - 1;
+    if (previous === "[" || previous === ",")
         return inFlow;
     if (previous === "-" && j < index - 1) {
         let k = j - 1;
