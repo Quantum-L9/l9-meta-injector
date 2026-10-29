@@ -106,3 +106,29 @@ describe("DEC-RC-024 option B (ADR-057) — the patcher reads a frontmatter scal
     expect(inspected.meta.b).toEqual(["p", "q # r"]);
   });
 });
+
+describe("AUDIT G04 — a bracket counts as flow only at a scalar start (INV-022)", () => {
+  // Every value holding a '[' or ']' outside a leading inline list is refused by the
+  // scalar readers, so a miscounted bracket never reaches an accepted value; these
+  // pin that the refusal leaves the bytes untouched and that real flow lists still
+  // keep their comment.
+  test("REG-AUDIT-G04-a: a mid-word '[' or a stray ']' is refused and the document is left byte-identical", () => {
+    for (const raw of ["---\ntitle: a[b # keep\nowner: bob\n---\nBody\n", "---\ntitle: a]b # keep\n---\nBody\n", "---\ntitle: a['b # keep\n---\nBody\n"]) {
+      const inspected = inspectFrontMatterDocument(raw);
+      expect(inspected.safe, raw).toBe(false);
+      expect(inspected.issue?.code, raw).toBe("FRONTMATTER_COMPLEX_YAML");
+      const patched = patchManagedFrontMatter(raw, { title: "new" });
+      expect(patched.changed, raw).toBe(false);
+      expect(patched.content, raw).toBe(raw);
+    }
+  });
+
+  test("REG-AUDIT-G04-b: an inline flow list keeps its trailing comment through a managed patch", () => {
+    const raw = "---\ntags: [p, 'q # r'] # keep\ntitle: old\n---\nBody\n";
+    const inspected = inspectFrontMatterDocument(raw);
+    expect(inspected.safe).toBe(true);
+    expect(inspected.meta.tags).toEqual(["p", "q # r"]);
+    const patched = patchManagedFrontMatter(raw, { title: "new" });
+    expect(patched.content).toBe("---\ntags: [p, 'q # r'] # keep\ntitle: \"new\"\n---\nBody\n");
+  });
+});
