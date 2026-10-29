@@ -1,6 +1,6 @@
 import { BlockBuilder, BlockLocator, DecodeInput, DocumentDecoder } from "./decoder";
 export declare const TEXT_DECODER_ID = "l9.text-decoder";
-export declare const TEXT_DECODER_VERSION = "1.2.0";
+export declare const TEXT_DECODER_VERSION = "1.3.0";
 export declare const CSV_DECODER_ID = "l9.csv-decoder";
 /**
  * 1.1.0 emits a block per populated cell beside the row block.
@@ -13,7 +13,7 @@ export declare const CSV_DECODER_ID = "l9.csv-decoder";
  * while the identical table in a worksheet was understood, purely because the
  * worksheet decoder emits cells and this one did not.
  */
-export declare const CSV_DECODER_VERSION = "1.3.0";
+export declare const CSV_DECODER_VERSION = "1.4.0";
 /** Read a file as UTF-8, refusing bytes that are not valid UTF-8. */
 export declare function readUtf8(input: DecodeInput): {
     text: string;
@@ -45,6 +45,10 @@ export declare const textDecoder: DocumentDecoder;
  * Written out rather than split on commas because a project tracker's "Blocked
  * by: procurement, legal" cell is exactly the case a naive split corrupts, and a
  * corrupted cell becomes a corrupted work signal.
+ *
+ * A `"` opens a quoted field only as the field's first character (RFC 4180
+ * §2.5). Anywhere else in an unquoted field it is a literal character, so a
+ * height written `27"` keeps its quote and does not swallow the cells after it.
  */
 export declare function splitCsvLine(line: string, delimiter: string): string[];
 export declare const csvDecoder: DocumentDecoder;

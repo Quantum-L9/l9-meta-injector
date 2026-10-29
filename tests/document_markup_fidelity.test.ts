@@ -949,3 +949,99 @@ describe("WU-064 text and notebook decoders", () => {
     expect(marked.tables.map((table) => table.rows)).toEqual(plain.tables.map((table) => table.rows));
   });
 });
+
+// ──────────────────────── Audit #112/#113 (GMP-129) ────────────────────────
+
+describe("AUDIT-112-113 markup counters, nested tables, CSV quotes and line terminators", () => {
+  const SELF_CLOSING_SUPPRESSORS = ["w:del", "w:delText", "w:moveFrom"];
+
+  it("REG-AUDIT-F09-a: a self-closing w:del, w:delText or w:moveFrom inside a w:del keeps the deletion suppressed", () => {
+    for (const element of SELF_CLOSING_SUPPRESSORS) {
+      const file = docx(
+        '<w:p><w:r><w:t xml:space="preserve">Keep </w:t></w:r>'
+        + `<w:del w:id="1"><w:r><${element}/><w:t>removed</w:t></w:r></w:del>`
+        + "<w:r><w:t>this</w:t></w:r></w:p>",
+      );
+      expect(texts(decode(file)), element).toEqual(["Keep this"]);
+    }
+  });
+
+  it("REG-AUDIT-F09-b: a self-closing element inside an mc:AlternateContent branch leaves the frame intact", () => {
+    for (const element of ["mc:AlternateContent", ...SELF_CLOSING_SUPPRESSORS, "w:t"]) {
+      const file = docx(
+        "<w:p><w:r><mc:AlternateContent>"
+        + `<mc:Choice Requires="wps"><w:r><${element}/><w:t>Box</w:t></w:r></mc:Choice>`
+        + "<mc:Fallback><w:r><w:t>Box</w:t></w:r></mc:Fallback>"
+        + "</mc:AlternateContent></w:r></w:p>",
+      );
+      expect(texts(decode(file)), element).toEqual(["Box"]);
+    }
+  });
+
+  it("REG-AUDIT-F09-c: a self-closing w:t inside a w:t does not end the enclosing text run", () => {
+    const file = docx("<w:p><w:r><w:t>Owner<w:t/> Mel</w:t></w:r></w:p>");
+    expect(texts(decode(file))).toEqual(["Owner Mel"]);
+  });
+
+  it("REG-AUDIT-F12-a: a table nested in a cell keeps the outer table's rows and cells", () => {
+    const document = page(
+      "<table><tr><td>Item</td><td>Status</td></tr>"
+      + "<tr><td>Contract<table><tr><td>inner a</td><td>inner b</td></tr></table></td><td>Blocked</td></tr>"
+      + "<tr><td>Launch</td><td>Done</td></tr></table>",
+    );
+    expect(document.tables.map((table) => table.rows)).toEqual([
+      [["inner a", "inner b"]],
+      [["Item", "Status"], ["Contract", "Blocked"], ["Launch", "Done"]],
+    ]);
+  });
+
+  it("REG-AUDIT-F12-b: a nested table with omitted end tags still restores the outer row", () => {
+    const document = page(
+      "<table><tr><td>A<table><tr><td>x<td>y</table><td>B</tr></table>",
+    );
+    // The inner row's `</tr>` is omitted, so the inner table has no finished row;
+    // what must survive is the outer row around it.
+    expect(document.tables.map((table) => table.rows)).toEqual([[["A", "B"]]]);
+  });
+
+  it("REG-AUDIT-F10-a: a quote inside an unquoted field is a literal character", () => {
+    const document = decoded(decode(csv('id,height,note\n1,27",tall\n2,30,short\n')));
+    expect(document.tables[0]?.rows).toEqual([["id", "height", "note"], ["1", '27"', "tall"], ["2", "30", "short"]]);
+    expect(rowBlocks(document).map((block) => block.locator.kind === "csv_row" && block.locator.row_number)).toEqual([1, 2, 3]);
+    expect(document.diagnostics.some((diagnostic) => diagnostic.message.includes("quote"))).toBe(false);
+  });
+
+  it("REG-AUDIT-F10-b: an even number of mid-field quotes across lines no longer merges records silently", () => {
+    const document = decoded(decode(csv('id,height,note\n1,27",tall\n2,30",short\n3,31,ok\n')));
+    expect(document.tables[0]?.rows).toEqual([
+      ["id", "height", "note"], ["1", '27"', "tall"], ["2", '30"', "short"], ["3", "31", "ok"],
+    ]);
+    expect(rowBlocks(document).map((block) => block.locator.kind === "csv_row" && block.locator.row_number)).toEqual([1, 2, 3, 4]);
+  });
+
+  it("REG-AUDIT-F10-c: a quote opening a field still quotes it, with escaped quotes and embedded delimiters", () => {
+    const document = decoded(decode(csv('id,note\n1,"say ""hi"", then\nleave"\n2,"a"\n', "q.csv")));
+    expect(document.tables[0]?.rows).toEqual([["id", "note"], ["1", 'say "hi", then\nleave'], ["2", "a"]]);
+    const tsv = decoded(decode(csv('id\tnote\n1\t"tab\there"\n2\t5"\n', "q.tsv")));
+    expect(tsv.tables[0]?.rows).toEqual([["id", "note"], ["1", "tab\there"], ["2", '5"']]);
+  });
+
+  it("REG-AUDIT-F15-a: a lone CR ends a line in decoded text, as it does for extractors", () => {
+    const blocks = decoded(decode(textFile("# Plan\rStatus: WIP\r\rOwner: Mel\r", "cr.md"))).blocks;
+    expect(blocks.map((block) => [block.kind, block.text, block.locator])).toEqual([
+      ["title", "Plan", { kind: "line_span", line_start: 1, line_end: 1 }],
+      ["paragraph", "Status: WIP", { kind: "line_span", line_start: 2, line_end: 2 }],
+      ["paragraph", "Owner: Mel", { kind: "line_span", line_start: 4, line_end: 4 }],
+    ]);
+  });
+
+  it("REG-AUDIT-F15-b: LF and CRLF files keep their line numbers", () => {
+    for (const eol of ["\n", "\r\n"]) {
+      const blocks = decoded(decode(textFile(`# Plan${eol}${eol}Body${eol}`, "eol.md"))).blocks;
+      expect(blocks.map((block) => [block.text, block.locator]), JSON.stringify(eol)).toEqual([
+        ["Plan", { kind: "line_span", line_start: 1, line_end: 1 }],
+        ["Body", { kind: "line_span", line_start: 3, line_end: 3 }],
+      ]);
+    }
+  });
+});

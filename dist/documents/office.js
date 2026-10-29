@@ -26,7 +26,10 @@ exports.DOCX_DECODER_ID = "l9.docx-decoder";
 // 1.2.0: part expansion is capped by compressed size x ratio and by one
 // allowance per container; pptx notes and xlsx sheets are found through their
 // relationship parts; an xlsx cell without `r` is cited at its implied position.
-exports.DOCX_DECODER_VERSION = "1.2.0";
+// 1.3.0 (docx only): a self-closing w:del, w:delText, w:moveFrom, w:t or
+// mc:AlternateContent no longer ends the enclosing deletion, text run or
+// AlternateContent frame early.
+exports.DOCX_DECODER_VERSION = "1.3.0";
 exports.PPTX_DECODER_ID = "l9.pptx-decoder";
 exports.PPTX_DECODER_VERSION = "1.2.0";
 exports.XLSX_DECODER_ID = "l9.xlsx-decoder";
@@ -180,9 +183,11 @@ exports.docxDecoder = {
                 }
                 if (event.type === "open") {
                     switch (event.name) {
+                        // These opens are unconditional: parseXml follows a self-closing
+                        // tag with a synthetic close, and the close handlers below pop or
+                        // decrement, so skipping the open would unbalance the counter.
                         case "AlternateContent":
-                            if (!event.selfClosing)
-                                alternates.push(false);
+                            alternates.push(false);
                             return;
                         case "Choice":
                         case "Fallback": {
@@ -197,14 +202,12 @@ exports.docxDecoder = {
                             return;
                         }
                         case "t":
-                            if (!event.selfClosing)
-                                inText += 1;
+                            inText += 1;
                             return;
                         case "del":
                         case "delText":
                         case "moveFrom":
-                            if (!event.selfClosing)
-                                suppressText += 1;
+                            suppressText += 1;
                             return;
                         case "pStyle":
                             style = event.attributes["w:val"] ?? event.attributes.val ?? null;

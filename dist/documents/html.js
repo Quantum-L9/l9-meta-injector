@@ -23,7 +23,9 @@ exports.HTML_DECODER_ID = "l9.html-decoder";
 // without recognising markup inside them; text outside a block element becomes
 // a paragraph of its enclosing element; `<br>` is a line break; a table cell
 // keeps the text of the blocks nested in it; HTML named references decode.
-exports.HTML_DECODER_VERSION = "1.2.0";
+// 1.3.0: a table nested in a cell is its own table and the enclosing table
+// keeps its rows and the cell around it.
+exports.HTML_DECODER_VERSION = "1.3.0";
 /** Elements whose contents are never text. */
 const OPAQUE = new Set([
     "script", "style", "noscript", "template", "svg", "canvas", "iframe", "object", "embed", "noembed", "noframes",
@@ -305,6 +307,9 @@ exports.htmlDecoder = {
         let titleParts = [];
         let tableRows = [];
         let tableRow = [];
+        // The enclosing tables' unfinished rows, one frame per open `<table>`: a
+        // table nested in a cell must not discard the rows of the table around it.
+        const tableFrames = [];
         let sawTitleBlock = false;
         let anchorHref = null;
         let anchorText = [];
@@ -402,9 +407,12 @@ exports.htmlDecoder = {
                     anchorText = [];
                 }
                 if (token.name === "table") {
-                    finishOpenCell();
+                    // A table opened inside a cell lives in that cell: the cell stays
+                    // open, and the enclosing table's rows wait for this one to close.
+                    tableFrames.push({ tableRows, tableRow });
                     tableDepth += 1;
                     tableRows = [];
+                    tableRow = [];
                 }
                 if (token.name === "tr") {
                     finishOpenCell();
@@ -508,6 +516,11 @@ exports.htmlDecoder = {
                         node_index: nodeIndex,
                     });
                     tableRows = [];
+                }
+                const frame = tableFrames.pop();
+                if (frame !== undefined) {
+                    tableRows = frame.tableRows;
+                    tableRow = frame.tableRow;
                 }
             }
             const index = stack.lastIndexOf(token.name);
