@@ -46,7 +46,6 @@ exports.corpusIntelligenceInput = corpusIntelligenceInput;
 const corpus_intelligence_1 = require("./corpus_intelligence");
 const repository_model_1 = require("./repository_model");
 const ordering_1 = require("./ordering");
-const local_source_1 = require("./local_source");
 /**
  * Formats whose decoded text has lines an operator can open the file and find.
  *
@@ -297,18 +296,44 @@ function candidateClusters(entries, candidateType, identities, profile) {
     })
         .sort((a, b) => (0, ordering_1.compareCodePoints)(a.candidate_id, b.candidate_id));
 }
+function archiveAncestryResolver(result, identities) {
+    const sourcePaths = new Map();
+    const parentOf = new Map();
+    for (const root of result.rootPackets) {
+        for (const artifact of root.packet.payload.artifacts) {
+            sourcePaths.set(artifact.artifact_id, artifact.source_path);
+        }
+        for (const edge of root.packet.payload.relationships) {
+            // Archive membership is the only `DERIVED_FROM` edge that carries a member id.
+            if (edge.edge_type === "DERIVED_FROM" && typeof edge.properties.member_id === "string") {
+                parentOf.set(edge.source_id, edge.target_id);
+            }
+        }
+    }
+    return (snapshotIdentity) => {
+        const chain = [];
+        const seen = new Set();
+        let current = parentOf.get(translate(snapshotIdentity, identities));
+        while (current !== undefined && !seen.has(current)) {
+            seen.add(current);
+            chain.push(sourcePaths.get(current) ?? current);
+            current = parentOf.get(current);
+        }
+        return JSON.stringify(chain.reverse());
+    };
+}
 /**
- * Whether a lexical candidate's containers sit under more than one archive
- * ancestry — the rule fusion's `crossArchive` applies to member views, read
- * from the archive locators in the container paths. A container outside any
- * archive has the empty ancestry, so a candidate with one container inside an
- * archive and one outside spans two.
+ * Whether a lexical candidate spans more than one archive ancestry — the rule
+ * fusion's `crossArchive` applies to member views. Each group is one container
+ * (its markers) or one member; an artifact outside any archive has the empty
+ * ancestry, so a candidate with one artifact inside an archive and one outside
+ * spans two.
  */
-function containersCrossArchive(containers) {
+function spansArchiveAncestries(groups, ancestryOf) {
     const ancestries = new Set();
-    for (const container of containers) {
-        const parts = container.container_path.split(local_source_1.ARCHIVE_MEMBER_SEPARATOR);
-        ancestries.add(parts.slice(0, -1).join(local_source_1.ARCHIVE_MEMBER_SEPARATOR));
+    for (const group of groups) {
+        for (const identity of group)
+            ancestries.add(ancestryOf(identity));
     }
     return ancestries.size > 1;
 }
@@ -324,11 +349,11 @@ function containersCrossArchive(containers) {
  *
  * Both families are published, each with its own `analysis_profile` so a reader
  * can tell which pass produced a cluster. Nothing here is computed but the
- * archive flag, which is read off the container paths the candidate already
- * carries: the lexical candidates are already written to `corpus-candidates.json`
+ * archive flag, which is read off the run's archive parent chain for the markers
+ * the candidate already carries (ADR-063): the lexical candidates are already written to `corpus-candidates.json`
  * and are simply carried across the boundary rather than left behind it.
  */
-function lexicalProjectClusters(result, identities) {
+function lexicalProjectClusters(result, identities, ancestryOf) {
     const analysis = result.candidates.analysis_profile;
     const profile = {
         profile_id: analysis.project_candidate_method,
@@ -350,7 +375,8 @@ function lexicalProjectClusters(result, identities) {
         // reader has to be able to see that.
         ambiguity_flags: candidate.identifier_is_declared ? [] : ["identifier_inferred_from_container"],
         cross_root: candidate.spans_roots,
-        cross_archive: containersCrossArchive(candidate.containers),
+        // A container's ancestry is that of the markers that define it.
+        cross_archive: spansArchiveAncestries(candidate.containers.map((container) => container.marker_ids), ancestryOf),
         analysis_profile: profile,
         upstream_candidate_id: candidate.candidate_id,
     }))
@@ -366,7 +392,7 @@ function lexicalProjectClusters(result, identities) {
  * topic domain beside a topic it had computed. Each cluster names the lexical
  * pass in its own `analysis_profile`, so it is never read as a semantic topic.
  */
-function lexicalTopicClusters(result, identities) {
+function lexicalTopicClusters(result, identities, ancestryOf) {
     const analysis = result.candidates.analysis_profile;
     const profile = {
         profile_id: analysis.topic_candidate_method,
@@ -386,7 +412,7 @@ function lexicalTopicClusters(result, identities) {
         confidence_class: "weak",
         ambiguity_flags: [],
         cross_root: candidate.spans_roots,
-        cross_archive: containersCrossArchive(candidate.member_paths.map((memberPath) => ({ container_path: memberPath }))),
+        cross_archive: spansArchiveAncestries(candidate.member_ids.map((member) => [member]), ancestryOf),
         analysis_profile: profile,
         upstream_candidate_id: candidate.candidate_id,
     }))
@@ -583,6 +609,7 @@ function roots(result) {
  */
 function corpusIntelligenceInput(result, options) {
     const identities = identityTranslation(result);
+    const ancestryOf = archiveAncestryResolver(result, identities);
     const semantic = result.semantic;
     // The profile the analysis actually ran under. The candidate documents all
     // carry the same one, because one run has one semantic profile.
@@ -611,13 +638,13 @@ function corpusIntelligenceInput(result, options) {
         exact_duplicate_relations: duplicateRelations(result, identities),
         semantic_pair_relations: pairRelations(result, identities, profile),
         topic_candidates: [
-            ...lexicalTopicClusters(result, identities),
+            ...lexicalTopicClusters(result, identities, ancestryOf),
             ...(semantic === null
                 ? []
                 : candidateClusters(semantic.topics.candidates, "TOPIC_CANDIDATE", identities, profile)),
         ].sort((a, b) => (0, ordering_1.compareCodePoints)(a.candidate_id, b.candidate_id)),
         project_candidates: [
-            ...lexicalProjectClusters(result, identities),
+            ...lexicalProjectClusters(result, identities, ancestryOf),
             ...(semantic === null
                 ? []
                 : candidateClusters(semantic.projects.candidates, "PROJECT_CANDIDATE", identities, profile)),
