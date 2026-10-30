@@ -12,6 +12,8 @@ containers solely to upsert a root `.l9meta.yaml` member.
 Does not amend [ADR-036](036-read-only-local-source-acquisition.md): `local-source` stays
 read-only and ZIP-only for expansion. Does not amend apply, check, or skills.
 
+Item 6 amended by [ADR-060](060-inventory-annotation-clock-convergence.md): carrier `created_at` / `modified_at` are carried forward while the carrier-free content is unchanged; `InventoryRecord` still holds the filesystem observation.
+
 ## Date
 
 2026-09-11

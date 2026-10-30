@@ -11,7 +11,12 @@ const version=JSON.parse(read("package.json")).version;const id=identity.release
 const branchAt=process.argv.indexOf("--branch");try{identity.assertBranchMatchesVersion(branchAt===-1?process.env.GITHUB_REF_NAME:process.argv[branchAt+1],version)}catch(error){console.error(`prepare-release: BLOCKED\n  - ${error.message}`);process.exit(1)}
 // The lockfile version is derived state, so it is written; package.json is not.
 for(const p of ["package-lock.json"]){const j=JSON.parse(read(p));j.version=version;if(j.packages?.[""])j.packages[""].version=version;write(p,JSON.stringify(j,null,2)+"\n")}
-for(const p of ["docs/package-publication-decision.json","docs/public-api-contract.json","docs/package-contract.json"]){const j=JSON.parse(read(p));if(Object.hasOwn(j,"package_version"))j.package_version=version;write(p,JSON.stringify(j,null,2)+"\n")}
+// A publication approval is bound to the version it approved (ADR-070). Preparing
+// a different version resets the decision to blocked before package_version is
+// restamped, so an approval for one version never becomes an approval for the
+// next. approved_version is never written here: only a recorded owner approval
+// sets it. Equal versions change nothing, so re-preparation stays idempotent.
+for(const p of ["docs/package-publication-decision.json","docs/public-api-contract.json","docs/package-contract.json"]){const j=JSON.parse(read(p));if(p==="docs/package-publication-decision.json"&&j.package_version!==version)j.status="blocked_pending_history_check";if(Object.hasOwn(j,"package_version"))j.package_version=version;write(p,JSON.stringify(j,null,2)+"\n")}
 // docs/architecture.md states the as-built package version. It was outside the
 // derived set, so it drifted a full release behind the authority.
 let arch=read("docs/architecture.md");arch=arch.replace(/^\*\*Package version:\*\* .+$/m,`**Package version:** ${version}`);write("docs/architecture.md",arch);

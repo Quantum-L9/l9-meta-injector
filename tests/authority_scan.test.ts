@@ -8,6 +8,7 @@ import {
   inspectRepositoryAuthority,
   scanRepositoryAuthority,
 } from "../src/authority_scan";
+import { runCheckAsync } from "../src/check";
 
 function tempRepo(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "l9-authority-"));
@@ -140,5 +141,131 @@ describe("hidden control-surface authority scan", () => {
     expect(scan.scannedPaths).toContain(".pre-commit-config.yaml");
     expect(scan.scannedPaths).toContain(".githooks/pre-commit");
     expect(scan.conflicts.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("symlinked control-surface directories fail closed (RC-027)", () => {
+  function gapPaths(scan: { scanGaps: Array<{ code: string; path?: string }> }): string[] {
+    return scan.scanGaps.filter((item) => item.code === "META_AUTHORITY_SCAN_INCOMPLETE").map((item) => item.path ?? "");
+  }
+
+  function linkedWorkflowRepo(): string {
+    const root = tempRepo();
+    write(root, META_AUTHORITY_RELATIVE_PATH, AUTHORITY);
+    write(root, "ci/meta.yml", "steps:\n  - run: python scripts/inject_l9_meta.py\n");
+    fs.mkdirSync(path.join(root, ".github"), { recursive: true });
+    fs.symlinkSync("../ci", path.join(root, ".github/workflows"));
+    return root;
+  }
+
+  test("REG-WU-024-RC-027-a: a symlinked .github/workflows is a scan gap naming the link", () => {
+    const root = linkedWorkflowRepo();
+    const inspection = inspectRepositoryAuthority(root);
+    const gaps = inspection.conflicts.filter((item) => item.code === "META_AUTHORITY_SCAN_INCOMPLETE");
+    expect(gaps.map((item) => item.path)).toEqual([".github/workflows"]);
+    expect(inspection.authorityResolved).toBe(false);
+  });
+
+  test("REG-WU-024-RC-027-b: a symlinked .github (an ancestor of a control prefix) is a scan gap", () => {
+    const root = tempRepo();
+    write(root, META_AUTHORITY_RELATIVE_PATH, AUTHORITY);
+    write(root, "shared/github/workflows/meta.yml", "steps:\n  - run: python scripts/inject_l9_meta.py\n");
+    fs.symlinkSync("shared/github", path.join(root, ".github"));
+    const inspection = inspectRepositoryAuthority(root);
+    expect(gapPaths(inspection)).toEqual([".github"]);
+    expect(inspection.authorityResolved).toBe(false);
+  });
+
+  test("REG-WU-024-RC-027-c: a symlinked scripts directory is a scan gap", () => {
+    const root = tempRepo();
+    write(root, META_AUTHORITY_RELATIVE_PATH, AUTHORITY);
+    fs.mkdirSync(path.join(root, "shared-scripts"));
+    fs.symlinkSync("shared-scripts", path.join(root, "scripts"));
+    const scan = scanRepositoryAuthority(root);
+    expect(gapPaths(scan)).toContain("scripts");
+  });
+
+  test("REG-WU-024-RC-027-d: symlinked .husky and .githooks each yield one gap naming the link", () => {
+    for (const name of [".husky", ".githooks"]) {
+      const root = tempRepo();
+      write(root, META_AUTHORITY_RELATIVE_PATH, AUTHORITY);
+      fs.mkdirSync(path.join(root, "hooks"));
+      fs.symlinkSync("hooks", path.join(root, name));
+      const scan = scanRepositoryAuthority(root);
+      expect(gapPaths(scan)).toEqual([name]);
+    }
+  });
+
+  test("REG-WU-024-RC-027-d: every control prefix and ancestor link gaps; whole segments only", () => {
+    const root = tempRepo();
+    write(root, META_AUTHORITY_RELATIVE_PATH, AUTHORITY);
+    fs.mkdirSync(path.join(root, "target"));
+    fs.mkdirSync(path.join(root, ".github"));
+    for (const name of ["bin", "tools", ".github/actions", "bin2", "scriptsx", ".githubx"]) {
+      fs.symlinkSync(path.join(root, "target"), path.join(root, name));
+    }
+    const scan = scanRepositoryAuthority(root);
+    expect(gapPaths(scan).sort()).toEqual([".github/actions", "bin", "tools"]);
+  });
+
+  test("REG-WU-024-RC-027-e: a non-control directory symlink produces no gap", () => {
+    const root = tempRepo();
+    write(root, META_AUTHORITY_RELATIVE_PATH, AUTHORITY);
+    const shared = `${root}-shared`;
+    fs.mkdirSync(shared, { recursive: true });
+    try {
+      fs.symlinkSync(shared, path.join(root, "assets"));
+      const scan = scanRepositoryAuthority(root);
+      expect(scan.scanGaps).toEqual([]);
+      expect(scan.conflicts).toEqual([]);
+    } finally {
+      fs.rmSync(shared, { recursive: true, force: true });
+    }
+  });
+
+  test("REG-WU-024-RC-027-f: a symlinked file inside a real control directory keeps exactly its existing gap", () => {
+    const root = tempRepo();
+    write(root, META_AUTHORITY_RELATIVE_PATH, AUTHORITY);
+    write(root, "elsewhere/meta.yml", "steps: []\n");
+    fs.mkdirSync(path.join(root, ".github/workflows"), { recursive: true });
+    fs.symlinkSync("../../elsewhere/meta.yml", path.join(root, ".github/workflows/meta.yml"));
+    const scan = scanRepositoryAuthority(root);
+    expect(scan.scanGaps.map((item) => [item.code, item.path])).toEqual([
+      ["META_AUTHORITY_SCAN_INCOMPLETE", ".github/workflows/meta.yml"],
+    ]);
+  });
+
+  test("REG-WU-024-RC-027-g: a governed check over a symlinked workflow directory reports a failure without touching the tree", async () => {
+    const root = linkedWorkflowRepo();
+    const outDir = `${root}.out`;
+    const before = fs.readdirSync(root).sort();
+    try {
+      const result = await runCheckAsync({
+        root,
+        glob: "**/*",
+        outDir,
+        namespace: "fixture",
+        authority: "l9.doctrine.platform",
+        nearDupThreshold: 0.9,
+        hashPrefixLength: 16,
+        indexDir: outDir,
+        verbose: false,
+        llmEnabled: false,
+        normalizeFilenames: false,
+        writeInjectLog: false,
+        localFiles: false,
+        persistOutputs: false,
+      });
+      expect(result.passed).toBe(false);
+      expect(result.authorityResolved).toBe(false);
+      expect(result.check?.authorityConflicts.map((item) => [item.code, item.path])).toContainEqual([
+        "META_AUTHORITY_SCAN_INCOMPLETE",
+        ".github/workflows",
+      ]);
+      expect(fs.readdirSync(root).sort()).toEqual(before);
+      expect(fs.readFileSync(path.join(root, "ci/meta.yml"), "utf8")).toBe("steps:\n  - run: python scripts/inject_l9_meta.py\n");
+    } finally {
+      fs.rmSync(outDir, { recursive: true, force: true });
+    }
   });
 });

@@ -186,6 +186,20 @@ function isCandidate(relativePath: string): boolean {
   return SUSPICIOUS_NAME.test(base);
 }
 
+/**
+ * Whether a symbolic link stands where a control surface would be (RC-027).
+ *
+ * A link is judged by its own repository-relative path: a control file, a control
+ * directory itself (a prefix without its trailing slash), or a strict ancestor of one
+ * (`.github` above `.github/workflows/`). Comparison is by whole path segments, so
+ * `bin2` or `scriptsx` never match. Derived from `CONTROL_PREFIXES` so the two cannot
+ * drift. The scanner never follows the link; it reports that it could not look.
+ */
+function isControlSurfaceLink(relativePath: string): boolean {
+  if (isCandidate(relativePath)) return true;
+  return CONTROL_PREFIXES.some((prefix) => prefix.slice(0, -1) === relativePath || prefix.startsWith(`${relativePath}/`));
+}
+
 interface WalkResult {
   files: string[];
   gaps: AuthorityConflict[];
@@ -195,6 +209,18 @@ interface WalkResult {
 
 const AUTHORITY_DIRECTORY_NAME = ".l9";
 const AUTHORITY_FILE_NAME = "meta-authority.yaml";
+
+/**
+ * Directories never searched for a nested authority declaration (ADR-072).
+ *
+ * Writer-evidence exclusions (`DEFAULT_EXCLUDED_DIRECTORIES` plus a caller's
+ * `excludedDirectoryNames`, ADR-020 item 5) keep inert examples out of active-writer
+ * conclusions. They do not hide a nested `.l9/meta-authority.yaml` (ADR-047 item 7):
+ * those directories are still descended for nested authority only. The one deliberate
+ * exception is VCS internals and dependency install trees, which a repository does not
+ * author and whose walk cost is unbounded.
+ */
+const NESTED_AUTHORITY_SKIPPED_DIRECTORIES = new Set([".git", "node_modules", ".venv", "__pycache__"]);
 
 function nestedAuthorityConflict(relativePath: string): AuthorityConflict {
   return {
@@ -216,7 +242,12 @@ function walkFiles(root: string, excluded: Set<string>): WalkResult {
   const files: string[] = [];
   const gaps: AuthorityConflict[] = [];
   const nestedAuthorities: string[] = [];
-  const walk = (directory: string): void => {
+  /**
+   * `collect` is false inside a writer-evidence-excluded directory: nothing there is a
+   * candidate control surface or a control-surface link gap, but nested authority
+   * declarations (and unreadable directories) are still reported.
+   */
+  const walk = (directory: string, collect: boolean): void => {
     let entries: fs.Dirent[];
     try {
       entries = fs.readdirSync(directory, { withFileTypes: true });
@@ -228,28 +259,37 @@ function walkFiles(root: string, excluded: Set<string>): WalkResult {
     for (const entry of entries) {
       const full = path.join(directory, entry.name);
       const relative = toPosix(path.relative(root, full));
+      const nestedAuthorityDirectory = entry.name === AUTHORITY_DIRECTORY_NAME && directory !== root;
       if (entry.isSymbolicLink()) {
-        if (isCandidate(relative)) gaps.push(scanGap(relative, "authority scan does not follow control-surface symlinks"));
+        if (nestedAuthorityDirectory) {
+          gaps.push(scanGap(relative, "authority scan does not follow a symlinked nested .l9; its declaration cannot be inspected"));
+        } else if (collect && isControlSurfaceLink(relative)) {
+          gaps.push(scanGap(relative, "authority scan does not follow control-surface symlinks"));
+        }
         continue;
       }
       if (entry.isDirectory()) {
-        if (excluded.has(entry.name)) continue;
-        if (entry.name === AUTHORITY_DIRECTORY_NAME && directory !== root) {
+        if (NESTED_AUTHORITY_SKIPPED_DIRECTORIES.has(entry.name)) continue;
+        if (nestedAuthorityDirectory) {
           const candidate = path.join(full, AUTHORITY_FILE_NAME);
           try {
-            if (fs.lstatSync(candidate).isFile()) nestedAuthorities.push(toPosix(path.relative(root, candidate)));
+            // Any entry at all competes: a regular file, a symlink (dangling or not), or
+            // something stranger. lstat never follows the link.
+            fs.lstatSync(candidate);
+            nestedAuthorities.push(toPosix(path.relative(root, candidate)));
           } catch {
             // No document inside the nested `.l9`: nothing competes.
           }
         }
-        walk(full);
-      } else if (entry.isFile() && isCandidate(relative)) {
+        walk(full, collect && !excluded.has(entry.name));
+      } else if (collect && entry.isFile() && isCandidate(relative)) {
         files.push(full);
       }
     }
   };
-  walk(root);
+  walk(root, true);
   files.sort(compareCodePoints);
+  gaps.sort((a, b) => compareCodePoints(a.path ?? "", b.path ?? ""));
   nestedAuthorities.sort(compareCodePoints);
   return { files, gaps, nestedAuthorities };
 }

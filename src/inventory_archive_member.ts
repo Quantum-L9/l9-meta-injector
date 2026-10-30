@@ -155,6 +155,47 @@ export type ArchiveMemberResult =
   | { rewritten: true }
   | { rewritten: false; hold: string };
 
+/**
+ * Hold code for a filesystem failure while reading or replacing the archive
+ * (RC-056). The errno code is the portable reason: the host message repeats the
+ * absolute path, which would make the record depend on where the tree lives.
+ */
+function ioHold(err: unknown): string {
+  const code = (err as NodeJS.ErrnoException | null)?.code;
+  return `archive.rewrite_io_failed:${typeof code === "string" && code.length > 0 ? code : "UNKNOWN_ERROR"}`;
+}
+
+type ArchiveRead = { ok: true; bytes: Buffer } | { ok: false; hold: string };
+
+function readArchive(abs: string): ArchiveRead {
+  try {
+    return { ok: true, bytes: fs.readFileSync(abs) };
+  } catch (err) {
+    return { ok: false, hold: ioHold(err) };
+  }
+}
+
+/**
+ * Replace the archive, or report why it could not be replaced. The staging file
+ * is removed by `replaceFileAtomically` on failure, so a held archive keeps its
+ * bytes and no staging sibling is left behind.
+ */
+function replaceArchive(abs: string, bytes: Buffer): ArchiveMemberResult {
+  try {
+    replaceFileAtomically(abs, bytes);
+    return { rewritten: true };
+  } catch (err) {
+    return { rewritten: false, hold: ioHold(err) };
+  }
+}
+
+/**
+ * Upsert the archive's root `.l9meta.yaml` member. Every outcome is a result:
+ * admission holds, codec holds, and filesystem failures while reading or
+ * replacing the archive (`archive.rewrite_io_failed:<errno>`) all return
+ * `{ rewritten: false, hold }` so the caller records them on the archive's own
+ * record and the inventory walk continues (RC-056).
+ */
 export function upsertArchiveRootMeta(abs: string, yaml: string): ArchiveMemberResult {
   const kind = inventoryRewriteKind(path.basename(abs));
   if (kind === null) {
@@ -166,31 +207,30 @@ export function upsertArchiveRootMeta(abs: string, yaml: string): ArchiveMemberR
     if (admit) return { rewritten: false, hold: admit };
     const injected = injectZipRootMeta(abs, yaml);
     if (!injected.ok) return { rewritten: false, hold: injected.hold };
-    replaceFileAtomically(abs, injected.bytes);
-    return { rewritten: true };
+    return replaceArchive(abs, injected.bytes);
   }
+
+  const read = readArchive(abs);
+  if (!read.ok) return { rewritten: false, hold: read.hold };
 
   if (kind === "tar") {
-    const bytes = fs.readFileSync(abs);
-    const admit = admitTarBytes(bytes);
+    const admit = admitTarBytes(read.bytes);
     if (admit) return { rewritten: false, hold: admit };
-    const injected = injectTarRootMeta(bytes, yaml);
+    const injected = injectTarRootMeta(read.bytes, yaml);
     if (!injected.ok) return { rewritten: false, hold: injected.hold };
-    replaceFileAtomically(abs, injected.bytes);
-    return { rewritten: true };
+    return replaceArchive(abs, injected.bytes);
   }
 
-  const inflateResult = boundedGunzipSync(fs.readFileSync(abs));
+  const inflateResult = boundedGunzipSync(read.bytes);
   if (!inflateResult.ok) {
     return { rewritten: false, hold: inflateResult.hold };
   }
   const tar = inflateResult.bytes;
   const admit = admitTarBytes(tar);
   if (admit) return { rewritten: false, hold: admit };
-  const injected = injectGzipTarRootMeta(fs.readFileSync(abs), yaml);
+  const injected = injectGzipTarRootMeta(read.bytes, yaml);
   if (!injected.ok) return { rewritten: false, hold: injected.hold };
-  replaceFileAtomically(abs, injected.bytes);
-  return { rewritten: true };
+  return replaceArchive(abs, injected.bytes);
 }
 
 export function isCanonicalMetaMemberName(name: string): boolean {

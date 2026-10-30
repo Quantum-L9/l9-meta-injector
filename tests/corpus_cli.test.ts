@@ -261,7 +261,7 @@ describe("corpus mode", () => {
 
     expect(snapshot.schema).toBe("l9.corpus-snapshot/v1");
     expect(candidates.schema).toBe("l9.corpus-candidates/v1");
-    expect(coverage.schema).toBe("l9.corpus-coverage/v1");
+    expect(coverage.schema).toBe("l9.corpus-coverage/v2");
     expect(signals.schema).toBe("l9.document-signals/v1");
     expect(signals.corpus_source_snapshot_id).toBe(snapshot.corpus_source_snapshot_id);
     // Decoding that reaches nothing is not a result. The signals document says
@@ -499,6 +499,55 @@ describe("semantic candidate discovery", () => {
     // The document index is not part of the semantic pass and still lands.
     expect(written).toContain("document-index.json");
     expect(written).toContain("corpus-candidates.json");
+  });
+
+  it("REG-WU-049-RC-076-a: states in the packet which domains a run without semantic analysis did not run", () => {
+    const f = fixture();
+    expect(run(argsFor(f, ["--no-semantic-analysis"])).status).toBe(0);
+    const cip = path.join(generation(f), "corpus-intelligence");
+    const packet = JSON.parse(fs.readFileSync(path.join(cip, "packet.json"), "utf8"));
+    expect(packet.packet_version).toBe("1.1.0");
+    const declared = packet.domains_not_run.map((entry: { domain: string }) => entry.domain);
+    expect(declared).toEqual([
+      "semantic_pair_relations",
+      "consolidation_candidates",
+      "reasoning_candidates",
+      "reasoning_evidence_pack_refs",
+    ]);
+    for (const domain of ["exact_duplicate_relations", "project_candidates", "readiness_evidence", "document_work_signals"]) {
+      expect(declared).not.toContain(domain);
+    }
+    // The lexical topic pass did run, and what it found crosses the boundary.
+    const candidates = JSON.parse(fs.readFileSync(path.join(generation(f), "corpus-candidates.json"), "utf8"));
+    const topics = JSON.parse(fs.readFileSync(path.join(cip, "payload", "topic-candidates.json"), "utf8"));
+    expect(topics.length).toBe(candidates.topic_candidates.length);
+    expect(topics.length).toBeGreaterThan(0);
+    for (const cluster of topics) {
+      expect(cluster.analysis_profile.profile_id).toBe(candidates.analysis_profile.topic_candidate_method);
+    }
+    // Every domain file is still written, empty when not run.
+    expect(fs.readdirSync(path.join(cip, "payload")).length).toBe(9);
+  });
+
+  it("REG-WU-049-RC-076-b: a default run declares every domain as run", () => {
+    const f = fixture();
+    expect(run(argsFor(f)).status).toBe(0);
+    const packet = JSON.parse(
+      fs.readFileSync(path.join(generation(f), "corpus-intelligence", "packet.json"), "utf8"),
+    );
+    expect(packet.domains_not_run).toEqual([]);
+    expect(Object.keys(packet.payload_refs).length).toBe(9);
+  });
+
+  it("REG-WU-049-RC-086-d: --no-interpret prints interpretation as not run, never as 0/0", () => {
+    const f = fixture();
+    const result = run(argsFor(f, ["--no-interpret"]));
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("interpreted      disabled (--no-interpret); not run");
+    expect(result.stdout).not.toMatch(/interpreted\s+0\/0/);
+    const coverage = JSON.parse(fs.readFileSync(path.join(generation(f), "corpus-coverage.json"), "utf8"));
+    expect(coverage.interpretation_enabled).toBe(false);
+    expect(coverage.interpretation_coverage).toBeNull();
   });
 
   it("keeps every mount point out of the semantic documents", () => {
@@ -773,5 +822,38 @@ describe("an archive whose member root is a project", () => {
     expect(candidates.project_candidates).toHaveLength(1);
     expect(candidates.project_candidates[0].project_key).toBe("project:zipped-proj");
     expect(candidates.project_candidates[0].member_count).toBe(3);
+  });
+});
+
+describe("corpus-mode index schema id (RC-070, ADR-067)", () => {
+  it("REG-WU-043-RC-070-a: the corpus-mode and single-root index schema constants differ, in dist as in src", async () => {
+    const analysis = await import("../src/corpus_analysis");
+    const corpusIndex = await import("../src/corpus_index");
+    expect(corpusIndex.CORPUS_INDEX_SCHEMA).not.toBe(analysis.CORPUS_INDEX_SCHEMA);
+    expect(analysis.CORPUS_INDEX_SCHEMA).toBe("l9.corpus-index/v1");
+    expect(corpusIndex.CORPUS_INDEX_SCHEMA).toBe("l9.corpus-mode-index/v1");
+    const builtAnalysis = JSON.stringify(fs.readFileSync(path.join(REPO, "dist", "corpus_analysis.js"), "utf8")
+      .match(/CORPUS_INDEX_SCHEMA = "([^"]+)"/)?.[1]);
+    const builtIndex = JSON.stringify(fs.readFileSync(path.join(REPO, "dist", "corpus_index.js"), "utf8")
+      .match(/CORPUS_INDEX_SCHEMA = "([^"]+)"/)?.[1]);
+    expect(builtAnalysis).toBe(JSON.stringify(analysis.CORPUS_INDEX_SCHEMA));
+    expect(builtIndex).toBe(JSON.stringify(corpusIndex.CORPUS_INDEX_SCHEMA));
+  });
+
+  it("REG-WU-043-RC-070-b: a corpus run's index declares the corpus-mode id and every work-signal artifact_id resolves in document-index.json", () => {
+    const f = fixture();
+    // A document that states work, so the machine projection carries records to join.
+    fs.writeFileSync(path.join(f.roots[0], "register.csv"), "owner,status,depends on\nmel,blocked,vendor.md\n");
+    const result = run(argsFor(f));
+    expect(result.status, result.stderr).toBe(0);
+    const index = JSON.parse(fs.readFileSync(path.join(generation(f), "corpus-index.json"), "utf8"));
+    expect(index.schema).toBe("l9.corpus-mode-index/v1");
+    expect(index.repository_model).toBeUndefined();
+    const documents = JSON.parse(fs.readFileSync(path.join(generation(f), "document-index.json"), "utf8"));
+    const known = new Set<string>(documents.documents.map((entry: { artifact_id: string }) => entry.artifact_id));
+    const records = fs.readFileSync(path.join(generation(f), "document-work-signals.jsonl"), "utf8")
+      .split("\n").filter((line) => line.length > 0).map((line) => JSON.parse(line) as { artifact_id: string });
+    expect(records.length).toBeGreaterThan(0);
+    for (const record of records) expect(known.has(record.artifact_id), record.artifact_id).toBe(true);
   });
 });

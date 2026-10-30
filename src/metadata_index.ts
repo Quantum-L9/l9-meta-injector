@@ -12,6 +12,7 @@ import * as path from "node:path";
 import { createHash } from "node:crypto";
 import type { ArtifactType } from "./schema";
 import type { AuthorityConfig, CarrierDecision, MetadataCarrier, OperationMode } from "./operation_contracts";
+import { compareCodePoints } from "./ordering";
 import {
   assertCarrierDecisionCoverage,
   resolveCarrierDecisions,
@@ -56,6 +57,13 @@ export interface CompileMetadataIndexInput {
   authority: AuthorityConfig;
   mode: OperationMode;
   subjects: readonly ManagedMetadataSubject[];
+  /**
+   * Existing index records carried forward verbatim (ADR-058). A scoped governed run
+   * passes the records of paths its discovery ledger marked scope-filtered; they are
+   * merged with the records compiled from `subjects` and validated as one index.
+   * Carrier decisions still cover `subjects` only.
+   */
+  preservedRecords?: readonly MetadataIndexRecord[];
 }
 
 export interface WriteMetadataIndexOptions {
@@ -77,6 +85,13 @@ const FORBIDDEN_VOLATILE_KEYS = new Set([
   "runtime_timestamp",
 ]);
 
+/** The record keys `schemas/metadata-index-record.schema.json` allows (additionalProperties: false). */
+const RECORD_KEYS = ["artifact_type", "carrier", "content_hash", "metadata", "path", "schema"] as const;
+const MAX_PATH_CODE_POINTS = 4096;
+// The schema's path pattern forbids exactly these characters.
+const CONTROL_CHARACTER = /[\u0001-\u001F\u007F]/u;
+
+/** Canonical repository-relative POSIX structure, required of every subject path. */
 function normalizeRelativePath(value: string): string {
   if (value.includes("\u0000")) throw new Error("metadata index path contains NUL");
   if (value.includes("\\")) throw new Error(`metadata index path must use POSIX separators: ${value}`);
@@ -89,6 +104,32 @@ function normalizeRelativePath(value: string): string {
     throw new Error(`metadata index path contains a non-canonical segment: ${value}`);
   }
   return segments.join("/");
+}
+
+/**
+ * The record schema's remaining `path` rules (pattern and maxLength), required of every
+ * materialized record: no control character, no leading '.', at most 4096 code points.
+ */
+function assertRecordPath(pathName: string): void {
+  const problem = metadataIndexPathProblem(pathName);
+  if (problem !== null) throw new Error(problem);
+}
+
+/**
+ * Why the index schema cannot represent `pathName`, or null when it can.
+ *
+ * Shared with discovery (DEC-RC-013 option B), which holds such a file with a
+ * blocking disposition so `check` reports it instead of the producer throwing.
+ */
+export function metadataIndexPathProblem(pathName: string): string | null {
+  if (CONTROL_CHARACTER.test(pathName)) {
+    return `metadata index path contains a control character (U+0001-U+001F, U+007F): ${JSON.stringify(pathName)}`;
+  }
+  if (pathName.startsWith(".")) return `metadata index path must not start with '.': ${pathName}`;
+  if ([...pathName].length > MAX_PATH_CODE_POINTS) {
+    return `metadata index path exceeds ${MAX_PATH_CODE_POINTS} characters: ${pathName.slice(0, 64)}...`;
+  }
+  return null;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -161,6 +202,7 @@ function toRecord(
     throw new Error(`carrier decision path mismatch for ${pathName}: ${decision.path}`);
   }
   if (decision.carrier === "hard_skip") return undefined;
+  assertRecordPath(pathName);
   assertContentHash(subject.contentHash, pathName);
 
   const metadata = canonicalize(subject.metadata, `metadata:${pathName}`, new Set<object>());
@@ -189,15 +231,26 @@ function byCodeUnit(a: string, b: string): number {
   return 0;
 }
 
+/** Records are in code-point path order, like every other identity-bearing order (ADR-058). */
 function comparePath(left: { path: string }, right: { path: string }): number {
-  return byCodeUnit(left.path, right.path);
+  return compareCodePoints(left.path, right.path);
+}
+
+function assertRecordKeys(record: MetadataIndexRecord): void {
+  const keys = Object.keys(record).sort(byCodeUnit);
+  if (keys.length !== RECORD_KEYS.length || keys.some((key, index) => key !== RECORD_KEYS[index])) {
+    const pathName = typeof record.path === "string" ? record.path : "<unknown>";
+    throw new Error(`metadata index record for ${pathName} must have exactly the keys ${RECORD_KEYS.join(", ")}; got ${keys.join(", ")}`);
+  }
 }
 
 export function serializeMetadataIndex(records: readonly MetadataIndexRecord[]): string {
   const seen = new Set<string>();
   const sorted = [...records].sort(comparePath);
   for (const record of sorted) {
+    assertRecordKeys(record);
     const pathName = normalizeRelativePath(record.path);
+    assertRecordPath(pathName);
     if (seen.has(pathName)) throw new Error(`duplicate metadata index path: ${pathName}`);
     seen.add(pathName);
     if (record.schema !== METADATA_INDEX_SCHEMA) throw new Error(`unsupported metadata index schema for ${pathName}`);
@@ -219,6 +272,25 @@ export function serializeMetadataIndex(records: readonly MetadataIndexRecord[]):
   return sorted.length === 0 ? "" : `${sorted.map((record) => canonicalJson(record)).join("\n")}\n`;
 }
 
+/** Metadata ids must stay unique across compiled and preserved records (the pipeline only saw the compiled ones). */
+function assertUniqueMergedMetadataIds(
+  subjects: readonly ManagedMetadataSubject[],
+  preserved: readonly MetadataIndexRecord[],
+): void {
+  const byId = new Map<string, string[]>();
+  const add = (id: unknown, pathName: string): void => {
+    if (id === undefined) return;
+    const key = String(id);
+    byId.set(key, [...(byId.get(key) ?? []), pathName]);
+  };
+  for (const subject of subjects) add(subject.metadata["id"], subject.path);
+  for (const record of preserved) add(record.metadata["id"], record.path);
+  const duplicates = [...byId.entries()].filter(([, paths]) => paths.length > 1);
+  if (duplicates.length === 0) return;
+  const detail = duplicates.map(([id, paths]) => `${id}: ${paths.join(", ")}`).join("; ");
+  throw new Error(`DUPLICATE_METADATA_ID: ${duplicates.length} id(s) map to more than one path across the merged metadata index: ${detail}`);
+}
+
 export function compileMetadataIndex(input: CompileMetadataIndexInput): MetadataIndexCompilation {
   const carrierDecisions = resolveCarrierDecisions({
     authority: input.authority,
@@ -233,6 +305,14 @@ export function compileMetadataIndex(input: CompileMetadataIndexInput): Metadata
     if (!subject) throw new Error(`carrier decision has no metadata subject: ${decision.path}`);
     const record = toRecord(subject, decision);
     if (record) records.push(record);
+  }
+  const preserved = input.preservedRecords ?? [];
+  if (preserved.length > 0) {
+    assertUniqueMergedMetadataIds(input.subjects, preserved);
+    for (const record of preserved) {
+      if (subjectByPath.has(record.path)) throw new Error(`preserved metadata index record overlaps a compiled subject: ${record.path}`);
+      records.push(record);
+    }
   }
   const bytes = serializeMetadataIndex(records);
   return {

@@ -86,8 +86,8 @@ consumable as a **GitHub composite action** — it runs directly against the pin
 | `mode` | `inventory` | `inventory` = classify + manifest. `pipeline` = scan→inject→verify→index. `skills` = Cursor-native skill description improve. |
 | `root` | `.` | Directory to scan, relative to the calling repo's checkout. |
 | `namespace` | *(repo name)* | `pipeline` mode only — stamped into placement/verification. |
-| `dry-run` | `true` for `inventory`, `false` for `pipeline`/`skills` | `pipeline` verification requires real injected frontmatter, so a `pipeline` dry-run will always fail verification on prose files — pair `dry-run: "true"` with `fail-on-issues: "false"` if you want a preview-only pipeline pass. |
-| `fail-on-issues` | `true` | `pipeline` mode only — gate the job on `verification.passed`. |
+| `dry-run` | `true` for `inventory`/`check`, `false` for `apply`/`skills` | Exact boolean. `check` rejects `false`, and `apply` (and its deprecated `pipeline` alias) rejects `true`: for a read-only preview of what apply would change, run `mode: check`. |
+| `fail-on-issues` | `true` | Exact boolean; only `true` is accepted. `check` always fails on drift and `apply` (and `pipeline`) always fails on repository authority conflicts; `"false"` is an input error in every mode, including `apply` (ADR-069). |
 | `omit` | *(empty)* | Comma-separated gitignore-style patterns (built-ins always protect `SKILL.md` and skip bytecode/logs). |
 | `upload-artifact` | `true` | Uploads the manifest/report directory as a workflow artifact. |
 | `llm` | `false` | `pipeline`/`skills` — enable LLM-assisted field assist (falls back to local/no-op if `llm-base-url`/`llm-model`/`llm-api-key` are incomplete). |
@@ -300,6 +300,8 @@ npm run local-source -- \
   visible. A crash at any point leaves the whole previous generation or the whole new
   one, never a coverage report from one run beside a readiness document from another.
   `--keep-generations` bounds retention; pruning never touches what the pointer names.
+  A publish holds an exclusive `.corpus-publish.lock` in the output root, so a second
+  concurrent publisher into the same root is refused rather than racing (ADR-066).
 - **Interrupted scans resume.** `corpus-session.json` records completions by
   content-addressed key; `--resume` picks them up. Cache and session writes are staged,
   fsynced, renamed, and the parent directory fsynced — a rename is atomic against a

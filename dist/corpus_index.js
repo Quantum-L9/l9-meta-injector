@@ -21,7 +21,14 @@ exports.renderCorpusIndexReport = renderCorpusIndexReport;
 // thirty files or thirty thousand.
 const corpus_analysis_1 = require("./corpus_analysis");
 const ordering_1 = require("./ordering");
-exports.CORPUS_INDEX_SCHEMA = "l9.corpus-index/v1";
+/**
+ * The corpus-mode table of contents' own schema id (ADR-067).
+ *
+ * Distinct from the single-root `l9.corpus-index/v1` that `corpus_analysis.ts`
+ * owns: the two documents share a file name, `corpus-index.json`, but not a
+ * shape, so they must not share an id a consumer dispatches on.
+ */
+exports.CORPUS_INDEX_SCHEMA = "l9.corpus-mode-index/v1";
 exports.CORPUS_INDEX_STATEMENT = "This index names what was observed and where each document was written. It contains no "
     + "ranking, no priority and no recommendation, and the order of any list in it carries none.";
 /**
@@ -70,7 +77,7 @@ function coverageFor(coverage, signals) {
 const KNOWN_DOCUMENTS = [
     { name: "snapshot", path: "corpus-snapshot.json", schema: "l9.corpus-snapshot/v1" },
     { name: "diff", path: "corpus-diff.json", schema: "l9.corpus-diff/v1" },
-    { name: "coverage", path: "corpus-coverage.json", schema: "l9.corpus-coverage/v1" },
+    { name: "coverage", path: "corpus-coverage.json", schema: "l9.corpus-coverage/v2" },
     { name: "readiness_evidence", path: "readiness-evidence.json", schema: "l9.readiness-evidence/v1" },
     { name: "candidates", path: "corpus-candidates.json", schema: "l9.corpus-candidates/v1" },
     { name: "document_index", path: "document-index.json", schema: "l9.document-index/v2" },

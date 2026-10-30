@@ -1,4 +1,6 @@
 // llm.ts — LLM adapter. Local default makes NO external calls.
+import { AsyncLocalStorage } from "node:async_hooks";
+
 export interface LlmAdapter {
   estimateTokens(text: string): number;
   classify?(prompt: string): Promise<string | null>;
@@ -9,10 +11,25 @@ export const localAdapter: LlmAdapter = {
   classify: undefined,
 };
 
+// The process-global adapter is the out-of-run default that setAdapter/resetAdapter
+// control. A pipeline or skills run installs its own adapter in an async-context scope
+// instead (ADR-064): every getAdapter() reached from inside the run, across awaits,
+// returns the run's adapter, and nothing outside the run observes it. Concurrent runs
+// therefore never share an endpoint, credential or metrics collector, and a finished
+// run leaves the global exactly as it found it (RC-018).
 let _active: LlmAdapter = localAdapter;
+const runScope = new AsyncLocalStorage<LlmAdapter>();
 export function setAdapter(a: LlmAdapter): void { _active = a; }
-export function getAdapter(): LlmAdapter { return _active; }
+export function getAdapter(): LlmAdapter { return runScope.getStore() ?? _active; }
 export function resetAdapter(): void { _active = localAdapter; }
+
+/**
+ * Run `body` with `adapter` as the adapter of this async context. Internal to the
+ * runners; not re-exported from the `./advanced/llm` subpath.
+ */
+export function runWithAdapter<T>(adapter: LlmAdapter, body: () => Promise<T>): Promise<T> {
+  return runScope.run(adapter, body);
+}
 
 // Outcome of a single LLM call. `classify` still returns `string | null` for the
 // adapter contract, but the outcome is reported separately so a failure (timeout,

@@ -147,6 +147,14 @@ export interface TopicCandidate {
 }
 /** The salient terms of one document: frequent, not too common, not a stopword. */
 export declare function salientTerms(document: TopicDocumentInput, documentFrequency: ReadonlyMap<string, number>, eligibleDocumentCount: number): string[];
+/**
+ * A threshold as every identity and key renders it: rounded, then six places.
+ *
+ * Rounded first, because `toFixed` and `Math.round` disagree on half-way inputs;
+ * rendering the raw value would let two thresholds that compare identically
+ * carry different names, or two that compare differently carry one.
+ */
+export declare function canonicalThresholdText(value: number): string;
 export interface BuildTopicCandidatesInput {
     documents: readonly TopicDocumentInput[];
     threshold?: number;
@@ -190,6 +198,10 @@ export interface TopicCandidateResult {
  * have to sit past a point where fewer than that many remain.
  *
  * So this is a filter, not a sample. No qualifying pair is lost.
+ *
+ * `t` is the canonical threshold the comparison uses, and `ceil(t * |X|)` is
+ * taken in integer micro-units rather than from a floating-point product, which
+ * can land a hair above an integer and shorten the prefix by one.
  */
 export declare function topicPrefixLength(setSize: number, threshold: number): number;
 /**

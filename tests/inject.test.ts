@@ -133,3 +133,40 @@ describe("QTE-004 — re-run idempotency and body preservation", () => {
     expect(rec.postInjectionBodyHash).toBe(contentHash("export function f() { return 42; }\n"));
   });
 });
+
+describe("WU-074 RC-050 — an unchanged target is not replaced", () => {
+  test("REG-WU-074-RC-050-RC050-g: a live injection whose rendering equals the file leaves its inode and mtime alone", async () => {
+    const root = tmp();
+    const fp = path.join(root, "stable.ts");
+    const body = "export const stable = 1;\n";
+    fs.writeFileSync(fp, body);
+    // The same meta both times: the second rendering is byte-equal to the file.
+    const meta = metaFor(fp, body);
+    injectFile(fp, meta, OPTS(tmp()));
+    const before = fs.statSync(fp);
+    const bytes = fs.readFileSync(fp, "utf8");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const rec = injectFile(fp, meta, OPTS(tmp()));
+    const after = fs.statSync(fp);
+    expect(rec.wouldChange).toBe(false);
+    expect(rec.headerInjected).toBe(true);
+    expect(fs.readFileSync(fp, "utf8")).toBe(bytes);
+    expect(after.ino).toBe(before.ino);
+    expect(after.mtimeMs).toBe(before.mtimeMs);
+  });
+
+  test("REG-WU-074-RC-050-RC050-g: an unchanged sidecar target is not replaced either", async () => {
+    const root = tmp();
+    const fp = path.join(root, "data.json");
+    fs.writeFileSync(fp, "{\"a\":1}\n");
+    inject(fp, tmp());
+    const sidecar = sidecarPathFor(fp);
+    const before = fs.statSync(sidecar);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const rec = inject(fp, tmp());
+    const after = fs.statSync(sidecar);
+    expect(rec.wouldChange).toBe(false);
+    expect(after.ino).toBe(before.ino);
+    expect(after.mtimeMs).toBe(before.mtimeMs);
+  });
+});

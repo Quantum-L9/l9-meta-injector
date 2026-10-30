@@ -15,19 +15,19 @@ import { runCorpusScan } from "../src/corpus_scan";
 /**
  * A file the scan inventoried and then could not read is an environment state
  * this suite cannot produce honestly on a filesystem it runs as root on, so the
- * probe reports it for one named file and is the real probe for every other.
+ * derive stage's read fails for one named file and is the real read for every
+ * other. Since WU-038 the derive stage reads each whole-file document once
+ * (`fs.promises.readFile`) and probes that verified buffer, so the read is the
+ * seam an unreadable file fails at.
  */
 const UNREADABLE_BASENAME = "vanished-at-derive.md";
-vi.mock("../src/encoding", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../src/encoding")>();
-  return {
-    ...actual,
-    probeFileEncoding: (absolutePath: string) =>
-      path.basename(absolutePath) === UNREADABLE_BASENAME
-        ? { status: "unreadable" as const, reason: "could not be read", hasBom: false }
-        : actual.probeFileEncoding(absolutePath),
-  };
-});
+const realReadFile = fs.promises.readFile.bind(fs.promises);
+vi.spyOn(fs.promises, "readFile").mockImplementation(((target: fs.PathLike | fs.promises.FileHandle, ...rest: unknown[]) => {
+  if (typeof target === "string" && path.basename(target) === UNREADABLE_BASENAME) {
+    return Promise.reject(Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" }));
+  }
+  return (realReadFile as (...args: unknown[]) => Promise<unknown>)(target, ...rest);
+}) as typeof fs.promises.readFile);
 
 const scratch: string[] = [];
 function tmp(): string {

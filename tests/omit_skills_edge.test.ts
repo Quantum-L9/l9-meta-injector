@@ -1,7 +1,8 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, afterAll } from "vitest";
+import { spawnSync } from "child_process";
 import { inventoryTree, classifyInventory } from "../src/inventory";
 import { runPipelineAsync } from "../src/pipeline";
 import { runSkillsPipelineAsync } from "../src/skills_pipeline";
@@ -215,5 +216,66 @@ describe("skills mode — Cursor-native description", () => {
     expect(r.repositoryMutated).toBe(false);
     expect(r.changed).toBe(0);
     expect(fs.readFileSync(skillPath, "utf8")).toBe(original);
+  });
+});
+
+describe("WU-006 omit patterns anchor as gitignore does (RC-014)", () => {
+  // An empty root, so no ambient .l9metaignore contributes rules.
+  const emptyRoot = tmp();
+  afterAll(() => fs.rmSync(emptyRoot, { recursive: true, force: true }));
+  const matcher = (patterns: string[]) => buildOmitMatcher({ root: emptyRoot, patterns, protectSkillMd: false });
+
+  it("REG-WU-006-RC-014-a: an interior-slash negation re-includes only the root-relative path", () => {
+    const m = matcher(["*.md", "!docs/keep.md"]);
+    expect(m.shouldOmit("docs/keep.md")).toBe(false);
+    expect(m.shouldOmit("vendor/docs/keep.md")).toBe(true);
+  });
+
+  it("REG-WU-006-RC-014-b: an interior-slash pattern omits only the root-relative path", () => {
+    const m = matcher(["docs/a.md"]);
+    expect(m.shouldOmit("docs/a.md")).toBe(true);
+    expect(m.shouldOmit("x/docs/a.md")).toBe(false);
+  });
+
+  it("REG-WU-006-RC-014-c: '**/' prefixes, trailing-slash and slash-free patterns still match at any depth", () => {
+    const m = matcher(["**/docs/keep.md", "vendor/", "*.txt"]);
+    expect(m.shouldOmit("docs/keep.md")).toBe(true);
+    expect(m.shouldOmit("a/b/docs/keep.md")).toBe(true);
+    expect(m.shouldOmit("vendor/x.ts")).toBe(true);
+    expect(m.shouldOmit("pkg/vendor/x.ts")).toBe(true);
+    expect(m.shouldOmit("a/b/c.txt")).toBe(true);
+    expect(m.shouldOmit("deep/debug.log")).toBe(true);
+    const protect = buildOmitMatcher({ root: emptyRoot, protectSkillMd: true });
+    expect(protect.shouldOmit("a/b/skills/x/SKILL.md")).toBe(true);
+  });
+
+  it("REG-WU-006-RC-014-d: a .l9metaignore directory rule with a nested negation keeps the directory omitted", () => {
+    const root = tmp();
+    fs.writeFileSync(path.join(root, ".l9metaignore"), "vendor/\n!vendor/keep.md\n");
+    const m = buildOmitMatcher({ root });
+    expect(m.shouldOmit("vendor/secret.txt")).toBe(true);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("REG-WU-006-RC-014-a: omit matching agrees with git check-ignore for leading, interior and trailing slashes", () => {
+    const root = tmp();
+    try {
+      const init = spawnSync("git", ["init", "-q", root], { encoding: "utf8" });
+      expect(init.status, init.stderr).toBe(0);
+      const patterns = ["*.md", "!docs/keep.md", "docs/a.txt", "/top.txt", "**/deep/x.txt", "src/*.txt", "build/"];
+      fs.writeFileSync(path.join(root, ".gitignore"), `${patterns.join("\n")}\n`);
+      const m = matcher(patterns);
+      const candidates = [
+        "docs/keep.md", "vendor/docs/keep.md", "readme.md", "docs/a.txt", "x/docs/a.txt", "top.txt", "sub/top.txt",
+        "deep/x.txt", "a/b/deep/x.txt", "src/y.txt", "lib/src/y.txt", "src/sub/y.txt", "build/out.js", "pkg/build/out.js",
+      ];
+      for (const candidate of candidates) {
+        const git = spawnSync("git", ["-C", root, "check-ignore", "--no-index", "-q", candidate], { encoding: "utf8" });
+        expect([0, 1], git.stderr).toContain(git.status);
+        expect(m.shouldOmit(candidate), candidate).toBe(git.status === 0);
+      }
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });

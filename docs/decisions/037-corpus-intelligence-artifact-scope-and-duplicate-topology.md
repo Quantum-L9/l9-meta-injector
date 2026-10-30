@@ -1,6 +1,7 @@
 # ADR-037: Corpus intelligence is artifact-scoped evidence plus two separately-classed duplicate analyses
 
 - **Status:** Accepted
+- **Amended by:** [ADR-067](067-corpus-mode-index-schema-id.md) — `l9.corpus-index/v1` names the single-root projection only; the corpus-mode table of contents declares `l9.corpus-mode-index/v1`.
 - **Date:** 2026-08-22
 - **Related:** [ADR-030](030-repository-model-packet-egress.md),
   [ADR-032](032-deterministic-repository-interpretation-seam.md),

@@ -1,6 +1,7 @@
 # ADR-026: Check and apply consume one carrier-aware plan
 
 - **Status:** Accepted
+- **Amended by:** [ADR-058](058-scoped-governed-runs-and-canonical-metadata-index-ordering-validation.md) — for a scoped run the plan carries forward the existing index records of scope-filtered paths and records the base it merged with.
 - **Date:** 2026-08-01
 
 ## Context

@@ -1,6 +1,7 @@
 # ADR-036: Canonical local-source and archive observation is read-only and staging-based
 
 - **Status:** Accepted
+- **Amended by:** [ADR-063](063-virtual-member-locator-collision-handling.md) — an archive that would mint an ambiguous member locator is held with `archive.locator_ambiguous`; the locator format is unchanged.
 - **Date:** 2026-08-22
 - **Supersedes:** the sibling-`*.l9extracted` materialization model of
   [ADR-016](016-local-files-archive-expansion.md) *for canonical observation only*.

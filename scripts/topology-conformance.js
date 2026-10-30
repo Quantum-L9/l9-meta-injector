@@ -67,6 +67,30 @@ print(json.dumps({
 }))
 `;
 
+const CORPUS_PROBE = `
+import json, sys
+from pathlib import Path
+from l9_constellation_topology.packets.corpus_ingress import load_corpus_intelligence
+from l9_constellation_topology.packets.corpus_validator import validate_corpus_intelligence_packet
+
+ingress = load_corpus_intelligence(Path(sys.argv[1]))
+validate_corpus_intelligence_packet(ingress.packet, tuple(bundle.packet for bundle in ingress.root_bundles))
+print(json.dumps({
+    "is_canonical": ingress.is_canonical,
+    "packet_id": ingress.packet.packet_id,
+    "semantic_hash": ingress.packet.semantic_hash,
+    "packet_type": ingress.packet.packet_type,
+    "packet_version": ingress.packet.packet_version,
+}))
+`;
+
+function validateCorpusObservation(packet, observed) {
+  if (observed.is_canonical !== true) throw new Error("consumer adapted rather than accepted the canonical corpus packet");
+  for (const field of ["packet_id", "semantic_hash", "packet_type", "packet_version"]) {
+    if (observed[field] !== packet[field]) throw new Error(`consumer reported a different corpus ${field}`);
+  }
+}
+
 function fail(message) {
   console.error(`${LABEL}: FAILED: ${message}`);
   process.exit(1);
@@ -272,6 +296,40 @@ function main() {
       normalized_counts: observed.counts,
     });
   }
+
+  // ADR-068 changes a different wire contract from the golden Repository Model
+  // bundles. Exercise the real CLI so a green repository-model proof cannot hide
+  // a corpus packet the sibling's closed model rejects.
+  const corpusOut = path.join(scratch, "corpus-out");
+  const emitted = cp.spawnSync(process.execPath, [
+    path.join(REPO, "scripts", "local-source-cli.js"),
+    "--root", `${path.join(REPO, "fixtures", "local-source", "sample-source")}=sample-local-source`,
+    "--out", corpusOut, "--no-cache",
+  ], { cwd: REPO, encoding: "utf8" });
+  if (emitted.status !== 0) fail(`real corpus producer failed: ${emitted.stderr || emitted.stdout}`);
+  const current = JSON.parse(fs.readFileSync(path.join(corpusOut, "CURRENT.json"), "utf8"));
+  const generation = path.join(corpusOut, current.generation_ref);
+  const corpusPacket = JSON.parse(fs.readFileSync(path.join(generation, "corpus-intelligence", "packet.json"), "utf8"));
+  fs.writeFileSync(scriptFile, CORPUS_PROBE, "utf8");
+  const corpusProbe = cp.spawnSync(python, [scriptFile, generation], {
+    cwd: checkout, encoding: "utf8",
+    env: { ...process.env, PYTHONPATH: sourceRoot, PYTHONDONTWRITEBYTECODE: "1" },
+  });
+  if (corpusProbe.status !== 0) fail(`consumer rejected the real corpus packet: ${corpusProbe.stderr || corpusProbe.stdout}`);
+  let corpusObserved;
+  try {
+    corpusObserved = JSON.parse(corpusProbe.stdout.trim().split(/\r?\n/).pop());
+    validateCorpusObservation(corpusPacket, corpusObserved);
+  } catch (error) { fail(error.message); }
+  const corpus = {
+    source_fixture: "fixtures/local-source/sample-source",
+    packet_id: corpusPacket.packet_id,
+    semantic_hash: corpusPacket.semantic_hash,
+    packet_type: corpusPacket.packet_type,
+    packet_version: corpusPacket.packet_version,
+    status: "passed",
+    translation_shim_required: false,
+  };
   fs.rmSync(scratch, { recursive: true, force: true });
 
   // The consumer's tree, after. Bytecode cache directories the interpreter
@@ -297,17 +355,20 @@ function main() {
   const evidence = {
     schema: "l9.topology-conformance/v1",
     repository: "Quantum-L9/l9-meta-injector",
-    statement: "Every committed Repository Model Packet bundle — inventory-only and structurally interpreted — was accepted by the bound l9-constellation-topology consumer without a translation shim.",
+    statement: "Both committed Repository Model Packet bundles and a corpus-intelligence packet emitted by the real CLI were accepted by the bound l9-constellation-topology consumer without a translation shim.",
     consumer: {
       repository: "Quantum-L9/l9-constellation-topology",
       revision,
       entrypoints: [
         "l9_constellation_topology.packets.loader.load_repository_model_bundle",
         "l9_constellation_topology.packets.adapters.repository_model_v1.RepositoryModelV1Adapter.adapt",
+        "l9_constellation_topology.packets.corpus_ingress.load_corpus_intelligence",
+        "l9_constellation_topology.packets.corpus_validator.validate_corpus_intelligence_packet",
       ],
       adapter_packet_version: adapterPacketVersion,
     },
     subjects,
+    corpus,
     result: {
       status: "passed",
       translation_shim_required: false,
@@ -335,4 +396,4 @@ function main() {
 // toolchain, and a guard nothing exercises is a guard nobody knows is broken.
 if (require.main === module) main();
 
-module.exports = { checkoutDigest, dropPycache, mutatedCheckoutPaths };
+module.exports = { checkoutDigest, dropPycache, mutatedCheckoutPaths, validateCorpusObservation };

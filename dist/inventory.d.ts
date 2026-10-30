@@ -44,6 +44,11 @@ export interface InventoryConfig {
 export interface DuplicateCluster {
     content_hash: string;
     count: number;
+    /**
+     * (count-1) * size of one member: bytes of repeated content. Not bytes a
+     * deletion recovers without loss — inventory members may carry different
+     * metadata (ADR-065).
+     */
     wasted_bytes: number;
     keeper: string;
     paths: string[];
@@ -72,10 +77,19 @@ export declare function loadMetaSchema(filePath: string): MetaSchema;
 /**
  * Group records by content_hash to surface duplicate clusters across the whole tree.
  *
- * Equivalence is byte equality and nothing else: two records belong to the same
- * cluster when both carry a known content hash and those hashes are identical.
- * Names, locations and sizes never decide membership, which is what lets a
- * physical file and an archive member land in one cluster.
+ * Equivalence is content_hash equality and nothing else: two records belong to
+ * the same cluster when both carry a known content hash and those hashes are
+ * identical. Names, locations and sizes never decide membership, which is what
+ * lets a physical file and an archive member land in one cluster.
+ *
+ * What a cluster means is therefore what the producer's hash covers. Inventory
+ * hashes a UTF-8 file's carrier-free content: the L9 managed header and, for a
+ * YAML front-matter document, the whole front-matter block are the metadata
+ * carrier and lie outside the hash (ADR-051 item 5, ADR-065). An inventory
+ * cluster says "same carrier-free content", not "byte-identical": its members'
+ * headers or front matter may differ, so it is not a list of copies that can be
+ * deleted without losing metadata. Binaries, archives and oversize files keep
+ * the raw-byte hash, where a cluster is byte equality.
  *
  * Ordering is code-point throughout. `localeCompare` used to decide both the
  * path order and the shortest-path tie-break, which made the emitted cluster —

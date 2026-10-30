@@ -53,6 +53,7 @@ const llm_1 = require("./llm");
 const meta_schema_1 = require("./meta_schema");
 const frontmatter_patch_1 = require("./frontmatter_patch");
 const comment_1 = require("./comment");
+const yaml_serialize_1 = require("./yaml_serialize");
 const durable_write_1 = require("./durable_write");
 // Parse the inner YAML of an existing injected header into a plain object.
 // Delegates to the canonical parser (meta_schema.ts) so all parsing rules —
@@ -151,8 +152,11 @@ function buildInjection(filePath, finalMeta, ctx) {
         // The block adopts the file's own line-ending convention and sits after any
         // BOM, so the only bytes that change are the block's (DATA-002).
         const newline = (0, comment_1.detectNewlineConvention)(ctx.cleanBody);
-        const block = (0, comment_1.yamlToBlock)((0, comment_1.frontMatterInner)(yamlFm), ctx.spec, newline);
-        const newContent = (0, comment_1.applyCommentInjection)(ctx.cleanBody, block, newline);
+        // Values are escaped for this carrier so none can end or invalidate the host
+        // comment (ADR-057); benign values serialize exactly as in `yamlFm`.
+        const inner = (0, yaml_serialize_1.serializeYamlObject)((0, schema_1.asRecord)(finalMeta), { fences: false, forbidden: (0, comment_1.carrierForbiddenSequences)(ctx.spec) });
+        const block = (0, comment_1.yamlToBlock)(inner, ctx.spec, newline);
+        const newContent = (0, comment_1.applyCommentInjection)(ctx.cleanBody, block, newline, ctx.spec);
         const postBodyHash = (0, extract_1.contentHash)((0, comment_1.stripInjectedBlock)(newContent, ctx.spec));
         return { targetPath: filePath, newContent, addedLines: block, postBodyHash, strategy: ctx.spec.strategy };
     }
@@ -205,8 +209,12 @@ function writeInjection(filePath, built, diffs, opts, sourcePath) {
     }
     else {
         // Staged beside the target and renamed in: the source is never truncated
-        // mid-write, and a hard link to it elsewhere keeps its old bytes.
-        (0, durable_write_1.replaceFileAtomically)(built.targetPath, built.newContent);
+        // mid-write, and a hard link to it elsewhere keeps its old bytes. A target
+        // whose bytes already equal the rendering is left alone (ADR-060): replacing
+        // it would change nothing but its inode, mtime and birthtime, which is how an
+        // annotation used to describe its own previous write instead of the file.
+        if (out.wouldChange)
+            (0, durable_write_1.replaceFileAtomically)(built.targetPath, built.newContent);
         if (opts.writeInjectLog && diffs.some((d) => d.action !== "keep")) {
             out.injectLogPath = filePath + ".inject.log";
             (0, durable_write_1.replaceFileAtomically)(out.injectLogPath, (0, reconcile_fields_1.diffsToLogYaml)(filePath, diffs, new Date().toISOString()));

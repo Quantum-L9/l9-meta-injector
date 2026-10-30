@@ -31,7 +31,11 @@ exports.renderCorpusCoverage = renderCorpusCoverage;
 const corpus_analysis_1 = require("./corpus_analysis");
 const documents_1 = require("./documents");
 const ordering_1 = require("./ordering");
-exports.CORPUS_COVERAGE_SCHEMA = "l9.corpus-coverage/v1";
+/**
+ * v2 (ADR-068): `interpretation_enabled` is stated, and `interpretation_coverage`
+ * is null when the interpretation pass did not run, as embeddings already are.
+ */
+exports.CORPUS_COVERAGE_SCHEMA = "l9.corpus-coverage/v2";
 /** Raster formats that carry no extractable text layer without OCR. */
 exports.OCR_REQUIRED_EXTENSIONS = documents_1.OCR_CANDIDATE_EXTENSIONS;
 /**

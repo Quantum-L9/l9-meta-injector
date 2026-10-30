@@ -12,6 +12,13 @@
 // members are inflated synchronously and held whole, bounded by the extraction
 // ceiling rather than by streaming. See `streamZipMember` for that contract. Zip64 central-directory records are understood so a
 // large archive is read correctly rather than silently truncated.
+//
+// Declared sizes are claims, not facts (ADR-061). Every member's declared data
+// extent must fit inside the archive before the central directory, so no
+// attacker-chosen length ever becomes an allocation; and the bytes a member
+// produces must equal its declared uncompressed size, so the preflight rules
+// judged on declared sizes bound the bytes actually produced.
+import { constants as bufferConstants } from "node:buffer";
 import * as fs from "node:fs";
 import * as zlib from "node:zlib";
 
@@ -107,6 +114,20 @@ export class ZipFormatError extends Error {
   }
 }
 
+/**
+ * A member produced more or fewer bytes than its central directory declares.
+ *
+ * A subclass of `ZipFormatError`, so every classifier that already holds a
+ * format error holds this fail-closed; classifiers that distinguish integrity
+ * failures (a CRC mismatch) refine it to their integrity code (ADR-061).
+ */
+export class ZipSizeMismatchError extends ZipFormatError {
+  constructor(message: string) {
+    super(message);
+    this.name = "ZipSizeMismatchError";
+  }
+}
+
 function readExact(fd: number, length: number, position: number): Buffer {
   if (length < 0) throw new ZipFormatError(`negative read length ${length}`);
   const buffer = Buffer.alloc(length);
@@ -142,8 +163,13 @@ function entryKindFor(versionMadeBy: number, externalAttributes: number, name: s
   unixMode: number | null;
 } {
   const host = (versionMadeBy >> 8) & 0xff;
+  const byName: ZipEntryKind = name.endsWith("/") ? "directory" : "file";
   if (host === HOST_UNIX) {
     const mode = (externalAttributes >>> 16) & 0xffff;
+    // A mode with permission bits but no S_IFMT type bits declares no type (CPython
+    // `zipfile.writestr` records 0o600): the name decides, exactly as on a non-Unix
+    // host, and the recorded mode is still reported.
+    if (mode !== 0 && (mode & S_IFMT) === 0) return { kind: byName, unixMode: mode };
     if (mode !== 0) {
       switch (mode & S_IFMT) {
         case S_IFLNK: return { kind: "symlink", unixMode: mode };
@@ -157,7 +183,7 @@ function entryKindFor(versionMadeBy: number, externalAttributes: number, name: s
       }
     }
   }
-  return { kind: name.endsWith("/") ? "directory" : "file", unixMode: null };
+  return { kind: byName, unixMode: null };
 }
 
 interface Eocd {
@@ -388,6 +414,38 @@ function readCentralEntry(
   };
 }
 
+/**
+ * Refuse any entry whose declared data extent does not fit before the central
+ * directory.
+ *
+ * The local header's own name and extra lengths are read (bytes 26..29) so the
+ * bound is exact: an honest last member ends exactly at the central directory.
+ * Checked here, at directory read, so every consumer -- extraction, the
+ * inventory writer, the OOXML decoder -- is protected before any allocation
+ * sized by `compressedSize`.
+ */
+function assertDataExtentsPrecedeCentralDirectory(
+  fd: number,
+  entries: ZipCentralEntry[],
+  centralDirectoryOffset: number,
+): void {
+  const refuse = (entry: ZipCentralEntry): ZipFormatError => new ZipFormatError(
+    `member ${entry.name} declares a data extent that extends past the start of the central directory ` +
+    `(local header offset ${entry.localHeaderOffset}, compressed size ${entry.compressedSize}, ` +
+    `uncompressed size ${entry.uncompressedSize}, central directory at ${centralDirectoryOffset})`,
+  );
+  for (const entry of entries) {
+    // The fixed header alone already overruns: refuse without reading at an
+    // offset the archive cannot contain.
+    if (entry.localHeaderOffset + LOCAL_FIXED_SIZE + entry.compressedSize > centralDirectoryOffset) {
+      throw refuse(entry);
+    }
+    const header = readExact(fd, LOCAL_FIXED_SIZE, entry.localHeaderOffset);
+    const dataStart = entry.localHeaderOffset + LOCAL_FIXED_SIZE + header.readUInt16LE(26) + header.readUInt16LE(28);
+    if (dataStart + entry.compressedSize > centralDirectoryOffset) throw refuse(entry);
+  }
+}
+
 /** Read an archive's central directory. */
 export function readZipCentralDirectory(archivePath: string): ZipDirectory {
   const fd = fs.openSync(archivePath, "r");
@@ -413,6 +471,7 @@ export function readZipCentralDirectory(archivePath: string): ZipDirectory {
         `central directory declares ${central.length} bytes but ${cursor} were consumed`,
       );
     }
+    assertDataExtentsPrecedeCentralDirectory(fd, entries, eocd.centralDirectoryOffset);
     return {
       entries,
       declaredEntryCount: eocd.entryCount,
@@ -453,7 +512,12 @@ export class Crc32 {
 // ───────────────────────────── member streaming ─────────────────────────────
 
 export interface ZipMemberStreamLimits {
-  /** Hard ceiling on bytes produced for this member. Exceeding it aborts the read. */
+  /**
+   * Hard ceiling on bytes produced for this member. Exceeding it aborts the read
+   * with `ZipBudgetExceededError`. The member's declared uncompressed size bounds
+   * what is emitted as well: producing more (inside this ceiling) or fewer bytes
+   * than declared is a `ZipSizeMismatchError`.
+   */
   maxUncompressedBytes: number;
   /** Chunk size used for stored members and for the sink. */
   chunkBytes?: number;
@@ -492,7 +556,29 @@ function readStoredMember(
   }
 }
 
-/** Inflate a deflated member whole, under a ceiling zlib itself enforces. */
+/** The caller's ceiling was reached: a budget refusal, whatever the member declared. */
+function ceilingError(entry: ZipCentralEntry, maxUncompressedBytes: number): ZipBudgetExceededError {
+  return new ZipBudgetExceededError(
+    `member ${entry.name} exceeded the ${maxUncompressedBytes}-byte extraction ceiling`,
+  );
+}
+
+/** The member produced more than it declares while staying inside the caller's ceiling. */
+function overDeclaredError(entry: ZipCentralEntry): ZipSizeMismatchError {
+  return new ZipSizeMismatchError(
+    `member ${entry.name} produced more than the ${entry.uncompressedSize} bytes its central directory declares`,
+  );
+}
+
+/**
+ * Inflate a deflated member whole, under a ceiling zlib itself enforces.
+ *
+ * zlib is bounded by the caller's ceiling, not by the declared size, so a member
+ * that runs past the ceiling is a budget refusal whatever it declared (the same
+ * verdict an honest bomb receives), while one that stays inside the ceiling but
+ * produces more than it declares is a size mismatch. Either way nothing beyond
+ * the declared size is ever emitted (ADR-061).
+ */
 function readDeflatedMember(
   fd: number,
   entry: ZipCentralEntry,
@@ -504,29 +590,43 @@ function readDeflatedMember(
   const compressed = readExact(fd, entry.compressedSize, dataStart);
   let inflated: Buffer;
   try {
-    inflated = zlib.inflateRawSync(compressed, { maxOutputLength: maxUncompressedBytes });
+    // zlib refuses a maxOutputLength above buffer.constants.MAX_LENGTH
+    // (ERR_OUT_OF_RANGE) and throws ERR_BUFFER_TOO_LARGE only for output strictly
+    // longer than it; the caller has already refused a ceiling below 1.
+    inflated = zlib.inflateRawSync(compressed, {
+      maxOutputLength: Math.min(maxUncompressedBytes, bufferConstants.MAX_LENGTH),
+    });
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ERR_BUFFER_TOO_LARGE") {
-      throw new ZipBudgetExceededError(
-        `member ${entry.name} exceeded the ${maxUncompressedBytes}-byte extraction ceiling`,
-      );
+      throw ceilingError(entry, maxUncompressedBytes);
     }
     throw new ZipFormatError(
       `member ${entry.name} could not be decompressed: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
+  if (inflated.length > entry.uncompressedSize) throw overDeclaredError(entry);
   for (let offset = 0; offset < inflated.length; offset += chunkBytes) {
     emit(inflated.subarray(offset, Math.min(offset + chunkBytes, inflated.length)));
   }
 }
 
-/** Offset of a member's data, read from its local header. */
+/**
+ * Offset of a member's data, read from its local header.
+ *
+ * Also the backstop for an entry handed in directly rather than read by
+ * `readZipCentralDirectory`: a data extent that runs past the archive's own size
+ * is refused before any read is sized by it.
+ */
 function memberDataStart(fd: number, entry: ZipCentralEntry): number {
   const header = readExact(fd, LOCAL_FIXED_SIZE, entry.localHeaderOffset);
   if (header.readUInt32LE(0) !== LOCAL_SIGNATURE) {
     throw new ZipFormatError(`local header signature is invalid for ${entry.name}`);
   }
-  return entry.localHeaderOffset + LOCAL_FIXED_SIZE + header.readUInt16LE(26) + header.readUInt16LE(28);
+  const dataStart = entry.localHeaderOffset + LOCAL_FIXED_SIZE + header.readUInt16LE(26) + header.readUInt16LE(28);
+  if (dataStart + entry.compressedSize > fs.fstatSync(fd).size) {
+    throw new ZipFormatError(`member ${entry.name} declares a data extent past the end of the archive`);
+  }
+  return dataStart;
 }
 
 /** Read one member and hand its bytes to `sink` in chunks. */
@@ -548,14 +648,18 @@ export function streamZipMember(
   const fd = fs.openSync(archivePath, "r");
   try {
     const dataStart = memberDataStart(fd, entry);
+    // Nothing past the declared size, and nothing past the caller's ceiling, ever
+    // reaches the sink. A stored member produces exactly its compressed bytes, so
+    // which bound it overran is known before the first chunk.
+    const limit = Math.min(entry.uncompressedSize, limits.maxUncompressedBytes);
     const crc = new Crc32();
     let produced = 0;
     const emit = (chunk: Buffer): void => {
       produced += chunk.length;
-      if (produced > limits.maxUncompressedBytes) {
-        throw new ZipBudgetExceededError(
-          `member ${entry.name} exceeded the ${limits.maxUncompressedBytes}-byte extraction ceiling`,
-        );
+      if (produced > limit) {
+        throw produced > limits.maxUncompressedBytes || entry.compressedSize > limits.maxUncompressedBytes
+          ? ceilingError(entry, limits.maxUncompressedBytes)
+          : overDeclaredError(entry);
       }
       crc.update(chunk);
       sink(chunk);
@@ -566,6 +670,13 @@ export function streamZipMember(
       readStoredMember(fd, entry, dataStart, chunkBytes, emit);
     } else {
       readDeflatedMember(fd, entry, dataStart, chunkBytes, limits.maxUncompressedBytes, emit);
+    }
+    // Output was never allowed past the declared size; ending short of it is the
+    // other half of the same lie.
+    if (produced !== entry.uncompressedSize) {
+      throw new ZipSizeMismatchError(
+        `member ${entry.name} produced ${produced} bytes but its central directory declares ${entry.uncompressedSize}`,
+      );
     }
     return { bytesWritten: produced, crc32: crc.digest() };
   } finally {

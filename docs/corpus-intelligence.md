@@ -207,7 +207,11 @@ wording; two documents about one subject can share none.
 
 ## The corpus index is a projection, not new truth
 
-`corpus-index.json` declares `l9.corpus-index/v1`. Every value in it is derived from:
+A single-root (local-source) run's `corpus-index.json` declares `l9.corpus-index/v1`.
+A corpus-mode (`--root`) run writes a different document under the same file name: a
+table of contents of roots, per-root references and the documents the run wrote, which
+declares `l9.corpus-mode-index/v1` and carries no `artifacts` (ADR-067). The rest of this
+section describes the single-root document. Every value in it is derived from:
 
 - the acquisition observation (`LocalSourceObservation` / `InventoryResult`),
 - the emitted Repository Model Packet,
@@ -268,8 +272,9 @@ tell a corpus that stated less from a report that listed less.
 Every record carries **both** identities, because the two live in different domains and
 guessing between them is how a consumer silently drops half a corpus:
 
-- `artifact_id` is the corpus identity (`vsrc:…`), which resolves in `corpus-index.json`
-  and `document-index.json`;
+- `artifact_id` is the corpus identity (`vsrc:…`), which resolves in `document-index.json`
+  and in `corpus-snapshot.json` (as `virtual_source_id`); the corpus-mode
+  `corpus-index.json` lists no artifacts;
 - `rmp_artifact_id` is the identity that artifact has *inside its own root's Repository
   Model Packet* (`artifact:…`).
 

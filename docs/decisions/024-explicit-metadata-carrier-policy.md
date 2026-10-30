@@ -1,6 +1,7 @@
 # ADR-024: Metadata carriers are explicit, ordered policy decisions
 
 - **Status:** Accepted
+- **Amended by:** [ADR-057](057-comment-carrier-position-detection-and-value-safety.md) — the governed carrier policy is unchanged; the bytes the ungoverned comment-carrier writers produce are corrected.
 - **Date:** 2026-08-01
 
 ## Context

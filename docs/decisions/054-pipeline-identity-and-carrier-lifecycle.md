@@ -9,6 +9,8 @@ Consumes, and does not reopen, [ADR-051](051-inventory-derived-annotation-fields
 [ADR-052](052-semantic-foundation-binding.md), and
 [ADR-053](053-semantic-binding-propagation.md).
 
+Amended by [ADR-071](071-identity-stem-representation-of-non-ascii-path-segments.md) (Decision item 1: non-ASCII segments are NFC-normalised and encoded as ASCII tokens) and [ADR-073](073-residual-duplicate-id-collisions-among-extracted-archive-members.md) (Decision item 2: the refusal precedes normalize sidecars and archive materialization, with a documented residual for extracted members).
+
 ## Date
 
 2026-10-05

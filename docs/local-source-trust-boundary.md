@@ -59,6 +59,15 @@ would present a partial view a consumer cannot distinguish from a complete one. 
 archive keeps its observation and its digest, records its reason, and contributes no
 members.
 
+**A member locator names exactly one thing.** The locator separator `!/` is legal in
+filesystem and member names, so acquisition holds an archive with
+`archive.locator_ambiguous` when a member's path contains `!/`, or when a physical
+entry already lives under `<archive>!/`: expanding either would mint a locator another
+record can spell, and with it a duplicate artifact identity. Two records that still
+share a locator stop acquisition as an invariant violation. Archive ancestry is read
+from the members' parent chain, never by splitting a path, so a physical `notes!/x.md`
+is inside no archive (ADR-063).
+
 **Expansion is bounded twice.** `LocalArchivePolicy` caps archive size, member count,
 per-member, per-archive and per-session uncompressed bytes, compression ratio, nesting
 depth, path length and processing time. The declared sizes in the central directory are

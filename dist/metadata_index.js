@@ -42,6 +42,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.METADATA_INDEX_RELATIVE_PATH = exports.METADATA_INDEX_SCHEMA = void 0;
+exports.metadataIndexPathProblem = metadataIndexPathProblem;
 exports.serializeMetadataIndex = serializeMetadataIndex;
 exports.compileMetadataIndex = compileMetadataIndex;
 exports.writeMetadataIndex = writeMetadataIndex;
@@ -49,6 +50,7 @@ exports.parseMetadataIndex = parseMetadataIndex;
 const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
 const node_crypto_1 = require("node:crypto");
+const ordering_1 = require("./ordering");
 const mutation_policy_1 = require("./mutation_policy");
 exports.METADATA_INDEX_SCHEMA = "l9.metadata-index/v1";
 exports.METADATA_INDEX_RELATIVE_PATH = ".l9/metadata-index.jsonl";
@@ -66,6 +68,12 @@ const FORBIDDEN_VOLATILE_KEYS = new Set([
     "run_started_at",
     "runtime_timestamp",
 ]);
+/** The record keys `schemas/metadata-index-record.schema.json` allows (additionalProperties: false). */
+const RECORD_KEYS = ["artifact_type", "carrier", "content_hash", "metadata", "path", "schema"];
+const MAX_PATH_CODE_POINTS = 4096;
+// The schema's path pattern forbids exactly these characters.
+const CONTROL_CHARACTER = /[\u0001-\u001F\u007F]/u;
+/** Canonical repository-relative POSIX structure, required of every subject path. */
 function normalizeRelativePath(value) {
     if (value.includes("\u0000"))
         throw new Error("metadata index path contains NUL");
@@ -81,6 +89,32 @@ function normalizeRelativePath(value) {
         throw new Error(`metadata index path contains a non-canonical segment: ${value}`);
     }
     return segments.join("/");
+}
+/**
+ * The record schema's remaining `path` rules (pattern and maxLength), required of every
+ * materialized record: no control character, no leading '.', at most 4096 code points.
+ */
+function assertRecordPath(pathName) {
+    const problem = metadataIndexPathProblem(pathName);
+    if (problem !== null)
+        throw new Error(problem);
+}
+/**
+ * Why the index schema cannot represent `pathName`, or null when it can.
+ *
+ * Shared with discovery (DEC-RC-013 option B), which holds such a file with a
+ * blocking disposition so `check` reports it instead of the producer throwing.
+ */
+function metadataIndexPathProblem(pathName) {
+    if (CONTROL_CHARACTER.test(pathName)) {
+        return `metadata index path contains a control character (U+0001-U+001F, U+007F): ${JSON.stringify(pathName)}`;
+    }
+    if (pathName.startsWith("."))
+        return `metadata index path must not start with '.': ${pathName}`;
+    if ([...pathName].length > MAX_PATH_CODE_POINTS) {
+        return `metadata index path exceeds ${MAX_PATH_CODE_POINTS} characters: ${pathName.slice(0, 64)}...`;
+    }
+    return null;
 }
 function isPlainObject(value) {
     if (typeof value !== "object" || value === null || Array.isArray(value))
@@ -146,6 +180,7 @@ function toRecord(subject, decision) {
     }
     if (decision.carrier === "hard_skip")
         return undefined;
+    assertRecordPath(pathName);
     assertContentHash(subject.contentHash, pathName);
     const metadata = canonicalize(subject.metadata, `metadata:${pathName}`, new Set());
     if (!isPlainObject(metadata))
@@ -173,14 +208,24 @@ function byCodeUnit(a, b) {
         return 1;
     return 0;
 }
+/** Records are in code-point path order, like every other identity-bearing order (ADR-058). */
 function comparePath(left, right) {
-    return byCodeUnit(left.path, right.path);
+    return (0, ordering_1.compareCodePoints)(left.path, right.path);
+}
+function assertRecordKeys(record) {
+    const keys = Object.keys(record).sort(byCodeUnit);
+    if (keys.length !== RECORD_KEYS.length || keys.some((key, index) => key !== RECORD_KEYS[index])) {
+        const pathName = typeof record.path === "string" ? record.path : "<unknown>";
+        throw new Error(`metadata index record for ${pathName} must have exactly the keys ${RECORD_KEYS.join(", ")}; got ${keys.join(", ")}`);
+    }
 }
 function serializeMetadataIndex(records) {
     const seen = new Set();
     const sorted = [...records].sort(comparePath);
     for (const record of sorted) {
+        assertRecordKeys(record);
         const pathName = normalizeRelativePath(record.path);
+        assertRecordPath(pathName);
         if (seen.has(pathName))
             throw new Error(`duplicate metadata index path: ${pathName}`);
         seen.add(pathName);
@@ -204,6 +249,25 @@ function serializeMetadataIndex(records) {
     }
     return sorted.length === 0 ? "" : `${sorted.map((record) => canonicalJson(record)).join("\n")}\n`;
 }
+/** Metadata ids must stay unique across compiled and preserved records (the pipeline only saw the compiled ones). */
+function assertUniqueMergedMetadataIds(subjects, preserved) {
+    const byId = new Map();
+    const add = (id, pathName) => {
+        if (id === undefined)
+            return;
+        const key = String(id);
+        byId.set(key, [...(byId.get(key) ?? []), pathName]);
+    };
+    for (const subject of subjects)
+        add(subject.metadata["id"], subject.path);
+    for (const record of preserved)
+        add(record.metadata["id"], record.path);
+    const duplicates = [...byId.entries()].filter(([, paths]) => paths.length > 1);
+    if (duplicates.length === 0)
+        return;
+    const detail = duplicates.map(([id, paths]) => `${id}: ${paths.join(", ")}`).join("; ");
+    throw new Error(`DUPLICATE_METADATA_ID: ${duplicates.length} id(s) map to more than one path across the merged metadata index: ${detail}`);
+}
 function compileMetadataIndex(input) {
     const carrierDecisions = (0, mutation_policy_1.resolveCarrierDecisions)({
         authority: input.authority,
@@ -220,6 +284,15 @@ function compileMetadataIndex(input) {
         const record = toRecord(subject, decision);
         if (record)
             records.push(record);
+    }
+    const preserved = input.preservedRecords ?? [];
+    if (preserved.length > 0) {
+        assertUniqueMergedMetadataIds(input.subjects, preserved);
+        for (const record of preserved) {
+            if (subjectByPath.has(record.path))
+                throw new Error(`preserved metadata index record overlaps a compiled subject: ${record.path}`);
+            records.push(record);
+        }
     }
     const bytes = serializeMetadataIndex(records);
     return {

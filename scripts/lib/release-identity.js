@@ -21,9 +21,14 @@ const PLAN_DIRECTORY = "docs/release";
 
 // Plain SemVer only. A prerelease or build-metadata version would resolve to a
 // major tag that consumers follow, so it is rejected rather than truncated.
-const VERSION_PATTERN = /^(\d+)\.(\d+)\.(\d+)$/;
-const RELEASE_BRANCH_PATTERN = /^release\/v(\d+\.\d+\.\d+)$/;
-const PLAN_FILE_PATTERN = /^v(\d+\.\d+\.\d+)-release-plan\.json$/;
+// Numeric identifiers follow SemVer 2.0.0 §2: `0` or a digit run without a
+// leading zero. `\d+` admitted `4.02.0`, which parsed as 4.2.0, so two distinct
+// tag strings compared equal. Branch and plan-file names use the same grammar.
+const NUMERIC_IDENTIFIER = "(?:0|[1-9]\\d*)";
+const SEMVER_CORE = `${NUMERIC_IDENTIFIER}\\.${NUMERIC_IDENTIFIER}\\.${NUMERIC_IDENTIFIER}`;
+const VERSION_PATTERN = new RegExp(`^(${NUMERIC_IDENTIFIER})\\.(${NUMERIC_IDENTIFIER})\\.(${NUMERIC_IDENTIFIER})$`);
+const RELEASE_BRANCH_PATTERN = new RegExp(`^release/v(${SEMVER_CORE})$`);
+const PLAN_FILE_PATTERN = new RegExp(`^v(${SEMVER_CORE})-release-plan\\.json$`);
 
 /**
  * Parse a plain SemVer string into its numeric parts.
@@ -147,7 +152,13 @@ function assertBranchMatchesVersion(ref, version) {
 // the previous rewrite searched for the pre-v1 `@main` form, which stopped
 // existing the moment the first projection ran, so it silently became dead
 // code and a future major would have left every documented consumer behind.
-const CONSUMER_REF_PATTERN = new RegExp(`${REPOSITORY}@(?:main|v\\d+)`, "g");
+//
+// The ref must end where the major ends: a following word character, hyphen,
+// or `.`+word character means a longer ref such as the exact pin `@v4.1.0`,
+// which is provenance and is left untouched. Without that boundary the pin was
+// matched as `@v4` and projected to the nonexistent `@v5.1.0`. A sentence-final
+// period (`@v4.`) is still a boundary.
+const CONSUMER_REF_PATTERN = new RegExp(`${REPOSITORY}@(?:main|v\\d+)(?![\\w-]|\\.\\w)`, "g");
 
 /** Every consumer reference in `text`, in order of appearance. */
 function findConsumerRefs(text) {

@@ -4,6 +4,8 @@
 
 Accepted for PR-1 Safety Envelope implementation.
 
+Item 5 clarified by [ADR-072](072-nested-authority-discovery-exclusions.md): its exclusions apply to active-writer evidence, not to nested-authority discovery.
+
 ## Context
 
 Normal artifact discovery skips hidden directories and is intentionally optimized

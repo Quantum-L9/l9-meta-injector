@@ -307,3 +307,176 @@ describe("pruning old generations", () => {
     expect(readerView(out)?.tags).toEqual(["b"]);
   });
 });
+
+describe("retention by recency (RC-069, ADR-066)", () => {
+  /** Publish runs with distinct content; return each run's generation directory name. */
+  function publishRuns(out: string, tags: string[], keep: number): string[] {
+    return tags.map((tag, index) => {
+      const result = publishCorpusGeneration({
+        outDir: out,
+        files: runFiles(tag),
+        committedAt: `2026-02-${String(index + 1).padStart(2, "0")}T00:00:00.000Z`,
+        keep,
+      });
+      return path.basename(result.generation_directory);
+    });
+  }
+
+  it("REG-WU-042-RC-069-a: keep=2 retains the two most recently published generations, whatever their hashes", () => {
+    const contentSets = [
+      ["r1", "r2", "r3", "r4", "r5", "r6"],
+      ["s6", "s5", "s4", "s3", "s2", "s1"],
+      ["alpha", "omega", "beta", "psi", "gamma", "chi"],
+    ];
+    const hashOrders = new Set<string>();
+    for (const tags of contentSets) {
+      const out = tmp();
+      const names = publishRuns(out, tags, 2);
+      hashOrders.add(names.map((name) => [...names].sort().indexOf(name)).join(","));
+      expect(listGenerations(out)).toEqual([names[4], names[5]].sort());
+      expect(readerView(out)?.tags).toEqual([tags[5]]);
+    }
+    // At least two content sets whose hashes sort in different orders.
+    expect(hashOrders.size).toBeGreaterThan(1);
+  });
+
+  it("REG-WU-042-RC-069-b: with keep>=2 the generation CURRENT named before a switch survives it", () => {
+    for (const keep of [2, 3]) {
+      const out = tmp();
+      for (let index = 0; index < 8; index += 1) {
+        const before = readCorpusCurrent(out);
+        publishCorpusGeneration({
+          outDir: out, files: runFiles(`k${keep}-${index}`), committedAt: "2026-03-01T00:00:00.000Z", keep,
+        });
+        if (before !== null) {
+          expect(listGenerations(out)).toContain(before.generation_ref.split("/")[1]);
+        }
+      }
+    }
+  });
+
+  it("REG-WU-042-RC-069-c: an orphan under the retention limit is kept", () => {
+    const out = tmp();
+    publishRuns(out, ["a"], 5);
+    const orphan = path.join(out, "generations", "f".repeat(64));
+    fs.mkdirSync(orphan, { recursive: true });
+    const names = publishRuns(out, ["b"], 5);
+    expect(listGenerations(out)).toContain("f".repeat(64));
+    expect(listGenerations(out)).toContain(names[0]);
+  });
+
+  it("REG-WU-042-RC-069-c: unrecorded directories are pruned before any recorded generation", () => {
+    const out = tmp();
+    const names = publishRuns(out, ["p1", "p2"], 3);
+    const orphan = "f".repeat(64);
+    fs.mkdirSync(path.join(out, "generations", orphan), { recursive: true });
+    const third = publishRuns(out, ["p3"], 3);
+    expect(listGenerations(out)).toEqual([names[0], names[1], third[0]].sort());
+  });
+
+  it("REG-WU-042-RC-069-d: a pointer from the old release (no history) keeps its generation; unrecorded ones go first", () => {
+    const out = tmp();
+    const names = publishRuns(out, ["o1", "o2", "o3"], 10);
+    // Rewrite CURRENT.json as the previous release wrote it: no history field.
+    const currentFile = path.join(out, "CURRENT.json");
+    const legacy = JSON.parse(fs.readFileSync(currentFile, "utf8")) as Record<string, unknown>;
+    delete legacy.previous_generation_ids;
+    fs.writeFileSync(currentFile, `${JSON.stringify(legacy)}\n`, "utf8");
+    expect(readCorpusCurrent(out)?.generation_ref).toBe(`generations/${names[2]}`);
+
+    const next = publishRuns(out, ["o4"], 2);
+    expect(listGenerations(out)).toEqual([names[2], next[0]].sort());
+    expect(readCorpusCurrent(out)?.previous_generation_ids).toEqual([legacy.generation_id]);
+  });
+
+  it("records previous generations newest first and bounds the list", () => {
+    const out = tmp();
+    const ids: string[] = [];
+    for (let index = 0; index < 30; index += 1) {
+      ids.push(publishCorpusGeneration({
+        outDir: out, files: runFiles(`h-${index}`), committedAt: "2026-03-01T00:00:00.000Z", keep: 1,
+      }).generation_id);
+    }
+    const history = readCorpusCurrent(out)?.previous_generation_ids ?? [];
+    expect(history[0]).toBe(ids[28]);
+    expect(history.length).toBeLessThan(30);
+    expect(history).toEqual(ids.slice(0, 29).reverse().slice(0, history.length));
+  });
+});
+
+describe("one publisher per output root (RC-072, ADR-066)", () => {
+  const LOCK = ".corpus-publish.lock";
+
+  it("REG-WU-042-RC-072-a: a second publisher during the first is refused and the first's generation survives", () => {
+    const out = tmp();
+    publishCorpusGeneration({ outDir: out, files: runFiles("base"), committedAt: "2026-04-01T00:00:00.000Z", keep: 1 });
+    let refusal: unknown = null;
+    publishCorpusGeneration({
+      outDir: out,
+      files: runFiles("A"),
+      committedAt: "2026-04-02T00:00:00.000Z",
+      keep: 1,
+      beforeSwitch: () => {
+        try {
+          publishCorpusGeneration({ outDir: out, files: runFiles("B"), committedAt: "2026-04-03T00:00:00.000Z", keep: 1 });
+        } catch (error) {
+          refusal = error;
+        }
+      },
+    });
+    expect(String(refusal)).toContain(path.join(out, LOCK));
+    const view = readerView(out);
+    expect(view?.tags).toEqual(["A"]);
+    expect(view?.missing).toEqual([]);
+    expect(fs.existsSync(path.join(out, LOCK))).toBe(false);
+  });
+
+  it("REG-WU-042-RC-072-b: a stale lock whose pid is not alive on this host is taken over", () => {
+    const out = tmp();
+    fs.writeFileSync(path.join(out, LOCK), `${JSON.stringify({ pid: 999999999, host: os.hostname() })}\n`, "utf8");
+    publishCorpusGeneration({ outDir: out, files: runFiles("after-crash"), committedAt: "2026-04-01T00:00:00.000Z" });
+    expect(readerView(out)?.tags).toEqual(["after-crash"]);
+    expect(fs.existsSync(path.join(out, LOCK))).toBe(false);
+  });
+
+  it("refuses, naming the lock file, when the lock is held by a live process or another host", () => {
+    for (const holder of [{ pid: process.ppid, host: os.hostname() }, { pid: 999999999, host: `${os.hostname()}-elsewhere` }]) {
+      const out = tmp();
+      fs.writeFileSync(path.join(out, LOCK), `${JSON.stringify(holder)}\n`, "utf8");
+      expect(() => publishCorpusGeneration({ outDir: out, files: runFiles("x"), committedAt: "2026-04-01T00:00:00.000Z" }))
+        .toThrow(path.join(out, LOCK));
+      expect(listGenerations(out)).toEqual([]);
+      expect(fs.existsSync(path.join(out, LOCK))).toBe(true);
+    }
+  });
+
+  it("REG-WU-042-RC-072-c: a crash before the switch releases the lock and a retry recovers", () => {
+    const out = tmp();
+    publishCorpusGeneration({ outDir: out, files: runFiles("first"), committedAt: "2026-04-01T00:00:00.000Z" });
+    expect(() => publishCorpusGeneration({
+      outDir: out,
+      files: runFiles("second"),
+      committedAt: "2026-04-02T00:00:00.000Z",
+      beforeSwitch: () => {
+        throw new InjectedCrash("killed before switching");
+      },
+    })).toThrow(InjectedCrash);
+    expect(fs.existsSync(path.join(out, LOCK))).toBe(false);
+    publishCorpusGeneration({ outDir: out, files: runFiles("second"), committedAt: "2026-04-03T00:00:00.000Z" });
+    const view = readerView(out);
+    expect(view?.tags).toEqual(["second"]);
+    expect(view?.missing).toEqual([]);
+  });
+
+  it("refuses to switch to a generation whose files are missing", () => {
+    const out = tmp();
+    publishCorpusGeneration({ outDir: out, files: runFiles("first"), committedAt: "2026-04-01T00:00:00.000Z" });
+    expect(() => publishCorpusGeneration({
+      outDir: out,
+      files: runFiles("second"),
+      committedAt: "2026-04-02T00:00:00.000Z",
+      beforeSwitch: ({ directory }) => fs.rmSync(path.join(directory, "corpus-coverage.json")),
+    })).toThrow(/corpus-coverage\.json/);
+    expect(readerView(out)?.tags).toEqual(["first"]);
+  });
+});

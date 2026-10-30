@@ -16,6 +16,7 @@ import {
 } from "./discovery_contracts";
 import { compareCodePoints } from "./ordering";
 import { compileDiscoveryGlob } from "./glob";
+import { metadataIndexPathProblem } from "./metadata_index";
 
 /**
  * Injector-generated adjacent artifacts must never be rediscovered as inputs. That
@@ -198,6 +199,16 @@ export function discoverFiles(root: string, glob: string, opts: FindFilesOptions
         } else {
           record(ledger, rel, "file", "glob_filtered", `file does not match discovery glob ${scope.pattern}`, stat.size);
         }
+        continue;
+      }
+
+      // A governed file the metadata index cannot represent (a control character
+      // in its path, or a path past the schema's length) is held here, with the
+      // existing blocking disposition, so check reports it and apply refuses at
+      // the discovery gate rather than the producer throwing (DEC-RC-013 B).
+      const indexProblem = metadataIndexPathProblem(rel);
+      if (indexProblem !== null) {
+        record(ledger, rel, "file", "unsupported_entry", indexProblem, stat.size);
         continue;
       }
 

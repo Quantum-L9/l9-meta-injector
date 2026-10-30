@@ -3,7 +3,15 @@ import { OmitMatcher } from "./omit";
 import { ArchiveHold, ArchivePreflightResult } from "./archive_preflight";
 import { ARCHIVE_READER_VERSION } from "./archive_execution";
 import { LocalArchivePolicy } from "./local_archive_policy";
-/** Separator between an archive path and a member path in a virtual locator. */
+/**
+ * Separator between an archive path and a member path in a virtual locator.
+ *
+ * In-band and unescaped (ADR-036 Decision 3), and legal in both filesystem and
+ * ZIP member names. Locators stay injective because an archive whose expansion
+ * would mint a locator some other record can also spell is held with
+ * `archive.locator_ambiguous` (ADR-063), and no consumer recovers archive
+ * ancestry by splitting on it: `memberArchiveAncestry` reads the parent chain.
+ */
 export declare const ARCHIVE_MEMBER_SEPARATOR = "!/";
 /** Ownership marker written at the root of every scratch directory this module creates. */
 export declare const SCRATCH_OWNER_FILE = ".l9-scratch-owner.json";
@@ -255,6 +263,15 @@ export interface PhysicalManifestEntry {
  * different mount point on a different machine yields the same digest.
  */
 export declare function physicalManifestDigest(entries: PhysicalManifestEntry[]): string;
+/**
+ * Enclosing archives of every virtual member, outermost first, keyed by its locator.
+ *
+ * Derived from the observation's parent chain (member -> parent archive -> its
+ * parent archive ...) rather than by splitting the locator, so a physical name
+ * containing `!/` (`notes!/x.md`, `Wow!/b.zip`) is never read as an archive
+ * boundary. A path with no entry is not an archive member and has no ancestry.
+ */
+export declare function memberArchiveAncestry(observation: Pick<LocalSourceObservation, "archives" | "virtualArtifacts">): Map<string, string[]>;
 /**
  * Observe a local source read-only and return everything a deterministic packet
  * needs: a stable snapshot identity, per-entry evidence, virtual archive members

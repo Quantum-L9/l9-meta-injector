@@ -440,4 +440,40 @@ describe("the registry", () => {
     expect(first.document.normalized_document_id).toBe(second.document.normalized_document_id);
     expect(first.document.normalized_document_id).toMatch(/^normdoc:/);
   });
+
+  it("REG-WU-039-RC-067-d: carries the decoder-declared dialect into the normalized document id", () => {
+    const dir = tmp();
+    const markdown = "# Plan\n\nStatus: blocked\n";
+    const table = "item\tstatus\nrouter\tblocked\n";
+    const files = {
+      md: path.join(dir, "a.md"),
+      txt: path.join(dir, "b.txt"),
+      csv: path.join(dir, "c.csv"),
+      tsv: path.join(dir, "d.tsv"),
+      md2: path.join(dir, "e.md"),
+    };
+    fs.writeFileSync(files.md, markdown);
+    fs.writeFileSync(files.txt, markdown);
+    fs.writeFileSync(files.md2, markdown);
+    fs.writeFileSync(files.csv, table);
+    fs.writeFileSync(files.tsv, table);
+
+    // The dialect is the decoder's own declaration, decided in one place.
+    expect(registry.forPath("a.md")?.dialectFor?.("a.md")).toBe("markdown");
+    expect(registry.forPath("x.MDX")?.dialectFor?.("x.MDX")).toBe("markdown");
+    expect(registry.forPath("b.txt")?.dialectFor?.("b.txt")).toBeUndefined();
+    expect(registry.forPath("d.tsv")?.dialectFor?.("d.tsv")).toBe("tsv");
+    expect(registry.forPath("c.csv")?.dialectFor?.("c.csv")).toBeUndefined();
+
+    const id = (file: string): string => {
+      const outcome = decode(file);
+      if (!outcome.decoded) throw new Error(`${file} did not decode`);
+      return outcome.document.normalized_document_id;
+    };
+    // Identical bytes, different dialect: different documents.
+    expect(id(files.md)).not.toBe(id(files.txt));
+    expect(id(files.csv)).not.toBe(id(files.tsv));
+    // Identical bytes, same dialect: one document.
+    expect(id(files.md)).toBe(id(files.md2));
+  });
 });

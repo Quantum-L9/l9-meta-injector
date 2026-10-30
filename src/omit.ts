@@ -115,13 +115,19 @@ function appendGlobToken(re: string, pattern: string, i: number): { re: string; 
   return { re: re + c, next: i };
 }
 
-/** Convert one gitignore-style pattern into a repository-relative RegExp. */
+/**
+ * Convert one gitignore-style pattern into a repository-relative RegExp.
+ *
+ * As in gitignore(5), a separator at the beginning or in the middle anchors the pattern
+ * to the root; a trailing separator only marks a directory. A leading `**` segment still
+ * matches at any depth (ADR-058). `?` matches one code point (`u` flag).
+ */
 function patternToRegExp(pattern: string): RegExp {
   let value = pattern.replace(/\\/g, "/");
   const dirOnly = value.endsWith("/");
   if (dirOnly) value = value.slice(0, -1);
-  const anchored = value.startsWith("/");
-  if (anchored) value = value.slice(1);
+  const anchored = value.startsWith("/") || value.includes("/");
+  if (value.startsWith("/")) value = value.slice(1);
 
   let re = "";
   for (let i = 0; i < value.length; i++) {
@@ -131,8 +137,8 @@ function patternToRegExp(pattern: string): RegExp {
   }
 
   if (dirOnly) re = `(?:${re}|${re}/.*)`;
-  if (anchored) return new RegExp(`^${re}$`, "i");
-  return new RegExp(`(?:^|/)${re}$`, "i");
+  if (anchored) return new RegExp(`^${re}$`, "iu");
+  return new RegExp(`(?:^|/)${re}$`, "iu");
 }
 
 interface CompiledRule {

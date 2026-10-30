@@ -1,5 +1,8 @@
+import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
-import { buildCarrierOperationPlan, inlinePlanDrift } from "../src/carrier_operation";
+import { buildCarrierOperationPlan, inlinePlanDrift, metadataIndexDrift } from "../src/carrier_operation";
+import { compileMetadataIndex, type ManagedMetadataSubject } from "../src/metadata_index";
 import type { AuthorityConfig } from "../src/operation_contracts";
 import type { PipelineResult } from "../src/pipeline";
 
@@ -86,5 +89,98 @@ describe("carrier-aware operation planning", () => {
     const plan = buildCarrierOperationPlan("apply", root, AUTHORITY, p);
     expect(plan.carrierDecisions.find((item) => item.path === "prompts/a.md")?.carrier).toBe("central_manifest");
     expect(plan.inlinePlans).toHaveLength(0);
+  });
+});
+
+describe("WU-005 scoped plans merge with the existing metadata index (RC-009)", () => {
+  const roots: string[] = [];
+  afterEach(() => {
+    for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  function tempRepo(indexBytes?: string): string {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "l9-carrier-merge-"));
+    roots.push(root);
+    if (indexBytes !== undefined) {
+      fs.mkdirSync(path.join(root, ".l9"));
+      fs.writeFileSync(path.join(root, ".l9", "metadata-index.jsonl"), indexBytes);
+    }
+    return root;
+  }
+
+  function outOfScopeSubject(pathName: string, id?: string): ManagedMetadataSubject {
+    const hash = "d".repeat(64);
+    return {
+      path: pathName,
+      artifactType: "source",
+      strategy: "line-comment",
+      contentHash: hash,
+      metadata: { source_path: pathName, content_hash: hash, ...(id ? { id } : {}) },
+    };
+  }
+
+  function scoped(p: PipelineResult, ...paths: string[]): PipelineResult {
+    p.coverage.discovery.entries = paths.map((item) => ({
+      path: item,
+      kind: "file" as const,
+      disposition: "glob_filtered" as const,
+      reason: "file does not match discovery glob prompts/**",
+    }));
+    return p;
+  }
+
+  test("REG-WU-005-RC-009-g: a plan without scope-filtered ledger entries never reads the index and keeps today's bytes", () => {
+    const root = tempRepo("not an index\n");
+    const p = pipeline(root);
+    const plan = buildCarrierOperationPlan("check", root, AUTHORITY, p);
+    expect(plan.metadataIndexBase ?? null).toBeNull();
+    const expected = compileMetadataIndex({ authority: AUTHORITY, mode: "check", subjects: p.metadataSubjects });
+    expect(plan.metadataIndex.bytes).toBe(expected.bytes);
+    expect(plan.metadataIndex.sha256).toBe(expected.sha256);
+    // The synthetic root that does not exist keeps compiling without touching the filesystem.
+    const missing = path.resolve("/tmp/repo-does-not-exist-l9");
+    expect(buildCarrierOperationPlan("check", missing, AUTHORITY, pipeline(missing)).metadataIndex.bytes).toBe(expected.bytes);
+  });
+
+  test("REG-WU-005-RC-009-a: scope-filtered records are carried forward verbatim and in-scope records are recompiled", () => {
+    const base = compileMetadataIndex({
+      authority: AUTHORITY,
+      mode: "apply",
+      subjects: [outOfScopeSubject("vendor/z.ts"), outOfScopeSubject("prompts/a.md"), outOfScopeSubject("prompts/gone.md")],
+    });
+    const root = tempRepo(base.bytes);
+    const p = scoped(pipeline(root), "vendor/z.ts");
+    const plan = buildCarrierOperationPlan("check", root, AUTHORITY, p);
+    expect(plan.metadataIndex.records.map((record) => record.path)).toEqual(["prompts/a.md", "src/a.ts", "vendor/z.ts"]);
+    const line = (bytes: string, name: string) => bytes.split("\n").find((item) => item.includes(`"path":"${name}"`));
+    expect(line(plan.metadataIndex.bytes, "vendor/z.ts")).toBe(line(base.bytes, "vendor/z.ts"));
+    expect(line(plan.metadataIndex.bytes, "prompts/a.md")).not.toBe(line(base.bytes, "prompts/a.md"));
+    expect(plan.metadataIndex.carrierDecisions.map((item) => item.path)).toEqual(["prompts/a.md", "src/a.ts"]);
+    expect(plan.metadataIndexBase).toEqual({ exists: true, sha256: base.sha256 });
+    expect(metadataIndexDrift(plan)?.kind).toBe("stale");
+  });
+
+  test("REG-WU-005-RC-009-e: an unparseable base index makes a scoped plan unmergeable and check reports it", () => {
+    const root = tempRepo("{\"broken\": true}\n");
+    const plan = buildCarrierOperationPlan("check", root, AUTHORITY, scoped(pipeline(root), "vendor/z.ts"));
+    expect(plan.metadataIndexBase?.unmergeableReason).toMatch(/cannot be parsed/);
+    const drift = metadataIndexDrift(plan);
+    expect(drift?.kind).toBe("conflict");
+    expect(drift?.message).toMatch(/unscoped/);
+  });
+
+  test("REG-WU-005-RC-009-a: a scoped plan on a repository without an index records an absent base", () => {
+    const root = tempRepo();
+    const plan = buildCarrierOperationPlan("apply", root, AUTHORITY, scoped(pipeline(root), "vendor/z.ts"));
+    expect(plan.metadataIndexBase).toEqual({ exists: false });
+    expect(plan.metadataIndex.records.map((record) => record.path)).toEqual(["prompts/a.md", "src/a.ts"]);
+  });
+
+  test("REG-WU-005-RC-009-a: a preserved record that reuses an in-scope metadata id is refused", () => {
+    const base = compileMetadataIndex({ authority: AUTHORITY, mode: "apply", subjects: [outOfScopeSubject("vendor/z.ts", "dup-id")] });
+    const root = tempRepo(base.bytes);
+    const p = scoped(pipeline(root), "vendor/z.ts");
+    (p.metadataSubjects[1].metadata as Record<string, unknown>).id = "dup-id";
+    expect(() => buildCarrierOperationPlan("apply", root, AUTHORITY, p)).toThrow(/DUPLICATE_METADATA_ID.*dup-id/);
   });
 });

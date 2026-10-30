@@ -193,7 +193,7 @@
     "path": ".l9/metadata-index.jsonl",
     "schema": "l9.metadata-index/v1",
     "encoding": "canonical JSONL",
-    "ordering": "repository-relative POSIX path",
+    "ordering": "repository-relative POSIX path, code-point order",
     "excludes_hard_skip": true,
     "sidecars_default": false,
     "inject_logs_default": false,

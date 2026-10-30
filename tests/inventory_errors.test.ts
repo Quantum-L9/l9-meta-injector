@@ -35,7 +35,7 @@ describe("inventory surfaces swallowed errors (OBS-004/006/007, PRD-002)", () =>
     expect(stderr).toHaveBeenCalled();
   });
 
-  test("an unwritable sidecar is recorded as sidecar_write_failed (OBS-006 / PRD-002)", () => {
+  test("REG-WU-074-RC-051-RC051-f / REG-WU-074-RC-056-RC056-d: an unwritable sidecar is recorded as sidecar_write_failed (OBS-006 / PRD-002)", () => {
     const root = tmp();
     // JSON uses sidecar strategy. Pre-create a DIRECTORY where the sidecar file
     // must go so the write throws EISDIR — no permissions needed.
@@ -45,5 +45,21 @@ describe("inventory surfaces swallowed errors (OBS-004/006/007, PRD-002)", () =>
     const r = inventoryTree({ root, outDir: tmp(), dryRun: false, now: "2026-01-01T00:00:00.000Z" });
     const rec = r.records.find((x) => x.file_name === "data.json")!;
     expect(rec.unknowns.some((u) => u.startsWith("sidecar_write_failed:"))).toBe(true);
+  });
+
+  test("REG-WU-074-RC-056-RC056-b: a directory where a folder sidecar belongs is recorded and the run completes", () => {
+    const root = tmp();
+    fs.mkdirSync(path.join(root, "sub"));
+    fs.writeFileSync(path.join(root, "sub", "note.md"), "# note\n");
+    fs.mkdirSync(path.join(root, "sub", ".l9meta.yaml"));
+    fs.writeFileSync(path.join(root, "z_later.md"), "# later\n");
+    const out = tmp();
+    const r = inventoryTree({ root, outDir: out, dryRun: false, now: "2026-01-01T00:00:00.000Z" });
+    const folder = r.records.find((x) => x.relative_path === "sub")!;
+    expect(folder.unknowns.some((u) => u.startsWith("sidecar_write_failed:"))).toBe(true);
+    expect(fs.statSync(path.join(root, "sub", ".l9meta.yaml")).isDirectory()).toBe(true);
+    // Later entries are still annotated and the manifests are written.
+    expect(fs.readFileSync(path.join(root, "z_later.md"), "utf8")).toContain("inspected_at:");
+    expect(fs.existsSync(path.join(out, "inventory.json"))).toBe(true);
   });
 });

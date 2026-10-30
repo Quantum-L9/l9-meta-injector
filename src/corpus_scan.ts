@@ -19,6 +19,7 @@
 // Nothing in this file writes to an observed root, executes anything it finds,
 // installs anything, or calls a model. A scan of a corpus leaves the corpus
 // byte-for-byte as it was.
+import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import {
@@ -64,6 +65,7 @@ import {
   TopicCandidate,
   buildProjectCandidates,
   buildTopicCandidates,
+  canonicalThresholdText,
   candidateProfileHash,
   readDeclaredIdentifier,
   readsDeclaredIdentifier,
@@ -131,7 +133,7 @@ import {
   boundedMap,
   yieldToEventLoop,
 } from "./corpus_session";
-import { probeFileEncoding } from "./encoding";
+import { probeBufferEncoding } from "./encoding";
 import {
   DEFAULT_DECODER_BUDGET,
   DecoderRegistry,
@@ -181,14 +183,21 @@ import {
 import { LocalArchivePolicy } from "./local_archive_policy";
 import type { ArchivePreflightResult } from "./archive_preflight";
 import {
-  ARCHIVE_MEMBER_SEPARATOR,
   ArchiveManifestStore,
   KnownFileHash,
   LocalSourceObservation,
   acquireLocalSource,
+  hashFileStreaming,
+  memberArchiveAncestry,
 } from "./local_source";
 import { compareCodePoints } from "./ordering";
-import { buildDocumentIndex, summarizeDocuments } from "./corpus_documents";
+import {
+  UNDECODED_REASON_OVERSIZED,
+  UNDECODED_REASON_SECRET_PATH,
+  UNDECODED_REASON_UNREADABLE,
+  buildDocumentIndex,
+  summarizeDocuments,
+} from "./corpus_documents";
 import { runSemanticAnalysis } from "./corpus_semantic_run";
 import type { DocumentIndex, DocumentIndexSummary } from "./corpus_documents";
 import type { SemanticAnalysisResult } from "./corpus_semantic_run";
@@ -476,6 +485,8 @@ interface ScanArtifact {
   sizeBytes: number | null;
   artifactType: string;
   isArchiveMember: boolean;
+  /** Enclosing archives, outermost first, from the acquisition's parent chain. Empty for a file on disk. */
+  archiveAncestry: readonly string[];
   basename: string;
   extension: string;
   statPrecheck?: { size_bytes: number; mtime_ms: number; mtime_ns?: string };
@@ -528,26 +539,34 @@ interface PortableInterpretationRecord {
 // ───────────────────────────── helpers ─────────────────────────────
 
 /**
- * The archives a member sits inside, outermost first.
+ * The archives an artifact sits inside, outermost first.
  *
  * `old.zip!/inner.zip!/draft.md` is two archives deep, and its ancestry is the
- * successive archive prefixes rather than the bare filenames — `inner.zip` alone
- * would collide with an unrelated `inner.zip` in another archive.
+ * successive archive locators rather than the bare filenames — `inner.zip` alone
+ * would collide with an unrelated `inner.zip` in another archive. Read from the
+ * acquisition's member-to-archive parent chain (`memberArchiveAncestry`), never
+ * by splitting the path on `!/`: a physical `notes!/x.md` is inside no archive,
+ * and a physical `Wow!/b.zip`'s members sit in one archive, not two (ADR-063).
  */
-function archiveAncestryOf(rootRelativePath: string): string[] {
-  const parts = rootRelativePath.split(ARCHIVE_MEMBER_SEPARATOR);
-  if (parts.length < 2) return [];
-  const ancestry: string[] = [];
-  for (let i = 0; i < parts.length - 1; i += 1) {
-    ancestry.push(parts.slice(0, i + 1).join(ARCHIVE_MEMBER_SEPARATOR));
-  }
-  return ancestry;
+function archiveAncestryOf(artifact: ScanArtifact): string[] {
+  return [...artifact.archiveAncestry];
 }
 
 
 function normalizeHash(value: string | null): string | null {
   if (value === null || value.length === 0) return null;
   return value.startsWith("sha256:") ? value : `sha256:${value}`;
+}
+
+/**
+ * The errno code of a failed read, or a generic word when there is none.
+ *
+ * Only the code: an error message carries the absolute path, and a diagnostic
+ * names the document by its corpus path instead.
+ */
+function errorCode(error: unknown): string {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === "string" && code.length > 0 ? code : "read failed";
 }
 
 function basenameOf(rootRelativePath: string): string {
@@ -588,23 +607,45 @@ export function isTextFamilyFormat(format: string): boolean {
 }
 
 /**
- * The identity of a decoded document: `H(content_hash, decoder_id, version)`.
+ * The dialect the decoder that read a document declared for its path.
+ *
+ * Asked of the registry by path, as the derive stage does when it builds the
+ * cache key, and only honoured when that decoder is the one the record names —
+ * so the published id and the key cannot disagree about which dialect they mean.
+ */
+function decoderDialectOf(
+  registry: DecoderRegistry,
+  rootRelativePath: string,
+  decoderId: string | undefined,
+): string | undefined {
+  const decoder = registry.forPath(rootRelativePath);
+  if (decoder === undefined || decoder.id !== decoderId) return undefined;
+  return decoder.dialectFor?.(rootRelativePath);
+}
+
+/**
+ * The identity of a decoded document: `H(content_hash, decoder_id, version[, dialect])`.
  *
  * Derived from the decoder that actually read the bytes. Naming a fixed decoder
  * here instead would give every `.docx` in a corpus an id that says the text
  * decoder produced it, and that id is the join key between the document index,
  * the cache and every piece of block-bound evidence — three places that would
- * then disagree about which decoding they mean.
+ * then disagree about which decoding they mean. The decoder's declared dialect
+ * enters for the same reason (ADR-059): a `.md` and a `.txt` holding identical
+ * bytes are two decoded documents.
  */
 function normalizedDocumentIdOf(
-  contentHash: string | null,
+  artifact: { contentHash: string | null; rootRelativePath: string },
   record: { decoder_id: string; decoder_version: string } | undefined,
+  registry: DecoderRegistry,
 ): string | null {
-  if (contentHash === null) return null;
+  if (artifact.contentHash === null) return null;
+  const dialect = decoderDialectOf(registry, artifact.rootRelativePath, record?.decoder_id);
   return normalizedDocumentKey({
-    contentHash,
+    contentHash: artifact.contentHash,
     decoderId: record?.decoder_id ?? TEXT_DECODER_ID,
     decoderVersion: record?.decoder_version ?? TEXT_DECODER_VERSION,
+    ...(dialect !== undefined ? { dialect } : {}),
   });
 }
 
@@ -659,7 +700,32 @@ interface DerivedLayers {
   manifestIdentifiers: Map<string, DeclaredIdentifier | null>;
   /** Documents the scan deliberately did not decode, by reason. */
   skipped: { secret: number; oversized: number; encoding: number; unreadable: number };
+  /**
+   * Per-file findings of the derive stage: a document that could not be read,
+   * or whose bytes no longer matched the hash acquisition recorded. Each names
+   * its corpus path, because a count tells an operator nothing to go and look at.
+   */
+  diagnostics: CorpusScanDiagnostic[];
+  /**
+   * Artifacts refused before any decoder ran, by id, with the decoder that
+   * claims the path. In memory only: a refusal is a decision about a path and
+   * is never cached under a content key.
+   */
+  refused: Map<string, RefusedBeforeDecoding>;
 }
+
+/** One pre-decode refusal, as the document index and signals report it. */
+interface RefusedBeforeDecoding {
+  reason: string;
+  format: string;
+  decoderId: string;
+  decoderVersion: string;
+}
+
+/** Undecoded reason of a document whose bytes moved after they were hashed. */
+const CHANGED_DURING_SCAN_REASON = "changed_during_scan";
+/** Undecoded reason of a document this run could not read. Never cached. */
+const UNREADABLE_REASON = "unreadable";
 
 interface DeriveDocumentContext {
   cache: CorpusCache;
@@ -693,16 +759,20 @@ async function deriveDocumentLayers(
     cache, session, memory, extractors, candidateProfile, interpretProfile,
     interpretEnabled, maxFileBytes, rootPathsById, rootKeyById, registry, into,
   } = context;
-  const { normalized, lexical, interpreted, manifestIdentifiers, skipped } = into;
+  const { normalized, lexical, interpreted, manifestIdentifiers, skipped, refused, diagnostics } = into;
   const contentHash = artifact.contentHash as string;
   // The decoder that claims this path decides the key. A `.docx` and a `.md` are
   // read by different code into different documents, and a decoder revision must
   // invalidate its own entries without touching anyone else's.
   const decoder = registry.forPath(artifact.rootRelativePath);
+  // …and so does the dialect that decoder declares for the path: a `.md` and a
+  // `.txt` are read by one decoder into two different documents (ADR-059).
+  const dialect = decoder?.dialectFor?.(artifact.rootRelativePath);
   const documentKey = normalizedDocumentKey({
     contentHash,
     decoderId: decoder?.id ?? TEXT_DECODER_ID,
     decoderVersion: decoder?.version ?? TEXT_DECODER_VERSION,
+    ...(dialect !== undefined ? { dialect } : {}),
   });
   const lexicalKey = lexicalFeaturesKey({
     normalizedDocumentIdentity: documentKey,
@@ -737,15 +807,28 @@ async function deriveDocumentLayers(
   const wantsInterpretation = interpretEnabled
     && extractors.some((extractor) => extractor.matches(artifact.rootRelativePath));
   const wantsIdentifier = readsDeclaredIdentifier(artifact.basename);
+  // Record a refusal made before decoding, against the decoder that claims the
+  // path, unless a decoding record already stands for this artifact.
+  const refuse = (reason: string): void => {
+    if (normalized.has(artifact.virtualSourceId)) return;
+    refused.set(artifact.virtualSourceId, {
+      reason,
+      format: decoder?.format ?? "unknown",
+      decoderId: decoder?.id ?? TEXT_DECODER_ID,
+      decoderVersion: decoder?.version ?? TEXT_DECODER_VERSION,
+    });
+  };
 
   // Eligibility first: a refusal to open a file is a decision about the file,
   // not about its bytes, so it is never cached under a content key.
   if (isSecretCandidatePath(artifact.rootRelativePath)) {
     skipped.secret += 1;
+    refuse(UNDECODED_REASON_SECRET_PATH);
     return;
   }
   if (artifact.sizeBytes !== null && artifact.sizeBytes > maxFileBytes) {
     skipped.oversized += 1;
+    refuse(UNDECODED_REASON_OVERSIZED);
     return;
   }
 
@@ -791,23 +874,107 @@ async function deriveDocumentLayers(
     return;
   }
 
+  // A refusal that describes this run rather than these bytes: the file could
+  // not be read, or what was read is not what was hashed. It is recorded for the
+  // run — so coverage still accounts for the document — named in a diagnostic,
+  // and never cached, so the next run tries again. A cached document record
+  // already in hand stays: it was derived from bytes that matched this hash.
+  const refuseForThisRun = (reason: string, message: string): void => {
+    if (reason === UNREADABLE_REASON) skipped.unreadable += 1;
+    if (documentHit === undefined) {
+      normalized.set(artifact.virtualSourceId, {
+        decodes: false,
+        reason,
+        byte_length: artifact.sizeBytes ?? 0,
+        normalized_content_hash: null,
+        token_count: 0,
+        format: decoder?.format ?? "unknown",
+        decoder_id: decoder?.id ?? TEXT_DECODER_ID,
+        decoder_version: decoder?.version ?? TEXT_DECODER_VERSION,
+        block_count: 0,
+      });
+    }
+    diagnostics.push({
+      code: reason === UNREADABLE_REASON
+        ? "corpus.document_unreadable"
+        : "corpus.document_changed_during_scan",
+      severity: "warning",
+      message,
+      corpus_path: artifact.corpusPath,
+    });
+  };
+  const changedMessage = "the file's bytes no longer match the content hash recorded when it was "
+    + "acquired; nothing was derived from them or cached for it, and the next run reads it again";
+
   const absolute = artifact.absolutePath;
   if (absolute === null) {
-    skipped.unreadable += 1;
+    refuseForThisRun(UNREADABLE_REASON, "the document has no readable path in this run and was not decoded");
     return;
   }
   const reserve = artifact.sizeBytes ?? 0;
   await memory.reserve(reserve);
   try {
+    // Every layer below is filed under keys computed from `contentHash`, so every
+    // layer is derived from bytes shown to *be* those bytes. The file was hashed
+    // earlier in the run; between then and now it is a mutable path on a disk
+    // somebody may be editing, and a decode of whatever it holds now would be
+    // cached — permanently — as the decoding of what it held then.
+    //
+    // Whole-file formats are read once, and that one buffer is hashed, probed and
+    // decoded: there is no second read for the bytes to change between.
+    //
+    // Container formats are read by their decoder, part by part, from the path —
+    // pulling a whole `.xlsx` into memory to hand it over would trade the
+    // concurrency for a memory spike. So the file is hashed immediately before the
+    // decode and its size and mtime are required unchanged across it. That is
+    // evidence rather than proof, the same standard acquisition holds a file to
+    // while hashing it.
+    //
+    // The read is also the seam `max_parallel_decoders` bounds. With the read
+    // inside a synchronous decoder there is nothing to overlap in a
+    // single-threaded runtime; reading here puts N reads genuinely in flight,
+    // which on a spinning disk or a network mount is the difference the operator
+    // was reaching for.
+    const wholeFile = decoder === undefined || WHOLE_FILE_FORMATS.has(decoder.format);
+    let bytes: Buffer | undefined;
+    let containerStat: fs.BigIntStats | undefined;
+    if (wholeFile) {
+      try {
+        bytes = await fs.promises.readFile(absolute);
+      } catch (error) {
+        refuseForThisRun(UNREADABLE_REASON, `the document could not be read (${errorCode(error)}) and was not decoded`);
+        return;
+      }
+      const observed = `sha256:${crypto.createHash("sha256").update(bytes).digest("hex")}`;
+      if (observed !== contentHash) {
+        refuseForThisRun(CHANGED_DURING_SCAN_REASON, changedMessage);
+        return;
+      }
+    } else {
+      let verified: boolean;
+      try {
+        containerStat = fs.statSync(absolute, { bigint: true });
+        verified = hashFileStreaming(absolute).hash === contentHash;
+      } catch (error) {
+        refuseForThisRun(UNREADABLE_REASON, `the document could not be read (${errorCode(error)}) and was not decoded`);
+        return;
+      }
+      if (!verified) {
+        refuseForThisRun(CHANGED_DURING_SCAN_REASON, changedMessage);
+        return;
+      }
+    }
+
     // A decoder that reads text still needs the bytes to be text; one that reads
     // a container does not, and probing a `.docx` for UTF-8 would reject every
-    // Word document in the corpus.
+    // Word document in the corpus. The probe reads the verified buffer, so its
+    // verdict — binary or invalid — is a fact about these bytes and is cached as
+    // one. A read failure never reaches this point.
     const textFamily = decoder === undefined || isTextFamilyFormat(decoder.format);
     if (textFamily) {
-      const encoding = probeFileEncoding(absolute);
+      const encoding = probeBufferEncoding(bytes as Buffer);
       if (encoding.status !== "utf8") {
-        if (encoding.status === "unreadable") skipped.unreadable += 1;
-        else skipped.encoding += 1;
+        skipped.encoding += 1;
         const record: NormalizedDocumentRecord = {
           decodes: false,
           reason: encoding.status,
@@ -827,30 +994,8 @@ async function deriveDocumentLayers(
 
     if (decoder === undefined) {
       skipped.unreadable += 1;
+      refuse(UNDECODED_REASON_UNREADABLE);
       return;
-    }
-
-    // Read the bytes here, asynchronously, for the formats whose decoders
-    // consume the whole file.
-    //
-    // This is the seam `max_parallel_decoders` bounds. With the read inside a
-    // synchronous decoder there is nothing to overlap in a single-threaded
-    // runtime, and the budget would govern only how many pipelines happened to
-    // be between awaits — a number nobody sets a flag for. Reading here puts N
-    // reads genuinely in flight, which on a spinning disk or a network mount is
-    // the difference the operator was reaching for.
-    //
-    // Container formats are excluded on purpose: their readers stream parts out
-    // by offset, and pulling a whole `.xlsx` into memory to hand it over would
-    // trade the concurrency for a memory spike and a second copy of every file.
-    let bytes: Buffer | undefined;
-    if (WHOLE_FILE_FORMATS.has(decoder.format)) {
-      try {
-        bytes = await fs.promises.readFile(absolute);
-      } catch {
-        skipped.unreadable += 1;
-        return;
-      }
     }
 
     const outcome = decoder.decode({
@@ -862,6 +1007,23 @@ async function deriveDocumentLayers(
       sizeBytes: artifact.sizeBytes ?? 0,
       budget: DEFAULT_DECODER_BUDGET,
     });
+
+    // The container's bytes have to have held still for the whole decode, or
+    // what the decoder read is not what was just verified — and that applies to
+    // a refusal as much as to a document.
+    if (containerStat !== undefined) {
+      let after: fs.BigIntStats;
+      try {
+        after = fs.statSync(absolute, { bigint: true });
+      } catch (error) {
+        refuseForThisRun(UNREADABLE_REASON, `the document could not be read (${errorCode(error)}) and was not decoded`);
+        return;
+      }
+      if (after.size !== containerStat.size || after.mtimeNs !== containerStat.mtimeNs) {
+        refuseForThisRun(CHANGED_DURING_SCAN_REASON, changedMessage);
+        return;
+      }
+    }
 
     if (!outcome.decoded) {
       // A refusal is a typed fact with a reason, never an empty document. A
@@ -896,10 +1058,10 @@ async function deriveDocumentLayers(
     // what `document-signals.json` carries.
     let text: string;
     if (textFamily) {
-      // The bytes are already in hand from the read above; decoding them again
-      // beats a second trip to the filesystem for the same file.
+      // The bytes are already in hand from the verified read above; decoding
+      // them again beats a second trip to the filesystem for the same file.
       if (bytes === undefined) {
-        skipped.unreadable += 1;
+        refuseForThisRun(UNREADABLE_REASON, "the document's bytes were not read and it was not decoded");
         return;
       }
       text = bytes.toString("utf8");
@@ -1325,6 +1487,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       const memberPaths = new Set(
         entry.observation.virtualArtifacts.map((member) => member.virtualSourcePath),
       );
+      const ancestryByPath = memberArchiveAncestry(entry.observation);
       for (const record of entry.observation.inventory.records) {
         // Counted per record rather than per artifact: folders are skipped below,
         // so a run of them at a multiple of the interval would otherwise yield
@@ -1347,6 +1510,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
           sizeBytes: record.size_bytes,
           artifactType: record.artifact_type,
           isArchiveMember: memberPaths.has(rootRelativePath),
+          archiveAncestry: ancestryByPath.get(rootRelativePath) ?? [],
           basename,
           extension: extensionOf(basename),
         };
@@ -1412,6 +1576,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
     const lexical = new Map<string, LexicalFeatureRecord>();
     const interpreted = new Map<string, InterpretationRecord>();
     const skipped = { secret: 0, oversized: 0, encoding: 0, unreadable: 0 };
+    const refused = new Map<string, RefusedBeforeDecoding>();
     const manifestIdentifiers = new Map<string, DeclaredIdentifier | null>();
 
     const memory = new MemoryBudget(budgets.max_memory_bytes);
@@ -1440,7 +1605,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
         rootPathsById,
         rootKeyById,
         registry,
-        into: { normalized, lexical, interpreted, manifestIdentifiers, skipped },
+        into: { normalized, lexical, interpreted, manifestIdentifiers, skipped, refused, diagnostics },
       }));
 
     // ── 4a. what the decoded documents say about themselves ───────────────
@@ -1473,7 +1638,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
         subjectId: repositoryModelArtifactId(`repo:${rootKey}`, artifact.rootRelativePath),
         sourcePath: artifact.rootRelativePath,
         sourceContentHash: artifact.contentHash,
-        normalizedDocumentId: normalizedDocumentIdOf(artifact.contentHash, record),
+        normalizedDocumentId: normalizedDocumentIdOf(artifact, record, registry),
         decoderId: record.decoder_id,
         decoderVersion: record.decoder_version,
         format: record.format,
@@ -1644,7 +1809,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       // as one archive rather than two — named by the root-scoped identity the
       // snapshot's archives carry, so two roots' `widget/old.zip` are two.
       archive_id: (() => {
-        const outermost = archiveAncestryOf(artifact.rootRelativePath)[0];
+        const outermost = archiveAncestryOf(artifact)[0];
         return outermost === undefined ? null : virtualSourceId(artifact.rootId, outermost);
       })(),
       decoded: normalized.get(artifact.virtualSourceId)?.decodes === true,
@@ -1697,9 +1862,17 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
     const featureIdentities = lexicalDocuments.map(
       (document) => `${document.artifactId} ${document.sourcePath} ${document.normalizedContentHash}`,
     );
+    // The near-duplicate pass also reads each document's exact content hash:
+    // byte-identical files are an exact-duplicate fact and never a candidate. A
+    // byte-only change that leaves the normalized text alone (CRLF and LF) flips
+    // that, so the hash is part of this key. The topic pass never reads it, and
+    // adding it there would only invalidate an analysis that has not changed.
+    const nearFeatureIdentities = lexicalDocuments.map(
+      (document) => `${document.artifactId} ${document.sourcePath} ${document.normalizedContentHash} ${document.contentHash}`,
+    );
 
     const nearKey = candidateAnalysisKey({
-      inputFeatureIdentities: [...featureIdentities, `near:${nearDuplicateThreshold.toFixed(6)}`],
+      inputFeatureIdentities: [...nearFeatureIdentities, `near:${canonicalThresholdText(nearDuplicateThreshold)}`],
       candidateProfileHash: candidateProfile,
     });
     const nearCandidates = nearDuplicatesEnabled
@@ -1709,7 +1882,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
     if (nearDuplicatesEnabled) session?.completeAnalysis(nearKey);
 
     const topicKey = candidateAnalysisKey({
-      inputFeatureIdentities: [...featureIdentities, `topic:${topicThreshold.toFixed(6)}`],
+      inputFeatureIdentities: [...featureIdentities, `topic:${canonicalThresholdText(topicThreshold)}`],
       candidateProfileHash: candidateProfile,
     });
     const rootByArtifact = new Map(artifacts.map((artifact) => [artifact.virtualSourceId, artifact.rootId]));
@@ -2027,7 +2200,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
           contentHash: artifact.contentHash,
           sizeBytes: artifact.sizeBytes,
           isArchiveMember: artifact.isArchiveMember,
-          archiveAncestry: archiveAncestryOf(artifact.rootRelativePath),
+          archiveAncestry: archiveAncestryOf(artifact),
           ...(record !== undefined
             ? {
               normalized: {
@@ -2039,7 +2212,19 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
               },
             }
             : {}),
-          normalizedDocumentId: normalizedDocumentIdOf(artifact.contentHash, record),
+          normalizedDocumentId: normalizedDocumentIdOf(artifact, record, registry),
+          ...(() => {
+            const refusal = refused.get(artifact.virtualSourceId);
+            return refusal === undefined
+              ? {}
+              : {
+                refusedBeforeDecoding: {
+                  reason: refusal.reason,
+                  decoderId: refusal.decoderId,
+                  decoderVersion: refusal.decoderVersion,
+                },
+              };
+          })(),
         };
       }),
     });
@@ -2162,7 +2347,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
           content_hash: artifact.contentHash,
           normalized_document_id: document?.normalized_document_id ?? null,
           is_archive_member: artifact.isArchiveMember,
-          archive_ancestry: archiveAncestryOf(artifact.rootRelativePath),
+          archive_ancestry: archiveAncestryOf(artifact),
           assertions: [
             ...(interpreted.get(artifact.virtualSourceId)?.assertions ?? []),
             ...(blockSignals.get(artifact.virtualSourceId) ?? []),
@@ -2251,19 +2436,35 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       corpusSourceSnapshotId: sourceSnapshotId,
       corpusAnalysisId: analysisIdentity.corpus_analysis_id,
       decoderProfiles: registry.profile(),
-      documents: [...normalized.entries()].map(([artifactId, record]) => ({
-        virtual_source_id: artifactId,
-        format: record.format,
-        decoder_id: record.decoder_id,
-        decoder_version: record.decoder_version,
-        decoded: record.decodes,
-        reason: record.reason,
-        blocks: (record.blocks ?? []).map((block) => ({
-          block_id: block.block_id,
-          kind: block.kind,
-          locator: block.locator,
+      documents: [
+        ...[...normalized.entries()].map(([artifactId, record]) => ({
+          virtual_source_id: artifactId,
+          format: record.format,
+          decoder_id: record.decoder_id,
+          decoder_version: record.decoder_version,
+          decoded: record.decodes,
+          reason: record.reason,
+          blocks: (record.blocks ?? []).map((block) => ({
+            block_id: block.block_id,
+            kind: block.kind,
+            locator: block.locator,
+          })),
         })),
-      })),
+        // Claimed and refused before decoding: eligible for the claiming
+        // decoder's format, with the refusal as its reason.
+        ...[...refused.entries()]
+          .filter(([artifactId]) => !normalized.has(artifactId))
+          .sort(([a], [b]) => compareCodePoints(a, b))
+          .map(([artifactId, refusal]) => ({
+            virtual_source_id: artifactId,
+            format: refusal.format,
+            decoder_id: refusal.decoderId,
+            decoder_version: refusal.decoderVersion,
+            decoded: false,
+            reason: refusal.reason,
+            blocks: [],
+          })),
+      ],
       blockProfile: {
         profile_id: DOCUMENT_BLOCK_PROFILE_ID,
         profile_version: DOCUMENT_BLOCK_PROFILE_VERSION,
@@ -2329,8 +2530,11 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       - decodeGap.secret_skipped - decodeGap.oversized - decodeGap.encoding_rejected
       - decodeGap.ocr_required - decodeGap.encrypted - decodeGap.malformed
       - decodeGap.other_refusal;
+    // Eligibility is a property of the artifact and the extractors, not of the
+    // switch: a disabled pass is reported as not run below, never as a pass over
+    // an empty eligible set (ADR-068).
     const interpretationEligible = artifacts.filter(
-      (artifact) => interpretEnabled && extractors.some((extractor) => extractor.matches(artifact.rootRelativePath)),
+      (artifact) => extractors.some((extractor) => extractor.matches(artifact.rootRelativePath)),
     );
     const lexicalEligible = artifacts.filter(
       (artifact) => isLexicallyAnalyzable(artifact.rootRelativePath)
@@ -2498,10 +2702,13 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
         artifacts.length,
       ),
       normalized_document_coverage: coverageRatio(decodedIds.size, decodableIds.size),
-      interpretation_coverage: coverageRatio(
-        interpretationEligible.filter((artifact) => interpreted.has(artifact.virtualSourceId)).length,
-        interpretationEligible.length,
-      ),
+      interpretation_enabled: interpretEnabled,
+      interpretation_coverage: interpretEnabled
+        ? coverageRatio(
+          interpretationEligible.filter((artifact) => interpreted.has(artifact.virtualSourceId)).length,
+          interpretationEligible.length,
+        )
+        : null,
       lexical_analysis_coverage: coverageRatio(
         lexicalEligible.filter((artifact) => lexical.has(artifact.virtualSourceId)).length,
         lexicalEligible.length,
@@ -2603,8 +2810,9 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       knownNormalizedDocumentIds: new Set(
         artifacts
           .map((artifact) => normalizedDocumentIdOf(
-            artifact.contentHash,
+            artifact,
             normalized.get(artifact.virtualSourceId),
+            registry,
           ))
           .filter((id): id is string => id !== null),
       ),

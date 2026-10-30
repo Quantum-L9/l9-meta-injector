@@ -78,26 +78,50 @@ function trailingWhitespaceStart(text) {
     const end = text.trimEnd().length;
     return end === text.length ? -1 : end;
 }
+/**
+ * Split a scalar's text from its inline comment. A quote opens a quoted scalar only
+ * where a scalar or flow-list item begins — a mid-word apostrophe (`it's`) is plain
+ * text in YAML — `''` escapes a quote inside single quotes, and a backslash escapes
+ * the next character inside double quotes. This is the rule every in-repository
+ * YAML-subset reader shares (ADR-057, RC-024 / DEC-RC-024).
+ */
 function splitInlineComment(text) {
     let single = false;
     let double = false;
     let bracketDepth = 0;
+    // Last significant character outside a quoted scalar ("" at the scalar's start).
+    let previous = "";
     for (let i = 0; i < text.length; i++) {
         const char = text[i];
-        if (char === "'" && !double) {
-            if (single && text[i + 1] === "'") {
+        if (double) {
+            if (char === "\\")
                 i += 1;
-                continue;
+            else if (char === '"') {
+                double = false;
+                previous = char;
             }
-            single = !single;
             continue;
         }
-        if (char === '"' && !single && (i === 0 || text[i - 1] !== "\\")) {
-            double = !double;
+        if (single) {
+            if (char === "'" && text[i + 1] === "'")
+                i += 1;
+            else if (char === "'") {
+                single = false;
+                previous = char;
+            }
             continue;
         }
-        if (single || double)
+        const startsScalar = previous === "" || previous === "[" || (bracketDepth > 0 && previous === ",");
+        if (char === "'" && startsScalar) {
+            single = true;
             continue;
+        }
+        if (char === '"' && startsScalar) {
+            double = true;
+            continue;
+        }
+        if (!/\s/.test(char))
+            previous = char;
         if (char === "[")
             bracketDepth += 1;
         if (char === "]")

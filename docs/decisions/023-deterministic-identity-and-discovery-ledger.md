@@ -4,6 +4,8 @@
 
 Accepted for PR-1 Safety Envelope P-105.
 
+Amended by [ADR-071](071-identity-stem-representation-of-non-ascii-path-segments.md): deterministic persisted identity also holds across Unicode normalisation forms, and non-ASCII path segments are encoded as ASCII tokens.
+
 ## Context
 
 The pipeline previously persisted absolute checkout paths and a fresh run timestamp

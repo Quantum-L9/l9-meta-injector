@@ -151,7 +151,14 @@ function buildMutationIntents(root, plan, outDir) {
         });
     }
     const indexTarget = path.join(root, ...metadata_index_1.METADATA_INDEX_RELATIVE_PATH.split("/"));
-    const indexState = currentIntentState(indexTarget);
+    // A scoped plan merged with a specific existing index (ADR-058): that base is the
+    // compare-and-swap expectation, so a concurrent change after planning is refused.
+    const base = plan.metadataIndexBase;
+    if (base?.unmergeableReason)
+        throw new Error(`METADATA_INDEX_UNMERGEABLE: ${base.unmergeableReason}`);
+    const indexState = base
+        ? (base.exists ? { expectedExists: true, expectedHash: base.sha256 } : { expectedExists: false })
+        : currentIntentState(indexTarget);
     const desiredIndexHash = sha256(plan.metadataIndex.bytes);
     if (indexState.expectedHash !== desiredIndexHash) {
         intents.push({
@@ -219,6 +226,10 @@ async function runApplyAsync(config) {
     });
     if (plan.pipeline.coverage.discovery.blocking > 0) {
         throw new Error(`DISCOVERY_INCOMPLETE: apply refused with ${plan.pipeline.coverage.discovery.blocking} blocking path(s)`);
+    }
+    if (plan.metadataIndexBase?.unmergeableReason) {
+        // A scoped apply never discards index records it cannot read (ADR-058).
+        throw new Error(`METADATA_INDEX_UNMERGEABLE: apply refused before any write: ${plan.metadataIndexBase.unmergeableReason}`);
     }
     const unsatisfied = (0, carrier_operation_1.unsatisfiedAuthorizationDrift)(plan);
     if (unsatisfied.length > 0) {

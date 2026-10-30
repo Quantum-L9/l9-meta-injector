@@ -48,6 +48,10 @@ packet built with interpretation.
 ## Corpus analysis
 
 `src/corpus_analysis.ts` and `src/corpus_report.ts` are normative for `l9.corpus-index/v1`.
+`src/corpus_index.ts` is normative for `l9.corpus-mode-index/v1`, the table of contents a
+corpus-mode (`--root`) run writes under the same file name, `corpus-index.json`. The two
+shapes differ, so their schema ids differ (ADR-067); a consumer dispatches on `schema`, not
+on the file name.
 They are a projection: every value derives from the acquisition observation, the emitted
 packet, the exact-duplicate clustering, or the near-duplicate analysis, and every artifact,
 assertion, relation endpoint and candidate endpoint must resolve against the packet.
@@ -71,7 +75,7 @@ Full semantics: `docs/corpus-intelligence.md`.
 
 ## Publication
 
-`docs/package-publication-decision.json` governs publication readiness. Unresolved registry history, constellation consumption, or approval blocks `npm publish` without blocking local validation or `npm pack`.
+`docs/package-publication-decision.json` governs publication readiness. Unresolved registry history, constellation consumption, or approval blocks `npm publish` without blocking local validation or `npm pack`. `npm run check:publication` requires the evidence ids `npm_registry_history`, `constellation_consumer_inventory` and `distribution_owner_approval` exactly once each, a `verified` `distribution_owner_approval`, and `approved_version` (`l9.package-publication-decision/v2`) equal to `package.json#version`; release preparation of a different version resets an approval (ADR-070).
 
 ## Invariants
 
