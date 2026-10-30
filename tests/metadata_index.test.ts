@@ -137,3 +137,89 @@ describe("metadata index writing", () => {
     fs.rmSync(outside, { recursive: true, force: true });
   });
 });
+
+describe("WU-006 index ordering and schema-faithful validation (RC-012, RC-013)", () => {
+  const SCHEMA = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "schemas", "metadata-index-record.schema.json"), "utf8")) as {
+    required: string[];
+    additionalProperties: boolean;
+    properties: { path: { pattern: string; maxLength: number; minLength: number } };
+  };
+  const SCHEMA_PATH = new RegExp(SCHEMA.properties.path.pattern, "u");
+
+  function conformsToSchema(record: Record<string, unknown>): boolean {
+    const keys = Object.keys(record).sort();
+    if (JSON.stringify(keys) !== JSON.stringify([...SCHEMA.required].sort())) return false;
+    const pathName = String(record.path);
+    const length = [...pathName].length;
+    return SCHEMA_PATH.test(pathName) && length >= SCHEMA.properties.path.minLength && length <= SCHEMA.properties.path.maxLength;
+  }
+
+  test("REG-WU-006-RC-012-a: records are ordered by code point, like carrier decisions", () => {
+    const fullwidth = "docs/～.txt";
+    const astral = "docs/\u{1F600}.txt";
+    const compiled = compileMetadataIndex({ authority: AUTHORITY, mode: "apply", subjects: [subject(astral, "unknown", HASH_A), subject(fullwidth, "unknown", HASH_B)] });
+    expect(compiled.carrierDecisions.map((item) => item.path)).toEqual([fullwidth, astral]);
+    expect(compiled.records.map((record) => record.path)).toEqual([fullwidth, astral]);
+    expect(compiled.bytes.indexOf(fullwidth)).toBeLessThan(compiled.bytes.indexOf(astral));
+  });
+
+  test("REG-WU-006-RC-012-b: the parser accepts code-point order and rejects the code-unit order", () => {
+    const fullwidth = "docs/～.txt";
+    const astral = "docs/\u{1F600}.txt";
+    const compiled = compileMetadataIndex({ authority: AUTHORITY, mode: "apply", subjects: [subject(astral, "unknown", HASH_A), subject(fullwidth, "unknown", HASH_B)] });
+    expect(parseMetadataIndex(compiled.bytes).map((record) => record.path)).toEqual([fullwidth, astral]);
+    const lines = compiled.bytes.trimEnd().split("\n");
+    const codeUnitOrder = `${[lines[1], lines[0]].join("\n")}\n`;
+    expect(() => parseMetadataIndex(codeUnitOrder)).toThrow(/canonical path order/);
+  });
+
+  test("REG-WU-006-RC-012-d: ASCII-only indexes keep their bytes", () => {
+    const compiled = compileMetadataIndex({ authority: AUTHORITY, mode: "apply", subjects: [
+      subject("src/b.ts", "source", HASH_B), subject("src/a.ts", "source", HASH_A), subject("Z.md", "unknown", HASH_A), subject("_x.ts", "source", HASH_B),
+    ] });
+    expect(compiled.records.map((record) => record.path)).toEqual(["Z.md", "_x.ts", "src/a.ts", "src/b.ts"]);
+    expect(parseMetadataIndex(compiled.bytes)).toEqual(compiled.records);
+  });
+
+  test("REG-WU-006-RC-013-a: a control-character path is refused by the producer naming the rule", () => {
+    expect(() => compileMetadataIndex({ authority: AUTHORITY, mode: "apply", subjects: [subject("src/tab\there.ts", "source", HASH_A)] }))
+      .toThrow(/control character/);
+    expect(() => compileMetadataIndex({ authority: AUTHORITY, mode: "apply", subjects: [subject("src/del\u007F.ts", "source", HASH_A)] }))
+      .toThrow(/control character/);
+    expect(() => compileMetadataIndex({ authority: AUTHORITY, mode: "apply", subjects: [subject(".github/x.yml", "source", HASH_A)] }))
+      .toThrow(/must not start with '\.'/);
+    expect(() => compileMetadataIndex({ authority: AUTHORITY, mode: "apply", subjects: [subject(`src/${"a".repeat(4094)}`, "source", HASH_A)] }))
+      .toThrow(/4096/);
+  });
+
+  test("REG-WU-006-RC-013-b: a record with a key outside the schema is refused by serialize and parse", () => {
+    const compiled = compileMetadataIndex({ authority: AUTHORITY, mode: "apply", subjects: [subject("src/a.ts", "source", HASH_A)] });
+    const parsed = JSON.parse(compiled.bytes.trim()) as Record<string, unknown>;
+    const extra = `${JSON.stringify(Object.fromEntries(Object.entries({ ...parsed, zzz_extra: 1 }).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))))}\n`;
+    expect(() => parseMetadataIndex(extra)).toThrow(/keys/);
+    expect(() => serializeMetadataIndex([{ ...compiled.records[0], zzz_extra: 1 } as never])).toThrow(/keys/);
+    const { metadata: _metadata, ...missing } = compiled.records[0];
+    expect(() => serializeMetadataIndex([missing as never])).toThrow(/keys/);
+  });
+
+  test("REG-WU-006-RC-013-c: every produced record conforms to the shipped record schema", () => {
+    expect(SCHEMA.additionalProperties).toBe(false);
+    const compiled = compileMetadataIndex({ authority: AUTHORITY, mode: "apply", subjects: [
+      subject("src/a.ts", "source", HASH_A),
+      subject("prompts/a.md", "prompt", HASH_B),
+      subject("docs/\u{1F600}.txt", "unknown", HASH_A),
+      subject("docs/café file.txt", "unknown", HASH_B),
+    ] });
+    for (const line of compiled.bytes.trimEnd().split("\n")) {
+      expect(conformsToSchema(JSON.parse(line) as Record<string, unknown>), line).toBe(true);
+    }
+    // The repository ships no persisted index fixture; the records every other test in
+    // this file produces are the existing corpus and are checked the same way.
+    const existing = compileMetadataIndex({ authority: AUTHORITY, mode: "apply", subjects: [
+      subject("src/a.ts", "source", HASH_A), subject("src/b.ts", "source", HASH_B), subject("prompts/a.md", "prompt", HASH_A),
+    ] });
+    for (const record of parseMetadataIndex(existing.bytes)) {
+      expect(conformsToSchema(record as unknown as Record<string, unknown>), record.path).toBe(true);
+    }
+  });
+});

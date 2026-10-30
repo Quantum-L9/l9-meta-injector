@@ -27,6 +27,7 @@
 // correct: those are different output sets, and pretending otherwise would mean
 // serving one run's timestamps under another run's name.
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { canonicalCorpusJson } from "./corpus_analysis";
 import { commitFileDurably, syncDirectory, writeFileDurably } from "./durable_write";
@@ -55,6 +56,15 @@ export interface CorpusCurrent {
   committed_at: string;
   /** Every file in the generation, with its hash, in code-point order. */
   files: { path: string; content_hash: string }[];
+  /**
+   * Generations that were current before this one, newest first (ADR-066).
+   *
+   * Written in the same durable rename as the rest of the pointer, so the record of
+   * publication order can never disagree with the switch it describes. Bounded; a
+   * generation that falls off the end counts as unrecorded. Absent in pointers
+   * written by earlier releases, which readers still accept.
+   */
+  previous_generation_ids?: string[];
 }
 
 /**
@@ -106,6 +116,107 @@ export interface PublishResult {
 }
 
 const DEFAULT_KEEP = 3;
+
+/** The publication-order record never grows past this many entries, or `keep` if larger. */
+const MIN_HISTORY_LENGTH = 16;
+
+/**
+ * The exclusive publisher lock, relative to the output root (ADR-066).
+ *
+ * One publisher per output root: the lock is created with an exclusive open before
+ * anything is written and removed after pruning. It records the holder's pid and
+ * host, so a lock left by a crashed process on this host is taken over.
+ */
+const PUBLISH_LOCK_FILE = ".corpus-publish.lock";
+
+interface PublishLockHolder {
+  pid: number;
+  host: string;
+  acquired_at: string;
+}
+
+function readLockHolder(lockFile: string): PublishLockHolder | null {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(lockFile, "utf8")) as Partial<PublishLockHolder> | null;
+    if (parsed === null || typeof parsed !== "object") return null;
+    if (typeof parsed.pid !== "number" || !Number.isInteger(parsed.pid) || parsed.pid <= 0) return null;
+    if (typeof parsed.host !== "string") return null;
+    return { pid: parsed.pid, host: parsed.host, acquired_at: String(parsed.acquired_at ?? "") };
+  } catch {
+    return null;
+  }
+}
+
+function processIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // EPERM: the process exists but belongs to someone else. Only ESRCH proves it is gone.
+    return (error as NodeJS.ErrnoException).code !== "ESRCH";
+  }
+}
+
+/**
+ * Take the output root's publisher lock, or throw naming the lock file.
+ *
+ * A lock whose holder is a dead process on this host is taken over once. A lock held
+ * by a live process, by another host, or whose content cannot be read is refused:
+ * across hosts a pid proves nothing, and an unreadable lock may be one being written.
+ */
+function acquirePublishLock(outDir: string): { file: string; contents: string } {
+  fs.mkdirSync(outDir, { recursive: true });
+  const file = path.join(outDir, PUBLISH_LOCK_FILE);
+  const contents = `${JSON.stringify({ pid: process.pid, host: os.hostname(), acquired_at: new Date().toISOString() })}\n`;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const fd = fs.openSync(file, "wx");
+      try {
+        fs.writeSync(fd, contents);
+        fs.fsyncSync(fd);
+      } finally {
+        fs.closeSync(fd);
+      }
+      return { file, contents };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+    const holder = readLockHolder(file);
+    const stale = attempt === 0 && holder !== null && holder.host === os.hostname() && !processIsAlive(holder.pid);
+    if (!stale) {
+      const who = holder === null ? "an unreadable holder" : `pid ${holder.pid} on ${holder.host}`;
+      throw new Error(
+        `corpus: another publisher holds ${file} (${who}); wait for it to finish, or remove the lock file if that publisher is gone`,
+      );
+    }
+    fs.rmSync(file, { force: true });
+  }
+  throw new Error(`corpus: unable to acquire ${file}`);
+}
+
+/** Remove the lock, but only if it is still the one this publisher wrote. */
+function releasePublishLock(lock: { file: string; contents: string }): void {
+  try {
+    if (fs.readFileSync(lock.file, "utf8") === lock.contents) fs.rmSync(lock.file, { force: true });
+  } catch {
+    // Already gone: nothing to release.
+  }
+}
+
+/** The string ids of a pointer's publication record, tolerating a pointer without one. */
+function recordedHistory(current: CorpusCurrent | null): string[] {
+  const list = current?.previous_generation_ids;
+  return Array.isArray(list) ? list.filter((item): item is string => typeof item === "string") : [];
+}
+
+/** The directory name a generation id lands in, or null for an id that cannot be one. */
+function directoryNameOrNull(id: string): string | null {
+  try {
+    return generationDirectoryName(id);
+  } catch {
+    return null;
+  }
+}
 
 /** Read the pointer, or null when nothing has been published yet. */
 export function readCorpusCurrent(outDir: string): CorpusCurrent | null {
@@ -190,6 +301,9 @@ function generationDirectoryName(id: string): string {
  *
  * Order matters at every step and each one is chosen against a specific crash:
  *
+ *  0. Take the output root's exclusive publisher lock (ADR-066), released in a
+ *     `finally` after pruning. Two publishers into one root serialise or the
+ *     second is refused before it writes anything.
  *  1. Write the generation's files, each synced. A crash here leaves an
  *     unreferenced directory that no reader can reach, because `CURRENT.json`
  *     has not moved.
@@ -198,7 +312,10 @@ function generationDirectoryName(id: string): string {
  *     cut that the files it names did not.
  *  3. Switch `CURRENT.json` with one durable rename. This is the instant the
  *     reader's whole view changes, and it is one syscall rather than twelve.
- *  4. Prune, after the switch, never touching what `CURRENT.json` names.
+ *  4. Prune, after the switch, never touching what `CURRENT.json` names when
+ *     re-read at that moment. Retention is by publication order recorded in the
+ *     pointer: unrecorded directories go first, then the oldest recorded ones,
+ *     until `keep` remain (ADR-066).
  */
 export function publishCorpusGeneration(input: PublishInput): PublishResult {
   const outDir = path.resolve(input.outDir);
@@ -213,6 +330,28 @@ export function publishCorpusGeneration(input: PublishInput): PublishResult {
       throw new Error(`corpus: refusing to publish '${file.path}' outside its generation`);
     }
   }
+
+  const lock = acquirePublishLock(outDir);
+  try {
+    return publishUnderLock(input, { outDir, id, directoryName, generationRef, generationDirectory, ordered });
+  } finally {
+    releasePublishLock(lock);
+  }
+}
+
+function publishUnderLock(
+  input: PublishInput,
+  target: {
+    outDir: string;
+    id: string;
+    directoryName: string;
+    generationRef: string;
+    generationDirectory: string;
+    ordered: PublishedFile[];
+  },
+): PublishResult {
+  const { outDir, id, directoryName, generationRef, generationDirectory, ordered } = target;
+  const keep = Math.max(1, Math.floor(input.keep ?? DEFAULT_KEEP));
 
   // A generation is identified by its bytes, so one that already exists already
   // holds exactly these files and rewriting it would be work with no effect.
@@ -248,6 +387,22 @@ export function publishCorpusGeneration(input: PublishInput): PublishResult {
 
   input.beforeSwitch?.({ id, directory: generationDirectory });
 
+  // Defence in depth under the lock: never point at a generation that is not whole.
+  const absent = ordered
+    .filter((file) => !fs.existsSync(path.join(generationDirectory, ...file.path.split("/"))))
+    .map((file) => file.path);
+  if (absent.length > 0) {
+    throw new Error(`corpus: generation ${generationRef} is missing ${absent.join(", ")}; CURRENT.json was not switched`);
+  }
+
+  // Publication order, newest first: the generation being replaced, then what it
+  // replaced. Recorded in the pointer itself, so it moves in the same rename.
+  const history = previous === null
+    ? []
+    : [previous.generation_id, ...recordedHistory(previous)]
+      .filter((item, index, list) => item !== id && list.indexOf(item) === index)
+      .slice(0, Math.max(keep, MIN_HISTORY_LENGTH));
+
   const current: CorpusCurrent = {
     schema: CORPUS_CURRENT_SCHEMA,
     generation_id: id,
@@ -257,6 +412,7 @@ export function publishCorpusGeneration(input: PublishInput): PublishResult {
       path: file.path,
       content_hash: sha256TextPrefixed(file.contents),
     })),
+    previous_generation_ids: history,
   };
   const currentFile = path.join(outDir, CURRENT_FILE);
   commitFileDurably({
@@ -265,11 +421,30 @@ export function publishCorpusGeneration(input: PublishInput): PublishResult {
     contents: `${canonicalCorpusJson(current)}\n`,
   });
 
-  // Only now, and only what the pointer does not name.
-  const keep = Math.max(1, Math.floor(input.keep ?? DEFAULT_KEEP));
+  // Only now, and only what the pointer does not name. The pointer is re-read
+  // rather than trusted: whatever it names at deletion time is never deleted.
+  const named = readCorpusCurrent(outDir);
+  const protectedNames = new Set([directoryName]);
+  if (named !== null) protectedNames.add(path.posix.basename(named.generation_ref));
+  // Newest first: this generation, then the recorded ones it replaced.
+  const recorded = [id, ...history]
+    .map(directoryNameOrNull)
+    .filter((name): name is string => name !== null);
+  const present = listGenerations(outDir);
+  const presentSet = new Set(present);
+  const keptRecorded = new Set(recorded.filter((name) => presentSet.has(name)).slice(0, keep));
+  // Prune order: directories with no publication record (crash orphans, pre-upgrade
+  // generations) in name order first, then recorded generations oldest first.
+  const recordedOrder = new Map(recorded.map((name, index) => [name, index]));
+  const unrecorded = present.filter((name) => !recordedOrder.has(name));
+  const olderRecorded = present
+    .filter((name) => recordedOrder.has(name) && !keptRecorded.has(name))
+    .sort((a, b) => (recordedOrder.get(b) ?? 0) - (recordedOrder.get(a) ?? 0));
+  const surplusCount = Math.max(0, present.length - keep);
+  const surplus = [...unrecorded, ...olderRecorded]
+    .filter((name) => !protectedNames.has(name))
+    .slice(0, surplusCount);
   const pruned: string[] = [];
-  const generations = listGenerations(outDir).filter((name) => name !== directoryName);
-  const surplus = generations.slice(0, Math.max(0, generations.length - (keep - 1)));
   for (const name of surplus) {
     fs.rmSync(path.join(outDir, GENERATIONS_DIRECTORY, name), { recursive: true, force: true });
     pruned.push(name);

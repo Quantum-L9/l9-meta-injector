@@ -15,7 +15,7 @@ import type { ArchiveManifestStore } from "../src/local_source";
 import { canonicalMemberPath, memberCollisionKey, preflightArchive } from "../src/archive_preflight";
 import type { ArchivePreflightResult } from "../src/archive_preflight";
 import { DEFAULT_LOCAL_ARCHIVE_POLICY, localArchivePolicyFingerprint, resolveLocalArchivePolicy } from "../src/local_archive_policy";
-import { ZipBudgetExceededError, readZipCentralDirectory, streamZipMember } from "../src/zip_reader";
+import { ZipBudgetExceededError, ZipFormatError, readZipCentralDirectory, streamZipMember } from "../src/zip_reader";
 import { UNIX_FIFO, UNIX_SYMLINK, treeSnapshot, writeRawZip } from "./helpers/zip_fixtures";
 import type { ZipMemberSpec } from "./helpers/zip_fixtures";
 import type { LocalArchivePolicy } from "../src/local_archive_policy";
@@ -697,11 +697,22 @@ describe("zip64 central-directory records", () => {
     eocd.writeUInt32LE(eocd.readUInt32LE(12) - 16, 12);
     fs.writeFileSync(path.join(root, "ok.zip"), Buffer.concat([bytes.subarray(0, eocdOffset - 16), eocd]));
 
-    const directory = readZipCentralDirectory(path.join(root, "ok.zip"));
-    // The first placeholder resolved; the two the payload could not cover stayed put.
-    expect(directory.entries[0].uncompressedSize).toBe("plain".length);
-    expect(directory.entries[0].compressedSize).toBe(0xffffffff);
-    expect(directory.entries[0].localHeaderOffset).toBe(0xffffffff);
+    // The first placeholder resolved; the two the payload could not cover stayed
+    // put. Since reader 1.2.0 (ADR-061) an entry whose data extent cannot fit
+    // before the central directory is refused at directory read, and the
+    // unresolved placeholders are exactly such an extent, so the resolved values
+    // are read from the refusal rather than from a returned entry.
+    let refusal: unknown = null;
+    try {
+      readZipCentralDirectory(path.join(root, "ok.zip"));
+    } catch (error) {
+      refusal = error;
+    }
+    expect(refusal).toBeInstanceOf(ZipFormatError);
+    const message = (refusal as Error).message;
+    expect(message).toContain(`uncompressed size ${"plain".length}`);
+    expect(message).toContain(`compressed size ${0xffffffff}`);
+    expect(message).toContain(`local header offset ${0xffffffff}`);
   });
 
   /**

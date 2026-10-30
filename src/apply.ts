@@ -137,7 +137,13 @@ function buildMutationIntents(root: string, plan: CarrierOperationPlan, outDir: 
   }
 
   const indexTarget = path.join(root, ...METADATA_INDEX_RELATIVE_PATH.split("/"));
-  const indexState = currentIntentState(indexTarget);
+  // A scoped plan merged with a specific existing index (ADR-058): that base is the
+  // compare-and-swap expectation, so a concurrent change after planning is refused.
+  const base = plan.metadataIndexBase;
+  if (base?.unmergeableReason) throw new Error(`METADATA_INDEX_UNMERGEABLE: ${base.unmergeableReason}`);
+  const indexState = base
+    ? (base.exists ? { expectedExists: true, expectedHash: base.sha256 } : { expectedExists: false })
+    : currentIntentState(indexTarget);
   const desiredIndexHash = sha256(plan.metadataIndex.bytes);
   if (indexState.expectedHash !== desiredIndexHash) {
     intents.push({
@@ -205,6 +211,10 @@ export async function runApplyAsync(config: ApplyConfig): Promise<OperationResul
   if (plan.pipeline.coverage.discovery.blocking > 0) {
     throw new Error(`DISCOVERY_INCOMPLETE: apply refused with ${plan.pipeline.coverage.discovery.blocking} blocking path(s)`);
   }
+  if (plan.metadataIndexBase?.unmergeableReason) {
+    // A scoped apply never discards index records it cannot read (ADR-058).
+    throw new Error(`METADATA_INDEX_UNMERGEABLE: apply refused before any write: ${plan.metadataIndexBase.unmergeableReason}`);
+  }
   const unsatisfied = unsatisfiedAuthorizationDrift(plan);
   if (unsatisfied.length > 0) {
     // The repository authorized inline metadata for a file whose header cannot be
@@ -224,6 +234,13 @@ export async function runApplyAsync(config: ApplyConfig): Promise<OperationResul
   const transaction = executeFileTransaction(root, intents, {
     validate: () => validateCommittedPlan(root, plan),
   });
+  if (transaction.cleanupPending) {
+    // Bytes are committed; only post-commit cleanup is left for the next run's recovery.
+    warnings.push(
+      `metadata transaction ${transaction.transactionId ?? "unknown"} committed but cleanup is pending `
+      + `(${transaction.cleanupPending.journalPath}); the next apply finalizes it`,
+    );
+  }
   const inlineChanged = transaction.changedPaths.filter((item) => item !== METADATA_INDEX_RELATIVE_PATH);
   const metadataIndexChanged = transaction.changedPaths.includes(METADATA_INDEX_RELATIVE_PATH);
   const repositoryMutated = transaction.changedPaths.length > 0;

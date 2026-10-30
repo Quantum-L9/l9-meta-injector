@@ -158,3 +158,211 @@ describe("one glob dialect for discovery scope and authority", () => {
     expect(fs.readFileSync(path.join(root, "docs", "a.md"), "utf8")).toBe(PROMPT);
   });
 });
+
+describe("WU-007 trailing-slash scopes are refused (RC-010)", () => {
+  test("REG-WU-007-RC-010-a: a pattern with an empty trailing segment is refused and the intended form suggested", () => {
+    const root = tempRoot();
+    write(root, "docs/a.md");
+    for (const glob of ["docs/", "docs/**/", "**/", "a/b/"]) {
+      expect(() => assertDiscoveryGlob(glob), glob).toThrow(/discovery glob/);
+      expect(() => discoverFiles(root, glob), glob).toThrow(/discovery glob/);
+    }
+    expect(() => assertDiscoveryGlob("docs/")).toThrow("docs/**");
+  });
+
+  test("REG-WU-007-RC-010-b: a governed check and apply refuse 'docs/' and touch nothing", async () => {
+    const root = governedRoot();
+    write(root, "docs/a.md");
+    await expect(runCheckAsync(config(root, "docs/"))).rejects.toThrow(/discovery glob/);
+    await expect(runApplyAsync({ ...config(root, "docs/"), dryRun: false } as never)).rejects.toThrow(/discovery glob/);
+    expect(fs.readFileSync(path.join(root, "docs", "a.md"), "utf8")).toBe(PROMPT);
+    expect(fs.existsSync(path.join(root, ".l9", "metadata-index.jsonl"))).toBe(false);
+  });
+
+  test("REG-WU-007-RC-010-c: directory and file scopes without an empty segment still match as before", () => {
+    const root = tempRoot();
+    write(root, "docs/a.md");
+    write(root, "docs/x/b.md");
+    write(root, "top.md");
+    for (const glob of ["docs/**", "docs/**/*.md", "**/*", "**", "*.md"]) {
+      expect(assertDiscoveryGlob(glob)).toBe(glob);
+    }
+    expect(relative(root, discoverFiles(root, "docs/**").files)).toEqual(["docs/a.md", "docs/x/b.md"]);
+    expect(relative(root, discoverFiles(root, "docs/**/*.md").files)).toEqual(["docs/a.md", "docs/x/b.md"]);
+    expect(relative(root, discoverFiles(root, "**/*").files)).toEqual(["docs/a.md", "docs/x/b.md", "top.md"]);
+    expect(relative(root, discoverFiles(root, "**").files)).toEqual(["docs/a.md", "docs/x/b.md", "top.md"]);
+    expect(relative(root, discoverFiles(root, "*.md").files)).toEqual(["top.md"]);
+  });
+});
+
+describe("WU-005 scoped governed runs merge with the repository-wide metadata index (RC-009)", () => {
+  const INDEX = path.join(".l9", "metadata-index.jsonl");
+  const SOURCE = "export const value = 1;\n";
+
+  function fullyApplied(): string {
+    const root = governedRoot();
+    write(root, "docs/a.md");
+    write(root, "other/b.md", PROMPT.replace("Build prompt", "Other prompt"));
+    write(root, "src/x.ts", SOURCE);
+    return root;
+  }
+
+  async function applyAll(root: string, glob = "**/*") {
+    return runApplyAsync({ ...config(root, glob), dryRun: false } as never);
+  }
+
+  function indexPaths(root: string): string[] {
+    return fs.readFileSync(path.join(root, INDEX), "utf8").trimEnd().split("\n").map((line) => (JSON.parse(line) as { path: string }).path);
+  }
+
+  function indexLine(root: string, pathName: string): string | undefined {
+    return fs.readFileSync(path.join(root, INDEX), "utf8").split("\n").find((line) => line.includes(`"path":${JSON.stringify(pathName)}`));
+  }
+
+  test("REG-WU-005-RC-009-a: a scoped check of a fully applied repository passes and touches nothing", async () => {
+    const root = fullyApplied();
+    expect((await applyAll(root)).passed).toBe(true);
+    expect(indexPaths(root)).toEqual(["docs/a.md", "other/b.md", "src/x.ts"]);
+    const before = fs.readFileSync(path.join(root, INDEX));
+    const check = await runCheckAsync(config(root, "docs/**/*.md"));
+    expect(check.check?.drift).toEqual([]);
+    expect(check.passed).toBe(true);
+    expect(check.repositoryMutated).toBe(false);
+    expect(fs.readFileSync(path.join(root, INDEX)).equals(before)).toBe(true);
+  });
+
+  test("REG-WU-005-RC-009-b: a scoped apply of a fully applied repository is a no-op that keeps every record", async () => {
+    const root = fullyApplied();
+    await applyAll(root);
+    const before = fs.readFileSync(path.join(root, INDEX), "utf8");
+    const apply = await applyAll(root, "docs/**/*.md");
+    expect(apply.passed).toBe(true);
+    expect(apply.repositoryMutated).toBe(false);
+    expect(apply.apply?.metadataIndexChanged).toBe(false);
+    expect(fs.readFileSync(path.join(root, INDEX), "utf8")).toBe(before);
+  });
+
+  test("REG-WU-005-RC-009-c: a scoped apply after an in-scope edit changes only that file and its record", async () => {
+    const root = fullyApplied();
+    await applyAll(root);
+    const otherRecord = indexLine(root, "other/b.md");
+    const sourceRecord = indexLine(root, "src/x.ts");
+    const docRecord = indexLine(root, "docs/a.md");
+    const otherBytes = fs.readFileSync(path.join(root, "other", "b.md"), "utf8");
+    const docPath = path.join(root, "docs", "a.md");
+    fs.writeFileSync(docPath, fs.readFileSync(docPath, "utf8").replace("inspect the repository", "inspect the whole repository"));
+
+    const apply = await applyAll(root, "docs/**/*.md");
+    expect(apply.passed).toBe(true);
+    expect(apply.apply?.inlineChanged).toEqual(["docs/a.md"]);
+    expect(apply.apply?.metadataIndexChanged).toBe(true);
+    expect(indexPaths(root)).toEqual(["docs/a.md", "other/b.md", "src/x.ts"]);
+    expect(indexLine(root, "other/b.md")).toBe(otherRecord);
+    expect(indexLine(root, "src/x.ts")).toBe(sourceRecord);
+    expect(indexLine(root, "docs/a.md")).not.toBe(docRecord);
+    expect(fs.readFileSync(path.join(root, "other", "b.md"), "utf8")).toBe(otherBytes);
+
+    const unscoped = await runCheckAsync(config(root, "**/*"));
+    expect(unscoped.check?.drift).toEqual([]);
+    expect(unscoped.passed).toBe(true);
+  });
+
+  test("REG-WU-005-RC-009-d: a scoped apply drops the record of a deleted in-scope file and keeps the rest", async () => {
+    const root = fullyApplied();
+    write(root, "docs/c.md", PROMPT.replace("Build prompt", "Third prompt"));
+    await applyAll(root);
+    const otherRecord = indexLine(root, "other/b.md");
+    const sourceRecord = indexLine(root, "src/x.ts");
+    fs.rmSync(path.join(root, "docs", "a.md"));
+
+    const apply = await applyAll(root, "docs/**/*.md");
+    expect(apply.passed).toBe(true);
+    expect(indexPaths(root)).toEqual(["docs/c.md", "other/b.md", "src/x.ts"]);
+    expect(indexLine(root, "other/b.md")).toBe(otherRecord);
+    expect(indexLine(root, "src/x.ts")).toBe(sourceRecord);
+  });
+
+  test("REG-WU-005-RC-009-e: an unparseable base index is reported by a scoped check, refused by a scoped apply and rebuilt by an unscoped apply", async () => {
+    const root = fullyApplied();
+    await applyAll(root);
+    const corrupt = "{\"not\":\"canonical\" }\n";
+    fs.writeFileSync(path.join(root, INDEX), corrupt);
+    const docBefore = fs.readFileSync(path.join(root, "docs", "a.md"), "utf8");
+
+    const check = await runCheckAsync(config(root, "docs/**/*.md"));
+    expect(check.passed).toBe(false);
+    const indexDrift = check.check?.drift.filter((item) => item.path === ".l9/metadata-index.jsonl") ?? [];
+    expect(indexDrift).toHaveLength(1);
+    expect(indexDrift[0].kind).toBe("conflict");
+    expect(indexDrift[0].message).toMatch(/cannot be parsed/);
+    expect(indexDrift[0].message).toMatch(/unscoped/);
+
+    await expect(applyAll(root, "docs/**/*.md")).rejects.toThrow(/METADATA_INDEX_UNMERGEABLE.*unscoped/);
+    expect(fs.readFileSync(path.join(root, INDEX), "utf8")).toBe(corrupt);
+    expect(fs.readFileSync(path.join(root, "docs", "a.md"), "utf8")).toBe(docBefore);
+
+    const rebuilt = await applyAll(root);
+    expect(rebuilt.passed).toBe(true);
+    expect(indexPaths(root)).toEqual(["docs/a.md", "other/b.md", "src/x.ts"]);
+  });
+
+  test("REG-WU-005-RC-009-f: a scoped run on a fresh repository still plans and writes only the scoped record", async () => {
+    const root = governedRoot();
+    write(root, "docs/a.md");
+    write(root, "other/b.md", PROMPT.replace("Build prompt", "Other prompt"));
+    const check = await runCheckAsync(config(root, "docs/**/*.md"));
+    expect(check.check?.carrierDecisions.map((item) => item.path)).toEqual(["docs/a.md"]);
+    const apply = await applyAll(root, "docs/**/*.md");
+    expect(apply.passed).toBe(true);
+    expect(apply.apply?.inlineChanged).toEqual(["docs/a.md"]);
+    expect(indexPaths(root)).toEqual(["docs/a.md"]);
+  });
+});
+
+describe("WU-006 '?' matches one code point in every matcher (RC-012)", () => {
+  test("REG-WU-006-RC-012-c: discovery, authority and omit '?' match an astral character and never '/'", async () => {
+    const { buildOmitMatcher } = await import("../src/omit");
+    const scope = compileDiscoveryGlob("?.md");
+    const authority = globToRegExp("?.md");
+    const omit = buildOmitMatcher({ root: tempRoot(), patterns: ["/?.md"], protectSkillMd: false });
+    for (const [candidate, expected] of [["\u{1F600}.md", true], ["é.md", true], ["a/b.md", false], ["ab.md", false]] as const) {
+      expect(scope.matches(candidate), candidate).toBe(expected);
+      expect(authority.test(candidate), candidate).toBe(expected);
+      expect(omit.shouldOmit(candidate), candidate).toBe(expected);
+    }
+  });
+
+  test("REG-WU-006-RC-012-d: ASCII glob behaviour is unchanged, including the case-insensitive scope", () => {
+    expect(compileDiscoveryGlob("docs/?.MD").matches("docs/a.md")).toBe(true);
+    expect(globToRegExp("docs/?.MD").test("docs/a.md")).toBe(false);
+    expect(globToRegExp("docs/**/*.md").test("docs/x/y.md")).toBe(true);
+    expect(globToRegExp("docs/(a)+.md").test("docs/(a)+.md")).toBe(true);
+    expect(globToRegExp("{a,b}.md").test("{a,b}.md")).toBe(true);
+  });
+});
+
+describe("WU-006 a governed path the index schema cannot represent (RC-013)", () => {
+  test("REG-WU-006-RC-013-d: apply refuses a TAB-named governed file at the discovery gate, before any write", async () => {
+    const root = governedRoot();
+    write(root, "src/tab\there.ts", "export const value = 1;\n");
+    write(root, "docs/a.md");
+    await expect(runApplyAsync({ ...config(root, "**/*"), dryRun: false } as never)).rejects.toThrow(/DISCOVERY_INCOMPLETE/);
+    expect(fs.existsSync(path.join(root, ".l9", "metadata-index.jsonl"))).toBe(false);
+    expect(fs.readFileSync(path.join(root, "docs", "a.md"), "utf8")).toBe(PROMPT);
+  });
+
+  test("REG-WU-006-RC-013-d (check half, DEC-RC-013 option B): check reports the unrepresentable path instead of throwing", async () => {
+    const root = governedRoot();
+    write(root, "src/tab\there.ts", "export const value = 1;\n");
+    const result = await runCheckAsync(config(root, "**/*"));
+    expect(result.passed).toBe(false);
+    expect(result.check?.discovery.blocking).toBe(1);
+    const drift = result.check?.drift.find((item) => item.path === "src/tab\there.ts");
+    expect(drift?.kind).toBe("unsupported");
+    expect(drift?.message).toMatch(/unsupported_entry: metadata index path contains a control character/);
+    // Discovery holds it, so it never reaches the planner as an eligible file.
+    const discovered = discoverFiles(root, "**/*");
+    expect(JSON.stringify(discovered)).toContain("unsupported_entry");
+    expect(JSON.stringify(discovered.files)).not.toContain("tab");
+  });
+});

@@ -224,7 +224,9 @@ export function resolveOperationMode(input: string): OperationModeResolution {
   if ((OPERATION_MODES as readonly string[]).includes(requested)) {
     return { requested, mode: requested as OperationMode };
   }
-  if (requested in LEGACY_OPERATION_ALIASES) {
+  // Own keys only: `in` walks Object.prototype, so 'toString' or '__proto__' would
+  // resolve to a function or object instead of failing closed (INV-014, RC-011).
+  if (Object.prototype.hasOwnProperty.call(LEGACY_OPERATION_ALIASES, requested)) {
     const alias = requested as LegacyOperationMode;
     return {
       requested,

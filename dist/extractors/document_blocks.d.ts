@@ -1,7 +1,7 @@
 import { BlockKind, BlockLocator } from "../documents/decoder";
 /** Identity of the block-signal policy. Bumped when these rules change. */
 export declare const DOCUMENT_BLOCK_PROFILE_ID = "meta-injector-document-block-signals";
-export declare const DOCUMENT_BLOCK_PROFILE_VERSION = "1.0.0";
+export declare const DOCUMENT_BLOCK_PROFILE_VERSION = "1.1.0";
 /** The single extractor this profile runs, named in every assertion it produces. */
 export declare const DOCUMENT_BLOCK_EXTRACTOR_ID = "document-block-work-intelligence/v1";
 /** One block, as this reader needs it. */

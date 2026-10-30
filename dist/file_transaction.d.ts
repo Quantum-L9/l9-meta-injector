@@ -18,10 +18,14 @@ export interface FileMutationIntent {
     expectedHash?: string;
     /** Complete replacement bytes. */
     bytes: string | Buffer;
-    /** Optional mode for a newly-created target. Existing files preserve their mode. */
+    /** Optional mode for a newly-created target. Existing files preserve their permission bits. */
     mode?: number;
 }
-export type TransactionFaultStage = "journal_created" | "target_staged" | "before_commit" | "original_backed_up" | "target_committed" | "before_validation" | "validation_succeeded";
+export type TransactionFaultStage = "journal_created" | "target_staged" | "before_commit" | "original_backed_up" | "target_committed" | "before_validation" | "validation_succeeded"
+/** After `complete` is durable, before one entry's backup is deleted. */
+ | "backup_cleanup"
+/** After `complete` is durable, before the journal itself is deleted. */
+ | "journal_cleanup";
 export interface TransactionFaultContext {
     stage: TransactionFaultStage;
     transactionId: string;
@@ -36,6 +40,14 @@ export interface ExecuteFileTransactionOptions {
     /** Deterministic test override. */
     transactionId?: string;
 }
+export interface FileTransactionCleanupPending {
+    /** Repository-relative journal left in state `complete` for recoverPendingTransactions to finalize. */
+    journalPath: string;
+    /** Repository-relative backups kept because they no longer hold the journaled original bytes. */
+    retainedBackups: string[];
+    /** Cleanup steps that failed after `complete`; none of them rolled the transaction back. */
+    errors: string[];
+}
 export interface FileTransactionResult {
     transactionId: string | null;
     plannedWrites: number;
@@ -43,6 +55,12 @@ export interface FileTransactionResult {
     changedPaths: string[];
     rolledBack: false;
     journalPath: string | null;
+    /**
+     * Present only when cleanup after the durable `complete` state did not finish.
+     * The validated bytes are committed; the leftover journal is finalized (or, for a
+     * retained backup, refused) by the next recoverPendingTransactions.
+     */
+    cleanupPending?: FileTransactionCleanupPending;
 }
 export interface RecoveryResult {
     /** Transactions rolled back to their journaled original state. */

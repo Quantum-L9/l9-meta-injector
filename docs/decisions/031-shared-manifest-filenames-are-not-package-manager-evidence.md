@@ -7,6 +7,8 @@ Accepted. The manifest-interpretation deferral recorded below is resolved by
 now read through that seam under [ADR-055](055-manifest-interpretation.md); the decision
 itself stands.
 
+Amended by [ADR-062](062-repository-level-fact-scope-and-shared-manifest-evidence.md): `package.json` is a shared manifest like `pyproject.toml`; its filename alone resolves no package manager.
+
 ## Date
 
 2026-08-15

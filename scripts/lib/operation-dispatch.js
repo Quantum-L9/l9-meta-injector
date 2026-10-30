@@ -2,6 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { NUMERIC_OPTION_BOUNDS, isNamespaceGlobPair, parseOptionArgv } = require("./cli-args");
 
 const OPERATION_MODES = Object.freeze(["inventory", "check", "apply", "skills"]);
 const LEGACY_OPERATION_ALIASES = Object.freeze({ pipeline: "apply" });
@@ -47,6 +48,12 @@ function parseNumber(name, raw, defaultValue, predicate, expectation) {
   return value;
 }
 
+/** parseNumber with the bounds the direct CLIs share (scripts/lib/cli-args.js). */
+function parseBoundedNumber(name, raw, defaultValue) {
+  const bounds = NUMERIC_OPTION_BOUNDS[`--${name}`];
+  return parseNumber(name, raw, defaultValue, bounds.predicate, bounds.expectation);
+}
+
 function resolveMode(raw) {
   const requested = String(raw ?? "").trim();
   if (OPERATION_MODES.includes(requested)) return { requested, mode: requested, warnings: [] };
@@ -86,6 +93,17 @@ function realDirectory(label, candidate) {
     fail(`${label} cannot be inspected: ${resolved}`);
   }
   if (!stat.isDirectory()) fail(`${label} must be a directory: ${resolved}`);
+  assertResolvedPath(label, resolved);
+  return resolved;
+}
+
+/**
+ * A resolved path is checked again after canonicalization: the raw input can be clean
+ * while a symlink target name carries NUL/CR/LF, and every resolved path ends up in a
+ * single-line GITHUB_OUTPUT value or a child argv element (RC-105).
+ */
+function assertResolvedPath(label, resolved) {
+  if (hasControlChar(resolved)) fail(`${label} resolves to a path containing a forbidden control character`);
   return resolved;
 }
 
@@ -129,11 +147,11 @@ function resolveFutureContainedPath(parent, input, label) {
   }
 
   if (fs.existsSync(lexical)) {
-    const actual = fs.realpathSync(lexical);
+    const actual = assertResolvedPath(label, fs.realpathSync(lexical));
     if (!isWithin(parent, actual)) fail(`${label} resolves outside its containment root: ${input}`);
     if (!fs.statSync(actual).isDirectory()) fail(`${label} must be a directory path: ${input}`);
   }
-  return lexical;
+  return assertResolvedPath(label, lexical);
 }
 
 function parseCsvPatterns(raw) {
@@ -151,10 +169,7 @@ function parseRepeatedValues(raw) {
 
 function assertNamespaceGlob(pair) {
   const value = assertText("namespace-glob", pair);
-  const index = value.indexOf("=");
-  if (index < 1 || index === value.length - 1) {
-    fail(`namespace-glob '${value}' must use glob=namespace`);
-  }
+  if (!isNamespaceGlobPair(value)) fail(`namespace-glob '${value}' must use glob=namespace`);
   return value;
 }
 
@@ -204,6 +219,12 @@ function assertModeShape(config) {
   }
   if (mode === "apply" && config.dryRun) {
     fail("apply does not accept dry-run=true; use check for read-only drift evaluation");
+  }
+  // apply refuses only on repository authority conflicts; it has no verification-only
+  // failure an advisory mode could downgrade, so false would be accepted and ignored
+  // (ADR-069 amending ADR-022).
+  if (mode === "apply" && config.failOnIssues === false) {
+    fail("fail-on-issues=false is forbidden for apply: apply fails only on authority conflicts, which are always fatal");
   }
   if ((mode === "inventory" || mode === "skills") && config.failOnIssues === false) {
     fail(`fail-on-issues is not supported for ${mode}`);
@@ -258,8 +279,8 @@ function normalizeEnvironment(rawEnv) {
   const glob = assertText("glob", String(env.L9_INPUT_GLOB ?? "**/*").trim() || "**/*");
   const omitPatterns = parseCsvPatterns(env.L9_INPUT_OMIT);
   const namespaceGlobs = namespaceGlobRules.map((rule) => `${rule.glob}=${rule.namespace}`);
-  const nearDupThreshold = parseNumber("near-dup", env.L9_INPUT_NEAR_DUP, 0.9, (n) => n >= 0 && n <= 1, "between 0 and 1");
-  const hashPrefixLength = parseNumber("hash-prefix-length", env.L9_INPUT_HASH_PREFIX_LENGTH, 16, (n) => Number.isInteger(n) && n >= 8 && n <= 64, "an integer from 8 to 64");
+  const nearDupThreshold = parseBoundedNumber("near-dup", env.L9_INPUT_NEAR_DUP, 0.9);
+  const hashPrefixLength = parseBoundedNumber("hash-prefix-length", env.L9_INPUT_HASH_PREFIX_LENGTH, 16);
 
   const runnerTempRaw = String(env.RUNNER_TEMP ?? "").trim();
   let reportPath;
@@ -309,20 +330,16 @@ const VALUE_OPTIONS = Object.freeze([
   "--llm-base-url", "--llm-model", "--llm-api-key",
 ]);
 
-const BOOLEAN_OPTION_SET = new Set(BOOLEAN_OPTIONS);
-const REPEATABLE_OPTION_SET = new Set(REPEATABLE_OPTIONS);
-const VALUE_OPTION_SET = new Set(VALUE_OPTIONS);
-/** `--no-dry-run` → `--dry-run`. The negation is the only way to express `false` on argv. */
-const NEGATED_BOOLEAN_OPTIONS = new Map(
-  BOOLEAN_OPTIONS.map((option) => [`--no-${option.slice(2)}`, option]),
-);
-
-function isKnownOptionToken(token) {
-  return BOOLEAN_OPTION_SET.has(token)
-    || REPEATABLE_OPTION_SET.has(token)
-    || VALUE_OPTION_SET.has(token)
-    || NEGATED_BOOLEAN_OPTIONS.has(token);
-}
+/** The dispatcher's option declaration, parsed by the shared strict core (ADR-069). */
+const DISPATCH_OPTION_SPEC = Object.freeze({
+  boolean: BOOLEAN_OPTIONS,
+  value: VALUE_OPTIONS,
+  repeatable: REPEATABLE_OPTIONS,
+  negatable: true,
+  // Values are validated after parsing with the Action-input wording (parseNumber,
+  // parseNamespaceGlobRule), so the dispatcher's messages are unchanged.
+  validateValues: false,
+});
 
 /**
  * Parse `--flag` / `--opt value` argv into option readers.
@@ -331,42 +348,11 @@ function isKnownOptionToken(token) {
  * following argv element, so `--dry-run --out reports` keeps `--out` an option rather
  * than swallowing it as the boolean's value. `--no-<flag>` is the explicit false form.
  * A value option whose value is itself a known option token is rejected loudly instead
- * of being mis-parsed into a plausible-looking configuration.
+ * of being mis-parsed into a plausible-looking configuration. One definition: the
+ * direct CLIs parse through the same core (scripts/lib/cli-args.js).
  */
 function parseArgOptions(args) {
-  const values = new Map();
-  const repeated = new Map();
-  while (args.length) {
-    const option = args.shift();
-
-    if (BOOLEAN_OPTION_SET.has(option)) {
-      if (values.has(option)) fail(`${option} may be specified only once`);
-      values.set(option, "true");
-      continue;
-    }
-    const negated = NEGATED_BOOLEAN_OPTIONS.get(option);
-    if (negated !== undefined) {
-      if (values.has(negated)) fail(`${negated} may be specified only once`);
-      values.set(negated, "false");
-      continue;
-    }
-
-    if (!(VALUE_OPTION_SET.has(option) || REPEATABLE_OPTION_SET.has(option))) {
-      fail(`unknown option '${option}'`);
-    }
-    if (!args.length) fail(`${option} requires a value`);
-    if (isKnownOptionToken(args[0])) fail(`${option} requires a value, got option '${args[0]}'`);
-    const value = args.shift();
-    if (REPEATABLE_OPTION_SET.has(option)) {
-      const list = repeated.get(option) ?? [];
-      list.push(value);
-      repeated.set(option, list);
-    } else {
-      if (values.has(option)) fail(`${option} may be specified only once`);
-      values.set(option, value);
-    }
-  }
-  return { values, repeated };
+  return parseOptionArgv(args, DISPATCH_OPTION_SPEC, fail);
 }
 
 function parseCommandLine(argv, env = process.env) {
@@ -396,8 +382,8 @@ function parseCommandLine(argv, env = process.env) {
   const authority = assertText("authority", identity.authority, { allowEmpty: modeResolution.mode === "inventory" }).trim();
   const glob = assertText("glob", values.get("--glob") ?? "**/*");
   const namespaceGlobs = namespaceGlobRules.map((rule) => `${rule.glob}=${rule.namespace}`);
-  const nearDupThreshold = parseNumber("near-dup", values.get("--near-dup"), 0.9, (n) => n >= 0 && n <= 1, "between 0 and 1");
-  const hashPrefixLength = parseNumber("hash-prefix-length", values.get("--hash-prefix-length"), 16, (n) => Number.isInteger(n) && n >= 8 && n <= 64, "an integer from 8 to 64");
+  const nearDupThreshold = parseBoundedNumber("near-dup", values.get("--near-dup"), 0.9);
+  const hashPrefixLength = parseBoundedNumber("hash-prefix-length", values.get("--hash-prefix-length"), 16);
   let reportPath;
   if (modeResolution.mode === "check") {
     const temp = realDirectory("temporary directory", env.RUNNER_TEMP || require("node:os").tmpdir());
@@ -464,7 +450,6 @@ function resolveScriptAndArgs(config, scripts) {
     const args = [...commonArgs(config), "--authority", config.authority, "--out", config.outDir,
       "--near-dup", String(config.nearDupThreshold), "--hash-prefix-length", String(config.hashPrefixLength),
       ...llmArgs(config)];
-    if (!config.failOnIssues) args.push("--no-fail-on-issues");
     return { script: path.join(scripts, "apply-cli.js"), args };
   }
   const args = [config.targetRoot, "--authority", config.authority, "--out", config.outDir, ...llmArgs(config)];
@@ -497,20 +482,43 @@ function buildInvocation(config) {
   };
 }
 
-function parseSummary(mode, text) {
-  const inventoryMatch = text.match(/(?:^|\n)inventory:\s+(\d+)\s+entries/m);
-  const scan = /(?:scanned|considered)=(\d+)/g;
-  let match;
-  let scanned = inventoryMatch ? inventoryMatch[1] : "0";
-  while ((match = scan.exec(text)) !== null) scanned = match[1];
-  const change = /(?:injected|changed)=(\d+)/g;
-  let injected = "0";
-  while ((match = change.exec(text)) !== null) injected = match[1];
-  const passedMatches = [...text.matchAll(/passed=(true|false)/g)];
-  const verificationPassed = passedMatches.length
-    ? passedMatches.at(-1)[1]
-    : "n-a";
-  return { scanned, injected, verificationPassed };
+/**
+ * Each child's summary record, as a whole-line, anchored grammar. The summary is the
+ * child's FIRST stdout line: the engine never writes stdout and every repository-influenced
+ * line (drift paths, conflict messages, manifest paths) is printed after it, so the first
+ * line matching the grammar cannot be forged by repository content (RC-100, ADR-022).
+ */
+const SUMMARY_GRAMMARS = Object.freeze({
+  inventory: /^inventory: (\d+) entries \((\d+) files, (\d+) folders\)$/,
+  check: /^check-cli: scanned=(\d+) planned=(\d+) drift=(\d+) authorityConflicts=(\d+) passed=(true|false)$/,
+  apply: /^apply-cli: scanned=(\d+) planned=(\d+) changed=(\d+) inlineChanged=(\d+) metadataIndexChanged=(\d+) passed=(true|false)$/,
+  skills: /^skills-cli: considered=(\d+) changed=(\d+) unchanged=(\d+) authorityResolved=(true|false) repositoryMutated=(true|false)$/,
+});
+
+/** Mode-fixed output projection of a matched summary; `null` means the summary is absent. */
+const SUMMARY_OUTPUTS = Object.freeze({
+  inventory: (m) => ({ scanned: m ? m[1] : "0", injected: "0", verificationPassed: "n-a" }),
+  check: (m) => ({ scanned: m ? m[1] : "0", injected: "0", verificationPassed: m ? m[5] : "false" }),
+  apply: (m) => (m
+    ? { scanned: m[1], injected: m[3], verificationPassed: m[6] }
+    : { scanned: "0", injected: "0", verificationPassed: "false" }),
+  skills: (m) => ({ scanned: m ? m[1] : "0", injected: m ? m[2] : "0", verificationPassed: "n-a" }),
+});
+
+/**
+ * Derive the Action outputs from a child's stdout. Only the child's own summary line is
+ * read; stderr is never consulted. A check/apply child that printed no summary (it crashed)
+ * reports verification_passed=false, never n-a or true.
+ */
+function parseSummary(mode, stdout) {
+  const grammar = SUMMARY_GRAMMARS[mode];
+  if (!grammar) throw new Error(`no summary grammar for mode '${mode}'`);
+  let match = null;
+  for (const line of String(stdout ?? "").split("\n")) {
+    match = grammar.exec(line);
+    if (match) break;
+  }
+  return SUMMARY_OUTPUTS[mode](match);
 }
 
 module.exports = {
@@ -521,6 +529,7 @@ module.exports = {
   REPEATABLE_OPTIONS,
   VALUE_OPTIONS,
   buildInvocation,
+  hasControlChar,
   parseArgOptions,
   isWithin,
   normalizeEnvironment,

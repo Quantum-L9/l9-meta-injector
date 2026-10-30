@@ -1,13 +1,15 @@
 {
   "schema": "l9.topology-conformance/v1",
   "repository": "Quantum-L9/l9-meta-injector",
-  "statement": "Every committed Repository Model Packet bundle — inventory-only and structurally interpreted — was accepted by the bound l9-constellation-topology consumer without a translation shim.",
+  "statement": "Both committed Repository Model Packet bundles and a corpus-intelligence packet emitted by the real CLI were accepted by the bound l9-constellation-topology consumer without a translation shim.",
   "consumer": {
     "repository": "Quantum-L9/l9-constellation-topology",
-    "revision": "fe85ed919596ce628f96368430b1ae9e09af0b17",
+    "revision": "dc1374ce24315fd8df2ea41db7139a2892897c2d",
     "entrypoints": [
       "l9_constellation_topology.packets.loader.load_repository_model_bundle",
-      "l9_constellation_topology.packets.adapters.repository_model_v1.RepositoryModelV1Adapter.adapt"
+      "l9_constellation_topology.packets.adapters.repository_model_v1.RepositoryModelV1Adapter.adapt",
+      "l9_constellation_topology.packets.corpus_ingress.load_corpus_intelligence",
+      "l9_constellation_topology.packets.corpus_validator.validate_corpus_intelligence_packet"
     ],
     "adapter_packet_version": "1.1.0"
   },
@@ -15,22 +17,22 @@
     {
       "id": "inventory",
       "bundle": "fixtures/repository-model/expected-bundle",
-      "packet_id": "packet:8ff080f3fb573b61cca2772f6aed95034a14b1fbc6f52c42149ab3861dd9f057",
-      "semantic_hash": "sha256:8ff080f3fb573b61cca2772f6aed95034a14b1fbc6f52c42149ab3861dd9f057",
+      "packet_id": "packet:53c5ca165d2c34729838a4b3ac753f644c7cca0795da87f6be3198cdd85fe3d5",
+      "semantic_hash": "sha256:53c5ca165d2c34729838a4b3ac753f644c7cca0795da87f6be3198cdd85fe3d5",
       "packet_type": "l9.repository-model",
       "packet_version": "1.1.0",
       "files": [
         {
           "path": "manifest.json",
-          "content_hash": "sha256:cc541d509466f7c12c6ed9f4934e56e972f1f3dc11f903ec7f0c0bcf7a643102"
+          "content_hash": "sha256:a062d5743109622135630e30242df6fd4d30ba5447ac39badbdc7b6f0182ab6d"
         },
         {
           "path": "packet.json",
-          "content_hash": "sha256:51cef0c60e63488c38a5921589696e92ce904b08082abadcc4a1f97796b6fec1"
+          "content_hash": "sha256:2e45e5fd383f1a5396b915ec28a37b45c79e88727d854bed330a9aebf1e39b4e"
         },
         {
           "path": "receipts/validation-receipt.json",
-          "content_hash": "sha256:5dc8861bfcd515572d0945b101ff9fb67cc26970c80c5eeefdb2b9563121211f"
+          "content_hash": "sha256:1116c3bab2c870cc9fe2058cb2d1910fc2538f0efdedc34b5f3b78a6baf4bb40"
         }
       ],
       "normalized_counts": {
@@ -38,29 +40,29 @@
         "artifacts": 7,
         "capabilities": 0,
         "relationships": 7,
-        "evidence": 20,
-        "diagnostics": 6
+        "evidence": 19,
+        "diagnostics": 7
       }
     },
     {
       "id": "local-source",
       "bundle": "fixtures/local-source/expected-bundle",
-      "packet_id": "packet:d480cbb830d8ebc02e1b488bf6f13e7752120aea39900af6364dd53b8e3190ab",
-      "semantic_hash": "sha256:d480cbb830d8ebc02e1b488bf6f13e7752120aea39900af6364dd53b8e3190ab",
+      "packet_id": "packet:2040644e05442f0866888cabd56bee9b8560c926c360561eb171ba075ac5ffc1",
+      "semantic_hash": "sha256:2040644e05442f0866888cabd56bee9b8560c926c360561eb171ba075ac5ffc1",
       "packet_type": "l9.repository-model",
       "packet_version": "1.1.0",
       "files": [
         {
           "path": "manifest.json",
-          "content_hash": "sha256:5bccb5a77f37424c49d3c89f7d844b1b295692eaacff352476b0329b0d94bdb2"
+          "content_hash": "sha256:dd7dfc893bc0cd886032da3d53bc3961d78301fcd74421b2db58bfd3539ff000"
         },
         {
           "path": "packet.json",
-          "content_hash": "sha256:0fa162e4142960732368ef7c6cdd31f603a10c86e14efd75dac3432156df7a28"
+          "content_hash": "sha256:ccee904447ad62b253f516a5ded367ef8d99dcd4954b8f8f59885f683f58c8fa"
         },
         {
           "path": "receipts/validation-receipt.json",
-          "content_hash": "sha256:a02e2439e5982a95e496bd953cb38879eea9d4f36b71770d7d7ca762646e6644"
+          "content_hash": "sha256:4c9e91bb0c91d260c3a28033ebd4626cd6ba79a0ed08d47e788f4bc38705e5c2"
         }
       ],
       "normalized_counts": {
@@ -68,11 +70,20 @@
         "artifacts": 10,
         "capabilities": 0,
         "relationships": 13,
-        "evidence": 30,
-        "diagnostics": 8
+        "evidence": 29,
+        "diagnostics": 9
       }
     }
   ],
+  "corpus": {
+    "source_fixture": "fixtures/local-source/sample-source",
+    "packet_id": "packet:c5b473414ec611b076f4eefceede7d41edf26c49325e00e10ff2b818d0f97a00",
+    "semantic_hash": "sha256:c5b473414ec611b076f4eefceede7d41edf26c49325e00e10ff2b818d0f97a00",
+    "packet_type": "l9.corpus-intelligence",
+    "packet_version": "1.1.0",
+    "status": "passed",
+    "translation_shim_required": false
+  },
   "result": {
     "status": "passed",
     "translation_shim_required": false

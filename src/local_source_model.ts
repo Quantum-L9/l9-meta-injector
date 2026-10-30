@@ -23,8 +23,10 @@ import {
   LocalSourceAcquireInput,
   LocalSourceObservation,
   acquireLocalSource,
+  memberArchiveAncestry,
 } from "./local_source";
 import { LocalArchivePolicy } from "./local_archive_policy";
+import { containmentBoundary, isInsideContainer, resolveForContainment } from "./corpus_roots";
 import {
   CorpusIndex,
   NearDuplicateOptions,
@@ -103,18 +105,43 @@ export function canonicalBlockReason(observation: LocalSourceObservation): strin
     return "SOURCE_CHANGED_DURING_OBSERVATION: the source changed while it was being observed, "
       + "so no deterministic snapshot exists to emit";
   }
-  const missing = observation.inventory.records.filter(
+  // A snapshot is canonical only when every byte it claims to describe was read.
+  // Folders carry no content hash by construction, and a symlink or a special entry
+  // is observed without ever being opened; every other record must have one.
+  const unhashed = observation.inventory.records.filter(
     (record) =>
       record.content_hash === null
       && record.artifact_type !== "folder"
-      && record.unknowns.some((unknown) => unknown.startsWith("content_hash_skipped:")),
+      && !record.unknowns.some((unknown) => UNOPENED_ENTRY_UNKNOWNS.has(unknown)),
   );
-  if (missing.length > 0) {
-    return `a required content hash is missing for ${missing.length} file(s); `
-      + "raise the hash budget rather than emitting a snapshot that cannot identify its bytes";
+  const budgeted = unhashed.filter(
+    (record) => record.unknowns.some((unknown) => unknown.startsWith("content_hash_skipped:")),
+  );
+  const reasons: string[] = [];
+  if (budgeted.length > 0) {
+    reasons.push(`a required content hash is missing for ${budgeted.length} file(s); `
+      + "raise the hash budget rather than emitting a snapshot that cannot identify its bytes");
   }
-  return null;
+  const unreadable = unhashed.length - budgeted.length;
+  if (unreadable > 0) {
+    reasons.push(`the content of ${unreadable} file(s) could not be read, `
+      + "so the snapshot cannot identify every byte it describes");
+  }
+  const skippedDirs = observation.inventory.skippedDirs.length;
+  if (skippedDirs > 0) {
+    reasons.push(`${skippedDirs} director(ies) could not be listed, `
+      + "so their subtrees are absent from the snapshot");
+  }
+  const uninspected = observation.diagnostics.filter((d) => d.code === "local-source.entry_unreadable").length;
+  if (uninspected > 0) {
+    reasons.push(`${uninspected} filesystem entr(ies) could not be inspected, `
+      + "so they are absent from the snapshot");
+  }
+  return reasons.length > 0 ? reasons.join("; ") : null;
 }
+
+/** Unknowns that mark an entry observed without being opened, so it has no content hash. */
+const UNOPENED_ENTRY_UNKNOWNS: ReadonlySet<string> = new Set(["symlink_not_traversed", "special_filesystem_entry"]);
 
 /**
  * Observe a local source and build its Repository Model Packet.
@@ -236,6 +263,9 @@ function semanticProjectionFor(
     bySubject.set(assertion.subject_id, existing);
   }
 
+  // Ancestry comes from the observation's parent chain, never from splitting a
+  // path on `!/`: a physical `notes!/x.md` is inside no archive (ADR-063).
+  const ancestryByPath = memberArchiveAncestry(result.observation);
   const analysis = runSemanticAnalysis({
     // A single source has no corpus around it, so its own physical snapshot is
     // both halves of the identity: there is no multi-root source identity to
@@ -250,7 +280,7 @@ function semanticProjectionFor(
       content_hash: artifact.content_hash,
       normalized_document_id: null,
       is_archive_member: artifact.is_archive_member,
-      archive_ancestry: archiveAncestryOf(artifact.source_path),
+      archive_ancestry: [...(ancestryByPath.get(artifact.source_path) ?? [])],
       assertions: (bySubject.get(artifact.artifact_id) ?? []).map((assertion) => ({
         assertion_id: assertion.assertion_id,
         predicate: assertion.predicate,
@@ -301,15 +331,6 @@ function semanticProjectionFor(
     candidate_ids_by_artifact: Object.fromEntries(analysis.candidateIdsByArtifact),
     candidate_statement: analysis.topics.candidate_statement,
   };
-}
-
-/** Enclosing archives of a virtual member locator, outermost first. */
-function archiveAncestryOf(sourcePath: string): string[] {
-  const parts = sourcePath.split("!/");
-  if (parts.length < 2) return [];
-  const ancestry: string[] = [];
-  for (let i = 0; i < parts.length - 1; i += 1) ancestry.push(parts.slice(0, i + 1).join("!/"));
-  return ancestry;
 }
 
 // ───────────────────────────── acquisition manifest ─────────────────────────────
@@ -424,17 +445,18 @@ export function buildLocalSourceManifest(
  * the next run would then observe this run's output as if it were user content.
  */
 function resolveOutsideSource(targetPath: string, sourceRoot: string, what: string): string {
-  const absoluteTarget = path.resolve(targetPath);
-  const absoluteSource = path.resolve(sourceRoot);
-  const sourceDirectory = fs.statSync(absoluteSource).isDirectory()
-    ? absoluteSource
-    : path.dirname(absoluteSource);
-  if (absoluteTarget === sourceDirectory || absoluteTarget.startsWith(sourceDirectory + path.sep)) {
+  // Both sides are resolved the way a write would land: through every symlink,
+  // including a dangling one, from the nearest existing ancestor. A lexical
+  // comparison would let a link walk straight through this check.
+  const resolvedTarget = resolveForContainment(targetPath);
+  if (isInsideContainer(containmentBoundary(sourceRoot), resolvedTarget)) {
+    const lexical = path.resolve(targetPath);
     throw new Error(
-      `local-source: refusing to write ${what} inside the observed source tree: ${absoluteTarget}`,
+      `local-source: refusing to write ${what} inside the observed source tree: ${resolvedTarget}`
+      + (resolvedTarget === lexical ? "" : ` (reached through ${lexical})`),
     );
   }
-  return absoluteTarget;
+  return resolvedTarget;
 }
 
 /** Write the acquisition manifest to a tool-owned output location. */

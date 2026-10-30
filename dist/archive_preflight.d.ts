@@ -1,7 +1,13 @@
 import { LocalArchivePolicy } from "./local_archive_policy";
 import { ZipCentralEntry, ZipDirectory } from "./zip_reader";
 /** Codes are stable identifiers; message text may change, codes may not. */
-export type ArchiveHoldCode = "archive.path_absolute" | "archive.path_drive_absolute" | "archive.path_unc" | "archive.path_traversal" | "archive.path_nul" | "archive.path_escapes_root" | "archive.path_too_long" | "archive.path_empty" | "archive.entry_symlink" | "archive.entry_special" | "archive.entry_kind_unknown" | "archive.member_encrypted" | "archive.compression_unsupported" | "archive.duplicate_member" | "archive.path_conflict" | "archive.case_collision" | "archive.unicode_collision" | "archive.member_count_exceeded" | "archive.member_too_large" | "archive.total_uncompressed_exceeded" | "archive.compression_ratio_exceeded" | "archive.nesting_depth_exceeded" | "archive.session_budget_exceeded" | "archive.extracted_bytes_exceeded" | "archive.member_integrity_failed" | "archive.format_unreadable" | "archive.format_not_expanded";
+export type ArchiveHoldCode = "archive.path_absolute" | "archive.path_drive_absolute" | "archive.path_unc" | "archive.path_traversal" | "archive.path_nul" | "archive.path_escapes_root" | "archive.path_too_long" | "archive.path_empty" | "archive.entry_symlink" | "archive.entry_special" | "archive.entry_kind_unknown" | "archive.member_encrypted" | "archive.compression_unsupported" | "archive.duplicate_member" | "archive.path_conflict" | "archive.case_collision" | "archive.unicode_collision" | "archive.member_count_exceeded" | "archive.member_too_large" | "archive.total_uncompressed_exceeded" | "archive.compression_ratio_exceeded" | "archive.nesting_depth_exceeded" | "archive.session_budget_exceeded" | "archive.extracted_bytes_exceeded" | "archive.member_integrity_failed" | "archive.format_unreadable" | "archive.format_not_expanded"
+/**
+ * Expanding the archive would mint a virtual member locator that another
+ * record can also spell (ADR-063). Raised by local-source acquisition, never
+ * by `preflightArchive`, whose verdict depends only on the archive's bytes.
+ */
+ | "archive.locator_ambiguous";
 export interface ArchiveHold {
     code: ArchiveHoldCode;
     /** Member the violation was found on, when it is member-scoped. */
@@ -52,6 +58,15 @@ export declare function canonicalMemberPath(name: string): string;
  * than resolved by whichever one happened to be written last.
  */
 export declare function memberCollisionKey(canonicalPath: string): string;
+/**
+ * Whether a stored member name is the archive's root metadata carrier.
+ *
+ * Identity is the admission identity: the canonical path under the collision
+ * fold. Anything narrower lets a writer keep `.//.l9meta.yaml` or `.L9META.yaml`
+ * beside the `.l9meta.yaml` it adds, producing an archive its own admit then
+ * holds as a duplicate or collision on every later run.
+ */
+export declare function rootMetaMemberKind(name: string): "canonical" | "legacy" | null;
 /** Path-safety holds for one member name. Shared by ZIP preflight and TAR inventory admit. */
 export declare function pathSafetyHolds(raw: string, policy: LocalArchivePolicy): ArchiveHold[];
 export interface ArchivePreflightInput {

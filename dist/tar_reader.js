@@ -5,14 +5,35 @@ exports.peekTarRootMeta = peekTarRootMeta;
 exports.rootMetaKind = rootMetaKind;
 // tar_reader.ts — bounded ustar reader for inventory harvest and rewrite admit (ADR-049).
 // Observation expansion does not use this module (ADR-036 / ADR-046).
+const archive_preflight_1 = require("./archive_preflight");
 const tar_format_1 = require("./tar_format");
 const REGULAR = new Set(["0", "\0", ""]);
 const DIRECTORY = new Set(["5"]);
 const HOSTILE_TYPES = new Set(["1", "2", "3", "4", "6", "7", "L", "K", "x", "g", "S"]);
-function readName(header) {
-    const raw = header.subarray(0, 100);
+const POSIX_USTAR_MAGIC = Buffer.from("ustar\0", "latin1");
+const POSIX_USTAR_VERSION = Buffer.from("00", "latin1");
+/** A NUL-terminated header field, or the full width when it has no terminator. */
+function readField(header, start, width) {
+    const raw = header.subarray(start, start + width);
     const end = raw.indexOf(0);
-    return raw.subarray(0, end === -1 ? raw.length : end).toString("utf8");
+    return raw.subarray(0, end === -1 ? raw.length : end);
+}
+/**
+ * The member's path. A POSIX ustar header splits a long path into the prefix
+ * field (345, 155 bytes) and the name field, joined by '/'. GNU-magic headers
+ * (`ustar  \0`) keep atime/ctime at 345, so only the POSIX magic and version
+ * enable the join.
+ */
+function readName(header) {
+    const name = readField(header, 0, 100);
+    const posix = header.subarray(257, 263).equals(POSIX_USTAR_MAGIC)
+        && header.subarray(263, 265).equals(POSIX_USTAR_VERSION);
+    if (posix) {
+        const prefix = readField(header, 345, 155);
+        if (prefix.length > 0)
+            return Buffer.concat([prefix, Buffer.from("/"), name]).toString("utf8");
+    }
+    return name.toString("utf8");
 }
 function readTarArchive(bytes) {
     if (bytes.length < tar_format_1.TAR_BLOCK_SIZE * 2)
@@ -67,12 +88,8 @@ function peekTarRootMeta(bytes) {
     const legacy = read.members.find((m) => rootMetaKind(m.name) === "legacy");
     return legacy ? legacy.content : null;
 }
+/** Root-meta identity is the admission identity (archive_preflight owns the rule). */
 function rootMetaKind(name) {
-    const normalized = name.replace(/\\/g, "/").replace(/^\.\//, "");
-    if (normalized === ".l9meta.yaml")
-        return "canonical";
-    if (normalized === "l9meta.yaml")
-        return "legacy";
-    return null;
+    return (0, archive_preflight_1.rootMetaMemberKind)(name);
 }
 //# sourceMappingURL=tar_reader.js.map

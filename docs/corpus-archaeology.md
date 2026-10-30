@@ -45,7 +45,7 @@ corpus-out/
   corpus-snapshot.json      l9.corpus-snapshot/v1      every artifact's corpus identity
   corpus-candidates.json    l9.corpus-candidates/v1    duplicates and the three candidate classes
   readiness-evidence.json   l9.readiness-evidence/v1   signals and body-of-work counts
-  corpus-coverage.json      l9.corpus-coverage/v1      what was reached, what was not
+  corpus-coverage.json      l9.corpus-coverage/v2      what was reached, what was not
   corpus-diff.json          l9.corpus-diff/v1          against the previous snapshot, when there is one
   corpus-session.json       l9.corpus-session/v1       operational: resume state and failures
 ```
@@ -309,18 +309,23 @@ Three classes, kept apart everywhere.
 
 A container is a project candidate when it holds a **build manifest** or a **CI
 definition**. A CI definition resolves to the directory holding its
-`.github`/`.circleci`, not to the dot-directory.
+`.github`/`.circleci`, not to the dot-directory; at an archive's member root that
+directory is the archive itself (`x.zip!/`), the same container a manifest beside
+it resolves to. A container that is given no member is not a candidate.
 
 The grouping key is the identifier the manifest **body** declared — `name` in
 `package.json`, `module` in `go.mod`, `[project].name` or `[tool.poetry].name` in
-`pyproject.toml`, `[package].name` in `Cargo.toml`, `<artifactId>` in `pom.xml` —
-recorded with the line it was read from. Containers sharing a declared identifier
+`pyproject.toml`, `[package].name` in `Cargo.toml`, the `<artifactId>` directly
+under `<project>` in `pom.xml` (never a `<parent>`'s or a dependency's) — recorded
+with the line it was read from; for a JSON manifest that is the line of the
+top-level key. Containers sharing a declared identifier
 join into one candidate across roots and disks.
 
 A container with no declared identifier keys on its own directory name, which
 also crosses roots: `OldSSD::archive/widget` and `Backup::widget` join. A
-root-level container with no declared name keys on its root and joins nothing,
-because there is no name to join on that is not a mount point.
+root-level container with no declared name keys on its root, as `root:<root
+label>` — a namespace no directory name or declared identifier can enter — and
+joins nothing, because there is no name to join on that is not a mount point.
 
 Members are assigned to the **innermost** container that claims them, so a
 monorepo does not swallow its own packages.
@@ -401,6 +406,8 @@ reasoning_eligible_candidate_count
   decoded and at least one of whose members carries a readiness signal.
 
 `embedding_coverage_when_enabled` is `null` and `embedding_enabled` is `false`.
+Likewise `interpretation_enabled` is stated, and `interpretation_coverage` is `null`
+rather than a complete-looking ratio when `--no-interpret` skipped the pass (ADR-068).
 No model is called and no network request is made by any code path in this layer.
 
 ### Reasoning handoff
@@ -466,7 +473,7 @@ to what those corpora contain — which is exactly what makes them unable to ans
 two-root corpus — five archives including one nested two deep, documents across
 two dozen extensions, four project shapes, cross-root exact duplicates, two
 revisions of one plan, and three credential-shaped files — scans it cold, scans it
-warm, and writes `l9.corpus-qualification-report/v1` to
+warm, and writes `l9.corpus-qualification-report/v2` to
 `reports/corpus-real-world-qualification.json`.
 
 The report carries the measurements the guarantees do not:
@@ -475,7 +482,7 @@ The report carries the measurements the guarantees do not:
 |---|---|
 | `bytes_scanned`, `files_scanned` | what acquisition read, from the cold run |
 | `cache_hit_ratio_second_run` | the second warm run's own accounting, per layer |
-| `decoder_coverage` | decoded over eligible, plus the decoder's identity |
+| `decoder_coverage` | decoded over eligible, plus the `decoder_profiles` behind those ratios and `interpretation_enabled` (`interpretation` is `null` when that pass did not run, ADR-068) |
 | `duplicate_counts` | exact clusters, cross-root clusters, near-duplicate candidates |
 | `topic_candidate_counts`, `project_candidate_counts` | totals and the cross-root subset |
 | `reasoning_eligible_count` | candidates carrying enough decoded content to reason over |

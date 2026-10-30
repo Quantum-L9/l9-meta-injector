@@ -84,6 +84,25 @@ function isInventoryFinderComment(value) {
 function escapeXml(value) {
     return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
+const XML_ENTITIES = { lt: "<", gt: ">", amp: "&", quot: "\"", apos: "'" };
+/**
+ * Decode `<string>` text read back from `plutil -convert xml1`: the predefined
+ * XML entities and numeric character references, in one pass so `&amp;lt;`
+ * decodes to the literal text `&lt;`. Comment and tag reads share it; decoding
+ * exactly once is what keeps a re-projection from escaping `&` again.
+ */
+function unescapeXml(value) {
+    return value.replace(/&(lt|gt|amp|quot|apos|#\d+|#x[0-9a-fA-F]+);/g, (entity, name) => {
+        if (name.startsWith("#x") || name.startsWith("#X"))
+            return safeCodePoint(Number.parseInt(name.slice(2), 16), entity);
+        if (name.startsWith("#"))
+            return safeCodePoint(Number.parseInt(name.slice(1), 10), entity);
+        return XML_ENTITIES[name] ?? entity;
+    });
+}
+function safeCodePoint(code, fallback) {
+    return Number.isInteger(code) && code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : fallback;
+}
 function stringPlistXml(value) {
     return `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><string>${escapeXml(value)}</string></plist>\n`;
 }
@@ -125,10 +144,13 @@ function plistStringFromBinary(bytes) {
         (0, node_child_process_1.execFileSync)("/usr/bin/plutil", ["-convert", "xml1", file], { stdio: "pipe" });
         const xml = fs.readFileSync(file, "utf8");
         const match = xml.match(/<string>([\s\S]*?)<\/string>/);
-        return match ? match[1].replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&") : null;
+        return match ? unescapeXml(match[1]) : null;
     }
     catch {
         return null;
+    }
+    finally {
+        fs.rmSync(dir, { recursive: true, force: true });
     }
 }
 function existingComment(abs) {
@@ -147,7 +169,9 @@ function existingTags(abs) {
         fs.writeFileSync(file, bytes);
         (0, node_child_process_1.execFileSync)("/usr/bin/plutil", ["-convert", "xml1", file], { stdio: "pipe" });
         const xml = fs.readFileSync(file, "utf8");
-        return [...xml.matchAll(/<string>([\s\S]*?)<\/string>/g)].map((m) => m[1].split("\n")[0]).filter(Boolean);
+        return [...xml.matchAll(/<string>([\s\S]*?)<\/string>/g)]
+            .map((m) => unescapeXml(m[1]).split("\n")[0])
+            .filter(Boolean);
     }
     catch {
         return [];

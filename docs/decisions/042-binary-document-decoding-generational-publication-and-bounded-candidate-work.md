@@ -13,6 +13,8 @@ existed. Extends
 [ADR-041](041-corpus-source-identity-verification-class-and-partial-corpora.md)
 (split identities). None is superseded.
 
+Amended by [ADR-059](059-corpus-cache-epoch-v2-and-decoder-dialect-identity.md) (normalized document identity binds a decoder-declared dialect, and the derive stage verifies the bytes it decodes) and [ADR-066](066-generation-retention-order-and-exclusive-publisher-lock.md) (generation retention order and the exclusive publisher lock).
+
 ## Date
 
 2026-08-23

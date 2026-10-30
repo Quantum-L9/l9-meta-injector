@@ -55,4 +55,20 @@ export interface FrontMatterPatchResult extends FrontMatterInspection {
     managedKeys: string[];
 }
 export declare function inspectFrontMatterDocument(raw: string): FrontMatterInspection;
+/**
+ * The verbatim value text of every `opaque` field, keyed by field name.
+ *
+ * Opaque values never enter `inspection.meta` (ADR-035): their meaning is not
+ * established. Reconciliation still has to *see* them, or a placeholder decided
+ * without them is written over a real user value — `created: 2025-10-28T15:30:00Z`
+ * would lose to `Unknown` while its quoted spelling survives. This view carries the
+ * exact bytes as an uninterpreted string beside `meta`, never inside it.
+ */
+export declare function opaqueFieldText(raw: string, inspection: FrontMatterInspection): Record<string, string>;
+/**
+ * The existing header values a reconciler compares against: parsed `meta` plus the
+ * verbatim text of opaque fields. The two key sets are disjoint by construction.
+ * A fresh object is returned; `inspection.meta` is not modified.
+ */
+export declare function frontMatterReconciliationView(raw: string, inspection: FrontMatterInspection): Record<string, unknown>;
 export declare function patchManagedFrontMatter(raw: string, managed: Record<string, unknown>): FrontMatterPatchResult;

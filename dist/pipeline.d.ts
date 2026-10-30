@@ -36,9 +36,11 @@ export interface InlineCarrierBlock {
 /** Per-path detail for a non-injectable skip (OBS-003 / ADR-018). */
 export interface NonInjectableSkipDetail {
     path: string;
-    reason: "taxonomy_non_injectable" | "carrier_inventory_only" | "carrier_hard_skip";
+    reason: "taxonomy_non_injectable" | "carrier_inventory_only" | "carrier_hard_skip" | "carrier_inline_blocked";
     artifactType: string;
     confidence: "high" | "medium" | "low";
+    /** Present for `carrier_inline_blocked`: why the existing frontmatter cannot be patched. */
+    inlineCarrierBlock?: InlineCarrierBlock;
 }
 export interface PipelineMetadataSubject {
     path: string;

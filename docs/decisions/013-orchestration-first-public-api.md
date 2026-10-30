@@ -4,6 +4,8 @@
 
 Accepted (retrospective)
 
+Amended by [ADR-064](064-per-run-llm-adapter-scope-for-the-experimental-advanced-llm-subpath.md): the experimental `advanced/llm` subpath's adapter set by `setAdapter` is the process-global default, and each pipeline or skills run uses its own scoped adapter. No entrypoint or exported name changes.
+
 ## Date
 
 2026-07-23

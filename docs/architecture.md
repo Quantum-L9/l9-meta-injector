@@ -22,7 +22,7 @@ l9-meta-injector                  stable orchestration root
 l9-meta-injector/inventory        stable standalone inventory
 l9-meta-injector/schema           stable metadata contracts
 l9-meta-injector/advanced         experimental composition primitives
-l9-meta-injector/advanced/llm     experimental process-global adapter controls
+l9-meta-injector/advanced/llm     experimental process-global default adapter; each run uses its own scoped adapter (ADR-064)
 l9-meta-injector/repository-model stable repository model packet egress
 ```
 
@@ -102,8 +102,13 @@ compression method, exact duplicates, case- and Unicode-folded collisions, a pat
 declared as a file by one member and used as a directory by another, and a component
 longer than any filesystem stores — before any byte is written, and one violation
 holds the whole archive rather than yielding a partial view. The path-conflict rule is
-judged once after the whole directory is known, so both central-directory orders
-receive the same verdict; the reader version is `1.1.0` (ADR-046).
+judged once after the whole directory is known and under the same collision fold as
+the collision rule, so both central-directory orders and every host receive the same
+verdict. Declared sizes are claims: a member whose declared data extent does not fit
+before the central directory is refused at directory read, and a member that produces
+more or fewer bytes than it declares is an integrity hold. A Unix mode without
+file-type bits is classified by name. The reader version is `1.2.0` (ADR-046,
+ADR-061).
 `src/glob.ts` is the one pattern language for every path scope: the discovery scope
 (`--glob`, `PipelineConfig.glob`) and the authority's `inline_allow` compile through the
 same function, so the files a run chooses and the files the authority licenses are named

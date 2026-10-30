@@ -46,6 +46,15 @@ function runCli(extraArgs: string[] = []): Run {
 }
 
 describe("local-source CLI", () => {
+  it("REG-WU-043-RC-070-c: a single-root run keeps the normative l9.corpus-index/v1 with repository_model", () => {
+    const run = runCli();
+    expect(run.status, run.stderr).toBe(0);
+    const index = JSON.parse(fs.readFileSync(path.join(run.outDir, "corpus-index.json"), "utf8"));
+    expect(index.schema).toBe("l9.corpus-index/v1");
+    expect(index.repository_model).toBeDefined();
+    expect(Array.isArray(index.artifacts)).toBe(true);
+  });
+
   it("emits the bundle, the manifest and both corpus outputs", () => {
     const run = runCli();
     expect(run.status, run.stderr).toBe(0);

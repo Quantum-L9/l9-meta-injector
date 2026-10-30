@@ -92,30 +92,77 @@ function findFrontmatter(lines: string[]): [number, number] {
   return [-1, -1];
 }
 
-const FENCE = /^\s{0,3}(`{3,}|~{3,})/;
+/**
+ * How far a fence may be indented and still be one.
+ *
+ * CommonMark allows 0-3 spaces at the top level and more inside list-item
+ * content. This module has no container parser, so the bound is the one the
+ * task and label readers already accept (`CHECKBOX`, `LIST_PREFIX`): a fence the
+ * readers would otherwise see into is a fence the exclusion recognises.
+ */
+const FENCE_MAX_INDENT = 8;
+
+interface FenceLine {
+  character: "`" | "~";
+  length: number;
+  /** What follows the fence run on the line (the info string, for an opener). */
+  rest: string;
+}
+
+/** The fence run a line starts with, or null. A scan, so linear on any line. */
+function fenceLine(line: string): FenceLine | null {
+  let position = 0;
+  while (position < line.length && position <= FENCE_MAX_INDENT && /\s/.test(line[position])) position++;
+  if (position > FENCE_MAX_INDENT) return null;
+  const character = line[position];
+  if (character !== "`" && character !== "~") return null;
+  let end = position;
+  while (end < line.length && line[end] === character) end++;
+  if (end - position < 3) return null;
+  return { character, length: end - position, rest: line.slice(end) };
+}
+
+/** True when `text` holds nothing but spaces and tabs. */
+function onlySpacesAndTabs(text: string): boolean {
+  for (const character of text) {
+    if (character !== " " && character !== "\t") return false;
+  }
+  return true;
+}
 
 /**
  * Which lines sit inside a fenced code block.
  *
- * A closing fence must use the same character as the one that opened it, so a
- * ``` block containing ~~~ stays open. Frontmatter is skipped: its `---` lines
- * are not fences, and its body is read as structured values elsewhere.
+ * Delimited as CommonMark delimits them: a backtick opener whose info string
+ * carries a backtick is not an opener, and a block closes only on a run of the
+ * same character at least as long as the opener with nothing but whitespace after
+ * it — so a ```` block wrapping a ``` example, a ```js line inside a ``` block, or
+ * a ``` block containing ~~~ all stay open. An unclosed fence runs to the end of
+ * the document. Frontmatter is skipped: its `---` lines are not fences, and its
+ * body is read as structured values elsewhere.
  */
 function markFencedCode(lines: string[], frontmatterEnd: number): boolean[] {
   const fenced: boolean[] = new Array(lines.length).fill(false);
-  let fence: string | null = null;
+  let open: FenceLine | null = null;
   for (let index = 0; index < lines.length; index++) {
     if (frontmatterEnd >= 0 && index <= frontmatterEnd + 1) continue;
-    const match = FENCE.exec(lines[index]);
-    if (fence === null) {
-      if (match) {
-        fence = match[1][0];
+    const fence = fenceLine(lines[index]);
+    if (open === null) {
+      if (fence && !(fence.character === "`" && fence.rest.includes("`"))) {
+        open = fence;
         fenced[index] = true;
       }
       continue;
     }
     fenced[index] = true;
-    if (match?.[1].startsWith(fence)) fence = null;
+    if (
+      fence &&
+      fence.character === open.character &&
+      fence.length >= open.length &&
+      onlySpacesAndTabs(fence.rest)
+    ) {
+      open = null;
+    }
   }
   return fenced;
 }
@@ -383,10 +430,10 @@ function kindValue(raw: string): string | null {
  * failed and the engine retried every division of the whitespace before giving
  * up: measured at 200ms for 16,000 characters and quadrupling with each
  * doubling, so a 120 KiB line — well inside the 512 KiB interpretation limit —
- * took minutes. A lone `\r` is not a contrived input: `toLines` splits on
- * `/\r?\n/`, so a classic Mac line ending survives into what this module calls a
- * line, and that is precisely the vintage of document an archive of old plans is
- * full of.
+ * took minutes. `toLines` now treats a lone `\r` as a line ending, but that does
+ * not remove the exposure: `\u2028` and `\u2029` are not line endings (CommonMark
+ * does not split on them either) and `.` excludes them just the same, and the
+ * block reader hands this module units it did not split.
  *
  * Writing the tail `([\s\S]*)$` fixes the runtime — the anchor is reached on the
  * first attempt — and leaves the two quantifiers adjacent, which a static
@@ -439,7 +486,51 @@ function headings(view: DocumentView): Heading[] {
 /** A frontmatter mapping key. Anchored on both ends, so it cannot backtrack. */
 const FRONTMATTER_KEY = /^[A-Za-z][A-Za-z0-9_-]*$/;
 
-/** Frontmatter `key: value` scalars, in document order. */
+/**
+ * A frontmatter value without its YAML comment: the first `#` that is preceded by
+ * whitespace (or starts the value) and lies outside a quoted scalar. A quote opens
+ * a quoted scalar only where a scalar or flow-list item begins, so a mid-word
+ * apostrophe is plain text (RC-024). One left-to-right pass that remembers the last
+ * significant character, so it is linear on any input.
+ */
+function withoutYamlComment(value: string): string {
+  let quote = "";
+  let previous = "";
+  let flowDepth = 0;
+  for (let i = 0; i < value.length; i++) {
+    const char = value[i];
+    if (quote === '"') {
+      if (char === "\\") i++;
+      else if (char === '"') { quote = ""; previous = char; }
+      continue;
+    }
+    if (quote === "'") {
+      if (char === "'" && value[i + 1] === "'") i++;
+      else if (char === "'") { quote = ""; previous = char; }
+      continue;
+    }
+    if (char === "#" && (i === 0 || WHITESPACE.test(value[i - 1]))) return value.slice(0, i).trimEnd();
+    if (WHITESPACE.test(char)) continue;
+    const startsScalar = previous === "" || previous === "[" || (flowDepth > 0 && previous === ",");
+    if ((char === "'" || char === '"') && startsScalar) quote = char;
+    else if (char === "[" && startsScalar) flowDepth++;
+    else if (char === "]" && flowDepth > 0) flowDepth--;
+    previous = char;
+  }
+  return value;
+}
+
+/**
+ * A YAML block-scalar header (`|`, `>`, with optional indentation and chomping
+ * indicators). It announces a value on the following lines and is never the value.
+ */
+const BLOCK_SCALAR_HEADER = /^[|>](?:[1-9][+-]?|[+-][1-9]?)?$/;
+
+/**
+ * Frontmatter `key: value` scalars, in document order. A trailing YAML comment is
+ * not part of the value, and a key whose value is a block scalar is skipped rather
+ * than read as its header (RC-024).
+ */
 function frontmatterFields(view: DocumentView): { index: number; key: string; value: string }[] {
   const out: { index: number; key: string; value: string }[] = [];
   if (view.frontmatterStart < 0) return out;
@@ -452,7 +543,9 @@ function frontmatterFields(view: DocumentView): { index: number; key: string; va
     if (colon < 0) continue;
     const key = line.slice(0, colon).trimEnd();
     if (!FRONTMATTER_KEY.test(key)) continue;
-    out.push({ index, key: key.toLowerCase(), value: line.slice(colon + 1).trim() });
+    const value = withoutYamlComment(line.slice(colon + 1).trim());
+    if (BLOCK_SCALAR_HEADER.test(value)) continue;
+    out.push({ index, key: key.toLowerCase(), value });
   }
   return out;
 }
@@ -549,7 +642,9 @@ function draft(
  */
 export const documentStructureExtractor: Extractor = {
   id: "document-structure/v1",
-  version: "1.0.0",
+  // 1.1.0: CommonMark fence delimiting (RC-095); BOM and lone-CR aware lines (RC-096);
+  // frontmatter comments and block-scalar headers are not values (RC-024).
+  version: "1.1.0",
   subjectScope: "artifact",
   matches: isSupportedTextDocument,
   extract(input: ExtractorFileInput): AssertionDraft[] {
@@ -584,13 +679,19 @@ const CHECKBOX = /^\s{0,8}(?:[-*+]|\d{1,3}[.)])\s+\[([ xX])\]/;
  * agree about what a list marker looks like.
  */
 const TODO_LINE = /^(?:\*\*|__)?TODO(?:\*\*|__)?\s*:/;
-const BULLET = /^\s{0,3}(?:[-*+]|\d{1,3}[.)])\s+(.*)$/;
+/** A list item's marker and the whitespace after it; the item text is sliced. */
+const BULLET = /^\s{0,3}(?:[-*+]|\d{1,3}[.)])\s+/;
 const MILESTONE_LABEL = /^milestone(?: [a-z0-9.]{1,8})?$/;
 const BLOCKQUOTE_STATUS = /^\s{0,3}>\s*(?:\*\*|__)?\[?([A-Za-z]+)\]?(?:\*\*|__)?\s*(?::.*)?$/;
 /** Where a title stops saying what the document is and starts qualifying it. */
 const TITLE_SEGMENT = / [—–|] | - |[:(]/u;
 
-/** Status markers a title carries, with the reason each one counts. */
+/**
+ * Status markers a title carries, with the reason each one counts.
+ *
+ * Distinct statuses in first-seen order: `[WIP] Rollout Plan - WIP` states one
+ * status twice (bracket and suffix), which is one claim, not two.
+ */
 function titleStatuses(text: string): string[] {
   const found: string[] = [];
   for (const match of text.matchAll(/[[(]\s*([A-Za-z][A-Za-z ]{0,20}?)\s*[\])]/g)) {
@@ -607,7 +708,7 @@ function titleStatuses(text: string): string[] {
     const status = statusValue(suffix[1]);
     if (status !== null && BARE_TITLE_STATUS.has(status)) found.push(status);
   }
-  return found;
+  return [...new Set(found)];
 }
 
 /**
@@ -671,7 +772,7 @@ function milestoneSectionBullets(view: DocumentView, opener: number): { index: n
     }
     // A milestone written as a checklist item is still a milestone; the checkbox
     // marker is task syntax, not part of the milestone's text.
-    const text = plainText(bullet[1].replace(/^\[[ xX]\]\s*/, ""));
+    const text = plainText(line.slice(bullet[0].length).replace(/^\[[ xX]\]\s*/, ""));
     if (text.length > 0) out.push({ index, text });
   }
   return out;
@@ -869,7 +970,10 @@ export const LEADING_ADMONITION_UNITS = LEADING_ADMONITION_LINES;
  */
 export const workIntelligenceExtractor: Extractor = {
   id: "work-intelligence/v1",
-  version: "1.0.0",
+  // 1.1.0: CommonMark fence delimiting (RC-095); distinct title statuses
+  // (RC-099); BOM and lone-CR aware lines (RC-096); linear list-item reading (RC-094);
+  // frontmatter comments and block-scalar headers are not values (RC-024).
+  version: "1.1.0",
   subjectScope: "artifact",
   matches: isSupportedTextDocument,
   extract(input: ExtractorFileInput): AssertionDraft[] {

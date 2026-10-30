@@ -14,7 +14,8 @@ const AUTHORITY_HEADERS = [
 const BULLET_PATH = /^\s*[-*+]\s+`([^`]+)`/;
 exports.declaredAuthorityExtractor = {
     id: "declared-authority/v1",
-    version: "1.0.0",
+    // 1.1.0: BOM and lone-CR aware lines (RC-096).
+    version: "1.1.0",
     matches(sourcePath) {
         return ((0, common_1.basenameIs)(sourcePath, "AGENTS.md") ||
             (0, common_1.basenameIs)(sourcePath, "CLAUDE.md") ||
@@ -70,12 +71,31 @@ const STATUS_TERMS = [
     { object: "experimental", pattern: /\bexperimental\b/i },
     { object: "maintenance-only", pattern: /\bmaintenance[- ]only\b/i },
 ];
-/** Explicit pointers to a replacement. */
+/**
+ * Explicit pointers to a replacement.
+ *
+ * A `tail` pattern matches only its fixed prefix and the pointer is the rest of
+ * the line, taken by slice: a `\s*(.+)$` tail backtracks quadratically when a
+ * character `.` does not match follows a long whitespace run. Each prefix keeps
+ * every character the old pattern required before its tail (`replaced by` keeps
+ * one whitespace character), and a match still needs at least one character
+ * after it, as `(.+)` did. `firstReference` trims the pointer either way.
+ */
 const REPLACEMENT_PATTERNS = [
-    /\b(?:ssot\s+)?replacement\s*:\s*(.+)$/i,
-    /\breplaced\s+by\s+(.+)$/i,
-    /\buse\s+\[?([A-Za-z0-9._-]+\/[A-Za-z0-9._-]+)\]?\s+instead\b/i,
+    { pattern: /\b(?:ssot\s+)?replacement\s*:/i, tail: true },
+    { pattern: /\breplaced\s+by\s/i, tail: true },
+    { pattern: /\buse\s+\[?([A-Za-z0-9._-]+\/[A-Za-z0-9._-]+)\]?\s+instead\b/i, tail: false },
 ];
+/** The replacement pointer a line states, or null when no pattern matches it. */
+function replacementPointer(text, entry) {
+    const match = entry.pattern.exec(text);
+    if (!match)
+        return null;
+    if (!entry.tail)
+        return match[1];
+    const rest = text.slice(match.index + match[0].length);
+    return rest.length > 0 ? rest : null;
+}
 /** Self-description claims that assert a current role. */
 const ROLE_PATTERNS = [
     { object: "reference-implementation", pattern: /\bthe\s+reference\s+implementation\b/i },
@@ -97,7 +117,8 @@ function isAdmonition(line) {
 }
 exports.repositoryStatusExtractor = {
     id: "repository-status/v1",
-    version: "1.0.0",
+    // 1.1.0: BOM and lone-CR aware lines (RC-096); linear replacement pointers (RC-094).
+    version: "1.1.0",
     matches(sourcePath) {
         return (0, common_1.basenameIs)(sourcePath, "README.md");
     },
@@ -114,10 +135,10 @@ exports.repositoryStatusExtractor = {
                         drafts.push((0, common_1.declared)("repository.status", term.object, index, line));
                     }
                 }
-                for (const pattern of REPLACEMENT_PATTERNS) {
-                    const match = pattern.exec(line.replace(/^\s*>\s*/, ""));
-                    if (match) {
-                        const reference = firstReference(match[1]);
+                for (const entry of REPLACEMENT_PATTERNS) {
+                    const pointer = replacementPointer(line.replace(/^\s*>\s*/, ""), entry);
+                    if (pointer !== null) {
+                        const reference = firstReference(pointer);
                         if (reference) {
                             drafts.push((0, common_1.declared)("repository.replaced_by", reference, index, line));
                         }
@@ -149,13 +170,21 @@ const BODY_MARKERS = [
 ];
 exports.pythonRouteObservationExtractor = {
     id: "python-route-observation/v1",
-    version: "1.0.0",
+    // 1.1.0: every route decorator of a stack is recorded (RC-098); BOM and
+    // lone-CR aware lines (RC-096).
+    version: "1.1.0",
     matches(sourcePath) {
         return sourcePath.endsWith(".py");
     },
     extract(input) {
         const drafts = [];
         const lines = (0, common_1.toLines)(input.content);
+        // The line a decorator stack ends on, once found, so each decorator of the
+        // stack reuses it instead of re-skipping the stack (linear in its height).
+        let stackEnd = -1;
+        // The def whose body was already scanned: every route in a stack shares one
+        // handler, and its markers are one observation, not one per route.
+        let scannedDef = -1;
         for (let index = 0; index < lines.length; index++) {
             const decorator = ROUTE_DECORATOR.exec(lines[index]);
             if (!decorator)
@@ -163,9 +192,10 @@ exports.pythonRouteObservationExtractor = {
             const [, , verb, routePath] = decorator;
             const method = verb.toUpperCase();
             // Find the handler this decorator applies to, skipping stacked decorators.
-            let cursor = index + 1;
+            let cursor = index < stackEnd ? stackEnd : index + 1;
             while (cursor < lines.length && /^\s*@/.test(lines[cursor]))
                 cursor++;
+            stackEnd = cursor;
             const definition = cursor < lines.length ? DEF_LINE.exec(lines[cursor]) : null;
             if (!definition) {
                 // A decorator with no reachable def is not a route observation.
@@ -191,6 +221,11 @@ exports.pythonRouteObservationExtractor = {
                 authority: "source",
                 confidence: "high",
             });
+            // The rest of the stack is read by the outer loop: a later route decorator
+            // above the same def is its own route (RC-098).
+            if (scannedDef === cursor)
+                continue;
+            scannedDef = cursor;
             // Scan the handler body: from the def to the next line at or below its
             // indentation. Markers are reported as present, with no claim about what
             // their presence implies for the endpoint's behavior.
@@ -219,7 +254,6 @@ exports.pythonRouteObservationExtractor = {
                     }
                 }
             }
-            index = cursor;
         }
         return drafts;
     },

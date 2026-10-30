@@ -12,7 +12,7 @@
  *
  * Dialect: `**` followed by `/` matches zero or more directories, `**` elsewhere matches
  * across separators, `*` matches within one segment, `?` matches one non-separator
- * character, every other character is literal. Brace alternation, character classes and
+ * code point (the matchers compile with the `u` flag, ADR-058), every other character is literal. Brace alternation, character classes and
  * negation are not part of the dialect: the authority treats them as literals
  * (fail-closed, a pattern that never matches grants nothing), and the discovery scope
  * refuses them explicitly, because a scope that silently matched nothing — or
@@ -53,7 +53,7 @@ function globToRegExpSource(pattern) {
 }
 /** Case-sensitive matcher used by the repository authority (`inline_allow`). */
 function globToRegExp(pattern) {
-    return new RegExp(globToRegExpSource(pattern));
+    return new RegExp(globToRegExpSource(pattern), "u");
 }
 const UNSUPPORTED_SCOPE_SYNTAX = /[{}[\]!]/;
 const CONTROL_CHARACTER = /[\u0000-\u001F\u007F]/;
@@ -81,6 +81,13 @@ function assertDiscoveryGlob(pattern) {
     if (pattern.includes("//"))
         throw new Error(`discovery glob must not contain an empty segment: ${pattern}`);
     const segments = pattern.split("/");
+    // A trailing '/' leaves an empty final segment: the pattern names a directory, can
+    // never match a file, and would let a governed run pass over nothing (RC-010).
+    if (segments.some((segment) => segment === "")) {
+        const directory = pattern.replace(/\/+$/, "");
+        const intended = directory.endsWith("**") ? directory : `${directory}/**`;
+        throw new Error(`discovery glob must not contain an empty segment (a trailing '/' matches no file; use '${intended}'): ${pattern}`);
+    }
     if (segments.some((segment) => segment === "." || segment === "..")) {
         throw new Error(`discovery glob must not contain . or .. segments: ${pattern}`);
     }
@@ -92,7 +99,7 @@ function assertDiscoveryGlob(pattern) {
 /** Compile a validated discovery-scope glob into a whole-path matcher. */
 function compileDiscoveryGlob(pattern) {
     const validated = assertDiscoveryGlob(pattern);
-    const expression = new RegExp(globToRegExpSource(validated), "i");
+    const expression = new RegExp(globToRegExpSource(validated), "iu");
     const extMatch = /^\*\.([a-z0-9]+)$/i.exec(validated.slice(validated.lastIndexOf("/") + 1));
     return {
         pattern: validated,

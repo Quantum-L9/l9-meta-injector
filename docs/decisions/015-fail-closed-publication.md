@@ -4,6 +4,8 @@
 
 Accepted (retrospective)
 
+Amended by [ADR-070](070-publication-evidence-set-and-version-bound-owner-approval.md): the required evidence set is `npm_registry_history`, `constellation_consumer_inventory` and `distribution_owner_approval`, the owner approval must be `verified` and is never waivable, and an approval is bound to the package version by `approved_version`.
+
 ## Date
 
 2026-07-23

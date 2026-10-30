@@ -88,22 +88,29 @@ exports.DEFAULT_DECODER_BUDGET = {
     maxContainerEntries: 4096,
     maxPartBytes: 32 * 1024 * 1024,
     maxCompressionRatio: 200,
+    maxContainerUncompressedBytes: 8 * 32 * 1024 * 1024,
     maxDepth: 64,
 };
 /**
  * Identity of a normalized document.
  *
- * Bound to the exact bytes and to the decoder that read them, and to nothing
- * else. Two artifacts holding identical bytes produce one normalized document
+ * Bound to the exact bytes, to the decoder that read them and to the dialect
+ * that decoder declared for them (ADR-059), and to nothing else. Two artifacts
+ * holding identical bytes read in one dialect produce one normalized document
  * identity, which is what lets the cache serve one to both; a decoder revision
  * produces a different one, which is what stops last release's reading being
  * presented as this release's.
+ *
+ * The dialect is hashed only when the decoder declares one, so the identity of
+ * every document read by a decoder without dialects is unchanged by its
+ * existence.
  */
 function normalizedDocumentId(input) {
     return (0, repository_model_1.stableId)("normdoc", {
         content_hash: input.contentHash,
         decoder_id: input.decoderId,
         decoder_version: input.decoderVersion,
+        ...(input.dialect !== undefined ? { dialect: input.dialect } : {}),
     });
 }
 /** Identity of one block within a document. */

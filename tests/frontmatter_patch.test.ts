@@ -79,3 +79,30 @@ describe("byte-preserving managed frontmatter", () => {
     expect(result.content).toBe(raw);
   });
 });
+
+describe("DEC-RC-024 option B (ADR-057) — the patcher reads a frontmatter scalar as YAML does", () => {
+  test("DEC-RC-024-B: a mid-word apostrophe does not pull the comment into the value", () => {
+    const raw = "---\ntitle: it's fine # keep me\n---\nBody\n";
+    const inspected = inspectFrontMatterDocument(raw);
+    expect(inspected.safe).toBe(true);
+    expect(inspected.meta.title).toBe("it's fine");
+  });
+
+  test("DEC-RC-024-B: a managed patch replaces the value and preserves the comment byte-for-byte", () => {
+    const raw = "---\ntitle: it's fine # keep me\nowner: bob\n---\nBody\n";
+    const patched = patchManagedFrontMatter(raw, { title: "new" });
+    expect(patched.safe).toBe(true);
+    expect(patched.content).toBe('---\ntitle: "new" # keep me\nowner: bob\n---\nBody\n');
+    expect(patched.body).toBe("Body\n");
+    const again = patchManagedFrontMatter(patched.content, { title: "new" });
+    expect(again.content).toBe(patched.content);
+  });
+
+  test("DEC-RC-024-B: quoted values and flow items keep their '#'", () => {
+    const raw = "---\na: 'x # y' # c\nb: [p, 'q # r'] # d\n---\n";
+    const inspected = inspectFrontMatterDocument(raw);
+    expect(inspected.safe).toBe(true);
+    expect(inspected.meta.a).toBe("x # y");
+    expect(inspected.meta.b).toEqual(["p", "q # r"]);
+  });
+});

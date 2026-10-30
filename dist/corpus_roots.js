@@ -466,7 +466,12 @@ function containmentBoundary(rootPath) {
 }
 /** True when `target` is `container` or lies beneath it, both already resolved. */
 function isInsideContainer(container, target) {
-    return target === container || target.startsWith(container + path.sep);
+    // A filesystem or drive root (`/`, `C:\\`) already ends with the separator;
+    // appending another produced `//`, a prefix no path has, so a root of `/`
+    // refused nothing. Any other container gets the separator, which is what
+    // keeps `/a` from containing `/ab`.
+    const prefix = container.endsWith(path.sep) ? container : container + path.sep;
+    return target === container || target.startsWith(prefix);
 }
 /**
  * Refuse a path that lies inside any observed root.

@@ -4,6 +4,8 @@
 
 Accepted
 
+Amended by [ADR-058](058-scoped-governed-runs-and-canonical-metadata-index-ordering-validation.md) (scoped governed runs merge with the existing metadata index, and glob `?` matches one code point) and [ADR-072](072-nested-authority-discovery-exclusions.md) (item 7: nested-authority discovery skips only `.git`, `node_modules`, `.venv` and `__pycache__`).
+
 ## Date
 
 2026-09-03

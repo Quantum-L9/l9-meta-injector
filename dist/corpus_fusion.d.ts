@@ -1,7 +1,7 @@
 import type { EvidenceFamily, PairSignalKind, SemanticPair } from "./corpus_pairs";
 import type { ArtifactFeatureView } from "./corpus_semantics";
 export declare const FUSION_PROFILE_ID = "semantic-fusion/v1";
-export declare const FUSION_PROFILE_VERSION = "1.0.0";
+export declare const FUSION_PROFILE_VERSION = "1.1.0";
 export declare const TOPIC_CANDIDATE_SCHEMA = "l9.topic-candidates/v1";
 export declare const PROJECT_CANDIDATE_SCHEMA = "l9.project-candidates/v1";
 export declare const CONSOLIDATION_CANDIDATE_SCHEMA = "l9.consolidation-candidates/v1";
@@ -62,6 +62,8 @@ export interface TopicCandidate {
     semantic_signal_count: number;
     explicit_reference_count: number;
     cross_archive: boolean;
+    /** True when the members come from more than one root. */
+    cross_root: boolean;
     confidence_class: ConfidenceClass;
     ambiguity_class: string[];
     representative_keyphrases: string[];
@@ -82,6 +84,8 @@ export interface ProjectCandidate {
     open_task_count: number;
     milestone_count: number;
     cross_archive: boolean;
+    /** True when the members come from more than one root. */
+    cross_root: boolean;
     confidence_class: ConfidenceClass;
     ambiguity_class: string[];
     analysis_profile: CandidateAnalysisProfile;
@@ -95,6 +99,15 @@ export interface ConsolidationCandidate {
     supersession_assertion_ids: string[];
     project_candidate_ids: string[];
     cross_archive: boolean;
+    /** True when the members come from more than one root. */
+    cross_root: boolean;
+    /**
+     * The strongest class among the pairs inside the member set — the rule topic
+     * and project candidates use. A group with no scored pair inside it (an exact
+     * duplicate cluster blocking never paired, say) resolves to `weak` by that
+     * same rule, not by a default.
+     */
+    confidence_class: ConfidenceClass;
     content_hash_count: number;
     /** Distinct content hashes: 1 means every member is byte-identical. */
     unique_content_variant_count: number;

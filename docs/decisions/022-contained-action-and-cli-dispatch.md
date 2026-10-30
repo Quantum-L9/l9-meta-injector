@@ -1,6 +1,7 @@
 # ADR-022: Contained Action and CLI Dispatch
 
 - Status: Accepted
+- Amended by: [ADR-069](069-direct-cli-argument-strictness-and-apply-fail-on-issues.md) (decision 8) — apply refuses `fail-on-issues=false`, so the input accepts only `true` in every mode; the direct lower-level CLIs parse their arguments through one strict option core.
 - Date: 2026-08-01
 - Decision owners: Quantum-L9 repository maintainers
 - Supersedes: composite Action mode branching in `action.yml`

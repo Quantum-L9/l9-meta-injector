@@ -67,6 +67,30 @@ print(json.dumps({
 }))
 `;
 
+const CORPUS_PROBE = `
+import json, sys
+from pathlib import Path
+from l9_constellation_topology.packets.corpus_ingress import load_corpus_intelligence
+from l9_constellation_topology.packets.corpus_validator import validate_corpus_intelligence_packet
+
+ingress = load_corpus_intelligence(Path(sys.argv[1]))
+validate_corpus_intelligence_packet(ingress.packet, tuple(bundle.packet for bundle in ingress.root_bundles))
+print(json.dumps({
+    "is_canonical": ingress.is_canonical,
+    "packet_id": ingress.packet.packet_id,
+    "semantic_hash": ingress.packet.semantic_hash,
+    "packet_type": ingress.packet.packet_type,
+    "packet_version": ingress.packet.packet_version,
+}))
+`;
+
+function validateCorpusObservation(packet, observed) {
+  if (observed.is_canonical !== true) throw new Error("consumer adapted rather than accepted the canonical corpus packet");
+  for (const field of ["packet_id", "semantic_hash", "packet_type", "packet_version"]) {
+    if (observed[field] !== packet[field]) throw new Error(`consumer reported a different corpus ${field}`);
+  }
+}
+
 function fail(message) {
   console.error(`${LABEL}: FAILED: ${message}`);
   process.exit(1);
@@ -109,10 +133,12 @@ function sha256(file) {
  * a cache directory, an adapter that persists something on load. Any of those is
  * a mutation of somebody else's repository performed by this one.
  *
- * `.git` is excluded — its object store and index legitimately change when git
- * itself is asked for a revision — and so is `__pycache__`, which the
- * interpreter creates for its own reasons and which the guard below removes
- * before comparing. Everything else must be byte-identical.
+ * Only `.git` is excluded — its object store and index legitimately change when
+ * git itself is asked for a revision. `__pycache__` entries are digested like
+ * everything else: a cache that existed before the run must still be there,
+ * byte-identical, and a run-created entry of that name that is not a cache
+ * directory the guard below removed is a reported mutation. Everything else must
+ * be byte-identical.
  */
 function checkoutDigest(root) {
   const crypto = require("node:crypto");
@@ -125,7 +151,7 @@ function checkoutDigest(root) {
       return;
     }
     for (const entry of listing.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
-      if (entry.name === ".git" || entry.name === "__pycache__") continue;
+      if (entry.name === ".git") continue;
       const absolute = path.join(directory, entry.name);
       const relative = path.relative(root, absolute).split(path.sep).join("/");
       let stats;
@@ -168,8 +194,23 @@ function mutatedCheckoutPaths(before, after) {
   return [...keys].filter((key) => before[key] !== after[key]).sort(compareCodeUnits);
 }
 
-/** Remove the bytecode caches the interpreter writes for its own reasons. */
-function dropPycache(root) {
+/**
+ * Remove the bytecode cache directories this run created, and only those.
+ *
+ * Provenance, not the name, decides: a `__pycache__` directory recorded in the
+ * `before` snapshot (the entries of `checkoutDigest` taken before the run) is the
+ * consumer's own content and is never touched, wherever it lives (an in-checkout
+ * virtualenv included). Without that snapshot nothing is removed.
+ *
+ * @param {string} root
+ * @param {Record<string, string>} before
+ */
+function dropPycache(root, before) {
+  // A runtime guard for JavaScript callers: the JSDoc type promises a record, but
+  // a missing snapshot must refuse rather than let every __pycache__ look new.
+  if (!before || typeof before !== "object") {
+    throw new Error("dropPycache requires the checkout entries recorded before the run");
+  }
   const walk = (directory) => {
     let listing;
     try {
@@ -182,7 +223,10 @@ function dropPycache(root) {
       const absolute = path.join(directory, entry.name);
       if (entry.name === ".git") continue;
       if (entry.name === "__pycache__") {
-        fs.rmSync(absolute, { recursive: true, force: true });
+        const relative = path.relative(root, absolute).split(path.sep).join("/");
+        if (!Object.prototype.hasOwnProperty.call(before, `${relative}/`)) {
+          fs.rmSync(absolute, { recursive: true, force: true });
+        }
         continue;
       }
       walk(absolute);
@@ -219,10 +263,12 @@ function main() {
     if (!fs.existsSync(bundleRoot)) fail(`golden bundle missing: ${bundleRoot}`);
     const packet = JSON.parse(fs.readFileSync(path.join(bundleRoot, "packet.json"), "utf8"));
 
+    // Bytecode writes are suppressed outright, so the consumer checkout (and any
+    // cache it already holds) is not rewritten by importing it.
     const probe = cp.spawnSync(python, [scriptFile, bundleRoot], {
       cwd: checkout,
       encoding: "utf8",
-      env: { ...process.env, PYTHONPATH: sourceRoot },
+      env: { ...process.env, PYTHONPATH: sourceRoot, PYTHONDONTWRITEBYTECODE: "1" },
     });
     if (probe.status !== 0) {
       process.stderr.write(probe.stdout || "");
@@ -250,12 +296,47 @@ function main() {
       normalized_counts: observed.counts,
     });
   }
+
+  // ADR-068 changes a different wire contract from the golden Repository Model
+  // bundles. Exercise the real CLI so a green repository-model proof cannot hide
+  // a corpus packet the sibling's closed model rejects.
+  const corpusOut = path.join(scratch, "corpus-out");
+  const emitted = cp.spawnSync(process.execPath, [
+    path.join(REPO, "scripts", "local-source-cli.js"),
+    "--root", `${path.join(REPO, "fixtures", "local-source", "sample-source")}=sample-local-source`,
+    "--out", corpusOut, "--no-cache",
+  ], { cwd: REPO, encoding: "utf8" });
+  if (emitted.status !== 0) fail(`real corpus producer failed: ${emitted.stderr || emitted.stdout}`);
+  const current = JSON.parse(fs.readFileSync(path.join(corpusOut, "CURRENT.json"), "utf8"));
+  const generation = path.join(corpusOut, current.generation_ref);
+  const corpusPacket = JSON.parse(fs.readFileSync(path.join(generation, "corpus-intelligence", "packet.json"), "utf8"));
+  fs.writeFileSync(scriptFile, CORPUS_PROBE, "utf8");
+  const corpusProbe = cp.spawnSync(python, [scriptFile, generation], {
+    cwd: checkout, encoding: "utf8",
+    env: { ...process.env, PYTHONPATH: sourceRoot, PYTHONDONTWRITEBYTECODE: "1" },
+  });
+  if (corpusProbe.status !== 0) fail(`consumer rejected the real corpus packet: ${corpusProbe.stderr || corpusProbe.stdout}`);
+  let corpusObserved;
+  try {
+    corpusObserved = JSON.parse(corpusProbe.stdout.trim().split(/\r?\n/).pop());
+    validateCorpusObservation(corpusPacket, corpusObserved);
+  } catch (error) { fail(error.message); }
+  const corpus = {
+    source_fixture: "fixtures/local-source/sample-source",
+    packet_id: corpusPacket.packet_id,
+    semantic_hash: corpusPacket.semantic_hash,
+    packet_type: corpusPacket.packet_type,
+    packet_version: corpusPacket.packet_version,
+    status: "passed",
+    translation_shim_required: false,
+  };
   fs.rmSync(scratch, { recursive: true, force: true });
 
-  // The consumer's tree, after. Bytecode caches the interpreter wrote are the
-  // one permitted difference and are removed rather than tolerated, so what
+  // The consumer's tree, after. Bytecode cache directories the interpreter
+  // created despite the suppression above are the one permitted difference and
+  // are removed rather than tolerated; pre-existing caches are left alone. What
   // remains is a mutation this harness caused.
-  dropPycache(checkout);
+  dropPycache(checkout, checkoutBefore.entries);
   const checkoutAfter = checkoutDigest(checkout);
   const mutated = mutatedCheckoutPaths(checkoutBefore.entries, checkoutAfter.entries);
   // Deliberately not recorded in `docs/topology-conformance.json`. The digests
@@ -274,17 +355,20 @@ function main() {
   const evidence = {
     schema: "l9.topology-conformance/v1",
     repository: "Quantum-L9/l9-meta-injector",
-    statement: "Every committed Repository Model Packet bundle — inventory-only and structurally interpreted — was accepted by the bound l9-constellation-topology consumer without a translation shim.",
+    statement: "Both committed Repository Model Packet bundles and a corpus-intelligence packet emitted by the real CLI were accepted by the bound l9-constellation-topology consumer without a translation shim.",
     consumer: {
       repository: "Quantum-L9/l9-constellation-topology",
       revision,
       entrypoints: [
         "l9_constellation_topology.packets.loader.load_repository_model_bundle",
         "l9_constellation_topology.packets.adapters.repository_model_v1.RepositoryModelV1Adapter.adapt",
+        "l9_constellation_topology.packets.corpus_ingress.load_corpus_intelligence",
+        "l9_constellation_topology.packets.corpus_validator.validate_corpus_intelligence_packet",
       ],
       adapter_packet_version: adapterPacketVersion,
     },
     subjects,
+    corpus,
     result: {
       status: "passed",
       translation_shim_required: false,
@@ -312,4 +396,4 @@ function main() {
 // toolchain, and a guard nothing exercises is a guard nobody knows is broken.
 if (require.main === module) main();
 
-module.exports = { checkoutDigest, dropPycache, mutatedCheckoutPaths };
+module.exports = { checkoutDigest, dropPycache, mutatedCheckoutPaths, validateCorpusObservation };

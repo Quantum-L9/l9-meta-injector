@@ -23,7 +23,7 @@ export declare const TEXT_DECODER_ID = "utf8-text-decoder";
 export declare const TEXT_DECODER_VERSION = "1.0.0";
 /** Decoder that reads a build manifest's declared name out of its body. */
 export declare const MANIFEST_DECODER_ID = "manifest-identifier-reader";
-export declare const MANIFEST_DECODER_VERSION = "1.0.0";
+export declare const MANIFEST_DECODER_VERSION = "1.1.0";
 export interface CorpusScanInput {
     roots: readonly CorpusRootSpec[];
     producerVersion: string;

@@ -25,11 +25,17 @@ import { canonicalCorpusJson } from "./corpus_analysis";
 import { compareCodePoints } from "./ordering";
 import type { CorpusCacheStats } from "./corpus_cache";
 import type { CoverageRatio, FormatCount } from "./corpus_coverage";
-import { TEXT_DECODER_ID, TEXT_DECODER_VERSION } from "./corpus_scan";
 import type { CorpusScanResult } from "./corpus_scan";
 
-/** Schema of the real-corpus qualification report. */
-export const CORPUS_QUALIFICATION_SCHEMA = "l9.corpus-qualification-report/v1";
+/**
+ * Schema of the real-corpus qualification report.
+ *
+ * v2 (ADR-068): `decoder_coverage` names every decoder profile the run used in
+ * `decoder_profiles` instead of one stale text-decoder identity, and states
+ * `interpretation_enabled` with a null `interpretation` ratio when the pass did
+ * not run.
+ */
+export const CORPUS_QUALIFICATION_SCHEMA = "l9.corpus-qualification-report/v2";
 
 /** One root, named by identity alone. */
 export interface QualificationRoot {
@@ -40,12 +46,19 @@ export interface QualificationRoot {
   source_revision: string;
 }
 
-/** What the decoders opened, and under which decoder identity. */
+/** What the decoders opened, and under which decoder identities. */
 export interface DecoderCoverage {
-  text_decoder_id: string;
-  text_decoder_version: string;
+  /**
+   * `id@version` of every decoder the run could decode with, sorted — the run's
+   * own `snapshot.analysis.document_decoder_profiles`. The ratios below span
+   * every one of them, so no single decoder is named as their identity.
+   */
+  decoder_profiles: string[];
   normalized_document: CoverageRatio;
-  interpretation: CoverageRatio;
+  /** Whether the interpretation pass ran. */
+  interpretation_enabled: boolean;
+  /** Null when interpretation did not run, rather than a ratio over nothing. */
+  interpretation: CoverageRatio | null;
   lexical_analysis: CoverageRatio;
   embedding_when_enabled: CoverageRatio | null;
   embedding_enabled: boolean;
@@ -238,9 +251,12 @@ export function buildCorpusQualificationReport(
   const handoff = coverage.reasoning_handoff;
   const profile = cold.candidates.analysis_profile;
 
+  // From the root-relative basename, by the rule the scan itself uses: the root
+  // label is presentation, and a dot in it must not become an extension. An
+  // archive member `x.zip!/README` has the basename `README`.
   const extensions = new Set<string>();
   for (const artifact of cold.snapshot.artifacts) {
-    const basename = artifact.corpus_path.split("/").pop() ?? "";
+    const basename = artifact.root_relative_path.split("/").pop() ?? "";
     const dot = basename.lastIndexOf(".");
     extensions.add(dot > 0 ? basename.slice(dot).toLowerCase() : "");
   }
@@ -290,9 +306,9 @@ export function buildCorpusQualificationReport(
     files_scanned: cold.scanned.files,
     cache_hit_ratio_second_run: secondRunCache(warm.cacheStats),
     decoder_coverage: {
-      text_decoder_id: TEXT_DECODER_ID,
-      text_decoder_version: TEXT_DECODER_VERSION,
+      decoder_profiles: [...cold.snapshot.analysis.document_decoder_profiles].sort(compareCodePoints),
       normalized_document: coverage.normalized_document_coverage,
+      interpretation_enabled: coverage.interpretation_enabled,
       interpretation: coverage.interpretation_coverage,
       lexical_analysis: coverage.lexical_analysis_coverage,
       embedding_when_enabled: coverage.embedding_coverage_when_enabled,

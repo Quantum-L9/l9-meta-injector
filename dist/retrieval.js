@@ -48,9 +48,14 @@ const encoding_1 = require("./encoding");
 const discovery_contracts_1 = require("./discovery_contracts");
 const ordering_1 = require("./ordering");
 const glob_1 = require("./glob");
-/** Injector-generated adjacent artifacts must never be rediscovered as inputs. */
+const metadata_index_1 = require("./metadata_index");
+/**
+ * Injector-generated adjacent artifacts must never be rediscovered as inputs. That
+ * includes the `--normalize-filenames` sidecar, which normalizeFilenameWithLog writes
+ * beside the file inside the scanned tree (RC-016).
+ */
 function isGeneratedArtifact(name) {
-    return name.endsWith(".inject.log") || name.endsWith(".l9meta.yaml");
+    return name.endsWith(".inject.log") || name.endsWith(".l9meta.yaml") || name.endsWith(".normalize.log.yaml");
 }
 function toPosix(value) {
     return value.split(path.sep).join("/");
@@ -191,6 +196,15 @@ function discoverFiles(root, glob, opts = {}) {
                 else {
                     record(ledger, rel, "file", "glob_filtered", `file does not match discovery glob ${scope.pattern}`, stat.size);
                 }
+                continue;
+            }
+            // A governed file the metadata index cannot represent (a control character
+            // in its path, or a path past the schema's length) is held here, with the
+            // existing blocking disposition, so check reports it and apply refuses at
+            // the discovery gate rather than the producer throwing (DEC-RC-013 B).
+            const indexProblem = (0, metadata_index_1.metadataIndexPathProblem)(rel);
+            if (indexProblem !== null) {
+                record(ledger, rel, "file", "unsupported_entry", indexProblem, stat.size);
                 continue;
             }
             const strategy = (0, comment_1.resolveStrategy)(full, "");

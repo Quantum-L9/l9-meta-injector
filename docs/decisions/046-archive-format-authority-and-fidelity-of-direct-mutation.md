@@ -9,6 +9,8 @@ may open admitted ZIP and TAR containers to upsert a root `.l9meta.yaml` member.
 Observation expansion remains ZIP-only; TAR is still never expanded by `local-source`
 or `localFiles`.
 
+Amended by [ADR-061](061-archive-admission-hardening-and-archive-reader-1-2-0.md): ZIP admission bounds declared extents and produced sizes, folds file/directory conflicts by collision key, and moves the archive reader to `1.2.0`.
+
 ## Date
 
 2026-09-02

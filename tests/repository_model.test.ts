@@ -172,10 +172,21 @@ describe("repository model evidence discipline", () => {
   it("derives repository facts only from observed paths", () => {
     const repository = observeSample().payload.repositories[0];
     expect(repository.languages).toEqual(["Python", "TypeScript"]);
-    expect(repository.package_managers).toEqual(["npm"]);
+    // package.json is a shared manifest with no lockfile beside it: no manager is
+    // derivable, and the gap is reported rather than guessed (ADR-031, ADR-062).
+    expect(repository.package_managers).toEqual([]);
     expect(repository.workflows).toEqual([".github/workflows/ci.yml"]);
     expect(repository.adr_refs).toEqual(["docs/decisions/adr-001-example.md"]);
     expect(repository.governance_refs).toEqual(["CODEOWNERS"]);
+  });
+
+  it("REG-WU-029-RC-034-c: reports the sample repository's package.json as unsupported package-manager evidence", () => {
+    const packet = observeSample();
+    expect(packet.payload.diagnostics.some(
+      (d) => d.code === "unsupported-by-evidence"
+        && d.details?.field === "package_managers"
+        && d.details?.source_path === "package.json",
+    )).toBe(true);
   });
 
   it("does not resolve a shared manifest filename to a guessed package manager", () => {
@@ -432,6 +443,16 @@ describe("topology conformance evidence", () => {
     expect(evidence.result.translation_shim_required).toBe(false);
   });
 
+  it("also records canonical acceptance of the real CLI corpus packet", () => {
+    expect(evidence.corpus.packet_type).toBe("l9.corpus-intelligence");
+    expect(evidence.corpus.packet_version).toBe("1.1.0");
+    expect(evidence.corpus.packet_id).toMatch(/^packet:[0-9a-f]{64}$/);
+    expect(evidence.corpus.semantic_hash).toBe(`sha256:${evidence.corpus.packet_id.slice(7)}`);
+    expect(evidence.corpus.status).toBe("passed");
+    expect(evidence.corpus.translation_shim_required).toBe(false);
+    expect(evidence.consumer.entrypoints).toContain("l9_constellation_topology.packets.corpus_ingress.load_corpus_intelligence");
+  });
+
   it("stays bound to every golden bundle it describes", () => {
     // The record carries one subject per committed bundle. Reading only the first
     // would let a second bundle drift unnoticed, which is exactly what happened
@@ -480,5 +501,21 @@ describe("topology conformance evidence", () => {
     expect(packet.payload.relationships.some(
       (edge: { edge_type: string }) => edge.edge_type === "DERIVED_FROM")).toBe(true);
     expect(packet.source_snapshot.revision).toMatch(/^fs:sha256:[a-f0-9]{64}$/);
+  });
+});
+
+describe("WU-081 repository model semantic unknowns", () => {
+  test("REG-WU-081-RC-060-RC060-c: a pipeline-annotated doc carries no harvested_type before or after live annotation", () => {
+    const root = scratch("rc060");
+    fs.writeFileSync(path.join(root, "guide.md"), "---\nartifact_type: doctrine\ntitle: Guide\n---\n# Guide\n");
+    const observe = (): RepositoryModelPacket => observeRepositoryModel({
+      root,
+      repositoryName: "rc060",
+      sourceRevision: REVISION,
+      producerVersion: PRODUCER_VERSION,
+    });
+    expect(canonicalJson(observe())).not.toContain("harvested_type");
+    inventoryTree({ root, outDir: path.join(scratch("rc060-out"), "out"), dryRun: false, folderSidecars: false, now: "2026-09-11T12:00:00.000Z" });
+    expect(canonicalJson(observe())).not.toContain("harvested_type");
   });
 });

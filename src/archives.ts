@@ -15,6 +15,7 @@ import {
   LEGACY_EXTRACTION_OWNER_FILE,
   LOCAL_FILES_EXTRACTION_SCHEMA,
   hasLegacyExtractionOwnership,
+  readExtractionOwnershipMarker,
 } from "./local_source";
 import { canonicalMemberPath } from "./archive_preflight";
 import {
@@ -27,6 +28,7 @@ import type { LocalArchivePolicy } from "./local_archive_policy";
 import {
   ZipBudgetExceededError,
   ZipFormatError,
+  ZipSizeMismatchError,
   readZipCentralDirectory,
   streamZipMember,
 } from "./zip_reader";
@@ -82,6 +84,9 @@ function expectedArchiveHoldReason(error: unknown): string | null {
   if (error instanceof ArchiveIntegrityError) return `archive.integrity_failed: ${error.message}`;
   if (error instanceof ArchiveExecutionHeldError) return `archive.resource_refused: ${error.message}`;
   if (error instanceof ZipBudgetExceededError) return `archive.resource_refused: ${error.message}`;
+  // Produced bytes contradicting the declared size is an integrity failure, like
+  // a CRC mismatch; it subclasses ZipFormatError, so it is tested first (ADR-061).
+  if (error instanceof ZipSizeMismatchError) return `archive.integrity_failed: ${error.message}`;
   if (error instanceof ZipFormatError) return `archive.format_unreadable: ${error.message}`;
   return null;
 }
@@ -133,9 +138,10 @@ interface ExtractionOwnershipV2 {
 
 function readExtractionOwnershipV2(directory: string): ExtractionOwnershipV2 | null {
   try {
-    const raw = JSON.parse(
-      fs.readFileSync(path.join(directory, LEGACY_EXTRACTION_OWNER_FILE), "utf8"),
-    ) as Partial<ExtractionOwnershipV2>;
+    // Untrusted source content with destructive consequence: read only through the
+    // gated reader (verified regular, non-symlink, bounded, non-blocking).
+    const raw = readExtractionOwnershipMarker(directory) as Partial<ExtractionOwnershipV2> | null;
+    if (raw === null || typeof raw !== "object") return null;
     if (raw.schema !== LOCAL_FILES_EXTRACTION_SCHEMA || raw.owner !== EXTRACTION_OWNER_ID) return null;
     if (typeof raw.archive !== "string" || raw.archive.length === 0) return null;
     if (typeof raw.archive_sha256 !== "string" || !/^sha256:[0-9a-f]{64}$/.test(raw.archive_sha256)) return null;

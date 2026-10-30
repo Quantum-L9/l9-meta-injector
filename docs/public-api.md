@@ -16,7 +16,7 @@
 | `l9-meta-injector/inventory` | stable | Standalone inventory and duplicate analysis |
 | `l9-meta-injector/schema` | stable | Metadata constants, guards, coercion, and MetaV3 construction |
 | `l9-meta-injector/advanced` | experimental | Low-level deterministic composition primitives |
-| `l9-meta-injector/advanced/llm` | experimental | Process-global LLM adapter controls |
+| `l9-meta-injector/advanced/llm` | experimental | Process-global default LLM adapter controls; each run uses its own scoped adapter (ADR-064) |
 | `l9-meta-injector/repository-model` | stable | Deterministic `l9.repository-model` packet construction, validation, and bundle emission |
 
 ## Root contract
@@ -27,7 +27,7 @@ The root exposes `runPipelineAsync` and `runSkillsPipelineAsync` plus shared con
 
 A caller composing low-level primitives must own orchestration order, body-preservation verification, coverage accounting, skipped-input handling, reconciliation logs, error propagation, metrics, output sequencing, and persisted-report completeness. The advanced surface does not silently recreate the pipeline.
 
-The LLM adapter is process-global. Multi-tenant or concurrent callers must isolate processes or serialize adapter changes.
+`setAdapter` and `resetAdapter` control the process-global default LLM adapter. Each `runPipelineAsync` and `runSkillsPipelineAsync` run uses its own scoped adapter (ADR-064), so concurrent runs in one process do not share an adapter, endpoint, credential or metrics collector; a skills run with the LLM enabled and incomplete credentials opens no scope and consults the default. Installing an adapter with `setAdapter` from inside a running pipeline does not take effect for that run.
 
 ## Repository model contract
 

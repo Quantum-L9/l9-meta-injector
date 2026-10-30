@@ -9,6 +9,8 @@ harvest existing meta, emit three clocks, and write adjacent sidecars and admitt
 archive members. The identity fields on those carriers are no longer stamped with
 inventory-mode constants.
 
+Item 5 amended by [ADR-065](065-inventory-content-hash-scope-versus-duplicate-cluster-byte-equality.md): inventory `content_hash` excludes the whole front-matter block, and a duplicate cluster means same carrier-free content.
+
 ## Date
 
 2026-10-04

@@ -61,4 +61,5 @@ export declare class HttpJsonEmbeddingProvider implements EmbeddingProvider {
     /** The revision the server reported, if the operator did not supply one. */
     get reportedRevision(): string | null;
     embed(text: string): Promise<EmbeddingResult>;
+    private exchange;
 }

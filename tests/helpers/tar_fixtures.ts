@@ -26,6 +26,10 @@ export interface TarEntrySpec {
   declaredSize?: number;
   /** Corrupt the header checksum. */
   badChecksum?: boolean;
+  /** POSIX ustar prefix field (offset 345, 155 bytes, NUL-terminated only when shorter). */
+  prefix?: string | Buffer;
+  /** Write the GNU magic `ustar  \0` instead of POSIX `ustar\0` + `00`. */
+  gnuMagic?: boolean;
 }
 
 function octal(value: number, width: number): string {
@@ -45,8 +49,16 @@ export function tarEntry(spec: TarEntrySpec): Buffer {
   header.write("        ", 148);
   header.write(spec.type ?? "0", 156);
   if (spec.linkName !== undefined) header.write(spec.linkName, 157, 100, "utf8");
-  header.write("ustar\0", 257);
-  header.write("00", 263);
+  if (spec.gnuMagic) {
+    header.write("ustar  \0", 257, "latin1");
+  } else {
+    header.write("ustar\0", 257);
+    header.write("00", 263);
+  }
+  if (spec.prefix !== undefined) {
+    const prefix = Buffer.isBuffer(spec.prefix) ? spec.prefix : Buffer.from(spec.prefix, "utf8");
+    prefix.copy(header, 345, 0, Math.min(prefix.length, 155));
+  }
   let sum = 0;
   for (const byte of header) sum += byte;
   if (spec.badChecksum) sum += 1;

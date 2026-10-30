@@ -10,12 +10,12 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { createHash } from "node:crypto";
 import { findFiles } from "./retrieval";
-import { inspectFrontMatterDocument, patchManagedFrontMatter } from "./frontmatter_patch";
+import { frontMatterReconciliationView, inspectFrontMatterDocument, patchManagedFrontMatter } from "./frontmatter_patch";
 import { MetaRecord, UNKNOWN, FieldDiff } from "./schema";
 import { assistField, isGoodValue, hasUseWhenSignal, DEFAULT_ASSIST_CONFIG } from "./assist";
 import type { AssistConfig } from "./assist";
 import { buildMaterialityPrompt, parseMaterialityReply } from "./materiality";
-import { getAdapter, makeOpenAIAdapter, setAdapter, resetAdapter } from "./llm";
+import { getAdapter, localAdapter, makeOpenAIAdapter, runWithAdapter } from "./llm";
 import { isSkillArtifactPath, buildOmitMatcher } from "./omit";
 import { MetricsCollector, MetricsSnapshot } from "./metrics";
 import { inspectRepositoryAuthority } from "./authority_scan";
@@ -115,7 +115,8 @@ function parseExistingFrontMatter(raw: string): { meta: MetaRecord; body: string
       issue: `${inspected.issue?.code ?? "FRONTMATTER_UNSAFE"}: ${inspected.issue?.message ?? "unsafe header"}`,
     };
   }
-  return { meta: inspected.meta, body: inspected.body, hadFrontMatter: inspected.hadFrontMatter };
+  // Opaque values (e.g. `description: Use when: x`) are existing values, not missing ones.
+  return { meta: frontMatterReconciliationView(raw, inspected), body: inspected.body, hadFrontMatter: inspected.hadFrontMatter };
 }
 
 function parseSignalList(v: unknown): string[] {
@@ -231,14 +232,9 @@ async function processSkillFile(
   const didChange = diffs.some((d) => d.action === "add" || d.action === "revise");
   if (!didChange) return { result: { sourcePath: abs, relativePath: rel, changed: false, diffs } };
 
-  // dry-run is a read-only preview: report the intended change, plan no mutation.
-  if (config.dryRun) {
-    if (config.verbose) {
-      process.stderr.write(`[l9-meta-injector] skills: ${rel} → ${diffs.map((d) => d.field).join(",")}\n`);
-    }
-    return { result: { sourcePath: abs, relativePath: rel, changed: true, diffs } };
-  }
-
+  // The real run's eligibility filters run in both modes, so a dry-run preview reports
+  // exactly the result the real run would (RC-025). Both are pure: the discard rule
+  // reads the plan, and patchManagedFrontMatter is a string function that writes nothing.
   if (!hadFrontMatter && !next.description) {
     return { result: { sourcePath: abs, relativePath: rel, changed: false, diffs: [] } };
   }
@@ -252,6 +248,11 @@ async function processSkillFile(
   }
   if (config.verbose) {
     process.stderr.write(`[l9-meta-injector] skills: ${rel} → ${diffs.map((d) => d.field).join(",")}\n`);
+  }
+
+  // dry-run is a read-only preview: report the intended change, plan no mutation.
+  if (config.dryRun) {
+    return { result: { sourcePath: abs, relativePath: rel, changed: true, diffs } };
   }
   // Route the protected write through the governed transaction rather than a direct
   // fs.writeFileSync. CAS fields come from the exact bytes observed at plan time.
@@ -268,16 +269,23 @@ async function processSkillFile(
 
 export async function runSkillsPipelineAsync(config: SkillsPipelineConfig): Promise<SkillsPipelineResult> {
   const metrics = new MetricsCollector();
+  // The run's adapter is scoped to this run (ADR-064, RC-018) and the process-global
+  // adapter is never changed. Complete credentials scope an OpenAI adapter; a disabled
+  // LLM scopes the local adapter; llmEnabled without complete credentials opens no scope,
+  // so the adapter the caller installed with setAdapter is the one consulted.
   if (config.llmEnabled && config.llmBaseUrl && config.llmApiKey && config.llmModel) {
-    setAdapter(makeOpenAIAdapter({
+    const adapter = makeOpenAIAdapter({
       baseUrl: config.llmBaseUrl, apiKey: config.llmApiKey, model: config.llmModel,
       onDiagnostic: metrics.onLlmDiagnostic,
       allowInsecure: config.llmAllowInsecure,
-    }));
-  } else if (!config.llmEnabled) {
-    resetAdapter();
+    });
+    return runWithAdapter(adapter, () => runSkillsPipelineInScope(config, metrics));
   }
+  if (!config.llmEnabled) return runWithAdapter(localAdapter, () => runSkillsPipelineInScope(config, metrics));
+  return runSkillsPipelineInScope(config, metrics);
+}
 
+async function runSkillsPipelineInScope(config: SkillsPipelineConfig, metrics: MetricsCollector): Promise<SkillsPipelineResult> {
   const root = path.resolve(config.root);
   fs.mkdirSync(config.outDir, { recursive: true });
 

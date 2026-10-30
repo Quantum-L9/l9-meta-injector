@@ -426,11 +426,33 @@ export function buildReasoningEvidencePacks(input: BuildPacksInput): ReasoningEv
     const selected = members.slice(0, budget.maxArtifactsPerPack);
     const artifactsOmitted = members.length - selected.length;
 
+    // One budget for every variable-length field the pack carries: each kept
+    // assertion's object, source path and excerpt, and every entry of the
+    // per-artifact lists. Identity fields (ids, paths of the artifacts, hashes,
+    // archive ancestry), the complete member list and the relationship context
+    // are fixed overhead and are not charged. Items are charged in the selection
+    // priority's bands — conflicts, then supersession and references, then
+    // titles and headings, then work signals — across all selected artifacts,
+    // so one artifact's work signals cannot starve another's conflict. Every
+    // item left out, by any rule, adds its original length to
+    // `characters_omitted`.
     let usedCharacters = 0;
     let excerptsOmitted = 0;
     let charactersOmitted = 0;
     const coverageGaps: string[] = [];
-    const artifacts: PackArtifact[] = [];
+
+    interface ChargeItem {
+      band: number;
+      artifact: number;
+      kind: number;
+      index: number;
+      charge: number;
+      original: number;
+      onKeep: () => void;
+      onDrop: () => void;
+    }
+    const items: ChargeItem[] = [];
+    const builders: (() => PackArtifact)[] = [];
 
     for (const artifactId of selected) {
       const view = byId.get(artifactId);
@@ -438,50 +460,120 @@ export function buildReasoningEvidencePacks(input: BuildPacksInput): ReasoningEv
         coverageGaps.push(`no feature view for ${artifactId}`);
         continue;
       }
+      const artifactIndex = builders.length;
       const all = [...(input.assertionsByArtifact.get(artifactId) ?? [])].sort(
         (a, b) => assertionPriority(a.predicate) - assertionPriority(b.predicate)
           || compareCodePoints(a.predicate, b.predicate)
           || compareCodePoints(a.assertion_id, b.assertion_id),
       );
-      const kept: PackAssertion[] = [];
-      for (const assertion of all) {
-        if (kept.length >= budget.maxExcerptsPerArtifact) {
-          excerptsOmitted += 1;
-          continue;
-        }
-        const excerpt = truncate(assertion.evidence_excerpt, budget.maxExcerptCharacters);
-        if (usedCharacters + excerpt.text.length > budget.maxTotalPackCharacters) {
-          excerptsOmitted += 1;
-          charactersOmitted += excerpt.text.length;
-          continue;
-        }
-        usedCharacters += excerpt.text.length;
-        charactersOmitted += excerpt.omitted;
-        kept.push({ ...assertion, evidence_excerpt: excerpt.text });
-      }
       if (all.length === 0) coverageGaps.push(`no assertions recorded for ${artifactId}`);
 
-      const titles = view.normalized_title_tokens;
-      artifacts.push({
+      const assertionLength = (assertion: PackAssertion): number =>
+        assertion.object.length + assertion.source_path.length + assertion.evidence_excerpt.length;
+      const keptExcerpts: (PackAssertion | null)[] = [];
+      all.forEach((assertion, position) => {
+        // The per-artifact cap is applied first, in priority order.
+        if (position >= budget.maxExcerptsPerArtifact) {
+          excerptsOmitted += 1;
+          charactersOmitted += assertionLength(assertion);
+          return;
+        }
+        const excerpt = truncate(assertion.evidence_excerpt, budget.maxExcerptCharacters);
+        const slot = keptExcerpts.length;
+        keptExcerpts.push(null);
+        items.push({
+          band: assertionPriority(assertion.predicate),
+          artifact: artifactIndex,
+          kind: 0,
+          index: position,
+          charge: assertion.object.length + assertion.source_path.length + excerpt.text.length,
+          original: assertionLength(assertion),
+          onKeep: () => {
+            charactersOmitted += excerpt.omitted;
+            keptExcerpts[slot] = { ...assertion, evidence_excerpt: excerpt.text };
+          },
+          onDrop: () => {
+            excerptsOmitted += 1;
+          },
+        });
+      });
+
+      // The list fields, each in its priority band. Entries beyond a field's
+      // own cap are left out as well, and counted the same way.
+      const listField = (
+        band: number,
+        kind: number,
+        values: readonly string[],
+        cap = Number.POSITIVE_INFINITY,
+      ): (() => string[]) => {
+        const kept: boolean[] = values.map(() => false);
+        values.forEach((value, position) => {
+          if (position >= cap) {
+            charactersOmitted += value.length;
+            return;
+          }
+          items.push({
+            band,
+            artifact: artifactIndex,
+            kind,
+            index: position,
+            charge: value.length,
+            original: value.length,
+            onKeep: () => {
+              kept[position] = true;
+            },
+            onDrop: () => undefined,
+          });
+        });
+        return () => values.filter((_, position) => kept[position] === true);
+      };
+      const statuses = listField(0, 1, view.statuses);
+      const supersessions = listField(1, 2, view.supersession_declarations.map(
+        (declaration) => `${declaration.predicate} ${declaration.object}`,
+      ));
+      const references = listField(1, 3, view.normalized_reference_targets);
+      const dependencies = listField(1, 4, view.declared_dependencies);
+      const titles = listField(2, 5, view.normalized_title_tokens);
+      const headings = listField(2, 6, view.normalized_heading_tokens, 12);
+      const kinds = listField(4, 7, view.kinds);
+      const tasks = listField(4, 8, view.task_terms, 12);
+      const milestones = listField(4, 9, view.milestone_terms, 12);
+
+      builders.push(() => ({
         artifact_id: view.artifact_id,
         source_path: view.corpus_path,
         content_hash: view.content_hash,
         archive_ancestry: view.archive_ancestry,
         normalized_document_id: view.normalized_document_id,
-        titles,
-        selected_headings: view.normalized_heading_tokens.slice(0, 12),
-        statuses: view.statuses,
-        work_kinds: view.kinds,
-        tasks_summary: { open_terms: view.task_terms.slice(0, 12) },
-        milestones: view.milestone_terms.slice(0, 12),
-        explicit_dependencies: view.declared_dependencies,
-        explicit_references: view.normalized_reference_targets,
-        supersession_assertions: view.supersession_declarations.map(
-          (declaration) => `${declaration.predicate} ${declaration.object}`,
-        ),
-        excerpts: kept,
-      });
+        titles: titles(),
+        selected_headings: headings(),
+        statuses: statuses(),
+        work_kinds: kinds(),
+        tasks_summary: { open_terms: tasks() },
+        milestones: milestones(),
+        explicit_dependencies: dependencies(),
+        explicit_references: references(),
+        supersession_assertions: supersessions(),
+        excerpts: keptExcerpts.filter((entry): entry is PackAssertion => entry !== null),
+      }));
     }
+
+    items.sort(
+      (a, b) => a.band - b.band
+        || a.artifact - b.artifact
+        || a.kind - b.kind
+        || a.index - b.index,
+    );
+    for (const item of items) {
+      if (usedCharacters + item.charge > budget.maxTotalPackCharacters) {
+        charactersOmitted += item.original;
+        item.onDrop();
+        continue;
+      }
+      usedCharacters += item.charge;
+      item.onKeep();
+    }
+    const artifacts: PackArtifact[] = builders.map((build) => build());
 
     const memberSet = new Set(members);
     const relevantPairs = input.pairs.filter(

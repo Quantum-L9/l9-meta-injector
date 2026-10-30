@@ -481,3 +481,58 @@ describe("verifySemanticFoundation", () => {
     expect(cli.stderr).toMatch(/does not match bound revision/);
   });
 });
+
+describe("verifySemanticFoundation refuses ambiguous ledger claims (WU-027, RC-036)", () => {
+  const ID = "l9.vocabulary/global@1";
+  const sha = (body: string) => `sha256:${crypto.createHash("sha256").update(body, "utf8").digest("hex")}`;
+  const binding = (ledgers: Record<string, string>) => ({
+    repository: "Quantum-L9/.github",
+    revision: "31b4f4f699becb1437b4804c308650bbad60c00e",
+    release: "v3.6.0",
+    admission: "candidate" as const,
+    ledgers,
+  });
+  const MATCHING = `schema: test\nartifact_id: ${ID}\nterms: [bound]\n`;
+  const STALE = `schema: test\nartifact_id: ${ID}\nterms: [redefined]\n`;
+
+  function semanticsWith(files: Record<string, string>): { root: string; dir: string } {
+    const root = tempRoot();
+    const dir = path.join(root, "semantics");
+    fs.mkdirSync(dir);
+    for (const [name, body] of Object.entries(files)) fs.writeFileSync(path.join(dir, name), body);
+    return { root, dir };
+  }
+
+  test("REG-WU-027-RC-036-a: a cited id claimed twice is refused even when the later claimant matches", () => {
+    const { root, dir } = semanticsWith({ "a-vocabulary-stale.yaml": STALE, "vocabulary.yaml": MATCHING });
+    const conflicts = verifySemanticFoundation(binding({ [ID]: sha(MATCHING) }), root);
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0].code).toBe("META_SEMANTIC_BINDING_INVALID");
+    expect(conflicts[0].message).toContain(ID);
+    expect(conflicts[0].evidence).toEqual([path.join(dir, "a-vocabulary-stale.yaml"), path.join(dir, "vocabulary.yaml")]);
+  });
+
+  test("REG-WU-027-RC-036-b: the same single conflict when the earlier claimant matches", () => {
+    const { root, dir } = semanticsWith({ "a-vocabulary.yaml": MATCHING, "vocabulary-stale.yaml": STALE });
+    const conflicts = verifySemanticFoundation(binding({ [ID]: sha(MATCHING) }), root);
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0].code).toBe("META_SEMANTIC_BINDING_INVALID");
+    expect(conflicts[0].message).toContain("more than one");
+    expect(conflicts[0].evidence).toEqual([path.join(dir, "a-vocabulary.yaml"), path.join(dir, "vocabulary-stale.yaml")]);
+  });
+
+  test("REG-WU-027-RC-036-c: unique ids with matching digests still verify clean", () => {
+    const { root } = semanticsWith({ "vocabulary.yaml": MATCHING });
+    expect(verifySemanticFoundation(binding({ [ID]: sha(MATCHING) }), root)).toEqual([]);
+  });
+
+  test("REG-WU-027-RC-036-d: a duplicate id that is not cited does not matter", () => {
+    const other = "l9.unrelated/global@1";
+    const { root } = semanticsWith({
+      "vocabulary.yaml": MATCHING,
+      "x-one.yaml": `artifact_id: ${other}\nv: 1\n`,
+      "x-two.yaml": `artifact_id: ${other}\nv: 2\n`,
+    });
+    expect(verifySemanticFoundation(binding({ [ID]: sha(MATCHING) }), root)).toEqual([]);
+  });
+});

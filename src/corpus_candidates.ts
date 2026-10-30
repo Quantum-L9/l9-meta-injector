@@ -22,7 +22,10 @@ import { compareCodePoints } from "./ordering";
 import { stableId } from "./repository_model";
 
 export const PROJECT_CANDIDATE_METHOD = "container-project-candidate/v1";
-export const PROJECT_CANDIDATE_METHOD_VERSION = "1.0.0";
+// 1.1.0: an archive-root CI definition resolves to the archive as `containerOf`
+// spells it, a container that receives no member is not a candidate, and a
+// root-level container keys in its own `root:` namespace.
+export const PROJECT_CANDIDATE_METHOD_VERSION = "1.1.0";
 
 export const TOPIC_CANDIDATE_METHOD = "lexical-topic-candidate/v1";
 // Bumped when the pass moved from an index over every salient term to one over
@@ -116,7 +119,11 @@ export interface ProjectCandidate {
   candidate_id: string;
   method: string;
   algorithm_version: string;
-  /** Declared identifier, or `container:<directory name>` when none was declared. */
+  /**
+   * `project:<declared identifier>`; `container:<directory name>` when none was
+   * declared; `root:<root label>` for a root-level container with no declared
+   * name, a namespace no directory name or declared identifier can enter.
+   */
   project_key: string;
   /** True when the key came from a manifest body rather than a directory name. */
   identifier_is_declared: boolean;
@@ -150,7 +157,10 @@ export function projectContainerForMarker(rootRelativePath: string): string {
   const segments = container.split("/");
   for (let index = segments.length - 1; index >= 0; index--) {
     if (segments[index] === ".github" || segments[index] === ".circleci") {
-      return segments.slice(0, index).join("/");
+      const head = segments.slice(0, index).join("/");
+      // An archive's member root is spelled `x.zip!/`, exactly as `containerOf`
+      // spells it, so the CI definition and a manifest beside it are one container.
+      return head.endsWith("!") ? `${head}/` : head;
     }
   }
   return container;
@@ -187,7 +197,9 @@ export function isUnderContainer(containerPath: string, candidate: string): bool
  * A declared identifier joins containers across roots and disks. A container with
  * no declared name can only join others of the same directory name. A root-level
  * container with no declared name joins nothing at all, because the only name it
- * has left is its root, and a root is not a project.
+ * has left is its root, and a root is not a project. Its key therefore lives in
+ * a `root:` namespace of its own: under `container:` a root labelled `alpha`
+ * would join another root's directory named `alpha`.
  */
 function projectGroupKey(input: {
   declared: string | undefined;
@@ -196,7 +208,7 @@ function projectGroupKey(input: {
 }): string {
   if (input.declared !== undefined) return `project:${input.declared}`;
   if (input.containerName.length > 0) return `container:${input.containerName}`;
-  return `container:${input.rootLabel}`;
+  return `root:${input.rootLabel}`;
 }
 
 export interface BuildProjectCandidatesInput {
@@ -300,6 +312,10 @@ export function buildProjectCandidates(input: BuildProjectCandidatesInput): Proj
       container.marker_kinds.sort(compareCodePoints);
       container.declared_identifiers.sort(compareCodePoints);
     }
+    // A project candidate is a grouping of members. One whose containers were
+    // given none (every file claimed by a longer container) states nothing, and
+    // emitting it would hand the packet a cluster that names no member.
+    if (memberIds.size === 0) continue;
     const rootIds = [...new Set(orderedContainers.map((container) => container.root_id))]
       .sort(compareCodePoints);
     candidates.push({
@@ -354,10 +370,148 @@ const TOML_NAME_SECTIONS: Readonly<Record<string, readonly string[]>> = {
   "pyproject.toml": ["project", "tool.poetry"],
 };
 
-/** 1-based line of the first occurrence of a pattern, or 0 when absent. */
-function lineOf(lines: readonly string[], predicate: (line: string) => boolean): number {
-  for (let index = 0; index < lines.length; index++) if (predicate(lines[index])) return index + 1;
-  return 0;
+/** 1-based line of a character offset, counting `\n` as the line break `split` uses. */
+function lineAtOffset(text: string, offset: number): number {
+  let line = 1;
+  for (let index = text.indexOf("\n"); index >= 0 && index < offset; index = text.indexOf("\n", index + 1)) {
+    line++;
+  }
+  return line;
+}
+
+/** Offset just past the JSON string literal that opens at `start`, or -1. */
+function jsonStringEnd(text: string, start: number): number {
+  for (let index = start + 1; index < text.length; index++) {
+    const char = text[index];
+    if (char === "\\") index++;
+    else if (char === '"') return index + 1;
+  }
+  return -1;
+}
+
+/**
+ * 1-based line of the top-level object's `field` key in already-validated JSON,
+ * or 0 when it cannot be found.
+ *
+ * Depth-aware rather than a line search: `"name":` inside `author` or a string
+ * that mentions it is not the manifest's name. A duplicate top-level key takes
+ * its last occurrence, because that is the one `JSON.parse` returned.
+ */
+function topLevelJsonKeyLine(text: string, field: string): number {
+  let depth = 0;
+  let found = -1;
+  for (let index = 0; index < text.length; index++) {
+    const char = text[index];
+    if (char === '"') {
+      const end = jsonStringEnd(text, index);
+      if (end < 0) return 0;
+      if (depth === 1) {
+        let next = end;
+        while (next < text.length && /\s/.test(text[next])) next++;
+        if (text[next] === ":") {
+          let key: unknown;
+          try {
+            key = JSON.parse(text.slice(index, end));
+          } catch {
+            key = undefined;
+          }
+          if (key === field) found = index;
+        }
+      }
+      index = end - 1;
+    } else if (char === "{" || char === "[") {
+      depth++;
+    } else if (char === "}" || char === "]") {
+      depth--;
+    }
+  }
+  return found < 0 ? 0 : lineAtOffset(text, found);
+}
+
+/** Local part of an XML element name: `pom:project` is `project`. */
+function xmlLocalName(qualified: string): string {
+  const colon = qualified.indexOf(":");
+  return colon < 0 ? qualified : qualified.slice(colon + 1);
+}
+
+/**
+ * The `<artifactId>` that is a direct child of the root `<project>` element.
+ *
+ * A nesting-aware scan rather than a line search: a `<parent>`, a dependency, a
+ * plugin or a profile declares an artifactId too, and in a standard POM the
+ * parent's comes first. Comments, CDATA, processing instructions and
+ * declarations are skipped, so markup quoted inside them is never read as an
+ * element. Anything the scan cannot follow yields `undefined`, never a guess.
+ */
+function pomProjectArtifactId(text: string): { identifier: string; line: number } | undefined {
+  const stack: string[] = [];
+  let index = text.indexOf("<");
+  while (index >= 0) {
+    if (text.startsWith("<!--", index)) {
+      const end = text.indexOf("-->", index + 4);
+      if (end < 0) return undefined;
+      index = text.indexOf("<", end + 3);
+      continue;
+    }
+    if (text.startsWith("<![CDATA[", index)) {
+      const end = text.indexOf("]]>", index + 9);
+      if (end < 0) return undefined;
+      index = text.indexOf("<", end + 3);
+      continue;
+    }
+    if (text.startsWith("<?", index)) {
+      const end = text.indexOf("?>", index + 2);
+      if (end < 0) return undefined;
+      index = text.indexOf("<", end + 2);
+      continue;
+    }
+    if (text.startsWith("<!", index)) {
+      const end = text.indexOf(">", index + 2);
+      if (end < 0) return undefined;
+      index = text.indexOf("<", end + 1);
+      continue;
+    }
+    // A tag: find its `>` outside quoted attribute values.
+    let end = index + 1;
+    let quote = "";
+    for (; end < text.length; end++) {
+      const char = text[end];
+      if (quote !== "") {
+        if (char === quote) quote = "";
+      } else if (char === '"' || char === "'") {
+        quote = char;
+      } else if (char === ">") {
+        break;
+      }
+    }
+    if (end >= text.length) return undefined;
+    const body = text.slice(index + 1, end);
+    if (body.startsWith("/")) {
+      const name = xmlLocalName(body.slice(1).trim());
+      if (stack.pop() !== name) return undefined;
+      if (stack.length === 0) return undefined;
+    } else {
+      const selfClosing = body.endsWith("/");
+      const nameEnd = body.search(/[\s/]/);
+      const name = xmlLocalName(nameEnd < 0 ? body : body.slice(0, nameEnd));
+      if (name.length === 0) return undefined;
+      if (stack.length === 0 && name !== "project") return undefined;
+      if (!selfClosing) {
+        if (stack.length === 1 && name === "artifactId") {
+          const close = text.indexOf("<", end + 1);
+          if (close < 0) return undefined;
+          const value = text.slice(end + 1, close).trim();
+          if (value.length === 0 || !/^<\/(?:[^\s:>]+:)?artifactId\s*>/.test(text.slice(close, close + 64))) {
+            return undefined;
+          }
+          return { identifier: value, line: lineAtOffset(text, index) };
+        }
+        stack.push(name);
+      }
+    }
+    index = text.indexOf("<", end + 1);
+  }
+  return undefined;
 }
 
 /**
@@ -385,11 +539,10 @@ export function readDeclaredIdentifier(
     if (parsed === null || typeof parsed !== "object") return undefined;
     const value = (parsed as Record<string, unknown>)[jsonField];
     if (typeof value !== "string" || value.trim().length === 0) return undefined;
-    const quoted = new RegExp(String.raw`"${jsonField}"\s*:`);
     return {
       identifier: value.trim(),
       field: jsonField,
-      line: lineOf(lines, (line) => quoted.test(line)),
+      line: topLevelJsonKeyLine(text, jsonField),
     };
   }
 
@@ -402,11 +555,8 @@ export function readDeclaredIdentifier(
   }
 
   if (name === "pom.xml") {
-    for (let index = 0; index < lines.length; index++) {
-      const match = /<artifactId>([^<]+)<\/artifactId>/.exec(lines[index]);
-      if (match) return { identifier: match[1].trim(), field: "artifactId", line: index + 1 };
-    }
-    return undefined;
+    const own = pomProjectArtifactId(text);
+    return own === undefined ? undefined : { identifier: own.identifier, field: "artifactId", line: own.line };
   }
 
   const sections = TOML_NAME_SECTIONS[name];
@@ -488,6 +638,22 @@ function roundTopicScore(value: number): number {
   return Math.round(value * 1e6) / 1e6;
 }
 
+/**
+ * A threshold as every identity and key renders it: rounded, then six places.
+ *
+ * Rounded first, because `toFixed` and `Math.round` disagree on half-way inputs;
+ * rendering the raw value would let two thresholds that compare identically
+ * carry different names, or two that compare differently carry one.
+ */
+export function canonicalThresholdText(value: number): string {
+  return roundTopicScore(value).toFixed(6);
+}
+
+/** The threshold in micro-units: the integer every topic bound is computed from. */
+function thresholdMicros(canonicalThreshold: number): number {
+  return Math.round(canonicalThreshold * 1e6);
+}
+
 /** One topic candidate from its members. Shared by the indexed and zero paths. */
 function buildTopicCandidate(
   members: readonly { document: TopicDocumentInput; terms: Set<string> }[],
@@ -515,7 +681,7 @@ function buildTopicCandidate(
       algorithm_id: TOPIC_CANDIDATE_METHOD,
       algorithm_version: TOPIC_CANDIDATE_METHOD_VERSION,
       member_ids: [...memberIds].sort(compareCodePoints),
-      threshold: threshold.toFixed(6),
+      threshold: canonicalThresholdText(threshold),
     }),
     method: TOPIC_CANDIDATE_METHOD,
     algorithm_version: TOPIC_CANDIDATE_METHOD_VERSION,
@@ -575,10 +741,15 @@ export interface TopicCandidateResult {
  * have to sit past a point where fewer than that many remain.
  *
  * So this is a filter, not a sample. No qualifying pair is lost.
+ *
+ * `t` is the canonical threshold the comparison uses, and `ceil(t * |X|)` is
+ * taken in integer micro-units rather than from a floating-point product, which
+ * can land a hair above an integer and shorten the prefix by one.
  */
 export function topicPrefixLength(setSize: number, threshold: number): number {
   if (setSize === 0) return 0;
-  return Math.max(1, setSize - Math.ceil(roundTopicScore(threshold) * setSize) + 1);
+  const required = Math.ceil((thresholdMicros(roundTopicScore(threshold)) * setSize) / 1e6);
+  return Math.max(1, setSize - required + 1);
 }
 
 /**
@@ -612,7 +783,11 @@ export function topicPrefixLength(setSize: number, threshold: number): number {
  * rather than asserted.
  */
 export function buildTopicCandidates(input: BuildTopicCandidatesInput): TopicCandidateResult {
-  const threshold = input.threshold ?? DEFAULT_TOPIC_THRESHOLD;
+  // Canonicalised once (ADR-059, DEC-RC-071 A): the comparison, both bounds, the
+  // candidate ids and the reported threshold all use this one value, so a
+  // threshold given to more than six places behaves as the rounding its identity
+  // already claimed.
+  const threshold = roundTopicScore(input.threshold ?? DEFAULT_TOPIC_THRESHOLD);
   const eligible = input.documents.filter((document) => document.token_count >= TOPIC_MIN_TOKENS);
   // `Math.max` rather than the bare product: at zero eligible documents the
   // expression is `-0`, which serializes as `-0` and reads as a different number
@@ -725,8 +900,8 @@ export function buildTopicCandidates(input: BuildTopicCandidatesInput): TopicCan
         }
         // Size bound: `other` was visited earlier so its set is no larger, and a
         // pair can only reach the threshold when the smaller is at least `t` of
-        // the larger.
-        if (features[other].terms.size < roundTopicScore(threshold) * size) continue;
+        // the larger — compared in integers, never as a float product.
+        if (features[other].terms.size * 1e6 < thresholdMicros(threshold) * size) continue;
         evaluated += 1;
         if (jaccardOfSets(feature.terms, features[other].terms) < threshold) continue;
         union(other, index);
@@ -792,7 +967,7 @@ export function buildTopicCandidates(input: BuildTopicCandidatesInput): TopicCan
 export function buildTopicCandidatesExhaustive(
   input: BuildTopicCandidatesInput,
 ): TopicCandidate[] {
-  const threshold = input.threshold ?? DEFAULT_TOPIC_THRESHOLD;
+  const threshold = roundTopicScore(input.threshold ?? DEFAULT_TOPIC_THRESHOLD);
   const eligible = input.documents.filter((document) => document.token_count >= TOPIC_MIN_TOKENS);
   if (eligible.length < 2) return [];
   if (roundTopicScore(threshold) <= 0) {
@@ -858,7 +1033,7 @@ export function candidateProfileHash(input: {
   nearDuplicateThreshold: number;
 }): string {
   return stableId("candidate-profile", {
-    near_duplicate_threshold: input.nearDuplicateThreshold.toFixed(6),
+    near_duplicate_threshold: canonicalThresholdText(input.nearDuplicateThreshold),
     project_method: PROJECT_CANDIDATE_METHOD,
     project_method_version: PROJECT_CANDIDATE_METHOD_VERSION,
     topic_df_ceiling: TOPIC_DOCUMENT_FREQUENCY_CEILING.toFixed(6),
@@ -869,6 +1044,6 @@ export function candidateProfileHash(input: {
     topic_min_tokens: TOPIC_MIN_TOKENS,
     topic_salient_terms: TOPIC_SALIENT_TERMS,
     topic_stopwords: [...TOPIC_STOPWORDS].sort(compareCodePoints),
-    topic_threshold: input.topicThreshold.toFixed(6),
+    topic_threshold: canonicalThresholdText(input.topicThreshold),
   });
 }

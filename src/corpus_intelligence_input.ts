@@ -49,6 +49,7 @@ import type {
   CorpusCandidateType,
   CorpusConfidenceClass,
   CorpusCoverage,
+  CorpusDomainNotRun,
   CorpusIntelligencePayload,
   CorpusIntelligenceRootInput,
   CorpusRootIdentityClass,
@@ -66,6 +67,7 @@ import type { CorpusScanResult } from "./corpus_scan";
 import type { BodyOfWorkMetrics } from "./corpus_readiness";
 import type { DocumentWorkSignalRecord } from "./corpus_work_signal_export";
 import { compareCodePoints } from "./ordering";
+import { ARCHIVE_MEMBER_SEPARATOR } from "./local_source";
 
 /**
  * Formats whose decoded text has lines an operator can open the file and find.
@@ -98,10 +100,33 @@ function sortedUnique(values: Iterable<string>): string[] {
   return [...new Set(values)].sort(compareCodePoints);
 }
 
-function confidenceClass(value: unknown): CorpusConfidenceClass {
-  return typeof value === "string" && CONFIDENCE_CLASSES.has(value)
-    ? (value as CorpusConfidenceClass)
-    : "weak";
+/**
+ * A confidence class the producer computed, or a refusal.
+ *
+ * This used to map anything absent or unknown to `weak`, which published a
+ * judgement nobody made. Every class reaching the packet is computed upstream
+ * — fusion classifies every pair, and every candidate carries the strongest
+ * class among its pairs — so a missing one is a producer defect to surface.
+ */
+function confidenceClass(value: unknown, subject: string): CorpusConfidenceClass {
+  if (typeof value === "string" && CONFIDENCE_CLASSES.has(value)) {
+    return value as CorpusConfidenceClass;
+  }
+  const shown = value === undefined ? "absent" : JSON.stringify(value);
+  throw new CorpusIntelligenceError(
+    `${subject} has confidence_class ${shown}, not one of weak|moderate|strong; ` +
+      "the producer must compute it and this translation does not default it",
+  );
+}
+
+/** A boolean the producer computed, or a refusal. Never coerced to false. */
+function requiredFlag(value: unknown, subject: string, field: string): boolean {
+  if (typeof value === "boolean") return value;
+  const shown = value === undefined ? "absent" : JSON.stringify(value);
+  throw new CorpusIntelligenceError(
+    `${subject} has ${field} ${shown}, not a boolean; ` +
+      "the producer must compute it and this translation does not default it",
+  );
 }
 
 // ───────────────────────────── identity translation ─────────────────────────────
@@ -295,7 +320,10 @@ function pairRelations(
         methods: sortedUnique(pair.signals.map((signal) => signal.method)),
         method_scores: scores,
         evidence_refs: sortedUnique(pair.evidence_refs),
-        confidence_class: confidenceClass(classification.get(pair.pair_id)?.confidence_class),
+        confidence_class: confidenceClass(
+          classification.get(pair.pair_id)?.confidence_class,
+          `semantic pair relation '${pair.pair_id}'`,
+        ),
         analysis_profile: profile,
         upstream_candidate_id: pair.pair_id,
       };
@@ -303,7 +331,13 @@ function pairRelations(
     .sort((a, b) => compareCodePoints(a.relation_id, b.relation_id));
 }
 
-/** The candidate fields this translation reads, across all three candidate kinds. */
+/**
+ * The candidate fields this translation reads, across all three semantic kinds.
+ *
+ * `confidence_class`, `cross_root` and `cross_archive` are required: fusion
+ * computes them for every candidate, and a candidate arriving without one is
+ * refused rather than given a value here.
+ */
 interface CandidateSource {
   candidate_id: string;
   member_artifact_ids: string[];
@@ -311,11 +345,11 @@ interface CandidateSource {
   exact_duplicate_cluster_ids?: string[];
   near_duplicate_candidate_ids?: string[];
   evidence_refs?: string[];
-  confidence_class?: string;
+  confidence_class: string;
   ambiguity_class?: string[];
   ambiguity_flags?: string[];
-  cross_root?: boolean;
-  cross_archive?: boolean;
+  cross_root: boolean;
+  cross_archive: boolean;
 }
 
 function candidateClusters(
@@ -325,29 +359,50 @@ function candidateClusters(
   profile: CorpusAnalysisProfileRef,
 ): CandidateCluster[] {
   return entries
-    .map((entry): CandidateCluster => ({
-      candidate_id: entry.candidate_id,
-      candidate_type: candidateType,
-      member_artifact_ids: sortedUnique(
-        entry.member_artifact_ids.map((member) => translate(member, identities)),
-      ),
-      supporting_relation_ids: sortedUnique([
-        ...(entry.supporting_pair_ids ?? []),
-        ...(entry.exact_duplicate_cluster_ids ?? []),
-        ...(entry.near_duplicate_candidate_ids ?? []),
-      ]),
-      evidence_refs: sortedUnique(entry.evidence_refs ?? []),
-      confidence_class: confidenceClass(entry.confidence_class),
-      ambiguity_flags: sortedUnique([
-        ...(entry.ambiguity_flags ?? []),
-        ...(entry.ambiguity_class ?? []),
-      ]),
-      cross_root: entry.cross_root === true,
-      cross_archive: entry.cross_archive === true,
-      analysis_profile: profile,
-      upstream_candidate_id: entry.candidate_id,
-    }))
+    .map((entry): CandidateCluster => {
+      const subject = `${candidateType} '${entry.candidate_id}'`;
+      return {
+        candidate_id: entry.candidate_id,
+        candidate_type: candidateType,
+        member_artifact_ids: sortedUnique(
+          entry.member_artifact_ids.map((member) => translate(member, identities)),
+        ),
+        supporting_relation_ids: sortedUnique([
+          ...(entry.supporting_pair_ids ?? []),
+          ...(entry.exact_duplicate_cluster_ids ?? []),
+          ...(entry.near_duplicate_candidate_ids ?? []),
+        ]),
+        evidence_refs: sortedUnique(entry.evidence_refs ?? []),
+        confidence_class: confidenceClass(entry.confidence_class, subject),
+        ambiguity_flags: sortedUnique([
+          ...(entry.ambiguity_flags ?? []),
+          ...(entry.ambiguity_class ?? []),
+        ]),
+        cross_root: requiredFlag(entry.cross_root, subject, "cross_root"),
+        cross_archive: requiredFlag(entry.cross_archive, subject, "cross_archive"),
+        analysis_profile: profile,
+        upstream_candidate_id: entry.candidate_id,
+      };
+    })
     .sort((a, b) => compareCodePoints(a.candidate_id, b.candidate_id));
+}
+
+/**
+ * Whether a lexical candidate's containers sit under more than one archive
+ * ancestry — the rule fusion's `crossArchive` applies to member views, read
+ * from the archive locators in the container paths. A container outside any
+ * archive has the empty ancestry, so a candidate with one container inside an
+ * archive and one outside spans two.
+ */
+function containersCrossArchive(
+  containers: readonly { container_path: string }[],
+): boolean {
+  const ancestries = new Set<string>();
+  for (const container of containers) {
+    const parts = container.container_path.split(ARCHIVE_MEMBER_SEPARATOR);
+    ancestries.add(parts.slice(0, -1).join(ARCHIVE_MEMBER_SEPARATOR));
+  }
+  return ancestries.size > 1;
 }
 
 /**
@@ -361,9 +416,10 @@ function candidateClusters(
  * exactly that.
  *
  * Both families are published, each with its own `analysis_profile` so a reader
- * can tell which pass produced a cluster. Nothing here is computed: the lexical
- * candidates are already written to `corpus-candidates.json` and are simply
- * carried across the boundary rather than left behind it.
+ * can tell which pass produced a cluster. Nothing here is computed but the
+ * archive flag, which is read off the container paths the candidate already
+ * carries: the lexical candidates are already written to `corpus-candidates.json`
+ * and are simply carried across the boundary rather than left behind it.
  */
 function lexicalProjectClusters(
   result: CorpusScanResult,
@@ -392,11 +448,84 @@ function lexicalProjectClusters(
       // reader has to be able to see that.
       ambiguity_flags: candidate.identifier_is_declared ? [] : ["identifier_inferred_from_container"],
       cross_root: candidate.spans_roots,
-      cross_archive: false,
+      cross_archive: containersCrossArchive(candidate.containers),
       analysis_profile: profile,
       upstream_candidate_id: candidate.candidate_id,
     }))
     .sort((a, b) => compareCodePoints(a.candidate_id, b.candidate_id));
+}
+
+/**
+ * The deterministic topic candidates, as clusters (ADR-068).
+ *
+ * The same carry-across as `lexicalProjectClusters`: the lexical topic pass
+ * groups documents by shared salient vocabulary and is written to
+ * `corpus-candidates.json` whether or not the semantic pass runs. Leaving it
+ * behind the boundary made a run without semantic analysis publish an empty
+ * topic domain beside a topic it had computed. Each cluster names the lexical
+ * pass in its own `analysis_profile`, so it is never read as a semantic topic.
+ */
+function lexicalTopicClusters(
+  result: CorpusScanResult,
+  identities: ReadonlyMap<string, string>,
+): CandidateCluster[] {
+  const analysis = result.candidates.analysis_profile;
+  const profile: CorpusAnalysisProfileRef = {
+    profile_id: analysis.topic_candidate_method,
+    profile_version: analysis.topic_candidate_version,
+    profile_hash: analysis.candidate_profile_hash,
+  };
+  return result.candidates.topic_candidates
+    .map((candidate): CandidateCluster => ({
+      candidate_id: candidate.candidate_id,
+      candidate_type: "TOPIC_CANDIDATE",
+      member_artifact_ids: sortedUnique(
+        candidate.member_ids.map((member) => translate(member, identities)),
+      ),
+      supporting_relation_ids: [],
+      evidence_refs: [],
+      // Shared vocabulary over a threshold is a grouping rule, not a graded
+      // similarity judgement. `weak` is the vocabulary's floor, as for the
+      // lexical project candidates.
+      confidence_class: "weak",
+      ambiguity_flags: [],
+      cross_root: candidate.spans_roots,
+      cross_archive: containersCrossArchive(
+        candidate.member_paths.map((memberPath) => ({ container_path: memberPath })),
+      ),
+      analysis_profile: profile,
+      upstream_candidate_id: candidate.candidate_id,
+    }))
+    .sort((a, b) => compareCodePoints(a.candidate_id, b.candidate_id));
+}
+
+/**
+ * Which payload domains no pass of this run populated (ADR-068).
+ *
+ * A domain is declared not run only when every pass that fills it was skipped.
+ * Project candidates always have the lexical pass, and topic candidates have it
+ * unless topic candidates were switched off, so those two are declared only
+ * when nothing could have filled them. Duplicates, readiness and work signals
+ * are not optional passes.
+ */
+function domainsNotRun(result: CorpusScanResult): CorpusDomainNotRun[] {
+  if (result.semantic !== null) return [];
+  const reason = "semantic analysis was not run for this corpus run";
+  const statements: CorpusDomainNotRun[] = [
+    { domain: "semantic_pair_relations", reason },
+  ];
+  if (!result.candidates.analysis_profile.topic_candidates_enabled) {
+    statements.push({
+      domain: "topic_candidates",
+      reason: "semantic analysis and lexical topic candidates were not run for this corpus run",
+    });
+  }
+  statements.push(
+    { domain: "consolidation_candidates", reason },
+    { domain: "reasoning_candidates", reason },
+    { domain: "reasoning_evidence_pack_refs", reason },
+  );
+  return statements;
 }
 
 /**
@@ -651,10 +780,12 @@ export function corpusIntelligenceInput(
       .sort((a, b) => compareCodePoints(a.signal_id, b.signal_id)),
     exact_duplicate_relations: duplicateRelations(result, identities),
     semantic_pair_relations: pairRelations(result, identities, profile),
-    topic_candidates:
-      semantic === null
+    topic_candidates: [
+      ...lexicalTopicClusters(result, identities),
+      ...(semantic === null
         ? []
-        : candidateClusters(semantic.topics.candidates, "TOPIC_CANDIDATE", identities, profile),
+        : candidateClusters(semantic.topics.candidates, "TOPIC_CANDIDATE", identities, profile)),
+    ].sort((a, b) => compareCodePoints(a.candidate_id, b.candidate_id)),
     project_candidates: [
       ...lexicalProjectClusters(result, identities),
       ...(semantic === null
@@ -682,6 +813,7 @@ export function corpusIntelligenceInput(
     roots: roots(result),
     coverage: coverage(result),
     payload,
+    domainsNotRun: domainsNotRun(result),
     producerVersion: options.producerVersion,
     profile: {
       id: profile.profile_id,

@@ -7,16 +7,12 @@ export type BoundedInflateResult = {
     hold: string;
 };
 /**
- * Streaming gzip inflation with budget enforcement.
- *
- * Returns the inflated buffer if it fits within the policy's maxTotalUncompressedBytesPerArchive.
- * Aborts and returns a hold if the budget would be exceeded, preventing decompression bombs.
+ * Bounded gzip inflation. Output above the policy's
+ * maxTotalUncompressedBytesPerArchive is refused while inflating; output exactly
+ * at the budget is accepted. Always settles.
  */
 export declare function boundedGunzip(compressed: Buffer, policy?: LocalArchivePolicy): Promise<BoundedInflateResult>;
-/**
- * Synchronous wrapper for bounded gzip inflation.
- * Uses a post-inflation check since zlib.gunzipSync must complete before we know the size.
- */
+/** Synchronous bounded gzip inflation; same verdicts as `boundedGunzip`. */
 export declare function boundedGunzipSync(compressed: Buffer, policy?: LocalArchivePolicy): BoundedInflateResult;
 export type InventoryRewriteKind = "zip" | "tar" | "tar.gz";
 export declare function inventoryRewriteKind(fileName: string): InventoryRewriteKind | null;
@@ -27,5 +23,12 @@ export type ArchiveMemberResult = {
     rewritten: false;
     hold: string;
 };
+/**
+ * Upsert the archive's root `.l9meta.yaml` member. Every outcome is a result:
+ * admission holds, codec holds, and filesystem failures while reading or
+ * replacing the archive (`archive.rewrite_io_failed:<errno>`) all return
+ * `{ rewritten: false, hold }` so the caller records them on the archive's own
+ * record and the inventory walk continues (RC-056).
+ */
 export declare function upsertArchiveRootMeta(abs: string, yaml: string): ArchiveMemberResult;
 export declare function isCanonicalMetaMemberName(name: string): boolean;

@@ -88,10 +88,19 @@ function loadMetaSchema(filePath) {
 /**
  * Group records by content_hash to surface duplicate clusters across the whole tree.
  *
- * Equivalence is byte equality and nothing else: two records belong to the same
- * cluster when both carry a known content hash and those hashes are identical.
- * Names, locations and sizes never decide membership, which is what lets a
- * physical file and an archive member land in one cluster.
+ * Equivalence is content_hash equality and nothing else: two records belong to
+ * the same cluster when both carry a known content hash and those hashes are
+ * identical. Names, locations and sizes never decide membership, which is what
+ * lets a physical file and an archive member land in one cluster.
+ *
+ * What a cluster means is therefore what the producer's hash covers. Inventory
+ * hashes a UTF-8 file's carrier-free content: the L9 managed header and, for a
+ * YAML front-matter document, the whole front-matter block are the metadata
+ * carrier and lie outside the hash (ADR-051 item 5, ADR-065). An inventory
+ * cluster says "same carrier-free content", not "byte-identical": its members'
+ * headers or front matter may differ, so it is not a list of copies that can be
+ * deleted without losing metadata. Binaries, archives and oversize files keep
+ * the raw-byte hash, where a cluster is byte equality.
  *
  * Ordering is code-point throughout. `localeCompare` used to decide both the
  * path order and the shortest-path tie-break, which made the emitted cluster —
@@ -212,7 +221,7 @@ function idFor(relPath) {
 }
 function csvCell(v) {
     const s = v === null || v === undefined ? "" : String(v);
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 // Sidecar serialization now delegates to the single canonical serializer (ACA-005),
 // replacing the always-JSON-quoted copy. Output is bare-when-safe and still
@@ -220,17 +229,35 @@ function csvCell(v) {
 function serializeYaml(rec) {
     return (0, yaml_serialize_1.serializeYamlObject)(rec, { fences: true, trailingNewline: true });
 }
-function walk(root, omit, skippedDirs, omittedPaths) {
+/** Token recorded when a failure carries no errno code of its own. */
+const UNKNOWN_ERROR_CODE = "UNKNOWN_ERROR";
+/**
+ * The machine-independent part of a filesystem failure: its errno code.
+ *
+ * A Node fs error message repeats the absolute path it failed on, so recording
+ * the message would make an inventory (and every packet built from it) depend on
+ * where the tree happens to be checked out. The code is the portable reason; the
+ * repository-relative path is carried beside it by the caller.
+ */
+function portableErrorCode(err) {
+    const code = err?.code;
+    return typeof code === "string" && code.length > 0 ? code : UNKNOWN_ERROR_CODE;
+}
+function walk(root, omit, skippedDirs, omittedPaths, skippedDetails) {
     const out = [];
     function rec(dir) {
         let entries;
         // An unreadable directory must not silently drop its whole subtree from the
         // inventory (finding OBS-007): record it so the coverage gap is observable.
+        // The recorded entry is `<repository-relative POSIX dir, or .>: <errno code>`;
+        // the host message (absolute path included) is kept only for the operator.
         try {
             entries = fs.readdirSync(dir, { withFileTypes: true });
         }
         catch (err) {
-            skippedDirs.push(`${dir}: ${err.message}`);
+            const relativeDir = path.relative(root, dir).split(path.sep).join("/") || ".";
+            skippedDirs.push(`${relativeDir}: ${portableErrorCode(err)}`);
+            skippedDetails.push(`${relativeDir}: ${err.message}`);
             return;
         }
         // Code-point order: `readdir` order is whatever the filesystem returns, and
@@ -350,6 +377,35 @@ function noteClockSkew(unknowns, created, modified, inspected) {
     if (modifiedAt !== null && modifiedAt > inspectedAt)
         unknowns.push("clock_skew:modified_at_after_inspected_at");
 }
+/** A complete ISO-8601 instant with an explicit zone, as inventory writes them. */
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+function isCarriedInstant(value) {
+    return typeof value === "string" && ISO_INSTANT.test(value) && instantOf(value) !== null;
+}
+/**
+ * The created_at / modified_at an annotation writes (ADR-060).
+ *
+ * While the carrier-free content is unchanged — the harvested content hash
+ * (the carrier field `hashKey`: `content_hash` for the built-in fields, or the
+ * schema field sourced from `content_hash`) equals the one just computed — each
+ * harvested clock that is a parseable
+ * instant (or, for created_at, exactly `Unknown`) is carried, so a carrier keeps
+ * describing the artifact as it was when its content last changed rather than
+ * the mtime and birthtime of the tool's own previous write. Anything else — no
+ * content hash, a different hash, a clock that does not parse — falls back to
+ * the lstat observation. The record itself keeps the observation (ADR-051 item 6).
+ */
+function carrierClocks(rec, harvest, hashKey) {
+    const observed = { created_at: rec.created_at, modified_at: rec.modified_at };
+    if (rec.content_hash === null || hashKey === undefined || harvest[hashKey] !== rec.content_hash)
+        return observed;
+    const created = harvest.created_at;
+    const modified = harvest.modified_at;
+    return {
+        created_at: isCarriedInstant(created) || created === schema_1.UNKNOWN ? created : observed.created_at,
+        modified_at: isCarriedInstant(modified) ? modified : observed.modified_at,
+    };
+}
 function buildRecord(root, abs, isDir, cfg, kind = isDir ? "directory" : "file", harvest = {}) {
     const relative = path.relative(root, abs).split(path.sep).join("/") || ".";
     const fileName = path.basename(abs);
@@ -359,7 +415,10 @@ function buildRecord(root, abs, isDir, cfg, kind = isDir ? "directory" : "file",
         : classifyInventory(relative, fileName, ext, isDir);
     let size = null, modified = null, hash = null, created = null;
     const unknowns = [...cls.unknowns];
-    const harvestedType = harvest.inventory_type ?? harvest.artifact_type;
+    // Compare like with like (ADR-051): only a harvested inventory_type is in the
+    // inventory taxonomy. A front-matter artifact_type is the pipeline taxonomy and
+    // never conflicts with the inventory classification.
+    const harvestedType = harvest.inventory_type;
     if (typeof harvestedType === "string" && harvestedType !== cls.type) {
         unknowns.push(`harvested_type:${harvestedType}`);
     }
@@ -378,7 +437,7 @@ function buildRecord(root, abs, isDir, cfg, kind = isDir ? "directory" : "file",
         }
     }
     catch (err) {
-        unknowns.push(`stat_failed:${err.message}`);
+        unknowns.push(`stat_failed:${portableErrorCode(err)}`);
     }
     noteClockSkew(unknowns, created, modified, cfg.now);
     const parent = path.dirname(relative);
@@ -430,23 +489,31 @@ function inventoryTree(config) {
     if (path.resolve(config.outDir) === root) {
         throw new Error("inventory: outDir must not equal the root directory (generated manifests would be re-inventoried); use a subdirectory such as <root>/.l9inventory");
     }
-    // If the chosen outDir lives inside root, ignore its top-level directory name too,
-    // so a custom --out under root can't re-inventory or mutate its own generated output.
-    const ignoreDirNames = [...ignoreDirs];
+    // If the chosen outDir lives inside root, omit exactly that directory (walk does
+    // not descend an omitted directory), so a custom --out under root can't
+    // re-inventory or mutate its own generated output. An exact root-relative path,
+    // not a basename pattern: `docs/.l9out` must not omit every `docs` in the tree,
+    // and a directory name never needs glob escaping.
     const relOut = path.relative(root, path.resolve(config.outDir));
-    if (relOut && !relOut.startsWith("..") && !path.isAbsolute(relOut)) {
-        ignoreDirNames.push(relOut.split(path.sep)[0]);
-    }
-    const omit = (0, omit_1.buildOmitMatcher)({
+    const outDirRel = relOut && !relOut.startsWith("..") && !path.isAbsolute(relOut)
+        ? relOut.split(path.sep).join("/")
+        : null;
+    const baseOmit = (0, omit_1.buildOmitMatcher)({
         root,
         patterns: [...(config.omitPatterns ?? []), "**/*.l9meta.yaml", "**/.l9meta.yaml"],
         omitFile: config.omitFile,
         protectSkillMd: true,
-        ignoreDirNames,
+        ignoreDirNames: [...ignoreDirs],
     });
+    const omit = outDirRel === null ? baseOmit : {
+        patterns: baseOmit.patterns,
+        sources: baseOmit.sources,
+        shouldOmit: (rel) => rel === outDirRel || baseOmit.shouldOmit(rel),
+    };
     const skippedDirs = [];
+    const skippedDetails = [];
     const omittedPaths = [];
-    const entries = walk(root, omit, skippedDirs, omittedPaths);
+    const entries = walk(root, omit, skippedDirs, omittedPaths, skippedDetails);
     const records = [];
     const typeDistribution = {};
     let files = 0, folders = 0;
@@ -456,28 +523,63 @@ function inventoryTree(config) {
     }));
     const boundAuthority = identity.source === "semantic_binding" ? identity.authority : undefined;
     const boundNamespace = identity.source === "semantic_binding" ? identity.namespace : undefined;
+    // The carrier field that holds the content hash: the anchor clocks are carried against.
+    // A schema with no field sourced from content_hash has none, so its clocks are observed.
+    const contentHashKey = schema
+        ? schema.fields.find((field) => field.source === "content_hash")?.name
+        : "content_hash";
+    /**
+     * The meta object written to headers/sidecars — schema-driven when provided,
+     * else the built-in fields — and the clocks it carries. Records the schema's
+     * missing required fields and its manifest meta on the record.
+     */
+    function deriveCarrier(rec, harvest, body) {
+        // Carriers carry the artifact's clocks; the record keeps the observation (ADR-060).
+        const clocks = carrierClocks(rec, harvest, contentHashKey);
+        if (!schema) {
+            return { clocks, metaObj: annotationFields(rec, harvest, { body, clocks, boundAuthority, boundNamespace }) };
+        }
+        const observed = (0, meta_schema_1.applySchema)((0, schema_1.asRecord)(rec), schema);
+        if (observed.missingRequired.length)
+            rec.unknowns.push(...observed.missingRequired.map((n) => `missing_required:${n}`));
+        const carried = clocks.created_at === rec.created_at && clocks.modified_at === rec.modified_at
+            ? observed
+            : (0, meta_schema_1.applySchema)((0, schema_1.asRecord)({ ...rec, ...clocks }), schema);
+        // Honor target:"manifest" — attach the schema-shaped meta to the record so it
+        // flows into inventory.json (otherwise "manifest" in target would be a no-op).
+        if ((0, meta_schema_1.targetIncludes)(schema, "manifest"))
+            rec.meta = observed.fields;
+        return { clocks, metaObj: omitSmashedClock({ ...sanitizeHarvest(harvest), ...carried.fields }) };
+    }
+    /**
+     * Re-observe an archive that annotation just rewrote (RC-053): the record and
+     * the adjacent sidecar must describe the bytes left on disk, not the ones the
+     * member upsert replaced. Diagnostics added since the first observation (read,
+     * schema and annotation notes such as darwin_search_write_failed) are kept;
+     * the observation's own diagnostics are taken from the fresh one. The member
+     * excludes content_hash and the clocks, so this cannot change what was embedded.
+     */
+    function reobserveArchive(abs, rec, harvest, observedUnknowns) {
+        const fresh = buildRecord(root, abs, false, cfg, "file", harvest);
+        const later = rec.unknowns.slice(observedUnknowns).filter((u) => !u.startsWith("missing_required:"));
+        rec.size_bytes = fresh.size_bytes;
+        rec.modified_at = fresh.modified_at;
+        rec.created_at = fresh.created_at;
+        rec.content_hash = fresh.content_hash;
+        rec.unknowns = [...fresh.unknowns];
+        const derived = deriveCarrier(rec, harvest, null);
+        rec.unknowns.push(...later);
+        return derived;
+    }
     for (const { abs, isDir, kind } of entries) {
         const harvest = kind === "symlink" || kind === "special" ? {} : (0, inventory_existing_meta_1.harvestExistingMeta)(abs, isDir);
         const rec = buildRecord(root, abs, isDir, cfg, kind, harvest);
+        const observedUnknowns = rec.unknowns.length;
         const isArchive = !isDir && archive_formats_1.ARCHIVE_EXTENSIONS.has((0, archive_formats_1.archiveExtensionOf)(abs));
         const body = kind === "file" && !isArchive && rec.size_bytes !== null
             ? tryReadUtf8Body(abs, rec.size_bytes, cfg.hashMaxBytes)
             : null;
-        // The meta object written to headers/sidecars: schema-driven when provided, else default.
-        let metaObj;
-        if (schema) {
-            const applied = (0, meta_schema_1.applySchema)((0, schema_1.asRecord)(rec), schema);
-            if (applied.missingRequired.length)
-                rec.unknowns.push(...applied.missingRequired.map((n) => `missing_required:${n}`));
-            metaObj = omitSmashedClock({ ...sanitizeHarvest(harvest), ...applied.fields });
-            // Honor target:"manifest" — attach the schema-shaped meta to the record so it
-            // flows into inventory.json (otherwise "manifest" in target would be a no-op).
-            if ((0, meta_schema_1.targetIncludes)(schema, "manifest"))
-                rec.meta = applied.fields;
-        }
-        else {
-            metaObj = annotationFields(rec, harvest, { body, boundAuthority, boundNamespace });
-        }
+        let { clocks, metaObj } = deriveCarrier(rec, harvest, body);
         records.push(rec);
         typeDistribution[rec.artifact_type] = (typeDistribution[rec.artifact_type] || 0) + 1;
         if (isDir)
@@ -507,6 +609,11 @@ function inventoryTree(config) {
         const strategy = raw === null ? "skip-binary" : (0, comment_1.resolveStrategy)(abs, raw).strategy;
         const isRecognizedArchive = archive_formats_1.ARCHIVE_EXTENSIONS.has((0, archive_formats_1.archiveExtensionOf)(abs));
         const canHeader = raw !== null && (strategy === "yaml-frontmatter" || strategy === "line-comment" || strategy === "block-comment");
+        // The member is upserted before any adjacent carrier is written, so a rewrite
+        // is re-observed and the sidecar records the archive's final bytes (RC-053).
+        if (isRecognizedArchive && annotateArchive(abs, rec, metaObj, harvest)) {
+            ({ clocks, metaObj } = reobserveArchive(abs, rec, harvest, observedUnknowns));
+        }
         if (cfg.injectHeaders && canHeader && (0, meta_schema_1.targetIncludes)(schema, "file_header")) {
             // With a schema, the header intentionally carries only the schema's fields
             // (tests assert built-in fields like mcp_primitive are absent), so it isn't a
@@ -523,9 +630,9 @@ function inventoryTree(config) {
                 });
                 stripSmashedClockFromWritten(abs);
                 applyInventoryClocksToWritten(abs, {
-                    created_at: rec.created_at ?? "Unknown",
-                    modified_at: rec.modified_at ?? "Unknown",
-                    inspected_at: rec.inspected_at ?? "Unknown",
+                    created_at: clocks.created_at ?? schema_1.UNKNOWN,
+                    modified_at: clocks.modified_at ?? schema_1.UNKNOWN,
+                    inspected_at: rec.inspected_at ?? schema_1.UNKNOWN,
                 });
             }
             catch (err) {
@@ -541,12 +648,9 @@ function inventoryTree(config) {
             && (isRecognizedArchive || strategy !== "skip-binary")) {
             writeSidecar(abs, metaObj, rec.unknowns);
         }
-        if (isRecognizedArchive) {
-            annotateArchive(abs, rec, metaObj, harvest);
-        }
     }
     if (skippedDirs.length) {
-        process.stderr.write(`[l9-meta-injector] inventory: ${skippedDirs.length} unreadable director(ies) skipped:\n${skippedDirs.map((d) => `  - ${d}`).join("\n")}\n`);
+        process.stderr.write(`[l9-meta-injector] inventory: ${skippedDirs.length} unreadable director(ies) skipped:\n${skippedDetails.map((d) => `  - ${d}`).join("\n")}\n`);
     }
     const duplicates = buildDuplicateClusters(records);
     const manifestPaths = writeManifests(config.outDir, root, records, typeDistribution, duplicates, cfg.now, cfg.dryRun);
@@ -583,19 +687,84 @@ function safeRead(abs) {
             fs.closeSync(fd);
     }
 }
-function writeSidecar(abs, obj, unknowns) {
+const FILE_SIDECAR_CODES = {
+    unreadable: "sidecar_unreadable",
+    lossy: "sidecar_lossy_roundtrip",
+    readFailed: "sidecar_read_failed",
+};
+const FOLDER_SIDECAR_CODES = {
+    unreadable: "folder_sidecar_unreadable",
+    lossy: "folder_sidecar_lossy_roundtrip",
+    readFailed: "folder_sidecar_read_failed",
+};
+/**
+ * The one preservation policy for `.l9meta.yaml` carriers, file and folder alike
+ * (RC-051). An existing regular file is replaced only when the canonical parser
+ * reads it and re-serializing it reproduces its bytes exactly — that is, when it
+ * is in the format this tool writes. A file the parser rejects, or one whose
+ * comments, layout or fences would not survive a rewrite, is held, so a
+ * hand-authored sidecar is never silently replaced by derived fields. A read
+ * failure is recorded, not thrown. Only a regular file is inspected: anything
+ * else at the path goes on to the write, whose refusal is recorded as
+ * `sidecar_write_failed:*`.
+ */
+function inspectExistingSidecar(p, codes) {
+    let st;
+    try {
+        st = fs.lstatSync(p);
+    }
+    catch (err) {
+        const code = portableErrorCode(err);
+        return code === "ENOENT" ? { state: "absent" } : { state: "held", diagnostic: `${codes.readFailed}:${code}` };
+    }
+    if (!st.isFile())
+        return { state: "non_regular" };
+    let original;
+    try {
+        original = fs.readFileSync(p, "utf8");
+    }
+    catch (err) {
+        return { state: "held", diagnostic: `${codes.readFailed}:${portableErrorCode(err)}` };
+    }
+    let parsed;
+    try {
+        parsed = (0, meta_schema_1.parseCanonicalYaml)(original);
+    }
+    catch {
+        return { state: "held", diagnostic: codes.unreadable };
+    }
+    if (typeof parsed === "object" && parsed !== null) {
+        const record = parsed;
+        if (serializeYaml(record) !== original)
+            return { state: "held", diagnostic: codes.lossy };
+        return { state: "tool_format", original, parsed: record };
+    }
+    return { state: "tool_format", original, parsed: null };
+}
+/** Replace a sidecar, recording (not throwing) a refused or failed write. */
+function replaceSidecar(p, content, unknowns) {
     // A no-op catch here silently drops the metadata AND contradicts the old comment
     // that claimed it was "recorded in manifest" (findings OBS-006 / PRD-002). Record it.
     try {
-        (0, durable_write_1.replaceFileAtomically)((0, comment_1.sidecarPathFor)(abs), serializeYaml(obj));
+        (0, durable_write_1.replaceFileAtomically)(p, content);
     }
     catch (err) {
         unknowns?.push(`sidecar_write_failed:${err.message}`);
     }
 }
-// Write a folder's .l9meta.yaml. If one already exists (possibly
-// user-authored), a parseability check is performed before rewriting it.
-// Note: this does NOT merge — the entire file is rewritten if parseable.
+function writeSidecar(abs, obj, unknowns) {
+    const p = (0, comment_1.sidecarPathFor)(abs);
+    const existing = inspectExistingSidecar(p, FILE_SIDECAR_CODES);
+    if (existing.state === "held") {
+        unknowns?.push(existing.diagnostic);
+        return;
+    }
+    const next = serializeYaml(obj);
+    // Same bytes: nothing to write, and replacing would only move the inode (ADR-060).
+    if (existing.state === "tool_format" && existing.original === next)
+        return;
+    replaceSidecar(p, next, unknowns);
+}
 // Boundary: a schema-driven header carries arbitrary operator-defined fields, not
 // the NormalizedMeta identity block. injectFile serializes meta as a generic
 // key/value bag, so this single documented cast is the one place that deliberately
@@ -605,32 +774,37 @@ function writeSidecar(abs, obj, unknowns) {
 function asInjectableMeta(fields) {
     return fields;
 }
+/** Carrier fields a folder sidecar may differ in without being rewritten (ADR-060). */
+const FOLDER_CLOCK_KEYS = ["created_at", "modified_at"];
+function withoutFolderClocks(fields) {
+    const out = { ...fields };
+    for (const key of FOLDER_CLOCK_KEYS)
+        delete out[key];
+    return out;
+}
+// Write a folder's .l9meta.yaml. An existing one (possibly user-authored) is
+// held unless it is in the tool's own format (`inspectExistingSidecar`).
+// Note: this does NOT merge — a tool-format file is rewritten whole.
 function writeFolderSidecar(dir, metaObj, unknowns) {
     const p = path.join(dir, ".l9meta.yaml");
-    if (fs.existsSync(p)) {
-        const original = fs.readFileSync(p, "utf8");
-        let parsed;
-        try {
-            parsed = (0, meta_schema_1.parseCanonicalYaml)(original);
-        }
-        catch {
-            unknowns?.push("folder_sidecar_unreadable");
+    const existing = inspectExistingSidecar(p, FOLDER_SIDECAR_CODES);
+    if (existing.state === "held") {
+        unknowns?.push(existing.diagnostic);
+        return;
+    }
+    const next = serializeYaml(metaObj);
+    if (existing.state === "tool_format") {
+        if (existing.original === next)
+            return;
+        // A folder has no content anchor to carry clocks against, and every write
+        // inside it moves its mtime. A tool-format sidecar that differs only in the
+        // filesystem clocks is kept, as an archive member is (ADR-049 / ADR-060).
+        if (existing.parsed !== null
+            && serializeYaml(withoutFolderClocks(existing.parsed)) === serializeYaml(withoutFolderClocks(metaObj))) {
             return;
         }
-        if (typeof parsed === "object" && parsed !== null) {
-            const roundTripped = serializeYaml(parsed);
-            if (roundTripped !== original) {
-                unknowns?.push("folder_sidecar_lossy_roundtrip");
-                return;
-            }
-        }
     }
-    try {
-        (0, durable_write_1.replaceFileAtomically)(p, serializeYaml(metaObj));
-    }
-    catch (err) {
-        unknowns?.push(`sidecar_write_failed:${err.message}`);
-    }
+    replaceSidecar(p, next, unknowns);
 }
 function omitSmashedClock(fields) {
     const out = { ...fields };
@@ -689,8 +863,8 @@ function applyInventoryClocksToWritten(abs, clocks) {
             return;
         const next = omitSmashedClock({ ...parsed, ...clocks });
         const newline = (0, comment_1.detectNewlineConvention)(raw);
-        const block = (0, comment_1.yamlToBlock)((0, yaml_serialize_1.serializeYamlObject)(next, { fences: false }), spec, newline);
-        const rewritten = (0, comment_1.applyCommentInjection)((0, comment_1.stripInjectedBlock)(raw, spec), block, newline);
+        const block = (0, comment_1.yamlToBlock)((0, yaml_serialize_1.serializeYamlObject)(next, { fences: false, forbidden: (0, comment_1.carrierForbiddenSequences)(spec) }), spec, newline);
+        const rewritten = (0, comment_1.applyCommentInjection)((0, comment_1.stripInjectedBlock)(raw, spec), block, newline, spec);
         if (rewritten !== raw)
             (0, durable_write_1.replaceFileAtomically)(abs, rewritten);
     }
@@ -727,8 +901,8 @@ function stripSmashedClockFromWritten(abs) {
         }
         const stripped = omitSmashedClock(parsed);
         const newline = (0, comment_1.detectNewlineConvention)(raw);
-        const block = (0, comment_1.yamlToBlock)((0, yaml_serialize_1.serializeYamlObject)(stripped, { fences: false }), spec, newline);
-        (0, durable_write_1.replaceFileAtomically)(abs, (0, comment_1.applyCommentInjection)((0, comment_1.stripInjectedBlock)(raw, spec), block, newline));
+        const block = (0, comment_1.yamlToBlock)((0, yaml_serialize_1.serializeYamlObject)(stripped, { fences: false, forbidden: (0, comment_1.carrierForbiddenSequences)(spec) }), spec, newline);
+        (0, durable_write_1.replaceFileAtomically)(abs, (0, comment_1.applyCommentInjection)((0, comment_1.stripInjectedBlock)(raw, spec), block, newline, spec));
         return true;
     }
     return false;
@@ -756,6 +930,18 @@ const ALWAYS_DERIVED_ANNOTATION_KEYS = [
     "retrievable",
     "injectable",
     "token_cost_estimate",
+];
+/** Keys `annotationFields` emits after the harvest spread, in emission order. */
+const TRAILING_ANNOTATION_KEYS = [
+    "id",
+    "title",
+    "source_path",
+    "content_hash",
+    "inventory_type",
+    "classification_confidence",
+    "created_at",
+    "modified_at",
+    "inspected_at",
 ];
 const ARTIFACT_TYPE_VALUES = new Set([
     "skill", "playbook", "kernel", "context", "prompt",
@@ -789,6 +975,7 @@ function asSharingScope(value) {
 }
 function annotationFields(rec, harvest, ctx) {
     const rawHarvest = sanitizeHarvest(harvest);
+    const harvestedTitle = typeof rawHarvest.title === "string" && rawHarvest.title.trim() ? rawHarvest.title : rec.file_name;
     const harvestedType = asArtifactType(rawHarvest.artifact_type);
     const harvestedNamespace = harvestedOperatorString(rawHarvest.namespace, "namespace");
     const harvestedAuthority = harvestedOperatorString(rawHarvest.authority, "authority");
@@ -799,6 +986,11 @@ function annotationFields(rec, harvest, ctx) {
             delete kept[key];
     }
     for (const key of ALWAYS_DERIVED_ANNOTATION_KEYS)
+        delete kept[key];
+    // Keys this function sets after the spread are removed from it, so a harvested
+    // copy cannot pin their position: the emitted key order is the same whether or
+    // not an earlier run left a header behind (ADR-060).
+    for (const key of TRAILING_ANNOTATION_KEYS)
         delete kept[key];
     const derivable = ctx.body !== null;
     const classified = derivable ? (0, classify_1.classify)(rec.relative_path, ctx.body ?? "", "none").artifactType : undefined;
@@ -818,7 +1010,6 @@ function annotationFields(rec, harvest, ctx) {
             : undefined)
         ?? schema_1.UNKNOWN;
     const tokens = derivable && ctx.body !== null ? (0, extract_1.estimateTokens)(ctx.body) : schema_1.UNKNOWN;
-    const harvestedTitle = typeof kept.title === "string" && kept.title.trim() ? kept.title : rec.file_name;
     return omitSmashedClock({
         artifact_type: tax.artifact_type,
         mcp_primitive: tax.mcp_primitive,
@@ -843,8 +1034,8 @@ function annotationFields(rec, harvest, ctx) {
         content_hash: rec.content_hash ?? schema_1.UNKNOWN,
         inventory_type: rec.artifact_type,
         classification_confidence: rec.classification_confidence,
-        created_at: rec.created_at ?? schema_1.UNKNOWN,
-        modified_at: rec.modified_at ?? schema_1.UNKNOWN,
+        created_at: ctx.clocks.created_at ?? schema_1.UNKNOWN,
+        modified_at: ctx.clocks.modified_at ?? schema_1.UNKNOWN,
         inspected_at: rec.inspected_at ?? schema_1.UNKNOWN,
     });
 }
@@ -855,6 +1046,11 @@ function harvestedStringList(value) {
         return [value];
     return [];
 }
+/**
+ * Upsert the archive's root member and project Darwin search metadata.
+ * Returns whether the archive's bytes were replaced, so the caller can
+ * re-observe it before writing the adjacent sidecar (RC-053).
+ */
 function annotateArchive(abs, rec, metaObj, harvest) {
     const embeddedMeta = { ...metaObj };
     delete embeddedMeta.content_hash;
@@ -866,7 +1062,7 @@ function annotateArchive(abs, rec, metaObj, harvest) {
     if (existing !== null) {
         const existingHash = crypto.createHash("sha256").update(existing, "utf8").digest("hex");
         if (newHash === existingHash) {
-            return;
+            return false;
         }
     }
     const darwinPrior = (0, inventory_darwin_search_1.harvestDarwinSearch)(abs);
@@ -883,6 +1079,7 @@ function annotateArchive(abs, rec, metaObj, harvest) {
     }, darwinPrior);
     if (err)
         rec.unknowns.push(err);
+    return member.rewritten;
 }
 function writeManifests(outDir, root, records, dist, duplicates, now, _dryRun) {
     fs.mkdirSync(outDir, { recursive: true });
@@ -898,9 +1095,9 @@ function writeManifests(outDir, root, records, dist, duplicates, now, _dryRun) {
     for (const r of records)
         rows.push(cols.map((c) => csvCell(Array.isArray(r[c]) ? r[c].join("; ") : r[c])).join(","));
     fs.writeFileSync(csvPath, rows.join("\n") + "\n", "utf8");
-    const md = [`# Inventory — ${root}`, ``, `Generated: ${now}  |  Total entries: ${records.length}  |  Duplicate clusters: ${duplicates.length}  |  Recoverable: ${totalWasted} bytes`, ``, `## Type distribution`, ``, ...Object.entries(dist).sort((a, b) => b[1] - a[1]).map(([k, v]) => `- **${k}**: ${v}`)];
+    const md = [`# Inventory — ${root}`, ``, `Generated: ${now}  |  Total entries: ${records.length}  |  Duplicate clusters: ${duplicates.length}  |  Repeated content: ${totalWasted} bytes`, ``, `## Type distribution`, ``, ...Object.entries(dist).sort((a, b) => b[1] - a[1]).map(([k, v]) => `- **${k}**: ${v}`)];
     if (duplicates.length) {
-        md.push(``, `## Duplicate clusters (consolidated dedup view)`, ``, `Files sharing a content hash across the tree. Read-only — nothing is deleted.`, ``, `| # | count | wasted bytes | keeper | other paths |`, `|---|---|---|---|---|`);
+        md.push(``, `## Duplicate clusters (same carrier-free content)`, ``, `Files sharing a content_hash across the tree. For text files the hash excludes the metadata carrier — the L9 header and any YAML front matter (ADR-051, ADR-065) — so members have the same carrier-free content, while their headers or front matter may differ. Compare that metadata before removing a copy. Read-only — nothing is deleted.`, ``, `| # | count | repeated bytes | keeper | other paths |`, `|---|---|---|---|---|`);
         duplicates.slice(0, 100).forEach((d, i) => md.push(`| ${i + 1} | ${d.count} | ${d.wasted_bytes} | \`${d.keeper}\` | ${d.paths.filter((p) => p !== d.keeper).join("<br>")} |`));
     }
     md.push(``, `## Entries`, ``, `| path | type | conf | size | evidence |`, `|---|---|---|---|---|`, ...records.slice(0, 500).map((r) => `| ${r.relative_path} | ${r.artifact_type} | ${r.classification_confidence} | ${r.size_bytes ?? ""} | ${r.evidence_excerpt ?? ""} |`));

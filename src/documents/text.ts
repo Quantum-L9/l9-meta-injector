@@ -8,6 +8,7 @@
 import * as fs from "node:fs";
 import {
   BlockBuilder,
+  BlockLocator,
   DecodeInput,
   DecodeOutcome,
   DocumentDecoder,
@@ -16,7 +17,12 @@ import {
 } from "./decoder";
 
 export const TEXT_DECODER_ID = "l9.text-decoder";
-export const TEXT_DECODER_VERSION = "1.0.0";
+// 1.1.0: a leading byte-order mark is not part of line 1, and an ATX closing
+// sequence (`## Status ##`) is not part of the heading text.
+// 1.2.0: the Markdown dialect is declared (`dialectFor`) and enters the
+// normalized document id and cache key (ADR-059), so a `.md` and a `.txt` with
+// identical bytes are two documents and an entry keyed without it is never served.
+export const TEXT_DECODER_VERSION = "1.2.0";
 export const CSV_DECODER_ID = "l9.csv-decoder";
 /**
  * 1.1.0 emits a block per populated cell beside the row block.
@@ -29,7 +35,12 @@ export const CSV_DECODER_ID = "l9.csv-decoder";
  * while the identical table in a worksheet was understood, purely because the
  * worksheet decoder emits cells and this one did not.
  */
-export const CSV_DECODER_VERSION = "1.1.0";
+// 1.2.0: a record ends at a newline outside quotes, so a quoted cell that
+// spans lines stays one cell and its row cites the line the record starts on.
+// 1.3.0: the tab-separated dialect is declared (`dialectFor`) and enters the
+// normalized document id and cache key (ADR-059), so a `.csv` and a `.tsv` with
+// identical bytes are two documents and an entry keyed without it is never served.
+export const CSV_DECODER_VERSION = "1.3.0";
 
 /** Read a file as UTF-8, refusing bytes that are not valid UTF-8. */
 export function readUtf8(input: DecodeInput): { text: string } | { reason: string } {
@@ -44,28 +55,148 @@ export function readUtf8(input: DecodeInput): { text: string } | { reason: strin
   if (!Buffer.from(text, "utf8").equals(bytes)) {
     return { reason: "bytes are not valid UTF-8" };
   }
-  return { text };
+  // A byte-order mark announces the encoding; it is not the first character of
+  // line 1. Left in, it stops `# Title` being a heading and a notebook being
+  // JSON. Stripped only after validity is established on the original bytes.
+  return { text: text.charCodeAt(0) === 0xfeff ? text.slice(1) : text };
+}
+
+/** Exactly the characters JavaScript's `\s` matches. */
+function isSpace(char: string | undefined): boolean {
+  return char !== undefined && /\s/.test(char);
+}
+
+/** Characters `.` does not match; content containing one never matched the old expressions. */
+function isLineTerminator(char: string): boolean {
+  return char === "\n" || char === "\r" || char === "\u2028" || char === "\u2029";
+}
+
+/**
+ * The content of `line` between `from` and its last non-whitespace character,
+ * or null when there is none or it holds a line terminator. One pass.
+ */
+function trimmedContent(line: string, from: number): string | null {
+  let start = from;
+  while (start < line.length && isSpace(line[start])) start += 1;
+  let end = line.length;
+  while (end > start && isSpace(line[end - 1])) end -= 1;
+  if (end <= start) return null;
+  for (let index = start; index < end; index += 1) {
+    if (isLineTerminator(line[index] as string)) return null;
+  }
+  return line.slice(start, end);
+}
+
+/**
+ * An ATX heading: one to six `#`, whitespace, then content.
+ *
+ * A linear scan rather than `/^(#{1,6})\s+(.*\S)\s*#*\s*$/`, whose `\s+` and
+ * `.*` overlap and try every split of a long whitespace run before failing. A
+ * closing sequence — whitespace then only `#` to the end of the line — is not
+ * part of the text; a `#` with no whitespace before it (`C#`) is.
+ */
+function classifyAtxHeading(line: string): { level: number; text: string } | null {
+  let level = 0;
+  while (level < line.length && line[level] === "#") level += 1;
+  if (level < 1 || level > 6 || !isSpace(line[level])) return null;
+  const content = trimmedContent(line, level);
+  if (content === null) return null;
+  let hashes = content.length;
+  while (hashes > 0 && content[hashes - 1] === "#") hashes -= 1;
+  if (hashes < content.length && hashes > 0 && isSpace(content[hashes - 1])) {
+    let end = hashes - 1;
+    while (end > 0 && isSpace(content[end - 1])) end -= 1;
+    if (end > 0) return { level, text: content.slice(0, end) };
+  }
+  return { level, text: content };
+}
+
+/**
+ * A list item: optional indentation, `-`, `*`, `+` or digits with `.`/`)`,
+ * whitespace, then content. The linear form of
+ * `/^\s*(?:[-*+]|\d+[.)])\s+(.*\S)\s*$/`.
+ */
+function classifyListItem(line: string): string | null {
+  let index = 0;
+  while (index < line.length && isSpace(line[index])) index += 1;
+  const marker = line[index];
+  if (marker === "-" || marker === "*" || marker === "+") {
+    index += 1;
+  } else {
+    const digits = index;
+    while (index < line.length && (line[index] as string) >= "0" && (line[index] as string) <= "9") index += 1;
+    if (index === digits || (line[index] !== "." && line[index] !== ")")) return null;
+    index += 1;
+  }
+  if (!isSpace(line[index])) return null;
+  return trimmedContent(line, index);
 }
 
 const MARKDOWN_EXTENSIONS = new Set([".md", ".markdown", ".mdx"]);
 
-/** ATX and Setext headings, list items, fenced code, and everything else. */
-function decodeTextBlocks(text: string, builder: BlockBuilder, markdown: boolean): void {
+/** Lowercased extension of a source path's last segment, with its dot, or "". */
+function extensionOfSourcePath(sourcePath: string): string {
+  const basename = sourcePath.slice(sourcePath.lastIndexOf("/") + 1).toLowerCase();
+  const dot = basename.lastIndexOf(".");
+  return dot > 0 ? basename.slice(dot) : "";
+}
+
+/**
+ * The text decoder's dialect for a path: `markdown`, or none for plain text.
+ *
+ * The one place the text decoder looks at a name. The decoder branches on it
+ * and the corpus keys on it, so the two cannot disagree about which document
+ * a set of bytes became.
+ */
+function textDialectFor(sourcePath: string): string | undefined {
+  return MARKDOWN_EXTENSIONS.has(extensionOfSourcePath(sourcePath)) ? "markdown" : undefined;
+}
+
+/** The CSV decoder's dialect for a path: `tsv`, or none for comma-separated. */
+function csvDialectFor(sourcePath: string): string | undefined {
+  return extensionOfSourcePath(sourcePath) === ".tsv" ? "tsv" : undefined;
+}
+
+/** How a caller places a block read from a span of lines, and what it calls the span. */
+export interface TextBlockScope {
+  /** The locator for lines `start`..`end` (1-based, inclusive) of this text. */
+  locate: (start: number, end: number) => BlockLocator;
+  /** Shared across calls when several texts form one document, as a notebook's cells do. */
+  title: { seen: boolean };
+  /** What the text is, for diagnostics: "file" or "cell". */
+  unit: string;
+}
+
+function lineSpanScope(): TextBlockScope {
+  return {
+    locate: (start, end) => ({ kind: "line_span", line_start: start, line_end: end }),
+    title: { seen: false },
+    unit: "file",
+  };
+}
+
+/**
+ * ATX headings, list items, fenced code, and everything else.
+ *
+ * Markdown files and a notebook's Markdown cells both come through here, so a
+ * fence means code in either and a heading means a heading in either.
+ */
+export function decodeTextBlocks(
+  text: string,
+  builder: BlockBuilder,
+  markdown: boolean,
+  scope: TextBlockScope = lineSpanScope(),
+): void {
   const lines = text.split(/\r?\n/);
   let paragraph: string[] = [];
   let paragraphStart = 1;
   let fence: string | null = null;
   let fenceStart = 1;
   let fenceLines: string[] = [];
-  let sawTitle = false;
 
   const flushParagraph = (endLine: number): void => {
     if (paragraph.length === 0) return;
-    builder.add("paragraph", paragraph.join("\n"), {
-      kind: "line_span",
-      line_start: paragraphStart,
-      line_end: endLine,
-    });
+    builder.add("paragraph", paragraph.join("\n"), scope.locate(paragraphStart, endLine));
     paragraph = [];
   };
 
@@ -77,11 +208,7 @@ function decodeTextBlocks(text: string, builder: BlockBuilder, markdown: boolean
       const fenceMatch = /^\s*(```|~~~)/.exec(line);
       if (fence !== null) {
         if (fenceMatch !== null && line.trim().startsWith(fence)) {
-          builder.add("code", fenceLines.join("\n"), {
-            kind: "line_span",
-            line_start: fenceStart,
-            line_end: lineNumber,
-          });
+          builder.add("code", fenceLines.join("\n"), scope.locate(fenceStart, lineNumber));
           fence = null;
           fenceLines = [];
           continue;
@@ -97,27 +224,21 @@ function decodeTextBlocks(text: string, builder: BlockBuilder, markdown: boolean
         continue;
       }
 
-      const atx = /^(#{1,6})\s+(.*\S)\s*#*\s*$/.exec(line);
+      const atx = classifyAtxHeading(line);
       if (atx !== null) {
         flushParagraph(lineNumber - 1);
-        const level = (atx[1] as string).length;
-        const heading = atx[2] as string;
         // The first level-1 heading is the document's title. Later ones are
         // headings: a file with three `#` sections has one title, not three.
-        const kind = level === 1 && !sawTitle ? "title" : "heading";
-        if (kind === "title") sawTitle = true;
-        builder.add(kind, heading, { kind: "line_span", line_start: lineNumber, line_end: lineNumber });
+        const kind = atx.level === 1 && !scope.title.seen ? "title" : "heading";
+        if (kind === "title") scope.title.seen = true;
+        builder.add(kind, atx.text, scope.locate(lineNumber, lineNumber));
         continue;
       }
 
-      const listItem = /^\s*(?:[-*+]|\d+[.)])\s+(.*\S)\s*$/.exec(line);
+      const listItem = classifyListItem(line);
       if (listItem !== null) {
         flushParagraph(lineNumber - 1);
-        builder.add("list_item", listItem[1] as string, {
-          kind: "line_span",
-          line_start: lineNumber,
-          line_end: lineNumber,
-        });
+        builder.add("list_item", listItem, scope.locate(lineNumber, lineNumber));
         continue;
       }
     }
@@ -131,15 +252,11 @@ function decodeTextBlocks(text: string, builder: BlockBuilder, markdown: boolean
   }
 
   if (fence !== null) {
-    builder.add("code", fenceLines.join("\n"), {
-      kind: "line_span",
-      line_start: fenceStart,
-      line_end: lines.length,
-    });
+    builder.add("code", fenceLines.join("\n"), scope.locate(fenceStart, lines.length));
     builder.note({
       code: "decoder.malformed",
       severity: "info",
-      message: "a fenced code block was not closed; it was read to the end of the file",
+      message: `a fenced code block was not closed; it was read to the end of the ${scope.unit}`,
     });
   }
   flushParagraph(lines.length);
@@ -161,6 +278,7 @@ export const textDecoder: DocumentDecoder = {
     "dockerfile", "containerfile", "gemfile", "jenkinsfile", "makefile", "procfile",
     "readme", "license", "changelog", "notice", "authors", "codeowners",
   ],
+  dialectFor: textDialectFor,
   decode(input: DecodeInput): DecodeOutcome {
     const read = readUtf8(input);
     if ("reason" in read) {
@@ -171,15 +289,15 @@ export const textDecoder: DocumentDecoder = {
         diagnostics: [{ code: "decoder.malformed", severity: "warning", message: read.reason }],
       };
     }
+    const dialect = textDialectFor(input.sourcePath);
     const documentId = normalizedDocumentId({
       contentHash: input.contentHash,
       decoderId: TEXT_DECODER_ID,
       decoderVersion: TEXT_DECODER_VERSION,
+      ...(dialect !== undefined ? { dialect } : {}),
     });
     const builder = new BlockBuilder(documentId, input.budget);
-    const basename = input.sourcePath.slice(input.sourcePath.lastIndexOf("/") + 1).toLowerCase();
-    const dot = basename.lastIndexOf(".");
-    const markdown = dot > 0 && MARKDOWN_EXTENSIONS.has(basename.slice(dot));
+    const markdown = dialect === "markdown";
     decodeTextBlocks(read.text, builder, markdown);
     const title = builder.finish().blocks.find((block) => block.kind === "title");
     return {
@@ -264,10 +382,44 @@ function addCsvCellBlocks(
 }
 
 /**
- * One block per non-empty row, plus one per populated cell, and the rows read.
+ * The records of a delimited file, each with the physical line it starts on.
  *
- * The row number is the line number in the file, so a row is citable at the place
- * an operator would look for it even though blank lines are skipped.
+ * A newline ends a record only outside quotes. Quote state is the parity of the
+ * `"` characters since the record began — the same toggling `splitCsvLine`
+ * applies, with `""` toggling twice — so the two agree on where a quoted field
+ * ends. A quote still open at end of file leaves the rest as one record, so no
+ * content is dropped, and is reported.
+ */
+function csvRecords(text: string): { records: { text: string; line: number }[]; unterminatedAt: number | null } {
+  const records: { text: string; line: number }[] = [];
+  let start = 0;
+  let startLine = 1;
+  let line = 1;
+  let quoted = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (char === '"') {
+      quoted = !quoted;
+      continue;
+    }
+    if (char !== "\n") continue;
+    line += 1;
+    if (quoted) continue;
+    const end = index > start && text[index - 1] === "\r" ? index - 1 : index;
+    records.push({ text: text.slice(start, end), line: startLine });
+    start = index + 1;
+    startLine = line;
+  }
+  if (start < text.length) records.push({ text: text.slice(start), line: startLine });
+  return { records, unterminatedAt: quoted ? startLine : null };
+}
+
+/**
+ * One block per non-empty record, plus one per populated cell, and the rows read.
+ *
+ * The row number is the line number in the file a record starts on, so a row is
+ * citable at the place an operator would look for it even though blank lines are
+ * skipped and a quoted cell may span several lines.
  */
 function addCsvRowBlocks(
   builder: BlockBuilder,
@@ -276,9 +428,18 @@ function addCsvRowBlocks(
 ): string[][] {
   const rows: string[][] = [];
   let header: string[] = [];
-  const lines = text.split(/\r?\n/);
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index] as string;
+  const { records, unterminatedAt } = csvRecords(text);
+  if (unterminatedAt !== null) {
+    builder.note({
+      code: "decoder.malformed",
+      severity: "info",
+      message: `a quoted field opened in the record starting on line ${unterminatedAt} is never closed; `
+        + "the rest of the file was read as that record",
+    });
+  }
+  for (const record of records) {
+    const line = record.text;
+    const rowNumber = record.line;
     if (line.trim().length === 0) continue;
     const cells = splitCsvLine(line, delimiter);
     if (rows.length === 0) header = cells;
@@ -289,8 +450,8 @@ function addCsvRowBlocks(
     const label = labelled
       ? cells.map((cell, column) => `${header[column]}: ${cell}`).join("; ")
       : cells.join(" | ");
-    builder.add("cell", label, { kind: "csv_row", row_number: index + 1 });
-    if (!builder.isFull && labelled) addCsvCellBlocks(builder, header, cells, index + 1);
+    builder.add("cell", label, { kind: "csv_row", row_number: rowNumber });
+    if (!builder.isFull && labelled) addCsvCellBlocks(builder, header, cells, rowNumber);
     if (builder.isFull) break;
   }
   return rows;
@@ -301,6 +462,7 @@ export const csvDecoder: DocumentDecoder = {
   version: CSV_DECODER_VERSION,
   format: "csv",
   extensions: [".csv", ".tsv"],
+  dialectFor: csvDialectFor,
   decode(input: DecodeInput): DecodeOutcome {
     const read = readUtf8(input);
     if ("reason" in read) {
@@ -311,13 +473,15 @@ export const csvDecoder: DocumentDecoder = {
         diagnostics: [{ code: "decoder.malformed", severity: "warning", message: read.reason }],
       };
     }
+    const dialect = csvDialectFor(input.sourcePath);
     const documentId = normalizedDocumentId({
       contentHash: input.contentHash,
       decoderId: CSV_DECODER_ID,
       decoderVersion: CSV_DECODER_VERSION,
+      ...(dialect !== undefined ? { dialect } : {}),
     });
     const builder = new BlockBuilder(documentId, input.budget);
-    const delimiter = input.sourcePath.toLowerCase().endsWith(".tsv") ? "\t" : ",";
+    const delimiter = dialect === "tsv" ? "\t" : ",";
     const rows = addCsvRowBlocks(builder, read.text, delimiter);
     if (rows.length > 0) {
       builder.addTable(rows, { kind: "csv_row", row_number: 1 });

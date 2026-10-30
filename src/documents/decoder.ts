@@ -210,10 +210,20 @@ export interface DecoderBudget {
   maxBlocks: number;
   /** Largest number of entries an OOXML container may declare. */
   maxContainerEntries: number;
-  /** Largest uncompressed size of one OOXML part. */
+  /**
+   * Largest uncompressed size of one OOXML part, and of one decompressed PDF
+   * stream.
+   */
   maxPartBytes: number;
-  /** Largest uncompressed:compressed ratio tolerated for one OOXML part. */
+  /**
+   * Largest uncompressed:compressed ratio tolerated for one OOXML part. For a
+   * PDF it bounds the document as a whole: all decompressed stream bytes
+   * together may not exceed this multiple of the file's size, nor four times
+   * `maxPartBytes`.
+   */
   maxCompressionRatio: number;
+  /** Largest total uncompressed bytes all the parts of one OOXML container may produce. */
+  maxContainerUncompressedBytes: number;
   /** Deepest nesting a structured format may use before it is refused. */
   maxDepth: number;
 }
@@ -225,6 +235,7 @@ export const DEFAULT_DECODER_BUDGET: DecoderBudget = {
   maxContainerEntries: 4096,
   maxPartBytes: 32 * 1024 * 1024,
   maxCompressionRatio: 200,
+  maxContainerUncompressedBytes: 8 * 32 * 1024 * 1024,
   maxDepth: 64,
 };
 
@@ -242,27 +253,45 @@ export interface DocumentDecoder {
    * by nobody, which is a coverage gap that looks like a decoder failure.
    */
   filenames?: readonly string[];
+  /**
+   * The dialect this decoder reads a source path in, or undefined for none.
+   *
+   * Declared by a decoder whose output depends on the name as well as the bytes:
+   * the text decoder reads `.md` as Markdown and `.txt` as plain text, the CSV
+   * decoder splits `.tsv` on tabs. The decoder consults this and nothing else
+   * when it branches on the name, and the corpus puts the same answer into the
+   * normalized document's identity and cache key — so identical bytes read in
+   * two dialects are two documents, and identical bytes read in one are one.
+   */
+  dialectFor?(sourcePath: string): string | undefined;
   decode(input: DecodeInput): DecodeOutcome;
 }
 
 /**
  * Identity of a normalized document.
  *
- * Bound to the exact bytes and to the decoder that read them, and to nothing
- * else. Two artifacts holding identical bytes produce one normalized document
+ * Bound to the exact bytes, to the decoder that read them and to the dialect
+ * that decoder declared for them (ADR-059), and to nothing else. Two artifacts
+ * holding identical bytes read in one dialect produce one normalized document
  * identity, which is what lets the cache serve one to both; a decoder revision
  * produces a different one, which is what stops last release's reading being
  * presented as this release's.
+ *
+ * The dialect is hashed only when the decoder declares one, so the identity of
+ * every document read by a decoder without dialects is unchanged by its
+ * existence.
  */
 export function normalizedDocumentId(input: {
   contentHash: string;
   decoderId: string;
   decoderVersion: string;
+  dialect?: string;
 }): string {
   return stableId("normdoc", {
     content_hash: input.contentHash,
     decoder_id: input.decoderId,
     decoder_version: input.decoderVersion,
+    ...(input.dialect !== undefined ? { dialect: input.dialect } : {}),
   });
 }
 

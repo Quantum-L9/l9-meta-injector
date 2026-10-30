@@ -30,7 +30,11 @@ import {
 } from "./documents";
 import { compareCodePoints } from "./ordering";
 
-export const CORPUS_COVERAGE_SCHEMA = "l9.corpus-coverage/v1";
+/**
+ * v2 (ADR-068): `interpretation_enabled` is stated, and `interpretation_coverage`
+ * is null when the interpretation pass did not run, as embeddings already are.
+ */
+export const CORPUS_COVERAGE_SCHEMA = "l9.corpus-coverage/v2";
 
 /** Raster formats that carry no extractable text layer without OCR. */
 export const OCR_REQUIRED_EXTENSIONS: readonly string[] = OCR_CANDIDATE_EXTENSIONS;
@@ -263,7 +267,14 @@ export interface CorpusCoverage {
   embeddings: EmbeddingCoverage;
   exact_hash_coverage: CoverageRatio;
   normalized_document_coverage: CoverageRatio;
-  interpretation_coverage: CoverageRatio;
+  /** Whether the interpretation pass ran at all. */
+  interpretation_enabled: boolean;
+  /**
+   * Null when interpretation was not enabled. A ratio over an empty eligible set
+   * reads as complete, and "nothing looked" is a different fact from "nothing
+   * was there to find" (ADR-068).
+   */
+  interpretation_coverage: CoverageRatio | null;
   lexical_analysis_coverage: CoverageRatio;
   /** Null when embeddings were not enabled, which is the default. */
   embedding_coverage_when_enabled: CoverageRatio | null;

@@ -352,3 +352,41 @@ describe("uncertainty", () => {
     expect(agreed.metrics.uncertainty.conflicting_status_count).toBe(0);
   });
 });
+
+describe("status conflicts are computed on status classes", () => {
+  function conflictsFor(statuses: string[]): number {
+    const inputs = statuses.map((status, index) =>
+      artifact(`proj/${String.fromCharCode(65 + index)}.md`, [{ predicate: "work.status", object: status }]));
+    const ctx: BodyOfWorkContext = {
+      signalsById: new Map(inputs.map((i) => [i.virtual_source_id, readinessSignalsFor(i)])),
+      artifactsById: new Map(inputs.map((i) => [i.virtual_source_id, i])),
+      rootById: new Map(inputs.map((i) => [i.virtual_source_id, "root:one"])),
+      exactDuplicateIds: new Set(),
+      nearDuplicatePairs: [],
+    };
+    return buildBodyOfWork(
+      {
+        origin: "project_candidate",
+        origin_ref: "container:proj",
+        member_ids: inputs.map((i) => i.virtual_source_id),
+      },
+      ctx,
+    ).metrics.uncertainty.conflicting_status_count;
+  }
+
+  it("REG-WU-055-RC-091-a: complete and done agree", () => {
+    expect(conflictsFor(["complete", "done"])).toBe(0);
+  });
+
+  it("REG-WU-055-RC-091-b: wip and active agree", () => {
+    expect(conflictsFor(["wip", "active"])).toBe(0);
+  });
+
+  it("REG-WU-055-RC-091-c: complete and wip still conflict, counting both members", () => {
+    expect(conflictsFor(["complete", "wip"])).toBe(2);
+  });
+
+  it("REG-WU-055-RC-091-d: an unclassified value stays its own class", () => {
+    expect(conflictsFor(["complete", "frozen"])).toBe(2);
+  });
+});

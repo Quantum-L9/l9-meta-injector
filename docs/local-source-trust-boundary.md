@@ -59,6 +59,15 @@ would present a partial view a consumer cannot distinguish from a complete one. 
 archive keeps its observation and its digest, records its reason, and contributes no
 members.
 
+**A member locator names exactly one thing.** The locator separator `!/` is legal in
+filesystem and member names, so acquisition holds an archive with
+`archive.locator_ambiguous` when a member's path contains `!/`, or when a physical
+entry already lives under `<archive>!/`: expanding either would mint a locator another
+record can spell, and with it a duplicate artifact identity. Two records that still
+share a locator stop acquisition as an invariant violation. Archive ancestry is read
+from the members' parent chain, never by splitting a path, so a physical `notes!/x.md`
+is inside no archive (ADR-063).
+
 **Expansion is bounded twice.** `LocalArchivePolicy` caps archive size, member count,
 per-member, per-archive and per-session uncompressed bytes, compression ratio, nesting
 depth, path length and processing time. The declared sizes in the central directory are
@@ -114,8 +123,20 @@ times, observation wall clock, usernames and hostnames never cross it.
 - **Hidden entries are observed.** Dotfiles and dot-directories under the source are
   ordinary entries; only `.git`, `node_modules`, this package's own generated
   artifacts, and omit patterns exclude anything. A host failure while staging a member
-  (permissions, a full disk) is thrown rather than reported as a property of the
-  archive, and the scratch root is disposed on the way out.
+  or an archive (permissions, a full disk) is thrown rather than reported as a property
+  of the archive, and the scratch root is disposed on the way out. An archive whose
+  bytes the snapshot could not read is not staged at all (its record carries
+  `content_hash_unavailable:<CODE>`); one that becomes unreadable between hashing and
+  staging makes the observation unstable. Recorded failures carry the errno code and
+  the repository-relative path, never the host's message or an absolute path.
+- **Only regular files are opened.** A source path that is a FIFO, socket or device
+  is refused before anything is opened or written. Every file read (hashing, prefix
+  sniffing, the `.l9extracted-owner.json` marker) lstat's the path, opens it
+  without following a final symlink and without blocking, and fstat's the
+  descriptor; anything that is not a regular file is never read. A marker that is
+  a symlink, special file, unparsable, or larger than 64 KiB grants no ownership. A
+  file that turns into something else between enumeration and hashing makes the
+  observation unstable.
 - **Member name encoding.** A member name stored without the UTF-8 flag is decoded as
   UTF-8 and flagged when that is lossy. Historical CP437 names are not transcoded.
 - **Time-of-check to time-of-use on the source root.** The archive is hashed and read

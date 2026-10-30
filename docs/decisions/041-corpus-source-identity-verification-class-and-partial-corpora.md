@@ -9,6 +9,8 @@ candidates and the reasoning queue). Neither is superseded.
 [ADR-037](037-corpus-intelligence-artifact-scope-and-duplicate-topology.md) and
 [ADR-039](039-real-corpus-qualification-report.md) are untouched.
 
+Amended by [ADR-068](068-not-run-versus-found-empty-in-corpus-packet-and-reports.md): the corpus coverage and packet declare passes a run did not make (`domains_not_run`, `l9.corpus-coverage/v2`).
+
 ## Date
 
 2026-08-23

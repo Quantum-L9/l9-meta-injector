@@ -5,26 +5,78 @@
 // Parsing is already single-sourced in meta_schema.parseCanonicalYaml; this is its
 // write-side counterpart, and its output is designed to round-trip back through it.
 
-// Serialize one scalar (or a nested value). Strings are emitted BARE when safe and
-// double-quoted (with \\ and \" escaped) when they contain YAML-significant
-// characters or would otherwise be misread as a bool/null — the inverse of
-// parseCanonicalYaml's SCALAR reader. null/undefined → `null`; nested objects and
-// arrays-as-values are inlined as JSON (the subset has no deeper nesting).
-// Double-quote escapes for the constrained YAML subset: a literal backslash is
-// emitted as "\\" and a literal double-quote as "\"". Hoisted to constants so the
-// serializer below has no nested template literals.
+// Serialize one scalar (or a nested value). Strings are emitted BARE when the
+// canonical parser (meta_schema.parseCanonicalYaml) would read them back as the same
+// string, and double-quoted otherwise — the exact complement of its SCALAR reader
+// (ADR-057, RC-005): YAML-significant punctuation, edge whitespace, the bool/null
+// tokens (`true`, `false`, `null`, `~`), integer and decimal patterns, and any line
+// terminator or tab. Inside double quotes a backslash, a double quote, LF, CR, TAB
+// and the LS/PS line separators are escaped. null/undefined → `null`; nested objects
+// and arrays-as-values are inlined as JSON (the subset has no deeper nesting).
+//
+// `forbidden` (carrier value safety, RC-003): sequences the host comment cannot
+// contain. A string containing one is double-quoted and the first character of every
+// occurrence is written as a standard YAML escape (`\xNN` / `\uXXXX`), which the
+// canonical parser reads back exactly. No escape spelling contains a forbidden
+// sequence, so the emitted text is free of them. A key, or a JSON-inlined value,
+// that contains one cannot be escaped and is refused (CARRIER_UNREPRESENTABLE).
 const ESCAPED_BACKSLASH = String.raw`\\`;
 const ESCAPED_QUOTE = String.raw`\"`;
+const NEEDS_QUOTES = /[:#{}[\],&*?|<>=!%@`\n\r\t\u2028\u2029'"\\]/;
+const READS_AS_NON_STRING = /^(?:true|false|null|~|-?\d+|-?\d*\.\d+)$/;
 
-export function yamlScalar(v: unknown): string {
+function hexEscape(code: number): string {
+  const hex = code.toString(16).toUpperCase();
+  return code < 0x100 ? `\\x${hex.padStart(2, "0")}` : `\\u${hex.padStart(4, "0")}`;
+}
+
+/** Indices of the first character of every (overlapping) occurrence of each sequence. */
+function forbiddenStarts(s: string, forbidden: readonly string[]): Set<number> {
+  const marks = new Set<number>();
+  for (const seq of forbidden) {
+    if (seq === "") continue;
+    for (let at = s.indexOf(seq); at !== -1; at = s.indexOf(seq, at + 1)) marks.add(at);
+  }
+  return marks;
+}
+
+function quoted(s: string, marks: ReadonlySet<number>): string {
+  let out = "";
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === "\\") out += ESCAPED_BACKSLASH;
+    else if (c === '"') out += ESCAPED_QUOTE;
+    else if (c === "\n") out += String.raw`\n`;
+    else if (c === "\r") out += String.raw`\r`;
+    else if (c === "\t") out += String.raw`\t`;
+    // The parser's line pattern (`.`) stops at LS/PS, so they are always escaped.
+    else if (c === "\u2028" || c === "\u2029") out += hexEscape(c.charCodeAt(0));
+    else if (marks.has(i)) out += hexEscape(c.charCodeAt(0));
+    else out += c;
+  }
+  return `"${out}"`;
+}
+
+function containsForbidden(s: string, forbidden: readonly string[]): string | undefined {
+  return forbidden.find((seq) => seq !== "" && s.includes(seq));
+}
+
+export function yamlScalar(v: unknown, forbidden: readonly string[] = []): string {
   if (v === null || v === undefined) return "null";
   if (typeof v === "boolean") return v ? "true" : "false";
   if (typeof v === "number") return String(v);
-  if (typeof v === "object") return JSON.stringify(v);
+  if (typeof v === "object") {
+    const json = JSON.stringify(v);
+    const hit = containsForbidden(json, forbidden);
+    if (hit !== undefined) {
+      throw new Error(`CARRIER_UNREPRESENTABLE: an inlined value contains ${JSON.stringify(hit)}, which its carrier cannot hold`);
+    }
+    return json;
+  }
   const s = String(v);
   if (s === "") return '""';
-  if (/[:#{}\[\],&*?|<>=!%@`\n'"\\]/.test(s) || s.trim() !== s || s === "true" || s === "false" || s === "null")
-    return `"${s.replace(/\\/g, ESCAPED_BACKSLASH).replace(/"/g, ESCAPED_QUOTE)}"`;
+  const marks = forbiddenStarts(s, forbidden);
+  if (marks.size > 0 || NEEDS_QUOTES.test(s) || s.trim() !== s || READS_AS_NON_STRING.test(s)) return quoted(s, marks);
   return s;
 }
 
@@ -33,6 +85,12 @@ export interface SerializeYamlOptions {
   fences?: boolean;
   /** Append a trailing newline after the closing fence (default: false). */
   trailingNewline?: boolean;
+  /**
+   * Sequences the destination carrier cannot contain (see comment.carrierForbiddenSequences).
+   * Values holding one are escaped; a key holding one is refused. Default: none,
+   * which leaves the output byte-identical for every other caller.
+   */
+  forbidden?: readonly string[];
 }
 
 // Serialize a flat object into the canonical YAML body:
@@ -41,14 +99,19 @@ export interface SerializeYamlOptions {
 // scalar via yamlScalar. Not a general YAML emitter — matches the parser's subset.
 export function serializeYamlObject(obj: Record<string, unknown>, opts: SerializeYamlOptions = {}): string {
   const withFences = opts.fences !== false;
+  const forbidden = opts.forbidden ?? [];
   const lines: string[] = [];
   if (withFences) lines.push("---");
   for (const [k, v] of Object.entries(obj)) {
+    const hit = containsForbidden(k, forbidden);
+    if (hit !== undefined) {
+      throw new Error(`CARRIER_UNREPRESENTABLE: key ${JSON.stringify(k)} contains ${JSON.stringify(hit)}, which its carrier cannot hold`);
+    }
     if (Array.isArray(v)) {
       if (v.length === 0) lines.push(`${k}: []`);
-      else { lines.push(`${k}:`); v.forEach((i) => lines.push(`  - ${yamlScalar(i)}`)); }
+      else { lines.push(`${k}:`); v.forEach((i) => lines.push(`  - ${yamlScalar(i, forbidden)}`)); }
     } else {
-      lines.push(`${k}: ${yamlScalar(v)}`);
+      lines.push(`${k}: ${yamlScalar(v, forbidden)}`);
     }
   }
   if (withFences) lines.push("---");

@@ -1,5 +1,5 @@
 export declare const PROJECT_CANDIDATE_METHOD = "container-project-candidate/v1";
-export declare const PROJECT_CANDIDATE_METHOD_VERSION = "1.0.0";
+export declare const PROJECT_CANDIDATE_METHOD_VERSION = "1.1.0";
 export declare const TOPIC_CANDIDATE_METHOD = "lexical-topic-candidate/v1";
 export declare const TOPIC_CANDIDATE_METHOD_VERSION = "1.1.0";
 /** Default salient-vocabulary overlap at which two documents join a topic. */
@@ -65,7 +65,11 @@ export interface ProjectCandidate {
     candidate_id: string;
     method: string;
     algorithm_version: string;
-    /** Declared identifier, or `container:<directory name>` when none was declared. */
+    /**
+     * `project:<declared identifier>`; `container:<directory name>` when none was
+     * declared; `root:<root label>` for a root-level container with no declared
+     * name, a namespace no directory name or declared identifier can enter.
+     */
     project_key: string;
     /** True when the key came from a manifest body rather than a directory name. */
     identifier_is_declared: boolean;
@@ -143,6 +147,14 @@ export interface TopicCandidate {
 }
 /** The salient terms of one document: frequent, not too common, not a stopword. */
 export declare function salientTerms(document: TopicDocumentInput, documentFrequency: ReadonlyMap<string, number>, eligibleDocumentCount: number): string[];
+/**
+ * A threshold as every identity and key renders it: rounded, then six places.
+ *
+ * Rounded first, because `toFixed` and `Math.round` disagree on half-way inputs;
+ * rendering the raw value would let two thresholds that compare identically
+ * carry different names, or two that compare differently carry one.
+ */
+export declare function canonicalThresholdText(value: number): string;
 export interface BuildTopicCandidatesInput {
     documents: readonly TopicDocumentInput[];
     threshold?: number;
@@ -186,6 +198,10 @@ export interface TopicCandidateResult {
  * have to sit past a point where fewer than that many remain.
  *
  * So this is a filter, not a sample. No qualifying pair is lost.
+ *
+ * `t` is the canonical threshold the comparison uses, and `ceil(t * |X|)` is
+ * taken in integer micro-units rather than from a floating-point product, which
+ * can land a hair above an integer and shorten the prefix by one.
  */
 export declare function topicPrefixLength(setSize: number, threshold: number): number;
 /**

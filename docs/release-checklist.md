@@ -28,10 +28,10 @@
 
 ## Publication
 
-- [ ] Registry history verified.
-- [ ] Constellation consumers inventoried.
-- [ ] Distribution owner approval recorded.
-- [ ] `docs/package-publication-decision.json` status changed to `approved` with evidence.
+- [ ] Registry history verified (evidence id `npm_registry_history`).
+- [ ] Constellation consumers inventoried (evidence id `constellation_consumer_inventory`).
+- [ ] Distribution owner approval recorded as `verified` (evidence id `distribution_owner_approval`; `not_applicable_with_reason` blocks).
+- [ ] `docs/package-publication-decision.json` status changed to `approved`, each required evidence id listed exactly once, and `approved_version` set by the owner approval to `package.json#version` (ADR-070).
 - [ ] `npm run check:publication` passed.
 
 Do not publish merely because CI is green. CI proves implementation and packaging; the publication decision additionally requires external evidence.

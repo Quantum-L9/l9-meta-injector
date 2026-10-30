@@ -106,13 +106,78 @@ describe("archive path conflicts — both archive paths hold, neither throws, no
   }
 });
 
+// WU-032 / RC-040 (ADR-061): the conflict rule is judged on the same fold as the
+// collision rule, so a file and a directory that one filesystem would merge are
+// held on every host instead of throwing EEXIST/ENOTDIR on a case-insensitive one.
+describe("archive preflight — path conflicts under the collision fold", () => {
+  const holdsOf = (specs: ZipMemberSpec[]) => preflight(specs).holds.map((h) => [h.code, h.memberPath]);
+
+  test("REG-WU-032-RC-040-040-a: a file 'Docs' beside 'docs/readme.txt' is a path conflict", () => {
+    const result = preflight([{ name: "Docs", content: "x" }, { name: "docs/readme.txt", content: "y" }]);
+    expect(result.accepted).toBe(false);
+    expect(result.holds.map((h) => [h.code, h.memberPath])).toEqual([["archive.path_conflict", "Docs"]]);
+  });
+
+  test("REG-WU-032-RC-040-040-b: the reverse order receives the identical verdict", () => {
+    expect(holdsOf([{ name: "docs/readme.txt", content: "y" }, { name: "Docs", content: "x" }]))
+      .toEqual([["archive.path_conflict", "Docs"]]);
+  });
+
+  test("REG-WU-032-RC-040-040-c: an NFC file and an NFD directory of the same name conflict", () => {
+    expect(holdsOf([{ name: "caf\u00e9", content: "x" }, { name: "cafe\u0301/x.txt", content: "y" }]))
+      .toEqual([["archive.path_conflict", "caf\u00e9"]]);
+  });
+
+  test("REG-WU-032-RC-040-040-d: the same name in another directory is not a conflict", () => {
+    expect(preflight([{ name: "docs", content: "x" }, { name: "other/docs", content: "y" }]).accepted).toBe(true);
+  });
+
+  test("REG-WU-032-RC-040-040-e: 'docs/' beside 'docs' is one duplicate, not also a conflict", () => {
+    expect(holdsOf([{ name: "docs/", content: "" }, { name: "docs", content: "file" }]).map(([code]) => code))
+      .toEqual(["archive.duplicate_member"]);
+  });
+
+  test("REG-WU-032-RC-040-040-f: 'Docs/' beside 'docs' is one case collision, not also a conflict", () => {
+    expect(holdsOf([{ name: "Docs/", content: "" }, { name: "docs", content: "file" }]).map(([code]) => code))
+      .toEqual(["archive.case_collision"]);
+  });
+
+  test("REG-WU-032-RC-040-040-h: exact-path conflicts keep their existing holds", () => {
+    expect(holdsOf([{ name: "a", content: "x" }, { name: "a/b", content: "y" }]))
+      .toEqual([["archive.path_conflict", "a"]]);
+    expect(holdsOf([{ name: "x/y/z.txt", content: "1" }, { name: "x/y", content: "2" }]))
+      .toEqual([["archive.path_conflict", "x/y"]]);
+  });
+
+  test("REG-WU-032-RC-040-040-g: both archive paths hold a folded conflict, neither throws, nothing leaks", () => {
+    const specs: ZipMemberSpec[] = [{ name: "Docs", content: "x" }, { name: "docs/readme.txt", content: "y" }];
+    const root = tmp();
+    const scratchParent = tmp();
+    writeRawZip(path.join(root, "Case.zip"), specs);
+    const before = treeSnapshot(root);
+
+    const observation = acquireLocalSource({ path: root, scratchParent });
+    expect(observation.archives[0].expanded).toBe(false);
+    expect(observation.archives[0].holds.map((h) => h.code)).toEqual(["archive.path_conflict"]);
+    expect(observation.virtualArtifacts).toEqual([]);
+    observation.dispose();
+    expect(fs.readdirSync(scratchParent)).toEqual([]);
+    expect(treeSnapshot(root)).toEqual(before);
+
+    const result = expandArchivesUnderRoot(root, { dryRun: false, verbose: false });
+    expect(result.archives[0].heldReason).toContain("archive.path_conflict");
+    expect(result.extractedRoots).toEqual([]);
+    expect(treeSnapshot(root)).toEqual(before);
+  });
+});
+
 describe("reader version", () => {
   test("is declared once and re-exported, and names the rule change", () => {
     expect(LOCAL_SOURCE_READER_VERSION).toBe(ARCHIVE_READER_VERSION);
-    expect(ARCHIVE_READER_VERSION).toBe("1.1.0");
+    expect(ARCHIVE_READER_VERSION).toBe("1.2.0");
   });
 
-  test("a warm 1.0.0 verdict is not consulted for a 1.1.0 reader", () => {
+  test("a warm 1.1.0 verdict is not consulted for a 1.2.0 reader", () => {
     const root = tmp();
     writeRawZip(path.join(root, "Case.zip"), [{ name: "a", content: "x" }, { name: "a/b", content: "y" }]);
     const seen: string[] = [];
@@ -125,6 +190,6 @@ describe("reader version", () => {
       },
     });
     observation.dispose();
-    expect(seen).toEqual(["1.1.0"]);
+    expect(seen).toEqual(["1.2.0"]);
   });
 });

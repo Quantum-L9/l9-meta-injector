@@ -77,7 +77,71 @@ function parseAttributes(raw: string): XmlAttributes {
 }
 
 /**
+ * The index of the `>` that ends the tag opened at `from`, or -1.
+ *
+ * XML permits an unescaped `>` inside a quoted attribute value, so the first `>`
+ * is not necessarily the end of the tag. One linear pass tracking which quote,
+ * if any, is open.
+ */
+function tagEnd(source: string, from: number): number {
+  let quote = "";
+  for (let index = from; index < source.length; index += 1) {
+    const char = source[index];
+    if (quote.length > 0) {
+      if (char === quote) quote = "";
+    } else if (char === '"' || char === "'") {
+      quote = char;
+    } else if (char === ">") {
+      return index;
+    }
+  }
+  return -1;
+}
+
+/**
+ * The index just past a `<!...>` declaration opened at `from`, or the source
+ * length when it is unterminated.
+ *
+ * A DOCTYPE may carry an internal subset in brackets, and that subset holds its
+ * own `>`-terminated declarations, quoted literals and comments. The declaration
+ * ends at the first `>` outside brackets, quotes and comments. Nothing in it is
+ * interpreted — this only finds where it stops, so no entity table is built.
+ */
+function declarationEnd(source: string, from: number): number {
+  let quote = "";
+  let brackets = 0;
+  let index = from;
+  while (index < source.length) {
+    const char = source[index];
+    if (quote.length > 0) {
+      if (char === quote) quote = "";
+    } else if (brackets > 0 && source.startsWith("<!--", index)) {
+      const end = source.indexOf("-->", index + 4);
+      if (end < 0) return source.length;
+      index = end + 3;
+      continue;
+    } else if (char === '"' || char === "'") {
+      quote = char;
+    } else if (char === "[") {
+      brackets += 1;
+    } else if (char === "]") {
+      brackets = Math.max(0, brackets - 1);
+    } else if (char === ">" && brackets === 0) {
+      return index + 1;
+    }
+    index += 1;
+  }
+  return source.length;
+}
+
+/**
  * Walk an XML document, handing each event to `visit`.
+ *
+ * Every text node is delivered, whitespace-only ones included. Whether a run of
+ * whitespace is content (a space-only `<w:t>`) or indentation between elements
+ * is a question only the caller can answer, because only the caller knows which
+ * elements carry text; deciding it here fused words that a formatting boundary
+ * had split into separate runs.
  *
  * Returning `false` from `visit` stops the walk, which is how a caller that has
  * filled its budget stops paying for the rest of a part.
@@ -95,12 +159,12 @@ export function parseXml(
     const open = source.indexOf("<", cursor);
     if (open < 0) {
       const text = decodeXmlText(source.slice(cursor));
-      if (text.trim().length > 0 && visit({ type: "text", text, depth }) === false) return;
+      visit({ type: "text", text, depth });
       return;
     }
     if (open > cursor) {
       const text = decodeXmlText(source.slice(cursor, open));
-      if (text.trim().length > 0 && visit({ type: "text", text, depth }) === false) return;
+      if (visit({ type: "text", text, depth }) === false) return;
     }
 
     // Comments, CDATA, processing instructions and doctypes. A doctype is
@@ -114,7 +178,7 @@ export function parseXml(
     if (source.startsWith("<![CDATA[", open)) {
       const end = source.indexOf("]]>", open + 9);
       const raw = source.slice(open + 9, end < 0 ? length : end);
-      if (raw.trim().length > 0 && visit({ type: "text", text: raw, depth }) === false) return;
+      if (raw.length > 0 && visit({ type: "text", text: raw, depth }) === false) return;
       cursor = end < 0 ? length : end + 3;
       continue;
     }
@@ -124,12 +188,11 @@ export function parseXml(
       continue;
     }
     if (source.startsWith("<!", open)) {
-      const end = source.indexOf(">", open + 2);
-      cursor = end < 0 ? length : end + 1;
+      cursor = declarationEnd(source, open + 2);
       continue;
     }
 
-    const close = source.indexOf(">", open);
+    const close = tagEnd(source, open + 1);
     if (close < 0) throw new XmlError("unterminated tag");
     const body = source.slice(open + 1, close);
     cursor = close + 1;

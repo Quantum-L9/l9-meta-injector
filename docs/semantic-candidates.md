@@ -168,6 +168,9 @@ Ambiguity is flagged rather than resolved: `conflicting_status`,
 `multiple_declared_project_names`, `ambiguous_supersession`,
 `mixed_version_lineage`, `weakly_connected_members`.
 
+`weakly_connected_members` has one rule for topic and project candidates: no
+pair inside the member set is `strong`. Adding a weaker pair can never clear it.
+
 ### `CONSOLIDATION_CANDIDATE`
 
 A person may want to look at these together.
@@ -176,6 +179,25 @@ Admitted on an exact-duplicate cluster, a near-duplicate edge, a declared
 supersession, or a project candidate holding genuine version lineage — meaning a
 near-duplicate edge or a supersession *among its members*, not merely two
 different files.
+
+A supersession counts only when the declaration resolves from one member to
+another: the pair builder records the declaring assertion in that pair's
+`evidence_refs`, and that structured fact — never the wording of a reference
+detail — is what admits it. A member superseding a file outside the group admits
+nothing, and `supersession_assertion_ids` lists only declarations that resolve
+between two of the candidate's members.
+
+Its `confidence_class` is computed by the same rule as topic and project
+candidates: the strongest class among the pairs inside the member set (`weak`
+when none is scored).
+
+### Facts every candidate states about its members
+
+`cross_archive` is true when the members sit under more than one archive
+ancestry; `cross_root` is true when they come from more than one root. Fusion
+computes both from the members for all three candidate kinds, and the packet
+translation refuses a semantic candidate missing either one, or its
+`confidence_class`, rather than supplying a default.
 
 The record carries `unique_content_variant_count`, which is the number that
 decides whether anyone needs to read anything: a group whose members are all
@@ -238,6 +260,16 @@ candidate exceeds the budget the **complete member id list is preserved**, the
 included evidence is the deterministically-selected subset, and `truncation`
 records exactly what was left out and under which policy.
 
+`maxTotalPackCharacters` bounds every variable-length field a pack carries, not
+only excerpts: each kept assertion's `object`, `source_path` and excerpt, and
+every entry of the per-artifact lists (titles, headings, statuses, kinds, tasks,
+milestones, references, dependencies, supersessions). Items are charged band by
+band in the priority order above, across all selected artifacts. Identity fields,
+the member list and the relationship context are fixed overhead and are not
+charged. Anything left out — by the total budget, the per-artifact excerpt cap or
+a list's own cap — adds its original length to `characters_omitted` and sets
+`truncated`.
+
 Packs never contain raw embedding vectors, secret content, or a dump of the
 corpus.
 
@@ -271,13 +303,13 @@ Writes, in addition to the existing corpus outputs:
 | `--allow-remote-embeddings` | permit a remote provider to receive bounded document text |
 | `--reasoning-pack-max-artifacts N` | members per pack, default `12` |
 | `--reasoning-pack-max-chars N` | characters per pack, default `24000` |
+| `--embedding-pair-threshold F` | cosine at which an embedding pair is offered: a number in `[0, 1]`, default `0.75`; anything else exits `2` |
 
-The similarity thresholds (`0.75` to offer a pair, `0.85` to count it strong) are
-**not** CLI flags. This release ships no embedding provider, so `--embeddings` is
-refused and a threshold flag could not take effect; they are set programmatically
-via `FusionOptions.embeddingStrongThreshold` and `RunEmbeddingsInput.pairThreshold`
-by a caller that supplies its own provider. A flag that cannot change anything is
-worse than no flag.
+The threshold at which an offered embedding pair counts as strong (`0.85`) is
+**not** a CLI flag; it is set programmatically via
+`FusionOptions.embeddingStrongThreshold` by a caller that needs a different one.
+The pair threshold is also settable programmatically, via
+`RunEmbeddingsInput.pairThreshold`.
 
 Single-source mode (`npm run local-source -- <path>`) runs the same pass and
 extends `corpus-index.json` and `corpus-report.md` with it. **Recall differs**:

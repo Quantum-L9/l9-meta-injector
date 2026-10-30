@@ -61,7 +61,8 @@ function harvestInline(abs) {
     const spec = (0, comment_1.resolveStrategy)(abs, raw);
     if (spec.strategy === "yaml-frontmatter") {
         const inspected = (0, frontmatter_patch_1.inspectFrontMatterDocument)(raw);
-        return inspected.safe ? inspected.meta : {};
+        // Opaque values are harvested as their verbatim text, never dropped (RC-004).
+        return inspected.safe ? (0, frontmatter_patch_1.frontMatterReconciliationView)(raw, inspected) : {};
     }
     if (spec.strategy === "line-comment" || spec.strategy === "block-comment") {
         const yaml = (0, comment_1.extractInjectedYaml)(raw, spec);

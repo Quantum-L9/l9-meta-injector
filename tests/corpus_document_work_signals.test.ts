@@ -18,6 +18,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { readDocumentBlockSignals } from "../src/extractors/document_blocks";
+import { workIntelligenceExtractor } from "../src/extractors/work_intelligence";
 import { runCorpusScan } from "../src/corpus_scan";
 import type { CorpusScanResult } from "../src/corpus_scan";
 import {
@@ -222,6 +223,42 @@ describe("a project tracker", () => {
     const rendered = JSON.stringify(result.documentSignals);
     expect(rendered).not.toContain('"3"');
     expect(result.coverage.documents.decoder_failure_count).toBe(0);
+  });
+});
+
+describe("a tracker whose tabs were reordered", () => {
+  it("REG-WU-061-RC-118-h: cites the sheet that actually holds the claim", async () => {
+    const quiet = tmp();
+    const root = tmp();
+    fs.writeFileSync(path.join(quiet, "README.md"), "# Notes\n\nNothing tracked here.\n");
+    const sheet = (text: string): string =>
+      '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'
+      + `<row r="1"><c r="A1" t="inlineStr"><is><t>${text}</t></is></c></row></sheetData></worksheet>`;
+    // The second-created sheet (sheet2.xml) was dragged to the first tab.
+    writeRawZip(path.join(root, "tracker.xlsx"), [
+      { name: "[Content_Types].xml", content: "<Types/>" },
+      {
+        name: "xl/workbook.xml",
+        content: '<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>'
+          + '<sheet name="Blocked items" sheetId="2" r:id="rId2"/><sheet name="Overview" sheetId="1" r:id="rId1"/>'
+          + "</sheets></workbook>",
+      },
+      {
+        name: "xl/_rels/workbook.xml.rels",
+        content: '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+          + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
+          + '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>'
+          + "</Relationships>",
+      },
+      { name: "xl/worksheets/sheet1.xml", content: sheet("Quarterly overview") },
+      { name: "xl/worksheets/sheet2.xml", content: sheet("Status: blocked") },
+    ]);
+    const result = await runCorpusScan({ roots: [{ path: quiet }, { path: root }], producerVersion: "test" });
+
+    const status = claim(result, "work.status", "blocked");
+    expect(status?.locatorKind).toBe("spreadsheet_cell");
+    expect(status?.locator.sheet).toBe("Blocked items");
+    expect(status?.locator.cell_or_range).toBe("A1");
   });
 });
 
@@ -479,5 +516,104 @@ describe("the block reader", () => {
       blocks: [block("b1", "title", "", 1), block("b2", "paragraph", "   ", 2)],
     });
     expect(signals).toEqual([]);
+  });
+
+  describe("a Milestones section reads like its Markdown twin", () => {
+    const milestonesOf = (blocks: ReturnType<typeof block>[]) =>
+      readDocumentBlockSignals({ ...base, blocks })
+        .filter((signal) => signal.predicate === "work.milestone")
+        .map((signal) => signal.object)
+        .sort();
+
+    it("REG-WU-022-RC-097-a: skips an introductory paragraph before the list", () => {
+      expect(
+        milestonesOf([
+          block("b1", "heading", "Milestones", 1),
+          block("b2", "paragraph", "The following are planned:", 2),
+          block("b3", "list_item", "Ship v1", 3),
+          block("b4", "list_item", "Ship v2", 4),
+        ]),
+      ).toEqual(["Ship v1", "Ship v2"]);
+    });
+
+    it("REG-WU-022-RC-097-b: a paragraph after the list still ends the section", () => {
+      expect(
+        milestonesOf([
+          block("b1", "heading", "Milestones", 1),
+          block("b2", "list_item", "Beta to ten customers", 2),
+          block("b3", "list_item", "General availability", 3),
+          block("b4", "paragraph", "Unrelated prose that ends the section.", 4),
+          block("b5", "list_item", "Not a milestone", 5),
+        ]),
+      ).toEqual(["Beta to ten customers", "General availability"]);
+    });
+
+    it("REG-WU-022-RC-097-c: a following heading ends a section that never reached a list", () => {
+      expect(
+        milestonesOf([
+          block("b1", "heading", "Milestones", 1),
+          block("b2", "paragraph", "To be decided.", 2),
+          block("b3", "heading", "Other", 3),
+          block("b4", "list_item", "x", 4),
+        ]),
+      ).toEqual([]);
+    });
+
+    it("REG-WU-022-RC-097-d: a code block ends the section", () => {
+      expect(
+        milestonesOf([
+          block("b1", "heading", "Milestones", 1),
+          block("b2", "code", "make release", 2),
+          block("b3", "list_item", "x", 3),
+        ]),
+      ).toEqual([]);
+    });
+
+    it("REG-WU-022-RC-097-e: the same plan as Markdown and as blocks yields the same milestones", () => {
+      const plans: { markdown: string[]; blocks: ReturnType<typeof block>[] }[] = [
+        {
+          markdown: ["## Milestones", "", "The following are planned:", "", "- Ship v1", "- Ship v2", "", "Afterwards prose.", "- Not one"],
+          blocks: [
+            block("b1", "heading", "Milestones", 1),
+            block("b2", "paragraph", "The following are planned:", 2),
+            block("b3", "list_item", "Ship v1", 3),
+            block("b4", "list_item", "Ship v2", 4),
+            block("b5", "paragraph", "Afterwards prose.", 5),
+            block("b6", "list_item", "Not one", 6),
+          ],
+        },
+        {
+          markdown: ["## Milestones", "", "Intro.", "", "## Other", "- x"],
+          blocks: [
+            block("b1", "heading", "Milestones", 1),
+            block("b2", "paragraph", "Intro.", 2),
+            block("b3", "heading", "Other", 3),
+            block("b4", "list_item", "x", 4),
+          ],
+        },
+        {
+          markdown: ["## Milestones", "", "```", "make release", "```", "- x"],
+          blocks: [
+            block("b1", "heading", "Milestones", 1),
+            block("b2", "code", "make release", 2),
+            block("b3", "list_item", "x", 3),
+          ],
+        },
+      ];
+      for (const plan of plans) {
+        const markdown = workIntelligenceExtractor
+          .extract({
+            subjectId: "artifact:x",
+            sourcePath: "m.md",
+            content: `${plan.markdown.join("\n")}\n`,
+            contentHash: "sha256:aa",
+            pathExists: () => false,
+          })
+          .filter((draft) => draft.predicate === "work.milestone")
+          .map((draft) => draft.object)
+          .sort();
+        expect(milestonesOf(plan.blocks), plan.markdown.join(" | ")).toEqual(markdown);
+      }
+    });
   });
 });

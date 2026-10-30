@@ -1,12 +1,11 @@
 // inventory_archive_member.ts — one inventory orchestrator for ZIP/TAR member inject (ADR-049).
 // Codecs do not call inventory. Observation expansion does not use this module.
+import { constants as bufferConstants } from "node:buffer";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { Transform, pipeline } from "node:stream";
-import { promisify } from "node:util";
 import * as zlib from "node:zlib";
 import { archiveExtensionOf } from "./archive_formats";
-import { pathSafetyHolds, preflightArchive } from "./archive_preflight";
+import { canonicalMemberPath, memberCollisionKey, pathSafetyHolds, preflightArchive } from "./archive_preflight";
 import { replaceFileAtomically } from "./durable_write";
 import { DEFAULT_LOCAL_ARCHIVE_POLICY, LocalArchivePolicy } from "./local_archive_policy";
 import { peekTarRootMeta, readTarArchive, rootMetaKind as tarRootMetaKind } from "./tar_reader";
@@ -14,80 +13,63 @@ import { injectGzipTarRootMeta, injectTarRootMeta } from "./tar_writer";
 import { injectZipRootMeta, peekZipRootMeta, rootMetaKind as zipRootMetaKind } from "./zip_writer";
 import { readZipCentralDirectory } from "./zip_reader";
 
-const pipelineAsync = promisify(pipeline);
-
 export type BoundedInflateResult =
   | { ok: true; bytes: Buffer }
   | { ok: false; hold: string };
 
+const INFLATION_BUDGET_HOLD = "archive.inflation_budget_exceeded";
+
 /**
- * Streaming gzip inflation with budget enforcement.
- *
- * Returns the inflated buffer if it fits within the policy's maxTotalUncompressedBytesPerArchive.
- * Aborts and returns a hold if the budget would be exceeded, preventing decompression bombs.
+ * zlib's own output ceiling for a budget. zlib stops inflating once the output
+ * would exceed `maxOutputLength`, so a decompression bomb never materializes
+ * past the budget. The value must lie in [1, buffer.constants.MAX_LENGTH].
  */
-export async function boundedGunzip(
+function gunzipOptions(budget: number): zlib.ZlibOptions {
+  return { maxOutputLength: Math.max(1, Math.min(budget, bufferConstants.MAX_LENGTH)) };
+}
+
+function inflateVerdict(err: Error | null, inflated: Buffer | undefined, budget: number): BoundedInflateResult {
+  if (err) {
+    if ((err as NodeJS.ErrnoException).code === "ERR_BUFFER_TOO_LARGE") return { ok: false, hold: INFLATION_BUDGET_HOLD };
+    return { ok: false, hold: `archive.gzip_unreadable:${err.message}` };
+  }
+  const bytes = inflated ?? Buffer.alloc(0);
+  // Belt for a budget below zlib's minimum ceiling of one byte.
+  if (bytes.length > budget) return { ok: false, hold: INFLATION_BUDGET_HOLD };
+  return { ok: true, bytes };
+}
+
+/**
+ * Bounded gzip inflation. Output above the policy's
+ * maxTotalUncompressedBytesPerArchive is refused while inflating; output exactly
+ * at the budget is accepted. Always settles.
+ */
+export function boundedGunzip(
   compressed: Buffer,
   policy: LocalArchivePolicy = DEFAULT_LOCAL_ARCHIVE_POLICY,
 ): Promise<BoundedInflateResult> {
   const budget = policy.maxTotalUncompressedBytesPerArchive;
-  const chunks: Buffer[] = [];
-  let totalBytes = 0;
-  let budgetExceeded = false;
-
-  const budgetEnforcer = new Transform({
-    transform(chunk: Buffer, _encoding, callback) {
-      if (budgetExceeded) {
-        callback();
-        return;
-      }
-      totalBytes += chunk.length;
-      if (totalBytes > budget) {
-        budgetExceeded = true;
-        callback(new Error("archive.inflation_budget_exceeded"));
-        return;
-      }
-      chunks.push(chunk);
-      callback(null, chunk);
-    },
-  });
-
-  const gunzip = zlib.createGunzip();
-
-  try {
-    await pipelineAsync(
-      (async function* () { yield compressed; })(),
-      gunzip,
-      budgetEnforcer,
-    );
-    return { ok: true, bytes: Buffer.concat(chunks) };
-  } catch (err) {
-    const msg = (err as Error).message;
-    if (msg === "archive.inflation_budget_exceeded" || budgetExceeded) {
-      return { ok: false, hold: "archive.inflation_budget_exceeded" };
+  return new Promise((resolve) => {
+    try {
+      zlib.gunzip(compressed, gunzipOptions(budget), (err, inflated) => {
+        resolve(inflateVerdict(err, inflated, budget));
+      });
+    } catch (err) {
+      resolve(inflateVerdict(err as Error, undefined, budget));
     }
-    return { ok: false, hold: `archive.gzip_unreadable:${msg}` };
-  }
+  });
 }
 
-/**
- * Synchronous wrapper for bounded gzip inflation.
- * Uses a post-inflation check since zlib.gunzipSync must complete before we know the size.
- */
+/** Synchronous bounded gzip inflation; same verdicts as `boundedGunzip`. */
 export function boundedGunzipSync(
   compressed: Buffer,
   policy: LocalArchivePolicy = DEFAULT_LOCAL_ARCHIVE_POLICY,
 ): BoundedInflateResult {
   const budget = policy.maxTotalUncompressedBytesPerArchive;
-
   try {
-    const inflated = zlib.gunzipSync(compressed);
-    if (inflated.length > budget) {
-      return { ok: false, hold: "archive.inflation_budget_exceeded" };
-    }
-    return { ok: true, bytes: inflated };
+    return inflateVerdict(null, zlib.gunzipSync(compressed, gunzipOptions(budget)), budget);
   } catch (err) {
-    return { ok: false, hold: `archive.gzip_unreadable:${(err as Error).message}` };
+    return inflateVerdict(err as Error, undefined, budget);
   }
 }
 
@@ -139,7 +121,8 @@ function admitTarNames(names: string[]): string | null {
   }
   const seen = new Set<string>();
   for (const name of names) {
-    const key = name.replace(/\\/g, "/").replace(/^\.\//, "").normalize("NFC").toLowerCase();
+    // The same identity ZIP preflight uses: canonical path under the collision fold.
+    const key = memberCollisionKey(canonicalMemberPath(name));
     if (seen.has(key)) return "archive.duplicate_member";
     seen.add(key);
   }
@@ -172,6 +155,47 @@ export type ArchiveMemberResult =
   | { rewritten: true }
   | { rewritten: false; hold: string };
 
+/**
+ * Hold code for a filesystem failure while reading or replacing the archive
+ * (RC-056). The errno code is the portable reason: the host message repeats the
+ * absolute path, which would make the record depend on where the tree lives.
+ */
+function ioHold(err: unknown): string {
+  const code = (err as NodeJS.ErrnoException | null)?.code;
+  return `archive.rewrite_io_failed:${typeof code === "string" && code.length > 0 ? code : "UNKNOWN_ERROR"}`;
+}
+
+type ArchiveRead = { ok: true; bytes: Buffer } | { ok: false; hold: string };
+
+function readArchive(abs: string): ArchiveRead {
+  try {
+    return { ok: true, bytes: fs.readFileSync(abs) };
+  } catch (err) {
+    return { ok: false, hold: ioHold(err) };
+  }
+}
+
+/**
+ * Replace the archive, or report why it could not be replaced. The staging file
+ * is removed by `replaceFileAtomically` on failure, so a held archive keeps its
+ * bytes and no staging sibling is left behind.
+ */
+function replaceArchive(abs: string, bytes: Buffer): ArchiveMemberResult {
+  try {
+    replaceFileAtomically(abs, bytes);
+    return { rewritten: true };
+  } catch (err) {
+    return { rewritten: false, hold: ioHold(err) };
+  }
+}
+
+/**
+ * Upsert the archive's root `.l9meta.yaml` member. Every outcome is a result:
+ * admission holds, codec holds, and filesystem failures while reading or
+ * replacing the archive (`archive.rewrite_io_failed:<errno>`) all return
+ * `{ rewritten: false, hold }` so the caller records them on the archive's own
+ * record and the inventory walk continues (RC-056).
+ */
 export function upsertArchiveRootMeta(abs: string, yaml: string): ArchiveMemberResult {
   const kind = inventoryRewriteKind(path.basename(abs));
   if (kind === null) {
@@ -183,31 +207,30 @@ export function upsertArchiveRootMeta(abs: string, yaml: string): ArchiveMemberR
     if (admit) return { rewritten: false, hold: admit };
     const injected = injectZipRootMeta(abs, yaml);
     if (!injected.ok) return { rewritten: false, hold: injected.hold };
-    replaceFileAtomically(abs, injected.bytes);
-    return { rewritten: true };
+    return replaceArchive(abs, injected.bytes);
   }
+
+  const read = readArchive(abs);
+  if (!read.ok) return { rewritten: false, hold: read.hold };
 
   if (kind === "tar") {
-    const bytes = fs.readFileSync(abs);
-    const admit = admitTarBytes(bytes);
+    const admit = admitTarBytes(read.bytes);
     if (admit) return { rewritten: false, hold: admit };
-    const injected = injectTarRootMeta(bytes, yaml);
+    const injected = injectTarRootMeta(read.bytes, yaml);
     if (!injected.ok) return { rewritten: false, hold: injected.hold };
-    replaceFileAtomically(abs, injected.bytes);
-    return { rewritten: true };
+    return replaceArchive(abs, injected.bytes);
   }
 
-  const inflateResult = boundedGunzipSync(fs.readFileSync(abs));
+  const inflateResult = boundedGunzipSync(read.bytes);
   if (!inflateResult.ok) {
     return { rewritten: false, hold: inflateResult.hold };
   }
   const tar = inflateResult.bytes;
   const admit = admitTarBytes(tar);
   if (admit) return { rewritten: false, hold: admit };
-  const injected = injectGzipTarRootMeta(fs.readFileSync(abs), yaml);
+  const injected = injectGzipTarRootMeta(read.bytes, yaml);
   if (!injected.ok) return { rewritten: false, hold: injected.hold };
-  replaceFileAtomically(abs, injected.bytes);
-  return { rewritten: true };
+  return replaceArchive(abs, injected.bytes);
 }
 
 export function isCanonicalMetaMemberName(name: string): boolean {

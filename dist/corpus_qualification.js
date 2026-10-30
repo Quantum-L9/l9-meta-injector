@@ -28,9 +28,15 @@ exports.renderCorpusQualificationReport = renderCorpusQualificationReport;
 //     `corpus_readiness.ts`, and this report stays on the same side of it.
 const corpus_analysis_1 = require("./corpus_analysis");
 const ordering_1 = require("./ordering");
-const corpus_scan_1 = require("./corpus_scan");
-/** Schema of the real-corpus qualification report. */
-exports.CORPUS_QUALIFICATION_SCHEMA = "l9.corpus-qualification-report/v1";
+/**
+ * Schema of the real-corpus qualification report.
+ *
+ * v2 (ADR-068): `decoder_coverage` names every decoder profile the run used in
+ * `decoder_profiles` instead of one stale text-decoder identity, and states
+ * `interpretation_enabled` with a null `interpretation` ratio when the pass did
+ * not run.
+ */
+exports.CORPUS_QUALIFICATION_SCHEMA = "l9.corpus-qualification-report/v2";
 exports.QUALIFICATION_NO_PRIORITY_STATEMENT = "This report measures one run over one corpus. Every field in it is a count, a ratio or "
     + "an identity. It contains no priority, no ranking and no recommendation about any "
     + "artifact, candidate or body of work it describes.";
@@ -68,9 +74,12 @@ function buildCorpusQualificationReport(input) {
     const summary = cold.candidates.summary;
     const handoff = coverage.reasoning_handoff;
     const profile = cold.candidates.analysis_profile;
+    // From the root-relative basename, by the rule the scan itself uses: the root
+    // label is presentation, and a dot in it must not become an extension. An
+    // archive member `x.zip!/README` has the basename `README`.
     const extensions = new Set();
     for (const artifact of cold.snapshot.artifacts) {
-        const basename = artifact.corpus_path.split("/").pop() ?? "";
+        const basename = artifact.root_relative_path.split("/").pop() ?? "";
         const dot = basename.lastIndexOf(".");
         extensions.add(dot > 0 ? basename.slice(dot).toLowerCase() : "");
     }
@@ -118,9 +127,9 @@ function buildCorpusQualificationReport(input) {
         files_scanned: cold.scanned.files,
         cache_hit_ratio_second_run: secondRunCache(warm.cacheStats),
         decoder_coverage: {
-            text_decoder_id: corpus_scan_1.TEXT_DECODER_ID,
-            text_decoder_version: corpus_scan_1.TEXT_DECODER_VERSION,
+            decoder_profiles: [...cold.snapshot.analysis.document_decoder_profiles].sort(ordering_1.compareCodePoints),
             normalized_document: coverage.normalized_document_coverage,
+            interpretation_enabled: coverage.interpretation_enabled,
             interpretation: coverage.interpretation_coverage,
             lexical_analysis: coverage.lexical_analysis_coverage,
             embedding_when_enabled: coverage.embedding_coverage_when_enabled,

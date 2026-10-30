@@ -19,6 +19,13 @@ export interface EmbeddingModelConfiguration {
 export interface EmbeddingResult {
     vector: number[];
     provider_metadata: Record<string, string>;
+    /**
+     * The model revision the provider itself reported for this answer, when it
+     * reported one. A model *name* is not a revision and never goes here. Kept
+     * apart from the configured `model_revision`, which is known before the pass
+     * and is the one bound into the analysis identity.
+     */
+    observed_model_revision?: string;
 }
 export interface EmbeddingProvider {
     readonly configuration: EmbeddingModelConfiguration;
@@ -81,9 +88,23 @@ export declare function chunkDocument(input: {
     body?: string;
 }): DocumentChunk[];
 export declare function vectorDigest(vector: readonly number[]): string;
-/** Cosine similarity in [-1, 1]. Zero when either vector has no magnitude. */
+/** A vector the pass cannot use: wrong dimension, mixed dimensions, or a non-finite value. */
+export declare class EmbeddingVectorError extends Error {
+}
+/**
+ * Cosine similarity in [-1, 1]. Zero when either vector has no magnitude.
+ *
+ * Both vectors are scaled by the largest absolute component first. Cosine is
+ * scale-invariant, so the answer is the same, and the squares can no longer
+ * overflow: `[1e200, 1e200]` against itself is 1, not `Infinity / Infinity`.
+ */
 export declare function cosineSimilarity(a: readonly number[], b: readonly number[]): number;
-/** Mean of a document's chunk vectors: one vector per document, for pair scoring. */
+/**
+ * Mean of a document's chunk vectors: one vector per document, for pair scoring.
+ *
+ * Refuses vectors of mixed length. Skipping the odd one out used to divide the
+ * survivors' sum by the full count, which produced a vector no chunk had.
+ */
 export declare function meanVector(vectors: readonly (readonly number[])[]): number[];
 export interface EmbeddableDocument {
     artifact_id: string;
@@ -106,6 +127,15 @@ export interface EmbeddingRunReport {
     provider: string | null;
     model_id: string | null;
     model_revision: string | null;
+    /**
+     * The revision the provider itself reported, when it reported one.
+     *
+     * Separate from `model_revision`, which is the configured value known before
+     * the pass and bound into the analysis identity. A revision a server states in
+     * its answers cannot be known until the first answer, so it is recorded beside
+     * the identity rather than inside it. Null when none was reported.
+     */
+    reported_model_revision: string | null;
     dimension: number | null;
     chunk_profile: string;
     reproducibility_class: EmbeddingReproducibilityClass | null;

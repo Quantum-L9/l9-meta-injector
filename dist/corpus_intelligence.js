@@ -73,7 +73,11 @@ const path = __importStar(require("node:path"));
 const ordering_1 = require("./ordering");
 const repository_model_1 = require("./repository_model");
 exports.CORPUS_INTELLIGENCE_PACKET_TYPE = "l9.corpus-intelligence";
-exports.CORPUS_INTELLIGENCE_PACKET_VERSION = "1.0.0";
+/**
+ * 1.1.0 adds `domains_not_run` (ADR-068): a payload domain no pass populated is
+ * stated as not run, so an empty array means found-nothing and nothing else.
+ */
+exports.CORPUS_INTELLIGENCE_PACKET_VERSION = "1.1.0";
 exports.CORPUS_INTELLIGENCE_PRODUCER_NAME = "l9-meta-injector.corpus-intelligence";
 exports.CORPUS_INTELLIGENCE_MANIFEST_VERSION = "1.0.0";
 /**
@@ -94,7 +98,8 @@ const MANIFEST_RELATIVE_PATH = "manifest.json";
  * Every one is serialized to its own file and its own hash. An empty array
  * means the producer found nothing of that kind, which is a different statement
  * from a domain that was never run — so every domain is always written, even
- * empty.
+ * empty, and a domain that was never run is named in the packet's
+ * `domains_not_run` (ADR-068) rather than left for a reader to infer.
  */
 exports.CORPUS_PAYLOAD_FIELDS = [
     "document_work_signals",
@@ -150,6 +155,7 @@ const SCHEMA_HASH = (0, repository_model_1.semanticHash)({
     packet_type: exports.CORPUS_INTELLIGENCE_PACKET_TYPE,
     packet_version: exports.CORPUS_INTELLIGENCE_PACKET_VERSION,
     payload_fields: [...exports.CORPUS_PAYLOAD_FIELDS],
+    run_statement_field: "domains_not_run",
 });
 // ───────────────────────────── serialization ─────────────────────────────
 /**
@@ -226,6 +232,27 @@ function artifactIdentities(roots) {
 function validateCorpusIntelligencePacket(packet, payload, roots) {
     const errors = [];
     const identities = artifactIdentities(roots);
+    // A domain declared not run must be a domain, stated once, with a reason, and
+    // empty: "not run" beside entries is the ambiguity the statement exists to end.
+    const knownDomains = new Set(exports.CORPUS_PAYLOAD_FIELDS);
+    const declaredNotRun = new Set();
+    for (const entry of packet.domains_not_run) {
+        if (!knownDomains.has(entry.domain)) {
+            errors.push(`domains_not_run names '${entry.domain}', which is not a payload domain`);
+            continue;
+        }
+        if (declaredNotRun.has(entry.domain)) {
+            errors.push(`domains_not_run names ${entry.domain} more than once`);
+        }
+        declaredNotRun.add(entry.domain);
+        if (typeof entry.reason !== "string" || entry.reason.length === 0) {
+            errors.push(`domains_not_run gives ${entry.domain} no reason`);
+        }
+        const carried = payload[entry.domain].length;
+        if (carried > 0) {
+            errors.push(`${entry.domain} is declared not run but carries ${carried} entr${carried === 1 ? "y" : "ies"}`);
+        }
+    }
     const declared = new Set(packet.inputs.repository_model_packets.map((ref) => ref.packet_id));
     for (const reference of packet.inputs.repository_model_packets) {
         if (reference.packet_type !== "l9.repository-model") {
@@ -347,6 +374,13 @@ function buildCorpusIntelligencePacket(input) {
         root_refs: rootRefs,
         coverage: input.coverage,
     };
+    // In contract order, so the statement is canonical whatever order the caller
+    // listed it in. Validation below refuses an unknown or repeated domain.
+    const fieldOrder = new Map(exports.CORPUS_PAYLOAD_FIELDS.map((field, index) => [field, index]));
+    const domainsNotRun = input.domainsNotRun
+        .map((entry) => ({ domain: entry.domain, reason: entry.reason }))
+        .sort((a, b) => (fieldOrder.get(a.domain) ?? Number.MAX_SAFE_INTEGER) - (fieldOrder.get(b.domain) ?? Number.MAX_SAFE_INTEGER)
+        || (0, ordering_1.compareCodePoints)(a.domain, b.domain));
     const payload_refs = {};
     const payload_hashes = {};
     for (const field of exports.CORPUS_PAYLOAD_FIELDS) {
@@ -362,6 +396,7 @@ function buildCorpusIntelligencePacket(input) {
         inputs,
         corpus,
         validation: { status: "passed" },
+        domains_not_run: domainsNotRun,
         schema_hash: SCHEMA_HASH,
         semantic_hash: "",
         payload_refs,
@@ -384,6 +419,7 @@ function buildCorpusIntelligencePacket(input) {
         profile: shell.profile,
         inputs: shell.inputs,
         corpus: shell.corpus,
+        domains_not_run: shell.domains_not_run,
         schema_hash: shell.schema_hash,
         payload_refs: shell.payload_refs,
         payload_hashes: shell.payload_hashes,

@@ -243,3 +243,75 @@ describe("a root that cannot be read", () => {
     expect(whole.snapshot.missing_root_ids).toEqual([]);
   });
 });
+
+describe("one root key with several mounts (WU-045)", () => {
+  it("REG-WU-045-RC-066-a: is observed, once, when any of its mounts was readable", async () => {
+    const present = root();
+    const unplugged = path.join(tmp(), "unplugged");
+    const result = await runCorpusScan({
+      roots: [{ path: present, name: "ssd" }, { path: unplugged, name: "ssd" }],
+      producerVersion: "test",
+      allowPartialRoots: true,
+    });
+    expect(result.snapshot.corpus_status).toBe("complete");
+    expect(result.snapshot.missing_root_ids).toEqual([]);
+    expect(result.snapshot.roots).toHaveLength(1);
+    expect(result.snapshot.roots[0].observation_status).toBe("observed");
+    expect(result.snapshot.counts.root_count_requested).toBe(2);
+    expect(result.snapshot.counts.root_count_failed).toBe(0);
+    expect(result.coverage.corpus.root_count_failed).toBe(0);
+    // The failed mount is not dropped silently: a warning names it, and no error
+    // claims the root is missing.
+    const warning = result.diagnostics.find((d) => d.severity === "warning" && d.message.includes(unplugged));
+    expect(warning).toBeDefined();
+    expect(warning?.message).toContain("'ssd'");
+    expect(result.diagnostics.some((d) => d.code === "corpus.root_unreadable")).toBe(false);
+  });
+
+  it("REG-WU-045-RC-066-b: diffs as unchanged against a single-mount run of the same root", async () => {
+    const present = root();
+    const previous = await runCorpusScan({
+      roots: [{ path: present, name: "ssd" }],
+      producerVersion: "test",
+    });
+    const result = await runCorpusScan({
+      roots: [{ path: present, name: "ssd" }, { path: path.join(tmp(), "unplugged"), name: "ssd" }],
+      producerVersion: "test",
+      allowPartialRoots: true,
+      previousSnapshot: previous.snapshot,
+    });
+    expect(result.diff?.counts.root_unchanged).toBe(1);
+    expect(result.diff?.counts.root_changed).toBe(0);
+  });
+
+  it("REG-WU-045-RC-066-c: still records a distinct missing key and labels the corpus partial", async () => {
+    const result = await runCorpusScan({
+      roots: [{ path: root(), name: "disk" }, { path: path.join(tmp(), "gone"), name: "old-ssd" }],
+      producerVersion: "test",
+      allowPartialRoots: true,
+    });
+    expect(result.snapshot.corpus_status).toBe("partial");
+    expect(result.snapshot.missing_root_ids).toHaveLength(1);
+    expect(result.snapshot.counts.root_count_failed).toBe(1);
+    expect(result.diagnostics.some((d) => d.code === "corpus.root_unreadable")).toBe(true);
+  });
+
+  it("REG-WU-045-RC-066-d: records a key whose every mount failed as one missing root", async () => {
+    const result = await runCorpusScan({
+      roots: [
+        { path: root(), name: "disk" },
+        { path: path.join(tmp(), "first-gone"), name: "ssd" },
+        { path: path.join(tmp(), "second-gone"), name: "ssd" },
+      ],
+      producerVersion: "test",
+      allowPartialRoots: true,
+    });
+    expect(result.snapshot.corpus_status).toBe("partial");
+    const missing = result.snapshot.roots.filter((entry) => entry.observation_status === "missing");
+    expect(missing).toHaveLength(1);
+    expect(missing[0].root_key).toBe("ssd");
+    expect(result.snapshot.missing_root_ids).toEqual([missing[0].root_id]);
+    expect(result.snapshot.counts.root_count_failed).toBe(1);
+    expect(new Set(result.snapshot.roots.map((entry) => entry.root_id)).size).toBe(result.snapshot.roots.length);
+  });
+});

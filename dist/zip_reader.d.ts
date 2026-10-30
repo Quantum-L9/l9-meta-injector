@@ -27,6 +27,14 @@ export interface ZipCentralEntry {
     modTime: number;
     /** DOS last-modification date, for byte-exact round-trip in writers. */
     modDate: number;
+    /**
+     * Absolute file offset of this entry's original central-directory record, so a
+     * writer can copy it verbatim. A number, not the bytes, so cached preflight
+     * verdicts that carry the entry stay JSON-safe.
+     */
+    centralRecordOffset?: number;
+    /** Length of the original central-directory record: fixed part, name, extra and comment. */
+    centralRecordLength?: number;
 }
 export interface ZipDirectory {
     entries: ZipCentralEntry[];
@@ -34,8 +42,22 @@ export interface ZipDirectory {
     declaredEntryCount: number;
     /** True when the archive used Zip64 records. */
     zip64: boolean;
+    /** Absolute file offset of the archive (EOCD) comment. */
+    eocdCommentOffset?: number;
+    /** Length of the archive (EOCD) comment; 0 when there is none. */
+    eocdCommentLength?: number;
 }
 export declare class ZipFormatError extends Error {
+    constructor(message: string);
+}
+/**
+ * A member produced more or fewer bytes than its central directory declares.
+ *
+ * A subclass of `ZipFormatError`, so every classifier that already holds a
+ * format error holds this fail-closed; classifiers that distinguish integrity
+ * failures (a CRC mismatch) refine it to their integrity code (ADR-061).
+ */
+export declare class ZipSizeMismatchError extends ZipFormatError {
     constructor(message: string);
 }
 /** Read an archive's central directory. */
@@ -47,7 +69,12 @@ export declare class Crc32 {
     digest(): number;
 }
 export interface ZipMemberStreamLimits {
-    /** Hard ceiling on bytes produced for this member. Exceeding it aborts the read. */
+    /**
+     * Hard ceiling on bytes produced for this member. Exceeding it aborts the read
+     * with `ZipBudgetExceededError`. The member's declared uncompressed size bounds
+     * what is emitted as well: producing more (inside this ceiling) or fewer bytes
+     * than declared is a `ZipSizeMismatchError`.
+     */
     maxUncompressedBytes: number;
     /** Chunk size used for stored members and for the sink. */
     chunkBytes?: number;

@@ -165,6 +165,10 @@ describe("a PowerPoint deck", () => {
     // Slide 10 must not sort before slide 2, which a string sort would do.
     const second = outcome.document.blocks.find((block) => block.text === "Next");
     if (second?.locator.kind === "pptx_shape") expect(second.locator.slide_number).toBe(2);
+    // Notes are found through each slide's relationship, so nothing is inferred.
+    expect(outcome.document.diagnostics.some(
+      (diagnostic) => diagnostic.message.includes("inferred"),
+    )).toBe(false);
   });
 });
 
@@ -205,6 +209,11 @@ describe("a spreadsheet", () => {
     expect(outcome.document.diagnostics.some(
       (diagnostic) => diagnostic.message.includes("were not evaluated"),
     )).toBe(true);
+    // REG-WU-061-RC-118-g: a conformant workbook resolves each sheet through
+    // its relationship, so nothing about the pairing is inferred.
+    expect(outcome.document.diagnostics.some(
+      (diagnostic) => diagnostic.message.includes("inferred"),
+    )).toBe(false);
   });
 });
 
@@ -387,6 +396,9 @@ describe("container defences", () => {
     const serialized = JSON.stringify(outcome.document);
     expect(serialized).not.toContain("root:");
     expect(serialized).not.toContain("/etc/passwd");
+    // REG-WU-060-RC-123-d: the internal subset is skipped through its own ']>',
+    // so no markup residue reaches the first paragraph.
+    expect(serialized).not.toContain("]>");
   });
 });
 
@@ -427,5 +439,41 @@ describe("the registry", () => {
     // serve one document to two artifacts holding identical bytes.
     expect(first.document.normalized_document_id).toBe(second.document.normalized_document_id);
     expect(first.document.normalized_document_id).toMatch(/^normdoc:/);
+  });
+
+  it("REG-WU-039-RC-067-d: carries the decoder-declared dialect into the normalized document id", () => {
+    const dir = tmp();
+    const markdown = "# Plan\n\nStatus: blocked\n";
+    const table = "item\tstatus\nrouter\tblocked\n";
+    const files = {
+      md: path.join(dir, "a.md"),
+      txt: path.join(dir, "b.txt"),
+      csv: path.join(dir, "c.csv"),
+      tsv: path.join(dir, "d.tsv"),
+      md2: path.join(dir, "e.md"),
+    };
+    fs.writeFileSync(files.md, markdown);
+    fs.writeFileSync(files.txt, markdown);
+    fs.writeFileSync(files.md2, markdown);
+    fs.writeFileSync(files.csv, table);
+    fs.writeFileSync(files.tsv, table);
+
+    // The dialect is the decoder's own declaration, decided in one place.
+    expect(registry.forPath("a.md")?.dialectFor?.("a.md")).toBe("markdown");
+    expect(registry.forPath("x.MDX")?.dialectFor?.("x.MDX")).toBe("markdown");
+    expect(registry.forPath("b.txt")?.dialectFor?.("b.txt")).toBeUndefined();
+    expect(registry.forPath("d.tsv")?.dialectFor?.("d.tsv")).toBe("tsv");
+    expect(registry.forPath("c.csv")?.dialectFor?.("c.csv")).toBeUndefined();
+
+    const id = (file: string): string => {
+      const outcome = decode(file);
+      if (!outcome.decoded) throw new Error(`${file} did not decode`);
+      return outcome.document.normalized_document_id;
+    };
+    // Identical bytes, different dialect: different documents.
+    expect(id(files.md)).not.toBe(id(files.txt));
+    expect(id(files.csv)).not.toBe(id(files.tsv));
+    // Identical bytes, same dialect: one document.
+    expect(id(files.md)).toBe(id(files.md2));
   });
 });

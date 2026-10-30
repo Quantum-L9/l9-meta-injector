@@ -39,7 +39,15 @@ const SCALAR = (raw) => {
     if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) {
         // Double-quoted: unescape the standard YAML escape sequences so values like
         // Windows paths ("C:\\tmp") or embedded \n/\" round-trip correctly.
-        return s.slice(1, -1).replace(/\\(["\\/nrt])/g, (_m, c) => unescapeDoubleQuotedChar(c));
+        // `\xNN` / `\uXXXX` / `\UXXXXXXXX` are the standard YAML escapes the serializer
+        // uses to keep carrier-forbidden sequences out of host comments (ADR-057).
+        return s.slice(1, -1).replace(/\\(?:x([0-9A-Fa-f]{2})|u([0-9A-Fa-f]{4})|U([0-9A-Fa-f]{8})|(["\\/nrt]))/g, (_m, x, u, big, c) => {
+            const hex = x ?? u ?? big;
+            if (hex === undefined)
+                return unescapeDoubleQuotedChar(c ?? "");
+            const code = Number.parseInt(hex, 16);
+            return code > 0x10ffff ? _m : String.fromCodePoint(code);
+        });
     }
     if (s.length >= 2 && s.startsWith("'") && s.endsWith("'")) {
         // Single-quoted: the only escape is a doubled quote ('').
@@ -65,19 +73,62 @@ const SCALAR = (raw) => {
     return s;
 };
 const indentOf = (line) => line.length - line.replace(/^ +/, "").length;
+const isBlank = (c) => c === " " || c === "\t";
+// Whether a scalar (or a flow-list item) begins at `i`: only there can a quote
+// character open a quoted scalar. In YAML a mid-word apostrophe (`it's`) is plain
+// text, so it must not hide a later ` # comment` (RC-024).
+function scalarStartsAt(line, i, inFlow) {
+    let j = i - 1;
+    while (j >= 0 && isBlank(line[j]))
+        j--;
+    if (j < 0)
+        return true;
+    const prev = line[j];
+    if (prev === ":" || prev === "[")
+        return true;
+    if (prev === ",")
+        return inFlow;
+    if (prev === "-" && j < i - 1) {
+        // A block-sequence marker: `- ` with only indentation before it.
+        let k = j - 1;
+        while (k >= 0 && isBlank(line[k]))
+            k--;
+        return k < 0;
+    }
+    return false;
+}
 // Drop a trailing `# comment` and surrounding space, but only when the `#` is
-// whitespace-preceded AND not inside a single/double-quoted string — so a value
-// like `description: "hello # world"` is preserved intact.
+// whitespace-preceded AND not inside a quoted scalar — so a value like
+// `description: "hello # world"` is preserved intact. A quote opens a quoted scalar
+// only where a scalar or flow item begins; `''` is an escaped quote inside single
+// quotes and a backslash escapes the next character inside double quotes
+// (ADR-057; RC-005, RC-024).
 const strip = (line) => {
-    let inSingle = false;
-    let inDouble = false;
+    let quote = null;
+    let flowDepth = 0;
     for (let i = 0; i < line.length; i++) {
         const c = line[i];
-        if (c === "'" && !inDouble)
-            inSingle = !inSingle;
-        else if (c === '"' && !inSingle)
-            inDouble = !inDouble;
-        else if (c === "#" && !inSingle && !inDouble && (i === 0 || /\s/.test(line[i - 1]))) {
+        if (quote === '"') {
+            if (c === "\\")
+                i++;
+            else if (c === '"')
+                quote = null;
+            continue;
+        }
+        if (quote === "'") {
+            if (c === "'" && line[i + 1] === "'")
+                i++;
+            else if (c === "'")
+                quote = null;
+            continue;
+        }
+        if ((c === "'" || c === '"') && scalarStartsAt(line, i, flowDepth > 0))
+            quote = c;
+        else if (c === "[" && scalarStartsAt(line, i, flowDepth > 0))
+            flowDepth++;
+        else if (c === "]" && flowDepth > 0)
+            flowDepth--;
+        else if (c === "#" && (i === 0 || /\s/.test(line[i - 1]))) {
             return line.slice(0, i).replace(/\s+$/, "");
         }
     }

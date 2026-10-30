@@ -48,9 +48,13 @@ const zip_reader_1 = require("./zip_reader");
  *
  * Bumped whenever an admission rule changes, because a warm archive-manifest
  * verdict is keyed on it: 1.1.0 added the file/directory path-conflict rule, and
- * an archive accepted under 1.0.0 may be held under 1.1.0.
+ * an archive accepted under 1.0.0 may be held under 1.1.0. 1.2.0 (ADR-061)
+ * refuses a declared data extent that does not fit before the central
+ * directory, judges path conflicts under the collision fold, and classifies a
+ * Unix mode without file-type bits by name, so a verdict cached under 1.1.0 may
+ * differ in either direction.
  */
-exports.ARCHIVE_READER_VERSION = "1.1.0";
+exports.ARCHIVE_READER_VERSION = "1.2.0";
 const STAGE_CHUNK_BYTES = 64 * 1024;
 /**
  * Expected refusal caused by archive/resource policy, not a host/tool failure.

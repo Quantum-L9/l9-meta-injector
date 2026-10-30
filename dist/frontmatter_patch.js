@@ -11,6 +11,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.FRONTMATTER_PATCH_SCHEMA = void 0;
 exports.isPatcherLimitation = isPatcherLimitation;
 exports.inspectFrontMatterDocument = inspectFrontMatterDocument;
+exports.opaqueFieldText = opaqueFieldText;
+exports.frontMatterReconciliationView = frontMatterReconciliationView;
 exports.patchManagedFrontMatter = patchManagedFrontMatter;
 exports.FRONTMATTER_PATCH_SCHEMA = "l9.frontmatter-patch/v1";
 /**
@@ -76,26 +78,50 @@ function trailingWhitespaceStart(text) {
     const end = text.trimEnd().length;
     return end === text.length ? -1 : end;
 }
+/**
+ * Split a scalar's text from its inline comment. A quote opens a quoted scalar only
+ * where a scalar or flow-list item begins — a mid-word apostrophe (`it's`) is plain
+ * text in YAML — `''` escapes a quote inside single quotes, and a backslash escapes
+ * the next character inside double quotes. This is the rule every in-repository
+ * YAML-subset reader shares (ADR-057, RC-024 / DEC-RC-024).
+ */
 function splitInlineComment(text) {
     let single = false;
     let double = false;
     let bracketDepth = 0;
+    // Last significant character outside a quoted scalar ("" at the scalar's start).
+    let previous = "";
     for (let i = 0; i < text.length; i++) {
         const char = text[i];
-        if (char === "'" && !double) {
-            if (single && text[i + 1] === "'") {
+        if (double) {
+            if (char === "\\")
                 i += 1;
-                continue;
+            else if (char === '"') {
+                double = false;
+                previous = char;
             }
-            single = !single;
             continue;
         }
-        if (char === '"' && !single && (i === 0 || text[i - 1] !== "\\")) {
-            double = !double;
+        if (single) {
+            if (char === "'" && text[i + 1] === "'")
+                i += 1;
+            else if (char === "'") {
+                single = false;
+                previous = char;
+            }
             continue;
         }
-        if (single || double)
+        const startsScalar = previous === "" || previous === "[" || (bracketDepth > 0 && previous === ",");
+        if (char === "'" && startsScalar) {
+            single = true;
             continue;
+        }
+        if (char === '"' && startsScalar) {
+            double = true;
+            continue;
+        }
+        if (!/\s/.test(char))
+            previous = char;
         if (char === "[")
             bracketDepth += 1;
         if (char === "]")
@@ -485,6 +511,34 @@ function inspectFrontMatterDocument(raw) {
         closingEnd: close.fullEnd,
     };
 }
+/**
+ * The verbatim value text of every `opaque` field, keyed by field name.
+ *
+ * Opaque values never enter `inspection.meta` (ADR-035): their meaning is not
+ * established. Reconciliation still has to *see* them, or a placeholder decided
+ * without them is written over a real user value — `created: 2025-10-28T15:30:00Z`
+ * would lose to `Unknown` while its quoted spelling survives. This view carries the
+ * exact bytes as an uninterpreted string beside `meta`, never inside it.
+ */
+function opaqueFieldText(raw, inspection) {
+    const out = Object.create(null);
+    if (!inspection.safe)
+        return out;
+    for (const field of inspection.fields) {
+        if (field.kind !== "opaque" || field.valueStart === undefined || field.valueEnd === undefined)
+            continue;
+        out[field.key] = raw.slice(field.valueStart, field.valueEnd);
+    }
+    return out;
+}
+/**
+ * The existing header values a reconciler compares against: parsed `meta` plus the
+ * verbatim text of opaque fields. The two key sets are disjoint by construction.
+ * A fresh object is returned; `inspection.meta` is not modified.
+ */
+function frontMatterReconciliationView(raw, inspection) {
+    return { ...inspection.meta, ...opaqueFieldText(raw, inspection) };
+}
 function failureFromInspection(raw, inspection, managedKeys) {
     return { ...inspection, content: raw, changed: false, managedKeys };
 }
@@ -526,12 +580,16 @@ function patchManagedFrontMatter(raw, managed) {
         }
         const rendered = renderSafeScalar(managed[key]);
         // An opaque field patches exactly like a scalar: its value byte range is known, and a
-        // managed key's canonical rendering replaces it wholesale. Only *unmanaged* opaque
-        // values are preserved verbatim — they are simply never edited.
+        // managed key's canonical rendering replaces it wholesale. Unmanaged opaque values
+        // are never edited, and a managed opaque value whose verbatim text already equals
+        // the managed value keeps its original bytes — reconciliation saw that text, so
+        // re-spelling it would be a write with no change in value.
         if (field.kind === "scalar" || field.kind === "opaque") {
             if (field.valueStart === undefined || field.valueEnd === undefined) {
                 return failureFromInspection(raw, issue(raw, "FRONTMATTER_COMPLEX_YAML", `managed field '${key}' lacks a safe scalar range`, { key }), managedKeys);
             }
+            if (field.kind === "opaque" && managed[key] === raw.slice(field.valueStart, field.valueEnd))
+                continue;
             edits.push({ start: field.valueStart, end: field.valueEnd, text: rendered });
         }
         else {
