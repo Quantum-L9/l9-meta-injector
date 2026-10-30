@@ -538,7 +538,7 @@
     },
     {
       "path": "docs/topology-conformance.json",
-      "git_blob_sha1": "dedb90688114a7c4625ac2810b76276c92828695"
+      "git_blob_sha1": "00a454be2eb0f96afdea49825929a47c120127fd"
     },
     {
       "path": "docs/traceability-map.json",
@@ -682,7 +682,7 @@
     },
     {
       "path": "scripts/topology-conformance.js",
-      "git_blob_sha1": "8a064956a54d33037b7554a228c9880da8d2afda"
+      "git_blob_sha1": "63d422285ed5e821954b1c7031b6413fb0b55de4"
     },
     {
       "path": "src/archive_preflight.ts",
@@ -966,7 +966,7 @@
     },
     {
       "path": "tests/repository_model.test.ts",
-      "git_blob_sha1": "54ec8fe0691450c79d0ca75fc44b3e2ca024fc4a"
+      "git_blob_sha1": "3fa7f16f19cda22f0d5b61928a12af77f3199579"
     },
     {
       "path": "tests/semantic_firewall.test.ts",

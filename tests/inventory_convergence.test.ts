@@ -133,9 +133,15 @@ describe("WU-074 RC-050: annotation converges for identical inputs", () => {
     const root = tmp();
     const file = path.join(root, "b.ts");
     fs.writeFileSync(file, "export const b = 1;\n");
+    // A real initial mtime distinct from annotation's write avoids relying on
+    // two fast writes landing in different filesystem clock ticks.
+    const initialMtime = new Date("2000-01-01T00:00:00.000Z");
+    fs.utimesSync(file, initialMtime, initialMtime);
     run(root, "2030-01-01T00:00:00.000Z");
     const first = fs.readFileSync(file, "utf8");
+    expect(field(first, "modified_at")).toBe(initialMtime.toISOString());
     await sleep(20);
+    const observedMtime = fs.lstatSync(file).mtime.toISOString();
     const second = run(root, "2030-06-01T00:00:00.000Z");
     const after = fs.readFileSync(file, "utf8");
     expect(field(after, "inspected_at")).toBe("2030-06-01T00:00:00.000Z");
@@ -144,6 +150,7 @@ describe("WU-074 RC-050: annotation converges for identical inputs", () => {
     // The record stays an observation (ADR-051 item 6): run 1's own write moved
     // the file's mtime, and the record says so while the carrier does not.
     const rec = second.records.find((r) => r.relative_path === "b.ts")!;
+    expect(rec.modified_at).toBe(observedMtime);
     expect(rec.modified_at).not.toBe(field(after, "modified_at"));
   });
 

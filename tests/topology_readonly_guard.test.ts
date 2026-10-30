@@ -25,6 +25,7 @@ const guard = require("../scripts/topology-conformance.js") as {
     before: Record<string, string>,
     after: Record<string, string>,
   ): string[];
+  validateCorpusObservation(packet: Record<string, unknown>, observed: Record<string, unknown>): void;
 };
 
 const scratch: string[] = [];
@@ -202,5 +203,27 @@ describe("caches are judged by provenance, not by name (WU-073, RC-111)", () => 
   it("refuses to clean without the before snapshot that proves provenance", () => {
     const root = fakeCheckout();
     expect(() => (guard.dropPycache as unknown as (root: string) => void)(root)).toThrow();
+  });
+});
+
+describe("canonical corpus identity at the sibling boundary", () => {
+  const packet = {
+    packet_type: "l9.corpus-intelligence", packet_version: "1.1.0",
+    packet_id: "packet:unit-fixture", semantic_hash: "sha256:unit-fixture",
+  };
+
+  it("accepts exactly the producer identity at canonical ingress", () => {
+    expect(() => guard.validateCorpusObservation(packet, { ...packet, is_canonical: true })).not.toThrow();
+  });
+
+  it("rejects reconstructed output even when its identity matches", () => {
+    expect(() => guard.validateCorpusObservation(packet, { ...packet, is_canonical: false })).toThrow(/adapted/);
+    expect(() => guard.validateCorpusObservation(packet, { ...packet })).toThrow(/adapted/);
+  });
+
+  it.each(["packet_id", "semantic_hash", "packet_type", "packet_version"])("rejects a mismatched %s", (field) => {
+    expect(() => guard.validateCorpusObservation(packet, {
+      ...packet, is_canonical: true, [field]: "different",
+    })).toThrow(/different corpus/);
   });
 });
