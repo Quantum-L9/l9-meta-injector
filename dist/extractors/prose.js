@@ -172,11 +172,11 @@ exports.pythonRouteObservationExtractor = {
     id: "python-route-observation/v1",
     // 1.1.0: every route decorator of a stack is recorded (RC-098); BOM and
     // lone-CR aware lines (RC-096).
-    // F11: one http.route_handler per (def, object), so the same verb and path
-    // on two routers above one def no longer yields a duplicate draft. The
-    // version bump to 1.2.0 is withheld: it rewrites the committed golden
-    // bundles under fixtures/*/expected-bundle (outside this change's scope).
-    version: "1.1.0",
+    // 1.2.0: one http.route_handler per (def, object), so the same verb and
+    // path on two routers above one def no longer yields a duplicate draft
+    // (F11). The committed golden bundles under fixtures/*/expected-bundle were
+    // regenerated for this version.
+    version: "1.2.0",
     matches(sourcePath) {
         return sourcePath.endsWith(".py");
     },
