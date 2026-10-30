@@ -239,27 +239,39 @@ function acquireTakeoverGuard(lockFile: string): { file: string; contents: strin
     if (attempt > 0 || !holderIsStale(holder)) {
       throw publisherRefusal(lockFile, holder, `, taking over a stale lock under ${file}`);
     }
-    const aside = `${file}.${process.pid}.${process.hrtime.bigint()}.reap`;
-    try {
-      fs.renameSync(file, aside);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
-      throw error;
-    }
-    const moved = readLockText(aside);
-    if (moved === seen) {
-      fs.rmSync(aside, { force: true });
-      continue;
-    }
-    try {
-      fs.linkSync(aside, file);
-    } catch {
-      // A third guard stands there already; it is the one in charge now.
-    }
-    fs.rmSync(aside, { force: true });
-    throw publisherRefusal(lockFile, parseLockHolder(moved), `, taking over a stale lock under ${file}`);
+    reapDeadGuard(lockFile, file, seen);
   }
   throw publisherRefusal(lockFile, parseLockHolder(readLockText(file)), `, taking over a stale lock under ${file}`);
+}
+
+/**
+ * Reap the takeover guard `file`, last read as `seen`: a dead holder's record.
+ *
+ * Returns once the guard is gone — reaped here, or removed by another publisher
+ * first — so the caller can try to create its own. Throws the publisher refusal
+ * when the bytes renamed aside are not `seen`: a live guard replaced the dead one
+ * after it was read, so it is linked back without overwriting.
+ */
+function reapDeadGuard(lockFile: string, file: string, seen: string | null): void {
+  const aside = `${file}.${process.pid}.${process.hrtime.bigint()}.reap`;
+  try {
+    fs.renameSync(file, aside);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  const moved = readLockText(aside);
+  if (moved === seen) {
+    fs.rmSync(aside, { force: true });
+    return;
+  }
+  try {
+    fs.linkSync(aside, file);
+  } catch {
+    // A third guard stands there already; it is the one in charge now.
+  }
+  fs.rmSync(aside, { force: true });
+  throw publisherRefusal(lockFile, parseLockHolder(moved), `, taking over a stale lock under ${file}`);
 }
 
 /** Remove a guard or lock, but only if it is still the one this publisher wrote. */

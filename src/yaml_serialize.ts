@@ -60,7 +60,9 @@ function quoted(s: string, marks: ReadonlySet<number>): string {
     else if (c === "\t") out += String.raw`\t`;
     // The parser's line pattern (`.`) stops at LS/PS, so they are always escaped.
     else if (c === "\u2028" || c === "\u2029") out += hexEscape(c.charCodeAt(0));
-    else if (isControl(c)) out += hexEscape(c.charCodeAt(0));
+    // `c` is one UTF-16 unit, so its code point is that unit (a lone surrogate
+    // half of an astral character included): every control here is below U+0080.
+    else if (isControl(c)) out += hexEscape(c.codePointAt(0) ?? 0);
     else if (marks.has(i)) out += hexEscape(c.charCodeAt(0));
     else out += c;
   }

@@ -399,6 +399,22 @@ function addCsvCellBlocks(
 }
 
 /**
+ * One character inside a quoted field: the index it was read up to, and whether
+ * the field is still open. `""` is an escaped quote, read as a pair; any other
+ * `"` closes the field.
+ */
+function quotedFieldStep(text: string, index: number): { index: number; quoted: boolean } {
+  if (text[index] !== '"') return { index, quoted: true };
+  if (text[index + 1] === '"') return { index: index + 1, quoted: true };
+  return { index, quoted: false };
+}
+
+/** Where a record ending at the newline `newline` ends, without a `\r` before it. */
+function recordEnd(text: string, start: number, newline: number): number {
+  return newline > start && text[newline - 1] === "\r" ? newline - 1 : newline;
+}
+
+/**
  * The records of a delimited file, each with the physical line it starts on.
  *
  * A newline ends a record only outside quotes. Quote state follows the rule
@@ -423,10 +439,7 @@ function csvRecords(
     const char = text[index];
     if (char === "\n") line += 1;
     if (quoted) {
-      if (char === '"') {
-        if (text[index + 1] === '"') index += 1;
-        else quoted = false;
-      }
+      ({ index, quoted } = quotedFieldStep(text, index));
       continue;
     }
     if (char === '"' && fieldStart) {
@@ -442,8 +455,7 @@ function csvRecords(
       fieldStart = false;
       continue;
     }
-    const end = index > start && text[index - 1] === "\r" ? index - 1 : index;
-    records.push({ text: text.slice(start, end), line: startLine });
+    records.push({ text: text.slice(start, recordEnd(text, start, index)), line: startLine });
     start = index + 1;
     startLine = line;
     fieldStart = true;

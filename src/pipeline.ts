@@ -193,6 +193,148 @@ function omitPatternsForOutputs(root: string, outputs: string[]): string[] {
   return patterns;
 }
 
+/** What the inject loop reads from the subject pass, and the skip ledger it extends. */
+interface InjectionInputs {
+  metas: ReadonlyMap<string, NormalizedMeta>;
+  classifications: ReadonlyMap<string, ReturnType<typeof classify>>;
+  inlineCarrierBlocks: ReadonlyMap<string, InlineCarrierBlock>;
+  carrierTiers: ReadonlyMap<string, ReturnType<typeof authorityFreeCarrierTier>>;
+  skippedNonInjectablePaths: string[];
+  skippedNonInjectableDetails: NonInjectableSkipDetail[];
+}
+
+/** Record a governed file the inject loop leaves alone, with why and how it classified. */
+function recordInjectSkip(
+  inputs: InjectionInputs,
+  sourcePath: string,
+  meta: NormalizedMeta,
+  reason: NonInjectableSkipDetail["reason"],
+  inlineCarrierBlock?: InlineCarrierBlock,
+): void {
+  inputs.skippedNonInjectablePaths.push(sourcePath);
+  const cls = inputs.classifications.get(sourcePath);
+  inputs.skippedNonInjectableDetails.push({
+    path: sourcePath,
+    reason,
+    artifactType: cls?.artifactType ?? meta.artifact_type,
+    confidence: cls?.confidence ?? "low",
+    ...(inlineCarrierBlock ? { inlineCarrierBlock } : {}),
+  });
+}
+
+/**
+ * Inject, in scan order, every governed file the carrier policy lets rewrite itself.
+ * A governed file left alone is recorded as a non-injectable skip beside the ones the
+ * subject pass recorded, so coverage accounts for every scanned file.
+ */
+async function injectGovernedFiles(
+  scanned: ReturnType<typeof scanFiles>,
+  inputs: InjectionInputs,
+  llmEnabled: boolean,
+  opts: Parameters<typeof injectFile>[2],
+  metrics: MetricsCollector,
+): Promise<InjectionRecord[]> {
+  const injected: InjectionRecord[] = [];
+  for (const e of scanned) {
+    const meta = inputs.metas.get(e.sourcePath);
+    if (!meta) continue; // binary or hard_skip — already recorded
+    if (inputs.carrierTiers.get(e.sourcePath)?.carrier === "inventory_only") {
+      recordInjectSkip(inputs, e.sourcePath, meta, "carrier_inventory_only");
+      continue;
+    }
+    if (!meta.injectable) {
+      recordInjectSkip(inputs, e.sourcePath, meta, "taxonomy_non_injectable");
+      continue;
+    }
+    // The file is governed, but it cannot rewrite itself: leave its bytes alone and let
+    // the carrier policy place its metadata in the central manifest. The standalone
+    // pipeline writes no central manifest, so coverage names the file and the exact
+    // block instead of dropping it from every bucket (RC-021).
+    const inlineCarrierBlock = inputs.inlineCarrierBlocks.get(e.sourcePath);
+    if (inlineCarrierBlock) {
+      recordInjectSkip(inputs, e.sourcePath, meta, "carrier_inline_blocked", inlineCarrierBlock);
+      continue;
+    }
+    // Use async inject (LLM boolean reconcile on description/intent) when LLM is enabled
+    const record = llmEnabled
+      ? await injectFileAsync(e.sourcePath, meta, opts, metrics)
+      : injectFile(e.sourcePath, meta, opts);
+    injected.push(record);
+    metrics.recordInject();
+  }
+  return injected;
+}
+
+/**
+ * Consume the verification signal at the decision point — a computed VerifyResult
+ * that nothing inspects is indistinguishable from no verification at all. Aggregate
+ * failures, surface them (independent of dryRun), and expose a gate flag to callers/CI.
+ */
+function summarizeVerification(verified: readonly VerifyResult[], dryRun: boolean): VerificationSummary {
+  const failures = verified
+    .filter((v) => v.issues.length > 0)
+    .map((v) => ({ sourcePath: v.sourcePath, issues: v.issues }));
+  const verification: VerificationSummary = {
+    total: verified.length,
+    clean: verified.length - failures.length,
+    withIssues: failures.length,
+    passed: failures.length === 0,
+    failures,
+  };
+  // Only print verification for a real run. Dry-run no longer reports the phantom
+  // header/body failures above, but governed check/apply plan in dry-run and must stay
+  // quiet; their verdict comes from the carrier operation, not from this print.
+  if (!verification.passed && !dryRun) {
+    const preview = failures.slice(0, 5).map((f) => `  - ${f.sourcePath}: ${f.issues.join("; ")}`).join("\n");
+    const more = failures.length > 5 ? `\n  … and ${failures.length - 5} more` : "";
+    process.stderr.write(
+      `[l9-meta-injector] verification FAILED for ${verification.withIssues}/${verification.total} file(s):\n${preview}${more}\n`,
+    );
+  }
+  return verification;
+}
+
+/** Write the run's coverage and LLM/IO metrics lines to stderr when they carry signal. */
+function surfaceRunSignals(config: PipelineConfig, coverage: CoverageSummary, metrics: MetricsCollector): void {
+  // Surface coverage when anything was skipped or on verbose runs — otherwise the
+  // library path emits no signal about what it processed vs. dropped (OBS-003).
+  if (config.verbose || coverage.skippedBinary + coverage.skippedNonInjectable > 0 || coverage.archivesExpanded > 0) {
+    process.stderr.write(
+      `[l9-meta-injector] coverage: scanned=${coverage.scanned} injected=${coverage.injected} ` +
+      `skipped-binary=${coverage.skippedBinary} skipped-noninjectable=${coverage.skippedNonInjectable} ` +
+      `archives-expanded=${coverage.archivesExpanded} ` +
+      `verify-failed=${coverage.verifyFailed} report=${coverage.reportPath}\n`,
+    );
+  }
+  // Surface the LLM/IO hotpath metrics whenever the LLM path ran or on verbose runs,
+  // so a degraded run (llm_failed_fallback / no_adapter) is visible (OBS-009/OBS-010).
+  if (config.llmEnabled || config.verbose) {
+    process.stderr.write(`[l9-meta-injector] metrics: ${metrics.formatLine()}\n`);
+  }
+}
+
+/** Write the run's index files into `indexDir` — a real run that persists outputs only. */
+function writeRunIndexes(config: PipelineConfig, run: {
+  injected: InjectionRecord[];
+  dedupReport: ReturnType<typeof buildDedupReport>;
+  verified: VerifyResult[];
+  placementPlans: PlacementPlan[];
+  metaV3: MetaV3Record[];
+  archives: ArchiveRecord[];
+}): void {
+  if (config.dryRun || config.persistOutputs === false) return;
+  const d = config.indexDir;
+  fs.mkdirSync(d, { recursive: true });
+  fs.writeFileSync(path.join(d, "primitive-library-index.json"), JSON.stringify(buildPrimitiveLibraryIndex(run.injected), null, 2));
+  fs.writeFileSync(path.join(d, "prompt-library-index.json"), JSON.stringify(buildPromptLibraryIndex(run.injected), null, 2));
+  fs.writeFileSync(path.join(d, "dedup-report.json"), JSON.stringify(run.dedupReport, null, 2));
+  fs.writeFileSync(path.join(d, "dedup-report.md"), dedupReportToMarkdown(run.dedupReport));
+  fs.writeFileSync(path.join(d, "verification-report.json"), JSON.stringify(run.verified, null, 2));
+  fs.writeFileSync(path.join(d, "placement-plan.json"), JSON.stringify(run.placementPlans, null, 2));
+  fs.writeFileSync(path.join(d, "meta-v3-index.json"), JSON.stringify(run.metaV3, null, 2));
+  fs.writeFileSync(path.join(d, "archives-expanded.json"), JSON.stringify(run.archives, null, 2));
+}
+
 export async function runPipelineAsync(config: PipelineConfig): Promise<PipelineResult> {
   return runPipelineEntry(config, false);
 }
@@ -459,57 +601,9 @@ async function runPipelineInScope(config: PipelineConfig, metrics: MetricsCollec
     writeInjectLog: config.writeInjectLog ?? false,
     writeDryRunDiff: config.persistOutputs !== false,
   };
-  const injected: InjectionRecord[] = [];
-
-  for (const e of scanned) {
-    const meta = metas.get(e.sourcePath);
-    if (!meta) continue; // binary or hard_skip — already recorded
-    if (carrierTiers.get(e.sourcePath)?.carrier === "inventory_only") {
-      skippedNonInjectablePaths.push(e.sourcePath);
-      const cls = classifications.get(e.sourcePath);
-      skippedNonInjectableDetails.push({
-        path: e.sourcePath,
-        reason: "carrier_inventory_only",
-        artifactType: cls?.artifactType ?? meta.artifact_type,
-        confidence: cls?.confidence ?? "low",
-      });
-      continue;
-    }
-    if (!meta.injectable) {
-      skippedNonInjectablePaths.push(e.sourcePath);
-      const cls = classifications.get(e.sourcePath);
-      skippedNonInjectableDetails.push({
-        path: e.sourcePath,
-        reason: "taxonomy_non_injectable",
-        artifactType: cls?.artifactType ?? meta.artifact_type,
-        confidence: cls?.confidence ?? "low",
-      });
-      continue;
-    }
-    // The file is governed, but it cannot rewrite itself: leave its bytes alone and let
-    // the carrier policy place its metadata in the central manifest. The standalone
-    // pipeline writes no central manifest, so coverage names the file and the exact
-    // block instead of dropping it from every bucket (RC-021).
-    const inlineCarrierBlock = inlineCarrierBlocks.get(e.sourcePath);
-    if (inlineCarrierBlock) {
-      skippedNonInjectablePaths.push(e.sourcePath);
-      const cls = classifications.get(e.sourcePath);
-      skippedNonInjectableDetails.push({
-        path: e.sourcePath,
-        reason: "carrier_inline_blocked",
-        artifactType: cls?.artifactType ?? meta.artifact_type,
-        confidence: cls?.confidence ?? "low",
-        inlineCarrierBlock,
-      });
-      continue;
-    }
-    // Use async inject (LLM boolean reconcile on description/intent) when LLM is enabled
-    const record = config.llmEnabled
-      ? await injectFileAsync(e.sourcePath, meta, opts, metrics)
-      : injectFile(e.sourcePath, meta, opts);
-    injected.push(record);
-    metrics.recordInject();
-  }
+  const injected = await injectGovernedFiles(scanned, {
+    metas, classifications, inlineCarrierBlocks, carrierTiers, skippedNonInjectablePaths, skippedNonInjectableDetails,
+  }, config.llmEnabled, opts, metrics);
 
   // In dry-run nothing was written. A record whose planned bytes differ from the current
   // target (or whose plan cannot prove otherwise) is verified only by the checks that do
@@ -520,29 +614,7 @@ async function runPipelineInScope(config: PipelineConfig, metrics: MetricsCollec
     semanticallyBound: identity.source === "semantic_binding",
     skipWrittenBytesChecks: config.dryRun && r.wouldChange !== false,
   }));
-  // Consume the verification signal at the decision point — a computed VerifyResult
-  // that nothing inspects is indistinguishable from no verification at all. Aggregate
-  // failures, surface them (independent of dryRun), and expose a gate flag to callers/CI.
-  const failures = verified
-    .filter((v) => v.issues.length > 0)
-    .map((v) => ({ sourcePath: v.sourcePath, issues: v.issues }));
-  const verification: VerificationSummary = {
-    total: verified.length,
-    clean: verified.length - failures.length,
-    withIssues: failures.length,
-    passed: failures.length === 0,
-    failures,
-  };
-  // Only print verification for a real run. Dry-run no longer reports the phantom
-  // header/body failures above, but governed check/apply plan in dry-run and must stay
-  // quiet; their verdict comes from the carrier operation, not from this print.
-  if (!verification.passed && !config.dryRun) {
-    const preview = failures.slice(0, 5).map((f) => `  - ${f.sourcePath}: ${f.issues.join("; ")}`).join("\n");
-    const more = failures.length > 5 ? `\n  … and ${failures.length - 5} more` : "";
-    process.stderr.write(
-      `[l9-meta-injector] verification FAILED for ${verification.withIssues}/${verification.total} file(s):\n${preview}${more}\n`,
-    );
-  }
+  const verification = summarizeVerification(verified, config.dryRun);
 
   // Persist coverage even on dry-run so skipped paths are inspectable after the fact (ADR-018).
   const coverageReportDir = config.outDir || config.indexDir;
@@ -580,21 +652,7 @@ async function runPipelineInScope(config: PipelineConfig, metrics: MetricsCollec
     fs.writeFileSync(coverageReportPath, JSON.stringify(persistedCoverage, null, 2));
   }
 
-  // Surface coverage when anything was skipped or on verbose runs — otherwise the
-  // library path emits no signal about what it processed vs. dropped (OBS-003).
-  if (config.verbose || coverage.skippedBinary + coverage.skippedNonInjectable > 0 || coverage.archivesExpanded > 0) {
-    process.stderr.write(
-      `[l9-meta-injector] coverage: scanned=${coverage.scanned} injected=${coverage.injected} ` +
-      `skipped-binary=${coverage.skippedBinary} skipped-noninjectable=${coverage.skippedNonInjectable} ` +
-      `archives-expanded=${coverage.archivesExpanded} ` +
-      `verify-failed=${coverage.verifyFailed} report=${coverageReportPath}\n`,
-    );
-  }
-  // Surface the LLM/IO hotpath metrics whenever the LLM path ran or on verbose runs,
-  // so a degraded run (llm_failed_fallback / no_adapter) is visible (OBS-009/OBS-010).
-  if (config.llmEnabled || config.verbose) {
-    process.stderr.write(`[l9-meta-injector] metrics: ${metrics.formatLine()}\n`);
-  }
+  surfaceRunSignals(config, coverage, metrics);
 
   const dedupEntries = buildDedupEntries(injected, config.hashPrefixLength, bodies);
   const dedupReport = buildDedupReport(dedupEntries, config.nearDupThreshold, config.hashPrefixLength);
@@ -629,18 +687,7 @@ async function runPipelineInScope(config: PipelineConfig, metrics: MetricsCollec
     };
   });
 
-  if (!config.dryRun && config.persistOutputs !== false) {
-    const d = config.indexDir;
-    fs.mkdirSync(d, { recursive: true });
-    fs.writeFileSync(path.join(d, "primitive-library-index.json"), JSON.stringify(buildPrimitiveLibraryIndex(injected), null, 2));
-    fs.writeFileSync(path.join(d, "prompt-library-index.json"), JSON.stringify(buildPromptLibraryIndex(injected), null, 2));
-    fs.writeFileSync(path.join(d, "dedup-report.json"), JSON.stringify(dedupReport, null, 2));
-    fs.writeFileSync(path.join(d, "dedup-report.md"), dedupReportToMarkdown(dedupReport));
-    fs.writeFileSync(path.join(d, "verification-report.json"), JSON.stringify(verified, null, 2));
-    fs.writeFileSync(path.join(d, "placement-plan.json"), JSON.stringify(placementPlans, null, 2));
-    fs.writeFileSync(path.join(d, "meta-v3-index.json"), JSON.stringify(metaV3, null, 2));
-    fs.writeFileSync(path.join(d, "archives-expanded.json"), JSON.stringify(archives, null, 2));
-  }
+  writeRunIndexes(config, { injected, dedupReport, verified, placementPlans, metaV3, archives });
 
   return {
     runStartedAt, scanned, metadataSubjects, injected, verified, verification, coverage,

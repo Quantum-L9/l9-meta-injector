@@ -319,7 +319,8 @@ function archiveAncestryResolver(result, identities) {
             chain.push(sourcePaths.get(current) ?? current);
             current = parentOf.get(current);
         }
-        return JSON.stringify(chain.reverse());
+        chain.reverse();
+        return JSON.stringify(chain);
     };
 }
 /**

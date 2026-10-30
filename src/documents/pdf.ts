@@ -408,6 +408,18 @@ function inflate(raw: Buffer, allowance: InflateAllowance): InflateResult {
   return { kind: "unreadable" };
 }
 
+/**
+ * Where a stream's data starts, given the offset just past its `stream` keyword:
+ * after the keyword's trailing spaces or tabs, and one end-of-line.
+ */
+function streamDataStart(bytes: Buffer, afterKeyword: number): number {
+  let start = afterKeyword;
+  while (bytes[start] === 0x20 || bytes[start] === 0x09) start += 1;
+  if (bytes[start] === 0x0d) start += 1;
+  if (bytes[start] === 0x0a) start += 1;
+  return start;
+}
+
 /** The object number of an `N G R` reference, or null when the value is not one. */
 function referenceNumber(value: string | undefined): number | null {
   const match = /^(\d+)\s+\d+\s+R$/.exec((value ?? "").trim());
@@ -466,10 +478,7 @@ class PdfFile {
       const marker = STREAM_KEYWORD.exec(body);
       let streamStart = -1;
       if (marker !== null) {
-        streamStart = bodyStart + marker.index + marker[0].length;
-        while (this.bytes[streamStart] === 0x20 || this.bytes[streamStart] === 0x09) streamStart += 1;
-        if (this.bytes[streamStart] === 0x0d) streamStart += 1;
-        if (this.bytes[streamStart] === 0x0a) streamStart += 1;
+        streamStart = streamDataStart(this.bytes, bodyStart + marker.index + marker[0].length);
       }
       const inner = dictBody(body);
       parts = {

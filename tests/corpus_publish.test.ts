@@ -424,6 +424,9 @@ describe("retention by recency (RC-069, ADR-066)", () => {
 
 describe("one publisher per output root (RC-072, ADR-066)", () => {
   const LOCK = ".corpus-publish.lock";
+  afterEach(() => {
+    seam.reads = 0;
+  });
 
   it("REG-WU-042-RC-072-a: a second publisher during the first is refused and the first's generation survives", () => {
     const out = tmp();
@@ -489,9 +492,6 @@ describe("one publisher per output root (RC-072, ADR-066)", () => {
   const GUARD = `${LOCK}.takeover`;
   const deadHolder = (stamp: string) =>
     `${JSON.stringify({ pid: 999999999, host: os.hostname(), acquired_at: stamp })}\n`;
-  afterEach(() => {
-    seam.reads = 0;
-  });
 
   it("REG-AUDIT-G01-a: two publishers that both observed the same stale lock leave exactly one owner", () => {
     const out = tmp();
