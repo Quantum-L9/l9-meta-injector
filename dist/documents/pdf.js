@@ -65,7 +65,7 @@ const zlib = __importStar(require("node:zlib"));
 const ordering_1 = require("../ordering");
 const decoder_1 = require("./decoder");
 exports.PDF_DECODER_ID = "l9.pdf-decoder";
-exports.PDF_DECODER_VERSION = "1.3.0";
+exports.PDF_DECODER_VERSION = "1.4.0";
 const WHITESPACE = new Set([0x00, 0x09, 0x0a, 0x0c, 0x0d, 0x20]);
 function isWhitespace(byte) {
     return WHITESPACE.has(byte);

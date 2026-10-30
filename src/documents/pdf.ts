@@ -38,7 +38,7 @@ import {
 } from "./decoder";
 
 export const PDF_DECODER_ID = "l9.pdf-decoder";
-export const PDF_DECODER_VERSION = "1.3.0";
+export const PDF_DECODER_VERSION = "1.4.0";
 
 interface PdfObject {
   offset: number;
