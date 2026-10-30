@@ -441,31 +441,32 @@ function csvRecords(text, delimiter) {
     let line = 1;
     let quoted = false;
     let fieldStart = true;
-    for (let index = 0; index < text.length; index += 1) {
+    // A while loop: an escaped `""` advances the cursor past its second quote.
+    let index = 0;
+    while (index < text.length) {
         const char = text[index];
         if (char === "\n")
             line += 1;
         if (quoted) {
             ({ index, quoted } = quotedFieldStep(text, index));
-            continue;
         }
-        if (char === '"' && fieldStart) {
+        else if (char === '"' && fieldStart) {
             quoted = true;
             fieldStart = false;
-            continue;
         }
-        if (char === delimiter) {
+        else if (char === delimiter) {
             fieldStart = true;
-            continue;
         }
-        if (char !== "\n") {
+        else if (char === "\n") {
+            records.push({ text: text.slice(start, recordEnd(text, start, index)), line: startLine });
+            start = index + 1;
+            startLine = line;
+            fieldStart = true;
+        }
+        else {
             fieldStart = false;
-            continue;
         }
-        records.push({ text: text.slice(start, recordEnd(text, start, index)), line: startLine });
-        start = index + 1;
-        startLine = line;
-        fieldStart = true;
+        index += 1;
     }
     if (start < text.length)
         records.push({ text: text.slice(start), line: startLine });
