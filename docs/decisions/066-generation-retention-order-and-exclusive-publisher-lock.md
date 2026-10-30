@@ -4,6 +4,8 @@
 
 Accepted
 
+Amended by [ADR-077](077-stale-publisher-lock-takeover-guard.md): Decision item 3 — a stale lock is taken over only under an exclusive `.corpus-publish.lock.takeover` guard, removing the lock only if it still holds the bytes judged stale, so exactly one of two racing publishers ends up holding it.
+
 ## Date
 
 2026-10-28

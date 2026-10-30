@@ -253,6 +253,31 @@ describe("a Jupyter notebook", () => {
     }
     expect(outcome.document.metadata.language).toBe("python");
   });
+
+  it("REG-AUDIT-N02-a: counts lone-CR lines in code and markdown cells alike", () => {
+    // Markdown cells already end a line at a lone CR (TEXT 1.3.0); a code cell
+    // counted only LF and CRLF, so the same notebook cited two line models.
+    const file = path.join(tmp(), "classic-mac.ipynb");
+    fs.writeFileSync(file, JSON.stringify({
+      cells: [
+        { cell_type: "markdown", metadata: {}, source: "First paragraph\r\rSecond paragraph" },
+        { cell_type: "code", metadata: {}, execution_count: null, outputs: [], source: "x = 1\ry = 2\rz = 3" },
+      ],
+      metadata: {},
+      nbformat: 4,
+      nbformat_minor: 5,
+    }), "utf8");
+
+    const outcome = decode(file);
+    expect(outcome.decoded).toBe(true);
+    if (!outcome.decoded) return;
+    expect(outcome.document.decoder_version).toBe("1.2.0");
+
+    const second = outcome.document.blocks.find((block) => block.text === "Second paragraph");
+    expect(second?.locator).toMatchObject({ kind: "notebook_cell", cell_index: 0, line_start: 3, line_end: 3 });
+    const code = outcome.document.blocks.find((block) => block.text.includes("x = 1"));
+    expect(code?.locator).toMatchObject({ kind: "notebook_cell", cell_index: 1, line_start: 1, line_end: 3 });
+  });
 });
 
 describe("a saved web page", () => {

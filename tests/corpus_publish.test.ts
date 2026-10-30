@@ -14,7 +14,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import {
   CORPUS_CURRENT_SCHEMA,
   generationId,
@@ -23,6 +23,24 @@ import {
   readCorpusCurrent,
   resolveCurrentGeneration,
 } from "../src/corpus_publish";
+
+// A read made before another publisher moved, acted on after it moved (G01). Two
+// publishers in one synchronous test cannot interleave on their own, so the seam
+// hands the next `seam.reads` reads of `seam.file` the earlier snapshot; every other
+// filesystem call is real.
+const seam = vi.hoisted(() => ({ file: "", text: "", reads: 0 }));
+
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  const readFileSync = ((target: fs.PathOrFileDescriptor, ...rest: unknown[]) => {
+    if (seam.reads > 0 && typeof target === "string" && path.resolve(target) === seam.file) {
+      seam.reads -= 1;
+      return seam.text;
+    }
+    return (actual.readFileSync as (...args: unknown[]) => unknown)(target, ...rest);
+  }) as typeof fs.readFileSync;
+  return { ...actual, readFileSync, default: { ...actual, readFileSync } };
+});
 
 const scratch: string[] = [];
 function tmp(): string {
@@ -406,6 +424,9 @@ describe("retention by recency (RC-069, ADR-066)", () => {
 
 describe("one publisher per output root (RC-072, ADR-066)", () => {
   const LOCK = ".corpus-publish.lock";
+  afterEach(() => {
+    seam.reads = 0;
+  });
 
   it("REG-WU-042-RC-072-a: a second publisher during the first is refused and the first's generation survives", () => {
     const out = tmp();
@@ -466,6 +487,86 @@ describe("one publisher per output root (RC-072, ADR-066)", () => {
     const view = readerView(out);
     expect(view?.tags).toEqual(["second"]);
     expect(view?.missing).toEqual([]);
+  });
+
+  const GUARD = `${LOCK}.takeover`;
+  const deadHolder = (stamp: string) =>
+    `${JSON.stringify({ pid: 999999999, host: os.hostname(), acquired_at: stamp })}\n`;
+
+  it("REG-AUDIT-G01-a: two publishers that both observed the same stale lock leave exactly one owner", () => {
+    const out = tmp();
+    const lock = path.join(out, LOCK);
+    const stale = deadHolder("2026-01-01T00:00:00.000Z");
+    fs.writeFileSync(lock, stale, "utf8");
+    let refusal: unknown = null;
+    let ownerBefore: string | null = null;
+    let ownerAfter: string | null = null;
+    publishCorpusGeneration({
+      outDir: out,
+      files: runFiles("A"),
+      committedAt: "2026-04-01T00:00:00.000Z",
+      keep: 1,
+      beforeSwitch: () => {
+        ownerBefore = fs.readFileSync(lock, "utf8");
+        // B read the stale lock before A replaced it, and acts on that read now.
+        Object.assign(seam, { file: lock, text: stale, reads: 1 });
+        try {
+          publishCorpusGeneration({ outDir: out, files: runFiles("B"), committedAt: "2026-04-02T00:00:00.000Z", keep: 1 });
+        } catch (error) {
+          refusal = error;
+        }
+        seam.reads = 0;
+        ownerAfter = fs.existsSync(lock) ? fs.readFileSync(lock, "utf8") : null;
+      },
+    });
+    expect(ownerBefore).not.toBe(stale);
+    expect(String(refusal)).toContain(lock);
+    // A still holds the lock it took over; B neither removed it nor replaced it.
+    expect(ownerAfter).toBe(ownerBefore);
+    expect(readerView(out)?.tags).toEqual(["A"]);
+    expect(fs.readdirSync(out).sort()).toEqual(["CURRENT.json", "generations"]);
+  });
+
+  it("REG-AUDIT-G01-b: a takeover guard left by a dead same-host pid does not wedge the next publisher", () => {
+    const out = tmp();
+    fs.writeFileSync(path.join(out, LOCK), deadHolder("2026-01-01T00:00:00.000Z"), "utf8");
+    fs.writeFileSync(path.join(out, GUARD), deadHolder("2026-01-01T00:00:01.000Z"), "utf8");
+    publishCorpusGeneration({ outDir: out, files: runFiles("after-crash"), committedAt: "2026-04-01T00:00:00.000Z" });
+    expect(readerView(out)?.tags).toEqual(["after-crash"]);
+    // The dead guard was reaped, not stepped around: nothing is left in the root.
+    expect(fs.readdirSync(out).sort()).toEqual(["CURRENT.json", "generations"]);
+    // And the next publisher is not wedged either.
+    publishCorpusGeneration({ outDir: out, files: runFiles("next"), committedAt: "2026-04-02T00:00:00.000Z" });
+    expect(readerView(out)?.tags).toEqual(["next"]);
+  });
+
+  it("REG-AUDIT-G01-c: a stale lock whose takeover guard is held by a live process is refused, nothing written", () => {
+    const out = tmp();
+    const stale = deadHolder("2026-01-01T00:00:00.000Z");
+    const guard = `${JSON.stringify({ pid: process.ppid, host: os.hostname(), acquired_at: "2026-01-01T00:00:02.000Z" })}\n`;
+    fs.writeFileSync(path.join(out, LOCK), stale, "utf8");
+    fs.writeFileSync(path.join(out, GUARD), guard, "utf8");
+    expect(() => publishCorpusGeneration({ outDir: out, files: runFiles("x"), committedAt: "2026-04-01T00:00:00.000Z" }))
+      .toThrow(path.join(out, LOCK));
+    expect(listGenerations(out)).toEqual([]);
+    expect(fs.readFileSync(path.join(out, LOCK), "utf8")).toBe(stale);
+    expect(fs.readFileSync(path.join(out, GUARD), "utf8")).toBe(guard);
+  });
+
+  it("REG-AUDIT-G01-d: reaping a guard that was replaced after it was read puts the live guard back and refuses", () => {
+    const out = tmp();
+    const stale = deadHolder("2026-01-01T00:00:00.000Z");
+    const live = `${JSON.stringify({ pid: process.ppid, host: os.hostname(), acquired_at: "2026-01-01T00:00:03.000Z" })}\n`;
+    fs.writeFileSync(path.join(out, LOCK), stale, "utf8");
+    fs.writeFileSync(path.join(out, GUARD), live, "utf8");
+    // The publisher read a dead guard; by the time it reaps, a live one stands there.
+    Object.assign(seam, { file: path.join(out, GUARD), text: deadHolder("2026-01-01T00:00:01.000Z"), reads: 1 });
+    expect(() => publishCorpusGeneration({ outDir: out, files: runFiles("x"), committedAt: "2026-04-01T00:00:00.000Z" }))
+      .toThrow(path.join(out, LOCK));
+    expect(listGenerations(out)).toEqual([]);
+    expect(fs.readFileSync(path.join(out, GUARD), "utf8")).toBe(live);
+    expect(fs.readFileSync(path.join(out, LOCK), "utf8")).toBe(stale);
+    expect(fs.readdirSync(out).sort()).toEqual([LOCK, GUARD].sort());
   });
 
   it("refuses to switch to a generation whose files are missing", () => {

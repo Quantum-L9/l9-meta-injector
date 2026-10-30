@@ -4,6 +4,15 @@
 
 Correctness remediation of the bf66978 audit (plan `l9-meta-injector-remediation-bf66978`, READY work units). Each unit lands as one commit with failing-before / passing-after regression tests named by their `REG-WU-*` ids. Units blocked on owner decisions (ADR-057..071) are not included.
 
+### Breaking
+
+Consumer-visible refusals and input-handling changes in this release. Which release line ships them is the owner's call (ADR-069); this heading carries no version label. The Wave 2 "Breaking or consumer-coordinated" list below also applies.
+
+- **Authority configuration (ADR-057).** `parseAuthorityYaml` refuses plain `null`/`~`/booleans, `key:value` without a space, a plain value containing `: `, and an empty block list such as `inline_allow:` with no items. A consumer `.l9/meta-authority.yaml` that parsed before can now fail with `META_AUTHORITY_CONFIG_INVALID` (WU-017).
+- **Omit patterns (ADR-058).** A pattern with a slash anywhere but the end is anchored at the root, as in gitignore. `dir/file` no longer matches nested copies; migrate with `**/dir/file` (WU-006).
+- **Carrier values with control characters (ADR-057).** A key holding a C0 control character or U+007F, or a JSON-inlined value holding U+007F, is refused with `CARRIER_UNREPRESENTABLE` (audit G07).
+- **`splitCsvLine`.** A `"` opens a quoted field only as the field's first character (RFC 4180), so a cell such as `27"` keeps its quote (audit F10).
+
 ### Changed
 
 - **Consumer-visible version bumps.** Each bump changes derived ids, cache keys or profile hashes once:
@@ -11,7 +20,7 @@ Correctness remediation of the bf66978 audit (plan `l9-meta-injector-remediation
   - `MANIFEST_DECODER_VERSION` and `PROJECT_CANDIDATE_METHOD_VERSION`: 1.1.0, so project candidate ids move.
   - `FUSION_PROFILE_VERSION`: 1.1.0, so semantic candidate ids move.
   - `READINESS_PROFILE_VERSION`: 1.1.0.
-  - PDF decoder: 1.0.0 → 1.3.0.
+  - PDF decoder: 1.0.0 → 1.4.0.
   - DOCX, PPTX and XLSX decoders: 1.1.0. HTML and CSV decoders: 1.2.0. Text and notebook decoders: 1.1.0.
 - `DecoderBudget` gains `maxContainerUncompressedBytes` (default 256 MiB, 8 × the per-part limit), the aggregate decompression allowance for one OOXML container (WU-061).
 - Inventory excludes a nested custom `outDir` by its exact root-relative path; same-named directories elsewhere are now inventoried (WU-078). Only a harvested `inventory_type` is compared with the classification, so repositories with pipeline-annotated docs see a one-time repository-model snapshot hash change (WU-081).
@@ -57,8 +66,8 @@ The repository owner adopted the plan's recommended option for every blocking de
   - Records are ordered by code point. ASCII and most BMP paths keep their order.
   - Glob `?` matches one code point.
   - The index writer and parser enforce the record schema.
-  - A governed path the index cannot represent is held at discovery as `unsupported_entry`, so `check` reports it and `apply` refuses (WU-006).
-- **Omit patterns (ADR-058).** A pattern with a slash anywhere but the end is anchored at the root, as in gitignore. `dir/file` no longer matches nested copies; migrate with `**/dir/file` (WU-006).
+  - In governed `check`/`apply`, an eligible text path the index cannot represent is held as `unsupported_entry`, so `check` reports it and `apply` refuses (WU-006; narrowed by audit G02, see below).
+- Omit-pattern anchoring is listed under Breaking (WU-006).
 - **Repository model (ADR-062).** Package managers, governance references and ADR references come only from the repository root (governance also from `.github/` and `docs/`). Repository-scoped claims from nested files and archive members are filed against their own artifact. `package.json` alone no longer implies npm. Interpretation profile 1.2.0 (WU-029).
 - **Corpus cache (ADR-059).** The cache epoch is `l9.corpus-cache-entry/v2`, so the first run after upgrade is cold. The decoder-declared dialect (Markdown, TSV) enters `normalized_document_id` and its cache key. Text decoder 1.2.0, CSV decoder 1.3.0 (WU-038, WU-039).
 - **Archive reader 1.2.0 (ADR-061).** Cached archive verdicts are recomputed once (WU-032).
@@ -73,7 +82,7 @@ The repository owner adopted the plan's recommended option for every blocking de
 #### Fixed
 
 - **Carrier values (ADR-057).** Values are escaped so they cannot end or break the host comment (`--`, `*/`, `#{`, CR, U+2028/2029, the end sentinel). A value that cannot be escaped refuses with `CARRIER_UNREPRESENTABLE`. Managed blocks are recognised only at the head position, so sentinel text in a file body is preserved. A shebang or `<?php` line without a trailing newline round-trips exactly (WU-001, WU-002).
-- **Narrow YAML readers (ADR-057).** The meta-schema, authority, extractor and frontmatter-patcher readers match YAML for the subset they accept, or refuse. `parseAuthorityYaml` refuses plain `null`/`~`/booleans, `key:value` without a space, a plain value containing `: `, and an empty block list (WU-017).
+- **Narrow YAML readers (ADR-057).** The meta-schema, authority, extractor and frontmatter-patcher readers match YAML for the subset they accept, or refuse; the `parseAuthorityYaml` refusals are listed under Breaking (WU-017).
 - **Scoped runs (ADR-058).** A `--glob`-scoped `apply` merges with the existing `.l9/metadata-index.jsonl` instead of dropping out-of-scope records. A scoped run over an unparseable index refuses with `METADATA_INDEX_UNMERGEABLE`, and apply's compare-and-swap binds to the index the plan merged with (WU-005).
 - **Inventory re-runs (ADR-060).**
   - Live re-runs converge: carrier clocks are carried while content is unchanged, and byte-identical carriers and sidecars are not rewritten.
@@ -91,6 +100,39 @@ The repository owner adopted the plan's recommended option for every blocking de
 - **LLM adapter (ADR-064).** Each pipeline and skills run uses its own LLM adapter, endpoint, credential and metrics, so concurrent runs no longer mix and a run no longer resets the caller's adapter (WU-014).
 - **Action outputs.** Outputs come only from each child's own summary line, so a crashed check or apply reports `verification-passed=false`. Paths containing NUL, CR or LF are refused (WU-065).
 - **Release versions.** Versions with leading zeros are rejected, and exact consumer pins such as `@v4.1.0` are no longer rewritten (WU-070).
+
+### Audit remediation of #112 and #113 (ADR-074..077)
+
+Fixes for the 2026-10-28 audit of the wave 1 and wave 2 heads (`f3096e5`, `ebc0dd3`). Each behavioural fix carries a `REG-AUDIT-<id>` regression test that fails on `ebc0dd3` and passes here.
+
+#### Changed
+
+- **Version bumps.** Each one changes cache keys, derived ids or profile hashes once: PDF decoder 1.4.0, DOCX decoder 1.3.0, HTML decoder 1.3.0, CSV decoder 1.4.0, text decoder 1.3.0, notebook decoder 1.2.0, and the `python-route-observation/v1` extractor 1.2.0. The golden repository-model and local-source bundles were regenerated for the extractor bump, and topology conformance was re-proven against the consumer at `fe85ed9`.
+- **PDF inflate allowance (F04).** An inflate strategy that fails after inflating, for example on a bad adler32, is now charged to the document's decompression allowance: a success after k failures is charged (k+1) × its output, and an all-fail stream min(ceiling, input × 1032) per attempt. Damaged PDFs reach the aggregate limit sooner.
+- **Corpus publication (G01, ADR-077).** Taking over a stale `.corpus-publish.lock` happens only under an exclusive `.corpus-publish.lock.takeover` guard, so two publishers that see the same stale lock can no longer both own it. The guard is transient; a guard left by a crashed process on the same host is reaped by the next takeover.
+- **Local source (F13).** `writeLocalSourceManifest` and `writeLocalSourceCorpus` again return `path.resolve(target)`, the path as given; containment and the write still use the resolved real path.
+- **Release preparation (N01).** `prepare-release.js` keeps the `Amended by` lines of ADR-050 when it regenerates the ADR.
+- **README.** The Action `Outputs` line lists all five outputs and their per-mode meaning, as `action.yml` does.
+
+#### Fixed
+
+- **PDF object scan (F01, F02, F03, F06, F07).** Object headers are found in one linear pass. Long runs of unclosed `(`, unterminated streams and long digit runs no longer cost quadratic time. An unterminated literal string ends at its object's `endobj` instead of swallowing later objects up to a stray `)`. `stream` is a keyword only after `>>` and before an end of line, in the scanner and in object parsing (N04), so a name such as `/a-stream` no longer hides objects or misplaces stream data. On well-formed files the one behaviour change is that a literal string containing the word `endobj` ends there, as before #112. The lexical header scan itself came from the review fix `e339f36` in #112.
+- **PDF text (F05).** The parts of a `/Contents` array are joined with a newline and tokenized as one stream, so a font chosen by `Tf` in one part applies to text in later parts.
+- **Office and HTML (F09, F12).** A self-closing `w:del`, `w:delText`, `w:moveFrom`, `w:t` or `mc:AlternateContent` no longer ends the surrounding deletion, run or frame early. A table nested in a cell is decoded as its own table, and the outer table keeps its rows.
+- **CSV and line ends (F10, F15, N02).** A quote inside an unquoted field no longer pulls following lines into its record. A lone CR ends a line in text blocks and notebook code cells, so line numbers match the extractors.
+- **YAML lexers (G03, G07).** A quote after a `:` with no following blank, or after a `[` that does not open a flow list, is plain text, so a trailing comment is dropped instead of kept in the value. Carrier strings holding C0 control characters (other than TAB, LF and CR) or U+007F are double-quoted with `\xNN` escapes for every carrier, so `<!-- -->` blocks stay well-formed and values round-trip exactly.
+- **Discovery (G02, G15).** The index-path hold applies only to governed `check`/`apply`, after the binary and encoding probes. A non-governed `runPipelineAsync` no longer refuses a tree with `DISCOVERY_INCOMPLETE`, public `findFiles` returns such files again, and a binary with an unrepresentable path is `known_binary`, not blocking. `.php` files are again eligible as "known text extension".
+- **Corpus intelligence (G06).** Lexical project and topic clusters take `cross_archive` from the archive parent chain (ADR-063), so a physical directory named like `notes!/` is not treated as an archive.
+- **Inventory (G05).** A `--schema` that renames a field sourced from `content_hash`, `created_at` or `modified_at` no longer writes it into an archive's embedded `.l9meta.yaml`, so such archives converge instead of being rewritten on every run.
+- **Interpretation (F11).** Stacked route decorators with the same verb and path on different routers yield one `http.route_handler` assertion instead of two drafts with the same id.
+
+#### Notes
+
+- **Hardening (G04).** The frontmatter inline-comment splitter counts `[` only at a scalar start and never below zero. The audited overwrite is not reachable today, because the scalar readers refuse such values; the change and its tests guard the case if those readers widen.
+- **Declined (F08).** Dry-run `bodyPreserved` was not changed. The claimed fail-open does not reproduce: 400k fuzzed carrier inputs and 4,500 dry-run files never produced a false planned `bodyPreserved`.
+- **Correction.** The wave 1 reasoning-pack budget (WU-053) keeps list entries by greedy best fit in priority order, not as a prefix as its commit message said.
+- **Records.** ADR-074 records the Action output contract of WU-065 (DEC-RC-100 option B, DEC-GAR-04). ADR-075 records DEC-RC-107 and the strict SemVer release grammar. ADR-076 corrects ADR-058 and ADR-069.
+- **Outstanding.** The v4-versus-v5 versioning of the ADR-069 `fail-on-issues` change stays with the owner. The macOS-only Finder-tag regression test (WU-079) still has no macOS CI runner.
 
 ## 4.2.0 - 2026-10-22
 

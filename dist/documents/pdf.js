@@ -65,7 +65,7 @@ const zlib = __importStar(require("node:zlib"));
 const ordering_1 = require("../ordering");
 const decoder_1 = require("./decoder");
 exports.PDF_DECODER_ID = "l9.pdf-decoder";
-exports.PDF_DECODER_VERSION = "1.3.0";
+exports.PDF_DECODER_VERSION = "1.4.0";
 const WHITESPACE = new Set([0x00, 0x09, 0x0a, 0x0c, 0x0d, 0x20]);
 function isWhitespace(byte) {
     return WHITESPACE.has(byte);
@@ -173,19 +173,21 @@ function dictBody(source) {
 /**
  * A balanced literal string opening at `open`: its raw text and where it closes.
  *
- * The one scanner for literal strings, shared by the content-stream tokenizer
- * and by dictionary values (a document title is one). `end` is the index of the
- * closing parenthesis, or the end of the source when the string never closes;
- * every step advances, so an unterminated string costs one pass.
+ * The one scanner for literal strings, shared by the content-stream tokenizer,
+ * by dictionary values (a document title is one) and by the object-header scan.
+ * The string is read no further than `limit` (the end of the source unless a
+ * caller bounds it). `end` is the index of the closing parenthesis, or `limit`
+ * when the string does not close before it; every step advances, so an
+ * unterminated string costs one pass.
  */
-function scanLiteral(source, open) {
+function scanLiteral(source, open, limit = source.length) {
     let depth = 1;
     let index = open + 1;
     let raw = "";
-    while (index < source.length && depth > 0) {
+    while (index < limit && depth > 0) {
         const inner = source[index];
         if (inner === "\\") {
-            raw += inner + (source[index + 1] ?? "");
+            raw += inner + (index + 1 < limit ? source[index + 1] : "");
             index += 2;
             continue;
         }
@@ -199,8 +201,33 @@ function scanLiteral(source, open) {
         raw += inner;
         index += 1;
     }
-    return { raw, end: index };
+    return { raw, end: Math.min(index, limit) };
 }
+/** PDF whitespace and delimiters: what may stand on either side of a keyword. */
+const KEYWORD_EDGE = String.raw `\0\t\n\f\r ()<>[\]{}/%`;
+/**
+ * An `endobj` keyword standing as its own token. Inside a name such as
+ * `/Xendobj` it is not one.
+ */
+const DELIMITED_ENDOBJ = new RegExp(`(?<![^${KEYWORD_EDGE}])endobj(?![^${KEYWORD_EDGE}])`, "g");
+/**
+ * A `stream` keyword where PDF puts one: after the dictionary's `>>` and before
+ * the end of its line. A name such as `/a-stream` is not one.
+ *
+ * One source shared by the object-header scan and `PdfFile.partsOf`, so where
+ * the scanner skips stream data and where an object's stream data is read from
+ * cannot diverge (N04).
+ */
+const STREAM_KEYWORD_SOURCE = String.raw `>>\s*stream(?=[ \t]*[\r\n])`;
+const STREAM_KEYWORD = new RegExp(STREAM_KEYWORD_SOURCE);
+/**
+ * What the object-header scan stops at: an object header, a literal string, a
+ * comment, or a stream keyword (`STREAM_KEYWORD_SOURCE`).
+ *
+ * - A header's numbers are whole digit runs: `(?<!\d)` refuses to start inside a
+ *   run, and the bounded counts stop a long run being backtracked over.
+ */
+const HEADER_SCAN = new RegExp(String.raw `(?<!\d)(\d{1,10})\s+(\d{1,5})\s+obj\b|\(|%|` + STREAM_KEYWORD_SOURCE, "g");
 /**
  * Every `N M obj` in the file, found by scanning.
  *
@@ -217,31 +244,75 @@ function scanLiteral(source, open) {
  * Headers are found lexically: an `N G obj` inside a literal string, a comment
  * or stream data is text, not a header. Otherwise a string such as
  * `(see 3 0 obj)` would cut short the object holding it and redefine object 3.
- * A string or stream that never closes is not skipped, so one damaged object
- * cannot hide every object after it.
+ *
+ * One rule bounds what is skipped: no literal string and no stream data runs
+ * past the next delimited `endobj`. A string that has not closed by then ends
+ * there, as does a stream with no `endstream` before it, so one damaged object
+ * cannot hide the objects after it. On a well-formed file the one difference
+ * this makes is that a literal string containing the word `endobj` ends at it,
+ * as it did before strings were skipped at all. A string with no `endobj`
+ * anywhere after it is not skipped, and from there on `(` is not treated as
+ * opening a string either: past that point the scan reads headers as it did
+ * before strings were skipped.
+ *
+ * The scan is one pass. The next `endobj` and the next `endstream` are found by
+ * cursors that only move forward, and each skipped region resumes the scan at
+ * its own end, so no byte is read more than a fixed number of times.
  */
 function scanObjects(text) {
     const objects = new Map();
     const inFileOrder = [];
-    const pattern = /(\d+)\s+(\d+)\s+obj\b|\(|%|\bstream\b/g;
+    const pattern = new RegExp(HEADER_SCAN.source, "g");
     const lineEnd = /[\r\n]/g;
+    const endobj = new RegExp(DELIMITED_ENDOBJ.source, "g");
+    // Forward-only cursors: the first match at or after the last position asked
+    // about, or `text.length` when there is none. A later question for a position
+    // not past the cached answer has the same answer.
+    let nextEndobjAt = -1;
+    const nextEndobj = (from) => {
+        if (nextEndobjAt >= from)
+            return nextEndobjAt;
+        endobj.lastIndex = from;
+        nextEndobjAt = endobj.exec(text)?.index ?? text.length;
+        return nextEndobjAt;
+    };
+    let nextEndstreamAt = -1;
+    const nextEndstream = (from) => {
+        if (nextEndstreamAt >= from)
+            return nextEndstreamAt;
+        const found = text.indexOf("endstream", from);
+        nextEndstreamAt = found < 0 ? text.length : found;
+        return nextEndstreamAt;
+    };
+    let literals = true;
     let match = pattern.exec(text);
     while (match !== null) {
         const token = match[0];
         if (token === "(") {
-            const literal = scanLiteral(text, match.index);
-            if (literal.end < text.length)
-                pattern.lastIndex = literal.end + 1;
+            if (literals) {
+                const boundary = nextEndobj(match.index);
+                const literal = scanLiteral(text, match.index, boundary);
+                if (literal.end < boundary)
+                    pattern.lastIndex = literal.end + 1;
+                else if (boundary < text.length)
+                    pattern.lastIndex = boundary;
+                else
+                    literals = false;
+            }
         }
         else if (token === "%") {
             lineEnd.lastIndex = match.index;
             const end = lineEnd.exec(text);
             pattern.lastIndex = end === null ? text.length : end.index;
         }
-        else if (token === "stream") {
-            const close = text.indexOf("endstream", match.index + token.length);
-            if (close >= 0)
+        else if (token.startsWith(">>")) {
+            const dataStart = match.index + token.length;
+            const boundary = nextEndobj(dataStart);
+            const close = nextEndstream(dataStart);
+            if (close < boundary)
                 pattern.lastIndex = close + "endstream".length;
+            else if (boundary < text.length)
+                pattern.lastIndex = boundary;
         }
         else {
             const object = { offset: match.index, bound: text.length };
@@ -268,6 +339,8 @@ function inflateAllowance(budget, sourceBytes) {
     const total = Math.max(1, Math.min(budget.maxCompressionRatio * sourceBytes, 4 * perStream));
     return { perStream, total, remaining: total, skipped: 0 };
 }
+/** Deflate's largest expansion of its input: about 1032 output bytes per input byte. */
+const MAX_DEFLATE_EXPANSION = 1032;
 /**
  * Inflate a stream, tolerating the trailing-garbage real PDFs often carry.
  *
@@ -275,6 +348,13 @@ function inflateAllowance(budget, sourceBytes) {
  * produce more than it is allowed however it is built. A stream that hits the
  * ceiling is over budget, which is a different fact from a corrupt one: the
  * strategy loop stops there instead of trying the next way to read it.
+ *
+ * A strategy that fails for any other reason may have inflated the whole
+ * stream first (a bad adler32 is only found at the end), so it is charged too.
+ * When a later strategy succeeds, each earlier failure is charged what the
+ * success produced. When none succeeds, the output is unknown, and each failure
+ * is charged the most the input could have produced: deflate expands at most
+ * about 1032 to 1, and never past the ceiling.
  */
 function inflate(raw, allowance) {
     if (allowance.remaining <= 0) {
@@ -283,6 +363,8 @@ function inflate(raw, allowance) {
     }
     const ceiling = Math.min(allowance.perStream, allowance.remaining);
     const aggregate = ceiling < allowance.perStream;
+    const failedCharge = Math.min(ceiling, raw.length * MAX_DEFLATE_EXPANSION);
+    let failures = 0;
     for (const attempt of [
         () => zlib.inflateSync(raw, { maxOutputLength: ceiling }),
         () => zlib.inflateRawSync(raw, { maxOutputLength: ceiling }),
@@ -290,12 +372,12 @@ function inflate(raw, allowance) {
     ]) {
         try {
             const bytes = attempt();
-            allowance.remaining -= bytes.length;
+            allowance.remaining -= (failures + 1) * bytes.length;
             return { kind: "ok", bytes };
         }
         catch (error) {
             if (error.code === "ERR_BUFFER_TOO_LARGE") {
-                allowance.remaining -= ceiling;
+                allowance.remaining -= ceiling + failures * failedCharge;
                 if (aggregate) {
                     allowance.remaining = 0;
                     allowance.skipped += 1;
@@ -303,9 +385,25 @@ function inflate(raw, allowance) {
                 return { kind: "over_budget", ceiling: aggregate ? allowance.total : ceiling, aggregate };
             }
             // Try the next strategy; a stream that resists all of them is reported.
+            failures += 1;
         }
     }
+    allowance.remaining -= failures * failedCharge;
     return { kind: "unreadable" };
+}
+/**
+ * Where a stream's data starts, given the offset just past its `stream` keyword:
+ * after the keyword's trailing spaces or tabs, and one end-of-line.
+ */
+function streamDataStart(bytes, afterKeyword) {
+    let start = afterKeyword;
+    while (bytes[start] === 0x20 || bytes[start] === 0x09)
+        start += 1;
+    if (bytes[start] === 0x0d)
+        start += 1;
+    if (bytes[start] === 0x0a)
+        start += 1;
+    return start;
 }
 /** The object number of an `N G R` reference, or null when the value is not one. */
 function referenceNumber(value) {
@@ -359,14 +457,13 @@ class PdfFile {
             const end = extent.indexOf("endobj", start);
             const body = extent.slice(start + 3, end < 0 ? extent.length : end);
             const bodyStart = object.offset + start + 3;
-            const marker = body.indexOf("stream");
+            // The keyword is located by the scanner's own rule, so a name such as
+            // `/a-stream` in the dictionary is not mistaken for it. Data starts after
+            // the keyword, its trailing spaces or tabs, and one end-of-line.
+            const marker = STREAM_KEYWORD.exec(body);
             let streamStart = -1;
-            if (marker >= 0) {
-                streamStart = bodyStart + marker + "stream".length;
-                if (this.bytes[streamStart] === 0x0d)
-                    streamStart += 1;
-                if (this.bytes[streamStart] === 0x0a)
-                    streamStart += 1;
+            if (marker !== null) {
+                streamStart = streamDataStart(this.bytes, bodyStart + marker.index + marker[0].length);
             }
             const inner = dictBody(body);
             parts = {
@@ -1416,7 +1513,11 @@ exports.pdfDecoder = {
                 imageObjects += 1;
         }
         const readContent = (contents, resolveFont) => {
-            const texts = [];
+            // A /Contents array is one content stream split into parts: graphics and
+            // text state, the selected font included, carry from one part into the
+            // next. The parts are joined by a newline, so no two tokens fuse where one
+            // part ends and the next begins.
+            const parts = [];
             let overBudget = false;
             for (const number of file.referencesIn(contents)) {
                 const target = objects.get(number);
@@ -1427,9 +1528,10 @@ exports.pdfDecoder = {
                     overBudget = true;
                 if (stream.kind !== "ok")
                     continue;
-                texts.push(...extractContentText(stream.bytes.toString("latin1"), resolveFont, facts));
+                parts.push(stream.bytes.toString("latin1"));
             }
-            return { lines: texts, overBudget };
+            const lines = parts.length === 0 ? [] : extractContentText(parts.join("\n"), resolveFont, facts);
+            return { lines, overBudget };
         };
         for (let index = 0; index < pages.length; index += 1) {
             if (builder.isFull)

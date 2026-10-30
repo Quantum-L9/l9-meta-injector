@@ -129,15 +129,39 @@ const MIN_HISTORY_LENGTH = 16;
  */
 const PUBLISH_LOCK_FILE = ".corpus-publish.lock";
 
+/**
+ * The takeover guard, beside the lock (G01).
+ *
+ * Taking over a stale lock is read, remove, create: three steps, and two publishers
+ * that both read the same stale holder could each remove what the other had just
+ * created, and both go on to publish. The guard makes the takeover exclusive. It is
+ * created with an exclusive open and records pid and host like the lock; under it the
+ * lock is re-read and removed only if it still holds exactly the stale bytes read
+ * before, and the new lock is then created exclusively. The guard is removed in a
+ * `finally`. It is consulted only on the takeover path, never by an ordinary
+ * acquisition, so it adds nothing to a publish that finds the lock free.
+ */
+const TAKEOVER_GUARD_SUFFIX = ".takeover";
+
 interface PublishLockHolder {
   pid: number;
   host: string;
   acquired_at: string;
 }
 
-function readLockHolder(lockFile: string): PublishLockHolder | null {
+/** The raw bytes of a lock-shaped file, or null when it is absent or unreadable. */
+function readLockText(file: string): string | null {
   try {
-    const parsed = JSON.parse(fs.readFileSync(lockFile, "utf8")) as Partial<PublishLockHolder> | null;
+    return fs.readFileSync(file, "utf8");
+  } catch {
+    return null;
+  }
+}
+
+function parseLockHolder(text: string | null): PublishLockHolder | null {
+  if (text === null) return null;
+  try {
+    const parsed = JSON.parse(text) as Partial<PublishLockHolder> | null;
     if (parsed === null || typeof parsed !== "object") return null;
     if (typeof parsed.pid !== "number" || !Number.isInteger(parsed.pid) || parsed.pid <= 0) return null;
     if (typeof parsed.host !== "string") return null;
@@ -157,51 +181,140 @@ function processIsAlive(pid: number): boolean {
   }
 }
 
-/**
- * Take the output root's publisher lock, or throw naming the lock file.
- *
- * A lock whose holder is a dead process on this host is taken over once. A lock held
- * by a live process, by another host, or whose content cannot be read is refused:
- * across hosts a pid proves nothing, and an unreadable lock may be one being written.
- */
-function acquirePublishLock(outDir: string): { file: string; contents: string } {
-  fs.mkdirSync(outDir, { recursive: true });
-  const file = path.join(outDir, PUBLISH_LOCK_FILE);
-  const contents = `${JSON.stringify({ pid: process.pid, host: os.hostname(), acquired_at: new Date().toISOString() })}\n`;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      const fd = fs.openSync(file, "wx");
-      try {
-        fs.writeSync(fd, contents);
-        fs.fsyncSync(fd);
-      } finally {
-        fs.closeSync(fd);
-      }
-      return { file, contents };
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-    }
-    const holder = readLockHolder(file);
-    const stale = attempt === 0 && holder !== null && holder.host === os.hostname() && !processIsAlive(holder.pid);
-    if (!stale) {
-      const who = holder === null ? "an unreadable holder" : `pid ${holder.pid} on ${holder.host}`;
-      throw new Error(
-        `corpus: another publisher holds ${file} (${who}); wait for it to finish, or remove the lock file if that publisher is gone`,
-      );
-    }
-    fs.rmSync(file, { force: true });
-  }
-  throw new Error(`corpus: unable to acquire ${file}`);
+/** A holder that is a dead process on this host. Across hosts a pid proves nothing. */
+function holderIsStale(holder: PublishLockHolder | null): holder is PublishLockHolder {
+  return holder !== null && holder.host === os.hostname() && !processIsAlive(holder.pid);
 }
 
-/** Remove the lock, but only if it is still the one this publisher wrote. */
-function releasePublishLock(lock: { file: string; contents: string }): void {
+function holderRecord(): string {
+  return `${JSON.stringify({ pid: process.pid, host: os.hostname(), acquired_at: new Date().toISOString() })}\n`;
+}
+
+/** Create `file` with an exclusive open. False when it already exists. */
+function createExclusive(file: string, contents: string): boolean {
+  let fd: number;
   try {
-    if (fs.readFileSync(lock.file, "utf8") === lock.contents) fs.rmSync(lock.file, { force: true });
+    fd = fs.openSync(file, "wx");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
+    throw error;
+  }
+  try {
+    fs.writeSync(fd, contents);
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+  return true;
+}
+
+function publisherRefusal(lockFile: string, holder: PublishLockHolder | null, detail = ""): Error {
+  const who = holder === null ? "an unreadable holder" : `pid ${holder.pid} on ${holder.host}`;
+  return new Error(
+    `corpus: another publisher holds ${lockFile} (${who}${detail}); wait for it to finish, or remove the lock file if that publisher is gone`,
+  );
+}
+
+/**
+ * Take the takeover guard, or throw the publisher refusal.
+ *
+ * A guard held by a live process, by another host, or that cannot be read is
+ * refused: someone is taking the lock over right now. A guard whose holder is a
+ * dead process on this host — a publisher killed inside its takeover — is reaped
+ * once so it cannot wedge every later publisher. Reaping is not a plain remove,
+ * because between reading the dead guard and removing it another publisher may
+ * have reaped it too and created its own: the guard is renamed aside (atomic, it
+ * moves whatever stands there now), and only if the moved bytes are the dead
+ * holder's are they deleted. Anything else is a live guard that was moved by
+ * mistake; it is linked back without overwriting and this publisher is refused.
+ */
+function acquireTakeoverGuard(lockFile: string): { file: string; contents: string } {
+  const file = `${lockFile}${TAKEOVER_GUARD_SUFFIX}`;
+  const contents = holderRecord();
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (createExclusive(file, contents)) return { file, contents };
+    const seen = readLockText(file);
+    if (seen === null && !fs.existsSync(file)) continue; // released meanwhile: try again
+    const holder = parseLockHolder(seen);
+    if (attempt > 0 || !holderIsStale(holder)) {
+      throw publisherRefusal(lockFile, holder, `, taking over a stale lock under ${file}`);
+    }
+    reapDeadGuard(lockFile, file, seen);
+  }
+  throw publisherRefusal(lockFile, parseLockHolder(readLockText(file)), `, taking over a stale lock under ${file}`);
+}
+
+/**
+ * Reap the takeover guard `file`, last read as `seen`: a dead holder's record.
+ *
+ * Returns once the guard is gone — reaped here, or removed by another publisher
+ * first — so the caller can try to create its own. Throws the publisher refusal
+ * when the bytes renamed aside are not `seen`: a live guard replaced the dead one
+ * after it was read, so it is linked back without overwriting.
+ */
+function reapDeadGuard(lockFile: string, file: string, seen: string | null): void {
+  const aside = `${file}.${process.pid}.${process.hrtime.bigint()}.reap`;
+  try {
+    fs.renameSync(file, aside);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  const moved = readLockText(aside);
+  if (moved === seen) {
+    fs.rmSync(aside, { force: true });
+    return;
+  }
+  try {
+    fs.linkSync(aside, file);
+  } catch {
+    // A third guard stands there already; it is the one in charge now.
+  }
+  fs.rmSync(aside, { force: true });
+  throw publisherRefusal(lockFile, parseLockHolder(moved), `, taking over a stale lock under ${file}`);
+}
+
+/** Remove a guard or lock, but only if it is still the one this publisher wrote. */
+function releaseOwned(owned: { file: string; contents: string }): void {
+  try {
+    if (fs.readFileSync(owned.file, "utf8") === owned.contents) fs.rmSync(owned.file, { force: true });
   } catch {
     // Already gone: nothing to release.
   }
 }
+
+/**
+ * Take the output root's publisher lock, or throw naming the lock file.
+ *
+ * A lock whose holder is a dead process on this host is taken over, under the
+ * takeover guard (G01): the lock is re-read under the guard and removed only if it
+ * still holds the bytes judged stale, and the new lock is created exclusively, so
+ * of two publishers that judged the same lock stale exactly one ends up holding it
+ * and the other is refused. A lock held by a live process, by another host, or
+ * whose content cannot be read is refused: across hosts a pid proves nothing, and
+ * an unreadable lock may be one being written.
+ */
+function acquirePublishLock(outDir: string): { file: string; contents: string } {
+  fs.mkdirSync(outDir, { recursive: true });
+  const file = path.join(outDir, PUBLISH_LOCK_FILE);
+  const contents = holderRecord();
+  if (createExclusive(file, contents)) return { file, contents };
+  const staleText = readLockText(file);
+  const holder = parseLockHolder(staleText);
+  if (!holderIsStale(holder)) throw publisherRefusal(file, holder);
+
+  const guard = acquireTakeoverGuard(file);
+  try {
+    // Only the exact stale bytes are removed. If the lock changed since it was
+    // judged stale, another publisher took it over first and it is theirs.
+    if (readLockText(file) === staleText) fs.rmSync(file, { force: true });
+    if (createExclusive(file, contents)) return { file, contents };
+  } finally {
+    releaseOwned(guard);
+  }
+  throw publisherRefusal(file, parseLockHolder(readLockText(file)));
+}
+
 
 /** The string ids of a pointer's publication record, tolerating a pointer without one. */
 function recordedHistory(current: CorpusCurrent | null): string[] {
@@ -335,7 +448,7 @@ export function publishCorpusGeneration(input: PublishInput): PublishResult {
   try {
     return publishUnderLock(input, { outDir, id, directoryName, generationRef, generationDirectory, ordered });
   } finally {
-    releasePublishLock(lock);
+    releaseOwned(lock);
   }
 }
 

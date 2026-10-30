@@ -5,7 +5,8 @@ import { afterEach, describe, expect, test } from "vitest";
 import { runApplyAsync } from "../src/apply";
 import { runCheckAsync, type CheckConfig } from "../src/check";
 import { assertDiscoveryGlob, compileDiscoveryGlob, globToRegExp } from "../src/glob";
-import { discoverFiles } from "../src/retrieval";
+import { runPipelineAsync } from "../src/pipeline";
+import { discoverFiles, findFiles } from "../src/retrieval";
 
 const roots: string[] = [];
 const PROMPT = [
@@ -360,9 +361,39 @@ describe("WU-006 a governed path the index schema cannot represent (RC-013)", ()
     const drift = result.check?.drift.find((item) => item.path === "src/tab\there.ts");
     expect(drift?.kind).toBe("unsupported");
     expect(drift?.message).toMatch(/unsupported_entry: metadata index path contains a control character/);
-    // Discovery holds it, so it never reaches the planner as an eligible file.
-    const discovered = discoverFiles(root, "**/*");
+    // Index-governed discovery holds it, so it never reaches the planner as an eligible file.
+    const discovered = discoverFiles(root, "**/*", {}, true);
     expect(JSON.stringify(discovered)).toContain("unsupported_entry");
     expect(JSON.stringify(discovered.files)).not.toContain("tab");
+  });
+
+  test("REG-AUDIT-G02-a: bare discoverFiles and public findFiles keep a TAB-named file out of blocking", () => {
+    const root = tempRoot();
+    write(root, "src/tab\there.ts", "export const value = 1;\n");
+    const discovered = discoverFiles(root, "**/*");
+    expect(discovered.summary.blocking).toBe(0);
+    expect(discovered.summary.entries.find((entry) => entry.path === "src/tab\there.ts")?.disposition).toBe("eligible");
+    expect(relative(root, discovered.files)).toEqual(["src/tab\there.ts"]);
+    expect(relative(root, findFiles(root, "**/*"))).toEqual(["src/tab\there.ts"]);
+  });
+
+  test("REG-AUDIT-G02-b: a non-governed runPipelineAsync does not throw DISCOVERY_INCOMPLETE for a TAB-named file", async () => {
+    const root = tempRoot();
+    write(root, "src/tab\there.ts", "export const value = 1;\n");
+    const result = await runPipelineAsync({ ...config(root, "**/*"), dryRun: false });
+    expect(result.coverage.discovery.blocking).toBe(0);
+    expect(result.injected.map((record) => path.relative(root, record.sourcePath).split(path.sep).join("/"))).toEqual(["src/tab\there.ts"]);
+  });
+
+  test("REG-AUDIT-G02-c: a binary whose path the index cannot represent is known_binary, not blocking", async () => {
+    const root = governedRoot();
+    fs.mkdirSync(path.join(root, "img"));
+    fs.writeFileSync(path.join(root, "img", "tab\there.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    const governed = discoverFiles(root, "**/*", {}, true);
+    expect(governed.summary.blocking).toBe(0);
+    expect(governed.summary.entries.find((entry) => entry.path === "img/tab\there.png")?.disposition).toBe("known_binary");
+    const result = await runCheckAsync(config(root, "**/*"));
+    expect(result.check?.discovery.blocking).toBe(0);
+    expect(result.check?.drift.some((item) => item.path === "img/tab\there.png")).toBe(false);
   });
 });

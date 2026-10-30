@@ -4,6 +4,8 @@
 
 Accepted. Supersedes ADR-029 for active consumer versioning.
 
+Amended by [ADR-075](075-release-identity-grammar-and-exact-pin-preservation.md): version, release-branch and plan-file names use the strict SemVer core grammar (no leading zeros), and consumer-ref projection moves only `@vX` and `@main`, leaving exact pins such as `@vX.Y.Z` untouched.
+
 ## Decision
 
 `package.json#version` is the sole persisted semantic-version authority. Release preparation derives the lockfile version, exact tag `vX.Y.Z`, release-plan identity, and maintained major tag `vX` from it. Exact GitHub Releases preserve immutable provenance; GitHub Action consumers use `Quantum-L9/l9-meta-injector@vX`.

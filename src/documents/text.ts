@@ -22,7 +22,9 @@ export const TEXT_DECODER_ID = "l9.text-decoder";
 // 1.2.0: the Markdown dialect is declared (`dialectFor`) and enters the
 // normalized document id and cache key (ADR-059), so a `.md` and a `.txt` with
 // identical bytes are two documents and an entry keyed without it is never served.
-export const TEXT_DECODER_VERSION = "1.2.0";
+// 1.3.0: a lone CR ends a line, as CRLF and LF do, so line numbers match the
+// extractors' `toLines`.
+export const TEXT_DECODER_VERSION = "1.3.0";
 export const CSV_DECODER_ID = "l9.csv-decoder";
 /**
  * 1.1.0 emits a block per populated cell beside the row block.
@@ -40,7 +42,10 @@ export const CSV_DECODER_ID = "l9.csv-decoder";
 // 1.3.0: the tab-separated dialect is declared (`dialectFor`) and enters the
 // normalized document id and cache key (ADR-059), so a `.csv` and a `.tsv` with
 // identical bytes are two documents and an entry keyed without it is never served.
-export const CSV_DECODER_VERSION = "1.3.0";
+// 1.4.0: a `"` opens a quoted field only as the field's first character
+// (RFC 4180); one inside an unquoted field (`27"`) is literal and no longer
+// joins the following lines into its record.
+export const CSV_DECODER_VERSION = "1.4.0";
 
 /** Read a file as UTF-8, refusing bytes that are not valid UTF-8. */
 export function readUtf8(input: DecodeInput): { text: string } | { reason: string } {
@@ -187,7 +192,11 @@ export function decodeTextBlocks(
   markdown: boolean,
   scope: TextBlockScope = lineSpanScope(),
 ): void {
-  const lines = text.split(/\r?\n/);
+  // CRLF, LF and a lone CR each end one line — the terminators the extractors'
+  // `toLines` honours — so a classic-Mac or mixed-ending file is cited at the
+  // line numbers an editor shows, and a decoded block and an extracted
+  // assertion on the same line agree on its number.
+  const lines = text.split(/\r\n|\r|\n/);
   let paragraph: string[] = [];
   let paragraphStart = 1;
   let fence: string | null = null;
@@ -319,11 +328,16 @@ export const textDecoder: DocumentDecoder = {
  * Written out rather than split on commas because a project tracker's "Blocked
  * by: procurement, legal" cell is exactly the case a naive split corrupts, and a
  * corrupted cell becomes a corrupted work signal.
+ *
+ * A `"` opens a quoted field only as the field's first character (RFC 4180
+ * §2.5). Anywhere else in an unquoted field it is a literal character, so a
+ * height written `27"` keeps its quote and does not swallow the cells after it.
  */
 export function splitCsvLine(line: string, delimiter: string): string[] {
   const cells: string[] = [];
   let cell = "";
   let quoted = false;
+  let fieldStart = true;
   for (let index = 0; index < line.length; index += 1) {
     const char = line[index] as string;
     if (quoted) {
@@ -339,15 +353,18 @@ export function splitCsvLine(line: string, delimiter: string): string[] {
       }
       continue;
     }
-    if (char === '"') {
+    if (char === '"' && fieldStart) {
       quoted = true;
+      fieldStart = false;
       continue;
     }
     if (char === delimiter) {
       cells.push(cell);
       cell = "";
+      fieldStart = true;
       continue;
     }
+    fieldStart = false;
     cell += char;
   }
   cells.push(cell);
@@ -382,33 +399,63 @@ function addCsvCellBlocks(
 }
 
 /**
+ * One character inside a quoted field: the index it was read up to, and whether
+ * the field is still open. `""` is an escaped quote, read as a pair; any other
+ * `"` closes the field.
+ */
+function quotedFieldStep(text: string, index: number): { index: number; quoted: boolean } {
+  if (text[index] !== '"') return { index, quoted: true };
+  if (text[index + 1] === '"') return { index: index + 1, quoted: true };
+  return { index, quoted: false };
+}
+
+/** Where a record ending at the newline `newline` ends, without a `\r` before it. */
+function recordEnd(text: string, start: number, newline: number): number {
+  return newline > start && text[newline - 1] === "\r" ? newline - 1 : newline;
+}
+
+/**
  * The records of a delimited file, each with the physical line it starts on.
  *
- * A newline ends a record only outside quotes. Quote state is the parity of the
- * `"` characters since the record began — the same toggling `splitCsvLine`
- * applies, with `""` toggling twice — so the two agree on where a quoted field
- * ends. A quote still open at end of file leaves the rest as one record, so no
- * content is dropped, and is reported.
+ * A newline ends a record only outside quotes. Quote state follows the rule
+ * `splitCsvLine` applies, so the two agree on where a quoted field ends: a `"`
+ * opens a quoted field only as the field's first character, `""` inside one is
+ * an escaped quote, and any other `"` inside one closes it. A `"` in the middle
+ * of an unquoted field (`27"`) is a literal and never joins the next line on. A
+ * quote still open at end of file leaves the rest as one record, so no content
+ * is dropped, and is reported.
  */
-function csvRecords(text: string): { records: { text: string; line: number }[]; unterminatedAt: number | null } {
+function csvRecords(
+  text: string,
+  delimiter: string,
+): { records: { text: string; line: number }[]; unterminatedAt: number | null } {
   const records: { text: string; line: number }[] = [];
   let start = 0;
   let startLine = 1;
   let line = 1;
   let quoted = false;
-  for (let index = 0; index < text.length; index += 1) {
+  let fieldStart = true;
+  // A while loop: an escaped `""` advances the cursor past its second quote.
+  let index = 0;
+  while (index < text.length) {
     const char = text[index];
-    if (char === '"') {
-      quoted = !quoted;
-      continue;
+    if (char === "\n") line += 1;
+    if (quoted) {
+      ({ index, quoted } = quotedFieldStep(text, index));
+    } else if (char === '"' && fieldStart) {
+      quoted = true;
+      fieldStart = false;
+    } else if (char === delimiter) {
+      fieldStart = true;
+    } else if (char === "\n") {
+      records.push({ text: text.slice(start, recordEnd(text, start, index)), line: startLine });
+      start = index + 1;
+      startLine = line;
+      fieldStart = true;
+    } else {
+      fieldStart = false;
     }
-    if (char !== "\n") continue;
-    line += 1;
-    if (quoted) continue;
-    const end = index > start && text[index - 1] === "\r" ? index - 1 : index;
-    records.push({ text: text.slice(start, end), line: startLine });
-    start = index + 1;
-    startLine = line;
+    index += 1;
   }
   if (start < text.length) records.push({ text: text.slice(start), line: startLine });
   return { records, unterminatedAt: quoted ? startLine : null };
@@ -428,7 +475,7 @@ function addCsvRowBlocks(
 ): string[][] {
   const rows: string[][] = [];
   let header: string[] = [];
-  const { records, unterminatedAt } = csvRecords(text);
+  const { records, unterminatedAt } = csvRecords(text, delimiter);
   if (unterminatedAt !== null) {
     builder.note({
       code: "decoder.malformed",

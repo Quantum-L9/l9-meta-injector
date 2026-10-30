@@ -164,26 +164,29 @@ function splitInlineComment(text: string): ScalarToken {
   let single = false;
   let double = false;
   let bracketDepth = 0;
-  // Last significant character outside a quoted scalar ("" at the scalar's start).
-  let previous = "";
+  // Whether a scalar or flow item begins here: at the value's start, right after a
+  // `[` that was itself counted as a flow opener, or after a `,` inside a flow list.
+  // A mid-word `[` (`a[b`) is plain text and never changes the depth, and a stray
+  // `]` never drives it below zero (audit G04).
+  let atScalarStart = true;
   for (let i = 0; i < text.length; i++) {
     const char = text[i];
     if (double) {
       if (char === "\\") i += 1;
-      else if (char === '"') { double = false; previous = char; }
+      else if (char === '"') double = false;
       continue;
     }
     if (single) {
       if (char === "'" && text[i + 1] === "'") i += 1;
-      else if (char === "'") { single = false; previous = char; }
+      else if (char === "'") single = false;
       continue;
     }
-    const startsScalar = previous === "" || previous === "[" || (bracketDepth > 0 && previous === ",");
-    if (char === "'" && startsScalar) { single = true; continue; }
-    if (char === '"' && startsScalar) { double = true; continue; }
-    if (!/\s/.test(char)) previous = char;
-    if (char === "[") bracketDepth += 1;
-    if (char === "]") bracketDepth -= 1;
+    if (char === "'" && atScalarStart) { single = true; atScalarStart = false; continue; }
+    if (char === '"' && atScalarStart) { double = true; atScalarStart = false; continue; }
+    if (char === "[" && atScalarStart) bracketDepth += 1;
+    else if (char === "]" && bracketDepth > 0) { bracketDepth -= 1; atScalarStart = false; }
+    else if (char === "," && bracketDepth > 0) atScalarStart = true;
+    else if (!/\s/.test(char)) atScalarStart = false;
     if (char === "#" && bracketDepth === 0 && (i === 0 || /\s/.test(text[i - 1]))) {
       const before = text.slice(0, i);
       const trailing = trailingWhitespaceStart(before);

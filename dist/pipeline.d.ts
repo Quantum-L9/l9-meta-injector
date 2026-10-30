@@ -98,3 +98,12 @@ export interface PipelineResult {
     };
 }
 export declare function runPipelineAsync(config: PipelineConfig): Promise<PipelineResult>;
+/**
+ * Internal entry for the index-compiling governed run (`carrier_operation.ts`, which
+ * `check` and `apply` both reach through `planCarrierOperationAsync`). It is the
+ * pipeline with index-governed discovery: an otherwise eligible file whose path the
+ * metadata index cannot represent is held as `unsupported_entry` (DEC-RC-013 B).
+ * Deliberately not re-exported from `src/index.ts` or `src/public`, and no field on
+ * the public `PipelineConfig` carries the flag.
+ */
+export declare function runIndexGovernedPipelineAsync(config: PipelineConfig): Promise<PipelineResult>;

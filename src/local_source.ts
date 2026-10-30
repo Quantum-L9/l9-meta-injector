@@ -339,8 +339,12 @@ function realPathOrNearest(target: string): string {
  *
  * A caller-selected scratch outside the source stays supported; this refuses one
  * location, not the option.
+ *
+ * Exported for the scratch-parent tests, which exercise a file source whose
+ * boundary is the filesystem root directly. Internal: not re-exported from
+ * `src/public` or `src/index.ts`.
  */
-function assertScratchOutsideSource(scratchParent: string, absoluteSource: string, sourceKind: LocalSourceKind): void {
+export function assertScratchOutsideSource(scratchParent: string, absoluteSource: string, sourceKind: LocalSourceKind): void {
   const realSource = realPathOrNearest(absoluteSource);
   // For a file source the protected boundary is the directory holding it: that is
   // the tree the observation promises not to write into.
@@ -2162,7 +2166,6 @@ interface AcquisitionTail {
   scratch: ScratchHandle;
 }
 
-/** Archive expansion and record assembly, once the scratch root exists. */
 /** Per-path hashing stats of the physical files that carry a hash. */
 function hashingStatsOf(hashed: HashedEntry[]): Map<string, HashingStat> {
   const stats = new Map<string, HashingStat>();
@@ -2173,6 +2176,7 @@ function hashingStatsOf(hashed: HashedEntry[]): Map<string, HashingStat> {
   return stats;
 }
 
+/** Archive expansion and record assembly, once the scratch root exists. */
 function finishAcquisition(tail: AcquisitionTail): LocalSourceObservation {
   const {
     input, absoluteSource, sourceKind, sourceName, policy, budget, omit, diagnostics, omittedPaths,

@@ -310,3 +310,33 @@ describe("WU-074 RC-051: hand-authored file sidecars are never overwritten", () 
     expect(rec.unknowns).toContain("sidecar_unreadable");
   });
 });
+
+describe("Audit G05: the embedded archive member excludes volatile fields by source, not by name", () => {
+  test("REG-AUDIT-G05-a: a --schema that renames content_hash and the clocks still converges the archive member", () => {
+    const root = tmp();
+    const zipPath = path.join(root, "pack.zip");
+    fs.writeFileSync(zipPath, buildZipBuffer([{ name: "readme.txt", data: Buffer.from("hello\n") }]));
+    const schema = toMetaSchema({
+      schema_id: "renamed-volatile",
+      fields: [
+        { name: "id", source: "artifact_id" },
+        { name: "kind", source: "artifact_type" },
+        { name: "digest", source: "content_hash" },
+        { name: "changed", source: "modified_at" },
+        { name: "born", source: "created_at" },
+      ],
+    });
+    run(root, NOW, { schema, folderSidecars: false });
+    const first = fs.readFileSync(zipPath);
+    run(root, NOW, { schema, folderSidecars: false });
+    const second = fs.readFileSync(zipPath);
+    run(root, NOW, { schema, folderSidecars: false });
+    expect(second, "run 2 must not rewrite the archive").toEqual(first);
+    expect(fs.readFileSync(zipPath), "run 3 must not rewrite the archive").toEqual(first);
+    const member = peekZipRootMeta(zipPath) ?? "";
+    expect(member).toContain("kind:");
+    for (const key of ["digest", "changed", "born", "content_hash", "modified_at", "created_at"]) {
+      expect(member, `member must not embed ${key}`).not.toMatch(new RegExp(`^${key}:`, "m"));
+    }
+  });
+});

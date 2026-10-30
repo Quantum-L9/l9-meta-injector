@@ -10,6 +10,8 @@ Amends [ADR-025](025-deterministic-central-metadata-index.md),
 Restores the gitignore contract that [ADR-017](017-omit-skill-protect-skills-mode.md)
 already states for omit patterns.
 
+Amended by [ADR-076](076-errata-for-adr-058-and-adr-069.md): erratum to Consequences — a scoped run drops the record of a deleted out-of-scope file, while the record of an out-of-scope file that became binary persists until an unscoped run.
+
 ## Date
 
 2026-10-28

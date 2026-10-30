@@ -86,14 +86,17 @@ const isBlank = (c: string | undefined): boolean => c === " " || c === "\t";
 
 // Whether a scalar (or a flow-list item) begins at `i`: only there can a quote
 // character open a quoted scalar. In YAML a mid-word apostrophe (`it's`) is plain
-// text, so it must not hide a later ` # comment` (RC-024).
+// text, so it must not hide a later ` # comment` (RC-024). A `:` separates a mapping
+// value only when a blank follows it, and a `[` opens a flow item only when it was
+// itself counted as a flow opener (`inFlow`), so `x:'a` and `x['a` stay plain
+// (audit G03). Kept in lockstep with authority.scalarStartsAt.
 function scalarStartsAt(line: string, i: number, inFlow: boolean): boolean {
   let j = i - 1;
   while (j >= 0 && isBlank(line[j])) j--;
   if (j < 0) return true;
   const prev = line[j];
-  if (prev === ":" || prev === "[") return true;
-  if (prev === ",") return inFlow;
+  if (prev === ":") return j < i - 1;
+  if (prev === "[" || prev === ",") return inFlow;
   if (prev === "-" && j < i - 1) {
     // A block-sequence marker: `- ` with only indentation before it.
     let k = j - 1;

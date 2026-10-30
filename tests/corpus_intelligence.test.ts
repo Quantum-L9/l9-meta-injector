@@ -25,6 +25,9 @@ import {
   validateCorpusIntelligencePacket,
   writeCorpusIntelligenceBundle,
 } from "../src/corpus_intelligence";
+import { corpusIntelligenceInput } from "../src/corpus_intelligence_input";
+import { runCorpusScan } from "../src/corpus_scan";
+import { writeRawZip } from "./helpers/zip_fixtures";
 
 const ARTIFACT_A = "artifact:aaa";
 const ARTIFACT_B = "artifact:bbb";
@@ -354,4 +357,74 @@ describe("corpus intelligence packet", () => {
     expect(errors.length).toBeGreaterThanOrEqual(2);
     expect(errors.every((message) => message.includes("no input packet carries"))).toBe(true);
   });
+});
+
+// ADR-063: archive ancestry comes from the observation's parent chain, never from
+// splitting a path on the member separator. A physical directory named `notes!`
+// is not an archive, so a candidate spanning it and a plain directory spans one
+// ancestry (the empty one); a real archive member beside a plain file spans two.
+describe("lexical cluster cross_archive reads parent-chain ancestry (G06)", () => {
+  const prose = [
+    "Harbour crane maintenance schedule covers winch cables, slewing bearings and hydraulic pumps.",
+    "Inspect winch cables weekly; grease slewing bearings monthly; test hydraulic pumps quarterly.",
+    "Crane maintenance records list winch cables, slewing bearings, hydraulic pumps and brake pads.",
+  ].join("\n");
+
+  function write(root: string, relative: string, contents: string): void {
+    const target = path.join(root, ...relative.split("/"));
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, contents, "utf8");
+  }
+
+  async function clusters(layout: (root: string) => void) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "l9-g06-"));
+    try {
+      layout(root);
+      const result = await runCorpusScan({
+        roots: [{ path: root, name: "R" }],
+        producerVersion: "test",
+        semanticAnalysis: false,
+      });
+      expect(result.semantic).toBeNull();
+      const built = corpusIntelligenceInput(result, { producerVersion: "test", createdAt: "2026-01-01T00:00:00.000Z" });
+      const project = built.payload.project_candidates.find((cluster) =>
+        result.candidates.project_candidates.some((candidate) =>
+          candidate.candidate_id === cluster.candidate_id && candidate.project_key === "project:widget"));
+      const topic = built.payload.topic_candidates.find((cluster) => {
+        const source = result.candidates.topic_candidates.find((candidate) => candidate.candidate_id === cluster.candidate_id);
+        return source !== undefined && source.member_paths.some((member) => member.endsWith("x.md"));
+      });
+      return { project, topic };
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  it("REG-AUDIT-G06-a: a physical 'notes!/x.md' container beside a plain one yields cross_archive false", async () => {
+    const { project, topic } = await clusters((root) => {
+      write(root, "notes!/package.json", `${JSON.stringify({ name: "widget" })}\n`);
+      write(root, "notes!/x.md", `${prose}\n`);
+      write(root, "plain/package.json", `${JSON.stringify({ name: "widget" })}\n`);
+      write(root, "plain/x.md", `${prose}\n`);
+    });
+    expect(project).toBeDefined();
+    expect(project!.cross_archive).toBe(false);
+    expect(topic).toBeDefined();
+    expect(topic!.cross_archive).toBe(false);
+  }, 120_000);
+
+  it("REG-AUDIT-G06-b: a real archive member beside a plain file still yields cross_archive true", async () => {
+    const { project, topic } = await clusters((root) => {
+      writeRawZip(path.join(root, "bundle.zip"), [
+        { name: "package.json", content: `${JSON.stringify({ name: "widget" })}\n` },
+        { name: "x.md", content: `${prose}\n` },
+      ]);
+      write(root, "plain/package.json", `${JSON.stringify({ name: "widget" })}\n`);
+      write(root, "plain/x.md", `${prose}\n`);
+    });
+    expect(project).toBeDefined();
+    expect(project!.cross_archive).toBe(true);
+    expect(topic).toBeDefined();
+    expect(topic!.cross_archive).toBe(true);
+  }, 120_000);
 });

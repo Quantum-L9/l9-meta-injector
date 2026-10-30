@@ -224,6 +224,25 @@ describe("release preparation never carries an approval to another version (RC-1
     expect(doc.approved_version ?? null).toBe(committedDecision().approved_version ?? null);
   });
 
+  test("REG-AUDIT-N01-a: preparation keeps every ADR-050 'Amended by' line and is idempotent", () => {
+    const dir = mirror();
+    const adr = path.join(dir, "docs/decisions/050-release-version-authority-and-major-tags.md");
+    const amendments = (text: string): string[] => text.split("\n").filter((line) => line.startsWith("Amended by [ADR-"));
+    const committed = amendments(fs.readFileSync(adr, "utf8"));
+    expect(committed.length).toBeGreaterThan(0);
+    const next = nextMinor(packageVersion(dir));
+    setPackageVersion(dir, next);
+    const first = prepare(dir, next);
+    expect(first.status, first.output).toBe(0);
+    const once = fs.readFileSync(adr, "utf8");
+    expect(amendments(once)).toEqual(committed);
+    // The amendment stays in the Status section, ahead of the Decision.
+    expect(once.indexOf(committed[0])).toBeLessThan(once.indexOf("## Decision"));
+    expect(once.indexOf(committed[0])).toBeGreaterThan(once.indexOf("## Status"));
+    expect(prepare(dir, next).status).toBe(0);
+    expect(fs.readFileSync(adr, "utf8")).toBe(once);
+  });
+
   test("the committed decision remains blocked and unapproved", () => {
     const doc = committedDecision();
     expect(doc.status).toBe("blocked_pending_history_check");

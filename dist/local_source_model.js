@@ -378,21 +378,33 @@ function resolveOutsideSource(targetPath, sourceRoot, what) {
     }
     return resolvedTarget;
 }
-/** Write the acquisition manifest to a tool-owned output location. */
+/**
+ * Write the acquisition manifest to a tool-owned output location.
+ *
+ * Returns `path.resolve(targetPath)`: the caller's own spelling, made absolute.
+ * Containment and the write use the symlink-resolved real path, so a target
+ * reached through a symlinked directory is checked and written where it lands,
+ * but the returned path is not rewritten to that real path.
+ */
 function writeLocalSourceManifest(manifest, targetPath, sourceRoot) {
-    const absoluteTarget = resolveOutsideSource(targetPath, sourceRoot, "the acquisition manifest");
-    fs.mkdirSync(path.dirname(absoluteTarget), { recursive: true });
-    fs.writeFileSync(absoluteTarget, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
-    return absoluteTarget;
+    const realTarget = resolveOutsideSource(targetPath, sourceRoot, "the acquisition manifest");
+    fs.mkdirSync(path.dirname(realTarget), { recursive: true });
+    fs.writeFileSync(realTarget, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+    return path.resolve(targetPath);
 }
-/** Write `corpus-index.json` and `corpus-report.md` outside the observed source. */
+/**
+ * Write `corpus-index.json` and `corpus-report.md` outside the observed source.
+ *
+ * Returns each target as `path.resolve(target)`; containment and the writes use
+ * the symlink-resolved real paths (see {@link writeLocalSourceManifest}).
+ */
 function writeLocalSourceCorpus(outputs, targets, sourceRoot) {
-    const indexPath = resolveOutsideSource(targets.indexPath, sourceRoot, "the corpus index");
-    const reportPath = resolveOutsideSource(targets.reportPath, sourceRoot, "the corpus report");
-    fs.mkdirSync(path.dirname(indexPath), { recursive: true });
-    fs.writeFileSync(indexPath, outputs.indexJson, "utf8");
-    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
-    fs.writeFileSync(reportPath, outputs.report, "utf8");
-    return { indexPath, reportPath };
+    const realIndexPath = resolveOutsideSource(targets.indexPath, sourceRoot, "the corpus index");
+    const realReportPath = resolveOutsideSource(targets.reportPath, sourceRoot, "the corpus report");
+    fs.mkdirSync(path.dirname(realIndexPath), { recursive: true });
+    fs.writeFileSync(realIndexPath, outputs.indexJson, "utf8");
+    fs.mkdirSync(path.dirname(realReportPath), { recursive: true });
+    fs.writeFileSync(realReportPath, outputs.report, "utf8");
+    return { indexPath: path.resolve(targets.indexPath), reportPath: path.resolve(targets.reportPath) };
 }
 //# sourceMappingURL=local_source_model.js.map

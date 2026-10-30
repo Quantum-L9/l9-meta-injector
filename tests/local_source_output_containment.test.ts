@@ -103,6 +103,46 @@ describe("library output containment resolves symlinks (RC-047)", () => {
     expect(fs.realpathSync(written)).toBe(fs.realpathSync(path.join(out, "local-source-manifest.json")));
     expect(fs.readdirSync(src)).toEqual(["a.md"]);
   });
+
+  test("REG-AUDIT-F13-a: through a symlinked output directory the manifest writer returns path.resolve(target)", () => {
+    const src = sourceTree();
+    const manifest = manifestOf(src);
+    const real = tmp();
+    const link = path.join(tmp(), "out-link");
+    fs.symlinkSync(real, link);
+    const target = path.join(link, "local-source-manifest.json");
+    const written = writeLocalSourceManifest(manifest, target, src);
+    expect(written).toBe(path.resolve(target));
+    // Containment and the write still use the resolved real path.
+    expect(fs.existsSync(path.join(real, "local-source-manifest.json"))).toBe(true);
+    expect(fs.realpathSync(written)).toBe(fs.realpathSync(path.join(real, "local-source-manifest.json")));
+    expect(fs.readdirSync(src)).toEqual(["a.md"]);
+  });
+
+  test("REG-AUDIT-F13-b: through a symlinked output directory the corpus writer returns path.resolve(target)", () => {
+    const src = sourceTree();
+    const result = observeLocalSourceModel({ path: src, producerVersion: "4.0.0", interpret: false });
+    try {
+      const corpus = buildLocalSourceCorpus(result);
+      const real = tmp();
+      const link = path.join(tmp(), "out-link");
+      fs.symlinkSync(real, link);
+      const targets = {
+        indexPath: path.join(link, "corpus-index.json"),
+        reportPath: path.join(link, "corpus-report.md"),
+      };
+      const written = writeLocalSourceCorpus(corpus, targets, src);
+      expect(written).toEqual({
+        indexPath: path.resolve(targets.indexPath),
+        reportPath: path.resolve(targets.reportPath),
+      });
+      expect(fs.existsSync(path.join(real, "corpus-index.json"))).toBe(true);
+      expect(fs.existsSync(path.join(real, "corpus-report.md"))).toBe(true);
+      expect(fs.readdirSync(src)).toEqual(["a.md"]);
+    } finally {
+      result.observation.dispose();
+    }
+  });
 });
 
 describe("the CLI writes nothing before output containment (RC-047)", () => {

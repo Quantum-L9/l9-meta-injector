@@ -23,7 +23,10 @@ export const NOTEBOOK_DECODER_ID = "l9.ipynb-decoder";
 // 1.1.0: Markdown and raw cells are read by the same block logic as a `.md`
 // file, so a fenced block in a cell is code; a byte-order mark no longer makes
 // the notebook unreadable; ATX closing sequences are not heading text.
-export const NOTEBOOK_DECODER_VERSION = "1.1.0";
+// 1.2.0: a lone CR ends a line in every cell (N02). Markdown and raw cells
+// already did through decodeTextBlocks (TEXT 1.3.0); a code cell's line_end
+// now counts CRLF, CR and LF the same way, so one notebook cites one line model.
+export const NOTEBOOK_DECODER_VERSION = "1.2.0";
 
 /** Notebook `source` is either a string or an array of lines. */
 function sourceToText(source: unknown): string {
@@ -119,7 +122,8 @@ export const notebookDecoder: DocumentDecoder = {
       const text = sourceToText(record.source);
       if (text.trim().length === 0) continue;
 
-      const lines = text.split(/\r?\n/);
+      // CRLF, a lone CR and LF each end one line, as in decodeTextBlocks.
+      const lines = text.split(/\r\n|\r|\n/);
       const locate = (start: number, end: number) => ({
         kind: "notebook_cell" as const,
         cell_index: cellIndex,

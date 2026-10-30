@@ -1,6 +1,6 @@
 import { DocumentDecoder } from "./decoder";
 export declare const DOCX_DECODER_ID = "l9.docx-decoder";
-export declare const DOCX_DECODER_VERSION = "1.2.0";
+export declare const DOCX_DECODER_VERSION = "1.3.0";
 export declare const PPTX_DECODER_ID = "l9.pptx-decoder";
 export declare const PPTX_DECODER_VERSION = "1.2.0";
 export declare const XLSX_DECODER_ID = "l9.xlsx-decoder";

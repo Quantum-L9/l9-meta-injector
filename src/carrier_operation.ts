@@ -18,7 +18,7 @@ import {
   type MetadataIndexRecord,
 } from "./metadata_index";
 import { resolveCarrierDecisions, assertCarrierDecisionCoverage, type CarrierSubject } from "./mutation_policy";
-import { runPipelineAsync, type PipelineMetadataSubject, type PipelineResult } from "./pipeline";
+import { runIndexGovernedPipelineAsync, type PipelineMetadataSubject, type PipelineResult } from "./pipeline";
 import type { InjectionRecord, PipelineConfig } from "./schema";
 import { compareCodePoints } from "./ordering";
 
@@ -238,7 +238,9 @@ export function buildCarrierOperationPlan(
 
 export async function planCarrierOperationAsync(input: PlanCarrierOperationInput): Promise<CarrierOperationPlan> {
   const root = path.resolve(input.config.root);
-  const pipeline = await runPipelineAsync({
+  // The governed run is the sole metadata-index compiler, so it alone discovers with
+  // the index-representability hold (DEC-RC-013 B).
+  const pipeline = await runIndexGovernedPipelineAsync({
     ...input.config,
     root,
     dryRun: true,

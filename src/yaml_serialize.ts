@@ -20,10 +20,19 @@
 // canonical parser reads back exactly. No escape spelling contains a forbidden
 // sequence, so the emitted text is free of them. A key, or a JSON-inlined value,
 // that contains one cannot be escaped and is refused (CARRIER_UNREPRESENTABLE).
+//
+// C0 controls other than TAB/LF/CR, and U+007F, are not YAML-printable and make an
+// XML/SVG `<!-- -->` carrier ill-formed (audit G07). For every carrier a string
+// holding one is double-quoted with each such character written as `\xNN`, which the
+// canonical parser reads back exactly; a key or a JSON-inlined value holding one is
+// refused (CARRIER_UNREPRESENTABLE).
 const ESCAPED_BACKSLASH = String.raw`\\`;
 const ESCAPED_QUOTE = String.raw`\"`;
 const NEEDS_QUOTES = /[:#{}[\],&*?|<>=!%@`\n\r\t\u2028\u2029'"\\]/;
 const READS_AS_NON_STRING = /^(?:true|false|null|~|-?\d+|-?\d*\.\d+)$/;
+// TAB, LF and CR have their own escapes; these have none and are always `\xNN`.
+const CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
+const isControl = (c: string): boolean => CONTROL.test(c);
 
 function hexEscape(code: number): string {
   const hex = code.toString(16).toUpperCase();
@@ -51,14 +60,18 @@ function quoted(s: string, marks: ReadonlySet<number>): string {
     else if (c === "\t") out += String.raw`\t`;
     // The parser's line pattern (`.`) stops at LS/PS, so they are always escaped.
     else if (c === "\u2028" || c === "\u2029") out += hexEscape(c.charCodeAt(0));
+    // `c` is one UTF-16 unit, so its code point is that unit (a lone surrogate
+    // half of an astral character included): every control here is below U+0080.
+    else if (isControl(c)) out += hexEscape(c.codePointAt(0) ?? 0);
     else if (marks.has(i)) out += hexEscape(c.charCodeAt(0));
     else out += c;
   }
   return `"${out}"`;
 }
 
+/** The first forbidden sequence, or the first unescapable control character, in `s`. */
 function containsForbidden(s: string, forbidden: readonly string[]): string | undefined {
-  return forbidden.find((seq) => seq !== "" && s.includes(seq));
+  return forbidden.find((seq) => seq !== "" && s.includes(seq)) ?? CONTROL.exec(s)?.[0];
 }
 
 export function yamlScalar(v: unknown, forbidden: readonly string[] = []): string {
@@ -76,7 +89,7 @@ export function yamlScalar(v: unknown, forbidden: readonly string[] = []): strin
   const s = String(v);
   if (s === "") return '""';
   const marks = forbiddenStarts(s, forbidden);
-  if (marks.size > 0 || NEEDS_QUOTES.test(s) || s.trim() !== s || READS_AS_NON_STRING.test(s)) return quoted(s, marks);
+  if (marks.size > 0 || NEEDS_QUOTES.test(s) || CONTROL.test(s) || s.trim() !== s || READS_AS_NON_STRING.test(s)) return quoted(s, marks);
   return s;
 }
 

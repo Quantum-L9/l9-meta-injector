@@ -163,7 +163,7 @@ describe("the topic threshold, canonicalised once", () => {
       .toBe(candidateProfileHash({ topicThreshold: 0.35, nearDuplicateThreshold: 0.85 }));
   });
 
-  it("REG-WU-041-RC-071-e: leaves six-decimal thresholds, their ids and the profile hash unchanged", () => {
+  it("REG-WU-041-RC-071-g: leaves six-decimal thresholds, their ids and the profile hash unchanged", () => {
     expect(candidateProfileHash({ topicThreshold: 0.35, nearDuplicateThreshold: 0.85 }))
       .toBe("candidate-profile:6533c9480ced244473b11d84ca754036f89d58764ffe415180d902800bd0a43e");
     expect(DEFAULT_TOPIC_THRESHOLD).toBe(0.35);

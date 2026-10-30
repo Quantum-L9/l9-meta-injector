@@ -148,3 +148,27 @@ describe("WU-017 RC-024 — work-intelligence frontmatter scalars", () => {
     expect(objects(work, "work.status").map((d) => d.object)).toContain("wip");
   });
 });
+
+describe("AUDIT G03 — ':' and '[' open a scalar only where YAML says they do", () => {
+  test("REG-AUDIT-G03-a: meta_schema — a quote after a mid-word ':' or '[' is plain text", () => {
+    // `x:'a` and `x['a` are plain scalars in YAML; the ' # b' that follows is a comment.
+    expect(parseCanonicalYaml("key: x:'a # b").key).toBe("x:'a");
+    expect(parseCanonicalYaml("key: x['a # b").key).toBe("x['a");
+    expect(parseCanonicalYaml("items:\n  - 1x:\"a # b\n  - y").items).toEqual(['1x:"a', "y"]);
+  });
+
+  test("REG-AUDIT-G03-b: meta_schema — quotes after ': ' and inside a flow list still protect '#'", () => {
+    expect(parseCanonicalYaml("key: 'a # b' # c").key).toBe("a # b");
+    expect(parseCanonicalYaml("tags: [x, \"c # d\"] # e").tags).toEqual(["x", "c # d"]);
+  });
+
+  test("REG-AUDIT-G03-c: authority — a quote after a mid-word ':' or '[' does not keep the comment", () => {
+    expect(parseAuthorityYaml(AUTHORITY.replace("ref: v4.0.0", "ref: x:'a # b")).writer.ref).toBe("x:'a");
+    expect(parseAuthorityYaml(AUTHORITY.replace("ref: v4.0.0", "ref: x['a # b")).writer.ref).toBe("x['a");
+    const list = parseAuthorityYaml(AUTHORITY.replace(
+      "inline_allow:\n  - prompts/**/*.md\n  - kernels/**/*.md",
+      "inline_allow: ['a # b', c] # trailing",
+    ));
+    expect(list.inline_allow).toEqual(["a # b", "c"]);
+  });
+});

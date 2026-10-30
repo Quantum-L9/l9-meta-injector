@@ -94,9 +94,21 @@ export interface BuildLocalSourceManifestOptions {
 }
 /** Build the acquisition manifest. Never written inside the observed source tree. */
 export declare function buildLocalSourceManifest(observation: LocalSourceObservation, options: BuildLocalSourceManifestOptions): LocalSourceManifest;
-/** Write the acquisition manifest to a tool-owned output location. */
+/**
+ * Write the acquisition manifest to a tool-owned output location.
+ *
+ * Returns `path.resolve(targetPath)`: the caller's own spelling, made absolute.
+ * Containment and the write use the symlink-resolved real path, so a target
+ * reached through a symlinked directory is checked and written where it lands,
+ * but the returned path is not rewritten to that real path.
+ */
 export declare function writeLocalSourceManifest(manifest: LocalSourceManifest, targetPath: string, sourceRoot: string): string;
-/** Write `corpus-index.json` and `corpus-report.md` outside the observed source. */
+/**
+ * Write `corpus-index.json` and `corpus-report.md` outside the observed source.
+ *
+ * Returns each target as `path.resolve(target)`; containment and the writes use
+ * the symlink-resolved real paths (see {@link writeLocalSourceManifest}).
+ */
 export declare function writeLocalSourceCorpus(outputs: LocalSourceCorpusOutputs, targets: {
     indexPath: string;
     reportPath: string;

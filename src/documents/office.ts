@@ -32,7 +32,10 @@ export const DOCX_DECODER_ID = "l9.docx-decoder";
 // 1.2.0: part expansion is capped by compressed size x ratio and by one
 // allowance per container; pptx notes and xlsx sheets are found through their
 // relationship parts; an xlsx cell without `r` is cited at its implied position.
-export const DOCX_DECODER_VERSION = "1.2.0";
+// 1.3.0 (docx only): a self-closing w:del, w:delText, w:moveFrom, w:t or
+// mc:AlternateContent no longer ends the enclosing deletion, text run or
+// AlternateContent frame early.
+export const DOCX_DECODER_VERSION = "1.3.0";
 export const PPTX_DECODER_ID = "l9.pptx-decoder";
 export const PPTX_DECODER_VERSION = "1.2.0";
 export const XLSX_DECODER_ID = "l9.xlsx-decoder";
@@ -186,8 +189,11 @@ export const docxDecoder: DocumentDecoder = {
         }
         if (event.type === "open") {
           switch (event.name) {
+            // These opens are unconditional: parseXml follows a self-closing
+            // tag with a synthetic close, and the close handlers below pop or
+            // decrement, so skipping the open would unbalance the counter.
             case "AlternateContent":
-              if (!event.selfClosing) alternates.push(false);
+              alternates.push(false);
               return;
             case "Choice":
             case "Fallback": {
@@ -201,12 +207,12 @@ export const docxDecoder: DocumentDecoder = {
               return;
             }
             case "t":
-              if (!event.selfClosing) inText += 1;
+              inText += 1;
               return;
             case "del":
             case "delText":
             case "moveFrom":
-              if (!event.selfClosing) suppressText += 1;
+              suppressText += 1;
               return;
             case "pStyle":
               style = event.attributes["w:val"] ?? event.attributes.val ?? null;
