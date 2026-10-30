@@ -868,6 +868,26 @@ describe("audit F01-F07: the object-header scan is linear and bounded by endobj"
     expect(texts(decodePdf(helloPdf([], [], "/X /a-stream ")))).toEqual(["Hello"]);
   });
 
+  it("REG-AUDIT-N04-a: a name containing `stream` in a content-stream dictionary does not move its data start", () => {
+    // The page's own content stream, uncompressed, with and without a name
+    // holding the word `stream` ahead of /Length in its dictionary.
+    const content = (dict: string): Buffer => buildPdf(
+      [
+        { number: 1, body: "<< /Type /Catalog /Pages 2 0 R >>" },
+        { number: 2, body: "<< /Type /Pages /Kids [3 0 R] /Count 1 >>" },
+        {
+          number: 3,
+          body: "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
+        },
+        { number: 4, body: dict, stream: Buffer.from("BT /F1 12 Tf 72 720 Td (Hello) Tj ET", "latin1") },
+        { number: 5, body: "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>" },
+      ],
+      { trailer: "/Size 6 /Root 1 0 R" },
+    );
+    expect(texts(decodePdf(content("<< /Length __LENGTH__ >>")))).toEqual(["Hello"]);
+    expect(texts(decodePdf(content("<< /X /a-stream /Length __LENGTH__ >>")))).toEqual(["Hello"]);
+  });
+
   it("REG-AUDIT-F01-a: 400,000 unclosed '(' cost one pass", () => {
     const { texts: shown, ms } = timed(helloPdf([{ number: 8, body: `<< /F ${"(".repeat(400_000)} >>` }]));
     expect(shown).toEqual(["Hello"]);

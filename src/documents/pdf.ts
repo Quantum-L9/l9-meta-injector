@@ -198,15 +198,24 @@ const KEYWORD_EDGE = String.raw`\0\t\n\f\r ()<>[\]{}/%`;
 const DELIMITED_ENDOBJ = new RegExp(`(?<![^${KEYWORD_EDGE}])endobj(?![^${KEYWORD_EDGE}])`, "g");
 
 /**
+ * A `stream` keyword where PDF puts one: after the dictionary's `>>` and before
+ * the end of its line. A name such as `/a-stream` is not one.
+ *
+ * One source shared by the object-header scan and `PdfFile.partsOf`, so where
+ * the scanner skips stream data and where an object's stream data is read from
+ * cannot diverge (N04).
+ */
+const STREAM_KEYWORD_SOURCE = String.raw`>>\s*stream(?=[ \t]*[\r\n])`;
+const STREAM_KEYWORD = new RegExp(STREAM_KEYWORD_SOURCE);
+
+/**
  * What the object-header scan stops at: an object header, a literal string, a
- * comment, or a stream keyword.
+ * comment, or a stream keyword (`STREAM_KEYWORD_SOURCE`).
  *
  * - A header's numbers are whole digit runs: `(?<!\d)` refuses to start inside a
  *   run, and the bounded counts stop a long run being backtracked over.
- * - `stream` is a keyword only where PDF puts one: after the dictionary's `>>`
- *   and before the end of its line. A name such as `/a-stream` is not one.
  */
-const HEADER_SCAN = /(?<!\d)(\d{1,10})\s+(\d{1,5})\s+obj\b|\(|%|>>\s*stream(?=[ \t]*[\r\n])/g;
+const HEADER_SCAN = new RegExp(String.raw`(?<!\d)(\d{1,10})\s+(\d{1,5})\s+obj\b|\(|%|` + STREAM_KEYWORD_SOURCE, "g");
 
 /**
  * Every `N M obj` in the file, found by scanning.
@@ -451,10 +460,14 @@ class PdfFile {
       const end = extent.indexOf("endobj", start);
       const body = extent.slice(start + 3, end < 0 ? extent.length : end);
       const bodyStart = object.offset + start + 3;
-      const marker = body.indexOf("stream");
+      // The keyword is located by the scanner's own rule, so a name such as
+      // `/a-stream` in the dictionary is not mistaken for it. Data starts after
+      // the keyword, its trailing spaces or tabs, and one end-of-line.
+      const marker = STREAM_KEYWORD.exec(body);
       let streamStart = -1;
-      if (marker >= 0) {
-        streamStart = bodyStart + marker + "stream".length;
+      if (marker !== null) {
+        streamStart = bodyStart + marker.index + marker[0].length;
+        while (this.bytes[streamStart] === 0x20 || this.bytes[streamStart] === 0x09) streamStart += 1;
         if (this.bytes[streamStart] === 0x0d) streamStart += 1;
         if (this.bytes[streamStart] === 0x0a) streamStart += 1;
       }
