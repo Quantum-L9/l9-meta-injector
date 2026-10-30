@@ -359,7 +359,7 @@ text is the body without the managed carrier. This is not apply: it does not req
 
 Pipeline coverage: every run (including dry-run) writes `coverage-report.json` under `--out-dir` with skipped binary/non-injectable paths and classification details (ADR-018, amended by ADR-054). `skipped-noninjectable` is taxonomy-gated or a carrier tier: `hard_skip` is coverage-only, and `inventory_only` is indexed and never injected. Weak keyword false positives, including keyword-only skill, playbook, kernel, and doctrine, are demoted so in-scope prose injects. File ids follow the repo-relative path, and a dry-run diff is written at `<out-dir>/<source_path>.diff`.
 
-Outputs: `scanned`, `injected` (`pipeline`/`skills`), `verification-passed` (`pipeline` mode: `true`/`false`/`n-a`).
+Outputs: `scanned`, `injected` (files changed by `apply`/`skills`; zero for `inventory`/`check`), `verification-passed` (`check`/`apply` verification result: `true`/`false`; `n-a` for other modes), `artifact-path` (contained report or output path supplied to upload-artifact), `resolved-mode` (canonical mode after deprecated-alias handling).
 
 ## Semantic Foundation binding
 
