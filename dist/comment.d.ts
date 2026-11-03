@@ -31,7 +31,7 @@ export declare function resolveStrategy(filePath: string, raw: string): Strategy
  * known text independently of what it contains. Internal: not re-exported from
  * the package's public surfaces.
  */
-export declare function hasCommentCarrierFamily(filePath: string): boolean;
+export declare function hasCommentCarrierFamily(filePath: string, strategy?: InjectionStrategy): boolean;
 export declare function sidecarPathFor(filePath: string): string;
 /** Strip the `---` fences from a serialized frontmatter block, leaving inner YAML lines. */
 export declare function frontMatterInner(yamlFrontMatter: string): string;

@@ -17,6 +17,7 @@ import {
 import { compareCodePoints } from "./ordering";
 import { compileDiscoveryGlob } from "./glob";
 import { metadataIndexPathProblem } from "./metadata_index";
+import { canTraverseHiddenControl, explicitHiddenControlPattern } from "./hidden_control";
 
 /**
  * Injector-generated adjacent artifacts must never be rediscovered as inputs. That
@@ -104,10 +105,11 @@ function record(
  * index cannot represent (DEC-RC-013 B). Every other caller — public `findFiles`, a
  * non-governed `runPipelineAsync` — compiles no index and keeps that file eligible.
  */
-export function discoverFiles(root: string, glob: string, opts: FindFilesOptions = {}, indexGoverned = false): DiscoveryResult {
+export function discoverFiles(root: string, glob: string, opts: FindFilesOptions = {}, indexGoverned = false, inlineAllow: readonly string[] = []): DiscoveryResult {
   // The scope is validated and compiled before the root is opened: a pattern the dialect
   // cannot express is refused here rather than matching nothing (or everything) later.
   const scope = compileDiscoveryGlob(glob);
+  const controlPatterns = indexGoverned ? inlineAllow : [];
   const absRoot = path.resolve(root);
   let rootStat: fs.Stats;
   try {
@@ -167,7 +169,7 @@ export function discoverFiles(root: string, glob: string, opts: FindFilesOptions
           record(ledger, rel, "directory", "omitted", "directory matched omit policy");
           continue;
         }
-        if (isHiddenControlPath(rel)) {
+        if (isHiddenControlPath(rel) && !canTraverseHiddenControl(rel, controlPatterns)) {
           record(ledger, rel, "directory", "hidden_control", "hidden control directory is reserved for authority scanning");
           continue;
         }
@@ -196,7 +198,9 @@ export function discoverFiles(root: string, glob: string, opts: FindFilesOptions
         record(ledger, rel, "file", "omitted", "file matched omit policy", stat.size);
         continue;
       }
-      if (isHiddenControlPath(rel)) {
+      // Excluded named controls remain discoverable for a central policy decision;
+      // exclusion prevents mutation, not metadata visibility. Unknown dotfiles stay closed.
+      if (isHiddenControlPath(rel) && !explicitHiddenControlPattern(rel, controlPatterns)) {
         record(ledger, rel, "file", "hidden_control", "hidden control file is reserved for authority scanning", stat.size);
         continue;
       }

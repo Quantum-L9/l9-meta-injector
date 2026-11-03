@@ -78,12 +78,12 @@ function decisionMap(decisions) {
     }
     return out;
 }
-function assertInlinePlan(root, record, decision) {
+function assertInlinePlan(root, record, decision, subject) {
     const source = relativePath(root, record.sourcePath);
     if (source !== decision.path)
         throw new Error(`inline plan path mismatch: ${source} != ${decision.path}`);
-    if (record.injectionStrategy !== "yaml-frontmatter") {
-        throw new Error(`inline_managed requires yaml-frontmatter, got '${record.injectionStrategy ?? "unknown"}' for ${source}`);
+    if (record.injectionStrategy !== subject.strategy || !["yaml-frontmatter", "line-comment", "block-comment"].includes(subject.strategy)) {
+        throw new Error(`inline_managed requires a matching safe strategy, got '${record.injectionStrategy ?? "unknown"}' for ${source}`);
     }
     if (!record.targetPath || relativePath(root, record.targetPath) !== source) {
         throw new Error(`inline_managed target must be the source file itself: ${source}`);
@@ -125,7 +125,7 @@ function collectInlinePlans(root, subjects, byPath, planBySource) {
         if (decision.carrier === "inline_managed") {
             if (!record)
                 throw new Error(`inline_managed subject lacks canonical injection plan: ${subject.path}`);
-            assertInlinePlan(root, record, decision);
+            assertInlinePlan(root, record, decision, subject);
             inlinePlans.push(record);
         }
         else if (record?.sidecarPath) {
@@ -226,7 +226,7 @@ async function planCarrierOperationAsync(input) {
         normalizeFilenames: false,
         writeInjectLog: false,
         persistOutputs: false,
-    });
+    }, input.authority);
     return buildCarrierOperationPlan(input.mode, root, input.authority, pipeline);
 }
 function metadataIndexDrift(plan) {

@@ -92,6 +92,7 @@ const BASENAME_LINE_COMMENT = {
     ".gitignore": "#", ".npmignore": "#", ".dockerignore": "#", ".gitattributes": "#",
     ".env": "#", ".bashrc": "#", ".zshrc": "#", ".profile": "#", ".editorconfig": "#",
     "codeowners": "#",
+    ".env.example": "#", ".l9metaignore": "#",
 };
 const BLOCK_COMMENT = {
     ".html": { open: "<!--", close: "-->" }, ".htm": { open: "<!--", close: "-->" },
@@ -167,12 +168,14 @@ function resolveStrategy(filePath, raw) {
  * known text independently of what it contains. Internal: not re-exported from
  * the package's public surfaces.
  */
-function hasCommentCarrierFamily(filePath) {
+function hasCommentCarrierFamily(filePath, strategy) {
     const ext = path.extname(filePath).toLowerCase();
     const base = path.basename(filePath).toLowerCase();
     if (BINARY_EXTS.has(ext))
         return false;
-    return LINE_COMMENT[ext] !== undefined || BASENAME_LINE_COMMENT[base] !== undefined || BLOCK_COMMENT[ext] !== undefined;
+    const line = LINE_COMMENT[ext] !== undefined || BASENAME_LINE_COMMENT[base] !== undefined;
+    const block = BLOCK_COMMENT[ext] !== undefined;
+    return strategy === "line-comment" ? line : strategy === "block-comment" ? block : strategy === undefined && (line || block);
 }
 function sidecarPathFor(filePath) {
     return filePath + ".l9meta.yaml";

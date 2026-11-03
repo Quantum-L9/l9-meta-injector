@@ -192,6 +192,25 @@ describe("WU-006 index ordering and schema-faithful validation (RC-012, RC-013)"
       .toThrow(/4096/);
   });
 
+  test.each([
+    ".gitignore", ".gitattributes", ".editorconfig", ".env.example", ".l9metaignore",
+    ".pre-commit-config.yaml", ".pre-commit-config.yml", ".github/CODEOWNERS",
+    ".github/workflows/ci.yml", ".github/workflows/nested/ci.yml",
+  ])("a known hidden control %s round-trips under the shipped schema", (name) => {
+    const compiled = compileMetadataIndex({ authority: { ...AUTHORITY, inline_allow: [name] }, mode: "apply", subjects: [subject(name, "source", HASH_A)] });
+    expect(compiled.records[0].carrier).toBe("inline_managed");
+    expect(conformsToSchema(compiled.records[0] as unknown as Record<string, unknown>)).toBe(true);
+    expect(parseMetadataIndex(compiled.bytes)).toEqual(compiled.records);
+    const central = compileMetadataIndex({ authority: { ...AUTHORITY, inline_allow: [name], inline_exclude: [name] }, mode: "check", subjects: [subject(name, "source", HASH_A)] });
+    expect(central.records[0].carrier).toBe("central_manifest");
+    expect(parseMetadataIndex(central.bytes)).toEqual(central.records);
+  });
+
+  test.each([".private/file.yml", ".github/actions/action.yml", ".github/workflows/.private.yml", ".github/workflows/../ci.yml"])("unknown or unsafe hidden index path %s remains unrepresentable", (name) => {
+    expect(SCHEMA_PATH.test(name)).toBe(false);
+    expect(() => compileMetadataIndex({ authority: AUTHORITY, mode: "apply", subjects: [subject(name, "source", HASH_A)] })).toThrow();
+  });
+
   test("REG-WU-006-RC-013-b: a record with a key outside the schema is refused by serialize and parse", () => {
     const compiled = compileMetadataIndex({ authority: AUTHORITY, mode: "apply", subjects: [subject("src/a.ts", "source", HASH_A)] });
     const parsed = JSON.parse(compiled.bytes.trim()) as Record<string, unknown>;

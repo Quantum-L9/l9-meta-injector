@@ -18,6 +18,7 @@ import {
   resolveCarrierDecisions,
   type CarrierSubject,
 } from "./mutation_policy";
+import { explicitHiddenControlPattern } from "./hidden_control";
 
 export const METADATA_INDEX_SCHEMA = "l9.metadata-index/v1" as const;
 export const METADATA_INDEX_RELATIVE_PATH = ".l9/metadata-index.jsonl" as const;
@@ -108,7 +109,8 @@ function normalizeRelativePath(value: string): string {
 
 /**
  * The record schema's remaining `path` rules (pattern and maxLength), required of every
- * materialized record: no control character, no leading '.', at most 4096 code points.
+ * materialized record: no control character, only known leading-dot controls, at most
+ * 4096 code points. Record representability does not itself grant inline authorization.
  */
 function assertRecordPath(pathName: string): void {
   const problem = metadataIndexPathProblem(pathName);
@@ -125,7 +127,9 @@ export function metadataIndexPathProblem(pathName: string): string | null {
   if (CONTROL_CHARACTER.test(pathName)) {
     return `metadata index path contains a control character (U+0001-U+001F, U+007F): ${JSON.stringify(pathName)}`;
   }
-  if (pathName.startsWith(".")) return `metadata index path must not start with '.': ${pathName}`;
+  if (pathName.startsWith(".") && !explicitHiddenControlPattern(pathName, [pathName])) {
+    return `metadata index path must not start with '.' unless it names a supported hidden control: ${pathName}`;
+  }
   if ([...pathName].length > MAX_PATH_CODE_POINTS) {
     return `metadata index path exceeds ${MAX_PATH_CODE_POINTS} characters: ${pathName.slice(0, 64)}...`;
   }

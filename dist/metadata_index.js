@@ -52,6 +52,7 @@ const path = __importStar(require("node:path"));
 const node_crypto_1 = require("node:crypto");
 const ordering_1 = require("./ordering");
 const mutation_policy_1 = require("./mutation_policy");
+const hidden_control_1 = require("./hidden_control");
 exports.METADATA_INDEX_SCHEMA = "l9.metadata-index/v1";
 exports.METADATA_INDEX_RELATIVE_PATH = ".l9/metadata-index.jsonl";
 const MATERIALIZED_CARRIERS = new Set([
@@ -92,7 +93,8 @@ function normalizeRelativePath(value) {
 }
 /**
  * The record schema's remaining `path` rules (pattern and maxLength), required of every
- * materialized record: no control character, no leading '.', at most 4096 code points.
+ * materialized record: no control character, only known leading-dot controls, at most
+ * 4096 code points. Record representability does not itself grant inline authorization.
  */
 function assertRecordPath(pathName) {
     const problem = metadataIndexPathProblem(pathName);
@@ -109,8 +111,9 @@ function metadataIndexPathProblem(pathName) {
     if (CONTROL_CHARACTER.test(pathName)) {
         return `metadata index path contains a control character (U+0001-U+001F, U+007F): ${JSON.stringify(pathName)}`;
     }
-    if (pathName.startsWith("."))
-        return `metadata index path must not start with '.': ${pathName}`;
+    if (pathName.startsWith(".") && !(0, hidden_control_1.explicitHiddenControlPattern)(pathName, [pathName])) {
+        return `metadata index path must not start with '.' unless it names a supported hidden control: ${pathName}`;
+    }
     if ([...pathName].length > MAX_PATH_CODE_POINTS) {
         return `metadata index path exceeds ${MAX_PATH_CODE_POINTS} characters: ${pathName.slice(0, 64)}...`;
     }

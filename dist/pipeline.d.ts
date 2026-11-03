@@ -8,6 +8,7 @@ import { MetaV3Record } from "./meta_v3";
 import { MetricsSnapshot } from "./metrics";
 import { type FrontMatterIssueCode } from "./frontmatter_patch";
 import { ArchiveRecord } from "./archives";
+import type { AuthorityConfig } from "./operation_contracts";
 export interface VerificationSummary {
     total: number;
     clean: number;
@@ -106,4 +107,4 @@ export declare function runPipelineAsync(config: PipelineConfig): Promise<Pipeli
  * Deliberately not re-exported from `src/index.ts` or `src/public`, and no field on
  * the public `PipelineConfig` carries the flag.
  */
-export declare function runIndexGovernedPipelineAsync(config: PipelineConfig): Promise<PipelineResult>;
+export declare function runIndexGovernedPipelineAsync(config: PipelineConfig, authority?: AuthorityConfig): Promise<PipelineResult>;

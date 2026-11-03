@@ -103,6 +103,7 @@ export interface AuthorityConfig {
   default_carrier: "central_manifest" | "inline_managed";
   legacy_writers: AuthorityLegacyPolicy;
   inline_allow: string[];
+  inline_exclude?: string[];
   validation_commands?: string[];
   semantic_foundation?: SemanticFoundationBinding;
   product?: ProductDeclaration;
@@ -351,7 +352,7 @@ export function isAuthorityConfig(value: unknown): value is AuthorityConfig {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const candidate = value as Record<string, unknown>;
   const v1Keys = [
-    "schema", "writer", "default_carrier", "legacy_writers", "inline_allow", "validation_commands",
+    "schema", "writer", "default_carrier", "legacy_writers", "inline_allow", "inline_exclude", "validation_commands",
   ];
   const v2Keys = [...v1Keys, "semantic_foundation", "product"];
   if (!isSupportedAuthoritySchema(candidate.schema)) return false;
@@ -365,6 +366,7 @@ export function isAuthorityConfig(value: unknown): value is AuthorityConfig {
   if (candidate.default_carrier !== "central_manifest" && candidate.default_carrier !== "inline_managed") return false;
   if (candidate.legacy_writers !== "forbidden" && candidate.legacy_writers !== "migration_only") return false;
   if (!isStringArray(candidate.inline_allow) || !candidate.inline_allow.every(isSafeAuthorityPathPattern)) return false;
+  if (candidate.inline_exclude !== undefined && (!isStringArray(candidate.inline_exclude) || !candidate.inline_exclude.every(isSafeAuthorityPathPattern))) return false;
   if (candidate.validation_commands !== undefined && !isStringArray(candidate.validation_commands)) return false;
   if (candidate.schema === META_AUTHORITY_SCHEMA) {
     return candidate.semantic_foundation === undefined && candidate.product === undefined;

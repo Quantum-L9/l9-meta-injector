@@ -82,6 +82,7 @@ const BASENAME_LINE_COMMENT: Record<string, string> = {
   ".gitignore": "#", ".npmignore": "#", ".dockerignore": "#", ".gitattributes": "#",
   ".env": "#", ".bashrc": "#", ".zshrc": "#", ".profile": "#", ".editorconfig": "#",
   "codeowners": "#",
+  ".env.example": "#", ".l9metaignore": "#",
 };
 
 const BLOCK_COMMENT: Record<string, { open: string; close: string }> = {
@@ -163,11 +164,13 @@ export function resolveStrategy(filePath: string, raw: string): StrategySpec {
  * known text independently of what it contains. Internal: not re-exported from
  * the package's public surfaces.
  */
-export function hasCommentCarrierFamily(filePath: string): boolean {
+export function hasCommentCarrierFamily(filePath: string, strategy?: InjectionStrategy): boolean {
   const ext = path.extname(filePath).toLowerCase();
   const base = path.basename(filePath).toLowerCase();
   if (BINARY_EXTS.has(ext)) return false;
-  return LINE_COMMENT[ext] !== undefined || BASENAME_LINE_COMMENT[base] !== undefined || BLOCK_COMMENT[ext] !== undefined;
+  const line = LINE_COMMENT[ext] !== undefined || BASENAME_LINE_COMMENT[base] !== undefined;
+  const block = BLOCK_COMMENT[ext] !== undefined;
+  return strategy === "line-comment" ? line : strategy === "block-comment" ? block : strategy === undefined && (line || block);
 }
 
 export function sidecarPathFor(filePath: string): string {

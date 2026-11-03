@@ -74,6 +74,60 @@ npx l9-meta-injector check . --authority <your-org>    # read-only drift gate; e
 A first `check` before any `apply` reports the missing metadata index as drift; that is
 expected.
 
+### Opt in to format-safe headers
+
+**Unreleased (ADR-080):** use a reviewed commit containing this change; `@v4` receives it
+only after a separate release. In the target's v1 or v2 `.l9/meta-authority.yaml`, retain
+the writer/binding fields and replace the carrier-policy fields with, for example:
+
+```yaml
+default_carrier: central_manifest
+inline_allow:
+  - "docs/**/*.md"
+  - "src/**/*.py"
+  - "scripts/**/*.py"
+  - "tests/*.py"
+  - "**/*.yaml"
+  - ".github/workflows/*.yml"
+  - ".gitignore"
+  - ".editorconfig"
+  - ".env.example"
+inline_exclude:
+  - "tests/fixtures/**"
+  - "**/golden_tests/**"
+  - "**/datasets/**"
+```
+
+`inline_allow` grants permission only for an eligible host carrier: approved Markdown
+frontmatter or supported, inert line/block comments in source, ordinary tests, scripts
+and configuration. No allow match means central metadata; even
+`default_carrier: inline_managed` cannot grant permission by itself. Optional
+`inline_exclude` defaults to `[]`, uses the same repository-relative POSIX glob dialect,
+and wins over allow without removing the file from discovery or the index. Preview with
+`check`, then use `apply` and a second `check` to verify the result.
+
+Canonical fixture families (`fixture`, `fixtures`, `__fixtures__`), `golden_tests` and
+`datasets` directories at any depth always stay centrally indexed, even under an allow
+of `**`; the example exclusions make the intent visible and can cover additional custom
+data paths. Hidden controls require named safe patterns such as
+`.github/workflows/*.yml`, `.gitignore` and `.editorconfig`: `**` or `**/*.yaml` alone
+never unlocks them. `.git`, `.l9`, dependencies and binaries are hard-skipped; generated
+outputs, locks and vendored state are never annotated. Secret-bearing `.env` files are
+hard-protected, distinct from an explicitly authorized, non-secret `.env.example`.
+JSON, JSONL, plaintext and files with no safe comment position stay central or retain
+an existing external carrier unchanged: governed apply inserts neither comments nor
+adjacent sidecars there. Normal-mode `SKILL.md` protection is unchanged.
+
+Headers use the existing renderer, preserving shebangs, BOMs, encoding cookies, CRLF
+and body bytes. All changed inline carriers and the index share the governed transaction
+and post-write verification. Scanned/inventory totals and index record counts are
+coverage, **not inline changes**: non-hard-skip metadata subjects remain indexed even
+when inline. Apply's `inlineChanged` identifies changed source carriers;
+`metadataIndexChanged` separately reports the index write, and `changed` includes both.
+Discovery omissions, hard skips, encoding/unsupported-entry holds and central fallbacks
+are coverage exceptions, not evidence that every file received a header. Full policy:
+[ADR-080](docs/decisions/080-governed-format-safe-comment-carriers.md).
+
 ## GitHub Action
 
 ```yaml

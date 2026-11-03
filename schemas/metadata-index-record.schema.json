@@ -11,7 +11,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 4096,
-      "pattern": "^(?![/.])(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)(?!.*//)[^\\u0000-\\u001F\\u007F]+$"
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*\\\\)(?!.*//)(?!.*\\/$)(?:(?!\\.)[^\\u0000-\\u001F\\u007F]+|\\.(?:gitignore|gitattributes|editorconfig|pre-commit-config\\.ya?ml|env\\.example|l9metaignore)|\\.github/(?:CODEOWNERS|workflows/[^./\\u0000-\\u001F\\u007F][^/\\u0000-\\u001F\\u007F]*(?:/[^./\\u0000-\\u001F\\u007F][^/\\u0000-\\u001F\\u007F]*)*))$"
     },
     "carrier": {
       "enum": ["inventory_only", "central_manifest", "inline_managed"]
