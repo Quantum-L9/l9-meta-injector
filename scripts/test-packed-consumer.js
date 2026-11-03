@@ -25,20 +25,27 @@ function makeTargetRepository(dir){
  command(GIT,["init","-q"],dir);command(GIT,["add","--",...Object.keys(files)],dir);command(GIT,[...ident,"commit","-q","-m","consumer target"],dir);
  return Object.keys(files).filter(rel=>!rel.startsWith(".l9/")).map(rel=>[rel,hash(path.join(dir,rel))]);
 }
-function binPath(consumer){return path.join(consumer,"node_modules",".bin",process.platform==="win32"?"l9-meta-injector.cmd":"l9-meta-injector");}
+// POSIX runs the installed .bin link itself (shebang + executable bit). Windows .cmd shims
+// cannot be spawned without a shell (Node >=18.20.2, CVE-2024-27980), so there the proof
+// runs the installed bin target with this Node instead.
+function binCommand(consumer){
+ if(process.platform==="win32"){return {cmd:process.execPath,prefix:[path.join(consumer,"node_modules","l9-meta-injector","scripts","operation-cli.js")]};}
+ return {cmd:path.join(consumer,"node_modules",".bin","l9-meta-injector"),prefix:[]};
+}
 function runConsumerCli(consumer,target){
- const bin=binPath(consumer),before=makeTargetRepository(target),steps=[];
- const help=expectStatus(bin,["--help"],target,0,"l9-meta-injector --help");
+ const {cmd:binCmd,prefix}=binCommand(consumer),before=makeTargetRepository(target),steps=[];
+ const bin=(args,expected,label)=>expectStatus(binCmd,[...prefix,...args],target,expected,label);
+ const help=bin(["--help"],0,"l9-meta-injector --help");
  if(!/usage:/.test(help.stdout)){die("--help printed no usage on stdout",{stdout:help.stdout});}
  steps.push("help");
- expectStatus(bin,["inventory","."],target,0,"inventory .");
+ bin(["inventory","."],0,"inventory .");
  steps.push("inventory");
- const firstCheck=expectStatus(bin,["check",".","--authority",CONSUMER_AUTHORITY],target,1,"check before apply");
+ const firstCheck=bin(["check",".","--authority",CONSUMER_AUTHORITY],1,"check before apply");
  if(!/metadata-index\.jsonl/.test(firstCheck.stdout+firstCheck.stderr)){die("check before apply did not report the missing metadata index",{stdout:firstCheck.stdout,stderr:firstCheck.stderr});}
  steps.push("check-drift");
- expectStatus(bin,["apply",".","--authority",CONSUMER_AUTHORITY],target,0,"apply");
+ bin(["apply",".","--authority",CONSUMER_AUTHORITY],0,"apply");
  steps.push("apply");
- expectStatus(bin,["check",".","--authority",CONSUMER_AUTHORITY],target,0,"check after apply");
+ bin(["check",".","--authority",CONSUMER_AUTHORITY],0,"check after apply");
  steps.push("check-clean");
  for(const [rel,digest] of before){
   if(hash(path.join(target,rel))!==digest){die(`apply rewrote source file ${rel} under the central_manifest carrier`);}

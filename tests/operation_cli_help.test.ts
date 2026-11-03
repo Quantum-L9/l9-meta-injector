@@ -24,6 +24,17 @@ describe("operation-cli help and root guidance", () => {
     expect(result.stderr).toBe("");
   });
 
+  test("--help after a mode still prints help and exits 0", () => {
+    const result = runCli(["inventory", "--help"], os.tmpdir());
+    expect(result.status).toBe(0);
+    expect(result.stdout).toMatch(/^usage: l9-meta-injector/);
+  });
+
+  test("help does not advertise the refused --no-fail-on-issues form", () => {
+    const result = runCli(["--help"], os.tmpdir());
+    expect(result.stdout).toContain("--no-fail-on-issues is refused");
+  });
+
   test("a missing root still fails as invalid input and points at --help", () => {
     const result = runCli(["inventory"], os.tmpdir());
     expect(result.status).toBe(2);

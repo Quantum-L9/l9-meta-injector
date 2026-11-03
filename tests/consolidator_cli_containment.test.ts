@@ -54,6 +54,18 @@ describe("folder_artifact_consolidator CLI path containment", () => {
     expect(fs.existsSync(path.join(root, "work", "out"))).toBe(false);
   });
 
+  test("phase C's default output (the manifest's grandparent) is contained too", () => {
+    const root = workspace();
+    const work = path.join(root, "work");
+    fs.writeFileSync(path.join(work, "move_map.csv"), "source_path,content_hash,output_path\n", "utf8");
+    const result = spawnSync("python3", [SCRIPT, "--phase", "C", "--from-manifest", "move_map.csv", "--source", "src"], {
+      cwd: work,
+      encoding: "utf8",
+    });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("path escapes boundary");
+  });
+
   test("a --from-manifest outside the working directory is refused in phase C", () => {
     const root = workspace();
     const result = spawnSync(

@@ -378,15 +378,16 @@ Options:
   --glob PATTERN         discovery glob (default **/*)
   --omit PATTERN         gitignore-style omit pattern (repeatable)
   --out DIR              output directory, relative to <root>
-  --dry-run / --no-dry-run, --fail-on-issues / --no-fail-on-issues
+  --dry-run / --no-dry-run   (inventory/check accept only dry-run; apply/skills only --no-dry-run)
+  --fail-on-issues           always on; --no-fail-on-issues is refused (ADR-069)
   --near-dup 0..1, --hash-prefix-length N
   --llm, --llm-base-url URL, --llm-model NAME, --llm-api-key KEY, --llm-allow-insecure
   -h, --help             print this help and exit 0
 `;
 
-/** True when the operator asked for help rather than an operation. */
+/** True when the operator asked for help anywhere on the command line, e.g. `inventory --help`. */
 function isHelpRequest(argv) {
-  return argv.length > 0 && (argv[0] === "--help" || argv[0] === "-h");
+  return argv.some((arg) => arg === "--help" || arg === "-h");
 }
 
 function parseCommandLine(argv, env = process.env) {

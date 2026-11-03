@@ -241,10 +241,10 @@ def main():
         if not a.manifest:
             sys.exit("Phase C requires --from-manifest")
         mm = _contained(workspace, a.manifest)
-        out = (
-            _contained(workspace, a.output)
-            if a.output
-            else os.path.dirname(os.path.dirname(mm))
+        # The default output (the manifest's grandparent) is contained too: a manifest
+        # at the workspace root would otherwise put it one level above the workspace.
+        out = _contained(
+            workspace, a.output if a.output else os.path.dirname(os.path.dirname(mm))
         )
         if not a.source:
             sys.exit("Phase C requires --source for copy integrity")
