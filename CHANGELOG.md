@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 4.3.0 - 2026-11-03
+
 ### Consumer readiness (ADR-078, ADR-079)
 
 Proves the package installs and runs from another repository, and clears the failures

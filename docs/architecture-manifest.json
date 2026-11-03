@@ -10,7 +10,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "git_blob_sha1": "a9bd1eed2de3488e17e768e185839e9755cb2477"
+      "git_blob_sha1": "1e36654ec20d669c5354cea5161ed2e813703a42"
     },
     {
       "path": "dist/archive_preflight.d.ts",
@@ -426,7 +426,7 @@
     },
     {
       "path": "docs/architecture.md",
-      "git_blob_sha1": "0386df3c8afcbe3db087e4000c07503b1ea4a5e5"
+      "git_blob_sha1": "398fb8d23023421e7c1e57d4bd76fa06e43cde32"
     },
     {
       "path": "docs/contracts.md",
@@ -510,15 +510,15 @@
     },
     {
       "path": "docs/package-contract.json",
-      "git_blob_sha1": "e8ab0e9b651eb6c20d0afb79f2086f32fd07179b"
+      "git_blob_sha1": "4effbf3f977c797a5162218551a7c1fd3cf3b569"
     },
     {
       "path": "docs/package-publication-decision.json",
-      "git_blob_sha1": "a642ed485c8757e7e3d8b8fda50806cd1698824b"
+      "git_blob_sha1": "9cadf64900a61229e20cfea71da1b405abcd886b"
     },
     {
       "path": "docs/public-api-contract.json",
-      "git_blob_sha1": "88dea455a4235d44f75f3414b17c9e1ff364c068"
+      "git_blob_sha1": "f4afdda76b67ed61403f21406b5fc1ea68a9b886"
     },
     {
       "path": "docs/public-api.md",
@@ -606,11 +606,11 @@
     },
     {
       "path": "package-lock.json",
-      "git_blob_sha1": "f20175679ec8d7c8fdf102b573ab1fbe1116cba8"
+      "git_blob_sha1": "31bea3a03a2bee2e27f85071898ec527031d4bd4"
     },
     {
       "path": "package.json",
-      "git_blob_sha1": "a09a046e7f46dafac5c67e05be9a40e6d42a682e"
+      "git_blob_sha1": "601154b54d96c9eeb06a4b2d7bf5be1231674198"
     },
     {
       "path": "README.md",
