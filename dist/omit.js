@@ -38,7 +38,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.BUILTIN_SKILL_PROTECT_PATTERNS = exports.BUILTIN_NOISE_PATTERNS = exports.L9_METAIGNORE_FILENAME = void 0;
+exports.GIT_IGNORE_SOURCES = exports.BUILTIN_SKILL_PROTECT_PATTERNS = exports.BUILTIN_NOISE_PATTERNS = exports.L9_METAIGNORE_FILENAME = void 0;
 exports.isSkillMdBasename = isSkillMdBasename;
 exports.isSkillArtifactPath = isSkillArtifactPath;
 exports.buildOmitMatcher = buildOmitMatcher;
@@ -61,6 +61,8 @@ exports.BUILTIN_SKILL_PROTECT_PATTERNS = [
     "**/SKILL.md",
     "**/skill.md",
 ];
+/** Repository-relative git ignore files honoured when `honorGitIgnore` is set (ADR-078). */
+exports.GIT_IGNORE_SOURCES = [".gitignore", ".git/info/exclude"];
 /** True when basename is SKILL.md under any casing. */
 function isSkillMdBasename(filePath) {
     return path.basename(filePath).toLowerCase() === "skill.md";
@@ -192,6 +194,18 @@ function buildOmitMatcher(opts) {
     for (const directory of opts.ignoreDirNames ?? []) {
         if (directory)
             patterns.push(`${directory}/`);
+    }
+    // The target's own ignore declarations come before .l9metaignore, --omit-file and
+    // --omit, so an operator source keeps the last word (last matching rule wins).
+    if (opts.honorGitIgnore === true) {
+        for (const relative of exports.GIT_IGNORE_SOURCES) {
+            const absolute = path.join(root, ...relative.split("/"));
+            const gitPatterns = readOmitFileStrict(absolute, relative, false);
+            if (gitPatterns.length > 0 || fs.existsSync(absolute)) {
+                patterns.push(...gitPatterns);
+                sources.push(relative);
+            }
+        }
     }
     const metaIgnorePath = path.join(root, exports.L9_METAIGNORE_FILENAME);
     const metaPatterns = readOmitFileStrict(metaIgnorePath, exports.L9_METAIGNORE_FILENAME, false);

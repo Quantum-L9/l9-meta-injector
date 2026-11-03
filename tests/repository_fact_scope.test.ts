@@ -204,3 +204,57 @@ describe("WU-029 RC-034: package.json is a shared manifest", () => {
     expect(uv.payload.repositories[0].package_managers).toEqual(["uv"]);
   });
 });
+
+describe("WU-078 (ADR-078): the observation honours the target's git ignore files", () => {
+  const manifest = '{"name":"svc"}\n';
+
+  it("REG-WU-078-a: a git-ignored root lockfile is not a repository fact", () => {
+    const root = materialize({
+      "package.json": manifest,
+      "package-lock.json": '{"lockfileVersion":3}\n',
+      "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+      ".gitignore": "node_modules/\npnpm-lock.yaml\n",
+    });
+    const packet = observe(root);
+    expect(packet.payload.repositories[0].package_managers).toEqual(["npm"]);
+    expect(evidencePathsFor(packet, "package_managers")).toEqual(["package-lock.json"]);
+    expect(validateRepositoryModelPacket(packet).status).toBe("passed");
+  });
+
+  it("REG-WU-078-b: the same lockfile, not ignored, is still reported", () => {
+    const root = materialize({
+      "package.json": manifest,
+      "package-lock.json": '{"lockfileVersion":3}\n',
+      "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+      ".gitignore": "node_modules/\n",
+    });
+    expect(observe(root).payload.repositories[0].package_managers).toEqual(["npm", "pnpm"]);
+  });
+
+  it("REG-WU-078-c: .git/info/exclude applies, and .l9metaignore negation keeps the last word", () => {
+    const excluded = materialize({
+      "package.json": manifest,
+      "yarn.lock": "# yarn\n",
+      ".git/info/exclude": "yarn.lock\n",
+    });
+    expect(observe(excluded).payload.repositories[0].package_managers).toEqual([]);
+
+    const reinstated = materialize({
+      "package.json": manifest,
+      "yarn.lock": "# yarn\n",
+      ".gitignore": "yarn.lock\n",
+      ".l9metaignore": "!yarn.lock\n",
+    });
+    expect(observe(reinstated).payload.repositories[0].package_managers).toEqual(["yarn"]);
+  });
+
+  it("REG-WU-078-d: a symlinked .gitignore fails closed instead of being silently skipped", () => {
+    const root = materialize({ "package.json": manifest, "real-ignore": "pnpm-lock.yaml\n" });
+    try {
+      fs.symlinkSync(path.join(root, "real-ignore"), path.join(root, ".gitignore"));
+    } catch {
+      return; // platform without symlink permission (Windows without developer mode)
+    }
+    expect(() => observe(root)).toThrow(/\.gitignore must not be a symbolic link/);
+  });
+});

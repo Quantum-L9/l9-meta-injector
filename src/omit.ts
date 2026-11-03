@@ -41,7 +41,15 @@ export interface OmitOptions {
   protectSkillMd?: boolean;
   /** Extra directory basenames to treat as ignored. */
   ignoreDirNames?: string[];
+  /**
+   * When true, the root's `.gitignore` and `.git/info/exclude` load before every
+   * operator omit source (ADR-078). Each is optional; a present one loads strictly.
+   */
+  honorGitIgnore?: boolean;
 }
+
+/** Repository-relative git ignore files honoured when `honorGitIgnore` is set (ADR-078). */
+export const GIT_IGNORE_SOURCES: readonly string[] = [".gitignore", ".git/info/exclude"];
 
 export interface OmitMatcher {
   /** True if this relative path should be skipped. */
@@ -178,6 +186,19 @@ export function buildOmitMatcher(opts: OmitOptions): OmitMatcher {
   }
   for (const directory of opts.ignoreDirNames ?? []) {
     if (directory) patterns.push(`${directory}/`);
+  }
+
+  // The target's own ignore declarations come before .l9metaignore, --omit-file and
+  // --omit, so an operator source keeps the last word (last matching rule wins).
+  if (opts.honorGitIgnore === true) {
+    for (const relative of GIT_IGNORE_SOURCES) {
+      const absolute = path.join(root, ...relative.split("/"));
+      const gitPatterns = readOmitFileStrict(absolute, relative, false);
+      if (gitPatterns.length > 0 || fs.existsSync(absolute)) {
+        patterns.push(...gitPatterns);
+        sources.push(relative);
+      }
+    }
   }
 
   const metaIgnorePath = path.join(root, L9_METAIGNORE_FILENAME);

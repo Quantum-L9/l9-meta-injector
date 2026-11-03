@@ -101,7 +101,9 @@ export interface InventoryConfig {
   omitPatterns?: string[];
   /** Optional path to an omit-file (gitignore syntax). */
   omitFile?: string;
-  now?: string;             // ISO timestamp (injected for determinism)
+  /** Honour the root's `.gitignore` and `.git/info/exclude` (ADR-078; default false). */
+  honorGitIgnore?: boolean;
+  now?: string;            // ISO timestamp (injected for determinism)
   schema?: MetaSchema;      // custom meta structure; when absent the built-in default is used
 }
 
@@ -585,6 +587,7 @@ export function inventoryTree(config: InventoryConfig): InventoryResult {
     omitFile: config.omitFile,
     protectSkillMd: true,
     ignoreDirNames: [...ignoreDirs],
+    honorGitIgnore: config.honorGitIgnore === true,
   });
   const omit: OmitMatcher = outDirRel === null ? baseOmit : {
     patterns: baseOmit.patterns,

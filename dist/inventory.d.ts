@@ -38,6 +38,8 @@ export interface InventoryConfig {
     omitPatterns?: string[];
     /** Optional path to an omit-file (gitignore syntax). */
     omitFile?: string;
+    /** Honour the root's `.gitignore` and `.git/info/exclude` (ADR-078; default false). */
+    honorGitIgnore?: boolean;
     now?: string;
     schema?: MetaSchema;
 }

@@ -20,7 +20,14 @@ export interface OmitOptions {
     protectSkillMd?: boolean;
     /** Extra directory basenames to treat as ignored. */
     ignoreDirNames?: string[];
+    /**
+     * When true, the root's `.gitignore` and `.git/info/exclude` load before every
+     * operator omit source (ADR-078). Each is optional; a present one loads strictly.
+     */
+    honorGitIgnore?: boolean;
 }
+/** Repository-relative git ignore files honoured when `honorGitIgnore` is set (ADR-078). */
+export declare const GIT_IGNORE_SOURCES: readonly string[];
 export interface OmitMatcher {
     /** True if this relative path should be skipped. */
     shouldOmit(relPath: string): boolean;

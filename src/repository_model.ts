@@ -1627,6 +1627,8 @@ export function observeRepositoryModel(input: RepositoryModelObservationInput): 
       writeSidecars: false,
       folderSidecars: false,
       sourceSystem: "local",
+      // A packet describes only files the repository owns: its own ignore files apply (ADR-078).
+      honorGitIgnore: true,
       now: input.generatedAt ?? DEFAULT_GENERATED_AT,
       ...(input.ignore !== undefined ? { ignore: input.ignore } : {}),
       ...(input.omitPatterns !== undefined ? { omitPatterns: input.omitPatterns } : {}),
