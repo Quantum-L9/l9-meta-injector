@@ -17,6 +17,13 @@ const COMMANDS = [
   { id: "validate", argv: ["npm", "run", "validate"], note: "the aggregate gate" },
 ];
 
+/** UTF-16 code-unit order — the default sort order, spelled out (S2871). */
+function compareCodeUnits(a, b) {
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
+
 function fail(message) {
   console.error(`${LABEL}: FAILED: ${message}`);
   process.exit(1);
@@ -72,7 +79,7 @@ function treeState() {
   }
 
   // Explicit UTF-16 code-unit order: identical to the default sort, so the digest is unchanged (S2871).
-  const ordered = [...paths].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const ordered = [...paths].sort(compareCodeUnits);
   const digest = crypto.createHash("sha256");
   for (const relative of ordered) {
     const absolute = path.join(REPO, relative);

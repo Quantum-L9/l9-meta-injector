@@ -12,11 +12,15 @@ const GIT=gitBinary(message=>die(message)),GIT_INSTALL=process.argv.includes("--
 // Consumer CLI proof: the installed bin runs against a foreign git repository, not this
 // one. The target is generated at runtime so no second meta-authority file is ever
 // committed under this repository's own scan root.
-function expectStatus(cmd,args,cwd,expected,label){const r=run(cmd,args,{cwd});if(r.status!==expected)die(`${label}: expected exit ${expected}, got ${r.status}`,{stdout:r.stdout,stderr:r.stderr});return r;}
+function expectStatus(cmd,args,cwd,expected,label){
+ const r=run(cmd,args,{cwd});
+ if(r.status!==expected){die(`${label}: expected exit ${expected}, got ${r.status}`,{stdout:r.stdout,stderr:r.stderr});}
+ return r;
+}
 function makeTargetRepository(dir){
  fs.mkdirSync(path.join(dir,".l9"),{recursive:true});
  const files={"README.md":"# consumer target\n","app.py":"print('consumer')\n",".l9/meta-authority.yaml":"schema: l9.meta-authority/v1\nwriter:\n  repository: Quantum-L9/l9-meta-injector\n  ref: v4\ndefault_carrier: central_manifest\nlegacy_writers: forbidden\ninline_allow: []\n"};
- for(const [rel,text] of Object.entries(files))fs.writeFileSync(path.join(dir,rel),text,"utf8");
+ for(const [rel,text] of Object.entries(files)){fs.writeFileSync(path.join(dir,rel),text,"utf8");}
  const ident=["-c","user.email=consumer@example.invalid","-c","user.name=consumer-proof"];
  command(GIT,["init","-q"],dir);command(GIT,["add","--",...Object.keys(files)],dir);command(GIT,[...ident,"commit","-q","-m","consumer target"],dir);
  return Object.keys(files).filter(rel=>!rel.startsWith(".l9/")).map(rel=>[rel,hash(path.join(dir,rel))]);
@@ -24,13 +28,22 @@ function makeTargetRepository(dir){
 function binPath(consumer){return path.join(consumer,"node_modules",".bin",process.platform==="win32"?"l9-meta-injector.cmd":"l9-meta-injector");}
 function runConsumerCli(consumer,target){
  const bin=binPath(consumer),before=makeTargetRepository(target),steps=[];
- const help=expectStatus(bin,["--help"],target,0,"l9-meta-injector --help");if(!/usage:/.test(help.stdout))die("--help printed no usage on stdout",{stdout:help.stdout});steps.push("help");
- expectStatus(bin,["inventory","."],target,0,"inventory .");steps.push("inventory");
- const firstCheck=expectStatus(bin,["check",".","--authority",CONSUMER_AUTHORITY],target,1,"check before apply");if(!/metadata-index\.jsonl/.test(firstCheck.stdout+firstCheck.stderr))die("check before apply did not report the missing metadata index",{stdout:firstCheck.stdout,stderr:firstCheck.stderr});steps.push("check-drift");
- expectStatus(bin,["apply",".","--authority",CONSUMER_AUTHORITY],target,0,"apply");steps.push("apply");
- expectStatus(bin,["check",".","--authority",CONSUMER_AUTHORITY],target,0,"check after apply");steps.push("check-clean");
- for(const [rel,digest] of before)if(hash(path.join(target,rel))!==digest)die(`apply rewrote source file ${rel} under the central_manifest carrier`);
- if(!fs.existsSync(path.join(target,".l9","metadata-index.jsonl")))die("apply did not write .l9/metadata-index.jsonl");
+ const help=expectStatus(bin,["--help"],target,0,"l9-meta-injector --help");
+ if(!/usage:/.test(help.stdout)){die("--help printed no usage on stdout",{stdout:help.stdout});}
+ steps.push("help");
+ expectStatus(bin,["inventory","."],target,0,"inventory .");
+ steps.push("inventory");
+ const firstCheck=expectStatus(bin,["check",".","--authority",CONSUMER_AUTHORITY],target,1,"check before apply");
+ if(!/metadata-index\.jsonl/.test(firstCheck.stdout+firstCheck.stderr)){die("check before apply did not report the missing metadata index",{stdout:firstCheck.stdout,stderr:firstCheck.stderr});}
+ steps.push("check-drift");
+ expectStatus(bin,["apply",".","--authority",CONSUMER_AUTHORITY],target,0,"apply");
+ steps.push("apply");
+ expectStatus(bin,["check",".","--authority",CONSUMER_AUTHORITY],target,0,"check after apply");
+ steps.push("check-clean");
+ for(const [rel,digest] of before){
+  if(hash(path.join(target,rel))!==digest){die(`apply rewrote source file ${rel} under the central_manifest carrier`);}
+ }
+ if(!fs.existsSync(path.join(target,".l9","metadata-index.jsonl"))){die("apply did not write .l9/metadata-index.jsonl");}
  return steps;
 }
 // Git-dependency proof (opt-in): installs the committed HEAD exactly as a consumer's
@@ -71,6 +84,9 @@ try{
  const installed=JSON.parse(fs.readFileSync(path.join(consumer,"node_modules",pkg.name,"package.json"),"utf8"));if(installed.version!==pkg.version)die("installed package version differs");if(JSON.stringify(installed.exports)!==JSON.stringify(pkg.exports))die("installed export map differs");
  report.cli={steps:runConsumerCli(consumer,path.join(temp,"target"))};
  if(GIT_INSTALL)report.gitInstall=gitInstallProof(temp);
- report.status="passed";if(JSON_MODE)process.stdout.write(stableJson(report));else console.log(`packed-consumer: OK (${report.tarball}, sha256=${report.tarballSha256}, entrypoints=${apiContract.entrypoints.length}, cli=${report.cli.steps.join(",")}${report.gitInstall?`, git-install=${report.gitInstall.revision.slice(0,12)}`:""})`);
+ report.status="passed";
+ const gitInstallNote=report.gitInstall?", git-install="+report.gitInstall.revision.slice(0,12):"";
+ if(JSON_MODE){process.stdout.write(stableJson(report));}
+ else{console.log(`packed-consumer: OK (${report.tarball}, sha256=${report.tarballSha256}, entrypoints=${apiContract.entrypoints.length}, cli=${report.cli.steps.join(",")}${gitInstallNote})`);}
  }
 }catch(error){if(JSON_MODE){report.reason=error?.message?error.message:String(error);report.details=error?.details?error.details:null;process.stdout.write(stableJson(report));}else{console.error(`packed-consumer: FAILED: ${error?.message?error.message:error}`);if(error?.details)console.error(JSON.stringify(error.details,null,2));if(KEEP)console.error(`temporary directory retained: ${temp}`);}process.exitCode=1;}finally{if(!KEEP)fs.rmSync(temp,{recursive:true,force:true});}

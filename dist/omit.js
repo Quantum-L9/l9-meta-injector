@@ -179,6 +179,17 @@ function compileRules(patterns) {
     }
     return rules;
 }
+/** Append the root's git ignore files (ADR-078); each is optional, a present one loads strictly. */
+function loadGitIgnoreSources(root, patterns, sources) {
+    for (const relative of exports.GIT_IGNORE_SOURCES) {
+        const absolute = path.join(root, ...relative.split("/"));
+        const gitPatterns = readOmitFileStrict(absolute, relative, false);
+        if (gitPatterns.length > 0 || fs.existsSync(absolute)) {
+            patterns.push(...gitPatterns);
+            sources.push(relative);
+        }
+    }
+}
 /**
  * Build an omit matcher from built-ins, `.l9metaignore`, and optional CLI
  * patterns. Last matching rule wins. Declared omit files fail closed.
@@ -197,16 +208,8 @@ function buildOmitMatcher(opts) {
     }
     // The target's own ignore declarations come before .l9metaignore, --omit-file and
     // --omit, so an operator source keeps the last word (last matching rule wins).
-    if (opts.honorGitIgnore === true) {
-        for (const relative of exports.GIT_IGNORE_SOURCES) {
-            const absolute = path.join(root, ...relative.split("/"));
-            const gitPatterns = readOmitFileStrict(absolute, relative, false);
-            if (gitPatterns.length > 0 || fs.existsSync(absolute)) {
-                patterns.push(...gitPatterns);
-                sources.push(relative);
-            }
-        }
-    }
+    if (opts.honorGitIgnore === true)
+        loadGitIgnoreSources(root, patterns, sources);
     const metaIgnorePath = path.join(root, exports.L9_METAIGNORE_FILENAME);
     const metaPatterns = readOmitFileStrict(metaIgnorePath, exports.L9_METAIGNORE_FILENAME, false);
     if (metaPatterns.length > 0 || fs.existsSync(metaIgnorePath)) {
