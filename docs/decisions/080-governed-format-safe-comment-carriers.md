@@ -87,6 +87,24 @@ syntax compatibility alone never grants mutation authority.
    existing compare-and-swap transaction with body and metadata post-verification and
    whole-run rollback on failure. Non-UTF-8 bytes are not transcoded to make them writable.
 
+## Review corrections (2026-11-03)
+
+Filename-only comment capability must be unambiguous. `.s` can mean GNU assembly,
+where `;` is not a portable comment delimiter, and `.m` can mean Objective-C rather
+than MATLAB. Neither extension grants governed comment-carrier eligibility without
+a verified dialect-specific rule; explicit authorization cannot make an unsafe
+delimiter safe. These paths remain central and their source bytes are preserved.
+
+The GitHub operational hidden-control exception applies only to root `.github/`.
+`nested/.github/workflows/` and `nested/.github/CODEOWNERS` are not GitHub control
+surfaces, even if an allow pattern explicitly names them. Neither discovery nor
+mutation may admit them through this exception. Other supported named harmless
+dotfile controls retain their existing independent admission rules.
+
+This ADR remains the narrow opt-in comment-carrier contract. It does not assert
+exact Git-tree-wide coverage, symlink/binary metadata materialization, path-exact
+identity migration, or completion of the separately proposed universal campaign.
+
 ## Consequences
 
 - Authority files without inline allow grants keep source/configuration central.

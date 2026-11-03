@@ -82,8 +82,10 @@ const LINE_COMMENT = {
     ".sass": "//",
     ".sql": "--", ".lua": "--", ".hs": "--", ".elm": "--", ".adb": "--", ".ads": "--",
     ".lisp": ";", ".clj": ";", ".cljs": ";", ".cljc": ";", ".el": ";", ".scm": ";",
-    ".asm": ";", ".s": ";",
-    ".tex": "%", ".erl": "%", ".m": "%",
+    // .s (assembler dialects) and .m (MATLAB / Objective-C) need verified dialects;
+    // their filenames alone cannot authorize an inert comment carrier.
+    ".asm": ";",
+    ".tex": "%", ".erl": "%",
 };
 // Files with no extension (or dotfiles whose whole name is the "extension").
 const BASENAME_LINE_COMMENT = {

@@ -7,7 +7,8 @@ import { runApplyAsync } from "../src/apply";
 import { runCheckAsync } from "../src/check";
 import { planCarrierOperationAsync } from "../src/carrier_operation";
 import { parseAuthorityYaml } from "../src/authority";
-import { hasInjectedBlock, resolveStrategy, stripInjectedBlock } from "../src/comment";
+import { hasCommentCarrierFamily, hasInjectedBlock, resolveStrategy, stripInjectedBlock } from "../src/comment";
+import { canTraverseHiddenControl, explicitHiddenControlPattern } from "../src/hidden_control";
 import { discoverFiles } from "../src/retrieval";
 import { parseMetadataIndex } from "../src/metadata_index";
 import type { AuthorityConfig, CarrierDecision } from "../src/operation_contracts";
@@ -72,6 +73,45 @@ afterEach(() => {
 });
 
 describe("governed format-safe inline carriers", () => {
+  test.each([
+    ["src/start.s", ".text\n.globl main\nmain:\n  ret\n"],
+    ["src/start.S", "; assembler-looking comment\nmov eax, 1\n"],
+    ["src/main.m", "#import <Foundation/Foundation.h>\nint main(void) { return 0; }\n"],
+    ["src/main.M", "% MATLAB-looking comment\nx = 1;\n"],
+  ])("ambiguous dialect %s has no filename-only comment carrier", (name, body) => {
+    expect(resolveStrategy(name, body)).toEqual({ strategy: "sidecar" });
+    expect(hasCommentCarrierFamily(name)).toBe(false);
+    expect(hasCommentCarrierFamily(name, "line-comment")).toBe(false);
+    expect(hasCommentCarrierFamily(name, "block-comment")).toBe(false);
+  });
+
+  test.each([["src/main.asm", ";"], ["docs/main.tex", "%"], ["src/main.erl", "%"]])("retains the accepted comment family for %s", (name, prefix) => {
+    expect(resolveStrategy(name, "")).toEqual({ strategy: "line-comment", linePrefix: prefix });
+    expect(hasCommentCarrierFamily(name)).toBe(true);
+    expect(hasCommentCarrierFamily(name, "line-comment")).toBe(true);
+    expect(hasCommentCarrierFamily(name, "block-comment")).toBe(false);
+  });
+
+  test.each([["**"], ["src/*.s", "src/*.m"]])("allow %j leaves ambiguous dialect bytes centrally managed", async (...allow) => {
+    const { root, config } = repo(allow);
+    const bodies = {
+      "src/start.s": ".text\n.globl main\nmain:\n  ret\n",
+      "src/main.m": "#import <Foundation/Foundation.h>\nint main(void) { return 0; }\n",
+    };
+    for (const [name, body] of Object.entries(bodies)) write(root, name, body);
+    const result = await runApplyAsync({ ...config, dryRun: false });
+    expect(result.passed).toBe(true);
+    expect(result.apply?.inlineChanged).toEqual([]);
+    for (const [name, body] of Object.entries(bodies)) {
+      expect(decision(result.apply?.carrierDecisions, name).carrier).toBe("central_manifest");
+      expect(fs.readFileSync(path.join(root, name), "utf8")).toBe(body);
+      expect(fs.existsSync(path.join(root, `${name}.l9meta.yaml`))).toBe(false);
+    }
+    const records = parseMetadataIndex(fs.readFileSync(path.join(root, ".l9/metadata-index.jsonl"), "utf8"));
+    expect(records.map((item) => item.path).sort()).toEqual(Object.keys(bodies).sort());
+    await stable(config);
+  });
+
   test("applies the canonical plan transactionally with body/prologue/BOM/CRLF fidelity", async () => {
     const { root, authority, config } = repo();
     const bodies = {
@@ -258,6 +298,49 @@ describe("governed named hidden controls", () => {
     expect(result.apply?.carrierDecisions.map((item) => item.path)).not.toEqual(expect.arrayContaining(Object.keys(forbidden)));
     // The standalone discovery API does not acquire hidden admission from its glob.
     expect(discoverFiles(root, ".github/workflows/**").files).toEqual([]);
+    await stable(config);
+  });
+
+  test.each([
+    ["**"], ["**/*"], ["nested/.github/**"],
+    ["nested/.github/workflows/**", "nested/.github/CODEOWNERS"],
+    ["nested/.github/workflows/ci.yml", "nested/.github/workflows/sub/ci.yml", "nested/.github/CODEOWNERS"],
+    ["**/.github/workflows/**", "**/.github/CODEOWNERS"],
+  ])("allow %j never opens nested .github discovery or writes", async (...attempt) => {
+    const allow = [...attempt, ".github/workflows/**", ".github/CODEOWNERS", "nested/.gitignore", "nested/.env.example"];
+    const { root, config } = repo(allow);
+    const accepted = {
+      ".github/workflows/ci.yml": controls[".github/workflows/ci.yml"],
+      ".github/workflows/sub/ci.yml": controls[".github/workflows/ci.yml"],
+      ".github/CODEOWNERS": controls[".github/CODEOWNERS"],
+      "nested/.gitignore": "build/\n", "nested/.env.example": "TOKEN=replace-me\n",
+    };
+    const forbidden = {
+      "nested/.github/workflows/ci.yml": controls[".github/workflows/ci.yml"],
+      "nested/.github/workflows/sub/ci.yml": controls[".github/workflows/ci.yml"],
+      "nested/.github/CODEOWNERS": controls[".github/CODEOWNERS"],
+    };
+    for (const [name, body] of Object.entries({ ...accepted, ...forbidden })) write(root, name, body);
+    for (const name of Object.keys(forbidden)) expect(explicitHiddenControlPattern(name, allow)).toBeUndefined();
+    for (const name of ["nested/.github", "nested/.github/workflows", "nested/.github/workflows/sub"]) {
+      expect(canTraverseHiddenControl(name, allow)).toBe(false);
+    }
+    const discovery = discoverFiles(root, "**", {}, true, allow);
+    expect(discovery.files.map((name) => path.relative(root, name)).sort()).toEqual(Object.keys(accepted).sort());
+    expect(discovery.summary.entries).toContainEqual(expect.objectContaining({ path: "nested/.github", disposition: "hidden_control" }));
+    const result = await runApplyAsync({ ...config, dryRun: false });
+    expect(result.passed).toBe(true);
+    expect(result.apply?.inlineChanged.sort()).toEqual(Object.keys(accepted).sort());
+    expect(result.apply?.carrierDecisions.map((item) => item.path).sort()).toEqual(Object.keys(accepted).sort());
+    for (const [name, body] of Object.entries(forbidden)) {
+      expect(fs.readFileSync(path.join(root, name), "utf8")).toBe(body);
+      expect(fs.existsSync(path.join(root, `${name}.l9meta.yaml`))).toBe(false);
+    }
+    for (const [name, body] of Object.entries(accepted)) {
+      const text = fs.readFileSync(path.join(root, name), "utf8");
+      expect(hasInjectedBlock(text, resolveStrategy(name, text))).toBe(true);
+      expect(stripInjectedBlock(text, resolveStrategy(name, text))).toBe(body);
+    }
     await stable(config);
   });
 });

@@ -138,6 +138,7 @@ describe("format-safe opt-in precedence", () => {
     ["tests/check.py", "line-comment"], ["scripts/run.sh", "line-comment"],
     ["config/settings.toml", "line-comment"], ["infra/deploy.yaml", "line-comment"],
     ["web/app.css", "block-comment"], ["views/page.html", "block-comment"],
+    ["src/main.asm", "line-comment"], ["docs/main.tex", "line-comment"], ["src/main.erl", "line-comment"],
   ] as const)("admits supported carrier %s only with opt-in", (name, strategy) => {
     expect(resolveCarrierDecision(subject(name, "source", strategy), broad, "apply").carrier).toBe("inline_managed");
     expect(resolveCarrierDecision(subject(name, "source", strategy), { ...broad, inline_allow: [] }, "apply").carrier).toBe("central_manifest");
@@ -184,6 +185,22 @@ describe("format-safe opt-in precedence", () => {
   test.each([".gitignore", ".env.example", ".github/workflows/ci.yml", ".github/CODEOWNERS"])("hidden control %s requires its name, not a blanket", (name) => {
     expect(resolveCarrierDecision(subject(name, "source", "line-comment"), broad, "apply").carrier).toBe("central_manifest");
     expect(resolveCarrierDecision(subject(name, "source", "line-comment"), { ...broad, inline_allow: [name] }, "apply").carrier).toBe("inline_managed");
+  });
+
+  test.each(["src/main.s", "src/main.S", "src/main.m", "src/main.M"])("even a supplied comment strategy cannot authorize ambiguous dialect %s", (name) => {
+    for (const strategy of ["line-comment", "block-comment"] as const) {
+      for (const inline_allow of [["**"], [name]]) {
+        expect(resolveCarrierDecision(subject(name, "source", strategy), { ...broad, inline_allow }, "apply").carrier).toBe("central_manifest");
+      }
+    }
+  });
+
+  test.each(["nested/.github/workflows/ci.yml", "nested/.github/workflows/sub/ci.yml", "nested/.github/CODEOWNERS"])("no allow can authorize nested GitHub control %s inline", (name) => {
+    for (const inline_allow of [["**"], [name], ["nested/.github/workflows/**", "nested/.github/CODEOWNERS"], ["**/.github/workflows/**", "**/.github/CODEOWNERS"]]) {
+      expect(resolveCarrierDecision(subject(name, "source", "line-comment"), { ...broad, inline_allow }, "apply")).toMatchObject({
+        carrier: "central_manifest", authorityRule: "hidden-control-not-explicit",
+      });
+    }
   });
 });
 
