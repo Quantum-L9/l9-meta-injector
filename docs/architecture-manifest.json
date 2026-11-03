@@ -526,7 +526,7 @@
     },
     {
       "path": "docs/release-checklist.md",
-      "git_blob_sha1": "20af738ea258f15137568e524394cb2d0689b5a2"
+      "git_blob_sha1": "8c14d2254c98473cde0fbf39038e4120db8fcc03"
     },
     {
       "path": "docs/schemas/architecture-authority.schema.json",
@@ -538,7 +538,7 @@
     },
     {
       "path": "docs/topology-conformance.json",
-      "git_blob_sha1": "40a8094d60cf9ed8802abdfb7fab05f3fbc97e4f"
+      "git_blob_sha1": "5f870244fe922b06fb98dc16afdd543973b67fa9"
     },
     {
       "path": "docs/traceability-map.json",
