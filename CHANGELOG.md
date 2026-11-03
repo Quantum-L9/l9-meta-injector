@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+### Consumer readiness (ADR-078, ADR-079)
+
+Proves the package installs and runs from another repository, and clears the failures
+and warnings on `main` at `c352dbf`.
+
+- **Breaking (repository model, ADR-078).** `observeRepositoryModel` honours the target's
+  root `.gitignore` and `.git/info/exclude`. Artifacts and repository facts the target
+  ignores (e.g. a stray ignored lockfile) disappear from its packet once, and the
+  `paths-omitted` count grows. `buildOmitMatcher` gains `honorGitIgnore` (default false);
+  inventory, check, apply and skills discovery are unchanged.
+- **Breaking (tarball, ADR-079).** The tarball ships only the 13 runtime scripts; release,
+  publication, conformance, selfpack, validation-report and manifest tooling stay in the
+  repository.
+- **CLI.** `l9-meta-injector --help` / `-h` print the full usage and exit 0; the bin is
+  committed executable; an absolute root is still refused (ADR-022) and the refusal names
+  the supported invocation.
+- **Proof.** `npm run test:packed` drives the installed bin through help, inventory, check,
+  apply and check in a generated foreign git repository; `--git-install` repeats it from a
+  git dependency and `--cli-only --tarball <file>` on any Node. CI runs it on Node 18, 20
+  and 22 and runs the composite Action against a separate target directory.
+- **Security (SonarCloud new code).** `folder_artifact_consolidator.py` contains every
+  operator path under the working directory (it previously wrote `../escaped` outside it);
+  `semantics-verify` spawns the absolute git; `validation-report` sorts with an explicit
+  comparator (same order, digest unchanged).
+- Topology conformance evidence rebound to consumer `2c2c628`; README documents the three
+  install paths and first-run onboarding and corrects the Action input table;
+  `@types/node` majors are no longer proposed by Dependabot.
+
 Correctness remediation of the bf66978 audit (plan `l9-meta-injector-remediation-bf66978`, READY work units). Each unit lands as one commit with failing-before / passing-after regression tests named by their `REG-WU-*` ids. Units blocked on owner decisions (ADR-057..071) are not included.
 
 ### Breaking
