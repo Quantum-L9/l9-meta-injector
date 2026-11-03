@@ -10,7 +10,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "git_blob_sha1": "1e36654ec20d669c5354cea5161ed2e813703a42"
+      "git_blob_sha1": "5b8ee076b7a017931f4b8e307c3b59e065347895"
     },
     {
       "path": "dist/archive_preflight.d.ts",
@@ -514,7 +514,7 @@
     },
     {
       "path": "docs/package-publication-decision.json",
-      "git_blob_sha1": "9cadf64900a61229e20cfea71da1b405abcd886b"
+      "git_blob_sha1": "e1ce30f2018498294a3024155aa0b85c4eeb5b39"
     },
     {
       "path": "docs/public-api-contract.json",
