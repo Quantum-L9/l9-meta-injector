@@ -21,6 +21,7 @@ import { compareCodePoints } from "./ordering";
 import { InterpretationResult, interpretRepository } from "./interpretation";
 import { defaultExtractors } from "./extractors";
 import { UNKNOWN } from "./schema";
+import { listGitIgnoredUntracked } from "./git_ignored";
 
 /** Re-exported so packet consumers keep one ordering import site. */
 export { compareCodePoints } from "./ordering";
@@ -1617,6 +1618,7 @@ export function emitRepositoryModelBundle(
  * the observed repository is never mutated.
  */
 export function observeRepositoryModel(input: RepositoryModelObservationInput): RepositoryModelPacket {
+  const gitIgnored = listGitIgnoredUntracked(input.root);
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "l9-repository-model-"));
   try {
     const inventory = inventoryTree({
@@ -1627,6 +1629,9 @@ export function observeRepositoryModel(input: RepositoryModelObservationInput): 
       writeSidecars: false,
       folderSidecars: false,
       sourceSystem: "local",
+      // A packet describes only files the repository owns: what git ignores is omitted,
+      // tracked files never are (ADR-078). A non-git target has no ignore semantics.
+      ...(gitIgnored !== undefined ? { gitIgnored } : {}),
       now: input.generatedAt ?? DEFAULT_GENERATED_AT,
       ...(input.ignore !== undefined ? { ignore: input.ignore } : {}),
       ...(input.omitPatterns !== undefined ? { omitPatterns: input.omitPatterns } : {}),

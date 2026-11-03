@@ -1,4 +1,5 @@
 import { MetaSchema } from "./meta_schema";
+import type { GitIgnoredPaths } from "./git_ignored";
 export type InventoryArtifactType = "spec" | "code" | "schema" | "prompt" | "research_markdown" | "research_pdf" | "config" | "test" | "documentation" | "archive" | "folder" | "unknown";
 export type SourceSystem = "dropbox" | "github" | "local" | "upload" | "unknown";
 export interface InventoryRecord {
@@ -38,6 +39,8 @@ export interface InventoryConfig {
     omitPatterns?: string[];
     /** Optional path to an omit-file (gitignore syntax). */
     omitFile?: string;
+    /** Untracked, ignored paths git reports for the root (ADR-078); omitted like an ignore source. */
+    gitIgnored?: GitIgnoredPaths;
     now?: string;
     schema?: MetaSchema;
 }

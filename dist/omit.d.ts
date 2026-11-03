@@ -1,3 +1,4 @@
+import { type GitIgnoredPaths } from "./git_ignored";
 export declare const L9_METAIGNORE_FILENAME = ".l9metaignore";
 /** Built-in noise: never inventoriable / never injectable in any mode. */
 export declare const BUILTIN_NOISE_PATTERNS: readonly string[];
@@ -20,6 +21,13 @@ export interface OmitOptions {
     protectSkillMd?: boolean;
     /** Extra directory basenames to treat as ignored. */
     ignoreDirNames?: string[];
+    /**
+     * Untracked, ignored paths as reported by git for this root (ADR-078,
+     * `listGitIgnoredUntracked`). They are omitted after the built-ins and before every
+     * operator omit source, so `.l9metaignore`, `--omit-file` and `--omit` keep the last
+     * word. Tracked files are never in this set, as in git.
+     */
+    gitIgnored?: GitIgnoredPaths;
 }
 export interface OmitMatcher {
     /** True if this relative path should be skipped. */

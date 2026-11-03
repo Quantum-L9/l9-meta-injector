@@ -24,19 +24,61 @@ The root is the stable orchestration boundary. `inventory` and `schema` are stab
 
 **SKILL.md protection:** `inventory` and `pipeline` modes never mutate `SKILL.md` / `skill.md` (built-in omit). Use `runSkillsPipelineAsync` / `npm run skills` / Action `mode: skills` for Cursor-native description improvements (ADR-017).
 
-**Omit:** built-in noise + SKILL.md protect, optional `.l9metaignore`, CLI `--omit` / `--omit-file`.
+**Omit:** built-in noise + SKILL.md protect, optional `.l9metaignore`, CLI `--omit` / `--omit-file`. Repository-model observation also omits what git reports as untracked and ignored, never a tracked file (ADR-078).
+
+## Use it from another repository
+
+npm registry publication is blocked (see `check:publication` below), so `npm install
+l9-meta-injector` does not work. Three install paths do, and each is proven by test
+(ADR-079): `npm run test:packed` drives the installed bin inside a generated foreign git
+repository, `--git-install` repeats that from a git dependency, and CI runs the composite
+Action against a separate target directory on every pull request. The packed runtime is
+proven on Node 18, 20 and 22.
+
+| Path | How | Notes |
+|---|---|---|
+| GitHub Action | `uses: Quantum-L9/l9-meta-injector@v4` (or `@<commit sha>`) | Runs the pinned ref's committed `dist/`; no build, no registry. |
+| Git dependency | `npm install --save-dev github:Quantum-L9/l9-meta-injector#<tag or sha>` | Installs the committed `dist/`; no developer toolchain runs (ADR-079). |
+| Packed tarball | `npm pack` in a checkout, then `npm install ./l9-meta-injector-<version>.tgz` | Same contents a registry release would ship. |
+
+`@v4` advances only when a release lands on `main`; to take unreleased fixes, pin a commit.
+
+### First run in a new repository
+
+`inventory` needs nothing. `check` and `apply` take the target repository's own
+`.l9/meta-authority.yaml` as input and refuse without it. An unbound repository declares
+the `v1` form:
+
+```yaml
+# .l9/meta-authority.yaml
+schema: l9.meta-authority/v1
+writer:
+  repository: Quantum-L9/l9-meta-injector
+  ref: v4
+default_carrier: central_manifest   # metadata lives in .l9/metadata-index.jsonl; sources stay byte-identical
+legacy_writers: forbidden
+inline_allow: []
+```
+
+(`l9.meta-authority/v2` adds `semantic_foundation` and `product`; see Semantic Foundation
+binding below.) Then, from inside the repository — the root must be a relative path inside
+the current directory (ADR-022):
+
+```bash
+npx l9-meta-injector --help
+npx l9-meta-injector inventory .                       # read-only scan, reports under .l9-meta-injector-out/
+npx l9-meta-injector apply . --authority <your-org>    # writes .l9/metadata-index.jsonl
+npx l9-meta-injector check . --authority <your-org>    # read-only drift gate; exits 1 on drift
+```
+
+A first `check` before any `apply` reports the missing metadata index as drift; that is
+expected.
 
 ## GitHub Action
-
-Publication to npm is currently blocked (see `check:publication` below), but this package is fully
-consumable as a **GitHub composite action** — it runs directly against the pinned ref's committed
-`dist/`, no build step and no npm registry needed. Drop this into any repo's workflow:
 
 ```yaml
 # Observation only: classify + write an inventory manifest as a build artifact.
 # `mode: inventory` defaults to dry-run, so the checked-out repo is not modified.
-# (Setting `dry-run: "false"` turns this into annotation: it then writes metadata
-# headers and sidecars into the checkout.) Safe as a first drop-in.
 - uses: actions/checkout@v4
 - uses: Quantum-L9/l9-meta-injector@v4
   with:
@@ -44,53 +86,52 @@ consumable as a **GitHub composite action** — it runs directly against the pin
 ```
 
 ```yaml
-# Real CI gate: inject + verify metadata, fail the job on verification drift
-# (e.g. sharing_scope mismatches against the given namespace).
+# CI drift gate: fail the job when committed metadata drifts from what apply would
+# write. Needs .l9/meta-authority.yaml in the repository (see above).
 - uses: actions/checkout@v4
 - uses: Quantum-L9/l9-meta-injector@v4
   with:
-    mode: pipeline
-    namespace: my-repo
-    fail-on-issues: "true"
+    mode: check
+    authority: my-org
 ```
 
 ```yaml
-# Cursor-native skills mode: material-improve SKILL.md description (Use when …).
+# Governed write: inject/refresh metadata, then commit the result in a later step.
+- uses: actions/checkout@v4
+- uses: Quantum-L9/l9-meta-injector@v4
+  with:
+    mode: apply
+    authority: my-org
+```
+
+```yaml
+# Cursor-native skills mode: material-improve SKILL.md descriptions (Use when …).
+# Composite actions cannot read the secrets context directly, so the calling workflow
+# passes its own secret in as an input — never hardcode a key in `with:`.
 - uses: actions/checkout@v4
 - uses: Quantum-L9/l9-meta-injector@v4
   with:
     mode: skills
+    authority: my-org
     llm: "true"
     llm-base-url: "https://api.openai.com/v1"
     llm-model: "gpt-5-nano"
     llm-api-key: ${{ secrets.OPENAI_API_KEY }}
 ```
 
-```yaml
-# Pipeline mode with LLM-assisted semantic classification. Composite actions cannot
-# read the secrets context directly, so the calling workflow passes its own secret in
-# as an input — never hardcode a key in `with:`.
-- uses: actions/checkout@v4
-- uses: Quantum-L9/l9-meta-injector@v4
-  with:
-    mode: pipeline
-    namespace: my-repo
-    llm: "true"
-    llm-base-url: "https://api.openai.com/v1"
-    llm-model: "gpt-5-nano" # cheapest OpenAI model as of 2026-07; ~$0.0001-0.0003/file, see TODO.md
-    llm-api-key: ${{ secrets.OPENAI_API_KEY }}
-```
-
 | Input | Default | Notes |
 |---|---|---|
-| `mode` | `inventory` | `inventory` = classify + manifest. `pipeline` = scan→inject→verify→index. `skills` = Cursor-native skill description improve. |
-| `root` | `.` | Directory to scan, relative to the calling repo's checkout. |
-| `namespace` | *(repo name)* | `pipeline` mode only — stamped into placement/verification. |
+| `mode` | `inventory` | `inventory` = classify + manifest (read-only by default). `check` = read-only drift gate. `apply` = governed metadata write. `skills` = Cursor-native skill description improve. `pipeline` is a deprecated alias of `apply`. |
+| `root` | `.` | Existing directory, relative to the calling repository's workspace. Absolute paths, traversal and symlink escapes are refused. |
+| `authority` | *(none)* | Header authority. Required by `check`, `apply` and `skills` unless `.l9/meta-authority.yaml` is v2 (then `product.owner` is used and a differing value is a conflict). |
+| `namespace` | *(folder name)* | Header namespace, every mode. Defaults to the bound `product.id` for a v2 authority, else the target directory name. |
 | `dry-run` | `true` for `inventory`/`check`, `false` for `apply`/`skills` | Exact boolean. `check` rejects `false`, and `apply` (and its deprecated `pipeline` alias) rejects `true`: for a read-only preview of what apply would change, run `mode: check`. |
 | `fail-on-issues` | `true` | Exact boolean; only `true` is accepted. `check` always fails on drift and `apply` (and `pipeline`) always fails on repository authority conflicts; `"false"` is an input error in every mode, including `apply` (ADR-069). |
+| `out` | `.l9-meta-injector-out` | Report/manifest directory, relative to `root`. |
 | `omit` | *(empty)* | Comma-separated gitignore-style patterns (built-ins always protect `SKILL.md` and skip bytecode/logs). |
+| `node-version` | `20` | Node used to run the action; 18, 20 and 22 are proven. |
 | `upload-artifact` | `true` | Uploads the manifest/report directory as a workflow artifact. |
-| `llm` | `false` | `pipeline`/`skills` — enable LLM-assisted field assist (falls back to local/no-op if `llm-base-url`/`llm-model`/`llm-api-key` are incomplete). |
+| `llm` | `false` | `apply`/`skills` only; `check` refuses it. `llm: "true"` without all of `llm-base-url`, `llm-model` and `llm-api-key` is an input error — there is no silent fallback. |
 | `llm-base-url` | *(none)* | OpenAI-chat-completions-compatible endpoint. |
 | `llm-model` | *(none)* | Model name sent in the request body. |
 | `llm-api-key` | *(none)* | Pass from the calling workflow's own secret, e.g. `${{ secrets.OPENAI_API_KEY }}`. Never hardcoded; read via env, never placed on the command line. |

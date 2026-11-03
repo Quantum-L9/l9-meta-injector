@@ -143,6 +143,22 @@ The flat config ignores:
 
 Green CI proves implementation and packaging, not authorization to publish. Publication remains blocked until registry history, consumer inventory, and distribution-owner approval are recorded as verified or not-applicable-with-reason in `docs/package-publication-decision.json`.
 
+> **2026-11-03 correction (additive):** the sentence above is narrower in code than it reads.
+> Under ADR-070, `distribution_owner_approval` must be `verified` — it can never be
+> not-applicable-with-reason — and `approved_version` must equal `package.json#version`
+> (`scripts/check-publication-readiness.js`). Only the registry-history and consumer-inventory
+> items admit not-applicable-with-reason.
+>
+> **Consumer install paths (ADR-079):** until publication, consumers use the composite Action,
+> a git dependency, or a packed tarball. `npm run test:packed` proves the installed bin in a
+> generated foreign repository (`--git-install` adds the git-dependency path, `--cli-only
+> --tarball <file>` the runtime-only Node-floor proof). Do not add a `prepare` script: npm
+> rebuilds a git dependency that has one. The tarball ships the runtime scripts listed in
+> `package.json#files`; `docs/package-contract.json` forbids maintenance tooling.
+>
+> **Repository-model observation (ADR-078):** it omits what git reports as untracked and
+> ignored and never a tracked file; inventory, check, apply and skills discovery do not.
+
 <!-- BEGIN L9 FORMATTER OWNERSHIP (generated — do not edit) -->
 
 ## Formatter ownership

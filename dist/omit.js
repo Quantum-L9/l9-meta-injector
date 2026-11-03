@@ -44,6 +44,7 @@ exports.isSkillArtifactPath = isSkillArtifactPath;
 exports.buildOmitMatcher = buildOmitMatcher;
 const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
+const git_ignored_1 = require("./git_ignored");
 exports.L9_METAIGNORE_FILENAME = ".l9metaignore";
 /** Built-in noise: never inventoriable / never injectable in any mode. */
 exports.BUILTIN_NOISE_PATTERNS = [
@@ -193,6 +194,12 @@ function buildOmitMatcher(opts) {
         if (directory)
             patterns.push(`${directory}/`);
     }
+    // Rules up to here run before the git-ignored set; operator sources below run after
+    // it, so they keep the last word (last matching rule wins).
+    const builtinRuleCount = patterns.length;
+    const gitIgnored = opts.gitIgnored;
+    if (gitIgnored)
+        sources.push("git:ignored-untracked");
     const metaIgnorePath = path.join(root, exports.L9_METAIGNORE_FILENAME);
     const metaPatterns = readOmitFileStrict(metaIgnorePath, exports.L9_METAIGNORE_FILENAME, false);
     if (metaPatterns.length > 0 || fs.existsSync(metaIgnorePath)) {
@@ -211,7 +218,8 @@ function buildOmitMatcher(opts) {
         patterns.push(...opts.patterns);
         sources.push("inline-patterns");
     }
-    const rules = compileRules(patterns);
+    const builtinRules = compileRules(patterns.slice(0, builtinRuleCount));
+    const operatorRules = compileRules(patterns.slice(builtinRuleCount));
     const protectSkill = opts.protectSkillMd !== false;
     return {
         patterns: [...patterns],
@@ -222,13 +230,20 @@ function buildOmitMatcher(opts) {
                 return false;
             if (protectSkill && isSkillMdBasename(rel))
                 return true;
-            let omitted = false;
-            for (const rule of rules) {
-                if (rule.re.test(rel))
-                    omitted = !rule.negate;
-            }
-            return omitted;
+            let omitted = applyRules(builtinRules, rel, false);
+            if (gitIgnored && (0, git_ignored_1.isGitIgnored)(gitIgnored, rel))
+                omitted = true;
+            return applyRules(operatorRules, rel, omitted);
         },
     };
+}
+/** Last matching rule wins, starting from `initial`. */
+function applyRules(rules, rel, initial) {
+    let omitted = initial;
+    for (const rule of rules) {
+        if (rule.re.test(rel))
+            omitted = !rule.negate;
+    }
+    return omitted;
 }
 //# sourceMappingURL=omit.js.map

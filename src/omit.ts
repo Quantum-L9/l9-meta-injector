@@ -6,6 +6,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { isGitIgnored, type GitIgnoredPaths } from "./git_ignored";
 
 export const L9_METAIGNORE_FILENAME = ".l9metaignore";
 
@@ -41,6 +42,13 @@ export interface OmitOptions {
   protectSkillMd?: boolean;
   /** Extra directory basenames to treat as ignored. */
   ignoreDirNames?: string[];
+  /**
+   * Untracked, ignored paths as reported by git for this root (ADR-078,
+   * `listGitIgnoredUntracked`). They are omitted after the built-ins and before every
+   * operator omit source, so `.l9metaignore`, `--omit-file` and `--omit` keep the last
+   * word. Tracked files are never in this set, as in git.
+   */
+  gitIgnored?: GitIgnoredPaths;
 }
 
 export interface OmitMatcher {
@@ -180,6 +188,12 @@ export function buildOmitMatcher(opts: OmitOptions): OmitMatcher {
     if (directory) patterns.push(`${directory}/`);
   }
 
+  // Rules up to here run before the git-ignored set; operator sources below run after
+  // it, so they keep the last word (last matching rule wins).
+  const builtinRuleCount = patterns.length;
+  const gitIgnored = opts.gitIgnored;
+  if (gitIgnored) sources.push("git:ignored-untracked");
+
   const metaIgnorePath = path.join(root, L9_METAIGNORE_FILENAME);
   const metaPatterns = readOmitFileStrict(metaIgnorePath, L9_METAIGNORE_FILENAME, false);
   if (metaPatterns.length > 0 || fs.existsSync(metaIgnorePath)) {
@@ -200,7 +214,8 @@ export function buildOmitMatcher(opts: OmitOptions): OmitMatcher {
     sources.push("inline-patterns");
   }
 
-  const rules = compileRules(patterns);
+  const builtinRules = compileRules(patterns.slice(0, builtinRuleCount));
+  const operatorRules = compileRules(patterns.slice(builtinRuleCount));
   const protectSkill = opts.protectSkillMd !== false;
 
   return {
@@ -211,11 +226,18 @@ export function buildOmitMatcher(opts: OmitOptions): OmitMatcher {
       if (!rel || rel === ".") return false;
       if (protectSkill && isSkillMdBasename(rel)) return true;
 
-      let omitted = false;
-      for (const rule of rules) {
-        if (rule.re.test(rel)) omitted = !rule.negate;
-      }
-      return omitted;
+      let omitted = applyRules(builtinRules, rel, false);
+      if (gitIgnored && isGitIgnored(gitIgnored, rel)) omitted = true;
+      return applyRules(operatorRules, rel, omitted);
     },
   };
+}
+
+/** Last matching rule wins, starting from `initial`. */
+function applyRules(rules: CompiledRule[], rel: string, initial: boolean): boolean {
+  let omitted = initial;
+  for (const rule of rules) {
+    if (rule.re.test(rel)) omitted = !rule.negate;
+  }
+  return omitted;
 }

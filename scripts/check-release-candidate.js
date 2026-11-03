@@ -37,7 +37,20 @@ if (lock.version !== pkg.version || lock.packages?.[""]?.version !== pkg.version
 }
 if (lock.packages?.[""]?.license !== pkg.license) errors.push("package-lock license mismatch");
 if (pkg.bin?.["l9-meta-injector"] !== "scripts/operation-cli.js") errors.push("package executable is missing");
-if (!Array.isArray(pkg.files) || !pkg.files.includes("scripts")) errors.push("runtime scripts are not packed");
+// ADR-079: `files` lists runtime scripts individually. The bin and every child script
+// it dispatches must be packed (or the whole scripts/ tree, as before ADR-079).
+const DISPATCHED_RUNTIME_SCRIPTS = [
+  "scripts/operation-cli.js",
+  "scripts/inventory.js",
+  "scripts/check-cli.js",
+  "scripts/apply-cli.js",
+  "scripts/skills-cli.js",
+  "scripts/lib/operation-dispatch.js",
+];
+const packsScripts = (rel) => Array.isArray(pkg.files) && (pkg.files.includes("scripts") || pkg.files.includes(rel));
+for (const rel of DISPATCHED_RUNTIME_SCRIPTS) {
+  if (!packsScripts(rel)) errors.push(`runtime script is not packed: ${rel}`);
+}
 
 if (plan) {
   if (plan.release_version !== pkg.version || plan.tag !== exactTag) {

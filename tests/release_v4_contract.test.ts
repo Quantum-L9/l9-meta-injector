@@ -324,7 +324,12 @@ describe("committed release state", () => {
     expect(lock.packages[""].version).toBe(pkg.version);
     expect(lock.packages[""].license).toBe(pkg.license);
     expect(pkg.bin["l9-meta-injector"]).toBe("scripts/operation-cli.js");
-    expect(pkg.files).toContain("scripts");
+    // ADR-079: runtime scripts are listed individually; maintenance tooling is not packed.
+    for (const runtime of ["scripts/operation-cli.js", "scripts/inventory.js", "scripts/check-cli.js", "scripts/apply-cli.js", "scripts/skills-cli.js", "scripts/lib/operation-dispatch.js"]) {
+      expect(pkg.files).toContain(runtime);
+    }
+    expect(pkg.files).not.toContain("scripts");
+    expect(pkg.files).not.toContain("scripts/check-publication-readiness.js");
     expect(plan.release_version).toBe(pkg.version);
     expect(plan.tag).toBe(derived.exactTag);
     expect(plan.maintained_major_tag).toBe(derived.majorTag);
