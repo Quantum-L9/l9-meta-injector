@@ -11,5 +11,7 @@
   "npm_publication": {
     "required": false,
     "status": "separately-authorized"
-  }
+  },
+  "status": "superseded",
+  "superseded_by": "v4.3.0"
 }

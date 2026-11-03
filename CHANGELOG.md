@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 4.3.0 - 2026-11-03
+
 ### Consumer readiness (ADR-078, ADR-079)
 
 Proves the package installs and runs from another repository, and clears the failures
@@ -35,7 +37,7 @@ Correctness remediation of the bf66978 audit (plan `l9-meta-injector-remediation
 
 ### Breaking
 
-Consumer-visible refusals and input-handling changes in this release. Which release line ships them is the owner's call (ADR-069); this heading carries no version label. The Wave 2 "Breaking or consumer-coordinated" list below also applies.
+Consumer-visible refusals and input-handling changes in this release. They ship on the maintained v4 line in 4.3.0, by operator decision 2026-11-03 (issue #119; ADR-069 left the release line to the owner). The Wave 2 "Breaking or consumer-coordinated" list below also applies.
 
 - **Authority configuration (ADR-057).** `parseAuthorityYaml` refuses plain `null`/`~`/booleans, `key:value` without a space, a plain value containing `: `, and an empty block list such as `inline_allow:` with no items. A consumer `.l9/meta-authority.yaml` that parsed before can now fail with `META_AUTHORITY_CONFIG_INVALID` (WU-017).
 - **Omit patterns (ADR-058).** A pattern with a slash anywhere but the end is anchored at the root, as in gitignore. `dir/file` no longer matches nested copies; migrate with `**/dir/file` (WU-006).
