@@ -514,7 +514,7 @@
     },
     {
       "path": "docs/package-publication-decision.json",
-      "git_blob_sha1": "e1ce30f2018498294a3024155aa0b85c4eeb5b39"
+      "git_blob_sha1": "8af05a70f8b24f71479d00919d2fe7e19012abeb"
     },
     {
       "path": "docs/public-api-contract.json",
@@ -526,7 +526,7 @@
     },
     {
       "path": "docs/release-checklist.md",
-      "git_blob_sha1": "8c14d2254c98473cde0fbf39038e4120db8fcc03"
+      "git_blob_sha1": "f2aa051c30f9efd371cf0a818ba57f9262a87069"
     },
     {
       "path": "docs/schemas/architecture-authority.schema.json",

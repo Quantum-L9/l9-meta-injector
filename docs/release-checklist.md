@@ -25,7 +25,7 @@
 
 - [ ] `package.json`, lockfile, API contract, package contract, and changelog all report the same version, as `npm run check:release-candidate` proves.
 - [ ] `docs/migrations/v3-to-v4.md` covers the breaking v4 operation/carrier/frontmatter changes.
-- [ ] `docs/topology-conformance.json` refreshed with `topology-conformance.js --update` after the version bump: the corpus-intelligence packet the real CLI emits embeds the producer version, so its `packet_id` and `semantic_hash` move with every release, and `prepare-release.js` cannot derive them (it needs a topology checkout and Python).
+- [ ] `docs/topology-conformance.json` refreshed after the version bump with `L9_TOPOLOGY_CHECKOUT=<topology checkout> L9_PYTHON=<its venv python> npm run topology:conformance -- --update`: the corpus-intelligence packet the real CLI emits embeds the producer version, so its `packet_id` and `semantic_hash` move with every release, and `prepare-release.js` cannot derive them (it needs a topology checkout and Python).
 
 ## Publication
 
