@@ -65,7 +65,8 @@ export function listGitIgnoredUntracked(root: string): GitIgnoredPaths | undefin
   if (probe.status !== 0 || probe.stdout.trim() !== "true") return undefined;
   const listed = runGit(absolute, ["ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"]);
   if (listed.status !== 0) {
-    throw new Error(`git ls-files failed under ${absolute}: ${listed.stderr.trim() || `exit ${listed.status}`}`);
+    const detail = listed.stderr.trim() || "exit " + String(listed.status);
+    throw new Error(`git ls-files failed under ${absolute}: ${detail}`);
   }
   const files = new Set<string>();
   const directories: string[] = [];
@@ -74,7 +75,7 @@ export function listGitIgnoredUntracked(root: string): GitIgnoredPaths | undefin
     if (entry.endsWith("/")) directories.push(entry.slice(0, -1));
     else files.add(entry);
   }
-  directories.sort();
+  // Order is irrelevant: membership is all isGitIgnored asks of this list.
   return { files, directories };
 }
 

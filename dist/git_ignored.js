@@ -95,7 +95,8 @@ function listGitIgnoredUntracked(root) {
         return undefined;
     const listed = runGit(absolute, ["ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"]);
     if (listed.status !== 0) {
-        throw new Error(`git ls-files failed under ${absolute}: ${listed.stderr.trim() || `exit ${listed.status}`}`);
+        const detail = listed.stderr.trim() || "exit " + String(listed.status);
+        throw new Error(`git ls-files failed under ${absolute}: ${detail}`);
     }
     const files = new Set();
     const directories = [];
@@ -107,7 +108,7 @@ function listGitIgnoredUntracked(root) {
         else
             files.add(entry);
     }
-    directories.sort();
+    // Order is irrelevant: membership is all isGitIgnored asks of this list.
     return { files, directories };
 }
 /** True when `relPath` is, or lies under, a path git reports as ignored and untracked. */
