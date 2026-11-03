@@ -60,12 +60,13 @@ We choose **Option B**.
    `--git-install` additionally installs the committed HEAD as `git+file://…#<sha>` and
    runs the same proof; CI runs it on clean checkouts.
 3. The repository defines no `prepare` script. Adding one is a change to this decision.
-4. `package.json#files` lists the 13 runtime scripts — `operation-cli.js`, the dispatched
+4. `package.json#files` lists the 12 runtime scripts — `operation-cli.js`, the dispatched
    `inventory`/`check-cli`/`apply-cli`/`skills-cli`, the `pipeline-cli`,
-   `repository-model-cli`, `local-source-cli` and `corpus-qualification` CLIs, and the four
-   `scripts/lib` modules they load. `docs/package-contract.json` requires
-   `scripts/operation-cli.js` and forbids every repository-maintenance script, so tooling
-   cannot drift back into the tarball.
+   `repository-model-cli` and `local-source-cli` CLIs, and the four `scripts/lib` modules
+   they load. `docs/package-contract.json` requires `scripts/operation-cli.js` and forbids
+   every repository-maintenance script, so tooling cannot drift back into the tarball.
+   `corpus-qualification.js` is maintenance tooling: it runs a test file through the
+   development-only Vitest, neither of which is packed.
 5. `scripts/operation-cli.js` is committed executable.
 
 ## Consequences

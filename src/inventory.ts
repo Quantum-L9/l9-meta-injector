@@ -56,6 +56,7 @@ import { replaceFileAtomically } from "./durable_write";
 import { harvestExistingMeta } from "./inventory_existing_meta";
 import { inventoryRewriteKind, upsertArchiveRootMeta, peekArchiveRootMeta } from "./inventory_archive_member";
 import { harvestDarwinSearch, projectDarwinSearch } from "./inventory_darwin_search";
+import type { GitIgnoredPaths } from "./git_ignored";
 
 export type InventoryArtifactType =
   | "spec" | "code" | "schema" | "prompt" | "research_markdown" | "research_pdf"
@@ -101,8 +102,8 @@ export interface InventoryConfig {
   omitPatterns?: string[];
   /** Optional path to an omit-file (gitignore syntax). */
   omitFile?: string;
-  /** Honour the root's `.gitignore` and `.git/info/exclude` (ADR-078; default false). */
-  honorGitIgnore?: boolean;
+  /** Untracked, ignored paths git reports for the root (ADR-078); omitted like an ignore source. */
+  gitIgnored?: GitIgnoredPaths;
   now?: string;            // ISO timestamp (injected for determinism)
   schema?: MetaSchema;      // custom meta structure; when absent the built-in default is used
 }
@@ -587,7 +588,7 @@ export function inventoryTree(config: InventoryConfig): InventoryResult {
     omitFile: config.omitFile,
     protectSkillMd: true,
     ignoreDirNames: [...ignoreDirs],
-    honorGitIgnore: config.honorGitIgnore === true,
+    ...(config.gitIgnored !== undefined ? { gitIgnored: config.gitIgnored } : {}),
   });
   const omit: OmitMatcher = outDirRel === null ? baseOmit : {
     patterns: baseOmit.patterns,

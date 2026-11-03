@@ -1,3 +1,4 @@
+import { type GitIgnoredPaths } from "./git_ignored";
 export declare const L9_METAIGNORE_FILENAME = ".l9metaignore";
 /** Built-in noise: never inventoriable / never injectable in any mode. */
 export declare const BUILTIN_NOISE_PATTERNS: readonly string[];
@@ -21,13 +22,13 @@ export interface OmitOptions {
     /** Extra directory basenames to treat as ignored. */
     ignoreDirNames?: string[];
     /**
-     * When true, the root's `.gitignore` and `.git/info/exclude` load before every
-     * operator omit source (ADR-078). Each is optional; a present one loads strictly.
+     * Untracked, ignored paths as reported by git for this root (ADR-078,
+     * `listGitIgnoredUntracked`). They are omitted after the built-ins and before every
+     * operator omit source, so `.l9metaignore`, `--omit-file` and `--omit` keep the last
+     * word. Tracked files are never in this set, as in git.
      */
-    honorGitIgnore?: boolean;
+    gitIgnored?: GitIgnoredPaths;
 }
-/** Repository-relative git ignore files honoured when `honorGitIgnore` is set (ADR-078). */
-export declare const GIT_IGNORE_SOURCES: readonly string[];
 export interface OmitMatcher {
     /** True if this relative path should be skipped. */
     shouldOmit(relPath: string): boolean;

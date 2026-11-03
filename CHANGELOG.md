@@ -7,14 +7,15 @@
 Proves the package installs and runs from another repository, and clears the failures
 and warnings on `main` at `c352dbf`.
 
-- **Breaking (repository model, ADR-078).** `observeRepositoryModel` honours the target's
-  root `.gitignore` and `.git/info/exclude`. Artifacts and repository facts the target
-  ignores (e.g. a stray ignored lockfile) disappear from its packet once, and the
-  `paths-omitted` count grows. `buildOmitMatcher` gains `honorGitIgnore` (default false);
-  inventory, check, apply and skills discovery are unchanged.
-- **Breaking (tarball, ADR-079).** The tarball ships only the 13 runtime scripts; release,
-  publication, conformance, selfpack, validation-report and manifest tooling stay in the
-  repository.
+- **Breaking (repository model, ADR-078).** `observeRepositoryModel` omits the files git
+  reports as untracked and ignored (`.gitignore` at any depth, `.git/info/exclude`,
+  `core.excludesFile`); tracked files are never omitted, and a non-git target has no
+  ignore rules. Artifacts and facts for ignored files (e.g. a stray ignored lockfile)
+  disappear from such packets once, and `paths-omitted` grows. `buildOmitMatcher` gains
+  `gitIgnored`; inventory, check, apply and skills discovery are unchanged.
+- **Breaking (tarball, ADR-079).** The tarball ships only the 12 runtime scripts; release,
+  publication, conformance, corpus-qualification, selfpack, validation-report and manifest
+  tooling stay in the repository.
 - **CLI.** `l9-meta-injector --help` / `-h` print the full usage and exit 0; the bin is
   committed executable; an absolute root is still refused (ADR-022) and the refusal names
   the supported invocation.

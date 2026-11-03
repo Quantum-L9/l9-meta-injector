@@ -156,8 +156,8 @@ Green CI proves implementation and packaging, not authorization to publish. Publ
 > rebuilds a git dependency that has one. The tarball ships the runtime scripts listed in
 > `package.json#files`; `docs/package-contract.json` forbids maintenance tooling.
 >
-> **Repository-model observation (ADR-078):** it honours the target's root `.gitignore` and
-> `.git/info/exclude`; inventory, check, apply and skills discovery do not.
+> **Repository-model observation (ADR-078):** it omits what git reports as untracked and
+> ignored and never a tracked file; inventory, check, apply and skills discovery do not.
 
 <!-- BEGIN L9 FORMATTER OWNERSHIP (generated — do not edit) -->
 

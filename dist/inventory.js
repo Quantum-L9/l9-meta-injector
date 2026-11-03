@@ -504,7 +504,7 @@ function inventoryTree(config) {
         omitFile: config.omitFile,
         protectSkillMd: true,
         ignoreDirNames: [...ignoreDirs],
-        honorGitIgnore: config.honorGitIgnore === true,
+        ...(config.gitIgnored !== undefined ? { gitIgnored: config.gitIgnored } : {}),
     });
     const omit = outDirRel === null ? baseOmit : {
         patterns: baseOmit.patterns,

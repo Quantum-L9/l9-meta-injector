@@ -44,7 +44,6 @@
     "examples",
     "scripts/apply-cli.js",
     "scripts/check-cli.js",
-    "scripts/corpus-qualification.js",
     "scripts/inventory.js",
     "scripts/lib/cli-args.js",
     "scripts/lib/header-identity.js",

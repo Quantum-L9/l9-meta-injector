@@ -6,6 +6,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { isGitIgnored, type GitIgnoredPaths } from "./git_ignored";
 
 export const L9_METAIGNORE_FILENAME = ".l9metaignore";
 
@@ -42,14 +43,13 @@ export interface OmitOptions {
   /** Extra directory basenames to treat as ignored. */
   ignoreDirNames?: string[];
   /**
-   * When true, the root's `.gitignore` and `.git/info/exclude` load before every
-   * operator omit source (ADR-078). Each is optional; a present one loads strictly.
+   * Untracked, ignored paths as reported by git for this root (ADR-078,
+   * `listGitIgnoredUntracked`). They are omitted after the built-ins and before every
+   * operator omit source, so `.l9metaignore`, `--omit-file` and `--omit` keep the last
+   * word. Tracked files are never in this set, as in git.
    */
-  honorGitIgnore?: boolean;
+  gitIgnored?: GitIgnoredPaths;
 }
-
-/** Repository-relative git ignore files honoured when `honorGitIgnore` is set (ADR-078). */
-export const GIT_IGNORE_SOURCES: readonly string[] = [".gitignore", ".git/info/exclude"];
 
 export interface OmitMatcher {
   /** True if this relative path should be skipped. */
@@ -172,18 +172,6 @@ function compileRules(patterns: string[]): CompiledRule[] {
   return rules;
 }
 
-/** Append the root's git ignore files (ADR-078); each is optional, a present one loads strictly. */
-function loadGitIgnoreSources(root: string, patterns: string[], sources: string[]): void {
-  for (const relative of GIT_IGNORE_SOURCES) {
-    const absolute = path.join(root, ...relative.split("/"));
-    const gitPatterns = readOmitFileStrict(absolute, relative, false);
-    if (gitPatterns.length > 0 || fs.existsSync(absolute)) {
-      patterns.push(...gitPatterns);
-      sources.push(relative);
-    }
-  }
-}
-
 /**
  * Build an omit matcher from built-ins, `.l9metaignore`, and optional CLI
  * patterns. Last matching rule wins. Declared omit files fail closed.
@@ -200,9 +188,11 @@ export function buildOmitMatcher(opts: OmitOptions): OmitMatcher {
     if (directory) patterns.push(`${directory}/`);
   }
 
-  // The target's own ignore declarations come before .l9metaignore, --omit-file and
-  // --omit, so an operator source keeps the last word (last matching rule wins).
-  if (opts.honorGitIgnore === true) loadGitIgnoreSources(root, patterns, sources);
+  // Rules up to here run before the git-ignored set; operator sources below run after
+  // it, so they keep the last word (last matching rule wins).
+  const builtinRuleCount = patterns.length;
+  const gitIgnored = opts.gitIgnored;
+  if (gitIgnored) sources.push("git:ignored-untracked");
 
   const metaIgnorePath = path.join(root, L9_METAIGNORE_FILENAME);
   const metaPatterns = readOmitFileStrict(metaIgnorePath, L9_METAIGNORE_FILENAME, false);
@@ -224,7 +214,8 @@ export function buildOmitMatcher(opts: OmitOptions): OmitMatcher {
     sources.push("inline-patterns");
   }
 
-  const rules = compileRules(patterns);
+  const builtinRules = compileRules(patterns.slice(0, builtinRuleCount));
+  const operatorRules = compileRules(patterns.slice(builtinRuleCount));
   const protectSkill = opts.protectSkillMd !== false;
 
   return {
@@ -235,11 +226,18 @@ export function buildOmitMatcher(opts: OmitOptions): OmitMatcher {
       if (!rel || rel === ".") return false;
       if (protectSkill && isSkillMdBasename(rel)) return true;
 
-      let omitted = false;
-      for (const rule of rules) {
-        if (rule.re.test(rel)) omitted = !rule.negate;
-      }
-      return omitted;
+      let omitted = applyRules(builtinRules, rel, false);
+      if (gitIgnored && isGitIgnored(gitIgnored, rel)) omitted = true;
+      return applyRules(operatorRules, rel, omitted);
     },
   };
+}
+
+/** Last matching rule wins, starting from `initial`. */
+function applyRules(rules: CompiledRule[], rel: string, initial: boolean): boolean {
+  let omitted = initial;
+  for (const rule of rules) {
+    if (rule.re.test(rel)) omitted = !rule.negate;
+  }
+  return omitted;
 }

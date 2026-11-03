@@ -38,12 +38,13 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.GIT_IGNORE_SOURCES = exports.BUILTIN_SKILL_PROTECT_PATTERNS = exports.BUILTIN_NOISE_PATTERNS = exports.L9_METAIGNORE_FILENAME = void 0;
+exports.BUILTIN_SKILL_PROTECT_PATTERNS = exports.BUILTIN_NOISE_PATTERNS = exports.L9_METAIGNORE_FILENAME = void 0;
 exports.isSkillMdBasename = isSkillMdBasename;
 exports.isSkillArtifactPath = isSkillArtifactPath;
 exports.buildOmitMatcher = buildOmitMatcher;
 const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
+const git_ignored_1 = require("./git_ignored");
 exports.L9_METAIGNORE_FILENAME = ".l9metaignore";
 /** Built-in noise: never inventoriable / never injectable in any mode. */
 exports.BUILTIN_NOISE_PATTERNS = [
@@ -61,8 +62,6 @@ exports.BUILTIN_SKILL_PROTECT_PATTERNS = [
     "**/SKILL.md",
     "**/skill.md",
 ];
-/** Repository-relative git ignore files honoured when `honorGitIgnore` is set (ADR-078). */
-exports.GIT_IGNORE_SOURCES = [".gitignore", ".git/info/exclude"];
 /** True when basename is SKILL.md under any casing. */
 function isSkillMdBasename(filePath) {
     return path.basename(filePath).toLowerCase() === "skill.md";
@@ -179,17 +178,6 @@ function compileRules(patterns) {
     }
     return rules;
 }
-/** Append the root's git ignore files (ADR-078); each is optional, a present one loads strictly. */
-function loadGitIgnoreSources(root, patterns, sources) {
-    for (const relative of exports.GIT_IGNORE_SOURCES) {
-        const absolute = path.join(root, ...relative.split("/"));
-        const gitPatterns = readOmitFileStrict(absolute, relative, false);
-        if (gitPatterns.length > 0 || fs.existsSync(absolute)) {
-            patterns.push(...gitPatterns);
-            sources.push(relative);
-        }
-    }
-}
 /**
  * Build an omit matcher from built-ins, `.l9metaignore`, and optional CLI
  * patterns. Last matching rule wins. Declared omit files fail closed.
@@ -206,10 +194,12 @@ function buildOmitMatcher(opts) {
         if (directory)
             patterns.push(`${directory}/`);
     }
-    // The target's own ignore declarations come before .l9metaignore, --omit-file and
-    // --omit, so an operator source keeps the last word (last matching rule wins).
-    if (opts.honorGitIgnore === true)
-        loadGitIgnoreSources(root, patterns, sources);
+    // Rules up to here run before the git-ignored set; operator sources below run after
+    // it, so they keep the last word (last matching rule wins).
+    const builtinRuleCount = patterns.length;
+    const gitIgnored = opts.gitIgnored;
+    if (gitIgnored)
+        sources.push("git:ignored-untracked");
     const metaIgnorePath = path.join(root, exports.L9_METAIGNORE_FILENAME);
     const metaPatterns = readOmitFileStrict(metaIgnorePath, exports.L9_METAIGNORE_FILENAME, false);
     if (metaPatterns.length > 0 || fs.existsSync(metaIgnorePath)) {
@@ -228,7 +218,8 @@ function buildOmitMatcher(opts) {
         patterns.push(...opts.patterns);
         sources.push("inline-patterns");
     }
-    const rules = compileRules(patterns);
+    const builtinRules = compileRules(patterns.slice(0, builtinRuleCount));
+    const operatorRules = compileRules(patterns.slice(builtinRuleCount));
     const protectSkill = opts.protectSkillMd !== false;
     return {
         patterns: [...patterns],
@@ -239,13 +230,20 @@ function buildOmitMatcher(opts) {
                 return false;
             if (protectSkill && isSkillMdBasename(rel))
                 return true;
-            let omitted = false;
-            for (const rule of rules) {
-                if (rule.re.test(rel))
-                    omitted = !rule.negate;
-            }
-            return omitted;
+            let omitted = applyRules(builtinRules, rel, false);
+            if (gitIgnored && (0, git_ignored_1.isGitIgnored)(gitIgnored, rel))
+                omitted = true;
+            return applyRules(operatorRules, rel, omitted);
         },
     };
+}
+/** Last matching rule wins, starting from `initial`. */
+function applyRules(rules, rel, initial) {
+    let omitted = initial;
+    for (const rule of rules) {
+        if (rule.re.test(rel))
+            omitted = !rule.negate;
+    }
+    return omitted;
 }
 //# sourceMappingURL=omit.js.map

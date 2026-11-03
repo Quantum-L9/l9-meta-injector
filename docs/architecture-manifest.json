@@ -10,7 +10,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "git_blob_sha1": "5af70ac61b184d71f9e712ff31c33653c067f1e8"
+      "git_blob_sha1": "a9bd1eed2de3488e17e768e185839e9755cb2477"
     },
     {
       "path": "dist/archive_preflight.d.ts",
@@ -402,11 +402,11 @@
     },
     {
       "path": "dist/repository_model.js",
-      "git_blob_sha1": "ded60901ff5b4668ff60cdffa03f3748879d7892"
+      "git_blob_sha1": "5d1ec63495b9619d815604a74866a391c9408acf"
     },
     {
       "path": "dist/repository_model.js.map",
-      "git_blob_sha1": "a3065622219df5e556dbc78894f60768c4fb3694"
+      "git_blob_sha1": "d563b7267b735b1ac983d28fca847b8a7cb4c7a4"
     },
     {
       "path": "dist/zip_reader.d.ts",
@@ -442,7 +442,7 @@
     },
     {
       "path": "docs/decision_log.md",
-      "git_blob_sha1": "96bf39abcf246531ee27f49a18b4df738ac2b477"
+      "git_blob_sha1": "d4a3f50c4562d7eef0c11d57348dc290b6fd7bf8"
     },
     {
       "path": "docs/decisions/036-read-only-local-source-acquisition.md",
@@ -510,7 +510,7 @@
     },
     {
       "path": "docs/package-contract.json",
-      "git_blob_sha1": "b5be6e29ea38d1a528c0bf96bcddd55a7fa375f1"
+      "git_blob_sha1": "e8ab0e9b651eb6c20d0afb79f2086f32fd07179b"
     },
     {
       "path": "docs/package-publication-decision.json",
@@ -610,11 +610,11 @@
     },
     {
       "path": "package.json",
-      "git_blob_sha1": "adad44b8f6d5cfcbab4828e91efdc0285ab71659"
+      "git_blob_sha1": "a09a046e7f46dafac5c67e05be9a40e6d42a682e"
     },
     {
       "path": "README.md",
-      "git_blob_sha1": "460021e36e3e7bb76e74f323d9f305c421e7454a"
+      "git_blob_sha1": "f84fc4b563c42e3a02747cab984fd96f19683e77"
     },
     {
       "path": "scripts/check-architecture-authority.js",
@@ -786,7 +786,7 @@
     },
     {
       "path": "src/inventory.ts",
-      "git_blob_sha1": "776acef4d58b6ade6fcf088f566b7b18f68df23e"
+      "git_blob_sha1": "eee8a244e24620b8e554b5d2293aa8127f91e4c3"
     },
     {
       "path": "src/local_archive_policy.ts",
@@ -834,7 +834,7 @@
     },
     {
       "path": "src/repository_model.ts",
-      "git_blob_sha1": "be68aedd66397f6da6da90d621c45810bb18e864"
+      "git_blob_sha1": "3803afef8686efbd6c9dd4b11c01b387eceaaf2a"
     },
     {
       "path": "src/schema.ts",

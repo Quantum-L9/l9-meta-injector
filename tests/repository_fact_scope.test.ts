@@ -1,6 +1,7 @@
 // repository_fact_scope.test.ts — WU-029 (ADR-062): repository-level facts and
 // repository-subject claims come from the repository root, and a shared manifest
 // filename is not package-manager evidence.
+import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -205,16 +206,32 @@ describe("WU-029 RC-034: package.json is a shared manifest", () => {
   });
 });
 
-describe("WU-078 (ADR-078): the observation honours the target's git ignore files", () => {
+describe("WU-078 (ADR-078): the observation omits what git ignores, never what git tracks", () => {
   const manifest = '{"name":"svc"}\n';
+  const npmLock = '{"lockfileVersion":3}\n';
+  const pnpmLock = "lockfileVersion: '9.0'\n";
 
-  it("REG-WU-078-a: a git-ignored root lockfile is not a repository fact", () => {
-    const root = materialize({
-      "package.json": manifest,
-      "package-lock.json": '{"lockfileVersion":3}\n',
-      "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
-      ".gitignore": "node_modules/\npnpm-lock.yaml\n",
-    });
+  function git(root: string, ...args: string[]): void {
+    const result = spawnSync("git", ["-c", "user.email=t@example.invalid", "-c", "user.name=t", ...args], { cwd: root, encoding: "utf8" });
+    if (result.status !== 0) throw new Error(`git ${args.join(" ")}: ${result.stderr}`);
+  }
+  /** A git work tree with `tracked` committed (force-added, so ignored-but-tracked is possible). */
+  function repository(files: Record<string, string>, tracked: string[]): string {
+    const root = materialize(files);
+    git(root, "init", "-q");
+    if (tracked.length > 0) {
+      git(root, "add", "-f", "--", ...tracked);
+      git(root, "commit", "-q", "-m", "fixture");
+    }
+    return root;
+  }
+  const managers = (root: string) => observe(root).payload.repositories[0].package_managers;
+
+  it("REG-WU-078-a: an untracked, git-ignored root lockfile is not a repository fact", () => {
+    const root = repository(
+      { "package.json": manifest, "package-lock.json": npmLock, "pnpm-lock.yaml": pnpmLock, ".gitignore": "pnpm-lock.yaml\n" },
+      ["package.json", "package-lock.json", ".gitignore"],
+    );
     const packet = observe(root);
     expect(packet.payload.repositories[0].package_managers).toEqual(["npm"]);
     expect(evidencePathsFor(packet, "package_managers")).toEqual(["package-lock.json"]);
@@ -222,39 +239,41 @@ describe("WU-078 (ADR-078): the observation honours the target's git ignore file
   });
 
   it("REG-WU-078-b: the same lockfile, not ignored, is still reported", () => {
-    const root = materialize({
-      "package.json": manifest,
-      "package-lock.json": '{"lockfileVersion":3}\n',
-      "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
-      ".gitignore": "node_modules/\n",
-    });
-    expect(observe(root).payload.repositories[0].package_managers).toEqual(["npm", "pnpm"]);
+    const root = repository(
+      { "package.json": manifest, "package-lock.json": npmLock, "pnpm-lock.yaml": pnpmLock, ".gitignore": "node_modules/\n" },
+      ["package.json", "package-lock.json", ".gitignore"],
+    );
+    expect(managers(root)).toEqual(["npm", "pnpm"]);
   });
 
-  it("REG-WU-078-c: .git/info/exclude applies, and .l9metaignore negation keeps the last word", () => {
-    const excluded = materialize({
-      "package.json": manifest,
-      "yarn.lock": "# yarn\n",
-      ".git/info/exclude": "yarn.lock\n",
-    });
-    expect(observe(excluded).payload.repositories[0].package_managers).toEqual([]);
-
-    const reinstated = materialize({
-      "package.json": manifest,
-      "yarn.lock": "# yarn\n",
-      ".gitignore": "yarn.lock\n",
-      ".l9metaignore": "!yarn.lock\n",
-    });
-    expect(observe(reinstated).payload.repositories[0].package_managers).toEqual(["yarn"]);
+  it("REG-WU-078-c: a tracked file that matches .gitignore stays a repository fact", () => {
+    const root = repository(
+      { "package.json": manifest, "package-lock.json": npmLock, "pnpm-lock.yaml": pnpmLock, ".gitignore": "pnpm-lock.yaml\n" },
+      ["package.json", "package-lock.json", "pnpm-lock.yaml", ".gitignore"],
+    );
+    expect(managers(root)).toEqual(["npm", "pnpm"]);
   });
 
-  it("REG-WU-078-d: a symlinked .gitignore fails closed instead of being silently skipped", () => {
-    const root = materialize({ "package.json": manifest, "real-ignore": "pnpm-lock.yaml\n" });
-    try {
-      fs.symlinkSync(path.join(root, "real-ignore"), path.join(root, ".gitignore"));
-    } catch {
-      return; // platform without symlink permission (Windows without developer mode)
-    }
-    expect(() => observe(root)).toThrow(/\.gitignore must not be a symbolic link/);
+  it("REG-WU-078-d: .git/info/exclude and nested .gitignore apply, and .l9metaignore negation keeps the last word", () => {
+    const excluded = repository({ "package.json": manifest, "yarn.lock": "# yarn\n" }, ["package.json"]);
+    fs.writeFileSync(path.join(excluded, ".git", "info", "exclude"), "yarn.lock\n", "utf8");
+    expect(managers(excluded)).toEqual([]);
+
+    const nested = repository(
+      { "package.json": manifest, "docs/.gitignore": "*.md\n", "docs/adr/001-x.md": "# ADR\n" },
+      ["package.json", "docs/.gitignore"],
+    );
+    expect(observe(nested).payload.repositories[0].adr_refs).not.toContain("docs/adr/001-x.md");
+
+    const reinstated = repository(
+      { "package.json": manifest, "yarn.lock": "# yarn\n", ".gitignore": "yarn.lock\n", ".l9metaignore": "!yarn.lock\n" },
+      ["package.json", ".gitignore", ".l9metaignore"],
+    );
+    expect(managers(reinstated)).toEqual(["yarn"]);
+  });
+
+  it("REG-WU-078-e: outside a git work tree a .gitignore file has no effect", () => {
+    const root = materialize({ "package.json": manifest, "package-lock.json": npmLock, "pnpm-lock.yaml": pnpmLock, ".gitignore": "pnpm-lock.yaml\n" });
+    expect(managers(root)).toEqual(["npm", "pnpm"]);
   });
 });

@@ -24,7 +24,7 @@ The root is the stable orchestration boundary. `inventory` and `schema` are stab
 
 **SKILL.md protection:** `inventory` and `pipeline` modes never mutate `SKILL.md` / `skill.md` (built-in omit). Use `runSkillsPipelineAsync` / `npm run skills` / Action `mode: skills` for Cursor-native description improvements (ADR-017).
 
-**Omit:** built-in noise + SKILL.md protect, optional `.l9metaignore`, CLI `--omit` / `--omit-file`. Repository-model observation also honours the target's root `.gitignore` and `.git/info/exclude` (ADR-078).
+**Omit:** built-in noise + SKILL.md protect, optional `.l9metaignore`, CLI `--omit` / `--omit-file`. Repository-model observation also omits what git reports as untracked and ignored, never a tracked file (ADR-078).
 
 ## Use it from another repository
 
