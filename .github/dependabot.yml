@@ -10,6 +10,13 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 3
+    # @types/node tracks the development Node line (devEngines >=22.12, CI on 22),
+    # not the newest Node: a types major ahead of it admits APIs the declared
+    # runtime floor (engines >=18, proven by consumer-node-floor, ADR-079) does not
+    # have. Move it deliberately with the dev Node line, never by bot (e.g. #115).
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     # Both version-update groups take minor and patch updates only, so a major
     # version of anything arrives as its own individual pull request and is
     # decided on its own (ADR-056 amendment). The first grouped branch (#108)
