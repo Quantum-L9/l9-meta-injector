@@ -43,7 +43,21 @@ function gitInstallProof(root){
  return {revision:head,steps:runConsumerCli(consumer,path.join(root,"git-target"))};
 }
 const temp=fs.mkdtempSync(path.join(os.tmpdir(),"l9-packed-consumer-")),report={schema:"l9.packed-consumer-report/v2",status:"failed",packageName:null,packageVersion:null,tarball:null,tarballSha256:null,packedFileCount:0,runtime:null,deepImports:null,declarations:null,cli:null,gitInstall:null};
+// --cli-only --tarball <file>: runtime proof of an already-packed tarball on the Node
+// that runs this script (ADR-079 Node-floor matrix). No dev toolchain is used: no pack,
+// no contract re-validation, no declaration typecheck — those run once on the dev Node.
+const CLI_ONLY=process.argv.includes("--cli-only"),TARBALL_INDEX=process.argv.indexOf("--tarball"),TARBALL_ARG=TARBALL_INDEX>=0?process.argv[TARBALL_INDEX+1]:undefined;
+function cliOnly(){
+ if(!TARBALL_ARG||TARBALL_ARG.startsWith("--"))die("--cli-only requires --tarball <file>");
+ const tarball=path.resolve(TARBALL_ARG);if(!fs.existsSync(tarball))die(`tarball not found: ${tarball}`);
+ report.tarball=path.basename(tarball);report.tarballSha256=hash(tarball);
+ const consumer=path.join(temp,"consumer");fs.cpSync(path.join(REPO,"fixtures/package-consumer"),consumer,{recursive:true});command(npm,["install","--ignore-scripts","--no-audit","--no-fund","--package-lock=false",tarball],consumer,{npm_config_loglevel:"silent"});
+ report.runtime={output:command(process.execPath,["runtime.cjs"],consumer).stdout.trim()};report.deepImports={output:command(process.execPath,["deep-import.cjs"],consumer).stdout.trim()};
+ report.cli={steps:runConsumerCli(consumer,path.join(temp,"target"))};
+ report.status="passed";if(JSON_MODE)process.stdout.write(stableJson(report));else console.log(`packed-consumer (cli-only): OK (node ${process.version}, ${report.tarball}, cli=${report.cli.steps.join(",")})`);
+}
 try{
+ if(CLI_ONLY){cliOnly();}else{
  const contract=JSON.parse(fs.readFileSync(path.join(REPO,"docs/package-contract.json"),"utf8")),apiContract=JSON.parse(fs.readFileSync(path.join(REPO,"docs/public-api-contract.json"),"utf8")),pkg=JSON.parse(fs.readFileSync(path.join(REPO,"package.json"),"utf8"));
  const errors=[...validatePackageContract(contract),...api.validateContract(apiContract,REPO),...api.validatePackageAgainstContract(pkg,apiContract)];if(errors.length)die("package or API contract is invalid",errors);
  report.packageName=pkg.name;report.packageVersion=pkg.version;
@@ -57,4 +71,5 @@ try{
  report.cli={steps:runConsumerCli(consumer,path.join(temp,"target"))};
  if(GIT_INSTALL)report.gitInstall=gitInstallProof(temp);
  report.status="passed";if(JSON_MODE)process.stdout.write(stableJson(report));else console.log(`packed-consumer: OK (${report.tarball}, sha256=${report.tarballSha256}, entrypoints=${apiContract.entrypoints.length}, cli=${report.cli.steps.join(",")}${report.gitInstall?`, git-install=${report.gitInstall.revision.slice(0,12)}`:""})`);
+ }
 }catch(error){if(JSON_MODE){report.reason=error?.message?error.message:String(error);report.details=error?.details?error.details:null;process.stdout.write(stableJson(report));}else{console.error(`packed-consumer: FAILED: ${error?.message?error.message:error}`);if(error?.details)console.error(JSON.stringify(error.details,null,2));if(KEEP)console.error(`temporary directory retained: ${temp}`);}process.exitCode=1;}finally{if(!KEEP)fs.rmSync(temp,{recursive:true,force:true});}

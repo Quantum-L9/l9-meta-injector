@@ -6,7 +6,7 @@
   "entries": [
     {
       "path": ".github/workflows/ci.yml",
-      "git_blob_sha1": "f9e769deb60bcf8dfe6c64db68c89a50a8857f1b"
+      "git_blob_sha1": "07bc352adc313af4b6edd1339080a9a8fa01fdd4"
     },
     {
       "path": "CHANGELOG.md",
@@ -678,7 +678,7 @@
     },
     {
       "path": "scripts/test-packed-consumer.js",
-      "git_blob_sha1": "a940c6a81d42d1f32efcbbadf7e0f26aceb9ccb6"
+      "git_blob_sha1": "aff118d6b29dd9072dac687b6b34375e2740eac0"
     },
     {
       "path": "scripts/topology-conformance.js",

@@ -38,3 +38,102 @@ jobs:
             echo "validation changed the immutable checkout" >&2
             exit 1
           fi
+      - name: Git-dependency consumer proof (ADR-079)
+        run: node scripts/test-packed-consumer.js --git-install
+
+  # ADR-079: the packed tarball must run on every Node the package declares
+  # (engines.node >=18) and the Action defaults to (20). Pack once on the dev Node,
+  # then run the runtime-only consumer proof on the matrix Node.
+  consumer-node-floor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["18", "20", "22"]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Pack on the development Node
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/pack"
+          npm pack --pack-destination "$RUNNER_TEMP/pack"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Runtime-only consumer proof on Node ${{ matrix.node }}
+        shell: bash
+        run: |
+          node --version
+          node scripts/test-packed-consumer.js --cli-only --tarball "$RUNNER_TEMP"/pack/l9-meta-injector-*.tgz
+
+  # ADR-079: the composite Action, run from its own checkout against a separate
+  # target repository directory: inventory, apply, then a check that must pass.
+  # (Drift before the first apply is proven by test:packed, not by an expected-red step.)
+  consumer-action:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: meta-injector
+          persist-credentials: false
+      - name: Generate the consumer target repository
+        shell: bash
+        run: |
+          mkdir -p consumer/.l9
+          printf '# consumer target\n' > consumer/README.md
+          printf "print('consumer')\n" > consumer/app.py
+          cat > consumer/.l9/meta-authority.yaml <<'EOF'
+          schema: l9.meta-authority/v1
+          writer:
+            repository: Quantum-L9/l9-meta-injector
+            ref: v4
+          default_carrier: central_manifest
+          legacy_writers: forbidden
+          inline_allow: []
+          EOF
+          git -C consumer init -q
+          git -C consumer add -- README.md app.py .l9/meta-authority.yaml
+          git -C consumer -c user.email=consumer@example.invalid -c user.name=consumer-proof commit -q -m "consumer target"
+          sha256sum consumer/README.md consumer/app.py > "$RUNNER_TEMP/source.sha256"
+      - name: inventory
+        uses: ./meta-injector
+        with:
+          mode: inventory
+          root: consumer
+          upload-artifact: "false"
+      - name: apply
+        uses: ./meta-injector
+        with:
+          mode: apply
+          root: consumer
+          authority: l9-consumer-proof
+          upload-artifact: "false"
+      - name: check after apply
+        id: check
+        uses: ./meta-injector
+        with:
+          mode: check
+          root: consumer
+          authority: l9-consumer-proof
+          upload-artifact: "false"
+      - name: Assert a clean check and untouched sources
+        shell: bash
+        env:
+          VERIFIED: ${{ steps.check.outputs.verification-passed }}
+        run: |
+          test "$VERIFIED" = "true"
+          test -f consumer/.l9/metadata-index.jsonl
+          sha256sum --check "$RUNNER_TEMP/source.sha256"
