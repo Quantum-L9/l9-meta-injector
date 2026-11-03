@@ -65,6 +65,7 @@ Accepted ADRs are not deleted. A replacement ADR links back to the decision it s
 | [ADR-076](076-errata-for-adr-058-and-adr-069.md) | Errata for ADR-058 (deleted out-of-scope records) and ADR-069 (README rows) | Accepted |
 | [ADR-077](077-stale-publisher-lock-takeover-guard.md) | Stale publisher-lock takeover runs under an exclusive takeover guard | Accepted |
 | [ADR-078](078-repository-model-observation-honours-the-target-ignore-files.md) | The repository-model observation honours the target's git ignore files | Accepted |
+| [ADR-079](079-consumer-install-paths-and-runtime-only-tarball.md) | Consumer install paths are proven by test, and the tarball ships runtime scripts only | Accepted |
 
 ## Authority boundary
 
