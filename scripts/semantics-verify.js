@@ -9,6 +9,7 @@ const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 const { requireBuilt } = require("./lib/cli-args");
+const { gitBinary } = require("./lib/git-binary");
 
 const REPO = path.resolve(__dirname, "..");
 const pkg = requireBuilt(path.join(REPO, "dist", "index.js"), "semantics-verify");
@@ -40,7 +41,8 @@ if (loaded.authority.schema !== "l9.meta-authority/v2" || !loaded.authority.sema
 }
 
 const binding = loaded.authority.semantic_foundation;
-const git = spawnSync("git", ["-C", semanticsRoot, "rev-parse", "HEAD"], { encoding: "utf8" });
+// Absolute git, resolved once (WU-069): a bare "git" lets PATH pick the binary (S4036).
+const git = spawnSync(gitBinary(fail), ["-C", semanticsRoot, "rev-parse", "HEAD"], { encoding: "utf8" });
 if (git.status !== 0) {
   fail(`unable to read checkout HEAD: ${git.stderr.trim() || git.stdout.trim()}`);
 }

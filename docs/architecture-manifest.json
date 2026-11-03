@@ -678,7 +678,7 @@
     },
     {
       "path": "scripts/test-packed-consumer.js",
-      "git_blob_sha1": "aff118d6b29dd9072dac687b6b34375e2740eac0"
+      "git_blob_sha1": "1abcb9dc2df8921c599767148c8833194ad1fbc1"
     },
     {
       "path": "scripts/topology-conformance.js",

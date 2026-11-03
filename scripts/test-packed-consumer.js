@@ -3,11 +3,12 @@
 const fs=require("node:fs"),os=require("node:os"),path=require("node:path"),crypto=require("node:crypto");
 const {run,listRegularFiles,validatePackageContract,validatePackedFiles,parseNpmPackJson,resolveTsc,stableJson}=require("./lib/dist-integrity");
 const api=require("./lib/public-api");
+const {gitBinary}=require("./lib/git-binary");
 const REPO=path.resolve(__dirname,".."),KEEP=process.argv.includes("--keep-temp"),JSON_MODE=process.argv.includes("--json"),npm=process.platform==="win32"?"npm.cmd":"npm";
 function die(message,details){const e=new Error(message);e.details=details;throw e;}
 function command(cmd,args,cwd,env={}){const r=run(cmd,args,{cwd,env});if(r.status!==0)die(`${cmd} ${args.join(" ")} failed`,r);return r;}
 function hash(file){return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");}
-const GIT_INSTALL=process.argv.includes("--git-install"),CONSUMER_AUTHORITY="l9-consumer-proof";
+const GIT=gitBinary(message=>die(message)),GIT_INSTALL=process.argv.includes("--git-install"),CONSUMER_AUTHORITY="l9-consumer-proof";
 // Consumer CLI proof: the installed bin runs against a foreign git repository, not this
 // one. The target is generated at runtime so no second meta-authority file is ever
 // committed under this repository's own scan root.
@@ -17,7 +18,7 @@ function makeTargetRepository(dir){
  const files={"README.md":"# consumer target\n","app.py":"print('consumer')\n",".l9/meta-authority.yaml":"schema: l9.meta-authority/v1\nwriter:\n  repository: Quantum-L9/l9-meta-injector\n  ref: v4\ndefault_carrier: central_manifest\nlegacy_writers: forbidden\ninline_allow: []\n"};
  for(const [rel,text] of Object.entries(files))fs.writeFileSync(path.join(dir,rel),text,"utf8");
  const ident=["-c","user.email=consumer@example.invalid","-c","user.name=consumer-proof"];
- command("git",["init","-q"],dir);command("git",["add","--",...Object.keys(files)],dir);command("git",[...ident,"commit","-q","-m","consumer target"],dir);
+ command(GIT,["init","-q"],dir);command(GIT,["add","--",...Object.keys(files)],dir);command(GIT,[...ident,"commit","-q","-m","consumer target"],dir);
  return Object.keys(files).filter(rel=>!rel.startsWith(".l9/")).map(rel=>[rel,hash(path.join(dir,rel))]);
 }
 function binPath(consumer){return path.join(consumer,"node_modules",".bin",process.platform==="win32"?"l9-meta-injector.cmd":"l9-meta-injector");}
@@ -36,8 +37,8 @@ function runConsumerCli(consumer,target){
 // `npm install github:Quantum-L9/l9-meta-injector#<ref>` would, then runs the same CLI
 // proof. Only committed state is installable, so this runs on clean CI checkouts.
 function gitInstallProof(root){
- const head=command("git",["rev-parse","HEAD"],REPO).stdout.trim(),bare=path.join(root,"source.git");
- command("git",["clone","-q","--bare","--depth","1","--no-local",`file://${REPO}`,bare],root);
+ const head=command(GIT,["rev-parse","HEAD"],REPO).stdout.trim(),bare=path.join(root,"source.git");
+ command(GIT,["clone","-q","--bare","--depth","1","--no-local",`file://${REPO}`,bare],root);
  const consumer=path.join(root,"git-consumer");fs.mkdirSync(consumer);fs.writeFileSync(path.join(consumer,"package.json"),'{"name":"git-consumer","private":true}\n');
  command(npm,["install","--no-audit","--no-fund","--package-lock=false",`git+file://${bare}#${head}`],consumer,{npm_config_loglevel:"silent"});
  return {revision:head,steps:runConsumerCli(consumer,path.join(root,"git-target"))};

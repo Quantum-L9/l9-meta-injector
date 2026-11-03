@@ -71,7 +71,8 @@ function treeState() {
     fail(`git status --porcelain failed: ${(statusRun.stderr || statusRun.stdout || "").trim()}`);
   }
 
-  const ordered = [...paths].sort();
+  // Explicit UTF-16 code-unit order: identical to the default sort, so the digest is unchanged (S2871).
+  const ordered = [...paths].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   const digest = crypto.createHash("sha256");
   for (const relative of ordered) {
     const absolute = path.join(REPO, relative);

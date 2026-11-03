@@ -224,21 +224,31 @@ def main():
     ap.add_argument("--threshold", type=float, default=0.60)
     a = ap.parse_args()
     truth = lambda x: str(x).lower() == "true"
+    # Every operator-supplied path is contained under the working directory before
+    # any filesystem use, as ADR-022 does for the JS CLI: a ``../`` or absolute
+    # argument outside it is refused, never followed (SonarCloud S8707).
+    workspace = os.getcwd()
 
     if a.phase == "B":
         if not a.source or not a.output:
             sys.exit("Phase B requires --source and --output")
-        if os.path.abspath(a.output).startswith(os.path.abspath(a.source) + os.sep):
+        source = _contained(workspace, a.source)
+        output = _contained(workspace, a.output)
+        if output.startswith(source + os.sep):
             sys.exit("FAIL: output nested inside source (would risk mutation)")
-        phase_b(a.source, a.output, a.threshold)
+        phase_b(source, output, a.threshold)
     else:
-        mm = a.manifest
-        if not mm:
+        if not a.manifest:
             sys.exit("Phase C requires --from-manifest")
-        out = a.output or os.path.dirname(os.path.dirname(os.path.abspath(mm)))
-        src = a.source
-        if not src:
+        mm = _contained(workspace, a.manifest)
+        out = (
+            _contained(workspace, a.output)
+            if a.output
+            else os.path.dirname(os.path.dirname(mm))
+        )
+        if not a.source:
             sys.exit("Phase C requires --source for copy integrity")
+        src = _contained(workspace, a.source)
         phase_c(src, out, mm, truth(a.copy_files), truth(a.inject_headers))
 
 
