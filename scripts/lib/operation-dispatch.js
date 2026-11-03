@@ -108,7 +108,10 @@ function assertResolvedPath(label, resolved) {
 }
 
 function rejectAbsolute(label, input) {
-  if (path.isAbsolute(input)) fail(`${label} must be relative, got absolute path '${input}'`);
+  // ADR-022: roots stay contained. The hint names the supported invocation instead of
+  // leaving a first-time consumer to infer it from the refusal.
+  const hint = label === "root" ? "; run from inside the target repository and pass a relative path, e.g. 'cd <repo> && l9-meta-injector inventory .'" : "";
+  if (path.isAbsolute(input)) fail(`${label} must be relative, got absolute path '${input}'${hint}`);
 }
 
 function resolveExistingContainedDirectory(parent, input, label) {
@@ -355,10 +358,41 @@ function parseArgOptions(args) {
   return parseOptionArgv(args, DISPATCH_OPTION_SPEC, fail);
 }
 
+const USAGE_LINE = "usage: l9-meta-injector <inventory|check|apply|skills|pipeline> <root> [options]";
+const HELP_TEXT = `${USAGE_LINE}
+
+Run from inside the target repository; <root> must be a relative path inside the
+current directory (for example '.'). Absolute roots are refused (ADR-022).
+
+Modes:
+  inventory   read-only scan; writes reports under --out (default .l9-meta-injector-out)
+  check       read-only drift gate; requires .l9/meta-authority.yaml and --authority
+  apply       governed write of metadata; requires .l9/meta-authority.yaml and --authority
+  skills      skills pipeline; requires --authority
+  pipeline    deprecated alias of apply
+
+Options:
+  --authority ID         header authority (required by check, apply, skills on an unbound root)
+  --namespace NAME       header namespace (default: the root folder name)
+  --namespace-glob G=NS  per-glob namespace (repeatable)
+  --glob PATTERN         discovery glob (default **/*)
+  --omit PATTERN         gitignore-style omit pattern (repeatable)
+  --out DIR              output directory, relative to <root>
+  --dry-run / --no-dry-run, --fail-on-issues / --no-fail-on-issues
+  --near-dup 0..1, --hash-prefix-length N
+  --llm, --llm-base-url URL, --llm-model NAME, --llm-api-key KEY, --llm-allow-insecure
+  -h, --help             print this help and exit 0
+`;
+
+/** True when the operator asked for help rather than an operation. */
+function isHelpRequest(argv) {
+  return argv.length > 0 && (argv[0] === "--help" || argv[0] === "-h");
+}
+
 function parseCommandLine(argv, env = process.env) {
   const args = [...argv];
   if (args.length < 2) {
-    fail("usage: operation-cli.js <inventory|check|apply|skills|pipeline> <root> [options]");
+    fail(`${USAGE_LINE} (run 'l9-meta-injector --help' for details)`);
   }
   const requestedMode = args.shift();
   const rootInput = args.shift();
@@ -524,6 +558,7 @@ function parseSummary(mode, stdout) {
 module.exports = {
   ActionInputError,
   BOOLEAN_OPTIONS,
+  HELP_TEXT,
   LEGACY_OPERATION_ALIASES,
   OPERATION_MODES,
   REPEATABLE_OPTIONS,
@@ -531,6 +566,7 @@ module.exports = {
   buildInvocation,
   hasControlChar,
   parseArgOptions,
+  isHelpRequest,
   isWithin,
   normalizeEnvironment,
   parseBoolean,

@@ -5,8 +5,10 @@ const fs = require("node:fs");
 const { spawnSync } = require("node:child_process");
 const {
   ActionInputError,
+  HELP_TEXT,
   buildInvocation,
   hasControlChar,
+  isHelpRequest,
   normalizeEnvironment,
   parseCommandLine,
   parseSummary,
@@ -64,6 +66,10 @@ function execute(config) {
 }
 
 function main() {
+  if (isHelpRequest(process.argv.slice(2))) {
+    process.stdout.write(HELP_TEXT);
+    process.exit(0);
+  }
   try {
     const actionEnv = process.argv.slice(2).includes("--action-env");
     if (actionEnv && process.argv.slice(2).length !== 1) {
