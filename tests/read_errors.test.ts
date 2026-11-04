@@ -23,7 +23,10 @@ afterEach(() => { (fs.openSync as unknown as Mock).mockImplementation(actual.ope
 
 test("inventory records read_failed, distinct from a binary skip (OBS-005)", () => {
   const root = tmp(); actual.writeFileSync(path.join(root, "note.md"), "# note\nbody text\n");
-  (fs.openSync as unknown as Mock).mockImplementation(() => { throw new Error("EACCES: cannot open"); });
+  (fs.openSync as unknown as Mock).mockImplementation((...args: Parameters<typeof actual.openSync>) => {
+    if (String(args[0]) === path.join(root, "note.md")) throw new Error("EACCES: cannot open");
+    return actual.openSync(...args);
+  });
   const r = inventoryTree({ root, outDir: tmp(), dryRun: false, now: "2026-01-01T00:00:00.000Z" });
   const rec = r.records.find((x) => x.file_name === "note.md")!;
   expect(rec.unknowns.some((u) => u.startsWith("read_failed:"))).toBe(true);
