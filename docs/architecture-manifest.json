@@ -10,7 +10,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "git_blob_sha1": "5b8ee076b7a017931f4b8e307c3b59e065347895"
+      "git_blob_sha1": "01da53d103ea3a08178f2d22026554a280fcf229"
     },
     {
       "path": "dist/apply.d.ts",
@@ -637,6 +637,10 @@
       "git_blob_sha1": "a28bd7a63a18e00995f62957960e30aa627b1388"
     },
     {
+      "path": "docs/qualification/universal-tracked-v2-2026-11-03.md",
+      "git_blob_sha1": "8a49c77daec885e0de900ef849cd7de62559def0"
+    },
+    {
       "path": "docs/release-checklist.md",
       "git_blob_sha1": "8c14d2254c98473cde0fbf39038e4120db8fcc03"
     },
@@ -782,7 +786,7 @@
     },
     {
       "path": "scripts/lib/architecture-authority.js",
-      "git_blob_sha1": "74b013de2dac641d8b15e0b766c5014679892412"
+      "git_blob_sha1": "f00a33145b4c530a92cb02156e88f664253219ec"
     },
     {
       "path": "scripts/lib/dist-integrity.js",
@@ -803,6 +807,10 @@
     {
       "path": "scripts/local-source-cli.js",
       "git_blob_sha1": "65ec700be653589f31a1d453d901166a79323c7d"
+    },
+    {
+      "path": "scripts/qualify-tracked-snapshot.js",
+      "git_blob_sha1": "84c144768a3b8947e9fdfc4404ec69b626e501e5"
     },
     {
       "path": "scripts/release-identity-cli.js",

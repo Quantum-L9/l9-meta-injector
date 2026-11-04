@@ -322,6 +322,8 @@ const AUTHORITY_CRITICAL_PATHS = [
   "tests/tracked_coverage_compatibility.test.ts",
   "tests/tracked_operations.test.ts",
   "tests/helpers/git_tree_fixtures.ts",
+  "scripts/qualify-tracked-snapshot.js",
+  "docs/qualification/universal-tracked-v2-2026-11-03.md",
 ].sort((a, b) => a.localeCompare(b));
 
 const LEGACY_ARCHIVE_BLOBS = Object.freeze({
