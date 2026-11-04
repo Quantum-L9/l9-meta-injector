@@ -74,6 +74,48 @@ npx l9-meta-injector check . --authority <your-org>    # read-only drift gate; e
 A first `check` before any `apply` reports the missing metadata index as drift; that is
 expected.
 
+## Universal tracked metadata v2 (explicit candidate contract)
+
+This unreleased candidate adds exact Git-tracked accounting. It is not present in
+the existing released `v4.3.0` tag: install an immutable validated candidate commit
+or its packed tarball before using it. Package release and consumer rollout require
+separate authorization.
+
+Universal coverage means every leaf entry at one exact Git revision receives exactly
+one v2 metadata record or protected/unsupported-exclusion receipt. It does **not** mean a header
+inside every file or a content hash for bytes that were never read. The tracked seam
+is conservative and index-only; source code, configuration, hidden files, archives,
+links and prose remain untouched. Canonical identities preserve exact path bytes,
+including case and Unicode form; legacy aliases are not unique canonical keys.
+
+```bash
+# Read-only, content-free Git commit-tree accounting. Export is outside the source.
+npx l9-meta-injector tracked-coverage . --repository Quantum-L9/example --revision <exact-commit> --out /tmp/example-coverage.json
+
+# Compare the active v2 index without repairing it.
+npx l9-meta-injector tracked-check . --repository Quantum-L9/example --revision <exact-commit>
+
+# Explicit governed index-only write; requires the repository's canonical authority.
+npx l9-meta-injector tracked-apply . --repository Quantum-L9/example --revision <exact-commit> --writer-ref <approved-writer-ref>
+
+# Replacing a legacy v1 index additionally requires an explicit migration choice.
+npx l9-meta-injector tracked-apply . --repository Quantum-L9/example --revision <exact-commit> --migrate-v1 --writer-ref <approved-writer-ref>
+```
+
+The one active store remains `.l9/metadata-index.jsonl`. V1 readers/valid behavior
+remain supported; mixed/unknown contracts and implicit v2-to-v1 downgrade are refused.
+Self-index and root `GIT_TREE_MANIFEST.json` are protected and accounted outside the
+tree to avoid hash cycles. Dirty/stale tracked sources and unsafe targets hold apply;
+the established CAS transaction provides rollback. A second unchanged apply performs
+no writes. No standalone annotating-inventory call or adjacent sidecar is used as a
+governed-write workaround.
+
+Read-only qualification uses pinned disposable repository snapshots. Private per-path
+metadata stays private. Snapshot proof does not promise continuous fleet freshness,
+host path materializability, blob encoding or semantic interpretation. See
+[ADR-081](docs/decisions/081-versioned-universal-tracked-metadata.md) and
+[the migration guide](docs/universal-tracked-metadata.md).
+
 ## GitHub Action
 
 ```yaml

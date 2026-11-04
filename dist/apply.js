@@ -132,7 +132,9 @@ function currentIntentState(target) {
     const stat = fs.lstatSync(target);
     if (stat.isSymbolicLink() || !stat.isFile())
         throw new Error(`apply target must be a regular file: ${target}`);
-    return { expectedExists: true, expectedHash: sha256(fs.readFileSync(target)) };
+    const bytes = fs.readFileSync(target);
+    (0, metadata_index_1.assertLegacyMetadataIndexWrite)(bytes.toString("utf8"));
+    return { expectedExists: true, expectedHash: sha256(bytes) };
 }
 function buildMutationIntents(root, plan, outDir) {
     const intents = [];
@@ -151,6 +153,12 @@ function buildMutationIntents(root, plan, outDir) {
         });
     }
     const indexTarget = path.join(root, ...metadata_index_1.METADATA_INDEX_RELATIVE_PATH.split("/"));
+    if (fs.existsSync(indexTarget)) {
+        const stat = fs.lstatSync(indexTarget);
+        if (stat.isSymbolicLink() || !stat.isFile())
+            throw new Error(`apply target must be a regular file: ${indexTarget}`);
+        (0, metadata_index_1.assertLegacyMetadataIndexWrite)(fs.readFileSync(indexTarget, "utf8"));
+    }
     // A scoped plan merged with a specific existing index (ADR-058): that base is the
     // compare-and-swap expectation, so a concurrent change after planning is refused.
     const base = plan.metadataIndexBase;

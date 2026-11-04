@@ -7,7 +7,7 @@
  * across checkout locations and operating systems.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.BLOCKING_DISCOVERY_DISPOSITIONS = exports.DISCOVERY_DISPOSITIONS = void 0;
+exports.TRACKED_POLICY_SCHEMA = exports.TRACKED_COVERAGE_SCHEMA = exports.BLOCKING_DISCOVERY_DISPOSITIONS = exports.DISCOVERY_DISPOSITIONS = void 0;
 exports.emptyDiscoverySummary = emptyDiscoverySummary;
 exports.summarizeDiscovery = summarizeDiscovery;
 const ordering_1 = require("./ordering");
@@ -59,4 +59,7 @@ function summarizeDiscovery(entries) {
     }
     return summary;
 }
+/** Versioned universal index-first evidence; never an inline mutation authorization. */
+exports.TRACKED_COVERAGE_SCHEMA = "l9.metadata-coverage/v2";
+exports.TRACKED_POLICY_SCHEMA = "l9.tracked-carrier-policy/v2";
 //# sourceMappingURL=discovery_contracts.js.map

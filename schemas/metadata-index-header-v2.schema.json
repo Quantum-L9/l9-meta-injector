@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://l9.dev/schemas/metadata-index-header-v2.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "kind",
+    "repository_id",
+    "producer_version",
+    "policy_contract"
+  ],
+  "properties": {
+    "schema": {
+      "const": "l9.metadata-index/v2"
+    },
+    "kind": {
+      "const": "header"
+    },
+    "repository_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+    },
+    "producer_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(?:[-+][0-9A-Za-z.-]+)?$"
+    },
+    "policy_contract": {
+      "const": "l9.tracked-carrier-policy/v2"
+    },
+    "legacy_identity_claims": {
+      "$ref": "metadata-index-migration-v2.schema.json#/$defs/legacyIdentityClaims"
+    }
+  }
+}

@@ -1,0 +1,515 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://l9.dev/schemas/tracked-operations-v2.schema.json",
+  "title": "Explicit tracked v2 workflow contracts",
+  "$ref": "#/$defs/coverageInput",
+  "$defs": {
+    "coverageInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "root",
+        "revision",
+        "repositoryId",
+        "contract",
+        "producerVersion"
+      ],
+      "properties": {
+        "root": {
+          "type": "string",
+          "minLength": 1
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "repositoryId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+        },
+        "contract": {
+          "const": "l9.tracked-carrier-policy/v2"
+        },
+        "producerVersion": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+(?:[-+][0-9A-Za-z.-]+)?$"
+        },
+        "maxOutputBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "checkInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "root",
+        "revision",
+        "repositoryId",
+        "contract",
+        "producerVersion"
+      ],
+      "properties": {
+        "root": {
+          "type": "string",
+          "minLength": 1
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "repositoryId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+        },
+        "contract": {
+          "const": "l9.tracked-carrier-policy/v2"
+        },
+        "producerVersion": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+(?:[-+][0-9A-Za-z.-]+)?$"
+        },
+        "maxOutputBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "migrateV1": {
+          "type": "boolean"
+        }
+      }
+    },
+    "applyInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "root",
+        "revision",
+        "repositoryId",
+        "contract",
+        "producerVersion"
+      ],
+      "properties": {
+        "root": {
+          "type": "string",
+          "minLength": 1
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "repositoryId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+        },
+        "contract": {
+          "const": "l9.tracked-carrier-policy/v2"
+        },
+        "producerVersion": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+(?:[-+][0-9A-Za-z.-]+)?$"
+        },
+        "maxOutputBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "migrateV1": {
+          "type": "boolean"
+        },
+        "expectedWriterRef": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "compilation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "header",
+        "records",
+        "bytes",
+        "sha256",
+        "carrierDecisions",
+        "coverage",
+        "coverageBytes"
+      ],
+      "properties": {
+        "header": {
+          "$ref": "metadata-index-header-v2.schema.json"
+        },
+        "records": {
+          "type": "array",
+          "items": {
+            "$ref": "metadata-index-record-v2.schema.json"
+          }
+        },
+        "bytes": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "carrierDecisions": {
+          "type": "array",
+          "items": {
+            "$ref": "metadata-coverage-v2.schema.json#/$defs/decision"
+          }
+        },
+        "coverage": {
+          "$ref": "metadata-coverage-v2.schema.json"
+        },
+        "coverageBytes": {
+          "type": "string"
+        }
+      }
+    },
+    "checkResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "passed",
+        "repositoryMutated",
+        "sourceMutated",
+        "authorityInspection",
+        "authorityConflicts",
+        "authorityNotices",
+        "metadataIndex",
+        "mode",
+        "drift",
+        "migrationEvidence"
+      ],
+      "properties": {
+        "passed": {
+          "type": "boolean"
+        },
+        "repositoryMutated": {
+          "const": false
+        },
+        "sourceMutated": {
+          "const": false
+        },
+        "authorityInspection": {
+          "const": "performed"
+        },
+        "authorityConflicts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "code",
+              "message"
+            ],
+            "properties": {
+              "code": {
+                "enum": [
+                  "META_AUTHORITY_FILE_MISSING",
+                  "META_AUTHORITY_SCHEMA_UNSUPPORTED",
+                  "META_AUTHORITY_CONFIG_INVALID",
+                  "META_AUTHORITY_SCAN_INCOMPLETE",
+                  "META_AUTHORITY_WRITER_MISMATCH",
+                  "META_AUTHORITY_CONFLICT",
+                  "META_LEGACY_METADATA_PRESENT",
+                  "META_SEMANTIC_BINDING_INVALID",
+                  "META_AUTHORITY_IDENTITY_MISMATCH"
+                ]
+              },
+              "message": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "authorityNotices": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "code",
+              "message"
+            ],
+            "properties": {
+              "code": {
+                "enum": [
+                  "META_LEGACY_METADATA_PRESENT",
+                  "META_LEGACY_WRITER_MIGRATION"
+                ]
+              },
+              "message": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "metadataIndex": {
+          "$ref": "tracked-operations-v2.schema.json#/$defs/compilation"
+        },
+        "migrationEvidence": {
+          "anyOf": [
+            { "type": "null" },
+            { "$ref": "metadata-index-migration-v2.schema.json" }
+          ]
+        },
+        "mode": {
+          "const": "tracked-check"
+        },
+        "drift": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "kind",
+              "message"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "missing",
+                  "stale",
+                  "extra",
+                  "conflict",
+                  "unsupported"
+                ]
+              },
+              "message": {
+                "type": "string"
+              },
+              "expectedHash": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "actualHash": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          }
+        }
+      }
+    },
+    "applyResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "passed",
+        "repositoryMutated",
+        "sourceMutated",
+        "authorityInspection",
+        "authorityConflicts",
+        "authorityNotices",
+        "metadataIndex",
+        "mode",
+        "transaction",
+        "migrationEvidence"
+      ],
+      "properties": {
+        "passed": {
+          "const": true
+        },
+        "repositoryMutated": {
+          "type": "boolean"
+        },
+        "sourceMutated": {
+          "const": false
+        },
+        "authorityInspection": {
+          "const": "performed"
+        },
+        "authorityConflicts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "code",
+              "message"
+            ],
+            "properties": {
+              "code": {
+                "enum": [
+                  "META_AUTHORITY_FILE_MISSING",
+                  "META_AUTHORITY_SCHEMA_UNSUPPORTED",
+                  "META_AUTHORITY_CONFIG_INVALID",
+                  "META_AUTHORITY_SCAN_INCOMPLETE",
+                  "META_AUTHORITY_WRITER_MISMATCH",
+                  "META_AUTHORITY_CONFLICT",
+                  "META_LEGACY_METADATA_PRESENT",
+                  "META_SEMANTIC_BINDING_INVALID",
+                  "META_AUTHORITY_IDENTITY_MISMATCH"
+                ]
+              },
+              "message": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "authorityNotices": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "code",
+              "message"
+            ],
+            "properties": {
+              "code": {
+                "enum": [
+                  "META_LEGACY_METADATA_PRESENT",
+                  "META_LEGACY_WRITER_MIGRATION"
+                ]
+              },
+              "message": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "metadataIndex": {
+          "$ref": "tracked-operations-v2.schema.json#/$defs/compilation"
+        },
+        "migrationEvidence": {
+          "anyOf": [
+            { "type": "null" },
+            { "$ref": "metadata-index-migration-v2.schema.json" }
+          ]
+        },
+        "mode": {
+          "const": "tracked-apply"
+        },
+        "transaction": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "transactionId",
+            "plannedWrites",
+            "committedWrites",
+            "changedPaths",
+            "rolledBack",
+            "journalPath"
+          ],
+          "properties": {
+            "transactionId": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "plannedWrites": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "committedWrites": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "changedPaths": {
+              "type": "array",
+              "maxItems": 1,
+              "items": {
+                "const": ".l9/metadata-index.jsonl"
+              }
+            },
+            "rolledBack": {
+              "const": false
+            },
+            "journalPath": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "cleanupPending": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "journalPath",
+                "retainedBackups",
+                "errors"
+              ],
+              "properties": {
+                "journalPath": {
+                  "type": "string"
+                },
+                "retainedBackups": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "errors": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

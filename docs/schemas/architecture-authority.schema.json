@@ -84,6 +84,22 @@
         },
         "package": {
           "const": "package.json"
+        },
+        "git_tree": {
+          "type": "string",
+          "minLength": 1
+        },
+        "git_runtime": {
+          "type": "string",
+          "minLength": 1
+        },
+        "namespace": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tracked_dispatch": {
+          "type": "string",
+          "minLength": 1
         }
       }
     },
@@ -255,6 +271,82 @@
         },
         "schemas": {
           "const": "tools/consolidation/schemas"
+        }
+      }
+    },
+    "tracked_metadata_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policy",
+        "index",
+        "receipt",
+        "population",
+        "identity",
+        "default_subject_payload_reads",
+        "default_authority_inspection",
+        "source_mutation",
+        "index_mode",
+        "active_store",
+        "implicit_downgrade",
+        "v1_migration_requires_consent",
+        "external_export",
+        "coverage_entrypoint",
+        "check_entrypoint",
+        "apply_entrypoint",
+        "continuous_fleet_freshness"
+      ],
+      "properties": {
+        "policy": {
+          "const": "l9.tracked-carrier-policy/v2"
+        },
+        "index": {
+          "const": "l9.metadata-index/v2"
+        },
+        "receipt": {
+          "const": "l9.metadata-coverage/v2"
+        },
+        "population": {
+          "const": "exact_immutable_git_tree_leaves"
+        },
+        "identity": {
+          "const": "declared_repository_plus_exact_path_bytes"
+        },
+        "default_subject_payload_reads": {
+          "const": false
+        },
+        "default_authority_inspection": {
+          "const": false
+        },
+        "source_mutation": {
+          "const": "never"
+        },
+        "index_mode": {
+          "const": "explicit_index_only"
+        },
+        "active_store": {
+          "const": ".l9/metadata-index.jsonl"
+        },
+        "implicit_downgrade": {
+          "const": false
+        },
+        "v1_migration_requires_consent": {
+          "const": true
+        },
+        "external_export": {
+          "const": "outside_source_descriptor_anchored_no_replace"
+        },
+        "coverage_entrypoint": {
+          "const": "src/carrier_operation.ts#runTrackedCoverage"
+        },
+        "check_entrypoint": {
+          "const": "src/carrier_operation.ts#runTrackedCheckAsync"
+        },
+        "apply_entrypoint": {
+          "const": "src/carrier_operation.ts#runTrackedApplyAsync"
+        },
+        "continuous_fleet_freshness": {
+          "const": false
         }
       }
     }

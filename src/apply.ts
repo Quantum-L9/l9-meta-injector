@@ -11,7 +11,7 @@ import {
   unsatisfiedAuthorizationDrift,
   type CarrierOperationPlan,
 } from "./carrier_operation";
-import { METADATA_INDEX_RELATIVE_PATH } from "./metadata_index";
+import { METADATA_INDEX_RELATIVE_PATH, assertLegacyMetadataIndexWrite } from "./metadata_index";
 import {
   executeFileTransaction,
   recoverPendingTransactions,
@@ -118,7 +118,9 @@ function currentIntentState(target: string): { expectedExists: boolean; expected
   if (!fs.existsSync(target)) return { expectedExists: false };
   const stat = fs.lstatSync(target);
   if (stat.isSymbolicLink() || !stat.isFile()) throw new Error(`apply target must be a regular file: ${target}`);
-  return { expectedExists: true, expectedHash: sha256(fs.readFileSync(target)) };
+  const bytes = fs.readFileSync(target);
+  assertLegacyMetadataIndexWrite(bytes.toString("utf8"));
+  return { expectedExists: true, expectedHash: sha256(bytes) };
 }
 
 function buildMutationIntents(root: string, plan: CarrierOperationPlan, outDir: string): FileMutationIntent[] {
@@ -137,6 +139,11 @@ function buildMutationIntents(root: string, plan: CarrierOperationPlan, outDir: 
   }
 
   const indexTarget = path.join(root, ...METADATA_INDEX_RELATIVE_PATH.split("/"));
+  if (fs.existsSync(indexTarget)) {
+    const stat = fs.lstatSync(indexTarget);
+    if (stat.isSymbolicLink() || !stat.isFile()) throw new Error(`apply target must be a regular file: ${indexTarget}`);
+    assertLegacyMetadataIndexWrite(fs.readFileSync(indexTarget, "utf8"));
+  }
   // A scoped plan merged with a specific existing index (ADR-058): that base is the
   // compare-and-swap expectation, so a concurrent change after planning is refused.
   const base = plan.metadataIndexBase;

@@ -157,3 +157,49 @@ export function resolveNamespace(filePath: string, cfg: NamespaceInput, typeHint
   const stem = identityStem(filePath);
   return { namespace, sharingScope, primitiveFolder, idStem: `${namespace}.${primitiveFolder}.${stem}` };
 }
+
+export const TRACKED_IDENTITY_PREFIX = "l9.path/v2:" as const;
+
+/** Reject lone surrogates instead of silently replacing repository identity bytes. */
+export function assertPortableRepositoryIdentity(repositoryId: string): void {
+  if (typeof repositoryId !== "string" || !repositoryId || /[\u0000-\u001f\u007f]/u.test(repositoryId)) {
+    throw new Error("tracked repository identity must be a nonempty portable string");
+  }
+  if (new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(Buffer.from(repositoryId, "utf8")) !== repositoryId) {
+    throw new Error("tracked repository identity must be exact UTF-8");
+  }
+}
+
+/** Canonical lossless byte decoder. Buffer's permissive base64 decoder is not validation. */
+export function decodeTrackedPathBytes(encoded: string): Buffer {
+  if (typeof encoded !== "string" || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)) {
+    throw new Error("tracked path bytes must be canonical base64");
+  }
+  const bytes = Buffer.from(encoded, "base64");
+  if (bytes.toString("base64") !== encoded) throw new Error("tracked path bytes must be canonical base64");
+  return bytes;
+}
+
+/** Two independently encoded tuple components; '.' cannot occur in either base64url component. */
+export function trackedPathIdentity(repositoryId: string, pathBytesBase64: string): string {
+  assertPortableRepositoryIdentity(repositoryId);
+  const bytes = decodeTrackedPathBytes(pathBytesBase64);
+  return `${TRACKED_IDENTITY_PREFIX}${Buffer.from(repositoryId, "utf8").toString("base64url")}.${bytes.toString("base64url")}`;
+}
+
+export function decodeTrackedPathIdentity(id: string): { repositoryId: string; pathBytesBase64: string } {
+  if (!id.startsWith(TRACKED_IDENTITY_PREFIX)) throw new Error("unsupported tracked identity version");
+  const tuple = id.slice(TRACKED_IDENTITY_PREFIX.length).split(".");
+  if (tuple.length !== 2 || tuple.some((part) => !/^[A-Za-z0-9_-]*$/.test(part))) {
+    throw new Error("invalid tracked identity tuple");
+  }
+  const repositoryId = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(Buffer.from(tuple[0], "base64url"));
+  const pathBytesBase64 = Buffer.from(tuple[1], "base64url").toString("base64");
+  if (trackedPathIdentity(repositoryId, pathBytesBase64) !== id) throw new Error("noncanonical tracked identity tuple");
+  return { repositoryId, pathBytesBase64 };
+}
+
+/** Git path order is an unsigned raw-byte lexicographic total order, never locale/NFC order. */
+export function compareTrackedPaths(left: { path_bytes_base64: string }, right: { path_bytes_base64: string }): number {
+  return Buffer.compare(decodeTrackedPathBytes(left.path_bytes_base64), decodeTrackedPathBytes(right.path_bytes_base64));
+}

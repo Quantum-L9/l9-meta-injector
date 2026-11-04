@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://l9.dev/schemas/metadata-index-migration-v2.schema.json",
+  "title": "Historical v1 identity claims and external v2 migration evidence",
+  "description": "Historical/unverified claims only. The source SHA-256 binds actual prior active v1 index bytes; snapshot presence is frozen at migration. The target SHA-256 binds final serialized v2 index bytes and is external only, never in its own header. Runtime verifies raw paths, canonical tuple identities, ordering, JSON values, and complete retention against the validated base.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "repository_id", "snapshot", "source_index", "target_index", "legacy_records"],
+  "properties": {
+    "schema": { "const": "l9.metadata-index-migration/v2" },
+    "repository_id": { "type": "string", "minLength": 1, "pattern": "^[^\\u0000-\\u001F\\u007F]+$" },
+    "snapshot": { "$ref": "#/$defs/snapshot" },
+    "source_index": { "$ref": "#/$defs/sourceIndex" },
+    "target_index": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "sha256"],
+      "properties": {
+        "schema": { "const": "l9.metadata-index/v2" },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "legacy_records": { "type": "array", "items": { "$ref": "#/$defs/legacyRecord" } }
+  },
+  "$defs": {
+    "sourceIndex": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "sha256"],
+      "properties": {
+        "schema": { "const": "l9.metadata-index/v1" },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["revision", "tree_oid", "object_format"],
+      "properties": {
+        "revision": { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" },
+        "tree_oid": { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" },
+        "object_format": { "enum": ["sha1", "sha256"] }
+      },
+      "allOf": [{
+        "if": { "properties": { "object_format": { "const": "sha1" } } },
+        "then": { "properties": { "revision": { "pattern": "^[0-9a-f]{40}$" }, "tree_oid": { "pattern": "^[0-9a-f]{40}$" } } },
+        "else": { "properties": { "revision": { "pattern": "^[0-9a-f]{64}$" }, "tree_oid": { "pattern": "^[0-9a-f]{64}$" } } }
+      }]
+    },
+    "jsonValue": {
+      "anyOf": [
+        { "type": ["null", "boolean", "number", "string"] },
+        { "type": "array", "items": { "$ref": "#/$defs/jsonValue" } },
+        { "type": "object", "additionalProperties": { "$ref": "#/$defs/jsonValue" }, "propertyNames": { "not": { "enum": ["absolute_path", "generated_at", "report_path", "run_started_at", "runtime_timestamp"] } } }
+      ]
+    },
+    "legacyRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "path_bytes_base64", "canonical_id", "legacy_metadata_id", "legacy_id_state", "legacy_content_hash_claim", "legacy_content_hash_scope", "snapshot_presence"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^(?![/.])(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*\\\\)(?!.*//)[^\\u0000-\\u001F\\u007F]+$" },
+        "path_bytes_base64": { "type": "string", "minLength": 4, "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$" },
+        "canonical_id": { "type": "string", "pattern": "^l9\\.path/v2:[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$" },
+        "legacy_metadata_id": { "$ref": "#/$defs/jsonValue" },
+        "legacy_id_state": { "enum": ["present", "absent"] },
+        "legacy_content_hash_claim": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "legacy_content_hash_scope": { "const": "legacy_v1_claim_not_revalidated" },
+        "snapshot_presence": { "enum": ["tracked", "absent_from_snapshot"] }
+      },
+      "allOf": [
+        { "if": { "properties": { "legacy_id_state": { "const": "absent" } } }, "then": { "properties": { "legacy_metadata_id": { "const": null } } } },
+        { "if": { "properties": { "legacy_metadata_id": { "type": "string" } } }, "then": { "properties": { "legacy_metadata_id": { "minLength": 1, "pattern": "^[^\\u0000-\\u001F\\u007F]+$" } } } }
+      ]
+    },
+    "legacyIdentityClaims": {
+      "description": "Immutable historical claims within the canonical v2 header, excluded from current coverage and alias keys. No target hash or current snapshot fields.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_index", "snapshot_at_migration", "legacy_records"],
+      "properties": {
+        "source_index": { "$ref": "#/$defs/sourceIndex" },
+        "snapshot_at_migration": { "$ref": "#/$defs/snapshot" },
+        "legacy_records": { "type": "array", "items": { "$ref": "#/$defs/legacyRecord" } }
+      }
+    }
+  }
+}

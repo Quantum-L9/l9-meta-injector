@@ -47,3 +47,9 @@ export { preflightArchive, canonicalMemberPath, memberCollisionKey } from "../ar
 export type { ArchiveHold, ArchiveHoldCode, ArchivePreflightInput, ArchivePreflightResult, PreflightMember, } from "../archive_preflight";
 export { probeFileEncoding, probeBufferEncoding, readUtf8Strict, isDecodableText, ENCODING_CHUNK_BYTES } from "../encoding";
 export type { EncodingProbe, EncodingStatus } from "../encoding";
+export { runTrackedCoverage, runTrackedCheckAsync, runTrackedApplyAsync } from "../carrier_operation";
+export { readVersionedMetadataIndex } from "../metadata_index";
+export type { TrackedCheckResult, TrackedApplyResult } from "../carrier_operation";
+export type { TrackedCoverageInput, TrackedCheckInput, TrackedApplyInput } from "../operation_contracts";
+export type { TrackedGitEntry, TrackedGitSnapshot } from "../discovery_contracts";
+export type { MetadataIndexHeaderV2, MetadataIndexRecordV2, TrackedCoverageReceipt, TrackedMetadataCompilation, VersionedMetadataIndex, } from "../metadata_index";

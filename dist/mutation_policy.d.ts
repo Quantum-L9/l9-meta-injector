@@ -7,6 +7,7 @@
  */
 import type { ArtifactType } from "./schema";
 import type { AuthorityConfig, CarrierDecision, MetadataCarrier, OperationMode } from "./operation_contracts";
+import type { TrackedGitEntry, TrackedCarrierDecision } from "./discovery_contracts";
 export declare const CARRIER_PRECEDENCE: readonly MetadataCarrier[];
 export declare const INLINE_MANAGED_ARTIFACT_TYPES: Set<ArtifactType>;
 export type CarrierInjectionStrategy = "yaml-frontmatter" | "line-comment" | "block-comment" | "sidecar" | "skip-binary";
@@ -45,3 +46,10 @@ export declare function authorityFreeCarrierTier(input: {
 export declare function resolveCarrierDecision(subject: CarrierSubject, authority: AuthorityConfig, mode: OperationMode): CarrierDecision;
 export declare function resolveCarrierDecisions(input: CarrierPolicyInput): CarrierDecision[];
 export declare function assertCarrierDecisionCoverage(subjects: readonly CarrierSubject[], decisions: readonly CarrierDecision[]): void;
+/** Exact Git facts are a separate input domain: discovery never grants write permission. */
+export declare function resolveTrackedCarrierDecision(entry: TrackedGitEntry): TrackedCarrierDecision;
+/** Spelling/evidence disagreements are corruption, not justified representation exceptions. */
+export declare function assertTrackedPathSpelling(entry: TrackedGitEntry): void;
+/** Unsupported path bytes stay in the external receipt, never vanish from coverage. */
+export declare function trackedIndexPathProblem(entry: TrackedGitEntry): string | null;
+export declare function resolveTrackedCarrierDecisions(entries: readonly TrackedGitEntry[]): TrackedCarrierDecision[];

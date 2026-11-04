@@ -265,6 +265,63 @@ const AUTHORITY_CRITICAL_PATHS = [
   "tools/consolidation/schemas/l9_meta.schema.yaml",
   "tools/consolidation/schemas/l9_artifact_meta.schema.yaml",
   "tools/consolidation/schemas/move_map.schema.yaml",
+  "src/git_tree.ts",
+  "src/git_runtime.ts",
+  "src/discovery_contracts.ts",
+  "src/metadata_index.ts",
+  "src/mutation_policy.ts",
+  "src/namespace.ts",
+  "src/carrier_operation.ts",
+  "src/operation_contracts.ts",
+  "src/apply.ts",
+  "scripts/tracked-metadata-cli.js",
+  "docs/decisions/081-versioned-universal-tracked-metadata.md",
+  "docs/universal-tracked-metadata.md",
+  "dist/git_tree.js",
+  "dist/git_tree.d.ts",
+  "dist/git_tree.js.map",
+  "dist/git_runtime.js",
+  "dist/git_runtime.d.ts",
+  "dist/git_runtime.js.map",
+  "dist/discovery_contracts.js",
+  "dist/discovery_contracts.d.ts",
+  "dist/discovery_contracts.js.map",
+  "dist/metadata_index.js",
+  "dist/metadata_index.d.ts",
+  "dist/metadata_index.js.map",
+  "dist/mutation_policy.js",
+  "dist/mutation_policy.d.ts",
+  "dist/mutation_policy.js.map",
+  "dist/namespace.js",
+  "dist/namespace.d.ts",
+  "dist/namespace.js.map",
+  "dist/carrier_operation.js",
+  "dist/carrier_operation.d.ts",
+  "dist/carrier_operation.js.map",
+  "dist/operation_contracts.js",
+  "dist/operation_contracts.d.ts",
+  "dist/operation_contracts.js.map",
+  "dist/apply.js",
+  "dist/apply.d.ts",
+  "dist/apply.js.map",
+  "schemas/local-files-extraction-v2.schema.json",
+  "schemas/metadata-coverage-v2.schema.json",
+  "schemas/metadata-index-header-v2.schema.json",
+  "schemas/metadata-index-migration-v2.schema.json",
+  "schemas/metadata-index-record-v2.schema.json",
+  "schemas/tracked-operations-v2.schema.json",
+  "tests/git_control_scope.test.ts",
+  "tests/git_tree_census.test.ts",
+  "tests/git_tree_no_contents.test.ts",
+  "tests/git_runtime.test.ts",
+  "tests/inventory_v2_admission.test.ts",
+  "tests/metadata_index_migration.test.ts",
+  "tests/path_exact_identity.test.ts",
+  "tests/tracked_cli.test.ts",
+  "tests/tracked_coverage.test.ts",
+  "tests/tracked_coverage_compatibility.test.ts",
+  "tests/tracked_operations.test.ts",
+  "tests/helpers/git_tree_fixtures.ts",
 ].sort((a, b) => a.localeCompare(b));
 
 const LEGACY_ARCHIVE_BLOBS = Object.freeze({
@@ -308,7 +365,7 @@ function validateAuthorityDocument(authority) {
   const errors = [];
   exactKeys(authority,
     ["schema","repository","audit_base_ref","status","engine","contracts","distribution","public_api","persisted_outputs","validation","legacy"],
-    ["operation_contract","invocation_boundary","deterministic_identity","carrier_policy","metadata_index","frontmatter_safety","local_source_acquisition"], "authority", errors);
+    ["operation_contract","invocation_boundary","deterministic_identity","carrier_policy","metadata_index","frontmatter_safety","local_source_acquisition","tracked_metadata_contract"], "authority", errors);
   if (!isPlainObject(authority)) return errors;
   if (authority.schema !== "l9.architecture-authority/v1") errors.push("authority.schema is invalid");
   if (authority.repository !== "Quantum-L9/l9-meta-injector") errors.push("authority.repository is invalid");
@@ -320,7 +377,7 @@ function validateAuthorityDocument(authority) {
     if (authority.engine.language !== "typescript") errors.push("authority.engine.language must be typescript");
     for (const key of ["source_root","runtime_entrypoint","package_entrypoint","types_entrypoint"]) requireString(authority.engine[key], `authority.engine.${key}`, errors);
   }
-  exactKeys(authority.contracts, ["metadata","pipeline","architecture","public_api","package"], ["operations","repository_authority","authority_scan","check","operation_dispatch","discovery","carrier_policy","metadata_index","carrier_operation","file_transaction","frontmatter_patch","output_placement","local_source","local_archive_policy","archive_preflight","encoding","corpus_analysis","corpus_report","corpus_scan","corpus_roots","corpus_cache","corpus_snapshot","corpus_diff","corpus_session","corpus_readiness","corpus_candidates","corpus_coverage","corpus_qualification","corpus_documents","corpus_semantics","corpus_pairs","corpus_fusion","corpus_reasoning","corpus_embeddings","corpus_semantic_run","corpus_archaeology","semantic_candidates","work_intelligence","ordering","inventory","inventory_archive_member"], "authority.contracts", errors);
+  exactKeys(authority.contracts, ["metadata","pipeline","architecture","public_api","package"], ["operations","repository_authority","authority_scan","check","operation_dispatch","discovery","carrier_policy","metadata_index","carrier_operation","file_transaction","frontmatter_patch","output_placement","local_source","local_archive_policy","archive_preflight","encoding","corpus_analysis","corpus_report","corpus_scan","corpus_roots","corpus_cache","corpus_snapshot","corpus_diff","corpus_session","corpus_readiness","corpus_candidates","corpus_coverage","corpus_qualification","corpus_documents","corpus_semantics","corpus_pairs","corpus_fusion","corpus_reasoning","corpus_embeddings","corpus_semantic_run","corpus_archaeology","semantic_candidates","work_intelligence","ordering","inventory","inventory_archive_member","git_tree","git_runtime","namespace","tracked_dispatch"], "authority.contracts", errors);
   if (isPlainObject(authority.contracts)) for (const key of Object.keys(authority.contracts)) requireString(authority.contracts[key], `authority.contracts.${key}`, errors);
   exactKeys(authority.distribution, ["model","source_root","generated_root","compliance_state","source_parity_command","packed_consumer_command","package_contract"], [], "authority.distribution", errors);
   if (isPlainObject(authority.distribution)) {
@@ -353,6 +410,16 @@ function validateAuthorityDocument(authority) {
   if (isPlainObject(authority.legacy)) {
     if (authority.legacy.status !== "reference_only") errors.push("authority.legacy.status must be reference_only");
     for (const key of ["documentation","runtime","schemas"]) requireString(authority.legacy[key], `authority.legacy.${key}`, errors);
+  }
+  if ("tracked_metadata_contract" in authority) {
+    const expected = {"policy":"l9.tracked-carrier-policy/v2","index":"l9.metadata-index/v2","receipt":"l9.metadata-coverage/v2","population":"exact_immutable_git_tree_leaves","identity":"declared_repository_plus_exact_path_bytes","default_subject_payload_reads":false,"default_authority_inspection":false,"source_mutation":"never","index_mode":"explicit_index_only","active_store":".l9/metadata-index.jsonl","implicit_downgrade":false,"v1_migration_requires_consent":true,"external_export":"outside_source_descriptor_anchored_no_replace","coverage_entrypoint":"src/carrier_operation.ts#runTrackedCoverage","check_entrypoint":"src/carrier_operation.ts#runTrackedCheckAsync","apply_entrypoint":"src/carrier_operation.ts#runTrackedApplyAsync","continuous_fleet_freshness":false};
+    exactKeys(authority.tracked_metadata_contract, Object.keys(expected), [], "authority.tracked_metadata_contract", errors);
+    if (isPlainObject(authority.tracked_metadata_contract)) for (const [key,value] of Object.entries(expected)) {
+      if (authority.tracked_metadata_contract[key] !== value) errors.push(`authority.tracked_metadata_contract.${key} is invalid`);
+    }
+    for (const [key,value] of Object.entries({git_tree:"src/git_tree.ts",git_runtime:"src/git_runtime.ts",namespace:"src/namespace.ts",tracked_dispatch:"scripts/tracked-metadata-cli.js"})) {
+      if (authority.contracts?.[key] !== value) errors.push(`authority.contracts.${key} must bind its v2 owner`);
+    }
   }
   return errors;
 }

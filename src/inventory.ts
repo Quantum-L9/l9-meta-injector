@@ -37,6 +37,7 @@ import { inspectFrontMatterDocument, patchManagedFrontMatter } from "./frontmatt
 import { injectFile, managedCarrierFreeBody } from "./inject";
 import { ArtifactType, NormalizedMeta, SharingScope, UNKNOWN, asRecord } from "./schema";
 import { projectPrimitiveTaxonomy } from "./normalize_meta";
+import { assertLegacyMetadataIndexWrite, METADATA_INDEX_RELATIVE_PATH } from "./metadata_index";
 import { classify } from "./classify";
 import { resolveNamespace } from "./namespace";
 import { assertHeaderIdentity, resolveHeaderIdentity } from "./authority";
@@ -565,6 +566,19 @@ export function inventoryTree(config: InventoryConfig): InventoryResult {
   // Absolutize root so absolute_path is truly absolute and relative_path/manifest
   // output are deterministic regardless of the caller's cwd.
   const root = path.resolve(config.root);
+  if (!cfg.dryRun && (cfg.injectHeaders || cfg.writeSidecars)) {
+    const index = path.join(root, METADATA_INDEX_RELATIVE_PATH);
+    try {
+      const parent = fs.lstatSync(path.dirname(index));
+      if (parent.isSymbolicLink() || !parent.isDirectory()) throw new Error("inventory: unsafe metadata authority directory");
+      const stat = fs.lstatSync(index);
+      if (stat.isSymbolicLink() || !stat.isFile()) throw new Error("inventory: unsafe metadata index target");
+      // Reuse the single index version owner; do not create another classifier.
+      assertLegacyMetadataIndexWrite(fs.readFileSync(index, "utf8"));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
   // outDir must not BE the root: its generated manifests would then sit directly in
   // root and get re-inventoried (and possibly injected) on the next run.
   if (path.resolve(config.outDir) === root) {

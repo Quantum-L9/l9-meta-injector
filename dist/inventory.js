@@ -68,6 +68,7 @@ const frontmatter_patch_1 = require("./frontmatter_patch");
 const inject_1 = require("./inject");
 const schema_1 = require("./schema");
 const normalize_meta_1 = require("./normalize_meta");
+const metadata_index_1 = require("./metadata_index");
 const classify_1 = require("./classify");
 const namespace_1 = require("./namespace");
 const authority_1 = require("./authority");
@@ -484,6 +485,23 @@ function inventoryTree(config) {
     // Absolutize root so absolute_path is truly absolute and relative_path/manifest
     // output are deterministic regardless of the caller's cwd.
     const root = path.resolve(config.root);
+    if (!cfg.dryRun && (cfg.injectHeaders || cfg.writeSidecars)) {
+        const index = path.join(root, metadata_index_1.METADATA_INDEX_RELATIVE_PATH);
+        try {
+            const parent = fs.lstatSync(path.dirname(index));
+            if (parent.isSymbolicLink() || !parent.isDirectory())
+                throw new Error("inventory: unsafe metadata authority directory");
+            const stat = fs.lstatSync(index);
+            if (stat.isSymbolicLink() || !stat.isFile())
+                throw new Error("inventory: unsafe metadata index target");
+            // Reuse the single index version owner; do not create another classifier.
+            (0, metadata_index_1.assertLegacyMetadataIndexWrite)(fs.readFileSync(index, "utf8"));
+        }
+        catch (error) {
+            if (error.code !== "ENOENT")
+                throw error;
+        }
+    }
     // outDir must not BE the root: its generated manifests would then sit directly in
     // root and get re-inventoried (and possibly injected) on the next run.
     if (path.resolve(config.outDir) === root) {
