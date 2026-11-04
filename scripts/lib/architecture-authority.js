@@ -316,6 +316,7 @@ const AUTHORITY_CRITICAL_PATHS = [
   "tests/git_runtime.test.ts",
   "tests/inventory_v2_admission.test.ts",
   "tests/metadata_index_migration.test.ts",
+  "tests/metadata_read_admission_races.test.ts",
   "tests/path_exact_identity.test.ts",
   "tests/tracked_cli.test.ts",
   "tests/tracked_coverage.test.ts",

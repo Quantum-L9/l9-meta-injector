@@ -177,6 +177,19 @@ export interface TrackedMetadataIndexBase {
     bytes?: string;
     index?: VersionedMetadataIndex;
 }
+/**
+ * Single producer-owned byte observation for tracked bases and legacy admission.
+ * Only open's ENOENT admits absence; links (including dangling links) and special
+ * entries are refused. Hash the same FD bytes that the caller classifies. Parsing
+ * stays with the version owner so legacy corrupt-v1 repair remains compatible.
+ */
+export declare function readMetadataIndexBaseBytes(rootInput: string): {
+    exists: false;
+} | {
+    exists: true;
+    raw: Buffer;
+    sha256: string;
+};
 /** Read only the active managed index, never a subject. Dangling symlinks count as unsafe. */
 export declare function readTrackedMetadataIndexBase(rootInput: string): TrackedMetadataIndexBase;
 export declare const METADATA_INDEX_MIGRATION_SCHEMA_V2: "l9.metadata-index-migration/v2";

@@ -9,13 +9,20 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { createHash } from "node:crypto";
-import type { AuthorityConfig, CarrierDecision, CheckDrift } from "./operation_contracts";
+import type {
+  AuthorityConfig, CarrierDecision, CheckDrift,
+  TrackedCoverageInput, TrackedCheckInput, TrackedApplyInput, AuthorityConflict, AuthorityNotice,
+} from "./operation_contracts";
 import {
   compileMetadataIndex,
   METADATA_INDEX_RELATIVE_PATH,
   parseMetadataIndex,
   type MetadataIndexCompilation,
   type MetadataIndexRecord,
+  compileTrackedMetadataIndex, readTrackedMetadataIndexBase, METADATA_INDEX_SCHEMA, METADATA_INDEX_SCHEMA_V2,
+  assertLegacyMetadataIndexWrite, type TrackedMetadataCompilation, type TrackedMetadataIndexBase,
+  compileMetadataIndexMigrationEvidence, metadataIndexMigrationAliasProblem, type MetadataIndexMigrationEvidenceV2,
+  compileMetadataIndexLegacyIdentityClaims, type MetadataIndexLegacyIdentityClaimsV2,
 } from "./metadata_index";
 import { resolveCarrierDecisions, assertCarrierDecisionCoverage, type CarrierSubject } from "./mutation_policy";
 import { runIndexGovernedPipelineAsync, type PipelineMetadataSubject, type PipelineResult } from "./pipeline";
@@ -23,13 +30,6 @@ import type { InjectionRecord, PipelineConfig } from "./schema";
 import { compareCodePoints } from "./ordering";
 import { readTrackedGitSnapshot, assertTrackedWorktreeCurrent } from "./git_tree";
 import { TRACKED_POLICY_SCHEMA, type TrackedGitSnapshot } from "./discovery_contracts";
-import type { TrackedCoverageInput, TrackedCheckInput, TrackedApplyInput, AuthorityConflict, AuthorityNotice } from "./operation_contracts";
-import {
-  compileTrackedMetadataIndex, readTrackedMetadataIndexBase, METADATA_INDEX_SCHEMA, METADATA_INDEX_SCHEMA_V2,
-  assertLegacyMetadataIndexWrite, type TrackedMetadataCompilation, type TrackedMetadataIndexBase,
-  compileMetadataIndexMigrationEvidence, metadataIndexMigrationAliasProblem, type MetadataIndexMigrationEvidenceV2,
-  compileMetadataIndexLegacyIdentityClaims, type MetadataIndexLegacyIdentityClaimsV2,
-} from "./metadata_index";
 import { inspectRepositoryAuthority, type RepositoryAuthorityInspection } from "./authority_scan";
 import { executeFileTransaction, TRANSACTION_DIRECTORY, type FileTransactionResult } from "./file_transaction";
 
@@ -378,8 +378,8 @@ export interface TrackedApplyResult {
 
 function assertTrackedOptIn(input: TrackedCoverageInput, governed = false): void {
   if (input.contract !== TRACKED_POLICY_SCHEMA) throw new Error("tracked workflow requires explicit l9.tracked-carrier-policy/v2 opt-in");
-  const allowed = ["root", "revision", "repositoryId", "contract", "producerVersion", "maxOutputBytes", "timeoutMs", ...(governed ? ["migrateV1", "expectedWriterRef"] : [])];
-  if (Object.keys(input).some((key) => !allowed.includes(key))) throw new Error("unsupported tracked workflow input field");
+  const allowed = new Set(["root", "revision", "repositoryId", "contract", "producerVersion", "maxOutputBytes", "timeoutMs", ...(governed ? ["migrateV1", "expectedWriterRef"] : [])]);
+  if (Object.keys(input).some((key) => !allowed.has(key))) throw new Error("unsupported tracked workflow input field");
   const options = input as TrackedApplyInput;
   if (options.migrateV1 !== undefined && typeof options.migrateV1 !== "boolean") throw new Error("migrateV1 must be explicit boolean consent");
   if (options.expectedWriterRef !== undefined && (typeof options.expectedWriterRef !== "string" || !options.expectedWriterRef.trim())) throw new Error("expectedWriterRef must be nonempty");
@@ -435,7 +435,12 @@ function trackedPlanDrift(plan: TrackedOperationPlan, migrateV1: boolean): Check
 }
 
 /** Read-only/in-memory by default; authority inspection is explicit and not content-free. */
-export async function runTrackedCheckAsync(input: TrackedCheckInput): Promise<TrackedCheckResult> {
+export function runTrackedCheckAsync(input: TrackedCheckInput): Promise<TrackedCheckResult> {
+  // The executor runs synchronously and turns thrown guards into rejected promises.
+  return new Promise((resolve) => resolve(runTrackedCheck(input)));
+}
+
+function runTrackedCheck(input: TrackedCheckInput): TrackedCheckResult {
   const plan = planTrackedOperation(input);
   assertTrackedWorktreeCurrent(plan.snapshot, plan.root);
   const drift = trackedPlanDrift(plan, input.migrateV1 === true);
@@ -476,7 +481,12 @@ function assertNoPendingTrackedTransactions(root: string): void {
 }
 
 /** Only the active canonical index may be committed; all census sources remain read-only. */
-export async function runTrackedApplyAsync(input: TrackedApplyInput): Promise<TrackedApplyResult> {
+export function runTrackedApplyAsync(input: TrackedApplyInput): Promise<TrackedApplyResult> {
+  // Do not defer planning/commit guards; preserve the async API's rejection semantics.
+  return new Promise((resolve) => resolve(runTrackedApply(input)));
+}
+
+function runTrackedApply(input: TrackedApplyInput): TrackedApplyResult {
   const plan = planTrackedOperation(input);
   if (plan.metadataIndexBase.unmergeableReason) throw new Error(`TRACKED_INDEX_UNMERGEABLE: ${plan.metadataIndexBase.unmergeableReason}`);
   assertTrackedAuthority(plan, input.expectedWriterRef);

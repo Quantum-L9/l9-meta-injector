@@ -78,6 +78,38 @@ function pathComponents(raw) {
     }
     return components;
 }
+function parseLeaf(row, format, seen) {
+    const tab = row.indexOf(9);
+    if (tab <= 0)
+        throw new Error("Malformed Git tree row");
+    const header = row.subarray(0, tab);
+    if (header.some((byte) => byte > 127))
+        throw new Error("Non-ASCII Git tree header");
+    const matched = /^(100644|100755|120000|160000) (blob|commit) ([0-9a-f]+)$/.exec(header.toString("ascii"));
+    if (!matched || !oidPattern(format).test(matched[3]))
+        throw new Error("Malformed Git leaf mode/type/object identity");
+    const mode = matched[1];
+    const type = matched[2];
+    if ((mode === "160000") !== (type === "commit"))
+        throw new Error("Invalid Git leaf mode/type combination");
+    const raw = row.subarray(tab + 1);
+    pathComponents(raw);
+    const base64 = raw.toString("base64");
+    if (seen.has(base64))
+        throw new Error("Duplicate Git leaf path");
+    seen.add(base64);
+    let decoded;
+    try {
+        decoded = (0, git_runtime_1.strictGitUtf8)(raw);
+    }
+    catch {
+        decoded = null;
+    }
+    return { raw, entry: Object.freeze({
+            path: decoded, path_bytes_base64: base64,
+            mode, object_type: type, object_oid: matched[3],
+        }) };
+}
 function parseLeaves(bytes, format) {
     if (bytes.length !== 0 && bytes[bytes.length - 1] !== 0) {
         throw new Error("Truncated Git tree output (missing NUL terminator)");
@@ -90,36 +122,7 @@ function parseLeaves(bytes, format) {
             continue;
         const row = bytes.subarray(start, end);
         start = end + 1;
-        const tab = row.indexOf(9);
-        if (tab <= 0)
-            throw new Error("Malformed Git tree row");
-        const header = row.subarray(0, tab);
-        if (header.some((byte) => byte > 127))
-            throw new Error("Non-ASCII Git tree header");
-        const matched = /^(100644|100755|120000|160000) (blob|commit) ([0-9a-f]+)$/.exec(header.toString("ascii"));
-        if (!matched || !oidPattern(format).test(matched[3]))
-            throw new Error("Malformed Git leaf mode/type/object identity");
-        const mode = matched[1];
-        const type = matched[2];
-        if ((mode === "160000") !== (type === "commit"))
-            throw new Error("Invalid Git leaf mode/type combination");
-        const raw = row.subarray(tab + 1);
-        pathComponents(raw);
-        const base64 = raw.toString("base64");
-        if (seen.has(base64))
-            throw new Error("Duplicate Git leaf path");
-        seen.add(base64);
-        let decoded;
-        try {
-            decoded = (0, git_runtime_1.strictGitUtf8)(raw);
-        }
-        catch {
-            decoded = null;
-        }
-        entries.push({ raw, entry: Object.freeze({
-                path: decoded, path_bytes_base64: base64,
-                mode, object_type: type, object_oid: matched[3],
-            }) });
+        entries.push(parseLeaf(row, format, seen));
     }
     // Byte order is portable even for names which no host can decode/materialize.
     entries.sort((a, b) => Buffer.compare(a.raw, b.raw));
@@ -163,6 +166,55 @@ function nulRows(bytes) {
     }
     return rows;
 }
+function trackedPathStat(current, missingGitlinkAllowed) {
+    try {
+        return fs.lstatSync(current);
+    }
+    catch {
+        // Gitlinks need not have an initialized checkout or referenced object.
+        if (missingGitlinkAllowed)
+            return null;
+        throw new Error("Tracked source path is missing or inaccessible");
+    }
+}
+function assertTrackedPathMode(stat, mode, isAncestor) {
+    if (isAncestor) {
+        if (!stat.isDirectory() || stat.isSymbolicLink())
+            throw new Error("Tracked source ancestor is not a safe directory");
+    }
+    else if (mode === "160000") {
+        // Checking a checked-out submodule HEAD would traverse another repository.
+        // Fail closed rather than silently ignore a possibly changed gitlink.
+        throw new Error("Cannot verify an initialized gitlink without submodule traversal");
+    }
+    else if (mode === "120000") {
+        if (!stat.isSymbolicLink())
+            throw new Error("Tracked source symlink mode changed");
+    }
+    else if (!stat.isFile() || stat.isSymbolicLink()) {
+        throw new Error("Tracked source file mode changed");
+    }
+}
+function assertTrackedEntryAncestry(entry, raw, root, checked) {
+    const components = pathComponents(raw);
+    if (process.platform === "win32" && (entry.path === null || raw.includes(92))) {
+        throw new Error("Tracked path cannot safely be checked on this host");
+    }
+    let current = Buffer.from(root);
+    for (let i = 0; i < components.length; i += 1) {
+        current = Buffer.concat([current, Buffer.from(path.sep), components[i]]);
+        const key = current.toString("base64");
+        if (checked.has(key))
+            continue;
+        const isAncestor = i < components.length - 1;
+        const stat = trackedPathStat(current, !isAncestor && entry.mode === "160000");
+        if (stat === null)
+            break;
+        assertTrackedPathMode(stat, entry.mode, isAncestor);
+        if (isAncestor)
+            checked.add(key);
+    }
+}
 /** Check ancestry using lstat only; never let Git follow a changed directory link. */
 function assertTrackedAncestry(snapshot, root) {
     const checked = new Set();
@@ -172,44 +224,7 @@ function assertTrackedAncestry(snapshot, root) {
             throw new Error("Noncanonical snapshot path identity");
         if (raw.equals(INDEX_PATH))
             continue;
-        const components = pathComponents(raw);
-        if (process.platform === "win32" && (entry.path === null || raw.includes(92))) {
-            throw new Error("Tracked path cannot safely be checked on this host");
-        }
-        let current = Buffer.from(root);
-        for (let i = 0; i < components.length; i += 1) {
-            current = Buffer.concat([current, Buffer.from(path.sep), components[i]]);
-            const key = current.toString("base64");
-            if (checked.has(key))
-                continue;
-            let stat;
-            try {
-                stat = fs.lstatSync(current);
-            }
-            catch {
-                // Gitlinks need not have an initialized checkout or referenced object.
-                if (i === components.length - 1 && entry.mode === "160000")
-                    break;
-                throw new Error("Tracked source path is missing or inaccessible");
-            }
-            if (i < components.length - 1) {
-                if (!stat.isDirectory() || stat.isSymbolicLink())
-                    throw new Error("Tracked source ancestor is not a safe directory");
-                checked.add(key);
-            }
-            else if (entry.mode === "160000") {
-                // Checking a checked-out submodule HEAD would traverse another repository.
-                // Fail closed rather than silently ignore a possibly changed gitlink.
-                throw new Error("Cannot verify an initialized gitlink without submodule traversal");
-            }
-            else if (entry.mode === "120000") {
-                if (!stat.isSymbolicLink())
-                    throw new Error("Tracked source symlink mode changed");
-            }
-            else if (!stat.isFile() || stat.isSymbolicLink()) {
-                throw new Error("Tracked source file mode changed");
-            }
-        }
+        assertTrackedEntryAncestry(entry, raw, root, checked);
     }
 }
 /**

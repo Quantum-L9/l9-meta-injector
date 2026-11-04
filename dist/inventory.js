@@ -486,21 +486,10 @@ function inventoryTree(config) {
     // output are deterministic regardless of the caller's cwd.
     const root = path.resolve(config.root);
     if (!cfg.dryRun && (cfg.injectHeaders || cfg.writeSidecars)) {
-        const index = path.join(root, metadata_index_1.METADATA_INDEX_RELATIVE_PATH);
-        try {
-            const parent = fs.lstatSync(path.dirname(index));
-            if (parent.isSymbolicLink() || !parent.isDirectory())
-                throw new Error("inventory: unsafe metadata authority directory");
-            const stat = fs.lstatSync(index);
-            if (stat.isSymbolicLink() || !stat.isFile())
-                throw new Error("inventory: unsafe metadata index target");
-            // Reuse the single index version owner; do not create another classifier.
-            (0, metadata_index_1.assertLegacyMetadataIndexWrite)(fs.readFileSync(index, "utf8"));
-        }
-        catch (error) {
-            if (error.code !== "ENOENT")
-                throw error;
-        }
+        const index = (0, metadata_index_1.readMetadataIndexBaseBytes)(root);
+        // Reuse the single index byte/version owners; corrupt v1 remains repairable.
+        if (index.exists)
+            (0, metadata_index_1.assertLegacyMetadataIndexWrite)(index.raw.toString("utf8"));
     }
     // outDir must not BE the root: its generated manifests would then sit directly in
     // root and get re-inventoried (and possibly injected) on the next run.

@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   forbidFs: false,
+  allowedControlPaths: new Set<string>(),
+  controlDescriptors: new Set<number>(),
   commands: [] as { executable: string; args: string[]; options: SpawnSyncOptions }[],
   fake: undefined as undefined | ((args: string[]) => SpawnSyncReturns<Buffer>),
 }));
@@ -24,12 +26,23 @@ vi.mock("node:fs", async (importOriginal) => {
     if (state.forbidFs) throw new Error(`Forbidden filesystem operation during census: ${name}`);
     return (actual[name as keyof typeof actual] as (...args: unknown[]) => unknown)(...args);
   };
+  const openControl = (...args: Parameters<typeof actual.openSync>) => {
+    if (state.forbidFs && (!state.allowedControlPaths.has(String(args[0])) || typeof args[1] !== "number" || (args[1] & 3) !== 0)) throw new Error("Forbidden subject/control write open during census");
+    const fd = actual.openSync(...args);
+    if (state.forbidFs) state.controlDescriptors.add(fd);
+    return fd;
+  };
+  const readControl = (...args: unknown[]) => {
+    if (state.forbidFs && !state.controlDescriptors.has(args[0] as number)) throw new Error("Forbidden subject descriptor read during census");
+    return (actual.readSync as (...values: unknown[]) => number)(...args);
+  };
+  const closeControl = (fd: number) => { state.controlDescriptors.delete(fd); return actual.closeSync(fd); };
   return { ...actual,
     readFileSync: forbid("readFileSync"), readFile: forbid("readFile"),
     readdirSync: forbid("readdirSync"), readdir: forbid("readdir"),
     readlinkSync: forbid("readlinkSync"), readlink: forbid("readlink"),
     lstatSync: forbid("lstatSync"), lstat: forbid("lstat"),
-    openSync: forbid("openSync"), open: forbid("open"),
+    openSync: openControl, readSync: readControl, closeSync: closeControl, open: forbid("open"),
     writeFileSync: forbid("writeFileSync"), writeFile: forbid("writeFile"),
     mkdirSync: forbid("mkdirSync"), renameSync: forbid("renameSync"), unlinkSync: forbid("unlinkSync"),
   };
@@ -74,17 +87,16 @@ function fakeCensus(rows: string | Buffer, options: { format?: string; revision?
 }
 function invoke() { return readTrackedGitSnapshot({ root: "/fixture", revision: "HEAD", repositoryId }); }
 
-afterEach(() => { state.forbidFs = false; state.commands.length = 0; state.fake = undefined; cleanupGitFixtures(); vi.restoreAllMocks(); });
+afterEach(() => { state.forbidFs = false; state.allowedControlPaths.clear(); state.controlDescriptors.clear(); state.commands.length = 0; state.fake = undefined; cleanupGitFixtures(); vi.restoreAllMocks(); });
 
 function filesystemState(root: string): Record<string, string> {
   const values: Record<string, string> = {};
   function visit(directory: string) {
-    for (const name of fs.readdirSync(directory)) {
-      const full = path.join(directory, name);
-      const stat = fs.lstatSync(full);
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const full = path.join(directory, entry.name);
       const relative = path.relative(root, full);
-      if (stat.isSymbolicLink()) values[relative] = `link:${fs.readlinkSync(full)}`;
-      else if (stat.isDirectory()) visit(full);
+      if (entry.isSymbolicLink()) values[relative] = `link:${fs.readlinkSync(full)}`;
+      else if (entry.isDirectory()) visit(full);
       else values[relative] = createHash("sha256").update(fs.readFileSync(full)).digest("hex");
     }
   }
@@ -110,6 +122,7 @@ describe("content-free census subprocess and filesystem boundaries", () => {
     state.commands.length = 0;
     let snapshot;
     try {
+      for (const control of [".git", ".git/config", ".git/commondir", ".git/config.worktree"]) state.allowedControlPaths.add(path.join(root, control));
       state.forbidFs = true;
       snapshot = readTrackedGitSnapshot({ root, revision: "HEAD", repositoryId });
     } finally { state.forbidFs = false; }

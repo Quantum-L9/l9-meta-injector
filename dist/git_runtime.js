@@ -102,6 +102,84 @@ function positiveLimit(value, fallback, name) {
 function strictGitUtf8(bytes) {
     return new node_util_1.TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
 }
+// These are Git control files, never tracked subject blobs. Read by descriptor
+// before launching native Git: newer Git can load includes during bootstrap,
+// before `config --no-includes` has parsed its command-specific switches.
+function gitControlEntry(file) {
+    let fd;
+    try {
+        fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+    }
+    catch (error) {
+        if (error.code === "ENOENT")
+            return null;
+        throw new Error("Unsafe Git control file");
+    }
+    try {
+        const before = fs.fstatSync(fd, { bigint: true });
+        if (before.isDirectory())
+            return { kind: "directory" };
+        if (!before.isFile() || before.size > 1024n * 1024n)
+            throw new Error("Unsupported Git control file");
+        const buffer = Buffer.alloc(1024 * 1024 + 1);
+        let count = 0;
+        while (count < buffer.length) {
+            const read = fs.readSync(fd, buffer, count, buffer.length - count, null);
+            if (read === 0)
+                break;
+            count += read;
+        }
+        const after = fs.fstatSync(fd, { bigint: true });
+        if (count > 1024 * 1024 || before.size !== after.size || before.mtimeNs !== after.mtimeNs)
+            throw new Error("Git control file changed or exceeded its cap");
+        return { kind: "file", text: strictGitUtf8(buffer.subarray(0, count)) };
+    }
+    finally {
+        fs.closeSync(fd);
+    }
+}
+function gitControlKind(file) {
+    let fd;
+    try {
+        fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+    }
+    catch (error) {
+        if (error.code === "ENOENT")
+            return null;
+        throw new Error("Unsafe Git control marker");
+    }
+    try {
+        const stat = fs.fstatSync(fd);
+        if (stat.isDirectory())
+            return "directory";
+        return stat.isFile() ? "file" : null;
+    }
+    finally {
+        fs.closeSync(fd);
+    }
+}
+function rejectGitControlIncludes(cwd) {
+    const dotGit = gitControlEntry(path.join(cwd, ".git"));
+    if (!dotGit && (gitControlKind(path.join(cwd, "HEAD")) !== "file" || gitControlKind(path.join(cwd, "objects")) !== "directory"))
+        return;
+    let gitDir = cwd;
+    if (dotGit?.kind === "directory")
+        gitDir = path.join(cwd, ".git");
+    if (dotGit?.kind === "file") {
+        const match = /^gitdir: ([^\r\n]+)\r?\n?$/.exec(dotGit.text);
+        if (!match)
+            throw new Error("Unsupported Git directory control");
+        gitDir = path.resolve(cwd, match[1]);
+    }
+    const common = gitControlEntry(path.join(gitDir, "commondir"));
+    const commonDir = common?.kind === "file" ? path.resolve(gitDir, common.text.trim()) : gitDir;
+    for (const file of new Set([path.join(commonDir, "config"), path.join(gitDir, "config.worktree"), path.join(commonDir, "config.worktree")])) {
+        const entry = gitControlEntry(file);
+        if (entry?.kind === "file" && /^[\t \uFEFF]*\[[\t ]*include(?:if)?(?:[\t ."\]]|$)/im.test(entry.text)) {
+            throw new Error("Git configuration includes are unsupported by content-free observation; use an isolated bare snapshot");
+        }
+    }
+}
 /**
  * A single observation has one cumulative output budget and deadline. This runner
  * reads Git metadata only. Callers choose a narrow command vocabulary, not a shell.
@@ -134,6 +212,7 @@ function readOnlyGitRunner(root, limits = {}) {
             throw new Error("Git observation timed out");
         if (remainingOutput <= 0)
             throw new Error("Git observation exceeded its output cap");
+        rejectGitControlIncludes(cwd);
         const result = (0, node_child_process_1.spawnSync)(git, [...config, ...args], {
             cwd, env, shell: false,
             timeout: remainingTime, maxBuffer: remainingOutput,

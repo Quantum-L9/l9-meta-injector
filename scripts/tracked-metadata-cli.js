@@ -21,7 +21,7 @@ function text(name, value) {
 
 function positiveInteger(name, value) {
   if (value === undefined) return undefined;
-  if (!/^[1-9][0-9]*$/.test(value) || !Number.isSafeInteger(Number(value))) {
+  if (!/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(Number(value))) {
     throw new CliArgsError(`${name} requires a positive safe integer`);
   }
   return Number(value);
@@ -72,6 +72,56 @@ function validateExternalReportPath(root, requested) {
   return { source, destination, parent, actualParent, name };
 }
 
+function captureFailure(errors, action) {
+  try {
+    action();
+  } catch (error) {
+    errors.push(error);
+  }
+}
+
+function throwFailures(errors) {
+  if (errors.length === 1) throw errors[0];
+  if (errors.length > 1) {
+    const messages = errors.map(error => error instanceof Error ? error.message : String(error));
+    throw new AggregateError(errors, `report export failed: ${messages.join("; ")}`);
+  }
+}
+
+function writeTemporaryReport(state, bytes) {
+  const fd = fs.openSync(state.temporary, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_NOFOLLOW, 0o600);
+  const errors = [];
+  try {
+    state.writtenStat = fs.fstatSync(fd);
+    fs.writeFileSync(fd, bytes, "utf8");
+    fs.fsyncSync(fd);
+  } catch (error) {
+    errors.push(error);
+  } finally {
+    captureFailure(errors, () => fs.closeSync(fd));
+  }
+  throwFailures(errors);
+}
+
+function assertReportParent(anchored, actualParent, source, phase) {
+  const currentParent = fs.realpathSync(anchored);
+  if (currentParent !== actualParent || isWithin(source, currentParent)) {
+    throw new CliArgsError(`report parent moved ${phase}`);
+  }
+}
+
+function rollbackOwnedReport(target, writtenStat) {
+  let actual;
+  try {
+    actual = fs.lstatSync(target);
+  } catch (error) {
+    if (error.code === "ENOENT") return;
+    throw error;
+  }
+  // A replaced file, directory or symlink belongs to the caller, not this writer.
+  if (actual.dev === writtenStat.dev && actual.ino === writtenStat.ino) fs.unlinkSync(target);
+}
+
 /** A source-safe report export, not a second index writer. Parent must already exist. */
 function writeExternalReport(root, requested, bytes) {
   const { source, destination, parent, actualParent, name } = validateExternalReportPath(root, requested);
@@ -80,95 +130,99 @@ function writeExternalReport(root, requested, bytes) {
   // in-memory API remains portable and never needs an export destination.
   const directory = fs.openSync(parent, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW);
   const anchored = `/proc/self/fd/${directory}`;
-  let temporary;
-  let installed = false;
-  let writtenStat;
   const anchoredTarget = path.join(anchored, name);
+  const errors = [];
+  const state = {};
+  let installed = false;
   try {
     if (!fs.existsSync(anchored)) throw new CliArgsError("descriptor-anchored report export is unavailable on this platform; use the in-memory API");
-    if (fs.realpathSync(anchored) !== actualParent) throw new CliArgsError("report parent changed during admission");
-    temporary = path.join(anchored, `.l9-coverage-${crypto.randomBytes(12).toString("hex")}.tmp`);
-    const fd = fs.openSync(temporary, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_NOFOLLOW, 0o600);
-    try {
-      fs.writeFileSync(fd, bytes, "utf8");
-      fs.fsyncSync(fd);
-      writtenStat = fs.fstatSync(fd);
-    } finally {
-      fs.closeSync(fd);
-    }
-    const currentParent = fs.realpathSync(anchored);
-    if (currentParent !== actualParent || isWithin(source, currentParent)) throw new CliArgsError("report parent moved during export");
+    assertReportParent(anchored, actualParent, source, "during admission");
+    state.temporary = path.join(anchored, `.l9-coverage-${crypto.randomBytes(12).toString("hex")}.tmp`);
+    writeTemporaryReport(state, bytes);
+    assertReportParent(anchored, actualParent, source, "during export");
     // Atomic no-replace installation: a raced-in file, directory or symlink holds.
-    fs.linkSync(temporary, anchoredTarget);
+    fs.linkSync(state.temporary, anchoredTarget);
     installed = true;
-    if (fs.realpathSync(anchored) !== actualParent) throw new CliArgsError("report parent moved at export commit");
+    assertReportParent(anchored, actualParent, source, "at export commit");
     fs.fsyncSync(directory);
   } catch (error) {
-    if (installed && writtenStat) {
-      const actual = fs.lstatSync(anchoredTarget);
-      if (actual.dev === writtenStat.dev && actual.ino === writtenStat.ino) fs.unlinkSync(anchoredTarget);
-    }
-    throw error;
+    errors.push(error);
   } finally {
-    try {
-      if (temporary) {
-        try { fs.unlinkSync(temporary); } catch (error) { if (error.code !== "ENOENT") throw error; }
-      }
-    } finally {
-      fs.closeSync(directory);
+    // Cleanup attempts cannot replace the primary error or skip descriptor close.
+    if (state.writtenStat) captureFailure(errors, () => rollbackOwnedReport(state.temporary, state.writtenStat));
+    if (errors.length > 0 && installed) {
+      captureFailure(errors, () => rollbackOwnedReport(anchoredTarget, state.writtenStat));
     }
+    captureFailure(errors, () => fs.closeSync(directory));
   }
+  throwFailures(errors);
   return destination;
 }
 
-async function main(argv = process.argv.slice(2)) {
-  if (argv.length === 1 && ["--help", "-h"].includes(argv[0])) {
-    process.stdout.write(TRACKED_HELP_TEXT);
-    return 0;
-  }
-  try {
-    const config = parseTrackedArguments(argv);
-    // The public experimental facade is the only composition surface used here.
-    const producer = require("../dist/public/advanced.js");
-    const input = {
-      root: config.root, revision: config.revision, repositoryId: config.repositoryId,
-      contract: "l9.tracked-carrier-policy/v2",
-      producerVersion: require("../package.json").version,
-      ...(config.timeoutMs === undefined ? {} : { timeoutMs: config.timeoutMs }),
-      ...(config.maxOutputBytes === undefined ? {} : { maxOutputBytes: config.maxOutputBytes }),
+async function runTrackedOperation(config) {
+  // The public experimental facade is the only composition surface used here.
+  const producer = require("../dist/public/advanced.js");
+  const input = {
+    root: config.root, revision: config.revision, repositoryId: config.repositoryId,
+    contract: "l9.tracked-carrier-policy/v2",
+    producerVersion: require("../package.json").version,
+    ...(config.timeoutMs === undefined ? {} : { timeoutMs: config.timeoutMs }),
+    ...(config.maxOutputBytes === undefined ? {} : { maxOutputBytes: config.maxOutputBytes }),
+  };
+  if (config.mode === "tracked-coverage") {
+    return {
+      compilation: producer.runTrackedCoverage(input),
+      result: { mode: config.mode, passed: true, repositoryMutated: false, sourceMutated: false, authorityInspection: "not_performed" },
     };
-    let compilation, result;
-    if (config.mode === "tracked-coverage") {
-      compilation = producer.runTrackedCoverage(input);
-      result = { mode: config.mode, passed: true, repositoryMutated: false, sourceMutated: false, authorityInspection: "not_performed" };
-    } else if (config.mode === "tracked-check") {
-      result = await producer.runTrackedCheckAsync({ ...input, migrateV1: config.migrateV1 });
-      compilation = result.metadataIndex;
-    } else {
-      result = await producer.runTrackedApplyAsync({ ...input, migrateV1: config.migrateV1, ...(config.expectedWriterRef ? { expectedWriterRef: config.expectedWriterRef } : {}) });
-      compilation = result.metadataIndex;
+  }
+  const operationInput = { ...input, migrateV1: config.migrateV1 };
+  const result = config.mode === "tracked-check"
+    ? await producer.runTrackedCheckAsync(operationInput)
+    : await producer.runTrackedApplyAsync({ ...operationInput, ...(config.expectedWriterRef ? { expectedWriterRef: config.expectedWriterRef } : {}) });
+  return { compilation: result.metadataIndex, result };
+}
+
+function reportBytes(config, compilation, result) {
+  if (config.mode === "tracked-coverage") return compilation.coverageBytes;
+  return `${JSON.stringify({
+    operation: { mode: result.mode, passed: result.passed, repositoryMutated: result.repositoryMutated, sourceMutated: result.sourceMutated, authorityInspection: result.authorityInspection },
+    authorityConflicts: result.authorityConflicts, drift: result.drift,
+    migrationEvidence: result.migrationEvidence,
+    coverage: compilation.coverage,
+  }, null, 2)}\n`;
+}
+
+function writeDiagnostics(result) {
+  if (result.drift?.length) process.stderr.write(`tracked-metadata: ${JSON.stringify(result.drift)}\n`);
+  if (result.authorityConflicts?.length) process.stderr.write(`tracked-metadata: ${JSON.stringify(result.authorityConflicts)}\n`);
+}
+
+function reportFailure(error) {
+  process.stderr.write(`tracked-metadata: failed: ${error instanceof Error ? error.message : String(error)}\n`);
+  return 2;
+}
+
+async function main(argv = process.argv.slice(2)) {
+  try {
+    if (argv.length === 1 && ["--help", "-h"].includes(argv[0])) {
+      process.stdout.write(TRACKED_HELP_TEXT);
+      return 0;
     }
+    const config = parseTrackedArguments(argv);
+    const { compilation, result } = await runTrackedOperation(config);
     const totals = compilation.coverage.totals;
     // The external export is not part of the source carrier transaction. An
     // export failure must not hide a successful index commit from the caller.
     process.stdout.write(`${config.mode}: passed=${result.passed} tree_leaves=${totals.tree_leaves} indexed=${totals.indexed} protected=${totals.protected} unsupported=${totals.unsupported} repository_mutated=${result.repositoryMutated} source_mutated=false\n`);
-    if (config.exportPath) {
-      const report = config.mode === "tracked-coverage" ? compilation.coverageBytes : `${JSON.stringify({
-        operation: { mode: result.mode, passed: result.passed, repositoryMutated: result.repositoryMutated, sourceMutated: result.sourceMutated, authorityInspection: result.authorityInspection },
-        authorityConflicts: result.authorityConflicts, drift: result.drift,
-        migrationEvidence: result.migrationEvidence,
-        coverage: compilation.coverage,
-      }, null, 2)}\n`;
-      writeExternalReport(config.root, config.exportPath, report);
-    }
-    if (result.drift?.length) process.stderr.write(`tracked-metadata: ${JSON.stringify(result.drift)}\n`);
-    if (result.authorityConflicts?.length) process.stderr.write(`tracked-metadata: ${JSON.stringify(result.authorityConflicts)}\n`);
+    if (config.exportPath) writeExternalReport(config.root, config.exportPath, reportBytes(config, compilation, result));
+    writeDiagnostics(result);
     return result.passed ? 0 : 1;
   } catch (error) {
-    process.stderr.write(`tracked-metadata: failed: ${error instanceof Error ? error.message : String(error)}\n`);
-    return 2;
+    return reportFailure(error);
   }
 }
 
-if (require.main === module) main().then(code => { process.exitCode = code; });
-module.exports = { main, parseTrackedArguments, writeExternalReport, TRACKED_MODES, TRACKED_HELP_TEXT };
+if (require.main === module) {
+  main().then(code => { process.exitCode = code; }).catch(error => { process.exitCode = reportFailure(error); });
+}
+module.exports = { main, parseTrackedArguments, validateExternalReportPath, writeExternalReport, TRACKED_MODES, TRACKED_HELP_TEXT };

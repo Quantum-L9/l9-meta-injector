@@ -77,7 +77,7 @@ export function fixtureTree(root: string, leaves: readonly FixtureLeaf[]): strin
     }
     const mode = leaf.mode ?? "100644";
     const oid = leaf.oid ?? fixtureBlob(root, leaf.contents);
-    node.leaves.push({ name: parts[parts.length - 1], mode, oid });
+    node.leaves.push({ name: parts.at(-1)!, mode, oid });
   }
   function write(node: TreeNode): string {
     const rows = node.leaves.map(({ name, mode, oid }) => Buffer.concat([

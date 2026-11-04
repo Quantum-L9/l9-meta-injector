@@ -55,6 +55,7 @@ exports.compileTrackedMetadataIndex = compileTrackedMetadataIndex;
 exports.assertTrackedIndexCoverage = assertTrackedIndexCoverage;
 exports.parseTrackedCoverage = parseTrackedCoverage;
 exports.assertLegacyMetadataIndexWrite = assertLegacyMetadataIndexWrite;
+exports.readMetadataIndexBaseBytes = readMetadataIndexBaseBytes;
 exports.readTrackedMetadataIndexBase = readTrackedMetadataIndexBase;
 exports.compileMetadataIndexLegacyIdentityClaims = compileMetadataIndexLegacyIdentityClaims;
 exports.compileMetadataIndexMigrationEvidence = compileMetadataIndexMigrationEvidence;
@@ -344,7 +345,8 @@ function assertSafeOutput(root) {
 function writeMetadataIndex(root, input, options = {}) {
     const output = assertSafeOutput(root);
     const compiled = compileMetadataIndex(input);
-    const current = fs.existsSync(output.target) ? fs.readFileSync(output.target, "utf8") : undefined;
+    const base = readMetadataIndexBaseBytes(root);
+    const current = base.exists ? base.raw.toString("utf8") : undefined;
     if (current !== undefined)
         assertLegacyMetadataIndexWrite(current);
     const changed = current !== compiled.bytes;
@@ -537,37 +539,46 @@ function readVersionedMetadataIndex(bytes) {
         return { schema: exports.METADATA_INDEX_SCHEMA_V2, header: JSON.parse(bytes.split("\n")[0]), records: parseMetadataIndexV2(bytes) };
     throw new Error("unsupported metadata index version");
 }
+function trackedMetadataRecord(entry, snapshot) {
+    if (entry.path === null || entry.carrier === "hard_skip")
+        throw new Error("indexed entry lacks safe representable path");
+    return {
+        schema: exports.METADATA_INDEX_SCHEMA_V2, path: entry.path, path_bytes_base64: entry.path_bytes_base64,
+        carrier: entry.carrier, artifact_type: "unknown", content_kind: "Unknown", content_hash: null, content_hash_scope: "not_inspected",
+        git: { mode: entry.mode, object_type: entry.object_type, object_oid: entry.object_oid, object_format: snapshot.object_format },
+        metadata: { id: (0, namespace_1.trackedPathIdentity)(snapshot.repository_id, entry.path_bytes_base64), repository_id: snapshot.repository_id, legacy_alias: legacyAlias(snapshot.repository_id, entry.path) },
+    };
+}
+function trackedMetadataHeader(input) {
+    const { snapshot } = input;
+    const header = { schema: exports.METADATA_INDEX_SCHEMA_V2, kind: "header", repository_id: snapshot.repository_id, producer_version: input.producerVersion, policy_contract: discovery_contracts_1.TRACKED_POLICY_SCHEMA };
+    if (input.legacyIdentityClaims !== undefined) {
+        assertLegacyIdentityClaims(input.legacyIdentityClaims, snapshot.repository_id);
+        header.legacy_identity_claims = freezeHistoricalClaims(input.legacyIdentityClaims);
+    }
+    return header;
+}
+function trackedAliasAmbiguities(records) {
+    const byAlias = new Map();
+    for (const record of records) {
+        const alias = record.metadata.legacy_alias.id;
+        byAlias.set(alias, [...(byAlias.get(alias) ?? []), record.metadata.id]);
+    }
+    return [...byAlias.entries()]
+        .filter(([, ids]) => ids.length > 1).sort(([a], [b]) => (0, ordering_1.compareCodePoints)(a, b))
+        .map(([alias, ids]) => ({ schema: exports.LEGACY_ALIAS_SCHEMA, alias, ids }));
+}
 function compileTrackedMetadataIndex(input) {
     const { snapshot } = input;
     if (typeof input.producerVersion !== "string" || !/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(input.producerVersion))
         throw new Error("explicit producer version required");
     const decisions = [...(input.decisions ?? (0, mutation_policy_2.resolveTrackedCarrierDecisions)(snapshot.entries))].sort(namespace_1.compareTrackedPaths);
     assertTrackedDecisionCoverage(snapshot, decisions);
-    const records = decisions.filter((entry) => entry.disposition === "indexed").map((entry) => {
-        if (entry.path === null || entry.carrier === "hard_skip")
-            throw new Error("indexed entry lacks safe representable path");
-        return {
-            schema: exports.METADATA_INDEX_SCHEMA_V2, path: entry.path, path_bytes_base64: entry.path_bytes_base64,
-            carrier: entry.carrier, artifact_type: "unknown", content_kind: "Unknown", content_hash: null, content_hash_scope: "not_inspected",
-            git: { mode: entry.mode, object_type: entry.object_type, object_oid: entry.object_oid, object_format: snapshot.object_format },
-            metadata: { id: (0, namespace_1.trackedPathIdentity)(snapshot.repository_id, entry.path_bytes_base64), repository_id: snapshot.repository_id, legacy_alias: legacyAlias(snapshot.repository_id, entry.path) },
-        };
-    });
-    const header = { schema: exports.METADATA_INDEX_SCHEMA_V2, kind: "header", repository_id: snapshot.repository_id, producer_version: input.producerVersion, policy_contract: discovery_contracts_1.TRACKED_POLICY_SCHEMA };
-    if (input.legacyIdentityClaims !== undefined) {
-        assertLegacyIdentityClaims(input.legacyIdentityClaims, snapshot.repository_id);
-        header.legacy_identity_claims = freezeHistoricalClaims(input.legacyIdentityClaims);
-    }
+    const records = decisions.filter((entry) => entry.disposition === "indexed").map((entry) => trackedMetadataRecord(entry, snapshot));
+    const header = trackedMetadataHeader(input);
     const bytes = serializeMetadataIndexV2(records, header);
     const sha256 = (0, node_crypto_1.createHash)("sha256").update(bytes).digest("hex");
-    const byAlias = new Map();
-    for (const record of records) {
-        const alias = record.metadata.legacy_alias.id;
-        byAlias.set(alias, [...(byAlias.get(alias) ?? []), record.metadata.id]);
-    }
-    const alias_ambiguities = [...byAlias.entries()]
-        .filter(([, ids]) => ids.length > 1).sort(([a], [b]) => (0, ordering_1.compareCodePoints)(a, b))
-        .map(([alias, ids]) => ({ schema: exports.LEGACY_ALIAS_SCHEMA, alias, ids }));
+    const alias_ambiguities = trackedAliasAmbiguities(records);
     const coverage = {
         schema: discovery_contracts_1.TRACKED_COVERAGE_SCHEMA, policy_contract: discovery_contracts_1.TRACKED_POLICY_SCHEMA, producer_version: input.producerVersion,
         repository_id: snapshot.repository_id,
@@ -637,55 +648,149 @@ function assertLegacyMetadataIndexWrite(bytes) {
         }
     }
 }
-/** Read only the active managed index, never a subject. Dangling symlinks count as unsafe. */
-function readTrackedMetadataIndexBase(rootInput) {
+function sameFileIdentity(left, right) {
+    return left.dev === right.dev && left.ino === right.ino;
+}
+/** Check names against held directory descriptors, not against a prior existence probe. */
+function assertMetadataIndexDirectories(directories) {
+    for (const directory of directories) {
+        const named = fs.lstatSync(directory.path);
+        const held = fs.fstatSync(directory.descriptor);
+        if (named.isSymbolicLink() || !named.isDirectory() || !held.isDirectory()
+            || !sameFileIdentity(named, directory.stat) || !sameFileIdentity(held, directory.stat)) {
+            throw new Error("metadata index parent changed during inspection; ancestry must remain real directories");
+        }
+    }
+}
+/**
+ * Linux permits directory-relative opens through a held /proc descriptor. Elsewhere
+ * Node has no portable openat: parent identities are checked before and after the
+ * read, but a hostile transient parent swap-and-restore is not an atomic boundary.
+ * Do not fall back to pathname traversal if Linux's descriptor namespace is absent.
+ */
+function metadataIndexChildPath(parent, name) {
+    return process.platform === "linux"
+        ? `/proc/self/fd/${parent.descriptor}/${name}`
+        : path.join(parent.path, name);
+}
+function openMetadataIndexEntry(target, directory) {
+    try {
+        // NONBLOCK prevents a substituted FIFO from hanging before fstat can refuse it.
+        return fs.openSync(target, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK
+            | (directory ? fs.constants.O_DIRECTORY : 0));
+    }
+    catch (error) {
+        const code = error.code;
+        if (code === "ELOOP" || code === "ENOTDIR") {
+            throw new Error(directory ? "metadata index ancestry must be a real directory" : "metadata index target must be a regular file");
+        }
+        throw error;
+    }
+}
+/** Optional paths are absent only when their direct open fails with ENOENT. */
+function openOptionalMetadataIndexEntry(target, directory) {
+    try {
+        return openMetadataIndexEntry(target, directory);
+    }
+    catch (error) {
+        if (error.code === "ENOENT")
+            return undefined;
+        throw error;
+    }
+}
+function ownMetadataIndexDirectory(namedPath, descriptor, directories) {
+    let stat;
+    try {
+        stat = fs.fstatSync(descriptor);
+    }
+    catch (error) {
+        fs.closeSync(descriptor);
+        throw error;
+    }
+    const directory = { path: namedPath, descriptor, stat };
+    directories.push(directory);
+    if (!stat.isDirectory())
+        throw new Error("metadata index ancestry must be a real directory");
+    return directory;
+}
+function observeMetadataIndexDirectories(root, directories) {
+    const filesystemRoot = path.parse(root).root;
+    let parent = ownMetadataIndexDirectory(filesystemRoot, openMetadataIndexEntry(filesystemRoot, true), directories);
+    if (process.platform === "linux") {
+        // Establish the descriptor namespace outside the optional-path ENOENT catches.
+        const pinned = fs.statSync(`/proc/self/fd/${parent.descriptor}`);
+        if (!pinned.isDirectory() || !sameFileIdentity(pinned, parent.stat)) {
+            throw new Error("metadata index directory descriptor namespace is unavailable");
+        }
+    }
+    for (const segment of root.slice(filesystemRoot.length).split(path.sep).filter(Boolean)) {
+        parent = ownMetadataIndexDirectory(path.join(parent.path, segment), openMetadataIndexEntry(metadataIndexChildPath(parent, segment), true), directories);
+    }
+    const descriptor = openOptionalMetadataIndexEntry(metadataIndexChildPath(parent, ".l9"), true);
+    if (descriptor === undefined) {
+        assertMetadataIndexDirectories(directories);
+        return false;
+    }
+    ownMetadataIndexDirectory(path.join(parent.path, ".l9"), descriptor, directories);
+    assertMetadataIndexDirectories(directories);
+    return true;
+}
+function assertMetadataIndexTarget(directories, target, opened) {
+    assertMetadataIndexDirectories(directories);
+    const named = fs.lstatSync(target);
+    if (named.isSymbolicLink() || !named.isFile() || !sameFileIdentity(named, opened)) {
+        throw new Error("metadata index target changed during inspection");
+    }
+}
+function assertMetadataIndexRead(before, after, raw) {
+    if (!after.isFile() || !sameFileIdentity(after, before) || raw.length !== before.size
+        || after.size !== before.size || after.mtimeMs !== before.mtimeMs || after.ctimeMs !== before.ctimeMs) {
+        throw new Error("metadata index target changed during inspection");
+    }
+}
+/**
+ * Single producer-owned byte observation for tracked bases and legacy admission.
+ * Only open's ENOENT admits absence; links (including dangling links) and special
+ * entries are refused. Hash the same FD bytes that the caller classifies. Parsing
+ * stays with the version owner so legacy corrupt-v1 repair remains compatible.
+ */
+function readMetadataIndexBaseBytes(rootInput) {
     const root = path.resolve(rootInput);
-    let cursor = path.parse(root).root;
-    for (const segment of root.slice(cursor.length).split(path.sep).filter(Boolean)) {
-        cursor = path.join(cursor, segment);
-        const stat = fs.lstatSync(cursor);
-        if (stat.isSymbolicLink() || !stat.isDirectory())
-            throw new Error("tracked index root ancestry must be real directories");
-    }
-    const directory = path.join(root, ".l9");
+    const directories = [];
+    let descriptor;
     try {
-        const stat = fs.lstatSync(directory);
-        if (stat.isSymbolicLink() || !stat.isDirectory())
-            throw new Error("tracked index .l9 must be a real directory");
-    }
-    catch (error) {
-        if (error.code === "ENOENT")
+        if (!observeMetadataIndexDirectories(root, directories))
             return { exists: false };
-        throw error;
-    }
-    const target = path.join(directory, "metadata-index.jsonl");
-    let before;
-    try {
-        before = fs.lstatSync(target);
-    }
-    catch (error) {
-        if (error.code === "ENOENT")
+        const parent = directories.at(-1);
+        descriptor = openOptionalMetadataIndexEntry(metadataIndexChildPath(parent, "metadata-index.jsonl"), false);
+        if (descriptor === undefined) {
+            assertMetadataIndexDirectories(directories);
             return { exists: false };
-        throw error;
-    }
-    if (before.isSymbolicLink() || !before.isFile())
-        throw new Error("tracked index target must be a regular file");
-    const descriptor = fs.openSync(target, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
-    let raw;
-    try {
-        const opened = fs.fstatSync(descriptor);
-        if (!opened.isFile() || opened.dev !== before.dev || opened.ino !== before.ino)
-            throw new Error("tracked index target changed during inspection");
-        raw = fs.readFileSync(descriptor);
+        }
+        const before = fs.fstatSync(descriptor);
+        if (!before.isFile())
+            throw new Error("metadata index target must be a regular file");
+        const target = path.join(parent.path, "metadata-index.jsonl");
+        assertMetadataIndexTarget(directories, target, before);
+        const raw = fs.readFileSync(descriptor);
+        assertMetadataIndexRead(before, fs.fstatSync(descriptor), raw);
+        assertMetadataIndexTarget(directories, target, before);
+        return { exists: true, raw, sha256: (0, node_crypto_1.createHash)("sha256").update(raw).digest("hex") };
     }
     finally {
-        fs.closeSync(descriptor);
+        if (descriptor !== undefined)
+            fs.closeSync(descriptor);
+        for (const directory of directories.reverse())
+            fs.closeSync(directory.descriptor);
     }
-    const after = fs.lstatSync(target);
-    if (after.isSymbolicLink() || !after.isFile() || after.dev !== before.dev || after.ino !== before.ino)
-        throw new Error("tracked index target changed during inspection");
-    const bytes = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(raw);
-    return { exists: true, bytes, sha256: (0, node_crypto_1.createHash)("sha256").update(raw).digest("hex"), index: readVersionedMetadataIndex(bytes) };
+}
+/** Read only the active managed index, never a subject. Dangling symlinks count as unsafe. */
+function readTrackedMetadataIndexBase(rootInput) {
+    const base = readMetadataIndexBaseBytes(rootInput);
+    if (!base.exists)
+        return { exists: false };
+    const bytes = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(base.raw);
+    return { exists: true, bytes, sha256: base.sha256, index: readVersionedMetadataIndex(bytes) };
 }
 exports.METADATA_INDEX_MIGRATION_SCHEMA_V2 = "l9.metadata-index-migration/v2";
 function assertLegacyIdentityClaims(value, repositoryId) {

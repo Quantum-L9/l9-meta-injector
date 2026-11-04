@@ -126,15 +126,12 @@ function renderInlineBytes(root, planned, outDir) {
         fs.rmSync(renderRoot, { recursive: true, force: true });
     }
 }
-function currentIntentState(target) {
-    if (!fs.existsSync(target))
+function currentIntentState(root) {
+    const base = (0, metadata_index_1.readMetadataIndexBaseBytes)(root);
+    if (!base.exists)
         return { expectedExists: false };
-    const stat = fs.lstatSync(target);
-    if (stat.isSymbolicLink() || !stat.isFile())
-        throw new Error(`apply target must be a regular file: ${target}`);
-    const bytes = fs.readFileSync(target);
-    (0, metadata_index_1.assertLegacyMetadataIndexWrite)(bytes.toString("utf8"));
-    return { expectedExists: true, expectedHash: sha256(bytes) };
+    (0, metadata_index_1.assertLegacyMetadataIndexWrite)(base.raw.toString("utf8"));
+    return { expectedExists: true, expectedHash: base.sha256 };
 }
 function buildMutationIntents(root, plan, outDir) {
     const intents = [];
@@ -152,13 +149,8 @@ function buildMutationIntents(root, plan, outDir) {
             bytes,
         });
     }
-    const indexTarget = path.join(root, ...metadata_index_1.METADATA_INDEX_RELATIVE_PATH.split("/"));
-    if (fs.existsSync(indexTarget)) {
-        const stat = fs.lstatSync(indexTarget);
-        if (stat.isSymbolicLink() || !stat.isFile())
-            throw new Error(`apply target must be a regular file: ${indexTarget}`);
-        (0, metadata_index_1.assertLegacyMetadataIndexWrite)(fs.readFileSync(indexTarget, "utf8"));
-    }
+    // Observe and admit one FD's bytes, even when a scoped plan supplies the CAS base.
+    const current = currentIntentState(root);
     // A scoped plan merged with a specific existing index (ADR-058): that base is the
     // compare-and-swap expectation, so a concurrent change after planning is refused.
     const base = plan.metadataIndexBase;
@@ -166,7 +158,7 @@ function buildMutationIntents(root, plan, outDir) {
         throw new Error(`METADATA_INDEX_UNMERGEABLE: ${base.unmergeableReason}`);
     const indexState = base
         ? (base.exists ? { expectedExists: true, expectedHash: base.sha256 } : { expectedExists: false })
-        : currentIntentState(indexTarget);
+        : current;
     const desiredIndexHash = sha256(plan.metadataIndex.bytes);
     if (indexState.expectedHash !== desiredIndexHash) {
         intents.push({
@@ -195,8 +187,8 @@ function validateCommittedPlan(root, plan) {
             throw new Error(`APPLY_VERIFICATION_FAILED: ${relativePath(root, planned.sourcePath)}: ${verified.issues.join("; ")}`);
         }
     }
-    const indexTarget = path.join(root, ...metadata_index_1.METADATA_INDEX_RELATIVE_PATH.split("/"));
-    if (!fs.existsSync(indexTarget) || fs.readFileSync(indexTarget, "utf8") !== plan.metadataIndex.bytes) {
+    const index = (0, metadata_index_1.readMetadataIndexBaseBytes)(root);
+    if (!index.exists || index.raw.toString("utf8") !== plan.metadataIndex.bytes) {
         throw new Error("APPLY_POSTCONDITION_FAILED: canonical metadata index differs from planned bytes");
     }
 }

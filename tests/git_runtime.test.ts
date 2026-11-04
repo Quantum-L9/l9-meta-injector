@@ -69,3 +69,21 @@ describe.skipIf(process.platform === "win32")("shared internal Git runtime", () 
     expect(() => readTrackedGitSnapshot({ root, revision: "HEAD", repositoryId: "fixture", maxOutputBytes: 32 })).toThrow(/cap/);
   });
 });
+
+
+describe.skipIf(process.platform === "win32")("include bootstrap admission", () => {
+  it("rejects include control before launching even a Git that would bootstrap includes", async () => {
+    const executableRoot = scratchDirectory(), repository = scratchDirectory();
+    const launched = path.join(executableRoot, "launched");
+    stub(executableRoot, `#!${process.execPath}\nrequire('node:fs').writeFileSync(${JSON.stringify(launched)}, 'launched');process.exit(42);\n`);
+    fs.mkdirSync(path.join(repository, "objects"));
+    fs.writeFileSync(path.join(repository, "HEAD"), "ref: refs/heads/main\n");
+    fs.writeFileSync(path.join(repository, "config"), "[include]\n  path = payload.conf\n");
+    fs.writeFileSync(path.join(repository, "payload.conf"), "not a Git configuration payload\n");
+    await resolveWith(executableRoot);
+    const { readOnlyGitRunner } = await import("../src/git_runtime");
+    expect(() => readOnlyGitRunner(repository)).toThrow(/configuration includes are unsupported/);
+    expect(fs.existsSync(launched)).toBe(false);
+    expect(fs.readFileSync(path.join(repository, "payload.conf"), "utf8")).toBe("not a Git configuration payload\n");
+  });
+});

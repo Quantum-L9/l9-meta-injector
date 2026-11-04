@@ -28,9 +28,12 @@ The 61 protected entries are justified receipt outcomes, not silently missing re
 
 `scripts/qualify-tracked-snapshot.js` is a Linux maintenance-only helper, **not shipped in the package**. It calls the existing producer's tracked coverage API and independently compares native tree metadata; it does not classify mutation permission or write consumer metadata. It requires `/usr/bin/git`, a locally available immutable commit/tree and an output directory outside the source.
 
+The output directory must already exist, be canonical and caller-owned with mode exactly `0700`. The helper neither creates nor chmods directories and rejects source destinations, symlink aliases and existing result files. Its three result files use the CLI's descriptor-safe exclusive writer independently; it is not a multi-file transaction. A private, stationary output namespace is an explicit assumption.
+
 ```bash
 # Disposable bare metadata-only checkout. Acquire an approved exact commit if needed.
 gh repo clone <approved-repository> /private/snapshot.git -- --bare --filter=blob:none
+mkdir -m 700 /private/qualification-output
 
 # Existing root, declared repository identity, exact source revision, private output,
 # producer checkout and exact implementation provenance. No tracked apply/check.
@@ -45,6 +48,8 @@ The helper retains private index/receipt/result files with restrictive permissio
 ## Validation and remaining authorization
 
 The implementation's canonical `npm run validate:report` ran `npm run lint` and `npm run validate`, both exit zero. The aggregate includes source typing, unit/adversarial tests, exact public runtime and declaration contracts, closed authority/schema validation, manifest integrity, committed distribution parity, selfpack and real installed-package CLI/SDK v2 execution. The package runner proves read-only coverage/check, idempotent governed index-only apply, consumed-ID v1 migration and replay while preserving generated fixture sources.
+
+The first published head exposed six CodeQL filesystem-race patterns, a newer-Git include-bootstrap difference and SonarCloud reliability findings. They were not dismissed or waived. Producer metadata admission now reads bounded, stable bytes through held descriptors, with Linux parent anchoring; Git control includes are rejected before native bootstrap. Focused race/control/CLI regressions cover the repairs. The initial table remains the measured first qualification; repaired-head requalification and provider results must be bound to their exact candidate separately.
 
 Final-tree validation evidence is `CURRENT_VALIDATION_REPORT.md`; it must be regenerated whenever non-report bytes change. A green technical candidate does not authorize release: `check:publication` still blocks on history/distribution-approval/version evidence. No consumer repository or PR was edited, no Topology #35 refresh choice was changed, no recurring freshness enforcement was deployed and nothing was merged or published.
 

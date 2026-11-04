@@ -59,7 +59,6 @@ const pipeline_1 = require("./pipeline");
 const ordering_1 = require("./ordering");
 const git_tree_1 = require("./git_tree");
 const discovery_contracts_1 = require("./discovery_contracts");
-const metadata_index_2 = require("./metadata_index");
 const authority_scan_1 = require("./authority_scan");
 const file_transaction_1 = require("./file_transaction");
 exports.CANONICAL_METADATA_WRITER = "Quantum-L9/l9-meta-injector";
@@ -268,7 +267,7 @@ function metadataIndexDrift(plan) {
     }
     const actualBytes = fs.readFileSync(target, "utf8");
     try {
-        (0, metadata_index_2.assertLegacyMetadataIndexWrite)(actualBytes);
+        (0, metadata_index_1.assertLegacyMetadataIndexWrite)(actualBytes);
     }
     catch (error) {
         return { path: metadata_index_1.METADATA_INDEX_RELATIVE_PATH, kind: "conflict", message: error instanceof Error ? error.message : String(error), expectedHash: plan.metadataIndex.sha256 };
@@ -320,8 +319,8 @@ function inlinePlanDrift(plan) {
 function assertTrackedOptIn(input, governed = false) {
     if (input.contract !== discovery_contracts_1.TRACKED_POLICY_SCHEMA)
         throw new Error("tracked workflow requires explicit l9.tracked-carrier-policy/v2 opt-in");
-    const allowed = ["root", "revision", "repositoryId", "contract", "producerVersion", "maxOutputBytes", "timeoutMs", ...(governed ? ["migrateV1", "expectedWriterRef"] : [])];
-    if (Object.keys(input).some((key) => !allowed.includes(key)))
+    const allowed = new Set(["root", "revision", "repositoryId", "contract", "producerVersion", "maxOutputBytes", "timeoutMs", ...(governed ? ["migrateV1", "expectedWriterRef"] : [])]);
+    if (Object.keys(input).some((key) => !allowed.has(key)))
         throw new Error("unsupported tracked workflow input field");
     const options = input;
     if (options.migrateV1 !== undefined && typeof options.migrateV1 !== "boolean")
@@ -332,7 +331,7 @@ function assertTrackedOptIn(input, governed = false) {
 /** Immutable tree metadata only. No pipeline/authority scan, subject reads, or writes. */
 function runTrackedCoverage(input) {
     assertTrackedOptIn(input);
-    return (0, metadata_index_2.compileTrackedMetadataIndex)({ snapshot: (0, git_tree_1.readTrackedGitSnapshot)(input), producerVersion: input.producerVersion });
+    return (0, metadata_index_1.compileTrackedMetadataIndex)({ snapshot: (0, git_tree_1.readTrackedGitSnapshot)(input), producerVersion: input.producerVersion });
 }
 /** One plan is shared by versioned check/apply; no inline or adjacent-sidecar intents exist. */
 function planTrackedOperation(input) {
@@ -341,43 +340,43 @@ function planTrackedOperation(input) {
     const snapshot = (0, git_tree_1.readTrackedGitSnapshot)(input);
     let metadataIndexBase;
     try {
-        metadataIndexBase = (0, metadata_index_2.readTrackedMetadataIndexBase)(root);
+        metadataIndexBase = (0, metadata_index_1.readTrackedMetadataIndexBase)(root);
     }
     catch (error) {
         metadataIndexBase = { exists: true, unmergeableReason: error instanceof Error ? error.message : String(error) };
     }
-    if (metadataIndexBase.index?.schema === metadata_index_2.METADATA_INDEX_SCHEMA_V2 && metadataIndexBase.index.header.repository_id !== input.repositoryId) {
+    if (metadataIndexBase.index?.schema === metadata_index_1.METADATA_INDEX_SCHEMA_V2 && metadataIndexBase.index.header.repository_id !== input.repositoryId) {
         metadataIndexBase.unmergeableReason = "active v2 index repository identity differs from requested repository";
     }
     let legacyIdentityClaims;
     if (!metadataIndexBase.unmergeableReason) {
         try {
-            if (metadataIndexBase.index?.schema === metadata_index_2.METADATA_INDEX_SCHEMA_V2) {
+            if (metadataIndexBase.index?.schema === metadata_index_1.METADATA_INDEX_SCHEMA_V2) {
                 legacyIdentityClaims = metadataIndexBase.index.header.legacy_identity_claims;
             }
-            else if (metadataIndexBase.index?.schema === metadata_index_2.METADATA_INDEX_SCHEMA && input.migrateV1 === true) {
+            else if (metadataIndexBase.index?.schema === metadata_index_1.METADATA_INDEX_SCHEMA && input.migrateV1 === true) {
                 if (!metadataIndexBase.sha256)
                     throw new Error("migration requires the actual active v1 index hash");
-                legacyIdentityClaims = (0, metadata_index_2.compileMetadataIndexLegacyIdentityClaims)(metadataIndexBase.index, metadataIndexBase.sha256, snapshot);
+                legacyIdentityClaims = (0, metadata_index_1.compileMetadataIndexLegacyIdentityClaims)(metadataIndexBase.index, metadataIndexBase.sha256, snapshot);
             }
         }
         catch (error) {
             metadataIndexBase.unmergeableReason = error instanceof Error ? error.message : String(error);
         }
     }
-    const metadataIndex = (0, metadata_index_2.compileTrackedMetadataIndex)({ snapshot, producerVersion: input.producerVersion, ...(legacyIdentityClaims ? { legacyIdentityClaims } : {}) });
+    const metadataIndex = (0, metadata_index_1.compileTrackedMetadataIndex)({ snapshot, producerVersion: input.producerVersion, ...(legacyIdentityClaims ? { legacyIdentityClaims } : {}) });
     const authorityInspection = (0, authority_scan_1.inspectRepositoryAuthority)(root, { expectedWriter: { repository: exports.CANONICAL_METADATA_WRITER } });
     const migrationEvidence = legacyIdentityClaims && metadataIndexBase.index && metadataIndexBase.sha256
-        ? (0, metadata_index_2.compileMetadataIndexMigrationEvidence)(metadataIndexBase.index, metadataIndexBase.sha256, metadataIndex, snapshot) : null;
+        ? (0, metadata_index_1.compileMetadataIndexMigrationEvidence)(metadataIndexBase.index, metadataIndexBase.sha256, metadataIndex, snapshot) : null;
     return { root, snapshot, metadataIndex, metadataIndexBase, authorityInspection, migrationEvidence };
 }
 function trackedPlanDrift(plan, migrateV1) {
     if (plan.metadataIndexBase.unmergeableReason)
         return [{ path: metadata_index_1.METADATA_INDEX_RELATIVE_PATH, kind: "conflict", message: plan.metadataIndexBase.unmergeableReason }];
-    if (plan.metadataIndexBase.index?.schema === metadata_index_2.METADATA_INDEX_SCHEMA && !migrateV1) {
+    if (plan.metadataIndexBase.index?.schema === metadata_index_1.METADATA_INDEX_SCHEMA && !migrateV1) {
         return [{ path: metadata_index_1.METADATA_INDEX_RELATIVE_PATH, kind: "conflict", message: "active v1 index requires explicit migrateV1 before replacement" }];
     }
-    const aliasProblem = plan.metadataIndexBase.index ? (0, metadata_index_2.metadataIndexMigrationAliasProblem)(plan.metadataIndexBase.index, plan.metadataIndex) : null;
+    const aliasProblem = plan.metadataIndexBase.index ? (0, metadata_index_1.metadataIndexMigrationAliasProblem)(plan.metadataIndexBase.index, plan.metadataIndex) : null;
     if (aliasProblem)
         return [{ path: metadata_index_1.METADATA_INDEX_RELATIVE_PATH, kind: "conflict", message: aliasProblem }];
     if (!plan.metadataIndexBase.exists)
@@ -387,7 +386,11 @@ function trackedPlanDrift(plan, migrateV1) {
     return [];
 }
 /** Read-only/in-memory by default; authority inspection is explicit and not content-free. */
-async function runTrackedCheckAsync(input) {
+function runTrackedCheckAsync(input) {
+    // The executor runs synchronously and turns thrown guards into rejected promises.
+    return new Promise((resolve) => resolve(runTrackedCheck(input)));
+}
+function runTrackedCheck(input) {
     const plan = planTrackedOperation(input);
     (0, git_tree_1.assertTrackedWorktreeCurrent)(plan.snapshot, plan.root);
     const drift = trackedPlanDrift(plan, input.migrateV1 === true);
@@ -410,7 +413,7 @@ function assertTrackedAuthority(plan, expectedWriterRef) {
         throw new Error("TRACKED_AUTHORITY_CHANGED: authority changed after planning");
 }
 function assertTrackedBaseCurrent(plan) {
-    const current = (0, metadata_index_2.readTrackedMetadataIndexBase)(plan.root);
+    const current = (0, metadata_index_1.readTrackedMetadataIndexBase)(plan.root);
     if (current.exists !== plan.metadataIndexBase.exists || current.sha256 !== plan.metadataIndexBase.sha256)
         throw new Error("TRACKED_INDEX_CAS_FAILED: active index changed after planning");
 }
@@ -428,14 +431,18 @@ function assertNoPendingTrackedTransactions(root) {
     }
 }
 /** Only the active canonical index may be committed; all census sources remain read-only. */
-async function runTrackedApplyAsync(input) {
+function runTrackedApplyAsync(input) {
+    // Do not defer planning/commit guards; preserve the async API's rejection semantics.
+    return new Promise((resolve) => resolve(runTrackedApply(input)));
+}
+function runTrackedApply(input) {
     const plan = planTrackedOperation(input);
     if (plan.metadataIndexBase.unmergeableReason)
         throw new Error(`TRACKED_INDEX_UNMERGEABLE: ${plan.metadataIndexBase.unmergeableReason}`);
     assertTrackedAuthority(plan, input.expectedWriterRef);
-    if (plan.metadataIndexBase.index?.schema === metadata_index_2.METADATA_INDEX_SCHEMA && input.migrateV1 !== true)
+    if (plan.metadataIndexBase.index?.schema === metadata_index_1.METADATA_INDEX_SCHEMA && input.migrateV1 !== true)
         throw new Error("active v1 index requires explicit migrateV1 before replacement");
-    const aliasProblem = plan.metadataIndexBase.index ? (0, metadata_index_2.metadataIndexMigrationAliasProblem)(plan.metadataIndexBase.index, plan.metadataIndex) : null;
+    const aliasProblem = plan.metadataIndexBase.index ? (0, metadata_index_1.metadataIndexMigrationAliasProblem)(plan.metadataIndexBase.index, plan.metadataIndex) : null;
     if (aliasProblem)
         throw new Error(aliasProblem);
     (0, git_tree_1.assertTrackedWorktreeCurrent)(plan.snapshot, plan.root);
@@ -462,7 +469,7 @@ async function runTrackedApplyAsync(input) {
         validate: () => {
             (0, git_tree_1.assertTrackedWorktreeCurrent)(plan.snapshot, plan.root);
             assertTrackedAuthority(plan, input.expectedWriterRef);
-            if ((0, metadata_index_2.readTrackedMetadataIndexBase)(plan.root).bytes !== plan.metadataIndex.bytes)
+            if ((0, metadata_index_1.readTrackedMetadataIndexBase)(plan.root).bytes !== plan.metadataIndex.bytes)
                 throw new Error("TRACKED_INDEX_POSTCONDITION_FAILED");
         },
     });
