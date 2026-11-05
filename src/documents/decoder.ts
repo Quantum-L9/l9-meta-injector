@@ -254,6 +254,16 @@ export interface DocumentDecoder {
    */
   filenames?: readonly string[];
   /**
+   * Lowercased filename prefixes this decoder claims, including the separator.
+   *
+   * Docker documents `<name>.Dockerfile` for a project's secondary Dockerfiles
+   * (claimed by extension). Repositories also write `Dockerfile.prod` and
+   * `Dockerfile.chassis`, where the part after the dot is a name rather than an
+   * extension, so neither the filename nor the extension table can claim them.
+   * Consulted after an exact filename and before the extension.
+   */
+  filenamePrefixes?: readonly string[];
+  /**
    * The dialect this decoder reads a source path in, or undefined for none.
    *
    * Declared by a decoder whose output depends on the name as well as the bytes:
@@ -442,6 +452,7 @@ export function buildNormalizedDocument(input: {
 export class DecoderRegistry {
   private readonly byExtension = new Map<string, DocumentDecoder>();
   private readonly byFilename = new Map<string, DocumentDecoder>();
+  private readonly byFilenamePrefix = new Map<string, DocumentDecoder>();
   private readonly decoders: DocumentDecoder[] = [];
 
   register(decoder: DocumentDecoder): void {
@@ -456,6 +467,7 @@ export class DecoderRegistry {
     };
     for (const extension of decoder.extensions) claim(this.byExtension, extension, "extension");
     for (const filename of decoder.filenames ?? []) claim(this.byFilename, filename, "filename");
+    for (const prefix of decoder.filenamePrefixes ?? []) claim(this.byFilenamePrefix, prefix, "filename prefix");
     this.decoders.push(decoder);
   }
 
@@ -464,6 +476,11 @@ export class DecoderRegistry {
     const basename = sourcePath.slice(sourcePath.lastIndexOf("/") + 1).toLowerCase();
     const named = this.byFilename.get(basename);
     if (named !== undefined) return named;
+    // Longest prefix first, so the answer never depends on registration order.
+    const prefixes = [...this.byFilenamePrefix.keys()].sort((a, b) => b.length - a.length || compareCodePoints(a, b));
+    for (const prefix of prefixes) {
+      if (basename.length > prefix.length && basename.startsWith(prefix)) return this.byFilenamePrefix.get(prefix);
+    }
     const dot = basename.lastIndexOf(".");
     if (dot <= 0) return undefined;
     return this.byExtension.get(basename.slice(dot));

@@ -518,6 +518,29 @@ npm run semantics:verify -- --semantics-root <Quantum-L9/.github checkout at the
 
 That command is not part of `npm run validate` (ADR-048, ADR-052).
 
+### Binding provenance in the Repository Model Packet
+
+`repository-model` carries the binding as evidence about the repository (ADR-082):
+
+- **Declared binding.** One `declared` evidence record, `semantic_binding`, cites
+  `.l9/meta-authority.yaml` and the digest of its exact bytes.
+- **Verified binding.** With `--semantics-root <checkout>`, the cited ledgers are
+  verified offline and a separate `validated` record,
+  `semantic_binding.verification`, is added. If verification fails, the CLI
+  refuses to emit.
+- **Strict mode.** `--require-semantic-binding` refuses anything short of a
+  verified v2 binding.
+- **What it never does.** It never promotes product identity into `owner_ids`
+  or `repository_id`, and verification never grants admission: a `candidate`
+  binding stays a candidate.
+
+```bash
+npm run repository-model -- . --name l9-meta-injector --revision git:<sha> --out <bundle> \
+  --semantics-root <Quantum-L9/.github checkout at the bound revision> --require-semantic-binding
+```
+
+Native metadata headers, workflow structure, static imports, requirements files and API contract references are observed as source claims under predicates the consumer preserves but does not project; see [Repository Model semantics](docs/repository-model-semantics.md).
+
 ## Validation
 
 ```bash

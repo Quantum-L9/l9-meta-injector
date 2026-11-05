@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.DEFAULT_MAX_FILE_BYTES = exports.MAX_EXCERPT_LENGTH = exports.INTERPRETATION_PROFILE_VERSION = exports.INTERPRETATION_PROFILE_ID = void 0;
+exports.DEFAULT_MAX_FILE_BYTES = exports.MAX_EXTRACTOR_DIAGNOSTICS_PER_FILE = exports.MAX_EXCERPT_LENGTH = exports.INTERPRETATION_PROFILE_VERSION = exports.INTERPRETATION_PROFILE_ID = void 0;
 exports.extractorSubjectScope = extractorSubjectScope;
 exports.isSecretCandidatePath = isSecretCandidatePath;
 exports.looksSecret = looksSecret;
@@ -76,8 +76,13 @@ exports.INTERPRETATION_PROFILE_ID = "meta-injector-repository-interpretation";
  * 1.2.0 files a repository-scoped extractor's claims against the repository only
  * for a file at the repository root; the same match anywhere else (a fixture, a
  * sub-package, an archive member) is a claim about that file (ADR-062).
+ *
+ * 1.3.0 adds the native-metadata, workflow, static-import and contract-reference
+ * extractors, the requirements-file reading of the manifest extractor, and the
+ * extractor diagnostic channel (ADR-082). Each changes what this profile
+ * observes, so the version moves with them.
  */
-exports.INTERPRETATION_PROFILE_VERSION = "1.2.0";
+exports.INTERPRETATION_PROFILE_VERSION = "1.3.0";
 /**
  * Where a repository-scoped extractor's claim is filed, stated in the profile
  * hash so the profile names the rule it applied.
@@ -146,6 +151,8 @@ function looksSecret(value) {
 }
 /** Excerpts are bounded so a packet can never become a file mirror. */
 exports.MAX_EXCERPT_LENGTH = 240;
+/** Diagnostics one extractor may report about one file before they are summarized. */
+exports.MAX_EXTRACTOR_DIAGNOSTICS_PER_FILE = 8;
 /** Files larger than this are reported as a diagnostic rather than interpreted. */
 exports.DEFAULT_MAX_FILE_BYTES = 512 * 1024;
 function boundExcerpt(value) {
@@ -172,6 +179,7 @@ function profileHash(extractors) {
         ordering: "code-point",
         absolute_paths_in_identity: false,
         max_excerpt_length: exports.MAX_EXCERPT_LENGTH,
+        max_extractor_diagnostics_per_file: exports.MAX_EXTRACTOR_DIAGNOSTICS_PER_FILE,
         repository_subject_paths: REPOSITORY_SUBJECT_PATHS,
         extractors: extractors
             .map((extractor) => ({
@@ -260,6 +268,7 @@ function interpretDocumentContent(input) {
             ? (0, repository_model_1.repositoryModelArtifactId)(input.repositorySubjectId, sourcePath)
             : input.repositorySubjectId;
         let drafts;
+        const reported = [];
         try {
             drafts = extractor.extract({
                 subjectId,
@@ -267,6 +276,15 @@ function interpretDocumentContent(input) {
                 content: input.content,
                 contentHash,
                 pathExists: input.pathExists,
+                report(diagnostic) {
+                    reported.push({
+                        code: diagnostic.code,
+                        severity: diagnostic.severity,
+                        message: diagnostic.message,
+                        extractor_id: extractor.id,
+                        source_path: sourcePath,
+                    });
+                },
             });
         }
         catch (error) {
@@ -279,6 +297,17 @@ function interpretDocumentContent(input) {
                 source_path: sourcePath,
             });
             continue;
+        }
+        // Bounded: a pathological file cannot turn the diagnostic domain into a mirror.
+        diagnostics.push(...reported.slice(0, exports.MAX_EXTRACTOR_DIAGNOSTICS_PER_FILE));
+        if (reported.length > exports.MAX_EXTRACTOR_DIAGNOSTICS_PER_FILE) {
+            diagnostics.push({
+                code: "interpretation.diagnostics_truncated",
+                severity: "info",
+                message: `${reported.length - exports.MAX_EXTRACTOR_DIAGNOSTICS_PER_FILE} further diagnostic(s) from this extractor were not recorded`,
+                extractor_id: extractor.id,
+                source_path: sourcePath,
+            });
         }
         for (const draft of drafts) {
             const excerpt = boundExcerpt(draft.evidenceExcerpt);

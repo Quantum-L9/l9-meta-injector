@@ -75,13 +75,21 @@ for (let run = 0; run < 2; run++) {
   }
 }
 assert.equal(filesystemState(root), before, "source filesystem metadata changed during census");
-const env = {};
+const env = Object.create(null);
 for (const [key, value] of Object.entries(process.env)) {
   if (!key.toUpperCase().startsWith("GIT_")) {
     env[key] = value;
   }
 }
-Object.assign(env, { GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null", GIT_OPTIONAL_LOCKS: "0", GIT_NO_LAZY_FETCH: "1", GIT_NO_REPLACE_OBJECTS: "1", GIT_ALLOW_PROTOCOL: "", GIT_TERMINAL_PROMPT: "0", LC_ALL: "C" });
+env.GIT_CONFIG_NOSYSTEM = "1";
+env.GIT_CONFIG_GLOBAL = "/dev/null";
+env.GIT_CONFIG_SYSTEM = "/dev/null";
+env.GIT_OPTIONAL_LOCKS = "0";
+env.GIT_NO_LAZY_FETCH = "1";
+env.GIT_NO_REPLACE_OBJECTS = "1";
+env.GIT_ALLOW_PROTOCOL = "";
+env.GIT_TERMINAL_PROMPT = "0";
+env.LC_ALL = "C";
 const git = spawnSync("/usr/bin/git", ["--no-optional-locks", "--no-replace-objects", "-c", "extensions.partialClone=", "-c", "core.fsmonitor=false", "ls-tree", "-r", "-z", "--full-tree", first.coverage.snapshot.tree_oid], { cwd: root, env, shell: false, timeout: 30000, maxBuffer: 64 * 1024 * 1024 });
 if (git.error || git.status !== 0) {
   throw new Error("independent tree metadata observation failed");

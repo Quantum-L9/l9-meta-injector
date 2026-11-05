@@ -1,0 +1,27 @@
+openapi: 3.1.0
+info:
+  title: Orders
+  version: 1.0.0
+paths:
+  /orders:
+    get:
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "./schemas/order.yaml"
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "./schemas/missing.yaml#/Error"
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "https://example.invalid/schemas/error.yaml"
+components:
+  schemas:
+    Local:
+      $ref: "#/components/schemas/Order"

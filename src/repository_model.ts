@@ -18,10 +18,15 @@ import * as path from "node:path";
 import * as crypto from "node:crypto";
 import { InventoryRecord, InventoryResult, inventoryTree } from "./inventory";
 import { compareCodePoints } from "./ordering";
-import { InterpretationResult, interpretRepository } from "./interpretation";
+import { InterpretationResult, interpretRepository, looksSecret } from "./interpretation";
 import { defaultExtractors } from "./extractors";
 import { UNKNOWN } from "./schema";
 import { listGitIgnoredUntracked } from "./git_ignored";
+import {
+  SEMANTIC_BINDING_VERIFICATION_SCOPE,
+  observeSemanticBinding,
+  type SemanticBindingObservation,
+} from "./authority";
 
 /** Re-exported so packet consumers keep one ordering import site. */
 export { compareCodePoints } from "./ordering";
@@ -34,6 +39,8 @@ export const REPOSITORY_MODEL_PRODUCER_NAME = "l9-meta-injector.repository-model
 const PROFILE_ID = "meta-injector-inventory-observation";
 const PROFILE_VERSION = "1.0.0";
 const OBSERVATION_STAGE = "meta-injector-inventory";
+/** Stage recorded on diagnostics the interpretation pass raised (ADR-082). */
+const INTERPRETATION_STAGE = "meta-injector-interpretation";
 const RECEIPT_PACKET_TYPE = "l9.validation-receipt";
 const RECEIPT_PACKET_VERSION = "1.0.0";
 const RECEIPT_RELATIVE_PATH = "receipts/validation-receipt.json";
@@ -576,6 +583,13 @@ export interface RepositoryModelBuildInput {
    * Absent for an ordinary repository observation, which keeps its prior identity.
    */
   localSource?: RepositoryModelLocalSourceInput;
+  /**
+   * What the observed repository's authority file establishes about its Semantic
+   * Foundation binding (ADR-082). Produced by `observeSemanticBinding`; the
+   * builder stays pure and never reads the file itself. Absent means the caller
+   * did not observe authority, which emits nothing about it.
+   */
+  semanticBinding?: SemanticBindingObservation;
 }
 
 export interface RepositoryModelObservationInput {
@@ -596,6 +610,17 @@ export interface RepositoryModelObservationInput {
   omitPatterns?: string[];
   omitFile?: string;
   hashMaxBytes?: number;
+  /**
+   * Operator-supplied Quantum-L9/.github checkout used to verify the bound ledger
+   * digests offline (ADR-082). Supplying it requests verification, and a failed
+   * verification refuses to build. Nothing is fetched.
+   */
+  semanticsRoot?: string;
+  /**
+   * Authority-bound observation: refuse to build unless the repository carries a
+   * structurally valid v2 binding that verifies against `semanticsRoot`.
+   */
+  requireSemanticBinding?: boolean;
 }
 
 export interface RepositoryModelEmitResult {
@@ -818,6 +843,8 @@ interface EvidenceDraft {
   subjectId: string;
   field?: string;
   evidenceClass: RepositoryModelEvidenceClass;
+  /** Defaults to `file`: every evidence record before ADR-082 read a file. */
+  sourceType?: RepositoryModelEvidenceSourceType;
   sourceRef: RepositoryModelSourceRef;
   value: CanonicalValue;
   confidence: RepositoryModelConfidence;
@@ -835,7 +862,7 @@ function makeEvidence(
     field: draft.field ?? null,
     stage: OBSERVATION_STAGE,
     evidence_class: draft.evidenceClass,
-    source_type: "file",
+    source_type: draft.sourceType ?? "file",
     source_ref: draft.sourceRef,
     value: draft.value,
     producer: REPOSITORY_MODEL_PRODUCER_NAME,
@@ -846,7 +873,7 @@ function makeEvidence(
     subject_id: draft.subjectId,
     stage: OBSERVATION_STAGE,
     evidence_class: draft.evidenceClass,
-    source_type: "file",
+    source_type: draft.sourceType ?? "file",
     source_ref: draft.sourceRef,
     value: draft.value,
     confidence: draft.confidence,
@@ -1145,6 +1172,132 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
   evidence.push(repositoryObservation);
   repositoryEvidenceRefs.push(repositoryObservation.evidence_id);
 
+  // Semantic Foundation binding (ADR-082). The authority file lives under `.l9/`,
+  // which inventory never emits as an artifact, so nothing here is filed against
+  // an artifact that is not in this packet: the binding is evidence about the
+  // repository, citing the exact authority bytes. What the file declares stays
+  // declared — product identity is never written into `owner_ids` or
+  // `repository_id`, and a verified digest is a separate validation record that
+  // grants no admission.
+  const binding = input.semanticBinding;
+  const bindingDeclared = binding?.status === "bound" && binding.semanticFoundation && binding.product;
+  if (binding && bindingDeclared && binding.semanticFoundation && binding.product) {
+    const foundation = binding.semanticFoundation;
+    const bindingRef: RepositoryModelSourceRef = {
+      source_path: binding.bindingPath,
+      source_revision: input.sourceRevision,
+      ...(binding.bindingDigest ? { content_hash: binding.bindingDigest } : {}),
+    };
+    const declaredBinding = makeEvidence({
+      subjectId: repositoryId,
+      field: "semantic_binding",
+      evidenceClass: "declared",
+      sourceRef: bindingRef,
+      value: {
+        authority_schema: binding.authoritySchema ?? UNKNOWN,
+        semantic_foundation: {
+          repository: foundation.repository,
+          revision: foundation.revision,
+          release: foundation.release,
+          admission: foundation.admission,
+          ledgers: Object.fromEntries(
+            Object.keys(foundation.ledgers).sort(compareCodePoints).map((id) => [id, foundation.ledgers[id]]),
+          ),
+        },
+        // Declared, as written. Neither value is resolved against an identity
+        // registry here, and neither becomes an owner or repository identity.
+        product: {
+          id: binding.product.id,
+          owner: binding.product.owner,
+          kind: binding.product.kind,
+          archetype: binding.product.archetype,
+        },
+      },
+      confidence: confidence("medium", "direct", "declared", "source", "partial"),
+    }, producerVersion, generatedAt);
+    evidence.push(declaredBinding);
+    repositoryEvidenceRefs.push(declaredBinding.evidence_id);
+
+    if (binding.verification.status === "verified") {
+      const verifiedBinding = makeEvidence({
+        subjectId: repositoryId,
+        field: "semantic_binding.verification",
+        evidenceClass: "validated",
+        sourceType: "validation",
+        sourceRef: bindingRef,
+        value: {
+          status: "verified",
+          scope: [...SEMANTIC_BINDING_VERIFICATION_SCOPE],
+          foundation_revision: foundation.revision,
+          ledgers_verified: binding.verification.ledgersVerified ?? 0,
+          admission: foundation.admission,
+          // Digest identity is not semantic admission (ADR-052): stated, not implied.
+          admission_granted_by_verification: false,
+        },
+        confidence: confidence("high", "direct", "deterministic", "validated-machine", "sufficient"),
+      }, producerVersion, generatedAt);
+      evidence.push(verifiedBinding);
+      repositoryEvidenceRefs.push(verifiedBinding.evidence_id);
+    } else {
+      diagnostics.push({
+        code: "semantic-binding-unverified",
+        severity: "info",
+        message: "The Semantic Foundation binding is declared but its cited ledgers were not verified; no Foundation checkout was supplied.",
+        stage: OBSERVATION_STAGE,
+        category: "authority",
+        subject_id: repositoryId,
+        evidence_refs: [declaredBinding.evidence_id],
+        details: { verification: binding.verification.status },
+      });
+    }
+    if (foundation.admission !== "admitted") {
+      diagnostics.push({
+        code: "semantic-binding-not-admitted",
+        severity: "info",
+        message: `The bound Semantic Foundation admission is '${foundation.admission}'; its semantics are cited, not admitted.`,
+        stage: OBSERVATION_STAGE,
+        category: "authority",
+        subject_id: repositoryId,
+        evidence_refs: [declaredBinding.evidence_id],
+        details: { admission: foundation.admission, release: foundation.release },
+      });
+    }
+  }
+  if (binding) {
+    for (const item of [...binding.conflicts].sort((a, b) =>
+      compareCodePoints(a.code, b.code) || compareCodePoints(a.message, b.message))) {
+      diagnostics.push({
+        code: "semantic-binding-conflict",
+        severity: "error",
+        message: item.message,
+        stage: OBSERVATION_STAGE,
+        category: "authority",
+        subject_id: repositoryId,
+        details: { conflict_code: item.code, binding_path: binding.bindingPath },
+      });
+    }
+    if (binding.status !== "bound") {
+      const messages: Record<Exclude<SemanticBindingObservation["status"], "bound">, string> = {
+        unbound: `No ${binding.bindingPath} is present; the repository's Semantic Foundation binding is unresolved.`,
+        v1: `${binding.bindingPath} is l9.meta-authority/v1, which declares no Semantic Foundation binding.`,
+        invalid: `${binding.bindingPath} is present but invalid; no binding is claimed from it.`,
+      };
+      diagnostics.push({
+        code: "semantic-binding-unresolved",
+        severity: binding.status === "invalid" ? "warning" : "info",
+        message: messages[binding.status],
+        stage: OBSERVATION_STAGE,
+        category: "authority",
+        subject_id: repositoryId,
+        details: {
+          binding_status: binding.status,
+          binding_path: binding.bindingPath,
+          ...(binding.authoritySchema ? { authority_schema: binding.authoritySchema } : {}),
+        },
+      });
+    }
+  }
+
   // Repository-level facts derived from observed paths, each with its own evidence.
   const addDerived = (field: string, value: string, sourcePath: string): void => {
     const record = makeEvidence({
@@ -1205,7 +1358,9 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
     ["primary_role", "Repository role is not derivable from inventory evidence; primary_role stays 'unknown'."],
     ["capabilities", "No capability evidence is available to this producer; capabilities is empty by policy."],
     ["entrypoints", "Entrypoints require package-manifest interpretation beyond inventory observation."],
-    ["owner_ids", "Ownership is not observable from inventory evidence."],
+    ["owner_ids", bindingDeclared
+      ? "Ownership is not promoted from the semantic binding: product.owner is carried as declared evidence, not as owner_ids."
+      : "Ownership is not observable from inventory evidence."],
     ...(declaresDependencies
       ? []
       : [["dependencies", "No package manifest declared a dependency; dependency claims require manifest interpretation."] as [string, string]]),
@@ -1283,6 +1438,29 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
       category: "coverage",
       subject_id: repositoryId,
       details: { omitted_count: input.inventory.omittedPaths.length },
+    });
+  }
+
+  // Interpretation diagnostics (ADR-082). A construct an extractor could not read,
+  // a file it was not allowed to open, or syntax outside its grammar is a fact
+  // about coverage; dropping it would let an absent assertion read as an absent
+  // construct. Each one is filed against the artifact it concerns when that
+  // artifact is in this packet.
+  for (const item of input.interpretation?.diagnostics ?? []) {
+    const subjectId = item.source_path !== undefined && emittedArtifactIds.has(artifactIdFor(item.source_path))
+      ? artifactIdFor(item.source_path)
+      : repositoryId;
+    diagnostics.push({
+      code: item.code,
+      severity: item.severity,
+      message: item.message,
+      stage: INTERPRETATION_STAGE,
+      category: "interpretation",
+      subject_id: subjectId,
+      details: {
+        ...(item.source_path !== undefined ? { source_path: item.source_path } : {}),
+        ...(item.extractor_id !== undefined ? { extractor_id: item.extractor_id } : {}),
+      },
     });
   }
 
@@ -1462,6 +1640,72 @@ export function validateRepositoryModelPacket(packet: RepositoryModelPacket): Re
     "every assertion attaches to a repository or an artifact in this packet",
     { orphan_count: orphanAssertions.length }));
 
+  // ADR-082: an assertion is a source claim. Its authority can be no higher than
+  // `source`, its path must be portable, its id unique, and its excerpt must not
+  // resemble a credential — the interpreter drops such drafts, and a packet that
+  // carries one anyway was not produced by that interpreter.
+  const ASSERTION_AUTHORITIES: ReadonlySet<string> = new Set(["source", "candidate", "unknown"]);
+  const escalated = payload.assertions.filter((assertion) =>
+    !ASSERTION_AUTHORITIES.has(assertion.authority)
+    || (assertion.evidence_class !== "declared" && assertion.evidence_class !== "observed"));
+  checks.push(check("assertion-authority", "invariant", "assertions_do_not_escalate_authority",
+    escalated.length === 0,
+    "no assertion claims authority above its source or an evidence class the interpreter cannot produce",
+    { escalated_count: escalated.length }));
+  const nonPortable = payload.assertions.filter((assertion) =>
+    assertion.source_path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(assertion.source_path) || assertion.source_path.includes("\\"));
+  checks.push(check("assertion-portable-paths", "invariant", "assertion_paths_are_repository_relative",
+    nonPortable.length === 0,
+    "every assertion cites a portable repository-relative path",
+    { offending_count: nonPortable.length }));
+  const assertionIds = new Set<string>();
+  let duplicateAssertions = 0;
+  for (const assertion of payload.assertions) {
+    if (assertionIds.has(assertion.assertion_id)) duplicateAssertions++;
+    assertionIds.add(assertion.assertion_id);
+  }
+  checks.push(check("assertion-unique", "invariant", "assertion_ids_are_unique",
+    duplicateAssertions === 0,
+    "no assertion is emitted twice",
+    { duplicate_count: duplicateAssertions }));
+  const secretExcerpts = payload.assertions.filter((assertion) =>
+    looksSecret(assertion.evidence_excerpt) || looksSecret(assertion.object)).length;
+  checks.push(check("assertion-secret-free", "evidence", "assertion_excerpts_are_secret_free",
+    secretExcerpts === 0,
+    "no assertion excerpt or object resembles a credential",
+    { offending_count: secretExcerpts }));
+
+  // This producer observes containment and archive ancestry, and nothing else.
+  // Every other relationship is the consumer's projection of a claim, so an edge
+  // of another kind, or one reached heuristically, is an unsupported canonical
+  // relationship and refused.
+  const OBSERVED_EDGE_TYPES: ReadonlySet<string> = new Set(["CONTAINS", "DERIVED_FROM"]);
+  // An edge's confidence is the confidence of the record it connects (a CONTAINS
+  // edge borrows its artifact's classification), so the derivation method is not
+  // a statement about the edge; its type and its evidence are.
+  const unsupportedEdges = payload.relationships.filter((edge) =>
+    !OBSERVED_EDGE_TYPES.has(edge.edge_type)
+    || edge.confidence.derivation_method === "model-assisted"
+    || edge.evidence_refs.length === 0);
+  checks.push(check("relationship-support", "evidence", "relationships_are_observed_with_evidence",
+    unsupportedEdges.length === 0,
+    "every relationship is an observed containment or ancestry edge with evidence",
+    { unsupported_count: unsupportedEdges.length }));
+  const promotedOwners = payload.repositories.filter((repository) => repository.owner_ids.length > 0).length;
+  checks.push(check("ownership-not-promoted", "invariant", "owner_ids_are_never_promoted",
+    promotedOwners === 0,
+    "no ownership is promoted into owner_ids; declared ownership stays declared evidence",
+    { promoted_count: promotedOwners }));
+  const admissionClaims = payload.evidence.filter((record) =>
+    record.field === "semantic_binding.verification"
+    && (typeof record.value !== "object" || record.value === null || Array.isArray(record.value)
+      || record.value instanceof CanonicalFloat
+      || (record.value as Record<string, CanonicalValue>).admission_granted_by_verification !== false));
+  checks.push(check("semantic-admission", "invariant", "verification_grants_no_admission",
+    admissionClaims.length === 0,
+    "a verified Foundation digest never claims semantic admission",
+    { offending_count: admissionClaims.length }));
+
   const evidenceIds = new Set(payload.evidence.map((e) => e.evidence_id));
   const danglingEvidence: string[] = [];
   const collect = (refs: string[]): void => {
@@ -1612,12 +1856,50 @@ export function emitRepositoryModelBundle(
 // ───────────────────────────── observation entrypoint ─────────────────────────────
 
 /**
+ * The compatibility policy for authority-bound observation (ADR-082).
+ *
+ * Observation without a request for authority keeps today's behavior: whatever
+ * the binding is, it is reported, never fatal. A request is either supplying a
+ * Foundation checkout (verification was asked for, so a failed verification is a
+ * refusal) or `requireSemanticBinding` (nothing short of a verified v2 binding is
+ * acceptable). Messages carry no absolute path.
+ */
+function assertSemanticBindingPolicy(
+  binding: SemanticBindingObservation,
+  input: RepositoryModelObservationInput,
+): void {
+  const reasons = binding.conflicts.map((item) => `${item.code}: ${item.message}`);
+  if (input.semanticsRoot !== undefined && binding.status === "bound" && binding.verification.status !== "verified") {
+    throw new Error(`repository-model: Semantic Foundation verification failed:\n  - ${reasons.join("\n  - ")}`);
+  }
+  if (!input.requireSemanticBinding) return;
+  if (binding.status !== "bound") {
+    throw new Error(
+      `repository-model: an authority-bound observation requires an l9.meta-authority/v2 binding; ${binding.bindingPath} is ${binding.status}` +
+      (reasons.length ? `:\n  - ${reasons.join("\n  - ")}` : ""),
+    );
+  }
+  if (input.semanticsRoot === undefined) {
+    throw new Error("repository-model: an authority-bound observation requires a Semantic Foundation checkout (semanticsRoot); none was supplied");
+  }
+  if (reasons.length) {
+    throw new Error(`repository-model: the Semantic Foundation binding has conflicts:\n  - ${reasons.join("\n  - ")}`);
+  }
+}
+
+/**
  * Observe a repository with the existing inventory engine and build its Repository
  * Model Packet. The observation is read-only: inventory runs in dry-run mode and its
  * own manifests are written to a temporary directory that is removed afterwards, so
  * the observed repository is never mutated.
  */
 export function observeRepositoryModel(input: RepositoryModelObservationInput): RepositoryModelPacket {
+  // Authority first: a refused binding should refuse before any tree is walked.
+  const semanticBinding = observeSemanticBinding(input.root, {
+    repositoryName: input.repositoryName,
+    ...(input.semanticsRoot !== undefined ? { semanticsRoot: input.semanticsRoot } : {}),
+  });
+  assertSemanticBindingPolicy(semanticBinding, input);
   const gitIgnored = listGitIgnoredUntracked(input.root);
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "l9-repository-model-"));
   try {
@@ -1653,6 +1935,7 @@ export function observeRepositoryModel(input: RepositoryModelObservationInput): 
       repositoryName: input.repositoryName,
       sourceRevision: input.sourceRevision,
       producerVersion: input.producerVersion,
+      semanticBinding,
       ...(input.generatedAt !== undefined ? { generatedAt: input.generatedAt } : {}),
     });
   } finally {

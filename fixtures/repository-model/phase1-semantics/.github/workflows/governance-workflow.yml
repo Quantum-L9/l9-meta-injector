@@ -1,0 +1,21 @@
+name: governance
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+      - name: Run
+        run: |
+          echo "uses: not/a-step@v1"
+      - uses: ./local-action
+  test:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker://alpine:3.19
+  publish:
+    needs: [build, test, deploy]
+    uses: Quantum-L9/shared/.github/workflows/publish.yml@v1
+  local:
+    uses: ./.github/workflows/governance-workflow.yml

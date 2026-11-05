@@ -10,6 +10,7 @@ exports.keyValue = keyValue;
 exports.declared = declared;
 exports.observed = observed;
 exports.basenameIs = basenameIs;
+exports.stripYamlComment = stripYamlComment;
 /**
  * Split preserving 1-based line numbering; no trailing-newline phantom line.
  *
@@ -119,5 +120,30 @@ function observed(predicate, object, range, excerpt, confidence = "high") {
 /** True when the repository-relative path's basename equals `name`. */
 function basenameIs(sourcePath, name) {
     return sourcePath === name || sourcePath.endsWith(`/${name}`);
+}
+/**
+ * Drop a YAML comment: a `#` outside quotes that begins the value or follows
+ * whitespace. Unlike `stripComment`, `a#b` is kept whole, as YAML reads it.
+ */
+function stripYamlComment(value) {
+    let quote = null;
+    for (let index = 0; index < value.length; index++) {
+        const character = value[index];
+        if (quote) {
+            if (character === "\\" && quote === '"')
+                index++;
+            else if (character === quote)
+                quote = null;
+            continue;
+        }
+        if (character === '"' || character === "'") {
+            quote = character;
+            continue;
+        }
+        if (character === "#" && (index === 0 || value[index - 1] === " " || value[index - 1] === "\t")) {
+            return value.slice(0, index).trimEnd();
+        }
+    }
+    return value.trimEnd();
 }
 //# sourceMappingURL=common.js.map

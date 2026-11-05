@@ -1,0 +1,5 @@
+# Runtime requirements for the fixture.
+-r requirements-dev.txt
+fastapi>=0.110
+neo4j==5.20.0
+git+https://example.invalid/vendor/tool.git

@@ -54,6 +54,7 @@ exports.carrierForbiddenSequences = carrierForbiddenSequences;
 exports.yamlToBlock = yamlToBlock;
 exports.stripInjectedBlock = stripInjectedBlock;
 exports.hasInjectedBlock = hasInjectedBlock;
+exports.injectedBlockSpan = injectedBlockSpan;
 exports.extractInjectedYaml = extractInjectedYaml;
 exports.applyCommentInjection = applyCommentInjection;
 const path = __importStar(require("node:path"));
@@ -409,6 +410,18 @@ function stripInjectedBlock(raw, spec) {
 /** Detect whether a comment-injected block is present at the carrier position. */
 function hasInjectedBlock(raw, spec) {
     return findHeadBlock(raw, spec) !== null;
+}
+/**
+ * Character offsets of the managed block at the carrier position, or null.
+ *
+ * `start` is the block's first byte and `end` the end of its closing delimiter
+ * line, before its terminator. Read-only: this is the same detection strip and
+ * extract use, exposed so a reader can cite the block's exact span (ADR-082)
+ * without a second implementation of where a managed block may sit.
+ */
+function injectedBlockSpan(raw, spec) {
+    const head = findHeadBlock(raw, spec);
+    return head ? { start: head.start, end: head.blockEnd, delimiters: head.delimiters } : null;
 }
 /** Extract the inner YAML from an existing comment block (comment prefixes removed), or null. */
 function extractInjectedYaml(raw, spec) {
