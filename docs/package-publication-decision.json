@@ -19,7 +19,7 @@
     {
       "id": "github_release_validation",
       "status": "verified",
-      "result": "2026-10-22: release.yml run 39812117101 (jobs candidate, accept, publish all succeeded) on the merge commit of PR #107, 953b7cba7a2a694abf02f73d1261a895c2bbc3d3, created tag v4.2.0 at that commit, published the non-draft, non-prerelease GitHub Release https://github.com/Quantum-L9/l9-meta-injector/releases/tag/v4.2.0, and moved v4 from 63fd3695947fcdc34d894a93a48ed2a07579628e to 953b7cba7a2a694abf02f73d1261a895c2bbc3d3 with a lease on the previous sha. The candidate job's packed-consumer proof reported l9-meta-injector-4.2.0.tgz sha256=6caf04ee785f3ab503741a9f70954461344fe371714a5b5632eb49d7e439dcd8 with 6 entrypoints and release-candidate PASS v4.2.0 -> v4. Prior released evidence: v4.0.0 at 56dadb0ee72f1a5da3e98dbf4f99e5e014d47e3b and v4.1.0 at 63fd3695947fcdc34d894a93a48ed2a07579628e."
+      "result": "2026-11-03: release.yml run 41717212599 (jobs candidate, accept, publish all succeeded) on the merge commit of PR #121, c53ef3aa0ccea04af2adfe67800ad09843b6e0fe, created tag v4.3.0 at that commit, published the non-draft, non-prerelease GitHub Release https://github.com/Quantum-L9/l9-meta-injector/releases/tag/v4.3.0, and moved v4 from 953b7cba7a2a694abf02f73d1261a895c2bbc3d3 to c53ef3aa0ccea04af2adfe67800ad09843b6e0fe with a lease on the previous sha. The candidate job's packed-consumer proof reported l9-meta-injector-4.3.0.tgz sha256=23bcc6b38ec1bd6107850fb16fe00a6096e1cb17e8abb01dee0d6fe4649ea368 with 6 entrypoints and release-candidate PASS v4.3.0 -> v4. Prior released evidence: v4.0.0 at 56dadb0ee72f1a5da3e98dbf4f99e5e014d47e3b, v4.1.0 at 63fd3695947fcdc34d894a93a48ed2a07579628e and v4.2.0 at 953b7cba7a2a694abf02f73d1261a895c2bbc3d3."
     },
     {
       "id": "l9_deploy_migration_validation",
@@ -29,12 +29,12 @@
     {
       "id": "distribution_owner_approval",
       "status": "not_applicable_with_reason",
-      "result": "npm_publication.required is false for 4.3.0 (docs/release/v4.3.0-release-plan.json). No distribution-owner approval for npm publication was recorded as of 2026-11-03; GitHub tag consumption remains the only channel. publication_authority.npm_publish remains false."
+      "result": "No distribution-owner approval for npm publication was recorded as of 2026-11-03. Under ADR-070 this evidence is never waivable: check:publication passes only when it is verified, so not_applicable_with_reason records the missing approval and keeps npm publication blocked. npm_publication.required is false for 4.3.0 (docs/release/v4.3.0-release-plan.json); GitHub tag consumption remains the only channel and publication_authority.npm_publish remains false."
     }
   ],
   "resolution": {
     "approve_when": "Every evidence item is verified or not_applicable_with_reason, github_release_validation records the v4.3.0 Release, the distribution owner records npm approval, and status is changed to approved.",
     "approval_rule": "ADR-070: check:publication requires npm_registry_history, constellation_consumer_inventory and distribution_owner_approval exactly once each (github_release_validation and l9_deploy_migration_validation are allowed optional ids; any other id blocks), distribution_owner_approval with status verified (never waivable), and approved_version equal to package.json#version. Only a recorded owner approval sets approved_version; release preparation of a different version resets status to blocked_pending_history_check.",
-    "implementation_effect": "GitHub commit/tag consumption is authorized through the maintained major tag v4; v4.3.0 becomes the exact released evidence when release.yml completes on main. npm publish remains separately blocked by publication_authority.npm_publish=false."
+    "implementation_effect": "GitHub commit/tag consumption is authorized through the maintained major tag v4, which points at the v4.3.0 release commit c53ef3aa0ccea04af2adfe67800ad09843b6e0fe. npm publish remains separately blocked by publication_authority.npm_publish=false."
   }
 }

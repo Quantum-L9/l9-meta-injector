@@ -514,7 +514,7 @@
     },
     {
       "path": "docs/package-publication-decision.json",
-      "git_blob_sha1": "e1ce30f2018498294a3024155aa0b85c4eeb5b39"
+      "git_blob_sha1": "8af05a70f8b24f71479d00919d2fe7e19012abeb"
     },
     {
       "path": "docs/public-api-contract.json",
@@ -526,7 +526,7 @@
     },
     {
       "path": "docs/release-checklist.md",
-      "git_blob_sha1": "8c14d2254c98473cde0fbf39038e4120db8fcc03"
+      "git_blob_sha1": "f2aa051c30f9efd371cf0a818ba57f9262a87069"
     },
     {
       "path": "docs/schemas/architecture-authority.schema.json",
@@ -606,11 +606,11 @@
     },
     {
       "path": "package-lock.json",
-      "git_blob_sha1": "31bea3a03a2bee2e27f85071898ec527031d4bd4"
+      "git_blob_sha1": "ab7c578ee2d2bba7ff78ff9be597d4feb51abb9f"
     },
     {
       "path": "package.json",
-      "git_blob_sha1": "601154b54d96c9eeb06a4b2d7bf5be1231674198"
+      "git_blob_sha1": "4cac0f46e63e127b585a1e2a889a3eebc9e86f3a"
     },
     {
       "path": "README.md",
