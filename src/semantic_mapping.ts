@@ -245,15 +245,40 @@ export function readLedgerFields(ledgerText: string): { fields: LedgerFieldRecor
 }
 
 /**
+ * The ledger's `projection_boundary.canonical_relations` scalar, or undefined
+ * when the block or the key is absent. Same narrow layout rule as the fields
+ * reader: a top-level `projection_boundary:` and a two-space key under it.
+ */
+export function readProjectionBoundary(ledgerText: string): string | undefined {
+  const lines = ledgerText.split(/\r?\n/);
+  const start = lines.indexOf("projection_boundary:");
+  if (start < 0) return undefined;
+  for (const line of lines.slice(start + 1)) {
+    if (line.length > 0 && !line.startsWith(" ")) break;
+    const match = /^ {2}canonical_relations:\s*(\S+)\s*$/.exec(line);
+    if (match) return match[1];
+  }
+  return undefined;
+}
+
+/**
  * Compare this mapping with the ledger text it claims to transcribe.
  *
  * Returns every disagreement: a field missing on either side, a different
- * category or value kind, or a different declared value set. Empty means the
- * table is an exact transcription of the ledger's field definitions.
+ * category or value kind, a different declared value set, or a projection
+ * boundary that no longer admits only `none` — the mapping's `projection: none`
+ * is transcribed from it, so a ledger that changed it must not verify. Empty
+ * means the table is an exact transcription of the ledger it cites.
  */
 export function compareMappingToLedger(ledgerText: string): string[] {
   const { fields, problems } = readLedgerFields(ledgerText);
   const out = [...problems];
+  const boundary = readProjectionBoundary(ledgerText);
+  if (boundary === undefined) {
+    out.push("ledger has no projection_boundary.canonical_relations");
+  } else if (boundary !== HEADER_DECLARATION_POLICY.projection) {
+    out.push(`ledger projection_boundary.canonical_relations is ${boundary}, mapping projection is ${HEADER_DECLARATION_POLICY.projection}`);
+  }
   const ledger = new Map(fields.map((record) => [record.field, record]));
   for (const mapping of NATIVE_HEADER_FIELDS) {
     const record = ledger.get(mapping.field);

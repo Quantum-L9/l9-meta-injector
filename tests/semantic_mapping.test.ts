@@ -51,7 +51,10 @@ describe("P2.2 the mapping is the bound ledger, transcribed", () => {
     const authority = fs.readFileSync(path.join(REPO, ".l9", "meta-authority.yaml"), "utf8");
     const line = authority.split(/\r?\n/).find((l) => l.trim().startsWith(`${ARTIFACT_HEADER_LEDGER.artifact_id}:`));
     expect(line?.trim()).toBe(`${ARTIFACT_HEADER_LEDGER.artifact_id}: ${ARTIFACT_HEADER_LEDGER.digest}`);
-    expect(authority).toMatch(new RegExp(`release: ${ARTIFACT_HEADER_LEDGER.release.replace(/\./g, "\\.")}`));
+    // A literal line comparison: building a pattern from the release string
+    // would need complete escaping, and an exact line is the stronger check.
+    const releaseLine = authority.split(/\r?\n/).find((l) => l.trim().startsWith("release:"));
+    expect(releaseLine?.trim()).toBe(`release: ${ARTIFACT_HEADER_LEDGER.release}`);
   });
 
   test("defines thirty fields, every one declared, artifact-scoped and never projected", () => {
@@ -87,6 +90,14 @@ describe("P2.2 the mapping is the bound ledger, transcribed", () => {
     expect(compareMappingToLedger(synthetic(extra))).toEqual(["ledger field role has no mapping entry"]);
     const missing = faithful.filter((row) => !row.startsWith("  amplifies:"));
     expect(compareMappingToLedger(synthetic(missing))).toEqual(["mapping field amplifies is not defined by the ledger"]);
+    // The mapping's `projection: none` is transcribed from the boundary, so a
+    // ledger that widened or dropped it must not verify, fields unchanged.
+    const widened = synthetic(faithful).replace("canonical_relations: none", "canonical_relations: owned_by");
+    expect(compareMappingToLedger(widened)).toEqual([
+      "ledger projection_boundary.canonical_relations is owned_by, mapping projection is none",
+    ]);
+    const dropped = synthetic(faithful).replace(/projection_boundary:\n {2}canonical_relations: none\n/, "");
+    expect(compareMappingToLedger(dropped)).toEqual(["ledger has no projection_boundary.canonical_relations"]);
   });
 });
 

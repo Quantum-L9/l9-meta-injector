@@ -84,11 +84,19 @@ export declare function readLedgerFields(ledgerText: string): {
     problems: string[];
 };
 /**
+ * The ledger's `projection_boundary.canonical_relations` scalar, or undefined
+ * when the block or the key is absent. Same narrow layout rule as the fields
+ * reader: a top-level `projection_boundary:` and a two-space key under it.
+ */
+export declare function readProjectionBoundary(ledgerText: string): string | undefined;
+/**
  * Compare this mapping with the ledger text it claims to transcribe.
  *
  * Returns every disagreement: a field missing on either side, a different
- * category or value kind, or a different declared value set. Empty means the
- * table is an exact transcription of the ledger's field definitions.
+ * category or value kind, a different declared value set, or a projection
+ * boundary that no longer admits only `none` — the mapping's `projection: none`
+ * is transcribed from it, so a ledger that changed it must not verify. Empty
+ * means the table is an exact transcription of the ledger it cites.
  */
 export declare function compareMappingToLedger(ledgerText: string): string[];
 /**
