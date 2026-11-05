@@ -606,11 +606,11 @@
     },
     {
       "path": "package-lock.json",
-      "git_blob_sha1": "ab7c578ee2d2bba7ff78ff9be597d4feb51abb9f"
+      "git_blob_sha1": "205291ee6a8ee22d982ef23d451624508c90a09c"
     },
     {
       "path": "package.json",
-      "git_blob_sha1": "4cac0f46e63e127b585a1e2a889a3eebc9e86f3a"
+      "git_blob_sha1": "b4810d19cb5be74484db29569f4eed5fe78333c2"
     },
     {
       "path": "README.md",

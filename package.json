@@ -32,7 +32,7 @@
   "devEngines": {
     "runtime": {
       "name": "node",
-      "version": ">=22.12.0",
+      "version": ">=22.13.0",
       "onFail": "error"
     }
   },
@@ -91,7 +91,7 @@
   },
   "devDependencies": {
     "@types/node": "22.20.5",
-    "eslint": "^9.39.5",
+    "eslint": "^10.14.0",
     "typescript": "5.9.3",
     "typescript-eslint": "^8.72.1",
     "vitest": "5.0.5"
