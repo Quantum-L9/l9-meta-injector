@@ -65,6 +65,7 @@ exports.interpretRepository = interpretRepository;
 const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
 const encoding_1 = require("./encoding");
+const semantic_mapping_1 = require("./semantic_mapping");
 const repository_model_1 = require("./repository_model");
 /** Identity of the interpretation policy. Bumped when extraction rules change. */
 exports.INTERPRETATION_PROFILE_ID = "meta-injector-repository-interpretation";
@@ -81,8 +82,12 @@ exports.INTERPRETATION_PROFILE_ID = "meta-injector-repository-interpretation";
  * extractors, the requirements-file reading of the manifest extractor, and the
  * extractor diagnostic channel (ADR-082). Each changes what this profile
  * observes, so the version moves with them.
+ *
+ * 1.4.0 binds the governed native-header semantic mapping (ADR-084) into the
+ * profile hash: what each header predicate means is now part of the rules a run
+ * applied, so a change of meaning changes every packet's identity.
  */
-exports.INTERPRETATION_PROFILE_VERSION = "1.3.0";
+exports.INTERPRETATION_PROFILE_VERSION = "1.4.0";
 /**
  * Where a repository-scoped extractor's claim is filed, stated in the profile
  * hash so the profile names the rule it applied.
@@ -181,6 +186,11 @@ function profileHash(extractors) {
         max_excerpt_length: exports.MAX_EXCERPT_LENGTH,
         max_extractor_diagnostics_per_file: exports.MAX_EXTRACTOR_DIAGNOSTICS_PER_FILE,
         repository_subject_paths: REPOSITORY_SUBJECT_PATHS,
+        semantic_mapping: {
+            id: semantic_mapping_1.SEMANTIC_MAPPING_ID,
+            version: semantic_mapping_1.SEMANTIC_MAPPING_VERSION,
+            hash: (0, repository_model_1.semanticHash)((0, semantic_mapping_1.semanticMappingIdentity)()),
+        },
         extractors: extractors
             .map((extractor) => ({
             id: extractor.id,

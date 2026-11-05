@@ -21,6 +21,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { InventoryResult } from "./inventory";
 import { probeFileEncoding } from "./encoding";
+import { SEMANTIC_MAPPING_ID, SEMANTIC_MAPPING_VERSION, semanticMappingIdentity } from "./semantic_mapping";
 import {
   compareCodePoints,
   repositoryModelArtifactId,
@@ -44,8 +45,12 @@ export const INTERPRETATION_PROFILE_ID = "meta-injector-repository-interpretatio
  * extractors, the requirements-file reading of the manifest extractor, and the
  * extractor diagnostic channel (ADR-082). Each changes what this profile
  * observes, so the version moves with them.
+ *
+ * 1.4.0 binds the governed native-header semantic mapping (ADR-084) into the
+ * profile hash: what each header predicate means is now part of the rules a run
+ * applied, so a change of meaning changes every packet's identity.
  */
-export const INTERPRETATION_PROFILE_VERSION = "1.3.0";
+export const INTERPRETATION_PROFILE_VERSION = "1.4.0";
 
 /**
  * Where a repository-scoped extractor's claim is filed, stated in the profile
@@ -321,6 +326,11 @@ function profileHash(extractors: Extractor[]): string {
     max_excerpt_length: MAX_EXCERPT_LENGTH,
     max_extractor_diagnostics_per_file: MAX_EXTRACTOR_DIAGNOSTICS_PER_FILE,
     repository_subject_paths: REPOSITORY_SUBJECT_PATHS,
+    semantic_mapping: {
+      id: SEMANTIC_MAPPING_ID,
+      version: SEMANTIC_MAPPING_VERSION,
+      hash: semanticHash(semanticMappingIdentity()),
+    },
     extractors: extractors
       .map((extractor) => ({
         id: extractor.id,

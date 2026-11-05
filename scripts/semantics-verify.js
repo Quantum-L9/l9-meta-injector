@@ -56,4 +56,18 @@ if (conflicts.length) {
   for (const item of conflicts) console.error(`semantics-verify: ${item.code}: ${item.message}`);
   process.exit(1);
 }
-console.log(`semantics-verify: OK — ${Object.keys(binding.ledgers).length} ledgers at ${binding.revision}`);
+// The governed header mapping (ADR-084) must cite the ledger digest this
+// repository binds, and must transcribe that ledger's field definitions exactly.
+const mapping = requireBuilt(path.join(REPO, "dist", "semantic_mapping.js"), "semantics-verify");
+const headerLedgerId = mapping.ARTIFACT_HEADER_LEDGER.artifact_id;
+if (binding.ledgers[headerLedgerId] !== mapping.ARTIFACT_HEADER_LEDGER.digest) {
+  fail(`semantic mapping cites ${headerLedgerId} at ${mapping.ARTIFACT_HEADER_LEDGER.digest}, binding has ${binding.ledgers[headerLedgerId] ?? "none"}`);
+}
+const headerLedgerPath = path.join(semanticsRoot, "semantics", "artifact_header_model.yaml");
+const disagreements = mapping.compareMappingToLedger(fs.readFileSync(headerLedgerPath, "utf8"));
+if (disagreements.length) {
+  for (const item of disagreements) console.error(`semantics-verify: semantic mapping: ${item}`);
+  process.exit(1);
+}
+console.log(`semantics-verify: OK — ${Object.keys(binding.ledgers).length} ledgers at ${binding.revision}; `
+  + `semantic mapping transcribes ${mapping.NATIVE_HEADER_FIELDS.length} ${headerLedgerId} fields exactly`);

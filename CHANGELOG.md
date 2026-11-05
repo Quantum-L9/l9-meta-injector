@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Governed native-header semantic mapping (ADR-084, Phase 2)
+
+- Native `L9_META` header predicates now carry the meanings of the Semantic Foundation's `l9.artifact-header-model/global@1` (v3.27.0, ADR-024) through one mapping table, `src/semantic_mapping.ts`: 30 fields with category, value kind, cardinality and a ledger reference, all declared source claims with no projection. See `docs/semantic-mapping.md`.
+- `.l9/meta-authority.yaml` binds `Quantum-L9/.github` `b3755ad` (v3.27.0, `admission: candidate`). `semantics:verify` also proves the mapping transcribes the bound ledger exactly.
+- The interpretation profile moves to 1.4.0 because the mapping's identity is part of it; `l9.repository-model` stays 1.1.0 and no wire field is added.
+
 ### Development toolchain
 
 - ESLint 10 (#117) needs Node `^22.13` on the 22 line, so `devEngines.runtime` is `>=22.13.0`; AGENTS.md, README and the Dependabot comment now say so. `engines.node` (`>=18`, the published package and Action) is unchanged.
