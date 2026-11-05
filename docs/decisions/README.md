@@ -66,6 +66,7 @@ Accepted ADRs are not deleted. A replacement ADR links back to the decision it s
 | [ADR-077](077-stale-publisher-lock-takeover-guard.md) | Stale publisher-lock takeover runs under an exclusive takeover guard | Accepted |
 | [ADR-078](078-repository-model-observation-honours-the-target-ignore-files.md) | The repository-model observation omits what git ignores, never what git tracks | Accepted |
 | [ADR-079](079-consumer-install-paths-and-runtime-only-tarball.md) | Consumer install paths are proven by test, and the tarball ships runtime scripts only | Accepted |
+| [ADR-082](082-authority-bound-metadata-and-evidence-production.md) | Authority-bound metadata and evidence production (Phase 1 producer foundation) | Accepted |
 
 ## Authority boundary
 
