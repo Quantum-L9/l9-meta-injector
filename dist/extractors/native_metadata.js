@@ -33,11 +33,19 @@ const CARRIER_EXTENSIONS = new Set([
     ".md", ".markdown", ".mdx", ".py", ".pyi", ".yaml", ".yml", ".toml", ".sh", ".bash", ".zsh",
     ".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".html", ".htm", ".xml",
     ".css", ".scss", ".sql", ".rb", ".go", ".rs", ".java", ".ini", ".cfg", ".conf",
+    // Hash-comment formats the constellation's L9_META headers are observed in
+    // (CEG main.tf, env.template, .env.template): measured, not assumed.
+    ".tf", ".tfvars", ".hcl", ".template", ".example", ".dockerfile",
 ]);
-const CARRIER_BASENAMES = new Set(["makefile", "dockerfile", "gnumakefile"]);
+const CARRIER_BASENAMES = new Set([
+    "makefile", "dockerfile", "gnumakefile", "codeowners", ".cursorrules",
+]);
 function carriesHeaders(sourcePath) {
     const base = (sourcePath.split("/").pop() ?? sourcePath).toLowerCase();
     if (CARRIER_BASENAMES.has(base))
+        return true;
+    // `Dockerfile.prod`, `Dockerfile.chassis`: a Dockerfile named for its variant.
+    if (base.startsWith("dockerfile."))
         return true;
     const dot = base.lastIndexOf(".");
     return dot > 0 && CARRIER_EXTENSIONS.has(base.slice(dot));
@@ -78,7 +86,10 @@ function fieldDrafts(declaration, field) {
 }
 exports.nativeMetadataExtractor = {
     id: "native-metadata/v1",
-    version: "1.0.0",
+    // 1.1.0: CODEOWNERS, .cursorrules, Dockerfile.<variant>, Terraform/HCL and
+    // template files are header carriers too; before this, their declarations were
+    // read nowhere and reported nowhere (PR #127 Phase 2 acceptance run).
+    version: "1.1.0",
     // A header describes the file that carries it, never the repository.
     subjectScope: "artifact",
     matches: carriesHeaders,

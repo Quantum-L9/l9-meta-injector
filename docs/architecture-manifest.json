@@ -654,7 +654,7 @@
     },
     {
       "path": "docs/topology-conformance.json",
-      "git_blob_sha1": "69d296604a81568f0667598e96938154606da028"
+      "git_blob_sha1": "d4759a076f36c7951b65166a24d69eae3e9cbfb3"
     },
     {
       "path": "docs/traceability-map.json",
@@ -666,15 +666,15 @@
     },
     {
       "path": "fixtures/local-source/expected-bundle/manifest.json",
-      "git_blob_sha1": "1b8633cd1e1f5a5887ee7eb0d073e9c64365b2b1"
+      "git_blob_sha1": "7aa3cb0737d6249fe43b4a4a75e5cae58383ade3"
     },
     {
       "path": "fixtures/local-source/expected-bundle/packet.json",
-      "git_blob_sha1": "7aecf9b0f724ff1bf1e71b597a6638619abbf3ad"
+      "git_blob_sha1": "2f34c5ba13fbe68feb10b78b3f8539bf04143962"
     },
     {
       "path": "fixtures/local-source/expected-bundle/receipts/validation-receipt.json",
-      "git_blob_sha1": "c01995a3db8b1c2a5f362169860ddd39629a457f"
+      "git_blob_sha1": "9a1363479150ffc842504b2c83cce65dadd63682"
     },
     {
       "path": "fixtures/local-source/sample-source/Bundle.zip",
@@ -710,15 +710,15 @@
     },
     {
       "path": "fixtures/repository-model/expected-bundle/manifest.json",
-      "git_blob_sha1": "cb3e3b1068f33a19298655b92c82069c67299b64"
+      "git_blob_sha1": "becda0f48f98423a59ddee98749d27a7cefa849c"
     },
     {
       "path": "fixtures/repository-model/expected-bundle/packet.json",
-      "git_blob_sha1": "f4a21a4c9ab97641efba3b12ea0a20ef5a2d60d7"
+      "git_blob_sha1": "de243a97a9ea7bed87219da4ad840872204688b2"
     },
     {
       "path": "fixtures/repository-model/expected-bundle/receipts/validation-receipt.json",
-      "git_blob_sha1": "153b38c3e2b1b0746e2a577d0ef6601c7ff7c5df"
+      "git_blob_sha1": "b107c2ab7294251beb63abaabdc751085cf7d8e1"
     },
     {
       "path": "Makefile",

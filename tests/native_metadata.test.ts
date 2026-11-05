@@ -214,3 +214,20 @@ describe("P1.2 rejected headers stay header syntax (PR #127 review)", () => {
     expect(drafts.some((d) => d.sourceRange.start_line <= 5)).toBe(false);
   });
 });
+
+describe("P1.2 carrier coverage (Phase 2 acceptance finding)", () => {
+  test.each([
+    ".github/CODEOWNERS", ".cursorrules", "Dockerfile.prod", "chassis/Dockerfile.chassis",
+    "infra/main.tf", "env.template", ".env.template",
+  ])("reads the header carrier in %s", (sourcePath) => {
+    expect(nativeMetadataExtractor.matches(sourcePath)).toBe(true);
+    const { drafts } = extract(sourcePath, "# --- L9_META ---\n# l9_schema: 1\n# owner: platform\n# --- /L9_META ---\n");
+    expect(drafts.map((d) => d.predicate)).toContain("meta.l9v1.governance.owner");
+  });
+
+  test("still ignores files that cannot carry a header", () => {
+    for (const sourcePath of ["logo.png", "data.json", "notes.txt", "archive.zip"]) {
+      expect(nativeMetadataExtractor.matches(sourcePath)).toBe(false);
+    }
+  });
+});
