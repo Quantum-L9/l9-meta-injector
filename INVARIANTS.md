@@ -20,6 +20,11 @@ The package root exposes the supported orchestration boundary. Stable and experi
 
 Injection may add or update governed metadata but must not silently rewrite the underlying body. Re-running the same operation must be idempotent.
 
+Governed comment headers reuse the prologue-aware renderer: BOMs, shebangs, encoding
+cookies, mandatory format directives, newline conventions (including CRLF) and
+carrier-free body bytes are preserved. Non-UTF-8 files are not transcoded to grant
+eligibility. Rendered bytes must agree with the plan and pass body verification.
+
 **Enforced by:** injection and pipeline tests, selfpack fixtures, verification output.
 
 ### INV-014: Operations and repository authority fail closed
@@ -73,16 +78,25 @@ fail-closed omit tests.
 ### INV-018: Every discovered path has one explicit metadata carrier
 
 Carrier choice is a deterministic policy decision, not an incidental consequence
-of comment syntax. Protected internals and binaries are `hard_skip`; generated,
-vendored, and lock-state artifacts are `inventory_only`; source, configuration,
-tests, workflows, infrastructure, and structured data are `central_manifest`;
-`inline_managed` requires both an approved L9 prose artifact type and an explicit
-safe `inline_allow` match. Skills mode does not bypass repository authority
-(ADR-033): it fails closed without resolved authority and commits `SKILL.md`
+of comment syntax. Protected Git/L9/dependency internals, injector outputs, binaries
+and secret-bearing `.env` files are `hard_skip`; generated, vendored,
+environment-managed and lock-state artifacts are `inventory_only`. Neither class is
+writable under an allow grant. Canonical fixture families (`fixture`, `fixtures`,
+`__fixtures__`), `golden_tests` and `datasets` stay central at any depth, even under
+blanket grants. Source, configuration, ordinary tests, workflows, infrastructure and
+structured data remain central by default. Under ADR-080, `inline_managed` requires an
+explicit safe `inline_allow` match and an approved prose/frontmatter or inert line/block
+comment carrier. Optional `inline_exclude` defaults to `[]` and outranks allow without
+omitting central metadata. Hidden controls require named safe patterns; `**` never
+unlocks them. An explicit non-secret `.env.example` is not permission for secret files.
+JSON, JSONL, plaintext and unsafe comment positions cannot gain inserted comments or
+adjacent sidecars in governed apply. Normal-mode SKILL.md protection is unchanged.
+Skills mode does not bypass repository authority (ADR-033): it fails closed without
+resolved authority and commits `SKILL.md`
 changes through the governed transaction, never a direct write.
 
 **Enforced by:** `src/mutation_policy.ts`, `src/skills_pipeline.ts`, strict
-authority-pattern validation, carrier matrix tests, precedence tests,
+authority-pattern validation, carrier matrix tests, exclusion and protection precedence tests,
 `tests/skills_authority.test.ts`, and complete decision-ledger checks.
 
 ### INV-019: Central metadata index bytes are canonical and self-excluding
@@ -92,10 +106,17 @@ record is canonical JSON, sorted by repository-relative POSIX path in code-point
 order, recursively sorts metadata keys, requires a lowercase SHA-256 content hash,
 contains no absolute paths or run-time report fields, and ends with one newline.
 Producer and parser enforce the shipped record schema: exactly its six keys, and no
-path with a control character, a leading `.` or more than 4096 characters (ADR-058). Normal
-discovery records `.l9` as generated state and never descends into it. Unchanged
-index bytes are not rewritten. Adjacent sidecars and inject logs are disabled by
-default and require explicit opt-in.
+path with a control character, traversal segment or more than 4096 characters
+(ADR-058, ADR-080). Safe hidden control paths are repository-relative index subjects,
+not traversal; protected `.l9` state remains self-excluded. Normal discovery records
+`.l9` as generated state and never descends into it. Unchanged index bytes are not
+rewritten. Governed check/apply create no adjacent sidecars or inject logs.
+
+Index records cover non-hard-skip metadata subjects, including inline carriers and
+central-only exceptions; record or inventory counts do not measure source mutation.
+`inlineChanged` reports changed source carriers, `metadataIndexChanged` reports the
+separate index write, and `changed` includes both. Discovery omissions, hard skips and
+encoding/unsupported-entry holds remain explicit metadata-coverage exceptions.
 
 **Enforced by:** `src/metadata_index.ts`, `src/retrieval.ts`, metadata-index
 schema-conformance tests, dual-order determinism tests, symlink-containment tests, and
@@ -106,9 +127,12 @@ idempotent write tests.
 Check and apply must consume the same path-sorted carrier decisions and canonical
 metadata-index compilation. `central_manifest` and `inventory_only` never create
 adjacent sidecars or source annotations. `inline_managed` requires an explicitly
-authorized YAML-frontmatter subject whose target is the source path. Skills mode
-recognizes only the canonical `SKILL.md` basename. A scoped run (its discovery
-ledger records `glob_filtered`/`extension_filtered` files) merges with the existing
+authorized approved YAML-frontmatter, line-comment or block-comment subject whose
+target is the source path (ADR-080); a sidecar strategy never becomes an inline target.
+Existing external carriers on comment-less/unsupported hosts are not modified by
+governed apply. Skills mode recognizes only the canonical `SKILL.md` basename.
+A scoped run (its discovery ledger records `glob_filtered`/`extension_filtered` files)
+merges with the existing
 index: records of scope-filtered paths are carried forward byte for byte, apply
 compare-and-swaps against the index bytes the merge read, and an index that cannot
 be parsed is reported by check and refused by apply rather than discarded (ADR-058).

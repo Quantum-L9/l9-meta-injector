@@ -71,12 +71,12 @@ describe("explicit metadata carrier policy", () => {
     ["doctrines/safety.md", "doctrine"],
     ["kernels/change/CHANGE.md", "kernel"],
   ] as const)("allows explicit managed prose path %s inline", (filePath, artifactType) => {
-    expect(resolveCarrierDecision(subject(filePath, artifactType, "yaml-frontmatter"), authority, "apply").carrier).toBe("inline_managed");
+    expect(resolveCarrierDecision(subject(filePath, artifactType, "yaml-frontmatter"), authority, artifactType === "skill" ? "skills" : "apply").carrier).toBe("inline_managed");
   });
 
-  test("an allow pattern cannot force source code inline", () => {
+  test("an explicit allow can authorize a safe source comment carrier", () => {
     const broad = { ...authority, inline_allow: ["**"] };
-    expect(resolveCarrierDecision(subject("src/app.ts", "source", "line-comment"), broad, "apply").carrier).toBe("central_manifest");
+    expect(resolveCarrierDecision(subject("src/app.ts", "source", "line-comment"), broad, "apply").carrier).toBe("inline_managed");
   });
 
   test("an allow pattern cannot force generic documentation inline", () => {
@@ -128,6 +128,79 @@ describe("explicit metadata carrier policy", () => {
 
   test.each(["/x", "../x", "a\\b", ".", ""])("rejects unsafe subject path %s", (filePath) => {
     expect(() => resolveCarrierDecision(subject(filePath, "context", "yaml-frontmatter"), authority, "check")).toThrow();
+  });
+});
+
+describe("format-safe opt-in precedence", () => {
+  const broad = { ...authority, inline_allow: ["**"] };
+
+  test.each([
+    ["tests/check.py", "line-comment"], ["scripts/run.sh", "line-comment"],
+    ["config/settings.toml", "line-comment"], ["infra/deploy.yaml", "line-comment"],
+    ["web/app.css", "block-comment"], ["views/page.html", "block-comment"],
+    ["src/main.asm", "line-comment"], ["docs/main.tex", "line-comment"], ["src/main.erl", "line-comment"],
+  ] as const)("admits supported carrier %s only with opt-in", (name, strategy) => {
+    expect(resolveCarrierDecision(subject(name, "source", strategy), broad, "apply").carrier).toBe("inline_managed");
+    expect(resolveCarrierDecision(subject(name, "source", strategy), { ...broad, inline_allow: [] }, "apply").carrier).toBe("central_manifest");
+  });
+
+  test.each([
+    ["src/fixtures/sample.py", "line-comment", "central_manifest"],
+    ["tests/fixture/input.yaml", "line-comment", "central_manifest"],
+    ["tests/__fixtures__/sample.py", "line-comment", "central_manifest"],
+    ["tests/golden_tests/output.css", "block-comment", "central_manifest"],
+    ["datasets/train.py", "line-comment", "central_manifest"],
+    ["src/generated/api.ts", "line-comment", "inventory_only"],
+    ["packages/pkg/vendor/lib.py", "line-comment", "inventory_only"],
+    ["src/api.generated.ts", "line-comment", "inventory_only"],
+    ["pnpm-lock.yaml", "line-comment", "inventory_only"],
+    ["config/state.lock", "line-comment", "inventory_only"],
+    ["nested/node_modules/x.js", "line-comment", "hard_skip"],
+    ["nested/.git/config", "line-comment", "hard_skip"],
+    ["nested/.l9/authority.yaml", "line-comment", "hard_skip"],
+    [".env", "line-comment", "hard_skip"], [".env.production", "line-comment", "hard_skip"],
+    ["config/app.json", "sidecar", "central_manifest"],
+    ["data/events.jsonl", "sidecar", "central_manifest"],
+    ["notes.txt", "sidecar", "central_manifest"],
+    ["prompts/input.md", "line-comment", "central_manifest"],
+    ["src/app.ts", "block-comment", "central_manifest"],
+    ["config/app.yaml", "block-comment", "central_manifest"],
+    ["web/app.css", "line-comment", "central_manifest"],
+  ] as const)("blanket allow never overrides protection for %s", (name, strategy, carrier) => {
+    expect(resolveCarrierDecision(subject(name, "context", strategy), broad, "apply").carrier).toBe(carrier);
+  });
+
+  test("exclusion outranks opt-in and leaves a named central reason", () => {
+    const excluded = { ...broad, inline_exclude: ["tests/**"] };
+    expect(resolveCarrierDecision(subject("tests/check.py", "test", "line-comment"), excluded, "check")).toMatchObject({
+      carrier: "central_manifest", authorityRule: "inline_exclude:tests/**", reason: expect.stringContaining("inline_exclude"),
+    });
+    expect(resolveCarrierDecision(subject("tests/node_modules/x.py", "test", "line-comment"), excluded, "apply").carrier).toBe("hard_skip");
+  });
+
+  test("SKILL.md stays protected outside skills mode", () => {
+    expect(resolveCarrierDecision(subject("skills/check/SKILL.md", "skill", "yaml-frontmatter"), broad, "apply").carrier).toBe("central_manifest");
+  });
+
+  test.each([".gitignore", ".env.example", ".github/workflows/ci.yml", ".github/CODEOWNERS"])("hidden control %s requires its name, not a blanket", (name) => {
+    expect(resolveCarrierDecision(subject(name, "source", "line-comment"), broad, "apply").carrier).toBe("central_manifest");
+    expect(resolveCarrierDecision(subject(name, "source", "line-comment"), { ...broad, inline_allow: [name] }, "apply").carrier).toBe("inline_managed");
+  });
+
+  test.each(["src/main.s", "src/main.S", "src/main.m", "src/main.M"])("even a supplied comment strategy cannot authorize ambiguous dialect %s", (name) => {
+    for (const strategy of ["line-comment", "block-comment"] as const) {
+      for (const inline_allow of [["**"], [name]]) {
+        expect(resolveCarrierDecision(subject(name, "source", strategy), { ...broad, inline_allow }, "apply").carrier).toBe("central_manifest");
+      }
+    }
+  });
+
+  test.each(["nested/.github/workflows/ci.yml", "nested/.github/workflows/sub/ci.yml", "nested/.github/CODEOWNERS"])("no allow can authorize nested GitHub control %s inline", (name) => {
+    for (const inline_allow of [["**"], [name], ["nested/.github/workflows/**", "nested/.github/CODEOWNERS"], ["**/.github/workflows/**", "**/.github/CODEOWNERS"]]) {
+      expect(resolveCarrierDecision(subject(name, "source", "line-comment"), { ...broad, inline_allow }, "apply")).toMatchObject({
+        carrier: "central_manifest", authorityRule: "hidden-control-not-explicit",
+      });
+    }
   });
 });
 

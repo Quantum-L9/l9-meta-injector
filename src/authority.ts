@@ -247,7 +247,7 @@ export function parseAuthorityYaml(text: string): AuthorityConfig {
       continue;
     }
 
-    if (key === "inline_allow" || key === "validation_commands") {
+    if (key === "inline_allow" || key === "inline_exclude" || key === "validation_commands") {
       if (rest) {
         result[key] = parseInlineList(rest);
         index++;

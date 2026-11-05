@@ -77,6 +77,7 @@ export interface AuthorityConfig {
     default_carrier: "central_manifest" | "inline_managed";
     legacy_writers: AuthorityLegacyPolicy;
     inline_allow: string[];
+    inline_exclude?: string[];
     validation_commands?: string[];
     semantic_foundation?: SemanticFoundationBinding;
     product?: ProductDeclaration;

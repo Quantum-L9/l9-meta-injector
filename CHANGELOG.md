@@ -11,6 +11,20 @@
 - Adversarial regression and real installed-package proof; six read-only pinned snapshots qualified across 9,222 leaves with 9,161 indexed and 61 protected. See [qualification evidence](docs/qualification/universal-tracked-v2-2026-11-03.md).
 - Package semver, registry publication, consumer realignment and fleet freshness remain separately authorized; this entry is not a release.
 
+### Governed format-safe headers (ADR-080)
+
+- Explicit `inline_allow` can authorize safe source/test/script/configuration comment
+  headers; central defaults and normal-mode SKILL.md protection are unchanged. Optional
+  authority v1/v2 `inline_exclude` defaults to `[]` and overrides allow without omitting
+  central metadata coverage.
+- Fixtures, golden tests and datasets stay central even under blanket grants; hidden
+  controls need named safe patterns. Secret-bearing `.env`, Git/L9/dependency internals,
+  binaries, generated outputs, locks and vendor state remain non-writable. JSON, JSONL,
+  plaintext and unsafe comment positions gain neither comments nor governed sidecars.
+- Reuses prologue/body-preserving rendering and the shared transactional check/apply
+  plan. README documents opt-in patterns and distinguishes index coverage from inline
+  changes. Package version stays 4.3.0 pending release; no publication authority changes.
+
 ## 4.3.0 - 2026-11-03
 
 ### Consumer readiness (ADR-078, ADR-079)

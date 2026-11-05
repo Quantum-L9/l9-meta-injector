@@ -17,6 +17,8 @@ import { compareCodePoints } from "./ordering";
 import { globToRegExp } from "./glob";
 import type { TrackedGitEntry, TrackedCarrierDecision } from "./discovery_contracts";
 import { decodeTrackedPathBytes, compareTrackedPaths } from "./namespace";
+import { hasCommentCarrierFamily } from "./comment";
+import { explicitHiddenControlPattern } from "./hidden_control";
 
 export const CARRIER_PRECEDENCE: readonly MetadataCarrier[] = [
   "hard_skip",
@@ -50,6 +52,7 @@ const INVENTORY_ONLY_PREFIXES = [
   "third-party/",
   ".venv/",
   "venv/",
+  "generated/",
 ] as const;
 
 const CENTRAL_MANIFEST_PREFIXES = [
@@ -212,6 +215,11 @@ function startsWithAny(relativePath: string, prefixes: readonly string[]): strin
   return prefixes.find((prefix) => relativePath.startsWith(prefix));
 }
 
+function protectedSegment(relativePath: string, prefixes: readonly string[]): string | undefined {
+  const segments = relativePath.split("/");
+  return prefixes.find((prefix) => segments.includes(prefix.slice(0, -1)));
+}
+
 function decision(pathName: string, carrier: MetadataCarrier, reason: string, authorityRule?: string): CarrierDecision {
   return { path: pathName, carrier, reason, authorityRule };
 }
@@ -222,9 +230,13 @@ function hardSkipDecision(
   lowerPath: string,
   subject: CarrierSubject,
 ): CarrierDecision | null {
-  const hardPrefix = startsWithAny(lowerPath, HARD_SKIP_PREFIXES);
+  const hardPrefix = protectedSegment(lowerPath, HARD_SKIP_PREFIXES);
   if (hardPrefix) {
     return decision(relativePath, "hard_skip", "protected internal, dependency, or generated namespace", hardPrefix);
+  }
+  const basename = posixBasename(lowerPath);
+  if (basename === ".env" || (basename.startsWith(".env.") && basename !== ".env.example")) {
+    return decision(relativePath, "hard_skip", "secret environment files are never metadata carriers", "secret-environment");
   }
   const generatedSuffix = GENERATED_SUFFIXES.find((suffix) => lowerPath.endsWith(suffix));
   if (generatedSuffix) {
@@ -242,14 +254,14 @@ function inventoryOnlyDecision(
   lowerPath: string,
   basename: string,
 ): CarrierDecision | null {
-  const inventoryPrefix = startsWithAny(lowerPath, INVENTORY_ONLY_PREFIXES);
+  const inventoryPrefix = protectedSegment(lowerPath, INVENTORY_ONLY_PREFIXES);
   if (inventoryPrefix) {
     return decision(relativePath, "inventory_only", "generated, vendored, or environment-managed content", inventoryPrefix);
   }
-  if (INVENTORY_ONLY_BASENAMES.has(basename)) {
+  if (INVENTORY_ONLY_BASENAMES.has(basename) || basename.endsWith(".lock")) {
     return decision(relativePath, "inventory_only", "dependency lock state is inventoried but never annotated", basename);
   }
-  if (basename.endsWith(".min.js") || basename.endsWith(".min.css") || basename.endsWith(".map")) {
+  if (basename.endsWith(".min.js") || basename.endsWith(".min.css") || basename.endsWith(".map") || basename.includes(".generated.")) {
     return decision(relativePath, "inventory_only", "generated distribution artifact", "generated-distribution-suffix");
   }
   return null;
@@ -268,7 +280,7 @@ function centralManifestDecision(
     return decision(relativePath, "central_manifest", "source, test, automation, or infrastructure surface", centralPrefix);
   }
   if (CENTRAL_MANIFEST_ARTIFACT_TYPES.has(subject.artifactType)) {
-    return decision(relativePath, "central_manifest", `artifact type '${subject.artifactType}' is never an inline carrier`, `artifact:${subject.artifactType}`);
+    return decision(relativePath, "central_manifest", `artifact type '${subject.artifactType}' uses the central manifest by default`, `artifact:${subject.artifactType}`);
   }
   if (CENTRAL_MANIFEST_BASENAMES.has(basename) || CENTRAL_MANIFEST_EXTENSIONS.has(extension)) {
     return decision(relativePath, "central_manifest", "structured, executable, or configuration format", basename || extension);
@@ -288,7 +300,9 @@ function inlineOrDefaultDecision(
   mode: OperationMode,
 ): CarrierDecision {
   const inlinePattern = matchesInlineAllow(relativePath, authority.inline_allow);
-  const inlineEligible = INLINE_MANAGED_ARTIFACT_TYPES.has(subject.artifactType);
+  const commentEligible = (subject.strategy === "line-comment" || subject.strategy === "block-comment")
+    && hasCommentCarrierFamily(relativePath, subject.strategy);
+  const inlineEligible = commentEligible || (subject.strategy === "yaml-frontmatter" && INLINE_MANAGED_ARTIFACT_TYPES.has(subject.artifactType));
   // A file whose existing frontmatter cannot be rewritten byte-safely is never an inline
   // carrier, no matter how eligible it otherwise is. Its bytes are preserved and its
   // metadata is carried centrally. The reason travels with the decision so an operator
@@ -312,7 +326,9 @@ function inlineOrDefaultDecision(
       "inline_managed",
       mode === "skills" && basename === "skill.md"
         ? "explicitly authorized managed skill entrypoint"
-        : "explicitly authorized L9-managed prose artifact",
+        : commentEligible
+          ? "explicitly authorized format-safe comment carrier"
+          : "explicitly authorized L9-managed prose artifact",
       `inline_allow:${inlinePattern}`,
     );
   }
@@ -320,7 +336,7 @@ function inlineOrDefaultDecision(
     return decision(
       relativePath,
       "central_manifest",
-      `inline_allow cannot override ineligible artifact type '${subject.artifactType}'`,
+      `inline_allow cannot override an unsafe format or ineligible artifact type '${subject.artifactType}'`,
       `inline_allow:${inlinePattern}`,
     );
   }
@@ -360,13 +376,26 @@ export function resolveCarrierDecision(
   const lowerPath = relativePath.toLowerCase();
   const basename = posixBasename(lowerPath);
   const extension = posixExtname(lowerPath);
-  // Ordered decision tiers — first non-null wins (order is load-bearing).
-  return (
-    hardSkipDecision(relativePath, lowerPath, subject) ??
-    inventoryOnlyDecision(relativePath, lowerPath, basename) ??
-    centralManifestDecision(relativePath, lowerPath, basename, extension, subject) ??
-    inlineOrDefaultDecision(relativePath, basename, subject, authority, mode)
-  );
+  // Protected tiers always outrank both repository allow and exclude patterns.
+  const protectedDecision = hardSkipDecision(relativePath, lowerPath, subject)
+    ?? inventoryOnlyDecision(relativePath, lowerPath, basename);
+  if (protectedDecision) return protectedDecision;
+  const excluded = matchesInlineAllow(relativePath, authority.inline_exclude ?? []);
+  if (excluded) return decision(relativePath, "central_manifest", "explicit inline_exclude preserves source bytes", `inline_exclude:${excluded}`);
+  const byteSensitive = lowerPath.split("/").find((segment) => ["fixture", "fixtures", "__fixtures__", "golden_tests", "datasets", "__snapshots__"].includes(segment));
+  if (byteSensitive) return decision(relativePath, "central_manifest", "byte-sensitive fixture, golden, or dataset payload is never an inline carrier", `byte-sensitive:${byteSensitive}`);
+  if (basename === "skill.md" && mode !== "skills") {
+    return decision(relativePath, "central_manifest", "SKILL.md is protected outside skills mode", "protected-skill-entrypoint");
+  }
+  if (relativePath.split("/").some((segment) => segment.startsWith(".")) && !explicitHiddenControlPattern(relativePath, authority.inline_allow)) {
+    return decision(relativePath, "central_manifest", "hidden control requires an inline_allow pattern naming a supported control", "hidden-control-not-explicit");
+  }
+  // Explicit safe authorization precedes the unchanged central defaults, not protection.
+  if (matchesInlineAllow(relativePath, authority.inline_allow) || subject.inlineCarrierBlock) {
+    return inlineOrDefaultDecision(relativePath, basename, subject, authority, mode);
+  }
+  return centralManifestDecision(relativePath, lowerPath, basename, extension, subject)
+    ?? inlineOrDefaultDecision(relativePath, basename, subject, authority, mode);
 }
 
 export function resolveCarrierDecisions(input: CarrierPolicyInput): CarrierDecision[] {

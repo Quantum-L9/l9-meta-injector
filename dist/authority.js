@@ -272,7 +272,7 @@ function parseAuthorityYaml(text) {
             result.writer = writer;
             continue;
         }
-        if (key === "inline_allow" || key === "validation_commands") {
+        if (key === "inline_allow" || key === "inline_exclude" || key === "validation_commands") {
             if (rest) {
                 result[key] = parseInlineList(rest);
                 index++;

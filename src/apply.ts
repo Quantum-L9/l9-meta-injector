@@ -89,6 +89,9 @@ function renderInlineBytes(root: string, planned: InjectionRecord, outDir: strin
   if (!planned.expectedContentHash || planned.wouldChange === undefined || planned.targetExists === undefined) {
     throw new Error(`inline mutation plan is incomplete: ${planned.sourcePath}`);
   }
+  if (!["yaml-frontmatter", "line-comment", "block-comment"].includes(planned.injectionStrategy ?? "")) {
+    throw new Error(`unsafe inline mutation strategy: ${planned.sourcePath}`);
+  }
   const renderRoot = fs.mkdtempSync(path.join(os.tmpdir(), "l9-meta-render-"));
   const renderTarget = path.join(renderRoot, path.basename(planned.sourcePath));
   try {
@@ -100,7 +103,7 @@ function renderInlineBytes(root: string, planned: InjectionRecord, outDir: strin
       writeInjectLog: false,
       writeDryRunDiff: false,
     });
-    if (rendered.injectionStrategy !== "yaml-frontmatter" || rendered.sidecarPath || rendered.injectLogPath) {
+    if (rendered.injectionStrategy !== planned.injectionStrategy || rendered.sidecarPath || rendered.injectLogPath) {
       throw new Error(`carrier policy violation while rendering ${planned.sourcePath}`);
     }
     const bytes = fs.readFileSync(renderTarget);
