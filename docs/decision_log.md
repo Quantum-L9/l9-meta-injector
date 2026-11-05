@@ -2,6 +2,8 @@
 
 The active decision sequence continues after the historical decisions 1 through 9 under `docs/legacy/consolidation-v1/decision_log.md`. Full rationale and alternatives are recorded in `docs/decisions/`.
 
+**Approved tracked v2 contract:** [ADR-081](decisions/081-versioned-universal-tracked-metadata.md) adds exact Git-tree accounting, path-exact identity, one versioned metadata store and protected external receipts under the existing producer owners. This standalone branch is not stacked on [PR #123](https://github.com/Quantum-L9/l9-meta-injector/pull/123), which owns the separate ADR-080 comment-carrier corrections. Protocol acceptance does not authorize release, consumer mutation or global semantic admission.
+
 | # | Decision | ADR | Rationale |
 |---|---|---|---|
 | 10 | The TypeScript pipeline is the sole active engine | [ADR-010](decisions/010-typescript-pipeline-sole-active-engine.md) | It is the shipped package, tested runtime, and CI-gated implementation. |

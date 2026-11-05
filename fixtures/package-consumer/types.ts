@@ -1,7 +1,7 @@
 import { META_AUTHORITY_SCHEMA, resolveOperationMode, assertAuthorityForOperation, runCheckAsync, runPipelineAsync, runSkillsPipelineAsync, UNKNOWN, type AuthorityConfig, type CheckConfig, type OperationMode, type OperationResult, type PipelineConfig, type PipelineResult, type SkillsPipelineConfig, type SkillsPipelineResult, type NormalizedMeta, type MetaV3Record } from "l9-meta-injector";
 import { inventoryTree, type InventoryConfig, type InventoryResult } from "l9-meta-injector/inventory";
 import { buildMetaV3, type MetaV3, type ArtifactType } from "l9-meta-injector/schema";
-import { compilePlacementPlans, parseCanonicalYaml, acquireLocalSource, observeLocalSourceModel, resolveLocalArchivePolicy, type PlacementPlan, type MetaSchema, type LocalSourceAcquireInput, type LocalSourceObservation, type LocalArchivePolicy, type LocalSourceModelResult } from "l9-meta-injector/advanced";
+import { compilePlacementPlans, parseCanonicalYaml, acquireLocalSource, observeLocalSourceModel, resolveLocalArchivePolicy, runTrackedCoverage, runTrackedCheckAsync, runTrackedApplyAsync, readVersionedMetadataIndex, type PlacementPlan, type MetaSchema, type LocalSourceAcquireInput, type LocalSourceObservation, type LocalArchivePolicy, type LocalSourceModelResult, type TrackedCoverageInput, type TrackedMetadataCompilation, type TrackedCheckResult, type TrackedApplyResult, type VersionedMetadataIndex } from "l9-meta-injector/advanced";
 import { makeOpenAIAdapter, type LlmAdapter, type LlmDiagnostic } from "l9-meta-injector/advanced/llm";
 import { validateRepositoryModelPacket, type RepositoryModelPacket, type RepositoryModelValidationResult } from "l9-meta-injector/repository-model";
 const config: PipelineConfig = { root:".",glob:"**/*.md",dryRun:true,outDir:".out",namespace:"l9",authority:"l9.doctrine.platform",nearDupThreshold:0.9,hashPrefixLength:16,indexDir:".index",verbose:false,llmEnabled:false,normalizeFilenames:false };
@@ -33,3 +33,9 @@ let repositoryModelPacket!: RepositoryModelPacket; const repositoryModelValidati
 const _keepAlive: unknown[] = [localSourceInput,localSourceObservation,localArchivePolicy,localSourceAcquire,localSourceModel,pipelinePromise,checkPromise,skillsPromise,inventoryResult,typeName,plans,parsed,adapter,diagnostic,meta,record,operationMode,authority,checkConfig,operationResult,UNKNOWN,repositoryModelValidation];
 let schema!: MetaSchema; const _schemaKeep: unknown = schema;
 export type _ConsumerFixtureKeepAlive = typeof _keepAlive | typeof _schemaKeep;
+const trackedInput: TrackedCoverageInput = {root:".",revision:"a".repeat(40),repositoryId:"Owner/Repo",contract:"l9.tracked-carrier-policy/v2",producerVersion:"4.3.0"};
+const trackedCoverage: (input: TrackedCoverageInput) => TrackedMetadataCompilation = runTrackedCoverage;
+const trackedCheck: (input: TrackedCoverageInput) => Promise<TrackedCheckResult> = runTrackedCheckAsync;
+const trackedApply: (input: TrackedCoverageInput) => Promise<TrackedApplyResult> = runTrackedApplyAsync;
+const versionedReader: (bytes: string) => VersionedMetadataIndex = readVersionedMetadataIndex;
+export type _TrackedConsumerFixtureKeepAlive = typeof trackedInput | typeof trackedCoverage | typeof trackedCheck | typeof trackedApply | typeof versionedReader;

@@ -12,8 +12,13 @@ exports.authorityFreeCarrierTier = authorityFreeCarrierTier;
 exports.resolveCarrierDecision = resolveCarrierDecision;
 exports.resolveCarrierDecisions = resolveCarrierDecisions;
 exports.assertCarrierDecisionCoverage = assertCarrierDecisionCoverage;
+exports.resolveTrackedCarrierDecision = resolveTrackedCarrierDecision;
+exports.assertTrackedPathSpelling = assertTrackedPathSpelling;
+exports.trackedIndexPathProblem = trackedIndexPathProblem;
+exports.resolveTrackedCarrierDecisions = resolveTrackedCarrierDecisions;
 const ordering_1 = require("./ordering");
 const glob_1 = require("./glob");
+const namespace_1 = require("./namespace");
 const comment_1 = require("./comment");
 const hidden_control_1 = require("./hidden_control");
 exports.CARRIER_PRECEDENCE = [
@@ -328,5 +333,86 @@ function assertCarrierDecisionCoverage(subjects, decisions) {
     if (missing.length || extra.length) {
         throw new Error(`carrier decision coverage mismatch; missing=[${missing.join(", ")}], extra=[${extra.join(", ")}]`);
     }
+}
+/** Exact Git facts are a separate input domain: discovery never grants write permission. */
+function resolveTrackedCarrierDecision(entry) {
+    assertTrackedPathSpelling(entry);
+    const result = (carrier, disposition, reason) => ({ ...entry, carrier, disposition, reason });
+    const name = entry.path;
+    // Exact protected paths have priority even if their mode is unsupported.
+    if (name === ".l9/metadata-index.jsonl")
+        return result("hard_skip", "protected", "protected_self");
+    if (name === "GIT_TREE_MANIFEST.json")
+        return result("hard_skip", "protected", "protected_manifest");
+    const lower = name?.toLowerCase();
+    if (lower?.split("/").includes(".git"))
+        return result("hard_skip", "protected", "protected_git_internal");
+    if (lower && isTrackedSecretPath(lower))
+        return result("hard_skip", "protected", "protected_secret");
+    if (trackedIndexPathProblem(entry) !== null)
+        return result("hard_skip", "unsupported", "unsupported_path");
+    if (!((entry.mode === "100644" || entry.mode === "100755" || entry.mode === "120000") && entry.object_type === "blob")
+        && !(entry.mode === "160000" && entry.object_type === "commit")) {
+        return result("hard_skip", "unsupported", "unsupported_git_entry");
+    }
+    if (entry.mode === "120000")
+        return result("inventory_only", "indexed", "link_as_link");
+    if (entry.mode === "160000")
+        return result("inventory_only", "indexed", "gitlink_as_reference");
+    const basename = posixBasename(lower ?? "");
+    const extension = posixExtname(lower ?? "");
+    if (startsWithAny(lower ?? "", [...INVENTORY_ONLY_PREFIXES, "node_modules/", "__pycache__/"])
+        || INVENTORY_ONLY_BASENAMES.has(basename)
+        || GENERATED_SUFFIXES.some((suffix) => lower?.endsWith(suffix))
+        || /\.(?:min\.(?:js|css)|map)$/.test(basename)
+        || TRACKED_BINARY_NAME_HINTS.has(extension)) {
+        return result("inventory_only", "indexed", "name_hint_inventory");
+    }
+    return result("central_manifest", "indexed", "index_only");
+}
+const TRACKED_BINARY_NAME_HINTS = new Set([
+    ".zip", ".tar", ".gz", ".bz2", ".xz", ".7z", ".rar", ".png", ".jpg", ".jpeg", ".gif", ".webp",
+    ".pdf", ".mp3", ".mp4", ".woff", ".woff2", ".exe", ".dll", ".so", ".bin", ".wasm",
+]);
+function isTrackedSecretPath(lower) {
+    const parts = lower.split("/");
+    return parts.some((part) => part === ".ssh" || part === ".gnupg" || part === "secrets" || part === ".secrets")
+        || parts.some((part) => (part === ".env" || part.startsWith(".env.")) && !/\.(?:example|sample|template)$/.test(part))
+        || /(?:^|\/)(?:credentials(?:\.[^/]*)?|id_(?:rsa|dsa|ecdsa|ed25519))(?:$|\/)/.test(lower)
+        || /\.(?:pem|key|p12|pfx|keystore)$/.test(lower);
+}
+/** Spelling/evidence disagreements are corruption, not justified representation exceptions. */
+function assertTrackedPathSpelling(entry) {
+    const bytes = (0, namespace_1.decodeTrackedPathBytes)(entry.path_bytes_base64);
+    let decoded;
+    try {
+        decoded = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+    }
+    catch {
+        decoded = null;
+    }
+    if (entry.path !== decoded)
+        throw new Error("tracked path spelling does not match exact path bytes");
+}
+/** Unsupported path bytes stay in the external receipt, never vanish from coverage. */
+function trackedIndexPathProblem(entry) {
+    const value = entry.path;
+    if (value === null)
+        return "invalid_utf8";
+    if (!value || value.includes("\\") || /[\u0000-\u001f\u007f]/u.test(value) || value.startsWith("/")
+        || /^[A-Za-z]:/.test(value) || [...value].length > 4096)
+        return "unsafe_portable_path";
+    if (value.split("/").some((segment) => !segment || segment === "." || segment === ".."))
+        return "noncanonical_path";
+    return null;
+}
+function resolveTrackedCarrierDecisions(entries) {
+    const seen = new Set();
+    return entries.map((entry) => {
+        if (seen.has(entry.path_bytes_base64))
+            throw new Error("duplicate tracked census path");
+        seen.add(entry.path_bytes_base64);
+        return resolveTrackedCarrierDecision(entry);
+    }).sort(namespace_1.compareTrackedPaths);
 }
 //# sourceMappingURL=mutation_policy.js.map

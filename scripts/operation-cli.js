@@ -13,6 +13,7 @@ const {
   parseCommandLine,
   parseSummary,
 } = require("./lib/operation-dispatch");
+const tracked = require("./tracked-metadata-cli");
 
 /** One `key=value` GITHUB_OUTPUT line; a key or value with NUL/CR/LF would forge extra lines. */
 function outputLine(key, value) {
@@ -66,8 +67,12 @@ function execute(config) {
 }
 
 function main() {
+  if (tracked.TRACKED_MODES.includes(process.argv[2])) {
+    tracked.main(process.argv.slice(2)).then(code => { process.exitCode = code; });
+    return;
+  }
   if (isHelpRequest(process.argv.slice(2))) {
-    process.stdout.write(HELP_TEXT);
+    process.stdout.write(HELP_TEXT + tracked.TRACKED_HELP_TEXT);
     process.exit(0);
   }
   try {

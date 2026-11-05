@@ -43,40 +43,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.listGitIgnoredUntracked = listGitIgnoredUntracked;
 exports.isGitIgnored = isGitIgnored;
 const node_child_process_1 = require("node:child_process");
-const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
-let resolvedGit;
-/**
- * Absolute path to git from PATH, resolved once (WU-069 / S4036): spawning the bare
- * name would let a writable PATH entry choose the binary. Relative PATH entries are
- * skipped. Returns null when no executable git is found.
- */
-function gitExecutable() {
-    if (resolvedGit !== undefined)
-        return resolvedGit;
-    const names = process.platform === "win32" ? ["git.exe", "git.cmd"] : ["git"];
-    for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
-        if (!dir || !path.isAbsolute(dir))
-            continue;
-        for (const name of names) {
-            const candidate = path.join(dir, name);
-            try {
-                if (!fs.statSync(candidate).isFile())
-                    continue;
-                fs.accessSync(candidate, fs.constants.X_OK);
-                resolvedGit = candidate;
-                return resolvedGit;
-            }
-            catch {
-                // not here; keep looking
-            }
-        }
-    }
-    resolvedGit = null;
-    return resolvedGit;
-}
+const git_runtime_1 = require("./git_runtime");
 function runGit(root, args) {
-    const git = gitExecutable();
+    const git = (0, git_runtime_1.gitExecutable)();
     if (git === null)
         return { status: null, stdout: "", stderr: "git not found" };
     const result = (0, node_child_process_1.spawnSync)(git, args, { cwd: root, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });

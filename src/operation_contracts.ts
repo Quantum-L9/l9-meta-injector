@@ -389,3 +389,24 @@ export function assertAuthorityForOperation(
   }
   return authority;
 }
+
+/** Explicit opt-in only. This does not extend legacy operation-mode dispatch. */
+export interface TrackedCoverageInput {
+  root: string;
+  revision: string;
+  repositoryId: string;
+  contract: "l9.tracked-carrier-policy/v2";
+  producerVersion: string;
+  maxOutputBytes?: number;
+  timeoutMs?: number;
+}
+
+export interface TrackedCheckInput extends TrackedCoverageInput {
+  /** Consent is reported but never writes during check. */
+  migrateV1?: boolean;
+}
+
+export interface TrackedApplyInput extends TrackedCheckInput {
+  /** Optional binding to the caller's selected canonical writer revision. */
+  expectedWriterRef?: string;
+}

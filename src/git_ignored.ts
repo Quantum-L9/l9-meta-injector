@@ -7,8 +7,8 @@
 // exactly as git does.
 
 import { spawnSync } from "node:child_process";
-import * as fs from "node:fs";
 import * as path from "node:path";
+import { gitExecutable } from "./git_runtime";
 
 /** Untracked, ignored paths relative to the observed root, as git reports them. */
 export interface GitIgnoredPaths {
@@ -16,34 +16,6 @@ export interface GitIgnoredPaths {
   readonly files: ReadonlySet<string>;
   /** Ignored untracked directories (git collapses them), without a trailing slash. */
   readonly directories: readonly string[];
-}
-
-let resolvedGit: string | null | undefined;
-
-/**
- * Absolute path to git from PATH, resolved once (WU-069 / S4036): spawning the bare
- * name would let a writable PATH entry choose the binary. Relative PATH entries are
- * skipped. Returns null when no executable git is found.
- */
-function gitExecutable(): string | null {
-  if (resolvedGit !== undefined) return resolvedGit;
-  const names = process.platform === "win32" ? ["git.exe", "git.cmd"] : ["git"];
-  for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
-    if (!dir || !path.isAbsolute(dir)) continue;
-    for (const name of names) {
-      const candidate = path.join(dir, name);
-      try {
-        if (!fs.statSync(candidate).isFile()) continue;
-        fs.accessSync(candidate, fs.constants.X_OK);
-        resolvedGit = candidate;
-        return resolvedGit;
-      } catch {
-        // not here; keep looking
-      }
-    }
-  }
-  resolvedGit = null;
-  return resolvedGit;
 }
 
 function runGit(root: string, args: string[]): { status: number | null; stdout: string; stderr: string } {

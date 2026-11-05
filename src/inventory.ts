@@ -37,6 +37,7 @@ import { inspectFrontMatterDocument, patchManagedFrontMatter } from "./frontmatt
 import { injectFile, managedCarrierFreeBody } from "./inject";
 import { ArtifactType, NormalizedMeta, SharingScope, UNKNOWN, asRecord } from "./schema";
 import { projectPrimitiveTaxonomy } from "./normalize_meta";
+import { assertLegacyMetadataIndexWrite, readMetadataIndexBaseBytes } from "./metadata_index";
 import { classify } from "./classify";
 import { resolveNamespace } from "./namespace";
 import { assertHeaderIdentity, resolveHeaderIdentity } from "./authority";
@@ -565,6 +566,11 @@ export function inventoryTree(config: InventoryConfig): InventoryResult {
   // Absolutize root so absolute_path is truly absolute and relative_path/manifest
   // output are deterministic regardless of the caller's cwd.
   const root = path.resolve(config.root);
+  if (!cfg.dryRun && (cfg.injectHeaders || cfg.writeSidecars)) {
+    const index = readMetadataIndexBaseBytes(root);
+    // Reuse the single index byte/version owners; corrupt v1 remains repairable.
+    if (index.exists) assertLegacyMetadataIndexWrite(index.raw.toString("utf8"));
+  }
   // outDir must not BE the root: its generated manifests would then sit directly in
   // root and get re-inventoried (and possibly injected) on the next run.
   if (path.resolve(config.outDir) === root) {

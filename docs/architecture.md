@@ -74,6 +74,35 @@ exceptions, not just changed files. `inlineChanged` and `metadataIndexChanged` r
 source-carrier changes and the separate index write; discovery omissions, hard skips
 and encoding/unsupported-entry holds remain explicit coverage exceptions.
 
+## Universal tracked metadata v2
+
+ADR-081 adds an explicit, conservative tracked-entry contract alongside the unchanged
+legacy filesystem candidate domain. The exact population is recursive Git commit-tree
+leaves, including hidden files, generated outputs, symlink blobs and gitlinks. Git
+commit/tree metadata is observed once through a bounded, binary-safe adapter; no
+subject blob payload, link target, archive member or submodule content is read by
+default. Missing/failed/truncated enumeration is never called complete.
+
+`discovery_contracts` owns the typed snapshot facts, `namespace` owns path-exact
+identity, `mutation_policy` owns the one disposition set, `metadata_index` owns the
+canonical v2 store and complementary protected receipt, and `carrier_operation`
+owns shared tracked planning/check/apply. Coverage proves identity-set and object
+evidence equality, not just totals. Content digests and semantic interpretation
+remain Unknown when uninspected; Git object IDs are separate provenance.
+
+The tracked seam is index-only: source files never become mutation intents. Hidden
+controls, binaries, archives, links and regular source/configuration are represented
+read-only; self-index and protected/cyclic-manifest exceptions remain visible in an
+out-of-tree receipt. The one active index stays `.l9/metadata-index.jsonl`; selecting
+v2 or migrating from v1 is explicit, and implicit downgrade is refused. Existing v1
+valid records, aliases, rendering, discovery and annotation behavior are preserved.
+
+Snapshot receipts identify their input commit/tree, not a hypothetical final tree
+that contains a newly generated index. Apply requires canonical repository authority,
+source-currentness checks and the established whole-run CAS/rollback transaction.
+No adjacent source sidecars, global-law mutation, consumer adoption, publication or
+continuous-freshness guarantee is implied. Qualification and release remain separate.
+
 ## Repository model egress
 
 `src/repository_model.ts` converts an inventory observation into an `l9.repository-model`

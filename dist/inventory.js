@@ -68,6 +68,7 @@ const frontmatter_patch_1 = require("./frontmatter_patch");
 const inject_1 = require("./inject");
 const schema_1 = require("./schema");
 const normalize_meta_1 = require("./normalize_meta");
+const metadata_index_1 = require("./metadata_index");
 const classify_1 = require("./classify");
 const namespace_1 = require("./namespace");
 const authority_1 = require("./authority");
@@ -484,6 +485,12 @@ function inventoryTree(config) {
     // Absolutize root so absolute_path is truly absolute and relative_path/manifest
     // output are deterministic regardless of the caller's cwd.
     const root = path.resolve(config.root);
+    if (!cfg.dryRun && (cfg.injectHeaders || cfg.writeSidecars)) {
+        const index = (0, metadata_index_1.readMetadataIndexBaseBytes)(root);
+        // Reuse the single index byte/version owners; corrupt v1 remains repairable.
+        if (index.exists)
+            (0, metadata_index_1.assertLegacyMetadataIndexWrite)(index.raw.toString("utf8"));
+    }
     // outDir must not BE the root: its generated manifests would then sit directly in
     // root and get re-inventoried (and possibly injected) on the next run.
     if (path.resolve(config.outDir) === root) {

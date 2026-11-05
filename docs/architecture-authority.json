@@ -22,6 +22,10 @@
     "check": "src/check.ts",
     "operation_dispatch": "scripts/operation-cli.js",
     "discovery": "src/discovery_contracts.ts",
+    "git_tree": "src/git_tree.ts",
+    "git_runtime": "src/git_runtime.ts",
+    "namespace": "src/namespace.ts",
+    "tracked_dispatch": "scripts/tracked-metadata-cli.js",
     "carrier_policy": "src/mutation_policy.ts",
     "metadata_index": "src/metadata_index.ts",
     "carrier_operation": "src/carrier_operation.ts",
@@ -198,6 +202,25 @@
     "sidecars_default": false,
     "inject_logs_default": false,
     "idempotent_no_rewrite": true
+  },
+  "tracked_metadata_contract": {
+    "policy": "l9.tracked-carrier-policy/v2",
+    "index": "l9.metadata-index/v2",
+    "receipt": "l9.metadata-coverage/v2",
+    "population": "exact_immutable_git_tree_leaves",
+    "identity": "declared_repository_plus_exact_path_bytes",
+    "default_subject_payload_reads": false,
+    "default_authority_inspection": false,
+    "source_mutation": "never",
+    "index_mode": "explicit_index_only",
+    "active_store": ".l9/metadata-index.jsonl",
+    "implicit_downgrade": false,
+    "v1_migration_requires_consent": true,
+    "external_export": "outside_source_descriptor_anchored_no_replace",
+    "coverage_entrypoint": "src/carrier_operation.ts#runTrackedCoverage",
+    "check_entrypoint": "src/carrier_operation.ts#runTrackedCheckAsync",
+    "apply_entrypoint": "src/carrier_operation.ts#runTrackedApplyAsync",
+    "continuous_fleet_freshness": false
   },
   "frontmatter_safety": {
     "carrier_extensions": [

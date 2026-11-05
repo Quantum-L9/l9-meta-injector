@@ -187,3 +187,21 @@ export declare function semanticBindingErrors(config: AuthorityConfig): string[]
 export declare function isSafeAuthorityPathPattern(value: unknown): value is string;
 export declare function isAuthorityConfig(value: unknown): value is AuthorityConfig;
 export declare function assertAuthorityForOperation(mode: OperationMode, authority: AuthorityConfig | undefined): AuthorityConfig | undefined;
+/** Explicit opt-in only. This does not extend legacy operation-mode dispatch. */
+export interface TrackedCoverageInput {
+    root: string;
+    revision: string;
+    repositoryId: string;
+    contract: "l9.tracked-carrier-policy/v2";
+    producerVersion: string;
+    maxOutputBytes?: number;
+    timeoutMs?: number;
+}
+export interface TrackedCheckInput extends TrackedCoverageInput {
+    /** Consent is reported but never writes during check. */
+    migrateV1?: boolean;
+}
+export interface TrackedApplyInput extends TrackedCheckInput {
+    /** Optional binding to the caller's selected canonical writer revision. */
+    expectedWriterRef?: string;
+}

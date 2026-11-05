@@ -46,6 +46,10 @@ exports.planCarrierOperationAsync = planCarrierOperationAsync;
 exports.metadataIndexDrift = metadataIndexDrift;
 exports.unsatisfiedAuthorizationDrift = unsatisfiedAuthorizationDrift;
 exports.inlinePlanDrift = inlinePlanDrift;
+exports.runTrackedCoverage = runTrackedCoverage;
+exports.planTrackedOperation = planTrackedOperation;
+exports.runTrackedCheckAsync = runTrackedCheckAsync;
+exports.runTrackedApplyAsync = runTrackedApplyAsync;
 const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
 const node_crypto_1 = require("node:crypto");
@@ -53,6 +57,10 @@ const metadata_index_1 = require("./metadata_index");
 const mutation_policy_1 = require("./mutation_policy");
 const pipeline_1 = require("./pipeline");
 const ordering_1 = require("./ordering");
+const git_tree_1 = require("./git_tree");
+const discovery_contracts_1 = require("./discovery_contracts");
+const authority_scan_1 = require("./authority_scan");
+const file_transaction_1 = require("./file_transaction");
 exports.CANONICAL_METADATA_WRITER = "Quantum-L9/l9-meta-injector";
 function toPosix(value) {
     return value.split(path.sep).join("/");
@@ -258,6 +266,12 @@ function metadataIndexDrift(plan) {
         };
     }
     const actualBytes = fs.readFileSync(target, "utf8");
+    try {
+        (0, metadata_index_1.assertLegacyMetadataIndexWrite)(actualBytes);
+    }
+    catch (error) {
+        return { path: metadata_index_1.METADATA_INDEX_RELATIVE_PATH, kind: "conflict", message: error instanceof Error ? error.message : String(error), expectedHash: plan.metadataIndex.sha256 };
+    }
     const actualHash = sha256Text(actualBytes);
     if (actualBytes === plan.metadataIndex.bytes)
         return null;
@@ -301,5 +315,170 @@ function inlinePlanDrift(plan) {
         });
     }
     return drift;
+}
+function assertTrackedOptIn(input, governed = false) {
+    if (input.contract !== discovery_contracts_1.TRACKED_POLICY_SCHEMA)
+        throw new Error("tracked workflow requires explicit l9.tracked-carrier-policy/v2 opt-in");
+    const allowed = new Set(["root", "revision", "repositoryId", "contract", "producerVersion", "maxOutputBytes", "timeoutMs", ...(governed ? ["migrateV1", "expectedWriterRef"] : [])]);
+    if (Object.keys(input).some((key) => !allowed.has(key)))
+        throw new Error("unsupported tracked workflow input field");
+    const options = input;
+    if (options.migrateV1 !== undefined && typeof options.migrateV1 !== "boolean")
+        throw new Error("migrateV1 must be explicit boolean consent");
+    if (options.expectedWriterRef !== undefined && (typeof options.expectedWriterRef !== "string" || !options.expectedWriterRef.trim()))
+        throw new Error("expectedWriterRef must be nonempty");
+}
+/** Immutable tree metadata only. No pipeline/authority scan, subject reads, or writes. */
+function runTrackedCoverage(input) {
+    assertTrackedOptIn(input);
+    return (0, metadata_index_1.compileTrackedMetadataIndex)({ snapshot: (0, git_tree_1.readTrackedGitSnapshot)(input), producerVersion: input.producerVersion });
+}
+/** One plan is shared by versioned check/apply; no inline or adjacent-sidecar intents exist. */
+function planTrackedOperation(input) {
+    assertTrackedOptIn(input, true);
+    const root = path.resolve(input.root);
+    (0, git_tree_1.assertTrackedGitTopLevel)(root);
+    const snapshot = (0, git_tree_1.readTrackedGitSnapshot)(input);
+    let metadataIndexBase;
+    try {
+        metadataIndexBase = (0, metadata_index_1.readTrackedMetadataIndexBase)(root);
+    }
+    catch (error) {
+        metadataIndexBase = { exists: true, unmergeableReason: error instanceof Error ? error.message : String(error) };
+    }
+    if (metadataIndexBase.index?.schema === metadata_index_1.METADATA_INDEX_SCHEMA_V2 && metadataIndexBase.index.header.repository_id !== input.repositoryId) {
+        metadataIndexBase.unmergeableReason = "active v2 index repository identity differs from requested repository";
+    }
+    let legacyIdentityClaims;
+    if (!metadataIndexBase.unmergeableReason) {
+        try {
+            if (metadataIndexBase.index?.schema === metadata_index_1.METADATA_INDEX_SCHEMA_V2) {
+                legacyIdentityClaims = metadataIndexBase.index.header.legacy_identity_claims;
+            }
+            else if (metadataIndexBase.index?.schema === metadata_index_1.METADATA_INDEX_SCHEMA && input.migrateV1 === true) {
+                if (!metadataIndexBase.sha256)
+                    throw new Error("migration requires the actual active v1 index hash");
+                legacyIdentityClaims = (0, metadata_index_1.compileMetadataIndexLegacyIdentityClaims)(metadataIndexBase.index, metadataIndexBase.sha256, snapshot);
+            }
+        }
+        catch (error) {
+            metadataIndexBase.unmergeableReason = error instanceof Error ? error.message : String(error);
+        }
+    }
+    const metadataIndex = (0, metadata_index_1.compileTrackedMetadataIndex)({ snapshot, producerVersion: input.producerVersion, ...(legacyIdentityClaims ? { legacyIdentityClaims } : {}) });
+    const authorityInspection = (0, authority_scan_1.inspectRepositoryAuthority)(root, { expectedWriter: { repository: exports.CANONICAL_METADATA_WRITER } });
+    const migrationEvidence = legacyIdentityClaims && metadataIndexBase.index && metadataIndexBase.sha256
+        ? (0, metadata_index_1.compileMetadataIndexMigrationEvidence)(metadataIndexBase.index, metadataIndexBase.sha256, metadataIndex, snapshot) : null;
+    return { root, snapshot, metadataIndex, metadataIndexBase, authorityInspection, migrationEvidence };
+}
+function trackedPlanDrift(plan, migrateV1) {
+    if (plan.metadataIndexBase.unmergeableReason)
+        return [{ path: metadata_index_1.METADATA_INDEX_RELATIVE_PATH, kind: "conflict", message: plan.metadataIndexBase.unmergeableReason }];
+    if (plan.metadataIndexBase.index?.schema === metadata_index_1.METADATA_INDEX_SCHEMA && !migrateV1) {
+        return [{ path: metadata_index_1.METADATA_INDEX_RELATIVE_PATH, kind: "conflict", message: "active v1 index requires explicit migrateV1 before replacement" }];
+    }
+    const aliasProblem = plan.metadataIndexBase.index ? (0, metadata_index_1.metadataIndexMigrationAliasProblem)(plan.metadataIndexBase.index, plan.metadataIndex) : null;
+    if (aliasProblem)
+        return [{ path: metadata_index_1.METADATA_INDEX_RELATIVE_PATH, kind: "conflict", message: aliasProblem }];
+    if (!plan.metadataIndexBase.exists)
+        return [{ path: metadata_index_1.METADATA_INDEX_RELATIVE_PATH, kind: "missing", message: "canonical v2 metadata index is missing", expectedHash: plan.metadataIndex.sha256 }];
+    if (plan.metadataIndexBase.bytes !== plan.metadataIndex.bytes)
+        return [{ path: metadata_index_1.METADATA_INDEX_RELATIVE_PATH, kind: "stale", message: "canonical v2 metadata index differs from tracked plan", expectedHash: plan.metadataIndex.sha256, actualHash: plan.metadataIndexBase.sha256 }];
+    return [];
+}
+/** Read-only/in-memory by default; authority inspection is explicit and not content-free. */
+function runTrackedCheckAsync(input) {
+    // The executor runs synchronously and turns thrown guards into rejected promises.
+    return new Promise((resolve) => resolve(runTrackedCheck(input)));
+}
+function runTrackedCheck(input) {
+    const plan = planTrackedOperation(input);
+    (0, git_tree_1.assertTrackedWorktreeCurrent)(plan.snapshot, plan.root);
+    const drift = trackedPlanDrift(plan, input.migrateV1 === true);
+    return {
+        mode: "tracked-check", passed: drift.length === 0 && plan.authorityInspection.conflicts.length === 0 && !!plan.authorityInspection.authority,
+        repositoryMutated: false, sourceMutated: false, authorityInspection: "performed",
+        authorityConflicts: plan.authorityInspection.conflicts, authorityNotices: plan.authorityInspection.notices,
+        drift, metadataIndex: plan.metadataIndex,
+        migrationEvidence: plan.migrationEvidence,
+    };
+}
+function assertTrackedAuthority(plan, expectedWriterRef) {
+    const inspection = (0, authority_scan_1.inspectRepositoryAuthority)(plan.root, {
+        expectedWriter: { repository: exports.CANONICAL_METADATA_WRITER, ...(expectedWriterRef ? { ref: expectedWriterRef } : {}) },
+    });
+    if (!inspection.authority || inspection.conflicts.length !== 0) {
+        throw new Error(`TRACKED_AUTHORITY_REQUIRED: ${inspection.conflicts.map((item) => item.code).join(", ")}`);
+    }
+    if (JSON.stringify(inspection.authority) !== JSON.stringify(plan.authorityInspection.authority))
+        throw new Error("TRACKED_AUTHORITY_CHANGED: authority changed after planning");
+}
+function assertTrackedBaseCurrent(plan) {
+    const current = (0, metadata_index_1.readTrackedMetadataIndexBase)(plan.root);
+    if (current.exists !== plan.metadataIndexBase.exists || current.sha256 !== plan.metadataIndexBase.sha256)
+        throw new Error("TRACKED_INDEX_CAS_FAILED: active index changed after planning");
+}
+function assertNoPendingTrackedTransactions(root) {
+    const directory = path.join(root, ...file_transaction_1.TRANSACTION_DIRECTORY.split("/"));
+    try {
+        const stat = fs.lstatSync(directory);
+        if (stat.isSymbolicLink() || !stat.isDirectory() || fs.readdirSync(directory).length !== 0) {
+            throw new Error("pending/unsafe transaction state requires existing recovery workflow before tracked apply");
+        }
+    }
+    catch (error) {
+        if (error.code !== "ENOENT")
+            throw error;
+    }
+}
+/** Only the active canonical index may be committed; all census sources remain read-only. */
+function runTrackedApplyAsync(input) {
+    // Do not defer planning/commit guards; preserve the async API's rejection semantics.
+    return new Promise((resolve) => resolve(runTrackedApply(input)));
+}
+function runTrackedApply(input) {
+    const plan = planTrackedOperation(input);
+    if (plan.metadataIndexBase.unmergeableReason)
+        throw new Error(`TRACKED_INDEX_UNMERGEABLE: ${plan.metadataIndexBase.unmergeableReason}`);
+    assertTrackedAuthority(plan, input.expectedWriterRef);
+    if (plan.metadataIndexBase.index?.schema === metadata_index_1.METADATA_INDEX_SCHEMA && input.migrateV1 !== true)
+        throw new Error("active v1 index requires explicit migrateV1 before replacement");
+    const aliasProblem = plan.metadataIndexBase.index ? (0, metadata_index_1.metadataIndexMigrationAliasProblem)(plan.metadataIndexBase.index, plan.metadataIndex) : null;
+    if (aliasProblem)
+        throw new Error(aliasProblem);
+    (0, git_tree_1.assertTrackedWorktreeCurrent)(plan.snapshot, plan.root);
+    assertNoPendingTrackedTransactions(plan.root);
+    assertTrackedBaseCurrent(plan);
+    const changed = plan.metadataIndexBase.bytes !== plan.metadataIndex.bytes;
+    const intents = changed ? [{
+            path: metadata_index_1.METADATA_INDEX_RELATIVE_PATH,
+            expectedExists: plan.metadataIndexBase.exists,
+            ...(plan.metadataIndexBase.exists ? { expectedHash: plan.metadataIndexBase.sha256 } : {}),
+            bytes: plan.metadataIndex.bytes,
+            mode: 0o644,
+        }] : [];
+    const transaction = (0, file_transaction_1.executeFileTransaction)(plan.root, intents, {
+        // Synchronous source and authority guards run immediately before committing and
+        // while backups remain available. Postcondition failure rolls the index back.
+        faultInjector: ({ stage }) => {
+            if (stage === "before_commit") {
+                (0, git_tree_1.assertTrackedWorktreeCurrent)(plan.snapshot, plan.root);
+                assertTrackedAuthority(plan, input.expectedWriterRef);
+                assertTrackedBaseCurrent(plan);
+            }
+        },
+        validate: () => {
+            (0, git_tree_1.assertTrackedWorktreeCurrent)(plan.snapshot, plan.root);
+            assertTrackedAuthority(plan, input.expectedWriterRef);
+            if ((0, metadata_index_1.readTrackedMetadataIndexBase)(plan.root).bytes !== plan.metadataIndex.bytes)
+                throw new Error("TRACKED_INDEX_POSTCONDITION_FAILED");
+        },
+    });
+    return {
+        mode: "tracked-apply", passed: true, repositoryMutated: transaction.changedPaths.length !== 0, sourceMutated: false,
+        authorityInspection: "performed", authorityConflicts: [], authorityNotices: plan.authorityInspection.notices,
+        metadataIndex: plan.metadataIndex, transaction,
+        migrationEvidence: plan.migrationEvidence,
+    };
 }
 //# sourceMappingURL=carrier_operation.js.map

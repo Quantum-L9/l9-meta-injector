@@ -25,3 +25,44 @@ export interface DiscoverySummary {
 export declare const BLOCKING_DISCOVERY_DISPOSITIONS: ReadonlySet<DiscoveryDisposition>;
 export declare function emptyDiscoverySummary(): DiscoverySummary;
 export declare function summarizeDiscovery(entries: DiscoveryLedgerEntry[]): DiscoverySummary;
+/** Exact Git commit-tree facts. This is not filesystem candidate discovery. */
+export interface TrackedGitEntry {
+    /** Strict UTF-8 spelling, or null when Git path bytes are not valid UTF-8. */
+    readonly path: string | null;
+    /** Lossless canonical base64 of the exact Git repository-relative path bytes. */
+    readonly path_bytes_base64: string;
+    readonly mode: "100644" | "100755" | "120000" | "160000";
+    readonly object_type: "blob" | "commit";
+    /** Git object identity, not a SHA-256 of subject contents. */
+    readonly object_oid: string;
+}
+export interface TrackedGitSnapshot {
+    readonly repository_id: string;
+    readonly revision: string;
+    readonly tree_oid: string;
+    readonly object_format: "sha1" | "sha256";
+    readonly entries: readonly TrackedGitEntry[];
+}
+export interface ReadTrackedGitSnapshotInput {
+    readonly root: string;
+    readonly revision: string;
+    readonly repositoryId: string;
+    readonly maxOutputBytes?: number;
+    readonly timeoutMs?: number;
+}
+/** Versioned universal index-first evidence; never an inline mutation authorization. */
+export declare const TRACKED_COVERAGE_SCHEMA: "l9.metadata-coverage/v2";
+export declare const TRACKED_POLICY_SCHEMA: "l9.tracked-carrier-policy/v2";
+export type TrackedDisposition = "indexed" | "protected" | "unsupported";
+export type TrackedReason = "index_only" | "link_as_link" | "gitlink_as_reference" | "name_hint_inventory" | "protected_self" | "protected_manifest" | "protected_git_internal" | "protected_secret" | "unsupported_path" | "unsupported_git_entry";
+export interface TrackedCarrierDecision extends TrackedGitEntry {
+    readonly carrier: "central_manifest" | "inventory_only" | "hard_skip";
+    readonly disposition: TrackedDisposition;
+    readonly reason: TrackedReason;
+}
+export interface LegacyTrackedAliasGroup {
+    readonly schema: "l9.namespace-alias/v1";
+    readonly alias: string;
+    /** Exact canonical v2 identities. An ambiguous alias is never a reconciliation key. */
+    readonly ids: readonly string[];
+}

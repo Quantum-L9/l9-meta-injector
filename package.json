@@ -54,6 +54,7 @@
     "scripts/pipeline-cli.js",
     "scripts/repository-model-cli.js",
     "scripts/skills-cli.js",
+    "scripts/tracked-metadata-cli.js",
     "README.md",
     "CHANGELOG.md"
   ],

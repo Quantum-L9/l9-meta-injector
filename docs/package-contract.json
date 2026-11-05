@@ -40,7 +40,8 @@
     "LICENSE",
     "README.md",
     "package.json",
-    "scripts/operation-cli.js"
+    "scripts/operation-cli.js",
+    "scripts/tracked-metadata-cli.js"
   ],
   "allowed_top_level": [
     "CHANGELOG.md",
