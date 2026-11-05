@@ -374,7 +374,8 @@ function parseSemanticFoundation(lines: string[], start: number): Record<string,
     block[childKey] = scalar(rest);
     index++;
   }
-  return Object.assign(block, { _end: index });
+  block._end = index;
+  return block;
 }
 
 function conflict(code: AuthorityConflictCode, message: string, filePath: string, evidence?: string[]): AuthorityConflict {

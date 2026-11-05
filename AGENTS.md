@@ -6,7 +6,7 @@
 - Org semantics are consumed by citation in `.l9/meta-authority.yaml` (`l9.meta-authority/v2`); do not copy `Quantum-L9/.github/semantics/` (ADR-052)
 - Runtime authority: TypeScript under `src/`
 - Compiled distribution: committed `dist/`
-- Supported Node version: `>=18` for consumers (`engines.node`); developing and testing this repository needs Node `>=22.12` (`devEngines.runtime`, required by vitest 5), and `CI / smoke` runs on Node 22
+- Supported Node version: `>=18` for consumers (`engines.node`); developing and testing this repository needs Node `>=22.13` (`devEngines.runtime`, required by vitest 5 and eslint 10), and `CI / smoke` runs on Node 22
 - Historical reference implementation: `tools/consolidation/` and `docs/legacy/consolidation-v1/`
 - Canonical validation command: `npm run validate`
 - Publication gate: `npm run check:publication`
@@ -45,6 +45,8 @@ git status --porcelain --untracked-files=all
 ```
 
 The final command must produce no output. `npm run validate` covers type checking, Vitest, public API, architecture authority, deterministic architecture manifest, committed distribution parity, selfpack, and installed-tarball consumption. ESLint is a separate required command and separate CI context.
+
+Core Repository Execution V2 uses the exact `.l9/repo-workflow.json` declaration and generated `make-v1` `Makefile`. The repository-owned `Repo.mk` maps `make setup` to `npm ci --ignore-scripts`, `make validate` to the authority and manifest checks, `make check` to ESLint, and `make test` to the complete `npm run validate` gate. The existing `make pr` and `make pr-check` publication targets remain in `Repo.mk` (ADR-083). Run all four Core phases in order; no individual phase replaces the required local gate.
 
 When `docs/architecture.md` or another authority-critical file changes, run this before validation:
 
