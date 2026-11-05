@@ -399,7 +399,8 @@ function parseSemanticFoundation(lines, start) {
         block[childKey] = scalar(rest);
         index++;
     }
-    return Object.assign(block, { _end: index });
+    block._end = index;
+    return block;
 }
 function conflict(code, message, filePath, evidence) {
     return { code, message, path: filePath, evidence };

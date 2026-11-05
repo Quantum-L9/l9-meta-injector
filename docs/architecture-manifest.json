@@ -9,6 +9,14 @@
       "git_blob_sha1": "07bc352adc313af4b6edd1339080a9a8fa01fdd4"
     },
     {
+      "path": ".gitignore",
+      "git_blob_sha1": "f1eff5bb6125d97b888ecd29bee08a4f8705acc9"
+    },
+    {
+      "path": ".l9/repo-workflow.json",
+      "git_blob_sha1": "caabf7a7f9948f37423dc04462f5348a230202a2"
+    },
+    {
       "path": "CHANGELOG.md",
       "git_blob_sha1": "a61fe0a7fe24f155b2767cb22f1513d973822a5e"
     },
@@ -550,7 +558,7 @@
     },
     {
       "path": "docs/decision_log.md",
-      "git_blob_sha1": "c96b1902a03b3930f05dff8c514c6418ed0fdcfa"
+      "git_blob_sha1": "b4ac1f2d126d83d4f460209bbd9adbe0dad0ee36"
     },
     {
       "path": "docs/decisions/036-read-only-local-source-acquisition.md",
@@ -575,6 +583,10 @@
     {
       "path": "docs/decisions/081-versioned-universal-tracked-metadata.md",
       "git_blob_sha1": "13c93b474cd167a9c9541f58665048b44a7729b7"
+    },
+    {
+      "path": "docs/decisions/083-core-repository-execution-v2.md",
+      "git_blob_sha1": "dab96149a6427b4d464734b1a19cfe0a2aa16802"
     },
     {
       "path": "docs/legacy/consolidation-v1/artifact_manifest.yaml",
@@ -722,7 +734,7 @@
     },
     {
       "path": "Makefile",
-      "git_blob_sha1": "699962b964733d991bfec36a5826e756ce7db888"
+      "git_blob_sha1": "f092bae889673a05cdf6a16170822a652bdc90f2"
     },
     {
       "path": "package-lock.json",
@@ -735,6 +747,10 @@
     {
       "path": "README.md",
       "git_blob_sha1": "af51295b0e375e580dedcaa4b8134e8b82909992"
+    },
+    {
+      "path": "Repo.mk",
+      "git_blob_sha1": "6a9084e1cf3816f191ab3a5c738d93c9f0263b97"
     },
     {
       "path": "schemas/local-files-extraction-v2.schema.json",
@@ -786,7 +802,7 @@
     },
     {
       "path": "scripts/lib/architecture-authority.js",
-      "git_blob_sha1": "53bdf4469c34b1ea7bb398b7cc92bc3dec211392"
+      "git_blob_sha1": "ba9a72406bc6c480f6dec8b274f948bac41216dc"
     },
     {
       "path": "scripts/lib/dist-integrity.js",
@@ -810,7 +826,7 @@
     },
     {
       "path": "scripts/qualify-tracked-snapshot.js",
-      "git_blob_sha1": "2384cd104a7701eb86e0698e8a9a2c6950385815"
+      "git_blob_sha1": "f870fb8830ee52929ed952aade0cc3633b3f4c6f"
     },
     {
       "path": "scripts/release-identity-cli.js",
@@ -1189,6 +1205,10 @@
       "git_blob_sha1": "5716f80f06f7a3cdcf6961e770a18287bd98fc47"
     },
     {
+      "path": "tests/repository_execution.test.ts",
+      "git_blob_sha1": "01a00623bc43ec34048506b9d4ebc6bb83894b49"
+    },
+    {
       "path": "tests/repository_model.test.ts",
       "git_blob_sha1": "3fa7f16f19cda22f0d5b61928a12af77f3199579"
     },
@@ -1198,7 +1218,7 @@
     },
     {
       "path": "tests/tracked_cli.test.ts",
-      "git_blob_sha1": "dadbb7070f1dcaf64429b2f6793e53e670427c9a"
+      "git_blob_sha1": "b0442c0244f998352e13a89da2e03e288858e583"
     },
     {
       "path": "tests/tracked_coverage_compatibility.test.ts",
