@@ -23,9 +23,11 @@ import {
   type AuthorityWriter,
   type HeaderIdentityRequest,
   type HeaderIdentityResolution,
+  type ProductDeclaration,
   type SemanticFoundationBinding,
 } from "./operation_contracts";
 import { compareCodePoints } from "./ordering";
+import { readOnlyGitRunner } from "./git_runtime";
 
 export const META_AUTHORITY_RELATIVE_PATH = ".l9/meta-authority.yaml" as const;
 
@@ -38,6 +40,12 @@ export interface AuthorityLoadResult {
   path: string;
   authority?: AuthorityConfig;
   conflicts: AuthorityConflict[];
+  /**
+   * `sha256:`-prefixed digest of the exact authority bytes that were parsed.
+   * Present whenever the document was read, whether or not it parsed, so a
+   * caller can cite the bytes a verdict was reached on.
+   */
+  digest?: string;
 }
 
 class AuthorityParseError extends Error {
@@ -468,8 +476,12 @@ export function loadRepositoryAuthority(root: string, options: AuthorityLoadOpti
   const pathConflict = authorityPathConflict(repositoryRoot, authorityPath, relative);
   if (pathConflict) return { path: authorityPath, conflicts: [pathConflict] };
 
+  let digest: string | undefined;
   try {
-    const authority = parseAuthorityYaml(fs.readFileSync(authorityPath, "utf8"));
+    // Read once: the digest names exactly the bytes the parser saw.
+    const bytes = fs.readFileSync(authorityPath);
+    digest = `sha256:${crypto.createHash("sha256").update(bytes).digest("hex")}`;
+    const authority = parseAuthorityYaml(bytes.toString("utf8"));
     const expected = options.expectedWriter;
     const mismatches: string[] = [];
     if (expected?.repository && authority.writer.repository !== expected.repository) {
@@ -483,15 +495,17 @@ export function loadRepositoryAuthority(root: string, options: AuthorityLoadOpti
         path: authorityPath,
         authority,
         conflicts: [conflict("META_AUTHORITY_WRITER_MISMATCH", "configured metadata writer does not match policy", authorityPath, mismatches)],
+        digest,
       };
     }
-    return { path: authorityPath, authority, conflicts: [] };
+    return { path: authorityPath, authority, conflicts: [], digest };
   } catch (error) {
     if (error instanceof AuthorityParseError) {
-      return { path: authorityPath, conflicts: [conflict(error.code, error.message, authorityPath)] };
+      return { path: authorityPath, conflicts: [conflict(error.code, error.message, authorityPath)], ...(digest ? { digest } : {}) };
     }
     return {
       path: authorityPath,
+      ...(digest ? { digest } : {}),
       conflicts: [
         conflict(
           "META_AUTHORITY_CONFIG_INVALID",
@@ -661,4 +675,184 @@ export function verifySemanticFoundation(
     }
   }
   return conflicts;
+}
+
+// ───────────────────────────── semantic binding observation ─────────────────────────────
+
+/** The only repository a Semantic Foundation binding may name (ADR-052). */
+export const SEMANTIC_FOUNDATION_REPOSITORY = "Quantum-L9/.github" as const;
+
+/**
+ * What a repository's authority file establishes about its Semantic Foundation
+ * binding, observed read-only.
+ *
+ * `unbound` — no authority file. `v1` — an l9.meta-authority/v1 file, which by
+ * construction declares no Foundation. `bound` — a structurally valid v2 binding.
+ * `invalid` — an authority file exists and does not parse or validate.
+ */
+export type SemanticBindingStatus = "unbound" | "v1" | "bound" | "invalid";
+
+/**
+ * Whether the cited Foundation content was checked, and against what.
+ *
+ * `verified` means exactly the checks in `SEMANTIC_BINDING_VERIFICATION_SCOPE`
+ * passed against an operator-supplied checkout. It never means admission: a
+ * `candidate` binding with verified digests is still a candidate.
+ */
+export type SemanticBindingVerificationStatus = "verified" | "not_run" | "failed";
+
+/** The checks a `verified` result covers, named so a consumer cannot read more into it. */
+export const SEMANTIC_BINDING_VERIFICATION_SCOPE = [
+  "binding-names-foundation-repository",
+  "checkout-origin-names-foundation-repository",
+  "checkout-head-equals-bound-revision",
+  "every-cited-ledger-present-once",
+  "every-cited-ledger-digest-matches",
+  "product-id-equals-observed-repository-name",
+] as const;
+
+export interface SemanticBindingObservation {
+  status: SemanticBindingStatus;
+  /** Repository-relative authority path. Never absolute. */
+  bindingPath: typeof META_AUTHORITY_RELATIVE_PATH;
+  /** Digest of the exact authority bytes, when a file was read. */
+  bindingDigest?: string;
+  authoritySchema?: string;
+  semanticFoundation?: SemanticFoundationBinding;
+  product?: ProductDeclaration;
+  verification: {
+    status: SemanticBindingVerificationStatus;
+    /** Revision the checkout was observed at, when it was read. */
+    checkoutRevision?: string;
+    ledgersVerified?: number;
+  };
+  /**
+   * Codes and repository-portable messages of every problem found. Absolute
+   * paths are deliberately absent: these can be carried into a packet.
+   */
+  conflicts: Array<{ code: AuthorityConflictCode; message: string }>;
+}
+
+export interface SemanticBindingObservationOptions {
+  /**
+   * An operator-supplied Quantum-L9/.github checkout. Supplying it requests
+   * verification; without it the binding is reported as declared, never verified.
+   * Mutable remote state is never fetched.
+   */
+  semanticsRoot?: string;
+  /** The repository name the caller is observing; compared with `product.id`. */
+  repositoryName?: string;
+}
+
+/** `owner/name` from a GitHub remote URL, or null when it is not one. */
+function githubRepositoryFromRemote(url: string): string | null {
+  const trimmed = url.trim();
+  const match = /^(?:https:\/\/github\.com\/|ssh:\/\/git@github\.com\/|git@github\.com:)([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/.exec(trimmed);
+  return match ? `${match[1]}/${match[2]}` : null;
+}
+
+/**
+ * Observe the repository's Semantic Foundation binding without mutating anything.
+ *
+ * This is a reader of `loadRepositoryAuthority`, not a second parser, and it
+ * reuses `verifySemanticFoundation` for the ledger checks. It never upgrades
+ * admission, never fetches, and returns conflicts instead of throwing so the
+ * caller decides what is fatal.
+ */
+export function observeSemanticBinding(
+  root: string,
+  options: SemanticBindingObservationOptions = {},
+): SemanticBindingObservation {
+  const loaded = loadRepositoryAuthority(root);
+  const base = {
+    bindingPath: META_AUTHORITY_RELATIVE_PATH,
+    ...(loaded.digest ? { bindingDigest: loaded.digest } : {}),
+  };
+  const missing = loaded.conflicts.length === 1 && loaded.conflicts[0].code === "META_AUTHORITY_FILE_MISSING";
+  if (missing) {
+    return { ...base, status: "unbound", verification: { status: "not_run" }, conflicts: [] };
+  }
+  // A writer mismatch is a policy verdict about apply, not about the binding; the
+  // parsed document is still what the repository declares.
+  const blocking = loaded.conflicts.filter((item) => item.code !== "META_AUTHORITY_WRITER_MISMATCH");
+  if (blocking.length || !loaded.authority) {
+    return {
+      ...base,
+      status: "invalid",
+      verification: { status: "not_run" },
+      conflicts: blocking.map((item) => ({ code: item.code, message: item.message.split(path.resolve(root)).join(".") })),
+    };
+  }
+  const authority = loaded.authority;
+  if (authority.schema !== META_AUTHORITY_SCHEMA_V2 || !authority.semantic_foundation || !authority.product) {
+    return { ...base, status: "v1", authoritySchema: authority.schema, verification: { status: "not_run" }, conflicts: [] };
+  }
+
+  const binding = authority.semantic_foundation;
+  const observation: SemanticBindingObservation = {
+    ...base,
+    status: "bound",
+    authoritySchema: authority.schema,
+    semanticFoundation: binding,
+    product: authority.product,
+    verification: { status: "not_run" },
+    conflicts: [],
+  };
+  const conflicts = observation.conflicts;
+  if (binding.repository !== SEMANTIC_FOUNDATION_REPOSITORY) {
+    conflicts.push({
+      code: "META_SEMANTIC_BINDING_INVALID",
+      message: `semantic_foundation.repository '${binding.repository}' is not ${SEMANTIC_FOUNDATION_REPOSITORY}`,
+    });
+  }
+  if (options.repositoryName !== undefined && options.repositoryName !== authority.product.id) {
+    conflicts.push({
+      code: "META_AUTHORITY_IDENTITY_MISMATCH",
+      message: `observed repository name '${options.repositoryName}' does not match bound product.id '${authority.product.id}'`,
+    });
+  }
+  if (options.semanticsRoot === undefined) return observation;
+
+  const semanticsRoot = path.resolve(options.semanticsRoot);
+  try {
+    const git = readOnlyGitRunner(semanticsRoot);
+    const head = git(["rev-parse", "HEAD"]).toString("utf8").trim();
+    observation.verification.checkoutRevision = head;
+    if (head !== binding.revision) {
+      conflicts.push({
+        code: "META_SEMANTIC_BINDING_INVALID",
+        message: `Semantic Foundation checkout HEAD ${head} does not match bound revision ${binding.revision}`,
+      });
+    }
+    const remotes = git(["remote"]).toString("utf8").split(/\r?\n/).filter(Boolean);
+    const origin = remotes.includes("origin")
+      ? githubRepositoryFromRemote(git(["remote", "get-url", "origin"]).toString("utf8"))
+      : null;
+    if (origin === null) {
+      conflicts.push({
+        code: "META_SEMANTIC_BINDING_INVALID",
+        message: "Semantic Foundation checkout repository identity could not be established: it has no GitHub origin remote",
+      });
+    } else if (origin.toLowerCase() !== SEMANTIC_FOUNDATION_REPOSITORY.toLowerCase()) {
+      conflicts.push({
+        code: "META_SEMANTIC_BINDING_INVALID",
+        message: `Semantic Foundation checkout origin names ${origin}, not ${SEMANTIC_FOUNDATION_REPOSITORY}`,
+      });
+    }
+  } catch (error) {
+    conflicts.push({
+      code: "META_SEMANTIC_BINDING_INVALID",
+      message: `Semantic Foundation checkout could not be read as a Git repository: ${(error as Error).message}`,
+    });
+  }
+  for (const item of verifySemanticFoundation(binding, semanticsRoot)) {
+    conflicts.push({ code: item.code, message: item.message.split(semanticsRoot).join("<semantics-root>") });
+  }
+  // Verified means every check in scope passed, including the identity checks made
+  // before the checkout was opened. Any conflict at all is a failed verification.
+  observation.verification.status = conflicts.length === 0 ? "verified" : "failed";
+  if (observation.verification.status === "verified") {
+    observation.verification.ledgersVerified = Object.keys(binding.ledgers).length;
+  }
+  return observation;
 }

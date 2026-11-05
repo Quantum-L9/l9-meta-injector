@@ -129,3 +129,27 @@ export function observed(
 export function basenameIs(sourcePath: string, name: string): boolean {
   return sourcePath === name || sourcePath.endsWith(`/${name}`);
 }
+
+/**
+ * Drop a YAML comment: a `#` outside quotes that begins the value or follows
+ * whitespace. Unlike `stripComment`, `a#b` is kept whole, as YAML reads it.
+ */
+export function stripYamlComment(value: string): string {
+  let quote: string | null = null;
+  for (let index = 0; index < value.length; index++) {
+    const character = value[index];
+    if (quote) {
+      if (character === "\\" && quote === '"') index++;
+      else if (character === quote) quote = null;
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      quote = character;
+      continue;
+    }
+    if (character === "#" && (index === 0 || value[index - 1] === " " || value[index - 1] === "\t")) {
+      return value.slice(0, index).trimEnd();
+    }
+  }
+  return value.trimEnd();
+}

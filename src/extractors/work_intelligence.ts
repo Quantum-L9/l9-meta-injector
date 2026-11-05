@@ -18,6 +18,7 @@
 // view.
 import { AssertionDraft, Extractor, ExtractorFileInput } from "../interpretation";
 import { lineRange, toLines } from "./common";
+import { parseNativeMetadata } from "../native_metadata";
 
 // ───────────────────────────── file eligibility ─────────────────────────────
 
@@ -61,6 +62,14 @@ interface DocumentView {
   frontmatterEnd: number;
   /** True for a line inside a fenced code block; markdown only. */
   fenced: boolean[];
+  /**
+   * True for a line inside a native metadata header other than frontmatter — a
+   * hash, HTML-comment or managed `L9_META` / `l9:meta` block (ADR-082). Those
+   * lines are read by `native-metadata/v1`; read again as prose, an EIE-style
+   * `# --- L9_META ---` line becomes a heading and the document gains a title
+   * it never had.
+   */
+  header: boolean[];
 }
 
 /**
@@ -75,10 +84,18 @@ function readDocument(sourcePath: string, content: string): DocumentView {
   const lines = toLines(content);
   if (!isMarkdown(sourcePath)) {
     // Plain text has neither construct, so both regions are empty by definition.
-    return { lines, frontmatterStart: -1, frontmatterEnd: -1, fenced: new Array(lines.length).fill(false) };
+    const none = new Array(lines.length).fill(false);
+    return { lines, frontmatterStart: -1, frontmatterEnd: -1, fenced: none, header: none };
   }
   const [frontmatterStart, frontmatterEnd] = findFrontmatter(lines);
-  return { lines, frontmatterStart, frontmatterEnd, fenced: markFencedCode(lines, frontmatterEnd) };
+  const header: boolean[] = new Array(lines.length).fill(false);
+  for (const declaration of parseNativeMetadata(sourcePath, content).declarations) {
+    if (declaration.carrier === "frontmatter" || declaration.carrier === "managed-frontmatter") continue;
+    for (let line = declaration.source_span.start_line; line <= declaration.source_span.end_line; line++) {
+      header[line - 1] = true;
+    }
+  }
+  return { lines, frontmatterStart, frontmatterEnd, fenced: markFencedCode(lines, frontmatterEnd), header };
 }
 
 /** The frontmatter body's line span, or `[-1, -1]` when the document has none. */
@@ -174,6 +191,7 @@ function inFrontmatter(view: DocumentView, index: number): boolean {
 /** True for a line that carries no readable body content: frontmatter or code. */
 function isProseLine(view: DocumentView, index: number): boolean {
   if (inFrontmatter(view, index)) return false;
+  if (view.header[index]) return false;
   if (view.frontmatterStart >= 0 && (index === 0 || index === view.frontmatterEnd + 1)) return false;
   return !view.fenced[index];
 }
@@ -644,7 +662,8 @@ export const documentStructureExtractor: Extractor = {
   id: "document-structure/v1",
   // 1.1.0: CommonMark fence delimiting (RC-095); BOM and lone-CR aware lines (RC-096);
   // frontmatter comments and block-scalar headers are not values (RC-024).
-  version: "1.1.0",
+  // 1.2.0: native metadata header blocks are not prose (ADR-082).
+  version: "1.2.0",
   subjectScope: "artifact",
   matches: isSupportedTextDocument,
   extract(input: ExtractorFileInput): AssertionDraft[] {
@@ -973,7 +992,8 @@ export const workIntelligenceExtractor: Extractor = {
   // 1.1.0: CommonMark fence delimiting (RC-095); distinct title statuses
   // (RC-099); BOM and lone-CR aware lines (RC-096); linear list-item reading (RC-094);
   // frontmatter comments and block-scalar headers are not values (RC-024).
-  version: "1.1.0",
+  // 1.2.0: native metadata header blocks are not prose (ADR-082).
+  version: "1.2.0",
   subjectScope: "artifact",
   matches: isSupportedTextDocument,
   extract(input: ExtractorFileInput): AssertionDraft[] {

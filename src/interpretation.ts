@@ -39,8 +39,13 @@ export const INTERPRETATION_PROFILE_ID = "meta-injector-repository-interpretatio
  * 1.2.0 files a repository-scoped extractor's claims against the repository only
  * for a file at the repository root; the same match anywhere else (a fixture, a
  * sub-package, an archive member) is a claim about that file (ADR-062).
+ *
+ * 1.3.0 adds the native-metadata, workflow, static-import and contract-reference
+ * extractors, the requirements-file reading of the manifest extractor, and the
+ * extractor diagnostic channel (ADR-082). Each changes what this profile
+ * observes, so the version moves with them.
  */
-export const INTERPRETATION_PROFILE_VERSION = "1.2.0";
+export const INTERPRETATION_PROFILE_VERSION = "1.3.0";
 
 /**
  * Where a repository-scoped extractor's claim is filed, stated in the profile
@@ -136,6 +141,20 @@ export interface ExtractorFileInput {
    * itself a fact worth reporting.
    */
   pathExists(relativePath: string): boolean;
+  /**
+   * Report a bounded diagnostic about this file: syntax outside the extractor's
+   * grammar, a construct it saw and refused to interpret. Optional so an extractor
+   * written before the channel existed is unchanged; the orchestrator always
+   * provides it (ADR-082). A diagnostic is never an assertion.
+   */
+  report?(diagnostic: ExtractorDiagnostic): void;
+}
+
+/** A diagnostic an extractor raises about the file it was given. */
+export interface ExtractorDiagnostic {
+  code: string;
+  severity: "info" | "warning";
+  message: string;
 }
 
 /** What an extractor returns. Identity and evidence plumbing is added centrally. */
@@ -248,6 +267,8 @@ export function looksSecret(value: string): boolean {
 
 /** Excerpts are bounded so a packet can never become a file mirror. */
 export const MAX_EXCERPT_LENGTH = 240;
+/** Diagnostics one extractor may report about one file before they are summarized. */
+export const MAX_EXTRACTOR_DIAGNOSTICS_PER_FILE = 8;
 /** Files larger than this are reported as a diagnostic rather than interpreted. */
 export const DEFAULT_MAX_FILE_BYTES = 512 * 1024;
 
@@ -298,6 +319,7 @@ function profileHash(extractors: Extractor[]): string {
     ordering: "code-point",
     absolute_paths_in_identity: false,
     max_excerpt_length: MAX_EXCERPT_LENGTH,
+    max_extractor_diagnostics_per_file: MAX_EXTRACTOR_DIAGNOSTICS_PER_FILE,
     repository_subject_paths: REPOSITORY_SUBJECT_PATHS,
     extractors: extractors
       .map((extractor) => ({
@@ -441,6 +463,7 @@ export function interpretDocumentContent(input: InterpretDocumentInput): Interpr
       ? repositoryModelArtifactId(input.repositorySubjectId, sourcePath)
       : input.repositorySubjectId;
     let drafts: AssertionDraft[];
+    const reported: InterpretationDiagnostic[] = [];
     try {
       drafts = extractor.extract({
         subjectId,
@@ -448,6 +471,15 @@ export function interpretDocumentContent(input: InterpretDocumentInput): Interpr
         content: input.content,
         contentHash,
         pathExists: input.pathExists,
+        report(diagnostic) {
+          reported.push({
+            code: diagnostic.code,
+            severity: diagnostic.severity,
+            message: diagnostic.message,
+            extractor_id: extractor.id,
+            source_path: sourcePath,
+          });
+        },
       });
     } catch (error) {
       // A malformed file is a fact about the repository, not a crash.
@@ -459,6 +491,17 @@ export function interpretDocumentContent(input: InterpretDocumentInput): Interpr
         source_path: sourcePath,
       });
       continue;
+    }
+    // Bounded: a pathological file cannot turn the diagnostic domain into a mirror.
+    diagnostics.push(...reported.slice(0, MAX_EXTRACTOR_DIAGNOSTICS_PER_FILE));
+    if (reported.length > MAX_EXTRACTOR_DIAGNOSTICS_PER_FILE) {
+      diagnostics.push({
+        code: "interpretation.diagnostics_truncated",
+        severity: "info",
+        message: `${reported.length - MAX_EXTRACTOR_DIAGNOSTICS_PER_FILE} further diagnostic(s) from this extractor were not recorded`,
+        extractor_id: extractor.id,
+        source_path: sourcePath,
+      });
     }
 
     for (const draft of drafts) {

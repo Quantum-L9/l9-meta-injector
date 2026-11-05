@@ -36,3 +36,8 @@ export declare function declared(predicate: string, object: string, index: numbe
 export declare function observed(predicate: string, object: string, range: InterpretedSourceRange, excerpt: string, confidence?: AssertionDraft["confidence"]): AssertionDraft;
 /** True when the repository-relative path's basename equals `name`. */
 export declare function basenameIs(sourcePath: string, name: string): boolean;
+/**
+ * Drop a YAML comment: a `#` outside quotes that begins the value or follows
+ * whitespace. Unlike `stripComment`, `a#b` is kept whole, as YAML reads it.
+ */
+export declare function stripYamlComment(value: string): string;

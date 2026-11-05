@@ -536,6 +536,30 @@ interface PortableInterpretationRecord {
   diagnostics: InterpretationDiagnostic[];
 }
 
+/**
+ * The level-one entry for a document whose interpretation consulted its root
+ * (ADR-082): the paths it asked about, in the order it asked. The answers to
+ * exactly these questions, plus the bytes, determine the result — an extractor
+ * reaches a different question only after a different answer to one of these —
+ * so the level-two key binds them and a hit can never serve an answer that the
+ * current root would not give.
+ */
+interface RootDependentInterpretationIndex {
+  root_probes: string[];
+}
+
+function isRootDependentIndex(value: unknown): value is RootDependentInterpretationIndex {
+  return typeof value === "object" && value !== null && Array.isArray((value as { root_probes?: unknown }).root_probes);
+}
+
+/** Level-two key: the level-one key plus the probed paths and their current answers. */
+function rootBoundInterpretationKey(levelOneKey: string, probes: readonly string[], observedPaths: ReadonlySet<string>): string {
+  return stableId("interp-root-bound", {
+    level_one: levelOneKey,
+    probes: probes.map((probe) => [probe, observedPaths.has(probe)]),
+  });
+}
+
 // ───────────────────────────── helpers ─────────────────────────────
 
 /**
@@ -841,9 +865,17 @@ async function deriveDocumentLayers(
   const lexicalHit = wantsLexical && mayDecode
     ? cache.get<LexicalFeatureRecord>("lexical_features", lexicalKey)
     : undefined;
-  const portableHit = wantsInterpretation && mayDecode
-    ? cache.get<PortableInterpretationRecord>("interpretation", interpretKey)
+  const levelOneHit = wantsInterpretation && mayDecode
+    ? cache.get<PortableInterpretationRecord | RootDependentInterpretationIndex>("interpretation", interpretKey)
     : undefined;
+  // A root-dependent entry is an index: the result lives under a key that binds
+  // the current answers to the questions the document asked.
+  const portableHit: PortableInterpretationRecord | undefined = isRootDependentIndex(levelOneHit)
+    ? cache.get<PortableInterpretationRecord>(
+        "interpretation",
+        rootBoundInterpretationKey(interpretKey, levelOneHit.root_probes, rootPathsById.get(artifact.rootId) ?? new Set<string>()),
+      )
+    : levelOneHit;
   const repositorySubjectId = `repo:${rootKeyById.get(artifact.rootId) ?? artifact.rootId}`;
   const interpretHit: InterpretationRecord | undefined = portableHit === undefined
     ? undefined
@@ -1105,26 +1137,37 @@ async function deriveDocumentLayers(
       const observedPaths = rootPathsById.get(artifact.rootId) ?? new Set<string>();
       // Whether the extractor set consulted the rest of the root is discovered
       // rather than assumed. A document whose interpretation depended on which
-      // other paths exist is not a function of its own bytes, so it is
-      // computed and used but never stored: a later run with a different root
-      // would otherwise read back an answer that is no longer true.
-      let consultedRoot = false;
+      // other paths exist is not a function of its own bytes alone; it is a
+      // function of its bytes and of the answers to the questions it asked. Those
+      // questions are recorded, and the result is stored under a key that binds
+      // their answers (ADR-082), so a later run with a different root asks again
+      // instead of reading back an answer that is no longer true.
+      const probes: string[] = [];
+      const asked = new Set<string>();
       const result = interpretDocumentContent({
         repositorySubjectId,
         sourcePath: artifact.rootRelativePath,
         content: text,
         extractors,
         pathExists: (relativePath) => {
-          consultedRoot = true;
-          return observedPaths.has(relativePath.replace(/^\.\//, ""));
+          const probe = relativePath.replace(/^\.\//, "");
+          if (!asked.has(probe)) {
+            asked.add(probe);
+            probes.push(probe);
+          }
+          return observedPaths.has(probe);
         },
       });
-      if (!consultedRoot) {
-        const portable: PortableInterpretationRecord = {
-          assertions: toPortableAssertions(result.assertions),
-          diagnostics: result.diagnostics,
-        };
+      const portable: PortableInterpretationRecord = {
+        assertions: toPortableAssertions(result.assertions),
+        diagnostics: result.diagnostics,
+      };
+      if (probes.length === 0) {
         cache.put("interpretation", interpretKey, portable);
+      } else {
+        const index: RootDependentInterpretationIndex = { root_probes: probes };
+        cache.put("interpretation", interpretKey, index);
+        cache.put("interpretation", rootBoundInterpretationKey(interpretKey, probes, observedPaths), portable);
       }
       interpreted.set(artifact.virtualSourceId, {
         assertions: result.assertions,

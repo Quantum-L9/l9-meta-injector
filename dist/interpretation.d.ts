@@ -9,8 +9,13 @@ export declare const INTERPRETATION_PROFILE_ID = "meta-injector-repository-inter
  * 1.2.0 files a repository-scoped extractor's claims against the repository only
  * for a file at the repository root; the same match anywhere else (a fixture, a
  * sub-package, an archive member) is a claim about that file (ADR-062).
+ *
+ * 1.3.0 adds the native-metadata, workflow, static-import and contract-reference
+ * extractors, the requirements-file reading of the manifest extractor, and the
+ * extractor diagnostic channel (ADR-082). Each changes what this profile
+ * observes, so the version moves with them.
  */
-export declare const INTERPRETATION_PROFILE_VERSION = "1.2.0";
+export declare const INTERPRETATION_PROFILE_VERSION = "1.3.0";
 /**
  * How an assertion was evidenced.
  *
@@ -84,6 +89,19 @@ export interface ExtractorFileInput {
      * itself a fact worth reporting.
      */
     pathExists(relativePath: string): boolean;
+    /**
+     * Report a bounded diagnostic about this file: syntax outside the extractor's
+     * grammar, a construct it saw and refused to interpret. Optional so an extractor
+     * written before the channel existed is unchanged; the orchestrator always
+     * provides it (ADR-082). A diagnostic is never an assertion.
+     */
+    report?(diagnostic: ExtractorDiagnostic): void;
+}
+/** A diagnostic an extractor raises about the file it was given. */
+export interface ExtractorDiagnostic {
+    code: string;
+    severity: "info" | "warning";
+    message: string;
 }
 /** What an extractor returns. Identity and evidence plumbing is added centrally. */
 export interface AssertionDraft {
@@ -129,6 +147,8 @@ export declare function isSecretCandidatePath(sourcePath: string): boolean;
 export declare function looksSecret(value: string): boolean;
 /** Excerpts are bounded so a packet can never become a file mirror. */
 export declare const MAX_EXCERPT_LENGTH = 240;
+/** Diagnostics one extractor may report about one file before they are summarized. */
+export declare const MAX_EXTRACTOR_DIAGNOSTICS_PER_FILE = 8;
 /** Files larger than this are reported as a diagnostic rather than interpreted. */
 export declare const DEFAULT_MAX_FILE_BYTES: number;
 export declare function boundExcerpt(value: string): string;

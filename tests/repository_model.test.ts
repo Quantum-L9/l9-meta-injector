@@ -519,3 +519,23 @@ describe("WU-081 repository model semantic unknowns", () => {
     expect(canonicalJson(observe())).not.toContain("harvested_type");
   });
 });
+
+describe("ADR-082 authority and interpretation coverage in the sample packet", () => {
+  it("reports the unbound sample repository's authority as unresolved, never as an owner", () => {
+    const packet = observeSample();
+    const unresolved = packet.payload.diagnostics.find((d) => d.code === "semantic-binding-unresolved");
+    expect(unresolved?.details).toMatchObject({ binding_status: "unbound", binding_path: ".l9/meta-authority.yaml" });
+    expect(packet.payload.evidence.some((e) => e.field?.startsWith("semantic_binding"))).toBe(false);
+    expect(packet.payload.repositories[0].owner_ids).toEqual([]);
+  });
+
+  it("carries interpretation diagnostics with their own stage", () => {
+    const root = scratch("interp-diag");
+    fs.writeFileSync(path.join(root, "notes.py"), "# --- L9_META ---\n# l9_schema: 1\n# status: a\n# status: b\n# --- /L9_META ---\n");
+    const packet = observeSample(root);
+    const diagnostic = packet.payload.diagnostics.find((d) => d.code === "native_metadata.duplicate_field");
+    expect(diagnostic).toMatchObject({ stage: "meta-injector-interpretation", category: "interpretation" });
+    expect(diagnostic?.details).toMatchObject({ source_path: "notes.py", extractor_id: "native-metadata/v1" });
+    expect(validateRepositoryModelPacket(packet).status).toBe("passed");
+  });
+});
