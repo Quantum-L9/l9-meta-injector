@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
   META_AUTHORITY_RELATIVE_PATH,
   parseAuthorityYaml,
@@ -114,6 +114,82 @@ describe("l9.meta-authority/v2 parse", () => {
     expect(isAuthorityConfig(parsed)).toBe(true);
     expect(isSupportedAuthoritySchema("l9.meta-authority/v2")).toBe(true);
   });
+
+  test("parses the product after the foundation without leaking the private cursor", () => {
+    const parsed = parseAuthorityYaml(v2Doc());
+    expect(parsed.semantic_foundation?.repository).toBe("Quantum-L9/.github");
+    expect(parsed.semantic_foundation?.ledgers["l9.vocabulary/global@1"]).toBe(DIGESTS["l9.vocabulary/global@1"]);
+    expect(parsed.product).toMatchObject({
+      id: "example-product",
+      owner: "Example/product",
+      kind: "dependency",
+      archetype: "l9.dependency-archetype/semantic-subsystem@1",
+    });
+
+    for (const map of [parsed, parsed.writer, parsed.semantic_foundation, parsed.semantic_foundation?.ledgers, parsed.product]) {
+      expect(map).toBeDefined();
+      expect(Object.getPrototypeOf(map)).toBeNull();
+      expect(Object.prototype.hasOwnProperty.call(map, "_end")).toBe(false);
+    }
+    expect(JSON.stringify(parsed)).not.toContain('"_end"');
+  });
+
+  test("does not use Object.assign to hand off the private foundation cursor", () => {
+    const assign = vi.spyOn(Object, "assign");
+    let copiedPrivateCursor: boolean;
+    try {
+      parseAuthorityYaml(v2Doc());
+      copiedPrivateCursor = assign.mock.calls.some((args) => args.slice(1).some((source) =>
+        source !== null && typeof source === "object" && Object.prototype.hasOwnProperty.call(source, "_end"),
+      ));
+    } finally {
+      assign.mockRestore();
+    }
+    expect(copiedPrivateCursor).toBe(false);
+  });
+
+  const sensitiveKeyLocations = [
+    {
+      name: "top-level",
+      document: (key: string) => v2Doc().replace("writer:\n", `${key}: marker\nwriter:\n`),
+      error: (key: string) => `unsupported top-level key '${key}'`,
+    },
+    {
+      name: "writer",
+      document: (key: string) => v2Doc().replace("  ref: v1\n", `  ref: v1\n  ${key}: marker\n`),
+      error: (key: string) => `unsupported writer key '${key}'`,
+    },
+    {
+      name: "semantic_foundation",
+      document: (key: string) => v2Doc().replace("  admission: candidate\n", `  admission: candidate\n  ${key}: marker\n`),
+      error: (key: string) => `unsupported semantic_foundation key '${key}'`,
+    },
+    {
+      name: "ledgers",
+      document: (key: string) => v2Doc({ ledgers: `    ${key}: ${DIGESTS["l9.vocabulary/global@1"]}\n${ledgerLines()}` }),
+      error: () => "invalid ledger key",
+    },
+    {
+      name: "product",
+      document: (key: string) => v2Doc().replace("  owner: Example/product\n", `  owner: Example/product\n  ${key}: marker\n`),
+      error: (key: string) => `unsupported product key '${key}'`,
+    },
+  ];
+  for (const location of sensitiveKeyLocations) {
+    test.each(["__proto__", "constructor", "prototype", "_end"])(
+      `rejects %s in ${location.name} without changing Object.prototype`,
+      (key) => {
+        const descriptors = Object.getOwnPropertyDescriptors(Object.prototype);
+        const prototype = Object.getPrototypeOf(Object.prototype);
+        try {
+          expect(() => parseAuthorityYaml(location.document(key))).toThrow(location.error(key));
+        } finally {
+          expect(Object.getOwnPropertyDescriptors(Object.prototype)).toEqual(descriptors);
+          expect(Object.getPrototypeOf(Object.prototype)).toBe(prototype);
+        }
+      },
+    );
+  }
 
   test("rejects a missing required ledger", () => {
     const ledgers = ledgerLines();

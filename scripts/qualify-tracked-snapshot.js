@@ -75,7 +75,7 @@ for (let run = 0; run < 2; run++) {
   }
 }
 assert.equal(filesystemState(root), before, "source filesystem metadata changed during census");
-const env = {};
+const env = Object.create(null);
 for (const [key, value] of Object.entries(process.env)) {
   if (!key.toUpperCase().startsWith("GIT_")) {
     env[key] = value;
