@@ -115,8 +115,8 @@ const CLI_OPTION_SPECS = Object.freeze({
     repeatable: ["--omit"],
   }),
   "repository-model": Object.freeze({
-    boolean: [],
-    value: ["--name", "--revision", "--out", "--generated-at"],
+    boolean: ["--require-semantic-binding"],
+    value: ["--name", "--revision", "--out", "--generated-at", "--semantics-root"],
     repeatable: [],
   }),
 });

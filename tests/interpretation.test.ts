@@ -425,3 +425,28 @@ describe("extractors report, never resolve", () => {
     );
   });
 });
+
+describe("interpretation profile 1.3.0 (ADR-082)", () => {
+  it("names the version that added the Phase 1 extractors and the diagnostic channel", () => {
+    expect(INTERPRETATION_PROFILE_VERSION).toBe("1.3.0");
+  });
+
+  it("files an extractor's reported diagnostic against that extractor and file", () => {
+    const reporting = {
+      id: "reporting/v1",
+      version: "1.0.0",
+      matches: () => true,
+      extract(input: { report?: (d: { code: string; severity: "info" | "warning"; message: string }) => void }) {
+        input.report?.({ code: "reporting.note", severity: "info", message: "seen" });
+        return [];
+      },
+    };
+    const result = interpretDocumentContent({
+      repositorySubjectId: "repo:x", sourcePath: "a.md", content: "# A\n", extractors: [reporting], pathExists: () => false,
+    });
+    expect(result.diagnostics).toEqual([
+      { code: "reporting.note", severity: "info", message: "seen", extractor_id: "reporting/v1", source_path: "a.md" },
+    ]);
+    expect(result.assertions).toEqual([]);
+  });
+});

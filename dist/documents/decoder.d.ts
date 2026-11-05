@@ -197,6 +197,16 @@ export interface DocumentDecoder {
      */
     filenames?: readonly string[];
     /**
+     * Lowercased filename prefixes this decoder claims, including the separator.
+     *
+     * Docker documents `<name>.Dockerfile` for a project's secondary Dockerfiles
+     * (claimed by extension). Repositories also write `Dockerfile.prod` and
+     * `Dockerfile.chassis`, where the part after the dot is a name rather than an
+     * extension, so neither the filename nor the extension table can claim them.
+     * Consulted after an exact filename and before the extension.
+     */
+    filenamePrefixes?: readonly string[];
+    /**
      * The dialect this decoder reads a source path in, or undefined for none.
      *
      * Declared by a decoder whose output depends on the name as well as the bytes:
@@ -277,6 +287,7 @@ export declare function buildNormalizedDocument(input: {
 export declare class DecoderRegistry {
     private readonly byExtension;
     private readonly byFilename;
+    private readonly byFilenamePrefix;
     private readonly decoders;
     register(decoder: DocumentDecoder): void;
     /** The decoder that claims this path, or undefined when none does. */

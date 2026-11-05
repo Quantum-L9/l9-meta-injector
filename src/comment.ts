@@ -435,6 +435,19 @@ export function hasInjectedBlock(raw: string, spec: StrategySpec): boolean {
   return findHeadBlock(raw, spec) !== null;
 }
 
+/**
+ * Character offsets of the managed block at the carrier position, or null.
+ *
+ * `start` is the block's first byte and `end` the end of its closing delimiter
+ * line, before its terminator. Read-only: this is the same detection strip and
+ * extract use, exposed so a reader can cite the block's exact span (ADR-082)
+ * without a second implementation of where a managed block may sit.
+ */
+export function injectedBlockSpan(raw: string, spec: StrategySpec): { start: number; end: number; delimiters: StrategySpec } | null {
+  const head = findHeadBlock(raw, spec);
+  return head ? { start: head.start, end: head.blockEnd, delimiters: head.delimiters } : null;
+}
+
 /** Extract the inner YAML from an existing comment block (comment prefixes removed), or null. */
 export function extractInjectedYaml(raw: string, spec: StrategySpec): string | null {
   const head = findHeadBlock(raw, spec);

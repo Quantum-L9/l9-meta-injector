@@ -7,9 +7,13 @@
 import { Extractor } from "../interpretation";
 import {
   contractInvariantsExtractor,
+  contractReferenceExtractor,
   manifestExtractor,
   serviceSpecExtractor,
 } from "./structured";
+import { nativeMetadataExtractor } from "./native_metadata";
+import { staticImportExtractor } from "./static_imports";
+import { workflowStructureExtractor } from "./workflows";
 import {
   declaredAuthorityExtractor,
   pythonRouteObservationExtractor,
@@ -22,9 +26,13 @@ import {
 
 export {
   contractInvariantsExtractor,
+  contractReferenceExtractor,
   manifestExtractor,
   serviceSpecExtractor,
 } from "./structured";
+export { nativeMetadataExtractor } from "./native_metadata";
+export { staticImportExtractor } from "./static_imports";
+export { workflowStructureExtractor } from "./workflows";
 export {
   declaredAuthorityExtractor,
   pythonRouteObservationExtractor,
@@ -42,12 +50,16 @@ export {
 export function defaultExtractors(): Extractor[] {
   return [
     contractInvariantsExtractor,
+    contractReferenceExtractor,
     declaredAuthorityExtractor,
     documentStructureExtractor,
     manifestExtractor,
+    nativeMetadataExtractor,
     pythonRouteObservationExtractor,
     repositoryStatusExtractor,
     serviceSpecExtractor,
+    staticImportExtractor,
+    workflowStructureExtractor,
     workIntelligenceExtractor,
   ];
 }

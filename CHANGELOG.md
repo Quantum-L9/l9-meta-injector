@@ -6,6 +6,15 @@
 
 - ESLint 10 (#117) needs Node `^22.13` on the 22 line, so `devEngines.runtime` is `>=22.13.0`; AGENTS.md, README and the Dependabot comment now say so. `engines.node` (`>=18`, the published package and Action) is unchanged.
 
+### Authority-bound metadata and evidence production (ADR-082, Phase 1)
+
+- The Repository Model Packet carries the repository's Semantic Foundation binding as declared evidence citing the authority bytes. Offline verification against a supplied `Quantum-L9/.github` checkout adds a separate validation record (`--semantics-root`, `--require-semantic-binding`). Product identity is never promoted and admission is never granted.
+- `native-metadata/v1` reads legacy `L9_META` hash, pipe, HTML-comment and docstring blocks, L9 frontmatter and managed `l9:meta` blocks at the file head with exact line provenance, keeping schema 1, schema 2, managed and unknown versions apart.
+- `workflow-structure/v1`, `static-imports/v1` and `contract-references/v1` observe jobs, `needs`/`uses`, static imports and literal `$ref` targets; `manifest/v1` 1.2.0 reads pip requirements files. None of these predicates is projected by the consumer.
+- Interpretation diagnostics reach the packet (bounded, stage `meta-injector-interpretation`). Producer validation now refuses escalated authority, non-portable or duplicate assertions, secret-looking excerpts, unobserved relationships, promoted ownership and admission-claiming verification.
+- Header blocks are no longer read as Markdown prose. Root-dependent interpretations are cacheable under probe-bound keys. The interpretation profile moves to 1.3.0, and `l9.repository-model` stays 1.1.0. Golden bundles were regenerated and topology conformance was re-recorded at the bound consumer revision.
+- Every file type the constellation writes headers in is read: CODEOWNERS, `.cursorrules`, `Dockerfile.<variant>`, Terraform/HCL and template files (`native-metadata/v1` 1.1.0). The text decoder claims every carrier the extractor matches, so the corpus scan decodes, interprets and caches them instead of reporting them unaccounted.
+
 ### Universal tracked metadata v2 (ADR-081, explicit opt-in)
 
 - Exact immutable Git-tree leaf census, including hidden/force-tracked ignored paths, binaries, symlink blobs and gitlinks, without default subject-payload inspection.

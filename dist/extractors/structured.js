@@ -1,6 +1,46 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.contractInvariantsExtractor = exports.serviceSpecExtractor = exports.manifestExtractor = void 0;
+exports.contractInvariantsExtractor = exports.serviceSpecExtractor = exports.contractReferenceExtractor = exports.manifestExtractor = void 0;
+// extractors/structured.ts — extractors over machine-readable declarations.
+//
+// These read manifests, service specs, and contract files. They report the
+// fields those files state, and nothing else: no normalization of a package
+// name into a service name, no merging of two action lists, no judgement about
+// whether a declared dependency is actually used.
+const posix = __importStar(require("node:path/posix"));
 const common_1 = require("./common");
 // ───────────────────────────── manifest/v1 ─────────────────────────────
 /** Dependency names worth reporting as a framework or server declaration. */
@@ -366,17 +406,58 @@ function cargoAssertions(lines) {
     });
     return drafts;
 }
+/** `requirements.txt`, `requirements-dev.txt`, `requirements_test.txt`, `requirements.in.txt`. */
+const REQUIREMENTS_FILE = /^requirements(?:[-_.][A-Za-z0-9_.-]+)?\.txt$/;
+function isRequirementsFile(sourcePath) {
+    return REQUIREMENTS_FILE.test(sourcePath.split("/").pop() ?? sourcePath);
+}
+/**
+ * One `package.dependency` claim per pip requirement line (ADR-082; admitted by
+ * ADR-055). Options (`-r`, `-c`, `-e`, `--index-url`), VCS and URL-only lines name
+ * no distribution by themselves, so they are counted and reported, never guessed
+ * into a name. A `name @ url` line names its distribution exactly.
+ */
+function requirementsAssertions(lines, input) {
+    const drafts = [];
+    let skipped = 0;
+    for (let index = 0; index < lines.length; index++) {
+        const line = lines[index];
+        const bare = line.replace(/(^|\s)#.*$/, "").trim();
+        if (bare === "")
+            continue;
+        if (bare.startsWith("-") || /^[a-z][a-z0-9+.-]*:\/\//i.test(bare) || bare.startsWith(".") || bare.startsWith("/")) {
+            skipped++;
+            continue;
+        }
+        const name = requirementName(bare);
+        if (name === null) {
+            skipped++;
+            continue;
+        }
+        drafts.push(...dependencyDrafts(name, index, line, true));
+    }
+    if (skipped > 0) {
+        input.report?.({
+            code: "manifest.requirement_lines_not_interpreted",
+            severity: "info",
+            message: `${skipped} requirement line(s) were options, paths or URLs and name no distribution by themselves`,
+        });
+    }
+    return drafts;
+}
 exports.manifestExtractor = {
     id: "manifest/v1",
     // 1.1.0: array-of-tables headers end a section, extras groups are not
     // dependency tables, PEP 621 dependency arrays are read, and package.json is
     // read by depth rather than by line shape (RC-093); BOM and lone-CR aware
     // lines (RC-096).
-    version: "1.1.0",
+    // 1.2.0: pip requirements files are read (ADR-082).
+    version: "1.2.0",
     matches(sourcePath) {
         return ((0, common_1.basenameIs)(sourcePath, "pyproject.toml") ||
             (0, common_1.basenameIs)(sourcePath, "package.json") ||
-            (0, common_1.basenameIs)(sourcePath, "Cargo.toml"));
+            (0, common_1.basenameIs)(sourcePath, "Cargo.toml") ||
+            isRequirementsFile(sourcePath));
     },
     extract(input) {
         const lines = (0, common_1.toLines)(input.content);
@@ -384,7 +465,58 @@ exports.manifestExtractor = {
             return pyprojectAssertions(lines);
         if ((0, common_1.basenameIs)(input.sourcePath, "package.json"))
             return packageJsonAssertions(lines);
+        if (isRequirementsFile(input.sourcePath))
+            return requirementsAssertions(lines, input);
         return cargoAssertions(lines);
+    },
+};
+// ─────────────────────── contract-references/v1 ───────────────────────
+/** OpenAPI, Swagger and AsyncAPI documents, by their conventional names. */
+const API_CONTRACT_FILE = /^(?:(?:openapi|swagger|asyncapi)(?:[-_.][A-Za-z0-9_.-]+)?|[A-Za-z0-9_.-]+\.(?:openapi|asyncapi))\.(?:ya?ml|json)$/i;
+const REF_LINE = /^\s*(?:-\s+)?(["']?)\$ref\1\s*:\s*(.+)$/;
+/**
+ * Literal `$ref` targets of a machine-readable API contract (ADR-082).
+ *
+ * An in-document pointer (`#/components/...`) references nothing outside the
+ * file and is not reported. A relative file reference resolves only to an
+ * observed path; a URL is reported as written. None of these is a runtime edge:
+ * a contract that references a schema file says where its definitions live,
+ * not which service calls which.
+ */
+exports.contractReferenceExtractor = {
+    id: "contract-references/v1",
+    version: "1.0.0",
+    subjectScope: "artifact",
+    matches(sourcePath) {
+        return API_CONTRACT_FILE.test(sourcePath.split("/").pop() ?? sourcePath);
+    },
+    extract(input) {
+        const drafts = [];
+        (0, common_1.toLines)(input.content).forEach((line, index) => {
+            const match = REF_LINE.exec(line);
+            if (!match)
+                return;
+            let value = (0, common_1.stripYamlComment)(match[2]).trim().replace(/,$/, "").trim();
+            value = (0, common_1.unquote)(value);
+            if (value === "" || value.startsWith("#") || value.includes("{"))
+                return;
+            const range = (0, common_1.spanRange)(index, index);
+            const claim = (predicate, object) => ({
+                predicate, object, sourceRange: range, evidenceExcerpt: line,
+                evidenceClass: "declared", authority: "source", confidence: "high",
+            });
+            if (/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) {
+                drafts.push(claim("contract.reference.remote", value));
+                return;
+            }
+            const file = value.split("#")[0];
+            const joined = posix.normalize(posix.join(posix.dirname(input.sourcePath), file));
+            const inside = file !== "" && !joined.startsWith("../") && joined !== ".." && !joined.startsWith("/");
+            drafts.push(inside && input.pathExists(joined)
+                ? claim("contract.reference.local", joined)
+                : claim("contract.reference.unresolved", value));
+        });
+        return drafts;
     },
 };
 // ───────────────────────────── service-spec/v1 ─────────────────────────────

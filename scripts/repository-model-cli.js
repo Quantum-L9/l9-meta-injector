@@ -3,7 +3,8 @@
 // Executable Repository Model Packet egress.
 //
 //   node scripts/repository-model-cli.js <root> --name <repo> \
-//     --revision git:<sha> --out <bundle-dir> [--generated-at <iso>]
+//     --revision git:<sha> --out <bundle-dir> [--generated-at <iso>] \
+//     [--semantics-root <Quantum-L9/.github checkout>] [--require-semantic-binding]
 //
 // Observes a repository with the inventory engine and writes a canonical packet
 // bundle that the l9-constellation-topology Repository Model consumer accepts
@@ -20,6 +21,12 @@ const USAGE = [
   "  --revision     explicit source revision, e.g. git:<40-hex> (required; never inferred)",
   "  --out          bundle directory to create (required; must be empty or absent)",
   "  --generated-at ISO timestamp recorded in the bundle (default: deterministic epoch)",
+  "  --semantics-root",
+  "                 Quantum-L9/.github checkout at the bound revision; verifies the",
+  "                 cited ledger digests offline and refuses to emit if they do not match",
+  "  --require-semantic-binding",
+  "                 refuse unless the repository has a v2 binding that verifies against",
+  "                 --semantics-root (authority-bound observation)",
 ].join("\n");
 
 function main() {
@@ -28,6 +35,8 @@ function main() {
   const revision = cli.opt("--revision", "");
   const out = cli.opt("--out", "");
   const generatedAt = cli.opt("--generated-at", "");
+  const semanticsRoot = cli.opt("--semantics-root", "");
+  const requireSemanticBinding = cli.flag("--require-semantic-binding");
 
   const missing = [];
   if (!name) missing.push("--name");
@@ -49,6 +58,8 @@ function main() {
       sourceRevision: revision,
       producerVersion: version,
       ...(generatedAt ? { generatedAt } : {}),
+      ...(semanticsRoot ? { semanticsRoot: path.resolve(semanticsRoot) } : {}),
+      ...(requireSemanticBinding ? { requireSemanticBinding: true } : {}),
     });
     result = repositoryModel.emitRepositoryModelBundle(packet, { outDir: out });
   } catch (error) {

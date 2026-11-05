@@ -281,12 +281,22 @@ export const textDecoder: DocumentDecoder = {
     ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".rb", ".go", ".rs",
     ".java", ".kt", ".kts", ".c", ".h", ".cc", ".cpp", ".hpp", ".cs", ".swift",
     ".php", ".pl", ".lua", ".sh", ".bash", ".zsh", ".sql", ".graphql", ".proto",
+    // Every format the native-metadata extractor reads a header from is a text
+    // format, and must be claimed here: a path an extractor is eligible for and
+    // no decoder claims is neither interpreted nor cached by the corpus scan, and
+    // surfaces as an `unaccounted` document on every run (PR #127). Claiming a
+    // path nobody claimed before changes no existing entry, so the version holds.
+    ".pyi", ".mts", ".cts", ".css", ".scss", ".conf",
+    ".tf", ".tfvars", ".hcl", ".template", ".example", ".dockerfile",
   ],
   // Build and container manifests carry no extension and are ordinary text.
   filenames: [
     "dockerfile", "containerfile", "gemfile", "jenkinsfile", "makefile", "procfile",
     "readme", "license", "changelog", "notice", "authors", "codeowners",
+    "gnumakefile", ".cursorrules",
   ],
+  // `Dockerfile.prod`, `Dockerfile.chassis`: a Dockerfile named for its variant.
+  filenamePrefixes: ["dockerfile."],
   dialectFor: textDialectFor,
   decode(input: DecodeInput): DecodeOutcome {
     const read = readUtf8(input);

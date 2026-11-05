@@ -62,6 +62,19 @@ export declare function yamlToBlock(yamlInner: string, spec: StrategySpec, newli
 export declare function stripInjectedBlock(raw: string, spec: StrategySpec): string;
 /** Detect whether a comment-injected block is present at the carrier position. */
 export declare function hasInjectedBlock(raw: string, spec: StrategySpec): boolean;
+/**
+ * Character offsets of the managed block at the carrier position, or null.
+ *
+ * `start` is the block's first byte and `end` the end of its closing delimiter
+ * line, before its terminator. Read-only: this is the same detection strip and
+ * extract use, exposed so a reader can cite the block's exact span (ADR-082)
+ * without a second implementation of where a managed block may sit.
+ */
+export declare function injectedBlockSpan(raw: string, spec: StrategySpec): {
+    start: number;
+    end: number;
+    delimiters: StrategySpec;
+} | null;
 /** Extract the inner YAML from an existing comment block (comment prefixes removed), or null. */
 export declare function extractInjectedYaml(raw: string, spec: StrategySpec): string | null;
 /**

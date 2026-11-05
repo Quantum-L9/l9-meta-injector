@@ -1,0 +1,6 @@
+# L9_META
+# l9_schema: 1 | origin: identityos-harvest | layer: kernel
+# category: governance | status: active
+# retrieval_keys: trust_ladder, earned_autonomy
+# /L9_META
+kernel: trust

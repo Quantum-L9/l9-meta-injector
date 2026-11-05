@@ -1,5 +1,6 @@
 import { InventoryResult } from "./inventory";
 import { InterpretationResult } from "./interpretation";
+import { type SemanticBindingObservation } from "./authority";
 /** Re-exported so packet consumers keep one ordering import site. */
 export { compareCodePoints } from "./ordering";
 export declare const REPOSITORY_MODEL_PACKET_TYPE = "l9.repository-model";
@@ -329,6 +330,13 @@ export interface RepositoryModelBuildInput {
      * Absent for an ordinary repository observation, which keeps its prior identity.
      */
     localSource?: RepositoryModelLocalSourceInput;
+    /**
+     * What the observed repository's authority file establishes about its Semantic
+     * Foundation binding (ADR-082). Produced by `observeSemanticBinding`; the
+     * builder stays pure and never reads the file itself. Absent means the caller
+     * did not observe authority, which emits nothing about it.
+     */
+    semanticBinding?: SemanticBindingObservation;
 }
 export interface RepositoryModelObservationInput {
     /** Repository root to observe. */
@@ -348,6 +356,17 @@ export interface RepositoryModelObservationInput {
     omitPatterns?: string[];
     omitFile?: string;
     hashMaxBytes?: number;
+    /**
+     * Operator-supplied Quantum-L9/.github checkout used to verify the bound ledger
+     * digests offline (ADR-082). Supplying it requests verification, and a failed
+     * verification refuses to build. Nothing is fetched.
+     */
+    semanticsRoot?: string;
+    /**
+     * Authority-bound observation: refuse to build unless the repository carries a
+     * structurally valid v2 binding that verifies against `semanticsRoot`.
+     */
+    requireSemanticBinding?: boolean;
 }
 export interface RepositoryModelEmitResult {
     bundleRoot: string;
