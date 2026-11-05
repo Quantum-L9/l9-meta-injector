@@ -185,7 +185,7 @@ function isAuthorityConfig(value) {
         return false;
     const candidate = value;
     const v1Keys = [
-        "schema", "writer", "default_carrier", "legacy_writers", "inline_allow", "validation_commands",
+        "schema", "writer", "default_carrier", "legacy_writers", "inline_allow", "inline_exclude", "validation_commands",
     ];
     const v2Keys = [...v1Keys, "semantic_foundation", "product"];
     if (!isSupportedAuthoritySchema(candidate.schema))
@@ -207,6 +207,8 @@ function isAuthorityConfig(value) {
     if (candidate.legacy_writers !== "forbidden" && candidate.legacy_writers !== "migration_only")
         return false;
     if (!isStringArray(candidate.inline_allow) || !candidate.inline_allow.every(isSafeAuthorityPathPattern))
+        return false;
+    if (candidate.inline_exclude !== undefined && (!isStringArray(candidate.inline_exclude) || !candidate.inline_exclude.every(isSafeAuthorityPathPattern)))
         return false;
     if (candidate.validation_commands !== undefined && !isStringArray(candidate.validation_commands))
         return false;

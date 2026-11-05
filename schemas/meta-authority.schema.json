@@ -25,7 +25,7 @@
         "type": "string",
         "minLength": 1,
         "maxLength": 512,
-        "pattern": "^(?![!/.])(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)(?!.*//)[^\\u0000-\\u001F\\u007F]+$"
+        "pattern": "^(?![!/])(?!\\./)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*\\\\)(?!.*//)(?!.*\\/$)(?!\\s)(?!.*\\s$)[^\\u0000-\\u001F\\u007F]+$"
       },
       "uniqueItems": true
     },
@@ -49,6 +49,7 @@
         "default_carrier": { "enum": ["central_manifest", "inline_managed"] },
         "legacy_writers": { "enum": ["forbidden", "migration_only"] },
         "inline_allow": { "$ref": "#/$defs/inline_allow" },
+        "inline_exclude": { "$ref": "#/$defs/inline_allow" },
         "validation_commands": { "$ref": "#/$defs/validation_commands" }
       }
     },
@@ -62,6 +63,7 @@
         "default_carrier": { "enum": ["central_manifest", "inline_managed"] },
         "legacy_writers": { "enum": ["forbidden", "migration_only"] },
         "inline_allow": { "$ref": "#/$defs/inline_allow" },
+        "inline_exclude": { "$ref": "#/$defs/inline_allow" },
         "validation_commands": { "$ref": "#/$defs/validation_commands" },
         "semantic_foundation": {
           "type": "object",

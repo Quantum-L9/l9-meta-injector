@@ -49,6 +49,7 @@ const discovery_contracts_1 = require("./discovery_contracts");
 const ordering_1 = require("./ordering");
 const glob_1 = require("./glob");
 const metadata_index_1 = require("./metadata_index");
+const hidden_control_1 = require("./hidden_control");
 /**
  * Injector-generated adjacent artifacts must never be rediscovered as inputs. That
  * includes the `--normalize-filenames` sidecar, which normalizeFilenameWithLog writes
@@ -100,10 +101,11 @@ function record(ledger, pathName, kind, disposition, reason, sizeBytes) {
  * index cannot represent (DEC-RC-013 B). Every other caller — public `findFiles`, a
  * non-governed `runPipelineAsync` — compiles no index and keeps that file eligible.
  */
-function discoverFiles(root, glob, opts = {}, indexGoverned = false) {
+function discoverFiles(root, glob, opts = {}, indexGoverned = false, inlineAllow = []) {
     // The scope is validated and compiled before the root is opened: a pattern the dialect
     // cannot express is refused here rather than matching nothing (or everything) later.
     const scope = (0, glob_1.compileDiscoveryGlob)(glob);
+    const controlPatterns = indexGoverned ? inlineAllow : [];
     const absRoot = path.resolve(root);
     let rootStat;
     try {
@@ -165,7 +167,7 @@ function discoverFiles(root, glob, opts = {}, indexGoverned = false) {
                     record(ledger, rel, "directory", "omitted", "directory matched omit policy");
                     continue;
                 }
-                if (isHiddenControlPath(rel)) {
+                if (isHiddenControlPath(rel) && !(0, hidden_control_1.canTraverseHiddenControl)(rel, controlPatterns)) {
                     record(ledger, rel, "directory", "hidden_control", "hidden control directory is reserved for authority scanning");
                     continue;
                 }
@@ -192,7 +194,9 @@ function discoverFiles(root, glob, opts = {}, indexGoverned = false) {
                 record(ledger, rel, "file", "omitted", "file matched omit policy", stat.size);
                 continue;
             }
-            if (isHiddenControlPath(rel)) {
+            // Excluded named controls remain discoverable for a central policy decision;
+            // exclusion prevents mutation, not metadata visibility. Unknown dotfiles stay closed.
+            if (isHiddenControlPath(rel) && !(0, hidden_control_1.explicitHiddenControlPattern)(rel, controlPatterns)) {
                 record(ledger, rel, "file", "hidden_control", "hidden control file is reserved for authority scanning", stat.size);
                 continue;
             }

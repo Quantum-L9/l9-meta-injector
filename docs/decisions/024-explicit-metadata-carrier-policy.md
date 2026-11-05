@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Amended by:** [ADR-057](057-comment-carrier-position-detection-and-value-safety.md) — the governed carrier policy is unchanged; the bytes the ungoverned comment-carrier writers produce are corrected.
+- **Partially superseded by:** [ADR-080](080-governed-format-safe-comment-carriers.md) — explicit safe comment-carrier authorization replaces the source/configuration prohibition; safety precedence and single-resolver authority remain in force.
 - **Date:** 2026-08-01
 
 ## Context

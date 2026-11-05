@@ -81,7 +81,7 @@ describe("carrier-aware operation planning", () => {
     expect(inlinePlanDrift(plan)).toEqual([{ path: "prompts/a.md", kind: "stale", message: "authorized inline metadata differs from canonical expected bytes", expectedHash: "e".repeat(64), actualHash: "f".repeat(64) }]);
   });
 
-  test("demotes non-frontmatter subjects to the central manifest", () => {
+  test("demotes a comment strategy unsupported by the filename to the central manifest", () => {
     const root = path.resolve("/tmp/repo");
     const p = pipeline(root);
     p.injected[0].injectionStrategy = "line-comment";
@@ -89,6 +89,20 @@ describe("carrier-aware operation planning", () => {
     const plan = buildCarrierOperationPlan("apply", root, AUTHORITY, p);
     expect(plan.carrierDecisions.find((item) => item.path === "prompts/a.md")?.carrier).toBe("central_manifest");
     expect(plan.inlinePlans).toHaveLength(0);
+  });
+
+  test("accepts matched safe comment plans but refuses plan/subject strategy divergence", () => {
+    const root = path.resolve("/tmp/repo");
+    const p = pipeline(root);
+    const source = p.injected[1];
+    source.injectionStrategy = "line-comment";
+    source.targetPath = source.sourcePath;
+    delete source.sidecarPath;
+    p.metadataSubjects[1].strategy = "line-comment";
+    const authority = { ...AUTHORITY, inline_allow: ["src/**"] };
+    expect(buildCarrierOperationPlan("apply", root, authority, p).inlinePlans).toEqual([source]);
+    source.injectionStrategy = "block-comment";
+    expect(() => buildCarrierOperationPlan("apply", root, authority, p)).toThrow(/matching safe strategy/);
   });
 });
 

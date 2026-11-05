@@ -43,6 +43,37 @@ Inventory and pipeline apply a shared omit layer (ADR-017): built-in protect for
 
 The stable root keeps callers on the full path. Low-level primitives remain available only through an explicitly experimental subpath whose caller obligations are documented.
 
+## Governed carrier policy
+
+ADR-080 partially supersedes ADR-024's central-only source/configuration rule; package
+version remains 4.3.0 pending a separate release. `src/mutation_policy.ts` remains the
+single resolver, and `src/carrier_operation.ts` supplies the same plan to check and apply.
+Central metadata is still the default. Explicit `inline_allow` can authorize approved
+Markdown frontmatter or safe line/block comments in source, ordinary tests, scripts,
+configuration, workflows and infrastructure. Optional `inline_exclude` in authority v1
+or v2 defaults to `[]`, uses the same validated glob dialect, and outranks allow without
+omitting metadata coverage. A default of `inline_managed` is not an allow grant.
+
+Hard skips for `.git`, `.l9`, dependencies, injector outputs, binaries and secrets, and
+inventory-only generated/lock/vendor state, remain non-writable regardless of allow.
+Canonical fixture directory families (`fixture`, `fixtures`, `__fixtures__`),
+`golden_tests` and `datasets` remain central at every depth. Hidden controls require a
+named safe pattern explicitly naming the hidden component; blanket `**` never unlocks
+them. A non-secret `.env.example` may be explicitly authorized, but secret-bearing
+`.env` files cannot. JSON/JSONL/plaintext and hosts with no safe inert comment position
+stay central or retain an existing external carrier unchanged; governed apply creates
+no adjacent sidecar. Normal-mode SKILL.md protection is unchanged.
+
+Inline plans target the source itself and reuse the existing prologue-aware renderer
+(ADR-046, ADR-057), preserving BOMs, shebangs, encoding cookies, CRLF and body bytes.
+Rendered bytes must equal the shared plan before changed carriers and the canonical
+index enter the existing compare-and-swap transaction; post-commit body/metadata
+verification and rollback still cover the whole set (ADR-027). Check remains read-only.
+Index records cover non-hard-skip metadata subjects, including inline and central-only
+exceptions, not just changed files. `inlineChanged` and `metadataIndexChanged` report
+source-carrier changes and the separate index write; discovery omissions, hard skips
+and encoding/unsupported-entry holds remain explicit coverage exceptions.
+
 ## Repository model egress
 
 `src/repository_model.ts` converts an inventory observation into an `l9.repository-model`
@@ -110,8 +141,8 @@ more or fewer bytes than it declares is an integrity hold. A Unix mode without
 file-type bits is classified by name. The reader version is `1.2.0` (ADR-046,
 ADR-061).
 `src/glob.ts` is the one pattern language for every path scope: the discovery scope
-(`--glob`, `PipelineConfig.glob`) and the authority's `inline_allow` compile through the
-same function, so the files a run chooses and the files the authority licenses are named
+(`--glob`, `PipelineConfig.glob`) and the authority's `inline_allow` / `inline_exclude`
+compile through the same function, so the files a run chooses and the files the authority licenses are named
 in one dialect. The scope is validated before any directory is read and a pattern the
 dialect cannot express is refused rather than silently matching nothing or everything;
 a file outside it is recorded as `glob_filtered` (ADR-047).

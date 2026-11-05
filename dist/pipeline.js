@@ -158,7 +158,10 @@ async function injectGovernedFiles(scanned, inputs, llmEnabled, opts, metrics) {
             recordInjectSkip(inputs, e.sourcePath, meta, "carrier_inventory_only");
             continue;
         }
-        if (!meta.injectable) {
+        // The prose taxonomy's test/script default is not permission to change code.
+        // A governed, format-safe comment authorization is that permission; the
+        // taxonomy values in the metadata remain unchanged.
+        if (!meta.injectable && !inputs.inlineAuthorizedPaths.has(e.sourcePath)) {
             recordInjectSkip(inputs, e.sourcePath, meta, "taxonomy_non_injectable");
             continue;
         }
@@ -248,10 +251,10 @@ async function runPipelineAsync(config) {
  * Deliberately not re-exported from `src/index.ts` or `src/public`, and no field on
  * the public `PipelineConfig` carries the flag.
  */
-async function runIndexGovernedPipelineAsync(config) {
-    return runPipelineEntry(config, true);
+async function runIndexGovernedPipelineAsync(config, authority) {
+    return runPipelineEntry(config, true, authority);
 }
-async function runPipelineEntry(config, indexGoverned) {
+async function runPipelineEntry(config, indexGoverned, authority) {
     // One collector per run aggregates the LLM/IO hotpath signal (OBS-009/OBS-010):
     // decision paths, call counts, failure counts, and p50/p95 latency.
     const metrics = new metrics_1.MetricsCollector();
@@ -265,11 +268,12 @@ async function runPipelineEntry(config, indexGoverned) {
             allowInsecure: config.llmAllowInsecure,
         })
         : llm_1.localAdapter;
-    return (0, llm_1.runWithAdapter)(adapter, () => runPipelineInScope(config, metrics, indexGoverned));
+    return (0, llm_1.runWithAdapter)(adapter, () => runPipelineInScope(config, metrics, indexGoverned, authority));
 }
-async function runPipelineInScope(config, metrics, indexGoverned) {
+async function runPipelineInScope(config, metrics, indexGoverned, authority) {
     const runStartedAt = new Date().toISOString();
     const root = path.resolve(config.root);
+    const inlineAllow = authority?.inline_allow ?? [];
     const metadataTimestamp = config.metadataTimestamp?.trim() || schema_1.UNKNOWN;
     const identity = (0, authority_1.assertHeaderIdentity)((0, authority_1.resolveHeaderIdentity)(root, {
         authority: config.authority,
@@ -453,7 +457,7 @@ async function runPipelineInScope(config, metrics, indexGoverned) {
     let archives = [];
     if (config.localFiles) {
         if (!config.dryRun) {
-            const before = (0, retrieval_1.discoverFiles)(root, config.glob, { omit, protectSkillMd: true }, indexGoverned);
+            const before = (0, retrieval_1.discoverFiles)(root, config.glob, { omit, protectSkillMd: true }, indexGoverned, inlineAllow);
             assertTreeGovernable(before);
             // Every collision among files that already exist is decidable now, so it refuses
             // before expansion materialises anything (RC-020). Collisions that only extracted
@@ -467,7 +471,7 @@ async function runPipelineInScope(config, metrics, indexGoverned) {
         });
         archives = expanded.archives;
     }
-    const discovery = (0, retrieval_1.discoverFiles)(root, config.glob, { omit, protectSkillMd: true }, indexGoverned);
+    const discovery = (0, retrieval_1.discoverFiles)(root, config.glob, { omit, protectSkillMd: true }, indexGoverned, inlineAllow);
     if (!config.dryRun)
         assertTreeGovernable(discovery);
     const filePaths = discovery.files;
@@ -485,8 +489,13 @@ async function runPipelineInScope(config, metrics, indexGoverned) {
         writeInjectLog: config.writeInjectLog ?? false,
         writeDryRunDiff: config.persistOutputs !== false,
     };
+    const inlineAuthorizedPaths = new Set(authority
+        ? (0, mutation_policy_1.resolveCarrierDecisions)({ authority, mode: "apply", subjects: metadataSubjects })
+            .filter((item) => item.carrier === "inline_managed")
+            .map((item) => path.join(root, ...item.path.split("/")))
+        : []);
     const injected = await injectGovernedFiles(scanned, {
-        metas, classifications, inlineCarrierBlocks, carrierTiers, skippedNonInjectablePaths, skippedNonInjectableDetails,
+        metas, classifications, inlineCarrierBlocks, carrierTiers, inlineAuthorizedPaths, skippedNonInjectablePaths, skippedNonInjectableDetails,
     }, config.llmEnabled, opts, metrics);
     // In dry-run nothing was written. A record whose planned bytes differ from the current
     // target (or whose plan cannot prove otherwise) is verified only by the checks that do

@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { PipelineConfig, NormalizedMeta, InjectionRecord, VerifyResult, UNKNOWN, asRecord, coerceNormalizedMeta } from "./schema";
 import type { ProductDeclaration, SemanticFoundationBinding } from "./schema";
 import { discoverFiles, scanFiles } from "./retrieval";
-import { authorityFreeCarrierTier, type CarrierInjectionStrategy } from "./mutation_policy";
+import { authorityFreeCarrierTier, resolveCarrierDecisions, type CarrierInjectionStrategy } from "./mutation_policy";
 import type { DiscoverySummary } from "./discovery_contracts";
 import { extract } from "./extract";
 import { classify, classifyWithSemantics } from "./classify";
@@ -25,6 +25,7 @@ import { inspectFrontMatterDocument, isPatcherLimitation, type FrontMatterIssueC
 import { expandArchivesUnderRoot, ArchiveRecord } from "./archives";
 import { buildOmitMatcher } from "./omit";
 import { assertHeaderIdentity, resolveHeaderIdentity } from "./authority";
+import type { AuthorityConfig } from "./operation_contracts";
 
 // classify()'s coarse "high"/"medium"/"low" confidence, numerically scaled to line up
 // with inventoryTree's InventoryRecord.classification_confidence (a 0..1 float), so a
@@ -199,6 +200,7 @@ interface InjectionInputs {
   classifications: ReadonlyMap<string, ReturnType<typeof classify>>;
   inlineCarrierBlocks: ReadonlyMap<string, InlineCarrierBlock>;
   carrierTiers: ReadonlyMap<string, ReturnType<typeof authorityFreeCarrierTier>>;
+  inlineAuthorizedPaths: ReadonlySet<string>;
   skippedNonInjectablePaths: string[];
   skippedNonInjectableDetails: NonInjectableSkipDetail[];
 }
@@ -242,7 +244,10 @@ async function injectGovernedFiles(
       recordInjectSkip(inputs, e.sourcePath, meta, "carrier_inventory_only");
       continue;
     }
-    if (!meta.injectable) {
+    // The prose taxonomy's test/script default is not permission to change code.
+    // A governed, format-safe comment authorization is that permission; the
+    // taxonomy values in the metadata remain unchanged.
+    if (!meta.injectable && !inputs.inlineAuthorizedPaths.has(e.sourcePath)) {
       recordInjectSkip(inputs, e.sourcePath, meta, "taxonomy_non_injectable");
       continue;
     }
@@ -347,11 +352,11 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
  * Deliberately not re-exported from `src/index.ts` or `src/public`, and no field on
  * the public `PipelineConfig` carries the flag.
  */
-export async function runIndexGovernedPipelineAsync(config: PipelineConfig): Promise<PipelineResult> {
-  return runPipelineEntry(config, true);
+export async function runIndexGovernedPipelineAsync(config: PipelineConfig, authority?: AuthorityConfig): Promise<PipelineResult> {
+  return runPipelineEntry(config, true, authority);
 }
 
-async function runPipelineEntry(config: PipelineConfig, indexGoverned: boolean): Promise<PipelineResult> {
+async function runPipelineEntry(config: PipelineConfig, indexGoverned: boolean, authority?: AuthorityConfig): Promise<PipelineResult> {
   // One collector per run aggregates the LLM/IO hotpath signal (OBS-009/OBS-010):
   // decision paths, call counts, failure counts, and p50/p95 latency.
   const metrics = new MetricsCollector();
@@ -365,12 +370,13 @@ async function runPipelineEntry(config: PipelineConfig, indexGoverned: boolean):
       allowInsecure: config.llmAllowInsecure,
     })
     : localAdapter;
-  return runWithAdapter(adapter, () => runPipelineInScope(config, metrics, indexGoverned));
+  return runWithAdapter(adapter, () => runPipelineInScope(config, metrics, indexGoverned, authority));
 }
 
-async function runPipelineInScope(config: PipelineConfig, metrics: MetricsCollector, indexGoverned: boolean): Promise<PipelineResult> {
+async function runPipelineInScope(config: PipelineConfig, metrics: MetricsCollector, indexGoverned: boolean, authority?: AuthorityConfig): Promise<PipelineResult> {
   const runStartedAt = new Date().toISOString();
   const root = path.resolve(config.root);
+  const inlineAllow = authority?.inline_allow ?? [];
   const metadataTimestamp = config.metadataTimestamp?.trim() || UNKNOWN;
   const identity = assertHeaderIdentity(resolveHeaderIdentity(root, {
     authority: config.authority,
@@ -563,7 +569,7 @@ async function runPipelineInScope(config: PipelineConfig, metrics: MetricsCollec
   let archives: ArchiveRecord[] = [];
   if (config.localFiles) {
     if (!config.dryRun) {
-      const before = discoverFiles(root, config.glob, { omit, protectSkillMd: true }, indexGoverned);
+      const before = discoverFiles(root, config.glob, { omit, protectSkillMd: true }, indexGoverned, inlineAllow);
       assertTreeGovernable(before);
       // Every collision among files that already exist is decidable now, so it refuses
       // before expansion materialises anything (RC-020). Collisions that only extracted
@@ -578,7 +584,7 @@ async function runPipelineInScope(config: PipelineConfig, metrics: MetricsCollec
     archives = expanded.archives;
   }
 
-  const discovery = discoverFiles(root, config.glob, { omit, protectSkillMd: true }, indexGoverned);
+  const discovery = discoverFiles(root, config.glob, { omit, protectSkillMd: true }, indexGoverned, inlineAllow);
   if (!config.dryRun) assertTreeGovernable(discovery);
   const filePaths = discovery.files;
 
@@ -601,8 +607,13 @@ async function runPipelineInScope(config: PipelineConfig, metrics: MetricsCollec
     writeInjectLog: config.writeInjectLog ?? false,
     writeDryRunDiff: config.persistOutputs !== false,
   };
+  const inlineAuthorizedPaths = new Set(authority
+    ? resolveCarrierDecisions({ authority, mode: "apply", subjects: metadataSubjects })
+      .filter((item) => item.carrier === "inline_managed")
+      .map((item) => path.join(root, ...item.path.split("/")))
+    : []);
   const injected = await injectGovernedFiles(scanned, {
-    metas, classifications, inlineCarrierBlocks, carrierTiers, skippedNonInjectablePaths, skippedNonInjectableDetails,
+    metas, classifications, inlineCarrierBlocks, carrierTiers, inlineAuthorizedPaths, skippedNonInjectablePaths, skippedNonInjectableDetails,
   }, config.llmEnabled, opts, metrics);
 
   // In dry-run nothing was written. A record whose planned bytes differ from the current

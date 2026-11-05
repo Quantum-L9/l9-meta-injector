@@ -24,7 +24,7 @@ export interface DiscoveryResult {
  * index cannot represent (DEC-RC-013 B). Every other caller — public `findFiles`, a
  * non-governed `runPipelineAsync` — compiles no index and keeps that file eligible.
  */
-export declare function discoverFiles(root: string, glob: string, opts?: FindFilesOptions, indexGoverned?: boolean): DiscoveryResult;
+export declare function discoverFiles(root: string, glob: string, opts?: FindFilesOptions, indexGoverned?: boolean, inlineAllow?: readonly string[]): DiscoveryResult;
 /** Backward-compatible file-only discovery wrapper. */
 export declare function findFiles(root: string, glob: string, opts?: FindFilesOptions): string[];
 export declare function scanFiles(filePaths: string[]): ScanEntry[];
