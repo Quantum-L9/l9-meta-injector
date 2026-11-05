@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Development toolchain
+
+- ESLint 10 (#117) needs Node `^22.13` on the 22 line, so `devEngines.runtime` is `>=22.13.0`; AGENTS.md, README and the Dependabot comment now say so. `engines.node` (`>=18`, the published package and Action) is unchanged.
+
 ### Universal tracked metadata v2 (ADR-081, explicit opt-in)
 
 - Exact immutable Git-tree leaf census, including hidden/force-tracked ignored paths, binaries, symlink blobs and gitlinks, without default subject-payload inspection.

@@ -10,7 +10,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "git_blob_sha1": "b16ca662de7b3615992a8993b62f8a48146a7b04"
+      "git_blob_sha1": "a61fe0a7fe24f155b2767cb22f1513d973822a5e"
     },
     {
       "path": "dist/apply.d.ts",
@@ -734,7 +734,7 @@
     },
     {
       "path": "README.md",
-      "git_blob_sha1": "ddc3c02a1117c90bed21a7f2927e134d9f5d4829"
+      "git_blob_sha1": "af51295b0e375e580dedcaa4b8134e8b82909992"
     },
     {
       "path": "schemas/local-files-extraction-v2.schema.json",
