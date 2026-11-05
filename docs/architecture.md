@@ -1,7 +1,7 @@
 # Architecture
 
 **As-built package generation:** 4
-**Package version:** 4.2.0
+**Package version:** 4.3.0
 
 ## Authority
 

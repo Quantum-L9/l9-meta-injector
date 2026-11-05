@@ -77,8 +77,8 @@
   ],
   "corpus": {
     "source_fixture": "fixtures/local-source/sample-source",
-    "packet_id": "packet:622d0cd48c2d86a04b504157d52158d335d3fe42b39e8aa3eea716b52bd6a003",
-    "semantic_hash": "sha256:622d0cd48c2d86a04b504157d52158d335d3fe42b39e8aa3eea716b52bd6a003",
+    "packet_id": "packet:c4f51a735e263af55e98142a5bb9a4598b9f9969a42ce5587d3e4eddf4f39943",
+    "semantic_hash": "sha256:c4f51a735e263af55e98142a5bb9a4598b9f9969a42ce5587d3e4eddf4f39943",
     "packet_type": "l9.corpus-intelligence",
     "packet_version": "1.1.0",
     "status": "passed",
