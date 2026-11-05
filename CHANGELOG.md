@@ -7,6 +7,7 @@
 - Native `L9_META` header predicates now carry the meanings of the Semantic Foundation's `l9.artifact-header-model/global@1` (v3.27.0, ADR-024) through one mapping table, `src/semantic_mapping.ts`: 30 fields with category, value kind, cardinality and a ledger reference, all declared source claims with no projection. See `docs/semantic-mapping.md`.
 - `.l9/meta-authority.yaml` binds `Quantum-L9/.github` `b3755ad` (v3.27.0, `admission: candidate`). `semantics:verify` also proves the mapping transcribes the bound ledger exactly.
 - The interpretation profile moves to 1.4.0 because the mapping's identity is part of it; `l9.repository-model` stays 1.1.0 and no wire field is added.
+- `native-metadata/v1` 1.2.0: the competing-declarations diagnostic (a Phase 1 defect) now follows the governed cardinality and is scoped by declared schema. Set-valued fields such as `tags` and `layer` aggregate instead of competing; a single-valued field listing several values in one declaration competes; and the same key under two declared schemas (`l9_schema: 1` vs `2`, or a managed header) is two predicates rather than a conflict. Assertions are unchanged; only the diagnostic moves.
 
 ### Development toolchain
 

@@ -137,6 +137,34 @@ describe("P1.2 versions, ambiguity and refusal", () => {
     expect(owners.map((d) => [d.object, d.sourceRange.start_line])).toEqual([["platform", 3], ["engine-team", 7]]);
   });
 
+  // ADR-084: the detector follows the governed mapping's cardinality and never
+  // compares fields across declared schemas.
+  test("set-valued fields that differ across carriers aggregate instead of competing", () => {
+    const sets = "---\nl9_schema: 1\ntags: [one]\nlayer: [docs]\n---\n<!-- L9_META\nl9_schema: 1\ntags: [two]\nlayer: [ci]\n/L9_META -->\n";
+    const result = parse("s.md", sets);
+    expect(result.diagnostics.map((d) => d.code)).not.toContain("native_metadata.competing_declarations");
+    expect(result.declarations.map((d) => d.conflicts)).toEqual([[], []]);
+  });
+
+  test("a single-valued field listing two values in one declaration competes", () => {
+    const result = parse("v.md", "<!-- L9_META\nl9_schema: 1\nstatus: [active, deprecated]\n/L9_META -->\n");
+    expect(result.diagnostics.map((d) => d.code)).toContain("native_metadata.competing_declarations");
+    expect(result.declarations.map((d) => d.conflicts)).toEqual([["status"]]);
+  });
+
+  test("the same key under two declared schemas is two predicates, not a conflict", () => {
+    const schemas = "---\nl9_schema: 1\nowner: platform\n---\n<!-- L9_META\nl9_schema: 2\nowner: engine-team\n/L9_META -->\n";
+    const result = parse("n.md", schemas);
+    expect(result.diagnostics.map((d) => d.code)).not.toContain("native_metadata.competing_declarations");
+    const predicates = extract("n.md", schemas).drafts.map((d) => d.predicate);
+    expect(predicates).toEqual(expect.arrayContaining(["meta.l9v1.governance.owner", "meta.l9v2.governance.owner"]));
+  });
+
+  test("agreeing single-valued declarations do not compete", () => {
+    const agree = "---\nl9_schema: 1\nstatus: active\n---\n<!-- L9_META\nl9_schema: 1\nstatus: active\n/L9_META -->\n";
+    expect(parse("a.md", agree).diagnostics.map((d) => d.code)).not.toContain("native_metadata.competing_declarations");
+  });
+
   test("reports a single-line header instead of guessing at it", () => {
     const single = "# L9_META: origin: kernel | layer: evals\nkey: 1\n";
     const result = parse("x.yaml", single);
