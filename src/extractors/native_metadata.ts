@@ -135,7 +135,11 @@ export const nativeMetadataExtractor: Extractor = {
   // 1.1.0: CODEOWNERS, .cursorrules, Dockerfile.<variant>, Terraform/HCL and
   // template files are header carriers too; before this, their declarations were
   // read nowhere and reported nowhere (PR #127 Phase 2 acceptance run).
-  version: "1.1.0",
+  // 1.2.0: the competing-declarations diagnostic follows the governed mapping's
+  // cardinality and is scoped by declared schema (ADR-084): set-valued fields
+  // aggregate, a single-valued field listing several values competes, and the
+  // same key under two schemas does not.
+  version: "1.2.0",
   // A header describes the file that carries it, never the repository.
   subjectScope: "artifact",
   matches: carriesHeaders,
