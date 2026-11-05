@@ -248,6 +248,7 @@ class DecoderRegistry {
     constructor() {
         this.byExtension = new Map();
         this.byFilename = new Map();
+        this.byFilenamePrefix = new Map();
         this.decoders = [];
     }
     register(decoder) {
@@ -262,6 +263,8 @@ class DecoderRegistry {
             claim(this.byExtension, extension, "extension");
         for (const filename of decoder.filenames ?? [])
             claim(this.byFilename, filename, "filename");
+        for (const prefix of decoder.filenamePrefixes ?? [])
+            claim(this.byFilenamePrefix, prefix, "filename prefix");
         this.decoders.push(decoder);
     }
     /** The decoder that claims this path, or undefined when none does. */
@@ -270,6 +273,12 @@ class DecoderRegistry {
         const named = this.byFilename.get(basename);
         if (named !== undefined)
             return named;
+        // Longest prefix first, so the answer never depends on registration order.
+        const prefixes = [...this.byFilenamePrefix.keys()].sort((a, b) => b.length - a.length || (0, ordering_1.compareCodePoints)(a, b));
+        for (const prefix of prefixes) {
+            if (basename.length > prefix.length && basename.startsWith(prefix))
+                return this.byFilenamePrefix.get(prefix);
+        }
         const dot = basename.lastIndexOf(".");
         if (dot <= 0)
             return undefined;

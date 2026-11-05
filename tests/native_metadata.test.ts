@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import { parseNativeMetadata } from "../src/native_metadata";
 import { nativeMetadataExtractor } from "../src/extractors/native_metadata";
 import { documentStructureExtractor } from "../src/extractors/work_intelligence";
+import { defaultDecoderRegistry } from "../src/documents";
 import type { AssertionDraft, ExtractorDiagnostic } from "../src/interpretation";
 
 function parse(sourcePath: string, content: string) {
@@ -229,5 +230,31 @@ describe("P1.2 carrier coverage (Phase 2 acceptance finding)", () => {
     for (const sourcePath of ["logo.png", "data.json", "notes.txt", "archive.zip"]) {
       expect(nativeMetadataExtractor.matches(sourcePath)).toBe(false);
     }
+  });
+
+  // The corpus scan interprets only what a decoder opens. A carrier the extractor
+  // matches and no decoder claims is read by neither path, is never cached, and
+  // surfaces as an `unaccounted` document on every run.
+  test("every carrier the extractor reads is claimed by a decoder", () => {
+    const registry = defaultDecoderRegistry();
+    const carriers = [
+      "a.md", "a.markdown", "a.mdx", "a.py", "a.pyi", "a.yaml", "a.yml", "a.toml", "a.sh", "a.bash",
+      "a.zsh", "a.ts", "a.tsx", "a.mts", "a.cts", "a.js", "a.jsx", "a.mjs", "a.cjs", "a.html", "a.htm",
+      "a.xml", "a.css", "a.scss", "a.sql", "a.rb", "a.go", "a.rs", "a.java", "a.ini", "a.cfg", "a.conf",
+      "infra/main.tf", "x.tfvars", "x.hcl", "env.template", ".env.template", "x.env.example",
+      "app.Dockerfile", "Makefile", "GNUmakefile", "Dockerfile", ".github/CODEOWNERS", ".cursorrules",
+      "Dockerfile.prod", "chassis/Dockerfile.chassis",
+    ];
+    const unclaimed = carriers.filter(
+      (sourcePath) => nativeMetadataExtractor.matches(sourcePath) && registry.forPath(sourcePath) === undefined,
+    );
+    expect(unclaimed).toEqual([]);
+    expect(carriers.every((sourcePath) => nativeMetadataExtractor.matches(sourcePath))).toBe(true);
+  });
+
+  test("a filename prefix claims only a name that continues past it", () => {
+    const registry = defaultDecoderRegistry();
+    expect(registry.forPath("Dockerfile.prod")?.id).toBe(registry.forPath("Dockerfile")?.id);
+    expect(registry.forPath("dockerfile.")).toBeUndefined();
   });
 });
