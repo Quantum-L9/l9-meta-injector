@@ -6,7 +6,7 @@
 - Org semantics are consumed by citation in `.l9/meta-authority.yaml` (`l9.meta-authority/v2`); do not copy `Quantum-L9/.github/semantics/` (ADR-052)
 - Runtime authority: TypeScript under `src/`
 - Compiled distribution: committed `dist/`
-- Supported Node version: `>=18` for consumers (`engines.node`); developing and testing this repository needs Node `>=22.12` (`devEngines.runtime`, required by vitest 5), and `CI / smoke` runs on Node 22
+- Supported Node version: `>=18` for consumers (`engines.node`); developing and testing this repository needs Node `>=22.13` (`devEngines.runtime`, required by vitest 5 and eslint 10), and `CI / smoke` runs on Node 22
 - Historical reference implementation: `tools/consolidation/` and `docs/legacy/consolidation-v1/`
 - Canonical validation command: `npm run validate`
 - Publication gate: `npm run check:publication`

@@ -10,7 +10,7 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 3
-    # @types/node tracks the development Node line (devEngines >=22.12, CI on 22),
+    # @types/node tracks the development Node line (devEngines >=22.13, CI on 22),
     # not the newest Node: a types major ahead of it admits APIs the declared
     # runtime floor (engines >=18, proven by consumer-node-floor, ADR-079) does not
     # have. Move it deliberately with the dev Node line, never by bot (e.g. #115).
