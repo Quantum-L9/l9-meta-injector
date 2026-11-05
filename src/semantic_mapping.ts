@@ -185,7 +185,7 @@ export function governedMeaningOf(predicate: string): GovernedPredicate | undefi
   const declared_schema = Object.keys(RECOGNIZED_DECLARED_SCHEMAS)
     .find((schema) => RECOGNIZED_DECLARED_SCHEMAS[schema] === match[1]);
   const mapping = BY_FIELD.get(match[3]);
-  if (declared_schema === undefined || mapping === undefined || mapping.category !== match[2]) return undefined;
+  if (declared_schema === undefined || mapping?.category !== match[2]) return undefined;
   return { predicate, declared_schema, mapping };
 }
 
@@ -208,40 +208,48 @@ export function readLedgerFields(ledgerText: string): { fields: LedgerFieldRecor
   const lines = ledgerText.split(/\r?\n/);
   const start = lines.indexOf("fields:");
   if (start < 0) return { fields: [], problems: ["ledger has no top-level `fields:` block"] };
-  const fields: LedgerFieldRecord[] = [];
-  const problems: string[] = [];
-  let current: LedgerFieldRecord | undefined;
-  let inDeclaredValues = false;
+  const state: LedgerReadState = { fields: [], inDeclaredValues: false };
   for (const line of lines.slice(start + 1)) {
     if (line.length > 0 && !line.startsWith(" ")) break;
-    const field = /^ {2}([a-z_]+):\s*$/.exec(line);
-    if (field) {
-      current = { field: field[1], category: "", value_kind: "", declared_values: [] };
-      fields.push(current);
-      inDeclaredValues = false;
-      continue;
-    }
-    const scalar = /^ {4}(category|value_kind):\s*(\S+)\s*$/.exec(line);
-    if (scalar && current) {
-      current[scalar[1] as "category" | "value_kind"] = scalar[2];
-      inDeclaredValues = false;
-      continue;
-    }
-    if (/^ {4}declared_values:\s*$/.test(line)) {
-      inDeclaredValues = true;
-      continue;
-    }
-    const value = /^ {6}([a-z_]+):/.exec(line);
-    if (value && inDeclaredValues && current) {
-      current.declared_values.push(value[1]);
-      continue;
-    }
-    if (/^ {4}\S/.test(line)) inDeclaredValues = false;
+    readLedgerLine(state, line);
   }
-  for (const record of fields) {
-    if (!record.category || !record.value_kind) problems.push(`ledger field ${record.field} has no category or value_kind`);
+  const problems = state.fields
+    .filter((record) => !record.category || !record.value_kind)
+    .map((record) => `ledger field ${record.field} has no category or value_kind`);
+  return { fields: state.fields, problems };
+}
+
+interface LedgerReadState {
+  fields: LedgerFieldRecord[];
+  current?: LedgerFieldRecord;
+  inDeclaredValues: boolean;
+}
+
+/** Apply one line of the `fields:` block to the reader's state. */
+function readLedgerLine(state: LedgerReadState, line: string): void {
+  const field = /^ {2}([a-z_]+):\s*$/.exec(line);
+  if (field) {
+    state.current = { field: field[1], category: "", value_kind: "", declared_values: [] };
+    state.fields.push(state.current);
+    state.inDeclaredValues = false;
+    return;
   }
-  return { fields, problems };
+  const scalar = /^ {4}(category|value_kind):\s*(\S+)\s*$/.exec(line);
+  if (scalar && state.current) {
+    state.current[scalar[1] as "category" | "value_kind"] = scalar[2];
+    state.inDeclaredValues = false;
+    return;
+  }
+  if (/^ {4}declared_values:\s*$/.test(line)) {
+    state.inDeclaredValues = true;
+    return;
+  }
+  const value = /^ {6}([a-z_]+):/.exec(line);
+  if (value && state.inDeclaredValues && state.current) {
+    state.current.declared_values.push(value[1]);
+    return;
+  }
+  if (/^ {4}\S/.test(line)) state.inDeclaredValues = false;
 }
 
 /**
