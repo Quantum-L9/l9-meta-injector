@@ -426,9 +426,11 @@ describe("extractors report, never resolve", () => {
   });
 });
 
-describe("interpretation profile 1.3.0 (ADR-082)", () => {
-  it("names the version that added the Phase 1 extractors and the diagnostic channel", () => {
-    expect(INTERPRETATION_PROFILE_VERSION).toBe("1.3.0");
+describe("interpretation profile 1.4.0 (ADR-082, ADR-084)", () => {
+  it("names the version that bound the governed header semantic mapping", () => {
+    // 1.3.0 added the Phase 1 extractors and the diagnostic channel (ADR-082);
+    // 1.4.0 hashes the native-header semantic mapping into the profile (ADR-084).
+    expect(INTERPRETATION_PROFILE_VERSION).toBe("1.4.0");
   });
 
   it("files an extractor's reported diagnostic against that extractor and file", () => {

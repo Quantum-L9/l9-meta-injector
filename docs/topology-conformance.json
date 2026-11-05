@@ -17,22 +17,22 @@
     {
       "id": "inventory",
       "bundle": "fixtures/repository-model/expected-bundle",
-      "packet_id": "packet:bd7ad54b086979495b070536d0c34fa2fdd8b2608371d78083154a3c16d0e164",
-      "semantic_hash": "sha256:bd7ad54b086979495b070536d0c34fa2fdd8b2608371d78083154a3c16d0e164",
+      "packet_id": "packet:e73a4f71c5b6bd536680a61ffe4a2f75aae21486edc9b536cc1c24d5852275d1",
+      "semantic_hash": "sha256:e73a4f71c5b6bd536680a61ffe4a2f75aae21486edc9b536cc1c24d5852275d1",
       "packet_type": "l9.repository-model",
       "packet_version": "1.1.0",
       "files": [
         {
           "path": "manifest.json",
-          "content_hash": "sha256:0b4b3bcad394fafbe11a8bccd16998eb18b90c6fa2ae3cfa037cbff377463d69"
+          "content_hash": "sha256:034f2e79f657aaac6d0c25d4ac80636101202b6bdcd94da3df3ee6b45a63b7c3"
         },
         {
           "path": "packet.json",
-          "content_hash": "sha256:3a4cda9cb93f13fefbcd992969db5ddbd83fac9547b6dac79d47303b98ef0a2d"
+          "content_hash": "sha256:8c09990affa51fa1cb7ba05b620d5d30ebb232511876bbd5292b963f1566933a"
         },
         {
           "path": "receipts/validation-receipt.json",
-          "content_hash": "sha256:cbbd4b1decc5e6bbc705017723ab1310cabdd4cd012dcb800ef4d5ae4f1dc264"
+          "content_hash": "sha256:9942109d756112ba2edb88c4dd1d7633726dc49aebbf47294ded1433c34a27cc"
         }
       ],
       "normalized_counts": {
@@ -47,22 +47,22 @@
     {
       "id": "local-source",
       "bundle": "fixtures/local-source/expected-bundle",
-      "packet_id": "packet:e0b41ac4a80b9ee81e546a8f623515b05976505853ed117c0e6e749e32368c8b",
-      "semantic_hash": "sha256:e0b41ac4a80b9ee81e546a8f623515b05976505853ed117c0e6e749e32368c8b",
+      "packet_id": "packet:d5b3505cc28a50df511dfd6f582d54ad147b0b3b56d41048e8a0fb5643541937",
+      "semantic_hash": "sha256:d5b3505cc28a50df511dfd6f582d54ad147b0b3b56d41048e8a0fb5643541937",
       "packet_type": "l9.repository-model",
       "packet_version": "1.1.0",
       "files": [
         {
           "path": "manifest.json",
-          "content_hash": "sha256:05e884946770295b5739bf028e8e4cb2fbaf30e33f047a340b299008189d48dc"
+          "content_hash": "sha256:9db14d9136ef784910ee461203080d4e18d5e80bb2e27d378f48ce56d728687b"
         },
         {
           "path": "packet.json",
-          "content_hash": "sha256:363dd803d0702175cd0b38a5ae67c2bbf36119e9ab36a229e582ebf7f2a16d3b"
+          "content_hash": "sha256:946ba1b4848e388557a8ac4732a0397b18127811a664ac570276aa95f969ab57"
         },
         {
           "path": "receipts/validation-receipt.json",
-          "content_hash": "sha256:ffe04359449d699baf70dbc03ec1ff7251c6ae0d3a956614e38128a82b2e17a1"
+          "content_hash": "sha256:7493a5013a2ee3c3d021a4b996fbd0856a0b9060a04c9fd59b0faba591d2f38a"
         }
       ],
       "normalized_counts": {
@@ -77,8 +77,8 @@
   ],
   "corpus": {
     "source_fixture": "fixtures/local-source/sample-source",
-    "packet_id": "packet:98f86244b3a8f95b83fbda07b5a4db99194b650fa00e36d2505ce1986a3c80af",
-    "semantic_hash": "sha256:98f86244b3a8f95b83fbda07b5a4db99194b650fa00e36d2505ce1986a3c80af",
+    "packet_id": "packet:26ea76f942f4b66ebd1e9c4d091dade1ee682f6757befe97f7043db60897126c",
+    "semantic_hash": "sha256:26ea76f942f4b66ebd1e9c4d091dade1ee682f6757befe97f7043db60897126c",
     "packet_type": "l9.corpus-intelligence",
     "packet_version": "1.1.0",
     "status": "passed",
