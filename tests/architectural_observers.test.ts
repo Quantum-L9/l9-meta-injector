@@ -176,6 +176,16 @@ describe("P1.3 static import observer", () => {
     expect(pairs(ts.drafts)).toEqual([["source.import.local", "src/model.ts"]]);
   });
 
+  test("reads a slash after postfix ++ or -- as division (PR #127 review)", () => {
+    const text = 'let x = 1;\nconst y = x++ / 2;\nconst z = x-- / 2;\nimport a from "./a";\n';
+    const { drafts, diagnostics } = run(staticImportExtractor, "m.ts", text, ["a.ts"]);
+    expect(pairs(drafts)).toEqual([["source.import.local", "a.ts"]]);
+    expect(diagnostics).toEqual([]);
+    // A prefix sign is not postfix: `a = + /re/.source` still opens a regex.
+    expect(pairs(run(staticImportExtractor, "n.ts", 'const r = + /x"y/.source;\nimport b from "./b";\n', ["b.ts"]).drafts))
+      .toEqual([["source.import.local", "b.ts"]]);
+  });
+
   test("refuses a relative specifier that escapes the repository root", () => {
     const { drafts } = run(staticImportExtractor, "a.ts", 'import x from "../outside";', ["../outside.ts"]);
     expect(pairs(drafts)).toEqual([["source.import.local_unresolved", "../outside"]]);

@@ -113,6 +113,8 @@ interface Token {
   kind: "word" | "string" | "punct";
   value: string;
   line: number;
+  /** Source offset of a punctuation token; adjacency decides `++` / `--`. */
+  offset?: number;
 }
 
 /** Keywords after which a `/` begins a regular expression rather than a division. */
@@ -139,9 +141,29 @@ function scanScript(content: string): Token[] | null {
     if (character === "\n") return true;
     return character === "\r" && content[at + 1] !== "\n";
   };
+  /** True when `token` ends an expression, so a following `/` divides. */
+  const endsExpression = (token: Token | undefined): boolean => {
+    if (!token) return false;
+    if (token.kind === "word") return !REGEX_AFTER_WORD.has(token.value);
+    if (token.kind === "string") return true;
+    return token.value === ")" || token.value === "]" || token.value === "}";
+  };
   const regexAllowed = (): boolean => {
     const previous = tokens[tokens.length - 1];
     if (!previous) return true;
+    // A postfix `++` / `--` (two adjacent signs after an operand) ends an
+    // expression: `x++ / y` divides. Read as a regex start, the slash would run
+    // to the end of the line and the whole file would be refused.
+    if (previous.kind === "punct" && (previous.value === "+" || previous.value === "-")) {
+      const sign = tokens[tokens.length - 2];
+      if (
+        sign?.kind === "punct" && sign.value === previous.value
+        && sign.offset !== undefined && previous.offset === sign.offset + 1
+        && endsExpression(tokens[tokens.length - 3])
+      ) {
+        return false;
+      }
+    }
     if (previous.kind === "word") return REGEX_AFTER_WORD.has(previous.value);
     if (previous.kind === "string") return false;
     return !(previous.value === ")" || previous.value === "]" || previous.value === "}");
@@ -271,7 +293,7 @@ function scanScript(content: string): Token[] | null {
         continue;
       }
     }
-    tokens.push({ kind: "punct", value: character, line });
+    tokens.push({ kind: "punct", value: character, line, offset: index });
     index++;
   }
   return tokens;

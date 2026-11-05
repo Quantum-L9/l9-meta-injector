@@ -89,9 +89,22 @@ export interface NativeMetadataDiagnostic {
   line?: number;
 }
 
+/**
+ * A header region the reader recognized: every carrier it found at the head of
+ * the file, whether its declaration was read or rejected. A rejected block is
+ * still metadata syntax, so a prose reader must exclude it as well.
+ */
+export interface NativeMetadataRegion {
+  carrier: NativeMetadataCarrier;
+  start_line: number;
+  end_line: number;
+  read: boolean;
+}
+
 export interface NativeMetadataParseResult {
   declarations: NativeMetadataDeclaration[];
   diagnostics: NativeMetadataDiagnostic[];
+  regions: NativeMetadataRegion[];
 }
 
 /** Declared schema of every declaration the managed writer produced. */
@@ -417,7 +430,14 @@ const DELIMITED: DelimitedCarrier[] = [
 type HeadStep =
   | { kind: "declaration"; value: NativeMetadataDeclaration; next: number; stop?: boolean }
   | { kind: "skip"; next: number }
-  | { kind: "rejected"; diagnostic: NativeMetadataDiagnostic; next: number; stop?: boolean }
+  | {
+      kind: "rejected";
+      diagnostic: NativeMetadataDiagnostic;
+      next: number;
+      stop?: boolean;
+      /** The span the reader recognized as this carrier before refusing it. */
+      region: Omit<NativeMetadataRegion, "read">;
+    }
   | { kind: "none" };
 
 function readDelimited(lines: string[], index: number, sourcePath: string): HeadStep {
@@ -432,6 +452,7 @@ function readDelimited(lines: string[], index: number, sourcePath: string): Head
           return {
             kind: "rejected",
             next: cursor + 1,
+            region: { carrier: form.carrier, start_line: index + 1, end_line: cursor + 1 },
             diagnostic: { code: parsed.rejected.code, severity: "warning", message: `${form.carrier} header rejected: ${parsed.rejected.message}`, line: parsed.rejected.line },
           };
         }
@@ -448,6 +469,8 @@ function readDelimited(lines: string[], index: number, sourcePath: string): Head
           kind: "rejected",
           next: lines.length,
           stop: true,
+          // The carrier ends where its comment lines end; the line that broke it is body.
+          region: { carrier: form.carrier, start_line: index + 1, end_line: cursor },
           diagnostic: { code: "native_metadata.malformed", severity: "warning", message: `${form.carrier} header rejected: a body line is not a comment`, line: cursor + 1 },
         };
       }
@@ -457,6 +480,8 @@ function readDelimited(lines: string[], index: number, sourcePath: string): Head
       kind: "rejected",
       next: lines.length,
       stop: true,
+      // Without a close the extent is unknown; only the opening marker is claimed.
+      region: { carrier: form.carrier, start_line: index + 1, end_line: index + 1 },
       diagnostic: { code: "native_metadata.unterminated", severity: "warning", message: `${form.carrier} header has no closing '${form.close}'`, line: index + 1 },
     };
   }
@@ -479,6 +504,7 @@ function readDocstring(lines: string[], index: number, sourcePath: string): Head
           kind: "rejected",
           next: lines.length,
           stop: true,
+          region: { carrier: "legacy-docstring", start_line: index + 2, end_line: cursor + 1 },
           diagnostic: { code: parsed.rejected.code, severity: "warning", message: `legacy-docstring header rejected: ${parsed.rejected.message}`, line: parsed.rejected.line },
         };
       }
@@ -497,6 +523,7 @@ function readDocstring(lines: string[], index: number, sourcePath: string): Head
     kind: "rejected",
     next: lines.length,
     stop: true,
+    region: { carrier: "legacy-docstring", start_line: index + 2, end_line: index + 2 },
     diagnostic: { code: "native_metadata.unterminated", severity: "warning", message: `legacy-docstring header has no closing '${MARKERS.docClose}' inside its docstring`, line: index + 2 },
   };
 }
@@ -526,6 +553,7 @@ function readManagedComment(content: string, lines: string[], index: number, sou
     return {
       kind: "rejected",
       next: endLine,
+      region: { carrier: "managed-comment", start_line: startLine, end_line: endLine },
       diagnostic: { code: parsed.rejected.code, severity: "warning", message: `managed-comment header rejected: ${parsed.rejected.message}`, line: parsed.rejected.line },
     };
   }
@@ -565,6 +593,7 @@ function readFrontMatter(content: string, lines: string[], sourcePath: string): 
     return {
       kind: "rejected",
       next: close + 1,
+      region: { carrier, start_line: 1, end_line: close + 1 },
       diagnostic: {
         code: "native_metadata.frontmatter_unsupported",
         severity: "warning",
@@ -626,19 +655,22 @@ export function parseNativeMetadata(sourcePath: string, content: string): Native
   const lines = toLines(content);
   const declarations: NativeMetadataDeclaration[] = [];
   const diagnostics: NativeMetadataDiagnostic[] = [];
+  const regions: NativeMetadataRegion[] = [];
   let index = 0;
   let headerEnd = 0;
+  const accept = (step: HeadStep): void => {
+    if (step.kind === "declaration") {
+      declarations.push(step.value);
+      regions.push({ carrier: step.value.carrier, ...step.value.source_span, read: true });
+    } else if (step.kind === "rejected") {
+      diagnostics.push(step.diagnostic);
+      regions.push({ ...step.region, read: false });
+    }
+  };
 
   const front = readFrontMatter(content, lines, sourcePath);
-  if (front.kind === "declaration") {
-    declarations.push(front.value);
-    index = front.next;
-  } else if (front.kind === "skip") {
-    index = front.next;
-  } else if (front.kind === "rejected") {
-    diagnostics.push(front.diagnostic);
-    index = front.next;
-  }
+  accept(front);
+  if (front.kind !== "none") index = front.next;
 
   while (index < lines.length) {
     const line = lines[index];
@@ -660,8 +692,7 @@ export function parseNativeMetadata(sourcePath: string, content: string): Native
     if (step.kind === "none") step = readDelimited(lines, index, sourcePath);
     if (step.kind === "none") step = readDocstring(lines, index, sourcePath);
     if (step.kind === "none") break;
-    if (step.kind === "declaration") declarations.push(step.value);
-    if (step.kind === "rejected") diagnostics.push(step.diagnostic);
+    accept(step);
     index = step.next;
     if ((step.kind === "declaration" || step.kind === "rejected") && step.stop) break;
   }
@@ -709,5 +740,5 @@ export function parseNativeMetadata(sourcePath: string, content: string): Native
       message: `declarations in this file disagree on: ${conflicting.join(", ")}`,
     });
   }
-  return { declarations, diagnostics };
+  return { declarations, diagnostics, regions };
 }

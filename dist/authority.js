@@ -302,9 +302,8 @@ function parseAuthorityYaml(text) {
                 fail("META_AUTHORITY_CONFIG_INVALID", "semantic_foundation must be a nested mapping");
             index++;
             const foundation = parseSemanticFoundation(lines, index);
-            index = foundation._end;
-            delete foundation._end;
-            result.semantic_foundation = foundation;
+            index = foundation.end;
+            result.semantic_foundation = foundation.block;
             continue;
         }
         if (key === "product") {
@@ -401,7 +400,7 @@ function parseSemanticFoundation(lines, start) {
         block[childKey] = scalar(rest);
         index++;
     }
-    return Object.assign(block, { _end: index });
+    return { block, end: index };
 }
 function conflict(code, message, filePath, evidence) {
     return { code, message, path: filePath, evidence };

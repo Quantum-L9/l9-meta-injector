@@ -49,9 +49,21 @@ export interface NativeMetadataDiagnostic {
     message: string;
     line?: number;
 }
+/**
+ * A header region the reader recognized: every carrier it found at the head of
+ * the file, whether its declaration was read or rejected. A rejected block is
+ * still metadata syntax, so a prose reader must exclude it as well.
+ */
+export interface NativeMetadataRegion {
+    carrier: NativeMetadataCarrier;
+    start_line: number;
+    end_line: number;
+    read: boolean;
+}
 export interface NativeMetadataParseResult {
     declarations: NativeMetadataDeclaration[];
     diagnostics: NativeMetadataDiagnostic[];
+    regions: NativeMetadataRegion[];
 }
 /** Declared schema of every declaration the managed writer produced. */
 export declare const MANAGED_DECLARED_SCHEMA = "managed:l9-meta-injector";

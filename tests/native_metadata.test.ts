@@ -2,6 +2,7 @@
 import { describe, expect, test } from "vitest";
 import { parseNativeMetadata } from "../src/native_metadata";
 import { nativeMetadataExtractor } from "../src/extractors/native_metadata";
+import { documentStructureExtractor } from "../src/extractors/work_intelligence";
 import type { AssertionDraft, ExtractorDiagnostic } from "../src/interpretation";
 
 function parse(sourcePath: string, content: string) {
@@ -165,7 +166,7 @@ describe("P1.2 header position and line conventions", () => {
   });
 
   test("returns nothing for a file with no metadata", () => {
-    expect(parse("plain.py", "import os\nprint(os.name)\n")).toEqual({ declarations: [], diagnostics: [] });
+    expect(parse("plain.py", "import os\nprint(os.name)\n")).toEqual({ declarations: [], diagnostics: [], regions: [] });
   });
 
   test("is deterministic and never modifies its input", () => {
@@ -193,5 +194,23 @@ describe("P1.2 extractor epistemics", () => {
       "meta.l9v1.governance.ssot_for", "meta.l9v1.retrieval.load_when", "meta.l9v1.retrieval.references",
     ]));
     expect(predicates.some((p) => p === "package.dependency" || p.startsWith("authority.") || p.startsWith("work."))).toBe(false);
+  });
+});
+
+describe("P1.2 rejected headers stay header syntax (PR #127 review)", () => {
+  const DUPLICATE = "# --- L9_META ---\n# l9_schema: 1\n# status: active\n# status: deprecated\n# --- /L9_META ---\n\n# Real title\n";
+
+  test("reports the span of a rejected block as an unread region", () => {
+    const result = parse("doc.md", DUPLICATE);
+    expect(result.declarations).toEqual([]);
+    expect(result.regions).toEqual([{ carrier: "legacy-hash", start_line: 1, end_line: 5, read: false }]);
+  });
+
+  test("keeps a rejected Markdown header out of document structure", () => {
+    const drafts = documentStructureExtractor.extract({
+      subjectId: "artifact:x", sourcePath: "doc.md", content: DUPLICATE, contentHash: "sha256:0", pathExists: () => false,
+    });
+    expect(drafts.filter((d) => d.predicate === "document.title").map((d) => d.object)).toEqual(["Real title"]);
+    expect(drafts.some((d) => d.sourceRange.start_line <= 5)).toBe(false);
   });
 });

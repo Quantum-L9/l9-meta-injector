@@ -52,12 +52,13 @@ function readDocument(sourcePath, content) {
     }
     const [frontmatterStart, frontmatterEnd] = findFrontmatter(lines);
     const header = new Array(lines.length).fill(false);
-    for (const declaration of (0, native_metadata_1.parseNativeMetadata)(sourcePath, content).declarations) {
-        if (declaration.carrier === "frontmatter" || declaration.carrier === "managed-frontmatter")
+    // Every recognized header region, read or rejected: a block refused for a
+    // duplicate key is still metadata syntax, never prose.
+    for (const region of (0, native_metadata_1.parseNativeMetadata)(sourcePath, content).regions) {
+        if (region.carrier === "frontmatter" || region.carrier === "managed-frontmatter")
             continue;
-        for (let line = declaration.source_span.start_line; line <= declaration.source_span.end_line; line++) {
+        for (let line = region.start_line; line <= region.end_line; line++)
             header[line - 1] = true;
-        }
     }
     return { lines, frontmatterStart, frontmatterEnd, fenced: markFencedCode(lines, frontmatterEnd), header };
 }

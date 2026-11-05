@@ -282,9 +282,8 @@ export function parseAuthorityYaml(text: string): AuthorityConfig {
       if (rest) fail("META_AUTHORITY_CONFIG_INVALID", "semantic_foundation must be a nested mapping");
       index++;
       const foundation = parseSemanticFoundation(lines, index);
-      index = foundation._end as number;
-      delete foundation._end;
-      result.semantic_foundation = foundation;
+      index = foundation.end;
+      result.semantic_foundation = foundation.block;
       continue;
     }
 
@@ -338,7 +337,7 @@ export function parseAuthorityYaml(text: string): AuthorityConfig {
   return result;
 }
 
-function parseSemanticFoundation(lines: string[], start: number): Record<string, unknown> {
+function parseSemanticFoundation(lines: string[], start: number): { block: Record<string, unknown>; end: number } {
   const block: Record<string, unknown> = Object.create(null);
   let index = start;
   while (index < lines.length && assertIndent(lines[index]) > 0) {
@@ -382,7 +381,7 @@ function parseSemanticFoundation(lines: string[], start: number): Record<string,
     block[childKey] = scalar(rest);
     index++;
   }
-  return Object.assign(block, { _end: index });
+  return { block, end: index };
 }
 
 function conflict(code: AuthorityConflictCode, message: string, filePath: string, evidence?: string[]): AuthorityConflict {

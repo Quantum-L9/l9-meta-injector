@@ -343,6 +343,7 @@ function readDelimited(lines, index, sourcePath) {
                     return {
                         kind: "rejected",
                         next: cursor + 1,
+                        region: { carrier: form.carrier, start_line: index + 1, end_line: cursor + 1 },
                         diagnostic: { code: parsed.rejected.code, severity: "warning", message: `${form.carrier} header rejected: ${parsed.rejected.message}`, line: parsed.rejected.line },
                     };
                 }
@@ -358,6 +359,8 @@ function readDelimited(lines, index, sourcePath) {
                     kind: "rejected",
                     next: lines.length,
                     stop: true,
+                    // The carrier ends where its comment lines end; the line that broke it is body.
+                    region: { carrier: form.carrier, start_line: index + 1, end_line: cursor },
                     diagnostic: { code: "native_metadata.malformed", severity: "warning", message: `${form.carrier} header rejected: a body line is not a comment`, line: cursor + 1 },
                 };
             }
@@ -367,6 +370,8 @@ function readDelimited(lines, index, sourcePath) {
             kind: "rejected",
             next: lines.length,
             stop: true,
+            // Without a close the extent is unknown; only the opening marker is claimed.
+            region: { carrier: form.carrier, start_line: index + 1, end_line: index + 1 },
             diagnostic: { code: "native_metadata.unterminated", severity: "warning", message: `${form.carrier} header has no closing '${form.close}'`, line: index + 1 },
         };
     }
@@ -388,6 +393,7 @@ function readDocstring(lines, index, sourcePath) {
                     kind: "rejected",
                     next: lines.length,
                     stop: true,
+                    region: { carrier: "legacy-docstring", start_line: index + 2, end_line: cursor + 1 },
                     diagnostic: { code: parsed.rejected.code, severity: "warning", message: `legacy-docstring header rejected: ${parsed.rejected.message}`, line: parsed.rejected.line },
                 };
             }
@@ -406,6 +412,7 @@ function readDocstring(lines, index, sourcePath) {
         kind: "rejected",
         next: lines.length,
         stop: true,
+        region: { carrier: "legacy-docstring", start_line: index + 2, end_line: index + 2 },
         diagnostic: { code: "native_metadata.unterminated", severity: "warning", message: `legacy-docstring header has no closing '${MARKERS.docClose}' inside its docstring`, line: index + 2 },
     };
 }
@@ -438,6 +445,7 @@ function readManagedComment(content, lines, index, sourcePath) {
         return {
             kind: "rejected",
             next: endLine,
+            region: { carrier: "managed-comment", start_line: startLine, end_line: endLine },
             diagnostic: { code: parsed.rejected.code, severity: "warning", message: `managed-comment header rejected: ${parsed.rejected.message}`, line: parsed.rejected.line },
         };
     }
@@ -477,6 +485,7 @@ function readFrontMatter(content, lines, sourcePath) {
         return {
             kind: "rejected",
             next: close + 1,
+            region: { carrier, start_line: 1, end_line: close + 1 },
             diagnostic: {
                 code: "native_metadata.frontmatter_unsupported",
                 severity: "warning",
@@ -540,20 +549,23 @@ function parseNativeMetadata(sourcePath, content) {
     const lines = (0, common_1.toLines)(content);
     const declarations = [];
     const diagnostics = [];
+    const regions = [];
     let index = 0;
     let headerEnd = 0;
+    const accept = (step) => {
+        if (step.kind === "declaration") {
+            declarations.push(step.value);
+            regions.push({ carrier: step.value.carrier, ...step.value.source_span, read: true });
+        }
+        else if (step.kind === "rejected") {
+            diagnostics.push(step.diagnostic);
+            regions.push({ ...step.region, read: false });
+        }
+    };
     const front = readFrontMatter(content, lines, sourcePath);
-    if (front.kind === "declaration") {
-        declarations.push(front.value);
+    accept(front);
+    if (front.kind !== "none")
         index = front.next;
-    }
-    else if (front.kind === "skip") {
-        index = front.next;
-    }
-    else if (front.kind === "rejected") {
-        diagnostics.push(front.diagnostic);
-        index = front.next;
-    }
     while (index < lines.length) {
         const line = lines[index];
         if (line.trim() === "" || PROLOGUE_LINE.some((pattern) => pattern.test(line))) {
@@ -577,10 +589,7 @@ function parseNativeMetadata(sourcePath, content) {
             step = readDocstring(lines, index, sourcePath);
         if (step.kind === "none")
             break;
-        if (step.kind === "declaration")
-            declarations.push(step.value);
-        if (step.kind === "rejected")
-            diagnostics.push(step.diagnostic);
+        accept(step);
         index = step.next;
         if ((step.kind === "declaration" || step.kind === "rejected") && step.stop)
             break;
@@ -629,6 +638,6 @@ function parseNativeMetadata(sourcePath, content) {
             message: `declarations in this file disagree on: ${conflicting.join(", ")}`,
         });
     }
-    return { declarations, diagnostics };
+    return { declarations, diagnostics, regions };
 }
 //# sourceMappingURL=native_metadata.js.map
