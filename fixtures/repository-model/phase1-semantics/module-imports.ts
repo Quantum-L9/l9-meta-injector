@@ -1,0 +1,13 @@
+import { value } from "./lib/util";
+import type { Missing } from "./lib/absent";
+import * as fs from "node:fs";
+import React from "react";
+import { thing } from "@scope/pkg/sub";
+export { value as renamed } from "./lib/util";
+import "./side-effect-missing";
+const text = "import fake from './not-real'";
+// import commented from "./commented-out";
+const loaded = require("./lib/util");
+const lazy = import("./lib/util");
+const pattern = /from "regex"/;
+export const total = value + text.length + Number(fs) + Number(React) + Number(thing) + Number(loaded) + Number(lazy) + Number(pattern);
