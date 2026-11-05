@@ -46,6 +46,13 @@ describe("G12-G13 versioned universal index does not widen legacy behavior", () 
     expect(() => assertLegacyMetadataIndexWrite("ordinary corrupt legacy content\n")).not.toThrow();
     expect(() => assertLegacyMetadataIndexWrite('{"schema":"l9.metadata-index/v1",broken\n')).not.toThrow();
   });
+  test("legacy write guard sees a version marker split across lines (PR #124 review)", () => {
+    expect(() => assertLegacyMetadataIndexWrite('{"schema"\n: "l9.metadata-index/v2"}\n')).toThrow(/downgrade active l9\.metadata-index\/v2/);
+    expect(() => assertLegacyMetadataIndexWrite('{"schema":\r\n  "l9.metadata-index/v2"}\n')).toThrow(/downgrade/);
+    expect(() => assertLegacyMetadataIndexWrite('{"schema"\n:\n"l9.metadata-index/v1"}\n')).not.toThrow();
+    // An escaped marker inside a JSON string value is data, not a store version.
+    expect(() => assertLegacyMetadataIndexWrite('{"schema":"l9.metadata-index/v1","note":"\\"schema\\":\\n\\"l9.metadata-index/v2\\""}\n')).not.toThrow();
+  });
   test("legacy direct index writer refuses active v2 with no replacement", () => {
     const directory = root();
     const result = v2();

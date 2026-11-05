@@ -9,6 +9,7 @@
 - Explicit index-only tracked coverage/check/apply CLI and experimental SDK, CAS/currentness rollback, no implicit v1 downgrade, and consented migration preserving actual consumed legacy IDs as historical claims.
 - Source/configuration/prose/link/archive bytes remain untouched by the tracked seam. Standalone annotation cannot bypass an active v2 store.
 - Adversarial regression and real installed-package proof; six read-only pinned snapshots qualified across 9,222 leaves with 9,161 indexed and 61 protected. See [qualification evidence](docs/qualification/universal-tracked-v2-2026-11-03.md).
+- Tracked check/apply refuse a root that is not the Git top level (the census is always the whole tree, so a subdirectory root would write a nested index), and the legacy-write downgrade guard also detects a v2 marker split across lines.
 - Package semver, registry publication, consumer realignment and fleet freshness remain separately authorized; this entry is not a release.
 
 ### Governed format-safe headers (ADR-080)

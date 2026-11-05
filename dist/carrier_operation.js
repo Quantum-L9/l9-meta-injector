@@ -337,6 +337,7 @@ function runTrackedCoverage(input) {
 function planTrackedOperation(input) {
     assertTrackedOptIn(input, true);
     const root = path.resolve(input.root);
+    (0, git_tree_1.assertTrackedGitTopLevel)(root);
     const snapshot = (0, git_tree_1.readTrackedGitSnapshot)(input);
     let metadataIndexBase;
     try {

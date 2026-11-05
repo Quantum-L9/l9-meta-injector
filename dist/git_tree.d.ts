@@ -14,4 +14,5 @@ export declare function readTrackedGitSnapshot(input: ReadTrackedGitSnapshotInpu
  * this is a fail-closed concurrency check, not a filesystem lock or atomic proof.
  * Only the root index output is excluded; untracked/ignored noise is not inspected.
  */
+export declare function assertTrackedGitTopLevel(root: string): void;
 export declare function assertTrackedWorktreeCurrent(snapshot: TrackedGitSnapshot, root: string): void;

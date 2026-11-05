@@ -28,7 +28,7 @@ import { resolveCarrierDecisions, assertCarrierDecisionCoverage, type CarrierSub
 import { runIndexGovernedPipelineAsync, type PipelineMetadataSubject, type PipelineResult } from "./pipeline";
 import type { InjectionRecord, PipelineConfig } from "./schema";
 import { compareCodePoints } from "./ordering";
-import { readTrackedGitSnapshot, assertTrackedWorktreeCurrent } from "./git_tree";
+import { readTrackedGitSnapshot, assertTrackedWorktreeCurrent, assertTrackedGitTopLevel } from "./git_tree";
 import { TRACKED_POLICY_SCHEMA, type TrackedGitSnapshot } from "./discovery_contracts";
 import { inspectRepositoryAuthority, type RepositoryAuthorityInspection } from "./authority_scan";
 import { executeFileTransaction, TRANSACTION_DIRECTORY, type FileTransactionResult } from "./file_transaction";
@@ -395,6 +395,7 @@ export function runTrackedCoverage(input: TrackedCoverageInput): TrackedMetadata
 export function planTrackedOperation(input: TrackedCheckInput): TrackedOperationPlan {
   assertTrackedOptIn(input, true);
   const root = path.resolve(input.root);
+  assertTrackedGitTopLevel(root);
   const snapshot = readTrackedGitSnapshot(input);
   let metadataIndexBase: TrackedMetadataIndexBase;
   try { metadataIndexBase = readTrackedMetadataIndexBase(root); }

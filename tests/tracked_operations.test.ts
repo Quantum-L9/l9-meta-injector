@@ -77,6 +77,14 @@ describe("governed universal index-only operations", () => {
     expect(repeated.metadataIndex.bytes).toBe(applied.metadataIndex.bytes);
     expect(repeated.metadataIndex.coverageBytes).toBe(applied.metadataIndex.coverageBytes);
   });
+  test("check and apply refuse a subdirectory root instead of writing a nested index (PR #124 review)", async () => {
+    const input = repo([{ path: "nested/.l9/meta-authority.yaml", contents: authority }, { path: "nested/b.ts", contents: "export const b = 1;\n" }]);
+    const nested = { ...input, root: path.join(input.root, "nested") };
+    await expect(runTrackedCheckAsync(nested)).rejects.toThrow(/Git top-level directory/);
+    await expect(runTrackedApplyAsync(nested)).rejects.toThrow(/Git top-level directory/);
+    expect(fs.existsSync(path.join(nested.root, METADATA_INDEX_RELATIVE_PATH))).toBe(false);
+    expect(fs.existsSync(indexTarget(input))).toBe(false);
+  });
   test("G12-G13 replacing existing v1 requires explicit migrateV1, including empty v1", async () => {
     for (const bytes of ["", serializeMetadataIndex([{ schema: "l9.metadata-index/v1", path: "src/a.ts", carrier: "central_manifest", artifact_type: "source", content_hash: "a".repeat(64), metadata: {} }])]) {
       const input = repo(); fs.writeFileSync(indexTarget(input), bytes);

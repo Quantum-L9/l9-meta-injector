@@ -701,6 +701,13 @@ export function parseTrackedCoverage(bytes: string, snapshot: TrackedGitSnapshot
 
 /** Legacy unscoped rebuilds may repair corrupt v1, never implicitly replace versioned stores. */
 export function assertLegacyMetadataIndexWrite(bytes: string): void {
+  // A damaged or reformatted record can split the marker across lines, which the
+  // per-line pass below cannot see; scan the whole byte sequence as well.
+  for (const match of bytes.matchAll(/"schema"\s*:\s*"(l9\.metadata-index\/[^"\r\n]+)"/g)) {
+    if (match[1] !== METADATA_INDEX_SCHEMA) {
+      throw new Error(`legacy metadata operation cannot downgrade active ${match[1]}; use explicit versioned workflow`);
+    }
+  }
   for (const line of bytes.split("\n")) {
     let schema: unknown;
     try {

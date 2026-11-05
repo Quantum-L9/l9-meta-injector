@@ -10,7 +10,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "git_blob_sha1": "7d08063229dfaae4a8f88b4f0156c877a8bdb1fa"
+      "git_blob_sha1": "b16ca662de7b3615992a8993b62f8a48146a7b04"
     },
     {
       "path": "dist/apply.d.ts",
@@ -42,11 +42,11 @@
     },
     {
       "path": "dist/carrier_operation.js",
-      "git_blob_sha1": "44c87ed42bf85015d596ee2877c76ddb122f5528"
+      "git_blob_sha1": "dfdb30df79179ea0479a179fd2c431a491c3a13d"
     },
     {
       "path": "dist/carrier_operation.js.map",
-      "git_blob_sha1": "01daea7a21281399b38d91ff4aec5f591cc7988b"
+      "git_blob_sha1": "104cc2c9e319b5eb2776d36dd9f50b20cf727bc0"
     },
     {
       "path": "dist/corpus_analysis.d.ts",
@@ -326,15 +326,15 @@
     },
     {
       "path": "dist/git_tree.d.ts",
-      "git_blob_sha1": "5eaf6fee72a689ab4ce8143b31a9b3f28a966f24"
+      "git_blob_sha1": "728d765939bee26c8d6161029f4e59692c0cde18"
     },
     {
       "path": "dist/git_tree.js",
-      "git_blob_sha1": "144eb0260e7d114fdd24bd7d6c4065eb1a67ca0d"
+      "git_blob_sha1": "c70e603af48575a05d7a08a7e23b8ef5a109880f"
     },
     {
       "path": "dist/git_tree.js.map",
-      "git_blob_sha1": "85c86d64ffb324ed05c45789ff329a667a9c84ab"
+      "git_blob_sha1": "6a8b65c8f2d53995f5fe93d79558f164c54d1ea2"
     },
     {
       "path": "dist/index.d.ts",
@@ -390,11 +390,11 @@
     },
     {
       "path": "dist/metadata_index.js",
-      "git_blob_sha1": "7a9eb74f67fbe6f689e60a0e2a22ba3baac3c994"
+      "git_blob_sha1": "c571695a44e2ffced300196d386b03e3107b1835"
     },
     {
       "path": "dist/metadata_index.js.map",
-      "git_blob_sha1": "c56b336eed871fb7e68e1effaffb0e8780f786d0"
+      "git_blob_sha1": "6b9980109857956d0a96e4dbc3450914bc5c423c"
     },
     {
       "path": "dist/mutation_policy.d.ts",
@@ -846,7 +846,7 @@
     },
     {
       "path": "src/carrier_operation.ts",
-      "git_blob_sha1": "f281fd80ab0181fbd1d5adb41f8825c709d8341e"
+      "git_blob_sha1": "ffad95a3456c43f29c927972bbbee121237865c4"
     },
     {
       "path": "src/corpus_analysis.ts",
@@ -946,7 +946,7 @@
     },
     {
       "path": "src/git_tree.ts",
-      "git_blob_sha1": "002c6fb460adaf4de7726aec07d9b22fc400e9d3"
+      "git_blob_sha1": "b14f9247c2f07f0c71bf386da3e3f3f58cea1c6b"
     },
     {
       "path": "src/index.ts",
@@ -978,7 +978,7 @@
     },
     {
       "path": "src/metadata_index.ts",
-      "git_blob_sha1": "acaf35a3f09fce597b3740e78a71f05de3f95f65"
+      "git_blob_sha1": "ed7850bda4e01694ea258aac619ac09997e61cee"
     },
     {
       "path": "src/mutation_policy.ts",
@@ -1202,7 +1202,7 @@
     },
     {
       "path": "tests/tracked_coverage_compatibility.test.ts",
-      "git_blob_sha1": "f3ae0a9a881be53a060505f78bc8d62918dd2bfe"
+      "git_blob_sha1": "2e0192fe0b2d3fac1e1552f723a490e7a662e6e8"
     },
     {
       "path": "tests/tracked_coverage.test.ts",
@@ -1210,7 +1210,7 @@
     },
     {
       "path": "tests/tracked_operations.test.ts",
-      "git_blob_sha1": "eafa0dd32c8a3cc760a2b2bb2f5ebcdcfbd37b47"
+      "git_blob_sha1": "60466971ffdd119e6831dd56ce20eae163fb2a94"
     },
     {
       "path": "tests/work_intelligence.test.ts",

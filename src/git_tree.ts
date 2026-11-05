@@ -192,6 +192,17 @@ function assertTrackedAncestry(snapshot: TrackedGitSnapshot, root: string): void
  * this is a fail-closed concurrency check, not a filesystem lock or atomic proof.
  * Only the root index output is excluded; untracked/ignored noise is not inspected.
  */
+export function assertTrackedGitTopLevel(root: string): void {
+  // The census always enumerates the whole commit tree (`ls-tree --full-tree`), so
+  // the index base, authority and transaction must sit at the same top level. A
+  // subdirectory root would write a nested index that claims root-level records.
+  const topLevel = scalar(readOnlyGitRunner(root)(["rev-parse", "--path-format=absolute", "--show-toplevel"]));
+  if (!path.isAbsolute(topLevel) || topLevel.includes("\0")) throw new Error("Invalid Git worktree root");
+  if (fs.realpathSync(path.resolve(root)) !== fs.realpathSync(topLevel)) {
+    throw new Error("Tracked check/apply root must be the Git top-level directory");
+  }
+}
+
 export function assertTrackedWorktreeCurrent(snapshot: TrackedGitSnapshot, root: string): void {
   if (!oidPattern(snapshot.object_format).test(snapshot.revision)) throw new Error("Invalid snapshot revision");
   const probe = readOnlyGitRunner(root);
