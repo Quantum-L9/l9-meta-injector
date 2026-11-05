@@ -273,6 +273,118 @@ describe("repository-only qualification output admission", () => {
   });
 });
 
+describe.skipIf(!fs.existsSync("/proc/self/fd"))("qualification independent comparator environment", () => {
+  test("isolates hostile Git variables while preserving non-Git entries in a null-prototype environment", () => {
+    const { base, source, outside } = fixture();
+    fs.chmodSync(outside, 0o700);
+
+    // Set up a local, hook-free repository without inheriting the caller's Git
+    // configuration. No remote is configured and all transports are disabled.
+    const setupEnv: NodeJS.ProcessEnv = Object.create(null);
+    for (const [key, value] of Object.entries(process.env)) {
+      if (!key.toUpperCase().startsWith("GIT_") && key !== "NODE_OPTIONS") setupEnv[key] = value;
+    }
+    Object.assign(setupEnv, {
+      HOME: base, XDG_CONFIG_HOME: base, PATH: "/usr/bin:/bin", LC_ALL: "C",
+      GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null",
+      GIT_ALLOW_PROTOCOL: "", GIT_TERMINAL_PROMPT: "0",
+    });
+    for (const argv of [
+      ["init", "-q", "--template="],
+      ["add", "unchanged.txt"],
+      ["-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", "-c", "user.name=CLI Test", "-c", "user.email=cli@example.invalid", "commit", "-qm", "fixture"],
+    ]) {
+      const git = spawnSync("/usr/bin/git", argv, { cwd: source, env: setupEnv, encoding: "utf8" });
+      expect(git.status, git.stderr).toBe(0);
+    }
+
+    // Compare file bytes and filesystem metadata for the complete fixture,
+    // including .git. Ignore atime, which may change on reads.
+    function sourceState(): string[] {
+      const rows: string[] = [];
+      function visit(file: string): void {
+        const stat = fs.lstatSync(file, { bigint: true });
+        const data = stat.isSymbolicLink() ? fs.readlinkSync(file) : stat.isFile() ? fs.readFileSync(file).toString("base64") : null;
+        rows.push(JSON.stringify([path.relative(source, file), String(stat.mode), String(stat.size), String(stat.mtimeNs), String(stat.ino), String(stat.nlink), data]));
+        if (stat.isDirectory()) for (const name of fs.readdirSync(file).sort()) visit(path.join(file, name));
+      }
+      visit(source);
+      return rows;
+    }
+
+    const observations = path.join(base, "comparator.jsonl");
+    const preload = path.join(base, "observe-comparator.cjs");
+    fs.writeFileSync(preload, `
+      "use strict";
+      const cp = require("node:child_process");
+      const fs = require("node:fs");
+      const original = cp.spawnSync;
+      cp.spawnSync = function (command, argv, options) {
+        // Producer Git calls have a different immediate caller; leave every
+        // other spawn completely untouched, including the git --version call.
+        const caller = new Error().stack.split("\\n")[2] || "";
+        if (command === "/usr/bin/git" && Array.isArray(argv) && argv.includes("ls-tree") && caller.includes(${JSON.stringify(qualificationScript + ":")})) {
+          const env = options.env;
+          let observation;
+          Object.defineProperty(Object.prototype, "GIT_INHERITED_SENTINEL", { value: "poison", enumerable: true, configurable: true });
+          try {
+            const rejected = ["GIT_DIR", "GIT_TRACE", "GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0", "gIt_CoNfIg_CoUnT", "GiT_cOnFiG_kEy_0", "gIT_ConFig_VaLuE_0", "GIT_INHERITED_SENTINEL"];
+            observation = {
+              nullPrototype: Object.getPrototypeOf(env) === null,
+              gitKeys: Object.keys(env).filter(key => key.toUpperCase().startsWith("GIT_")).sort(),
+              rejected: Object.fromEntries(rejected.map(key => [key, key in env])),
+              controls: Object.fromEntries(["GIT_CONFIG_NOSYSTEM", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "GIT_OPTIONAL_LOCKS", "GIT_NO_LAZY_FETCH", "GIT_NO_REPLACE_OBJECTS", "GIT_ALLOW_PROTOCOL", "GIT_TERMINAL_PROMPT", "LC_ALL"].map(key => [key, env[key]])),
+              marker: env.L9_QUALIFICATION_MARKER,
+              protoMarker: env["__proto__"],
+            };
+          } finally {
+            delete Object.prototype.GIT_INHERITED_SENTINEL;
+          }
+          fs.appendFileSync(${JSON.stringify(observations)}, JSON.stringify(observation) + "\\n");
+        }
+        return original.apply(this, arguments);
+      };
+    `);
+
+    const hostileEnv: NodeJS.ProcessEnv = Object.assign(Object.create(null), setupEnv, {
+      GIT_DIR: path.join(base, "does-not-exist"),
+      GIT_TRACE: path.join(base, "caller-git-trace"),
+      GIT_CONFIG_COUNT: "invalid", GIT_CONFIG_KEY_0: "core.fsmonitor", GIT_CONFIG_VALUE_0: "invalid",
+      gIt_CoNfIg_CoUnT: "1", GiT_cOnFiG_kEy_0: "core.fsmonitor", gIT_ConFig_VaLuE_0: "invalid",
+      GIT_CONFIG_NOSYSTEM: "0", GIT_CONFIG_GLOBAL: path.join(base, "untrusted-config"), GIT_CONFIG_SYSTEM: path.join(base, "untrusted-system-config"),
+      GIT_OPTIONAL_LOCKS: "1", GIT_NO_LAZY_FETCH: "0", GIT_NO_REPLACE_OBJECTS: "0", GIT_ALLOW_PROTOCOL: "file", GIT_TERMINAL_PROMPT: "1",
+      LC_ALL: "C.UTF-8", L9_QUALIFICATION_MARKER: "preserved non-Git value",
+    });
+    hostileEnv["__proto__"] = "preserved special-key value";
+    const before = sourceState();
+    const result = spawnSync(process.execPath, ["--require", preload, qualificationScript, source, "Owner/Repo", "HEAD", outside, path.resolve("."), "a".repeat(40)], {
+      env: hostileEnv, encoding: "utf8", timeout: 30000,
+    });
+    expect(result.status, result.stderr || String(result.error)).toBe(0);
+    expect(sourceState()).toEqual(before);
+    expect(JSON.parse(fs.readFileSync(path.join(outside, "result.json"), "utf8"))).toMatchObject({
+      status: "passed", exact_set_verified: true, repeat_bytes_identical: true, source_filesystem_unchanged: true,
+      subject_payload_inspection: false, counts: { blobs: 1 },
+    });
+
+    const calls = fs.readFileSync(observations, "utf8").trim().split("\n").map(line => JSON.parse(line));
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({
+      nullPrototype: true,
+      gitKeys: ["GIT_ALLOW_PROTOCOL", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GIT_CONFIG_SYSTEM", "GIT_NO_LAZY_FETCH", "GIT_NO_REPLACE_OBJECTS", "GIT_OPTIONAL_LOCKS", "GIT_TERMINAL_PROMPT"],
+      rejected: {
+        GIT_DIR: false, GIT_TRACE: false, GIT_CONFIG_COUNT: false, GIT_CONFIG_KEY_0: false, GIT_CONFIG_VALUE_0: false,
+        gIt_CoNfIg_CoUnT: false, GiT_cOnFiG_kEy_0: false, gIT_ConFig_VaLuE_0: false, GIT_INHERITED_SENTINEL: false,
+      },
+      controls: {
+        GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null", GIT_OPTIONAL_LOCKS: "0",
+        GIT_NO_LAZY_FETCH: "1", GIT_NO_REPLACE_OBJECTS: "1", GIT_ALLOW_PROTOCOL: "", GIT_TERMINAL_PROMPT: "0", LC_ALL: "C",
+      },
+      marker: "preserved non-Git value", protoMarker: "preserved special-key value",
+    });
+  });
+});
+
 test("tracked main awaits its operation and reports invalid input with a nonzero exit", async () => {
   const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
   await expect(cli.main(["tracked-unknown"])).resolves.toBe(2);

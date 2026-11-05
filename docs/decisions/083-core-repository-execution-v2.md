@@ -21,6 +21,8 @@ The canonical gate remains `npm run lint` plus `npm run validate`; publication r
 
 Core creates SDK, toolchain-alignment, and capability files under `.l9/runtime/` before repository verification. Ignore that disposable subtree so it neither makes the tree-bound validation report stale nor dirties the checkout. The `.l9` contract and metadata files remain trackable; the ignore rule is not a blanket exclusion of `.l9/`.
 
+The first PR run passed repository verification but failed the separate Core SDK gate on two pre-existing prototype-pollution rule matches. Both `Object.assign` sources used only fixed literal keys. Replace those fixed-key merges with direct assignments without suppressing the rule. The authority parser keeps its null-prototype block and key allowlist; the qualification script additionally constructs its Git subprocess environment with a null prototype to prevent inherited properties from reaching the subprocess. The Git isolation controls remain unchanged.
+
 ## Validation and limits
 
 Core's pinned admission code must accept the exact contract, facade and `Repo.mk` ABI and execute all four phases. Regression tests exercise phase routing and failure propagation without pushing. The architecture manifest includes the new execution inputs and is regenerated. A local pass is not a claim that all remote CI or branch-protection checks passed; those must be observed separately on the PR.
