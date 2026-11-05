@@ -18,3 +18,4 @@
 """A managed header stacked above a native one."""
 
 from pkg import helpers  # noqa: F401
+# ruff: noqa -- deliberate observer input for tests/architectural_observers.test.ts (ADR-082); never autofix

@@ -11,3 +11,4 @@ status: active
 
 engine/compliance.py — the docstring carrier.
 """
+# ruff: noqa -- deliberate observer input for tests/architectural_observers.test.ts (ADR-082); never autofix
