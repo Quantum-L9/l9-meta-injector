@@ -306,11 +306,11 @@
     },
     {
       "path": "dist/extractors/work_intelligence.js",
-      "git_blob_sha1": "324072b65c34f79d4d3fb9b0d4b9fd6acefafa5d"
+      "git_blob_sha1": "78567abac65d1bbffd90fb3f5b62d0af9f393d06"
     },
     {
       "path": "dist/extractors/work_intelligence.js.map",
-      "git_blob_sha1": "6da1b0f2595d303c3faf3bf253ac60bc91fae65a"
+      "git_blob_sha1": "beeb37a3245193c8d4ebd4d74d9fa815209001c6"
     },
     {
       "path": "dist/git_runtime.d.ts",
@@ -810,7 +810,7 @@
     },
     {
       "path": "scripts/qualify-tracked-snapshot.js",
-      "git_blob_sha1": "2384cd104a7701eb86e0698e8a9a2c6950385815"
+      "git_blob_sha1": "7b949ddfce3583ac7b15b75678c89ae871289664"
     },
     {
       "path": "scripts/release-identity-cli.js",
@@ -938,7 +938,7 @@
     },
     {
       "path": "src/extractors/work_intelligence.ts",
-      "git_blob_sha1": "4129556112977420e36bdb834cc585a4477eb7b4"
+      "git_blob_sha1": "39c6c62257a63ee0312d1826dafda8eeb00893be"
     },
     {
       "path": "src/git_runtime.ts",
