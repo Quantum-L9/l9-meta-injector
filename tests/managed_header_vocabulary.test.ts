@@ -8,6 +8,7 @@ import { describe, expect, test } from "vitest";
 import { buildMeta } from "../src/normalize_meta";
 import { extract, splitContent } from "../src/extract";
 import { injectFile } from "../src/inject";
+import { inventoryTree } from "../src/inventory";
 import { nativeMetadataExtractor } from "../src/extractors/native_metadata";
 import { MANAGED_DECLARED_SCHEMA } from "../src/native_metadata";
 import { PRIMITIVE_TAXONOMY } from "../src/schema";
@@ -31,7 +32,8 @@ const CONTRACT = JSON.parse(fs.readFileSync(path.join(REPO, "docs/managed-header
   definition_ref_form: string;
   declared_schema: string;
   meaning: { projection: string };
-  unresolved_and_out_of_vocabulary: { written_outside_vocabulary: string[] };
+  writers: Array<{ writer: string }>;
+  unresolved_and_out_of_vocabulary: { written_outside_vocabulary: { annotate: string[]; inventory: string[] } };
   variants: { family: string[]; owner: string[]; neither: string[] };
   writer_invariants: { taxonomy: Record<string, { mcp_primitive: string; callable: boolean; injectable: boolean }> };
   fields: ContractField[];
@@ -74,6 +76,26 @@ function roundTrip(fileName: string, body: string, artifactType: ArtifactType) {
   return { meta: meta as unknown as Record<string, unknown>, drafts };
 }
 
+/** Annotate a fresh tree with the inventory writer, then read every header back. */
+function inventoryRoundTrip(files: Record<string, string>) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "l9-managed-inv-"));
+  for (const [name, body] of Object.entries(files)) fs.writeFileSync(path.join(root, name), body);
+  inventoryTree({
+    root, outDir: fs.mkdtempSync(path.join(os.tmpdir(), "l9-managed-inv-out-")),
+    writeSidecars: false, folderSidecars: false, now: "2026-01-01T00:00:00.000Z",
+  });
+  return Object.keys(files).map((name) => nativeMetadataExtractor.extract({
+    subjectId: "artifact:x",
+    sourcePath: name,
+    content: fs.readFileSync(path.join(root, name), "utf8"),
+    contentHash: "sha256:0",
+    pathExists: () => false,
+    report: () => undefined,
+  }));
+}
+
+const INVENTORY_DRAFTS = inventoryRoundTrip({ "research-skill.md": "## Role\nAn agent.\n", "tool.py": "print(1)\n" });
+
 const ROUND_TRIPS = [
   roundTrip("research-skill.md", "## Role\nAn agent.\n", "skill"),
   roundTrip("research-prompt.md", "## Role\nAn agent.\n", "prompt"),
@@ -114,7 +136,7 @@ describe("managed-header vocabulary contract (ADR-086)", () => {
   });
 
   test("every written field is either a contract field or listed as written outside the vocabulary", () => {
-    const outside = new Set(CONTRACT.unresolved_and_out_of_vocabulary.written_outside_vocabulary);
+    const outside = new Set(CONTRACT.unresolved_and_out_of_vocabulary.written_outside_vocabulary.annotate);
     const written = new Set<string>();
     for (const { meta, drafts } of ROUND_TRIPS) {
       for (const key of Object.keys(meta)) {
@@ -164,5 +186,42 @@ describe("managed-header vocabulary contract (ADR-086)", () => {
       expect("owner" in meta, `${type} owner`).toBe(CONTRACT.variants.owner.includes(type));
       expect(meta.retrievable, `${type} retrievable`).toBe(meta.injectable);
     }
+  });
+
+  test("the inventory writer stays inside the contract: no family or owner, and only its listed extra fields", () => {
+    expect(CONTRACT.writers.map((entry) => entry.writer)).toEqual(["annotate", "inventory"]);
+    const outside = new Set(CONTRACT.unresolved_and_out_of_vocabulary.written_outside_vocabulary.inventory);
+    const valued = new Set<string>();
+    const outsideKeys = new Set<string>();
+    for (const drafts of INVENTORY_DRAFTS) {
+      expect(drafts.length).toBeGreaterThan(0);
+      for (const { predicate, object } of drafts) {
+        const match = /^meta\.managed\.(identity|classification|governance)\.([a-z_]+)$/.exec(predicate);
+        if (match) {
+          valued.add(match[2]);
+          expect(FIELD.get(match[2])?.category, match[2]).toBe(match[1]);
+          const allowed = FIELD.get(match[2])?.allowed_values;
+          if (allowed) expect(allowed, `${match[2]}=${object}`).toContain(object);
+        }
+        // An out-of-vocabulary key with no value (here an unavailable created_at) is unresolved, not unsupported.
+        if (predicate === "meta.managed.unsupported_field") outsideKeys.add(object);
+        if (predicate === "meta.managed.unresolved_field" && !FIELD.has(object)) outsideKeys.add(object);
+      }
+    }
+    expect(valued.has("family")).toBe(false);
+    expect(valued.has("owner")).toBe(false);
+    for (const field of ["id", "title", "source_path", "artifact_type", "mcp_primitive", "callable", "retrievable", "injectable", "sharing_scope"]) {
+      expect(valued.has(field), field).toBe(true);
+    }
+    expect([...outsideKeys].sort()).toEqual([...outside].sort());
+    const id = INVENTORY_DRAFTS[0].find((draft) => draft.predicate === "meta.managed.identity.id")?.object;
+    expect(id).toMatch(/^inv-[0-9a-f]{16}$/);
+  });
+
+  test("a claim object is the decoded scalar, not its quoted lexical form", () => {
+    const { meta, drafts } = roundTrip("a: b.md", "## Role\nAn agent.\n", "skill");
+    const title = drafts.find((draft) => draft.predicate === "meta.managed.identity.title")?.object;
+    expect(title).toBe(meta.title);
+    expect(title).toBe("a: b");
   });
 });
