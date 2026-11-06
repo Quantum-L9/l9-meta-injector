@@ -34,6 +34,9 @@ const CARRIER_EXTENSIONS = new Set([
 ]);
 const CARRIER_BASENAMES = new Set([
     "makefile", "dockerfile", "gnumakefile", "codeowners", ".cursorrules",
+    // Hash-comment dotfiles the comment layer already supports (`comment.ts`
+    // BASENAME_LINE_COMMENT). Their declarations were read nowhere (ADR-085).
+    ".editorconfig", ".gitignore",
 ]);
 function carriesHeaders(sourcePath) {
     const base = (sourcePath.split("/").pop() ?? sourcePath).toLowerCase();
@@ -88,7 +91,8 @@ exports.nativeMetadataExtractor = {
     // cardinality and is scoped by declared schema (ADR-084): set-valued fields
     // aggregate, a single-valued field listing several values competes, and the
     // same key under two schemas does not.
-    version: "1.2.0",
+    // 1.3.0: `.editorconfig` and `.gitignore` are header carriers too (ADR-085).
+    version: "1.3.0",
     // A header describes the file that carries it, never the repository.
     subjectScope: "artifact",
     matches: carriesHeaders,

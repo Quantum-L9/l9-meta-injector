@@ -247,7 +247,7 @@ describe("P1.2 rejected headers stay header syntax (PR #127 review)", () => {
 describe("P1.2 carrier coverage (Phase 2 acceptance finding)", () => {
   test.each([
     ".github/CODEOWNERS", ".cursorrules", "Dockerfile.prod", "chassis/Dockerfile.chassis",
-    "infra/main.tf", "env.template", ".env.template",
+    "infra/main.tf", "env.template", ".env.template", ".editorconfig", "packages/a/.gitignore",
   ])("reads the header carrier in %s", (sourcePath) => {
     expect(nativeMetadataExtractor.matches(sourcePath)).toBe(true);
     const { drafts } = extract(sourcePath, "# --- L9_META ---\n# l9_schema: 1\n# owner: platform\n# --- /L9_META ---\n");
@@ -271,7 +271,7 @@ describe("P1.2 carrier coverage (Phase 2 acceptance finding)", () => {
       "a.xml", "a.css", "a.scss", "a.sql", "a.rb", "a.go", "a.rs", "a.java", "a.ini", "a.cfg", "a.conf",
       "infra/main.tf", "x.tfvars", "x.hcl", "env.template", ".env.template", "x.env.example",
       "app.Dockerfile", "Makefile", "GNUmakefile", "Dockerfile", ".github/CODEOWNERS", ".cursorrules",
-      "Dockerfile.prod", "chassis/Dockerfile.chassis",
+      "Dockerfile.prod", "chassis/Dockerfile.chassis", ".editorconfig", ".gitignore",
     ];
     const unclaimed = carriers.filter(
       (sourcePath) => nativeMetadataExtractor.matches(sourcePath) && registry.forPath(sourcePath) === undefined,

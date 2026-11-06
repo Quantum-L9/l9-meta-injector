@@ -18,8 +18,10 @@ export declare const INTERPRETATION_PROFILE_ID = "meta-injector-repository-inter
  * 1.4.0 binds the governed native-header semantic mapping (ADR-084) into the
  * profile hash: what each header predicate means is now part of the rules a run
  * applied, so a change of meaning changes every packet's identity.
+ *
+ * 1.5.0 reads native headers from `.editorconfig` and `.gitignore` (ADR-085).
  */
-export declare const INTERPRETATION_PROFILE_VERSION = "1.4.0";
+export declare const INTERPRETATION_PROFILE_VERSION = "1.5.0";
 /**
  * How an assertion was evidenced.
  *
@@ -233,11 +235,4 @@ export declare function toPortableAssertions(assertions: readonly InterpretedAss
  */
 export declare function bindPortableAssertions(assertions: readonly PortableAssertion[], repositorySubjectId: string): InterpretedAssertion[];
 export declare function interpretDocumentContent(input: InterpretDocumentInput): InterpretDocumentResult;
-/**
- * Interpret a repository that inventory has already observed.
- *
- * Returns an empty assertion set rather than throwing when nothing matches: a
- * repository the profile has no rules for is not an error, it is a repository
- * with no declared semantics this profile can read.
- */
 export declare function interpretRepository(input: InterpretRepositoryInput): InterpretationResult;

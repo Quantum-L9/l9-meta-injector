@@ -86,8 +86,10 @@ exports.INTERPRETATION_PROFILE_ID = "meta-injector-repository-interpretation";
  * 1.4.0 binds the governed native-header semantic mapping (ADR-084) into the
  * profile hash: what each header predicate means is now part of the rules a run
  * applied, so a change of meaning changes every packet's identity.
+ *
+ * 1.5.0 reads native headers from `.editorconfig` and `.gitignore` (ADR-085).
  */
-exports.INTERPRETATION_PROFILE_VERSION = "1.4.0";
+exports.INTERPRETATION_PROFILE_VERSION = "1.5.0";
 /**
  * Where a repository-scoped extractor's claim is filed, stated in the profile
  * hash so the profile names the rule it applied.
@@ -377,6 +379,15 @@ function interpretDocumentContent(input) {
  * repository the profile has no rules for is not an error, it is a repository
  * with no declared semantics this profile can read.
  */
+/** True only for a regular file, judged on the entry itself (lstat), never its target. */
+function isRegularFile(absolute) {
+    try {
+        return fs.lstatSync(absolute).isFile();
+    }
+    catch {
+        return false;
+    }
+}
 function interpretRepository(input) {
     const extractors = [...input.extractors].sort((left, right) => (0, repository_model_1.compareCodePoints)(left.id, right.id));
     const maxFileBytes = input.maxFileBytes ?? exports.DEFAULT_MAX_FILE_BYTES;
@@ -413,6 +424,19 @@ function interpretRepository(input) {
             continue;
         }
         const absolute = record.absolute_path ?? path.join(input.root, sourcePath);
+        // Only a regular file is read. Inventory records a symbolic link or a special
+        // entry without opening it (`symlink_not_traversed`); reading the path here
+        // would follow the link, possibly outside the root, and cite bytes that are
+        // not the repository's. lstat, never stat: the entry itself decides.
+        if (!isRegularFile(absolute)) {
+            diagnostics.push({
+                code: "interpretation.not_regular_file",
+                severity: "info",
+                message: "path is not a regular file (symbolic link or special entry) and was not opened for interpretation",
+                source_path: sourcePath,
+            });
+            continue;
+        }
         // Encoding eligibility is decided over every byte before the file is decoded.
         // A prefix that happens to be ASCII says nothing about byte 9000, and decoding
         // a non-UTF-8 file with replacement characters would produce assertions whose

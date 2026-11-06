@@ -77,7 +77,12 @@ exports.REPOSITORY_MODEL_PACKET_VERSION = "1.1.0";
 exports.REPOSITORY_MODEL_PRODUCER_NAME = "l9-meta-injector.repository-model";
 /** Profile identity for the observation policy this producer applies. */
 const PROFILE_ID = "meta-injector-inventory-observation";
-const PROFILE_VERSION = "1.0.0";
+/**
+ * 1.1.0 observes protected skill entrypoints: the observation walk is write-free,
+ * so SKILL.md mutation protection no longer removes them from the observed set
+ * (ADR-085). Which files a packet can describe changed, so the version moves.
+ */
+const PROFILE_VERSION = "1.1.0";
 const OBSERVATION_STAGE = "meta-injector-inventory";
 /** Stage recorded on diagnostics the interpretation pass raised (ADR-082). */
 const INTERPRETATION_STAGE = "meta-injector-interpretation";
@@ -1419,6 +1424,9 @@ function observeRepositoryModel(input) {
             injectHeaders: false,
             writeSidecars: false,
             folderSidecars: false,
+            // Write-free observation: protected skill entrypoints are observed, not
+            // hidden. They stay unwritable; nothing in this walk writes (ADR-085).
+            purpose: "observe",
             sourceSystem: "local",
             // A packet describes only files the repository owns: what git ignores is omitted,
             // tracked files never are (ADR-078). A non-git target has no ignore semantics.
