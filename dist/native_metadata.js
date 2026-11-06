@@ -31,6 +31,7 @@ const comment_1 = require("./comment");
 const common_1 = require("./extractors/common");
 const schema_1 = require("./schema");
 const ordering_1 = require("./ordering");
+const semantic_mapping_1 = require("./semantic_mapping");
 /** Declared schema of every declaration the managed writer produced. */
 exports.MANAGED_DECLARED_SCHEMA = "managed:l9-meta-injector";
 const MARKERS = {
@@ -615,22 +616,45 @@ function parseNativeMetadata(sourcePath, content) {
             line: firstOutside,
         });
     }
-    // Competing declarations: the same key declared with different values in two
-    // carriers of one file. Both stay; the conflict is named, never resolved.
-    const byKey = new Map();
+    // Competing declarations: one field declared with incompatible values about
+    // this file under one declared schema. Every value stays; the conflict is
+    // named, never resolved.
+    //
+    // Different declared schemas are different predicates (`meta.l9v1.*` vs
+    // `meta.managed.*`), so they never compete. A field the governed mapping
+    // defines follows its cardinality (ADR-084): a set-valued field aggregates and
+    // never competes, and a single-valued field competes as soon as its
+    // declarations — or one declaration listing several values — name more than
+    // one distinct value. A field the mapping does not govern (the managed header,
+    // an unrecognized schema, a key outside the vocabulary) keeps the conservative
+    // rule: two declarations whose value lists differ compete.
+    const groups = new Map();
     for (const item of declarations) {
+        const governed = semantic_mapping_1.RECOGNIZED_DECLARED_SCHEMAS[item.declared_schema] !== undefined;
         for (const field of item.fields) {
             if (field.state !== "declared")
                 continue;
-            const values = byKey.get(field.key) ?? new Set();
-            values.add(field.values.map((value) => value.text).join("\u0000"));
-            byKey.set(field.key, values);
+            const mapping = governed ? (0, semantic_mapping_1.headerFieldMapping)(field.key) : undefined;
+            if (mapping?.cardinality === "set")
+                continue;
+            const group = `${item.declared_schema}\u0000${field.key}`;
+            const entry = groups.get(group) ?? { schema: item.declared_schema, key: field.key, values: new Set() };
+            if (mapping?.cardinality === "single") {
+                for (const value of field.values)
+                    entry.values.add(value.text);
+            }
+            else {
+                entry.values.add(field.values.map((value) => value.text).join("\u0000"));
+            }
+            groups.set(group, entry);
         }
     }
-    const conflicting = [...byKey.entries()].filter(([, values]) => values.size > 1).map(([key]) => key).sort(ordering_1.compareCodePoints);
+    const competing = [...groups.values()].filter((entry) => entry.values.size > 1);
+    const conflicting = [...new Set(competing.map((entry) => entry.key))].sort(ordering_1.compareCodePoints);
     if (conflicting.length > 0) {
         for (const item of declarations) {
-            item.conflicts = conflicting.filter((key) => item.fields.some((field) => field.key === key && field.state === "declared"));
+            item.conflicts = conflicting.filter((key) => competing.some((entry) => entry.key === key && entry.schema === item.declared_schema)
+                && item.fields.some((field) => field.key === key && field.state === "declared"));
         }
         diagnostics.push({
             code: "native_metadata.competing_declarations",

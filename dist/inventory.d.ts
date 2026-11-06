@@ -43,7 +43,19 @@ export interface InventoryConfig {
     gitIgnored?: GitIgnoredPaths;
     now?: string;
     schema?: MetaSchema;
+    /**
+     * Why the tree is walked (ADR-085). `annotate` (the default) may write, so the
+     * built-in SKILL.md mutation protection also keeps skill entrypoints out of the
+     * walk. `observe` is a write-free observation: it requires `dryRun` with every
+     * header and sidecar write disabled, and it observes protected skill entrypoints
+     * instead of hiding them. Observing a file never makes it writable — mutation
+     * eligibility stays with `mutation_policy.ts`, and read eligibility (secret
+     * paths, size, encoding) stays with the interpretation boundary.
+     */
+    purpose?: InventoryPurpose;
 }
+/** Why an inventory walks a tree: to annotate it, or only to observe it (ADR-085). */
+export type InventoryPurpose = "annotate" | "observe";
 export interface DuplicateCluster {
     content_hash: string;
     count: number;

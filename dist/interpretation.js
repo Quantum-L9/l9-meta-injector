@@ -65,6 +65,7 @@ exports.interpretRepository = interpretRepository;
 const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
 const encoding_1 = require("./encoding");
+const semantic_mapping_1 = require("./semantic_mapping");
 const repository_model_1 = require("./repository_model");
 /** Identity of the interpretation policy. Bumped when extraction rules change. */
 exports.INTERPRETATION_PROFILE_ID = "meta-injector-repository-interpretation";
@@ -81,8 +82,14 @@ exports.INTERPRETATION_PROFILE_ID = "meta-injector-repository-interpretation";
  * extractors, the requirements-file reading of the manifest extractor, and the
  * extractor diagnostic channel (ADR-082). Each changes what this profile
  * observes, so the version moves with them.
+ *
+ * 1.4.0 binds the governed native-header semantic mapping (ADR-084) into the
+ * profile hash: what each header predicate means is now part of the rules a run
+ * applied, so a change of meaning changes every packet's identity.
+ *
+ * 1.5.0 reads native headers from `.editorconfig` and `.gitignore` (ADR-085).
  */
-exports.INTERPRETATION_PROFILE_VERSION = "1.3.0";
+exports.INTERPRETATION_PROFILE_VERSION = "1.5.0";
 /**
  * Where a repository-scoped extractor's claim is filed, stated in the profile
  * hash so the profile names the rule it applied.
@@ -181,6 +188,11 @@ function profileHash(extractors) {
         max_excerpt_length: exports.MAX_EXCERPT_LENGTH,
         max_extractor_diagnostics_per_file: exports.MAX_EXTRACTOR_DIAGNOSTICS_PER_FILE,
         repository_subject_paths: REPOSITORY_SUBJECT_PATHS,
+        semantic_mapping: {
+            id: semantic_mapping_1.SEMANTIC_MAPPING_ID,
+            version: semantic_mapping_1.SEMANTIC_MAPPING_VERSION,
+            hash: (0, repository_model_1.semanticHash)((0, semantic_mapping_1.semanticMappingIdentity)()),
+        },
         extractors: extractors
             .map((extractor) => ({
             id: extractor.id,
@@ -367,6 +379,15 @@ function interpretDocumentContent(input) {
  * repository the profile has no rules for is not an error, it is a repository
  * with no declared semantics this profile can read.
  */
+/** True only for a regular file, judged on the entry itself (lstat), never its target. */
+function isRegularFile(absolute) {
+    try {
+        return fs.lstatSync(absolute).isFile();
+    }
+    catch {
+        return false;
+    }
+}
 function interpretRepository(input) {
     const extractors = [...input.extractors].sort((left, right) => (0, repository_model_1.compareCodePoints)(left.id, right.id));
     const maxFileBytes = input.maxFileBytes ?? exports.DEFAULT_MAX_FILE_BYTES;
@@ -403,6 +424,19 @@ function interpretRepository(input) {
             continue;
         }
         const absolute = record.absolute_path ?? path.join(input.root, sourcePath);
+        // Only a regular file is read. Inventory records a symbolic link or a special
+        // entry without opening it (`symlink_not_traversed`); reading the path here
+        // would follow the link, possibly outside the root, and cite bytes that are
+        // not the repository's. lstat, never stat: the entry itself decides.
+        if (!isRegularFile(absolute)) {
+            diagnostics.push({
+                code: "interpretation.not_regular_file",
+                severity: "info",
+                message: "path is not a regular file (symbolic link or special entry) and was not opened for interpretation",
+                source_path: sourcePath,
+            });
+            continue;
+        }
         // Encoding eligibility is decided over every byte before the file is decoded.
         // A prefix that happens to be ASCII says nothing about byte 9000, and decoding
         // a non-UTF-8 file with replacement characters would produce assertions whose

@@ -25,22 +25,18 @@ import {
   NativeMetadataField,
   parseNativeMetadata,
 } from "../native_metadata";
+import { HeaderFieldCategory, NATIVE_HEADER_FIELDS, RECOGNIZED_DECLARED_SCHEMAS } from "../semantic_mapping";
 
-type Category = "identity" | "classification" | "governance" | "retrieval";
+type Category = HeaderFieldCategory;
 
-/** Field vocabulary of the native `L9_META` schemas, as observed in constellation repositories. */
-const NATIVE_VOCABULARY: Readonly<Record<string, Category>> = {
-  id: "identity", origin: "identity", engine: "identity", namespace: "identity",
-  component: "identity", canonical_path: "identity", version: "identity", title: "identity",
-  source_repo: "identity", source_file: "identity", source_adr: "identity",
-  layer: "classification", tags: "classification", artifact_type: "classification",
-  status: "classification", ring: "classification", category: "classification",
-  owner: "governance", ssot_for: "governance", canonical: "governance",
-  canonical_source: "governance", single_source_rule: "governance",
-  retrieval: "retrieval", load_when: "retrieval", load_condition: "retrieval",
-  references: "retrieval", requires: "retrieval", amplifies: "retrieval",
-  retrieval_keys: "retrieval", token_estimate: "retrieval",
-};
+/**
+ * Field vocabulary of the native `L9_META` schemas: exactly the fields
+ * `l9.artifact-header-model/global@1` defines, read from the governed mapping so
+ * there is one table (ADR-084). A field outside it has no meaning here.
+ */
+const NATIVE_VOCABULARY: Readonly<Record<string, Category>> = Object.fromEntries(
+  NATIVE_HEADER_FIELDS.map((mapping) => [mapping.field, mapping.category]),
+);
 
 /** Field vocabulary of the managed header this package writes. */
 const MANAGED_VOCABULARY: Readonly<Record<string, Category>> = {
@@ -52,8 +48,11 @@ const MANAGED_VOCABULARY: Readonly<Record<string, Category>> = {
 
 /** Declared schemas with a known field vocabulary, and the predicate namespace each uses. */
 const KNOWN_SCHEMAS: Readonly<Record<string, { ns: string; vocabulary: Readonly<Record<string, Category>> }>> = {
-  "l9_schema:1": { ns: "l9v1", vocabulary: NATIVE_VOCABULARY },
-  "l9_schema:2": { ns: "l9v2", vocabulary: NATIVE_VOCABULARY },
+  ...Object.fromEntries(
+    Object.entries(RECOGNIZED_DECLARED_SCHEMAS).map(([schema, ns]) => [schema, { ns, vocabulary: NATIVE_VOCABULARY }]),
+  ),
+  // The managed header is this package's own; its meaning is producer-owned and is
+  // not governed by the artifact-header ledger, which defines native L9_META only.
   [MANAGED_DECLARED_SCHEMA]: { ns: "managed", vocabulary: MANAGED_VOCABULARY },
 };
 
@@ -68,6 +67,9 @@ const CARRIER_EXTENSIONS: ReadonlySet<string> = new Set([
 ]);
 const CARRIER_BASENAMES: ReadonlySet<string> = new Set([
   "makefile", "dockerfile", "gnumakefile", "codeowners", ".cursorrules",
+  // Hash-comment dotfiles the comment layer already supports (`comment.ts`
+  // BASENAME_LINE_COMMENT). Their declarations were read nowhere (ADR-085).
+  ".editorconfig", ".gitignore",
 ]);
 
 function carriesHeaders(sourcePath: string): boolean {
@@ -136,7 +138,12 @@ export const nativeMetadataExtractor: Extractor = {
   // 1.1.0: CODEOWNERS, .cursorrules, Dockerfile.<variant>, Terraform/HCL and
   // template files are header carriers too; before this, their declarations were
   // read nowhere and reported nowhere (PR #127 Phase 2 acceptance run).
-  version: "1.1.0",
+  // 1.2.0: the competing-declarations diagnostic follows the governed mapping's
+  // cardinality and is scoped by declared schema (ADR-084): set-valued fields
+  // aggregate, a single-valued field listing several values competes, and the
+  // same key under two schemas does not.
+  // 1.3.0: `.editorconfig` and `.gitignore` are header carriers too (ADR-085).
+  version: "1.3.0",
   // A header describes the file that carries it, never the repository.
   subjectScope: "artifact",
   matches: carriesHeaders,

@@ -115,7 +115,13 @@ describe("WU-017 RC-024 — authority parser is narrow and fail-closed", () => {
     expect(own.default_carrier).toBe("central_manifest");
     expect(own.inline_allow).toEqual([]);
     expect(own.product?.archetype).toBe("l9.dependency-archetype/semantic-subsystem@1");
-    expect(Object.keys(own.semantic_foundation?.ledgers ?? {})).toHaveLength(6);
+    // v3.27.0 binding (ADR-084): the six v3.6.0 ledgers plus the artifact-header model.
+    expect(Object.keys(own.semantic_foundation?.ledgers ?? {}).sort()).toEqual([
+      "l9.artifact-header-model/global@1", "l9.artifact-model/global@1", "l9.authority-model/global@1",
+      "l9.dependency-archetypes/global@1", "l9.identity-model/global@1", "l9.product-kinds/global@1",
+      "l9.vocabulary/global@1",
+    ]);
+    expect(own.semantic_foundation?.release).toBe("v3.27.0");
     const fixture = parseAuthorityYaml(AUTHORITY);
     expect(fixture.writer).toEqual({ repository: "Quantum-L9/l9-meta-injector", ref: "v4.0.0" });
     expect(fixture.inline_allow).toEqual(["prompts/**/*.md", "kernels/**/*.md"]);

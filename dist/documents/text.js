@@ -306,7 +306,7 @@ exports.textDecoder = {
     filenames: [
         "dockerfile", "containerfile", "gemfile", "jenkinsfile", "makefile", "procfile",
         "readme", "license", "changelog", "notice", "authors", "codeowners",
-        "gnumakefile", ".cursorrules",
+        "gnumakefile", ".cursorrules", ".editorconfig", ".gitignore",
     ],
     // `Dockerfile.prod`, `Dockerfile.chassis`: a Dockerfile named for its variant.
     filenamePrefixes: ["dockerfile."],
