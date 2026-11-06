@@ -1,0 +1,297 @@
+{
+  "schema": "l9.producer-vocabulary/v1",
+  "vocabulary": "l9-meta-injector:managed-header",
+  "version": "1.0.0",
+  "identity": "l9-meta-injector:managed-header@1.0.0",
+  "definition_ref_form": "l9-meta-injector:managed-header@1.0.0#fields.<field>",
+  "owner": "Quantum-L9/l9-meta-injector",
+  "decision": "docs/decisions/086-managed-header-vocabulary-contract.md",
+  "status": "candidate",
+  "admission": {
+    "repository": "candidate until the meta-injector owner accepts ADR-086",
+    "consumer": "not admitted; l9-constellation-topology owns interpretation and reconciliation",
+    "semantic_foundation": "not Foundation-governed; neither depends on nor implies admission of the v3.27.0 binding"
+  },
+  "declared_schema": "managed:l9-meta-injector",
+  "carriers": [
+    "managed-frontmatter",
+    "managed-comment"
+  ],
+  "writers": [
+    {
+      "writer": "annotate",
+      "source": "src/normalize_meta.ts buildMeta, used by inject, apply and check",
+      "writes": "every vocabulary field except as variants says"
+    },
+    {
+      "writer": "inventory",
+      "source": "src/inventory.ts inventoryTree with purpose annotate and headers enabled",
+      "writes": "every vocabulary field except family and owner, which it never derives; a family or owner harvested from an earlier header is preserved"
+    }
+  ],
+  "predicate_form": "meta.managed.<category>.<field>",
+  "claim": {
+    "object": "the declared scalar value as decoded text: the reader removes YAML quoting and decodes escapes, so the object is the value, not its lexical form",
+    "claim_authority": "source",
+    "evidence_class": "declared",
+    "confidence": "medium"
+  },
+  "meaning": {
+    "declaration_only": "A field states what the managed header declares about the artifact that carries it. It does not establish that the statement is true, current or authoritative.",
+    "projection": "none",
+    "projection_prohibition": "No field may be projected into a canonical entity, relationship, identity, ownership, capability or canonical status. A consumer may index, query, compare and reconcile these claims; it may not promote them.",
+    "subject_scope": "artifact: the file that carries the managed header",
+    "cardinality": "single: the producer writes one managed declaration per artifact and one value per field. A second value or a second declaration for the same artifact is a competing claim; the producer does not choose between them."
+  },
+  "unresolved_and_out_of_vocabulary": {
+    "unresolved": "Any key, in the vocabulary or not, declared as Unknown, empty, ~ or null states no value. It arrives as meta.managed.unresolved_field with the key as object, never as a field predicate and never as the value \"Unknown\". The reader decides this before it consults the vocabulary.",
+    "out_of_vocabulary": "A key outside this vocabulary that declares a value arrives as meta.managed.unsupported_field with the key as object. It carries no vocabulary meaning.",
+    "written_outside_vocabulary": {
+      "annotate": [
+        "content_hash",
+        "token_cost_estimate",
+        "created_or_detected_at",
+        "description",
+        "activation_signals",
+        "input_contract",
+        "output_contract",
+        "validation_gates",
+        "stop_conditions",
+        "role",
+        "objective",
+        "input_variables",
+        "output_format",
+        "model_target",
+        "constraints",
+        "phase_model",
+        "governs",
+        "decision_drivers",
+        "applies_to_domains"
+      ],
+      "inventory": [
+        "token_cost_estimate",
+        "content_hash",
+        "evidence",
+        "inventory_type",
+        "classification_confidence",
+        "created_at",
+        "modified_at",
+        "inspected_at"
+      ],
+      "harvested": "The inventory writer also preserves any key harvested from an earlier header. A preserved key outside this vocabulary arrives as meta.managed.unsupported_field like any other."
+    }
+  },
+  "authority_name_distinction": {
+    "header_field_authority": "meta.managed.governance.authority: an attribution label the producer records, naming who it treats as answerable for the header. It is the bound product.owner of .l9/meta-authority.yaml (schema v2); unbound, it is the operator-supplied value (annotate writer) or a harvested value or Unknown (inventory writer).",
+    "claim_level_authority": "The authority of the claim itself is always source, for every field including this one. A header is the file speaking for itself.",
+    "global_authority_model": "l9.authority-model/global@1 governs authority classes and precedence across the constellation. The header field is not an authority class, grants none and is not interpreted under that model."
+  },
+  "variants": {
+    "description": "Which artifact_type values the annotate writer gives family and owner. The inventory writer derives neither (see writers). Every other field is written by both writers.",
+    "family": [
+      "skill",
+      "playbook",
+      "kernel",
+      "context",
+      "prompt",
+      "unknown"
+    ],
+    "owner": [
+      "test",
+      "script",
+      "source"
+    ],
+    "neither": [
+      "doctrine"
+    ]
+  },
+  "writer_invariants": {
+    "description": "Relations both writers maintain when they derive artifact_type. When the inventory writer cannot read the body to classify it, it writes Unknown for artifact_type and the four taxonomy fields, which arrive unresolved. A header can be edited after it is written, so a reader receives these relations as claims: a violation is evidence for the consumer to reconcile, not a value to correct.",
+    "taxonomy_derived": [
+      "mcp_primitive",
+      "callable",
+      "retrievable",
+      "injectable"
+    ],
+    "retrievable_equals_injectable": true,
+    "taxonomy": {
+      "skill": {
+        "mcp_primitive": "tool",
+        "callable": true,
+        "injectable": true
+      },
+      "playbook": {
+        "mcp_primitive": "tool",
+        "callable": true,
+        "injectable": true
+      },
+      "kernel": {
+        "mcp_primitive": "tool",
+        "callable": true,
+        "injectable": true
+      },
+      "context": {
+        "mcp_primitive": "resource",
+        "callable": true,
+        "injectable": true
+      },
+      "prompt": {
+        "mcp_primitive": "prompt",
+        "callable": true,
+        "injectable": true
+      },
+      "doctrine": {
+        "mcp_primitive": "none",
+        "callable": false,
+        "injectable": true
+      },
+      "test": {
+        "mcp_primitive": "none",
+        "callable": false,
+        "injectable": false
+      },
+      "script": {
+        "mcp_primitive": "none",
+        "callable": false,
+        "injectable": false
+      },
+      "source": {
+        "mcp_primitive": "resource",
+        "callable": false,
+        "injectable": true
+      },
+      "unknown": {
+        "mcp_primitive": "none",
+        "callable": false,
+        "injectable": false
+      }
+    }
+  },
+  "fields": [
+    {
+      "field": "id",
+      "category": "identity",
+      "value_kind": "label",
+      "semantics": "A producer-local identifier for the artifact. The annotate writer writes <namespace>.<primitive folder>.<file stem>; the inventory writer writes inv-<first 16 hex digits of the hash of the repository-relative path>. Neither is a constellation identity coordinate, and the two writers' ids for the same file differ."
+    },
+    {
+      "field": "title",
+      "category": "identity",
+      "value_kind": "text",
+      "semantics": "Human-readable presentation text, not a governed name. The annotate writer derives it from the file basename; the inventory writer keeps a harvested title or uses the file name."
+    },
+    {
+      "field": "namespace",
+      "category": "identity",
+      "value_kind": "label",
+      "semantics": "The namespace the producer assigned: the bound product.id under a v2 binding. Unbound, the annotate writer uses the operator, namespace-glob or folder default, and the inventory writer keeps a harvested namespace or writes Unknown."
+    },
+    {
+      "field": "source_path",
+      "category": "identity",
+      "value_kind": "path",
+      "semantics": "The repository-relative POSIX path of the carrier when the header was written. It can be stale after a move; where the artifact is now is the consumer's observation, not this field."
+    },
+    {
+      "field": "artifact_type",
+      "category": "classification",
+      "value_kind": "label",
+      "allowed_values": [
+        "skill",
+        "playbook",
+        "kernel",
+        "context",
+        "prompt",
+        "doctrine",
+        "test",
+        "script",
+        "source",
+        "unknown"
+      ],
+      "semantics": "The producer's heuristic classification of the artifact's primitive kind. \"unknown\" is a value (unclassified), distinct from an unresolved field."
+    },
+    {
+      "field": "family",
+      "category": "classification",
+      "value_kind": "label",
+      "allowed_values": [
+        "auditor",
+        "compiler",
+        "meta_kernel_forge",
+        "builder",
+        "planner",
+        "research",
+        "domain_agent",
+        "legal"
+      ],
+      "presence": "annotate writer: artifact_type in variants.family, absent otherwise. inventory writer: only when preserved from an earlier header",
+      "semantics": "The producer's keyword-signal classification of an executable or retrievable artifact's functional family. An undetected family is written as Unknown and arrives unresolved."
+    },
+    {
+      "field": "mcp_primitive",
+      "category": "classification",
+      "value_kind": "label",
+      "allowed_values": [
+        "tool",
+        "resource",
+        "prompt",
+        "none"
+      ],
+      "semantics": "The MCP primitive the declared artifact_type maps to under the producer's primitive taxonomy."
+    },
+    {
+      "field": "callable",
+      "category": "classification",
+      "value_kind": "boolean",
+      "allowed_values": [
+        "true",
+        "false"
+      ],
+      "semantics": "The primitive taxonomy's callable flag for the declared artifact_type: whether the producer treats artifacts of that type as invocable capabilities. It grants no capability."
+    },
+    {
+      "field": "retrievable",
+      "category": "classification",
+      "value_kind": "boolean",
+      "allowed_values": [
+        "true",
+        "false"
+      ],
+      "semantics": "Whether the producer treats the artifact as retrievable context. Written equal to injectable."
+    },
+    {
+      "field": "injectable",
+      "category": "classification",
+      "value_kind": "boolean",
+      "allowed_values": [
+        "true",
+        "false"
+      ],
+      "semantics": "The primitive taxonomy's injectable flag for the declared artifact_type: whether the producer treats artifacts of that type as eligible for context injection."
+    },
+    {
+      "field": "authority",
+      "category": "governance",
+      "value_kind": "label",
+      "semantics": "An attribution label; see authority_name_distinction. Unbound, the inventory writer keeps a harvested value or writes Unknown. It is not claim authority, not an l9.authority-model class, and grants no ownership or precedence."
+    },
+    {
+      "field": "owner",
+      "category": "governance",
+      "value_kind": "label",
+      "presence": "annotate writer: artifact_type in variants.owner, absent otherwise. inventory writer: only when preserved from an earlier header",
+      "semantics": "The bound product.owner, recorded on test, script and source artifacts. Unbound, it is written as Unknown and arrives unresolved. It grants no ownership."
+    },
+    {
+      "field": "sharing_scope",
+      "category": "governance",
+      "value_kind": "label",
+      "allowed_values": [
+        "private",
+        "shared",
+        "agnostic"
+      ],
+      "semantics": "The producer's sharing classification, from shared and private signal words in the path of a prose-format file. Code and configuration files are always agnostic."
+    }
+  ]
+}
