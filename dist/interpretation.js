@@ -86,8 +86,10 @@ exports.INTERPRETATION_PROFILE_ID = "meta-injector-repository-interpretation";
  * 1.4.0 binds the governed native-header semantic mapping (ADR-084) into the
  * profile hash: what each header predicate means is now part of the rules a run
  * applied, so a change of meaning changes every packet's identity.
+ *
+ * 1.5.0 reads native headers from `.editorconfig` and `.gitignore` (ADR-085).
  */
-exports.INTERPRETATION_PROFILE_VERSION = "1.4.0";
+exports.INTERPRETATION_PROFILE_VERSION = "1.5.0";
 /**
  * Where a repository-scoped extractor's claim is filed, stated in the profile
  * hash so the profile names the rule it applied.

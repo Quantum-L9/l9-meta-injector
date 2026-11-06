@@ -107,7 +107,20 @@ export interface InventoryConfig {
   gitIgnored?: GitIgnoredPaths;
   now?: string;            // ISO timestamp (injected for determinism)
   schema?: MetaSchema;      // custom meta structure; when absent the built-in default is used
+  /**
+   * Why the tree is walked (ADR-085). `annotate` (the default) may write, so the
+   * built-in SKILL.md mutation protection also keeps skill entrypoints out of the
+   * walk. `observe` is a write-free observation: it requires `dryRun` with every
+   * header and sidecar write disabled, and it observes protected skill entrypoints
+   * instead of hiding them. Observing a file never makes it writable — mutation
+   * eligibility stays with `mutation_policy.ts`, and read eligibility (secret
+   * paths, size, encoding) stays with the interpretation boundary.
+   */
+  purpose?: InventoryPurpose;
 }
+
+/** Why an inventory walks a tree: to annotate it, or only to observe it (ADR-085). */
+export type InventoryPurpose = "annotate" | "observe";
 
 export interface DuplicateCluster {
   content_hash: string;
@@ -563,6 +576,12 @@ export function inventoryTree(config: InventoryConfig): InventoryResult {
     hashMaxBytes: config.hashMaxBytes ?? 50 * 1024 * 1024,
     now: config.now ?? "1970-01-01T00:00:00.000Z",
   };
+  const purpose: InventoryPurpose = config.purpose ?? "annotate";
+  if (purpose === "observe" && (!cfg.dryRun || cfg.injectHeaders || cfg.writeSidecars || cfg.folderSidecars)) {
+    throw new Error(
+      "inventory: purpose 'observe' is write-free; it requires dryRun with injectHeaders, writeSidecars and folderSidecars all disabled"
+    );
+  }
   // Absolutize root so absolute_path is truly absolute and relative_path/manifest
   // output are deterministic regardless of the caller's cwd.
   const root = path.resolve(config.root);
@@ -592,7 +611,10 @@ export function inventoryTree(config: InventoryConfig): InventoryResult {
     root,
     patterns: [...(config.omitPatterns ?? []), "**/*.l9meta.yaml", "**/.l9meta.yaml"],
     omitFile: config.omitFile,
-    protectSkillMd: true,
+    // SKILL.md is protected from mutation, not from observation (ADR-085). An
+    // annotating walk keeps it out entirely; a write-free observation reads it,
+    // so a protected entrypoint's declarations are not mistaken for absent ones.
+    protectSkillMd: purpose === "annotate",
     ignoreDirNames: [...ignoreDirs],
     ...(config.gitIgnored !== undefined ? { gitIgnored: config.gitIgnored } : {}),
   });

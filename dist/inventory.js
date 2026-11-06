@@ -482,6 +482,10 @@ function inventoryTree(config) {
         hashMaxBytes: config.hashMaxBytes ?? 50 * 1024 * 1024,
         now: config.now ?? "1970-01-01T00:00:00.000Z",
     };
+    const purpose = config.purpose ?? "annotate";
+    if (purpose === "observe" && (!cfg.dryRun || cfg.injectHeaders || cfg.writeSidecars || cfg.folderSidecars)) {
+        throw new Error("inventory: purpose 'observe' is write-free; it requires dryRun with injectHeaders, writeSidecars and folderSidecars all disabled");
+    }
     // Absolutize root so absolute_path is truly absolute and relative_path/manifest
     // output are deterministic regardless of the caller's cwd.
     const root = path.resolve(config.root);
@@ -509,7 +513,10 @@ function inventoryTree(config) {
         root,
         patterns: [...(config.omitPatterns ?? []), "**/*.l9meta.yaml", "**/.l9meta.yaml"],
         omitFile: config.omitFile,
-        protectSkillMd: true,
+        // SKILL.md is protected from mutation, not from observation (ADR-085). An
+        // annotating walk keeps it out entirely; a write-free observation reads it,
+        // so a protected entrypoint's declarations are not mistaken for absent ones.
+        protectSkillMd: purpose === "annotate",
         ignoreDirNames: [...ignoreDirs],
         ...(config.gitIgnored !== undefined ? { gitIgnored: config.gitIgnored } : {}),
     });

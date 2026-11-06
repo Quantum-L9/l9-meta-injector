@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Observation eligibility separated from mutation protection (ADR-085)
+
+- The repository-model observation now walks with `InventoryConfig.purpose: "observe"`, a write-free walk that observes protected `SKILL.md` entrypoints instead of hiding them. They remain unwritable outside skills mode; secret-path, size and encoding refusals are unchanged.
+- `native-metadata/v1` 1.3.0 reads native headers from `.editorconfig` and `.gitignore`, and the text decoder claims both.
+- Observation profile 1.1.0, interpretation profile 1.5.0. `l9.repository-model` stays 1.1.0.
+
 ### Governed native-header semantic mapping (ADR-084, Phase 2)
 
 - Native `L9_META` header predicates now carry the meanings of the Semantic Foundation's `l9.artifact-header-model/global@1` (v3.27.0, ADR-024) through one mapping table, `src/semantic_mapping.ts`: 30 fields with category, value kind, cardinality and a ledger reference, all declared source claims with no projection. See `docs/semantic-mapping.md`.
