@@ -62,6 +62,34 @@ describe("Case A: protected but readable", () => {
     expect(() => inventoryTree({ root, outDir, purpose: "observe", dryRun: true })).toThrow(/write-free/);
   });
 
+  it("refuses an unknown purpose instead of dropping protection", () => {
+    const root = repoWith({ "skills/demo/SKILL.md": `${HEADER}# Skill\n` });
+    const skill = fs.readFileSync(path.join(root, "skills/demo/SKILL.md"), "utf8");
+    const outDir = path.join(scratch("unknown-purpose"), "out");
+    const config = { root, outDir, purpose: "observ" } as unknown as Parameters<typeof inventoryTree>[0];
+    expect(() => inventoryTree(config)).toThrow(/unknown purpose/);
+    expect(fs.readFileSync(path.join(root, "skills/demo/SKILL.md"), "utf8")).toBe(skill);
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "never reads through a symlinked SKILL.md or other symlinked carrier",
+    () => {
+      const outside = path.join(scratch("outside"), "target.md");
+      fs.writeFileSync(outside, `${HEADER}# Outside the root\n`);
+      const root = repoWith({ "README.md": "# Readme\n" });
+      fs.mkdirSync(path.join(root, "skills/linked"), { recursive: true });
+      fs.symlinkSync(outside, path.join(root, "skills/linked/SKILL.md"));
+      fs.symlinkSync(outside, path.join(root, "linked.md"));
+      const packet = observeRepositoryModel({
+        root, repositoryName: "repo", sourceRevision: REVISION, producerVersion: "4.0.0",
+      });
+      for (const linked of ["skills/linked/SKILL.md", "linked.md"]) {
+        expect(packet.payload.assertions.some((a) => a.source_path === linked)).toBe(false);
+      }
+      expect(validateRepositoryModelPacket(packet).status).toBe("passed");
+    },
+  );
+
   it("still honours explicit operator omissions and secret-path refusal while observing", () => {
     const root = repoWith({
       "skills/demo/SKILL.md": `${HEADER}# Skill\n`,

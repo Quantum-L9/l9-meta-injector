@@ -235,11 +235,4 @@ export declare function toPortableAssertions(assertions: readonly InterpretedAss
  */
 export declare function bindPortableAssertions(assertions: readonly PortableAssertion[], repositorySubjectId: string): InterpretedAssertion[];
 export declare function interpretDocumentContent(input: InterpretDocumentInput): InterpretDocumentResult;
-/**
- * Interpret a repository that inventory has already observed.
- *
- * Returns an empty assertion set rather than throwing when nothing matches: a
- * repository the profile has no rules for is not an error, it is a repository
- * with no declared semantics this profile can read.
- */
 export declare function interpretRepository(input: InterpretRepositoryInput): InterpretationResult;

@@ -5,6 +5,7 @@
 ### Observation eligibility separated from mutation protection (ADR-085)
 
 - The repository-model observation now walks with `InventoryConfig.purpose: "observe"`, a write-free walk that observes protected `SKILL.md` entrypoints instead of hiding them. They remain unwritable outside skills mode; secret-path, size and encoding refusals are unchanged.
+- Interpretation now opens only regular files (`lstat`). A symlinked carrier, `SKILL.md` included, is never followed; it yields `interpretation.not_regular_file`. An unknown inventory `purpose` is refused.
 - `native-metadata/v1` 1.3.0 reads native headers from `.editorconfig` and `.gitignore`, and the text decoder claims both.
 - Observation profile 1.1.0, interpretation profile 1.5.0. `l9.repository-model` stays 1.1.0.
 

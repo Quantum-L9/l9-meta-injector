@@ -18,7 +18,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "git_blob_sha1": "ef4657aa067046c1f616951e4d8eaa2e699180ab"
+      "git_blob_sha1": "03aa497b6a02fdf82e88ed201c1242d9a9646cf7"
     },
     {
       "path": "dist/apply.d.ts",
@@ -970,11 +970,11 @@
     },
     {
       "path": "src/interpretation.ts",
-      "git_blob_sha1": "64767efb73f37f534022e7173e9735d14d60b553"
+      "git_blob_sha1": "52cfbc32e52d34ab3f04400eb310535ca5544b21"
     },
     {
       "path": "src/inventory.ts",
-      "git_blob_sha1": "f9b853105eb7b5098a85cb03d2c67ff4791fe2db"
+      "git_blob_sha1": "6150bbf58dd2fd6f19a29644cbf01b49da80e9ad"
     },
     {
       "path": "src/local_archive_policy.ts",

@@ -49,11 +49,13 @@ We choose **Option B**.
 1. `InventoryConfig.purpose` is `annotate` (the default, unchanged behaviour) or `observe`. `observe` is write-free: it is refused unless `dryRun` is set and `injectHeaders`, `writeSidecars` and `folderSidecars` are all disabled. Under `observe` the built-in skill-entrypoint protection does not remove `SKILL.md` from the walk.
 2. `observeRepositoryModel` walks with `purpose: "observe"`.
 3. Nothing else about inventory eligibility changes: built-in noise, `.l9metaignore`, `--omit-file`, `--omit`, git-ignored untracked paths (ADR-078) and the output-directory exclusion all still apply. Read eligibility is unchanged: a secret-candidate path is still never opened. Mutation eligibility is unchanged: `mutation_policy.ts` still makes `SKILL.md` a `central_manifest` carrier outside skills mode.
-4. `native-metadata/v1` 1.3.0 recognizes `.editorconfig` and `.gitignore` as carriers, and the text decoder claims them so the corpus scan interprets and caches them too.
+4. An unknown `purpose` value is refused. Protection is dropped only for the exact value `observe`, never for a value that merely fails to be `annotate`.
+5. Interpretation opens only regular files, judged with `lstat`. Inventory records a symbolic link or special entry without opening it (`symlink_not_traversed`). Interpretation previously filtered out only folders, so it followed a symlinked carrier, possibly outside the root, and cited bytes the repository does not own. That defect predates this decision for any symlinked carrier; observing `SKILL.md` would have extended it to skill entrypoints. Such a path now yields `interpretation.not_regular_file`.
+6. `native-metadata/v1` 1.3.0 recognizes `.editorconfig` and `.gitignore` as carriers, and the text decoder claims them so the corpus scan interprets and caches them too.
 
 ## Consequences
 
 - A protected skill entrypoint's declarations reach the Repository Model Packet as source-bound assertions; the file is never modified.
 - The observation profile `meta-injector-inventory-observation` moves to 1.1.0 and the interpretation profile to 1.5.0, because what a packet can describe changed. `l9.repository-model` stays 1.1.0; no wire field is added.
 - An annotating inventory, `inventory --dry-run`, check, apply and skills mode are unchanged.
-- Tests: `tests/observation_eligibility.test.ts` (protected-but-readable, write-free refusal, operator omission and secret refusal while observing, dotfile carriers) and `tests/native_metadata.test.ts` (carrier and decoder coverage).
+- Tests: `tests/observation_eligibility.test.ts` (protected-but-readable, write-free refusal, unknown-purpose refusal, symlinked `SKILL.md` and carrier never read, operator omission and secret refusal while observing, dotfile carriers) and `tests/native_metadata.test.ts` (carrier and decoder coverage).

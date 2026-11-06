@@ -483,6 +483,11 @@ function inventoryTree(config) {
         now: config.now ?? "1970-01-01T00:00:00.000Z",
     };
     const purpose = config.purpose ?? "annotate";
+    // A JavaScript caller or deserialized config can pass anything. Refuse an
+    // unknown purpose rather than let it fall through to an unprotected walk.
+    if (purpose !== "annotate" && purpose !== "observe") {
+        throw new Error(`inventory: unknown purpose ${JSON.stringify(purpose)}; expected 'annotate' or 'observe'`);
+    }
     if (purpose === "observe" && (!cfg.dryRun || cfg.injectHeaders || cfg.writeSidecars || cfg.folderSidecars)) {
         throw new Error("inventory: purpose 'observe' is write-free; it requires dryRun with injectHeaders, writeSidecars and folderSidecars all disabled");
     }
@@ -516,7 +521,7 @@ function inventoryTree(config) {
         // SKILL.md is protected from mutation, not from observation (ADR-085). An
         // annotating walk keeps it out entirely; a write-free observation reads it,
         // so a protected entrypoint's declarations are not mistaken for absent ones.
-        protectSkillMd: purpose === "annotate",
+        protectSkillMd: purpose !== "observe",
         ignoreDirNames: [...ignoreDirs],
         ...(config.gitIgnored !== undefined ? { gitIgnored: config.gitIgnored } : {}),
     });
