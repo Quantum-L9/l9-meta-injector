@@ -1,4 +1,4 @@
-import type { ArchitectureEvidenceRecord, RoleEvidence } from "./corpus_architecture_evidence";
+import type { ArchitectureEvidenceRecord } from "./corpus_architecture_evidence";
 import type { CorpusVerification } from "./corpus_snapshot";
 /** Schema of the one response this module renders. */
 export declare const CORPUS_EVIDENCE_QUERY_SCHEMA = "l9.corpus-evidence-query/v1";
@@ -43,13 +43,18 @@ export interface EvidenceQueryInput {
     /** Restrict to one source. */
     source?: EvidenceSource;
     /**
-     * A document role of the selection policy (`architecture-development/v2`).
-     * Every record's document is filed under the roles its own declarations
-     * establish, from any source; the roles and their evidence are returned under
-     * `roles_by_document` whenever this filter is used.
+     * A document role of the selection policy (`architecture-development/v2`), as
+     * the generation recorded it on each architecture-evidence record. Meaningful
+     * for that source only: without `source` the query evaluates architecture
+     * evidence alone; with another source it is unsupported. Nothing is re-derived.
      */
     role?: string;
-    /** Only architecture-evidence records the selection profile marked selected. */
+    /**
+     * Only architecture-evidence records the selection profile marked selected.
+     * Together with `role`, only records whose recorded `selected_for_roles` names
+     * that role; a generation that recorded no per-role attribution is unsupported
+     * for the combination rather than approximated.
+     */
     selectedOnly?: boolean;
     limit?: number;
     maxExcerptBytes?: number;
@@ -156,18 +161,6 @@ export interface EvidenceQueryResponse {
     truncated: boolean;
     truncation_statement: string | null;
     results: EvidenceQueryResult[];
-    /**
-     * The roles each returned document is filed under, with the declarations that
-     * established them. Present only when a role filter was given: the roles are
-     * computed by the same selector the projection uses, from the work signals and
-     * packet assertions the generation already holds, and are a reading of what
-     * each document declared, never a verdict about it.
-     */
-    roles_by_document?: {
-        artifact_id: string;
-        roles: string[];
-        role_evidence: RoleEvidence[];
-    }[];
     diagnostics: {
         code: string;
         severity: "info" | "warning" | "error";

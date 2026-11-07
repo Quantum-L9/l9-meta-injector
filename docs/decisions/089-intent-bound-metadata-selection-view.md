@@ -64,8 +64,9 @@ We choose **Option C**.
 
 1. `src/corpus_metadata_selection.ts` holds the policy `local-source-metadata-selection/v1`:
    four intents (`wip_design`, `accepted_declaration`, `development_handoff`,
-   `historical_review`), each a row of roles, an unknown-role retention bit, a class
-   order, a field list and a per-document bound; a catalog of sixteen existing evidence
+   `historical_review`), each a row of roles, of declared `work.status` values (the
+   lifecycle axis the role policy keeps separate from roles), an unknown-role retention
+   bit, a class order, a field list and a per-document bound; a catalog of sixteen existing evidence
    fields with an always-set of six; three field-level rules (not in intent, empty,
    redundant) and nothing else.
 2. `--metadata-selection INTENT` on the local-source CLI (`metadataSelection` on

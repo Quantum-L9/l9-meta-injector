@@ -125,15 +125,16 @@ number it does not have (ADR-043).
     "handoff": []
   },
   "selection": {
-    "profile_id": "architecture-development/v1",
+    "profile_id": "architecture-development/v2",
     "roles": ["wip_proposal"],
     "role_evidence": [{"role": "wip_proposal", "predicate": "work.kind", "object": "proposal", "assertion_id": "assertion:…", "count": 1}, …],
     "selected": true,
+    "selected_for_roles": ["wip_proposal"],
     "reasons": ["wip_proposal selects constraint: work.kind=proposal (assertion:…), work.status=wip (assertion:…)"]
   },
   "epistemic_class": "source-declared",
   "authority_verified": false,
-  "extractor_id": "architecture-statements/v1", "extractor_version": "1.0.0", "profile_version": "1.0.0"
+  "extractor_id": "architecture-statements/v1", "extractor_version": "1.1.0", "profile_version": "1.3.0"
 }
 ```
 
@@ -166,22 +167,51 @@ from a static table, and marks which classes a reader of that role is looking fo
 |---|---|---|
 | `wip_proposal` | `work.kind` in `design`, `plan`, `proposal`, `roadmap`; or `work.status` in `draft`, `planned`, `wip` | all five classes |
 | `specification` | `work.kind` in `decision`, `specification` | `constraint`, `decision_statement` |
-| `accepted_declaration` | `work.status` in `active`, `complete`, `done` | `constraint`, `decision_statement`, `intent` |
 | `development_handoff` | `work.kind` `checklist`; or any `work.task.open`, `work.task.completed`, `work.blocked_by`, `work.depends_on` | `constraint`, `open_question` |
-| `research` | `work.kind` in `notes`, `research` | `assumption`, `intent`, `open_question` |
-| `historical` | `work.status` in `archived`, `cancelled`, `superseded`; or any `work.superseded_by` | `constraint`, `decision_statement` |
-| `unknown` | none of the above | all five classes |
+| `research_notes` | `work.kind` in `notes`, `research` | all five classes, deliberately recall-oriented |
+| `unknown` | no rule above matched | all five classes |
 
 The policy is `architecture-development/v2` and the manifest carries every rule under
 `selection_policy`, so a reason on a record can be checked against the row that produced
-it. An `accepted_declaration` is a document that says it holds and a `historical` document
-is one that says it no longer does; neither is a verdict that the declaration is true today.
+it. The vocabulary is closed: every role is established by one of the declarations in the
+table and nothing else establishes one.
 
-Roles overlap and the selection is the union. `selection.reasons` names, for each
-selecting rule, the predicate, object and assertion id that established the role. An
-unselected record has an empty reason list: no rule selected it, nothing judged it. An
-undeclared role selects everything, because not knowing what a document is for is no
-reason to hide what it said. `work_context.applicability` carries the document's
+**A role is a retrieval-selection classification, not a lifecycle judgement.** A
+declared `work.status` is a separate axis that the record carries under
+`work_context.statuses` and `work_context.applicability` and the query filters with
+`--status`. An archived specification is a `specification` whose declared status is
+`archived`; there is no `historical` role, and nothing is read as historical because a
+file is old, sits under `archive/`, carries a date, or names a successor. Equally,
+`status: active` or `done` establishes no role and no authority. `wip_proposal` is a
+legacy selection-family name: matching a `plan` kind says what the document is for, not
+that it is unfinished today; its declared status says that, separately. Research and
+notes are `research_notes`, never `wip_proposal` by kind alone; a research document that
+also declares `status: wip` is both.
+
+Roles overlap and there is no priority among them. A record's `selection.selected` is
+true when at least one of its document's roles selects its class, and
+`selection.selected_for_roles` names exactly which: the matched roles whose rule selects
+that class, in code-point order, derived from the same typed rule evaluation as the
+reasons and never from their text. In a document that is both a `specification` and a
+`development_handoff`, a `constraint` is selected for both, an `open_question` for the
+handoff only, and a `decision_statement` for the specification only; all three are
+`selected`, and a question "selected for specification documents" is answered from
+`selected_for_roles`, never from `roles` plus `selected`. `selection.reasons` names,
+for each selecting rule, the predicate, object and assertion id that established the
+role. An unselected record has an empty reason list and an empty `selected_for_roles`: no
+rule selected it, nothing judged it. A document matching no rule is `unknown`, carries no
+role evidence, selects every class, and says why on every record: "no supported
+document-role rule matched the available source declarations; all observed architectural
+classes remain selected to preserve recall" — which is not a claim that the document
+declared nothing; a document that declares only `Status: archived` is unknown too, and
+that status stays on its records.
+
+`selected_for_roles` was added in profile 1.3.0. A payload written before it recorded only
+`selected`; the verifier does not fault such a payload for lacking the field, and the
+query will not reconstruct it (see `corpus-evidence-query.md`). A policy change moves the
+profile hash and `corpus_analysis_id`; it never moves an unchanged statement's
+`evidence_id`, the source snapshot, a packet id or a cache key: `selection` is derived
+metadata, not part of the statement's identity. `work_context.applicability` carries the document's
 `work.status`, `work.supersedes` and `work.superseded_by` declarations, and
 `work_context.handoff` counts its tasks, blockers, dependencies and references, on every
 record, so the view can be re-derived by a consumer with a different table.
@@ -196,7 +226,8 @@ is a change to `ARCHITECTURE_EVIDENCE_PROFILE_VERSION`.
 | `record_count`, `payload_byte_length` | count the lines, check the bytes |
 | `payload_artifact_hash` | SHA-256 of the exact bytes — nothing was rewritten |
 | `payload_semantic_hash` | SHA-256 over the canonical records — survives a move |
-| `selected_record_count`, `by_class`, `by_format`, `by_role`, `by_recognition_form` | totals the records must support |
+| `selected_record_count`, `by_class`, `by_format`, `by_role`, `by_recognition_form` | totals the records must support; `by_role` counts document-role membership, not selection |
+| `selection_policy` | every rule the selection applied, so a reason or a `selected_for_roles` entry can be checked against its row |
 | `document_count`, `documents_read` | documents that declared something, documents the reader was given |
 | `diagnostics`, `diagnostic_count`, `diagnostics_omitted` | every construct outside the grammar, by artifact and block |
 | `profile_hash`, `extractor_version`, `selection_profile_id` | the rules that produced this |

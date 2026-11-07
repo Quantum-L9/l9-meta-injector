@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SELECTION_POLICY_STATEMENT = exports.ARCHITECTURE_DOCUMENT_ROLES = exports.ARCHITECTURE_EVIDENCE_STATEMENT = exports.ARCHITECTURE_EVIDENCE_EPISTEMIC_CLASS = exports.ARCHITECTURE_SELECTION_PROFILE_ID = exports.ARCHITECTURE_EVIDENCE_PROFILE_VERSION = exports.ARCHITECTURE_EVIDENCE_PROFILE_ID = exports.ARCHITECTURE_EVIDENCE_MANIFEST_FILE = exports.ARCHITECTURE_EVIDENCE_PAYLOAD_FILE = exports.ARCHITECTURE_EVIDENCE_MANIFEST_SCHEMA = exports.ARCHITECTURE_EVIDENCE_SCHEMA = void 0;
+exports.SELECTION_POLICY_STATEMENT = exports.UNKNOWN_ROLE_EXPLANATION = exports.ARCHITECTURE_DOCUMENT_ROLES = exports.ARCHITECTURE_EVIDENCE_STATEMENT = exports.ARCHITECTURE_EVIDENCE_EPISTEMIC_CLASS = exports.ARCHITECTURE_SELECTION_PROFILE_ID = exports.ARCHITECTURE_EVIDENCE_PROFILE_VERSION = exports.ARCHITECTURE_EVIDENCE_PROFILE_ID = exports.ARCHITECTURE_EVIDENCE_MANIFEST_FILE = exports.ARCHITECTURE_EVIDENCE_PAYLOAD_FILE = exports.ARCHITECTURE_EVIDENCE_MANIFEST_SCHEMA = exports.ARCHITECTURE_EVIDENCE_SCHEMA = void 0;
 exports.architectureSelectionPolicy = architectureSelectionPolicy;
 exports.architectureEvidenceProfileHash = architectureEvidenceProfileHash;
 exports.selectForDocument = selectForDocument;
@@ -65,7 +65,7 @@ exports.ARCHITECTURE_EVIDENCE_PROFILE_ID = "meta-injector-architecture-evidence"
  * selector exported so the query can file every record's document under the
  * same roles. Record identity is unchanged.
  */
-exports.ARCHITECTURE_EVIDENCE_PROFILE_VERSION = "1.2.0";
+exports.ARCHITECTURE_EVIDENCE_PROFILE_VERSION = "1.3.0";
 /** The one selection profile this release ships. A view over the records, not a vocabulary. */
 exports.ARCHITECTURE_SELECTION_PROFILE_ID = "architecture-development/v2";
 /** What every record is, epistemically. Stated on each one so no reader has to remember. */
@@ -79,32 +79,31 @@ exports.ARCHITECTURE_EVIDENCE_STATEMENT = "Every record is a statement a documen
 /**
  * The roles the selection profile recognizes, each from explicit evidence only.
  *
- * `wip_proposal`         — a declared kind in the proposal family (design, plan,
- *                          proposal, roadmap), or a declared status that says the
- *                          work is not finished (draft, planned, wip).
- * `specification`        — a declared specification or decision kind.
- * `accepted_declaration` — a declared status that says the document holds
- *                          (active, complete, done).
- * `development_handoff`  — a declared checklist kind, or the document carries the
- *                          task, blocker or dependency declarations a handoff is
- *                          made of.
- * `research`             — a declared research or notes kind.
- * `historical`           — a declared status that says the document no longer
- *                          holds (archived, cancelled, superseded), or a declared
- *                          successor (`Superseded by:`).
- * `unknown`              — none of the above was declared.
+ * `wip_proposal`        — a declared kind in the proposal family (design, plan,
+ *                         proposal, roadmap), or a declared status that says the
+ *                         work is not finished (draft, planned, wip). A legacy
+ *                         selection-family name: matching a plan kind says what
+ *                         the document is for, not that it is unfinished today.
+ * `specification`       — a declared specification or decision kind.
+ * `development_handoff` — a declared checklist kind, or the document carries the
+ *                         task, blocker or dependency declarations a handoff is
+ *                         made of.
+ * `research_notes`      — a declared research or notes kind. Research is not
+ *                         evidence of a WIP proposal; a research document is also
+ *                         a `wip_proposal` only when it declares a WIP status.
+ * `unknown`             — no supported role rule matched the declarations.
  *
- * Roles overlap: a `Type: plan` document with open tasks is both a proposal and a
- * handoff, a `Status: archived` specification is both a specification and
- * historical, and the classes each selects are the union. Every role is a
- * reading of what the document declared about itself; none is a verdict about
- * whether the declaration is true today.
+ * A role is a retrieval-selection classification, never a lifecycle judgement.
+ * `work.status` stays a separate, independently queryable axis: an archived
+ * specification is a specification whose declared status is archived, not a
+ * different role. Roles overlap: a `Type: plan` document with open tasks is both
+ * a proposal and a handoff, and the classes each selects are the union. Every
+ * role is a reading of what the document declared about itself; none is a
+ * verdict about whether the declaration is true today.
  */
 exports.ARCHITECTURE_DOCUMENT_ROLES = [
-    "accepted_declaration",
     "development_handoff",
-    "historical",
-    "research",
+    "research_notes",
     "specification",
     "unknown",
     "wip_proposal",
@@ -132,13 +131,6 @@ const ROLE_RULES = [
         classes: ["constraint", "decision_statement"],
     },
     {
-        role: "accepted_declaration",
-        kinds: [],
-        statuses: ["active", "complete", "done"],
-        predicates: [],
-        classes: ["constraint", "decision_statement", "intent"],
-    },
-    {
         role: "development_handoff",
         kinds: ["checklist"],
         statuses: [],
@@ -146,25 +138,25 @@ const ROLE_RULES = [
         classes: ["constraint", "open_question"],
     },
     {
-        role: "research",
+        // Deliberately high-recall: research and notes are read for everything they
+        // declare. Weighing those classes by what a run is for is not this table's job.
+        role: "research_notes",
         kinds: ["notes", "research"],
         statuses: [],
         predicates: [],
-        classes: ["assumption", "intent", "open_question"],
-    },
-    {
-        role: "historical",
-        kinds: [],
-        statuses: ["archived", "cancelled", "superseded"],
-        predicates: ["work.superseded_by"],
-        classes: ["constraint", "decision_statement"],
+        classes: ["assumption", "constraint", "decision_statement", "intent", "open_question"],
     },
 ];
-exports.SELECTION_POLICY_STATEMENT = "A role is a reading of what the document declared about itself (work.kind, work.status, "
-    + "handoff and supersession predicates), cited by assertion id. Roles overlap and the "
-    + "selected classes are their union. A document matching no rule is unknown and selects "
-    + "every class. No role is a verdict that the declaration is true today: an accepted_declaration "
-    + "is a document that says it holds, a historical document is one that says it no longer does.";
+/** What the unknown role says about itself: a fallback, never a reading of evidence. */
+exports.UNKNOWN_ROLE_EXPLANATION = "no supported document-role rule matched the available source declarations; "
+    + "all observed architectural classes remain selected to preserve recall";
+exports.SELECTION_POLICY_STATEMENT = "A role is a retrieval-selection reading of what the document declared about itself "
+    + "(work.kind, work.status and handoff predicates), cited by assertion id; it is not a "
+    + "lifecycle judgement, and a declared status such as archived stays a separate axis. "
+    + "Roles overlap with no priority among them; a statement's selection is the union of its "
+    + "roles' selected classes and selected_for_roles names exactly the roles whose rule "
+    + "selected it. A document matching no rule is unknown and selects every class. No role "
+    + "is a verdict that a declaration is true, accepted or authoritative today.";
 /** The selection policy this profile applies, for the manifest and the docs. */
 function architectureSelectionPolicy() {
     return {
@@ -264,6 +256,7 @@ function selectForDocument(assertions) {
     const roles = [];
     const roleEvidence = [];
     const reasonsByClass = new Map();
+    const rolesByClass = new Map();
     const kinds = refsFor(assertions, "work.kind");
     const statuses = refsFor(assertions, "work.status");
     for (const rule of ROLE_RULES) {
@@ -299,19 +292,23 @@ function selectForDocument(assertions) {
             const reasons = reasonsByClass.get(statementClass) ?? [];
             reasons.push(`${rule.role} selects ${statementClass}: ${because}`);
             reasonsByClass.set(statementClass, reasons);
+            const selecting = rolesByClass.get(statementClass) ?? [];
+            selecting.push(rule.role);
+            rolesByClass.set(statementClass, selecting);
         }
     }
     if (roles.length === 0) {
         roles.push("unknown");
         for (const statementClass of architecture_statements_1.ARCHITECTURE_STATEMENT_CLASSES) {
-            reasonsByClass.set(statementClass, [
-                `unknown selects ${statementClass}: the document declares no work.kind, work.status or handoff evidence, so every observed class is retained`,
-            ]);
+            reasonsByClass.set(statementClass, [`unknown selects ${statementClass}: ${exports.UNKNOWN_ROLE_EXPLANATION}`]);
+            rolesByClass.set(statementClass, ["unknown"]);
         }
     }
     roles.sort(ordering_1.compareCodePoints);
     roleEvidence.sort((a, b) => (0, ordering_1.compareCodePoints)(a.role, b.role) || compareRefs(a, b));
-    return { roles, roleEvidence, reasonsByClass };
+    for (const selecting of rolesByClass.values())
+        selecting.sort(ordering_1.compareCodePoints);
+    return { roles, roleEvidence, reasonsByClass, rolesByClass };
 }
 /** One record, canonically rendered onto a single line. */
 function renderArchitectureEvidenceRecord(record) {
@@ -401,6 +398,7 @@ function buildArchitectureEvidenceExport(input) {
         };
         for (const statement of reading.statements) {
             const reasons = selection.reasonsByClass.get(statement.statement_class) ?? [];
+            const selectedForRoles = selection.rolesByClass.get(statement.statement_class) ?? [];
             const identity = {
                 artifact_id: document.artifactId,
                 block_id: statement.block.block_id,
@@ -435,7 +433,8 @@ function buildArchitectureEvidenceExport(input) {
                     profile_id: exports.ARCHITECTURE_SELECTION_PROFILE_ID,
                     roles: [...selection.roles],
                     role_evidence: selection.roleEvidence.map((item) => ({ ...item })),
-                    selected: reasons.length > 0,
+                    selected: selectedForRoles.length > 0,
+                    selected_for_roles: [...selectedForRoles],
                     reasons: [...reasons],
                 },
                 epistemic_class: exports.ARCHITECTURE_EVIDENCE_EPISTEMIC_CLASS,
@@ -527,6 +526,76 @@ function readPayloadRecords(payloadJsonl) {
     return { records, problems };
 }
 /**
+ * The per-role selection invariants of one record (profile 1.3.0 and later).
+ *
+ * A payload written before 1.3.0 recorded only `selected`; its records carry no
+ * `selected_for_roles` and are not faulted for that. A record that carries the
+ * field, from any profile, must satisfy every invariant: no duplicates, code-point
+ * order, every member a matched role whose rule selects this class, `selected`
+ * true exactly when non-empty, a reason naming each selecting role, source-backed
+ * evidence for every non-unknown role, and the stated fallback for unknown.
+ */
+function verifyRoleSelection(record, profileVersion) {
+    const problems = [];
+    const selection = record.selection;
+    const id = record.evidence_id;
+    if (selection === undefined || !Array.isArray(selection.roles)) {
+        return [`record ${id} carries no selection`];
+    }
+    const selectedFor = selection.selected_for_roles;
+    if (selectedFor === undefined) {
+        if (profileVersion === exports.ARCHITECTURE_EVIDENCE_PROFILE_VERSION) {
+            problems.push(`record ${id} carries no selected_for_roles under profile ${profileVersion}`);
+        }
+        return problems;
+    }
+    if (!Array.isArray(selectedFor))
+        return [`record ${id} selected_for_roles is not a list`];
+    const sorted = [...selectedFor].sort(ordering_1.compareCodePoints);
+    if (sorted.some((role, index) => role !== selectedFor[index])) {
+        problems.push(`record ${id} selected_for_roles is not in code-point order`);
+    }
+    if (new Set(selectedFor).size !== selectedFor.length) {
+        problems.push(`record ${id} selected_for_roles carries a duplicate`);
+    }
+    if (selection.selected !== (selectedFor.length > 0)) {
+        problems.push(`record ${id} is marked selected=${String(selection.selected)} but selected_for_roles has ${selectedFor.length} member(s)`);
+    }
+    for (const role of selectedFor) {
+        if (!exports.ARCHITECTURE_DOCUMENT_ROLES.includes(role)) {
+            problems.push(`record ${id} selected_for_roles names '${String(role)}', which is not a role`);
+            continue;
+        }
+        if (!selection.roles.includes(role)) {
+            problems.push(`record ${id} is selected for ${role}, a role its document was not filed under`);
+        }
+        const rule = ROLE_RULES.find((candidate) => candidate.role === role);
+        const classes = rule === undefined && role === "unknown" ? architecture_statements_1.ARCHITECTURE_STATEMENT_CLASSES : rule?.classes ?? [];
+        if (!classes.includes(record.statement_class)) {
+            problems.push(`record ${id} is selected for ${role}, whose rule does not select ${record.statement_class}`);
+        }
+        if (!selection.reasons.some((reason) => reason.startsWith(`${role} selects ${record.statement_class}:`))) {
+            problems.push(`record ${id} is selected for ${role} without a reason naming it`);
+        }
+    }
+    for (const role of selection.roles) {
+        const evidence = selection.role_evidence.filter((item) => item.role === role);
+        if (role === "unknown") {
+            if (selection.role_evidence.length > 0)
+                problems.push(`record ${id} claims source evidence for the unknown role`);
+            if (selection.roles.length !== 1)
+                problems.push(`record ${id} files unknown beside a matched role`);
+            if (!selection.reasons.every((reason) => reason.includes(exports.UNKNOWN_ROLE_EXPLANATION))) {
+                problems.push(`record ${id} has an unknown role without the fallback explanation`);
+            }
+        }
+        else if (evidence.length === 0) {
+            problems.push(`record ${id} files its document under ${role} with no source evidence`);
+        }
+    }
+    return problems;
+}
+/**
  * Prove a payload is the complete set its manifest claims, before it is published.
  *
  * The checks mirror the work-signal export's, and add the two this contract
@@ -589,6 +658,7 @@ function verifyArchitectureEvidenceExport(input) {
         if (!architecture_statements_1.ARCHITECTURE_STATEMENT_CLASSES.includes(record.statement_class)) {
             problems.push(`record ${record.evidence_id} carries statement_class '${String(record.statement_class)}', which is not in the vocabulary`);
         }
+        problems.push(...verifyRoleSelection(record, manifest.profile_version));
     }
     if (manifest.diagnostic_count !== manifest.diagnostics.length) {
         problems.push(`manifest diagnostic_count is ${manifest.diagnostic_count} and it lists ${manifest.diagnostics.length}`);

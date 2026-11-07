@@ -291,9 +291,11 @@ function loadGeneration(pinned) {
     });
     // Architecture evidence: opt-in, so absent is a state rather than a failure.
     let architecture = null;
+    let architectureProfileVersion = null;
     if (snapshot.architecture_evidence !== undefined || pinned.names(corpus_architecture_evidence_1.ARCHITECTURE_EVIDENCE_PAYLOAD_FILE)) {
         const manifest = pinned.json(corpus_architecture_evidence_1.ARCHITECTURE_EVIDENCE_MANIFEST_FILE, corpus_architecture_evidence_1.ARCHITECTURE_EVIDENCE_MANIFEST_SCHEMA);
         sameCorpus(corpus_architecture_evidence_1.ARCHITECTURE_EVIDENCE_MANIFEST_FILE, manifest);
+        architectureProfileVersion = manifest.profile_version;
         const payload = pinned.text(corpus_architecture_evidence_1.ARCHITECTURE_EVIDENCE_PAYLOAD_FILE);
         const problems = (0, corpus_architecture_evidence_1.verifyArchitectureEvidenceExport)({
             manifest,
@@ -372,7 +374,7 @@ function loadGeneration(pinned) {
         problems: [],
     });
     sources.sort((a, b) => (0, ordering_1.compareCodePoints)(a.source, b.source));
-    return { pinned, snapshot, index, signals, workSignals, architecture, packets, sources };
+    return { pinned, snapshot, index, signals, workSignals, architecture, architectureProfileVersion, packets, sources };
 }
 /** The join from both identity domains to the document, built from existing ids only. */
 function documentContexts(loaded) {
@@ -390,7 +392,6 @@ function documentContexts(loaded) {
             root_key: key,
             rmp_artifact_id: rmp,
             declarations: { kinds: [], statuses: [] },
-            assertions: [],
         });
         byRmp.set(rmp, entry.artifact_id);
         byCorpusPath.set(entry.corpus_path, entry.artifact_id);
@@ -399,7 +400,6 @@ function documentContexts(loaded) {
         const context = byArtifact.get(artifactId);
         if (context === undefined)
             return;
-        context.assertions.push({ assertion_id: assertionId, predicate, object });
         if (predicate === "work.kind")
             context.declarations.kinds.push({ object, assertion_id: assertionId });
         if (predicate === "work.status")
@@ -704,19 +704,34 @@ function queryCorpusEvidence(input) {
         rootIds = new Set(matched.map((root) => root.root_id));
     }
     const contexts = documentContexts(loaded);
-    // A selected-only view is a view over the selection profile's verdicts, and
-    // only a generation that ran the projection has any.
-    if (query.selected_only === true && loaded.architecture === null) {
-        return refuse("unsupported", "query.architecture_evidence_not_run", "selected-only asks for the selection profile's verdicts, and the pinned generation was produced without --architecture-evidence", generation, loaded.sources);
+    // Roles and selection verdicts exist on architecture-evidence records and
+    // nowhere else, as the generation recorded them. A question about them is
+    // answered from that source only, from a generation that ran the projection,
+    // and never by re-deriving a role from today's rules over yesterday's evidence.
+    const roleFilter = query.role !== undefined || query.selected_only === true;
+    if (roleFilter && query.source !== null && query.source !== "architecture_evidence") {
+        return refuse("unsupported", "query.role_filter_source_unsupported", `--role and --selected-only apply to architecture_evidence records only; source ${query.source} carries no role or selection verdict`, generation, loaded.sources);
     }
-    // Every document's roles, from the same selector the projection applies, so a
-    // role filter means one thing whichever source a record came from.
-    const rolesByArtifact = new Map();
-    if (query.role !== undefined) {
-        for (const [id, context] of contexts.byArtifact) {
-            const selection = (0, corpus_architecture_evidence_1.selectForDocument)(context.assertions);
-            rolesByArtifact.set(id, { roles: selection.roles, role_evidence: selection.roleEvidence });
+    if (roleFilter && query.predicate !== null) {
+        return refuse("unsupported", "query.role_filter_predicate_unsupported", "--role and --selected-only apply to architecture_evidence records, which carry a statement class and no predicate; drop --predicate or the role filter", generation, loaded.sources);
+    }
+    if (roleFilter && loaded.architecture === null) {
+        return refuse("unsupported", "query.architecture_evidence_not_run", "--role and --selected-only ask for the selection profile's verdicts, and the pinned generation was produced without --architecture-evidence", generation, loaded.sources);
+    }
+    if (query.role !== undefined && query.selected_only === true && loaded.architecture !== null) {
+        const unattributed = loaded.architecture.filter((record) => record.selection?.selected_for_roles === undefined);
+        if (unattributed.length > 0) {
+            return refuse("unsupported", "query.role_selection_not_recorded", `the pinned generation (profile ${loaded.architectureProfileVersion ?? "unknown"}) recorded only a global selected flag on `
+                + `${unattributed.length} record(s), not which role selected each; --role with --selected-only needs that attribution, `
+                + "and the query will not reconstruct it from today's rules", generation, loaded.sources);
         }
+    }
+    if (roleFilter && query.source === null) {
+        diagnostics.push({
+            code: "query.role_filter_architecture_only",
+            severity: "info",
+            message: "--role and --selected-only evaluate architecture_evidence records only; work-signal and packet records carry no role",
+        });
     }
     let artifactId = null;
     if (query.artifact !== null) {
@@ -747,10 +762,19 @@ function queryCorpusEvidence(input) {
             return false;
         if (query.text !== null && !record.value.includes(query.text) && !record.bounded_excerpt.includes(query.text))
             return false;
-        if (query.role !== undefined && !(rolesByArtifact.get(record.artifact_id)?.roles ?? []).includes(query.role))
+        if (roleFilter && record.source !== "architecture_evidence")
             return false;
-        if (query.selected_only === true && record.selection?.selected !== true)
+        if (query.role !== undefined && !(record.selection?.roles ?? []).includes(query.role))
             return false;
+        if (query.selected_only === true) {
+            if (query.role !== undefined) {
+                if (!(record.selection?.selected_for_roles ?? []).includes(query.role))
+                    return false;
+            }
+            else if (record.selection?.selected !== true) {
+                return false;
+            }
+        }
         return true;
     }).sort(compareResults);
     const returned = matches.slice(0, query.limit).map((record) => {
@@ -781,13 +805,6 @@ function queryCorpusEvidence(input) {
         truncated,
         truncation_statement: truncated ? exports.TRUNCATION_STATEMENT : null,
         results: returned,
-        ...(query.role !== undefined
-            ? {
-                roles_by_document: [...new Set(returned.map((record) => record.artifact_id))]
-                    .sort(ordering_1.compareCodePoints)
-                    .map((id) => ({ artifact_id: id, ...(rolesByArtifact.get(id) ?? { roles: [], role_evidence: [] }) })),
-            }
-            : {}),
         diagnostics,
     };
 }

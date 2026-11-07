@@ -251,22 +251,45 @@ describe("the view an intent takes of the same evidence", () => {
     expect(carried(untyped[0] as MetadataSelectionRecord)).toEqual(expectedFields(
       untyped[0] as MetadataSelectionRecord, [...METADATA_ALWAYS_FIELDS, "selection.roles"],
     ));
-    for (const other of ["specs/transport-packet-spec.docx", "handoffs/chassis-auth-handoff.md", "history/old-routing.md"]) {
+    for (const other of ["specs/transport-packet-spec.docx", "handoffs/chassis-auth-handoff.md"]) {
       expect(included(records, other)).toEqual([]);
       expect(new Set(excluded(records, other).map((record) => record.reason))).toEqual(new Set(["role_outside_intent"]));
     }
+    // An archived document with no declared kind has no role; a design run keeps
+    // it for recall, and its declared status travels with it, unjudged.
+    const history = included(records, "history/old-routing.md");
+    expect(new Set(history.map((record) => record.reason))).toEqual(new Set(["role_unknown_retained"]));
+    expect(history[0]?.roles).toEqual(["unknown"]);
+    expect(history[0]?.fields?.["work_context.statuses"]).toEqual([expect.objectContaining({ object: "archived" })]);
   });
 
   it("for an accepted declaration carries what the accepted documents are bound by and decided, with the bytes behind them", async () => {
-    const result = await scan(corpusRoot(), { metadataSelection: "accepted_declaration" });
+    const result = await scan(corpusRoot((dir) => {
+      writeCorpus(dir);
+      write(dir, "specs/accepted-chassis.md", [
+        "# Chassis Boundary",
+        "",
+        "Status: done",
+        "",
+        "Decision: The chassis owns auth, ingress, logging and metrics.",
+        "Constraint: An engine exposes no FastAPI route.",
+        "Open question: Should metrics be sampled?",
+        "",
+      ].join("\n"));
+    }), { metadataSelection: "accepted_declaration" });
     const records = view(result);
     const spec = included(records, "specs/transport-packet-spec.docx");
     expect(classes(spec)).toEqual(["constraint", "decision_statement"]);
     expect(excluded(records, "specs/transport-packet-spec.docx").map((record) => [record.statement_class, record.reason]))
       .toEqual([["open_question", "class_outside_intent"]]);
-    expect(spec[0]?.explanation).toBe("document role accepted_declaration, specification is in accepted_declaration's roles");
+    expect(spec[0]?.explanation).toBe("document role specification is in accepted_declaration's roles");
+    // `Status: done` with no declared kind is no role at all; the intent reads
+    // the declared status, and says so, without promoting it to a role.
     const chassis = included(records, "specs/accepted-chassis.md");
-    expect(chassis).toEqual([]);
+    expect(classes(chassis)).toEqual(["constraint", "decision_statement"]);
+    expect(chassis[0]?.roles).toEqual(["unknown"]);
+    expect(chassis[0]?.reason).toBe("status_matches_intent");
+    expect(chassis[0]?.explanation).toBe("document declares work.status=done, which accepted_declaration reads (a source declaration, not a verified lifecycle)");
     for (const record of spec) {
       expect(carried(record)).toEqual([
         ...METADATA_ALWAYS_FIELDS, "authority_verified", "raw_content_hash", "selection.role_evidence",
@@ -275,14 +298,16 @@ describe("the view an intent takes of the same evidence", () => {
       // Carried so a consumer reading the view alone still sees it is unverified.
       expect(record.fields?.authority_verified).toBe(false);
       expect(String(record.fields?.raw_content_hash)).toMatch(/^sha256:/);
-      expect(record.fields?.["selection.role_evidence"]).toEqual(
-        expect.arrayContaining([expect.objectContaining({ predicate: "work.status", object: "active" })]),
-      );
+      // The role's evidence is the declared kind; the declared status travels as a status.
+      expect(record.fields?.["selection.role_evidence"]).toEqual([
+        expect.objectContaining({ role: "specification", predicate: "work.kind", object: "specification" }),
+      ]);
+      expect(record.fields?.["work_context.statuses"]).toEqual([expect.objectContaining({ object: "active" })]);
     }
     // Accepted means declared accepted: an untyped note is not retained here.
     expect(included(records, "notes/untyped.md")).toEqual([]);
     expect(excluded(records, "notes/untyped.md")[0]?.explanation)
-      .toBe("document role unknown is not in accepted_declaration's roles (accepted_declaration, specification)");
+      .toBe("document role unknown is not in accepted_declaration's roles (specification) and it declares none of the statuses active, complete, done");
     expect(included(records, "plans/gate-routing-proposal.md")).toEqual([]);
     expect(included(records, "history/old-routing.md")).toEqual([]);
   });
@@ -326,11 +351,16 @@ describe("the view an intent takes of the same evidence", () => {
     expect(classes(history)).toEqual(["assumption", "constraint", "decision_statement"]);
     expect(excluded(records, "history/old-routing.md").map((record) => [record.statement_class, record.reason]))
       .toEqual([["open_question", "class_outside_intent"]]);
+    // The archived design declares no kind, so its role is unknown and carries no
+    // role evidence; the intent reads its declared status and supersession.
+    expect(history[0]?.roles).toEqual(["unknown"]);
+    expect(history[0]?.reason).toBe("status_matches_intent");
     for (const record of history) {
       expect(carried(record)).toEqual([
-        ...METADATA_ALWAYS_FIELDS, "raw_content_hash", "selection.role_evidence", "selection.roles",
+        ...METADATA_ALWAYS_FIELDS, "raw_content_hash", "selection.roles",
         "work_context.applicability", "work_context.statuses",
       ].sort());
+      expect(record.field_reasons?.find((reason) => reason.field === "selection.role_evidence")?.disposition).toBe("empty");
       expect(record.fields?.["work_context.applicability"]).toEqual([
         expect.objectContaining({ predicate: "work.status", object: "archived" }),
         expect.objectContaining({ predicate: "work.superseded_by", object: "plans/gate-routing-proposal.md" }),
@@ -389,7 +419,7 @@ describe("the bound and the reasons", () => {
     ]);
     expect(dropped[0]?.explanation).toContain("historical_review carries at most 6 record(s) per document");
     expect(result.metadataSelection?.manifest.by_reason).toEqual([
-      { reason: "role_matches_intent", record_count: 6 },
+      { reason: "status_matches_intent", record_count: 6 },
       { reason: "bounded_out", record_count: 2 },
     ]);
   });

@@ -30,12 +30,14 @@ const USAGE = [
   "  --kind VALUE               documents that declared this work.kind (any declaration)",
   "  --status VALUE             documents that declared this work.status (any declaration)",
   "  --source NAME              architecture_evidence | document_work_signals | repository_model_packet",
-  "  --role NAME                documents the selection policy files under this role, from their",
-  "                             own declarations: accepted_declaration, development_handoff,",
-  "                             historical, research, specification, unknown, wip_proposal;",
-  "                             the roles and their evidence come back under roles_by_document",
+  "  --role NAME                architecture-evidence records whose document the generation",
+  "                             filed under this role: development_handoff, research_notes,",
+  "                             specification, unknown, wip_proposal (architecture_evidence",
+  "                             source only; needs --architecture-evidence at generation)",
   "  --selected-only            only architecture-evidence records the selection profile marked",
-  "                             selected (needs a generation made with --architecture-evidence)",
+  "                             selected; with --role, only records that role's own rule",
+  "                             selected (unsupported on a generation that recorded no",
+  "                             per-role attribution)",
   "  --limit N                  records returned (default 50, max 500); more is truncation,",
   "                             not a page: narrow the query",
   "  --max-excerpt-bytes N      excerpt byte ceiling on the wire (default 1024)",
@@ -62,6 +64,7 @@ function parseArgs(argv) {
   const options = {};
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
+    if (options[flag] !== undefined) fail(`${flag} was given more than once`);
     if (flag === "--help" || flag === "-h") {
       console.log(USAGE);
       process.exit(0);
@@ -73,7 +76,7 @@ function parseArgs(argv) {
     }
     if (!VALUE_FLAGS.has(flag)) fail(`unknown option '${flag}'\n\n${USAGE}`);
     const value = argv[index + 1];
-    if (value === undefined || value.startsWith("--")) fail(`${flag} needs a value`);
+    if (value === undefined || value === "" || value.startsWith("--")) fail(`${flag} needs a value`);
     if (flag in options) fail(`${flag} was given twice`);
     options[flag] = value;
     index += 1;
