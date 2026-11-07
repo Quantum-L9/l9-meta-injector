@@ -437,6 +437,17 @@ npm run local-source -- \
   evidence that decided it. Complete, hashed and manifest-bound like the work signals;
   selecting it moves `corpus_analysis_id` and nothing else. See
   [`docs/architecture-evidence.md`](docs/architecture-evidence.md) (ADR-087, Proposed).
+- **`metadata-selection.jsonl`** (`l9.metadata-selection/v1`, opt-in with
+  `--metadata-selection INTENT` on top of `--architecture-evidence`) is the bounded view
+  of that evidence for one purpose — `wip_design`, `accepted_declaration`,
+  `development_handoff` or `historical_review` — chosen by one static table from the
+  documents' own declared roles and statement classes: one record per evidence record
+  saying whether the intent carries it and why, and for a carried record which of its
+  existing fields travel and why each other field does not. The evidence stays complete
+  beside it; the manifest states the policy, the evidence hash it derives from and the
+  carrier disposition `external-generation` (no observed file written); the policy and
+  intent enter `corpus_analysis_id` only when selected. See
+  [`docs/metadata-selection.md`](docs/metadata-selection.md) (ADR-089, Proposed).
 - **`corpus-query-cli.js`** asks one bounded question of a completed generation and
   answers from its own records: `--class open_question --text Gate`,
   `--class decision_statement --status wip`, `--predicate work.status --root Designs`.

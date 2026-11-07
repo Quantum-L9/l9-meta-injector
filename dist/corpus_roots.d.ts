@@ -142,6 +142,12 @@ export interface CorpusAnalysisProfiles {
      * concluded, and stays put when it is not, because nothing else changed.
      */
     architecture_evidence_profile?: string;
+    /**
+     * Present only when the opt-in metadata-selection view was selected: the
+     * policy and the run intent together. Absent, not null, otherwise, for the
+     * same reason as above.
+     */
+    metadata_selection_profile?: string;
 }
 /**
  * Identity of what was *concluded* about the corpus.

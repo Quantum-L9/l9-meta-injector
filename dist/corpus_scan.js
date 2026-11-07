@@ -81,6 +81,7 @@ const documents_1 = require("./documents");
 const corpus_root_history_1 = require("./corpus_root_history");
 const corpus_work_signal_export_1 = require("./corpus_work_signal_export");
 const corpus_architecture_evidence_1 = require("./corpus_architecture_evidence");
+const corpus_metadata_selection_1 = require("./corpus_metadata_selection");
 const extractors_1 = require("./extractors");
 const document_blocks_1 = require("./extractors/document_blocks");
 const interpretation_1 = require("./interpretation");
@@ -753,6 +754,17 @@ async function runCorpusScan(input) {
     const architectureProfile = input.architectureEvidence === true
         ? (0, corpus_architecture_evidence_1.architectureEvidenceProfileHash)()
         : null;
+    // The view is a function of the evidence; without the evidence there is
+    // nothing to derive it from, and deriving it from nothing would be a view that
+    // says the corpus declared nothing. Refused rather than degraded (ADR-068).
+    const metadataIntent = input.metadataSelection ?? null;
+    if (metadataIntent !== null && architectureProfile === null) {
+        throw new Error("corpus: --metadata-selection derives its view from the architecture-evidence payload, "
+            + "which this run did not select. Add --architecture-evidence or drop the intent.");
+    }
+    const metadataProfile = metadataIntent !== null
+        ? (0, corpus_metadata_selection_1.metadataSelectionProfileHash)(metadataIntent)
+        : null;
     const interpretEnabled = input.interpret !== false;
     // The selection profile reads the work.kind and work.status a text document
     // declares, and those are read by the interpretation pass. Without it every
@@ -1259,6 +1271,7 @@ async function runCorpusScan(input) {
                     ...(embeddingProfile !== null ? { embedding_profile: embeddingProfile } : {}),
                     readiness_profile: (0, corpus_readiness_1.readinessProfileHash)(),
                     ...(architectureProfile !== null ? { architecture_evidence_profile: architectureProfile } : {}),
+                    ...(metadataProfile !== null ? { metadata_selection_profile: metadataProfile } : {}),
                 },
             }),
             corpus_profile: corpusProfileHash,
@@ -1269,6 +1282,7 @@ async function runCorpusScan(input) {
             embedding_profile: embeddingProfile,
             readiness_profile: (0, corpus_readiness_1.readinessProfileHash)(),
             ...(architectureProfile !== null ? { architecture_evidence_profile: architectureProfile } : {}),
+            ...(metadataProfile !== null ? { metadata_selection_profile: metadataProfile } : {}),
         };
         // Both projections of the work signals are built from this one array. The
         // report samples it and the machine payload carries all of it, so the two can
@@ -1359,6 +1373,18 @@ async function runCorpusScan(input) {
                 corpusSourceSnapshotId: sourceSnapshotId,
                 corpusAnalysisId: analysisIdentity.corpus_analysis_id,
                 documents,
+            });
+        }
+        // The metadata view is derived from the export above and from nothing else:
+        // no document is re-read, no field is invented, and the complete evidence
+        // stays beside it.
+        let metadataSelection = null;
+        if (metadataIntent !== null && architectureEvidence !== null) {
+            metadataSelection = (0, corpus_metadata_selection_1.buildMetadataSelectionExport)({
+                intent: metadataIntent,
+                evidence: architectureEvidence,
+                corpusSourceSnapshotId: sourceSnapshotId,
+                corpusAnalysisId: analysisIdentity.corpus_analysis_id,
             });
         }
         // What the operator authorized, recorded beside what was observed. Null on
@@ -1597,6 +1623,9 @@ async function runCorpusScan(input) {
             document_work_signals: (0, corpus_work_signal_export_1.documentWorkSignalsRef)(documentWorkSignals.manifest),
             ...(architectureEvidence !== null
                 ? { architecture_evidence: (0, corpus_architecture_evidence_1.architectureEvidenceRef)(architectureEvidence.manifest) }
+                : {}),
+            ...(metadataSelection !== null
+                ? { metadata_selection: (0, corpus_metadata_selection_1.metadataSelectionRef)(metadataSelection.manifest) }
                 : {}),
             ...(historyOverride !== null
                 ? { operational_provenance: { inferred_root_history_override: historyOverride } }
@@ -2295,6 +2324,18 @@ async function runCorpusScan(input) {
                 throw new Error("corpus: the architecture-evidence payload failed its own completeness "
                     + `check and was not published:\n  - ${evidenceProblems.join("\n  - ")}`);
             }
+            if (metadataSelection !== null) {
+                const viewProblems = (0, corpus_metadata_selection_1.verifyMetadataSelectionExport)({
+                    manifest: metadataSelection.manifest,
+                    payloadJsonl: metadataSelection.payloadJsonl,
+                    knownEvidenceIds: new Set(architectureEvidence.records.map((record) => record.evidence_id)),
+                    evidencePayloadSemanticHash: architectureEvidence.manifest.payload_semantic_hash,
+                });
+                if (viewProblems.length > 0) {
+                    throw new Error("corpus: the metadata-selection view failed its own completeness "
+                        + `check and was not published:\n  - ${viewProblems.join("\n  - ")}`);
+                }
+            }
         }
         // Built only after the guard above allowed the comparison: an unauthorized
         // inferred continuity never reaches this call, so a diff exists exactly when
@@ -2314,6 +2355,7 @@ async function runCorpusScan(input) {
             snapshot,
             documentWorkSignals,
             architectureEvidence,
+            metadataSelection,
             rootPackets,
             candidates: candidatesDocument,
             readiness,

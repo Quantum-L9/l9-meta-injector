@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Intent-bound metadata selection (`local-source-metadata-selection/v1`, ADR-089 Proposed)
+
+- `--metadata-selection INTENT` on the local-source CLI, with `--architecture-evidence`, derives `metadata-selection.jsonl` (+ manifest) for one of four run intents — `wip_design`, `accepted_declaration`, `development_handoff`, `historical_review`. One static table decides, per evidence record, whether the intent carries it (by the document's declared roles and the statement class, bounded per document in class order) and which of sixteen existing evidence fields travel with it, giving a reason for every record and a disposition for every field. The evidence payload stays complete beside the view; nothing is scored, inferred, invented or deleted.
+- The manifest carries the whole policy, the intent, the evidence it derives from by hash, and the carrier disposition `external-generation` with `mutates_observed_files: false`; the view is verified before the generation is published and listed in the corpus index whether or not it was written.
+- `metadata_selection_profile` (policy hash + intent) enters `corpus_analysis_id` only when selected; the source snapshot, root packets, evidence payload and evidence ids are unchanged with or without it and across intents. The intent is refused without the evidence projection, and an unknown intent is refused before anything is read.
+
 ### Document-role selection closure (`architecture-development/v2`, evidence profile 1.2.0)
 
 - The selection policy recognizes three further roles, each from explicit declarations only: `accepted_declaration` (`work.status` active, complete or done; selects constraint, decision_statement, intent), `research` (`work.kind` notes or research; selects assumption, intent, open_question) and `historical` (`work.status` archived, cancelled or superseded, or any `work.superseded_by`; selects constraint, decision_statement). `wip_proposal` no longer claims notes and research. Roles still overlap, every record is still emitted with its verdict and reasons, and the manifest now carries the whole policy table under `selection_policy`.

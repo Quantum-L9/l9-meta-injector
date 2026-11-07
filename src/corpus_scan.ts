@@ -164,6 +164,13 @@ import {
   buildArchitectureEvidenceExport,
   verifyArchitectureEvidenceExport,
 } from "./corpus_architecture_evidence";
+import {
+  buildMetadataSelectionExport,
+  metadataSelectionProfileHash,
+  metadataSelectionRef,
+  verifyMetadataSelectionExport,
+} from "./corpus_metadata_selection";
+import type { MetadataSelectionExport, MetadataSelectionIntent } from "./corpus_metadata_selection";
 import { defaultExtractors } from "./extractors";
 import {
   DOCUMENT_BLOCK_EXTRACTOR_ID,
@@ -345,6 +352,13 @@ export interface CorpusScanInput {
    * cache layer are the same with or without it.
    */
   architectureEvidence?: boolean;
+  /**
+   * Opt-in, and only on top of `architectureEvidence`: derive the bounded
+   * metadata view `metadata-selection.jsonl` for this run intent, choosing per
+   * record which existing evidence fields to carry and saying why. The policy
+   * and the intent enter `corpus_analysis_id`; nothing else moves.
+   */
+  metadataSelection?: MetadataSelectionIntent;
 }
 
 export interface CorpusScanDiagnostic {
@@ -495,6 +509,8 @@ export interface CorpusScanResult {
    * mistake "not asked for" for "found nothing" (ADR-068).
    */
   architectureEvidence: ArchitectureEvidenceExport | null;
+  /** The opt-in metadata-selection view over the evidence. Null when no intent was given. */
+  metadataSelection: MetadataSelectionExport | null;
   /** Candidate discovery over recorded evidence. Null when it was switched off. */
   semantic: SemanticAnalysisResult | null;
 }
@@ -1287,6 +1303,19 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
   const architectureProfile: string | null = input.architectureEvidence === true
     ? architectureEvidenceProfileHash()
     : null;
+  // The view is a function of the evidence; without the evidence there is
+  // nothing to derive it from, and deriving it from nothing would be a view that
+  // says the corpus declared nothing. Refused rather than degraded (ADR-068).
+  const metadataIntent: MetadataSelectionIntent | null = input.metadataSelection ?? null;
+  if (metadataIntent !== null && architectureProfile === null) {
+    throw new Error(
+      "corpus: --metadata-selection derives its view from the architecture-evidence payload, "
+      + "which this run did not select. Add --architecture-evidence or drop the intent.",
+    );
+  }
+  const metadataProfile: string | null = metadataIntent !== null
+    ? metadataSelectionProfileHash(metadataIntent)
+    : null;
   const interpretEnabled = input.interpret !== false;
   // The selection profile reads the work.kind and work.status a text document
   // declares, and those are read by the interpretation pass. Without it every
@@ -1825,6 +1854,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
           ...(embeddingProfile !== null ? { embedding_profile: embeddingProfile } : {}),
           readiness_profile: readinessProfileHash(),
           ...(architectureProfile !== null ? { architecture_evidence_profile: architectureProfile } : {}),
+          ...(metadataProfile !== null ? { metadata_selection_profile: metadataProfile } : {}),
         },
       }),
       corpus_profile: corpusProfileHash,
@@ -1835,6 +1865,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       embedding_profile: embeddingProfile,
       readiness_profile: readinessProfileHash(),
       ...(architectureProfile !== null ? { architecture_evidence_profile: architectureProfile } : {}),
+      ...(metadataProfile !== null ? { metadata_selection_profile: metadataProfile } : {}),
     };
     // Both projections of the work signals are built from this one array. The
     // report samples it and the machine payload carries all of it, so the two can
@@ -1927,6 +1958,18 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
         corpusSourceSnapshotId: sourceSnapshotId,
         corpusAnalysisId: analysisIdentity.corpus_analysis_id,
         documents,
+      });
+    }
+    // The metadata view is derived from the export above and from nothing else:
+    // no document is re-read, no field is invented, and the complete evidence
+    // stays beside it.
+    let metadataSelection: MetadataSelectionExport | null = null;
+    if (metadataIntent !== null && architectureEvidence !== null) {
+      metadataSelection = buildMetadataSelectionExport({
+        intent: metadataIntent,
+        evidence: architectureEvidence,
+        corpusSourceSnapshotId: sourceSnapshotId,
+        corpusAnalysisId: analysisIdentity.corpus_analysis_id,
       });
     }
 
@@ -2196,6 +2239,9 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       document_work_signals: documentWorkSignalsRef(documentWorkSignals.manifest),
       ...(architectureEvidence !== null
         ? { architecture_evidence: architectureEvidenceRef(architectureEvidence.manifest) }
+        : {}),
+      ...(metadataSelection !== null
+        ? { metadata_selection: metadataSelectionRef(metadataSelection.manifest) }
         : {}),
       ...(historyOverride !== null
         ? { operational_provenance: { inferred_root_history_override: historyOverride } }
@@ -2990,6 +3036,20 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
           + `check and was not published:\n  - ${evidenceProblems.join("\n  - ")}`,
         );
       }
+      if (metadataSelection !== null) {
+        const viewProblems = verifyMetadataSelectionExport({
+          manifest: metadataSelection.manifest,
+          payloadJsonl: metadataSelection.payloadJsonl,
+          knownEvidenceIds: new Set(architectureEvidence.records.map((record) => record.evidence_id)),
+          evidencePayloadSemanticHash: architectureEvidence.manifest.payload_semantic_hash,
+        });
+        if (viewProblems.length > 0) {
+          throw new Error(
+            "corpus: the metadata-selection view failed its own completeness "
+            + `check and was not published:\n  - ${viewProblems.join("\n  - ")}`,
+          );
+        }
+      }
     }
 
     // Built only after the guard above allowed the comparison: an unauthorized
@@ -3013,6 +3073,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       snapshot,
       documentWorkSignals,
       architectureEvidence,
+      metadataSelection,
       rootPackets,
       candidates: candidatesDocument,
       readiness,

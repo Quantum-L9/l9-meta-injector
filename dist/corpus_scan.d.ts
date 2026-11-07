@@ -11,6 +11,7 @@ import { CorpusResourceBudgets, CorpusSessionStore } from "./corpus_session";
 import { DecoderRegistry } from "./documents";
 import { DocumentWorkSignalExport } from "./corpus_work_signal_export";
 import { ArchitectureEvidenceExport } from "./corpus_architecture_evidence";
+import type { MetadataSelectionExport, MetadataSelectionIntent } from "./corpus_metadata_selection";
 import { LocalArchivePolicy } from "./local_archive_policy";
 import type { DocumentIndex, DocumentIndexSummary } from "./corpus_documents";
 import type { SemanticAnalysisResult } from "./corpus_semantic_run";
@@ -117,6 +118,13 @@ export interface CorpusScanInput {
      * cache layer are the same with or without it.
      */
     architectureEvidence?: boolean;
+    /**
+     * Opt-in, and only on top of `architectureEvidence`: derive the bounded
+     * metadata view `metadata-selection.jsonl` for this run intent, choosing per
+     * record which existing evidence fields to carry and saying why. The policy
+     * and the intent enter `corpus_analysis_id`; nothing else moves.
+     */
+    metadataSelection?: MetadataSelectionIntent;
 }
 export interface CorpusScanDiagnostic {
     code: string;
@@ -262,6 +270,8 @@ export interface CorpusScanResult {
      * mistake "not asked for" for "found nothing" (ADR-068).
      */
     architectureEvidence: ArchitectureEvidenceExport | null;
+    /** The opt-in metadata-selection view over the evidence. Null when no intent was given. */
+    metadataSelection: MetadataSelectionExport | null;
     /** Candidate discovery over recorded evidence. Null when it was switched off. */
     semantic: SemanticAnalysisResult | null;
 }

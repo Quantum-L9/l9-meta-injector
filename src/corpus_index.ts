@@ -213,6 +213,17 @@ const KNOWN_DOCUMENTS: { name: string; path: string; schema: string | null }[] =
     path: "architecture-evidence.manifest.json",
     schema: "l9.architecture-evidence-manifest/v1",
   },
+  // Opt-in (`--metadata-selection INTENT`), derived from the evidence above.
+  {
+    name: "metadata_selection",
+    path: "metadata-selection.jsonl",
+    schema: "l9.metadata-selection/v1",
+  },
+  {
+    name: "metadata_selection_manifest",
+    path: "metadata-selection.manifest.json",
+    schema: "l9.metadata-selection-manifest/v1",
+  },
   { name: "semantic_relations", path: "semantic-relations.json", schema: "l9.semantic-relations/v1" },
   { name: "topic_candidates", path: "topic-candidates.json", schema: "l9.topic-candidates/v1" },
   { name: "project_candidates", path: "project-candidates.json", schema: "l9.project-candidates/v1" },

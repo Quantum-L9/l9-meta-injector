@@ -93,6 +93,13 @@ const USAGE = [
   "                             set as architecture-evidence.jsonl (+ manifest). Opt-in;",
   "                             binds the projection's rules into corpus_analysis_id",
   "                             and leaves every other identity and output unchanged.",
+  "  --metadata-selection INTENT",
+  "                             with --architecture-evidence: also write the bounded",
+  "                             metadata view metadata-selection.jsonl (+ manifest) for",
+  "                             one run intent — wip_design, accepted_declaration,",
+  "                             development_handoff or historical_review — choosing per",
+  "                             record which existing evidence fields to carry and why.",
+  "                             A derived view: the complete evidence stays beside it.",
   "  --no-semantic-analysis     skip candidate discovery; duplicates still reported",
   "  --embeddings               enable optional semantic embeddings (default: off)",
   "  --embedding-provider NAME  required when --embeddings is given; 'http-json' is",
@@ -393,6 +400,14 @@ function reportCorpusRun(context) {
     );
     console.log("  every statement is source-declared and none is authority-verified");
   }
+  if (result.metadataSelection !== null) {
+    const view = result.metadataSelection.manifest;
+    console.log(
+      `  metadata view    ${view.intent}: ${view.included_record_count} of ${view.record_count} evidence record(s) `
+      + `carried from ${view.included_document_count} of ${view.document_count} document(s); `
+      + `carrier ${view.carrier.disposition}, no observed file written`,
+    );
+  }
   if (result.semantic === null) {
     console.log("  semantic         off (--no-semantic-analysis)");
   } else {
@@ -533,6 +548,7 @@ async function runCorpusMode(cli) {
   const documentsModule = requireBuilt(path.join(repo, "dist", "corpus_documents.js"));
   const embeddingsModule = requireBuilt(path.join(repo, "dist", "corpus_embeddings.js"));
   const publishModule = requireBuilt(path.join(repo, "dist", "corpus_publish.js"));
+  const metadataModule = requireBuilt(path.join(repo, "dist", "corpus_metadata_selection.js"));
   const httpEmbeddings = requireBuilt(path.join(repo, "dist", "corpus_embedding_http.js"));
   const repositoryModel = requireBuilt(path.join(repo, "dist", "public", "repository_model.js"));
   const ordering = requireBuilt(path.join(repo, "dist", "ordering.js"));
@@ -571,6 +587,20 @@ async function runCorpusMode(cli) {
   if (cli.flag("--architecture-evidence") && cli.flag("--no-interpret")) {
     fail("--architecture-evidence needs the interpretation pass that --no-interpret disables. "
       + "Drop one of the two switches.", 2);
+  }
+  // The metadata view is derived from the evidence payload, so it needs the run
+  // that writes one, and its intent vocabulary is closed: an intent this package
+  // does not know is refused rather than mapped to the nearest one.
+  const metadataIntent = cli.opt("--metadata-selection", null);
+  if (metadataIntent !== null) {
+    if (!cli.flag("--architecture-evidence")) {
+      fail("--metadata-selection derives its view from the architecture-evidence payload. "
+        + "Add --architecture-evidence or drop the intent.", 2);
+    }
+    if (!metadataModule.isMetadataSelectionIntent(metadataIntent)) {
+      fail(`--metadata-selection '${metadataIntent}' is not a run intent this package knows. `
+        + `One of: ${metadataModule.METADATA_SELECTION_INTENTS.join(", ")}.`, 2);
+    }
   }
   const cacheEnabled = !cli.flag("--no-cache");
   // The session manifest names the work that was finished; the cache holds what
@@ -757,6 +787,7 @@ async function runCorpusMode(cli) {
       // Opt-in: an operator who did not ask for the projection gets the run they
       // always got, identities included.
       ...(cli.flag("--architecture-evidence") ? { architectureEvidence: true } : {}),
+      ...(metadataIntent !== null ? { metadataSelection: metadataIntent } : {}),
       ...(embeddingProvider !== undefined ? { embeddingProvider } : {}),
       ...(embeddingPairThreshold !== undefined ? { embeddingPairThreshold } : {}),
       ...(Object.keys(packBudget).length > 0 ? { packBudget } : {}),
@@ -794,6 +825,12 @@ async function runCorpusMode(cli) {
     outputs.push(
       { path: "architecture-evidence.jsonl", contents: result.architectureEvidence.payloadJsonl },
       { path: "architecture-evidence.manifest.json", contents: result.architectureEvidence.manifestJson },
+    );
+  }
+  if (result.metadataSelection !== null) {
+    outputs.push(
+      { path: "metadata-selection.jsonl", contents: result.metadataSelection.payloadJsonl },
+      { path: "metadata-selection.manifest.json", contents: result.metadataSelection.manifestJson },
     );
   }
   if (result.semantic !== null) {
