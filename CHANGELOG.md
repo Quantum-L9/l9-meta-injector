@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Document-role selection closure (`architecture-development/v2`, evidence profile 1.2.0)
+
+- The selection policy recognizes three further roles, each from explicit declarations only: `accepted_declaration` (`work.status` active, complete or done; selects constraint, decision_statement, intent), `research` (`work.kind` notes or research; selects assumption, intent, open_question) and `historical` (`work.status` archived, cancelled or superseded, or any `work.superseded_by`; selects constraint, decision_statement). `wip_proposal` no longer claims notes and research. Roles still overlap, every record is still emitted with its verdict and reasons, and the manifest now carries the whole policy table under `selection_policy`.
+- The query gains `--role NAME` (documents filed under a role by the same selector, from any source, with `roles_by_document` returning the roles and the assertion ids behind them) and `--selected-only` (only selected architecture-evidence records). An unfiltered response is byte-identical to before: the new query fields and `roles_by_document` appear only when used.
+- The policy's identity is part of the architecture-evidence profile hash, so `corpus_analysis_id` moves for runs that select the projection; the source snapshot, root packets and evidence ids do not.
+
 ### Architectural statement coverage closure (`architecture-statements/v1` 1.1.0)
 
 - Four demonstrable gaps in the five-class reader are closed, each bounded to an explicit written form: a heading's leading section number and trailing qualifier are not part of its label (`## 2. Open Questions (v2)`, `## Decisions — phase 1`); a single bold or numbered bare label on its own line opens a section like a heading (`**Decisions**`, `3.1 Invariants`); the fields between a text file's leading `---` fences are read as `frontmatter_field` statements; and the lines that follow a labelled field inside its block are its continuation, folded into one statement with the `line_span` widened over them. Records carry `unit_count`.

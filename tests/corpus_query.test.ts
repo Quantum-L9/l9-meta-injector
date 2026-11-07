@@ -100,6 +100,21 @@ function writeCorpus(root: string): void {
   write(root, "notes/untyped.md", "Objective: Keep the gateway stateless.\n");
 }
 
+/** The base corpus plus a document that declares itself historical. */
+function writeRoleCorpus(root: string): void {
+  writeCorpus(root);
+  write(root, "history/old-routing.md", [
+    "# Routing Table History",
+    "",
+    "Status: archived",
+    "Superseded by: plans/gate-routing-proposal.md",
+    "",
+    "Decision: Each node kept its own routing table.",
+    "Open question: Was the hourly refresh ever fast enough?",
+    "",
+  ].join("\n"));
+}
+
 interface Generated {
   root: string;
   out: string;
@@ -148,12 +163,17 @@ function copyOut(out: string): string {
 }
 
 let evidence: Generated;
+let roles: Generated;
 
 beforeAll(() => {
   const root = path.join(tmp("l9-corpus-query-src-"), "Designs");
   fs.mkdirSync(root);
   writeCorpus(root);
   evidence = scan(root, ["--architecture-evidence"]);
+  const roleRoot = path.join(tmp("l9-corpus-query-roles-src-"), "Designs");
+  fs.mkdirSync(roleRoot);
+  writeRoleCorpus(roleRoot);
+  roles = scan(roleRoot, ["--architecture-evidence"]);
 });
 
 // ───────────────────────── A. architectural discovery ─────────────────────────
@@ -471,6 +491,73 @@ describe("E. incomplete corpus", () => {
     const statuses = queryCorpusEvidence({ outDir: plain.out, predicate: "work.status" });
     expect(statuses.outcome).toBe("ok");
     expect(statuses.results.length).toBeGreaterThan(0);
+  });
+});
+
+// ───────────────────────── roles and the selected view ─────────────────────────
+
+describe("role and selected-only filters", () => {
+  it("files every record's document under the policy's roles and returns the evidence", () => {
+    const response = queryCorpusEvidence({ outDir: roles.out, role: "historical" });
+    expect(response.outcome).toBe("ok");
+    expect(new Set(response.results.map((record) => record.source_path))).toEqual(new Set(["history/old-routing.md"]));
+    // Records from every source: the archived decision (architecture evidence)
+    // and the `Status: archived` line itself (packet assertion).
+    expect(new Set(response.results.map((record) => record.source))).toEqual(new Set(["architecture_evidence", "repository_model_packet"]));
+    expect(response.query.role).toBe("historical");
+    expect(response.roles_by_document).toHaveLength(1);
+    expect(response.roles_by_document?.[0]?.roles).toEqual(["historical"]);
+    expect(response.roles_by_document?.[0]?.role_evidence.map((item) => [item.predicate, item.object])).toEqual([
+      ["work.status", "archived"],
+      ["work.superseded_by", "plans/gate-routing-proposal.md"],
+    ]);
+    for (const item of response.roles_by_document?.[0]?.role_evidence ?? []) {
+      expect(item.assertion_id.startsWith("assertion:")).toBe(true);
+    }
+    // A handoff's tasks, found by role rather than by path.
+    const handoff = queryCorpusEvidence({ outDir: roles.out, role: "development_handoff", predicate: "work.task.open" });
+    expect(handoff.results.map((record) => record.source_path)).toEqual(["handoffs/chassis-auth-handoff.md"]);
+  });
+
+  it("returns only the selection profile's selected records on request, and keeps the rest otherwise", () => {
+    const all = queryCorpusEvidence({ outDir: roles.out, statementClass: "open_question" });
+    const selected = queryCorpusEvidence({ outDir: roles.out, statementClass: "open_question", selectedOnly: true });
+    expect(selected.query.selected_only).toBe(true);
+    expect(selected.results.length).toBeLessThan(all.results.length);
+    expect(selected.results.every((record) => record.selection?.selected === true)).toBe(true);
+    // The historical document's question is declared, unselected, and still in the unfiltered answer.
+    expect(all.results.some((record) => record.source_path === "history/old-routing.md" && record.selection?.selected === false)).toBe(true);
+    expect(selected.results.some((record) => record.source_path === "history/old-routing.md")).toBe(false);
+    // Only architecture-evidence records carry a verdict, so selected-only never returns another source.
+    const statuses = queryCorpusEvidence({ outDir: roles.out, predicate: "work.status", selectedOnly: true });
+    expect(statuses.results).toEqual([]);
+    expect(statuses.outcome).toBe("empty");
+    expect(runQuery(["--out", roles.out, "--class", "open_question", "--selected-only", "--role", "wip_proposal"]).response.results.every(
+      (record) => record.selection?.selected === true && record.source_path === "plans/gate-routing-proposal.md",
+    )).toBe(true);
+  });
+
+  it("refuses an unknown role, and selected-only against a generation without the projection", () => {
+    expect(queryCorpusEvidence({ outDir: roles.out, role: "canonical" }).outcome).toBe("unsupported");
+    const root = path.join(tmp("l9-corpus-query-plain-roles-"), "Designs");
+    fs.mkdirSync(root);
+    writeRoleCorpus(root);
+    const plain = scan(root);
+    const response = queryCorpusEvidence({ outDir: plain.out, predicate: "work.status", selectedOnly: true });
+    expect(response.outcome).toBe("unsupported");
+    expect(response.diagnostics[0]?.code).toBe("query.architecture_evidence_not_run");
+    // A role filter needs no projection: roles come from the work signals and packets.
+    const byRole = queryCorpusEvidence({ outDir: plain.out, predicate: "work.status", role: "historical" });
+    expect(byRole.outcome).toBe("ok");
+    expect(byRole.results.map((record) => record.value)).toEqual(["archived"]);
+  });
+
+  it("changes nothing in an unfiltered response", () => {
+    const response = queryCorpusEvidence({ outDir: roles.out, predicate: "work.status" });
+    expect(Object.keys(response.query).sort()).toEqual([
+      "artifact", "kind", "limit", "max_excerpt_bytes", "predicate", "root", "source", "statement_class", "status", "text",
+    ]);
+    expect(response).not.toHaveProperty("roles_by_document");
   });
 });
 

@@ -28,6 +28,8 @@ node scripts/corpus-query-cli.js --out <corpus output dir> [filters] [--limit N]
 | `--kind VALUE` | documents that declared this `work.kind`, by any of their declarations |
 | `--status VALUE` | documents that declared this `work.status`, by any of their declarations |
 | `--source NAME` | `architecture_evidence`, `document_work_signals` or `repository_model_packet` |
+| `--role NAME` | documents the selection policy files under this role from their own declarations: `accepted_declaration`, `development_handoff`, `historical`, `research`, `specification`, `unknown`, `wip_proposal`; the roles and the declarations that established them come back under `roles_by_document` |
+| `--selected-only` | only architecture-evidence records the selection profile marked selected; needs a generation made with `--architecture-evidence` |
 | `--limit N` | records returned, default 50, max 500 |
 | `--max-excerpt-bytes N` | excerpt byte ceiling on the wire, default 1024 |
 
@@ -99,6 +101,13 @@ Two flags keep an excerpt honest: `excerpt_truncated_at_source` is true when the
 itself cut it at its bound, and `excerpt_cut_by_query` is true when `--max-excerpt-bytes`
 cut it further. Neither excerpt is ever presented as the complete passage;
 `value_truncated_at_source` says the same of a declared text.
+
+A role filter files every record's document — from any source — under the roles the same
+selector (`architecture-development/v2`) derives from its work signals and packet
+assertions, and adds `roles_by_document` with the roles and the assertion ids behind them.
+`--selected-only` keeps only records the selection profile marked selected, so it never
+returns a work-signal or packet record. Neither filter changes an unfiltered response:
+`query.role`, `query.selected_only` and `roles_by_document` are present only when used.
 
 Results are ordered by source, then `artifact_id`, then `record_id`: a total order over
 identities the generation already assigned. When more match than the limit returns,

@@ -1,4 +1,4 @@
-import type { ArchitectureEvidenceRecord } from "./corpus_architecture_evidence";
+import type { ArchitectureEvidenceRecord, RoleEvidence } from "./corpus_architecture_evidence";
 import type { CorpusVerification } from "./corpus_snapshot";
 /** Schema of the one response this module renders. */
 export declare const CORPUS_EVIDENCE_QUERY_SCHEMA = "l9.corpus-evidence-query/v1";
@@ -42,6 +42,15 @@ export interface EvidenceQueryInput {
     status?: string;
     /** Restrict to one source. */
     source?: EvidenceSource;
+    /**
+     * A document role of the selection policy (`architecture-development/v2`).
+     * Every record's document is filed under the roles its own declarations
+     * establish, from any source; the roles and their evidence are returned under
+     * `roles_by_document` whenever this filter is used.
+     */
+    role?: string;
+    /** Only architecture-evidence records the selection profile marked selected. */
+    selectedOnly?: boolean;
     limit?: number;
     maxExcerptBytes?: number;
 }
@@ -120,6 +129,10 @@ export interface EvidenceQueryResponse {
         kind: string | null;
         status: string | null;
         source: EvidenceSource | null;
+        /** Present only when a role filter was given, so an unfiltered response is unchanged. */
+        role?: string;
+        /** Present only when set, for the same reason. */
+        selected_only?: true;
         limit: number;
         max_excerpt_bytes: number;
     };
@@ -143,6 +156,18 @@ export interface EvidenceQueryResponse {
     truncated: boolean;
     truncation_statement: string | null;
     results: EvidenceQueryResult[];
+    /**
+     * The roles each returned document is filed under, with the declarations that
+     * established them. Present only when a role filter was given: the roles are
+     * computed by the same selector the projection uses, from the work signals and
+     * packet assertions the generation already holds, and are a reading of what
+     * each document declared, never a verdict about it.
+     */
+    roles_by_document?: {
+        artifact_id: string;
+        roles: string[];
+        role_evidence: RoleEvidence[];
+    }[];
     diagnostics: {
         code: string;
         severity: "info" | "warning" | "error";

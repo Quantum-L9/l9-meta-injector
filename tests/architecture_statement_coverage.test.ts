@@ -235,7 +235,7 @@ describe("identity and versions", () => {
       expect(record.profile_version).toBe(ARCHITECTURE_EVIDENCE_PROFILE_VERSION);
     }
     expect(ARCHITECTURE_STATEMENT_EXTRACTOR_VERSION).toBe("1.1.0");
-    expect(ARCHITECTURE_EVIDENCE_PROFILE_VERSION).toBe("1.1.0");
+    expect(ARCHITECTURE_EVIDENCE_PROFILE_VERSION).toBe("1.2.0");
     expect(architectureEvidenceProfileHash()).toMatch(/^sha256:[0-9a-f]{64}$/);
   });
 
