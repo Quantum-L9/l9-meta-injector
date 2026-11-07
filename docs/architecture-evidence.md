@@ -157,17 +157,25 @@ payload verifier refuses a record that claims otherwise.
 
 ## The selection profile
 
-`architecture-development/v1` is a view over the records, not a filter and not a
+`architecture-development/v2` is a view over the records, not a filter and not a
 vocabulary. It reads what the document already declared about itself — `work.kind`,
 `work.status`, and whether it carries tasks, blockers or dependencies — assigns roles
 from a static table, and marks which classes a reader of that role is looking for.
 
 | Role | Established by | Selects |
 |---|---|---|
-| `wip_proposal` | `work.kind` in `design`, `notes`, `plan`, `proposal`, `research`, `roadmap`; or `work.status` in `draft`, `planned`, `wip` | all five classes |
+| `wip_proposal` | `work.kind` in `design`, `plan`, `proposal`, `roadmap`; or `work.status` in `draft`, `planned`, `wip` | all five classes |
 | `specification` | `work.kind` in `decision`, `specification` | `constraint`, `decision_statement` |
+| `accepted_declaration` | `work.status` in `active`, `complete`, `done` | `constraint`, `decision_statement`, `intent` |
 | `development_handoff` | `work.kind` `checklist`; or any `work.task.open`, `work.task.completed`, `work.blocked_by`, `work.depends_on` | `constraint`, `open_question` |
+| `research` | `work.kind` in `notes`, `research` | `assumption`, `intent`, `open_question` |
+| `historical` | `work.status` in `archived`, `cancelled`, `superseded`; or any `work.superseded_by` | `constraint`, `decision_statement` |
 | `unknown` | none of the above | all five classes |
+
+The policy is `architecture-development/v2` and the manifest carries every rule under
+`selection_policy`, so a reason on a record can be checked against the row that produced
+it. An `accepted_declaration` is a document that says it holds and a `historical` document
+is one that says it no longer does; neither is a verdict that the declaration is true today.
 
 Roles overlap and the selection is the union. `selection.reasons` names, for each
 selecting rule, the predicate, object and assertion id that established the role. An

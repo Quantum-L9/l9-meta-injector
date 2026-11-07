@@ -390,6 +390,7 @@ function documentContexts(loaded) {
             root_key: key,
             rmp_artifact_id: rmp,
             declarations: { kinds: [], statuses: [] },
+            assertions: [],
         });
         byRmp.set(rmp, entry.artifact_id);
         byCorpusPath.set(entry.corpus_path, entry.artifact_id);
@@ -398,6 +399,7 @@ function documentContexts(loaded) {
         const context = byArtifact.get(artifactId);
         if (context === undefined)
             return;
+        context.assertions.push({ assertion_id: assertionId, predicate, object });
         if (predicate === "work.kind")
             context.declarations.kinds.push({ object, assertion_id: assertionId });
         if (predicate === "work.status")
@@ -617,6 +619,8 @@ function queryCorpusEvidence(input) {
         kind: emptyText(input.kind),
         status: emptyText(input.status),
         source: input.source ?? null,
+        ...(emptyText(input.role) !== null ? { role: emptyText(input.role) } : {}),
+        ...(input.selectedOnly === true ? { selected_only: true } : {}),
         limit: exports.DEFAULT_QUERY_LIMIT,
         max_excerpt_bytes: exports.DEFAULT_MAX_EXCERPT_BYTES,
     };
@@ -641,6 +645,9 @@ function queryCorpusEvidence(input) {
         }
         if (query.source !== null && !exports.EVIDENCE_SOURCES.includes(query.source)) {
             return refuse("unsupported", "query.unknown_source", `'${String(query.source)}' is not an evidence source`);
+        }
+        if (query.role !== undefined && !corpus_architecture_evidence_1.ARCHITECTURE_DOCUMENT_ROLES.includes(query.role)) {
+            return refuse("unsupported", "query.unknown_role", `'${query.role}' is not a document role; the policy's roles are ${corpus_architecture_evidence_1.ARCHITECTURE_DOCUMENT_ROLES.join(", ")}`);
         }
     }
     catch (error) {
@@ -697,6 +704,20 @@ function queryCorpusEvidence(input) {
         rootIds = new Set(matched.map((root) => root.root_id));
     }
     const contexts = documentContexts(loaded);
+    // A selected-only view is a view over the selection profile's verdicts, and
+    // only a generation that ran the projection has any.
+    if (query.selected_only === true && loaded.architecture === null) {
+        return refuse("unsupported", "query.architecture_evidence_not_run", "selected-only asks for the selection profile's verdicts, and the pinned generation was produced without --architecture-evidence", generation, loaded.sources);
+    }
+    // Every document's roles, from the same selector the projection applies, so a
+    // role filter means one thing whichever source a record came from.
+    const rolesByArtifact = new Map();
+    if (query.role !== undefined) {
+        for (const [id, context] of contexts.byArtifact) {
+            const selection = (0, corpus_architecture_evidence_1.selectForDocument)(context.assertions);
+            rolesByArtifact.set(id, { roles: selection.roles, role_evidence: selection.roleEvidence });
+        }
+    }
     let artifactId = null;
     if (query.artifact !== null) {
         artifactId = contexts.byArtifact.has(query.artifact)
@@ -725,6 +746,10 @@ function queryCorpusEvidence(input) {
         if (query.status !== null && !record.document_declarations.statuses.some((ref) => ref.object === query.status))
             return false;
         if (query.text !== null && !record.value.includes(query.text) && !record.bounded_excerpt.includes(query.text))
+            return false;
+        if (query.role !== undefined && !(rolesByArtifact.get(record.artifact_id)?.roles ?? []).includes(query.role))
+            return false;
+        if (query.selected_only === true && record.selection?.selected !== true)
             return false;
         return true;
     }).sort(compareResults);
@@ -756,6 +781,13 @@ function queryCorpusEvidence(input) {
         truncated,
         truncation_statement: truncated ? exports.TRUNCATION_STATEMENT : null,
         results: returned,
+        ...(query.role !== undefined
+            ? {
+                roles_by_document: [...new Set(returned.map((record) => record.artifact_id))]
+                    .sort(ordering_1.compareCodePoints)
+                    .map((id) => ({ artifact_id: id, ...(rolesByArtifact.get(id) ?? { roles: [], role_evidence: [] }) })),
+            }
+            : {}),
         diagnostics,
     };
 }

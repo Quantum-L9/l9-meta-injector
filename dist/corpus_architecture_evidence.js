@@ -1,7 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ARCHITECTURE_DOCUMENT_ROLES = exports.ARCHITECTURE_EVIDENCE_STATEMENT = exports.ARCHITECTURE_EVIDENCE_EPISTEMIC_CLASS = exports.ARCHITECTURE_SELECTION_PROFILE_ID = exports.ARCHITECTURE_EVIDENCE_PROFILE_VERSION = exports.ARCHITECTURE_EVIDENCE_PROFILE_ID = exports.ARCHITECTURE_EVIDENCE_MANIFEST_FILE = exports.ARCHITECTURE_EVIDENCE_PAYLOAD_FILE = exports.ARCHITECTURE_EVIDENCE_MANIFEST_SCHEMA = exports.ARCHITECTURE_EVIDENCE_SCHEMA = void 0;
+exports.SELECTION_POLICY_STATEMENT = exports.ARCHITECTURE_DOCUMENT_ROLES = exports.ARCHITECTURE_EVIDENCE_STATEMENT = exports.ARCHITECTURE_EVIDENCE_EPISTEMIC_CLASS = exports.ARCHITECTURE_SELECTION_PROFILE_ID = exports.ARCHITECTURE_EVIDENCE_PROFILE_VERSION = exports.ARCHITECTURE_EVIDENCE_PROFILE_ID = exports.ARCHITECTURE_EVIDENCE_MANIFEST_FILE = exports.ARCHITECTURE_EVIDENCE_PAYLOAD_FILE = exports.ARCHITECTURE_EVIDENCE_MANIFEST_SCHEMA = exports.ARCHITECTURE_EVIDENCE_SCHEMA = void 0;
+exports.architectureSelectionPolicy = architectureSelectionPolicy;
 exports.architectureEvidenceProfileHash = architectureEvidenceProfileHash;
+exports.selectForDocument = selectForDocument;
 exports.renderArchitectureEvidenceRecord = renderArchitectureEvidenceRecord;
 exports.buildArchitectureEvidenceExport = buildArchitectureEvidenceExport;
 exports.architectureEvidenceRef = architectureEvidenceRef;
@@ -56,10 +58,16 @@ exports.ARCHITECTURE_EVIDENCE_PROFILE_ID = "meta-injector-architecture-evidence"
 /**
  * 1.1.0: the reader's coverage closure (`architecture-statements/v1` 1.1.0) and
  * the `unit_count` field on every record. Record identity is unchanged.
+ *
+ * 1.2.0: the selection policy moves to `architecture-development/v2` — the
+ * `historical`, `research` and `accepted_declaration` roles, each from explicit
+ * declarations only, the policy table carried in the manifest, and the role
+ * selector exported so the query can file every record's document under the
+ * same roles. Record identity is unchanged.
  */
-exports.ARCHITECTURE_EVIDENCE_PROFILE_VERSION = "1.1.0";
+exports.ARCHITECTURE_EVIDENCE_PROFILE_VERSION = "1.2.0";
 /** The one selection profile this release ships. A view over the records, not a vocabulary. */
-exports.ARCHITECTURE_SELECTION_PROFILE_ID = "architecture-development/v1";
+exports.ARCHITECTURE_SELECTION_PROFILE_ID = "architecture-development/v2";
 /** What every record is, epistemically. Stated on each one so no reader has to remember. */
 exports.ARCHITECTURE_EVIDENCE_EPISTEMIC_CLASS = "source-declared";
 exports.ARCHITECTURE_EVIDENCE_STATEMENT = "Every record is a statement a document explicitly declared about itself, read from a "
@@ -71,19 +79,32 @@ exports.ARCHITECTURE_EVIDENCE_STATEMENT = "Every record is a statement a documen
 /**
  * The roles the selection profile recognizes, each from explicit evidence only.
  *
- * `wip_proposal`        — a declared kind in the proposal family, or a declared
- *                         status that says the work is not finished.
- * `specification`       — a declared specification or decision kind.
- * `development_handoff` — a declared checklist kind, or the document carries the
- *                         task, blocker or dependency declarations a handoff is
- *                         made of.
- * `unknown`             — none of the above was declared.
+ * `wip_proposal`         — a declared kind in the proposal family (design, plan,
+ *                          proposal, roadmap), or a declared status that says the
+ *                          work is not finished (draft, planned, wip).
+ * `specification`        — a declared specification or decision kind.
+ * `accepted_declaration` — a declared status that says the document holds
+ *                          (active, complete, done).
+ * `development_handoff`  — a declared checklist kind, or the document carries the
+ *                          task, blocker or dependency declarations a handoff is
+ *                          made of.
+ * `research`             — a declared research or notes kind.
+ * `historical`           — a declared status that says the document no longer
+ *                          holds (archived, cancelled, superseded), or a declared
+ *                          successor (`Superseded by:`).
+ * `unknown`              — none of the above was declared.
  *
  * Roles overlap: a `Type: plan` document with open tasks is both a proposal and a
- * handoff, and the classes it selects are the union.
+ * handoff, a `Status: archived` specification is both a specification and
+ * historical, and the classes each selects are the union. Every role is a
+ * reading of what the document declared about itself; none is a verdict about
+ * whether the declaration is true today.
  */
 exports.ARCHITECTURE_DOCUMENT_ROLES = [
+    "accepted_declaration",
     "development_handoff",
+    "historical",
+    "research",
     "specification",
     "unknown",
     "wip_proposal",
@@ -98,7 +119,7 @@ exports.ARCHITECTURE_DOCUMENT_ROLES = [
 const ROLE_RULES = [
     {
         role: "wip_proposal",
-        kinds: ["design", "notes", "plan", "proposal", "research", "roadmap"],
+        kinds: ["design", "plan", "proposal", "roadmap"],
         statuses: ["draft", "planned", "wip"],
         predicates: [],
         classes: ["assumption", "constraint", "decision_statement", "intent", "open_question"],
@@ -111,13 +132,54 @@ const ROLE_RULES = [
         classes: ["constraint", "decision_statement"],
     },
     {
+        role: "accepted_declaration",
+        kinds: [],
+        statuses: ["active", "complete", "done"],
+        predicates: [],
+        classes: ["constraint", "decision_statement", "intent"],
+    },
+    {
         role: "development_handoff",
         kinds: ["checklist"],
         statuses: [],
         predicates: ["work.blocked_by", "work.depends_on", "work.task.completed", "work.task.open"],
         classes: ["constraint", "open_question"],
     },
+    {
+        role: "research",
+        kinds: ["notes", "research"],
+        statuses: [],
+        predicates: [],
+        classes: ["assumption", "intent", "open_question"],
+    },
+    {
+        role: "historical",
+        kinds: [],
+        statuses: ["archived", "cancelled", "superseded"],
+        predicates: ["work.superseded_by"],
+        classes: ["constraint", "decision_statement"],
+    },
 ];
+exports.SELECTION_POLICY_STATEMENT = "A role is a reading of what the document declared about itself (work.kind, work.status, "
+    + "handoff and supersession predicates), cited by assertion id. Roles overlap and the "
+    + "selected classes are their union. A document matching no rule is unknown and selects "
+    + "every class. No role is a verdict that the declaration is true today: an accepted_declaration "
+    + "is a document that says it holds, a historical document is one that says it no longer does.";
+/** The selection policy this profile applies, for the manifest and the docs. */
+function architectureSelectionPolicy() {
+    return {
+        profile_id: exports.ARCHITECTURE_SELECTION_PROFILE_ID,
+        rules: ROLE_RULES.map((rule) => ({
+            role: rule.role,
+            kinds: [...rule.kinds],
+            statuses: [...rule.statuses],
+            predicates: [...rule.predicates],
+            classes: [...rule.classes],
+        })),
+        unknown_role_selects: [...architecture_statements_1.ARCHITECTURE_STATEMENT_CLASSES],
+        statement: exports.SELECTION_POLICY_STATEMENT,
+    };
+}
 /** Existing work predicates a handoff is made of, counted on every record's document. */
 const HANDOFF_PREDICATES = [
     "work.blocked_by",
@@ -153,6 +215,7 @@ function architectureEvidenceProfileHash() {
                 classes: [...rule.classes],
             })),
             unknown_role_selects: [...architecture_statements_1.ARCHITECTURE_STATEMENT_CLASSES],
+            role_vocabulary: [...exports.ARCHITECTURE_DOCUMENT_ROLES],
             handoff_predicates: [...HANDOFF_PREDICATES],
             applicability_predicates: [...APPLICABILITY_PREDICATES],
         },
@@ -404,6 +467,7 @@ function buildArchitectureEvidenceExport(input) {
         extractor_id: architecture_statements_1.ARCHITECTURE_STATEMENT_EXTRACTOR_ID,
         extractor_version: architecture_statements_1.ARCHITECTURE_STATEMENT_EXTRACTOR_VERSION,
         selection_profile_id: exports.ARCHITECTURE_SELECTION_PROFILE_ID,
+        selection_policy: architectureSelectionPolicy(),
         payload_file: exports.ARCHITECTURE_EVIDENCE_PAYLOAD_FILE,
         record_count: records.length,
         selected_record_count: records.filter((record) => record.selection.selected).length,

@@ -12,29 +12,67 @@ export declare const ARCHITECTURE_EVIDENCE_PROFILE_ID = "meta-injector-architect
 /**
  * 1.1.0: the reader's coverage closure (`architecture-statements/v1` 1.1.0) and
  * the `unit_count` field on every record. Record identity is unchanged.
+ *
+ * 1.2.0: the selection policy moves to `architecture-development/v2` — the
+ * `historical`, `research` and `accepted_declaration` roles, each from explicit
+ * declarations only, the policy table carried in the manifest, and the role
+ * selector exported so the query can file every record's document under the
+ * same roles. Record identity is unchanged.
  */
-export declare const ARCHITECTURE_EVIDENCE_PROFILE_VERSION = "1.1.0";
+export declare const ARCHITECTURE_EVIDENCE_PROFILE_VERSION = "1.2.0";
 /** The one selection profile this release ships. A view over the records, not a vocabulary. */
-export declare const ARCHITECTURE_SELECTION_PROFILE_ID = "architecture-development/v1";
+export declare const ARCHITECTURE_SELECTION_PROFILE_ID = "architecture-development/v2";
 /** What every record is, epistemically. Stated on each one so no reader has to remember. */
 export declare const ARCHITECTURE_EVIDENCE_EPISTEMIC_CLASS = "source-declared";
 export declare const ARCHITECTURE_EVIDENCE_STATEMENT: string;
 /**
  * The roles the selection profile recognizes, each from explicit evidence only.
  *
- * `wip_proposal`        — a declared kind in the proposal family, or a declared
- *                         status that says the work is not finished.
- * `specification`       — a declared specification or decision kind.
- * `development_handoff` — a declared checklist kind, or the document carries the
- *                         task, blocker or dependency declarations a handoff is
- *                         made of.
- * `unknown`             — none of the above was declared.
+ * `wip_proposal`         — a declared kind in the proposal family (design, plan,
+ *                          proposal, roadmap), or a declared status that says the
+ *                          work is not finished (draft, planned, wip).
+ * `specification`        — a declared specification or decision kind.
+ * `accepted_declaration` — a declared status that says the document holds
+ *                          (active, complete, done).
+ * `development_handoff`  — a declared checklist kind, or the document carries the
+ *                          task, blocker or dependency declarations a handoff is
+ *                          made of.
+ * `research`             — a declared research or notes kind.
+ * `historical`           — a declared status that says the document no longer
+ *                          holds (archived, cancelled, superseded), or a declared
+ *                          successor (`Superseded by:`).
+ * `unknown`              — none of the above was declared.
  *
  * Roles overlap: a `Type: plan` document with open tasks is both a proposal and a
- * handoff, and the classes it selects are the union.
+ * handoff, a `Status: archived` specification is both a specification and
+ * historical, and the classes each selects are the union. Every role is a
+ * reading of what the document declared about itself; none is a verdict about
+ * whether the declaration is true today.
  */
-export declare const ARCHITECTURE_DOCUMENT_ROLES: readonly ["development_handoff", "specification", "unknown", "wip_proposal"];
+export declare const ARCHITECTURE_DOCUMENT_ROLES: readonly ["accepted_declaration", "development_handoff", "historical", "research", "specification", "unknown", "wip_proposal"];
 export type ArchitectureDocumentRole = (typeof ARCHITECTURE_DOCUMENT_ROLES)[number];
+/** The policy, as the manifest states it: every rule, nothing hidden in code. */
+export interface SelectionPolicyRule {
+    role: ArchitectureDocumentRole;
+    /** `work.kind` values that establish the role. */
+    kinds: string[];
+    /** `work.status` values that establish the role. */
+    statuses: string[];
+    /** Predicates whose presence establishes the role. */
+    predicates: string[];
+    /** Statement classes the role selects. */
+    classes: ArchitectureStatementClass[];
+}
+export interface SelectionPolicy {
+    profile_id: string;
+    rules: SelectionPolicyRule[];
+    /** What a document matching no rule selects. */
+    unknown_role_selects: ArchitectureStatementClass[];
+    statement: string;
+}
+export declare const SELECTION_POLICY_STATEMENT: string;
+/** The selection policy this profile applies, for the manifest and the docs. */
+export declare function architectureSelectionPolicy(): SelectionPolicy;
 /**
  * Hash of the rules this projection applies: the reader's grammar and vocabulary,
  * the selection table, and the record contract. Bound into the analysis identity
@@ -137,6 +175,8 @@ export interface ArchitectureEvidenceManifest {
     extractor_id: string;
     extractor_version: string;
     selection_profile_id: string;
+    /** Every rule the selection applied, so a reader can check a reason against the row. */
+    selection_policy: SelectionPolicy;
     payload_file: string;
     record_count: number;
     selected_record_count: number;
@@ -207,6 +247,21 @@ export interface BuildArchitectureEvidenceInput {
     corpusAnalysisId: string;
     documents: readonly ArchitectureEvidenceDocumentInput[];
 }
+export interface DocumentSelection {
+    roles: ArchitectureDocumentRole[];
+    roleEvidence: RoleEvidence[];
+    /** Why each selected class was selected: one sentence per selecting rule. */
+    reasonsByClass: Map<ArchitectureStatementClass, string[]>;
+}
+/**
+ * Decide the document's roles from its own declarations, and which classes they select.
+ *
+ * Every role is established by a named assertion, and every selected class by a
+ * named rule. The sentences are generated from the table rather than written
+ * per document, so a reader can check a reason against the table and find the
+ * row.
+ */
+export declare function selectForDocument(assertions: readonly ExistingWorkAssertion[]): DocumentSelection;
 /** One record, canonically rendered onto a single line. */
 export declare function renderArchitectureEvidenceRecord(record: ArchitectureEvidenceRecord): string;
 /**

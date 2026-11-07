@@ -140,11 +140,49 @@ function writeCorpus(root: string): void {
   write(root, "plans/sparse-notes.md", SPARSE);
 }
 
-function corpusRoot(): string {
+/** The base corpus plus one document per role the v2 policy added. */
+function writeRoleCorpus(root: string): void {
+  writeCorpus(root);
+  write(root, "history/old-routing.md", [
+    "# Routing Table History",
+    "",
+    "Status: archived",
+    "Superseded by: plans/gate-routing-proposal.md",
+    "",
+    "Decision: Each node kept its own routing table.",
+    "Constraint: Routing tables were refreshed hourly.",
+    "Open question: Was the hourly refresh ever fast enough?",
+    "",
+  ].join("\n"));
+  write(root, "research/latency-study.md", [
+    "---",
+    "type: research",
+    "---",
+    "# Latency Study",
+    "",
+    "Objective: Measure hop latency through Gate.",
+    "Assumption: The benchmark corpus is representative.",
+    "Open question: Does p99 latency change with tenant count?",
+    "Decision: Benchmarks run nightly.",
+    "",
+  ].join("\n"));
+  write(root, "specs/accepted-chassis.md", [
+    "# Chassis Boundary",
+    "",
+    "Status: done",
+    "",
+    "Decision: The chassis owns auth, ingress, logging and metrics.",
+    "Constraint: An engine exposes no FastAPI route.",
+    "Open question: Should metrics be sampled?",
+    "",
+  ].join("\n"));
+}
+
+function corpusRoot(populate: (root: string) => void = writeCorpus): string {
   const base = tmp();
   const root = path.join(base, "ArchDocs");
   fs.mkdirSync(root);
-  writeCorpus(root);
+  populate(root);
   return root;
 }
 
@@ -334,7 +372,9 @@ describe("the architecture-development/v1 selection profile", () => {
     const root = corpusRoot();
     const result = await scan(root);
     const spec = byPath(result, "specs/transport-packet-spec.docx");
-    expect(spec[0]?.selection.roles).toEqual(["specification"]);
+    // The specification declares `Status: active` too, so it is also an
+    // accepted declaration; roles overlap and the view is their union.
+    expect(spec[0]?.selection.roles).toEqual(["accepted_declaration", "specification"]);
     const question = spec.find((record) => record.statement_class === "open_question");
     // The specification view asks for constraints and decisions. The open
     // question the document declared is still in the payload, unselected, with
@@ -350,6 +390,47 @@ describe("the architecture-development/v1 selection profile", () => {
       .toEqual([["work.status", "active"]]);
     const manifest = result.architectureEvidence?.manifest;
     expect(manifest?.selected_record_count).toBe((manifest?.record_count ?? 0) - 1);
+  });
+
+  it("files historical, research and accepted documents by their own declarations", async () => {
+    const root = corpusRoot(writeRoleCorpus);
+    const result = await scan(root);
+    const historical = byPath(result, "history/old-routing.md");
+    expect(historical[0]?.selection.roles).toEqual(["historical"]);
+    expect(historical[0]?.selection.role_evidence.map((item) => [item.predicate, item.object])).toEqual([
+      ["work.status", "archived"],
+      ["work.superseded_by", "plans/gate-routing-proposal.md"],
+    ]);
+    expect(historical.map((record) => [record.statement_class, record.selection.selected]).sort()).toEqual([
+      ["constraint", true], ["decision_statement", true], ["open_question", false],
+    ]);
+    expect(historical.find((record) => record.statement_class === "decision_statement")?.selection.reasons[0])
+      .toContain("historical selects decision_statement: work.status=archived");
+    // A historical decision is still a source declaration about what was decided then.
+    expect(historical.every((record) => record.authority_verified === false)).toBe(true);
+    expect(historical[0]?.work_context.applicability.map((ref) => ref.predicate)).toEqual(["work.status", "work.superseded_by"]);
+
+    const research = byPath(result, "research/latency-study.md");
+    expect(research[0]?.selection.roles).toEqual(["research"]);
+    expect(research.map((record) => [record.statement_class, record.selection.selected]).sort()).toEqual([
+      ["assumption", true], ["decision_statement", false], ["intent", true], ["open_question", true],
+    ]);
+
+    const accepted = byPath(result, "specs/accepted-chassis.md");
+    expect(accepted[0]?.selection.roles).toEqual(["accepted_declaration"]);
+    expect(accepted.map((record) => [record.statement_class, record.selection.selected]).sort()).toEqual([
+      ["constraint", true], ["decision_statement", true], ["open_question", false],
+    ]);
+    // The policy the manifest carries is the policy the records cite.
+    const policy = result.architectureEvidence?.manifest.selection_policy;
+    expect(policy?.profile_id).toBe(ARCHITECTURE_SELECTION_PROFILE_ID);
+    expect(policy?.rules.map((rule) => rule.role)).toEqual([
+      "wip_proposal", "specification", "accepted_declaration", "development_handoff", "research", "historical",
+    ]);
+    expect(policy?.rules.find((rule) => rule.role === "historical")).toEqual({
+      role: "historical", kinds: [], statuses: ["archived", "cancelled", "superseded"],
+      predicates: ["work.superseded_by"], classes: ["constraint", "decision_statement"],
+    });
   });
 
   it("reads a handoff by its tasks and blockers, and counts them beside each statement", async () => {
@@ -529,7 +610,7 @@ describe("the payload is a function of the corpus, not of the run", () => {
     expect(evidence.manifest.by_class.map((entry) => entry.statement_class)).toEqual([...ARCHITECTURE_STATEMENT_CLASSES]);
     expect(evidence.manifest.by_class.reduce((sum, entry) => sum + entry.record_count, 0)).toBe(evidence.manifest.record_count);
     expect(evidence.manifest.by_role.map((entry) => entry.role)).toEqual([
-      "development_handoff", "specification", "unknown", "wip_proposal",
+      "accepted_declaration", "development_handoff", "specification", "unknown", "wip_proposal",
     ]);
     const known = {
       knownArtifactIds: new Set(result.snapshot.artifacts.map((artifact) => artifact.virtual_source_id)),
