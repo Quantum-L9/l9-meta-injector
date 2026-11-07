@@ -142,3 +142,32 @@ We choose **Option B**.
 - If the owner prefers Option A's packet reach, the reader is already position-free and
   can be attached to the interpretation seam; that would be a separate, identity-moving
   change under its own ADR.
+
+## Amendment 2026-11-07 — selection policy `architecture-development/v2` (profile 1.3.0)
+
+Supersedes item 5's table and the unknown-role wording above; the rest of the decision
+stands. Still Proposed, under this ADR rather than a successor, because the projection,
+schema, identity boundaries and non-goals are unchanged and only the selection table and
+one derived field moved.
+
+- The role vocabulary is closed at `wip_proposal`, `specification`,
+  `development_handoff`, `research_notes` and `unknown`, each established by explicit
+  `work.kind`, `work.status` or handoff declarations only. `research_notes` (kinds
+  `research`, `notes`; selects all five classes, recall first) is separated from
+  `wip_proposal`, which no longer claims those kinds: being research is not evidence of
+  a WIP proposal. A research document that also declares a WIP status is both.
+- A role is a retrieval-selection classification, not a lifecycle judgement. A declared
+  status (`archived`, `superseded`, `active`, `done`) establishes no role and no
+  authority; it stays on the record and remains queryable with `--status`. There is no
+  historical or accepted role.
+- Each record carries `selection.selected_for_roles`: exactly the matched roles whose
+  rule selects its class, in code-point order, from the same typed evaluation as
+  `reasons`. `selected` is true exactly when it is non-empty. The verifier checks the
+  per-role invariants on every payload that carries the field and does not fault an
+  older payload for lacking it.
+- The unknown fallback states that no rule matched the available declarations and that
+  every class is retained for recall; it no longer claims the document declared nothing.
+- Identity: the profile hash and `corpus_analysis_id` move for runs that select the
+  projection; the source snapshot, packet ids, evidence ids, coordinates and cache keys do
+  not. `selection` is derived metadata, outside the statement's identity.
+

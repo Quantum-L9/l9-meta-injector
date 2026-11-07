@@ -274,7 +274,9 @@ and from nothing else. It reuses the work reader's `Label: value` grammar, skips
 unit the work vocabulary claims, and cites the exact line for a `line_span` block and the
 block locator verbatim for every other kind. `src/corpus_architecture_evidence.ts` emits
 the complete payload (`l9.architecture-evidence/v1`) with a manifest built like the
-work-signal export's, applies the static `architecture-development/v1` selection table,
+work-signal export's, applies the static `architecture-development/v2` selection table
+(roles from explicit declarations only, lifecycle status a separate axis, per-statement
+`selected_for_roles` attribution),
 and binds its profile into `corpus_analysis_id` only when selected (ADR-087, Proposed).
 `src/corpus_metadata_selection.ts` derives, on top of that payload and only when
 `--metadata-selection INTENT` names a run intent, the bounded view

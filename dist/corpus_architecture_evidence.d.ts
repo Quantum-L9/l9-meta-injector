@@ -19,7 +19,7 @@ export declare const ARCHITECTURE_EVIDENCE_PROFILE_ID = "meta-injector-architect
  * selector exported so the query can file every record's document under the
  * same roles. Record identity is unchanged.
  */
-export declare const ARCHITECTURE_EVIDENCE_PROFILE_VERSION = "1.2.0";
+export declare const ARCHITECTURE_EVIDENCE_PROFILE_VERSION = "1.3.0";
 /** The one selection profile this release ships. A view over the records, not a vocabulary. */
 export declare const ARCHITECTURE_SELECTION_PROFILE_ID = "architecture-development/v2";
 /** What every record is, epistemically. Stated on each one so no reader has to remember. */
@@ -28,29 +28,32 @@ export declare const ARCHITECTURE_EVIDENCE_STATEMENT: string;
 /**
  * The roles the selection profile recognizes, each from explicit evidence only.
  *
- * `wip_proposal`         — a declared kind in the proposal family (design, plan,
- *                          proposal, roadmap), or a declared status that says the
- *                          work is not finished (draft, planned, wip).
- * `specification`        — a declared specification or decision kind.
- * `accepted_declaration` — a declared status that says the document holds
- *                          (active, complete, done).
- * `development_handoff`  — a declared checklist kind, or the document carries the
- *                          task, blocker or dependency declarations a handoff is
- *                          made of.
- * `research`             — a declared research or notes kind.
- * `historical`           — a declared status that says the document no longer
- *                          holds (archived, cancelled, superseded), or a declared
- *                          successor (`Superseded by:`).
- * `unknown`              — none of the above was declared.
+ * `wip_proposal`        — a declared kind in the proposal family (design, plan,
+ *                         proposal, roadmap), or a declared status that says the
+ *                         work is not finished (draft, planned, wip). A legacy
+ *                         selection-family name: matching a plan kind says what
+ *                         the document is for, not that it is unfinished today.
+ * `specification`       — a declared specification or decision kind.
+ * `development_handoff` — a declared checklist kind, or the document carries the
+ *                         task, blocker or dependency declarations a handoff is
+ *                         made of.
+ * `research_notes`      — a declared research or notes kind. Research is not
+ *                         evidence of a WIP proposal; a research document is also
+ *                         a `wip_proposal` only when it declares a WIP status.
+ * `unknown`             — no supported role rule matched the declarations.
  *
- * Roles overlap: a `Type: plan` document with open tasks is both a proposal and a
- * handoff, a `Status: archived` specification is both a specification and
- * historical, and the classes each selects are the union. Every role is a
- * reading of what the document declared about itself; none is a verdict about
- * whether the declaration is true today.
+ * A role is a retrieval-selection classification, never a lifecycle judgement.
+ * `work.status` stays a separate, independently queryable axis: an archived
+ * specification is a specification whose declared status is archived, not a
+ * different role. Roles overlap: a `Type: plan` document with open tasks is both
+ * a proposal and a handoff, and the classes each selects are the union. Every
+ * role is a reading of what the document declared about itself; none is a
+ * verdict about whether the declaration is true today.
  */
-export declare const ARCHITECTURE_DOCUMENT_ROLES: readonly ["accepted_declaration", "development_handoff", "historical", "research", "specification", "unknown", "wip_proposal"];
+export declare const ARCHITECTURE_DOCUMENT_ROLES: readonly ["development_handoff", "research_notes", "specification", "unknown", "wip_proposal"];
 export type ArchitectureDocumentRole = (typeof ARCHITECTURE_DOCUMENT_ROLES)[number];
+/** What the unknown role says about itself: a fallback, never a reading of evidence. */
+export declare const UNKNOWN_ROLE_EXPLANATION: string;
 /** The policy, as the manifest states it: every rule, nothing hidden in code. */
 export interface SelectionPolicyRule {
     role: ArchitectureDocumentRole;
@@ -152,6 +155,13 @@ export interface ArchitectureEvidenceRecord {
         roles: ArchitectureDocumentRole[];
         role_evidence: RoleEvidence[];
         selected: boolean;
+        /**
+         * Exactly the matched roles whose rule selects this record's class, in code-point
+         * order; `selected` is true exactly when it is non-empty. Derived from the same
+         * typed rule evaluation as `reasons`, never from those sentences. Absent on
+         * payloads written before profile 1.3.0, which recorded only `selected`.
+         */
+        selected_for_roles?: ArchitectureDocumentRole[];
         /** One sentence per rule that selected this record's class. Empty when none did. */
         reasons: string[];
     };
@@ -252,6 +262,8 @@ export interface DocumentSelection {
     roleEvidence: RoleEvidence[];
     /** Why each selected class was selected: one sentence per selecting rule. */
     reasonsByClass: Map<ArchitectureStatementClass, string[]>;
+    /** Which matched roles select each class: the typed form of `reasonsByClass`, same pass. */
+    rolesByClass: Map<ArchitectureStatementClass, ArchitectureDocumentRole[]>;
 }
 /**
  * Decide the document's roles from its own declarations, and which classes they select.

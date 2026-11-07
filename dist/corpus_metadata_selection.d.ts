@@ -85,6 +85,13 @@ export interface MetadataIntentRule {
     statement: string;
     /** Documents filed under any of these roles are in the view. */
     roles: readonly ArchitectureDocumentRole[];
+    /**
+     * Documents that declared any of these `work.status` values are in the view too.
+     * A declared lifecycle status is a separate axis from a role (a specification
+     * that says it is archived is still a specification), so an intent about
+     * accepted or superseded documents reads the status the document declared.
+     */
+    statuses: readonly string[];
     /** Whether a document with no declared role is kept for recall. */
     retains_unknown_role: boolean;
     /** The classes the intent wants, most useful first; the order bounds the view. */
@@ -96,7 +103,7 @@ export interface MetadataIntentRule {
 }
 export declare function metadataIntentRule(intent: MetadataSelectionIntent): MetadataIntentRule;
 /** Why a record is in the view or not. Closed vocabulary; the manifest tallies it. */
-export declare const METADATA_RECORD_REASONS: readonly ["role_matches_intent", "role_unknown_retained", "role_outside_intent", "class_outside_intent", "bounded_out"];
+export declare const METADATA_RECORD_REASONS: readonly ["role_matches_intent", "status_matches_intent", "role_unknown_retained", "role_outside_intent", "class_outside_intent", "bounded_out"];
 export type MetadataRecordReason = (typeof METADATA_RECORD_REASONS)[number];
 /** Why a field is carried or not. */
 export declare const METADATA_FIELD_DISPOSITIONS: readonly ["always", "intent_selects", "not_in_intent", "empty", "redundant"];
@@ -113,6 +120,7 @@ export interface MetadataSelectionPolicy {
         intent: MetadataSelectionIntent;
         statement: string;
         roles: ArchitectureDocumentRole[];
+        statuses: string[];
         retains_unknown_role: boolean;
         classes: ArchitectureStatementClass[];
         fields: MetadataField[];

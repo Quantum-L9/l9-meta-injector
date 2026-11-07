@@ -21,10 +21,12 @@ import {
   ARCHITECTURE_EVIDENCE_MANIFEST_SCHEMA,
   ARCHITECTURE_EVIDENCE_SCHEMA,
   ARCHITECTURE_SELECTION_PROFILE_ID,
+  UNKNOWN_ROLE_EXPLANATION,
   architectureEvidenceProfileHash,
+  renderArchitectureEvidenceRecord,
   verifyArchitectureEvidenceExport,
 } from "../src/corpus_architecture_evidence";
-import type { ArchitectureEvidenceRecord } from "../src/corpus_architecture_evidence";
+import type { ArchitectureDocumentRole, ArchitectureEvidenceRecord } from "../src/corpus_architecture_evidence";
 import { FileCorpusCache } from "../src/corpus_cache";
 import { runCorpusScan } from "../src/corpus_scan";
 import type { CorpusScanResult } from "../src/corpus_scan";
@@ -343,7 +345,7 @@ describe("the questions a developer asks of a design corpus", () => {
 
 // ───────────────────────── the selection profile ─────────────────────────
 
-describe("the architecture-development/v1 selection profile", () => {
+describe("the architecture-development/v2 selection profile", () => {
   it("selects by the document's own declared role and says which declaration decided it", async () => {
     const root = corpusRoot();
     const result = await scan(root);
@@ -372,18 +374,20 @@ describe("the architecture-development/v1 selection profile", () => {
     const root = corpusRoot();
     const result = await scan(root);
     const spec = byPath(result, "specs/transport-packet-spec.docx");
-    // The specification declares `Status: active` too, so it is also an
-    // accepted declaration; roles overlap and the view is their union.
-    expect(spec[0]?.selection.roles).toEqual(["accepted_declaration", "specification"]);
+    // `Status: active` is a declared lifecycle status, not a role: the document
+    // is a specification, and what it says about its status travels beside it.
+    expect(spec[0]?.selection.roles).toEqual(["specification"]);
     const question = spec.find((record) => record.statement_class === "open_question");
     // The specification view asks for constraints and decisions. The open
     // question the document declared is still in the payload, unselected, with
     // no reason — because no rule selected it, not because it was judged.
     expect(question).toBeDefined();
     expect(question?.selection.selected).toBe(false);
+    expect(question?.selection.selected_for_roles).toEqual([]);
     expect(question?.selection.reasons).toEqual([]);
     const decision = spec.find((record) => record.statement_class === "decision_statement");
     expect(decision?.selection.selected).toBe(true);
+    expect(decision?.selection.selected_for_roles).toEqual(["specification"]);
     expect(decision?.selection.reasons[0]).toContain("specification selects decision_statement");
     // Applicability evidence is carried where the document declared it.
     expect(decision?.work_context.applicability.map((ref) => [ref.predicate, ref.object]))
@@ -392,45 +396,196 @@ describe("the architecture-development/v1 selection profile", () => {
     expect(manifest?.selected_record_count).toBe((manifest?.record_count ?? 0) - 1);
   });
 
-  it("files historical, research and accepted documents by their own declarations", async () => {
+  it("reads research and notes as research_notes, and a declared status as a status, never as a role", async () => {
     const root = corpusRoot(writeRoleCorpus);
     const result = await scan(root);
+    // `Status: archived` plus `Superseded by:` and no declared kind: no rule
+    // matches, so the role is unknown — not historical — and recall is complete.
     const historical = byPath(result, "history/old-routing.md");
-    expect(historical[0]?.selection.roles).toEqual(["historical"]);
-    expect(historical[0]?.selection.role_evidence.map((item) => [item.predicate, item.object])).toEqual([
-      ["work.status", "archived"],
-      ["work.superseded_by", "plans/gate-routing-proposal.md"],
-    ]);
-    expect(historical.map((record) => [record.statement_class, record.selection.selected]).sort()).toEqual([
-      ["constraint", true], ["decision_statement", true], ["open_question", false],
-    ]);
-    expect(historical.find((record) => record.statement_class === "decision_statement")?.selection.reasons[0])
-      .toContain("historical selects decision_statement: work.status=archived");
-    // A historical decision is still a source declaration about what was decided then.
-    expect(historical.every((record) => record.authority_verified === false)).toBe(true);
+    expect(historical[0]?.selection.roles).toEqual(["unknown"]);
+    expect(historical[0]?.selection.role_evidence).toEqual([]);
+    expect(historical.every((record) => record.selection.selected && record.selection.selected_for_roles?.length === 1)).toBe(true);
+    expect(historical[0]?.selection.reasons[0]).toContain(UNKNOWN_ROLE_EXPLANATION);
+    // The declarations it did make are preserved on every record, unjudged.
+    expect(historical[0]?.work_context.statuses.map((ref) => ref.object)).toEqual(["archived"]);
     expect(historical[0]?.work_context.applicability.map((ref) => ref.predicate)).toEqual(["work.status", "work.superseded_by"]);
+    expect(historical.every((record) => record.authority_verified === false)).toBe(true);
 
     const research = byPath(result, "research/latency-study.md");
-    expect(research[0]?.selection.roles).toEqual(["research"]);
-    expect(research.map((record) => [record.statement_class, record.selection.selected]).sort()).toEqual([
-      ["assumption", true], ["decision_statement", false], ["intent", true], ["open_question", true],
+    expect(research[0]?.selection.roles).toEqual(["research_notes"]);
+    expect(research[0]?.selection.role_evidence.map((item) => [item.role, item.predicate, item.object]))
+      .toEqual([["research_notes", "work.kind", "research"]]);
+    // High recall: every class the note declared is selected, by that one role.
+    expect(research.map((record) => [record.statement_class, record.selection.selected_for_roles]).sort()).toEqual([
+      ["assumption", ["research_notes"]], ["decision_statement", ["research_notes"]],
+      ["intent", ["research_notes"]], ["open_question", ["research_notes"]],
     ]);
 
-    const accepted = byPath(result, "specs/accepted-chassis.md");
-    expect(accepted[0]?.selection.roles).toEqual(["accepted_declaration"]);
-    expect(accepted.map((record) => [record.statement_class, record.selection.selected]).sort()).toEqual([
-      ["constraint", true], ["decision_statement", true], ["open_question", false],
-    ]);
+    // `Status: done` establishes no role either.
+    const done = byPath(result, "specs/accepted-chassis.md");
+    expect(done[0]?.selection.roles).toEqual(["unknown"]);
+    expect(done.every((record) => record.selection.selected)).toBe(true);
+    expect(done[0]?.work_context.statuses.map((ref) => ref.object)).toEqual(["done"]);
+
     // The policy the manifest carries is the policy the records cite.
     const policy = result.architectureEvidence?.manifest.selection_policy;
     expect(policy?.profile_id).toBe(ARCHITECTURE_SELECTION_PROFILE_ID);
     expect(policy?.rules.map((rule) => rule.role)).toEqual([
-      "wip_proposal", "specification", "accepted_declaration", "development_handoff", "research", "historical",
+      "wip_proposal", "specification", "development_handoff", "research_notes",
     ]);
-    expect(policy?.rules.find((rule) => rule.role === "historical")).toEqual({
-      role: "historical", kinds: [], statuses: ["archived", "cancelled", "superseded"],
-      predicates: ["work.superseded_by"], classes: ["constraint", "decision_statement"],
+    expect(policy?.rules.find((rule) => rule.role === "research_notes")).toEqual({
+      role: "research_notes", kinds: ["notes", "research"], statuses: [], predicates: [],
+      classes: ["assumption", "constraint", "decision_statement", "intent", "open_question"],
     });
+    expect(policy?.unknown_role_selects).toEqual([...ARCHITECTURE_STATEMENT_CLASSES]);
+  });
+
+  it("attributes each statement to exactly the roles whose rule selected it when roles overlap", async () => {
+    const root = corpusRoot((dir) => {
+      write(dir, "specs/overlap.md", [
+        "---",
+        "type: specification",
+        "---",
+        "# Integration Spec",
+        "",
+        "- [ ] Review integration",
+        "",
+        "Constraint: The chassis owns ingress.",
+        "Open question: Who reviews the integration?",
+        "Decision: Ingress is terminated at the chassis.",
+        "",
+      ].join("\n"));
+      write(dir, "research/wip-study.md", [
+        "---",
+        "type: research",
+        "status: wip",
+        "---",
+        "# Tenant Study",
+        "",
+        "Decision: Use synthetic tenants.",
+        "Open question: How many tenants?",
+        "",
+      ].join("\n"));
+      write(dir, "plans/contradictory.md", [
+        "# Tenant Rollout",
+        "",
+        "Status: wip",
+        "Status: complete",
+        "",
+        "Constraint: Rollout proceeds one tenant at a time.",
+        "",
+      ].join("\n"));
+      write(dir, "specs/archived-spec.md", [
+        "---",
+        "type: specification",
+        "status: archived",
+        "---",
+        "# Old Packet Spec",
+        "",
+        "Constraint: Every packet carried a hop count.",
+        "Open question: Was 16 enough?",
+        "",
+      ].join("\n"));
+    });
+    const result = await scan(root);
+
+    // Scenario I: a specification with an open task is both a specification and
+    // a handoff. Each statement names the roles that selected it, and only those.
+    const overlap = byPath(result, "specs/overlap.md");
+    expect(overlap[0]?.selection.roles).toEqual(["development_handoff", "specification"]);
+    const table = Object.fromEntries(overlap.map((record) => [record.statement_class, record.selection.selected_for_roles]));
+    expect(table).toEqual({
+      constraint: ["development_handoff", "specification"],
+      open_question: ["development_handoff"],
+      decision_statement: ["specification"],
+    });
+    expect(overlap.every((record) => record.selection.selected)).toBe(true);
+    for (const record of overlap) {
+      for (const role of record.selection.selected_for_roles ?? []) {
+        expect(record.selection.reasons.some((reason) => reason.startsWith(`${role} selects ${record.statement_class}:`))).toBe(true);
+        expect(record.selection.role_evidence.some((item) => item.role === role)).toBe(true);
+      }
+    }
+    expect(overlap.find((record) => record.statement_class === "open_question")?.selection.reasons).toEqual([
+      expect.stringMatching(/^development_handoff selects open_question: work\.task\.open=/),
+    ]);
+
+    // Scenario E: research that declares a WIP status is both, with no priority.
+    const study = byPath(result, "research/wip-study.md");
+    expect(study[0]?.selection.roles).toEqual(["research_notes", "wip_proposal"]);
+    expect(study[0]?.selection.role_evidence.map((item) => [item.role, item.predicate, item.object])).toEqual([
+      ["research_notes", "work.kind", "research"],
+      ["wip_proposal", "work.status", "wip"],
+    ]);
+    expect(study.every((record) => JSON.stringify(record.selection.selected_for_roles) === JSON.stringify(["research_notes", "wip_proposal"]))).toBe(true);
+
+    // Scenario G: contradictory statuses are both preserved; the WIP evidence
+    // establishes the role and nothing chooses a current status.
+    const contradictory = byPath(result, "plans/contradictory.md");
+    expect(contradictory[0]?.selection.roles).toEqual(["wip_proposal"]);
+    expect(contradictory[0]?.work_context.statuses.map((ref) => ref.object)).toEqual(["complete", "wip"]);
+    expect(contradictory[0]?.selection.role_evidence.map((item) => [item.predicate, item.object])).toEqual([["work.status", "wip"]]);
+
+    // Scenario F: an archived specification is a specification whose declared
+    // status is archived. No role replaces it, nothing hides the status.
+    const archived = byPath(result, "specs/archived-spec.md");
+    expect(archived[0]?.selection.roles).toEqual(["specification"]);
+    expect(archived[0]?.work_context.statuses.map((ref) => ref.object)).toEqual(["archived"]);
+    expect(archived.map((record) => [record.statement_class, record.selection.selected]).sort()).toEqual([
+      ["constraint", true], ["open_question", false],
+    ]);
+  });
+
+  it("refuses a payload whose per-role attribution disagrees with its roles, rules, flag or evidence", async () => {
+    const root = corpusRoot();
+    const result = await scan(root);
+    const exported = result.architectureEvidence;
+    if (exported === null) throw new Error("not selected");
+    const known = {
+      knownArtifactIds: new Set(exported.records.map((record) => record.artifact_id)),
+      knownNormalizedDocumentIds: new Set(exported.records.map((record) => record.normalized_document_id).filter((id): id is string => id !== null)),
+    };
+    const tamper = (mutate: (record: ArchitectureEvidenceRecord) => void): string[] => {
+      const records = JSON.parse(JSON.stringify(exported.records)) as ArchitectureEvidenceRecord[];
+      const target = records.find((record) => record.source_path === "specs/transport-packet-spec.docx" && record.statement_class === "constraint");
+      if (target === undefined) throw new Error("no target");
+      mutate(target);
+      const payloadJsonl = records.map((record) => `${renderArchitectureEvidenceRecord(record)}\n`).join("");
+      return verifyArchitectureEvidenceExport({ manifest: exported.manifest, payloadJsonl, ...known });
+    };
+    expect(verifyArchitectureEvidenceExport({ manifest: exported.manifest, payloadJsonl: exported.payloadJsonl, ...known })).toEqual([]);
+    expect(tamper((r) => { r.selection.selected_for_roles = ["development_handoff"]; })).toEqual(expect.arrayContaining([
+      expect.stringContaining("a role its document was not filed under"),
+    ]));
+    expect(tamper((r) => { r.selection.selected_for_roles = ["specification", "specification"]; })).toEqual(expect.arrayContaining([
+      expect.stringContaining("carries a duplicate"),
+    ]));
+    expect(tamper((r) => { r.selection.selected_for_roles = []; })).toEqual(expect.arrayContaining([
+      expect.stringContaining("marked selected=true but selected_for_roles has 0"),
+    ]));
+    expect(tamper((r) => { r.statement_class = "open_question"; })).toEqual(expect.arrayContaining([
+      expect.stringContaining("whose rule does not select open_question"),
+    ]));
+    expect(tamper((r) => { r.selection.selected_for_roles = ["canonical" as ArchitectureDocumentRole]; })).toEqual(expect.arrayContaining([
+      expect.stringContaining("which is not a role"),
+    ]));
+    expect(tamper((r) => { r.selection.role_evidence = []; })).toEqual(expect.arrayContaining([
+      expect.stringContaining("with no source evidence"),
+    ]));
+    expect(tamper((r) => { r.selection.roles = ["unknown"]; r.selection.selected_for_roles = ["unknown"]; r.selection.reasons = ["unknown selects constraint: invented"]; })).toEqual(expect.arrayContaining([
+      expect.stringContaining("claims source evidence for the unknown role"),
+      expect.stringContaining("without the fallback explanation"),
+    ]));
+    expect(tamper((r) => { delete r.selection.selected_for_roles; })).toEqual(expect.arrayContaining([
+      expect.stringContaining("carries no selected_for_roles under profile 1.3.0"),
+    ]));
+    // A payload written before 1.3.0 is not faulted for lacking the field.
+    const legacy = JSON.parse(JSON.stringify(exported.records)) as ArchitectureEvidenceRecord[];
+    for (const record of legacy) delete record.selection.selected_for_roles;
+    const legacyPayload = legacy.map((record) => `${renderArchitectureEvidenceRecord(record)}\n`).join("");
+    const legacyManifest = { ...exported.manifest, profile_version: "1.2.0" };
+    expect(verifyArchitectureEvidenceExport({ manifest: legacyManifest, payloadJsonl: legacyPayload, ...known })
+      .filter((problem) => problem.includes("selected_for_roles"))).toEqual([]);
   });
 
   it("reads a handoff by its tasks and blockers, and counts them beside each statement", async () => {
@@ -459,7 +614,9 @@ describe("the architecture-development/v1 selection profile", () => {
     expect(untyped[0]?.statement_class).toBe("intent");
     expect(untyped[0]?.selection.roles).toEqual(["unknown"]);
     expect(untyped[0]?.selection.selected).toBe(true);
-    expect(untyped[0]?.selection.reasons[0]).toContain("unknown selects intent");
+    expect(untyped[0]?.selection.selected_for_roles).toEqual(["unknown"]);
+    expect(untyped[0]?.selection.reasons).toEqual([`unknown selects intent: ${UNKNOWN_ROLE_EXPLANATION}`]);
+    expect(untyped[0]?.selection.role_evidence).toEqual([]);
     expect(untyped[0]?.work_context).toEqual({ kinds: [], statuses: [], applicability: [], handoff: [] });
   });
 
@@ -610,7 +767,7 @@ describe("the payload is a function of the corpus, not of the run", () => {
     expect(evidence.manifest.by_class.map((entry) => entry.statement_class)).toEqual([...ARCHITECTURE_STATEMENT_CLASSES]);
     expect(evidence.manifest.by_class.reduce((sum, entry) => sum + entry.record_count, 0)).toBe(evidence.manifest.record_count);
     expect(evidence.manifest.by_role.map((entry) => entry.role)).toEqual([
-      "accepted_declaration", "development_handoff", "specification", "unknown", "wip_proposal",
+      "development_handoff", "specification", "unknown", "wip_proposal",
     ]);
     const known = {
       knownArtifactIds: new Set(result.snapshot.artifacts.map((artifact) => artifact.virtual_source_id)),

@@ -28,13 +28,15 @@ node scripts/corpus-query-cli.js --out <corpus output dir> [filters] [--limit N]
 | `--kind VALUE` | documents that declared this `work.kind`, by any of their declarations |
 | `--status VALUE` | documents that declared this `work.status`, by any of their declarations |
 | `--source NAME` | `architecture_evidence`, `document_work_signals` or `repository_model_packet` |
-| `--role NAME` | documents the selection policy files under this role from their own declarations: `accepted_declaration`, `development_handoff`, `historical`, `research`, `specification`, `unknown`, `wip_proposal`; the roles and the declarations that established them come back under `roles_by_document` |
-| `--selected-only` | only architecture-evidence records the selection profile marked selected; needs a generation made with `--architecture-evidence` |
+| `--role NAME` | architecture-evidence records whose document the generation filed under this role: `development_handoff`, `research_notes`, `specification`, `unknown`, `wip_proposal` |
+| `--selected-only` | only architecture-evidence records the selection profile marked selected; with `--role`, only records that role's own rule selected |
 | `--limit N` | records returned, default 50, max 500 |
 | `--max-excerpt-bytes N` | excerpt byte ceiling on the wire, default 1024 |
 
 Exit codes: `0` for `ok`, `empty`, `incomplete`; `3` for `unavailable`, `unsupported`; `1`
-for `invalid`; `2` for a usage error. Unknown flags are refused (ADR-069).
+for `invalid`; `2` for a usage error. The grammar is strict (ADR-069): unknown flags,
+positional arguments, a flag given twice, a value flag without a value (`--role ""`
+included) and `--selected-only=true` are refused with exit `2` before anything is read.
 
 Programmatically: `queryCorpusEvidence(input)` and `renderEvidenceQueryResponse(response)`
 from `src/corpus_query.ts`. Neither is a package export.
@@ -102,12 +104,58 @@ itself cut it at its bound, and `excerpt_cut_by_query` is true when `--max-excer
 cut it further. Neither excerpt is ever presented as the complete passage;
 `value_truncated_at_source` says the same of a declared text.
 
-A role filter files every record's document — from any source — under the roles the same
-selector (`architecture-development/v2`) derives from its work signals and packet
-assertions, and adds `roles_by_document` with the roles and the assertion ids behind them.
-`--selected-only` keeps only records the selection profile marked selected, so it never
-returns a work-signal or packet record. Neither filter changes an unfiltered response:
-`query.role`, `query.selected_only` and `roles_by_document` are present only when used.
+### Roles and selection
+
+Roles and selection verdicts exist on architecture-evidence records, as the generation
+recorded them (`selection.roles`, `selection.selected`, `selection.selected_for_roles`,
+`selection.role_evidence`), and the query reads those fields and nothing else: it does not
+re-run the role rules, re-read a document, or reinterpret an older generation under
+today's table. A role is a retrieval classification from the document's own declarations,
+not a lifecycle or authority judgement; `--status` stays the independent axis for what a
+document declared about its lifecycle.
+
+| Query | Returns |
+|---|---|
+| no new flags | existing behaviour, byte-identical |
+| `--role specification` | every architecture-evidence record whose document's `roles` include `specification`, selected or not |
+| `--selected-only` | architecture-evidence records with `selected: true` (selected by at least one of their roles) |
+| `--role specification --selected-only` | only records whose `selected_for_roles` names `specification`: a question selected only by a handoff rule in the same document is excluded |
+| `--role unknown` | records from documents no rule matched |
+| `--role development_handoff --class open_question` | the open questions of handoff-classified documents |
+
+Both filters are conjunctive with `--root`, `--artifact`, `--class`, `--text`, `--kind`,
+`--status`, `--limit` and `--max-excerpt-bytes`; ordering, limits, excerpt bounds and
+match counts are unchanged. They apply to the `architecture_evidence` source only: without
+`--source` the query evaluates that source alone and says so in an `info` diagnostic
+(`query.role_filter_architecture_only`); with `--source document_work_signals` or
+`--source repository_model_packet` the outcome is `unsupported`
+(`query.role_filter_source_unsupported`), as it is with `--predicate`, which names a
+work-signal field those records do not have (`query.role_filter_predicate_unsupported`).
+A generation produced without `--architecture-evidence` is `unsupported` for either flag
+(`query.architecture_evidence_not_run`), never `empty`. An unknown role is `unsupported`
+(`query.unknown_role`), never a search for `unknown`.
+
+**Historical generations.** A payload written before profile 1.3.0 recorded `roles` and
+a global `selected` flag but not `selected_for_roles`. Against such a generation `--role`
+alone and `--selected-only` alone are answered from what was recorded; `--role` with
+`--selected-only` is `unsupported` (`query.role_selection_not_recorded`, naming the
+profile version), because the attribution it needs was never written and the query will
+not reconstruct it from today's rules or from the reason sentences. The generation stays
+valid for every other question.
+
+```bash
+npm run corpus-query -- --out ./corpus-out --role specification
+npm run corpus-query -- --out ./corpus-out --role specification --selected-only --class constraint
+npm run corpus-query -- --out ./corpus-out --role development_handoff --selected-only --class open_question
+npm run corpus-query -- --out ./corpus-out --role research_notes --status archived
+npm run corpus-query -- --out ./corpus-out --selected-only --source architecture_evidence
+```
+
+Role queries enumerate architecture-evidence records, so a document that declares a
+kind but no recognized architectural statement does not appear under any role: the
+projection is statement-level, and a corpus-wide document-role inventory is a separate
+capability. Neither filter changes an unfiltered response: `query.role` and
+`query.selected_only` are present only when used.
 
 Results are ordered by source, then `artifact_id`, then `record_id`: a total order over
 identities the generation already assigned. When more match than the limit returns,

@@ -23,6 +23,8 @@ import {
   renderEvidenceQueryResponse,
 } from "../src/corpus_query";
 import type { EvidenceQueryResponse } from "../src/corpus_query";
+import { canonicalCorpusJson } from "../src/corpus_analysis";
+import { sha256TextPrefixed } from "../src/repository_model";
 import { writeDocx } from "./helpers/document_fixtures";
 
 const REPO = path.resolve(__dirname, "..");
@@ -100,9 +102,37 @@ function writeCorpus(root: string): void {
   write(root, "notes/untyped.md", "Objective: Keep the gateway stateless.\n");
 }
 
-/** The base corpus plus a document that declares itself historical. */
+/**
+ * The base corpus plus the role scenarios: a specification that is also a
+ * handoff (the critical overlap), a research note, and an archived document
+ * that declares no kind.
+ */
 function writeRoleCorpus(root: string): void {
   writeCorpus(root);
+  write(root, "specs/overlap.md", [
+    "---",
+    "type: specification",
+    "---",
+    "# Integration Spec",
+    "",
+    "- [ ] Review integration",
+    "",
+    "Constraint: The chassis owns ingress.",
+    "Open question: Who reviews the integration?",
+    "Decision: Ingress is terminated at the chassis.",
+    "",
+  ].join("\n"));
+  write(root, "research/latency-study.md", [
+    "---",
+    "type: research",
+    "status: archived",
+    "---",
+    "# Latency Study",
+    "",
+    "Assumption: The benchmark corpus is representative.",
+    "Decision: Benchmarks ran nightly.",
+    "",
+  ].join("\n"));
   write(root, "history/old-routing.md", [
     "# Routing Table History",
     "",
@@ -497,59 +527,166 @@ describe("E. incomplete corpus", () => {
 // ───────────────────────── roles and the selected view ─────────────────────────
 
 describe("role and selected-only filters", () => {
-  it("files every record's document under the policy's roles and returns the evidence", () => {
-    const response = queryCorpusEvidence({ outDir: roles.out, role: "historical" });
+  const overlapBy = (response: EvidenceQueryResponse): Record<string, string[] | undefined> => Object.fromEntries(
+    response.results
+      .filter((record) => record.source_path === "specs/overlap.md")
+      .map((record) => [record.statement_class, record.selection?.selected_for_roles]),
+  );
+
+  it("filters by the role the generation recorded on each architecture-evidence record", () => {
+    const response = queryCorpusEvidence({ outDir: roles.out, role: "specification" });
     expect(response.outcome).toBe("ok");
-    expect(new Set(response.results.map((record) => record.source_path))).toEqual(new Set(["history/old-routing.md"]));
-    // Records from every source: the archived decision (architecture evidence)
-    // and the `Status: archived` line itself (packet assertion).
-    expect(new Set(response.results.map((record) => record.source))).toEqual(new Set(["architecture_evidence", "repository_model_packet"]));
-    expect(response.query.role).toBe("historical");
-    expect(response.roles_by_document).toHaveLength(1);
-    expect(response.roles_by_document?.[0]?.roles).toEqual(["historical"]);
-    expect(response.roles_by_document?.[0]?.role_evidence.map((item) => [item.predicate, item.object])).toEqual([
-      ["work.status", "archived"],
-      ["work.superseded_by", "plans/gate-routing-proposal.md"],
-    ]);
-    for (const item of response.roles_by_document?.[0]?.role_evidence ?? []) {
-      expect(item.assertion_id.startsWith("assertion:")).toBe(true);
+    expect(response.query.role).toBe("specification");
+    expect(new Set(response.results.map((record) => record.source_path)))
+      .toEqual(new Set(["specs/transport-packet-spec.docx", "specs/overlap.md"]));
+    expect(response.results.every((record) => record.source === "architecture_evidence")).toBe(true);
+    expect(response.results.every((record) => record.selection?.roles.includes("specification"))).toBe(true);
+    // The overlapping document's records are all returned: role membership is
+    // not selection, and the selection each carries is the generation's own.
+    expect(overlapBy(response)).toEqual({
+      constraint: ["development_handoff", "specification"],
+      open_question: ["development_handoff"],
+      decision_statement: ["specification"],
+    });
+    expect(response.diagnostics.map((diagnostic) => diagnostic.code)).toEqual(["query.role_filter_architecture_only"]);
+    // The other roles, from their own declarations; unknown is what nothing matched.
+    expect(new Set(queryCorpusEvidence({ outDir: roles.out, role: "research_notes" }).results.map((record) => record.source_path)))
+      .toEqual(new Set(["research/latency-study.md"]));
+    expect(new Set(queryCorpusEvidence({ outDir: roles.out, role: "unknown" }).results.map((record) => record.source_path)))
+      .toEqual(new Set(["history/old-routing.md", "notes/untyped.md"]));
+    expect(new Set(queryCorpusEvidence({ outDir: roles.out, role: "development_handoff" }).results.map((record) => record.source_path)))
+      .toEqual(new Set(["handoffs/chassis-auth-handoff.md", "specs/overlap.md"]));
+  });
+
+  it("with selected-only returns only what the requested role's own rule selected — the overlap gate", () => {
+    const spec = queryCorpusEvidence({ outDir: roles.out, role: "specification", selectedOnly: true });
+    expect(spec.query.selected_only).toBe(true);
+    expect(Object.keys(overlapBy(spec)).sort()).toEqual(["constraint", "decision_statement"]);
+    const handoff = queryCorpusEvidence({ outDir: roles.out, role: "development_handoff", selectedOnly: true });
+    expect(Object.keys(overlapBy(handoff)).sort()).toEqual(["constraint", "open_question"]);
+    // Alone, selected-only is the global flag: each of the three is selected by some role.
+    const any = queryCorpusEvidence({ outDir: roles.out, selectedOnly: true });
+    expect(Object.keys(overlapBy(any)).sort()).toEqual(["constraint", "decision_statement", "open_question"]);
+    expect(any.results.every((record) => record.selection?.selected === true && record.source === "architecture_evidence")).toBe(true);
+    // The specification's own open question (a Word document) is unselected and stays out.
+    expect(any.results.some((record) => record.source_path === "specs/transport-packet-spec.docx" && record.statement_class === "open_question")).toBe(false);
+    expect(queryCorpusEvidence({ outDir: roles.out, source: "architecture_evidence", selectedOnly: true }).results).toEqual(any.results);
+    // The same answers through the command line, byte for byte with the API.
+    const cli = runQuery(["--out", roles.out, "--role", "specification", "--selected-only"]);
+    expect(cli.status).toBe(0);
+    expect(cli.stdout).toBe(renderEvidenceQueryResponse(spec));
+    expect(runQuery(["--out", roles.out, "--role", "development_handoff", "--selected-only", "--class", "open_question"]).response.results
+      .map((record) => record.source_path).sort()).toEqual(["handoffs/chassis-auth-handoff.md", "specs/overlap.md"]);
+    expect(runQuery(["--out", roles.out, "--role", "specification", "--selected-only", "--class", "open_question"]).response.outcome).toBe("empty");
+  });
+
+  it("composes with the existing filters, and keeps a declared status independent of the role", () => {
+    const archived = queryCorpusEvidence({ outDir: roles.out, role: "research_notes", status: "archived" });
+    expect(archived.results.map((record) => record.source_path)).toEqual(["research/latency-study.md", "research/latency-study.md"]);
+    expect(archived.results[0]?.document_declarations.statuses.map((ref) => ref.object)).toEqual(["archived"]);
+    expect(queryCorpusEvidence({ outDir: roles.out, role: "specification", status: "archived" }).outcome).toBe("empty");
+    expect(queryCorpusEvidence({ outDir: roles.out, role: "specification", kind: "specification", statementClass: "constraint", root: "Designs", selectedOnly: true })
+      .results.map((record) => record.statement_class)).toEqual(["constraint", "constraint"]);
+    expect(queryCorpusEvidence({ outDir: roles.out, role: "specification", text: "ingress", selectedOnly: true }).results.map((record) => record.value))
+      .toEqual(["The chassis owns ingress."]);
+  });
+
+  it("refuses an unknown role, another source, a predicate, and a generation without the projection", () => {
+    const unknown = queryCorpusEvidence({ outDir: roles.out, role: "canonical" });
+    expect(unknown.outcome).toBe("unsupported");
+    expect(unknown.diagnostics[0]?.code).toBe("query.unknown_role");
+    for (const source of ["document_work_signals", "repository_model_packet"] as const) {
+      const response = queryCorpusEvidence({ outDir: roles.out, source, role: "specification" });
+      expect(response.outcome).toBe("unsupported");
+      expect(response.diagnostics[0]?.code).toBe("query.role_filter_source_unsupported");
+      expect(queryCorpusEvidence({ outDir: roles.out, source, selectedOnly: true }).outcome).toBe("unsupported");
     }
-    // A handoff's tasks, found by role rather than by path.
-    const handoff = queryCorpusEvidence({ outDir: roles.out, role: "development_handoff", predicate: "work.task.open" });
-    expect(handoff.results.map((record) => record.source_path)).toEqual(["handoffs/chassis-auth-handoff.md"]);
-  });
-
-  it("returns only the selection profile's selected records on request, and keeps the rest otherwise", () => {
-    const all = queryCorpusEvidence({ outDir: roles.out, statementClass: "open_question" });
-    const selected = queryCorpusEvidence({ outDir: roles.out, statementClass: "open_question", selectedOnly: true });
-    expect(selected.query.selected_only).toBe(true);
-    expect(selected.results.length).toBeLessThan(all.results.length);
-    expect(selected.results.every((record) => record.selection?.selected === true)).toBe(true);
-    // The historical document's question is declared, unselected, and still in the unfiltered answer.
-    expect(all.results.some((record) => record.source_path === "history/old-routing.md" && record.selection?.selected === false)).toBe(true);
-    expect(selected.results.some((record) => record.source_path === "history/old-routing.md")).toBe(false);
-    // Only architecture-evidence records carry a verdict, so selected-only never returns another source.
-    const statuses = queryCorpusEvidence({ outDir: roles.out, predicate: "work.status", selectedOnly: true });
-    expect(statuses.results).toEqual([]);
-    expect(statuses.outcome).toBe("empty");
-    expect(runQuery(["--out", roles.out, "--class", "open_question", "--selected-only", "--role", "wip_proposal"]).response.results.every(
-      (record) => record.selection?.selected === true && record.source_path === "plans/gate-routing-proposal.md",
-    )).toBe(true);
-  });
-
-  it("refuses an unknown role, and selected-only against a generation without the projection", () => {
-    expect(queryCorpusEvidence({ outDir: roles.out, role: "canonical" }).outcome).toBe("unsupported");
+    const predicate = queryCorpusEvidence({ outDir: roles.out, predicate: "work.status", selectedOnly: true });
+    expect(predicate.outcome).toBe("unsupported");
+    expect(predicate.diagnostics[0]?.code).toBe("query.role_filter_predicate_unsupported");
     const root = path.join(tmp("l9-corpus-query-plain-roles-"), "Designs");
     fs.mkdirSync(root);
     writeRoleCorpus(root);
     const plain = scan(root);
-    const response = queryCorpusEvidence({ outDir: plain.out, predicate: "work.status", selectedOnly: true });
-    expect(response.outcome).toBe("unsupported");
-    expect(response.diagnostics[0]?.code).toBe("query.architecture_evidence_not_run");
-    // A role filter needs no projection: roles come from the work signals and packets.
-    const byRole = queryCorpusEvidence({ outDir: plain.out, predicate: "work.status", role: "historical" });
+    for (const input of [{ role: "specification" }, { selectedOnly: true }, { role: "unknown", selectedOnly: true }]) {
+      const response = queryCorpusEvidence({ outDir: plain.out, ...input });
+      expect(response.outcome).toBe("unsupported");
+      expect(response.match_count).toBeNull();
+      expect(response.diagnostics[0]?.code).toBe("query.architecture_evidence_not_run");
+    }
+  });
+
+  it("reads a generation that recorded only the global flag at the fidelity it recorded", () => {
+    // A pre-1.3.0 generation: the same records without selected_for_roles, with
+    // every integrity proof rewritten consistently so the generation is valid.
+    const copy = copyOut(roles.out);
+    const dir = generationDir(copy);
+    const payloadPath = path.join(dir, "architecture-evidence.jsonl");
+    const manifestPath = path.join(dir, "architecture-evidence.manifest.json");
+    const snapshotPath = path.join(dir, "corpus-snapshot.json");
+    const records = fs.readFileSync(payloadPath, "utf8").split("\n").filter((line) => line.length > 0).map((line) => JSON.parse(line) as { selection: Record<string, unknown> });
+    for (const record of records) delete record.selection.selected_for_roles;
+    const payload = records.map((record) => `${canonicalCorpusJson(record, 0)}\n`).join("");
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+    manifest.profile_version = "1.2.0";
+    manifest.payload_byte_length = Buffer.byteLength(payload, "utf8");
+    manifest.payload_artifact_hash = sha256TextPrefixed(payload);
+    manifest.payload_semantic_hash = sha256TextPrefixed(canonicalCorpusJson({ schema: "l9.architecture-evidence/v1", records }, 0));
+    const manifestJson = `${canonicalCorpusJson(manifest)}\n`;
+    const snapshot = JSON.parse(fs.readFileSync(snapshotPath, "utf8"));
+    snapshot.architecture_evidence.payload_artifact_hash = manifest.payload_artifact_hash;
+    snapshot.architecture_evidence.payload_semantic_hash = manifest.payload_semantic_hash;
+    const snapshotJson = `${canonicalCorpusJson(snapshot)}\n`;
+    fs.writeFileSync(payloadPath, payload, "utf8");
+    fs.writeFileSync(manifestPath, manifestJson, "utf8");
+    fs.writeFileSync(snapshotPath, snapshotJson, "utf8");
+    const currentPath = path.join(copy, "CURRENT.json");
+    const current = JSON.parse(fs.readFileSync(currentPath, "utf8"));
+    const rewritten: Record<string, string> = {
+      "architecture-evidence.jsonl": payload, "architecture-evidence.manifest.json": manifestJson, "corpus-snapshot.json": snapshotJson,
+    };
+    for (const file of current.files) {
+      const contents = rewritten[file.path];
+      if (contents !== undefined) file.content_hash = `sha256:${crypto.createHash("sha256").update(contents, "utf8").digest("hex")}`;
+    }
+    fs.writeFileSync(currentPath, JSON.stringify(current, null, 2), "utf8");
+
+    // Legacy questions are answered from what was recorded.
+    expect(queryCorpusEvidence({ outDir: copy, predicate: "work.status" }).outcome).toBe("ok");
+    const byRole = queryCorpusEvidence({ outDir: copy, role: "specification" });
     expect(byRole.outcome).toBe("ok");
-    expect(byRole.results.map((record) => record.value)).toEqual(["archived"]);
+    expect(byRole.results.every((record) => record.selection?.selected_for_roles === undefined)).toBe(true);
+    const selected = queryCorpusEvidence({ outDir: copy, selectedOnly: true });
+    expect(selected.outcome).toBe("ok");
+    expect(selected.results.length).toBe(queryCorpusEvidence({ outDir: roles.out, selectedOnly: true }).results.length);
+    // The combination needs attribution the generation never recorded, and the
+    // query will not reconstruct it from today's rules.
+    const combined = queryCorpusEvidence({ outDir: copy, role: "specification", selectedOnly: true });
+    expect(combined.outcome).toBe("unsupported");
+    expect(combined.match_count).toBeNull();
+    expect(combined.diagnostics[0]?.code).toBe("query.role_selection_not_recorded");
+    expect(combined.diagnostics[0]?.message).toContain("profile 1.2.0");
+  });
+
+  it("refuses malformed role options under the strict grammar", () => {
+    const refused = (args: string[]): string => {
+      const result = cp.spawnSync(process.execPath, [QUERY_CLI, "--out", roles.out, ...args], { encoding: "utf8" });
+      expect(result.status).toBe(2);
+      expect(result.stdout).toBe("");
+      return result.stderr;
+    };
+    expect(refused(["--role", "specification", "--role", "unknown"])).toContain("--role was given more than once");
+    expect(refused(["--selected-only", "--selected-only"])).toContain("--selected-only was given more than once");
+    expect(refused(["--selected-only=true"])).toContain("unknown option '--selected-only=true'");
+    expect(refused(["--role"])).toContain("--role needs a value");
+    expect(refused(["--role", ""])).toContain("--role needs a value");
+    expect(refused(["specification"])).toContain("unknown option 'specification'");
+    expect(refused(["--role", "specification", "extra"])).toContain("unknown option 'extra'");
+    // An unknown role is a usage of the query, refused by the query: exit 3, not a search for unknown.
+    const invalid = runQuery(["--out", roles.out, "--role", "canonical"]);
+    expect(invalid.status).toBe(3);
+    expect(invalid.response.outcome).toBe("unsupported");
+    expect(invalid.response.results).toEqual([]);
   });
 
   it("changes nothing in an unfiltered response", () => {
@@ -557,7 +694,10 @@ describe("role and selected-only filters", () => {
     expect(Object.keys(response.query).sort()).toEqual([
       "artifact", "kind", "limit", "max_excerpt_bytes", "predicate", "root", "source", "statement_class", "status", "text",
     ]);
-    expect(response).not.toHaveProperty("roles_by_document");
+    expect(Object.keys(response).sort()).toEqual([
+      "diagnostics", "generation", "match_count", "outcome", "query", "results", "returned_count", "schema", "sources", "truncated", "truncation_statement",
+    ]);
+    expect(response.diagnostics).toEqual([]);
   });
 });
 

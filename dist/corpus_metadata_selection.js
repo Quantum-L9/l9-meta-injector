@@ -96,7 +96,8 @@ const INTENT_RULES = [
     {
         intent: "wip_design",
         statement: "a design still in progress: what it is trying to do, what it assumes, what it has not settled, and where it stands",
-        roles: ["wip_proposal", "research"],
+        roles: ["wip_proposal", "research_notes"],
+        statuses: [],
         retains_unknown_role: true,
         classes: ["open_question", "assumption", "intent", "decision_statement", "constraint"],
         fields: ["bounded_excerpt", "work_context.statuses", "work_context.handoff", "selection.roles"],
@@ -105,7 +106,8 @@ const INTENT_RULES = [
     {
         intent: "accepted_declaration",
         statement: "what a document that declares itself accepted says it is bound by and has decided, with the bytes it was read from",
-        roles: ["accepted_declaration", "specification"],
+        roles: ["specification"],
+        statuses: ["active", "complete", "done"],
         retains_unknown_role: false,
         classes: ["constraint", "decision_statement", "intent"],
         fields: ["raw_content_hash", "work_context.statuses", "selection.roles", "selection.role_evidence", "authority_verified"],
@@ -115,6 +117,7 @@ const INTENT_RULES = [
         intent: "development_handoff",
         statement: "what the next engineer may not change, what nobody has resolved, and what the document says is blocked or pending",
         roles: ["development_handoff", "wip_proposal"],
+        statuses: [],
         retains_unknown_role: true,
         classes: ["open_question", "constraint", "decision_statement"],
         fields: ["bounded_excerpt", "work_context.handoff", "work_context.applicability", "selection.roles", "selection.role_evidence"],
@@ -123,7 +126,8 @@ const INTENT_RULES = [
     {
         intent: "historical_review",
         statement: "what a document that declares itself superseded or archived had decided and assumed, and what it says replaced it",
-        roles: ["historical"],
+        roles: [],
+        statuses: ["archived", "cancelled", "superseded"],
         retains_unknown_role: false,
         classes: ["decision_statement", "constraint", "assumption"],
         fields: ["raw_content_hash", "work_context.applicability", "work_context.statuses", "selection.roles", "selection.role_evidence"],
@@ -139,6 +143,7 @@ function metadataIntentRule(intent) {
 /** Why a record is in the view or not. Closed vocabulary; the manifest tallies it. */
 exports.METADATA_RECORD_REASONS = [
     "role_matches_intent",
+    "status_matches_intent",
     "role_unknown_retained",
     "role_outside_intent",
     "class_outside_intent",
@@ -167,6 +172,7 @@ function metadataSelectionPolicy() {
             intent: rule.intent,
             statement: rule.statement,
             roles: [...rule.roles],
+            statuses: [...rule.statuses],
             retains_unknown_role: rule.retains_unknown_role,
             classes: [...rule.classes],
             fields: [...rule.fields],
@@ -270,11 +276,17 @@ function selectFields(record, rule) {
 function gate(record, rule) {
     const roles = record.selection.roles;
     const matched = roles.filter((role) => rule.roles.includes(role));
+    const declared = record.work_context.statuses.filter((ref) => rule.statuses.includes(ref.object));
     let roleReason;
     let roleExplanation;
     if (matched.length > 0) {
         roleReason = "role_matches_intent";
         roleExplanation = `document role ${matched.join(", ")} is in ${rule.intent}'s roles`;
+    }
+    else if (declared.length > 0) {
+        roleReason = "status_matches_intent";
+        roleExplanation = `document declares work.status=${declared.map((ref) => ref.object).join(", ")}, which ${rule.intent} reads`
+            + " (a source declaration, not a verified lifecycle)";
     }
     else if (roles.length === 1 && roles[0] === "unknown" && rule.retains_unknown_role) {
         roleReason = "role_unknown_retained";
@@ -285,7 +297,8 @@ function gate(record, rule) {
             included: false,
             reason: "role_outside_intent",
             explanation: `document role ${roles.join(", ")} is not in ${rule.intent}'s roles (${rule.roles.join(", ")}`
-                + `${rule.retains_unknown_role ? ", unknown" : ""})`,
+                + `${rule.retains_unknown_role ? ", unknown" : ""})`
+                + (rule.statuses.length > 0 ? ` and it declares none of the statuses ${rule.statuses.join(", ")}` : ""),
         };
     }
     if (!rule.classes.includes(record.statement_class)) {
