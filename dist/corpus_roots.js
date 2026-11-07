@@ -174,6 +174,9 @@ function corpusAnalysisId(input) {
         ...(input.profiles.architecture_evidence_profile !== undefined
             ? { architecture_evidence_profile: input.profiles.architecture_evidence_profile }
             : {}),
+        ...(input.profiles.metadata_selection_profile !== undefined
+            ? { metadata_selection_profile: input.profiles.metadata_selection_profile }
+            : {}),
     });
 }
 /**

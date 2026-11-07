@@ -211,6 +211,12 @@ export interface CorpusAnalysisProfiles {
    * concluded, and stays put when it is not, because nothing else changed.
    */
   architecture_evidence_profile?: string;
+  /**
+   * Present only when the opt-in metadata-selection view was selected: the
+   * policy and the run intent together. Absent, not null, otherwise, for the
+   * same reason as above.
+   */
+  metadata_selection_profile?: string;
 }
 
 /**
@@ -236,6 +242,9 @@ export function corpusAnalysisId(input: {
     semantic_candidate_profile: input.profiles.semantic_candidate_profile,
     ...(input.profiles.architecture_evidence_profile !== undefined
       ? { architecture_evidence_profile: input.profiles.architecture_evidence_profile }
+      : {}),
+    ...(input.profiles.metadata_selection_profile !== undefined
+      ? { metadata_selection_profile: input.profiles.metadata_selection_profile }
       : {}),
   });
 }

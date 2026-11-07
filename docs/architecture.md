@@ -276,6 +276,12 @@ block locator verbatim for every other kind. `src/corpus_architecture_evidence.t
 the complete payload (`l9.architecture-evidence/v1`) with a manifest built like the
 work-signal export's, applies the static `architecture-development/v1` selection table,
 and binds its profile into `corpus_analysis_id` only when selected (ADR-087, Proposed).
+`src/corpus_metadata_selection.ts` derives, on top of that payload and only when
+`--metadata-selection INTENT` names a run intent, the bounded view
+`l9.metadata-selection/v1`: one static table over the documents' declared roles and
+statement classes chooses which existing evidence fields each carried record keeps, with a
+reason per record and a disposition per field, verified before publication; the policy and
+intent enter `corpus_analysis_id` and nothing else moves (ADR-089, Proposed).
 
 Exact duplicates are content-hash equality over the unified record set, so a physical
 file and a member of a nested archive can share a cluster. `DUPLICATE_OF` is rendered
