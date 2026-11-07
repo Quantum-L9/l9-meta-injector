@@ -282,6 +282,14 @@ describe("corpus mode", () => {
     expect(result.stdout).toContain("no model was called and no network request was made");
   });
 
+  it("refuses --architecture-evidence together with --no-interpret before reading anything", () => {
+    const f = fixture();
+    const result = run(argsFor(f, ["--architecture-evidence", "--no-interpret"]));
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain("--architecture-evidence needs the interpretation pass");
+    expect(fs.existsSync(path.join(f.out, "CURRENT.json"))).toBe(false);
+  });
+
   it("reports the architecture-evidence projection as not run unless it is selected", () => {
     const f = fixture();
     const result = run(argsFor(f));

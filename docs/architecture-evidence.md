@@ -21,6 +21,12 @@ Off by default. A run that does not pass the flag is the run it always was: the 
 `document-work-signals.jsonl`, the same cache. The corpus index lists the two files
 below as `present: false`, and the CLI prints `architecture     not run`.
 
+`--architecture-evidence` is refused together with `--no-interpret`: the selection profile
+reads each text document's declared `work.kind` and `work.status` through the
+interpretation pass, and without it every Markdown proposal would silently become an
+`unknown` role. A decoded document with no blocks (an empty file) counts in
+`documents_read` and declares nothing.
+
 With the flag, the generation gains:
 
 ```text

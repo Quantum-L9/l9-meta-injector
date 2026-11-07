@@ -1288,6 +1288,18 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
     ? architectureEvidenceProfileHash()
     : null;
   const interpretEnabled = input.interpret !== false;
+  // The selection profile reads the work.kind and work.status a text document
+  // declares, and those are read by the interpretation pass. Without it every
+  // Markdown proposal and specification would be filed under the unknown role,
+  // and a document's selection verdict would silently depend on a switch that
+  // has nothing to do with it. Refused rather than degraded (ADR-068).
+  if (architectureProfile !== null && !interpretEnabled) {
+    throw new Error(
+      "corpus: --architecture-evidence needs the interpretation pass, which --no-interpret "
+      + "disables: the selection profile reads each text document's declared work.kind and "
+      + "work.status through it. Drop one of the two switches.",
+    );
+  }
   const verificationMode: VerificationMode = input.verification ?? "full";
   const verifyContent = input.verifyContent === true;
   // `--verify-content` outranks `--incremental`: it exists precisely to turn a
@@ -1882,8 +1894,9 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       const documents = decodable.flatMap((artifact) => {
         const record = normalized.get(artifact.virtualSourceId);
         if (record?.decodes !== true) return [];
+        // A decoded document with no blocks (an empty file) is still a document
+        // the reader was given and found nothing in; `documents_read` counts it.
         const blocks = record.blocks ?? [];
-        if (blocks.length === 0) return [];
         const rootKey = rootKeyById.get(artifact.rootId) ?? artifact.rootId;
         return [{
           artifactId: artifact.virtualSourceId,
