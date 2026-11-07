@@ -53,7 +53,11 @@ exports.ARCHITECTURE_EVIDENCE_PAYLOAD_FILE = "architecture-evidence.jsonl";
 exports.ARCHITECTURE_EVIDENCE_MANIFEST_FILE = "architecture-evidence.manifest.json";
 /** Identity of the whole projection: the reader plus the selection profile. */
 exports.ARCHITECTURE_EVIDENCE_PROFILE_ID = "meta-injector-architecture-evidence";
-exports.ARCHITECTURE_EVIDENCE_PROFILE_VERSION = "1.0.0";
+/**
+ * 1.1.0: the reader's coverage closure (`architecture-statements/v1` 1.1.0) and
+ * the `unit_count` field on every record. Record identity is unchanged.
+ */
+exports.ARCHITECTURE_EVIDENCE_PROFILE_VERSION = "1.1.0";
 /** The one selection profile this release ships. A view over the records, not a vocabulary. */
 exports.ARCHITECTURE_SELECTION_PROFILE_ID = "architecture-development/v1";
 /** What every record is, epistemically. Stated on each one so no reader has to remember. */
@@ -355,8 +359,9 @@ function buildArchitectureEvidenceExport(input) {
                 decoder_version: document.decoderVersion,
                 block_id: statement.block.block_id,
                 block_kind: statement.block.kind,
-                structured_locator: (0, architecture_statements_1.architectureStatementLocator)(statement.block, statement.unit_index),
+                structured_locator: (0, architecture_statements_1.architectureStatementLocator)(statement.block, statement.unit_index, statement.unit_count),
                 unit_index: statement.unit_index,
+                unit_count: statement.unit_count,
                 statement_class: statement.statement_class,
                 declared_text: statement.declared_text,
                 declared_text_truncated: statement.declared_text_truncated,

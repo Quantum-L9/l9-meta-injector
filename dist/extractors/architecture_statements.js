@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MAX_ARCHITECTURE_DIAGNOSTICS_PER_DOCUMENT = exports.MAX_STATEMENT_TEXT_LENGTH = exports.ARCHITECTURE_LABEL_VOCABULARY = exports.ARCHITECTURE_STATEMENT_CLASSES = exports.ARCHITECTURE_STATEMENT_EXTRACTOR_VERSION = exports.ARCHITECTURE_STATEMENT_EXTRACTOR_ID = void 0;
 exports.architectureHeadingClass = architectureHeadingClass;
+exports.architecturePseudoHeadingLabel = architecturePseudoHeadingLabel;
 exports.architectureLabelOf = architectureLabelOf;
 exports.readArchitectureStatements = readArchitectureStatements;
 exports.architectureStatementLocator = architectureStatementLocator;
@@ -11,7 +12,16 @@ const ordering_1 = require("../ordering");
 const work_intelligence_1 = require("./work_intelligence");
 /** Identity of this reader. Bumped when the vocabulary or the grammar changes. */
 exports.ARCHITECTURE_STATEMENT_EXTRACTOR_ID = "architecture-statements/v1";
-exports.ARCHITECTURE_STATEMENT_EXTRACTOR_VERSION = "1.0.0";
+/**
+ * 1.1.0 (coverage closure): a heading's leading section number and trailing
+ * qualifier are not part of its label; a bold or numbered bare label on a line
+ * of its own opens a section like a heading; the leading frontmatter fences of a
+ * text file are read as `frontmatter_field` declarations; the lines that follow a
+ * labelled field inside its block are its continuation, not separate members.
+ * Statement identity does not include this version, so a statement these rules
+ * read the same way keeps its evidence id.
+ */
+exports.ARCHITECTURE_STATEMENT_EXTRACTOR_VERSION = "1.1.0";
 /** The five statement classes, in code-point order. Closed. */
 exports.ARCHITECTURE_STATEMENT_CLASSES = [
     "assumption",
@@ -73,9 +83,25 @@ const TITULAR_BLOCK_KINDS = new Set(["title", "heading"]);
 function unitsOf(text) {
     return text.split(/\r\n|\r|\n/);
 }
-/** A heading's text as a vocabulary key: quoted, lowercased, trailing colon dropped. */
+/**
+ * A leading section number: `3.`, `2.1`, `4)`, `1.2.3.` — digits and dots, one
+ * optional closing mark, then whitespace. Anchored and linear.
+ */
+const SECTION_NUMBER = /^\d+(?:\.\d+)*[.)]?\s+/;
+/**
+ * Where a heading stops naming its section and starts qualifying it: an opening
+ * parenthesis, an em or en dash, a spaced hyphen, or a colon. `Open Questions
+ * (v2)`, `Decisions — phase 1` and `Constraints: transport` all name their
+ * section first. The qualifier is not read and does not change the class.
+ */
+const HEADING_QUALIFIER = /\s*(?:\(|—|–|\s-\s|:).*$/u;
+/** A heading's text as a vocabulary key: quoted, numbering and qualifier dropped, lowercased. */
 function headingLabel(text) {
-    return (0, work_intelligence_1.documentText)(text).toLowerCase().replace(/\s*:\s*$/, "").trim();
+    return (0, work_intelligence_1.documentText)(text)
+        .replace(SECTION_NUMBER, "")
+        .replace(HEADING_QUALIFIER, "")
+        .toLowerCase()
+        .trim();
 }
 /** The class a heading names, or null when the heading is not in the vocabulary. */
 function architectureHeadingClass(text) {
@@ -83,6 +109,27 @@ function architectureHeadingClass(text) {
     if (firstLine === undefined)
         return null;
     return exports.ARCHITECTURE_LABEL_VOCABULARY[headingLabel(firstLine)] ?? null;
+}
+const isEmphasisMark = (character) => character === "*" || character === "_";
+/**
+ * A line that is a heading written without `#`: a bare vocabulary label wrapped
+ * in emphasis (`**Constraints**`) or carrying a section number (`2.1 Open
+ * Questions`), with nothing else on the line but an optional trailing colon.
+ *
+ * A plain `Constraints:` is deliberately not one: that shape has always opened a
+ * list of the items that follow it (`label_list`), and reading it as a section
+ * would change what it means and which statements it owns.
+ */
+function architecturePseudoHeadingLabel(line) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0)
+        return null;
+    const emphasized = isEmphasisMark(trimmed[0]) && isEmphasisMark(trimmed[trimmed.length - 1]);
+    const numbered = SECTION_NUMBER.test(trimmed);
+    if (!emphasized && !numbered)
+        return null;
+    const label = (0, work_intelligence_1.documentText)(trimmed).replace(SECTION_NUMBER, "").replace(/\s*:\s*$/, "").toLowerCase().trim();
+    return label in exports.ARCHITECTURE_LABEL_VOCABULARY ? label : null;
 }
 /** A labelled line whose label is in the vocabulary, with its class and value. */
 function architectureLabelOf(line) {
@@ -118,6 +165,13 @@ function isWorkSignalUnit(line) {
 function isTableRow(line) {
     return /^\s*\|/.test(line);
 }
+/**
+ * A thematic break: three or more of one of `-`, `*`, `_`, optionally spaced,
+ * and nothing else. Not text, so never a continuation and never a member.
+ */
+function isThematicBreak(line) {
+    return /^\s*([-*_])(?:\s*\1){2,}\s*$/.test(line);
+}
 /** True when every content line of a block is a table row. */
 function isTableShaped(units) {
     const content = units.filter((unit) => unit.trim().length > 0);
@@ -135,6 +189,26 @@ function isTableShaped(units) {
  */
 function isForeignLabelledUnit(line) {
     return (0, work_intelligence_1.readLabelledLine)(line) !== null;
+}
+/**
+ * The closing fence of a leading frontmatter block, or -1.
+ *
+ * The text decoder has no frontmatter construct: a file's `---` fences and the
+ * fields between them arrive as the first paragraph block, at line 1. That is
+ * the only shape this reader treats as frontmatter — a block elsewhere whose
+ * first line is `---` is a thematic break, not metadata.
+ */
+function frontmatterClose(block, units) {
+    if (block.locator.kind !== "line_span" || block.locator.line_start !== 1)
+        return -1;
+    if (units.length < 2 || units[0]?.trim() !== "---")
+        return -1;
+    for (let index = 1; index < units.length; index += 1) {
+        const fence = units[index]?.trim();
+        if (fence === "---" || fence === "...")
+            return index;
+    }
+    return -1;
 }
 /** Cut a quotation at the statement bound, saying so. */
 function boundStatementText(value) {
@@ -168,7 +242,7 @@ class StatementReader {
     diagnostic(code, severity, message, block) {
         this.raised.push({ code, severity, message, block_id: block.block_id });
     }
-    emit(statementClass, rawText, excerpt, form, label, block, unitIndex) {
+    emit(statementClass, rawText, excerpt, form, label, block, unitIndex, unitCount) {
         const quoted = (0, work_intelligence_1.documentText)(rawText);
         if (quoted.length === 0)
             return false;
@@ -191,6 +265,7 @@ class StatementReader {
             recognition: { form, label },
             block,
             unit_index: unitIndex,
+            unit_count: Math.max(1, unitCount),
         });
         return true;
     }
@@ -212,6 +287,11 @@ class StatementReader {
             this.diagnostic("architecture_evidence.section_without_items", "warning", `the '${section.label}' section declares ${section.statementClass} statements and holds no item or paragraph this reader can attribute to it`, section.block);
         }
     }
+    openSection(statementClass, label, block) {
+        this.closePendingList();
+        this.closeSection();
+        this.section = { statementClass, label, members: 0, block };
+    }
     readBlock(block) {
         if (TITULAR_BLOCK_KINDS.has(block.kind)) {
             // Any heading ends what came before it, whether or not it opens a section.
@@ -219,7 +299,8 @@ class StatementReader {
             this.closeSection();
             const statementClass = architectureHeadingClass(block.text);
             if (statementClass !== null) {
-                this.section = { statementClass, label: headingLabel(block.text), members: 0, block };
+                const firstLine = unitsOf(block.text).find((line) => line.trim().length > 0) ?? block.text;
+                this.section = { statementClass, label: headingLabel(firstLine), members: 0, block };
             }
             return;
         }
@@ -240,17 +321,51 @@ class StatementReader {
             this.closePendingList();
             return;
         }
-        const labelled = units.map((unit) => architectureLabelOf(unit));
+        // The file's leading frontmatter: its fields are declarations, its fences
+        // are not, and nothing in it belongs to a section or a list.
+        const fenceClose = frontmatterClose(block, units);
+        if (fenceClose >= 0) {
+            this.readFrontmatter(block, units, fenceClose);
+            this.readBody(block, units, fenceClose + 1);
+            return;
+        }
+        // A heading written without `#`: a single bold or numbered bare label.
+        const content = units.filter((unit) => unit.trim().length > 0);
+        if (block.kind === "paragraph" && content.length === 1) {
+            const label = architecturePseudoHeadingLabel(content[0]);
+            if (label !== null) {
+                this.openSection(exports.ARCHITECTURE_LABEL_VOCABULARY[label], label, block);
+                return;
+            }
+        }
+        this.readBody(block, units, 0);
+    }
+    /** `key: value` lines between the fences whose key is in the vocabulary. */
+    readFrontmatter(block, units, fenceClose) {
+        for (let index = 1; index < fenceClose; index += 1) {
+            const unit = units[index];
+            const hit = architectureLabelOf(unit);
+            if (hit === null || hit.value.length === 0)
+                continue;
+            this.emit(hit.statementClass, hit.value, unit, "frontmatter_field", hit.label, block, index, 1);
+        }
+    }
+    /** The block's body from `start`: labelled units, list members, section members. */
+    readBody(block, units, start) {
+        const body = units.slice(start);
+        if (body.every((unit) => unit.trim().length === 0))
+            return;
+        const labelled = body.map((unit) => architectureLabelOf(unit));
         if (labelled.some((hit) => hit !== null)) {
             this.closePendingList();
-            this.readLabelledBlock(block, units, labelled);
+            this.readLabelledBlock(block, units, start, labelled);
             return;
         }
         // A pending `Label:` list takes the list items that follow it and ends at the
         // first block that is not one — the shape `milestoneSectionBullets` reads.
         if (this.pendingList !== null) {
             if (block.kind === "list_item") {
-                this.readMembers(block, units, this.pendingList.statementClass, "label_list", this.pendingList.label, this.pendingList);
+                this.readMembers(block, units, start, this.pendingList.statementClass, "label_list", this.pendingList.label, this.pendingList);
                 return;
             }
             this.closePendingList();
@@ -261,12 +376,13 @@ class StatementReader {
             // one; each is quoted as the document wrote it. A unit the work vocabulary
             // claims is skipped, so `Status: blocked` under a section is not a constraint.
             if (block.kind === "list_item" || block.kind === "cell") {
-                this.readMembers(block, units, section.statementClass, "section_heading", section.label, section);
+                this.readMembers(block, units, start, section.statementClass, "section_heading", section.label, section);
                 return;
             }
-            const kept = units.filter((unit) => unit.trim().length > 0 && !this.skipsMember(unit, section, block));
+            const kept = body.filter((unit) => unit.trim().length > 0 && !isThematicBreak(unit) && !this.skipsMember(unit, section, block));
             if (kept.length > 0) {
-                if (this.emit(section.statementClass, kept.join("\n"), block.text, "section_heading", section.label, block, null)) {
+                const unitIndex = start === 0 ? null : start;
+                if (this.emit(section.statementClass, kept.join("\n"), kept[0], "section_heading", section.label, block, unitIndex, body.length)) {
                     section.members += 1;
                 }
             }
@@ -287,36 +403,51 @@ class StatementReader {
         return true;
     }
     /** Items read one unit at a time, each attributed to the open declaration. */
-    readMembers(block, units, statementClass, form, label, owner) {
-        for (const [index, unit] of units.entries()) {
-            if (unit.trim().length === 0 || this.skipsMember(unit, { statementClass, label }, block))
+    readMembers(block, units, start, statementClass, form, label, owner) {
+        for (let index = start; index < units.length; index += 1) {
+            const unit = units[index];
+            if (unit.trim().length === 0 || isThematicBreak(unit) || this.skipsMember(unit, { statementClass, label }, block))
                 continue;
-            if (this.emit(statementClass, unit, unit, form, label, block, index))
+            if (this.emit(statementClass, unit, unit, form, label, block, index, 1))
                 owner.members += 1;
         }
     }
     /**
      * A block holding at least one vocabulary label, read unit by unit.
      *
-     * `Objective: ship it` is a statement on its own line. `Constraints:` with
-     * nothing after the colon opens a list: the units after it in the same block
-     * belong to it, and if there are none, the list items that follow the block
-     * do. A unit that is neither — body text in a block that also carries a label
-     * — belongs to the open heading section if there is one, and to nothing
-     * otherwise: a label on line three does not reach back to claim lines one and
-     * two.
+     * `Objective: ship it` is a statement on its own line, and the lines that
+     * follow it inside the same block — a Markdown paragraph's soft-wrapped
+     * continuation, a Word paragraph's line breaks — are the rest of that
+     * statement, not separate members. `Constraints:` with nothing after the
+     * colon opens a list: the units after it in the same block belong to it, and
+     * if there are none, the list items that follow the block do. A unit that is
+     * none of these belongs to the open heading section if there is one, and to
+     * nothing otherwise: a label on line three does not reach back to claim lines
+     * one and two.
      */
-    readLabelledBlock(block, units, labelled) {
+    readLabelledBlock(block, units, start, labelled) {
         let open = null;
-        for (const [index, unit] of units.entries()) {
-            const hit = labelled[index];
+        let field = null;
+        const flushField = () => {
+            if (field === null)
+                return;
+            this.emit(field.statementClass, field.parts.join(" "), field.excerpt, "field_label", field.label, block, field.first, field.last - field.first + 1);
+            field = null;
+        };
+        const closeOpen = () => {
+            if (open !== null && open.members === 0) {
+                this.diagnostic("architecture_evidence.empty_declaration", "warning", `'${open.label}:' declares a ${open.statementClass} list and nothing follows it that this reader can attribute to it`, block);
+            }
+            open = null;
+        };
+        for (let index = start; index < units.length; index += 1) {
+            const unit = units[index];
+            const hit = labelled[index - start] ?? null;
             if (hit !== null) {
-                if (open !== null && open.members === 0) {
-                    this.diagnostic("architecture_evidence.empty_declaration", "warning", `'${open.label}:' declares a ${open.statementClass} list and nothing follows it that this reader can attribute to it`, block);
-                }
-                open = null;
+                flushField();
+                closeOpen();
                 if (hit.value.length > 0) {
-                    this.emit(hit.statementClass, hit.value, unit, "field_label", hit.label, block, index);
+                    field = { statementClass: hit.statementClass, label: hit.label, parts: [hit.value], excerpt: unit, first: index, last: index };
                 }
                 else {
                     open = { statementClass: hit.statementClass, label: hit.label, members: 0 };
@@ -325,24 +456,39 @@ class StatementReader {
             }
             if (unit.trim().length === 0)
                 continue;
+            if (isWorkSignalUnit(unit) || isTableRow(unit) || isThematicBreak(unit)) {
+                flushField();
+                continue;
+            }
+            if (isForeignLabelledUnit(unit)) {
+                flushField();
+                const owner = open ?? this.section;
+                if (owner !== null)
+                    this.skipsMember(unit, owner, block);
+                continue;
+            }
+            if (field !== null) {
+                // Continuation of the labelled statement above it.
+                field.parts.push(unit);
+                field.last = index;
+                continue;
+            }
             if (open !== null) {
-                if (this.skipsMember(unit, open, block))
-                    continue;
-                if (this.emit(open.statementClass, unit, unit, "label_list", open.label, block, index))
+                if (this.emit(open.statementClass, unit, unit, "label_list", open.label, block, index, 1))
                     open.members += 1;
                 continue;
             }
             if (this.section !== null) {
-                if (this.skipsMember(unit, this.section, block))
-                    continue;
-                if (this.emit(this.section.statementClass, unit, unit, "section_heading", this.section.label, block, index)) {
+                if (this.emit(this.section.statementClass, unit, unit, "section_heading", this.section.label, block, index, 1)) {
                     this.section.members += 1;
                 }
             }
         }
+        flushField();
         if (open !== null && open.members === 0) {
             // Nothing in this block followed the label; the list items after it may.
-            this.pendingList = { statementClass: open.statementClass, label: open.label, members: 0, block };
+            const pending = open;
+            this.pendingList = { statementClass: pending.statementClass, label: pending.label, members: 0, block };
         }
     }
 }
@@ -361,18 +507,20 @@ function readArchitectureStatements(blocks) {
  *
  * A `line_span` block maps its text lines onto source lines one to one — the
  * text decoder joins the lines of a paragraph with `\n` and starts the span at
- * the first of them — so a statement on unit *k* of the block is on line
- * `line_start + k`, and the locator says exactly that line. Every other locator
- * kind has no coordinate finer than the block, and the block's own locator is
- * cited verbatim; the unit offset is carried beside it rather than converted
- * into a line number the format does not have.
+ * the first of them — so a statement starting on unit *k* of the block and
+ * spanning *n* units cites lines `line_start + k` to `line_start + k + n - 1`,
+ * never past the block's own end. Every other locator kind has no coordinate
+ * finer than the block, and the block's own locator is cited verbatim; the unit
+ * offset and count are carried beside it rather than converted into a line
+ * number the format does not have.
  */
-function architectureStatementLocator(block, unitIndex) {
+function architectureStatementLocator(block, unitIndex, unitCount = 1) {
     const locator = block.locator;
     if (locator.kind === "line_span" && unitIndex !== null) {
-        const line = locator.line_start + unitIndex;
-        if (line <= locator.line_end)
-            return { kind: "line_span", line_start: line, line_end: line };
+        const start = locator.line_start + unitIndex;
+        if (start <= locator.line_end) {
+            return { kind: "line_span", line_start: start, line_end: Math.min(start + Math.max(1, unitCount) - 1, locator.line_end) };
+        }
     }
     return locator;
 }
@@ -388,12 +536,17 @@ function architectureStatementRules() {
         extractor_id: exports.ARCHITECTURE_STATEMENT_EXTRACTOR_ID,
         extractor_version: exports.ARCHITECTURE_STATEMENT_EXTRACTOR_VERSION,
         statement_classes: [...exports.ARCHITECTURE_STATEMENT_CLASSES],
-        recognition_forms: ["field_label", "label_list", "section_heading"],
+        recognition_forms: ["field_label", "frontmatter_field", "label_list", "section_heading"],
         vocabulary: Object.keys(exports.ARCHITECTURE_LABEL_VOCABULARY)
             .sort(ordering_1.compareCodePoints)
             .map((label) => [label, exports.ARCHITECTURE_LABEL_VOCABULARY[label]]),
         readable_block_kinds: [...READABLE_BLOCK_KINDS].sort(ordering_1.compareCodePoints),
         section_delimiters: ["code", "heading", "title"],
+        heading_section_numbers_ignored: true,
+        heading_qualifiers_ignored: ["(", "—", "–", " - ", ":"],
+        pseudo_headings: ["emphasized bare label", "numbered bare label"],
+        frontmatter_fields: "leading `---` fences of a line_span block at line 1",
+        field_continuation_lines: true,
         work_vocabulary_excluded: true,
         foreign_labelled_members_excluded: true,
         table_shaped_blocks_excluded: true,

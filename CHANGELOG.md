@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Architectural statement coverage closure (`architecture-statements/v1` 1.1.0)
+
+- Four demonstrable gaps in the five-class reader are closed, each bounded to an explicit written form: a heading's leading section number and trailing qualifier are not part of its label (`## 2. Open Questions (v2)`, `## Decisions — phase 1`); a single bold or numbered bare label on its own line opens a section like a heading (`**Decisions**`, `3.1 Invariants`); the fields between a text file's leading `---` fences are read as `frontmatter_field` statements; and the lines that follow a labelled field inside its block are its continuation, folded into one statement with the `line_span` widened over them. Records carry `unit_count`.
+- `docs/architecture-evidence-coverage.md` is the exact supported-input definition — every form, every refusal with its diagnostic, and how coordinates are verified — and `tests/architecture_statement_coverage.test.ts` executes it against real files through the real scan.
+- Evidence ids include no version, so a statement read the same way keeps its id; `extractor_version` and `profile_version` move to 1.1.0 and the profile hash moves `corpus_analysis_id` for runs that select the projection. The source snapshot, packets and work signals are unchanged.
+
 ### Read-only corpus evidence query (ADR-088, Proposed)
 
 - `node scripts/corpus-query-cli.js --out <dir> [--root|--artifact|--predicate|--class|--text|--kind|--status|--source] [--limit N] [--max-excerpt-bytes N]` (`npm run corpus-query`) asks one bounded question of one completed generation. `CURRENT.json` is resolved once; every file read must be named by it, sit inside the generation (no symlinks), and hash to its record; `document-work-signals.jsonl` and `architecture-evidence.jsonl` are verified with the scan's own verifiers and each root packet must be the one the snapshot recorded. Any failure is an `invalid` outcome with no results.

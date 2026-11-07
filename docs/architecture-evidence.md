@@ -56,8 +56,10 @@ mark, not from a filename, a date, a similarity score or a model.
 | Form | Shape | What is quoted |
 |---|---|---|
 | `field_label` | `Decision: Gate is the only routing authority.` — a `Label: value` line, with the same list-prefix and emphasis tolerance the work reader has (`**Objective:** …`, `- Constraint: …`) | the value |
+| `field_label` continuation | the non-empty lines after a labelled field inside the same block (a soft-wrapped paragraph, a Word line break) until the next label, work signal, table row or thematic break | folded into that statement (`unit_count` > 1, locator widened over the lines) |
 | `label_list` | `Constraints:` with nothing after the colon, then the lines after it in the same block or the list items that follow the block | each item |
-| `section_heading` | a title or heading block whose text is a label (`## Open Questions`, a Word `Heading 1` reading `Invariants`), then every list item and paragraph until the next heading, title or code block | each item; each paragraph as one statement |
+| `section_heading` | a title or heading block whose text is a label (`## Open Questions`, a Word `Heading 1` reading `Invariants`) — a leading section number and a qualifier after `(`, `—`, `–`, ` - ` or `:` are ignored (`## 2. Open Questions (v2)`) — or a single bold or numbered bare label on its own line (`**Decisions**`, `3.1 Invariants`); then every list item and paragraph until the next heading, title or code block | each item; each paragraph as one statement |
+| `frontmatter_field` | `decision: …`, `objective: …` between the leading `---` fences of a text file | the value |
 
 The reader walks the normalized blocks a decoder already produced, so a Markdown file, a
 Word document, a deck, a worksheet, a notebook, a PDF and a saved page are read by one
@@ -80,22 +82,24 @@ Diagnostics are bounded at eight per document; the manifest states how many more
 raised. A document the reader was given and found nothing in is counted in
 `documents_read` and is not a diagnostic.
 
-Known gaps, stated rather than closed: a heading that carries a label inside a longer
-phrase (`Open Questions (v2)`), a bare `Questions` heading, Markdown frontmatter keys
-(the text decoder has no frontmatter construct, so `decision:` in frontmatter is read as
-a labelled line), and a statement split across a soft line break inside one Word
-paragraph, which is quoted as the unit it sits on.
+The complete supported-input definition — every form, every refusal, and how each
+coordinate is verified — is the coverage matrix in
+[`architecture-evidence-coverage.md`](architecture-evidence-coverage.md), executed by
+`tests/architecture_statement_coverage.test.ts`. Still refused, by design: a bare
+`Questions` heading, a heading whose label is not its leading phrase, tables in any
+format, and a paragraph separated by a blank line from a colon-opened list.
 
 ## The coordinate
 
 Every record cites the block it was read from and the coordinate that block's format
 has. A `line_span` block's lines map one to one onto the file's lines, so a statement on
 unit *k* of a Markdown block cites line `line_start + k` exactly; the tests read that
-line back from the file and check it holds the excerpt. Every other locator kind —
+line back from the file and check it holds the excerpt; a labelled field that continues
+over following lines cites the whole span, never past the block. Every other locator kind —
 `docx_block`, `pptx_shape`, `spreadsheet_cell`, `pdf_page_block`, `notebook_cell`,
-`html_node`, `csv_row` — is cited verbatim, with `unit_index` beside it saying which
-line of the block's text the statement is on. No format is given a line number it does
-not have (ADR-043).
+`html_node`, `csv_row` — is cited verbatim, with `unit_index` and `unit_count` beside it
+saying which lines of the block's text the statement occupies. No format is given a line
+number it does not have (ADR-043).
 
 ## The record
 
@@ -108,7 +112,7 @@ not have (ADR-043).
   "decoder_id": "l9.text-decoder",           "decoder_version": "…",
   "block_id": "block:…",                     "block_kind": "list_item",
   "structured_locator": {"kind": "line_span", "line_start": 11, "line_end": 11},
-  "unit_index": 0,
+  "unit_index": 0, "unit_count": 1,
   "statement_class": "constraint",
   "declared_text": "TransportPacket is the only wire format.",
   "declared_text_truncated": false,
