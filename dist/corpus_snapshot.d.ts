@@ -1,6 +1,7 @@
 import { CorpusRootIdentity } from "./corpus_roots";
 import type { CorpusAnalysisManifest } from "./corpus_analysis_manifest";
 import type { DocumentWorkSignalsRef } from "./corpus_work_signal_export";
+import type { ArchitectureEvidenceRef } from "./corpus_architecture_evidence";
 import type { InferredRootHistoryOverride } from "./corpus_root_history";
 export declare const CORPUS_SNAPSHOT_SCHEMA = "l9.corpus-snapshot/v1";
 export interface CorpusSnapshotArtifact {
@@ -93,6 +94,11 @@ export interface CorpusAnalysisIdentity {
     semantic_candidate_profile: string;
     embedding_profile: string | null;
     readiness_profile: string;
+    /**
+     * Rules of the opt-in architecture-evidence projection. Present only when the
+     * projection was selected; a run without it carries the identity it always did.
+     */
+    architecture_evidence_profile?: string;
 }
 export interface CorpusSnapshot {
     schema: string;
@@ -122,6 +128,14 @@ export interface CorpusSnapshot {
      * the one this run produced.
      */
     document_work_signals?: DocumentWorkSignalsRef;
+    /**
+     * Where the complete architecture-evidence payload is, and what it should be.
+     *
+     * Present only when the opt-in projection was selected. The same shape of
+     * reference as `document_work_signals`, for the same reason: a reader holding
+     * the snapshot can tell whether the payload beside it is the one this run wrote.
+     */
+    architecture_evidence?: ArchitectureEvidenceRef;
     /**
      * What the operator authorized about this run, as distinct from what was seen.
      *

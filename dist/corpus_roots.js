@@ -171,6 +171,9 @@ function corpusAnalysisId(input) {
         interpretation_profile: input.profiles.interpretation_profile,
         readiness_profile: input.profiles.readiness_profile,
         semantic_candidate_profile: input.profiles.semantic_candidate_profile,
+        ...(input.profiles.architecture_evidence_profile !== undefined
+            ? { architecture_evidence_profile: input.profiles.architecture_evidence_profile }
+            : {}),
     });
 }
 /**

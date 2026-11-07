@@ -5,6 +5,7 @@ exports.readTextUnit = readTextUnit;
 exports.readTitleMarkers = readTitleMarkers;
 exports.isMilestoneSectionHeading = isMilestoneSectionHeading;
 exports.documentText = documentText;
+exports.readLabelledLine = readLabelledLine;
 const common_1 = require("./common");
 const native_metadata_1 = require("../native_metadata");
 // ───────────────────────────── file eligibility ─────────────────────────────
@@ -885,6 +886,24 @@ function isMilestoneSectionHeading(text) {
 /** Normalize a fragment of document text for use as an assertion object. */
 function documentText(value) {
     return plainText(value);
+}
+/**
+ * The `Label: value` grammar, for a reader with its own label vocabulary.
+ *
+ * Exported for the architecture-statement reader (`./architecture_statements`),
+ * which recognizes `Objective:`, `Constraint:`, `Decision:` and the rest with
+ * exactly the line shape this module accepts for `Status:` and `Depends on:`.
+ * A second definition of "what is a labelled line" would eventually accept a
+ * line this one refuses, and the two vocabularies would then disagree about
+ * whether a document declared anything at all.
+ *
+ * The label is returned normalized (emphasis removed, lowercased); the value is
+ * as written after the colon, with leading emphasis trimmed. Null when the line
+ * has no label of the accepted shape. Recognizing the label is not the same as
+ * reading a signal: this function says nothing about the vocabulary.
+ */
+function readLabelledLine(line) {
+    return labelledLine(line);
 }
 /** How far into a document a bare status admonition still counts as leading. */
 exports.LEADING_ADMONITION_UNITS = LEADING_ADMONITION_LINES;

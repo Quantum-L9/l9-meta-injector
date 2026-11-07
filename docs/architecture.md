@@ -266,6 +266,17 @@ they do not reach the packet. The rules are versioned separately as
 `document_block_profile`, which sits beside `interpretation_profile` in the analysis
 identity rather than being folded into it.
 
+`src/extractors/architecture_statements.ts` (`architecture-statements/v1`) reads the
+same blocks a second time, opt-in, for what a document explicitly declares about its own
+architecture: `intent`, `constraint`, `assumption`, `open_question` and
+`decision_statement`, from labelled fields, labelled lists and labelled section headings
+and from nothing else. It reuses the work reader's `Label: value` grammar, skips every
+unit the work vocabulary claims, and cites the exact line for a `line_span` block and the
+block locator verbatim for every other kind. `src/corpus_architecture_evidence.ts` emits
+the complete payload (`l9.architecture-evidence/v1`) with a manifest built like the
+work-signal export's, applies the static `architecture-development/v1` selection table,
+and binds its profile into `corpus_analysis_id` only when selected (ADR-087, Proposed).
+
 Exact duplicates are content-hash equality over the unified record set, so a physical
 file and a member of a nested archive can share a cluster. `DUPLICATE_OF` is rendered
 in the corpus index rather than in the packet, because `RepositoryModelEdgeType` is the

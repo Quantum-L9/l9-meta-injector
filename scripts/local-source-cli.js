@@ -87,6 +87,12 @@ const USAGE = [
   "  --max-memory-bytes N       ceiling on decoded text held at once (default: 256 MiB)",
   "",
   "semantic candidate discovery (on by default):",
+  "  --architecture-evidence    also read every decoded document for the intent,",
+  "                             constraint, assumption, open-question and decision",
+  "                             statements it explicitly labels, and write the complete",
+  "                             set as architecture-evidence.jsonl (+ manifest). Opt-in;",
+  "                             binds the projection's rules into corpus_analysis_id",
+  "                             and leaves every other identity and output unchanged.",
   "  --no-semantic-analysis     skip candidate discovery; duplicates still reported",
   "  --embeddings               enable optional semantic embeddings (default: off)",
   "  --embedding-provider NAME  required when --embeddings is given; 'http-json' is",
@@ -301,7 +307,7 @@ function reportCorpusRun(context) {
     console.log(`    ${binding.root_label}  ${binding.source_revision}  ${binding.absolute_path}`);
   }
   console.log(`  files scanned    ${result.scanned.files} (${result.scanned.bytes} byte(s))`);
-  console.log(`  archives         ${coverage.archive_count}, ${coverage.archive_member_count} member(s)`);
+  console.log(`  archives         ${coverage.corpus.archive_count}, ${coverage.corpus.archive_member_count} member(s)`);
   console.log(`  exact hashes     ${coverage.exact_hash_coverage.covered}/${coverage.exact_hash_coverage.eligible}`);
   console.log(`  decoded          ${coverage.normalized_document_coverage.covered}/${coverage.normalized_document_coverage.eligible}`);
   // A pass that did not run has no completeness figure to print (ADR-068).
@@ -347,7 +353,7 @@ function reportCorpusRun(context) {
   console.log(
     `  projects         ${summary.project_candidate_count} candidate(s), `
     + `${summary.cross_root_project_candidate_count} crossing a root boundary, `
-    + `${coverage.reasoning_eligible_candidate_count} reasoning-eligible`,
+    + `${coverage.reasoning_handoff.reasoning_eligible_candidate_count} reasoning-eligible`,
   );
   const unsupported = coverage.unsupported_format_counts
     .map((format) => `${format.extension}:${format.count}`)
@@ -370,10 +376,23 @@ function reportCorpusRun(context) {
       + ` ${entry.lexically_analyzed_count} analyzed, ${entry.candidate_member_count} in candidates`,
     );
   }
-  console.log(`  ocr required     ${coverage.ocr_required_count}`);
-  console.log(`  encrypted        ${coverage.encrypted_document_count}`);
-  console.log(`  oversized        ${coverage.oversized_document_count}`);
-  console.log(`  secrets skipped  ${coverage.secret_skipped_count}`);
+  console.log(`  ocr required     ${coverage.documents.ocr_required_count}`);
+  console.log(`  encrypted        ${coverage.documents.encrypted_document_count}`);
+  console.log(`  oversized        ${coverage.documents.oversized_document_count}`);
+  console.log(`  secrets skipped  ${coverage.documents.secret_skipped_count}`);
+  // Two sentences for two states (ADR-068): a projection nobody asked for is
+  // reported as not run, never as a corpus that declared nothing.
+  if (result.architectureEvidence === null) {
+    console.log("  architecture     not run (pass --architecture-evidence to read declared statements)");
+  } else {
+    const manifest = result.architectureEvidence.manifest;
+    console.log(
+      `  architecture     ${manifest.record_count} declared statement(s) in ${manifest.document_count} `
+      + `of ${manifest.documents_read} decoded document(s); ${manifest.selected_record_count} selected by `
+      + `${manifest.selection_profile_id}; ${manifest.diagnostic_count} coverage diagnostic(s)`,
+    );
+    console.log("  every statement is source-declared and none is authority-verified");
+  }
   if (result.semantic === null) {
     console.log("  semantic         off (--no-semantic-analysis)");
   } else {
@@ -546,6 +565,13 @@ async function runCorpusMode(cli) {
   const outDir = path.resolve(cli.opt("--out", path.join(os.tmpdir(), "l9-corpus-out")));
   roots.assertOutsideRoots(outDir, rootPaths, "the corpus output directory");
 
+  // The selection profile reads each text document's declared work.kind and
+  // work.status through the interpretation pass; without it every Markdown
+  // proposal is an unknown role. Refused before anything is read.
+  if (cli.flag("--architecture-evidence") && cli.flag("--no-interpret")) {
+    fail("--architecture-evidence needs the interpretation pass that --no-interpret disables. "
+      + "Drop one of the two switches.", 2);
+  }
   const cacheEnabled = !cli.flag("--no-cache");
   // The session manifest names the work that was finished; the cache holds what
   // that work produced. Resuming without the cache could only skip work whose
@@ -728,6 +754,9 @@ async function runCorpusMode(cli) {
       allowInferredRootHistory: cli.flag("--allow-inferred-root-history"),
       allowPartialRoots: cli.flag("--allow-partial-roots"),
       semanticAnalysis: !cli.flag("--no-semantic-analysis"),
+      // Opt-in: an operator who did not ask for the projection gets the run they
+      // always got, identities included.
+      ...(cli.flag("--architecture-evidence") ? { architectureEvidence: true } : {}),
       ...(embeddingProvider !== undefined ? { embeddingProvider } : {}),
       ...(embeddingPairThreshold !== undefined ? { embeddingPairThreshold } : {}),
       ...(Object.keys(packBudget).length > 0 ? { packBudget } : {}),
@@ -759,6 +788,14 @@ async function runCorpusMode(cli) {
     { path: "document-work-signals.jsonl", contents: result.documentWorkSignals.payloadJsonl },
     { path: "document-work-signals.manifest.json", contents: result.documentWorkSignals.manifestJson },
   ];
+  // Opt-in, and absent from the generation when it did not run: the index lists
+  // it as not written, which is the honest statement rather than an empty file.
+  if (result.architectureEvidence !== null) {
+    outputs.push(
+      { path: "architecture-evidence.jsonl", contents: result.architectureEvidence.payloadJsonl },
+      { path: "architecture-evidence.manifest.json", contents: result.architectureEvidence.manifestJson },
+    );
+  }
   if (result.semantic !== null) {
     outputs.push(
       { path: "semantic-relations.json", contents: semanticRun.renderSemanticRelations(result.semantic.relations) },

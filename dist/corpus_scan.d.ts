@@ -10,6 +10,7 @@ import { CorpusSnapshot, VerificationMode } from "./corpus_snapshot";
 import { CorpusResourceBudgets, CorpusSessionStore } from "./corpus_session";
 import { DecoderRegistry } from "./documents";
 import { DocumentWorkSignalExport } from "./corpus_work_signal_export";
+import { ArchitectureEvidenceExport } from "./corpus_architecture_evidence";
 import { LocalArchivePolicy } from "./local_archive_policy";
 import type { DocumentIndex, DocumentIndexSummary } from "./corpus_documents";
 import type { SemanticAnalysisResult } from "./corpus_semantic_run";
@@ -104,6 +105,18 @@ export interface CorpusScanInput {
         maxArtifactsPerPack?: number;
         maxTotalPackCharacters?: number;
     };
+    /**
+     * Select the architecture-evidence projection (`architecture-development/v1`).
+     *
+     * Off by default. When on, every decoded document's blocks are read for the
+     * explicit intent, constraint, assumption, open-question and decision
+     * statements it declares, and the complete set is emitted as
+     * `architecture-evidence.jsonl` with a manifest. Selecting it binds the
+     * projection's rules into `corpus_analysis_id` and into nothing else: the
+     * source snapshot, the per-root packets, the work-signal payload and every
+     * cache layer are the same with or without it.
+     */
+    architectureEvidence?: boolean;
 }
 export interface CorpusScanDiagnostic {
     code: string;
@@ -242,6 +255,13 @@ export interface CorpusScanResult {
      * much the corpus found.
      */
     documentWorkSignals: DocumentWorkSignalExport;
+    /**
+     * The architecture-evidence projection, complete and never sampled.
+     *
+     * Null when it was not selected — which is the default — so a caller cannot
+     * mistake "not asked for" for "found nothing" (ADR-068).
+     */
+    architectureEvidence: ArchitectureEvidenceExport | null;
     /** Candidate discovery over recorded evidence. Null when it was switched off. */
     semantic: SemanticAnalysisResult | null;
 }

@@ -334,6 +334,20 @@
       "stability": "stable"
     },
     {
+      "capability": "architecture_evidence_projection",
+      "source": "src/extractors/architecture_statements.ts and src/corpus_architecture_evidence.ts",
+      "public_entrypoint": null,
+      "tests": [
+        "tests/architecture_evidence.test.ts",
+        "tests/corpus_cli.test.ts"
+      ],
+      "validators": [
+        "npm test",
+        "npm run validate"
+      ],
+      "stability": "experimental"
+    },
+    {
       "capability": "semantic_candidate_discovery",
       "source": "src/corpus_semantics.ts and src/corpus_pairs.ts and src/corpus_fusion.ts",
       "public_entrypoint": null,
