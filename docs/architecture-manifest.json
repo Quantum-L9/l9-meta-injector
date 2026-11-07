@@ -18,7 +18,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "git_blob_sha1": "734c69b5fe1a52cda8161170c404692fcc1a5687"
+      "git_blob_sha1": "6b01839276ef4b24ec56a32825f81225ae801c4e"
     },
     {
       "path": "dist/apply.d.ts",
@@ -554,11 +554,11 @@
     },
     {
       "path": "docs/corpus-intelligence.md",
-      "git_blob_sha1": "8e07c190f85ed750751d05c50d8d0de82bac8d2d"
+      "git_blob_sha1": "f92fc626826b89413ccdeaf04476255d6d2853c7"
     },
     {
       "path": "docs/decision_log.md",
-      "git_blob_sha1": "015ea59ae2789cb5fd50b10a361cb213310164cd"
+      "git_blob_sha1": "989826fe8a340f0f947953ada7489676b38fc05f"
     },
     {
       "path": "docs/decisions/036-read-only-local-source-acquisition.md",
@@ -634,7 +634,7 @@
     },
     {
       "path": "docs/package-contract.json",
-      "git_blob_sha1": "1846f9c2948938ffeff2f3d7fc4a72b22a91a0b9"
+      "git_blob_sha1": "44183b6e80441921b880369065d7d00ee8ec25b7"
     },
     {
       "path": "docs/package-publication-decision.json",
@@ -670,7 +670,7 @@
     },
     {
       "path": "docs/traceability-map.json",
-      "git_blob_sha1": "6267385fd91543b65a769e74347d6c5ee1349437"
+      "git_blob_sha1": "cd6d05528f9137a93a5a982ccc60af892e97e250"
     },
     {
       "path": "docs/universal-tracked-metadata.md",
@@ -742,11 +742,11 @@
     },
     {
       "path": "package.json",
-      "git_blob_sha1": "b2c6f99b22afade5e30df3d1e3aeaf664b74a206"
+      "git_blob_sha1": "6427d2898ecb99721d75066bf2473bea609c8a78"
     },
     {
       "path": "README.md",
-      "git_blob_sha1": "3ce018187b544dd8b6e787939b6c483ab2e6b514"
+      "git_blob_sha1": "7f00340740e139a557d69cd3201e6ddf9d4fcc88"
     },
     {
       "path": "Repo.mk",
