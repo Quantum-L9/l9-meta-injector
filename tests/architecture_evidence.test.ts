@@ -135,6 +135,8 @@ function writeCorpus(root: string): void {
   });
   write(root, "handoffs/chassis-auth-handoff.md", HANDOFF);
   write(root, "notes/untyped.md", "Objective: Keep the gateway stateless.\n");
+  // Decodes to zero blocks: a document the reader is given and finds nothing in.
+  write(root, "notes/empty.md", "\n");
   write(root, "plans/sparse-notes.md", SPARSE);
 }
 
@@ -428,6 +430,24 @@ describe("selecting the projection moves the analysis identity and nothing else"
     expect(reference?.schema).toBe(ARCHITECTURE_EVIDENCE_SCHEMA);
     expect(reference?.record_count).toBe(withProfile.architectureEvidence?.manifest.record_count);
     expect(reference?.payload_artifact_hash).toBe(withProfile.architectureEvidence?.manifest.payload_artifact_hash);
+  });
+
+  it("counts every decoded document the reader was given, blocks or not, and refuses to run without interpretation", async () => {
+    const root = corpusRoot();
+    const result = await scan(root);
+    const decoded = result.documentIndex.documents.filter((entry) => entry.decoded);
+    expect(decoded.some((entry) => entry.root_relative_path === "notes/empty.md" && entry.block_count === 0)).toBe(true);
+    expect(result.architectureEvidence?.manifest.documents_read).toBe(decoded.length);
+    expect(result.architectureEvidence?.manifest.document_count).toBeLessThan(decoded.length);
+    // Without the interpretation pass a Markdown proposal declares no kind or
+    // status to the profile, and every text document would silently become an
+    // unknown role. The combination is refused, not degraded.
+    await expect(runCorpusScan({
+      roots: [{ path: root, name: "ArchDocs" }],
+      producerVersion: "test",
+      architectureEvidence: true,
+      interpret: false,
+    })).rejects.toThrow(/--architecture-evidence needs the interpretation pass/);
   });
 
   it("invalidates no cache layer: a warm cache serves a run that newly selects the projection", async () => {

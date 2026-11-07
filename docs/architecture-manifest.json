@@ -18,7 +18,11 @@
     },
     {
       "path": "CHANGELOG.md",
+<<<<<<< HEAD
       "git_blob_sha1": "6b01839276ef4b24ec56a32825f81225ae801c4e"
+=======
+      "git_blob_sha1": "78da833355af6df221883a37d362e755cffab980"
+>>>>>>> origin/claude-mobile/dazzling-feynman-azm517
     },
     {
       "path": "dist/apply.d.ts",
@@ -230,11 +234,11 @@
     },
     {
       "path": "dist/corpus_scan.js",
-      "git_blob_sha1": "1011029815f68f94c62c3ada30172ca2cf1922d8"
+      "git_blob_sha1": "ca7e7dc9e6487d8de60067c632d849f5ad46cf8a"
     },
     {
       "path": "dist/corpus_scan.js.map",
-      "git_blob_sha1": "b90b699c82d4977b8788185c213816e4bee1d002"
+      "git_blob_sha1": "3d765d2a505ea596d44f2050b76d75fa31c9ce7c"
     },
     {
       "path": "dist/corpus_semantic_run.d.ts",
@@ -822,7 +826,7 @@
     },
     {
       "path": "scripts/local-source-cli.js",
-      "git_blob_sha1": "7fe2f7d03b2d4e457edff7d39c5f9e79eff43c33"
+      "git_blob_sha1": "769d146ac0faaacb20a30091b37a69ee1bc36dfa"
     },
     {
       "path": "scripts/qualify-tracked-snapshot.js",
@@ -922,7 +926,7 @@
     },
     {
       "path": "src/corpus_scan.ts",
-      "git_blob_sha1": "2aae81c9ce94cc35e04585e1456762791ffe507d"
+      "git_blob_sha1": "a7e69906413439f90af6667a1a65e3ac47b4811e"
     },
     {
       "path": "src/corpus_semantic_run.ts",
@@ -1066,7 +1070,7 @@
     },
     {
       "path": "tests/corpus_cli.test.ts",
-      "git_blob_sha1": "a2504f0b0c98a3f04a488fd56afa4902d751e812"
+      "git_blob_sha1": "f454d05c2ab2de95a798818a146942aca1beff21"
     },
     {
       "path": "tests/corpus_diff.test.ts",

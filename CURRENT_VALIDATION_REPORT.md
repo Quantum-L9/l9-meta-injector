@@ -1,9 +1,16 @@
 # Current validation report
 
+<<<<<<< HEAD
 **Generated at commit:** `e86f9bca677feec930b2b7046aa3f893dccc3558`
 **Working tree:** clean apart from this report
 **Bound to tree:** `sha256:c456be9340925f76d936297579bfdeebce13c10de76fc370a81983c7bcc82436`
 **Generated:** 2026-11-07T18:27:24.701Z
+=======
+**Generated at commit:** `84d5055af11ed739efb485e2e1c8cb4e90f322dc`
+**Working tree:** clean apart from this report
+**Bound to tree:** `sha256:5dd733040aa141a3ff06951e3cc9971b67da766d05c53040d5036ebfc12ef814`
+**Generated:** 2026-11-07T18:35:12.568Z
+>>>>>>> origin/claude-mobile/dazzling-feynman-azm517
 
 This report is written by `scripts/validation-report.js`, which runs each
 command below and records the exit code it received rather than a claim about it.

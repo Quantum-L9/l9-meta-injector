@@ -565,6 +565,13 @@ async function runCorpusMode(cli) {
   const outDir = path.resolve(cli.opt("--out", path.join(os.tmpdir(), "l9-corpus-out")));
   roots.assertOutsideRoots(outDir, rootPaths, "the corpus output directory");
 
+  // The selection profile reads each text document's declared work.kind and
+  // work.status through the interpretation pass; without it every Markdown
+  // proposal is an unknown role. Refused before anything is read.
+  if (cli.flag("--architecture-evidence") && cli.flag("--no-interpret")) {
+    fail("--architecture-evidence needs the interpretation pass that --no-interpret disables. "
+      + "Drop one of the two switches.", 2);
+  }
   const cacheEnabled = !cli.flag("--no-cache");
   // The session manifest names the work that was finished; the cache holds what
   // that work produced. Resuming without the cache could only skip work whose
