@@ -170,4 +170,3 @@ one derived field moved.
 - Identity: the profile hash and `corpus_analysis_id` move for runs that select the
   projection; the source snapshot, packet ids, evidence ids, coordinates and cache keys do
   not. `selection` is derived metadata, outside the statement's identity.
-
