@@ -59,7 +59,11 @@ export const ARCHITECTURE_EVIDENCE_MANIFEST_FILE = "architecture-evidence.manife
 
 /** Identity of the whole projection: the reader plus the selection profile. */
 export const ARCHITECTURE_EVIDENCE_PROFILE_ID = "meta-injector-architecture-evidence";
-export const ARCHITECTURE_EVIDENCE_PROFILE_VERSION = "1.0.0";
+/**
+ * 1.1.0: the reader's coverage closure (`architecture-statements/v1` 1.1.0) and
+ * the `unit_count` field on every record. Record identity is unchanged.
+ */
+export const ARCHITECTURE_EVIDENCE_PROFILE_VERSION = "1.1.0";
 
 /** The one selection profile this release ships. A view over the records, not a vocabulary. */
 export const ARCHITECTURE_SELECTION_PROFILE_ID = "architecture-development/v1";
@@ -227,8 +231,10 @@ export interface ArchitectureEvidenceRecord {
   block_kind: string;
   /** The exact coordinate, in the format's own terms. Its `kind` says which shape. */
   structured_locator: Record<string, unknown>;
-  /** Line of the block's text the statement is on, or null for a whole-block statement. */
+  /** Line of the block's text the statement starts on, or null for a whole-block statement. */
   unit_index: number | null;
+  /** How many of the block's lines the statement spans from `unit_index`. */
+  unit_count: number;
   statement_class: ArchitectureStatementClass;
   /** The statement as written, normalized as a quotation and bounded. */
   declared_text: string;
@@ -568,8 +574,9 @@ export function buildArchitectureEvidenceExport(
         decoder_version: document.decoderVersion,
         block_id: statement.block.block_id,
         block_kind: statement.block.kind,
-        structured_locator: architectureStatementLocator(statement.block, statement.unit_index) as unknown as Record<string, unknown>,
+        structured_locator: architectureStatementLocator(statement.block, statement.unit_index, statement.unit_count) as unknown as Record<string, unknown>,
         unit_index: statement.unit_index,
+        unit_count: statement.unit_count,
         statement_class: statement.statement_class,
         declared_text: statement.declared_text,
         declared_text_truncated: statement.declared_text_truncated,
