@@ -51,7 +51,10 @@ Then, before any result is released:
    `architecture-evidence.jsonl` (when the generation has it) with
    `verifyArchitectureEvidenceExport` — the same functions the scan ran before publishing —
    and each manifest must match the snapshot's reference to it;
-5. each observed root's `bundle/packet.json` must be the packet the snapshot recorded.
+5. each observed root's `bundle/packet.json` must pass `validateRepositoryModelPacket`
+   (which recomputes the semantic hash its id derives from and checks every referential
+   invariant) and must be the packet the snapshot recorded;
+6. the pointer's own file list must be well formed (a path and a hash per entry).
 
 Any failure is an `invalid` outcome with the refusal named, an empty result list and a null
 `match_count`. Nothing is repaired, refreshed or re-read from the source files.

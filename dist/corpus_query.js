@@ -136,6 +136,15 @@ class PinnedGeneration {
         this.outDir = outDir;
         this.current = current;
         this.directory = directory;
+        // `readCorpusCurrent` checks the pointer's schema and ids, not its file list.
+        // A pointer with no list, or a list entry without a path and a hash, cannot
+        // vouch for anything and is refused as malformed rather than crashed on.
+        const files = current.files;
+        if (!Array.isArray(files) || files.some((file) => file === null || typeof file !== "object"
+            || typeof file.path !== "string"
+            || typeof file.content_hash !== "string")) {
+            throw new QueryRefusal("query.pointer_malformed", "CURRENT.json does not carry a well-formed file list (each entry needs a path and a content_hash)");
+        }
         this.hashes = new Map(current.files.map((file) => [file.path, file.content_hash]));
         this.realDirectory = fs.realpathSync(directory);
         const realOut = fs.realpathSync(outDir);
@@ -339,6 +348,16 @@ function loadGeneration(pinned) {
         }
         if (packet.packet_type !== repository_model_1.REPOSITORY_MODEL_PACKET_TYPE) {
             throw new QueryRefusal("query.schema_mismatch", `'${relative}' is not a ${repository_model_1.REPOSITORY_MODEL_PACKET_TYPE} packet`);
+        }
+        // The declared id alone proves nothing about the contents: a rewritten
+        // assertion with the pointer's hash updated to match would still carry the
+        // old id. The packet's own validation recomputes the semantic hash the id
+        // is derived from, and checks every referential invariant the producer
+        // promised, so it is the same proof the scan ran before emitting it.
+        const validation = (0, repository_model_1.validateRepositoryModelPacket)(packet);
+        if (validation.status !== "passed") {
+            const failed = validation.checks.filter((entry) => entry.status !== "passed").map((entry) => entry.rule);
+            throw new QueryRefusal("query.packet_invalid", `${relative} failed its own packet validation: ${failed.join(", ")}`);
         }
         if (packet.packet_id !== root.rmp_packet_id) {
             throw new QueryRefusal("query.packet_mismatch", `${relative} is packet ${packet.packet_id}; the snapshot records ${root.rmp_packet_id} for root ${root.root_key}`);

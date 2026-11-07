@@ -18,11 +18,7 @@
     },
     {
       "path": "CHANGELOG.md",
-<<<<<<< HEAD
-      "git_blob_sha1": "6b01839276ef4b24ec56a32825f81225ae801c4e"
-=======
-      "git_blob_sha1": "78da833355af6df221883a37d362e755cffab980"
->>>>>>> origin/claude-mobile/dazzling-feynman-azm517
+      "git_blob_sha1": "5cf29047f2b03508f2d4ef52a3a9f560fa586e51"
     },
     {
       "path": "dist/apply.d.ts",

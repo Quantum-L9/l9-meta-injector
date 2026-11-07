@@ -62,7 +62,12 @@ import type { DocumentWorkSignalManifest, DocumentWorkSignalRecord } from "./cor
 import { ARCHITECTURE_STATEMENT_CLASSES } from "./extractors/architecture_statements";
 import { MAX_EXCERPT_LENGTH } from "./interpretation";
 import { compareCodePoints } from "./ordering";
-import { REPOSITORY_MODEL_PACKET_TYPE, repositoryModelArtifactId, sha256TextPrefixed } from "./repository_model";
+import {
+  REPOSITORY_MODEL_PACKET_TYPE,
+  repositoryModelArtifactId,
+  sha256TextPrefixed,
+  validateRepositoryModelPacket,
+} from "./repository_model";
 import type { RepositoryModelAssertionRecord, RepositoryModelPacket } from "./repository_model";
 
 /** Schema of the one response this module renders. */
@@ -257,6 +262,19 @@ class PinnedGeneration {
     readonly current: CorpusCurrent,
     readonly directory: string,
   ) {
+    // `readCorpusCurrent` checks the pointer's schema and ids, not its file list.
+    // A pointer with no list, or a list entry without a path and a hash, cannot
+    // vouch for anything and is refused as malformed rather than crashed on.
+    const files: unknown = current.files;
+    if (!Array.isArray(files) || files.some((file) =>
+      file === null || typeof file !== "object"
+      || typeof (file as { path?: unknown }).path !== "string"
+      || typeof (file as { content_hash?: unknown }).content_hash !== "string")) {
+      throw new QueryRefusal(
+        "query.pointer_malformed",
+        "CURRENT.json does not carry a well-formed file list (each entry needs a path and a content_hash)",
+      );
+    }
     this.hashes = new Map(current.files.map((file) => [file.path, file.content_hash]));
     this.realDirectory = fs.realpathSync(directory);
     const realOut = fs.realpathSync(outDir);
@@ -501,6 +519,19 @@ function loadGeneration(pinned: PinnedGeneration): LoadedGeneration {
     }
     if (packet.packet_type !== REPOSITORY_MODEL_PACKET_TYPE) {
       throw new QueryRefusal("query.schema_mismatch", `'${relative}' is not a ${REPOSITORY_MODEL_PACKET_TYPE} packet`);
+    }
+    // The declared id alone proves nothing about the contents: a rewritten
+    // assertion with the pointer's hash updated to match would still carry the
+    // old id. The packet's own validation recomputes the semantic hash the id
+    // is derived from, and checks every referential invariant the producer
+    // promised, so it is the same proof the scan ran before emitting it.
+    const validation = validateRepositoryModelPacket(packet);
+    if (validation.status !== "passed") {
+      const failed = validation.checks.filter((entry) => entry.status !== "passed").map((entry) => entry.rule);
+      throw new QueryRefusal(
+        "query.packet_invalid",
+        `${relative} failed its own packet validation: ${failed.join(", ")}`,
+      );
     }
     if (packet.packet_id !== root.rmp_packet_id) {
       throw new QueryRefusal(

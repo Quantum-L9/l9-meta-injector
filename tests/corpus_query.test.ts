@@ -329,6 +329,49 @@ describe("D. integrity refusal", () => {
     expect(response.diagnostics.map((diagnostic) => diagnostic.code)).toContain("query.file_hash_mismatch");
   });
 
+  it("refuses a rewritten packet even when the pointer's hash was rewritten to match it", () => {
+    const copy = copyOut(evidence.out);
+    const dir = generationDir(copy);
+    const packetPath = path.join(dir, "roots", "Designs", "bundle", "packet.json");
+    const tampered = fs.readFileSync(packetPath, "utf8").replace('"object":"blocked"', '"object":"done"');
+    expect(tampered).not.toBe(fs.readFileSync(packetPath, "utf8"));
+    fs.writeFileSync(packetPath, tampered, "utf8");
+    const currentPath = path.join(copy, "CURRENT.json");
+    const current = JSON.parse(fs.readFileSync(currentPath, "utf8"));
+    for (const file of current.files) {
+      if (file.path === "roots/Designs/bundle/packet.json") {
+        file.content_hash = `sha256:${crypto.createHash("sha256").update(tampered, "utf8").digest("hex")}`;
+      }
+    }
+    fs.writeFileSync(currentPath, JSON.stringify(current, null, 2), "utf8");
+    // The declared packet id is unchanged and matches the snapshot; the
+    // packet's own validation recomputes the semantic hash and refuses.
+    const response = queryCorpusEvidence({ outDir: copy, predicate: "work.status" });
+    expect(response.outcome).toBe("invalid");
+    expect(response.results).toEqual([]);
+    expect(response.diagnostics.map((diagnostic) => diagnostic.code)).toContain("query.packet_invalid");
+    expect(response.diagnostics[response.diagnostics.length - 1]?.message).toContain("semantic_hash");
+  });
+
+  it("refuses a malformed pointer file list as invalid rather than crashing", () => {
+    const copy = copyOut(evidence.out);
+    const currentPath = path.join(copy, "CURRENT.json");
+    const current = JSON.parse(fs.readFileSync(currentPath, "utf8"));
+    delete current.files;
+    fs.writeFileSync(currentPath, JSON.stringify(current, null, 2), "utf8");
+    const missing = queryCorpusEvidence({ outDir: copy, predicate: "work.status" });
+    expect(missing.outcome).toBe("invalid");
+    expect(missing.diagnostics[0]?.code).toBe("query.pointer_malformed");
+    current.files = [{ path: "corpus-snapshot.json" }];
+    fs.writeFileSync(currentPath, JSON.stringify(current, null, 2), "utf8");
+    const partial = queryCorpusEvidence({ outDir: copy, predicate: "work.status" });
+    expect(partial.outcome).toBe("invalid");
+    expect(partial.diagnostics[0]?.code).toBe("query.pointer_malformed");
+    const cli = runQuery(["--out", copy, "--predicate", "work.status"]);
+    expect(cli.status).toBe(1);
+    expect(cli.response.outcome).toBe("invalid");
+  });
+
   it("refuses a pointer that names a path outside the generation, and a symlink in place of a file", () => {
     const traversal = copyOut(evidence.out);
     const currentPath = path.join(traversal, "CURRENT.json");
