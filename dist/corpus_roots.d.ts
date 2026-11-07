@@ -133,6 +133,15 @@ export interface CorpusAnalysisProfiles {
     /** Present only when embeddings ran. */
     embedding_profile?: string;
     readiness_profile: string;
+    /**
+     * Present only when the opt-in architecture-evidence projection was selected.
+     *
+     * Absent — not null — when it was not, so a run that never asked for the
+     * projection hashes exactly as it did before the projection existed. The
+     * identity moves when the projection is selected, because more is then
+     * concluded, and stays put when it is not, because nothing else changed.
+     */
+    architecture_evidence_profile?: string;
 }
 /**
  * Identity of what was *concluded* about the corpus.

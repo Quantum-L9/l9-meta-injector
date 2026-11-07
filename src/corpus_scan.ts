@@ -157,6 +157,13 @@ import {
   documentWorkSignalsRef,
   verifyDocumentWorkSignalExport,
 } from "./corpus_work_signal_export";
+import {
+  ArchitectureEvidenceExport,
+  architectureEvidenceProfileHash,
+  architectureEvidenceRef,
+  buildArchitectureEvidenceExport,
+  verifyArchitectureEvidenceExport,
+} from "./corpus_architecture_evidence";
 import { defaultExtractors } from "./extractors";
 import {
   DOCUMENT_BLOCK_EXTRACTOR_ID,
@@ -326,6 +333,18 @@ export interface CorpusScanInput {
   embeddingPairThreshold?: number;
   /** Overrides for the bounded reasoning evidence packs. */
   packBudget?: { maxArtifactsPerPack?: number; maxTotalPackCharacters?: number };
+  /**
+   * Select the architecture-evidence projection (`architecture-development/v1`).
+   *
+   * Off by default. When on, every decoded document's blocks are read for the
+   * explicit intent, constraint, assumption, open-question and decision
+   * statements it declares, and the complete set is emitted as
+   * `architecture-evidence.jsonl` with a manifest. Selecting it binds the
+   * projection's rules into `corpus_analysis_id` and into nothing else: the
+   * source snapshot, the per-root packets, the work-signal payload and every
+   * cache layer are the same with or without it.
+   */
+  architectureEvidence?: boolean;
 }
 
 export interface CorpusScanDiagnostic {
@@ -469,6 +488,13 @@ export interface CorpusScanResult {
    * much the corpus found.
    */
   documentWorkSignals: DocumentWorkSignalExport;
+  /**
+   * The architecture-evidence projection, complete and never sampled.
+   *
+   * Null when it was not selected — which is the default — so a caller cannot
+   * mistake "not asked for" for "found nothing" (ADR-068).
+   */
+  architectureEvidence: ArchitectureEvidenceExport | null;
   /** Candidate discovery over recorded evidence. Null when it was switched off. */
   semantic: SemanticAnalysisResult | null;
 }
@@ -1255,6 +1281,12 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
   const undecodedExtensions = new Set(gaps.unsupported);
   const interpretProfile = interpretationProfileHash(extractors);
   const blockProfile = documentBlockProfileHash();
+  // Null, not a hash, when the projection was not selected: the profile enters
+  // the analysis identity only by being asked for, so a default run's identity
+  // is a function of the rules it actually applied.
+  const architectureProfile: string | null = input.architectureEvidence === true
+    ? architectureEvidenceProfileHash()
+    : null;
   const interpretEnabled = input.interpret !== false;
   const verificationMode: VerificationMode = input.verification ?? "full";
   const verifyContent = input.verifyContent === true;
@@ -1780,6 +1812,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
           semantic_candidate_profile: candidateProfile,
           ...(embeddingProfile !== null ? { embedding_profile: embeddingProfile } : {}),
           readiness_profile: readinessProfileHash(),
+          ...(architectureProfile !== null ? { architecture_evidence_profile: architectureProfile } : {}),
         },
       }),
       corpus_profile: corpusProfileHash,
@@ -1789,6 +1822,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       semantic_candidate_profile: candidateProfile,
       embedding_profile: embeddingProfile,
       readiness_profile: readinessProfileHash(),
+      ...(architectureProfile !== null ? { architecture_evidence_profile: architectureProfile } : {}),
     };
     // Both projections of the work signals are built from this one array. The
     // report samples it and the machine payload carries all of it, so the two can
@@ -1832,6 +1866,56 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       },
       records: workSignalRecords,
     });
+
+    // ── 4d. what the documents declare about their own architecture ────────
+    //
+    // Opt-in, and read from the same blocks step 4a read — every decoded
+    // document this time, the text family included, because a Markdown
+    // proposal's `## Constraints` is exactly what this projection exists to
+    // find and its line-span blocks cite the lines the file really has. The
+    // document's existing `work.kind`, `work.status` and handoff declarations,
+    // from whichever reader made them, are handed over by assertion id so the
+    // selection profile can say which claim decided a document's role. Nothing
+    // is re-read from disk and nothing is computed that the cache would hold.
+    let architectureEvidence: ArchitectureEvidenceExport | null = null;
+    if (architectureProfile !== null) {
+      const documents = decodable.flatMap((artifact) => {
+        const record = normalized.get(artifact.virtualSourceId);
+        if (record?.decodes !== true) return [];
+        const blocks = record.blocks ?? [];
+        if (blocks.length === 0) return [];
+        const rootKey = rootKeyById.get(artifact.rootId) ?? artifact.rootId;
+        return [{
+          artifactId: artifact.virtualSourceId,
+          rmpArtifactId: repositoryModelArtifactId(`repo:${rootKey}`, artifact.rootRelativePath),
+          sourcePath: artifact.rootRelativePath,
+          format: record.format,
+          rawContentHash: artifact.contentHash,
+          normalizedDocumentId: normalizedDocumentIdOf(artifact, record, registry),
+          decoderId: record.decoder_id,
+          decoderVersion: record.decoder_version,
+          blocks: blocks.map((block) => ({
+            block_id: block.block_id,
+            kind: block.kind as BlockKind,
+            text: block.text,
+            locator: block.locator as unknown as BlockLocator,
+          })),
+          workAssertions: [
+            ...(interpreted.get(artifact.virtualSourceId)?.assertions ?? []),
+            ...(blockSignals.get(artifact.virtualSourceId) ?? []),
+          ].map((assertion) => ({
+            assertion_id: assertion.assertion_id,
+            predicate: assertion.predicate,
+            object: assertion.object,
+          })),
+        }];
+      });
+      architectureEvidence = buildArchitectureEvidenceExport({
+        corpusSourceSnapshotId: sourceSnapshotId,
+        corpusAnalysisId: analysisIdentity.corpus_analysis_id,
+        documents,
+      });
+    }
 
     // What the operator authorized, recorded beside what was observed. Null on
     // an ordinary run: an `enabled: false` entry on every run would train a
@@ -2097,6 +2181,9 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       corpus_source_snapshot_id: sourceSnapshotId,
       analysis: analysisIdentity,
       document_work_signals: documentWorkSignalsRef(documentWorkSignals.manifest),
+      ...(architectureEvidence !== null
+        ? { architecture_evidence: architectureEvidenceRef(architectureEvidence.manifest) }
+        : {}),
       ...(historyOverride !== null
         ? { operational_provenance: { inferred_root_history_override: historyOverride } }
         : {}),
@@ -2867,6 +2954,30 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
         + `check and was not published:\n  - ${exportProblems.join("\n  - ")}`,
       );
     }
+    if (architectureEvidence !== null) {
+      // The same guard for the same reason: a payload that fails its own receipt
+      // is not published, whatever the rest of the generation looks like.
+      const evidenceProblems = verifyArchitectureEvidenceExport({
+        manifest: architectureEvidence.manifest,
+        payloadJsonl: architectureEvidence.payloadJsonl,
+        knownArtifactIds: new Set(artifacts.map((artifact) => artifact.virtualSourceId)),
+        knownNormalizedDocumentIds: new Set(
+          artifacts
+            .map((artifact) => normalizedDocumentIdOf(
+              artifact,
+              normalized.get(artifact.virtualSourceId),
+              registry,
+            ))
+            .filter((id): id is string => id !== null),
+        ),
+      });
+      if (evidenceProblems.length > 0) {
+        throw new Error(
+          "corpus: the architecture-evidence payload failed its own completeness "
+          + `check and was not published:\n  - ${evidenceProblems.join("\n  - ")}`,
+        );
+      }
+    }
 
     // Built only after the guard above allowed the comparison: an unauthorized
     // inferred continuity never reaches this call, so a diff exists exactly when
@@ -2888,6 +2999,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
     return {
       snapshot,
       documentWorkSignals,
+      architectureEvidence,
       rootPackets,
       candidates: candidatesDocument,
       readiness,

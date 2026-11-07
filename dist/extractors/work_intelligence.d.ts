@@ -58,6 +58,25 @@ export declare function readTitleMarkers(text: string, excerpt: string): SignalR
 export declare function isMilestoneSectionHeading(text: string): boolean;
 /** Normalize a fragment of document text for use as an assertion object. */
 export declare function documentText(value: string): string;
+/**
+ * The `Label: value` grammar, for a reader with its own label vocabulary.
+ *
+ * Exported for the architecture-statement reader (`./architecture_statements`),
+ * which recognizes `Objective:`, `Constraint:`, `Decision:` and the rest with
+ * exactly the line shape this module accepts for `Status:` and `Depends on:`.
+ * A second definition of "what is a labelled line" would eventually accept a
+ * line this one refuses, and the two vocabularies would then disagree about
+ * whether a document declared anything at all.
+ *
+ * The label is returned normalized (emphasis removed, lowercased); the value is
+ * as written after the colon, with leading emphasis trimmed. Null when the line
+ * has no label of the accepted shape. Recognizing the label is not the same as
+ * reading a signal: this function says nothing about the vocabulary.
+ */
+export declare function readLabelledLine(line: string): {
+    label: string;
+    value: string;
+} | null;
 /** How far into a document a bare status admonition still counts as leading. */
 export declare const LEADING_ADMONITION_UNITS = 10;
 /**

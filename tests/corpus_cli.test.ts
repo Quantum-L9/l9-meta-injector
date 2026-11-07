@@ -282,6 +282,49 @@ describe("corpus mode", () => {
     expect(result.stdout).toContain("no model was called and no network request was made");
   });
 
+  it("reports the architecture-evidence projection as not run unless it is selected", () => {
+    const f = fixture();
+    const result = run(argsFor(f));
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("architecture     not run");
+    const index = JSON.parse(fs.readFileSync(path.join(generation(f), "corpus-index.json"), "utf8"));
+    const listed = index.documents.filter((document: { name: string }) => document.name.startsWith("architecture_evidence"));
+    expect(listed.map((document: { present: boolean }) => document.present)).toEqual([false, false]);
+    expect(fs.existsSync(path.join(generation(f), "architecture-evidence.jsonl"))).toBe(false);
+    const snapshot = JSON.parse(fs.readFileSync(path.join(generation(f), "corpus-snapshot.json"), "utf8"));
+    expect(snapshot.architecture_evidence).toBeUndefined();
+    expect(snapshot.analysis.architecture_evidence_profile).toBeUndefined();
+  });
+
+  it("writes the complete architecture-evidence payload beside the rest when selected", () => {
+    const f = fixture();
+    const before = f.roots.map((root) => treeSnapshot(root));
+    const result = run(argsFor(f, ["--architecture-evidence"]));
+    expect(result.stderr).toBe("");
+    expect(result.status).toBe(0);
+    expect(f.roots.map((root) => treeSnapshot(root))).toEqual(before);
+    expect(result.stdout).toMatch(/architecture {5}\d+ declared statement\(s\)/);
+    expect(result.stdout).toContain("every statement is source-declared and none is authority-verified");
+
+    const dir = generation(f);
+    const manifest = JSON.parse(fs.readFileSync(path.join(dir, "architecture-evidence.manifest.json"), "utf8"));
+    const payload = fs.readFileSync(path.join(dir, "architecture-evidence.jsonl"), "utf8");
+    const lines = payload.split("\n").filter((line) => line.length > 0);
+    expect(manifest.schema).toBe("l9.architecture-evidence-manifest/v1");
+    expect(lines).toHaveLength(manifest.record_count);
+    expect(sha256Of(payload)).toBe(manifest.payload_artifact_hash);
+    for (const root of f.roots) expect(payload).not.toContain(root);
+    expect(payload).not.toContain(os.tmpdir());
+
+    const index = JSON.parse(fs.readFileSync(path.join(dir, "corpus-index.json"), "utf8"));
+    const listed = index.documents.filter((document: { name: string }) => document.name.startsWith("architecture_evidence"));
+    expect(listed.map((document: { present: boolean }) => document.present)).toEqual([true, true]);
+    const snapshot = JSON.parse(fs.readFileSync(path.join(dir, "corpus-snapshot.json"), "utf8"));
+    expect(snapshot.architecture_evidence.payload_artifact_hash).toBe(manifest.payload_artifact_hash);
+    expect(snapshot.analysis.architecture_evidence_profile).toBe(manifest.profile_hash);
+    expect(snapshot.analysis.corpus_analysis_id).toBe(manifest.corpus_analysis_id);
+  });
+
   it("keeps every mount point out of the semantic projections", () => {
     const f = fixture();
     expect(run(argsFor(f)).status).toBe(0);

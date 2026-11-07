@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Architecture evidence projection (ADR-087, Proposed)
+
+- `architecture-statements/v1` reads the explicit `intent`, `constraint`, `assumption`, `open_question` and `decision_statement` declarations a document makes — labelled fields (`Objective:`, `Decision:`), labelled lists (`Constraints:` then items) and labelled sections (`## Open Questions`) — over the normalized blocks every decoder already produces, so Markdown and Word are read by one implementation. A text statement cites its exact line; every other format cites its block locator. Constructs outside the grammar (empty labels, empty sections, tables, foreign `Label: value` lines, credential-shaped text) are coverage diagnostics, never guesses.
+- `--architecture-evidence` (opt-in) writes `architecture-evidence.jsonl` (`l9.architecture-evidence/v1`) and its manifest beside `document-work-signals.jsonl`, through the same atomic generation and the same complete-or-refuse receipt. Every record carries both artifact identities, the source hash, the normalized document id, the block and coordinate, the declared text, the document's existing `work.kind`/`work.status`/handoff references by assertion id, `epistemic_class: "source-declared"` and `authority_verified: false`. Contradictory declarations are all retained.
+- `architecture-development/v1` is a static selection table (WIP proposal, specification, development handoff, unknown) that marks each record selected or not with the rule and the assertion that decided it. Nothing is removed by it.
+- Selecting the projection binds `architecture_evidence_profile` into `corpus_analysis_id` and into nothing else. A default run is byte-identical in every identity, packet, payload and cache layer; the corpus index lists the two new files as not written (ADR-068).
+- `local-source` corpus summary: `archives`, `projects … reasoning-eligible`, `ocr required`, `encrypted`, `oversized` and `secrets skipped` printed `undefined` because the reporter read six coverage fields at paths the `l9.corpus-coverage/v2` document does not have (`corpus.*`, `documents.*`, `reasoning_handoff.*`). Fixed; the written documents were always correct.
+
 ### Observation eligibility separated from mutation protection (ADR-085)
 
 - The repository-model observation now walks with `InventoryConfig.purpose: "observe"`, a write-free walk that observes protected `SKILL.md` entrypoints instead of hiding them. They remain unwritable outside skills mode; secret-path, size and encoding refusals are unchanged.

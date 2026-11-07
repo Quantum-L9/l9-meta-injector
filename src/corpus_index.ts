@@ -201,6 +201,18 @@ const KNOWN_DOCUMENTS: { name: string; path: string; schema: string | null }[] =
     path: "document-work-signals.manifest.json",
     schema: "l9.document-work-signals-manifest/v1",
   },
+  // Opt-in (`--architecture-evidence`). Listed whether or not the run selected
+  // it, so a reader can tell "not asked for" from "written somewhere else".
+  {
+    name: "architecture_evidence",
+    path: "architecture-evidence.jsonl",
+    schema: "l9.architecture-evidence/v1",
+  },
+  {
+    name: "architecture_evidence_manifest",
+    path: "architecture-evidence.manifest.json",
+    schema: "l9.architecture-evidence-manifest/v1",
+  },
   { name: "semantic_relations", path: "semantic-relations.json", schema: "l9.semantic-relations/v1" },
   { name: "topic_candidates", path: "topic-candidates.json", schema: "l9.topic-candidates/v1" },
   { name: "project_candidates", path: "project-candidates.json", schema: "l9.project-candidates/v1" },
