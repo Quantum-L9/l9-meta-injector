@@ -80,6 +80,13 @@ export interface ArchitectureStatementReading {
     /** Diagnostics raised beyond the per-document bound, so the count is still stated. */
     diagnostics_omitted: number;
 }
+/**
+ * A heading's text normalized under this reader's heading grammar: quoted,
+ * lowercased, one section number and one parenthetical qualifier removed.
+ * Exported so a selection over the same blocks reads `## 1. Status` the way this
+ * reader reads `## 1. Constraints`; it says nothing about the vocabulary.
+ */
+export declare function architectureHeadingLabel(text: string): string;
 /** The class a heading names, or null when the heading is not in the vocabulary. */
 export declare function architectureHeadingClass(text: string): ArchitectureStatementClass | null;
 /** A labelled line whose label is in the vocabulary, with its class and value. */

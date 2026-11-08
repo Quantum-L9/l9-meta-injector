@@ -18,7 +18,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "git_blob_sha1": "d240503dbf78d620b1296cb4074c3cf03b2abdf6"
+      "git_blob_sha1": "d0952995daafe4e8f9c43538af767442b1e862cf"
     },
     {
       "path": "dist/apply.d.ts",
@@ -542,7 +542,7 @@
     },
     {
       "path": "docs/architecture.md",
-      "git_blob_sha1": "5cb71dad3babdf368490a143c87238ef238847e1"
+      "git_blob_sha1": "12f6d962b47e94fd97534175da97a7b0422d5191"
     },
     {
       "path": "docs/contracts.md",
@@ -558,7 +558,7 @@
     },
     {
       "path": "docs/decision_log.md",
-      "git_blob_sha1": "c8190da2f30a1cd3e6c6575e0ce9b59990f0447c"
+      "git_blob_sha1": "5bfb62a118fded48f07c8acfe56ce61c40e00891"
     },
     {
       "path": "docs/decisions/036-read-only-local-source-acquisition.md",
@@ -746,7 +746,7 @@
     },
     {
       "path": "README.md",
-      "git_blob_sha1": "7f00340740e139a557d69cd3201e6ddf9d4fcc88"
+      "git_blob_sha1": "631fe17f51a9dc39f4b2b93558218da16068d4da"
     },
     {
       "path": "Repo.mk",
@@ -922,7 +922,7 @@
     },
     {
       "path": "src/corpus_scan.ts",
-      "git_blob_sha1": "a7e69906413439f90af6667a1a65e3ac47b4811e"
+      "git_blob_sha1": "46310a39e8600733d10a744e2ff8866398b7373c"
     },
     {
       "path": "src/corpus_semantic_run.ts",

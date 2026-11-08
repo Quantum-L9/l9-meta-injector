@@ -136,7 +136,7 @@ not have (ADR-043).
     "handoff": []
   },
   "selection": {
-    "profile_id": "architecture-development/v1",
+    "profile_id": "architecture-development/v2",
     "roles": ["wip_proposal"],
     "role_evidence": [{"role": "wip_proposal", "predicate": "work.kind", "object": "proposal", "assertion_id": "assertion:…", "count": 1}, …],
     "selected": true,
@@ -168,20 +168,52 @@ payload verifier refuses a record that claims otherwise.
 
 ## The selection profile
 
-`architecture-development/v1` is a view over the records, not a filter and not a
-vocabulary. It reads what the document already declared about itself — `work.kind`,
-`work.status`, and whether it carries tasks, blockers or dependencies — assigns roles
-from a static table, and marks which classes a reader of that role is looking for.
+`architecture-development/v2` (policy 2.0.0, [ADR-090](decisions/090-document-role-selection-closure.md),
+Proposed) is a view over the records, not a filter and not a vocabulary. It reads what the
+document already declared about itself — `work.kind`, `work.status`, whether it carries
+tasks, blockers or dependencies, and (new in v2) the status a decision record declares and
+an `ADR-NNN` title — assigns roles from a static table, and marks which classes a reader of
+that role is looking for.
 
 | Role | Established by | Selects |
 |---|---|---|
-| `wip_proposal` | `work.kind` in `design`, `notes`, `plan`, `proposal`, `research`, `roadmap`; or `work.status` in `draft`, `planned`, `wip` | all five classes |
-| `specification` | `work.kind` in `decision`, `specification` | `constraint`, `decision_statement` |
+| `decision_record` | `work.kind` `decision`; a declared status `accepted`, `deprecated`, `proposed`, `rejected` or `superseded`; or an `ADR-NNN` title | `assumption`, `constraint`, `decision_statement` |
 | `development_handoff` | `work.kind` `checklist`; or any `work.task.open`, `work.task.completed`, `work.blocked_by`, `work.depends_on` | `constraint`, `open_question` |
+| `historical_record` | `work.status` in `archived`, `cancelled`, `superseded`; a declared status `deprecated`, `rejected`, `superseded`; or any `work.superseded_by` | `decision_statement`, `intent` |
+| `research` | `work.kind` `research` | `assumption`, `intent`, `open_question` |
+| `specification` | `work.kind` `specification` | `constraint`, `decision_statement` |
+| `wip_proposal` | `work.kind` in `design`, `notes`, `plan`, `proposal`, `roadmap`; `work.status` in `draft`, `planned`, `wip`; or a declared status `proposed` | all five classes |
 | `unknown` | none of the above | all five classes |
 
+**Declared statuses** (`document.declared_status`) are read by this selection from the
+document's blocks, from exactly two forms: the first paragraph or list item under a heading
+labelled `Status` (`## Status` then `Accepted.`, `**Proposed** (2026-11-08)`, `Superseded by
+ADR-012.`), and a `Status:` labelled line (`- **Status:** Accepted`) whose value is a
+decision-record status the work reader does not already read — `Status: superseded` is a
+`work.status` assertion and is never read twice. The first word decides, from the closed
+vocabulary `accepted`, `deprecated`, `proposed`, `rejected`, `superseded`; prose such as
+"the status is accepted" declares nothing. `document.decision_record_title` is read from a
+title opening `ADR-NNN`. Each declaration is listed on every record in
+`work_context.declarations` with a stable `declaration_id`, the `block_id` and the
+coordinate it was read at, and cited in `selection.role_evidence` with
+`source: "document_declaration"` (a work assertion is cited with
+`source: "work_assertion"`). A declaration is what the document says about itself: an
+"Accepted" record is not thereby an accepted decision.
+
+**Contradictions are kept and named.** Declared statuses fall in three families —
+`in_progress` (`draft`, `planned`, `proposed`, `wip`), `settled` (`accepted`, `active`,
+`complete`, `done`), `retired` (`archived`, `cancelled`, `deprecated`, `rejected`,
+`superseded`). `selection.status_families` lists the families a document declared;
+`selection.status_conflict` is true when it declared more than one. Both roles apply,
+every declaration stays on the record, and nothing resolves which one holds.
+
+The policy is versioned (`selection.policy_version`, the manifest's
+`selection_policy_version`) and hashed on its own (`selection_policy_hash`); the policy is
+part of the profile hash bound into `corpus_analysis_id` when the projection is selected.
+Selection changes no `evidence_id`, no source snapshot and no packet.
+
 Roles overlap and the selection is the union. `selection.reasons` names, for each
-selecting rule, the predicate, object and assertion id that established the role. An
+selecting rule, the predicate, object and assertion or declaration id that established the role. An
 unselected record has an empty reason list: no rule selected it, nothing judged it. An
 undeclared role selects everything, because not knowing what a document is for is no
 reason to hide what it said. `work_context.applicability` carries the document's

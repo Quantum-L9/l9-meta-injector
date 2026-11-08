@@ -36,6 +36,7 @@ import {
   ARCHITECTURE_EVIDENCE_MANIFEST_FILE,
   ARCHITECTURE_EVIDENCE_MANIFEST_SCHEMA,
   ARCHITECTURE_EVIDENCE_PAYLOAD_FILE,
+  ARCHITECTURE_DOCUMENT_ROLES,
   ARCHITECTURE_EVIDENCE_SCHEMA,
   verifyArchitectureEvidenceExport,
 } from "./corpus_architecture_evidence";
@@ -136,6 +137,16 @@ export interface EvidenceQueryInput {
   status?: string;
   /** Restrict to one source. */
   source?: EvidenceSource;
+  /**
+   * Only architecture-evidence records whose document holds this selection role
+   * (ADR-090). Other sources carry no role and are not returned.
+   */
+  role?: string;
+  /**
+   * Only architecture-evidence records the selection profile marked selected.
+   * Every other record stays in the generation; this narrows the answer only.
+   */
+  selectedOnly?: boolean;
   limit?: number;
   maxExcerptBytes?: number;
 }
@@ -212,6 +223,10 @@ export interface EvidenceQueryResponse {
     kind: string | null;
     status: string | null;
     source: EvidenceSource | null;
+    /** Present only when the caller asked for a role; a default query's echo is unchanged. */
+    role?: string;
+    /** Present only when the caller asked for selected records only. */
+    selected_only?: true;
     limit: number;
     max_excerpt_bytes: number;
   };
@@ -819,9 +834,13 @@ export function queryCorpusEvidence(input: EvidenceQueryInput): EvidenceQueryRes
     kind: emptyText(input.kind),
     status: emptyText(input.status),
     source: input.source ?? null,
+    ...(emptyText(input.role) !== null ? { role: emptyText(input.role) as string } : {}),
+    ...(input.selectedOnly === true ? { selected_only: true as const } : {}),
     limit: DEFAULT_QUERY_LIMIT,
     max_excerpt_bytes: DEFAULT_MAX_EXCERPT_BYTES,
   };
+  const roleFilter = query.role ?? null;
+  const selectedOnly = query.selected_only === true;
   const refuse = (
     outcome: QueryOutcome,
     code: string,
@@ -850,6 +869,13 @@ export function queryCorpusEvidence(input: EvidenceQueryInput): EvidenceQueryRes
         "unsupported",
         "query.unknown_statement_class",
         `'${query.statement_class}' is not a statement class; the vocabulary is ${ARCHITECTURE_STATEMENT_CLASSES.join(", ")}`,
+      );
+    }
+    if (roleFilter !== null && !(ARCHITECTURE_DOCUMENT_ROLES as readonly string[]).includes(roleFilter)) {
+      return refuse(
+        "unsupported",
+        "query.unknown_role",
+        `'${roleFilter}' is not a selection role; the roles are ${ARCHITECTURE_DOCUMENT_ROLES.join(", ")}`,
       );
     }
     if (query.source !== null && !(EVIDENCE_SOURCES as readonly string[]).includes(query.source)) {
@@ -900,6 +926,18 @@ export function queryCorpusEvidence(input: EvidenceQueryInput): EvidenceQueryRes
     );
   }
 
+  // A role or selection filter asks about the selection profile's view, which only
+  // a generation that read statements has.
+  if ((roleFilter !== null || selectedOnly) && loaded.architecture === null) {
+    return refuse(
+      "unsupported",
+      "query.architecture_evidence_not_run",
+      "the pinned generation was produced without --architecture-evidence, so selection roles cannot be queried from it",
+      generation,
+      loaded.sources,
+    );
+  }
+
   // Root filter resolves against the snapshot: a key or id the snapshot does not
   // know is a wrong question; a root the snapshot names as missing is a known
   // absence and gets an explicit unavailable outcome rather than zero results.
@@ -942,6 +980,8 @@ export function queryCorpusEvidence(input: EvidenceQueryInput): EvidenceQueryRes
     if (artifactId !== null && record.artifact_id !== artifactId) return false;
     if (query.predicate !== null && record.predicate !== query.predicate) return false;
     if (query.statement_class !== null && record.statement_class !== query.statement_class) return false;
+    if (roleFilter !== null && !(record.selection?.roles as readonly string[] | undefined)?.includes(roleFilter)) return false;
+    if (selectedOnly && record.selection?.selected !== true) return false;
     if (query.kind !== null && !record.document_declarations.kinds.some((ref) => ref.object === query.kind)) return false;
     if (query.status !== null && !record.document_declarations.statuses.some((ref) => ref.object === query.status)) return false;
     if (query.text !== null && !record.value.includes(query.text) && !record.bounded_excerpt.includes(query.text)) return false;

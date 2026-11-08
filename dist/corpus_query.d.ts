@@ -42,6 +42,16 @@ export interface EvidenceQueryInput {
     status?: string;
     /** Restrict to one source. */
     source?: EvidenceSource;
+    /**
+     * Only architecture-evidence records whose document holds this selection role
+     * (ADR-090). Other sources carry no role and are not returned.
+     */
+    role?: string;
+    /**
+     * Only architecture-evidence records the selection profile marked selected.
+     * Every other record stays in the generation; this narrows the answer only.
+     */
+    selectedOnly?: boolean;
     limit?: number;
     maxExcerptBytes?: number;
 }
@@ -120,6 +130,10 @@ export interface EvidenceQueryResponse {
         kind: string | null;
         status: string | null;
         source: EvidenceSource | null;
+        /** Present only when the caller asked for a role; a default query's echo is unchanged. */
+        role?: string;
+        /** Present only when the caller asked for selected records only. */
+        selected_only?: true;
         limit: number;
         max_excerpt_bytes: number;
     };

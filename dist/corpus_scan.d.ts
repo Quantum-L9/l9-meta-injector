@@ -106,7 +106,7 @@ export interface CorpusScanInput {
         maxTotalPackCharacters?: number;
     };
     /**
-     * Select the architecture-evidence projection (`architecture-development/v1`).
+     * Select the architecture-evidence projection (`architecture-development/v2`).
      *
      * Off by default. When on, every decoded document's blocks are read for the
      * explicit intent, constraint, assumption, open-question and decision

@@ -305,7 +305,7 @@ describe("the questions a developer asks of a design corpus", () => {
 
 // ───────────────────────── the selection profile ─────────────────────────
 
-describe("the architecture-development/v1 selection profile", () => {
+describe("the architecture-development selection profile", () => {
   it("selects by the document's own declared role and says which declaration decided it", async () => {
     const root = corpusRoot();
     const result = await scan(root);
@@ -379,7 +379,7 @@ describe("the architecture-development/v1 selection profile", () => {
     expect(untyped[0]?.selection.roles).toEqual(["unknown"]);
     expect(untyped[0]?.selection.selected).toBe(true);
     expect(untyped[0]?.selection.reasons[0]).toContain("unknown selects intent");
-    expect(untyped[0]?.work_context).toEqual({ kinds: [], statuses: [], applicability: [], handoff: [] });
+    expect(untyped[0]?.work_context).toEqual({ kinds: [], statuses: [], applicability: [], handoff: [], declarations: [] });
   });
 
   it("roles overlap, and the selected classes are their union", () => {

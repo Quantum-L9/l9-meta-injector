@@ -9,31 +9,55 @@ export declare const ARCHITECTURE_EVIDENCE_PAYLOAD_FILE = "architecture-evidence
 export declare const ARCHITECTURE_EVIDENCE_MANIFEST_FILE = "architecture-evidence.manifest.json";
 /** Identity of the whole projection: the reader plus the selection profile. */
 export declare const ARCHITECTURE_EVIDENCE_PROFILE_ID = "meta-injector-architecture-evidence";
-export declare const ARCHITECTURE_EVIDENCE_PROFILE_VERSION = "1.1.0";
+export declare const ARCHITECTURE_EVIDENCE_PROFILE_VERSION = "1.2.0";
 /** The one selection profile this release ships. A view over the records, not a vocabulary. */
-export declare const ARCHITECTURE_SELECTION_PROFILE_ID = "architecture-development/v1";
+export declare const ARCHITECTURE_SELECTION_PROFILE_ID = "architecture-development/v2";
+/** Moves whenever a role, a rule, a vocabulary or the declaration grammar changes. */
+export declare const ARCHITECTURE_SELECTION_POLICY_VERSION = "2.0.0";
 /** What every record is, epistemically. Stated on each one so no reader has to remember. */
 export declare const ARCHITECTURE_EVIDENCE_EPISTEMIC_CLASS = "source-declared";
 export declare const ARCHITECTURE_EVIDENCE_STATEMENT: string;
 /**
  * The roles the selection profile recognizes, each from explicit evidence only.
  *
- * `wip_proposal`        — a declared kind in the proposal family, or a declared
- *                         status that says the work is not finished.
- * `specification`       — a declared specification or decision kind.
+ * `decision_record`     — a declared `decision` kind, a decision-record status
+ *                         declaration (`## Status` → `Accepted.`, `Status: Proposed`),
+ *                         or a title that opens with an `ADR-NNN` identifier.
  * `development_handoff` — a declared checklist kind, or the document carries the
  *                         task, blocker or dependency declarations a handoff is
  *                         made of.
+ * `historical_record`   — a declared retired status (`archived`, `cancelled`,
+ *                         `superseded`, `deprecated`, `rejected`) or a declared
+ *                         successor (`work.superseded_by`).
+ * `research`            — a declared `research` kind.
+ * `specification`       — a declared `specification` kind.
+ * `wip_proposal`        — a declared kind in the proposal family, or a declared
+ *                         status that says the work is not finished (`proposed`
+ *                         included).
  * `unknown`             — none of the above was declared.
  *
- * Roles overlap: a `Type: plan` document with open tasks is both a proposal and a
- * handoff, and the classes it selects are the union.
+ * Roles overlap: a proposed ADR is a decision record and a WIP proposal; a
+ * superseded ADR is a decision record and a historical record. The classes it
+ * selects are the union of its roles'.
  */
-export declare const ARCHITECTURE_DOCUMENT_ROLES: readonly ["development_handoff", "specification", "unknown", "wip_proposal"];
+export declare const ARCHITECTURE_DOCUMENT_ROLES: readonly ["decision_record", "development_handoff", "historical_record", "research", "specification", "unknown", "wip_proposal"];
 export type ArchitectureDocumentRole = (typeof ARCHITECTURE_DOCUMENT_ROLES)[number];
 /**
+ * The status vocabulary a decision record declares about itself. Closed; read
+ * only from a `## Status` section's first item or a `Status:` label, never from
+ * prose. `superseded` read from a `Status:` label is already a `work.status`
+ * assertion and is not read twice.
+ */
+export declare const DECISION_RECORD_STATUSES: readonly ["accepted", "deprecated", "proposed", "rejected", "superseded"];
+/** Predicates of the declarations this selection reads from blocks itself. */
+export declare const DOCUMENT_DECLARATION_PREDICATES: readonly ["document.declared_status", "document.decision_record_title"];
+/** The selection policy, as the data its hash is taken over. */
+export declare function architectureSelectionPolicy(): Record<string, unknown>;
+/** Hash of the selection policy alone, reported in the manifest. */
+export declare function architectureSelectionPolicyHash(): string;
+/**
  * Hash of the rules this projection applies: the reader's grammar and vocabulary,
- * the selection table, and the record contract. Bound into the analysis identity
+ * the selection policy, and the record contract. Bound into the analysis identity
  * when the projection is selected, and nowhere when it is not.
  */
 export declare function architectureEvidenceProfileHash(): string;
@@ -49,11 +73,31 @@ export interface WorkEvidenceRef {
     object: string;
     assertion_id: string;
 }
-/** Why a role was assigned: one example per predicate that established it, with the count. */
+/**
+ * A status or type the document declared about itself, read by this selection
+ * from a block. `declaration_id` is stable across runs and output locations;
+ * `block_id` and `structured_locator` say where the declaration was made.
+ */
+export interface DocumentDeclarationRef {
+    predicate: string;
+    object: string;
+    declaration_id: string;
+    block_id: string;
+    structured_locator: Record<string, unknown>;
+}
+/**
+ * Why a role was assigned: one example per predicate that established it, with
+ * the count. `source` says whether the example is an existing work assertion
+ * (resolvable by `assertion_id` in the root's packet) or a declaration this
+ * selection read from a block (resolvable by `block_id` and `structured_locator`).
+ */
 export interface RoleEvidence extends WorkEvidenceRef {
     role: ArchitectureDocumentRole;
-    /** How many assertions of this predicate the document carries. */
+    /** How many assertions or declarations of this predicate and rule the document carries. */
     count: number;
+    source: "work_assertion" | "document_declaration";
+    block_id: string | null;
+    structured_locator: Record<string, unknown> | null;
 }
 /**
  * One architectural statement, as a downstream consumer receives it.
@@ -110,11 +154,21 @@ export interface ArchitectureEvidenceRecord {
             predicate: string;
             count: number;
         }[];
+        /** Statuses and types the document declared that this selection read from its blocks. */
+        declarations: DocumentDeclarationRef[];
     };
     selection: {
         profile_id: string;
+        policy_version: string;
         roles: ArchitectureDocumentRole[];
         role_evidence: RoleEvidence[];
+        /**
+         * The status families the document's declared statuses fall in. More than one
+         * of `in_progress`, `settled`, `retired` is a contradiction the document made;
+         * it is reported here and resolved nowhere.
+         */
+        status_families: string[];
+        status_conflict: boolean;
         selected: boolean;
         /** One sentence per rule that selected this record's class. Empty when none did. */
         reasons: string[];
@@ -139,6 +193,8 @@ export interface ArchitectureEvidenceManifest {
     extractor_id: string;
     extractor_version: string;
     selection_profile_id: string;
+    selection_policy_version: string;
+    selection_policy_hash: string;
     payload_file: string;
     record_count: number;
     selected_record_count: number;
@@ -209,6 +265,16 @@ export interface BuildArchitectureEvidenceInput {
     corpusAnalysisId: string;
     documents: readonly ArchitectureEvidenceDocumentInput[];
 }
+/**
+ * The statuses and types a document declares about itself in its blocks.
+ *
+ * Three explicit forms, nothing else: the first paragraph or list item under a
+ * heading labelled `Status` (`## Status` then `Accepted.`), whose first word is a
+ * decision-record status; a `Status:` labelled line whose value's first word is a
+ * decision-record status the work reader does not already read; and a title that
+ * opens with an `ADR-NNN` identifier. Code blocks are never read.
+ */
+export declare function readDocumentDeclarations(artifactId: string, blocks: readonly DocumentBlockView[]): DocumentDeclarationRef[];
 /** One record, canonically rendered onto a single line. */
 export declare function renderArchitectureEvidenceRecord(record: ArchitectureEvidenceRecord): string;
 /**

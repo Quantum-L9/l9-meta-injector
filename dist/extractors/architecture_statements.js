@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MAX_ARCHITECTURE_DIAGNOSTICS_PER_DOCUMENT = exports.MAX_STATEMENT_TEXT_LENGTH = exports.ARCHITECTURE_LABEL_VOCABULARY = exports.ARCHITECTURE_STATEMENT_CLASSES = exports.ARCHITECTURE_STATEMENT_EXTRACTOR_VERSION = exports.ARCHITECTURE_STATEMENT_EXTRACTOR_ID = void 0;
+exports.architectureHeadingLabel = architectureHeadingLabel;
 exports.architectureHeadingClass = architectureHeadingClass;
 exports.architectureLabelOf = architectureLabelOf;
 exports.readArchitectureStatements = readArchitectureStatements;
@@ -109,6 +110,16 @@ function headingLabel(text) {
     label = label.replace(HEADING_NUMBER_PREFIX, "");
     label = withoutTrailingColon(label.replace(HEADING_QUALIFIER_SUFFIX, ""));
     return label;
+}
+/**
+ * A heading's text normalized under this reader's heading grammar: quoted,
+ * lowercased, one section number and one parenthetical qualifier removed.
+ * Exported so a selection over the same blocks reads `## 1. Status` the way this
+ * reader reads `## 1. Constraints`; it says nothing about the vocabulary.
+ */
+function architectureHeadingLabel(text) {
+    const firstLine = unitsOf(text).find((line) => line.trim().length > 0);
+    return firstLine === undefined ? "" : headingLabel(firstLine);
 }
 /** The class a heading names, or null when the heading is not in the vocabulary. */
 function architectureHeadingClass(text) {

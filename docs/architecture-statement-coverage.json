@@ -2,7 +2,7 @@
   "schema": "l9.architecture-statement-coverage/v1",
   "extractor_id": "architecture-statements/v1",
   "extractor_version": "1.1.0",
-  "profile_version": "1.1.0",
+  "profile_version": "1.2.0",
   "statement": "Every case is run by tests/architecture_statement_coverage.test.ts through runCorpusScan with the projection selected, over a real file (a real .docx for the Word cases). expect is the complete observation for that file: every record the reader emitted and every coverage diagnostic it raised, in source order. Every line_span record is also checked against the file's own lines, and every docx record against its block's text. A supported case emits; an unsupported case is reported; an excluded case is deliberately not quoted. Nothing outside these cases is claimed.",
   "cases": [
     {

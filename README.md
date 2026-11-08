@@ -433,7 +433,7 @@ npm run local-source -- \
   text file has or the block a Word document has. Every record is **source-declared and
   never authority-verified** — a recorded decision is not an accepted one — and carries
   both artifact identities, the document's own `work.kind`/`work.status` declarations by
-  assertion id, and the `architecture-development/v1` selection verdict with the rule and
+  assertion id, and the `architecture-development/v2` selection verdict with the rule and
   evidence that decided it. Complete, hashed and manifest-bound like the work signals;
   selecting it moves `corpus_analysis_id` and nothing else. See
   [`docs/architecture-evidence.md`](docs/architecture-evidence.md) (ADR-087, Proposed).

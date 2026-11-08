@@ -1,7 +1,10 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ARCHITECTURE_DOCUMENT_ROLES = exports.ARCHITECTURE_EVIDENCE_STATEMENT = exports.ARCHITECTURE_EVIDENCE_EPISTEMIC_CLASS = exports.ARCHITECTURE_SELECTION_PROFILE_ID = exports.ARCHITECTURE_EVIDENCE_PROFILE_VERSION = exports.ARCHITECTURE_EVIDENCE_PROFILE_ID = exports.ARCHITECTURE_EVIDENCE_MANIFEST_FILE = exports.ARCHITECTURE_EVIDENCE_PAYLOAD_FILE = exports.ARCHITECTURE_EVIDENCE_MANIFEST_SCHEMA = exports.ARCHITECTURE_EVIDENCE_SCHEMA = void 0;
+exports.DOCUMENT_DECLARATION_PREDICATES = exports.DECISION_RECORD_STATUSES = exports.ARCHITECTURE_DOCUMENT_ROLES = exports.ARCHITECTURE_EVIDENCE_STATEMENT = exports.ARCHITECTURE_EVIDENCE_EPISTEMIC_CLASS = exports.ARCHITECTURE_SELECTION_POLICY_VERSION = exports.ARCHITECTURE_SELECTION_PROFILE_ID = exports.ARCHITECTURE_EVIDENCE_PROFILE_VERSION = exports.ARCHITECTURE_EVIDENCE_PROFILE_ID = exports.ARCHITECTURE_EVIDENCE_MANIFEST_FILE = exports.ARCHITECTURE_EVIDENCE_PAYLOAD_FILE = exports.ARCHITECTURE_EVIDENCE_MANIFEST_SCHEMA = exports.ARCHITECTURE_EVIDENCE_SCHEMA = void 0;
+exports.architectureSelectionPolicy = architectureSelectionPolicy;
+exports.architectureSelectionPolicyHash = architectureSelectionPolicyHash;
 exports.architectureEvidenceProfileHash = architectureEvidenceProfileHash;
+exports.readDocumentDeclarations = readDocumentDeclarations;
 exports.renderArchitectureEvidenceRecord = renderArchitectureEvidenceRecord;
 exports.buildArchitectureEvidenceExport = buildArchitectureEvidenceExport;
 exports.architectureEvidenceRef = architectureEvidenceRef;
@@ -40,8 +43,18 @@ exports.verifyArchitectureEvidenceExport = verifyArchitectureEvidenceExport;
 // selected or not — with the rule and the evidence that decided it. A document
 // whose role is undeclared has every class selected, because an unknown role is
 // not a reason to hide what the document said.
+//
+// Selection policy v2 (ADR-090) adds the roles a design corpus actually holds —
+// decision records, research, and historical material — and reads the one
+// declaration that establishes most of them and that no reader recognized: the
+// status a decision record declares about itself (`## Status` / `Accepted.`,
+// `Status: Proposed`) and an `ADR-NNN` title. These are read from the same
+// blocks, under a closed vocabulary, and cited by block and coordinate. They are
+// declarations, not verified authority: an "Accepted" record is a document saying
+// it was accepted.
 const corpus_analysis_1 = require("./corpus_analysis");
 const architecture_statements_1 = require("./extractors/architecture_statements");
+const work_intelligence_1 = require("./extractors/work_intelligence");
 const ordering_1 = require("./ordering");
 const repository_model_1 = require("./repository_model");
 /** Schema of the complete payload. One record per line. */
@@ -56,9 +69,14 @@ exports.ARCHITECTURE_EVIDENCE_PROFILE_ID = "meta-injector-architecture-evidence"
 // 1.1.0: reader 1.1.0 (numbered/qualified/setext headings, continuation lines,
 // YAML frontmatter scalars); records carry `continuation_block_ids` and a
 // locator that ends on the statement's last line.
-exports.ARCHITECTURE_EVIDENCE_PROFILE_VERSION = "1.1.0";
+// 1.2.0: selection policy v2 (ADR-090): decision-record, research and historical
+// roles; block-read status declarations; status-family conflicts; the policy is
+// versioned and hashed on its own and bound into the profile hash.
+exports.ARCHITECTURE_EVIDENCE_PROFILE_VERSION = "1.2.0";
 /** The one selection profile this release ships. A view over the records, not a vocabulary. */
-exports.ARCHITECTURE_SELECTION_PROFILE_ID = "architecture-development/v1";
+exports.ARCHITECTURE_SELECTION_PROFILE_ID = "architecture-development/v2";
+/** Moves whenever a role, a rule, a vocabulary or the declaration grammar changes. */
+exports.ARCHITECTURE_SELECTION_POLICY_VERSION = "2.0.0";
 /** What every record is, epistemically. Stated on each one so no reader has to remember. */
 exports.ARCHITECTURE_EVIDENCE_EPISTEMIC_CLASS = "source-declared";
 exports.ARCHITECTURE_EVIDENCE_STATEMENT = "Every record is a statement a document explicitly declared about itself, read from a "
@@ -70,25 +88,53 @@ exports.ARCHITECTURE_EVIDENCE_STATEMENT = "Every record is a statement a documen
 /**
  * The roles the selection profile recognizes, each from explicit evidence only.
  *
- * `wip_proposal`        — a declared kind in the proposal family, or a declared
- *                         status that says the work is not finished.
- * `specification`       — a declared specification or decision kind.
+ * `decision_record`     — a declared `decision` kind, a decision-record status
+ *                         declaration (`## Status` → `Accepted.`, `Status: Proposed`),
+ *                         or a title that opens with an `ADR-NNN` identifier.
  * `development_handoff` — a declared checklist kind, or the document carries the
  *                         task, blocker or dependency declarations a handoff is
  *                         made of.
+ * `historical_record`   — a declared retired status (`archived`, `cancelled`,
+ *                         `superseded`, `deprecated`, `rejected`) or a declared
+ *                         successor (`work.superseded_by`).
+ * `research`            — a declared `research` kind.
+ * `specification`       — a declared `specification` kind.
+ * `wip_proposal`        — a declared kind in the proposal family, or a declared
+ *                         status that says the work is not finished (`proposed`
+ *                         included).
  * `unknown`             — none of the above was declared.
  *
- * Roles overlap: a `Type: plan` document with open tasks is both a proposal and a
- * handoff, and the classes it selects are the union.
+ * Roles overlap: a proposed ADR is a decision record and a WIP proposal; a
+ * superseded ADR is a decision record and a historical record. The classes it
+ * selects are the union of its roles'.
  */
 exports.ARCHITECTURE_DOCUMENT_ROLES = [
+    "decision_record",
     "development_handoff",
+    "historical_record",
+    "research",
     "specification",
     "unknown",
     "wip_proposal",
 ];
 /**
- * The selection table. Static, closed, and part of the profile hash.
+ * The status vocabulary a decision record declares about itself. Closed; read
+ * only from a `## Status` section's first item or a `Status:` label, never from
+ * prose. `superseded` read from a `Status:` label is already a `work.status`
+ * assertion and is not read twice.
+ */
+exports.DECISION_RECORD_STATUSES = ["accepted", "deprecated", "proposed", "rejected", "superseded"];
+/** Predicates of the declarations this selection reads from blocks itself. */
+exports.DOCUMENT_DECLARATION_PREDICATES = ["document.declared_status", "document.decision_record_title"];
+/** Work statuses the work vocabulary already reads, so a `Status:` label holding one is not read again. */
+const WORK_READER_STATUSES = [
+    "active", "archived", "blocked", "cancelled", "complete", "done",
+    "draft", "paused", "planned", "superseded", "wip",
+];
+/** A title that opens with an architecture-decision-record identifier. */
+const DECISION_RECORD_TITLE = /^adr[-\s]?\d{1,5}\b/;
+/**
+ * The selection table. Static, closed, and part of the policy hash.
  *
  * Deliberately not a weighting: a class is selected for a role or it is not,
  * and the reason a record carries names the rule and the evidence. A document
@@ -96,27 +142,70 @@ exports.ARCHITECTURE_DOCUMENT_ROLES = [
  */
 const ROLE_RULES = [
     {
-        role: "wip_proposal",
-        kinds: ["design", "notes", "plan", "proposal", "research", "roadmap"],
-        statuses: ["draft", "planned", "wip"],
-        predicates: [],
-        classes: ["assumption", "constraint", "decision_statement", "intent", "open_question"],
-    },
-    {
-        role: "specification",
-        kinds: ["decision", "specification"],
+        role: "decision_record",
+        kinds: ["decision"],
         statuses: [],
+        declaredStatuses: ["accepted", "deprecated", "proposed", "rejected", "superseded"],
+        decisionRecordTitle: true,
         predicates: [],
-        classes: ["constraint", "decision_statement"],
+        classes: ["assumption", "constraint", "decision_statement"],
     },
     {
         role: "development_handoff",
         kinds: ["checklist"],
         statuses: [],
+        declaredStatuses: [],
+        decisionRecordTitle: false,
         predicates: ["work.blocked_by", "work.depends_on", "work.task.completed", "work.task.open"],
         classes: ["constraint", "open_question"],
     },
+    {
+        role: "historical_record",
+        kinds: [],
+        statuses: ["archived", "cancelled", "superseded"],
+        declaredStatuses: ["deprecated", "rejected", "superseded"],
+        decisionRecordTitle: false,
+        predicates: ["work.superseded_by"],
+        classes: ["decision_statement", "intent"],
+    },
+    {
+        role: "research",
+        kinds: ["research"],
+        statuses: [],
+        declaredStatuses: [],
+        decisionRecordTitle: false,
+        predicates: [],
+        classes: ["assumption", "intent", "open_question"],
+    },
+    {
+        role: "specification",
+        kinds: ["specification"],
+        statuses: [],
+        declaredStatuses: [],
+        decisionRecordTitle: false,
+        predicates: [],
+        classes: ["constraint", "decision_statement"],
+    },
+    {
+        role: "wip_proposal",
+        kinds: ["design", "notes", "plan", "proposal", "roadmap"],
+        statuses: ["draft", "planned", "wip"],
+        declaredStatuses: ["proposed"],
+        decisionRecordTitle: false,
+        predicates: [],
+        classes: ["assumption", "constraint", "decision_statement", "intent", "open_question"],
+    },
 ];
+/**
+ * Which family a declared status belongs to. A document declaring statuses from
+ * two families (a `wip` plan that also says `Accepted`) contradicts itself; both
+ * declarations are kept, both roles apply, and the record says so.
+ */
+const STATUS_FAMILIES = {
+    in_progress: ["draft", "planned", "proposed", "wip"],
+    retired: ["archived", "cancelled", "deprecated", "rejected", "superseded"],
+    settled: ["accepted", "active", "complete", "done"],
+};
 /** Existing work predicates a handoff is made of, counted on every record's document. */
 const HANDOFF_PREDICATES = [
     "work.blocked_by",
@@ -131,9 +220,43 @@ const APPLICABILITY_PREDICATES = [
     "work.superseded_by",
     "work.supersedes",
 ];
+/** The selection policy, as the data its hash is taken over. */
+function architectureSelectionPolicy() {
+    return {
+        profile_id: exports.ARCHITECTURE_SELECTION_PROFILE_ID,
+        policy_version: exports.ARCHITECTURE_SELECTION_POLICY_VERSION,
+        roles: ROLE_RULES.map((rule) => ({
+            role: rule.role,
+            kinds: [...rule.kinds],
+            statuses: [...rule.statuses],
+            declared_statuses: [...rule.declaredStatuses],
+            decision_record_title: rule.decisionRecordTitle,
+            predicates: [...rule.predicates],
+            classes: [...rule.classes],
+        })),
+        unknown_role_selects: [...architecture_statements_1.ARCHITECTURE_STATEMENT_CLASSES],
+        declarations: {
+            predicates: [...exports.DOCUMENT_DECLARATION_PREDICATES],
+            decision_record_statuses: [...exports.DECISION_RECORD_STATUSES],
+            status_section_label: "status",
+            status_section_reads: "first_word_of_first_paragraph_or_list_item",
+            status_label_excludes_work_vocabulary: [...WORK_READER_STATUSES],
+            decision_record_title: DECISION_RECORD_TITLE.source,
+        },
+        status_families: Object.keys(STATUS_FAMILIES)
+            .sort(ordering_1.compareCodePoints)
+            .map((family) => [family, [...(STATUS_FAMILIES[family] ?? [])]]),
+        handoff_predicates: [...HANDOFF_PREDICATES],
+        applicability_predicates: [...APPLICABILITY_PREDICATES],
+    };
+}
+/** Hash of the selection policy alone, reported in the manifest. */
+function architectureSelectionPolicyHash() {
+    return (0, repository_model_1.semanticHash)(architectureSelectionPolicy());
+}
 /**
  * Hash of the rules this projection applies: the reader's grammar and vocabulary,
- * the selection table, and the record contract. Bound into the analysis identity
+ * the selection policy, and the record contract. Bound into the analysis identity
  * when the projection is selected, and nowhere when it is not.
  */
 function architectureEvidenceProfileHash() {
@@ -142,19 +265,8 @@ function architectureEvidenceProfileHash() {
         version: exports.ARCHITECTURE_EVIDENCE_PROFILE_VERSION,
         schema: exports.ARCHITECTURE_EVIDENCE_SCHEMA,
         reader: (0, architecture_statements_1.architectureStatementRules)(),
-        selection: {
-            profile_id: exports.ARCHITECTURE_SELECTION_PROFILE_ID,
-            roles: ROLE_RULES.map((rule) => ({
-                role: rule.role,
-                kinds: [...rule.kinds],
-                statuses: [...rule.statuses],
-                predicates: [...rule.predicates],
-                classes: [...rule.classes],
-            })),
-            unknown_role_selects: [...architecture_statements_1.ARCHITECTURE_STATEMENT_CLASSES],
-            handoff_predicates: [...HANDOFF_PREDICATES],
-            applicability_predicates: [...APPLICABILITY_PREDICATES],
-        },
+        selection: architectureSelectionPolicy(),
+        selection_policy_hash: architectureSelectionPolicyHash(),
         epistemic_class: exports.ARCHITECTURE_EVIDENCE_EPISTEMIC_CLASS,
         ordering: "code-point",
     });
@@ -184,45 +296,133 @@ function refsFor(assertions, predicate) {
     }))
         .sort(compareRefs);
 }
-/** The lowest-ordered ref for a predicate, as the one example a role cites. */
-function exampleRef(assertions, predicate) {
-    return refsFor(assertions, predicate)[0];
+/** The first word of a unit, lowercased, leading markup and punctuation skipped. */
+function firstWord(unit) {
+    const match = /^[^a-z]*([a-z]+)/.exec((0, work_intelligence_1.documentText)(unit).toLowerCase());
+    return match === null ? null : match[1];
+}
+/**
+ * The statuses and types a document declares about itself in its blocks.
+ *
+ * Three explicit forms, nothing else: the first paragraph or list item under a
+ * heading labelled `Status` (`## Status` then `Accepted.`), whose first word is a
+ * decision-record status; a `Status:` labelled line whose value's first word is a
+ * decision-record status the work reader does not already read; and a title that
+ * opens with an `ADR-NNN` identifier. Code blocks are never read.
+ */
+function readDocumentDeclarations(artifactId, blocks) {
+    const out = [];
+    const declare = (predicate, object, block, unitIndex) => {
+        out.push({
+            predicate,
+            object,
+            declaration_id: (0, repository_model_1.stableId)("architecture_declaration", {
+                artifact_id: artifactId,
+                block_id: block.block_id,
+                object,
+                predicate,
+                unit_index: unitIndex,
+            }),
+            block_id: block.block_id,
+            structured_locator: (0, architecture_statements_1.architectureStatementLocator)(block, unitIndex),
+        });
+    };
+    const statuses = new Set(exports.DECISION_RECORD_STATUSES);
+    let statusSectionOpen = false;
+    for (const block of blocks) {
+        if (block.kind === "title" || block.kind === "heading") {
+            statusSectionOpen = (0, architecture_statements_1.architectureHeadingLabel)(block.text) === "status";
+            if (block.kind === "title" && DECISION_RECORD_TITLE.test((0, work_intelligence_1.documentText)(block.text).toLowerCase())) {
+                declare("document.decision_record_title", "adr", block, null);
+            }
+            continue;
+        }
+        if (block.kind === "code") {
+            statusSectionOpen = false;
+            continue;
+        }
+        if (block.kind !== "paragraph" && block.kind !== "list_item")
+            continue;
+        const units = block.text.split(/\r\n|\r|\n/);
+        if (statusSectionOpen) {
+            statusSectionOpen = false;
+            const index = units.findIndex((unit) => unit.trim().length > 0);
+            const word = index < 0 ? null : firstWord(units[index]);
+            if (word !== null && statuses.has(word) && (0, work_intelligence_1.readLabelledLine)(units[index]) === null) {
+                declare("document.declared_status", word, block, index);
+                continue;
+            }
+        }
+        for (const [index, unit] of units.entries()) {
+            const labelled = (0, work_intelligence_1.readLabelledLine)(unit);
+            if (labelled === null || labelled.label !== "status")
+                continue;
+            const word = firstWord(labelled.value);
+            if (word !== null && statuses.has(word) && !WORK_READER_STATUSES.includes(word)) {
+                declare("document.declared_status", word, block, index);
+            }
+        }
+    }
+    return out.sort((a, b) => (0, ordering_1.compareCodePoints)(a.predicate, b.predicate)
+        || (0, ordering_1.compareCodePoints)(a.object, b.object)
+        || (0, ordering_1.compareCodePoints)(a.declaration_id, b.declaration_id));
+}
+/** A declaration in the shape a role cites. */
+function declarationAsRef(declaration) {
+    return { predicate: declaration.predicate, object: declaration.object, assertion_id: declaration.declaration_id };
 }
 /**
  * Decide the document's roles from its own declarations, and which classes they select.
  *
- * Every role is established by a named assertion, and every selected class by a
- * named rule. The sentences are generated from the table rather than written
- * per document, so a reader can check a reason against the table and find the
- * row.
+ * Every role is established by a named assertion or a cited declaration, and
+ * every selected class by a named rule. The sentences are generated from the
+ * table rather than written per document, so a reader can check a reason
+ * against the table and find the row.
  */
-function selectForDocument(assertions) {
+function selectForDocument(assertions, declarations) {
     const roles = [];
     const roleEvidence = [];
     const reasonsByClass = new Map();
     const kinds = refsFor(assertions, "work.kind");
     const statuses = refsFor(assertions, "work.status");
+    const declaredStatuses = declarations.filter((item) => item.predicate === "document.declared_status");
+    const titles = declarations.filter((item) => item.predicate === "document.decision_record_title");
+    const fromWork = (role, matched) => ({
+        role,
+        ...matched[0],
+        count: matched.length,
+        source: "work_assertion",
+        block_id: null,
+        structured_locator: null,
+    });
+    const fromDeclaration = (role, matched) => {
+        const first = matched[0];
+        return {
+            role,
+            ...declarationAsRef(first),
+            count: matched.length,
+            source: "document_declaration",
+            block_id: first.block_id,
+            structured_locator: first.structured_locator,
+        };
+    };
     for (const rule of ROLE_RULES) {
         const evidence = [];
         const matchedKinds = kinds.filter((ref) => rule.kinds.includes(ref.object));
         const matchedStatuses = statuses.filter((ref) => rule.statuses.includes(ref.object));
-        if (matchedKinds.length > 0) {
-            const first = matchedKinds[0];
-            evidence.push({ role: rule.role, ...first, count: matchedKinds.length });
-        }
-        if (matchedStatuses.length > 0) {
-            const first = matchedStatuses[0];
-            evidence.push({ role: rule.role, ...first, count: matchedStatuses.length });
-        }
+        const matchedDeclared = declaredStatuses.filter((item) => rule.declaredStatuses.includes(item.object));
+        if (matchedKinds.length > 0)
+            evidence.push(fromWork(rule.role, matchedKinds));
+        if (matchedStatuses.length > 0)
+            evidence.push(fromWork(rule.role, matchedStatuses));
+        if (matchedDeclared.length > 0)
+            evidence.push(fromDeclaration(rule.role, matchedDeclared));
+        if (rule.decisionRecordTitle && titles.length > 0)
+            evidence.push(fromDeclaration(rule.role, titles));
         for (const predicate of rule.predicates) {
-            const example = exampleRef(assertions, predicate);
-            if (example === undefined)
-                continue;
-            evidence.push({
-                role: rule.role,
-                ...example,
-                count: assertions.filter((assertion) => assertion.predicate === predicate).length,
-            });
+            const matched = refsFor(assertions, predicate);
+            if (matched.length > 0)
+                evidence.push(fromWork(rule.role, matched));
         }
         if (evidence.length === 0)
             continue;
@@ -241,13 +441,20 @@ function selectForDocument(assertions) {
         roles.push("unknown");
         for (const statementClass of architecture_statements_1.ARCHITECTURE_STATEMENT_CLASSES) {
             reasonsByClass.set(statementClass, [
-                `unknown selects ${statementClass}: the document declares no work.kind, work.status or handoff evidence, so every observed class is retained`,
+                `unknown selects ${statementClass}: the document declares no role-establishing kind, status, decision-record declaration or handoff evidence, so every observed class is retained`,
             ]);
         }
     }
+    const declaredValues = [...statuses.map((ref) => ref.object), ...declaredStatuses.map((item) => item.object)];
+    const statusFamilies = Object.keys(STATUS_FAMILIES)
+        .filter((family) => (STATUS_FAMILIES[family] ?? []).some((value) => declaredValues.includes(value)))
+        .sort(ordering_1.compareCodePoints);
     roles.sort(ordering_1.compareCodePoints);
     roleEvidence.sort((a, b) => (0, ordering_1.compareCodePoints)(a.role, b.role) || compareRefs(a, b));
-    return { roles, roleEvidence, reasonsByClass };
+    // Each reason list follows the role order, so the sentences read in a fixed order.
+    for (const [statementClass, reasons] of reasonsByClass)
+        reasonsByClass.set(statementClass, [...reasons].sort(ordering_1.compareCodePoints));
+    return { roles, roleEvidence, statusFamilies, reasonsByClass };
 }
 /** One record, canonically rendered onto a single line. */
 function renderArchitectureEvidenceRecord(record) {
@@ -323,7 +530,8 @@ function buildArchitectureEvidenceExport(input) {
         diagnosticsOmitted += reading.diagnostics_omitted;
         if (reading.statements.length === 0)
             continue;
-        const selection = selectForDocument(document.workAssertions);
+        const declarations = readDocumentDeclarations(document.artifactId, document.blocks);
+        const selection = selectForDocument(document.workAssertions, declarations);
         const workContext = {
             kinds: refsFor(document.workAssertions, "work.kind"),
             statuses: refsFor(document.workAssertions, "work.status"),
@@ -334,6 +542,7 @@ function buildArchitectureEvidenceExport(input) {
                 count: document.workAssertions.filter((assertion) => assertion.predicate === predicate).length,
             }))
                 .filter((entry) => entry.count > 0),
+            declarations: declarations.map((item) => ({ ...item })),
         };
         for (const statement of reading.statements) {
             const reasons = selection.reasonsByClass.get(statement.statement_class) ?? [];
@@ -369,8 +578,11 @@ function buildArchitectureEvidenceExport(input) {
                 work_context: workContext,
                 selection: {
                     profile_id: exports.ARCHITECTURE_SELECTION_PROFILE_ID,
+                    policy_version: exports.ARCHITECTURE_SELECTION_POLICY_VERSION,
                     roles: [...selection.roles],
                     role_evidence: selection.roleEvidence.map((item) => ({ ...item })),
+                    status_families: [...selection.statusFamilies],
+                    status_conflict: selection.statusFamilies.length > 1,
                     selected: reasons.length > 0,
                     reasons: [...reasons],
                 },
@@ -403,6 +615,8 @@ function buildArchitectureEvidenceExport(input) {
         extractor_id: architecture_statements_1.ARCHITECTURE_STATEMENT_EXTRACTOR_ID,
         extractor_version: architecture_statements_1.ARCHITECTURE_STATEMENT_EXTRACTOR_VERSION,
         selection_profile_id: exports.ARCHITECTURE_SELECTION_PROFILE_ID,
+        selection_policy_version: exports.ARCHITECTURE_SELECTION_POLICY_VERSION,
+        selection_policy_hash: architectureSelectionPolicyHash(),
         payload_file: exports.ARCHITECTURE_EVIDENCE_PAYLOAD_FILE,
         record_count: records.length,
         selected_record_count: records.filter((record) => record.selection.selected).length,
@@ -520,6 +734,16 @@ function verifyArchitectureEvidenceExport(input) {
         }
         if (record.epistemic_class !== exports.ARCHITECTURE_EVIDENCE_EPISTEMIC_CLASS || record.authority_verified !== false) {
             problems.push(`record ${record.evidence_id} is not classed ${exports.ARCHITECTURE_EVIDENCE_EPISTEMIC_CLASS} with authority_verified false`);
+        }
+        const selection = record.selection;
+        if (selection !== undefined && selection.selected !== (selection.reasons?.length ?? 0) > 0) {
+            problems.push(`record ${record.evidence_id} is marked selected=${String(selection.selected)} with ${selection.reasons?.length ?? 0} reason(s)`);
+        }
+        if (selection !== undefined
+            && selection.selected
+            && !selection.roles?.includes("unknown")
+            && (selection.role_evidence?.length ?? 0) === 0) {
+            problems.push(`record ${record.evidence_id} is selected by a declared role with no role evidence`);
         }
         if (!architecture_statements_1.ARCHITECTURE_STATEMENT_CLASSES.includes(record.statement_class)) {
             problems.push(`record ${record.evidence_id} carries statement_class '${String(record.statement_class)}', which is not in the vocabulary`);
