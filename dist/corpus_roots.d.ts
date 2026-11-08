@@ -142,6 +142,12 @@ export interface CorpusAnalysisProfiles {
      * concluded, and stays put when it is not, because nothing else changed.
      */
     architecture_evidence_profile?: string;
+    /**
+     * Present only when the opt-in field-selection view was asked for: the policy,
+     * the run intent and the budget it selected under. Absent otherwise, for the
+     * reason `architecture_evidence_profile` is.
+     */
+    field_selection_profile?: string;
 }
 /**
  * Identity of what was *concluded* about the corpus.

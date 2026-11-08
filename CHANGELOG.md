@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Adaptive field selection for local-source (ADR-091, Proposed)
+
+- `--field-selection <intent>` (with `--architecture-evidence`): `field-selection.jsonl` + manifest (`l9.local-source-field-selection/v1`) — per document, which existing evidence fields the run intent (`architecture_review`, `design_exploration`, `development_handoff`, `history_audit`) surfaces, with role promotions from the document's source-declared roles, availability, redundancy (repeated values; non-representative exact duplicates) and a per-document budget (`--field-selection-max-fields|-values|-chars`). Every field carries a disposition and reasons; every selected value cites an existing record id.
+- Carrier `external_generation` (in-repository carriers recorded as refused); published in the same atomic generation and verified first. Policy + intent + budget bind into `corpus_analysis_id` only when selected; every payload, id and the source snapshot are unchanged, and a run without the flag writes exactly what it did before.
+
 ### Document-role selection closure (ADR-090, Proposed)
 
 - Selection `architecture-development/v2` (policy 2.0.0) adds the `decision_record`, `research` and `historical_record` roles and reads the declarations that establish them from the document's own blocks: `document.declared_status` (`## Status` → `Accepted.`, `- **Status:** Proposed`; closed vocabulary `accepted`/`deprecated`/`proposed`/`rejected`/`superseded`, never a value the work reader already reads) and `document.decision_record_title` (`ADR-NNN` titles). Each declaration is cited by `declaration_id`, block and coordinate in `work_context.declarations` and in role evidence (`source: document_declaration`).

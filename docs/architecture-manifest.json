@@ -18,7 +18,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "git_blob_sha1": "d0952995daafe4e8f9c43538af767442b1e862cf"
+      "git_blob_sha1": "96bd7ce51448c93a5934b48b698d4faee3f3f64a"
     },
     {
       "path": "dist/apply.d.ts",
@@ -214,27 +214,27 @@
     },
     {
       "path": "dist/corpus_roots.d.ts",
-      "git_blob_sha1": "85cda82ec08018064aaf731683e17d7e1f483fe4"
+      "git_blob_sha1": "2643c75b4c8c3520e3400e6e0a593856c8d8140a"
     },
     {
       "path": "dist/corpus_roots.js",
-      "git_blob_sha1": "94a783a5be4f1139fea3a6bc12eef94b192d3223"
+      "git_blob_sha1": "068e643392b556d1df9164878dd7d5b0f8ae5f4d"
     },
     {
       "path": "dist/corpus_roots.js.map",
-      "git_blob_sha1": "38aa8e466618c7e910b6f88477260aac2d8d7ec1"
+      "git_blob_sha1": "272bde5719f64d890bf42c53f6f4085fb8af2460"
     },
     {
       "path": "dist/corpus_scan.d.ts",
-      "git_blob_sha1": "2b681e71551ef6fa6bf9384c00e02317e03594b3"
+      "git_blob_sha1": "3d9118cbcfc25cb6240ac18b4199e3a42cb7c9a3"
     },
     {
       "path": "dist/corpus_scan.js",
-      "git_blob_sha1": "ca7e7dc9e6487d8de60067c632d849f5ad46cf8a"
+      "git_blob_sha1": "3da0678b1c3694407970b4908ff5628197665dc6"
     },
     {
       "path": "dist/corpus_scan.js.map",
-      "git_blob_sha1": "3d765d2a505ea596d44f2050b76d75fa31c9ce7c"
+      "git_blob_sha1": "40c2d6f7ce694e362226f6f782f7a35879214bba"
     },
     {
       "path": "dist/corpus_semantic_run.d.ts",
@@ -274,7 +274,7 @@
     },
     {
       "path": "dist/corpus_snapshot.d.ts",
-      "git_blob_sha1": "e716f9768a703bf43bbc1c17cd68fb9e263a2ff4"
+      "git_blob_sha1": "457cdccd7e75e403e741d506263433eab222fa07"
     },
     {
       "path": "dist/corpus_snapshot.js",
@@ -282,7 +282,7 @@
     },
     {
       "path": "dist/corpus_snapshot.js.map",
-      "git_blob_sha1": "c9c5bacf11c9e1eca3a73f4a91fd09a621d47e8e"
+      "git_blob_sha1": "1ad8aab5b29c058321be9bc0dde78a89f0a6b92f"
     },
     {
       "path": "dist/discovery_contracts.d.ts",
@@ -558,7 +558,7 @@
     },
     {
       "path": "docs/decision_log.md",
-      "git_blob_sha1": "5bfb62a118fded48f07c8acfe56ce61c40e00891"
+      "git_blob_sha1": "fbdd7c213afb8986a5ffe62b13b3088a54560c3c"
     },
     {
       "path": "docs/decisions/036-read-only-local-source-acquisition.md",
@@ -746,7 +746,7 @@
     },
     {
       "path": "README.md",
-      "git_blob_sha1": "631fe17f51a9dc39f4b2b93558218da16068d4da"
+      "git_blob_sha1": "ec86b9ada14d68c44c8dbf0158e3466b36403f5c"
     },
     {
       "path": "Repo.mk",
@@ -822,7 +822,7 @@
     },
     {
       "path": "scripts/local-source-cli.js",
-      "git_blob_sha1": "769d146ac0faaacb20a30091b37a69ee1bc36dfa"
+      "git_blob_sha1": "7ea33d62aa18fabac1248f82f54ed5caa5db5893"
     },
     {
       "path": "scripts/qualify-tracked-snapshot.js",
@@ -918,11 +918,11 @@
     },
     {
       "path": "src/corpus_roots.ts",
-      "git_blob_sha1": "8e1d9635fffc5b1011f5eb1037ac0a522e271ed6"
+      "git_blob_sha1": "627b6436f9e8a7b19418ee470a3a7313a1ed25f4"
     },
     {
       "path": "src/corpus_scan.ts",
-      "git_blob_sha1": "46310a39e8600733d10a744e2ff8866398b7373c"
+      "git_blob_sha1": "324e22c7dc6f1d8897412d94e4be2e010e8666d3"
     },
     {
       "path": "src/corpus_semantic_run.ts",
@@ -938,7 +938,7 @@
     },
     {
       "path": "src/corpus_snapshot.ts",
-      "git_blob_sha1": "f8c18eee7544e0e6adbd33a554f57301dbf00f7e"
+      "git_blob_sha1": "e05cb1f20349e29846cdde995cd43082d141245a"
     },
     {
       "path": "src/discovery_contracts.ts",

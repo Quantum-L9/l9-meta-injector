@@ -437,6 +437,12 @@ npm run local-source -- \
   evidence that decided it. Complete, hashed and manifest-bound like the work signals;
   selecting it moves `corpus_analysis_id` and nothing else. See
   [`docs/architecture-evidence.md`](docs/architecture-evidence.md) (ADR-087, Proposed).
+- **`--field-selection <intent>`** (with `--architecture-evidence`) writes a derived,
+  bounded view of which existing evidence fields matter for a run intent in each document
+  and why — selected, redundant, over budget, unavailable or not asked for — citing every
+  value by its payload id; nothing is removed from any payload and no observed file is
+  written. See [`docs/local-source-field-selection.md`](docs/local-source-field-selection.md)
+  (ADR-091, Proposed).
 - **`corpus-query-cli.js`** asks one bounded question of a completed generation and
   answers from its own records: `--class open_question --text Gate`,
   `--class decision_statement --status wip`, `--predicate work.status --root Designs`.

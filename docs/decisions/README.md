@@ -71,6 +71,7 @@ Accepted ADRs are not deleted. A replacement ADR links back to the decision it s
 | [ADR-088](088-read-only-corpus-evidence-query.md) | A read-only evidence query over one pinned corpus generation | Proposed |
 | [ADR-089](089-architecture-statement-coverage-closure.md) | Architecture statement reader 1.1.0: coverage closure under an exact matrix | Proposed |
 | [ADR-090](090-document-role-selection-closure.md) | Document-role selection closure: decision records, research and historical material | Proposed |
+| [ADR-091](091-local-source-adaptive-field-selection.md) | Adaptive field selection for local-source, as a derived view | Proposed |
 
 ## Authority boundary
 

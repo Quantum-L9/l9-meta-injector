@@ -226,6 +226,20 @@ const KNOWN_DOCUMENTS: { name: string; path: string; schema: string | null }[] =
   { name: "report", path: "corpus-report.md", schema: null },
 ];
 
+/** Opt-in documents listed only when a run wrote them. */
+const OPT_IN_WRITTEN_DOCUMENTS: readonly Omit<CorpusIndexArtifactRef, "present">[] = [
+  {
+    name: "field_selection",
+    path: "field-selection.jsonl",
+    schema: "l9.local-source-field-selection/v1",
+  },
+  {
+    name: "field_selection_manifest",
+    path: "field-selection.manifest.json",
+    schema: "l9.local-source-field-selection-manifest/v1",
+  },
+];
+
 export function buildCorpusIndex(input: BuildCorpusIndexInput): CorpusIndex {
   const { snapshot } = input;
   const written = new Set(input.writtenPaths);
@@ -278,10 +292,19 @@ export function buildCorpusIndex(input: BuildCorpusIndexInput): CorpusIndex {
     // Absence is reported rather than omitted: a consumer that cannot find
     // `corpus-diff.json` should be able to tell "this run made no comparison"
     // from "this run wrote it somewhere else".
-    documents: KNOWN_DOCUMENTS.map((document) => ({
-      ...document,
-      present: written.has(document.path),
-    })),
+    documents: [
+      ...KNOWN_DOCUMENTS.map((document) => ({
+        ...document,
+        present: written.has(document.path),
+      })),
+      // The field-selection view is listed only when written. A run that did not
+      // ask for it keeps the byte-identical index it always had (ADR-091), and a
+      // run that did names the two files it wrote.
+      ...OPT_IN_WRITTEN_DOCUMENTS.filter((document) => written.has(document.path)).map((document) => ({
+        ...document,
+        present: true,
+      })),
+    ],
     ...(input.coverage !== undefined
       ? { coverage: coverageFor(input.coverage, input.documentSignals) }
       : {}),
