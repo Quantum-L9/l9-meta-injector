@@ -59,7 +59,10 @@ export const ARCHITECTURE_EVIDENCE_MANIFEST_FILE = "architecture-evidence.manife
 
 /** Identity of the whole projection: the reader plus the selection profile. */
 export const ARCHITECTURE_EVIDENCE_PROFILE_ID = "meta-injector-architecture-evidence";
-export const ARCHITECTURE_EVIDENCE_PROFILE_VERSION = "1.0.0";
+// 1.1.0: reader 1.1.0 (numbered/qualified/setext headings, continuation lines,
+// YAML frontmatter scalars); records carry `continuation_block_ids` and a
+// locator that ends on the statement's last line.
+export const ARCHITECTURE_EVIDENCE_PROFILE_VERSION = "1.1.0";
 
 /** The one selection profile this release ships. A view over the records, not a vocabulary. */
 export const ARCHITECTURE_SELECTION_PROFILE_ID = "architecture-development/v1";
@@ -225,7 +228,15 @@ export interface ArchitectureEvidenceRecord {
   decoder_version: string;
   block_id: string;
   block_kind: string;
-  /** The exact coordinate, in the format's own terms. Its `kind` says which shape. */
+  /**
+   * Blocks after `block_id` the statement continues into (a Markdown list item's
+   * lazy continuation lines), in order. Empty for a one-block statement.
+   */
+  continuation_block_ids: string[];
+  /**
+   * The exact coordinate, in the format's own terms. Its `kind` says which shape.
+   * A `line_span` starts on the statement's first line and ends on its last.
+   */
   structured_locator: Record<string, unknown>;
   /** Line of the block's text the statement is on, or null for a whole-block statement. */
   unit_index: number | null;
@@ -568,7 +579,13 @@ export function buildArchitectureEvidenceExport(
         decoder_version: document.decoderVersion,
         block_id: statement.block.block_id,
         block_kind: statement.block.kind,
-        structured_locator: architectureStatementLocator(statement.block, statement.unit_index) as unknown as Record<string, unknown>,
+        continuation_block_ids: statement.continuation_blocks.map((block) => block.block_id),
+        structured_locator: architectureStatementLocator(
+          statement.block,
+          statement.unit_index,
+          statement.unit_end_index,
+          statement.continuation_blocks,
+        ) as unknown as Record<string, unknown>,
         unit_index: statement.unit_index,
         statement_class: statement.statement_class,
         declared_text: statement.declared_text,

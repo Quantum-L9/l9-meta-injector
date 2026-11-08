@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Architecture statement reader 1.1.0 — coverage closure (ADR-089, Proposed)
+
+- `architecture-statements/v1` 1.1.0 (id unchanged, so every statement read as before keeps its `evidence_id`): section headings may carry a section number (`## 2.1 Open Questions`, `## A. Decisions`) and one parenthetical qualifier (`## Assumptions (v2)`); setext headings are headings; a CommonMark lazy continuation line is joined to its list item and no longer ends the enclosing label list, so an `Assumptions:` list under `## Constraints` stays assumptions; running text after a labelled value continues it across a soft line break, and a Word list paragraph with soft breaks is one item; frontmatter is read with the work reader's YAML scalar rules (comments cut, quoted scalars unquoted, block-scalar values read, flow collections reported); thematic breaks and labels inside inline code spans are not statements.
+- New coverage diagnostics: `heading_not_recognized`, `frontmatter_flow_collection_unsupported`, `frontmatter_block_scalar_unread`.
+- Records carry `continuation_block_ids`; a `line_span` locator ends on the statement's last line. Profile 1.1.0; the profile hash moves `corpus_analysis_id` only for runs that select the projection.
+- `docs/architecture-statement-coverage.json` / `.md`: the exact supported-input matrix (37 cases), enforced by `tests/architecture_statement_coverage.test.ts` against real files with source-coordinate verification.
+
 ### Read-only corpus evidence query (ADR-088, Proposed)
 
 - `node scripts/corpus-query-cli.js --out <dir> [--root|--artifact|--predicate|--class|--text|--kind|--status|--source] [--limit N] [--max-excerpt-bytes N]` (`npm run corpus-query`) asks one bounded question of one completed generation. `CURRENT.json` is resolved once; every file read must be named by it, sit inside the generation (no symlinks), and hash to its record; `document-work-signals.jsonl` and `architecture-evidence.jsonl` are verified with the scan's own verifiers and each root packet must be the one the snapshot recorded. Any failure is an `invalid` outcome with no results.
