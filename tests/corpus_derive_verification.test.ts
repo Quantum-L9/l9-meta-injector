@@ -25,8 +25,8 @@ import {
   MemoryCorpusCache,
 } from "../src/corpus_cache";
 import { CorpusScanResult, renderReadinessEvidence, runCorpusScan } from "../src/corpus_scan";
-import { DecoderRegistry, defaultDecoderRegistry, docxDecoder } from "../src/documents";
 import type { DocumentDecoder } from "../src/documents";
+import { DecoderRegistry, defaultDecoderRegistry, docxDecoder } from "../src/documents";
 import { writeDocx, writePdf } from "./helpers/document_fixtures";
 import { planDocument } from "./helpers/multi_root_fixtures";
 
@@ -95,7 +95,9 @@ describe("a file rewritten between hashing and decoding", () => {
     );
 
     // Step 1 is still the identity authority: the snapshot names the bytes it hashed.
-    const artifact = raced.snapshot.artifacts.find((entry) => entry.root_relative_path === "plan.md");
+    const artifact = raced.snapshot.artifacts.find(
+      (entry) => entry.root_relative_path === "plan.md",
+    );
     expect(artifact?.content_hash).toBe(sha256(V1));
 
     // Nothing derived from the rewritten bytes was filed under the old bytes' keys.
@@ -103,7 +105,9 @@ describe("a file rewritten between hashing and decoding", () => {
       expect(writes(raced.cacheStats, layer)).toBe(0);
     }
     // The run names the file, and no evidence quoting the new text is attributed to it.
-    const changed = raced.diagnostics.filter((d) => d.code === "corpus.document_changed_during_scan");
+    const changed = raced.diagnostics.filter(
+      (d) => d.code === "corpus.document_changed_during_scan",
+    );
     expect(changed.map((d) => d.corpus_path)).toEqual(["R1::plan.md"]);
     expect(changed[0]?.severity).toBe("warning");
     expect(emittedEvidence(raced)).not.toContain("Omega");
@@ -116,14 +120,23 @@ describe("a file rewritten between hashing and decoding", () => {
     // (b) A second root holding the hashed bytes reads the same warm as cold.
     const r2 = tmp();
     fs.writeFileSync(path.join(r2, "plan.md"), V1, "utf8");
-    const warm = await runCorpusScan({ roots: [{ path: r2, name: "R2" }], producerVersion: PRODUCER, cache });
-    const cold = await runCorpusScan({ roots: [{ path: r2, name: "R2" }], producerVersion: PRODUCER });
+    const warm = await runCorpusScan({
+      roots: [{ path: r2, name: "R2" }],
+      producerVersion: PRODUCER,
+      cache,
+    });
+    const cold = await runCorpusScan({
+      roots: [{ path: r2, name: "R2" }],
+      producerVersion: PRODUCER,
+    });
     expect(renderReadinessEvidence(warm.readiness)).toBe(renderReadinessEvidence(cold.readiness));
-    expect(warm.documentIndex.documents.map((d) => d.normalized_content_hash))
-      .toEqual(cold.documentIndex.documents.map((d) => d.normalized_content_hash));
+    expect(warm.documentIndex.documents.map((d) => d.normalized_content_hash)).toEqual(
+      cold.documentIndex.documents.map((d) => d.normalized_content_hash),
+    );
     expect(warm.documentIndex.documents[0]?.decoded).toBe(true);
-    expect(warm.rootPackets.map((root) => root.packet.semantic_hash))
-      .toEqual(cold.rootPackets.map((root) => root.packet.semantic_hash));
+    expect(warm.rootPackets.map((root) => root.packet.semantic_hash)).toEqual(
+      cold.rootPackets.map((root) => root.packet.semantic_hash),
+    );
     expect(emittedEvidence(warm)).not.toContain("Omega");
   });
 
@@ -135,12 +148,20 @@ describe("a file rewritten between hashing and decoding", () => {
 
     const raced = await scanThenMutate(
       { roots: [{ path: root, name: "R" }], producerVersion: PRODUCER, cache },
-      () => writeDocx(target, { title: "Omega Plan", headings: ["Scope"], paragraphs: ["Status: done"] }),
+      () =>
+        writeDocx(target, {
+          title: "Omega Plan",
+          headings: ["Scope"],
+          paragraphs: ["Status: done"],
+        }),
     );
 
     expect(writes(raced.cacheStats, "normalized_document")).toBe(0);
-    expect(raced.diagnostics.filter((d) => d.code === "corpus.document_changed_during_scan")
-      .map((d) => d.corpus_path)).toEqual(["R::plan.docx"]);
+    expect(
+      raced.diagnostics
+        .filter((d) => d.code === "corpus.document_changed_during_scan")
+        .map((d) => d.corpus_path),
+    ).toEqual(["R::plan.docx"]);
     const entry = raced.documentIndex.documents.find((d) => d.root_relative_path === "plan.docx");
     expect(entry?.decoded).toBe(false);
     expect(entry?.undecoded_reason).toBe("changed_during_scan");
@@ -169,12 +190,18 @@ describe("a file rewritten between hashing and decoding", () => {
     const cache = new MemoryCorpusCache(PRODUCER);
 
     const result = await runCorpusScan({
-      roots: [{ path: root, name: "R" }], producerVersion: PRODUCER, cache, decoderRegistry: registry,
+      roots: [{ path: root, name: "R" }],
+      producerVersion: PRODUCER,
+      cache,
+      decoderRegistry: registry,
     });
 
     expect(writes(result.cacheStats, "normalized_document")).toBe(0);
-    expect(result.diagnostics.filter((d) => d.code === "corpus.document_changed_during_scan")
-      .map((d) => d.corpus_path)).toEqual(["R::plan.docx"]);
+    expect(
+      result.diagnostics
+        .filter((d) => d.code === "corpus.document_changed_during_scan")
+        .map((d) => d.corpus_path),
+    ).toEqual(["R::plan.docx"]);
     expect(result.coverage.documents.decode_gap.unaccounted).toBe(0);
   });
 
@@ -182,7 +209,11 @@ describe("a file rewritten between hashing and decoding", () => {
     const root = tmp();
     fs.writeFileSync(path.join(root, "plan.md"), V1, "utf8");
     fs.writeFileSync(path.join(root, "notes.txt"), planDocument("Beta"), "utf8");
-    writeDocx(path.join(root, "brief.docx"), { title: "Gamma", headings: ["Scope"], paragraphs: ["Status: draft"] });
+    writeDocx(path.join(root, "brief.docx"), {
+      title: "Gamma",
+      headings: ["Scope"],
+      paragraphs: ["Status: draft"],
+    });
     writePdf(path.join(root, "report.pdf"), ["Delta report", "Status: blocked"]);
     const roots = [{ path: root, name: "R" }];
     const cache = new MemoryCorpusCache(PRODUCER);
@@ -195,16 +226,23 @@ describe("a file rewritten between hashing and decoding", () => {
     expect(readFile).not.toHaveBeenCalled();
     expect(warm.cacheStats.misses).toBe(0);
     expect(warm.cacheStats.hit_ratio).toBe(1);
-    expect(warm.diagnostics.some((d) => d.code === "corpus.document_changed_during_scan")).toBe(false);
+    expect(warm.diagnostics.some((d) => d.code === "corpus.document_changed_during_scan")).toBe(
+      false,
+    );
     expect(renderReadinessEvidence(warm.readiness)).toBe(renderReadinessEvidence(cold.readiness));
-    expect(JSON.stringify(warm.documentIndex.documents)).toBe(JSON.stringify(cold.documentIndex.documents));
+    expect(JSON.stringify(warm.documentIndex.documents)).toBe(
+      JSON.stringify(cold.documentIndex.documents),
+    );
   });
 });
 
 describe("encoding refusals stay cached, because they are facts about the bytes", () => {
   it("REG-WU-038-RC-062-f / REG-WU-038-RC-064-c: a Latin-1 Markdown file is refused once and never reopened", async () => {
     const root = tmp();
-    fs.writeFileSync(path.join(root, "latin.md"), Buffer.from("# Caf\xe9 notes\n\nStatus: draft\n", "latin1"));
+    fs.writeFileSync(
+      path.join(root, "latin.md"),
+      Buffer.from("# Caf\xe9 notes\n\nStatus: draft\n", "latin1"),
+    );
     const roots = [{ path: root, name: "R" }];
     const cache = new MemoryCorpusCache(PRODUCER);
 
@@ -218,8 +256,10 @@ describe("encoding refusals stay cached, because they are facts about the bytes"
     const warm = await runCorpusScan({ roots, producerVersion: PRODUCER, cache });
     expect(readFile).not.toHaveBeenCalled();
     expect(hits(warm.cacheStats, "normalized_document")).toBe(1);
-    expect(warm.documentIndex.documents.find((d) => d.root_relative_path === "latin.md")?.undecoded_reason)
-      .toBe("invalid");
+    expect(
+      warm.documentIndex.documents.find((d) => d.root_relative_path === "latin.md")
+        ?.undecoded_reason,
+    ).toBe("invalid");
   });
 });
 
@@ -242,18 +282,24 @@ describe("a file that cannot be read", () => {
     expect(writes(vanished.cacheStats, "normalized_document")).toBe(0);
     expect(vanished.coverage.documents.decode_gap.other_refusal).toBe(1);
     expect(vanished.coverage.documents.decode_gap.unaccounted).toBe(0);
-    expect(vanished.documentIndex.documents.find((d) => d.root_relative_path === "a.md")?.undecoded_reason)
-      .toBe("unreadable");
+    expect(
+      vanished.documentIndex.documents.find((d) => d.root_relative_path === "a.md")
+        ?.undecoded_reason,
+    ).toBe("unreadable");
 
     // (b) Restored, the same bytes decode on every path that holds them.
     fs.writeFileSync(path.join(r1, "a.md"), text, "utf8");
-    const roots = [{ path: r1, name: "r1" }, { path: r2, name: "r2" }];
+    const roots = [
+      { path: r1, name: "r1" },
+      { path: r2, name: "r2" },
+    ];
     const warm = await runCorpusScan({ roots, producerVersion: PRODUCER, cache });
     const cold = await runCorpusScan({ roots, producerVersion: PRODUCER });
     expect(warm.coverage.documents.normalized_document_count).toBe(2);
     expect(warm.coverage.documents.decoder_eligible_count).toBe(2);
-    expect(warm.coverage.documents.normalized_document_count)
-      .toBe(cold.coverage.documents.normalized_document_count);
+    expect(warm.coverage.documents.normalized_document_count).toBe(
+      cold.coverage.documents.normalized_document_count,
+    );
     expect(renderReadinessEvidence(warm.readiness)).toBe(renderReadinessEvidence(cold.readiness));
     expect(warm.diagnostics.some((d) => d.code === "corpus.document_unreadable")).toBe(false);
   });
@@ -264,13 +310,20 @@ describe("a file that cannot be read", () => {
     fs.writeFileSync(path.join(root, "plan.md"), V1, "utf8");
 
     const result = await scanThenMutate(
-      { roots: [{ path: root, name: "R" }], producerVersion: PRODUCER, cache: new MemoryCorpusCache(PRODUCER) },
+      {
+        roots: [{ path: root, name: "R" }],
+        producerVersion: PRODUCER,
+        cache: new MemoryCorpusCache(PRODUCER),
+      },
       () => fs.unlinkSync(path.join(root, "report.pdf")),
     );
 
     expect(result.coverage.documents.decode_gap.unaccounted).toBe(0);
-    expect(result.diagnostics.filter((d) => d.code === "corpus.document_unreadable")
-      .map((d) => d.corpus_path)).toEqual(["R::report.pdf"]);
+    expect(
+      result.diagnostics
+        .filter((d) => d.code === "corpus.document_unreadable")
+        .map((d) => d.corpus_path),
+    ).toEqual(["R::report.pdf"]);
     expect(writes(result.cacheStats, "normalized_document")).toBe(1);
   });
 });

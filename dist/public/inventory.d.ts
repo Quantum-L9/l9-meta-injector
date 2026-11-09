@@ -1,2 +1,2 @@
-export { inventoryTree, loadMetaSchema, buildDuplicateClusters, classifyInventory, buildRecord } from "../inventory";
-export type { InventoryArtifactType, SourceSystem, InventoryRecord, InventoryConfig, DuplicateCluster, InventoryResult, } from "../inventory";
+export type { DuplicateCluster, InventoryArtifactType, InventoryConfig, InventoryRecord, InventoryResult, SourceSystem, } from "../inventory";
+export { buildDuplicateClusters, buildRecord, classifyInventory, inventoryTree, loadMetaSchema, } from "../inventory";

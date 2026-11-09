@@ -72,41 +72,129 @@ exports.FORBIDDEN_READINESS_METRICS = [
 ];
 // ───────────────────────────── closed vocabularies ─────────────────────────────
 const SOURCE_EXTENSIONS = new Set([
-    ".bash", ".c", ".cc", ".clj", ".cpp", ".cs", ".cxx", ".dart", ".erl", ".ex", ".exs",
-    ".fs", ".go", ".h", ".hpp", ".hs", ".java", ".jl", ".js", ".jsx", ".kt", ".kts",
-    ".lua", ".m", ".mjs", ".cjs", ".mm", ".php", ".pl", ".py", ".r", ".rb", ".rs",
-    ".scala", ".sh", ".sql", ".svelte", ".swift", ".ts", ".tsx", ".vue", ".zsh",
+    ".bash",
+    ".c",
+    ".cc",
+    ".clj",
+    ".cpp",
+    ".cs",
+    ".cxx",
+    ".dart",
+    ".erl",
+    ".ex",
+    ".exs",
+    ".fs",
+    ".go",
+    ".h",
+    ".hpp",
+    ".hs",
+    ".java",
+    ".jl",
+    ".js",
+    ".jsx",
+    ".kt",
+    ".kts",
+    ".lua",
+    ".m",
+    ".mjs",
+    ".cjs",
+    ".mm",
+    ".php",
+    ".pl",
+    ".py",
+    ".r",
+    ".rb",
+    ".rs",
+    ".scala",
+    ".sh",
+    ".sql",
+    ".svelte",
+    ".swift",
+    ".ts",
+    ".tsx",
+    ".vue",
+    ".zsh",
 ]);
 const BUILD_MANIFEST_NAMES = new Set([
-    "build.gradle", "build.gradle.kts", "build.sbt", "cargo.toml", "cmakelists.txt",
-    "composer.json", "deno.json", "deno.jsonc", "gemfile", "go.mod", "makefile",
-    "meson.build", "mix.exs", "package.json", "pipfile", "pnpm-workspace.yaml",
-    "pom.xml", "project.clj", "pubspec.yaml", "pyproject.toml", "requirements.txt",
-    "setup.cfg", "setup.py", "settings.gradle", "settings.gradle.kts",
+    "build.gradle",
+    "build.gradle.kts",
+    "build.sbt",
+    "cargo.toml",
+    "cmakelists.txt",
+    "composer.json",
+    "deno.json",
+    "deno.jsonc",
+    "gemfile",
+    "go.mod",
+    "makefile",
+    "meson.build",
+    "mix.exs",
+    "package.json",
+    "pipfile",
+    "pnpm-workspace.yaml",
+    "pom.xml",
+    "project.clj",
+    "pubspec.yaml",
+    "pyproject.toml",
+    "requirements.txt",
+    "setup.cfg",
+    "setup.py",
+    "settings.gradle",
+    "settings.gradle.kts",
 ]);
 const BUILD_MANIFEST_EXTENSIONS = new Set([".csproj", ".fsproj", ".sln", ".vbproj"]);
 /** Files that define how something is assembled, as opposed to what it needs. */
 const BUILD_DEFINITION_NAMES = new Set([
-    "build.gradle", "build.gradle.kts", "build.sbt", "cmakelists.txt", "makefile",
-    "meson.build", "mix.exs", "pom.xml", "settings.gradle", "settings.gradle.kts",
+    "build.gradle",
+    "build.gradle.kts",
+    "build.sbt",
+    "cmakelists.txt",
+    "makefile",
+    "meson.build",
+    "mix.exs",
+    "pom.xml",
+    "settings.gradle",
+    "settings.gradle.kts",
 ]);
 const BUILD_DEFINITION_EXTENSIONS = new Set([".csproj", ".fsproj", ".sln", ".vbproj"]);
 const CI_DEFINITION_NAMES = new Set([
-    ".gitlab-ci.yml", ".gitlab-ci.yaml", ".travis.yml", "appveyor.yml",
-    "azure-pipelines.yml", "azure-pipelines.yaml", "bitbucket-pipelines.yml",
-    "cloudbuild.yaml", "jenkinsfile",
+    ".gitlab-ci.yml",
+    ".gitlab-ci.yaml",
+    ".travis.yml",
+    "appveyor.yml",
+    "azure-pipelines.yml",
+    "azure-pipelines.yaml",
+    "bitbucket-pipelines.yml",
+    "cloudbuild.yaml",
+    "jenkinsfile",
 ]);
 const CONTAINER_DEFINITION_NAMES = new Set([
-    "compose.yaml", "compose.yml", "containerfile", "docker-compose.yaml",
-    "docker-compose.yml", "dockerfile",
+    "compose.yaml",
+    "compose.yml",
+    "containerfile",
+    "docker-compose.yaml",
+    "docker-compose.yml",
+    "dockerfile",
 ]);
 const DEPLOYMENT_DEFINITION_NAMES = new Set([
-    "chart.yaml", "fly.toml", "kustomization.yaml", "kustomization.yml", "netlify.toml",
-    "procfile", "render.yaml", "serverless.yml", "serverless.yaml", "vercel.json",
+    "chart.yaml",
+    "fly.toml",
+    "kustomization.yaml",
+    "kustomization.yml",
+    "netlify.toml",
+    "procfile",
+    "render.yaml",
+    "serverless.yml",
+    "serverless.yaml",
+    "vercel.json",
 ]);
 const DEPLOYMENT_DEFINITION_EXTENSIONS = new Set([".tf", ".tfvars"]);
 const SPECIFICATION_NAMES = new Set([
-    "openapi.json", "openapi.yaml", "openapi.yml", "swagger.json", "swagger.yaml",
+    "openapi.json",
+    "openapi.yaml",
+    "openapi.yml",
+    "swagger.json",
+    "swagger.yaml",
 ]);
 const SPECIFICATION_EXTENSIONS = new Set([".graphql", ".proto", ".thrift"]);
 const DOCUMENTATION_EXTENSIONS = new Set([".markdown", ".md", ".rst", ".txt", ".adoc"]);
@@ -124,14 +212,21 @@ const STATUS_BLOCKED = new Set(["blocked"]);
  */
 const WIP_STATUSES = new Set(["wip", "in-progress", "in_progress", "active", "ongoing"]);
 const DRAFT_STATUSES = new Set(["draft", "proposed", "idea", "sketch"]);
-const COMPLETE_STATUSES = new Set(["complete", "completed", "done", "shipped", "released", "accepted"]);
+const COMPLETE_STATUSES = new Set([
+    "complete",
+    "completed",
+    "done",
+    "shipped",
+    "released",
+    "accepted",
+]);
 /** How `unique_content` is arrived at, stated in the document that carries it. */
-exports.UNIQUE_CONTENT_METHOD = "Distinct sha256 content hashes among this body's members, counted once each, with the "
-    + "bytes of one member per hash. It measures how much of the body is not a copy of the rest "
-    + "of it. It is not a measure of importance, value, or effort.";
-exports.NO_RANKING_STATEMENT = "Counts and cited evidence only. This document contains no priority, no score, "
-    + "no percentage complete and no judgement of value; deriving one is a downstream "
-    + "decision this producer does not make.";
+exports.UNIQUE_CONTENT_METHOD = "Distinct sha256 content hashes among this body's members, counted once each, with the " +
+    "bytes of one member per hash. It measures how much of the body is not a copy of the rest " +
+    "of it. It is not a measure of importance, value, or effort.";
+exports.NO_RANKING_STATEMENT = "Counts and cited evidence only. This document contains no priority, no score, " +
+    "no percentage complete and no judgement of value; deriving one is a downstream " +
+    "decision this producer does not make.";
 // ───────────────────────────── signal detection ─────────────────────────────
 function basenameOf(rootRelativePath) {
     const tail = rootRelativePath.slice(rootRelativePath.lastIndexOf("/") + 1);
@@ -202,7 +297,8 @@ function conventionSignals(rootRelativePath) {
     else if (DEPLOYMENT_DEFINITION_EXTENSIONS.has(extension)) {
         push(signals, "artifact.has_deployment_definition", "extension_convention", extension);
     }
-    else if (parents.includes("helm") && (basename === "values.yaml" || basename === "values.yml")) {
+    else if (parents.includes("helm") &&
+        (basename === "values.yaml" || basename === "values.yml")) {
         push(signals, "artifact.has_deployment_definition", "path_convention", "helm/");
     }
     if (SPECIFICATION_NAMES.has(basename)) {
@@ -325,21 +421,43 @@ function emptyMetrics() {
 }
 /** Where each signal is tallied. `null` means the signal is not a count here. */
 const SIGNAL_METRIC = {
-    "artifact.has_source_code": (m) => { m.implementation.source_artifact_count += 1; },
-    "artifact.has_tests": (m) => { m.validation.structural_test_artifact_count += 1; },
-    "artifact.has_build_manifest": (m) => { m.implementation.manifest_count += 1; },
-    "artifact.has_build_definition": (m) => { m.implementation.build_definition_count += 1; },
-    "artifact.has_ci_definition": (m) => { m.validation.ci_definition_count += 1; },
-    "artifact.has_container_definition": (m) => { m.delivery.container_definition_count += 1; },
-    "artifact.has_deployment_definition": (m) => { m.delivery.deployment_definition_count += 1; },
-    "artifact.has_specification": (m) => { m.knowledge.specification_count += 1; },
-    "artifact.has_documentation": (m) => { m.knowledge.documentation_count += 1; },
+    "artifact.has_source_code": (m) => {
+        m.implementation.source_artifact_count += 1;
+    },
+    "artifact.has_tests": (m) => {
+        m.validation.structural_test_artifact_count += 1;
+    },
+    "artifact.has_build_manifest": (m) => {
+        m.implementation.manifest_count += 1;
+    },
+    "artifact.has_build_definition": (m) => {
+        m.implementation.build_definition_count += 1;
+    },
+    "artifact.has_ci_definition": (m) => {
+        m.validation.ci_definition_count += 1;
+    },
+    "artifact.has_container_definition": (m) => {
+        m.delivery.container_definition_count += 1;
+    },
+    "artifact.has_deployment_definition": (m) => {
+        m.delivery.deployment_definition_count += 1;
+    },
+    "artifact.has_specification": (m) => {
+        m.knowledge.specification_count += 1;
+    },
+    "artifact.has_documentation": (m) => {
+        m.knowledge.documentation_count += 1;
+    },
     // Tallied from the assertions themselves, so one document with five open tasks
     // counts five rather than one.
     "artifact.has_open_tasks": null,
     "artifact.has_blockers": null,
-    "artifact.has_roadmap": (m) => { m.knowledge.roadmap_count += 1; },
-    "artifact.has_plan": (m) => { m.knowledge.plan_count += 1; },
+    "artifact.has_roadmap": (m) => {
+        m.knowledge.roadmap_count += 1;
+    },
+    "artifact.has_plan": (m) => {
+        m.knowledge.plan_count += 1;
+    },
 };
 /**
  * Connected components of size two or more in a pair graph.
@@ -402,8 +520,8 @@ function buildBodyOfWorkMetrics(memberIds, context) {
             // The language of a source artifact is its extension, and it is read from
             // the signal's own evidence rather than re-derived, so the distribution can
             // never disagree with the count it breaks down.
-            if (signal.signal === "artifact.has_source_code"
-                && signal.evidence_class === "extension_convention") {
+            if (signal.signal === "artifact.has_source_code" &&
+                signal.evidence_class === "extension_convention") {
                 languages.set(signal.evidence, (languages.get(signal.evidence) ?? 0) + 1);
             }
         }
@@ -460,7 +578,8 @@ function buildBodyOfWorkMetrics(memberIds, context) {
                         metrics.work_state.blocked_count += 1;
                     break;
                 }
-                default: break;
+                default:
+                    break;
             }
         }
         if (context.exactDuplicateIds.has(id)) {

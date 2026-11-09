@@ -222,33 +222,52 @@ function scorePair(a, b, context) {
     const title = jaccardOf(a.normalized_title_tokens, b.normalized_title_tokens);
     if (title.score > 0) {
         signals.push({
-            kind: "title_overlap", method: exports.TITLE_OVERLAP_METHOD, score: title.score,
-            categorical: false, fact: false, detail: title.shared,
+            kind: "title_overlap",
+            method: exports.TITLE_OVERLAP_METHOD,
+            score: title.score,
+            categorical: false,
+            fact: false,
+            detail: title.shared,
         });
     }
     const heading = jaccardOf(a.normalized_heading_tokens, b.normalized_heading_tokens);
     if (heading.score > 0) {
         signals.push({
-            kind: "heading_overlap", method: exports.HEADING_OVERLAP_METHOD, score: heading.score,
-            categorical: false, fact: false, detail: heading.shared,
+            kind: "heading_overlap",
+            method: exports.HEADING_OVERLAP_METHOD,
+            score: heading.score,
+            categorical: false,
+            fact: false,
+            detail: heading.shared,
         });
     }
     const keyphrase = keyphraseOverlap(a, b);
     if (keyphrase.score > 0) {
         signals.push({
-            kind: "keyphrase_overlap", method: exports.KEYPHRASE_OVERLAP_METHOD, score: keyphrase.score,
-            categorical: false, fact: false, detail: keyphrase.shared,
+            kind: "keyphrase_overlap",
+            method: exports.KEYPHRASE_OVERLAP_METHOD,
+            score: keyphrase.score,
+            categorical: false,
+            fact: false,
+            detail: keyphrase.shared,
         });
     }
     const identifiers = jaccardOf(a.declared_project_identifiers, b.declared_project_identifiers);
     if (identifiers.shared.length > 0) {
         signals.push({
-            kind: "declared_identifier_match", method: exports.DECLARED_IDENTIFIER_METHOD, score: 1,
-            categorical: true, fact: false, detail: identifiers.shared,
+            kind: "declared_identifier_match",
+            method: exports.DECLARED_IDENTIFIER_METHOD,
+            score: 1,
+            categorical: true,
+            fact: false,
+            detail: identifiers.shared,
         });
     }
     const referenceDetail = [];
-    for (const [from, to] of [[a, b], [b, a]]) {
+    for (const [from, to] of [
+        [a, b],
+        [b, a],
+    ]) {
         for (const target of from.normalized_reference_targets) {
             if (resolveReference(referenceIndex, target) === to.artifact_id) {
                 referenceDetail.push(`${from.artifact_id} references ${target}`);
@@ -273,44 +292,68 @@ function scorePair(a, b, context) {
     if (referenceDetail.length > 0) {
         referenceDetail.sort(ordering_1.compareCodePoints);
         signals.push({
-            kind: "explicit_reference", method: exports.EXPLICIT_REFERENCE_METHOD, score: 1,
-            categorical: true, fact: false, detail: referenceDetail,
+            kind: "explicit_reference",
+            method: exports.EXPLICIT_REFERENCE_METHOD,
+            score: 1,
+            categorical: true,
+            fact: false,
+            detail: referenceDetail,
         });
     }
     const dependencies = jaccardOf(a.declared_dependencies, b.declared_dependencies);
     if (dependencies.score > 0) {
         signals.push({
-            kind: "dependency_overlap", method: exports.DEPENDENCY_OVERLAP_METHOD, score: dependencies.score,
-            categorical: false, fact: false, detail: dependencies.shared,
+            kind: "dependency_overlap",
+            method: exports.DEPENDENCY_OVERLAP_METHOD,
+            score: dependencies.score,
+            categorical: false,
+            fact: false,
+            detail: dependencies.shared,
         });
     }
     const nearScore = nearByPair.get(key);
     if (nearScore !== undefined) {
         signals.push({
-            kind: "near_duplicate", method: exports.NEAR_DUPLICATE_METHOD_REF, score: round(nearScore),
-            categorical: false, fact: false, detail: [],
+            kind: "near_duplicate",
+            method: exports.NEAR_DUPLICATE_METHOD_REF,
+            score: round(nearScore),
+            categorical: false,
+            fact: false,
+            detail: [],
         });
     }
-    const isExactDuplicate = a.exact_duplicate_cluster_id !== null
-        && a.exact_duplicate_cluster_id === b.exact_duplicate_cluster_id;
+    const isExactDuplicate = a.exact_duplicate_cluster_id !== null &&
+        a.exact_duplicate_cluster_id === b.exact_duplicate_cluster_id;
     if (isExactDuplicate) {
         signals.push({
-            kind: "exact_duplicate", method: exports.EXACT_DUPLICATE_METHOD_REF, score: 1,
-            categorical: true, fact: true, detail: [a.exact_duplicate_cluster_id],
+            kind: "exact_duplicate",
+            method: exports.EXACT_DUPLICATE_METHOD_REF,
+            score: 1,
+            categorical: true,
+            fact: true,
+            detail: [a.exact_duplicate_cluster_id],
         });
     }
     const embeddingScore = embeddingByPair.get(key);
     if (embeddingScore !== undefined) {
         signals.push({
-            kind: "embedding_similarity", method: "cosine/v1", score: round(embeddingScore),
-            categorical: false, fact: false, detail: [],
+            kind: "embedding_similarity",
+            method: "cosine/v1",
+            score: round(embeddingScore),
+            categorical: false,
+            fact: false,
+            detail: [],
         });
     }
     const ancestry = sharedAncestry(a, b);
     if (ancestry.length > 0) {
         signals.push({
-            kind: "archive_context", method: exports.ARCHIVE_CONTEXT_METHOD, score: 1,
-            categorical: true, fact: false, detail: ancestry,
+            kind: "archive_context",
+            method: exports.ARCHIVE_CONTEXT_METHOD,
+            score: 1,
+            categorical: true,
+            fact: false,
+            detail: ancestry,
         });
     }
     return { signals, evidenceRefs };
@@ -389,9 +432,9 @@ function buildSemanticPairs(input) {
         diagnostics.push({
             code: "corpus.pair_generation.high_frequency_terms_skipped",
             severity: "info",
-            message: `${skippedTerms} term(s) appear in more than ${exports.MAX_POSTINGS_FOR_PAIR_GENERATION} documents and `
-                + "were not used to propose pairs; they still contribute to the score of pairs proposed on "
-                + "other grounds",
+            message: `${skippedTerms} term(s) appear in more than ${exports.MAX_POSTINGS_FOR_PAIR_GENERATION} documents and ` +
+                "were not used to propose pairs; they still contribute to the score of pairs proposed on " +
+                "other grounds",
         });
     }
     const nearByPair = new Map();
@@ -457,8 +500,8 @@ function buildSemanticPairs(input) {
             },
         });
     }
-    pairs.sort((x, y) => (0, ordering_1.compareCodePoints)(x.artifact_a_id, y.artifact_a_id)
-        || (0, ordering_1.compareCodePoints)(x.artifact_b_id, y.artifact_b_id));
+    pairs.sort((x, y) => (0, ordering_1.compareCodePoints)(x.artifact_a_id, y.artifact_a_id) ||
+        (0, ordering_1.compareCodePoints)(x.artifact_b_id, y.artifact_b_id));
     return {
         pairs,
         diagnostics,

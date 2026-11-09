@@ -3,10 +3,10 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { extract } from "../src/extract";
+import type { NamespaceConfig } from "../src/namespace";
 import { buildMeta, serializeToYamlFrontMatter } from "../src/normalize_meta";
 import type { ClassifyResult } from "../src/schema";
 import { UNKNOWN } from "../src/schema";
-import type { NamespaceConfig } from "../src/namespace";
 
 const roots: string[] = [];
 const namespace: NamespaceConfig = {
@@ -43,8 +43,26 @@ describe("deterministic persisted metadata identity", () => {
     const second = makeRoot("l9-meta-b-");
     const body = fs.readFileSync(first.file, "utf8");
     const fields = extract(body);
-    const a = buildMeta(first.file, body, fields, classification, namespace, "fixture.authority", UNKNOWN, first.root);
-    const b = buildMeta(second.file, body, fields, classification, namespace, "fixture.authority", UNKNOWN, second.root);
+    const a = buildMeta(
+      first.file,
+      body,
+      fields,
+      classification,
+      namespace,
+      "fixture.authority",
+      UNKNOWN,
+      first.root,
+    );
+    const b = buildMeta(
+      second.file,
+      body,
+      fields,
+      classification,
+      namespace,
+      "fixture.authority",
+      UNKNOWN,
+      second.root,
+    );
     expect(a).toEqual(b);
     expect(a.source_path).toBe("prompts/build.md");
     expect(a.created_or_detected_at).toBe(UNKNOWN);
@@ -55,6 +73,17 @@ describe("deterministic persisted metadata identity", () => {
     const first = makeRoot("l9-meta-root-");
     const outside = path.join(os.tmpdir(), "outside.md");
     const body = "outside";
-    expect(() => buildMeta(outside, body, extract(body), classification, namespace, "fixture.authority", UNKNOWN, first.root)).toThrow(/escapes repository root/);
+    expect(() =>
+      buildMeta(
+        outside,
+        body,
+        extract(body),
+        classification,
+        namespace,
+        "fixture.authority",
+        UNKNOWN,
+        first.root,
+      ),
+    ).toThrow(/escapes repository root/);
   });
 });

@@ -1,6 +1,6 @@
 import type { ConsolidationCandidate, ProjectCandidate, TopicCandidate } from "./corpus_fusion";
-import type { ArtifactFeatureView } from "./corpus_semantics";
 import type { SemanticPair } from "./corpus_pairs";
+import type { ArtifactFeatureView } from "./corpus_semantics";
 export declare const REASONING_ROUTING_PROFILE_ID = "reasoning-routing/v1";
 export declare const REASONING_ROUTING_PROFILE_VERSION = "1.0.0";
 export declare const REASONING_CANDIDATE_SCHEMA = "l9.reasoning-candidate/v1";

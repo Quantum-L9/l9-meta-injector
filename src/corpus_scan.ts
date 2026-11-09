@@ -22,11 +22,16 @@
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import type { ArchivePreflightResult } from "./archive_preflight";
 import {
+  analysisTokens,
+  buildDuplicateRelations,
   CORPUS_PROFILE_ID,
   CORPUS_PROFILE_VERSION,
   CorpusDuplicateCluster,
   CorpusRelation,
+  canonicalCorpusJson,
+  clusterExactDuplicates,
   DEFAULT_NEAR_DUPLICATE_THRESHOLD,
   EXACT_DUPLICATE_METHOD,
   EXACT_DUPLICATE_METHOD_VERSION,
@@ -35,74 +40,100 @@ import {
   NEAR_DUPLICATE_METHOD_VERSION,
   NearDuplicateCandidate,
   NearDuplicateDocument,
-  analysisTokens,
-  buildDuplicateRelations,
-  canonicalCorpusJson,
-  clusterExactDuplicates,
   nearDuplicateCandidates,
   normalizeForAnalysis,
   shingleSet,
 } from "./corpus_analysis";
+import { buildAnalysisManifest } from "./corpus_analysis_manifest";
 import {
+  ArchitectureEvidenceExport,
+  architectureEvidenceProfileHash,
+  architectureEvidenceRef,
+  buildArchitectureEvidenceExport,
+  verifyArchitectureEvidenceExport,
+} from "./corpus_architecture_evidence";
+import {
+  archiveManifestKey,
   CorpusCache,
   CorpusCacheStats,
-  NullCorpusCache,
-  cacheStatsDelta,
   cached,
+  cacheStatsDelta,
   candidateAnalysisKey,
   interpretationKey,
   lexicalFeaturesKey,
+  NullCorpusCache,
   normalizedDocumentKey,
-  archiveManifestKey,
   rawIdentityKey,
   statPrecheckMatches,
 } from "./corpus_cache";
+import type { TopicCandidateResult } from "./corpus_candidates";
 import {
+  buildProjectCandidates,
+  buildTopicCandidates,
+  candidateProfileHash,
+  canonicalThresholdText,
   DEFAULT_TOPIC_THRESHOLD,
   DeclaredIdentifier,
   ProjectCandidate,
   ProjectMarker,
-  TopicCandidate,
-  buildProjectCandidates,
-  buildTopicCandidates,
-  canonicalThresholdText,
-  candidateProfileHash,
   readDeclaredIdentifier,
   readsDeclaredIdentifier,
+  TopicCandidate,
 } from "./corpus_candidates";
 import {
   CORPUS_COVERAGE_SCHEMA,
   CorpusCoverage,
-  NO_PRIORITY_STATEMENT,
   coverageRatio,
   documentGaps,
   formatCounts,
+  NO_PRIORITY_STATEMENT,
 } from "./corpus_coverage";
-import { buildAnalysisManifest } from "./corpus_analysis_manifest";
-import { CorpusDiff, buildCorpusDiff } from "./corpus_diff";
+import { buildCorpusDiff, CorpusDiff } from "./corpus_diff";
+import { buildCorpusDocumentSignals, CorpusDocumentSignals } from "./corpus_document_signals";
+import type { DocumentIndex, DocumentIndexSummary } from "./corpus_documents";
 import {
-  CorpusDocumentSignals,
-  buildCorpusDocumentSignals,
-} from "./corpus_document_signals";
+  buildDocumentIndex,
+  summarizeDocuments,
+  UNDECODED_REASON_OVERSIZED,
+  UNDECODED_REASON_SECRET_PATH,
+  UNDECODED_REASON_UNREADABLE,
+} from "./corpus_documents";
+import type {
+  EmbeddableDocument,
+  EmbeddingProvider,
+  EmbeddingRunReport,
+} from "./corpus_embeddings";
+import { embeddingChunkProfileHash, runEmbeddings } from "./corpus_embeddings";
+import { DEFAULT_EMBEDDING_PAIR_THRESHOLD } from "./corpus_fusion";
+import type { EmbeddingPairScore } from "./corpus_pairs";
 import {
+  BodyOfWorkSpec,
+  buildReadinessEvidence,
   READINESS_SIGNALS,
   ReadinessArtifactInput,
   ReadinessEvidence,
   ReadinessSignal,
-  BodyOfWorkSpec,
-  buildReadinessEvidence,
   readinessProfileHash,
   readinessSignalsFor,
 } from "./corpus_readiness";
+import type { PackAssertion } from "./corpus_reasoning";
 import {
+  assertLongitudinalRootIdentityAuthorized,
+  inferredRootHistoryOverride,
+  inferredRootHistoryWarning,
+  LongitudinalAuthorization,
+  LongitudinalOperation,
+  RootIdentityRecord,
+} from "./corpus_root_history";
+import {
+  bindCorpusRoots,
   CORPUS_PATH_SEPARATOR,
   CorpusRootBinding,
   CorpusRootSpec,
-  bindCorpusRoots,
+  corpusAnalysisId,
   corpusPath,
   corpusRootId,
   corpusRootSnapshotId,
-  corpusAnalysisId,
   corpusSourceSnapshotId,
   DEFAULT_CORPUS_ID,
   resolveRootIdentity,
@@ -110,7 +141,20 @@ import {
   rootIdentity,
   virtualSourceId,
 } from "./corpus_roots";
+import type { SemanticAnalysisResult } from "./corpus_semantic_run";
+import { runSemanticAnalysis } from "./corpus_semantic_run";
+import type { SemanticArtifactInput } from "./corpus_semantics";
 import {
+  boundedMap,
+  CorpusResourceBudgets,
+  CorpusSessionStore,
+  DEFAULT_CORPUS_BUDGETS,
+  MemoryBudget,
+  YIELD_INTERVAL,
+  yieldToEventLoop,
+} from "./corpus_session";
+import {
+  CACHED_ASSUMPTION_STATEMENT,
   CORPUS_SNAPSHOT_SCHEMA,
   CorpusAnalysisIdentity,
   CorpusSnapshot,
@@ -119,51 +163,26 @@ import {
   CorpusSnapshotRoot,
   CorpusStatus,
   CorpusVerification,
-  CACHED_ASSUMPTION_STATEMENT,
   FULLY_VERIFIED_STATEMENT,
-  VerificationMode,
   snapshotPrechecks,
+  VerificationMode,
 } from "./corpus_snapshot";
 import {
-  CorpusResourceBudgets,
-  CorpusSessionStore,
-  DEFAULT_CORPUS_BUDGETS,
-  MemoryBudget,
-  YIELD_INTERVAL,
-  boundedMap,
-  yieldToEventLoop,
-} from "./corpus_session";
-import { probeBufferEncoding } from "./encoding";
-import {
-  DEFAULT_DECODER_BUDGET,
-  DecoderRegistry,
-  NormalizedDocument,
-  defaultDecoderRegistry,
-  isProseDocumentFormat,
-} from "./documents";
-import type { BlockKind, BlockLocator } from "./documents/decoder";
-import {
-  LongitudinalAuthorization,
-  LongitudinalOperation,
-  RootIdentityRecord,
-  assertLongitudinalRootIdentityAuthorized,
-  inferredRootHistoryOverride,
-  inferredRootHistoryWarning,
-} from "./corpus_root_history";
-import {
+  buildDocumentWorkSignalExport,
   DocumentWorkSignalExport,
   DocumentWorkSignalRecord,
-  buildDocumentWorkSignalExport,
   documentWorkSignalsRef,
   verifyDocumentWorkSignalExport,
 } from "./corpus_work_signal_export";
 import {
-  ArchitectureEvidenceExport,
-  architectureEvidenceProfileHash,
-  architectureEvidenceRef,
-  buildArchitectureEvidenceExport,
-  verifyArchitectureEvidenceExport,
-} from "./corpus_architecture_evidence";
+  DEFAULT_DECODER_BUDGET,
+  DecoderRegistry,
+  defaultDecoderRegistry,
+  isProseDocumentFormat,
+  NormalizedDocument,
+} from "./documents";
+import type { BlockKind, BlockLocator } from "./documents/decoder";
+import { probeBufferEncoding } from "./encoding";
 import { defaultExtractors } from "./extractors";
 import {
   DOCUMENT_BLOCK_EXTRACTOR_ID,
@@ -174,62 +193,40 @@ import {
   readDocumentBlockSignals,
 } from "./extractors/document_blocks";
 import {
+  bindPortableAssertions,
   DEFAULT_MAX_FILE_BYTES,
   Extractor,
-  InterpretedAssertion,
-  InterpretationDiagnostic,
   INTERPRETATION_PROFILE_ID,
   INTERPRETATION_PROFILE_VERSION,
-  PortableAssertion,
-  bindPortableAssertions,
-  toPortableAssertions,
-  interpretDocumentContent,
+  InterpretationDiagnostic,
+  InterpretedAssertion,
   interpretationProfileHash,
+  interpretDocumentContent,
   isSecretCandidatePath,
+  PortableAssertion,
+  toPortableAssertions,
 } from "./interpretation";
 import { LocalArchivePolicy } from "./local_archive_policy";
-import type { ArchivePreflightResult } from "./archive_preflight";
 import {
   ArchiveManifestStore,
-  KnownFileHash,
-  LocalSourceObservation,
   acquireLocalSource,
   hashFileStreaming,
+  KnownFileHash,
+  LocalSourceObservation,
   memberArchiveAncestry,
 } from "./local_source";
+import {
+  buildLocalSourceManifest,
+  LocalSourceManifest,
+  toRepositoryModelLocalSource,
+} from "./local_source_model";
 import { compareCodePoints } from "./ordering";
 import {
-  UNDECODED_REASON_OVERSIZED,
-  UNDECODED_REASON_SECRET_PATH,
-  UNDECODED_REASON_UNREADABLE,
-  buildDocumentIndex,
-  summarizeDocuments,
-} from "./corpus_documents";
-import { runSemanticAnalysis } from "./corpus_semantic_run";
-import type { DocumentIndex, DocumentIndexSummary } from "./corpus_documents";
-import type { SemanticAnalysisResult } from "./corpus_semantic_run";
-import type { SemanticArtifactInput } from "./corpus_semantics";
-import type { PackAssertion } from "./corpus_reasoning";
-import type { TopicCandidateResult } from "./corpus_candidates";
-import type { EmbeddingPairScore } from "./corpus_pairs";
-import { DEFAULT_EMBEDDING_PAIR_THRESHOLD } from "./corpus_fusion";
-import { embeddingChunkProfileHash, runEmbeddings } from "./corpus_embeddings";
-import type {
-  EmbeddableDocument,
-  EmbeddingProvider,
-  EmbeddingRunReport,
-} from "./corpus_embeddings";
-import {
-  RepositoryModelPacket,
   buildRepositoryModelPacket,
+  RepositoryModelPacket,
   repositoryModelArtifactId,
   stableId,
 } from "./repository_model";
-import {
-  LocalSourceManifest,
-  buildLocalSourceManifest,
-  toRepositoryModelLocalSource,
-} from "./local_source_model";
 
 export const CORPUS_CANDIDATES_SCHEMA = "l9.corpus-candidates/v1";
 
@@ -258,7 +255,6 @@ const LEXICAL_EXTENSIONS = new Set(NEAR_DUPLICATE_EXTENSIONS);
  * container reader never makes.
  */
 const WHOLE_FILE_FORMATS = new Set(["text", "markdown", "csv", "html", "ipynb", "pdf"]);
-
 
 // ───────────────────────────── inputs ─────────────────────────────
 
@@ -417,11 +413,11 @@ export interface CorpusCandidatesDocument {
 }
 
 export const CANDIDATE_STATEMENT =
-  "Exact duplicates are byte equality and are facts. Near-duplicate candidates, topic "
-  + "candidates and project candidates are deterministic candidate analyses: they report "
-  + "shared bytes, shared wording and a container that holds a project marker. None of "
-  + "them claims two documents mean the same thing, that anything should be merged, "
-  + "moved or deleted, or that one is more valuable than another.";
+  "Exact duplicates are byte equality and are facts. Near-duplicate candidates, topic " +
+  "candidates and project candidates are deterministic candidate analyses: they report " +
+  "shared bytes, shared wording and a container that holds a project marker. None of " +
+  "them claims two documents mean the same thing, that anything should be merged, " +
+  "moved or deleted, or that one is more valuable than another.";
 
 /**
  * v2 alongside `l9.document-index/v2`, and for the same reason: the single
@@ -575,11 +571,19 @@ interface RootDependentInterpretationIndex {
 }
 
 function isRootDependentIndex(value: unknown): value is RootDependentInterpretationIndex {
-  return typeof value === "object" && value !== null && Array.isArray((value as { root_probes?: unknown }).root_probes);
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    Array.isArray((value as { root_probes?: unknown }).root_probes)
+  );
 }
 
 /** Level-two key: the level-one key plus the probed paths and their current answers. */
-function rootBoundInterpretationKey(levelOneKey: string, probes: readonly string[], observedPaths: ReadonlySet<string>): string {
+function rootBoundInterpretationKey(
+  levelOneKey: string,
+  probes: readonly string[],
+  observedPaths: ReadonlySet<string>,
+): string {
   return stableId("interp-root-bound", {
     level_one: levelOneKey,
     probes: probes.map((probe) => [probe, observedPaths.has(probe)]),
@@ -601,7 +605,6 @@ function rootBoundInterpretationKey(levelOneKey: string, probes: readonly string
 function archiveAncestryOf(artifact: ScanArtifact): string[] {
   return [...artifact.archiveAncestry];
 }
-
 
 function normalizeHash(value: string | null): string | null {
   if (value === null || value.length === 0) return null;
@@ -732,12 +735,14 @@ function indexMembership<T>(
 /** Reject a root key that would make a corpus path ambiguous. */
 function assertUsableRootKey(rootKey: string, rootPath: string): void {
   if (rootKey.length === 0) {
-    throw new Error(`corpus: root ${rootPath} resolves to an empty key; name it with --root PATH=NAME`);
+    throw new Error(
+      `corpus: root ${rootPath} resolves to an empty key; name it with --root PATH=NAME`,
+    );
   }
   if (rootKey.includes(CORPUS_PATH_SEPARATOR) || /[\n\r]/.test(rootKey)) {
     throw new Error(
-      `corpus: root key '${rootKey}' contains '${CORPUS_PATH_SEPARATOR}' or a newline, `
-      + "which would make a corpus path ambiguous",
+      `corpus: root key '${rootKey}' contains '${CORPUS_PATH_SEPARATOR}' or a newline, ` +
+        "which would make a corpus path ambiguous",
     );
   }
 }
@@ -806,10 +811,21 @@ async function deriveDocumentLayers(
   context: DeriveDocumentContext,
 ): Promise<void> {
   const {
-    cache, session, memory, extractors, candidateProfile, interpretProfile,
-    interpretEnabled, maxFileBytes, rootPathsById, rootKeyById, registry, into,
+    cache,
+    session,
+    memory,
+    extractors,
+    candidateProfile,
+    interpretProfile,
+    interpretEnabled,
+    maxFileBytes,
+    rootPathsById,
+    rootKeyById,
+    registry,
+    into,
   } = context;
-  const { normalized, lexical, interpreted, manifestIdentifiers, skipped, refused, diagnostics } = into;
+  const { normalized, lexical, interpreted, manifestIdentifiers, skipped, refused, diagnostics } =
+    into;
   const contentHash = artifact.contentHash as string;
   // The decoder that claims this path decides the key. A `.docx` and a `.md` are
   // read by different code into different documents, and a decoder revision must
@@ -852,10 +868,12 @@ async function deriveDocumentLayers(
   // other. For a document format there is nothing left to consult: a Word file
   // is prose whatever it is called. Without the second route a decoded `.docx`
   // would be counted in coverage and reach no candidate at all.
-  const wantsLexical = isLexicallyAnalyzable(artifact.rootRelativePath)
-    || (decoder !== undefined && isProseDocumentFormat(decoder.format));
-  const wantsInterpretation = interpretEnabled
-    && extractors.some((extractor) => extractor.matches(artifact.rootRelativePath));
+  const wantsLexical =
+    isLexicallyAnalyzable(artifact.rootRelativePath) ||
+    (decoder !== undefined && isProseDocumentFormat(decoder.format));
+  const wantsInterpretation =
+    interpretEnabled &&
+    extractors.some((extractor) => extractor.matches(artifact.rootRelativePath));
   const wantsIdentifier = readsDeclaredIdentifier(artifact.basename);
   // Record a refusal made before decoding, against the decoder that claims the
   // path, unless a decoding record already stands for this artifact.
@@ -888,45 +906,58 @@ async function deriveDocumentLayers(
   // every run forever — and a warm run over a corpus containing one could never
   // reach a full cache however many times it was repeated.
   const mayDecode = documentHit === undefined || documentHit.decodes;
-  const lexicalHit = wantsLexical && mayDecode
-    ? cache.get<LexicalFeatureRecord>("lexical_features", lexicalKey)
-    : undefined;
-  const levelOneHit = wantsInterpretation && mayDecode
-    ? cache.get<PortableInterpretationRecord | RootDependentInterpretationIndex>("interpretation", interpretKey)
-    : undefined;
+  const lexicalHit =
+    wantsLexical && mayDecode
+      ? cache.get<LexicalFeatureRecord>("lexical_features", lexicalKey)
+      : undefined;
+  const levelOneHit =
+    wantsInterpretation && mayDecode
+      ? cache.get<PortableInterpretationRecord | RootDependentInterpretationIndex>(
+          "interpretation",
+          interpretKey,
+        )
+      : undefined;
   // A root-dependent entry is an index: the result lives under a key that binds
   // the current answers to the questions the document asked.
   const portableHit: PortableInterpretationRecord | undefined = isRootDependentIndex(levelOneHit)
     ? cache.get<PortableInterpretationRecord>(
         "interpretation",
-        rootBoundInterpretationKey(interpretKey, levelOneHit.root_probes, rootPathsById.get(artifact.rootId) ?? new Set<string>()),
+        rootBoundInterpretationKey(
+          interpretKey,
+          levelOneHit.root_probes,
+          rootPathsById.get(artifact.rootId) ?? new Set<string>(),
+        ),
       )
     : levelOneHit;
   const repositorySubjectId = `repo:${rootKeyById.get(artifact.rootId) ?? artifact.rootId}`;
-  const interpretHit: InterpretationRecord | undefined = portableHit === undefined
-    ? undefined
-    : {
-        assertions: bindPortableAssertions(portableHit.assertions, repositorySubjectId),
-        diagnostics: portableHit.diagnostics,
-      };
+  const interpretHit: InterpretationRecord | undefined =
+    portableHit === undefined
+      ? undefined
+      : {
+          assertions: bindPortableAssertions(portableHit.assertions, repositorySubjectId),
+          diagnostics: portableHit.diagnostics,
+        };
   const identifierKey = normalizedDocumentKey({
     contentHash,
     decoderId: MANIFEST_DECODER_ID,
     decoderVersion: MANIFEST_DECODER_VERSION,
   });
-  const identifierHit = wantsIdentifier && mayDecode
-    ? cache.get<{ declared: DeclaredIdentifier | null }>("normalized_document", identifierKey)
-    : undefined;
+  const identifierHit =
+    wantsIdentifier && mayDecode
+      ? cache.get<{ declared: DeclaredIdentifier | null }>("normalized_document", identifierKey)
+      : undefined;
 
-  const needsText = documentHit === undefined
-    || (wantsLexical && lexicalHit === undefined && documentHit.decodes)
-    || (wantsInterpretation && interpretHit === undefined && documentHit.decodes)
-    || (wantsIdentifier && identifierHit === undefined && documentHit.decodes);
+  const needsText =
+    documentHit === undefined ||
+    (wantsLexical && lexicalHit === undefined && documentHit.decodes) ||
+    (wantsInterpretation && interpretHit === undefined && documentHit.decodes) ||
+    (wantsIdentifier && identifierHit === undefined && documentHit.decodes);
 
   if (documentHit !== undefined) normalized.set(artifact.virtualSourceId, documentHit);
   if (lexicalHit !== undefined) lexical.set(artifact.virtualSourceId, lexicalHit);
   if (interpretHit !== undefined) interpreted.set(artifact.virtualSourceId, interpretHit);
-  if (identifierHit !== undefined) manifestIdentifiers.set(artifact.virtualSourceId, identifierHit.declared);
+  if (identifierHit !== undefined)
+    manifestIdentifiers.set(artifact.virtualSourceId, identifierHit.declared);
   if (!needsText) {
     session?.completeDecoder(documentKey);
     return;
@@ -953,20 +984,25 @@ async function deriveDocumentLayers(
       });
     }
     diagnostics.push({
-      code: reason === UNREADABLE_REASON
-        ? "corpus.document_unreadable"
-        : "corpus.document_changed_during_scan",
+      code:
+        reason === UNREADABLE_REASON
+          ? "corpus.document_unreadable"
+          : "corpus.document_changed_during_scan",
       severity: "warning",
       message,
       corpus_path: artifact.corpusPath,
     });
   };
-  const changedMessage = "the file's bytes no longer match the content hash recorded when it was "
-    + "acquired; nothing was derived from them or cached for it, and the next run reads it again";
+  const changedMessage =
+    "the file's bytes no longer match the content hash recorded when it was " +
+    "acquired; nothing was derived from them or cached for it, and the next run reads it again";
 
   const absolute = artifact.absolutePath;
   if (absolute === null) {
-    refuseForThisRun(UNREADABLE_REASON, "the document has no readable path in this run and was not decoded");
+    refuseForThisRun(
+      UNREADABLE_REASON,
+      "the document has no readable path in this run and was not decoded",
+    );
     return;
   }
   const reserve = artifact.sizeBytes ?? 0;
@@ -1000,7 +1036,10 @@ async function deriveDocumentLayers(
       try {
         bytes = await fs.promises.readFile(absolute);
       } catch (error) {
-        refuseForThisRun(UNREADABLE_REASON, `the document could not be read (${errorCode(error)}) and was not decoded`);
+        refuseForThisRun(
+          UNREADABLE_REASON,
+          `the document could not be read (${errorCode(error)}) and was not decoded`,
+        );
         return;
       }
       const observed = `sha256:${crypto.createHash("sha256").update(bytes).digest("hex")}`;
@@ -1014,7 +1053,10 @@ async function deriveDocumentLayers(
         containerStat = fs.statSync(absolute, { bigint: true });
         verified = hashFileStreaming(absolute).hash === contentHash;
       } catch (error) {
-        refuseForThisRun(UNREADABLE_REASON, `the document could not be read (${errorCode(error)}) and was not decoded`);
+        refuseForThisRun(
+          UNREADABLE_REASON,
+          `the document could not be read (${errorCode(error)}) and was not decoded`,
+        );
         return;
       }
       if (!verified) {
@@ -1074,7 +1116,10 @@ async function deriveDocumentLayers(
       try {
         after = fs.statSync(absolute, { bigint: true });
       } catch (error) {
-        refuseForThisRun(UNREADABLE_REASON, `the document could not be read (${errorCode(error)}) and was not decoded`);
+        refuseForThisRun(
+          UNREADABLE_REASON,
+          `the document could not be read (${errorCode(error)}) and was not decoded`,
+        );
         return;
       }
       if (after.size !== containerStat.size || after.mtimeNs !== containerStat.mtimeNs) {
@@ -1119,7 +1164,10 @@ async function deriveDocumentLayers(
       // The bytes are already in hand from the verified read above; decoding
       // them again beats a second trip to the filesystem for the same file.
       if (bytes === undefined) {
-        refuseForThisRun(UNREADABLE_REASON, "the document's bytes were not read and it was not decoded");
+        refuseForThisRun(
+          UNREADABLE_REASON,
+          "the document's bytes were not read and it was not decoded",
+        );
         return;
       }
       text = bytes.toString("utf8");
@@ -1193,7 +1241,11 @@ async function deriveDocumentLayers(
       } else {
         const index: RootDependentInterpretationIndex = { root_probes: probes };
         cache.put("interpretation", interpretKey, index);
-        cache.put("interpretation", rootBoundInterpretationKey(interpretKey, probes, observedPaths), portable);
+        cache.put(
+          "interpretation",
+          rootBoundInterpretationKey(interpretKey, probes, observedPaths),
+          portable,
+        );
       }
       interpreted.set(artifact.virtualSourceId, {
         assertions: result.assertions,
@@ -1264,7 +1316,8 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
   };
   const maxFileBytes = input.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES;
   const nearDuplicatesEnabled = input.nearDuplicates?.enabled !== false;
-  const nearDuplicateThreshold = input.nearDuplicates?.threshold ?? DEFAULT_NEAR_DUPLICATE_THRESHOLD;
+  const nearDuplicateThreshold =
+    input.nearDuplicates?.threshold ?? DEFAULT_NEAR_DUPLICATE_THRESHOLD;
   const topicsEnabled = input.topics?.enabled !== false;
   const topicThreshold = input.topics?.threshold ?? DEFAULT_TOPIC_THRESHOLD;
   const extractors = defaultExtractors();
@@ -1284,9 +1337,8 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
   // Null, not a hash, when the projection was not selected: the profile enters
   // the analysis identity only by being asked for, so a default run's identity
   // is a function of the rules it actually applied.
-  const architectureProfile: string | null = input.architectureEvidence === true
-    ? architectureEvidenceProfileHash()
-    : null;
+  const architectureProfile: string | null =
+    input.architectureEvidence === true ? architectureEvidenceProfileHash() : null;
   const interpretEnabled = input.interpret !== false;
   // The selection profile reads the work.kind and work.status a text document
   // declares, and those are read by the interpretation pass. Without it every
@@ -1295,9 +1347,9 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
   // has nothing to do with it. Refused rather than degraded (ADR-068).
   if (architectureProfile !== null && !interpretEnabled) {
     throw new Error(
-      "corpus: --architecture-evidence needs the interpretation pass, which --no-interpret "
-      + "disables: the selection profile reads each text document's declared work.kind and "
-      + "work.status through it. Drop one of the two switches.",
+      "corpus: --architecture-evidence needs the interpretation pass, which --no-interpret " +
+        "disables: the selection profile reads each text document's declared work.kind and " +
+        "work.status through it. Drop one of the two switches.",
     );
   }
   const verificationMode: VerificationMode = input.verification ?? "full";
@@ -1309,16 +1361,25 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
   // policy, so it is cached under exactly those. The bytes are still staged: the
   // members are needed by whatever reads them next, and a verdict is not members.
   const archiveManifestStore: ArchiveManifestStore = {
-    get: (key) => cache.get<ArchivePreflightResult>("archive_manifest", archiveManifestKey({
-      archiveContentHash: key.archiveContentHash,
-      archiveReaderVersion: key.readerVersion,
-      archivePolicyFingerprint: key.policyFingerprint,
-    })),
-    put: (key, value) => cache.put("archive_manifest", archiveManifestKey({
-      archiveContentHash: key.archiveContentHash,
-      archiveReaderVersion: key.readerVersion,
-      archivePolicyFingerprint: key.policyFingerprint,
-    }), value),
+    get: (key) =>
+      cache.get<ArchivePreflightResult>(
+        "archive_manifest",
+        archiveManifestKey({
+          archiveContentHash: key.archiveContentHash,
+          archiveReaderVersion: key.readerVersion,
+          archivePolicyFingerprint: key.policyFingerprint,
+        }),
+      ),
+    put: (key, value) =>
+      cache.put(
+        "archive_manifest",
+        archiveManifestKey({
+          archiveContentHash: key.archiveContentHash,
+          archiveReaderVersion: key.readerVersion,
+          archivePolicyFingerprint: key.policyFingerprint,
+        }),
+        value,
+      ),
   };
   // ── 0. may this run claim continuity with a previous one? ───────────────
   //
@@ -1363,9 +1424,8 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
     authorize("resume", sessionRoots);
   }
 
-  const knownHashesEnabled = verificationMode === "incremental"
-    && !verifyContent
-    && input.previousSnapshot !== undefined;
+  const knownHashesEnabled =
+    verificationMode === "incremental" && !verifyContent && input.previousSnapshot !== undefined;
   if (knownHashesEnabled) {
     // Reuse keyed purely on content is safe whatever the root is called: the key
     // is the bytes. This is the other kind — "that path under that root had these
@@ -1378,8 +1438,12 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
   // One entry per failed *mount*. Reconciled against the bound roots below: a
   // key is missing only when none of its mounts was observed (RC-066).
   const failedRoots: {
-    rootKey: string; rootId: string; reason: string; keyDeclared: boolean;
-    absolutePath: string; diagnostic: CorpusScanDiagnostic;
+    rootKey: string;
+    rootId: string;
+    reason: string;
+    keyDeclared: boolean;
+    absolutePath: string;
+    diagnostic: CorpusScanDiagnostic;
   }[] = [];
   const disposals: LocalSourceObservation[] = [];
   try {
@@ -1420,7 +1484,10 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
         if (input.allowPartialRoots !== true) throw error;
         const reason = error instanceof Error ? error.message : String(error);
         failedRoots.push({
-          rootKey, rootId: corpusRootId(rootKey), reason, keyDeclared,
+          rootKey,
+          rootId: corpusRootId(rootKey),
+          reason,
+          keyDeclared,
           absolutePath: path.resolve(spec.path),
           diagnostic: {
             code: "corpus.root_unreadable",
@@ -1432,11 +1499,15 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       }
       disposals.push(observation);
       if (!observation.stable) {
-        const unstable = `corpus: SOURCE_CHANGED_DURING_OBSERVATION under root '${rootKey}'; `
-          + "the root changed while it was being read, so it has no deterministic snapshot";
+        const unstable =
+          `corpus: SOURCE_CHANGED_DURING_OBSERVATION under root '${rootKey}'; ` +
+          "the root changed while it was being read, so it has no deterministic snapshot";
         if (input.allowPartialRoots !== true) throw new Error(unstable);
         failedRoots.push({
-          rootKey, rootId: corpusRootId(rootKey), reason: unstable, keyDeclared,
+          rootKey,
+          rootId: corpusRootId(rootKey),
+          reason: unstable,
+          keyDeclared,
           absolutePath: path.resolve(spec.path),
           diagnostic: { code: "corpus.root_unstable", severity: "error", message: unstable },
         });
@@ -1474,21 +1545,22 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
           code: "corpus.root_mount_unobserved",
           severity: "warning",
           message:
-            `root '${failed.rootKey}' could not be observed through ${failed.absolutePath} `
-            + `(${failed.reason}); it was observed through ${observedPath}`,
+            `root '${failed.rootKey}' could not be observed through ${failed.absolutePath} ` +
+            `(${failed.reason}); it was observed through ${observedPath}`,
         });
         continue;
       }
       diagnostics.push(failed.diagnostic);
-      if (!missingRoots.some((missing) => missing.rootId === failed.rootId)) missingRoots.push(failed);
+      if (!missingRoots.some((missing) => missing.rootId === failed.rootId))
+        missingRoots.push(failed);
     }
     for (const folded of bound.folded) {
       diagnostics.push({
         code: "corpus.root_folded",
         severity: "info",
         message:
-          `root '${folded.root_key}' was mounted twice with identical content; `
-          + `${folded.absolute_path} was folded into ${folded.kept_absolute_path}`,
+          `root '${folded.root_key}' was mounted twice with identical content; ` +
+          `${folded.absolute_path} was folded into ${folded.kept_absolute_path}`,
       });
     }
     const keptPaths = new Set(bound.roots.map((root) => root.absolute_path));
@@ -1533,21 +1605,22 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
     // alternatives; the provider wins when both are given, because it is the one
     // that will actually produce this run's numbers.
     const embeddingConfiguration = input.embeddingProvider?.configuration;
-    const embeddingProfile: string | null = embeddingConfiguration !== undefined
-      ? stableId("embedding-profile", {
-          chunk_profile: embeddingChunkProfileHash(),
-          model_id: embeddingConfiguration.model_id,
-          model_revision: embeddingConfiguration.model_revision ?? "",
-          provider: embeddingConfiguration.provider,
-        })
-      : input.embeddingReport?.enabled === true
+    const embeddingProfile: string | null =
+      embeddingConfiguration !== undefined
         ? stableId("embedding-profile", {
-            chunk_profile: input.embeddingReport.chunk_profile,
-            model_id: input.embeddingReport.model_id ?? "",
-            model_revision: input.embeddingReport.model_revision ?? "",
-            provider: input.embeddingReport.provider ?? "",
+            chunk_profile: embeddingChunkProfileHash(),
+            model_id: embeddingConfiguration.model_id,
+            model_revision: embeddingConfiguration.model_revision ?? "",
+            provider: embeddingConfiguration.provider,
           })
-        : null;
+        : input.embeddingReport?.enabled === true
+          ? stableId("embedding-profile", {
+              chunk_profile: input.embeddingReport.chunk_profile,
+              model_id: input.embeddingReport.model_id ?? "",
+              model_revision: input.embeddingReport.model_revision ?? "",
+              provider: input.embeddingReport.provider ?? "",
+            })
+          : null;
 
     // ── 3. corpus artifacts ───────────────────────────────────────────────
     const previousPrechecks = input.previousSnapshot
@@ -1612,8 +1685,10 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
         }
         // The hint is scored against the hash that was just computed, and then
         // discarded. It has no other effect anywhere in this file.
-        if (artifact.statPrecheck !== undefined
-          && statPrecheckMatches(previousPrechecks.get(identity), artifact.statPrecheck)) {
+        if (
+          artifact.statPrecheck !== undefined &&
+          statPrecheckMatches(previousPrechecks.get(identity), artifact.statPrecheck)
+        ) {
           precheck.predicted_unchanged += 1;
           if (previousHashes.get(identity) === contentHash) precheck.confirmed_unchanged += 1;
           else precheck.contradicted += 1;
@@ -1672,9 +1747,9 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
     // rather than the corpus. The extension list is the floor, not the ceiling.
     const decodable = artifacts.filter(
       (artifact) =>
-        artifact.contentHash !== null
-        && (isDecodable(artifact.rootRelativePath, registry)
-          || extractors.some((extractor) => extractor.matches(artifact.rootRelativePath))),
+        artifact.contentHash !== null &&
+        (isDecodable(artifact.rootRelativePath, registry) ||
+          extractors.some((extractor) => extractor.matches(artifact.rootRelativePath))),
     );
 
     const rootKeyById = new Map(bound.roots.map((root) => [root.root_id, root.root_key]));
@@ -1692,8 +1767,17 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
         rootPathsById,
         rootKeyById,
         registry,
-        into: { normalized, lexical, interpreted, manifestIdentifiers, skipped, refused, diagnostics },
-      }));
+        into: {
+          normalized,
+          lexical,
+          interpreted,
+          manifestIdentifiers,
+          skipped,
+          refused,
+          diagnostics,
+        },
+      }),
+    );
 
     // ── 4a. what the decoded documents say about themselves ───────────────
     //
@@ -1783,9 +1867,12 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
                 // Sorted so a packet does not inherit the order documents happened
                 // to finish decoding in; the decode stage is bounded-parallel.
                 assertions: [...rootAssertions].sort((a, b) =>
-                  compareCodePoints(a.assertion_id, b.assertion_id)),
-                diagnostics: [...rootDiagnostics].sort((a, b) =>
-                  compareCodePoints(a.code, b.code) || compareCodePoints(a.message, b.message)),
+                  compareCodePoints(a.assertion_id, b.assertion_id),
+                ),
+                diagnostics: [...rootDiagnostics].sort(
+                  (a, b) =>
+                    compareCodePoints(a.code, b.code) || compareCodePoints(a.message, b.message),
+                ),
               },
             }
           : {}),
@@ -1824,7 +1911,9 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
           semantic_candidate_profile: candidateProfile,
           ...(embeddingProfile !== null ? { embedding_profile: embeddingProfile } : {}),
           readiness_profile: readinessProfileHash(),
-          ...(architectureProfile !== null ? { architecture_evidence_profile: architectureProfile } : {}),
+          ...(architectureProfile !== null
+            ? { architecture_evidence_profile: architectureProfile }
+            : {}),
         },
       }),
       corpus_profile: corpusProfileHash,
@@ -1834,13 +1923,15 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       semantic_candidate_profile: candidateProfile,
       embedding_profile: embeddingProfile,
       readiness_profile: readinessProfileHash(),
-      ...(architectureProfile !== null ? { architecture_evidence_profile: architectureProfile } : {}),
+      ...(architectureProfile !== null
+        ? { architecture_evidence_profile: architectureProfile }
+        : {}),
     };
     // Both projections of the work signals are built from this one array. The
     // report samples it and the machine payload carries all of it, so the two can
     // disagree about presentation and never about how much the corpus found.
-    const workSignalRecords: DocumentWorkSignalRecord[] = [...blockSignals.entries()]
-      .flatMap(([artifactId, signals]) =>
+    const workSignalRecords: DocumentWorkSignalRecord[] = [...blockSignals.entries()].flatMap(
+      ([artifactId, signals]) =>
         signals.map((signal) => ({
           signal_id: signal.assertion_id,
           artifact_id: artifactId,
@@ -1862,7 +1953,8 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
           confidence: signal.confidence,
           extractor_id: signal.extractor_id,
           extractor_profile_version: DOCUMENT_BLOCK_PROFILE_VERSION,
-        })));
+        })),
+    );
 
     // The complete payload is built here, before the snapshot, because the
     // snapshot carries a reference to it: a record count and the two hashes, so a
@@ -1898,30 +1990,32 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
         // the reader was given and found nothing in; `documents_read` counts it.
         const blocks = record.blocks ?? [];
         const rootKey = rootKeyById.get(artifact.rootId) ?? artifact.rootId;
-        return [{
-          artifactId: artifact.virtualSourceId,
-          rmpArtifactId: repositoryModelArtifactId(`repo:${rootKey}`, artifact.rootRelativePath),
-          sourcePath: artifact.rootRelativePath,
-          format: record.format,
-          rawContentHash: artifact.contentHash,
-          normalizedDocumentId: normalizedDocumentIdOf(artifact, record, registry),
-          decoderId: record.decoder_id,
-          decoderVersion: record.decoder_version,
-          blocks: blocks.map((block) => ({
-            block_id: block.block_id,
-            kind: block.kind as BlockKind,
-            text: block.text,
-            locator: block.locator as unknown as BlockLocator,
-          })),
-          workAssertions: [
-            ...(interpreted.get(artifact.virtualSourceId)?.assertions ?? []),
-            ...(blockSignals.get(artifact.virtualSourceId) ?? []),
-          ].map((assertion) => ({
-            assertion_id: assertion.assertion_id,
-            predicate: assertion.predicate,
-            object: assertion.object,
-          })),
-        }];
+        return [
+          {
+            artifactId: artifact.virtualSourceId,
+            rmpArtifactId: repositoryModelArtifactId(`repo:${rootKey}`, artifact.rootRelativePath),
+            sourcePath: artifact.rootRelativePath,
+            format: record.format,
+            rawContentHash: artifact.contentHash,
+            normalizedDocumentId: normalizedDocumentIdOf(artifact, record, registry),
+            decoderId: record.decoder_id,
+            decoderVersion: record.decoder_version,
+            blocks: blocks.map((block) => ({
+              block_id: block.block_id,
+              kind: block.kind as BlockKind,
+              text: block.text,
+              locator: block.locator as unknown as BlockLocator,
+            })),
+            workAssertions: [
+              ...(interpreted.get(artifact.virtualSourceId)?.assertions ?? []),
+              ...(blockSignals.get(artifact.virtualSourceId) ?? []),
+            ].map((assertion) => ({
+              assertion_id: assertion.assertion_id,
+              predicate: assertion.predicate,
+              object: assertion.object,
+            })),
+          },
+        ];
       });
       architectureEvidence = buildArchitectureEvidenceExport({
         corpusSourceSnapshotId: sourceSnapshotId,
@@ -1966,7 +2060,10 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       })),
     }));
     const signalsById = new Map<string, ReadinessSignal[]>(
-      readinessInputs.map((artifact) => [artifact.virtual_source_id, readinessSignalsFor(artifact)]),
+      readinessInputs.map((artifact) => [
+        artifact.virtual_source_id,
+        readinessSignalsFor(artifact),
+      ]),
     );
 
     // ── 6. corpus-scope analyses ──────────────────────────────────────────
@@ -2000,7 +2097,8 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
     // renamed is a different input to this analysis: keying on content alone would
     // serve back candidates naming artifacts the current snapshot does not have.
     const featureIdentities = lexicalDocuments.map(
-      (document) => `${document.artifactId} ${document.sourcePath} ${document.normalizedContentHash}`,
+      (document) =>
+        `${document.artifactId} ${document.sourcePath} ${document.normalizedContentHash}`,
     );
     // The near-duplicate pass also reads each document's exact content hash:
     // byte-identical files are an exact-duplicate fact and never a candidate. A
@@ -2008,52 +2106,63 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
     // that, so the hash is part of this key. The topic pass never reads it, and
     // adding it there would only invalidate an analysis that has not changed.
     const nearFeatureIdentities = lexicalDocuments.map(
-      (document) => `${document.artifactId} ${document.sourcePath} ${document.normalizedContentHash} ${document.contentHash}`,
+      (document) =>
+        `${document.artifactId} ${document.sourcePath} ${document.normalizedContentHash} ${document.contentHash}`,
     );
 
     const nearKey = candidateAnalysisKey({
-      inputFeatureIdentities: [...nearFeatureIdentities, `near:${canonicalThresholdText(nearDuplicateThreshold)}`],
+      inputFeatureIdentities: [
+        ...nearFeatureIdentities,
+        `near:${canonicalThresholdText(nearDuplicateThreshold)}`,
+      ],
       candidateProfileHash: candidateProfile,
     });
     const nearCandidates = nearDuplicatesEnabled
       ? cached(cache, "candidate_analysis", nearKey, () =>
-        nearDuplicateCandidates(lexicalDocuments, nearDuplicateThreshold))
+          nearDuplicateCandidates(lexicalDocuments, nearDuplicateThreshold),
+        )
       : [];
     if (nearDuplicatesEnabled) session?.completeAnalysis(nearKey);
 
     const topicKey = candidateAnalysisKey({
-      inputFeatureIdentities: [...featureIdentities, `topic:${canonicalThresholdText(topicThreshold)}`],
+      inputFeatureIdentities: [
+        ...featureIdentities,
+        `topic:${canonicalThresholdText(topicThreshold)}`,
+      ],
       candidateProfileHash: candidateProfile,
     });
-    const rootByArtifact = new Map(artifacts.map((artifact) => [artifact.virtualSourceId, artifact.rootId]));
+    const rootByArtifact = new Map(
+      artifacts.map((artifact) => [artifact.virtualSourceId, artifact.rootId]),
+    );
     const topicResult: TopicCandidateResult = topicsEnabled
       ? cached(cache, "candidate_analysis", topicKey, () =>
-        buildTopicCandidates({
-          documents: artifacts
-            .filter((artifact) => lexical.has(artifact.virtualSourceId))
-            .map((artifact) => {
-              const features = lexical.get(artifact.virtualSourceId) as LexicalFeatureRecord;
-              return {
-                virtual_source_id: artifact.virtualSourceId,
-                corpus_path: artifact.corpusPath,
-                term_counts: features.term_counts,
-                token_count: features.token_count,
-              };
-            }),
-          threshold: topicThreshold,
-          rootById: rootByArtifact,
-        }))
+          buildTopicCandidates({
+            documents: artifacts
+              .filter((artifact) => lexical.has(artifact.virtualSourceId))
+              .map((artifact) => {
+                const features = lexical.get(artifact.virtualSourceId) as LexicalFeatureRecord;
+                return {
+                  virtual_source_id: artifact.virtualSourceId,
+                  corpus_path: artifact.corpusPath,
+                  term_counts: features.term_counts,
+                  token_count: features.token_count,
+                };
+              }),
+            threshold: topicThreshold,
+            rootById: rootByArtifact,
+          }),
+        )
       : {
-        candidates: [],
-        pair_work: {
-          eligible_document_count: 0,
-          exhaustive_pair_count: 0,
-          evaluated_pair_count: 0,
-          skipped_same_component_count: 0,
-          indexed_posting_count: 0,
-          unindexed_term_count: 0,
-        },
-      };
+          candidates: [],
+          pair_work: {
+            eligible_document_count: 0,
+            exhaustive_pair_count: 0,
+            evaluated_pair_count: 0,
+            skipped_same_component_count: 0,
+            indexed_posting_count: 0,
+            unindexed_term_count: 0,
+          },
+        };
     const topicCandidates = topicResult.candidates;
     if (topicsEnabled) session?.completeAnalysis(topicKey);
 
@@ -2063,7 +2172,9 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       const isManifest = signals.some((signal) => signal.signal === "artifact.has_build_manifest");
       const isCi = signals.some((signal) => signal.signal === "artifact.has_ci_definition");
       if (!isManifest && !isCi) continue;
-      const declared = isManifest ? manifestIdentifiers.get(artifact.virtualSourceId) ?? null : null;
+      const declared = isManifest
+        ? (manifestIdentifiers.get(artifact.virtualSourceId) ?? null)
+        : null;
       markers.push({
         virtual_source_id: artifact.virtualSourceId,
         root_id: artifact.rootId,
@@ -2072,9 +2183,9 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
         marker_kind: isManifest ? "build_manifest" : "ci_definition",
         ...(declared !== null
           ? {
-            declared_identifier: declared.identifier,
-            declared_identifier_evidence: { field: declared.field, line: declared.line },
-          }
+              declared_identifier: declared.identifier,
+              declared_identifier_evidence: { field: declared.field, line: declared.line },
+            }
           : {}),
       });
     }
@@ -2092,12 +2203,14 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
     // ── 7. projections ────────────────────────────────────────────────────
     const clusterByArtifact = new Map<string, string>();
     for (const cluster of clusters) {
-      for (const artifactId of cluster.artifact_ids) clusterByArtifact.set(artifactId, cluster.cluster_id);
+      for (const artifactId of cluster.artifact_ids)
+        clusterByArtifact.set(artifactId, cluster.cluster_id);
     }
-    const nearByArtifact = indexMembership(nearCandidates, (candidate) => [
-      candidate.artifact_a_id,
-      candidate.artifact_b_id,
-    ], (candidate) => candidate.candidate_id);
+    const nearByArtifact = indexMembership(
+      nearCandidates,
+      (candidate) => [candidate.artifact_a_id, candidate.artifact_b_id],
+      (candidate) => candidate.candidate_id,
+    );
     const topicByArtifact = indexMembership(
       topicCandidates,
       (candidate) => candidate.member_ids,
@@ -2121,8 +2234,8 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       ...(artifact.statPrecheck !== undefined ? { stat_precheck: artifact.statPrecheck } : {}),
     }));
 
-    const orderedArchives = [...archives].sort(
-      (a, b) => compareCodePoints(a.corpus_path, b.corpus_path),
+    const orderedArchives = [...archives].sort((a, b) =>
+      compareCodePoints(a.corpus_path, b.corpus_path),
     );
     const snapshotRoots: CorpusSnapshotRoot[] = bound.roots.map((root) => {
       const packet = packetByRoot.get(root.root_id);
@@ -2132,14 +2245,16 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
         rmp_semantic_hash: packet?.semantic_hash ?? "",
         // Output-relative, so a snapshot copied to another machine still points at
         // its own bundles. The absolute location is the operator's business.
-        bundle_ref: packet === undefined ? null : `roots/${rootDirectoryName(root.root_key)}/bundle`,
+        bundle_ref:
+          packet === undefined ? null : `roots/${rootDirectoryName(root.root_key)}/bundle`,
         observation_status: packet === undefined ? "failed" : "observed",
         failure_reason: null,
       };
     });
     const hashingTotals = active.reduce(
       (sum, entry) => ({
-        fully_rehashed_count: sum.fully_rehashed_count + entry.observation.hashing.fully_rehashed_count,
+        fully_rehashed_count:
+          sum.fully_rehashed_count + entry.observation.hashing.fully_rehashed_count,
         cached_reuse_count: sum.cached_reuse_count + entry.observation.hashing.cached_reuse_count,
         unhashed_count: sum.unhashed_count + entry.observation.hashing.unhashed_count,
       }),
@@ -2151,15 +2266,15 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
     const verification: CorpusVerification = {
       mode: verificationMode,
       verify_content_requested: verifyContent,
-      verification_class: hashingTotals.cached_reuse_count === 0
-        ? "fully_verified"
-        : "cached_unchanged_assumption",
+      verification_class:
+        hashingTotals.cached_reuse_count === 0 ? "fully_verified" : "cached_unchanged_assumption",
       fully_rehashed_artifact_count: hashingTotals.fully_rehashed_count,
       cached_hash_reuse_count: hashingTotals.cached_reuse_count,
       unhashed_artifact_count: hashingTotals.unhashed_count,
-      statement: hashingTotals.cached_reuse_count === 0
-        ? FULLY_VERIFIED_STATEMENT
-        : CACHED_ASSUMPTION_STATEMENT,
+      statement:
+        hashingTotals.cached_reuse_count === 0
+          ? FULLY_VERIFIED_STATEMENT
+          : CACHED_ASSUMPTION_STATEMENT,
     };
     // A root that was named and could not be read appears in the snapshot as a
     // missing root, not as an absence. Downstream, "12 project candidates" over a
@@ -2280,7 +2395,8 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
         near_duplicate_candidate_count: nearCandidates.length,
         cross_root_near_duplicate_count: nearCandidates.filter(
           (candidate) =>
-            rootByArtifact.get(candidate.artifact_a_id) !== rootByArtifact.get(candidate.artifact_b_id),
+            rootByArtifact.get(candidate.artifact_a_id) !==
+            rootByArtifact.get(candidate.artifact_b_id),
         ).length,
         topic_candidate_count: topicCandidates.length,
         cross_root_topic_candidate_count: crossRoot(topicCandidates),
@@ -2299,7 +2415,9 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
         near_duplicate_candidate_ids: (nearByArtifact.get(artifact.virtualSourceId) ?? []).sort(
           compareCodePoints,
         ),
-        topic_candidate_ids: (topicByArtifact.get(artifact.virtualSourceId) ?? []).sort(compareCodePoints),
+        topic_candidate_ids: (topicByArtifact.get(artifact.virtualSourceId) ?? []).sort(
+          compareCodePoints,
+        ),
         project_candidate_ids: (projectByArtifact.get(artifact.virtualSourceId) ?? []).sort(
           compareCodePoints,
         ),
@@ -2317,7 +2435,9 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       (candidate) => [candidate.artifact_a_id, candidate.artifact_b_id] as const,
     );
     const bodies: BodyOfWorkSpec[] = projectCandidates.map((candidate) => ({
-      origin: candidate.identifier_is_declared ? "explicit_project_identifier" : "project_candidate",
+      origin: candidate.identifier_is_declared
+        ? "explicit_project_identifier"
+        : "project_candidate",
       origin_ref: candidate.project_key,
       member_ids: candidate.member_ids,
     }));
@@ -2346,14 +2466,14 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
           archiveAncestry: archiveAncestryOf(artifact),
           ...(record !== undefined
             ? {
-              normalized: {
-                ...record,
-                // Read off the blocks rather than declared beside them, so the
-                // index cannot claim a coordinate system no block of this
-                // document actually cites.
-                locator_kinds: (record.blocks ?? []).map((block) => String(block.locator.kind)),
-              },
-            }
+                normalized: {
+                  ...record,
+                  // Read off the blocks rather than declared beside them, so the
+                  // index cannot claim a coordinate system no block of this
+                  // document actually cites.
+                  locator_kinds: (record.blocks ?? []).map((block) => String(block.locator.kind)),
+                },
+              }
             : {}),
           normalizedDocumentId: normalizedDocumentIdOf(artifact, record, registry),
           ...(() => {
@@ -2361,12 +2481,12 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
             return refusal === undefined
               ? {}
               : {
-                refusedBeforeDecoding: {
-                  reason: refusal.reason,
-                  decoderId: refusal.decoderId,
-                  decoderVersion: refusal.decoderVersion,
-                },
-              };
+                  refusedBeforeDecoding: {
+                    reason: refusal.reason,
+                    decoderId: refusal.decoderId,
+                    decoderVersion: refusal.decoderVersion,
+                  },
+                };
           })(),
         };
       }),
@@ -2499,13 +2619,16 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
             predicate: assertion.predicate,
             object: assertion.object,
           })),
-          declared_identifiers: declared === null
-            ? []
-            : [{
-              identifier: declared.identifier,
-              manifest: artifact.basename.toLowerCase(),
-              field: declared.field,
-            }],
+          declared_identifiers:
+            declared === null
+              ? []
+              : [
+                  {
+                    identifier: declared.identifier,
+                    manifest: artifact.basename.toLowerCase(),
+                    field: declared.field,
+                  },
+                ],
           exact_duplicate_cluster_id: clusterByArtifact.get(artifact.virtualSourceId) ?? null,
           near_duplicate_candidate_ids: nearByArtifact.get(artifact.virtualSourceId) ?? [],
           // Term counts rather than text: the lexical cache holds a bag of words
@@ -2544,7 +2667,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
 
       semantic = runSemanticAnalysis({
         corpusSourceSnapshotId: sourceSnapshotId,
-      corpusAnalysisId: analysisIdentity.corpus_analysis_id,
+        corpusAnalysisId: analysisIdentity.corpus_analysis_id,
         artifacts: semanticArtifacts,
         nearDuplicatePairs: nearCandidates.map((candidate) => ({
           artifact_a_id: candidate.artifact_a_id,
@@ -2567,11 +2690,13 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
     // only the second one means the decoding was worth doing.
     const candidateMembers = new Set(
       candidatesDocument.artifacts
-        .filter((artifact) =>
-          artifact.exact_duplicate_cluster_id !== null
-          || artifact.near_duplicate_candidate_ids.length > 0
-          || artifact.topic_candidate_ids.length > 0
-          || artifact.project_candidate_ids.length > 0)
+        .filter(
+          (artifact) =>
+            artifact.exact_duplicate_cluster_id !== null ||
+            artifact.near_duplicate_candidate_ids.length > 0 ||
+            artifact.topic_candidate_ids.length > 0 ||
+            artifact.project_candidate_ids.length > 0,
+        )
         .map((artifact) => artifact.virtual_source_id),
     );
 
@@ -2649,8 +2774,11 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
     const refusals = (...reasons: string[]): number =>
       reasons.reduce((sum, reason) => sum + (refusalReasons.get(reason) ?? 0), 0);
     const namedRefusals = new Set([
-      "decoder.ocr_required", "decoder.encrypted", "decoder.malformed",
-      "binary", "invalid",
+      "decoder.ocr_required",
+      "decoder.encrypted",
+      "decoder.malformed",
+      "binary",
+      "invalid",
     ]);
     const decodeGap = {
       secret_skipped: skipped.secret,
@@ -2669,24 +2797,31 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
     // The residual, computed rather than assumed zero: if a document goes missing
     // between eligibility and decoding by a route nobody named, it surfaces here
     // instead of vanishing into the difference between two totals.
-    decodeGap.unaccounted = decodableIds.size - decodedIds.size
-      - decodeGap.secret_skipped - decodeGap.oversized - decodeGap.encoding_rejected
-      - decodeGap.ocr_required - decodeGap.encrypted - decodeGap.malformed
-      - decodeGap.other_refusal;
+    decodeGap.unaccounted =
+      decodableIds.size -
+      decodedIds.size -
+      decodeGap.secret_skipped -
+      decodeGap.oversized -
+      decodeGap.encoding_rejected -
+      decodeGap.ocr_required -
+      decodeGap.encrypted -
+      decodeGap.malformed -
+      decodeGap.other_refusal;
     // Eligibility is a property of the artifact and the extractors, not of the
     // switch: a disabled pass is reported as not run below, never as a pass over
     // an empty eligible set (ADR-068).
-    const interpretationEligible = artifacts.filter(
-      (artifact) => extractors.some((extractor) => extractor.matches(artifact.rootRelativePath)),
+    const interpretationEligible = artifacts.filter((artifact) =>
+      extractors.some((extractor) => extractor.matches(artifact.rootRelativePath)),
     );
     const lexicalEligible = artifacts.filter(
-      (artifact) => isLexicallyAnalyzable(artifact.rootRelativePath)
-        || isProseDocumentFormat(registry.forPath(artifact.rootRelativePath)?.format ?? ""),
+      (artifact) =>
+        isLexicallyAnalyzable(artifact.rootRelativePath) ||
+        isProseDocumentFormat(registry.forPath(artifact.rootRelativePath)?.format ?? ""),
     );
     const encryptedCount = active.reduce(
       (sum, entry) =>
-        sum
-        + entry.observation.archives.reduce(
+        sum +
+        entry.observation.archives.reduce(
           (holds, archive) =>
             holds + archive.holds.filter((hold) => hold.code === "archive.member_encrypted").length,
           0,
@@ -2713,9 +2848,12 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       ...blockSignals.values(),
     ]) {
       for (const assertion of assertions) {
-        if (!assertion.predicate.startsWith("work.depends_on")
-          && !assertion.predicate.startsWith("work.blocked_by")
-          && !assertion.predicate.startsWith("work.references")) continue;
+        if (
+          !assertion.predicate.startsWith("work.depends_on") &&
+          !assertion.predicate.startsWith("work.blocked_by") &&
+          !assertion.predicate.startsWith("work.references")
+        )
+          continue;
         dependencyPredicates.set(
           assertion.predicate,
           (dependencyPredicates.get(assertion.predicate) ?? 0) + 1,
@@ -2731,8 +2869,8 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
     }
     const reasoningEligible = projectCandidates.filter(
       (candidate) =>
-        candidate.member_ids.some((id) => decodedIds.has(id))
-        && candidate.member_ids.some((id) => (signalsById.get(id) ?? []).length > 0),
+        candidate.member_ids.some((id) => decodedIds.has(id)) &&
+        candidate.member_ids.some((id) => (signalsById.get(id) ?? []).length > 0),
     ).length;
 
     const cacheStats = cacheStatsDelta(cacheAtStart, cache.stats());
@@ -2791,19 +2929,22 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       documents: {
         decoder_eligible_count: decodableIds.size,
         normalized_document_count: decodedIds.size,
-        unsupported_format_count: artifacts.filter(
-          (artifact) => undecodedExtensions.has(artifact.extension),
+        unsupported_format_count: artifacts.filter((artifact) =>
+          undecodedExtensions.has(artifact.extension),
         ).length,
         // A decoder that was offered bytes it claimed and could not read them.
         // Distinct from an artifact no decoder claims — one is a gap in this
         // corpus, the other a gap in the decoder set — and distinct again from a
         // page that simply has no text on it, which is neither.
-        decoder_failure_count: decodeGap.malformed + decodeGap.encoding_rejected
-          + decodeGap.other_refusal + decodeGap.unaccounted,
+        decoder_failure_count:
+          decodeGap.malformed +
+          decodeGap.encoding_rejected +
+          decodeGap.other_refusal +
+          decodeGap.unaccounted,
         // Two routes to the same finding: a raster file, known by its extension,
         // and a document a decoder opened to discover its pages are images.
-        ocr_required_count: artifacts.filter((a) => ocrExtensions.has(a.extension)).length
-          + decodeGap.ocr_required,
+        ocr_required_count:
+          artifacts.filter((a) => ocrExtensions.has(a.extension)).length + decodeGap.ocr_required,
         encrypted_document_count: encryptedCount + decodeGap.encrypted,
         oversized_document_count: skipped.oversized,
         secret_skipped_count: skipped.secret,
@@ -2821,24 +2962,20 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       },
       embeddings: {
         enabled: embeddingReport?.enabled === true,
-        eligible_count: embeddingReport?.enabled === true
-          ? embeddingReport.eligible_artifact_count
-          : null,
-        embedded_count: embeddingReport?.enabled === true
-          ? embeddingReport.embedded_artifact_count
-          : null,
-        cache_hit_count: embeddingReport?.enabled === true
-          ? embeddingReport.cache_hits
-          : null,
+        eligible_count:
+          embeddingReport?.enabled === true ? embeddingReport.eligible_artifact_count : null,
+        embedded_count:
+          embeddingReport?.enabled === true ? embeddingReport.embedded_artifact_count : null,
+        cache_hit_count: embeddingReport?.enabled === true ? embeddingReport.cache_hits : null,
         // Eligibility already excludes the documents refused for their name, so
         // subtracting them again would report a negative failure count on any
         // corpus holding one.
-        provider_failure_count: embeddingReport?.enabled === true
-          ? embeddingReport.eligible_artifact_count - embeddingReport.embedded_artifact_count
-          : null,
-        secret_skipped_count: embeddingReport?.enabled === true
-          ? embeddingReport.secret_candidates_skipped
-          : null,
+        provider_failure_count:
+          embeddingReport?.enabled === true
+            ? embeddingReport.eligible_artifact_count - embeddingReport.embedded_artifact_count
+            : null,
+        secret_skipped_count:
+          embeddingReport?.enabled === true ? embeddingReport.secret_candidates_skipped : null,
       },
       exact_hash_coverage: coverageRatio(
         artifacts.filter((artifact) => artifact.contentHash !== null).length,
@@ -2848,9 +2985,10 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       interpretation_enabled: interpretEnabled,
       interpretation_coverage: interpretEnabled
         ? coverageRatio(
-          interpretationEligible.filter((artifact) => interpreted.has(artifact.virtualSourceId)).length,
-          interpretationEligible.length,
-        )
+            interpretationEligible.filter((artifact) => interpreted.has(artifact.virtualSourceId))
+              .length,
+            interpretationEligible.length,
+          )
         : null,
       lexical_analysis_coverage: coverageRatio(
         lexicalEligible.filter((artifact) => lexical.has(artifact.virtualSourceId)).length,
@@ -2858,12 +2996,13 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       ),
       // A real ratio when a pass ran, and null — not zero — when none did. Zero
       // would read as "the model was asked and answered nothing".
-      embedding_coverage_when_enabled: embeddingReport?.enabled === true
-        ? coverageRatio(
-          embeddingReport.embedded_artifact_count,
-          embeddingReport.eligible_artifact_count,
-        )
-        : null,
+      embedding_coverage_when_enabled:
+        embeddingReport?.enabled === true
+          ? coverageRatio(
+              embeddingReport.embedded_artifact_count,
+              embeddingReport.eligible_artifact_count,
+            )
+          : null,
       unsupported_format_counts: formatCounts(
         artifacts
           .filter((artifact) => undecodedExtensions.has(artifact.extension))
@@ -2873,9 +3012,8 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
         reasoning_eligible_candidate_count: reasoningEligible,
         reasoning_candidate_count: semantic?.reasoningCandidates.length ?? 0,
         reasoning_evidence_pack_count: semantic?.evidencePacks.length ?? 0,
-        truncated_evidence_pack_count: semantic?.evidencePacks.filter(
-          (pack) => pack.truncation.truncated,
-        ).length ?? 0,
+        truncated_evidence_pack_count:
+          semantic?.evidencePacks.filter((pack) => pack.truncation.truncated).length ?? 0,
         corpus_snapshot_ref: "corpus-snapshot.json",
         corpus_coverage_ref: "corpus-coverage.json",
         readiness_evidence_refs: {
@@ -2895,7 +3033,10 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
           near_duplicate_threshold: Math.round(nearDuplicateThreshold * 1e6) / 1e6,
         },
         unique_content_estimate: uniqueHashes.size,
-        unique_content_bytes_estimate: [...uniqueHashes.values()].reduce((sum, bytes) => sum + bytes, 0),
+        unique_content_bytes_estimate: [...uniqueHashes.values()].reduce(
+          (sum, bytes) => sum + bytes,
+          0,
+        ),
         no_priority_statement: NO_PRIORITY_STATEMENT,
       },
       cache: {
@@ -2952,19 +3093,17 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       knownArtifactIds: new Set(artifacts.map((artifact) => artifact.virtualSourceId)),
       knownNormalizedDocumentIds: new Set(
         artifacts
-          .map((artifact) => normalizedDocumentIdOf(
-            artifact,
-            normalized.get(artifact.virtualSourceId),
-            registry,
-          ))
+          .map((artifact) =>
+            normalizedDocumentIdOf(artifact, normalized.get(artifact.virtualSourceId), registry),
+          )
           .filter((id): id is string => id !== null),
       ),
       reportSignalCount: documentSignals.block_signals.signal_count,
     });
     if (exportProblems.length > 0) {
       throw new Error(
-        "corpus: the complete document work-signal payload failed its own completeness "
-        + `check and was not published:\n  - ${exportProblems.join("\n  - ")}`,
+        "corpus: the complete document work-signal payload failed its own completeness " +
+          `check and was not published:\n  - ${exportProblems.join("\n  - ")}`,
       );
     }
     if (architectureEvidence !== null) {
@@ -2976,18 +3115,16 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
         knownArtifactIds: new Set(artifacts.map((artifact) => artifact.virtualSourceId)),
         knownNormalizedDocumentIds: new Set(
           artifacts
-            .map((artifact) => normalizedDocumentIdOf(
-              artifact,
-              normalized.get(artifact.virtualSourceId),
-              registry,
-            ))
+            .map((artifact) =>
+              normalizedDocumentIdOf(artifact, normalized.get(artifact.virtualSourceId), registry),
+            )
             .filter((id): id is string => id !== null),
         ),
       });
       if (evidenceProblems.length > 0) {
         throw new Error(
-          "corpus: the architecture-evidence payload failed its own completeness "
-          + `check and was not published:\n  - ${evidenceProblems.join("\n  - ")}`,
+          "corpus: the architecture-evidence payload failed its own completeness " +
+            `check and was not published:\n  - ${evidenceProblems.join("\n  - ")}`,
         );
       }
     }
@@ -2997,16 +3134,15 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
     // there was a claim worth making.
     const diff = input.previousSnapshot
       ? {
-        ...buildCorpusDiff(input.previousSnapshot, snapshot),
-        ...(historyOverride !== null
-          ? { inferred_root_history_override: historyOverride }
-          : {}),
-      }
+          ...buildCorpusDiff(input.previousSnapshot, snapshot),
+          ...(historyOverride !== null ? { inferred_root_history_override: historyOverride } : {}),
+        }
       : null;
     const orderedDiagnostics = [...diagnostics].sort(
-      (a, b) => compareCodePoints(a.code, b.code)
-        || compareCodePoints(a.corpus_path ?? "", b.corpus_path ?? "")
-        || compareCodePoints(a.message, b.message),
+      (a, b) =>
+        compareCodePoints(a.code, b.code) ||
+        compareCodePoints(a.corpus_path ?? "", b.corpus_path ?? "") ||
+        compareCodePoints(a.message, b.message),
     );
 
     return {

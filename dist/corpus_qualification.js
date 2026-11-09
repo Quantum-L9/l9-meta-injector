@@ -37,9 +37,9 @@ const ordering_1 = require("./ordering");
  * not run.
  */
 exports.CORPUS_QUALIFICATION_SCHEMA = "l9.corpus-qualification-report/v2";
-exports.QUALIFICATION_NO_PRIORITY_STATEMENT = "This report measures one run over one corpus. Every field in it is a count, a ratio or "
-    + "an identity. It contains no priority, no ranking and no recommendation about any "
-    + "artifact, candidate or body of work it describes.";
+exports.QUALIFICATION_NO_PRIORITY_STATEMENT = "This report measures one run over one corpus. Every field in it is a count, a ratio or " +
+    "an identity. It contains no priority, no ranking and no recommendation about any " +
+    "artifact, candidate or body of work it describes.";
 function secondRunCache(stats) {
     return {
         enabled: stats.enabled,

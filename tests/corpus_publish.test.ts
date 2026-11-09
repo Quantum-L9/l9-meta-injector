@@ -87,7 +87,9 @@ describe("publishing one generation", () => {
   it("puts every projection in one directory and one pointer beside it", () => {
     const out = tmp();
     const result = publishCorpusGeneration({
-      outDir: out, files: runFiles("first"), committedAt: "2026-01-01T00:00:00.000Z",
+      outDir: out,
+      files: runFiles("first"),
+      committedAt: "2026-01-01T00:00:00.000Z",
     });
 
     expect(fs.readdirSync(out).sort()).toEqual(["CURRENT.json", "generations"]);
@@ -111,10 +113,14 @@ describe("publishing one generation", () => {
   it("names the generation by its contents, so an unchanged rerun is a no-op", () => {
     const out = tmp();
     const first = publishCorpusGeneration({
-      outDir: out, files: runFiles("same"), committedAt: "2026-01-01T00:00:00.000Z",
+      outDir: out,
+      files: runFiles("same"),
+      committedAt: "2026-01-01T00:00:00.000Z",
     });
     const second = publishCorpusGeneration({
-      outDir: out, files: runFiles("same"), committedAt: "2026-01-02T00:00:00.000Z",
+      outDir: out,
+      files: runFiles("same"),
+      committedAt: "2026-01-02T00:00:00.000Z",
     });
 
     expect(second.generation_id).toBe(first.generation_id);
@@ -135,11 +141,15 @@ describe("publishing one generation", () => {
   it("refuses a path that would escape its generation", () => {
     const out = tmp();
     for (const bad of ["../escape.json", "/etc/passwd", "roots/../../escape.json", ""]) {
-      expect(() => publishCorpusGeneration({
-        outDir: out,
-        files: [{ path: bad, contents: "{}\n" }],
-        committedAt: "2026-01-01T00:00:00.000Z",
-      }), bad).toThrow(/outside its generation/);
+      expect(
+        () =>
+          publishCorpusGeneration({
+            outDir: out,
+            files: [{ path: bad, contents: "{}\n" }],
+            committedAt: "2026-01-01T00:00:00.000Z",
+          }),
+        bad,
+      ).toThrow(/outside its generation/);
     }
   });
 });
@@ -148,18 +158,22 @@ describe("crashing mid-publish", () => {
   it("leaves the previous run whole when it dies before the switch", () => {
     const out = tmp();
     publishCorpusGeneration({
-      outDir: out, files: runFiles("first"), committedAt: "2026-01-01T00:00:00.000Z",
+      outDir: out,
+      files: runFiles("first"),
+      committedAt: "2026-01-01T00:00:00.000Z",
     });
 
-    expect(() => publishCorpusGeneration({
-      outDir: out,
-      files: runFiles("second"),
-      committedAt: "2026-01-02T00:00:00.000Z",
-      // The generation is fully written at this point and nothing points at it.
-      beforeSwitch: () => {
-        throw new InjectedCrash("killed after writing, before switching");
-      },
-    })).toThrow(InjectedCrash);
+    expect(() =>
+      publishCorpusGeneration({
+        outDir: out,
+        files: runFiles("second"),
+        committedAt: "2026-01-02T00:00:00.000Z",
+        // The generation is fully written at this point and nothing points at it.
+        beforeSwitch: () => {
+          throw new InjectedCrash("killed after writing, before switching");
+        },
+      }),
+    ).toThrow(InjectedCrash);
 
     // The reader sees the first run, entire. Not a mixture, and not nothing.
     const view = readerView(out);
@@ -170,14 +184,16 @@ describe("crashing mid-publish", () => {
 
   it("leaves nothing readable when the very first publish dies before the switch", () => {
     const out = tmp();
-    expect(() => publishCorpusGeneration({
-      outDir: out,
-      files: runFiles("first"),
-      committedAt: "2026-01-01T00:00:00.000Z",
-      beforeSwitch: () => {
-        throw new InjectedCrash("killed before the first switch");
-      },
-    })).toThrow(InjectedCrash);
+    expect(() =>
+      publishCorpusGeneration({
+        outDir: out,
+        files: runFiles("first"),
+        committedAt: "2026-01-01T00:00:00.000Z",
+        beforeSwitch: () => {
+          throw new InjectedCrash("killed before the first switch");
+        },
+      }),
+    ).toThrow(InjectedCrash);
 
     // An unreferenced directory on disk and no pointer: a consumer resolving the
     // published set correctly finds nothing, rather than finding a directory
@@ -190,7 +206,9 @@ describe("crashing mid-publish", () => {
   it("recovers on the next attempt, reusing nothing it cannot vouch for", () => {
     const out = tmp();
     publishCorpusGeneration({
-      outDir: out, files: runFiles("first"), committedAt: "2026-01-01T00:00:00.000Z",
+      outDir: out,
+      files: runFiles("first"),
+      committedAt: "2026-01-01T00:00:00.000Z",
     });
     try {
       publishCorpusGeneration({
@@ -210,7 +228,9 @@ describe("crashing mid-publish", () => {
     // file the first attempt failed on cannot survive as a remnant beside its
     // correct siblings.
     const retry = publishCorpusGeneration({
-      outDir: out, files: runFiles("second"), committedAt: "2026-01-03T00:00:00.000Z",
+      outDir: out,
+      files: runFiles("second"),
+      committedAt: "2026-01-03T00:00:00.000Z",
     });
     expect(retry.reused).toBe(false);
     expect(retry.written_paths).toHaveLength(6);
@@ -220,7 +240,9 @@ describe("crashing mid-publish", () => {
   it("never lets a reader see two runs at once, at any point in a sequence", () => {
     const out = tmp();
     publishCorpusGeneration({
-      outDir: out, files: runFiles("gen-0"), committedAt: "2026-01-01T00:00:00.000Z",
+      outDir: out,
+      files: runFiles("gen-0"),
+      committedAt: "2026-01-01T00:00:00.000Z",
     });
 
     // Crash every run, at the one moment a run can be crashed and still have
@@ -250,7 +272,9 @@ describe("crashing mid-publish", () => {
   it("reports a generation that lost a file rather than returning the rest", () => {
     const out = tmp();
     const result = publishCorpusGeneration({
-      outDir: out, files: runFiles("first"), committedAt: "2026-01-01T00:00:00.000Z",
+      outDir: out,
+      files: runFiles("first"),
+      committedAt: "2026-01-01T00:00:00.000Z",
     });
     fs.rmSync(path.join(result.generation_directory, "corpus-coverage.json"));
 
@@ -264,7 +288,9 @@ describe("crashing mid-publish", () => {
   it("treats an unreadable pointer as no pointer", () => {
     const out = tmp();
     publishCorpusGeneration({
-      outDir: out, files: runFiles("first"), committedAt: "2026-01-01T00:00:00.000Z",
+      outDir: out,
+      files: runFiles("first"),
+      committedAt: "2026-01-01T00:00:00.000Z",
     });
     fs.writeFileSync(path.join(out, "CURRENT.json"), "{ truncated", "utf8");
     // Better than a half-parsed pointer into a directory that may not be there.
@@ -277,12 +303,14 @@ describe("pruning old generations", () => {
     const out = tmp();
     const ids: string[] = [];
     for (let i = 0; i < 5; i += 1) {
-      ids.push(publishCorpusGeneration({
-        outDir: out,
-        files: runFiles(`gen-${i}`),
-        committedAt: `2026-01-0${i + 1}T00:00:00.000Z`,
-        keep: 2,
-      }).generation_id);
+      ids.push(
+        publishCorpusGeneration({
+          outDir: out,
+          files: runFiles(`gen-${i}`),
+          committedAt: `2026-01-0${i + 1}T00:00:00.000Z`,
+          keep: 2,
+        }).generation_id,
+      );
     }
 
     expect(listGenerations(out)).toHaveLength(2);
@@ -297,10 +325,16 @@ describe("pruning old generations", () => {
   it("keeps at least the current generation however small the request", () => {
     const out = tmp();
     publishCorpusGeneration({
-      outDir: out, files: runFiles("a"), committedAt: "2026-01-01T00:00:00.000Z", keep: 0,
+      outDir: out,
+      files: runFiles("a"),
+      committedAt: "2026-01-01T00:00:00.000Z",
+      keep: 0,
     });
     publishCorpusGeneration({
-      outDir: out, files: runFiles("b"), committedAt: "2026-01-02T00:00:00.000Z", keep: 0,
+      outDir: out,
+      files: runFiles("b"),
+      committedAt: "2026-01-02T00:00:00.000Z",
+      keep: 0,
     });
     expect(listGenerations(out)).toHaveLength(1);
     expect(readerView(out)?.tags).toEqual(["b"]);
@@ -309,7 +343,10 @@ describe("pruning old generations", () => {
   it("leaves an unreferenced directory rather than risking one in use", () => {
     const out = tmp();
     publishCorpusGeneration({
-      outDir: out, files: runFiles("a"), committedAt: "2026-01-01T00:00:00.000Z", keep: 5,
+      outDir: out,
+      files: runFiles("a"),
+      committedAt: "2026-01-01T00:00:00.000Z",
+      keep: 5,
     });
     // A directory a crash left behind, pointed at by nothing.
     const orphan = path.join(out, "generations", "0".repeat(64));
@@ -317,7 +354,10 @@ describe("pruning old generations", () => {
     fs.writeFileSync(path.join(orphan, "partial.json"), "{}\n", "utf8");
 
     publishCorpusGeneration({
-      outDir: out, files: runFiles("b"), committedAt: "2026-01-02T00:00:00.000Z", keep: 5,
+      outDir: out,
+      files: runFiles("b"),
+      committedAt: "2026-01-02T00:00:00.000Z",
+      keep: 5,
     });
     // Under the retention limit, so it stays. Disk is the cost; removing
     // something a reader is using would be the alternative.
@@ -364,7 +404,10 @@ describe("retention by recency (RC-069, ADR-066)", () => {
       for (let index = 0; index < 8; index += 1) {
         const before = readCorpusCurrent(out);
         publishCorpusGeneration({
-          outDir: out, files: runFiles(`k${keep}-${index}`), committedAt: "2026-03-01T00:00:00.000Z", keep,
+          outDir: out,
+          files: runFiles(`k${keep}-${index}`),
+          committedAt: "2026-03-01T00:00:00.000Z",
+          keep,
         });
         if (before !== null) {
           expect(listGenerations(out)).toContain(before.generation_ref.split("/")[1]);
@@ -411,9 +454,14 @@ describe("retention by recency (RC-069, ADR-066)", () => {
     const out = tmp();
     const ids: string[] = [];
     for (let index = 0; index < 30; index += 1) {
-      ids.push(publishCorpusGeneration({
-        outDir: out, files: runFiles(`h-${index}`), committedAt: "2026-03-01T00:00:00.000Z", keep: 1,
-      }).generation_id);
+      ids.push(
+        publishCorpusGeneration({
+          outDir: out,
+          files: runFiles(`h-${index}`),
+          committedAt: "2026-03-01T00:00:00.000Z",
+          keep: 1,
+        }).generation_id,
+      );
     }
     const history = readCorpusCurrent(out)?.previous_generation_ids ?? [];
     expect(history[0]).toBe(ids[28]);
@@ -430,7 +478,12 @@ describe("one publisher per output root (RC-072, ADR-066)", () => {
 
   it("REG-WU-042-RC-072-a: a second publisher during the first is refused and the first's generation survives", () => {
     const out = tmp();
-    publishCorpusGeneration({ outDir: out, files: runFiles("base"), committedAt: "2026-04-01T00:00:00.000Z", keep: 1 });
+    publishCorpusGeneration({
+      outDir: out,
+      files: runFiles("base"),
+      committedAt: "2026-04-01T00:00:00.000Z",
+      keep: 1,
+    });
     let refusal: unknown = null;
     publishCorpusGeneration({
       outDir: out,
@@ -439,7 +492,12 @@ describe("one publisher per output root (RC-072, ADR-066)", () => {
       keep: 1,
       beforeSwitch: () => {
         try {
-          publishCorpusGeneration({ outDir: out, files: runFiles("B"), committedAt: "2026-04-03T00:00:00.000Z", keep: 1 });
+          publishCorpusGeneration({
+            outDir: out,
+            files: runFiles("B"),
+            committedAt: "2026-04-03T00:00:00.000Z",
+            keep: 1,
+          });
         } catch (error) {
           refusal = error;
         }
@@ -454,18 +512,34 @@ describe("one publisher per output root (RC-072, ADR-066)", () => {
 
   it("REG-WU-042-RC-072-b: a stale lock whose pid is not alive on this host is taken over", () => {
     const out = tmp();
-    fs.writeFileSync(path.join(out, LOCK), `${JSON.stringify({ pid: 999999999, host: os.hostname() })}\n`, "utf8");
-    publishCorpusGeneration({ outDir: out, files: runFiles("after-crash"), committedAt: "2026-04-01T00:00:00.000Z" });
+    fs.writeFileSync(
+      path.join(out, LOCK),
+      `${JSON.stringify({ pid: 999999999, host: os.hostname() })}\n`,
+      "utf8",
+    );
+    publishCorpusGeneration({
+      outDir: out,
+      files: runFiles("after-crash"),
+      committedAt: "2026-04-01T00:00:00.000Z",
+    });
     expect(readerView(out)?.tags).toEqual(["after-crash"]);
     expect(fs.existsSync(path.join(out, LOCK))).toBe(false);
   });
 
   it("refuses, naming the lock file, when the lock is held by a live process or another host", () => {
-    for (const holder of [{ pid: process.ppid, host: os.hostname() }, { pid: 999999999, host: `${os.hostname()}-elsewhere` }]) {
+    for (const holder of [
+      { pid: process.ppid, host: os.hostname() },
+      { pid: 999999999, host: `${os.hostname()}-elsewhere` },
+    ]) {
       const out = tmp();
       fs.writeFileSync(path.join(out, LOCK), `${JSON.stringify(holder)}\n`, "utf8");
-      expect(() => publishCorpusGeneration({ outDir: out, files: runFiles("x"), committedAt: "2026-04-01T00:00:00.000Z" }))
-        .toThrow(path.join(out, LOCK));
+      expect(() =>
+        publishCorpusGeneration({
+          outDir: out,
+          files: runFiles("x"),
+          committedAt: "2026-04-01T00:00:00.000Z",
+        }),
+      ).toThrow(path.join(out, LOCK));
       expect(listGenerations(out)).toEqual([]);
       expect(fs.existsSync(path.join(out, LOCK))).toBe(true);
     }
@@ -473,17 +547,27 @@ describe("one publisher per output root (RC-072, ADR-066)", () => {
 
   it("REG-WU-042-RC-072-c: a crash before the switch releases the lock and a retry recovers", () => {
     const out = tmp();
-    publishCorpusGeneration({ outDir: out, files: runFiles("first"), committedAt: "2026-04-01T00:00:00.000Z" });
-    expect(() => publishCorpusGeneration({
+    publishCorpusGeneration({
+      outDir: out,
+      files: runFiles("first"),
+      committedAt: "2026-04-01T00:00:00.000Z",
+    });
+    expect(() =>
+      publishCorpusGeneration({
+        outDir: out,
+        files: runFiles("second"),
+        committedAt: "2026-04-02T00:00:00.000Z",
+        beforeSwitch: () => {
+          throw new InjectedCrash("killed before switching");
+        },
+      }),
+    ).toThrow(InjectedCrash);
+    expect(fs.existsSync(path.join(out, LOCK))).toBe(false);
+    publishCorpusGeneration({
       outDir: out,
       files: runFiles("second"),
-      committedAt: "2026-04-02T00:00:00.000Z",
-      beforeSwitch: () => {
-        throw new InjectedCrash("killed before switching");
-      },
-    })).toThrow(InjectedCrash);
-    expect(fs.existsSync(path.join(out, LOCK))).toBe(false);
-    publishCorpusGeneration({ outDir: out, files: runFiles("second"), committedAt: "2026-04-03T00:00:00.000Z" });
+      committedAt: "2026-04-03T00:00:00.000Z",
+    });
     const view = readerView(out);
     expect(view?.tags).toEqual(["second"]);
     expect(view?.missing).toEqual([]);
@@ -511,7 +595,12 @@ describe("one publisher per output root (RC-072, ADR-066)", () => {
         // B read the stale lock before A replaced it, and acts on that read now.
         Object.assign(seam, { file: lock, text: stale, reads: 1 });
         try {
-          publishCorpusGeneration({ outDir: out, files: runFiles("B"), committedAt: "2026-04-02T00:00:00.000Z", keep: 1 });
+          publishCorpusGeneration({
+            outDir: out,
+            files: runFiles("B"),
+            committedAt: "2026-04-02T00:00:00.000Z",
+            keep: 1,
+          });
         } catch (error) {
           refusal = error;
         }
@@ -531,12 +620,20 @@ describe("one publisher per output root (RC-072, ADR-066)", () => {
     const out = tmp();
     fs.writeFileSync(path.join(out, LOCK), deadHolder("2026-01-01T00:00:00.000Z"), "utf8");
     fs.writeFileSync(path.join(out, GUARD), deadHolder("2026-01-01T00:00:01.000Z"), "utf8");
-    publishCorpusGeneration({ outDir: out, files: runFiles("after-crash"), committedAt: "2026-04-01T00:00:00.000Z" });
+    publishCorpusGeneration({
+      outDir: out,
+      files: runFiles("after-crash"),
+      committedAt: "2026-04-01T00:00:00.000Z",
+    });
     expect(readerView(out)?.tags).toEqual(["after-crash"]);
     // The dead guard was reaped, not stepped around: nothing is left in the root.
     expect(fs.readdirSync(out).sort()).toEqual(["CURRENT.json", "generations"]);
     // And the next publisher is not wedged either.
-    publishCorpusGeneration({ outDir: out, files: runFiles("next"), committedAt: "2026-04-02T00:00:00.000Z" });
+    publishCorpusGeneration({
+      outDir: out,
+      files: runFiles("next"),
+      committedAt: "2026-04-02T00:00:00.000Z",
+    });
     expect(readerView(out)?.tags).toEqual(["next"]);
   });
 
@@ -546,8 +643,13 @@ describe("one publisher per output root (RC-072, ADR-066)", () => {
     const guard = `${JSON.stringify({ pid: process.ppid, host: os.hostname(), acquired_at: "2026-01-01T00:00:02.000Z" })}\n`;
     fs.writeFileSync(path.join(out, LOCK), stale, "utf8");
     fs.writeFileSync(path.join(out, GUARD), guard, "utf8");
-    expect(() => publishCorpusGeneration({ outDir: out, files: runFiles("x"), committedAt: "2026-04-01T00:00:00.000Z" }))
-      .toThrow(path.join(out, LOCK));
+    expect(() =>
+      publishCorpusGeneration({
+        outDir: out,
+        files: runFiles("x"),
+        committedAt: "2026-04-01T00:00:00.000Z",
+      }),
+    ).toThrow(path.join(out, LOCK));
     expect(listGenerations(out)).toEqual([]);
     expect(fs.readFileSync(path.join(out, LOCK), "utf8")).toBe(stale);
     expect(fs.readFileSync(path.join(out, GUARD), "utf8")).toBe(guard);
@@ -560,9 +662,18 @@ describe("one publisher per output root (RC-072, ADR-066)", () => {
     fs.writeFileSync(path.join(out, LOCK), stale, "utf8");
     fs.writeFileSync(path.join(out, GUARD), live, "utf8");
     // The publisher read a dead guard; by the time it reaps, a live one stands there.
-    Object.assign(seam, { file: path.join(out, GUARD), text: deadHolder("2026-01-01T00:00:01.000Z"), reads: 1 });
-    expect(() => publishCorpusGeneration({ outDir: out, files: runFiles("x"), committedAt: "2026-04-01T00:00:00.000Z" }))
-      .toThrow(path.join(out, LOCK));
+    Object.assign(seam, {
+      file: path.join(out, GUARD),
+      text: deadHolder("2026-01-01T00:00:01.000Z"),
+      reads: 1,
+    });
+    expect(() =>
+      publishCorpusGeneration({
+        outDir: out,
+        files: runFiles("x"),
+        committedAt: "2026-04-01T00:00:00.000Z",
+      }),
+    ).toThrow(path.join(out, LOCK));
     expect(listGenerations(out)).toEqual([]);
     expect(fs.readFileSync(path.join(out, GUARD), "utf8")).toBe(live);
     expect(fs.readFileSync(path.join(out, LOCK), "utf8")).toBe(stale);
@@ -571,13 +682,19 @@ describe("one publisher per output root (RC-072, ADR-066)", () => {
 
   it("refuses to switch to a generation whose files are missing", () => {
     const out = tmp();
-    publishCorpusGeneration({ outDir: out, files: runFiles("first"), committedAt: "2026-04-01T00:00:00.000Z" });
-    expect(() => publishCorpusGeneration({
+    publishCorpusGeneration({
       outDir: out,
-      files: runFiles("second"),
-      committedAt: "2026-04-02T00:00:00.000Z",
-      beforeSwitch: ({ directory }) => fs.rmSync(path.join(directory, "corpus-coverage.json")),
-    })).toThrow(/corpus-coverage\.json/);
+      files: runFiles("first"),
+      committedAt: "2026-04-01T00:00:00.000Z",
+    });
+    expect(() =>
+      publishCorpusGeneration({
+        outDir: out,
+        files: runFiles("second"),
+        committedAt: "2026-04-02T00:00:00.000Z",
+        beforeSwitch: ({ directory }) => fs.rmSync(path.join(directory, "corpus-coverage.json")),
+      }),
+    ).toThrow(/corpus-coverage\.json/);
     expect(readerView(out)?.tags).toEqual(["first"]);
   });
 });

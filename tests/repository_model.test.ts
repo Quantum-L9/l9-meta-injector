@@ -2,18 +2,18 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { inventoryTree } from "../src/inventory";
 import {
   buildRepositoryModelPacket,
   canonicalJson,
   emitRepositoryModelBundle,
   observeRepositoryModel,
-  validateRepositoryModelPacket,
   REPOSITORY_MODEL_PACKET_TYPE,
   REPOSITORY_MODEL_PACKET_VERSION,
   REPOSITORY_MODEL_PRODUCER_NAME,
   type RepositoryModelPacket,
+  validateRepositoryModelPacket,
 } from "../src/repository_model";
-import { inventoryTree } from "../src/inventory";
 import { UNKNOWN } from "../src/schema";
 
 const REPO = path.resolve(__dirname, "..");
@@ -50,7 +50,9 @@ function emitTo(packet: RepositoryModelPacket, name: string): string {
 function bundleFiles(root: string): string[] {
   const out: string[] = [];
   const walk = (dir: string): void => {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    for (const entry of fs
+      .readdirSync(dir, { withFileTypes: true })
+      .sort((a, b) => a.name.localeCompare(b.name))) {
       const abs = path.join(dir, entry.name);
       if (entry.isDirectory()) walk(abs);
       else out.push(path.relative(root, abs).split(path.sep).join("/"));
@@ -67,12 +69,30 @@ describe("repository model packet contract", () => {
     expect(packet.packet_version).toBe(REPOSITORY_MODEL_PACKET_VERSION);
     expect(packet.producer.name).toBe(REPOSITORY_MODEL_PRODUCER_NAME);
     for (const key of [
-      "packet_type", "packet_version", "packet_id", "subject", "source_snapshot", "validation",
-      "producer", "profile", "schema_hash", "semantic_hash", "artifact_hash", "payload_refs", "payload",
+      "packet_type",
+      "packet_version",
+      "packet_id",
+      "subject",
+      "source_snapshot",
+      "validation",
+      "producer",
+      "profile",
+      "schema_hash",
+      "semantic_hash",
+      "artifact_hash",
+      "payload_refs",
+      "payload",
     ]) {
       expect(packet).toHaveProperty(key);
     }
-    for (const domain of ["repositories", "artifacts", "capabilities", "relationships", "evidence", "diagnostics"]) {
+    for (const domain of [
+      "repositories",
+      "artifacts",
+      "capabilities",
+      "relationships",
+      "evidence",
+      "diagnostics",
+    ]) {
       expect(packet.payload).toHaveProperty(domain);
     }
   });
@@ -85,10 +105,19 @@ describe("repository model packet contract", () => {
   });
 
   it("refuses to infer a source revision", () => {
-    const inventory = inventoryTree({ root: SAMPLE_ROOT, outDir: path.join(scratch("inv"), "out"), dryRun: true });
-    expect(() => buildRepositoryModelPacket({
-      inventory, repositoryName: "sample-repo", sourceRevision: "", producerVersion: PRODUCER_VERSION,
-    })).toThrow(/sourceRevision is required/);
+    const inventory = inventoryTree({
+      root: SAMPLE_ROOT,
+      outDir: path.join(scratch("inv"), "out"),
+      dryRun: true,
+    });
+    expect(() =>
+      buildRepositoryModelPacket({
+        inventory,
+        repositoryName: "sample-repo",
+        sourceRevision: "",
+        producerVersion: PRODUCER_VERSION,
+      }),
+    ).toThrow(/sourceRevision is required/);
   });
 });
 
@@ -116,14 +145,18 @@ describe("repository model determinism", () => {
     const there = observeSample(alternate);
     expect(there.semantic_hash).toBe(here.semantic_hash);
     expect(there.packet_id).toBe(here.packet_id);
-    const serialized = fs.readFileSync(path.join(emitTo(there, "alt-bundle"), "packet.json"), "utf8");
+    const serialized = fs.readFileSync(
+      path.join(emitTo(there, "alt-bundle"), "packet.json"),
+      "utf8",
+    );
     expect(serialized).not.toContain(alternate);
     expect(serialized).not.toContain(os.tmpdir());
   });
 
   it("orders every emitted collection explicitly", () => {
     const { payload } = observeSample();
-    const ordered = (values: string[]): boolean => values.every((v, i) => i === 0 || values[i - 1] < v);
+    const ordered = (values: string[]): boolean =>
+      values.every((v, i) => i === 0 || values[i - 1] < v);
     expect(ordered(payload.artifacts.map((a) => a.source_path))).toBe(true);
     expect(ordered(payload.evidence.map((e) => e.evidence_id))).toBe(true);
     expect(ordered(payload.relationships.map((e) => e.edge_id))).toBe(true);
@@ -133,8 +166,9 @@ describe("repository model determinism", () => {
     const emitted = emitTo(observeSample(), "golden");
     expect(bundleFiles(emitted)).toEqual(bundleFiles(GOLDEN));
     for (const rel of bundleFiles(GOLDEN)) {
-      expect(fs.readFileSync(path.join(emitted, rel)).toString("utf8"))
-        .toBe(fs.readFileSync(path.join(GOLDEN, rel)).toString("utf8"));
+      expect(fs.readFileSync(path.join(emitted, rel)).toString("utf8")).toBe(
+        fs.readFileSync(path.join(GOLDEN, rel)).toString("utf8"),
+      );
     }
   });
 });
@@ -182,11 +216,14 @@ describe("repository model evidence discipline", () => {
 
   it("REG-WU-029-RC-034-c: reports the sample repository's package.json as unsupported package-manager evidence", () => {
     const packet = observeSample();
-    expect(packet.payload.diagnostics.some(
-      (d) => d.code === "unsupported-by-evidence"
-        && d.details?.field === "package_managers"
-        && d.details?.source_path === "package.json",
-    )).toBe(true);
+    expect(
+      packet.payload.diagnostics.some(
+        (d) =>
+          d.code === "unsupported-by-evidence" &&
+          d.details?.field === "package_managers" &&
+          d.details?.source_path === "package.json",
+      ),
+    ).toBe(true);
   });
 
   it("does not resolve a shared manifest filename to a guessed package manager", () => {
@@ -197,11 +234,14 @@ describe("repository model evidence discipline", () => {
     const packet = observeSample(root);
     const repository = packet.payload.repositories[0];
     expect(repository.package_managers).toEqual([]);
-    expect(packet.payload.diagnostics.some(
-      (d) => d.code === "unsupported-by-evidence"
-        && d.details?.field === "package_managers"
-        && d.details?.source_path === "pyproject.toml",
-    )).toBe(true);
+    expect(
+      packet.payload.diagnostics.some(
+        (d) =>
+          d.code === "unsupported-by-evidence" &&
+          d.details?.field === "package_managers" &&
+          d.details?.source_path === "pyproject.toml",
+      ),
+    ).toBe(true);
     expect(validateRepositoryModelPacket(packet).status).toBe("passed");
   });
 
@@ -215,7 +255,7 @@ describe("repository model evidence discipline", () => {
 
     const uvRoot = path.join(scratch("uv-lock"), "repo");
     fs.mkdirSync(uvRoot, { recursive: true });
-    fs.writeFileSync(path.join(uvRoot, "pyproject.toml"), "[project]\nname = \"svc\"\n");
+    fs.writeFileSync(path.join(uvRoot, "pyproject.toml"), '[project]\nname = "svc"\n');
     fs.writeFileSync(path.join(uvRoot, "uv.lock"), "version = 1\n");
 
     expect(observeSample(uvRoot).payload.repositories[0].package_managers).toEqual(["uv"]);
@@ -242,7 +282,10 @@ describe("repository model evidence discipline", () => {
     fs.mkdirSync(root, { recursive: true });
     fs.writeFileSync(path.join(root, "notes.txt"), "nothing derivable here\n");
     const packet = observeRepositoryModel({
-      root, repositoryName: "bare-repo", sourceRevision: REVISION, producerVersion: PRODUCER_VERSION,
+      root,
+      repositoryName: "bare-repo",
+      sourceRevision: REVISION,
+      producerVersion: PRODUCER_VERSION,
     });
     const repository = packet.payload.repositories[0];
     expect(repository.confidence.authority).toBe("validated-machine");
@@ -250,11 +293,17 @@ describe("repository model evidence discipline", () => {
     const ids = new Set(packet.payload.evidence.map((e) => e.evidence_id));
     for (const ref of repository.evidence_refs) expect(ids.has(ref)).toBe(true);
     const observation = packet.payload.evidence.find(
-      (e) => e.subject_id === repository.repository_id && e.evidence_class === "observed" && e.field === "artifact_ids",
+      (e) =>
+        e.subject_id === repository.repository_id &&
+        e.evidence_class === "observed" &&
+        e.field === "artifact_ids",
     );
     expect(observation?.source_ref.source_path).toBe(".");
     expect(observation?.source_ref.source_revision).toBe(REVISION);
-    expect(observation?.value).toEqual({ artifact_count: 1, snapshot_semantic_hash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/) });
+    expect(observation?.value).toEqual({
+      artifact_count: 1,
+      snapshot_semantic_hash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+    });
     expect(validateRepositoryModelPacket(packet).status).toBe("passed");
   });
 
@@ -264,28 +313,42 @@ describe("repository model evidence discipline", () => {
     // line-cited package.dependency assertion, and the same packet must not also
     // say dependencies are unsupported by evidence.
     const sample = observeSample();
-    expect(sample.payload.diagnostics.some(
-      (d) => d.code === "unsupported-by-evidence" && d.details?.field === "dependencies",
-    )).toBe(true);
+    expect(
+      sample.payload.diagnostics.some(
+        (d) => d.code === "unsupported-by-evidence" && d.details?.field === "dependencies",
+      ),
+    ).toBe(true);
 
     const root = path.join(scratch("deps"), "deps-repo");
     fs.mkdirSync(root, { recursive: true });
-    fs.writeFileSync(path.join(root, "package.json"), '{\n  "name": "deps-repo",\n  "dependencies": {\n    "express": "^4.0.0"\n  }\n}\n');
+    fs.writeFileSync(
+      path.join(root, "package.json"),
+      '{\n  "name": "deps-repo",\n  "dependencies": {\n    "express": "^4.0.0"\n  }\n}\n',
+    );
     const packet = observeRepositoryModel({
-      root, repositoryName: "deps-repo", sourceRevision: REVISION, producerVersion: PRODUCER_VERSION,
+      root,
+      repositoryName: "deps-repo",
+      sourceRevision: REVISION,
+      producerVersion: PRODUCER_VERSION,
     });
     const claim = packet.payload.assertions.find((a) => a.predicate === "package.dependency");
     expect(claim?.object).toBe("express");
     expect(claim?.evidence_class).toBe("declared");
     expect(claim?.subject_id).toBe(packet.payload.repositories[0].repository_id);
-    expect(packet.payload.diagnostics.some(
-      (d) => d.code === "unsupported-by-evidence" && d.details?.field === "dependencies",
-    )).toBe(false);
+    expect(
+      packet.payload.diagnostics.some(
+        (d) => d.code === "unsupported-by-evidence" && d.details?.field === "dependencies",
+      ),
+    ).toBe(false);
     expect(validateRepositoryModelPacket(packet).status).toBe("passed");
   });
 
   it("preserves unknowns instead of converting absence into certainty", () => {
-    const inventory = inventoryTree({ root: SAMPLE_ROOT, outDir: path.join(scratch("unknown"), "out"), dryRun: true });
+    const inventory = inventoryTree({
+      root: SAMPLE_ROOT,
+      outDir: path.join(scratch("unknown"), "out"),
+      dryRun: true,
+    });
     const target = inventory.records.find((r) => r.artifact_type !== "folder");
     expect(target).toBeDefined();
     if (!target) return;
@@ -293,15 +356,24 @@ describe("repository model evidence discipline", () => {
     target.unknowns = [...target.unknowns, "content_hash_skipped:file_too_large"];
 
     const packet = buildRepositoryModelPacket({
-      inventory, repositoryName: "sample-repo", sourceRevision: REVISION, producerVersion: PRODUCER_VERSION,
+      inventory,
+      repositoryName: "sample-repo",
+      sourceRevision: REVISION,
+      producerVersion: PRODUCER_VERSION,
     });
     const artifact = packet.payload.artifacts.find((a) => a.source_path === target.relative_path);
     expect(artifact?.content_hash).toBe(UNKNOWN);
     expect(artifact?.confidence.completeness).toBe("partial");
-    expect(packet.payload.diagnostics.some((d) => d.code === "content-hash-unavailable")).toBe(true);
-    expect(packet.payload.diagnostics.some(
-      (d) => d.code === "inventory-unknown" && d.details?.unknown === "content_hash_skipped:file_too_large",
-    )).toBe(true);
+    expect(packet.payload.diagnostics.some((d) => d.code === "content-hash-unavailable")).toBe(
+      true,
+    );
+    expect(
+      packet.payload.diagnostics.some(
+        (d) =>
+          d.code === "inventory-unknown" &&
+          d.details?.unknown === "content_hash_skipped:file_too_large",
+      ),
+    ).toBe(true);
     expect(validateRepositoryModelPacket(packet).status).toBe("passed");
   });
 
@@ -327,10 +399,19 @@ describe("repository model evidence discipline", () => {
     const there = observeSample(copy);
     expect(there.semantic_hash).toBe(here.semantic_hash);
     for (const packet of [here, there]) {
-      expect(packet.payload.diagnostics.some((d) => String(d.details?.unknown ?? "").startsWith("clock_skew:"))).toBe(false);
+      expect(
+        packet.payload.diagnostics.some((d) =>
+          String(d.details?.unknown ?? "").startsWith("clock_skew:"),
+        ),
+      ).toBe(false);
       expect(JSON.stringify(packet)).not.toContain("clock_skew");
     }
-    const inventory = inventoryTree({ root: copy, outDir: path.join(scratch("clocks-out"), "out"), dryRun: true, now: "1970-01-01T00:00:00.000Z" });
+    const inventory = inventoryTree({
+      root: copy,
+      outDir: path.join(scratch("clocks-out"), "out"),
+      dryRun: true,
+      now: "1970-01-01T00:00:00.000Z",
+    });
     const readme = inventory.records.find((record) => record.relative_path === "README.md");
     expect(readme?.unknowns).toContain("clock_skew:modified_at_after_inspected_at");
   });
@@ -364,28 +445,35 @@ describe("repository model producer validation", () => {
     const packet = observeSample();
     const artifacts = [...packet.payload.artifacts];
     artifacts[0] = { ...artifacts[0], evidence_refs: ["evidence:does-not-exist"] };
-    const result = validateRepositoryModelPacket({ ...packet, payload: { ...packet.payload, artifacts } });
+    const result = validateRepositoryModelPacket({
+      ...packet,
+      payload: { ...packet.payload, artifacts },
+    });
     expect(result.checks.find((c) => c.check_id === "evidence-resolves")?.status).toBe("failed");
   });
 
   it("refuses to emit a packet that fails validation", () => {
     const packet = observeSample();
     const broken: RepositoryModelPacket = { ...packet, semantic_hash: "sha256:0000" };
-    expect(() => emitRepositoryModelBundle(broken, { outDir: path.join(scratch("broken"), "bundle") }))
-      .toThrow(/failed producer validation/);
+    expect(() =>
+      emitRepositoryModelBundle(broken, { outDir: path.join(scratch("broken"), "bundle") }),
+    ).toThrow(/failed producer validation/);
   });
 
   it("treats packet bundles as immutable", () => {
     const bundleRoot = emitTo(observeSample(), "immutable");
-    expect(() => emitRepositoryModelBundle(observeSample(), { outDir: bundleRoot }))
-      .toThrow(/immutable/);
+    expect(() => emitRepositoryModelBundle(observeSample(), { outDir: bundleRoot })).toThrow(
+      /immutable/,
+    );
   });
 });
 
 /** JSON.parse preserves source order for non-numeric keys, so this reads the file's real key order. */
 function expectSortedKeys(value: unknown, label: string): void {
   if (Array.isArray(value)) {
-    value.forEach((item) => expectSortedKeys(item, label));
+    value.forEach((item) => {
+      expectSortedKeys(item, label);
+    });
     return;
   }
   if (value === null || typeof value !== "object") return;
@@ -397,7 +485,11 @@ function expectSortedKeys(value: unknown, label: string): void {
 describe("repository model bundle shape", () => {
   it("writes a canonical bundle the consumer can verify", () => {
     const bundleRoot = emitTo(observeSample(), "shape");
-    expect(bundleFiles(bundleRoot)).toEqual(["manifest.json", "packet.json", "receipts/validation-receipt.json"]);
+    expect(bundleFiles(bundleRoot)).toEqual([
+      "manifest.json",
+      "packet.json",
+      "receipts/validation-receipt.json",
+    ]);
 
     for (const rel of bundleFiles(bundleRoot)) {
       const text = fs.readFileSync(path.join(bundleRoot, rel), "utf8");
@@ -414,14 +506,19 @@ describe("repository model bundle shape", () => {
 
     const manifest = JSON.parse(fs.readFileSync(path.join(bundleRoot, "manifest.json"), "utf8"));
     const packet = JSON.parse(fs.readFileSync(path.join(bundleRoot, "packet.json"), "utf8"));
-    const receipt = JSON.parse(fs.readFileSync(path.join(bundleRoot, "receipts/validation-receipt.json"), "utf8"));
+    const receipt = JSON.parse(
+      fs.readFileSync(path.join(bundleRoot, "receipts/validation-receipt.json"), "utf8"),
+    );
 
     expect(manifest.packet_id).toBe(packet.packet_id);
     expect(manifest.semantic_hash).toBe(packet.semantic_hash);
     expect(receipt.subject_packet_id).toBe(packet.packet_id);
     expect(receipt.subject_semantic_hash).toBe(packet.semantic_hash);
     expect(receipt.status).toBe("passed");
-    expect(packet.validation).toEqual({ status: "passed", receipt_ref: "receipts/validation-receipt.json" });
+    expect(packet.validation).toEqual({
+      status: "passed",
+      receipt_ref: "receipts/validation-receipt.json",
+    });
     expect(packet.payload_refs).toEqual({});
 
     for (const entry of manifest.files) {
@@ -433,7 +530,9 @@ describe("repository model bundle shape", () => {
 });
 
 describe("topology conformance evidence", () => {
-  const evidence = JSON.parse(fs.readFileSync(path.join(REPO, "docs", "topology-conformance.json"), "utf8"));
+  const evidence = JSON.parse(
+    fs.readFileSync(path.join(REPO, "docs", "topology-conformance.json"), "utf8"),
+  );
 
   it("records acceptance by the bound topology consumer without a translation shim", () => {
     expect(evidence.schema).toBe("l9.topology-conformance/v1");
@@ -450,7 +549,9 @@ describe("topology conformance evidence", () => {
     expect(evidence.corpus.semantic_hash).toBe(`sha256:${evidence.corpus.packet_id.slice(7)}`);
     expect(evidence.corpus.status).toBe("passed");
     expect(evidence.corpus.translation_shim_required).toBe(false);
-    expect(evidence.consumer.entrypoints).toContain("l9_constellation_topology.packets.corpus_ingress.load_corpus_intelligence");
+    expect(evidence.consumer.entrypoints).toContain(
+      "l9_constellation_topology.packets.corpus_ingress.load_corpus_intelligence",
+    );
   });
 
   it("stays bound to every golden bundle it describes", () => {
@@ -460,16 +561,23 @@ describe("topology conformance evidence", () => {
     expect(Array.isArray(evidence.subjects)).toBe(true);
     expect(evidence.subjects.length).toBeGreaterThanOrEqual(2);
     for (const subject of evidence.subjects) {
-      const packet = JSON.parse(fs.readFileSync(path.join(REPO, subject.bundle, "packet.json"), "utf8"));
+      const packet = JSON.parse(
+        fs.readFileSync(path.join(REPO, subject.bundle, "packet.json"), "utf8"),
+      );
       expect(subject.packet_id).toBe(packet.packet_id);
       expect(subject.semantic_hash).toBe(packet.semantic_hash);
       expect(subject.packet_type).toBe(REPOSITORY_MODEL_PACKET_TYPE);
       expect(subject.packet_version).toBe(REPOSITORY_MODEL_PACKET_VERSION);
     }
-    expect(evidence.subjects.map((subject: { id: string }) => subject.id).sort())
-      .toEqual(["inventory", "local-source"]);
-    expect(evidence.subjects.some((subject: { bundle: string }) => subject.bundle === path.relative(REPO, GOLDEN)))
-      .toBe(true);
+    expect(evidence.subjects.map((subject: { id: string }) => subject.id).sort()).toEqual([
+      "inventory",
+      "local-source",
+    ]);
+    expect(
+      evidence.subjects.some(
+        (subject: { bundle: string }) => subject.bundle === path.relative(REPO, GOLDEN),
+      ),
+    ).toBe(true);
   });
 
   it("binds the record to the exact bytes of every file in each bundle", () => {
@@ -479,8 +587,11 @@ describe("topology conformance evidence", () => {
     // been rewritten.
     for (const subject of evidence.subjects) {
       expect(Array.isArray(subject.files)).toBe(true);
-      expect(subject.files.map((file: { path: string }) => file.path).sort())
-        .toEqual(["manifest.json", "packet.json", "receipts/validation-receipt.json"]);
+      expect(subject.files.map((file: { path: string }) => file.path).sort()).toEqual([
+        "manifest.json",
+        "packet.json",
+        "receipts/validation-receipt.json",
+      ]);
       for (const file of subject.files) {
         const absolute = path.join(REPO, subject.bundle, ...file.path.split("/"));
         const digest = `sha256:${crypto.createHash("sha256").update(fs.readFileSync(absolute)).digest("hex")}`;
@@ -490,16 +601,23 @@ describe("topology conformance evidence", () => {
   });
 
   it("proves the local-source packet reached the consumer with its archive provenance", () => {
-    const localSource = evidence.subjects.find((subject: { id: string }) => subject.id === "local-source");
+    const localSource = evidence.subjects.find(
+      (subject: { id: string }) => subject.id === "local-source",
+    );
     expect(localSource).toBeDefined();
-    const packet = JSON.parse(fs.readFileSync(path.join(REPO, localSource.bundle, "packet.json"), "utf8"));
+    const packet = JSON.parse(
+      fs.readFileSync(path.join(REPO, localSource.bundle, "packet.json"), "utf8"),
+    );
     // The consumer normalizes what it accepted; these counts are the proof that
     // archive member artifacts and DERIVED_FROM edges survived the boundary rather
     // than being dropped on the way in.
     expect(localSource.normalized_counts.artifacts).toBe(packet.payload.artifacts.length);
     expect(localSource.normalized_counts.relationships).toBe(packet.payload.relationships.length);
-    expect(packet.payload.relationships.some(
-      (edge: { edge_type: string }) => edge.edge_type === "DERIVED_FROM")).toBe(true);
+    expect(
+      packet.payload.relationships.some(
+        (edge: { edge_type: string }) => edge.edge_type === "DERIVED_FROM",
+      ),
+    ).toBe(true);
     expect(packet.source_snapshot.revision).toMatch(/^fs:sha256:[a-f0-9]{64}$/);
   });
 });
@@ -507,15 +625,25 @@ describe("topology conformance evidence", () => {
 describe("WU-081 repository model semantic unknowns", () => {
   test("REG-WU-081-RC-060-RC060-c: a pipeline-annotated doc carries no harvested_type before or after live annotation", () => {
     const root = scratch("rc060");
-    fs.writeFileSync(path.join(root, "guide.md"), "---\nartifact_type: doctrine\ntitle: Guide\n---\n# Guide\n");
-    const observe = (): RepositoryModelPacket => observeRepositoryModel({
-      root,
-      repositoryName: "rc060",
-      sourceRevision: REVISION,
-      producerVersion: PRODUCER_VERSION,
-    });
+    fs.writeFileSync(
+      path.join(root, "guide.md"),
+      "---\nartifact_type: doctrine\ntitle: Guide\n---\n# Guide\n",
+    );
+    const observe = (): RepositoryModelPacket =>
+      observeRepositoryModel({
+        root,
+        repositoryName: "rc060",
+        sourceRevision: REVISION,
+        producerVersion: PRODUCER_VERSION,
+      });
     expect(canonicalJson(observe())).not.toContain("harvested_type");
-    inventoryTree({ root, outDir: path.join(scratch("rc060-out"), "out"), dryRun: false, folderSidecars: false, now: "2026-09-11T12:00:00.000Z" });
+    inventoryTree({
+      root,
+      outDir: path.join(scratch("rc060-out"), "out"),
+      dryRun: false,
+      folderSidecars: false,
+      now: "2026-09-11T12:00:00.000Z",
+    });
     expect(canonicalJson(observe())).not.toContain("harvested_type");
   });
 });
@@ -523,19 +651,37 @@ describe("WU-081 repository model semantic unknowns", () => {
 describe("ADR-082 authority and interpretation coverage in the sample packet", () => {
   it("reports the unbound sample repository's authority as unresolved, never as an owner", () => {
     const packet = observeSample();
-    const unresolved = packet.payload.diagnostics.find((d) => d.code === "semantic-binding-unresolved");
-    expect(unresolved?.details).toMatchObject({ binding_status: "unbound", binding_path: ".l9/meta-authority.yaml" });
-    expect(packet.payload.evidence.some((e) => e.field?.startsWith("semantic_binding"))).toBe(false);
+    const unresolved = packet.payload.diagnostics.find(
+      (d) => d.code === "semantic-binding-unresolved",
+    );
+    expect(unresolved?.details).toMatchObject({
+      binding_status: "unbound",
+      binding_path: ".l9/meta-authority.yaml",
+    });
+    expect(packet.payload.evidence.some((e) => e.field?.startsWith("semantic_binding"))).toBe(
+      false,
+    );
     expect(packet.payload.repositories[0].owner_ids).toEqual([]);
   });
 
   it("carries interpretation diagnostics with their own stage", () => {
     const root = scratch("interp-diag");
-    fs.writeFileSync(path.join(root, "notes.py"), "# --- L9_META ---\n# l9_schema: 1\n# status: a\n# status: b\n# --- /L9_META ---\n");
+    fs.writeFileSync(
+      path.join(root, "notes.py"),
+      "# --- L9_META ---\n# l9_schema: 1\n# status: a\n# status: b\n# --- /L9_META ---\n",
+    );
     const packet = observeSample(root);
-    const diagnostic = packet.payload.diagnostics.find((d) => d.code === "native_metadata.duplicate_field");
-    expect(diagnostic).toMatchObject({ stage: "meta-injector-interpretation", category: "interpretation" });
-    expect(diagnostic?.details).toMatchObject({ source_path: "notes.py", extractor_id: "native-metadata/v1" });
+    const diagnostic = packet.payload.diagnostics.find(
+      (d) => d.code === "native_metadata.duplicate_field",
+    );
+    expect(diagnostic).toMatchObject({
+      stage: "meta-injector-interpretation",
+      category: "interpretation",
+    });
+    expect(diagnostic?.details).toMatchObject({
+      source_path: "notes.py",
+      extractor_id: "native-metadata/v1",
+    });
     expect(validateRepositoryModelPacket(packet).status).toBe("passed");
   });
 });

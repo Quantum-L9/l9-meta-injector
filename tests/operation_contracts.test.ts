@@ -1,13 +1,13 @@
 import { describe, expect, test } from "vitest";
 import {
-  META_AUTHORITY_SCHEMA,
-  OPERATION_MODES,
+  type AuthorityConfig,
   assertAuthorityForOperation,
   isAuthorityConfig,
   isSupportedAuthoritySchema,
+  META_AUTHORITY_SCHEMA,
+  OPERATION_MODES,
   operationRequiresAuthority,
   resolveOperationMode,
-  type AuthorityConfig,
 } from "../src/operation_contracts";
 
 const authority: AuthorityConfig = {
@@ -49,7 +49,10 @@ describe("operation contracts", () => {
   );
 
   test("REG-WU-008-RC-011-b: own aliases and padded canonical modes still resolve", () => {
-    expect(resolveOperationMode("pipeline")).toMatchObject({ mode: "apply", deprecatedAlias: "pipeline" });
+    expect(resolveOperationMode("pipeline")).toMatchObject({
+      mode: "apply",
+      deprecatedAlias: "pipeline",
+    });
     expect(resolveOperationMode(" apply ")).toEqual({ requested: "apply", mode: "apply" });
   });
 
@@ -59,8 +62,12 @@ describe("operation contracts", () => {
     expect(operationRequiresAuthority("check")).toBe(true);
     expect(operationRequiresAuthority("apply")).toBe(true);
     expect(assertAuthorityForOperation("inventory", undefined)).toBeUndefined();
-    expect(() => assertAuthorityForOperation("check", undefined)).toThrow("requires .l9/meta-authority.yaml");
-    expect(() => assertAuthorityForOperation("skills", undefined)).toThrow("requires .l9/meta-authority.yaml");
+    expect(() => assertAuthorityForOperation("check", undefined)).toThrow(
+      "requires .l9/meta-authority.yaml",
+    );
+    expect(() => assertAuthorityForOperation("skills", undefined)).toThrow(
+      "requires .l9/meta-authority.yaml",
+    );
     expect(assertAuthorityForOperation("apply", authority)).toBe(authority);
     expect(assertAuthorityForOperation("skills", authority)).toBe(authority);
   });
@@ -69,10 +76,16 @@ describe("operation contracts", () => {
     expect(isSupportedAuthoritySchema(META_AUTHORITY_SCHEMA)).toBe(true);
     expect(isSupportedAuthoritySchema("l9.meta-authority/v2")).toBe(true);
     expect(isAuthorityConfig(authority)).toBe(true);
-    expect(isAuthorityConfig({ ...authority, writer: { repository: "invalid", ref: "v4" } })).toBe(false);
+    expect(isAuthorityConfig({ ...authority, writer: { repository: "invalid", ref: "v4" } })).toBe(
+      false,
+    );
     expect(isAuthorityConfig({ ...authority, schema: "l9.meta-authority/v2" })).toBe(false);
     expect(isAuthorityConfig({ ...authority, extra: true })).toBe(false);
-    expect(isAuthorityConfig({ ...authority, writer: { ...authority.writer, extra: true } })).toBe(false);
-    expect(isAuthorityConfig({ ...authority, inline_allow: ["prompts/**/*.md", "prompts/**/*.md"] })).toBe(false);
+    expect(isAuthorityConfig({ ...authority, writer: { ...authority.writer, extra: true } })).toBe(
+      false,
+    );
+    expect(
+      isAuthorityConfig({ ...authority, inline_allow: ["prompts/**/*.md", "prompts/**/*.md"] }),
+    ).toBe(false);
   });
 });

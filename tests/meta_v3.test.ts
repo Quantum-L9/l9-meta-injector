@@ -1,6 +1,6 @@
+import { classifyArtifact } from "../src/artifact_class";
 import { buildMetaV3, hasAllPlanes } from "../src/meta_v3";
 import { compilePlacementPlan } from "../src/placement_policy";
-import { classifyArtifact } from "../src/artifact_class";
 import { META_V3_PLANES, NormalizedMeta, UNKNOWN } from "../src/schema";
 
 function sampleMeta(overrides: Partial<Record<string, unknown>> = {}): NormalizedMeta {
@@ -68,7 +68,13 @@ describe("buildMetaV3 — DWL-003 live producer", () => {
   });
 
   test("works for a doctrine meta lacking exec fields (defensive field reads)", () => {
-    const meta = sampleMeta({ artifact_type: "doctrine", family: undefined, owner: "platform-team", decision_drivers: ["scale"], activation_signals: undefined });
+    const meta = sampleMeta({
+      artifact_type: "doctrine",
+      family: undefined,
+      owner: "platform-team",
+      decision_drivers: ["scale"],
+      activation_signals: undefined,
+    });
     const v3 = buildMetaV3({ meta, semantic: classifyArtifact("doctrines/policy.md") });
     expect(hasAllPlanes(v3)).toBe(true);
     expect(v3.taxonomy.family).toBe("Unknown");

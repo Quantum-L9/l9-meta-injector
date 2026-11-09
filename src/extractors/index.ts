@@ -5,46 +5,43 @@
 // profile hash. Callers pass this set explicitly rather than the orchestrator
 // reaching for it, which keeps the contract independent of its implementation.
 import { Extractor } from "../interpretation";
-import {
-  contractInvariantsExtractor,
-  contractReferenceExtractor,
-  manifestExtractor,
-  serviceSpecExtractor,
-} from "./structured";
 import { nativeMetadataExtractor } from "./native_metadata";
-import { staticImportExtractor } from "./static_imports";
-import { workflowStructureExtractor } from "./workflows";
 import {
   declaredAuthorityExtractor,
   pythonRouteObservationExtractor,
   repositoryStatusExtractor,
 } from "./prose";
+import { staticImportExtractor } from "./static_imports";
 import {
-  documentStructureExtractor,
-  workIntelligenceExtractor,
-} from "./work_intelligence";
+  contractInvariantsExtractor,
+  contractReferenceExtractor,
+  manifestExtractor,
+  serviceSpecExtractor,
+} from "./structured";
+import { documentStructureExtractor, workIntelligenceExtractor } from "./work_intelligence";
+import { workflowStructureExtractor } from "./workflows";
 
+export { nativeMetadataExtractor } from "./native_metadata";
+export {
+  declaredAuthorityExtractor,
+  pythonRouteObservationExtractor,
+  repositoryStatusExtractor,
+} from "./prose";
+export { staticImportExtractor } from "./static_imports";
 export {
   contractInvariantsExtractor,
   contractReferenceExtractor,
   manifestExtractor,
   serviceSpecExtractor,
 } from "./structured";
-export { nativeMetadataExtractor } from "./native_metadata";
-export { staticImportExtractor } from "./static_imports";
-export { workflowStructureExtractor } from "./workflows";
 export {
-  declaredAuthorityExtractor,
-  pythonRouteObservationExtractor,
-  repositoryStatusExtractor,
-} from "./prose";
-export {
+  documentStructureExtractor,
   WORK_KIND_VOCABULARY,
   WORK_PREDICATES,
   WORK_STATUS_VOCABULARY,
-  documentStructureExtractor,
   workIntelligenceExtractor,
 } from "./work_intelligence";
+export { workflowStructureExtractor } from "./workflows";
 
 /** Every extractor in the current interpretation profile. */
 export function defaultExtractors(): Extractor[] {

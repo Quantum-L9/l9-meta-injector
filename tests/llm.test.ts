@@ -1,5 +1,5 @@
 import { vi } from "vitest";
-import { getAdapter, setAdapter, resetAdapter, localAdapter, makeOpenAIAdapter } from "../src/llm";
+import { getAdapter, localAdapter, makeOpenAIAdapter, resetAdapter, setAdapter } from "../src/llm";
 
 afterEach(() => resetAdapter());
 
@@ -12,7 +12,9 @@ test("default adapter has no classify — sync reconcile path is used", () => {
 
 test("estimateTokens is proportional to text length", () => {
   const short = getAdapter().estimateTokens("hi");
-  const longer = getAdapter().estimateTokens("hello world this is a longer sentence with more tokens");
+  const longer = getAdapter().estimateTokens(
+    "hello world this is a longer sentence with more tokens",
+  );
   expect(longer).toBeGreaterThan(short);
 });
 
@@ -41,7 +43,9 @@ test("makeOpenAIAdapter returns an adapter with a classify function", () => {
 
 test("makeOpenAIAdapter.classify returns null when fetch throws (network error)", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => { throw new Error("network error"); };
+  globalThis.fetch = async () => {
+    throw new Error("network error");
+  };
   try {
     const a = makeOpenAIAdapter({ baseUrl: "http://localhost:0", apiKey: "k", model: "m" });
     const result = await a.classify!("test prompt");
@@ -53,7 +57,7 @@ test("makeOpenAIAdapter.classify returns null when fetch throws (network error)"
 
 test("makeOpenAIAdapter.classify returns null on non-OK HTTP response", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => ({ ok: false, json: async () => ({}) } as Response);
+  globalThis.fetch = async () => ({ ok: false, json: async () => ({}) }) as Response;
   try {
     const a = makeOpenAIAdapter({ baseUrl: "http://localhost:0", apiKey: "k", model: "m" });
     expect(await a.classify!("test prompt")).toBeNull();
@@ -67,10 +71,18 @@ test("makeOpenAIAdapter.classify sends max_tokens+temperature for non-reasoning 
   let capturedBody: Record<string, unknown> | null = null;
   globalThis.fetch = async (_url, init) => {
     capturedBody = JSON.parse((init as RequestInit).body as string);
-    return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: "ok" } }] }) } as unknown as Response;
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ choices: [{ message: { content: "ok" } }] }),
+    } as unknown as Response;
   };
   try {
-    const a = makeOpenAIAdapter({ baseUrl: "https://localhost", apiKey: "k", model: "gpt-4o-mini" });
+    const a = makeOpenAIAdapter({
+      baseUrl: "https://localhost",
+      apiKey: "k",
+      model: "gpt-4o-mini",
+    });
     await a.classify!("test prompt");
     expect(capturedBody).toMatchObject({ model: "gpt-4o-mini", max_tokens: 80, temperature: 0 });
     expect(capturedBody).not.toHaveProperty("max_completion_tokens");
@@ -87,7 +99,11 @@ test("makeOpenAIAdapter.classify sends max_completion_tokens (no temperature) fo
   let capturedBody: Record<string, unknown> | null = null;
   globalThis.fetch = async (_url, init) => {
     capturedBody = JSON.parse((init as RequestInit).body as string);
-    return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: "ok" } }] }) } as unknown as Response;
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ choices: [{ message: { content: "ok" } }] }),
+    } as unknown as Response;
   };
   try {
     for (const model of ["gpt-5-nano", "gpt-5", "gpt-5-mini", "o1", "o3-mini", "o4-mini"]) {
@@ -105,10 +121,11 @@ test("makeOpenAIAdapter.classify sends max_completion_tokens (no temperature) fo
 
 test("makeOpenAIAdapter.classify returns null when response has no choices", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => ({
-    ok: true,
-    json: async () => ({ choices: [] }),
-  } as unknown as Response);
+  globalThis.fetch = async () =>
+    ({
+      ok: true,
+      json: async () => ({ choices: [] }),
+    }) as unknown as Response;
   try {
     const a = makeOpenAIAdapter({ baseUrl: "http://localhost:0", apiKey: "k", model: "m" });
     expect(await a.classify!("test prompt")).toBeNull();
@@ -128,10 +145,18 @@ test("makeOpenAIAdapter.classify posts to <baseUrl>/chat/completions with a Bear
   globalThis.fetch = async (url, init) => {
     capturedUrl = url;
     capturedInit = init as RequestInit;
-    return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: "ok" } }] }) } as unknown as Response;
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ choices: [{ message: { content: "ok" } }] }),
+    } as unknown as Response;
   };
   try {
-    const a = makeOpenAIAdapter({ baseUrl: "https://api.example.com/v1", apiKey: "secret-key", model: "gpt-4o-mini" });
+    const a = makeOpenAIAdapter({
+      baseUrl: "https://api.example.com/v1",
+      apiKey: "secret-key",
+      model: "gpt-4o-mini",
+    });
     await a.classify!("test prompt");
     expect(capturedUrl).toBe("https://api.example.com/v1/chat/completions");
     const headers = capturedInit?.headers as Record<string, string>;
@@ -149,7 +174,12 @@ test("makeOpenAIAdapter.classify clears the abort timeout after a successful req
   const originalFetch = globalThis.fetch;
   const setSpy = vi.spyOn(globalThis, "setTimeout");
   const clearSpy = vi.spyOn(globalThis, "clearTimeout");
-  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: "ok" } }] }) } as unknown as Response);
+  globalThis.fetch = async () =>
+    ({
+      ok: true,
+      status: 200,
+      json: async () => ({ choices: [{ message: { content: "ok" } }] }),
+    }) as unknown as Response;
   try {
     const a = makeOpenAIAdapter({ baseUrl: "https://localhost", apiKey: "k", model: "m" });
     await a.classify!("test prompt");
@@ -167,7 +197,9 @@ test("makeOpenAIAdapter.classify clears the abort timeout after a failed request
   const originalFetch = globalThis.fetch;
   const setSpy = vi.spyOn(globalThis, "setTimeout");
   const clearSpy = vi.spyOn(globalThis, "clearTimeout");
-  globalThis.fetch = async () => { throw new Error("network error"); };
+  globalThis.fetch = async () => {
+    throw new Error("network error");
+  };
   try {
     const a = makeOpenAIAdapter({ baseUrl: "https://localhost", apiKey: "k", model: "m" });
     const result = await a.classify!("test prompt");

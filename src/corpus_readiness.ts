@@ -77,50 +77,138 @@ export type ReadinessEvidenceClass =
 // ───────────────────────────── closed vocabularies ─────────────────────────────
 
 const SOURCE_EXTENSIONS = new Set([
-  ".bash", ".c", ".cc", ".clj", ".cpp", ".cs", ".cxx", ".dart", ".erl", ".ex", ".exs",
-  ".fs", ".go", ".h", ".hpp", ".hs", ".java", ".jl", ".js", ".jsx", ".kt", ".kts",
-  ".lua", ".m", ".mjs", ".cjs", ".mm", ".php", ".pl", ".py", ".r", ".rb", ".rs",
-  ".scala", ".sh", ".sql", ".svelte", ".swift", ".ts", ".tsx", ".vue", ".zsh",
+  ".bash",
+  ".c",
+  ".cc",
+  ".clj",
+  ".cpp",
+  ".cs",
+  ".cxx",
+  ".dart",
+  ".erl",
+  ".ex",
+  ".exs",
+  ".fs",
+  ".go",
+  ".h",
+  ".hpp",
+  ".hs",
+  ".java",
+  ".jl",
+  ".js",
+  ".jsx",
+  ".kt",
+  ".kts",
+  ".lua",
+  ".m",
+  ".mjs",
+  ".cjs",
+  ".mm",
+  ".php",
+  ".pl",
+  ".py",
+  ".r",
+  ".rb",
+  ".rs",
+  ".scala",
+  ".sh",
+  ".sql",
+  ".svelte",
+  ".swift",
+  ".ts",
+  ".tsx",
+  ".vue",
+  ".zsh",
 ]);
 
 const BUILD_MANIFEST_NAMES = new Set([
-  "build.gradle", "build.gradle.kts", "build.sbt", "cargo.toml", "cmakelists.txt",
-  "composer.json", "deno.json", "deno.jsonc", "gemfile", "go.mod", "makefile",
-  "meson.build", "mix.exs", "package.json", "pipfile", "pnpm-workspace.yaml",
-  "pom.xml", "project.clj", "pubspec.yaml", "pyproject.toml", "requirements.txt",
-  "setup.cfg", "setup.py", "settings.gradle", "settings.gradle.kts",
+  "build.gradle",
+  "build.gradle.kts",
+  "build.sbt",
+  "cargo.toml",
+  "cmakelists.txt",
+  "composer.json",
+  "deno.json",
+  "deno.jsonc",
+  "gemfile",
+  "go.mod",
+  "makefile",
+  "meson.build",
+  "mix.exs",
+  "package.json",
+  "pipfile",
+  "pnpm-workspace.yaml",
+  "pom.xml",
+  "project.clj",
+  "pubspec.yaml",
+  "pyproject.toml",
+  "requirements.txt",
+  "setup.cfg",
+  "setup.py",
+  "settings.gradle",
+  "settings.gradle.kts",
 ]);
 
 const BUILD_MANIFEST_EXTENSIONS = new Set([".csproj", ".fsproj", ".sln", ".vbproj"]);
 
 /** Files that define how something is assembled, as opposed to what it needs. */
 const BUILD_DEFINITION_NAMES = new Set([
-  "build.gradle", "build.gradle.kts", "build.sbt", "cmakelists.txt", "makefile",
-  "meson.build", "mix.exs", "pom.xml", "settings.gradle", "settings.gradle.kts",
+  "build.gradle",
+  "build.gradle.kts",
+  "build.sbt",
+  "cmakelists.txt",
+  "makefile",
+  "meson.build",
+  "mix.exs",
+  "pom.xml",
+  "settings.gradle",
+  "settings.gradle.kts",
 ]);
 
 const BUILD_DEFINITION_EXTENSIONS = new Set([".csproj", ".fsproj", ".sln", ".vbproj"]);
 
 const CI_DEFINITION_NAMES = new Set([
-  ".gitlab-ci.yml", ".gitlab-ci.yaml", ".travis.yml", "appveyor.yml",
-  "azure-pipelines.yml", "azure-pipelines.yaml", "bitbucket-pipelines.yml",
-  "cloudbuild.yaml", "jenkinsfile",
+  ".gitlab-ci.yml",
+  ".gitlab-ci.yaml",
+  ".travis.yml",
+  "appveyor.yml",
+  "azure-pipelines.yml",
+  "azure-pipelines.yaml",
+  "bitbucket-pipelines.yml",
+  "cloudbuild.yaml",
+  "jenkinsfile",
 ]);
 
 const CONTAINER_DEFINITION_NAMES = new Set([
-  "compose.yaml", "compose.yml", "containerfile", "docker-compose.yaml",
-  "docker-compose.yml", "dockerfile",
+  "compose.yaml",
+  "compose.yml",
+  "containerfile",
+  "docker-compose.yaml",
+  "docker-compose.yml",
+  "dockerfile",
 ]);
 
 const DEPLOYMENT_DEFINITION_NAMES = new Set([
-  "chart.yaml", "fly.toml", "kustomization.yaml", "kustomization.yml", "netlify.toml",
-  "procfile", "render.yaml", "serverless.yml", "serverless.yaml", "vercel.json",
+  "chart.yaml",
+  "fly.toml",
+  "kustomization.yaml",
+  "kustomization.yml",
+  "netlify.toml",
+  "procfile",
+  "render.yaml",
+  "serverless.yml",
+  "serverless.yaml",
+  "vercel.json",
 ]);
 
 const DEPLOYMENT_DEFINITION_EXTENSIONS = new Set([".tf", ".tfvars"]);
 
 const SPECIFICATION_NAMES = new Set([
-  "openapi.json", "openapi.yaml", "openapi.yml", "swagger.json", "swagger.yaml",
+  "openapi.json",
+  "openapi.yaml",
+  "openapi.yml",
+  "swagger.json",
+  "swagger.yaml",
 ]);
 
 const SPECIFICATION_EXTENSIONS = new Set([".graphql", ".proto", ".thrift"]);
@@ -144,7 +232,14 @@ const STATUS_BLOCKED = new Set(["blocked"]);
  */
 const WIP_STATUSES = new Set(["wip", "in-progress", "in_progress", "active", "ongoing"]);
 const DRAFT_STATUSES = new Set(["draft", "proposed", "idea", "sketch"]);
-const COMPLETE_STATUSES = new Set(["complete", "completed", "done", "shipped", "released", "accepted"]);
+const COMPLETE_STATUSES = new Set([
+  "complete",
+  "completed",
+  "done",
+  "shipped",
+  "released",
+  "accepted",
+]);
 
 // ───────────────────────────── inputs and outputs ─────────────────────────────
 
@@ -281,9 +376,9 @@ export interface BodyOfWorkMetrics {
 
 /** How `unique_content` is arrived at, stated in the document that carries it. */
 export const UNIQUE_CONTENT_METHOD =
-  "Distinct sha256 content hashes among this body's members, counted once each, with the "
-  + "bytes of one member per hash. It measures how much of the body is not a copy of the rest "
-  + "of it. It is not a measure of importance, value, or effort.";
+  "Distinct sha256 content hashes among this body's members, counted once each, with the " +
+  "bytes of one member per hash. It measures how much of the body is not a copy of the rest " +
+  "of it. It is not a measure of importance, value, or effort.";
 
 export interface BodyOfWork {
   body_id: string;
@@ -318,9 +413,9 @@ export interface ReadinessEvidence {
 }
 
 export const NO_RANKING_STATEMENT =
-  "Counts and cited evidence only. This document contains no priority, no score, "
-  + "no percentage complete and no judgement of value; deriving one is a downstream "
-  + "decision this producer does not make.";
+  "Counts and cited evidence only. This document contains no priority, no score, " +
+  "no percentage complete and no judgement of value; deriving one is a downstream " +
+  "decision this producer does not make.";
 
 // ───────────────────────────── signal detection ─────────────────────────────
 
@@ -416,7 +511,10 @@ function conventionSignals(rootRelativePath: string): ReadinessSignal[] {
     push(signals, "artifact.has_deployment_definition", "filename_convention", basename);
   } else if (DEPLOYMENT_DEFINITION_EXTENSIONS.has(extension)) {
     push(signals, "artifact.has_deployment_definition", "extension_convention", extension);
-  } else if (parents.includes("helm") && (basename === "values.yaml" || basename === "values.yml")) {
+  } else if (
+    parents.includes("helm") &&
+    (basename === "values.yaml" || basename === "values.yml")
+  ) {
     push(signals, "artifact.has_deployment_definition", "path_convention", "helm/");
   }
 
@@ -455,7 +553,12 @@ function declaredSignals(assertions: readonly ReadinessAssertion[]): ReadinessSi
         } else if (assertion.object === "plan") {
           push(signals, "artifact.has_plan", "declared_assertion", "work.kind=plan");
         } else if (assertion.object === "specification") {
-          push(signals, "artifact.has_specification", "declared_assertion", "work.kind=specification");
+          push(
+            signals,
+            "artifact.has_specification",
+            "declared_assertion",
+            "work.kind=specification",
+          );
         }
         break;
       default:
@@ -565,22 +668,46 @@ function emptyMetrics(): BodyOfWorkMetrics {
 }
 
 /** Where each signal is tallied. `null` means the signal is not a count here. */
-const SIGNAL_METRIC: Readonly<Record<ReadinessSignalName, ((m: BodyOfWorkMetrics) => void) | null>> = {
-  "artifact.has_source_code": (m) => { m.implementation.source_artifact_count += 1; },
-  "artifact.has_tests": (m) => { m.validation.structural_test_artifact_count += 1; },
-  "artifact.has_build_manifest": (m) => { m.implementation.manifest_count += 1; },
-  "artifact.has_build_definition": (m) => { m.implementation.build_definition_count += 1; },
-  "artifact.has_ci_definition": (m) => { m.validation.ci_definition_count += 1; },
-  "artifact.has_container_definition": (m) => { m.delivery.container_definition_count += 1; },
-  "artifact.has_deployment_definition": (m) => { m.delivery.deployment_definition_count += 1; },
-  "artifact.has_specification": (m) => { m.knowledge.specification_count += 1; },
-  "artifact.has_documentation": (m) => { m.knowledge.documentation_count += 1; },
+const SIGNAL_METRIC: Readonly<
+  Record<ReadinessSignalName, ((m: BodyOfWorkMetrics) => void) | null>
+> = {
+  "artifact.has_source_code": (m) => {
+    m.implementation.source_artifact_count += 1;
+  },
+  "artifact.has_tests": (m) => {
+    m.validation.structural_test_artifact_count += 1;
+  },
+  "artifact.has_build_manifest": (m) => {
+    m.implementation.manifest_count += 1;
+  },
+  "artifact.has_build_definition": (m) => {
+    m.implementation.build_definition_count += 1;
+  },
+  "artifact.has_ci_definition": (m) => {
+    m.validation.ci_definition_count += 1;
+  },
+  "artifact.has_container_definition": (m) => {
+    m.delivery.container_definition_count += 1;
+  },
+  "artifact.has_deployment_definition": (m) => {
+    m.delivery.deployment_definition_count += 1;
+  },
+  "artifact.has_specification": (m) => {
+    m.knowledge.specification_count += 1;
+  },
+  "artifact.has_documentation": (m) => {
+    m.knowledge.documentation_count += 1;
+  },
   // Tallied from the assertions themselves, so one document with five open tasks
   // counts five rather than one.
   "artifact.has_open_tasks": null,
   "artifact.has_blockers": null,
-  "artifact.has_roadmap": (m) => { m.knowledge.roadmap_count += 1; },
-  "artifact.has_plan": (m) => { m.knowledge.plan_count += 1; },
+  "artifact.has_roadmap": (m) => {
+    m.knowledge.roadmap_count += 1;
+  },
+  "artifact.has_plan": (m) => {
+    m.knowledge.plan_count += 1;
+  },
 };
 
 /**
@@ -646,8 +773,10 @@ export function buildBodyOfWorkMetrics(
       // The language of a source artifact is its extension, and it is read from
       // the signal's own evidence rather than re-derived, so the distribution can
       // never disagree with the count it breaks down.
-      if (signal.signal === "artifact.has_source_code"
-        && signal.evidence_class === "extension_convention") {
+      if (
+        signal.signal === "artifact.has_source_code" &&
+        signal.evidence_class === "extension_convention"
+      ) {
         languages.set(signal.evidence, (languages.get(signal.evidence) ?? 0) + 1);
       }
     }
@@ -669,14 +798,22 @@ export function buildBodyOfWorkMetrics(
 
     for (const assertion of artifact.assertions ?? []) {
       switch (assertion.predicate) {
-        case "work.task.open": metrics.work_state.open_task_count += 1; break;
-        case "work.task.completed": metrics.work_state.completed_task_count += 1; break;
-        case "work.milestone": metrics.work_state.milestone_count += 1; break;
+        case "work.task.open":
+          metrics.work_state.open_task_count += 1;
+          break;
+        case "work.task.completed":
+          metrics.work_state.completed_task_count += 1;
+          break;
+        case "work.milestone":
+          metrics.work_state.milestone_count += 1;
+          break;
         case "work.blocked_by":
           metrics.work_state.blocked_count += 1;
           metrics.dependency.explicit_blocker_count += 1;
           break;
-        case "work.depends_on": metrics.dependency.explicit_dependency_count += 1; break;
+        case "work.depends_on":
+          metrics.dependency.explicit_dependency_count += 1;
+          break;
         case "work.supersedes":
         case "work.superseded_by":
           metrics.reuse_and_duplication.explicit_supersession_count += 1;
@@ -692,7 +829,8 @@ export function buildBodyOfWorkMetrics(
           else if (STATUS_BLOCKED.has(value)) metrics.work_state.blocked_count += 1;
           break;
         }
-        default: break;
+        default:
+          break;
       }
     }
 
@@ -704,7 +842,8 @@ export function buildBodyOfWorkMetrics(
     // things: a format nothing here reads, bytes a decoder could not turn into
     // text, and a file whose bytes were never established at all.
     if (artifact.content_hash === null) metrics.uncertainty.coverage_gap_count += 1;
-    else if (artifact.unsupported_format === true) metrics.uncertainty.unsupported_document_count += 1;
+    else if (artifact.unsupported_format === true)
+      metrics.uncertainty.unsupported_document_count += 1;
     else if (artifact.decoded === false) metrics.uncertainty.undecoded_artifact_count += 1;
 
     if (artifact.content_hash !== null && !contentHashes.has(artifact.content_hash)) {
@@ -732,7 +871,9 @@ export function buildBodyOfWorkMetrics(
     metrics.uncertainty.conflicting_status_count = declaredStatuses.size;
   }
 
-  const localPairs = context.nearDuplicatePairs.filter(([a, b]) => members.has(a) && members.has(b));
+  const localPairs = context.nearDuplicatePairs.filter(
+    ([a, b]) => members.has(a) && members.has(b),
+  );
   metrics.corpus.artifact_count = members.size;
   metrics.corpus.root_count = roots.size;
   metrics.corpus.archive_count = archives.size;
@@ -813,7 +954,10 @@ export function buildReadinessEvidence(input: BuildReadinessEvidenceInput): Read
   const artifactEvidence = buildReadinessArtifactEvidence(input.artifacts);
   const bodies = input.bodies
     .map((spec) => buildBodyOfWork(spec, input.context))
-    .sort((a, b) => compareCodePoints(a.origin_ref, b.origin_ref) || compareCodePoints(a.body_id, b.body_id));
+    .sort(
+      (a, b) =>
+        compareCodePoints(a.origin_ref, b.origin_ref) || compareCodePoints(a.body_id, b.body_id),
+    );
   return {
     schema: READINESS_EVIDENCE_SCHEMA,
     profile: {
@@ -827,10 +971,7 @@ export function buildReadinessEvidence(input: BuildReadinessEvidenceInput): Read
     corpus_analysis_id: input.corpusAnalysisId,
     artifact_evidence: artifactEvidence,
     bodies_of_work: bodies,
-    signal_totals: signalCounts(
-      [...input.context.signalsById.keys()],
-      input.context.signalsById,
-    ),
+    signal_totals: signalCounts([...input.context.signalsById.keys()], input.context.signalsById),
     no_ranking_statement: NO_RANKING_STATEMENT,
   };
 }

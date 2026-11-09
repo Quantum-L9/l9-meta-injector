@@ -142,9 +142,7 @@ export function defaultRootKey(rootPath: string): string {
  * word exactly when the class is `declared`. Deriving them separately is how a
  * key ends up called declared at one call site and inferred at another.
  */
-export function resolveRootIdentity(
-  spec: CorpusRootSpec,
-): { rootKey: string; declared: boolean } {
+export function resolveRootIdentity(spec: CorpusRootSpec): { rootKey: string; declared: boolean } {
   const declared = spec.name !== undefined && spec.name.length > 0;
   return { rootKey: declared ? (spec.name as string) : defaultRootKey(spec.path), declared };
 }
@@ -229,7 +227,9 @@ export function corpusAnalysisId(input: {
     corpus_profile: input.profiles.corpus_profile,
     corpus_source_snapshot_id: input.corpusSourceSnapshotId,
     document_block_profile: input.profiles.document_block_profile,
-    document_decoder_profiles: [...input.profiles.document_decoder_profiles].sort(compareCodePoints),
+    document_decoder_profiles: [...input.profiles.document_decoder_profiles].sort(
+      compareCodePoints,
+    ),
     embedding_profile: input.profiles.embedding_profile ?? null,
     interpretation_profile: input.profiles.interpretation_profile,
     readiness_profile: input.profiles.readiness_profile,
@@ -399,8 +399,8 @@ export function readCorpusManifest(manifestPath: string): CorpusManifest {
   }
   if (parsed.schema !== CORPUS_MANIFEST_SCHEMA) {
     throw new Error(
-      `corpus: ${absolute} declares schema '${String(parsed.schema)}'; expected `
-      + `'${CORPUS_MANIFEST_SCHEMA}' or '${CORPUS_ROOTS_SCHEMA}'`,
+      `corpus: ${absolute} declares schema '${String(parsed.schema)}'; expected ` +
+        `'${CORPUS_MANIFEST_SCHEMA}' or '${CORPUS_ROOTS_SCHEMA}'`,
     );
   }
   if (typeof parsed.corpus_id !== "string" || parsed.corpus_id.trim().length === 0) {
@@ -422,8 +422,8 @@ export function readCorpusManifest(manifestPath: string): CorpusManifest {
     }
     if (typeof record.root_id !== "string" || record.root_id.trim().length === 0) {
       throw new Error(
-        `corpus: ${absolute} root #${index} (${record.path}) has no 'root_id'; `
-        + "a corpus manifest names every root explicitly so the name survives a remount",
+        `corpus: ${absolute} root #${index} (${record.path}) has no 'root_id'; ` +
+          "a corpus manifest names every root explicitly so the name survives a remount",
       );
     }
     const rootId = record.root_id;
@@ -467,7 +467,9 @@ export interface CorpusRootBindingResult {
  */
 export function bindCorpusRoots(bindings: readonly CorpusRootBinding[]): CorpusRootBindingResult {
   const ordered = [...bindings].sort(
-    (a, b) => compareCodePoints(a.root_id, b.root_id) || compareCodePoints(a.absolute_path, b.absolute_path),
+    (a, b) =>
+      compareCodePoints(a.root_id, b.root_id) ||
+      compareCodePoints(a.absolute_path, b.absolute_path),
   );
   const roots: CorpusRootBinding[] = [];
   const folded: FoldedRoot[] = [];
@@ -481,9 +483,9 @@ export function bindCorpusRoots(bindings: readonly CorpusRootBinding[]): CorpusR
     }
     if (existing.physical_snapshot_hash !== binding.physical_snapshot_hash) {
       throw new Error(
-        `corpus: two roots declare the key '${binding.root_key}' but hold different content `
-        + `(${existing.absolute_path} and ${binding.absolute_path}); `
-        + "give each one a distinct key with --root PATH=NAME",
+        `corpus: two roots declare the key '${binding.root_key}' but hold different content ` +
+          `(${existing.absolute_path} and ${binding.absolute_path}); ` +
+          "give each one a distinct key with --root PATH=NAME",
       );
     }
     folded.push({
@@ -604,8 +606,10 @@ export function assertOutsideRoots(
   for (const rootPath of rootPaths) {
     if (isInsideContainer(containmentBoundary(rootPath), resolvedTarget)) {
       throw new Error(
-        `corpus: refusing to write ${what} inside an observed root: ${resolvedTarget}`
-        + (resolvedTarget === path.resolve(target) ? "" : ` (reached through ${path.resolve(target)})`),
+        `corpus: refusing to write ${what} inside an observed root: ${resolvedTarget}` +
+          (resolvedTarget === path.resolve(target)
+            ? ""
+            : ` (reached through ${path.resolve(target)})`),
       );
     }
   }

@@ -72,9 +72,9 @@ exports.renderCorpusIndex = renderCorpusIndex;
 // discover something those four did not already establish, and it never writes
 // anything into the observed source.
 const fs = __importStar(require("node:fs"));
+const encoding_1 = require("./encoding");
 const interpretation_1 = require("./interpretation");
 const ordering_1 = require("./ordering");
-const encoding_1 = require("./encoding");
 const repository_model_1 = require("./repository_model");
 // ───────────────────────────── identity ─────────────────────────────
 exports.CORPUS_INDEX_SCHEMA = "l9.corpus-index/v1";
@@ -133,7 +133,9 @@ function canonicalCorpusJson(value, indent = 2) {
         }
         if (typeof node === "object") {
             const source = node;
-            const keys = Object.keys(source).filter((key) => source[key] !== undefined).sort(ordering_1.compareCodePoints);
+            const keys = Object.keys(source)
+                .filter((key) => source[key] !== undefined)
+                .sort(ordering_1.compareCodePoints);
             if (keys.length === 0)
                 return "{}";
             const items = keys.map((key) => `${pad(depth + 1)}${JSON.stringify(key)}:${indent > 0 ? " " : ""}${render(source[key], depth + 1)}`);
@@ -161,12 +163,7 @@ function scoreKey(value) {
  * analysis is explicitly lexical rather than semantic.
  */
 function normalizeForAnalysis(text) {
-    return text
-        .normalize("NFKC")
-        .replace(/\r\n?/g, "\n")
-        .toLowerCase()
-        .replace(/\s+/g, " ")
-        .trim();
+    return text.normalize("NFKC").replace(/\r\n?/g, "\n").toLowerCase().replace(/\s+/g, " ").trim();
 }
 const TOKEN = /[\p{L}\p{N}_]+/gu;
 /** Unicode word tokens of already-normalized text. */
@@ -244,10 +241,10 @@ function pairIneligible(left, right) {
     return left.contentHash === right.contentHash;
 }
 function compareCandidates(left, right) {
-    return (right.score - left.score
-        || (0, ordering_1.compareCodePoints)(left.artifact_a_id, right.artifact_a_id)
-        || (0, ordering_1.compareCodePoints)(left.artifact_b_id, right.artifact_b_id)
-        || (0, ordering_1.compareCodePoints)(left.candidate_id, right.candidate_id));
+    return (right.score - left.score ||
+        (0, ordering_1.compareCodePoints)(left.artifact_a_id, right.artifact_a_id) ||
+        (0, ordering_1.compareCodePoints)(left.artifact_b_id, right.artifact_b_id) ||
+        (0, ordering_1.compareCodePoints)(left.candidate_id, right.candidate_id));
 }
 /**
  * Every qualifying pair, compared exhaustively.
@@ -339,14 +336,14 @@ function nearDuplicateCandidates(documents, threshold) {
             documentFrequency.set(shingle, (documentFrequency.get(shingle) ?? 0) + 1);
         }
     }
-    const globalOrder = (left, right) => (documentFrequency.get(left) ?? 0) - (documentFrequency.get(right) ?? 0)
-        || (0, ordering_1.compareCodePoints)(left, right);
+    const globalOrder = (left, right) => (documentFrequency.get(left) ?? 0) - (documentFrequency.get(right) ?? 0) ||
+        (0, ordering_1.compareCodePoints)(left, right);
     // Smallest set first, so that when a document is compared it has already seen
     // every partner that could satisfy the size bound from below.
     const ordered = documents
         .map((document, index) => ({ document, index }))
-        .sort((left, right) => left.document.shingles.size - right.document.shingles.size
-        || (0, ordering_1.compareCodePoints)(left.document.artifactId, right.document.artifactId));
+        .sort((left, right) => left.document.shingles.size - right.document.shingles.size ||
+        (0, ordering_1.compareCodePoints)(left.document.artifactId, right.document.artifactId));
     const postings = new Map();
     const out = [];
     const seen = new Set();
@@ -423,9 +420,18 @@ exports.CORPUS_WORK_PREDICATES = [
 ];
 function emptySummary() {
     return {
-        statuses: [], kinds: [], titles: [], heading_count: 0,
-        open_task_count: 0, completed_task_count: 0, milestone_count: 0,
-        depends_on: [], blocked_by: [], references: [], supersedes: [], superseded_by: [],
+        statuses: [],
+        kinds: [],
+        titles: [],
+        heading_count: 0,
+        open_task_count: 0,
+        completed_task_count: 0,
+        milestone_count: 0,
+        depends_on: [],
+        blocked_by: [],
+        references: [],
+        supersedes: [],
+        superseded_by: [],
         signal_count: 0,
     };
 }
@@ -453,7 +459,8 @@ function addSignal(summary, assertion) {
         case MILESTONE_PREDICATE:
             summary.milestone_count++;
             return;
-        default: break;
+        default:
+            break;
     }
     const bucket = RELATION_PREDICATES[assertion.predicate];
     if (bucket !== undefined)
@@ -487,14 +494,14 @@ function clusterId(contentHash) {
  * the one to keep.
  */
 function duplicateRepresentative(members) {
-    return [...members].sort((left, right) => left.sourcePath.length - right.sourcePath.length
-        || (0, ordering_1.compareCodePoints)(left.sourcePath, right.sourcePath))[0];
+    return [...members].sort((left, right) => left.sourcePath.length - right.sourcePath.length ||
+        (0, ordering_1.compareCodePoints)(left.sourcePath, right.sourcePath))[0];
 }
 /** Total order over clusters: most recoverable bytes, then size, then id. */
 function compareDuplicateClusters(left, right) {
-    return (right.recoverable_bytes - left.recoverable_bytes
-        || right.count - left.count
-        || (0, ordering_1.compareCodePoints)(left.cluster_id, right.cluster_id));
+    return (right.recoverable_bytes - left.recoverable_bytes ||
+        right.count - left.count ||
+        (0, ordering_1.compareCodePoints)(left.cluster_id, right.cluster_id));
 }
 /**
  * Cluster artifacts by byte equality, over any artifact set.
@@ -547,7 +554,10 @@ function buildCorpusDuplicateClusters(inventory, repositoryId, emittedArtifactId
     for (const cluster of inventory.duplicates) {
         const paths = [...cluster.paths].sort(ordering_1.compareCodePoints);
         const resolved = paths
-            .map((sourcePath) => ({ sourcePath, artifactId: (0, repository_model_1.repositoryModelArtifactId)(repositoryId, sourcePath) }))
+            .map((sourcePath) => ({
+            sourcePath,
+            artifactId: (0, repository_model_1.repositoryModelArtifactId)(repositoryId, sourcePath),
+        }))
             .filter((entry) => emittedArtifactIds.has(entry.artifactId));
         if (resolved.length < 2)
             continue;
@@ -596,8 +606,8 @@ function buildDuplicateRelations(clusters) {
             });
         }
     }
-    return relations.sort((left, right) => (0, ordering_1.compareCodePoints)(left.duplicate_cluster_id, right.duplicate_cluster_id)
-        || (0, ordering_1.compareCodePoints)(left.source_artifact_id, right.source_artifact_id));
+    return relations.sort((left, right) => (0, ordering_1.compareCodePoints)(left.duplicate_cluster_id, right.duplicate_cluster_id) ||
+        (0, ordering_1.compareCodePoints)(left.source_artifact_id, right.source_artifact_id));
 }
 function extensionOf(sourcePath) {
     const slash = sourcePath.lastIndexOf("/");
@@ -869,11 +879,11 @@ function buildCorpusIndex(input) {
     }))
         .sort((left, right) => (0, ordering_1.compareCodePoints)(left.source_path, right.source_path));
     const interpretationProfile = resolveInterpretationProfile(input.interpretation, packet);
-    const orderedWorkSignals = [...workSignals].sort((left, right) => (0, ordering_1.compareCodePoints)(left.source_path, right.source_path)
-        || left.source_range.start_line - right.source_range.start_line
-        || (0, ordering_1.compareCodePoints)(left.predicate, right.predicate)
-        || (0, ordering_1.compareCodePoints)(left.object, right.object)
-        || (0, ordering_1.compareCodePoints)(left.assertion_id, right.assertion_id));
+    const orderedWorkSignals = [...workSignals].sort((left, right) => (0, ordering_1.compareCodePoints)(left.source_path, right.source_path) ||
+        left.source_range.start_line - right.source_range.start_line ||
+        (0, ordering_1.compareCodePoints)(left.predicate, right.predicate) ||
+        (0, ordering_1.compareCodePoints)(left.object, right.object) ||
+        (0, ordering_1.compareCodePoints)(left.assertion_id, right.assertion_id));
     const packetDiagnostics = packet.payload.diagnostics;
     return {
         schema: exports.CORPUS_INDEX_SCHEMA,

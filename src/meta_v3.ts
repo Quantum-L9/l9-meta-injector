@@ -8,11 +8,18 @@
 // classifier (DWL-001). It is additive: it reads existing metadata and changes
 // no v1/v2 behavior.
 
-import {
-  MetaV3, NormalizedMeta, ArtifactClassification, UNKNOWN, Unknown,
-  META_V3_SCHEMA_VERSION, META_V3_PLANES, ArtifactFamily, asRecord,
-} from "./schema";
 import { PlacementPlan } from "./placement_policy";
+import {
+  ArtifactClassification,
+  ArtifactFamily,
+  asRecord,
+  META_V3_PLANES,
+  META_V3_SCHEMA_VERSION,
+  MetaV3,
+  NormalizedMeta,
+  UNKNOWN,
+  Unknown,
+} from "./schema";
 
 // NormalizedMeta is a union; these fields exist only on some members. Read them
 // defensively so the builder works for every artifact type without narrowing.
@@ -109,7 +116,5 @@ export function buildMetaV3(input: BuildMetaV3Input): MetaV3 {
 export function hasAllPlanes(value: unknown): value is MetaV3 {
   if (typeof value !== "object" || value === null) return false;
   const obj = value as Record<string, unknown>;
-  return META_V3_PLANES.every(
-    (plane) => typeof obj[plane] === "object" && obj[plane] !== null
-  );
+  return META_V3_PLANES.every((plane) => typeof obj[plane] === "object" && obj[plane] !== null);
 }

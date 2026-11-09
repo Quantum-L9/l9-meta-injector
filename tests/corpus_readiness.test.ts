@@ -9,16 +9,16 @@
 import { describe, expect, it } from "vitest";
 import {
   BodyOfWorkContext,
+  buildBodyOfWork,
+  buildReadinessArtifactEvidence,
+  buildReadinessEvidence,
   FORBIDDEN_READINESS_METRICS,
   NO_RANKING_STATEMENT,
   READINESS_SIGNALS,
   ReadinessArtifactInput,
   ReadinessSignal,
-  buildBodyOfWork,
-  buildReadinessArtifactEvidence,
-  UNIQUE_CONTENT_METHOD,
-  buildReadinessEvidence,
   readinessSignalsFor,
+  UNIQUE_CONTENT_METHOD,
 } from "../src/corpus_readiness";
 
 function artifact(
@@ -43,7 +43,9 @@ function names(signals: readonly ReadinessSignal[]): string[] {
 
 describe("signals read from a convention", () => {
   it("recognize source, tests, manifests, CI, containers, deployment and specs", () => {
-    expect(names(readinessSignalsFor(artifact("src/index.ts")))).toEqual(["artifact.has_source_code"]);
+    expect(names(readinessSignalsFor(artifact("src/index.ts")))).toEqual([
+      "artifact.has_source_code",
+    ]);
     expect(names(readinessSignalsFor(artifact("tests/router.test.ts")))).toEqual([
       "artifact.has_source_code",
       "artifact.has_tests",
@@ -52,7 +54,9 @@ describe("signals read from a convention", () => {
       "artifact.has_source_code",
       "artifact.has_tests",
     ]);
-    expect(names(readinessSignalsFor(artifact("package.json")))).toEqual(["artifact.has_build_manifest"]);
+    expect(names(readinessSignalsFor(artifact("package.json")))).toEqual([
+      "artifact.has_build_manifest",
+    ]);
     expect(names(readinessSignalsFor(artifact(".github/workflows/ci.yml")))).toEqual([
       "artifact.has_ci_definition",
     ]);
@@ -101,17 +105,29 @@ describe("signals read from a convention", () => {
 describe("signals read from a declaration", () => {
   it("come only from a predicate a document actually emitted", () => {
     expect(
-      names(readinessSignalsFor(artifact("plans/a.md", [{ predicate: "work.task.open", object: "x" }]))),
+      names(
+        readinessSignalsFor(artifact("plans/a.md", [{ predicate: "work.task.open", object: "x" }])),
+      ),
     ).toEqual(["artifact.has_documentation", "artifact.has_open_tasks"]);
     expect(
-      names(readinessSignalsFor(artifact("plans/a.md", [{ predicate: "work.status", object: "blocked" }]))),
+      names(
+        readinessSignalsFor(
+          artifact("plans/a.md", [{ predicate: "work.status", object: "blocked" }]),
+        ),
+      ),
     ).toEqual(["artifact.has_blockers", "artifact.has_documentation"]);
     expect(
-      names(readinessSignalsFor(artifact("plans/a.md", [{ predicate: "work.kind", object: "roadmap" }]))),
+      names(
+        readinessSignalsFor(
+          artifact("plans/a.md", [{ predicate: "work.kind", object: "roadmap" }]),
+        ),
+      ),
     ).toEqual(["artifact.has_documentation", "artifact.has_roadmap"]);
     // A status outside the blocked vocabulary is not a blocker.
     expect(
-      names(readinessSignalsFor(artifact("plans/a.md", [{ predicate: "work.status", object: "wip" }]))),
+      names(
+        readinessSignalsFor(artifact("plans/a.md", [{ predicate: "work.status", object: "wip" }])),
+      ),
     ).toEqual(["artifact.has_documentation"]);
   });
 
@@ -157,7 +173,11 @@ describe("body-of-work metrics", () => {
 
   it("count what was observed and combine nothing", () => {
     const body = buildBodyOfWork(
-      { origin: "project_candidate", origin_ref: "container:proj", member_ids: inputs.map((i) => i.virtual_source_id) },
+      {
+        origin: "project_candidate",
+        origin_ref: "container:proj",
+        member_ids: inputs.map((i) => i.virtual_source_id),
+      },
       context,
     );
     expect(body.metrics).toEqual({
@@ -216,11 +236,15 @@ describe("body-of-work metrics", () => {
   });
 
   it("give the same body the same id wherever it was computed", () => {
-    const spec = { origin: "project_candidate" as const, origin_ref: "container:proj", member_ids: ["a"] };
+    const spec = {
+      origin: "project_candidate" as const,
+      origin_ref: "container:proj",
+      member_ids: ["a"],
+    };
     expect(buildBodyOfWork(spec, context).body_id).toBe(buildBodyOfWork(spec, context).body_id);
-    expect(
-      buildBodyOfWork({ ...spec, origin_ref: "container:other" }, context).body_id,
-    ).not.toBe(buildBodyOfWork(spec, context).body_id);
+    expect(buildBodyOfWork({ ...spec, origin_ref: "container:other" }, context).body_id).not.toBe(
+      buildBodyOfWork(spec, context).body_id,
+    );
   });
 });
 
@@ -255,7 +279,10 @@ describe("the emitted document", () => {
   it("contains no forbidden metric under any key, at any depth", () => {
     const keys: string[] = [];
     const walk = (node: unknown): void => {
-      if (Array.isArray(node)) return node.forEach(walk);
+      if (Array.isArray(node)) {
+        node.forEach(walk);
+        return;
+      }
       if (node !== null && typeof node === "object") {
         for (const [key, value] of Object.entries(node)) {
           keys.push(key);
@@ -356,7 +383,10 @@ describe("uncertainty", () => {
 describe("status conflicts are computed on status classes", () => {
   function conflictsFor(statuses: string[]): number {
     const inputs = statuses.map((status, index) =>
-      artifact(`proj/${String.fromCharCode(65 + index)}.md`, [{ predicate: "work.status", object: status }]));
+      artifact(`proj/${String.fromCharCode(65 + index)}.md`, [
+        { predicate: "work.status", object: status },
+      ]),
+    );
     const ctx: BodyOfWorkContext = {
       signalsById: new Map(inputs.map((i) => [i.virtual_source_id, readinessSignalsFor(i)])),
       artifactsById: new Map(inputs.map((i) => [i.virtual_source_id, i])),

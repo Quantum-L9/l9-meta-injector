@@ -91,8 +91,14 @@ function derivePrimitiveFolder(filePath) {
     // nested one (`repo/skills/x.md`) does. `includes("/skills/")` misses the first.
     const bounded = `/${norm.replace(/^\/+/, "")}`;
     const segMap = {
-        skills: "skill", playbooks: "playbook", kernels: "kernel", contexts: "context",
-        prompts: "prompt", doctrines: "doctrine", tests: "test", scripts: "script",
+        skills: "skill",
+        playbooks: "playbook",
+        kernels: "kernel",
+        contexts: "context",
+        prompts: "prompt",
+        doctrines: "doctrine",
+        tests: "test",
+        scripts: "script",
     };
     for (const [seg, prim] of Object.entries(segMap)) {
         if (bounded.includes(`/${seg}/`))
@@ -130,9 +136,15 @@ function encodeNonAscii(value) {
  * ASCII token, so ids keep to `[a-z0-9_]` and ASCII-only segments are unchanged.
  */
 function snakeSegment(value) {
-    const separated = value.normalize("NFC").replace(/([a-z])([A-Z])/g, "$1_$2").replace(/[-\s]+/g, "_");
+    const separated = value
+        .normalize("NFC")
+        .replace(/([a-z])([A-Z])/g, "$1_$2")
+        .replace(/[-\s]+/g, "_");
     return encodeNonAscii(separated)
-        .replace(/[^a-z0-9_]/gi, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toLowerCase();
+        .replace(/[^a-z0-9_]/gi, "_")
+        .replace(/_+/g, "_")
+        .replace(/^_|_$/g, "")
+        .toLowerCase();
 }
 /**
  * Path identity. The final extension is kept behind `__`, which {@link snakeSegment}
@@ -153,11 +165,17 @@ function identityStem(filePath) {
     return extStem ? `${body}__${extStem}` : body;
 }
 function toSnakeStem(filename) {
-    const stem = path.basename(filename, path.extname(filename))
+    const stem = path
+        .basename(filename, path.extname(filename))
         .replace(/^Prompt-/i, "")
         .replace(/\.[a-z]+$/i, "");
-    return stem.replace(/([a-z])([A-Z])/g, "$1_$2").replace(/[-\s]+/g, "_")
-        .replace(/[^a-z0-9_]/gi, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toLowerCase();
+    return stem
+        .replace(/([a-z])([A-Z])/g, "$1_$2")
+        .replace(/[-\s]+/g, "_")
+        .replace(/[^a-z0-9_]/gi, "_")
+        .replace(/_+/g, "_")
+        .replace(/^_|_$/g, "")
+        .toLowerCase();
 }
 function resolveNamespace(filePath, cfg, typeHint) {
     const norm = filePath.replace(/\\/g, "/");
@@ -177,12 +195,19 @@ function resolveNamespace(filePath, cfg, typeHint) {
     if (primitiveFolder === "unknown" && typeHint && typeHint !== "unknown")
         primitiveFolder = typeHint;
     const stem = identityStem(filePath);
-    return { namespace, sharingScope, primitiveFolder, idStem: `${namespace}.${primitiveFolder}.${stem}` };
+    return {
+        namespace,
+        sharingScope,
+        primitiveFolder,
+        idStem: `${namespace}.${primitiveFolder}.${stem}`,
+    };
 }
 exports.TRACKED_IDENTITY_PREFIX = "l9.path/v2:";
 /** Reject lone surrogates instead of silently replacing repository identity bytes. */
 function assertPortableRepositoryIdentity(repositoryId) {
-    if (typeof repositoryId !== "string" || !repositoryId || /[\u0000-\u001f\u007f]/u.test(repositoryId)) {
+    if (typeof repositoryId !== "string" ||
+        !repositoryId ||
+        /[\u0000-\u001f\u007f]/u.test(repositoryId)) {
         throw new Error("tracked repository identity must be a nonempty portable string");
     }
     if (new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(Buffer.from(repositoryId, "utf8")) !== repositoryId) {
@@ -191,7 +216,8 @@ function assertPortableRepositoryIdentity(repositoryId) {
 }
 /** Canonical lossless byte decoder. Buffer's permissive base64 decoder is not validation. */
 function decodeTrackedPathBytes(encoded) {
-    if (typeof encoded !== "string" || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)) {
+    if (typeof encoded !== "string" ||
+        !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)) {
         throw new Error("tracked path bytes must be canonical base64");
     }
     const bytes = Buffer.from(encoded, "base64");

@@ -14,19 +14,26 @@
 // exactly. A bound that quietly dropped a qualifying pair would show up here as
 // a missing group, not as a faster test.
 import { describe, expect, it } from "vitest";
+import type { TopicDocumentInput } from "../src/corpus_candidates";
 import {
-  DEFAULT_TOPIC_THRESHOLD,
-  TOPIC_MIN_TOKENS,
   buildTopicCandidates,
   buildTopicCandidatesExhaustive,
+  DEFAULT_TOPIC_THRESHOLD,
+  TOPIC_MIN_TOKENS,
   topicPrefixLength,
 } from "../src/corpus_candidates";
-import type { TopicDocumentInput } from "../src/corpus_candidates";
 
 /** Term counts for a body, in the shape the topic pass consumes. */
-function document(id: string, body: string, tokenCount = TOPIC_MIN_TOKENS + 40): TopicDocumentInput {
+function document(
+  id: string,
+  body: string,
+  tokenCount = TOPIC_MIN_TOKENS + 40,
+): TopicDocumentInput {
   const counts = new Map<string, number>();
-  for (const word of body.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 0)) {
+  for (const word of body
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length > 0)) {
     counts.set(word, (counts.get(word) ?? 0) + 1);
   }
   return {
@@ -62,9 +69,10 @@ function structuredCorpus(size: number, subjects: number): TopicDocumentInput[] 
   return Array.from({ length: size }, (_unused, index) =>
     document(
       `doc-${String(index).padStart(4, "0")}`,
-      `${boilerplate} ${subjectBodies[index % subjects] as string} `
-      + `reference${index} unique${index} tail${index}`,
-    ));
+      `${boilerplate} ${subjectBodies[index % subjects] as string} ` +
+        `reference${index} unique${index} tail${index}`,
+    ),
+  );
 }
 
 describe("the topic prefix bound", () => {
@@ -89,9 +97,12 @@ describe("the indexed pass against an exhaustive one", () => {
     const documents = structuredCorpus(120, 6);
     for (const threshold of thresholds) {
       const indexed = buildTopicCandidates({ documents, rootById: new Map(), threshold });
-      const exhaustive = buildTopicCandidatesExhaustive({ documents, rootById: new Map(), threshold });
-      expect(grouping(indexed.candidates), `threshold ${threshold}`)
-        .toEqual(grouping(exhaustive));
+      const exhaustive = buildTopicCandidatesExhaustive({
+        documents,
+        rootById: new Map(),
+        threshold,
+      });
+      expect(grouping(indexed.candidates), `threshold ${threshold}`).toEqual(grouping(exhaustive));
     }
   });
 
@@ -100,12 +111,16 @@ describe("the indexed pass against an exhaustive one", () => {
     // for: one term in every document, which must not become a posting list the
     // size of the corpus and must not cost a single qualifying pair either.
     const documents = Array.from({ length: 80 }, (_unused, index) =>
-      document(`d${index}`, `common common common alpha${index % 4} beta${index % 7} tail${index}`));
+      document(`d${index}`, `common common common alpha${index % 4} beta${index % 7} tail${index}`),
+    );
     for (const threshold of thresholds) {
       const indexed = buildTopicCandidates({ documents, rootById: new Map(), threshold });
-      const exhaustive = buildTopicCandidatesExhaustive({ documents, rootById: new Map(), threshold });
-      expect(grouping(indexed.candidates), `threshold ${threshold}`)
-        .toEqual(grouping(exhaustive));
+      const exhaustive = buildTopicCandidatesExhaustive({
+        documents,
+        rootById: new Map(),
+        threshold,
+      });
+      expect(grouping(indexed.candidates), `threshold ${threshold}`).toEqual(grouping(exhaustive));
     }
   });
 
@@ -121,22 +136,35 @@ describe("the indexed pass against an exhaustive one", () => {
     ];
     for (const threshold of thresholds) {
       const indexed = buildTopicCandidates({ documents, rootById: new Map(), threshold });
-      const exhaustive = buildTopicCandidatesExhaustive({ documents, rootById: new Map(), threshold });
-      expect(grouping(indexed.candidates), `threshold ${threshold}`)
-        .toEqual(grouping(exhaustive));
+      const exhaustive = buildTopicCandidatesExhaustive({
+        documents,
+        rootById: new Map(),
+        threshold,
+      });
+      expect(grouping(indexed.candidates), `threshold ${threshold}`).toEqual(grouping(exhaustive));
     }
   });
 
   it("agrees on a corpus where nothing groups", () => {
     const documents = Array.from({ length: 40 }, (_unused, index) =>
-      document(`d${index}`, `unique${index} words${index} only${index} here${index} nothing${index}`));
+      document(
+        `d${index}`,
+        `unique${index} words${index} only${index} here${index} nothing${index}`,
+      ),
+    );
     const indexed = buildTopicCandidates({
-      documents, rootById: new Map(), threshold: DEFAULT_TOPIC_THRESHOLD,
+      documents,
+      rootById: new Map(),
+      threshold: DEFAULT_TOPIC_THRESHOLD,
     });
     expect(indexed.candidates).toEqual([]);
-    expect(buildTopicCandidatesExhaustive({
-      documents, rootById: new Map(), threshold: DEFAULT_TOPIC_THRESHOLD,
-    })).toEqual([]);
+    expect(
+      buildTopicCandidatesExhaustive({
+        documents,
+        rootById: new Map(),
+        threshold: DEFAULT_TOPIC_THRESHOLD,
+      }),
+    ).toEqual([]);
     // Nothing was compared, and that is the correct answer rather than a gap:
     // no two of these documents share a salient term, so no pair can reach any
     // positive threshold and the index is right to offer none. The exhaustive
@@ -151,7 +179,9 @@ describe("the pair work a topic pass reports", () => {
   it("stays orders of magnitude under comparing everything", () => {
     const documents = structuredCorpus(600, 6);
     const result = buildTopicCandidates({
-      documents, rootById: new Map(), threshold: DEFAULT_TOPIC_THRESHOLD,
+      documents,
+      rootById: new Map(),
+      threshold: DEFAULT_TOPIC_THRESHOLD,
     });
 
     const work = result.pair_work;
@@ -170,7 +200,8 @@ describe("the pair work a topic pass reports", () => {
   it("reports the exhaustive count even when nothing was eligible", () => {
     const short = { ...document("a", "one two"), token_count: TOPIC_MIN_TOKENS - 1 };
     const work = buildTopicCandidates({
-      documents: [short, { ...short, virtual_source_id: "b" }], rootById: new Map(),
+      documents: [short, { ...short, virtual_source_id: "b" }],
+      rootById: new Map(),
     }).pair_work;
     expect(work.eligible_document_count).toBe(0);
     expect(work.exhaustive_pair_count).toBe(0);
@@ -196,8 +227,10 @@ describe("the pair work a topic pass reports", () => {
       // Doubling the corpus must not more than double the comparisons. A
       // quadratic pass would show ~4x here, which is exactly the regression this
       // test exists to catch.
-      expect(current.evaluated / Math.max(1, previous.evaluated), `${previous.size} → ${current.size}`)
-        .toBeLessThanOrEqual(2.5);
+      expect(
+        current.evaluated / Math.max(1, previous.evaluated),
+        `${previous.size} → ${current.size}`,
+      ).toBeLessThanOrEqual(2.5);
     }
   });
 });

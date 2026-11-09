@@ -77,7 +77,9 @@ const ZIP64_EXTRA_ID = 0x0001;
 /** Build a Zip64 extended-information payload for the placeholders requested. */
 function zip64ExtraField(values: number[]): Buffer {
   const payload = Buffer.alloc(values.length * 8);
-  values.forEach((value, index) => payload.writeBigUInt64LE(BigInt(value), index * 8));
+  values.forEach((value, index) => {
+    payload.writeBigUInt64LE(BigInt(value), index * 8);
+  });
   const field = Buffer.alloc(4 + payload.length);
   field.writeUInt16LE(ZIP64_EXTRA_ID, 0);
   field.writeUInt16LE(payload.length, 2);
@@ -171,7 +173,11 @@ function prepare(spec: ZipMemberSpec): Omit<PreparedMember, "localHeaderOffset">
 }
 
 /** Write a ZIP archive containing exactly the members given, verbatim. */
-export function writeRawZip(archivePath: string, specs: ZipMemberSpec[], options: RawZipOptions = {}): string {
+export function writeRawZip(
+  archivePath: string,
+  specs: ZipMemberSpec[],
+  options: RawZipOptions = {},
+): string {
   fs.mkdirSync(path.dirname(archivePath), { recursive: true });
   const chunks: Buffer[] = [];
   const prepared: PreparedMember[] = [];
@@ -202,7 +208,11 @@ export function writeRawZip(archivePath: string, specs: ZipMemberSpec[], options
     // in the order uncompressed, compressed, local-header offset.
     const extra = Buffer.concat([
       member.zip64
-        ? zip64ExtraField([member.uncompressedSize, member.declaredCompressedSize, member.localHeaderOffset])
+        ? zip64ExtraField([
+            member.uncompressedSize,
+            member.declaredCompressedSize,
+            member.localHeaderOffset,
+          ])
         : Buffer.alloc(0),
       member.centralExtra,
     ]);
@@ -255,8 +265,15 @@ export function treeSnapshot(root: string): Record<string, string> {
       const absolute = path.join(directory, name);
       const relative = path.relative(root, absolute).split(path.sep).join("/");
       const stats = fs.lstatSync(absolute);
-      if (stats.isSymbolicLink()) { out[relative] = `symlink:${fs.readlinkSync(absolute)}`; continue; }
-      if (stats.isDirectory()) { out[`${relative}/`] = "dir"; walk(absolute); continue; }
+      if (stats.isSymbolicLink()) {
+        out[relative] = `symlink:${fs.readlinkSync(absolute)}`;
+        continue;
+      }
+      if (stats.isDirectory()) {
+        out[`${relative}/`] = "dir";
+        walk(absolute);
+        continue;
+      }
       if (stats.isFile()) {
         out[relative] = crypto.createHash("sha256").update(fs.readFileSync(absolute)).digest("hex");
         continue;

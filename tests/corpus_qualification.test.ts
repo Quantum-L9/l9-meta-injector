@@ -17,20 +17,26 @@ import * as path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import {
   CORPUS_CACHE_ENTRY_SCHEMA,
-  MemoryCorpusCache,
   cacheEntryDefect,
   interpretationKey,
   lexicalFeaturesKey,
+  MemoryCorpusCache,
   normalizedDocumentKey,
 } from "../src/corpus_cache";
-import { CorpusScanResult, TEXT_DECODER_ID, TEXT_DECODER_VERSION, runCorpusScan } from "../src/corpus_scan";
-import { defaultDecoderRegistry } from "../src/documents";
-import { CorpusSessionStore, DEFAULT_CORPUS_BUDGETS } from "../src/corpus_session";
 import { corpusRootId } from "../src/corpus_roots";
+import {
+  CorpusScanResult,
+  renderCorpusCandidates,
+  renderReadinessEvidence,
+  runCorpusScan,
+  TEXT_DECODER_ID,
+  TEXT_DECODER_VERSION,
+} from "../src/corpus_scan";
+import { CorpusSessionStore, DEFAULT_CORPUS_BUDGETS } from "../src/corpus_session";
 import { renderCorpusSnapshot } from "../src/corpus_snapshot";
-import { renderCorpusCandidates, renderReadinessEvidence } from "../src/corpus_scan";
-import { writeMultiRootCorpus, planDocument } from "./helpers/multi_root_fixtures";
-import { writeRawZip, treeSnapshot } from "./helpers/zip_fixtures";
+import { defaultDecoderRegistry } from "../src/documents";
+import { planDocument, writeMultiRootCorpus } from "./helpers/multi_root_fixtures";
+import { treeSnapshot, writeRawZip } from "./helpers/zip_fixtures";
 
 const scratch: string[] = [];
 function tmp(prefix = "l9-corpus-qual-"): string {
@@ -65,7 +71,10 @@ function contentOnlySnapshot(result: CorpusScanResult): string {
   });
 }
 
-async function scan(roots: { path: string; name?: string }[], extra: Partial<Parameters<typeof runCorpusScan>[0]> = {}) {
+async function scan(
+  roots: { path: string; name?: string }[],
+  extra: Partial<Parameters<typeof runCorpusScan>[0]> = {},
+) {
   return runCorpusScan({ roots, producerVersion: "qualification", ...extra });
 }
 
@@ -111,7 +120,10 @@ describe("cold and warm runs", () => {
 describe("incremental invalidation", () => {
   it("reprocesses only the changed document when one file changes", async () => {
     const corpus = writeMultiRootCorpus(tmp());
-    const roots = [{ path: corpus.oldSsd, name: "OldSSD" }, { path: corpus.backup, name: "Backup" }];
+    const roots = [
+      { path: corpus.oldSsd, name: "OldSSD" },
+      { path: corpus.backup, name: "Backup" },
+    ];
     const cache = new MemoryCorpusCache("qualification");
     const first = await scan(roots, { cache });
 
@@ -171,7 +183,9 @@ describe("incremental invalidation", () => {
     expect(rename?.corpus_path).toBe("OldSSD::archive/monday.md");
     // Same bytes: nothing content-keyed is invalidated by a move.
     expect(second.diff?.invalidation.new_content_hashes).toHaveLength(0);
-    expect(second.cacheStats.layers.find((layer) => layer.layer === "normalized_document")?.misses).toBe(0);
+    expect(
+      second.cacheStats.layers.find((layer) => layer.layer === "normalized_document")?.misses,
+    ).toBe(0);
   });
 
   it("does not reuse a corpus-scope analysis across a rename", async () => {
@@ -187,7 +201,11 @@ describe("incremental invalidation", () => {
     ].join("\n");
     fs.mkdirSync(path.join(root, "notes"), { recursive: true });
     fs.writeFileSync(path.join(root, "notes/one.md"), `# One\n\n${shared}\n`, "utf8");
-    fs.writeFileSync(path.join(root, "notes/two.md"), `# Two\n\n${shared}\nA differing tail.\n`, "utf8");
+    fs.writeFileSync(
+      path.join(root, "notes/two.md"),
+      `# Two\n\n${shared}\nA differing tail.\n`,
+      "utf8",
+    );
 
     const cache = new MemoryCorpusCache("qualification");
     const before = await scan([{ path: root }], { cache });
@@ -210,9 +228,10 @@ describe("incremental invalidation", () => {
     for (const candidate of warm.candidates.topic_candidates) {
       for (const id of candidate.member_ids) expect(present.has(id)).toBe(true);
     }
-    const paths = warm.candidates.near_duplicate_candidates.flatMap(
-      (candidate) => [candidate.source_path_a, candidate.source_path_b],
-    );
+    const paths = warm.candidates.near_duplicate_candidates.flatMap((candidate) => [
+      candidate.source_path_a,
+      candidate.source_path_b,
+    ]);
     expect(paths).toContain("Corpus::archive/one.md");
     expect(paths).not.toContain("Corpus::notes/one.md");
   });
@@ -224,10 +243,16 @@ describe("incremental invalidation", () => {
   const lineEndingPair = (root: string, bEndings: "lf" | "crlf"): void => {
     const text = planDocument("Routing");
     fs.writeFileSync(path.join(root, "a.md"), text, "utf8");
-    fs.writeFileSync(path.join(root, "b.md"), bEndings === "lf" ? text : text.replace(/\n/g, "\r\n"), "utf8");
+    fs.writeFileSync(
+      path.join(root, "b.md"),
+      bEndings === "lf" ? text : text.replace(/\n/g, "\r\n"),
+      "utf8",
+    );
   };
   const nearAndExact = (result: CorpusScanResult) => ({
-    near: result.candidates.near_duplicate_candidates.map((c) => `${c.source_path_a} ~ ${c.source_path_b} ${c.score}`),
+    near: result.candidates.near_duplicate_candidates.map(
+      (c) => `${c.source_path_a} ~ ${c.source_path_b} ${c.score}`,
+    ),
     exact: result.candidates.exact_duplicate_clusters.length,
   });
 
@@ -296,14 +321,19 @@ describe("incremental invalidation", () => {
     // diff, and no cache entry was destroyed on its account.
     expect(third.diff?.counts.removed).toBeGreaterThan(0);
     expect(third.diff?.invalidation.cache_entries_removed).toBe(0);
-    expect(third.snapshot.artifacts.some((a) => a.corpus_path.includes("new-work.zip"))).toBe(false);
+    expect(third.snapshot.artifacts.some((a) => a.corpus_path.includes("new-work.zip"))).toBe(
+      false,
+    );
   });
 });
 
 describe("interruption and resume", () => {
   it("carries completed work forward and finishes with identical output", async () => {
     const corpus = writeMultiRootCorpus(tmp());
-    const roots = [{ path: corpus.oldSsd, name: "OldSSD" }, { path: corpus.backup, name: "Backup" }];
+    const roots = [
+      { path: corpus.oldSsd, name: "OldSSD" },
+      { path: corpus.backup, name: "Backup" },
+    ];
     const sessionFile = path.join(tmp("l9-corpus-session-"), "corpus-session.json");
     const budgets = { ...DEFAULT_CORPUS_BUDGETS, archive: {} };
     // Keyed and classed the way the CLI writes a session manifest: resuming
@@ -443,7 +473,9 @@ describe("mount points and path namespaces", () => {
   it("keeps the same relative filename in two roots apart", async () => {
     const corpus = writeMultiRootCorpus(tmp());
     const result = await scan([{ path: corpus.oldSsd }, { path: corpus.backup }]);
-    const mondays = result.snapshot.artifacts.filter((a) => a.root_relative_path === "notes/monday.md");
+    const mondays = result.snapshot.artifacts.filter(
+      (a) => a.root_relative_path === "notes/monday.md",
+    );
     expect(mondays).toHaveLength(2);
     expect(new Set(mondays.map((a) => a.virtual_source_id)).size).toBe(2);
     expect(new Set(mondays.map((a) => a.corpus_path))).toEqual(
@@ -455,15 +487,15 @@ describe("mount points and path namespaces", () => {
 
   it("folds one root mounted twice and refuses two different roots that share a key", async () => {
     const corpus = writeMultiRootCorpus(tmp());
-    const folded = await scan([
-      { path: corpus.oldSsd },
-      { path: corpus.oldSsd, name: "OldSSD" },
-    ]);
+    const folded = await scan([{ path: corpus.oldSsd }, { path: corpus.oldSsd, name: "OldSSD" }]);
     expect(folded.bindings).toHaveLength(1);
     expect(folded.diagnostics.some((d) => d.code === "corpus.root_folded")).toBe(true);
 
     await expect(
-      scan([{ path: corpus.oldSsd, name: "Same" }, { path: corpus.backup, name: "Same" }]),
+      scan([
+        { path: corpus.oldSsd, name: "Same" },
+        { path: corpus.backup, name: "Same" },
+      ]),
     ).rejects.toThrow(/declare the key 'Same' but hold different content/);
   });
 });
@@ -497,8 +529,13 @@ describe("the source", () => {
     expect(() => assertOutsideRoots(link, [corpus.oldSsd], "the output")).toThrow(
       /refusing to write the output inside an observed root/,
     );
-    expect(() =>
-      new FileCorpusCache({ root: link, producerVersion: "q", observedRootPaths: [corpus.oldSsd] }),
+    expect(
+      () =>
+        new FileCorpusCache({
+          root: link,
+          producerVersion: "q",
+          observedRootPaths: [corpus.oldSsd],
+        }),
     ).toThrow(/refusing a cache root inside an observed source tree/);
 
     // …and a path under a symlink that does not exist yet is judged the same way,
@@ -527,9 +564,9 @@ describe("the source", () => {
     ).toThrow(/refusing a cache root inside an observed source tree/);
 
     const { assertOutsideRoots } = await import("../src/corpus_roots");
-    expect(() => assertOutsideRoots(path.join(corpus.backup, "out"), [corpus.backup], "the output")).toThrow(
-      /refusing to write the output inside an observed root/,
-    );
+    expect(() =>
+      assertOutsideRoots(path.join(corpus.backup, "out"), [corpus.backup], "the output"),
+    ).toThrow(/refusing to write the output inside an observed root/);
   });
 
   it("REG-WU-080-RC-058-RC058-a: a filesystem root contains every path on it", async () => {
@@ -577,20 +614,43 @@ describe("cache keys", () => {
     // REG-WU-039-RC-067-d: a decoder-declared dialect is a rule applied to the
     // bytes, so it separates keys; absent, the key is the dialect-free one.
     expect(
-      normalizedDocumentKey({ contentHash, decoderId: TEXT_DECODER_ID, decoderVersion: TEXT_DECODER_VERSION, dialect: "markdown" }),
+      normalizedDocumentKey({
+        contentHash,
+        decoderId: TEXT_DECODER_ID,
+        decoderVersion: TEXT_DECODER_VERSION,
+        dialect: "markdown",
+      }),
     ).not.toBe(documentKey);
     expect(
-      normalizedDocumentKey({ contentHash, decoderId: TEXT_DECODER_ID, decoderVersion: TEXT_DECODER_VERSION, dialect: "markdown" }),
+      normalizedDocumentKey({
+        contentHash,
+        decoderId: TEXT_DECODER_ID,
+        decoderVersion: TEXT_DECODER_VERSION,
+        dialect: "markdown",
+      }),
     ).toBe(
-      normalizedDocumentKey({ contentHash, decoderId: TEXT_DECODER_ID, decoderVersion: TEXT_DECODER_VERSION, dialect: "markdown" }),
+      normalizedDocumentKey({
+        contentHash,
+        decoderId: TEXT_DECODER_ID,
+        decoderVersion: TEXT_DECODER_VERSION,
+        dialect: "markdown",
+      }),
     );
     expect(
       lexicalFeaturesKey({ normalizedDocumentIdentity: documentKey, lexicalProfileHash: "p1" }),
-    ).not.toBe(lexicalFeaturesKey({ normalizedDocumentIdentity: documentKey, lexicalProfileHash: "p2" }));
-    expect(
-      interpretationKey({ normalizedDocumentIdentity: documentKey, interpretationProfileHash: "p1" }),
     ).not.toBe(
-      interpretationKey({ normalizedDocumentIdentity: documentKey, interpretationProfileHash: "p2" }),
+      lexicalFeaturesKey({ normalizedDocumentIdentity: documentKey, lexicalProfileHash: "p2" }),
+    );
+    expect(
+      interpretationKey({
+        normalizedDocumentIdentity: documentKey,
+        interpretationProfileHash: "p1",
+      }),
+    ).not.toBe(
+      interpretationKey({
+        normalizedDocumentIdentity: documentKey,
+        interpretationProfileHash: "p2",
+      }),
     );
   });
 });

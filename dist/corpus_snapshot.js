@@ -70,12 +70,12 @@ exports.CORPUS_OBSERVATION_STATUSES = ["observed", "failed", "missing"];
 exports.VERIFICATION_CLASSES = ["fully_verified", "cached_unchanged_assumption"];
 /** What the operator asked for, as distinct from what was achieved. */
 exports.VERIFICATION_MODES = ["full", "incremental"];
-exports.FULLY_VERIFIED_STATEMENT = "Every regular file under every root was read in full on this run, so each content hash "
-    + "describes bytes this run observed.";
-exports.CACHED_ASSUMPTION_STATEMENT = "Some content hashes were carried over from a previous run because the file's size and "
-    + "mtime had not moved. Filesystem metadata is a revalidation signal, not content truth: "
-    + "this run did not read those bytes, and this snapshot is not byte-verified. Run with "
-    + "--verify-content to establish one that is.";
+exports.FULLY_VERIFIED_STATEMENT = "Every regular file under every root was read in full on this run, so each content hash " +
+    "describes bytes this run observed.";
+exports.CACHED_ASSUMPTION_STATEMENT = "Some content hashes were carried over from a previous run because the file's size and " +
+    "mtime had not moved. Filesystem metadata is a revalidation signal, not content truth: " +
+    "this run did not read those bytes, and this snapshot is not byte-verified. Run with " +
+    "--verify-content to establish one that is.";
 /** How a corpus as a whole observed. */
 exports.CORPUS_STATUSES = ["complete", "partial", "failed"];
 /** Order a snapshot's contents so two equal corpora render identically. */
@@ -83,8 +83,8 @@ exports.CORPUS_STATUSES = ["complete", "partial", "failed"];
 function orderManifest(manifest) {
     return {
         ...manifest,
-        entries: [...manifest.entries].sort((a, b) => (0, ordering_1.compareCodePoints)(a.candidate_kind, b.candidate_kind)
-            || (0, ordering_1.compareCodePoints)(a.candidate_id, b.candidate_id)),
+        entries: [...manifest.entries].sort((a, b) => (0, ordering_1.compareCodePoints)(a.candidate_kind, b.candidate_kind) ||
+            (0, ordering_1.compareCodePoints)(a.candidate_id, b.candidate_id)),
     };
 }
 function orderCorpusSnapshot(snapshot) {
@@ -99,8 +99,8 @@ function orderCorpusSnapshot(snapshot) {
             ? { analysis_manifest: orderManifest(snapshot.analysis_manifest) }
             : {}),
         roots: [...snapshot.roots].sort((a, b) => (0, ordering_1.compareCodePoints)(a.root_id, b.root_id)),
-        artifacts: [...snapshot.artifacts].sort((a, b) => (0, ordering_1.compareCodePoints)(a.corpus_path, b.corpus_path)
-            || (0, ordering_1.compareCodePoints)(a.virtual_source_id, b.virtual_source_id)),
+        artifacts: [...snapshot.artifacts].sort((a, b) => (0, ordering_1.compareCodePoints)(a.corpus_path, b.corpus_path) ||
+            (0, ordering_1.compareCodePoints)(a.virtual_source_id, b.virtual_source_id)),
         archives: [...snapshot.archives].sort((a, b) => (0, ordering_1.compareCodePoints)(a.corpus_path, b.corpus_path)),
     };
 }
@@ -115,7 +115,9 @@ function readCorpusSnapshot(snapshotPath) {
     if (parsed.schema !== exports.CORPUS_SNAPSHOT_SCHEMA) {
         throw new Error(`corpus: ${absolute} declares schema '${String(parsed.schema)}'; expected '${exports.CORPUS_SNAPSHOT_SCHEMA}'`);
     }
-    if (!Array.isArray(parsed.artifacts) || !Array.isArray(parsed.archives) || !Array.isArray(parsed.roots)) {
+    if (!Array.isArray(parsed.artifacts) ||
+        !Array.isArray(parsed.archives) ||
+        !Array.isArray(parsed.roots)) {
         throw new Error(`corpus: ${absolute} is not a complete corpus snapshot`);
     }
     // A snapshot written before source identity and analysis identity were split
@@ -124,8 +126,8 @@ function readCorpusSnapshot(snapshotPath) {
     // every unchanged corpus changed, so it is refused by shape rather than trusted
     // by version.
     if (typeof parsed.corpus_source_snapshot_id !== "string" || parsed.analysis === undefined) {
-        throw new Error(`corpus: ${absolute} predates the split between source identity and analysis `
-            + "identity and cannot be diffed against; run a full scan to write a current snapshot");
+        throw new Error(`corpus: ${absolute} predates the split between source identity and analysis ` +
+            "identity and cannot be diffed against; run a full scan to write a current snapshot");
     }
     return parsed;
 }

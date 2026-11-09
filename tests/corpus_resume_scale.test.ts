@@ -15,8 +15,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { CorpusCache, MemoryCorpusCache } from "../src/corpus_cache";
-import { runCorpusScan } from "../src/corpus_scan";
 import { corpusRootId } from "../src/corpus_roots";
+import { runCorpusScan } from "../src/corpus_scan";
 import { CorpusSessionStore, DEFAULT_CORPUS_BUDGETS } from "../src/corpus_session";
 import { renderCorpusSnapshot } from "../src/corpus_snapshot";
 import { writeScaleCorpus } from "./helpers/multi_root_fixtures";
@@ -101,8 +101,9 @@ describe("a large scan that was interrupted", () => {
       budgets,
       now: "2026-01-01T00:00:00.000Z",
     });
-    await expect(runCorpusScan({ ...options, cache: dying, session: interruptedSession }))
-      .rejects.toThrow(/simulated process death/);
+    await expect(
+      runCorpusScan({ ...options, cache: dying, session: interruptedSession }),
+    ).rejects.toThrow(/simulated process death/);
     interruptedSession.save("2026-01-01T00:01:00.000Z");
 
     // A failed run leaves the session behind and publishes nothing.
@@ -137,7 +138,11 @@ describe("the archive budget at scale", () => {
   it("holds what it cannot expand, and says so rather than truncating quietly", async () => {
     const base = tmp();
     const corpus = writeScaleCorpus(base, {
-      artifacts: 300, archives: 100, nestedArchives: 10, duplicateClusters: 10, candidateProjects: 4,
+      artifacts: 300,
+      archives: 100,
+      nestedArchives: 10,
+      duplicateClusters: 10,
+      candidateProjects: 4,
       mixedDocumentsPerFormat: 2,
     });
     // The default ceiling, deliberately left in place: an unbounded archive

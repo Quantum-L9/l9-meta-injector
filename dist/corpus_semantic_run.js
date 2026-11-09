@@ -25,27 +25,27 @@ exports.renderReasoningEvidencePacks = renderReasoningEvidencePacks;
 // pass, embeddings included, cannot change a packet id or a semantic hash,
 // because nothing in this file writes to one.
 const corpus_analysis_1 = require("./corpus_analysis");
-const ordering_1 = require("./ordering");
+const corpus_embeddings_1 = require("./corpus_embeddings");
 const corpus_fusion_1 = require("./corpus_fusion");
 const corpus_pairs_1 = require("./corpus_pairs");
-const corpus_semantics_1 = require("./corpus_semantics");
 const corpus_reasoning_1 = require("./corpus_reasoning");
-const corpus_embeddings_1 = require("./corpus_embeddings");
+const corpus_semantics_1 = require("./corpus_semantics");
+const ordering_1 = require("./ordering");
 exports.SEMANTIC_ANALYSIS_PROFILE_ID = "corpus-semantic-analysis/v1";
 exports.SEMANTIC_ANALYSIS_PROFILE_VERSION = "1.0.0";
-exports.RELATION_STATEMENT = "Every relation in this document is a candidate signal about a pair of artifacts. Exact "
-    + "duplication is a fact about bytes. Lexical overlap, declared-identifier matches, explicit "
-    + "references and embedding similarity are evidence, not conclusions: none of them establishes "
-    + "that two artifacts share a topic, a project, an author's intent, or a fate.";
-exports.TOPIC_STATEMENT = "A topic candidate means the members show evidence of discussing related subject matter. It "
-    + "does not mean they belong to the same project, that any of them is current, or that any of "
-    + "them should be changed.";
-exports.PROJECT_STATEMENT = "A project candidate means there is evidence these artifacts may belong to one body of work. "
-    + "The evidence is named per candidate. No name is synthesized for the body of work, and no "
-    + "member is identified as canonical, current, or superseded except where a source said so.";
-exports.CONSOLIDATION_STATEMENT = "A consolidation candidate means these artifacts are worth inspecting together. It is not an "
-    + "instruction to merge, delete, move, or keep any of them, and this document deliberately "
-    + "contains no field that could be read as one.";
+exports.RELATION_STATEMENT = "Every relation in this document is a candidate signal about a pair of artifacts. Exact " +
+    "duplication is a fact about bytes. Lexical overlap, declared-identifier matches, explicit " +
+    "references and embedding similarity are evidence, not conclusions: none of them establishes " +
+    "that two artifacts share a topic, a project, an author's intent, or a fate.";
+exports.TOPIC_STATEMENT = "A topic candidate means the members show evidence of discussing related subject matter. It " +
+    "does not mean they belong to the same project, that any of them is current, or that any of " +
+    "them should be changed.";
+exports.PROJECT_STATEMENT = "A project candidate means there is evidence these artifacts may belong to one body of work. " +
+    "The evidence is named per candidate. No name is synthesized for the body of work, and no " +
+    "member is identified as canonical, current, or superseded except where a source said so.";
+exports.CONSOLIDATION_STATEMENT = "A consolidation candidate means these artifacts are worth inspecting together. It is not an " +
+    "instruction to merge, delete, move, or keep any of them, and this document deliberately " +
+    "contains no field that could be read as one.";
 function profileOf(input, embedding) {
     return {
         semantic_analysis_profile_id: exports.SEMANTIC_ANALYSIS_PROFILE_ID,
@@ -77,7 +77,9 @@ function runSemanticAnalysis(input) {
     const views = (0, corpus_semantics_1.buildFeatureViews)(input.artifacts);
     const pairResult = (0, corpus_pairs_1.buildSemanticPairs)({
         views,
-        ...(input.nearDuplicatePairs !== undefined ? { nearDuplicatePairs: input.nearDuplicatePairs } : {}),
+        ...(input.nearDuplicatePairs !== undefined
+            ? { nearDuplicatePairs: input.nearDuplicatePairs }
+            : {}),
         ...(input.embeddingPairs !== undefined ? { embeddingPairs: input.embeddingPairs } : {}),
     });
     const fusionOptions = input.fusion ?? {};
@@ -103,8 +105,10 @@ function runSemanticAnalysis(input) {
     const candidateIdsByArtifact = new Map();
     const slot = (artifactId) => {
         const existing = candidateIdsByArtifact.get(artifactId) ?? {
-            topic_candidate_ids: [], project_candidate_ids: [],
-            consolidation_candidate_ids: [], reasoning_candidate_ids: [],
+            topic_candidate_ids: [],
+            project_candidate_ids: [],
+            consolidation_candidate_ids: [],
+            reasoning_candidate_ids: [],
         };
         candidateIdsByArtifact.set(artifactId, existing);
         return existing;
@@ -135,8 +139,11 @@ function runSemanticAnalysis(input) {
         entry.consolidation_candidate_ids.sort(ordering_1.compareCodePoints);
         entry.reasoning_candidate_ids.sort(ordering_1.compareCodePoints);
     }
-    const header = { corpus_source_snapshot_id: input.corpusSourceSnapshotId,
-        corpus_analysis_id: input.corpusAnalysisId, analysis_profile: profile };
+    const header = {
+        corpus_source_snapshot_id: input.corpusSourceSnapshotId,
+        corpus_analysis_id: input.corpusAnalysisId,
+        analysis_profile: profile,
+    };
     return {
         profile,
         views,
@@ -150,16 +157,22 @@ function runSemanticAnalysis(input) {
             relation_statement: exports.RELATION_STATEMENT,
         },
         topics: {
-            schema: corpus_fusion_1.TOPIC_CANDIDATE_SCHEMA, ...header,
-            candidates: topics, candidate_statement: exports.TOPIC_STATEMENT,
+            schema: corpus_fusion_1.TOPIC_CANDIDATE_SCHEMA,
+            ...header,
+            candidates: topics,
+            candidate_statement: exports.TOPIC_STATEMENT,
         },
         projects: {
-            schema: corpus_fusion_1.PROJECT_CANDIDATE_SCHEMA, ...header,
-            candidates: projects, candidate_statement: exports.PROJECT_STATEMENT,
+            schema: corpus_fusion_1.PROJECT_CANDIDATE_SCHEMA,
+            ...header,
+            candidates: projects,
+            candidate_statement: exports.PROJECT_STATEMENT,
         },
         consolidations: {
-            schema: corpus_fusion_1.CONSOLIDATION_CANDIDATE_SCHEMA, ...header,
-            candidates: consolidations, candidate_statement: exports.CONSOLIDATION_STATEMENT,
+            schema: corpus_fusion_1.CONSOLIDATION_CANDIDATE_SCHEMA,
+            ...header,
+            candidates: consolidations,
+            candidate_statement: exports.CONSOLIDATION_STATEMENT,
         },
         reasoningCandidates,
         evidencePacks,

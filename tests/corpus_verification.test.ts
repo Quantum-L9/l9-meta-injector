@@ -10,8 +10,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { CorpusSnapshot } from "../src/corpus_snapshot";
 import { runCorpusScan } from "../src/corpus_scan";
+import { CorpusSnapshot } from "../src/corpus_snapshot";
 
 const scratch: string[] = [];
 function tmp(prefix = "l9-verify-"): string {
@@ -34,7 +34,11 @@ function root(): string {
 
 async function scan(
   dir: string,
-  options: { previousSnapshot?: CorpusSnapshot; incremental?: boolean; verifyContent?: boolean } = {},
+  options: {
+    previousSnapshot?: CorpusSnapshot;
+    incremental?: boolean;
+    verifyContent?: boolean;
+  } = {},
 ) {
   return runCorpusScan({
     roots: [{ path: dir, name: "disk" }],
@@ -87,8 +91,9 @@ describe("incremental verification", () => {
     expect(second.snapshot.verification.statement).toMatch(/not byte-verified/);
 
     // Reuse is only worth having if it produces the same answer.
-    expect(second.snapshot.corpus_source_snapshot_id)
-      .toBe(first.snapshot.corpus_source_snapshot_id);
+    expect(second.snapshot.corpus_source_snapshot_id).toBe(
+      first.snapshot.corpus_source_snapshot_id,
+    );
   });
 
   it("has nothing to reuse without a previous snapshot, and does not pretend otherwise", async () => {
@@ -111,7 +116,9 @@ describe("incremental verification", () => {
     const second = await scan(dir, { previousSnapshot: first.snapshot, incremental: true });
     expect(second.snapshot.verification.fully_rehashed_artifact_count).toBe(1);
     expect(second.snapshot.verification.cached_hash_reuse_count).toBe(2);
-    const changed = second.snapshot.artifacts.find((a) => a.root_relative_path === "notes/monday.md");
+    const changed = second.snapshot.artifacts.find(
+      (a) => a.root_relative_path === "notes/monday.md",
+    );
     const before = first.snapshot.artifacts.find((a) => a.root_relative_path === "notes/monday.md");
     expect(changed?.content_hash).not.toBe(before?.content_hash);
   });
@@ -125,8 +132,9 @@ describe("incremental verification", () => {
     const second = await scan(dir, { previousSnapshot: first.snapshot, incremental: true });
     expect(second.snapshot.verification.fully_rehashed_artifact_count).toBe(1);
     expect(second.snapshot.verification.cached_hash_reuse_count).toBe(2);
-    expect(second.snapshot.corpus_source_snapshot_id)
-      .not.toBe(first.snapshot.corpus_source_snapshot_id);
+    expect(second.snapshot.corpus_source_snapshot_id).not.toBe(
+      first.snapshot.corpus_source_snapshot_id,
+    );
   });
 
   it("does not carry a hash across to a file that was not there before", async () => {
@@ -155,8 +163,9 @@ describe("--verify-content", () => {
     expect(verified.snapshot.verification.verify_content_requested).toBe(true);
     expect(verified.snapshot.verification.cached_hash_reuse_count).toBe(0);
     expect(verified.snapshot.verification.verification_class).toBe("fully_verified");
-    expect(verified.snapshot.corpus_source_snapshot_id)
-      .toBe(first.snapshot.corpus_source_snapshot_id);
+    expect(verified.snapshot.corpus_source_snapshot_id).toBe(
+      first.snapshot.corpus_source_snapshot_id,
+    );
   });
 });
 
@@ -170,8 +179,9 @@ describe("coverage", () => {
     expect(hashing.verification_mode).toBe("incremental");
     expect(hashing.verification_class).toBe("cached_unchanged_assumption");
     expect(hashing.cached_hash_reuse_count).toBe(3);
-    expect(hashing.fully_rehashed_count + hashing.cached_hash_reuse_count + hashing.unhashed_count)
-      .toBe(second.coverage.corpus.total_physical_artifacts);
+    expect(
+      hashing.fully_rehashed_count + hashing.cached_hash_reuse_count + hashing.unhashed_count,
+    ).toBe(second.coverage.corpus.total_physical_artifacts);
 
     // Every denominator the contract asks for is present, not merely the counts.
     expect(second.coverage.corpus.root_count_requested).toBe(1);
@@ -186,17 +196,25 @@ describe("coverage", () => {
 describe("a root that cannot be read", () => {
   it("fails the run by default, rather than quietly shrinking the corpus", async () => {
     const present = root();
-    await expect(runCorpusScan({
-      roots: [{ path: present, name: "disk" }, { path: path.join(tmp(), "unplugged"), name: "old-ssd" }],
-      producerVersion: "test",
-    })).rejects.toThrow();
+    await expect(
+      runCorpusScan({
+        roots: [
+          { path: present, name: "disk" },
+          { path: path.join(tmp(), "unplugged"), name: "old-ssd" },
+        ],
+        producerVersion: "test",
+      }),
+    ).rejects.toThrow();
   });
 
   it("is named in the snapshot when the operator asked for a partial one", async () => {
     const present = root();
     const missing = path.join(tmp(), "unplugged");
     const result = await runCorpusScan({
-      roots: [{ path: present, name: "disk" }, { path: missing, name: "old-ssd" }],
+      roots: [
+        { path: present, name: "disk" },
+        { path: missing, name: "old-ssd" },
+      ],
       producerVersion: "test",
       allowPartialRoots: true,
     });
@@ -224,7 +242,10 @@ describe("a root that cannot be read", () => {
   it("gives a partial corpus a different identity from the whole one", async () => {
     const present = root();
     const partial = await runCorpusScan({
-      roots: [{ path: present, name: "disk" }, { path: path.join(tmp(), "gone"), name: "old-ssd" }],
+      roots: [
+        { path: present, name: "disk" },
+        { path: path.join(tmp(), "gone"), name: "old-ssd" },
+      ],
       producerVersion: "test",
       allowPartialRoots: true,
     });
@@ -236,8 +257,9 @@ describe("a root that cannot be read", () => {
     // The observed roots are identical, so the source identity is too: identity
     // is computed from what was observed. What differs is the status and the
     // named missing root, which is where the difference belongs.
-    expect(partial.snapshot.corpus_source_snapshot_id)
-      .toBe(whole.snapshot.corpus_source_snapshot_id);
+    expect(partial.snapshot.corpus_source_snapshot_id).toBe(
+      whole.snapshot.corpus_source_snapshot_id,
+    );
     expect(partial.snapshot.corpus_status).toBe("partial");
     expect(whole.snapshot.corpus_status).toBe("complete");
     expect(whole.snapshot.missing_root_ids).toEqual([]);
@@ -249,7 +271,10 @@ describe("one root key with several mounts (WU-045)", () => {
     const present = root();
     const unplugged = path.join(tmp(), "unplugged");
     const result = await runCorpusScan({
-      roots: [{ path: present, name: "ssd" }, { path: unplugged, name: "ssd" }],
+      roots: [
+        { path: present, name: "ssd" },
+        { path: unplugged, name: "ssd" },
+      ],
       producerVersion: "test",
       allowPartialRoots: true,
     });
@@ -262,7 +287,9 @@ describe("one root key with several mounts (WU-045)", () => {
     expect(result.coverage.corpus.root_count_failed).toBe(0);
     // The failed mount is not dropped silently: a warning names it, and no error
     // claims the root is missing.
-    const warning = result.diagnostics.find((d) => d.severity === "warning" && d.message.includes(unplugged));
+    const warning = result.diagnostics.find(
+      (d) => d.severity === "warning" && d.message.includes(unplugged),
+    );
     expect(warning).toBeDefined();
     expect(warning?.message).toContain("'ssd'");
     expect(result.diagnostics.some((d) => d.code === "corpus.root_unreadable")).toBe(false);
@@ -275,7 +302,10 @@ describe("one root key with several mounts (WU-045)", () => {
       producerVersion: "test",
     });
     const result = await runCorpusScan({
-      roots: [{ path: present, name: "ssd" }, { path: path.join(tmp(), "unplugged"), name: "ssd" }],
+      roots: [
+        { path: present, name: "ssd" },
+        { path: path.join(tmp(), "unplugged"), name: "ssd" },
+      ],
       producerVersion: "test",
       allowPartialRoots: true,
       previousSnapshot: previous.snapshot,
@@ -286,7 +316,10 @@ describe("one root key with several mounts (WU-045)", () => {
 
   it("REG-WU-045-RC-066-c: still records a distinct missing key and labels the corpus partial", async () => {
     const result = await runCorpusScan({
-      roots: [{ path: root(), name: "disk" }, { path: path.join(tmp(), "gone"), name: "old-ssd" }],
+      roots: [
+        { path: root(), name: "disk" },
+        { path: path.join(tmp(), "gone"), name: "old-ssd" },
+      ],
       producerVersion: "test",
       allowPartialRoots: true,
     });
@@ -312,6 +345,8 @@ describe("one root key with several mounts (WU-045)", () => {
     expect(missing[0].root_key).toBe("ssd");
     expect(result.snapshot.missing_root_ids).toEqual([missing[0].root_id]);
     expect(result.snapshot.counts.root_count_failed).toBe(1);
-    expect(new Set(result.snapshot.roots.map((entry) => entry.root_id)).size).toBe(result.snapshot.roots.length);
+    expect(new Set(result.snapshot.roots.map((entry) => entry.root_id)).size).toBe(
+      result.snapshot.roots.length,
+    );
   });
 });

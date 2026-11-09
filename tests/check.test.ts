@@ -3,8 +3,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { runCheckAsync, type CheckConfig } from "../src/check";
 import { runApplyAsync } from "../src/apply";
+import { type CheckConfig, runCheckAsync } from "../src/check";
 
 const roots: string[] = [];
 
@@ -12,24 +12,30 @@ function tempRoot(): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "l9-check-test-"));
   roots.push(root);
   fs.mkdirSync(path.join(root, ".l9"), { recursive: true });
-  fs.writeFileSync(path.join(root, ".l9", "meta-authority.yaml"), [
-    "schema: l9.meta-authority/v1",
-    "writer:",
-    "  repository: Quantum-L9/l9-meta-injector",
-    "  ref: fc335977581ff556a8d071a80fd48dfb3686a5cb",
-    "default_carrier: inline_managed",
-    "legacy_writers: forbidden",
-    "inline_allow: [\"**/*.md\"]",
-    "",
-  ].join("\n"));
-  fs.writeFileSync(path.join(root, "prompt.md"), [
-    "# Build prompt",
-    "",
-    "Role: repository auditor",
-    "Objective: inspect the repository and report evidence.",
-    "Output format: markdown report.",
-    "",
-  ].join("\n"));
+  fs.writeFileSync(
+    path.join(root, ".l9", "meta-authority.yaml"),
+    [
+      "schema: l9.meta-authority/v1",
+      "writer:",
+      "  repository: Quantum-L9/l9-meta-injector",
+      "  ref: fc335977581ff556a8d071a80fd48dfb3686a5cb",
+      "default_carrier: inline_managed",
+      "legacy_writers: forbidden",
+      'inline_allow: ["**/*.md"]',
+      "",
+    ].join("\n"),
+  );
+  fs.writeFileSync(
+    path.join(root, "prompt.md"),
+    [
+      "# Build prompt",
+      "",
+      "Role: repository auditor",
+      "Objective: inspect the repository and report evidence.",
+      "Output format: markdown report.",
+      "",
+    ].join("\n"),
+  );
   return root;
 }
 
@@ -56,7 +62,9 @@ function config(root: string, localFiles = false): CheckConfig {
 function treeHash(root: string): string {
   const hash = createHash("sha256");
   const walk = (dir: string): void => {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    for (const entry of fs
+      .readdirSync(dir, { withFileTypes: true })
+      .sort((a, b) => a.name.localeCompare(b.name))) {
       const full = path.join(dir, entry.name);
       const rel = path.relative(root, full).split(path.sep).join("/");
       hash.update(`${entry.isDirectory() ? "d" : entry.isSymbolicLink() ? "l" : "f"}:${rel}\0`);
@@ -128,7 +136,11 @@ describe("read-only check", () => {
     fs.writeFileSync(path.join(root, "fixture.zip"), zip);
     const before = treeHash(root);
     const result = await runCheckAsync(config(root, true));
-    expect(result.check?.drift.some((item) => item.kind === "unsupported" && item.path === "fixture.zip")).toBe(true);
+    expect(
+      result.check?.drift.some(
+        (item) => item.kind === "unsupported" && item.path === "fixture.zip",
+      ),
+    ).toBe(true);
     expect(fs.existsSync(path.join(root, "fixture.l9extracted"))).toBe(false);
     expect(fs.existsSync(path.join(root, "fixture.zip.l9meta.yaml"))).toBe(false);
     expect(treeHash(root)).toBe(before);

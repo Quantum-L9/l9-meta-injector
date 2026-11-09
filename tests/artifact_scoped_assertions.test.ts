@@ -10,21 +10,21 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { inventoryTree } from "../src/inventory";
 import { defaultExtractors } from "../src/extractors";
 import {
-  interpretRepository,
   type Extractor,
   type InterpretationResult,
+  interpretRepository,
 } from "../src/interpretation";
+import { inventoryTree } from "../src/inventory";
+import { withLocalSourceModel } from "../src/local_source_model";
 import {
   buildRepositoryModelPacket,
   observeRepositoryModel,
+  type RepositoryModelPacket,
   repositoryModelArtifactId,
   validateRepositoryModelPacket,
-  type RepositoryModelPacket,
 } from "../src/repository_model";
-import { withLocalSourceModel } from "../src/local_source_model";
 import { writeRawZip } from "./helpers/zip_fixtures";
 
 const REPO = path.resolve(__dirname, "..");
@@ -50,7 +50,11 @@ function materialize(files: Record<string, string>, root = tmp()): string {
   return root;
 }
 
-function interpret(root: string, subjectId = SUBJECT, extractors?: Extractor[]): InterpretationResult {
+function interpret(
+  root: string,
+  subjectId = SUBJECT,
+  extractors?: Extractor[],
+): InterpretationResult {
   const inventory = inventoryTree({
     root,
     outDir: path.join(tmp("l9-artifact-scope-out-"), "inventory"),
@@ -101,15 +105,17 @@ describe("existing extractors keep the repository scope they had", () => {
       id: "legacy/v1",
       version: "1.0.0",
       matches: (sourcePath) => sourcePath === "anything.md",
-      extract: () => [{
-        predicate: "legacy.claim",
-        object: "value",
-        sourceRange: { start_line: 1, end_line: 1 },
-        evidenceExcerpt: "line",
-        evidenceClass: "declared",
-        authority: "source",
-        confidence: "high",
-      }],
+      extract: () => [
+        {
+          predicate: "legacy.claim",
+          object: "value",
+          sourceRange: { start_line: 1, end_line: 1 },
+          evidenceExcerpt: "line",
+          evidenceClass: "declared",
+          authority: "source",
+          confidence: "high",
+        },
+      ],
     };
     const root = materialize({ "anything.md": "line\n" });
     const result = interpret(root, SUBJECT, [legacy]);
@@ -136,10 +142,12 @@ describe("work assertions attach to the artifact that made them", () => {
   it("gives an assertion a different identity when its subject changes", () => {
     const root = materialize({ "plan.md": "---\nstatus: wip\n---\n\n# Plan\n" });
     const artifactScoped = interpret(root).assertions.find((a) => a.predicate === "work.status");
-    const repositoryScoped = interpret(root, SUBJECT, [{
-      ...(defaultExtractors().find((e) => e.id === "work-intelligence/v1") as Extractor),
-      subjectScope: "repository",
-    }]).assertions.find((a) => a.predicate === "work.status");
+    const repositoryScoped = interpret(root, SUBJECT, [
+      {
+        ...(defaultExtractors().find((e) => e.id === "work-intelligence/v1") as Extractor),
+        subjectScope: "repository",
+      },
+    ]).assertions.find((a) => a.predicate === "work.status");
 
     expect(artifactScoped?.subject_id).not.toBe(repositoryScoped?.subject_id);
     // Identity binds the subject, so the same claim about two different subjects
@@ -151,8 +159,9 @@ describe("work assertions attach to the artifact that made them", () => {
     const files = { "plan.md": "---\nstatus: wip\n---\n\n# Plan\n" };
     const first = interpret(materialize(files, tmp("l9-scope-a-")));
     const second = interpret(materialize(files, tmp("l9-scope-b-")));
-    expect(first.assertions.map((a) => [a.subject_id, a.assertion_id]))
-      .toEqual(second.assertions.map((a) => [a.subject_id, a.assertion_id]));
+    expect(first.assertions.map((a) => [a.subject_id, a.assertion_id])).toEqual(
+      second.assertions.map((a) => [a.subject_id, a.assertion_id]),
+    );
   });
 });
 
@@ -161,11 +170,13 @@ describe("archive members are their own subjects", () => {
     const parent = tmp("l9-scope-archive-");
     const inner = path.join(parent, "build", "inner.zip");
     fs.mkdirSync(path.dirname(inner), { recursive: true });
-    writeRawZip(inner, [{
-      name: "world-model.md",
-      content: "---\nstatus: draft\n---\n\n# World Model\n",
-      stored: true,
-    }]);
+    writeRawZip(inner, [
+      {
+        name: "world-model.md",
+        content: "---\nstatus: draft\n---\n\n# World Model\n",
+        stored: true,
+      },
+    ]);
     const source = path.join(parent, "source");
     fs.mkdirSync(source, { recursive: true });
     writeRawZip(path.join(source, "old-projects.zip"), [
@@ -183,9 +194,12 @@ describe("archive members are their own subjects", () => {
         const expected = repositoryModelArtifactId("repo:corpus", memberPath);
         expect(status?.subject_id).toBe(expected);
         // Not the outer archive, not the inner archive, not the repository.
-        expect(status?.subject_id).not.toBe(repositoryModelArtifactId("repo:corpus", "old-projects.zip"));
-        expect(status?.subject_id)
-          .not.toBe(repositoryModelArtifactId("repo:corpus", "old-projects.zip!/plans/inner.zip"));
+        expect(status?.subject_id).not.toBe(
+          repositoryModelArtifactId("repo:corpus", "old-projects.zip"),
+        );
+        expect(status?.subject_id).not.toBe(
+          repositoryModelArtifactId("repo:corpus", "old-projects.zip!/plans/inner.zip"),
+        );
         expect(status?.subject_id).not.toBe("repo:corpus");
 
         // And the subject really is an emitted artifact of this packet.
@@ -215,11 +229,14 @@ describe("packet-side subject handling", () => {
     });
     const packet = packetFor(root);
     const byExtractor = (id: string): string[] => [
-      ...new Set(packet.payload.assertions.filter((a) => a.extractor_id === id).map((a) => a.subject_id)),
+      ...new Set(
+        packet.payload.assertions.filter((a) => a.extractor_id === id).map((a) => a.subject_id),
+      ),
     ];
     expect(byExtractor("repository-status/v1")).toEqual(["repo:fixture"]);
-    expect(byExtractor("work-intelligence/v1"))
-      .toContain(repositoryModelArtifactId("repo:fixture", "plan.md"));
+    expect(byExtractor("work-intelligence/v1")).toContain(
+      repositoryModelArtifactId("repo:fixture", "plan.md"),
+    );
     expect(validateRepositoryModelPacket(packet).status).toBe("passed");
   });
 
@@ -270,19 +287,27 @@ describe("packet-side subject handling", () => {
 describe("the bound topology consumer", () => {
   const evidence = JSON.parse(
     fs.readFileSync(path.join(REPO, "docs", "topology-conformance.json"), "utf8"),
-  ) as { subjects: { id: string; bundle: string }[]; result: { translation_shim_required: boolean } };
+  ) as {
+    subjects: { id: string; bundle: string }[];
+    result: { translation_shim_required: boolean };
+  };
 
   it("accepted a packet carrying artifact-scoped assertion subjects", () => {
     const localSource = evidence.subjects.find((subject) => subject.id === "local-source");
     expect(localSource).toBeDefined();
     const packet = JSON.parse(
-      fs.readFileSync(path.join(REPO, (localSource as { bundle: string }).bundle, "packet.json"), "utf8"),
+      fs.readFileSync(
+        path.join(REPO, (localSource as { bundle: string }).bundle, "packet.json"),
+        "utf8",
+      ),
     ) as RepositoryModelPacket;
 
     const repositoryIds = new Set(packet.payload.repositories.map((r) => r.repository_id));
     const artifactIds = new Set(packet.payload.artifacts.map((a) => a.artifact_id));
     const artifactScoped = packet.payload.assertions.filter((a) => artifactIds.has(a.subject_id));
-    const repositoryScoped = packet.payload.assertions.filter((a) => repositoryIds.has(a.subject_id));
+    const repositoryScoped = packet.payload.assertions.filter((a) =>
+      repositoryIds.has(a.subject_id),
+    );
 
     // The proven bundle must actually exercise both scopes, or the conformance
     // record would only be evidence about the scope that happened to be present.

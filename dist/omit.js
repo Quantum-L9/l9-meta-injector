@@ -58,10 +58,7 @@ exports.BUILTIN_NOISE_PATTERNS = [
  * Built-in protect for inventory + pipeline: Cursor Agent Skill entrypoints.
  * Matched case-insensitively on basename in addition to these glob patterns.
  */
-exports.BUILTIN_SKILL_PROTECT_PATTERNS = [
-    "**/SKILL.md",
-    "**/skill.md",
-];
+exports.BUILTIN_SKILL_PROTECT_PATTERNS = ["**/SKILL.md", "**/skill.md"];
 /** True when basename is SKILL.md under any casing. */
 function isSkillMdBasename(filePath) {
     return path.basename(filePath).toLowerCase() === "skill.md";
@@ -210,7 +207,9 @@ function buildOmitMatcher(opts) {
         const supplied = opts.omitFile.trim();
         if (!supplied)
             throw new Error("--omit-file must not be empty");
-        const absolute = path.isAbsolute(supplied) ? path.resolve(supplied) : path.resolve(root, supplied);
+        const absolute = path.isAbsolute(supplied)
+            ? path.resolve(supplied)
+            : path.resolve(root, supplied);
         patterns.push(...readOmitFileStrict(absolute, "--omit-file", true));
         sources.push(absolute);
     }

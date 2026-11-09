@@ -339,12 +339,17 @@ const LEGACY_ARCHIVE_BLOBS = Object.freeze({
   "docs/legacy/consolidation-v1/manifest.md": "18c97ba760c15117821af0222bcd1e9fcdd9f56c",
   "docs/legacy/consolidation-v1/artifact_manifest.yaml": "3f589985403aef6c8d6015ef8e49d88ed1a39b9d",
   "tools/consolidation/schemas/l9_meta.schema.yaml": "5c7ee8791008c27d12bdf5f8246f8771a5266583",
-  "tools/consolidation/schemas/l9_artifact_meta.schema.yaml": "1ea74752496d2398209ba53e86c30587861b8401",
+  "tools/consolidation/schemas/l9_artifact_meta.schema.yaml":
+    "1ea74752496d2398209ba53e86c30587861b8401",
   "tools/consolidation/schemas/move_map.schema.yaml": "3a2d2b60d40d4b7f1e1f6cd0f6dd3fab8462a983",
 });
 
-function fail(message) { throw new Error(message); }
-function readJson(file) { return JSON.parse(fs.readFileSync(file, "utf8")); }
+function fail(message) {
+  throw new Error(message);
+}
+function readJson(file) {
+  return JSON.parse(fs.readFileSync(file, "utf8"));
+}
 function isPlainObject(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -355,13 +360,18 @@ function gitBlobSha(buffer) {
   return crypto.createHash("sha1").update(header).update(buffer).digest("hex"); // NOSONAR
 }
 function exactKeys(value, requiredKeys, optionalKeys, label, errors) {
-  if (!isPlainObject(value)) { errors.push(`${label} must be an object`); return; }
+  if (!isPlainObject(value)) {
+    errors.push(`${label} must be an object`);
+    return;
+  }
   const allowed = new Set([...requiredKeys, ...optionalKeys]);
   for (const key of requiredKeys) if (!(key in value)) errors.push(`${label}.${key} is required`);
-  for (const key of Object.keys(value)) if (!allowed.has(key)) errors.push(`${label}.${key} is not allowed`);
+  for (const key of Object.keys(value))
+    if (!allowed.has(key)) errors.push(`${label}.${key} is not allowed`);
 }
 function requireString(value, label, errors, pattern) {
-  if (typeof value !== "string" || value.length === 0) errors.push(`${label} must be a non-empty string`);
+  if (typeof value !== "string" || value.length === 0)
+    errors.push(`${label} must be a non-empty string`);
   else if (pattern && !pattern.test(value)) errors.push(`${label} has an invalid format`);
 }
 function requireStringArray(value, label, errors) {
@@ -371,62 +381,265 @@ function requireStringArray(value, label, errors) {
 }
 function validateAuthorityDocument(authority) {
   const errors = [];
-  exactKeys(authority,
-    ["schema","repository","audit_base_ref","status","engine","contracts","distribution","public_api","persisted_outputs","validation","legacy"],
-    ["operation_contract","invocation_boundary","deterministic_identity","carrier_policy","metadata_index","frontmatter_safety","local_source_acquisition","tracked_metadata_contract"], "authority", errors);
+  exactKeys(
+    authority,
+    [
+      "schema",
+      "repository",
+      "audit_base_ref",
+      "status",
+      "engine",
+      "contracts",
+      "distribution",
+      "public_api",
+      "persisted_outputs",
+      "validation",
+      "legacy",
+    ],
+    [
+      "operation_contract",
+      "invocation_boundary",
+      "deterministic_identity",
+      "carrier_policy",
+      "metadata_index",
+      "frontmatter_safety",
+      "local_source_acquisition",
+      "tracked_metadata_contract",
+    ],
+    "authority",
+    errors,
+  );
   if (!isPlainObject(authority)) return errors;
-  if (authority.schema !== "l9.architecture-authority/v1") errors.push("authority.schema is invalid");
-  if (authority.repository !== "Quantum-L9/l9-meta-injector") errors.push("authority.repository is invalid");
+  if (authority.schema !== "l9.architecture-authority/v1")
+    errors.push("authority.schema is invalid");
+  if (authority.repository !== "Quantum-L9/l9-meta-injector")
+    errors.push("authority.repository is invalid");
   requireString(authority.audit_base_ref, "authority.audit_base_ref", errors, /^[a-f0-9]{40}$/);
   if (authority.status !== "active") errors.push("authority.status must be active");
 
-  exactKeys(authority.engine, ["language","source_root","runtime_entrypoint","package_entrypoint","types_entrypoint"], [], "authority.engine", errors);
+  exactKeys(
+    authority.engine,
+    ["language", "source_root", "runtime_entrypoint", "package_entrypoint", "types_entrypoint"],
+    [],
+    "authority.engine",
+    errors,
+  );
   if (isPlainObject(authority.engine)) {
-    if (authority.engine.language !== "typescript") errors.push("authority.engine.language must be typescript");
-    for (const key of ["source_root","runtime_entrypoint","package_entrypoint","types_entrypoint"]) requireString(authority.engine[key], `authority.engine.${key}`, errors);
+    if (authority.engine.language !== "typescript")
+      errors.push("authority.engine.language must be typescript");
+    for (const key of [
+      "source_root",
+      "runtime_entrypoint",
+      "package_entrypoint",
+      "types_entrypoint",
+    ])
+      requireString(authority.engine[key], `authority.engine.${key}`, errors);
   }
-  exactKeys(authority.contracts, ["metadata","pipeline","architecture","public_api","package"], ["operations","repository_authority","authority_scan","check","operation_dispatch","discovery","carrier_policy","metadata_index","carrier_operation","file_transaction","frontmatter_patch","output_placement","local_source","local_archive_policy","archive_preflight","encoding","corpus_analysis","corpus_report","corpus_scan","corpus_roots","corpus_cache","corpus_snapshot","corpus_diff","corpus_session","corpus_readiness","corpus_candidates","corpus_coverage","corpus_qualification","corpus_documents","corpus_semantics","corpus_pairs","corpus_fusion","corpus_reasoning","corpus_embeddings","corpus_semantic_run","corpus_archaeology","semantic_candidates","work_intelligence","ordering","inventory","inventory_archive_member","git_tree","git_runtime","namespace","tracked_dispatch"], "authority.contracts", errors);
-  if (isPlainObject(authority.contracts)) for (const key of Object.keys(authority.contracts)) requireString(authority.contracts[key], `authority.contracts.${key}`, errors);
-  exactKeys(authority.distribution, ["model","source_root","generated_root","compliance_state","source_parity_command","packed_consumer_command","package_contract"], [], "authority.distribution", errors);
+  exactKeys(
+    authority.contracts,
+    ["metadata", "pipeline", "architecture", "public_api", "package"],
+    [
+      "operations",
+      "repository_authority",
+      "authority_scan",
+      "check",
+      "operation_dispatch",
+      "discovery",
+      "carrier_policy",
+      "metadata_index",
+      "carrier_operation",
+      "file_transaction",
+      "frontmatter_patch",
+      "output_placement",
+      "local_source",
+      "local_archive_policy",
+      "archive_preflight",
+      "encoding",
+      "corpus_analysis",
+      "corpus_report",
+      "corpus_scan",
+      "corpus_roots",
+      "corpus_cache",
+      "corpus_snapshot",
+      "corpus_diff",
+      "corpus_session",
+      "corpus_readiness",
+      "corpus_candidates",
+      "corpus_coverage",
+      "corpus_qualification",
+      "corpus_documents",
+      "corpus_semantics",
+      "corpus_pairs",
+      "corpus_fusion",
+      "corpus_reasoning",
+      "corpus_embeddings",
+      "corpus_semantic_run",
+      "corpus_archaeology",
+      "semantic_candidates",
+      "work_intelligence",
+      "ordering",
+      "inventory",
+      "inventory_archive_member",
+      "git_tree",
+      "git_runtime",
+      "namespace",
+      "tracked_dispatch",
+    ],
+    "authority.contracts",
+    errors,
+  );
+  if (isPlainObject(authority.contracts))
+    for (const key of Object.keys(authority.contracts))
+      requireString(authority.contracts[key], `authority.contracts.${key}`, errors);
+  exactKeys(
+    authority.distribution,
+    [
+      "model",
+      "source_root",
+      "generated_root",
+      "compliance_state",
+      "source_parity_command",
+      "packed_consumer_command",
+      "package_contract",
+    ],
+    [],
+    "authority.distribution",
+    errors,
+  );
   if (isPlainObject(authority.distribution)) {
-    if (authority.distribution.model !== "committed_dist_mirror") errors.push("authority.distribution.model is invalid");
-    if (authority.distribution.compliance_state !== "enforced_RAA-006") errors.push("authority.distribution.compliance_state must be enforced_RAA-006");
+    if (authority.distribution.model !== "committed_dist_mirror")
+      errors.push("authority.distribution.model is invalid");
+    if (authority.distribution.compliance_state !== "enforced_RAA-006")
+      errors.push("authority.distribution.compliance_state must be enforced_RAA-006");
     requireString(authority.distribution.source_root, "authority.distribution.source_root", errors);
-    requireString(authority.distribution.generated_root, "authority.distribution.generated_root", errors);
-    if (authority.distribution.source_parity_command !== "npm run check:dist") errors.push("authority.distribution.source_parity_command is invalid");
-    if (authority.distribution.packed_consumer_command !== "npm run test:packed") errors.push("authority.distribution.packed_consumer_command is invalid");
-    if (authority.distribution.package_contract !== "docs/package-contract.json") errors.push("authority.distribution.package_contract is invalid");
+    requireString(
+      authority.distribution.generated_root,
+      "authority.distribution.generated_root",
+      errors,
+    );
+    if (authority.distribution.source_parity_command !== "npm run check:dist")
+      errors.push("authority.distribution.source_parity_command is invalid");
+    if (authority.distribution.packed_consumer_command !== "npm run test:packed")
+      errors.push("authority.distribution.packed_consumer_command is invalid");
+    if (authority.distribution.package_contract !== "docs/package-contract.json")
+      errors.push("authority.distribution.package_contract is invalid");
   }
-  exactKeys(authority.public_api, ["model","current_state","primary_entrypoint","contract","versioning","supported_subpaths","validation_command"], [], "authority.public_api", errors);
+  exactKeys(
+    authority.public_api,
+    [
+      "model",
+      "current_state",
+      "primary_entrypoint",
+      "contract",
+      "versioning",
+      "supported_subpaths",
+      "validation_command",
+    ],
+    [],
+    "authority.public_api",
+    errors,
+  );
   if (isPlainObject(authority.public_api)) {
-    if (authority.public_api.model !== "orchestration_root_plus_versioned_subpaths") errors.push("authority.public_api.model is invalid");
-    if (authority.public_api.current_state !== "enforced_RAA-007") errors.push("authority.public_api.current_state must be enforced_RAA-007");
-    requireString(authority.public_api.primary_entrypoint, "authority.public_api.primary_entrypoint", errors);
-    if (authority.public_api.contract !== "docs/public-api-contract.json") errors.push("authority.public_api.contract is invalid");
+    if (authority.public_api.model !== "orchestration_root_plus_versioned_subpaths")
+      errors.push("authority.public_api.model is invalid");
+    if (authority.public_api.current_state !== "enforced_RAA-007")
+      errors.push("authority.public_api.current_state must be enforced_RAA-007");
+    requireString(
+      authority.public_api.primary_entrypoint,
+      "authority.public_api.primary_entrypoint",
+      errors,
+    );
+    if (authority.public_api.contract !== "docs/public-api-contract.json")
+      errors.push("authority.public_api.contract is invalid");
     requireString(authority.public_api.versioning, "authority.public_api.versioning", errors);
-    requireStringArray(authority.public_api.supported_subpaths, "authority.public_api.supported_subpaths", errors);
-    if (authority.public_api.validation_command !== "npm run check:api") errors.push("authority.public_api.validation_command is invalid");
+    requireStringArray(
+      authority.public_api.supported_subpaths,
+      "authority.public_api.supported_subpaths",
+      errors,
+    );
+    if (authority.public_api.validation_command !== "npm run check:api")
+      errors.push("authority.public_api.validation_command is invalid");
   }
   requireStringArray(authority.persisted_outputs, "authority.persisted_outputs", errors);
   if (Array.isArray(authority.persisted_outputs)) {
     const actual = [...authority.persisted_outputs].sort((a, b) => a.localeCompare(b));
-    if (JSON.stringify(actual) !== JSON.stringify(EXPECTED_PERSISTED_OUTPUTS)) errors.push("authority.persisted_outputs does not match the live pipeline outputs");
+    if (JSON.stringify(actual) !== JSON.stringify(EXPECTED_PERSISTED_OUTPUTS))
+      errors.push("authority.persisted_outputs does not match the live pipeline outputs");
   }
-  exactKeys(authority.validation, ["api","authority","manifest","dist","packed_consumer","publication","canonical","ci_workflow","selfpack","publish_path"], [], "authority.validation", errors);
-  if (isPlainObject(authority.validation)) for (const key of Object.keys(authority.validation)) requireString(authority.validation[key], `authority.validation.${key}`, errors);
-  exactKeys(authority.legacy, ["status","documentation","runtime","schemas"], [], "authority.legacy", errors);
+  exactKeys(
+    authority.validation,
+    [
+      "api",
+      "authority",
+      "manifest",
+      "dist",
+      "packed_consumer",
+      "publication",
+      "canonical",
+      "ci_workflow",
+      "selfpack",
+      "publish_path",
+    ],
+    [],
+    "authority.validation",
+    errors,
+  );
+  if (isPlainObject(authority.validation))
+    for (const key of Object.keys(authority.validation))
+      requireString(authority.validation[key], `authority.validation.${key}`, errors);
+  exactKeys(
+    authority.legacy,
+    ["status", "documentation", "runtime", "schemas"],
+    [],
+    "authority.legacy",
+    errors,
+  );
   if (isPlainObject(authority.legacy)) {
-    if (authority.legacy.status !== "reference_only") errors.push("authority.legacy.status must be reference_only");
-    for (const key of ["documentation","runtime","schemas"]) requireString(authority.legacy[key], `authority.legacy.${key}`, errors);
+    if (authority.legacy.status !== "reference_only")
+      errors.push("authority.legacy.status must be reference_only");
+    for (const key of ["documentation", "runtime", "schemas"])
+      requireString(authority.legacy[key], `authority.legacy.${key}`, errors);
   }
   if ("tracked_metadata_contract" in authority) {
-    const expected = {"policy":"l9.tracked-carrier-policy/v2","index":"l9.metadata-index/v2","receipt":"l9.metadata-coverage/v2","population":"exact_immutable_git_tree_leaves","identity":"declared_repository_plus_exact_path_bytes","default_subject_payload_reads":false,"default_authority_inspection":false,"source_mutation":"never","index_mode":"explicit_index_only","active_store":".l9/metadata-index.jsonl","implicit_downgrade":false,"v1_migration_requires_consent":true,"external_export":"outside_source_descriptor_anchored_no_replace","coverage_entrypoint":"src/carrier_operation.ts#runTrackedCoverage","check_entrypoint":"src/carrier_operation.ts#runTrackedCheckAsync","apply_entrypoint":"src/carrier_operation.ts#runTrackedApplyAsync","continuous_fleet_freshness":false};
-    exactKeys(authority.tracked_metadata_contract, Object.keys(expected), [], "authority.tracked_metadata_contract", errors);
-    if (isPlainObject(authority.tracked_metadata_contract)) for (const [key,value] of Object.entries(expected)) {
-      if (authority.tracked_metadata_contract[key] !== value) errors.push(`authority.tracked_metadata_contract.${key} is invalid`);
-    }
-    for (const [key,value] of Object.entries({git_tree:"src/git_tree.ts",git_runtime:"src/git_runtime.ts",namespace:"src/namespace.ts",tracked_dispatch:"scripts/tracked-metadata-cli.js"})) {
-      if (authority.contracts?.[key] !== value) errors.push(`authority.contracts.${key} must bind its v2 owner`);
+    const expected = {
+      policy: "l9.tracked-carrier-policy/v2",
+      index: "l9.metadata-index/v2",
+      receipt: "l9.metadata-coverage/v2",
+      population: "exact_immutable_git_tree_leaves",
+      identity: "declared_repository_plus_exact_path_bytes",
+      default_subject_payload_reads: false,
+      default_authority_inspection: false,
+      source_mutation: "never",
+      index_mode: "explicit_index_only",
+      active_store: ".l9/metadata-index.jsonl",
+      implicit_downgrade: false,
+      v1_migration_requires_consent: true,
+      external_export: "outside_source_descriptor_anchored_no_replace",
+      coverage_entrypoint: "src/carrier_operation.ts#runTrackedCoverage",
+      check_entrypoint: "src/carrier_operation.ts#runTrackedCheckAsync",
+      apply_entrypoint: "src/carrier_operation.ts#runTrackedApplyAsync",
+      continuous_fleet_freshness: false,
+    };
+    exactKeys(
+      authority.tracked_metadata_contract,
+      Object.keys(expected),
+      [],
+      "authority.tracked_metadata_contract",
+      errors,
+    );
+    if (isPlainObject(authority.tracked_metadata_contract))
+      for (const [key, value] of Object.entries(expected)) {
+        if (authority.tracked_metadata_contract[key] !== value)
+          errors.push(`authority.tracked_metadata_contract.${key} is invalid`);
+      }
+    for (const [key, value] of Object.entries({
+      git_tree: "src/git_tree.ts",
+      git_runtime: "src/git_runtime.ts",
+      namespace: "src/namespace.ts",
+      tracked_dispatch: "scripts/tracked-metadata-cli.js",
+    })) {
+      if (authority.contracts?.[key] !== value)
+        errors.push(`authority.contracts.${key} must bind its v2 owner`);
     }
   }
   return errors;
@@ -434,14 +647,36 @@ function validateAuthorityDocument(authority) {
 function validateAuthoritySchemaDocument(schema) {
   const errors = [];
   if (!isPlainObject(schema)) return ["authority schema must be an object"];
-  if (schema.$schema !== "https://json-schema.org/draft/2020-12/schema") errors.push("authority schema draft is invalid");
-  if (schema.type !== "object" || schema.additionalProperties !== false) errors.push("authority schema root must be a closed object");
-  const required = ["schema","repository","audit_base_ref","status","engine","contracts","distribution","public_api","persisted_outputs","validation","legacy"].sort((a, b) => a.localeCompare(b));
-  const actual = Array.isArray(schema.required) ? [...schema.required].sort((a, b) => a.localeCompare(b)) : [];
-  if (JSON.stringify(required) !== JSON.stringify(actual)) errors.push("authority schema required-key set is incomplete");
-  for (const key of ["engine","contracts","distribution","public_api","validation","legacy"]) {
+  if (schema.$schema !== "https://json-schema.org/draft/2020-12/schema")
+    errors.push("authority schema draft is invalid");
+  if (schema.type !== "object" || schema.additionalProperties !== false)
+    errors.push("authority schema root must be a closed object");
+  const required = [
+    "schema",
+    "repository",
+    "audit_base_ref",
+    "status",
+    "engine",
+    "contracts",
+    "distribution",
+    "public_api",
+    "persisted_outputs",
+    "validation",
+    "legacy",
+  ].sort((a, b) => a.localeCompare(b));
+  const actual = Array.isArray(schema.required)
+    ? [...schema.required].sort((a, b) => a.localeCompare(b))
+    : [];
+  if (JSON.stringify(required) !== JSON.stringify(actual))
+    errors.push("authority schema required-key set is incomplete");
+  for (const key of ["engine", "contracts", "distribution", "public_api", "validation", "legacy"]) {
     const node = schema.properties?.[key];
-    if (!isPlainObject(node) || node.type !== "object" || node.additionalProperties !== false || !Array.isArray(node.required)) {
+    if (
+      !isPlainObject(node) ||
+      node.type !== "object" ||
+      node.additionalProperties !== false ||
+      !Array.isArray(node.required)
+    ) {
       errors.push(`authority schema ${key} must be a closed required object`);
     }
   }
@@ -449,46 +684,67 @@ function validateAuthoritySchemaDocument(schema) {
 }
 function validateTraceabilityDocument(doc) {
   const errors = [];
-  exactKeys(doc, ["schema","repository","authority","capabilities"], [], "traceability", errors);
+  exactKeys(doc, ["schema", "repository", "authority", "capabilities"], [], "traceability", errors);
   if (!isPlainObject(doc)) return errors;
   if (doc.schema !== "l9.traceability-map/v1") errors.push("traceability.schema is invalid");
-  if (doc.repository !== "Quantum-L9/l9-meta-injector") errors.push("traceability.repository is invalid");
-  if (doc.authority !== "docs/architecture-authority.json") errors.push("traceability.authority is invalid");
-  if (!Array.isArray(doc.capabilities) || doc.capabilities.length === 0) return [...errors, "traceability.capabilities must be a non-empty array"];
+  if (doc.repository !== "Quantum-L9/l9-meta-injector")
+    errors.push("traceability.repository is invalid");
+  if (doc.authority !== "docs/architecture-authority.json")
+    errors.push("traceability.authority is invalid");
+  if (!Array.isArray(doc.capabilities) || doc.capabilities.length === 0)
+    return [...errors, "traceability.capabilities must be a non-empty array"];
   const names = new Set();
   for (let i = 0; i < doc.capabilities.length; i++) {
     const c = doc.capabilities[i];
     const label = `traceability.capabilities[${i}]`;
-    exactKeys(c, ["capability","source","public_entrypoint","tests","validators","stability"], ["persisted_outputs"], label, errors);
+    exactKeys(
+      c,
+      ["capability", "source", "public_entrypoint", "tests", "validators", "stability"],
+      ["persisted_outputs"],
+      label,
+      errors,
+    );
     if (!isPlainObject(c)) continue;
     requireString(c.capability, `${label}.capability`, errors);
     if (names.has(c.capability)) errors.push(`${label}.capability is duplicated`);
     names.add(c.capability);
     requireString(c.source, `${label}.source`, errors);
-    if (!(c.public_entrypoint === null || typeof c.public_entrypoint === "string")) errors.push(`${label}.public_entrypoint must be string or null`);
+    if (!(c.public_entrypoint === null || typeof c.public_entrypoint === "string"))
+      errors.push(`${label}.public_entrypoint must be string or null`);
     requireStringArray(c.tests, `${label}.tests`, errors);
     requireStringArray(c.validators, `${label}.validators`, errors);
     requireString(c.stability, `${label}.stability`, errors);
-    if ("persisted_outputs" in c) requireStringArray(c.persisted_outputs, `${label}.persisted_outputs`, errors);
+    if ("persisted_outputs" in c)
+      requireStringArray(c.persisted_outputs, `${label}.persisted_outputs`, errors);
   }
   return errors;
 }
 function isRegularFile(root, rel) {
   const abs = path.join(root, rel);
-  try { return fs.lstatSync(abs).isFile() && !fs.lstatSync(abs).isSymbolicLink(); }
-  catch { return false; }
+  try {
+    return fs.lstatSync(abs).isFile() && !fs.lstatSync(abs).isSymbolicLink();
+  } catch {
+    return false;
+  }
 }
 function isDirectory(root, rel) {
   const abs = path.join(root, rel);
-  try { return fs.lstatSync(abs).isDirectory() && !fs.lstatSync(abs).isSymbolicLink(); }
-  catch { return false; }
+  try {
+    return fs.lstatSync(abs).isDirectory() && !fs.lstatSync(abs).isSymbolicLink();
+  } catch {
+    return false;
+  }
 }
 function verifyLegacyArchive(root = REPO) {
   const errors = [];
   for (const [rel, expected] of Object.entries(LEGACY_ARCHIVE_BLOBS)) {
-    if (!isRegularFile(root, rel)) { errors.push(`legacy archive file missing or unsafe: ${rel}`); continue; }
+    if (!isRegularFile(root, rel)) {
+      errors.push(`legacy archive file missing or unsafe: ${rel}`);
+      continue;
+    }
     const actual = gitBlobSha(fs.readFileSync(path.join(root, rel)));
-    if (actual !== expected) errors.push(`legacy archive blob drift: ${rel} expected ${expected}, got ${actual}`);
+    if (actual !== expected)
+      errors.push(`legacy archive blob drift: ${rel} expected ${expected}, got ${actual}`);
   }
   return errors;
 }
@@ -506,10 +762,23 @@ function buildManifest(root = REPO) {
     entries,
   };
 }
-function stableJson(value) { return JSON.stringify(value, null, 2) + "\n"; }
+function stableJson(value) {
+  return JSON.stringify(value, null, 2) + "\n";
+}
 module.exports = {
-  REPO, EXPECTED_PERSISTED_OUTPUTS, AUTHORITY_CRITICAL_PATHS, LEGACY_ARCHIVE_BLOBS,
-  buildManifest, stableJson, readJson, fail, gitBlobSha, isRegularFile, isDirectory,
-  validateAuthorityDocument, validateAuthoritySchemaDocument, validateTraceabilityDocument,
+  REPO,
+  EXPECTED_PERSISTED_OUTPUTS,
+  AUTHORITY_CRITICAL_PATHS,
+  LEGACY_ARCHIVE_BLOBS,
+  buildManifest,
+  stableJson,
+  readJson,
+  fail,
+  gitBlobSha,
+  isRegularFile,
+  isDirectory,
+  validateAuthorityDocument,
+  validateAuthoritySchemaDocument,
+  validateTraceabilityDocument,
   verifyLegacyArchive,
 };

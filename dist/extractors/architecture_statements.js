@@ -67,7 +67,12 @@ exports.MAX_ARCHITECTURE_DIAGNOSTICS_PER_DOCUMENT = 8;
  * header rather than a statement. A table under a labelled section is reported
  * as unsupported instead of guessed at.
  */
-const READABLE_BLOCK_KINDS = new Set(["paragraph", "list_item", "note", "cell"]);
+const READABLE_BLOCK_KINDS = new Set([
+    "paragraph",
+    "list_item",
+    "note",
+    "cell",
+]);
 const TITULAR_BLOCK_KINDS = new Set(["title", "heading"]);
 /** A unit of text, as the block-signal reader splits one: CRLF, LF or lone CR. */
 function unitsOf(text) {
@@ -75,7 +80,10 @@ function unitsOf(text) {
 }
 /** A heading's text as a vocabulary key: quoted, lowercased, trailing colon dropped. */
 function headingLabel(text) {
-    return (0, work_intelligence_1.documentText)(text).toLowerCase().replace(/\s*:\s*$/, "").trim();
+    return (0, work_intelligence_1.documentText)(text)
+        .toLowerCase()
+        .replace(/\s*:\s*$/, "")
+        .trim();
 }
 /** The class a heading names, or null when the heading is not in the vocabulary. */
 function architectureHeadingClass(text) {
@@ -342,7 +350,12 @@ class StatementReader {
         }
         if (open !== null && open.members === 0) {
             // Nothing in this block followed the label; the list items after it may.
-            this.pendingList = { statementClass: open.statementClass, label: open.label, members: 0, block };
+            this.pendingList = {
+                statementClass: open.statementClass,
+                label: open.label,
+                members: 0,
+                block,
+            };
         }
     }
 }

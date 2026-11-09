@@ -153,14 +153,16 @@ function milestoneSectionDrafts(blocks) {
  */
 /** What one titular block declares: its text, and any marker that text carries. */
 function titularBlockDrafts(block, line, text, isName) {
-    const drafts = [{
+    const drafts = [
+        {
             predicate: isName ? "document.title" : "document.heading",
             object: text,
             excerpt: line,
             evidenceClass: isName ? "declared" : "observed",
             confidence: "high",
             block,
-        }];
+        },
+    ];
     if (block.kind !== "title")
         return drafts;
     for (const marker of (0, work_intelligence_1.readTitleMarkers)(text, line)) {
@@ -235,11 +237,11 @@ function statementDrafts(blocks) {
 }
 /** Total order over assertions, so the output never depends on reading order. */
 function compareAssertions(left, right) {
-    return ((0, ordering_1.compareCodePoints)(left.source_path, right.source_path)
-        || (0, ordering_1.compareCodePoints)(left.evidence.block_id, right.evidence.block_id)
-        || (0, ordering_1.compareCodePoints)(left.predicate, right.predicate)
-        || (0, ordering_1.compareCodePoints)(left.object, right.object)
-        || (0, ordering_1.compareCodePoints)(left.assertion_id, right.assertion_id));
+    return ((0, ordering_1.compareCodePoints)(left.source_path, right.source_path) ||
+        (0, ordering_1.compareCodePoints)(left.evidence.block_id, right.evidence.block_id) ||
+        (0, ordering_1.compareCodePoints)(left.predicate, right.predicate) ||
+        (0, ordering_1.compareCodePoints)(left.object, right.object) ||
+        (0, ordering_1.compareCodePoints)(left.assertion_id, right.assertion_id));
 }
 /**
  * Read every work signal a decoded document states about itself.

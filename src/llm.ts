@@ -7,7 +7,9 @@ export interface LlmAdapter {
 }
 
 export const localAdapter: LlmAdapter = {
-  estimateTokens(text: string): number { return Math.max(1, Math.ceil(text.length / 4)); },
+  estimateTokens(text: string): number {
+    return Math.max(1, Math.ceil(text.length / 4));
+  },
   classify: undefined,
 };
 
@@ -19,9 +21,15 @@ export const localAdapter: LlmAdapter = {
 // run leaves the global exactly as it found it (RC-018).
 let _active: LlmAdapter = localAdapter;
 const runScope = new AsyncLocalStorage<LlmAdapter>();
-export function setAdapter(a: LlmAdapter): void { _active = a; }
-export function getAdapter(): LlmAdapter { return runScope.getStore() ?? _active; }
-export function resetAdapter(): void { _active = localAdapter; }
+export function setAdapter(a: LlmAdapter): void {
+  _active = a;
+}
+export function getAdapter(): LlmAdapter {
+  return runScope.getStore() ?? _active;
+}
+export function resetAdapter(): void {
+  _active = localAdapter;
+}
 
 /**
  * Run `body` with `adapter` as the adapter of this async context. Internal to the
@@ -50,11 +58,19 @@ export interface LlmDiagnostic {
 // The caller-supplied callback still receives every outcome (incl. "ok") for
 // metering. Never throws — diagnostics must not break the call path.
 function reportDiagnostic(cb: ((d: LlmDiagnostic) => void) | undefined, d: LlmDiagnostic): void {
-  if (cb) { try { cb(d); } catch { /* diagnostics must never break the caller */ } }
+  if (cb) {
+    try {
+      cb(d);
+    } catch {
+      /* diagnostics must never break the caller */
+    }
+  }
   if (d.outcome !== "ok") {
     const status = d.status !== undefined ? ` (status ${d.status})` : "";
     const detail = d.detail ? `: ${d.detail}` : "";
-    process.stderr.write(`[l9-meta-injector] llm ${d.outcome}${status}${detail} [${d.durationMs}ms]\n`);
+    process.stderr.write(
+      `[l9-meta-injector] llm ${d.outcome}${status}${detail} [${d.durationMs}ms]\n`,
+    );
   }
 }
 
@@ -68,13 +84,19 @@ function isReasoningModel(model: string): boolean {
 }
 
 export function makeOpenAIAdapter(opts: {
-  baseUrl: string; apiKey: string; model: string; maxTokens?: number; timeout?: number;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  maxTokens?: number;
+  timeout?: number;
   onDiagnostic?: (d: LlmDiagnostic) => void;
   /** Opt-in to send the bearer token over a non-https baseUrl (default: refuse). */
   allowInsecure?: boolean;
 }): LlmAdapter {
   return {
-    estimateTokens(text: string): number { return Math.max(1, Math.ceil(text.length / 4)); },
+    estimateTokens(text: string): number {
+      return Math.max(1, Math.ceil(text.length / 4));
+    },
     async classify(prompt: string): Promise<string | null> {
       const ctrl = new AbortController();
       const started = Date.now();
@@ -83,11 +105,18 @@ export function makeOpenAIAdapter(opts: {
       try {
         // Never transmit the Authorization bearer over cleartext (SEC-003 / CWE-319).
         if (!/^https:/i.test(opts.baseUrl) && !opts.allowInsecure) {
-          emit({ outcome: "network_error", detail: "refusing to send credential to non-https baseUrl", durationMs: Date.now() - started });
+          emit({
+            outcome: "network_error",
+            detail: "refusing to send credential to non-https baseUrl",
+            durationMs: Date.now() - started,
+          });
           return null;
         }
         const tokenLimit = opts.maxTokens ?? 80;
-        const body: Record<string, unknown> = { model: opts.model, messages: [{ role: "user", content: prompt }] };
+        const body: Record<string, unknown> = {
+          model: opts.model,
+          messages: [{ role: "user", content: prompt }],
+        };
         if (isReasoningModel(opts.model)) {
           body.max_completion_tokens = tokenLimit;
         } else {
@@ -102,15 +131,29 @@ export function makeOpenAIAdapter(opts: {
         });
         if (!res.ok) {
           let body = "";
-          try { body = (await res.text()).slice(0, 200); } catch { /* body unreadable */ }
-          emit({ outcome: "http_error", status: res.status, detail: body || undefined, durationMs: Date.now() - started });
+          try {
+            body = (await res.text()).slice(0, 200);
+          } catch {
+            /* body unreadable */
+          }
+          emit({
+            outcome: "http_error",
+            status: res.status,
+            detail: body || undefined,
+            durationMs: Date.now() - started,
+          });
           return null;
         }
         let data: { choices?: Array<{ message?: { content?: string } }> };
         try {
-          data = await res.json() as { choices?: Array<{ message?: { content?: string } }> };
+          data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
         } catch (e) {
-          emit({ outcome: "parse_error", status: res.status, detail: (e as Error)?.message, durationMs: Date.now() - started });
+          emit({
+            outcome: "parse_error",
+            status: res.status,
+            detail: (e as Error)?.message,
+            durationMs: Date.now() - started,
+          });
           return null;
         }
         const content = data.choices?.[0]?.message?.content ?? null;
@@ -121,7 +164,9 @@ export function makeOpenAIAdapter(opts: {
         const outcome: LlmCallOutcome = err?.name === "AbortError" ? "timeout" : "network_error";
         emit({ outcome, detail: err?.message, durationMs: Date.now() - started });
         return null;
-      } finally { clearTimeout(timer); }
+      } finally {
+        clearTimeout(timer);
+      }
     },
   };
 }

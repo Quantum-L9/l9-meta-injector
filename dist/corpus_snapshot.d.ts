@@ -1,8 +1,8 @@
-import { CorpusRootIdentity } from "./corpus_roots";
 import type { CorpusAnalysisManifest } from "./corpus_analysis_manifest";
-import type { DocumentWorkSignalsRef } from "./corpus_work_signal_export";
 import type { ArchitectureEvidenceRef } from "./corpus_architecture_evidence";
 import type { InferredRootHistoryOverride } from "./corpus_root_history";
+import { CorpusRootIdentity } from "./corpus_roots";
+import type { DocumentWorkSignalsRef } from "./corpus_work_signal_export";
 export declare const CORPUS_SNAPSHOT_SCHEMA = "l9.corpus-snapshot/v1";
 export interface CorpusSnapshotArtifact {
     virtual_source_id: string;

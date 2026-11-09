@@ -10,19 +10,19 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { MemoryCorpusCache, normalizedDocumentKey } from "../src/corpus_cache";
-import { MANIFEST_DECODER_ID, MANIFEST_DECODER_VERSION, runCorpusScan } from "../src/corpus_scan";
 import {
-  DEFAULT_TOPIC_THRESHOLD,
-  TOPIC_MIN_TOKENS,
   buildProjectCandidates,
   buildTopicCandidates,
   candidateProfileHash,
   containerOf,
+  DEFAULT_TOPIC_THRESHOLD,
   isUnderContainer,
   projectContainerForMarker,
   readDeclaredIdentifier,
   readsDeclaredIdentifier,
+  TOPIC_MIN_TOKENS,
 } from "../src/corpus_candidates";
+import { MANIFEST_DECODER_ID, MANIFEST_DECODER_VERSION, runCorpusScan } from "../src/corpus_scan";
 
 const rootLabels = new Map([
   ["root:a", "OldSSD"],
@@ -72,10 +72,13 @@ describe("container arithmetic", () => {
   it("REG-WU-047-RC-073-a: resolves an archive-root CI definition to the archive, spelled as containerOf spells it", () => {
     expect(projectContainerForMarker("p.zip!/.github/workflows/ci.yml")).toBe("p.zip!/");
     expect(containerOf("p.zip!/package.json")).toBe("p.zip!/");
-    expect(projectContainerForMarker("p.zip!/.github/workflows/ci.yml"))
-      .toBe(projectContainerForMarker("p.zip!/package.json"));
+    expect(projectContainerForMarker("p.zip!/.github/workflows/ci.yml")).toBe(
+      projectContainerForMarker("p.zip!/package.json"),
+    );
     // A nested archive's member root is spelled the same way.
-    expect(projectContainerForMarker("a.zip!/b.zip!/.github/workflows/x.yml")).toBe("a.zip!/b.zip!/");
+    expect(projectContainerForMarker("a.zip!/b.zip!/.github/workflows/x.yml")).toBe(
+      "a.zip!/b.zip!/",
+    );
     expect(containerOf("a.zip!/b.zip!/package.json")).toBe("a.zip!/b.zip!/");
   });
 
@@ -86,7 +89,9 @@ describe("container arithmetic", () => {
   it("REG-WU-047-RC-073-d: leaves directory and nested-archive-directory CI containers unchanged", () => {
     expect(projectContainerForMarker("svc/.github/workflows/ci.yml")).toBe("svc");
     expect(projectContainerForMarker(".github/workflows/ci.yml")).toBe("");
-    expect(projectContainerForMarker("bundle.zip!/pkg/.github/workflows/x.yml")).toBe("bundle.zip!/pkg");
+    expect(projectContainerForMarker("bundle.zip!/pkg/.github/workflows/x.yml")).toBe(
+      "bundle.zip!/pkg",
+    );
   });
 
   it("treats the root container as holding everything, and a prefix as a whole segment", () => {
@@ -118,7 +123,10 @@ describe("declared identifiers", () => {
       line: 2,
     });
     expect(
-      readDeclaredIdentifier("pom.xml", "<project>\n  <artifactId>widget</artifactId>\n</project>\n"),
+      readDeclaredIdentifier(
+        "pom.xml",
+        "<project>\n  <artifactId>widget</artifactId>\n</project>\n",
+      ),
     ).toEqual({ identifier: "widget", field: "artifactId", line: 2 });
   });
 
@@ -154,7 +162,7 @@ describe("declared identifiers", () => {
       "  <!-- <artifactId>in-a-comment</artifactId> -->",
       "  <parent/>",
       "  <description><![CDATA[ <artifactId>in-cdata</artifactId> ]]></description>",
-      '  <build><plugins><plugin><artifactId>maven-compiler-plugin</artifactId></plugin></plugins></build>',
+      "  <build><plugins><plugin><artifactId>maven-compiler-plugin</artifactId></plugin></plugins></build>",
       "  <artifactId>real-one</artifactId>",
       "</project>",
     ].join("\n");
@@ -203,7 +211,10 @@ describe("declared identifiers", () => {
 
   it("REG-WU-047-RC-075-e: keep the simple pom and package.json expectations", () => {
     expect(
-      readDeclaredIdentifier("pom.xml", "<project>\n  <artifactId>widget</artifactId>\n</project>\n"),
+      readDeclaredIdentifier(
+        "pom.xml",
+        "<project>\n  <artifactId>widget</artifactId>\n</project>\n",
+      ),
     ).toEqual({ identifier: "widget", field: "artifactId", line: 2 });
     expect(readDeclaredIdentifier("package.json", '{\n  "name": "widget-api"\n}\n')).toEqual({
       identifier: "widget-api",
@@ -215,7 +226,9 @@ describe("declared identifiers", () => {
   it("yield nothing rather than guessing", () => {
     expect(readDeclaredIdentifier("package.json", "{ not json")).toBeUndefined();
     expect(readDeclaredIdentifier("package.json", '{"version": "1.0.0"}')).toBeUndefined();
-    expect(readDeclaredIdentifier("pyproject.toml", '[tool.black]\nname = "not-the-project"\n')).toBeUndefined();
+    expect(
+      readDeclaredIdentifier("pyproject.toml", '[tool.black]\nname = "not-the-project"\n'),
+    ).toBeUndefined();
     expect(readDeclaredIdentifier("Makefile", "all:\n\techo hi\n")).toBeUndefined();
     expect(readsDeclaredIdentifier("Makefile")).toBe(false);
     expect(readsDeclaredIdentifier("PACKAGE.JSON")).toBe(true);
@@ -302,7 +315,9 @@ describe("project candidates", () => {
 
   it("treat a CI definition as a project marker on its own", () => {
     const candidates = buildProjectCandidates({
-      markers: [marker("root:a", "OldSSD", "svc/.github/workflows/ci.yml", undefined, "ci_definition")],
+      markers: [
+        marker("root:a", "OldSSD", "svc/.github/workflows/ci.yml", undefined, "ci_definition"),
+      ],
       members: [
         member("root:a", "OldSSD", "svc/.github/workflows/ci.yml"),
         member("root:a", "OldSSD", "svc/main.go"),
@@ -320,7 +335,13 @@ describe("project candidates (WU-047 regressions)", () => {
     const candidates = buildProjectCandidates({
       markers: [
         marker("root:a", "OldSSD", "proj.zip!/package.json", "zipped-proj"),
-        marker("root:a", "OldSSD", "proj.zip!/.github/workflows/ci.yml", undefined, "ci_definition"),
+        marker(
+          "root:a",
+          "OldSSD",
+          "proj.zip!/.github/workflows/ci.yml",
+          undefined,
+          "ci_definition",
+        ),
       ],
       members: [
         member("root:a", "OldSSD", "proj.zip!/package.json"),
@@ -331,7 +352,9 @@ describe("project candidates (WU-047 regressions)", () => {
     });
     expect(candidates).toHaveLength(1);
     expect(candidates[0].project_key).toBe("project:zipped-proj");
-    expect(candidates[0].containers.map((container) => container.container_path)).toEqual(["proj.zip!/"]);
+    expect(candidates[0].containers.map((container) => container.container_path)).toEqual([
+      "proj.zip!/",
+    ]);
     expect(candidates[0].containers[0].marker_kinds).toEqual(["build_manifest", "ci_definition"]);
     expect(candidates[0].member_count).toBe(3);
   });
@@ -353,14 +376,15 @@ describe("project candidates (WU-047 regressions)", () => {
   });
 
   it("REG-WU-047-RC-075-d: keep two Maven projects sharing a parent apart", () => {
-    const pomFor = (artifactId: string) => [
-      "<project>",
-      "  <parent>",
-      "    <artifactId>spring-boot-starter-parent</artifactId>",
-      "  </parent>",
-      `  <artifactId>${artifactId}</artifactId>`,
-      "</project>",
-    ].join("\n");
+    const pomFor = (artifactId: string) =>
+      [
+        "<project>",
+        "  <parent>",
+        "    <artifactId>spring-boot-starter-parent</artifactId>",
+        "  </parent>",
+        `  <artifactId>${artifactId}</artifactId>`,
+        "</project>",
+      ].join("\n");
     const declaredMarker = (rootId: string, label: string, relative: string, text: string) => {
       const declared = readDeclaredIdentifier("pom.xml", text);
       return {
@@ -368,9 +392,9 @@ describe("project candidates (WU-047 regressions)", () => {
         marker_kind: "build_manifest" as const,
         ...(declared !== undefined
           ? {
-            declared_identifier: declared.identifier,
-            declared_identifier_evidence: { field: declared.field, line: declared.line },
-          }
+              declared_identifier: declared.identifier,
+              declared_identifier_evidence: { field: declared.field, line: declared.line },
+            }
           : {}),
       };
     };
@@ -410,7 +434,10 @@ describe("project candidates (WU-047 regressions)", () => {
     });
     expect(candidates).toHaveLength(2);
     expect(candidates.every((candidate) => candidate.spans_roots === false)).toBe(true);
-    expect(candidates.map((candidate) => candidate.project_key)).toEqual(["container:alpha", "root:alpha"]);
+    expect(candidates.map((candidate) => candidate.project_key)).toEqual([
+      "container:alpha",
+      "root:alpha",
+    ]);
   });
 
   it("REG-WU-047-RC-078-b: keep two roots' top-level Makefiles apart", () => {
@@ -442,11 +469,15 @@ describe("project candidates (WU-047 regressions)", () => {
 });
 
 describe("topic candidates", () => {
-  const routing = "routing table regeneration upstream dependency verified against recorded fixture staging promotion";
-  const baking = "sourdough starter hydration levain bulk fermentation banneton proofing oven spring crumb";
+  const routing =
+    "routing table regeneration upstream dependency verified against recorded fixture staging promotion";
+  const baking =
+    "sourdough starter hydration levain bulk fermentation banneton proofing oven spring crumb";
 
   function document(id: string, text: string, repeat = 3) {
-    const tokens = Array.from({ length: repeat }, () => text).join(" ").split(/\s+/);
+    const tokens = Array.from({ length: repeat }, () => text)
+      .join(" ")
+      .split(/\s+/);
     const counts = new Map<string, number>();
     for (const token of tokens) counts.set(token, (counts.get(token) ?? 0) + 1);
     return {
@@ -507,9 +538,14 @@ describe("topic candidates", () => {
     // silently under-reports — the same reason the near-duplicate pass keeps an
     // exhaustive path at zero.
     const documents = [document("a", routing), document("b", baking)];
-    expect(buildTopicCandidates({ documents, rootById: new Map(), threshold: 0.35 }).candidates)
-      .toEqual([]);
-    const { candidates: joined } = buildTopicCandidates({ documents, rootById: new Map(), threshold: 0 });
+    expect(
+      buildTopicCandidates({ documents, rootById: new Map(), threshold: 0.35 }).candidates,
+    ).toEqual([]);
+    const { candidates: joined } = buildTopicCandidates({
+      documents,
+      rootById: new Map(),
+      threshold: 0,
+    });
     expect(joined).toHaveLength(1);
     expect([...joined[0].member_ids].sort()).toEqual(["a", "b"]);
     expect(joined[0].threshold).toBe(0);
@@ -519,7 +555,8 @@ describe("topic candidates", () => {
     const documents = [document("a", routing), document("b", `${routing} deployment`)];
     const { candidates: forward } = buildTopicCandidates({ documents, rootById: new Map() });
     const { candidates: backward } = buildTopicCandidates({
-      documents: [...documents].reverse(), rootById: new Map(),
+      documents: [...documents].reverse(),
+      rootById: new Map(),
     });
     expect(backward[0].candidate_id).toBe(forward[0].candidate_id);
   });
@@ -529,8 +566,12 @@ describe("the candidate profile hash", () => {
   it("changes when a threshold changes and not otherwise", () => {
     const base = candidateProfileHash({ topicThreshold: 0.35, nearDuplicateThreshold: 0.85 });
     expect(candidateProfileHash({ topicThreshold: 0.35, nearDuplicateThreshold: 0.85 })).toBe(base);
-    expect(candidateProfileHash({ topicThreshold: 0.4, nearDuplicateThreshold: 0.85 })).not.toBe(base);
-    expect(candidateProfileHash({ topicThreshold: 0.35, nearDuplicateThreshold: 0.9 })).not.toBe(base);
+    expect(candidateProfileHash({ topicThreshold: 0.4, nearDuplicateThreshold: 0.85 })).not.toBe(
+      base,
+    );
+    expect(candidateProfileHash({ topicThreshold: 0.35, nearDuplicateThreshold: 0.9 })).not.toBe(
+      base,
+    );
   });
 });
 
@@ -553,7 +594,8 @@ describe("declared identifiers through a warm cache", () => {
   async function scanWith(cache: MemoryCorpusCache, root: string) {
     const result = await runCorpusScan({ roots: [{ path: root }], producerVersion: "test", cache });
     return result.candidates.project_candidates.flatMap((candidate) =>
-      candidate.containers.flatMap((container) => container.declared_identifiers));
+      candidate.containers.flatMap((container) => container.declared_identifiers),
+    );
   }
 
   it("REG-WU-047-RC-075-f: recompute an identifier an earlier reader version cached", async () => {
@@ -564,29 +606,41 @@ describe("declared identifiers through a warm cache", () => {
     // A cold run records the manifest's content hash, which is the cache key's
     // content half.
     const cold = await runCorpusScan({ roots: [{ path: root }], producerVersion: "test" });
-    const artifact = cold.snapshot.artifacts.find((entry) => entry.root_relative_path === "pom.xml");
+    const artifact = cold.snapshot.artifacts.find(
+      (entry) => entry.root_relative_path === "pom.xml",
+    );
     expect(artifact?.content_hash).toBeTruthy();
     const contentHash = artifact?.content_hash as string;
-    const stale = { declared: { identifier: "stale-cached-identifier", field: "artifactId", line: 3 } };
+    const stale = {
+      declared: { identifier: "stale-cached-identifier", field: "artifactId", line: 3 },
+    };
 
     // Control: an entry under the current reader's key is what the scan reads,
     // so the key arithmetic below is the scan's own.
     const current = new MemoryCorpusCache("test");
-    current.put("normalized_document", normalizedDocumentKey({
-      contentHash,
-      decoderId: MANIFEST_DECODER_ID,
-      decoderVersion: MANIFEST_DECODER_VERSION,
-    }), stale);
+    current.put(
+      "normalized_document",
+      normalizedDocumentKey({
+        contentHash,
+        decoderId: MANIFEST_DECODER_ID,
+        decoderVersion: MANIFEST_DECODER_VERSION,
+      }),
+      stale,
+    );
     expect(await scanWith(current, root)).toEqual(["stale-cached-identifier"]);
 
     // The cache an earlier reader (1.0.0, first-match artifactId) populated must
     // not be served to this one: the version is part of the key.
     const warm = new MemoryCorpusCache("test");
-    warm.put("normalized_document", normalizedDocumentKey({
-      contentHash,
-      decoderId: MANIFEST_DECODER_ID,
-      decoderVersion: "1.0.0",
-    }), stale);
+    warm.put(
+      "normalized_document",
+      normalizedDocumentKey({
+        contentHash,
+        decoderId: MANIFEST_DECODER_ID,
+        decoderVersion: "1.0.0",
+      }),
+      stale,
+    );
     expect(await scanWith(warm, root)).toEqual(["billing-service"]);
   });
 });

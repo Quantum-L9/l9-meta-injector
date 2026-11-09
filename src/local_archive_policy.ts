@@ -78,11 +78,20 @@ export function validateLocalArchivePolicy(policy: LocalArchivePolicy): LocalArc
   }
   for (const field of POSITIVE_INTEGER_FIELDS) {
     const value = policy[field];
-    if (typeof value !== "number" || !Number.isFinite(value) || !Number.isInteger(value) || value <= 0) {
+    if (
+      typeof value !== "number" ||
+      !Number.isFinite(value) ||
+      !Number.isInteger(value) ||
+      value <= 0
+    ) {
       throw new Error(`local archive policy ${String(field)} must be a positive finite integer`);
     }
   }
-  if (!Number.isFinite(policy.maxNestedDepth) || !Number.isInteger(policy.maxNestedDepth) || policy.maxNestedDepth < 0) {
+  if (
+    !Number.isFinite(policy.maxNestedDepth) ||
+    !Number.isInteger(policy.maxNestedDepth) ||
+    policy.maxNestedDepth < 0
+  ) {
     throw new Error("local archive policy maxNestedDepth must be a non-negative finite integer");
   }
   if (!Number.isFinite(policy.maxCompressionRatio) || policy.maxCompressionRatio <= 0) {
@@ -92,7 +101,9 @@ export function validateLocalArchivePolicy(policy: LocalArchivePolicy): LocalArc
 }
 
 /** Merge caller overrides onto the defaults, keeping the version explicit. */
-export function resolveLocalArchivePolicy(overrides?: Partial<LocalArchivePolicy>): LocalArchivePolicy {
+export function resolveLocalArchivePolicy(
+  overrides?: Partial<LocalArchivePolicy>,
+): LocalArchivePolicy {
   return validateLocalArchivePolicy({
     ...DEFAULT_LOCAL_ARCHIVE_POLICY,
     ...overrides,
@@ -133,8 +144,12 @@ export class ArchiveSessionBudget {
     private readonly nowMs: () => number,
   ) {}
 
-  get totalExpandedBytes(): number { return this.expandedBytes; }
-  get totalExpandedArchives(): number { return this.expandedArchives; }
+  get totalExpandedBytes(): number {
+    return this.expandedBytes;
+  }
+  get totalExpandedArchives(): number {
+    return this.expandedArchives;
+  }
 
   /** Remaining session byte allowance; never negative. */
   remainingBytes(): number {
@@ -156,7 +171,10 @@ export class ArchiveSessionBudget {
     }
     const processing = this.processingRefusalReason();
     if (processing !== null) return processing;
-    if (this.expandedBytes + declaredUncompressedBytes > this.policy.maxTotalUncompressedBytesPerSession) {
+    if (
+      this.expandedBytes + declaredUncompressedBytes >
+      this.policy.maxTotalUncompressedBytesPerSession
+    ) {
       return `session expansion budget of ${this.policy.maxTotalUncompressedBytesPerSession} bytes would be exceeded`;
     }
     return null;

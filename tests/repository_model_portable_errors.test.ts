@@ -9,7 +9,11 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
-import { emitRepositoryModelBundle, observeRepositoryModel, type RepositoryModelPacket } from "../src/repository_model";
+import {
+  emitRepositoryModelBundle,
+  observeRepositoryModel,
+  type RepositoryModelPacket,
+} from "../src/repository_model";
 
 const seam = vi.hoisted(() => ({
   /** Directory basename whose `readdirSync` fails with EACCES. */
@@ -21,20 +25,28 @@ const seam = vi.hoisted(() => ({
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
   const denied = (syscall: string, target: string): NodeJS.ErrnoException => {
-    const error = new Error(`EACCES: permission denied, ${syscall} '${target}'`) as NodeJS.ErrnoException;
+    const error = new Error(
+      `EACCES: permission denied, ${syscall} '${target}'`,
+    ) as NodeJS.ErrnoException;
     error.code = "EACCES";
     return error;
   };
   const readdirSync = ((target: fs.PathLike, ...rest: unknown[]) => {
-    if (seam.lockedDir && path.basename(String(target)) === seam.lockedDir) throw denied("scandir", path.resolve(String(target)));
+    if (seam.lockedDir && path.basename(String(target)) === seam.lockedDir)
+      throw denied("scandir", path.resolve(String(target)));
     return (actual.readdirSync as (...args: unknown[]) => unknown)(target, ...rest);
   }) as typeof fs.readdirSync;
   const openSync = ((target: fs.PathLike, ...rest: unknown[]) => {
-    if (seam.lockedFile && path.basename(String(target)) === seam.lockedFile) throw denied("open", path.resolve(String(target)));
+    if (seam.lockedFile && path.basename(String(target)) === seam.lockedFile)
+      throw denied("open", path.resolve(String(target)));
     return (actual.openSync as (...args: unknown[]) => unknown)(target, ...rest);
   }) as typeof fs.openSync;
   const readFileSync = ((target: fs.PathOrFileDescriptor, ...rest: unknown[]) => {
-    if (seam.lockedFile && typeof target !== "number" && path.basename(String(target)) === seam.lockedFile) {
+    if (
+      seam.lockedFile &&
+      typeof target !== "number" &&
+      path.basename(String(target)) === seam.lockedFile
+    ) {
       throw denied("open", path.resolve(String(target)));
     }
     return (actual.readFileSync as (...args: unknown[]) => unknown)(target, ...rest);
@@ -143,8 +155,14 @@ describe("repository model identity with unreadable entries (RC-032)", () => {
     });
     const emitted = path.join(scratch("golden"), "bundle");
     emitRepositoryModelBundle(packet, { outDir: emitted });
-    for (const rel of ["packet.json", "manifest.json", path.join("receipts", "validation-receipt.json")]) {
-      expect(fs.readFileSync(path.join(emitted, rel), "utf8")).toBe(fs.readFileSync(path.join(GOLDEN, rel), "utf8"));
+    for (const rel of [
+      "packet.json",
+      "manifest.json",
+      path.join("receipts", "validation-receipt.json"),
+    ]) {
+      expect(fs.readFileSync(path.join(emitted, rel), "utf8")).toBe(
+        fs.readFileSync(path.join(GOLDEN, rel), "utf8"),
+      );
     }
   });
 });

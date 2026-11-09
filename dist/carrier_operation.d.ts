@@ -5,13 +5,13 @@
  * to the carrier policy. It never writes source files, adjacent sidecars, logs,
  * reports, or indexes. Both check and apply consume the exact same plan.
  */
-import type { AuthorityConfig, CarrierDecision, CheckDrift, TrackedCoverageInput, TrackedCheckInput, TrackedApplyInput, AuthorityConflict, AuthorityNotice } from "./operation_contracts";
-import { type MetadataIndexCompilation, type TrackedMetadataCompilation, type TrackedMetadataIndexBase, type MetadataIndexMigrationEvidenceV2 } from "./metadata_index";
+import { type RepositoryAuthorityInspection } from "./authority_scan";
+import { type TrackedGitSnapshot } from "./discovery_contracts";
+import { type FileTransactionResult } from "./file_transaction";
+import { type MetadataIndexCompilation, type MetadataIndexMigrationEvidenceV2, type TrackedMetadataCompilation, type TrackedMetadataIndexBase } from "./metadata_index";
+import type { AuthorityConfig, AuthorityConflict, AuthorityNotice, CarrierDecision, CheckDrift, TrackedApplyInput, TrackedCheckInput, TrackedCoverageInput } from "./operation_contracts";
 import { type PipelineMetadataSubject, type PipelineResult } from "./pipeline";
 import type { InjectionRecord, PipelineConfig } from "./schema";
-import { type TrackedGitSnapshot } from "./discovery_contracts";
-import { type RepositoryAuthorityInspection } from "./authority_scan";
-import { type FileTransactionResult } from "./file_transaction";
 export declare const CANONICAL_METADATA_WRITER: "Quantum-L9/l9-meta-injector";
 export type GovernedCarrierMode = "check" | "apply";
 export interface CarrierOperationPlan {

@@ -10,13 +10,16 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { describe, expect, test } from "vitest";
 import { acquireLocalSource, hasLegacyExtractionOwnership } from "../src/local_source";
-import { UNIX_SYMLINK, treeSnapshot, writeRawZip } from "./helpers/zip_fixtures";
+import { treeSnapshot, UNIX_SYMLINK, writeRawZip } from "./helpers/zip_fixtures";
 
 function tmp(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "l9-local-safety-"));
 }
 
-function observe<T>(input: Parameters<typeof acquireLocalSource>[0], body: (o: ReturnType<typeof acquireLocalSource>) => T): T {
+function observe<T>(
+  input: Parameters<typeof acquireLocalSource>[0],
+  body: (o: ReturnType<typeof acquireLocalSource>) => T,
+): T {
   const observation = acquireLocalSource(input);
   try {
     return body(observation);
@@ -58,10 +61,12 @@ describe("local source — the source is never modified", () => {
     const before = treeSnapshot(root);
 
     const paths = observe({ path: root }, (observation) =>
-      observation.inventory.records.map((record) => record.relative_path));
+      observation.inventory.records.map((record) => record.relative_path),
+    );
 
-    expect(fs.readFileSync(path.join(root, "Foo.l9extracted", "IMPORTANT_USER_DATA"), "utf8"))
-      .toBe("irreplaceable\n");
+    expect(fs.readFileSync(path.join(root, "Foo.l9extracted", "IMPORTANT_USER_DATA"), "utf8")).toBe(
+      "irreplaceable\n",
+    );
     expect(treeSnapshot(root)).toEqual(before);
     // Not tool-owned, so it is ordinary user content and is observed as such.
     expect(hasLegacyExtractionOwnership(path.join(root, "Foo.l9extracted"))).toBe(false);
@@ -119,7 +124,8 @@ describe("local source — the source is never modified", () => {
     fs.writeFileSync(path.join(root, ".l9", "metadata-index.jsonl"), "{}\n");
 
     const paths = observe({ path: root }, (observation) =>
-      observation.inventory.records.map((record) => record.relative_path));
+      observation.inventory.records.map((record) => record.relative_path),
+    );
 
     expect(paths).toEqual(["a.md"]);
   });
@@ -159,7 +165,9 @@ describe("local source — symlinks and special entries", () => {
     // The target's bytes were never read, so there is no content hash for them.
     expect(link?.content_hash).toBeNull();
     expect(link?.unknowns).toContain("symlink_not_traversed");
-    const diagnostic = result.diagnostics.find((d) => d.code === "local-source.symlink_not_traversed");
+    const diagnostic = result.diagnostics.find(
+      (d) => d.code === "local-source.symlink_not_traversed",
+    );
     expect(diagnostic?.sourcePath).toBe("link.txt");
     expect(diagnostic?.message).toContain("secret-target.txt");
   });
@@ -172,7 +180,8 @@ describe("local source — symlinks and special entries", () => {
     fs.symlinkSync(path.join(outside, "tree"), path.join(root, "linked-tree"));
 
     const paths = observe({ path: root }, (observation) =>
-      observation.inventory.records.map((record) => record.relative_path));
+      observation.inventory.records.map((record) => record.relative_path),
+    );
 
     expect(paths).toEqual(["linked-tree"]);
     expect(paths.some((value) => value.includes("hidden.md"))).toBe(false);
@@ -238,8 +247,9 @@ describe("local source — snapshot stability", () => {
     });
     try {
       expect(observation.stable).toBe(false);
-      expect(observation.diagnostics.map((d) => d.code))
-        .toContain("local-source.source_changed_during_observation");
+      expect(observation.diagnostics.map((d) => d.code)).toContain(
+        "local-source.source_changed_during_observation",
+      );
     } finally {
       observation.dispose();
     }
@@ -274,7 +284,11 @@ describe("local source — snapshot stability", () => {
     // hash alone.
     fs.writeFileSync(
       path.join(root, "scan.pdf"),
-      Buffer.concat([Buffer.from("%PDF-1.4\n", "ascii"), Buffer.from([0x80, 0x81, 0xfe]), Buffer.from("\n%%EOF\n", "ascii")]),
+      Buffer.concat([
+        Buffer.from("%PDF-1.4\n", "ascii"),
+        Buffer.from([0x80, 0x81, 0xfe]),
+        Buffer.from("\n%%EOF\n", "ascii"),
+      ]),
     );
 
     const view = (observation: ReturnType<typeof acquireLocalSource>) => ({
@@ -293,21 +307,24 @@ describe("local source — snapshot stability", () => {
           .filter((record) => record.content_hash !== null)
           .map((record) => {
             const stats = fs.statSync(path.join(root, record.relative_path));
-            return [record.relative_path, {
-              content_hash: record.content_hash as string,
-              size_bytes: stats.size,
-              mtime_ms: stats.mtimeMs,
-            }];
+            return [
+              record.relative_path,
+              {
+                content_hash: record.content_hash as string,
+                size_bytes: stats.size,
+                mtime_ms: stats.mtimeMs,
+              },
+            ];
           }),
       ),
     }));
 
     // Hand the first run's hashes back, which is exactly what an incremental
     // scan does with the previous snapshot.
-    const reused = observe(
-      { path: root, knownHashes: fresh.hashes },
-      (observation) => ({ ...view(observation), reuse: observation.hashing.cached_reuse_count }),
-    );
+    const reused = observe({ path: root, knownHashes: fresh.hashes }, (observation) => ({
+      ...view(observation),
+      reuse: observation.hashing.cached_reuse_count,
+    }));
 
     expect(reused.reuse).toBe(fresh.hashes.size);
     expect(fresh.unknowns).toContain("scan.pdf: unsupported_encoding");
@@ -329,8 +346,9 @@ describe("local source — scratch containment", () => {
     fs.writeFileSync(path.join(root, "pkg", "a.md"), "# A\n", "utf8");
     const before = treeSnapshot(root);
 
-    expect(() => acquireLocalSource({ path: root, scratchParent: path.join(root, ".scratch") }))
-      .toThrow(/resolves inside the observed source/);
+    expect(() =>
+      acquireLocalSource({ path: root, scratchParent: path.join(root, ".scratch") }),
+    ).toThrow(/resolves inside the observed source/);
 
     // The refusal is the point only if nothing was created on the way to it.
     expect(treeSnapshot(root)).toEqual(before);
@@ -348,8 +366,9 @@ describe("local source — scratch containment", () => {
     fs.symlinkSync(path.join(root, "pkg"), link, "dir");
     const before = treeSnapshot(root);
 
-    expect(() => acquireLocalSource({ path: root, scratchParent: link }))
-      .toThrow(/resolves inside the observed source/);
+    expect(() => acquireLocalSource({ path: root, scratchParent: link })).toThrow(
+      /resolves inside the observed source/,
+    );
     expect(treeSnapshot(root)).toEqual(before);
   });
 
@@ -395,8 +414,11 @@ describe("local source — nanosecond file state", () => {
     const root = tmp();
     fs.writeFileSync(path.join(root, "a.md"), "# A\n", "utf8");
     observe({ path: root }, (observation) => {
-      expect(observation.diagnostics.filter((d) => d.code === "local-source.source_changed_during_observation"))
-        .toEqual([]);
+      expect(
+        observation.diagnostics.filter(
+          (d) => d.code === "local-source.source_changed_during_observation",
+        ),
+      ).toEqual([]);
       expect(observation.inventory.records).toHaveLength(1);
       expect(observation.stable).toBe(true);
     });

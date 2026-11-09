@@ -25,9 +25,7 @@ export interface OperationModeResolution {
 
 export const META_AUTHORITY_SCHEMA = "l9.meta-authority/v1" as const;
 export const META_AUTHORITY_SCHEMA_V2 = "l9.meta-authority/v2" as const;
-export type MetaAuthoritySchema =
-  | typeof META_AUTHORITY_SCHEMA
-  | typeof META_AUTHORITY_SCHEMA_V2;
+export type MetaAuthoritySchema = typeof META_AUTHORITY_SCHEMA | typeof META_AUTHORITY_SCHEMA_V2;
 
 export const SEMANTIC_LEDGER_ID_RE = /^l9\.[a-z0-9-]+\/[a-z0-9-]+@\d+$/;
 export const SEMANTIC_LEDGER_DIGEST_RE = /^sha256:[0-9a-f]{64}$/;
@@ -136,9 +134,7 @@ export interface AuthorityConflict {
  * `META_LEGACY_WRITER_MIGRATION` is the `migration_only` allowance for a dormant legacy
  * writer artifact — recorded, visible, and deliberately not a conflict.
  */
-export type AuthorityNoticeCode =
-  | "META_LEGACY_METADATA_PRESENT"
-  | "META_LEGACY_WRITER_MIGRATION";
+export type AuthorityNoticeCode = "META_LEGACY_METADATA_PRESENT" | "META_LEGACY_WRITER_MIGRATION";
 
 export interface AuthorityNotice {
   code: AuthorityNoticeCode;
@@ -182,7 +178,6 @@ export interface CheckResult {
   carrierDecisions: CarrierDecision[];
   discovery: DiscoverySummary;
 }
-
 
 export interface ApplyTransactionSummary {
   transactionId: string | null;
@@ -268,14 +263,25 @@ export function archetypePrefixForKind(kind: ProductKindDeclaration): string | u
 export function isSemanticFoundationBinding(value: unknown): value is SemanticFoundationBinding {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const candidate = value as Record<string, unknown>;
-  if (!hasOnlyKeys(candidate, ["repository", "revision", "release", "admission", "ledgers"])) return false;
-  if (typeof candidate.repository !== "string" || !PRODUCT_OWNER_RE.test(candidate.repository)) return false;
-  if (typeof candidate.revision !== "string" || !SEMANTIC_REVISION_RE.test(candidate.revision)) return false;
+  if (!hasOnlyKeys(candidate, ["repository", "revision", "release", "admission", "ledgers"]))
+    return false;
+  if (typeof candidate.repository !== "string" || !PRODUCT_OWNER_RE.test(candidate.repository))
+    return false;
+  if (typeof candidate.revision !== "string" || !SEMANTIC_REVISION_RE.test(candidate.revision))
+    return false;
   if (typeof candidate.release !== "string" || candidate.release.trim().length === 0) return false;
-  if (candidate.admission !== "candidate" && candidate.admission !== "admitted" && candidate.admission !== "Unknown") {
+  if (
+    candidate.admission !== "candidate" &&
+    candidate.admission !== "admitted" &&
+    candidate.admission !== "Unknown"
+  ) {
     return false;
   }
-  if (typeof candidate.ledgers !== "object" || candidate.ledgers === null || Array.isArray(candidate.ledgers)) {
+  if (
+    typeof candidate.ledgers !== "object" ||
+    candidate.ledgers === null ||
+    Array.isArray(candidate.ledgers)
+  ) {
     return false;
   }
   const ledgers = candidate.ledgers as Record<string, unknown>;
@@ -296,7 +302,8 @@ export function isProductDeclaration(value: unknown): value is ProductDeclaratio
   if (typeof candidate.id !== "string" || !PRODUCT_ID_RE.test(candidate.id)) return false;
   if (typeof candidate.owner !== "string" || !PRODUCT_OWNER_RE.test(candidate.owner)) return false;
   if (!isProductKindDeclaration(candidate.kind)) return false;
-  if (typeof candidate.archetype !== "string" || candidate.archetype.trim().length === 0) return false;
+  if (typeof candidate.archetype !== "string" || candidate.archetype.trim().length === 0)
+    return false;
   if (candidate.archetype !== "Unknown") {
     const prefix = archetypePrefixForKind(candidate.kind);
     if (!prefix || !candidate.archetype.startsWith(prefix)) return false;
@@ -324,9 +331,11 @@ export function semanticBindingErrors(config: AuthorityConfig): string[] {
 }
 
 function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value)
-    && value.every((item) => typeof item === "string" && item.trim().length > 0)
-    && new Set(value).size === value.length;
+  return (
+    Array.isArray(value) &&
+    value.every((item) => typeof item === "string" && item.trim().length > 0) &&
+    new Set(value).size === value.length
+  );
 }
 
 /**
@@ -338,7 +347,8 @@ export function isSafeAuthorityPathPattern(value: unknown): value is string {
   if (typeof value !== "string" || value.length === 0 || value.length > 512) return false;
   if (value.trim() !== value) return false;
   if (value.startsWith("/") || value.startsWith("./") || value.startsWith("!")) return false;
-  if (value.includes("\\") || value.includes("//") || /[\u0000-\u001F\u007F]/.test(value)) return false;
+  if (value.includes("\\") || value.includes("//") || /[\u0000-\u001F\u007F]/.test(value))
+    return false;
   const segments = value.split("/");
   return segments.every((segment) => segment.length > 0 && segment !== "." && segment !== "..");
 }
@@ -352,22 +362,49 @@ export function isAuthorityConfig(value: unknown): value is AuthorityConfig {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const candidate = value as Record<string, unknown>;
   const v1Keys = [
-    "schema", "writer", "default_carrier", "legacy_writers", "inline_allow", "inline_exclude", "validation_commands",
+    "schema",
+    "writer",
+    "default_carrier",
+    "legacy_writers",
+    "inline_allow",
+    "inline_exclude",
+    "validation_commands",
   ];
   const v2Keys = [...v1Keys, "semantic_foundation", "product"];
   if (!isSupportedAuthoritySchema(candidate.schema)) return false;
   const allowed = candidate.schema === META_AUTHORITY_SCHEMA_V2 ? v2Keys : v1Keys;
   if (!hasOnlyKeys(candidate, allowed)) return false;
-  if (typeof candidate.writer !== "object" || candidate.writer === null || Array.isArray(candidate.writer)) return false;
+  if (
+    typeof candidate.writer !== "object" ||
+    candidate.writer === null ||
+    Array.isArray(candidate.writer)
+  )
+    return false;
   const writer = candidate.writer as Record<string, unknown>;
   if (!hasOnlyKeys(writer, ["repository", "ref"])) return false;
-  if (typeof writer.repository !== "string" || !/^[^/\s]+\/[^/\s]+$/.test(writer.repository)) return false;
+  if (typeof writer.repository !== "string" || !/^[^/\s]+\/[^/\s]+$/.test(writer.repository))
+    return false;
   if (typeof writer.ref !== "string" || writer.ref.trim().length === 0) return false;
-  if (candidate.default_carrier !== "central_manifest" && candidate.default_carrier !== "inline_managed") return false;
-  if (candidate.legacy_writers !== "forbidden" && candidate.legacy_writers !== "migration_only") return false;
-  if (!isStringArray(candidate.inline_allow) || !candidate.inline_allow.every(isSafeAuthorityPathPattern)) return false;
-  if (candidate.inline_exclude !== undefined && (!isStringArray(candidate.inline_exclude) || !candidate.inline_exclude.every(isSafeAuthorityPathPattern))) return false;
-  if (candidate.validation_commands !== undefined && !isStringArray(candidate.validation_commands)) return false;
+  if (
+    candidate.default_carrier !== "central_manifest" &&
+    candidate.default_carrier !== "inline_managed"
+  )
+    return false;
+  if (candidate.legacy_writers !== "forbidden" && candidate.legacy_writers !== "migration_only")
+    return false;
+  if (
+    !isStringArray(candidate.inline_allow) ||
+    !candidate.inline_allow.every(isSafeAuthorityPathPattern)
+  )
+    return false;
+  if (
+    candidate.inline_exclude !== undefined &&
+    (!isStringArray(candidate.inline_exclude) ||
+      !candidate.inline_exclude.every(isSafeAuthorityPathPattern))
+  )
+    return false;
+  if (candidate.validation_commands !== undefined && !isStringArray(candidate.validation_commands))
+    return false;
   if (candidate.schema === META_AUTHORITY_SCHEMA) {
     return candidate.semantic_foundation === undefined && candidate.product === undefined;
   }

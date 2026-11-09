@@ -9,8 +9,13 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, expect, test } from "vitest";
+import {
+  applyCommentInjection,
+  detectNewlineConvention,
+  extractInjectedYaml,
+  yamlToBlock,
+} from "../src/comment";
 import { injectFile } from "../src/inject";
-import { applyCommentInjection, detectNewlineConvention, extractInjectedYaml, yamlToBlock } from "../src/comment";
 import { coerceNormalizedMeta } from "../src/schema";
 
 function tmp(): string {
@@ -19,10 +24,20 @@ function tmp(): string {
 
 function meta(id: string) {
   return coerceNormalizedMeta({
-    id, title: id, artifact_type: "source", mcp_primitive: "resource", callable: false,
-    retrievable: true, injectable: true, namespace: "t", sharing_scope: "agnostic",
-    source_path: `${id}.py`, content_hash: "Unknown", token_cost_estimate: 0,
-    authority: "t", created_or_detected_at: "Unknown",
+    id,
+    title: id,
+    artifact_type: "source",
+    mcp_primitive: "resource",
+    callable: false,
+    retrievable: true,
+    injectable: true,
+    namespace: "t",
+    sharing_scope: "agnostic",
+    source_path: `${id}.py`,
+    content_hash: "Unknown",
+    token_cost_estimate: 0,
+    authority: "t",
+    created_or_detected_at: "Unknown",
   });
 }
 
@@ -31,7 +46,12 @@ function run(name: string, body: string, times = 1): string {
   const target = path.join(root, name);
   fs.writeFileSync(target, body);
   for (let i = 0; i < times; i++) {
-    injectFile(target, meta("t.a"), { dryRun: false, outDir: path.join(root, "out"), verbose: false, writeInjectLog: false });
+    injectFile(target, meta("t.a"), {
+      dryRun: false,
+      outDir: path.join(root, "out"),
+      verbose: false,
+      writeInjectLog: false,
+    });
   }
   return fs.readFileSync(target, "utf8");
 }
@@ -101,7 +121,11 @@ describe("comment helpers", () => {
   });
 
   test("yamlToBlock joins with the requested convention and accepts either on input", () => {
-    const block = yamlToBlock("a: 1\r\nb: 2", { strategy: "line-comment", linePrefix: "#" }, "\r\n");
+    const block = yamlToBlock(
+      "a: 1\r\nb: 2",
+      { strategy: "line-comment", linePrefix: "#" },
+      "\r\n",
+    );
     expect(block).toBe("# >>> l9:meta >>>\r\n# a: 1\r\n# b: 2\r\n# <<< l9:meta <<<");
   });
 });

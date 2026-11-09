@@ -56,7 +56,15 @@
     {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schema", "writer", "default_carrier", "legacy_writers", "inline_allow", "semantic_foundation", "product"],
+      "required": [
+        "schema",
+        "writer",
+        "default_carrier",
+        "legacy_writers",
+        "inline_allow",
+        "semantic_foundation",
+        "product"
+      ],
       "properties": {
         "schema": { "const": "l9.meta-authority/v2" },
         "writer": { "$ref": "#/$defs/writer" },

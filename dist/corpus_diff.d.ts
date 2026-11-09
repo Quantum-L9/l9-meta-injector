@@ -1,7 +1,7 @@
 import type { CandidateKind } from "./corpus_analysis_manifest";
+import type { InferredRootHistoryOverride } from "./corpus_root_history";
 import type { RootIdentityClass } from "./corpus_roots";
 import { CorpusSnapshot } from "./corpus_snapshot";
-import type { InferredRootHistoryOverride } from "./corpus_root_history";
 export declare const CORPUS_DIFF_SCHEMA = "l9.corpus-diff/v1";
 export declare const CORPUS_DIFF_CATEGORIES: readonly ["added", "removed", "changed_content", "renamed_candidate", "unchanged", "archive_added", "archive_removed", "archive_changed", "archive_unchanged"];
 /** How each root fared between two snapshots. */

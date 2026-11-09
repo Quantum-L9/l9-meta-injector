@@ -46,14 +46,19 @@ export function holdZipRewrite(
   if (directory.zip64) return "archive.zip64";
   for (const entry of directory.entries) {
     if (entry.encrypted) return "archive.member_encrypted";
-    if (entry.compressedSize > U32_MAX || entry.uncompressedSize > U32_MAX || entry.localHeaderOffset > U32_MAX) {
+    if (
+      entry.compressedSize > U32_MAX ||
+      entry.uncompressedSize > U32_MAX ||
+      entry.localHeaderOffset > U32_MAX
+    ) {
       return "archive.zip64";
     }
   }
   if (centralRecordOf) {
     for (const entry of directory.entries) {
       if (rootMetaKind(entry.name) !== null) continue;
-      if (centralRecordOf(entry).readUInt32LE(CENTRAL_LOCAL_OFFSET_FIELD) === U32_MAX) return "archive.zip64";
+      if (centralRecordOf(entry).readUInt32LE(CENTRAL_LOCAL_OFFSET_FIELD) === U32_MAX)
+        return "archive.zip64";
     }
   }
   return null;
@@ -64,7 +69,8 @@ function readExact(fd: number, length: number, position: number): Buffer {
   let read = 0;
   while (read < length) {
     const count = fs.readSync(fd, buffer, read, length - read, position + read);
-    if (count === 0) throw new ZipFormatError(`unexpected end of archive at offset ${position + read}`);
+    if (count === 0)
+      throw new ZipFormatError(`unexpected end of archive at offset ${position + read}`);
     read += count;
   }
   return buffer;
@@ -96,7 +102,8 @@ function readCentralRecord(fd: number, entry: ZipCentralEntry): Buffer {
   if (record.readUInt32LE(0) !== CENTRAL_SIGNATURE) {
     throw new ZipFormatError(`central-directory header signature is invalid for ${entry.name}`);
   }
-  const declared = CENTRAL_FIXED + record.readUInt16LE(28) + record.readUInt16LE(30) + record.readUInt16LE(32);
+  const declared =
+    CENTRAL_FIXED + record.readUInt16LE(28) + record.readUInt16LE(30) + record.readUInt16LE(32);
   if (declared !== length) {
     throw new ZipFormatError(`central record length disagrees with its fields for ${entry.name}`);
   }
@@ -105,7 +112,8 @@ function readCentralRecord(fd: number, entry: ZipCentralEntry): Buffer {
 
 /** The original record with only the relative-offset-of-local-header field moved. */
 function relocateCentralRecord(record: Buffer, localHeaderOffset: number): Buffer {
-  if (localHeaderOffset > U32_MAX) throw new ZipFormatError("Zip64 emit is out of scope for inventory writer v1");
+  if (localHeaderOffset > U32_MAX)
+    throw new ZipFormatError("Zip64 emit is out of scope for inventory writer v1");
   const copy = Buffer.from(record);
   copy.writeUInt32LE(localHeaderOffset, CENTRAL_LOCAL_OFFSET_FIELD);
   return copy;
@@ -189,7 +197,9 @@ function dosTimeNow(): { modTime: number; modDate: number } {
   const modTime =
     ((d.getSeconds() >> 1) & 0x1f) | ((d.getMinutes() & 0x3f) << 5) | ((d.getHours() & 0x1f) << 11);
   const modDate =
-    (d.getDate() & 0x1f) | (((d.getMonth() + 1) & 0x0f) << 5) | (((d.getFullYear() - 1980) & 0x7f) << 9);
+    (d.getDate() & 0x1f) |
+    (((d.getMonth() + 1) & 0x0f) << 5) |
+    (((d.getFullYear() - 1980) & 0x7f) << 9);
   return { modTime, modDate };
 }
 
@@ -200,25 +210,30 @@ export function buildZipBuffer(members: Array<{ name: string; data: Buffer }>): 
   for (const member of members) {
     const local = writeLocalStored(member.name, member.data);
     locals.push(local);
-    centrals.push(writeCentral({
-      name: member.name,
-      flags: FLAG_UTF8_NAME,
-      method: COMPRESSION_STORED,
-      crc32: crc32(member.data),
-      compressedSize: member.data.length,
-      uncompressedSize: member.data.length,
-      localHeaderOffset: offset,
-      externalAttributes: (0o100644 << 16) >>> 0,
-      versionMadeBy: (3 << 8),
-      ...dosTimeNow(),
-    }));
+    centrals.push(
+      writeCentral({
+        name: member.name,
+        flags: FLAG_UTF8_NAME,
+        method: COMPRESSION_STORED,
+        crc32: crc32(member.data),
+        compressedSize: member.data.length,
+        uncompressedSize: member.data.length,
+        localHeaderOffset: offset,
+        externalAttributes: (0o100644 << 16) >>> 0,
+        versionMadeBy: 3 << 8,
+        ...dosTimeNow(),
+      }),
+    );
     offset += local.length;
   }
   const central = Buffer.concat(centrals);
   return Buffer.concat([...locals, central, writeEocd(members.length, central.length, offset)]);
 }
 
-export function injectZipRootMeta(archivePath: string, yaml: string): { ok: true; bytes: Buffer } | { ok: false; hold: string } {
+export function injectZipRootMeta(
+  archivePath: string,
+  yaml: string,
+): { ok: true; bytes: Buffer } | { ok: false; hold: string } {
   let directory: ZipDirectory;
   try {
     directory = readZipCentralDirectory(archivePath);
@@ -261,9 +276,10 @@ export function injectZipRootMeta(archivePath: string, yaml: string): { ok: true
       offset += blob.length;
     }
     const commentLength = directory.eocdCommentLength ?? 0;
-    archiveComment = commentLength > 0 && directory.eocdCommentOffset !== undefined
-      ? readExact(fd, commentLength, directory.eocdCommentOffset)
-      : Buffer.alloc(0);
+    archiveComment =
+      commentLength > 0 && directory.eocdCommentOffset !== undefined
+        ? readExact(fd, commentLength, directory.eocdCommentOffset)
+        : Buffer.alloc(0);
   } catch (err) {
     return { ok: false, hold: `archive.zip_copy_failed:${(err as Error).message}` };
   } finally {
@@ -272,24 +288,30 @@ export function injectZipRootMeta(archivePath: string, yaml: string): { ok: true
 
   const metaLocal = writeLocalStored(".l9meta.yaml", yamlBytes);
   locals.push(metaLocal);
-  centrals.push(writeCentral({
-    name: ".l9meta.yaml",
-    flags: FLAG_UTF8_NAME,
-    method: COMPRESSION_STORED,
-    crc32: crc32(yamlBytes),
-    compressedSize: yamlBytes.length,
-    uncompressedSize: yamlBytes.length,
-    localHeaderOffset: offset,
-    externalAttributes: (0o100644 << 16) >>> 0,
-    versionMadeBy: (3 << 8),
+  centrals.push(
+    writeCentral({
+      name: ".l9meta.yaml",
+      flags: FLAG_UTF8_NAME,
+      method: COMPRESSION_STORED,
+      crc32: crc32(yamlBytes),
+      compressedSize: yamlBytes.length,
+      uncompressedSize: yamlBytes.length,
+      localHeaderOffset: offset,
+      externalAttributes: (0o100644 << 16) >>> 0,
+      versionMadeBy: 3 << 8,
       ...dosTimeNow(),
-  }));
+    }),
+  );
   offset += metaLocal.length;
   const central = Buffer.concat(centrals);
   try {
     return {
       ok: true,
-      bytes: Buffer.concat([...locals, central, writeEocd(centrals.length, central.length, offset, archiveComment)]),
+      bytes: Buffer.concat([
+        ...locals,
+        central,
+        writeEocd(centrals.length, central.length, offset, archiveComment),
+      ]),
     };
   } catch (err) {
     return { ok: false, hold: `archive.zip_write_failed:${(err as Error).message}` };
@@ -303,11 +325,16 @@ export function peekZipRootMeta(archivePath: string): string | null {
   } catch {
     return null;
   }
-  const entry = directory.entries.find((e) => rootMetaKind(e.name) === "canonical")
-    ?? directory.entries.find((e) => rootMetaKind(e.name) === "legacy");
+  const entry =
+    directory.entries.find((e) => rootMetaKind(e.name) === "canonical") ??
+    directory.entries.find((e) => rootMetaKind(e.name) === "legacy");
   if (!entry) return null;
   if (entry.encrypted) return null;
-  if (entry.compressionMethod !== COMPRESSION_STORED && entry.compressionMethod !== COMPRESSION_DEFLATE) return null;
+  if (
+    entry.compressionMethod !== COMPRESSION_STORED &&
+    entry.compressionMethod !== COMPRESSION_DEFLATE
+  )
+    return null;
   const chunks: Buffer[] = [];
   try {
     streamZipMember(archivePath, entry, { maxUncompressedBytes: 256 * 1024 }, (chunk) => {

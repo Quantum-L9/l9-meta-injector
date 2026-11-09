@@ -18,14 +18,14 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import {
-  InferredRootHistoryError,
   assertLongitudinalRootIdentityAuthorized,
+  InferredRootHistoryError,
   identityClassOf,
   inferredRootHistoryOverride,
 } from "../src/corpus_root_history";
-import { DEFAULT_CORPUS_BUDGETS, CorpusSessionStore } from "../src/corpus_session";
 import { corpusRootId } from "../src/corpus_roots";
 import { runCorpusScan } from "../src/corpus_scan";
+import { CorpusSessionStore, DEFAULT_CORPUS_BUDGETS } from "../src/corpus_session";
 
 const scratch: string[] = [];
 function tmp(prefix = "l9-root-history-"): string {
@@ -70,12 +70,13 @@ describe("the authorization rule", () => {
     previous: ReturnType<typeof declared>[] | ReturnType<typeof legacy>[],
     current: ReturnType<typeof declared>[],
     allow = false,
-  ) => assertLongitudinalRootIdentityAuthorized({
-    operation: "previous-snapshot diff",
-    previousRoots: previous,
-    currentRoots: current,
-    allowInferredRootHistory: allow,
-  });
+  ) =>
+    assertLongitudinalRootIdentityAuthorized({
+      operation: "previous-snapshot diff",
+      previousRoots: previous,
+      currentRoots: current,
+      allowInferredRootHistory: allow,
+    });
 
   it("allows a claim between two roots the operator named", () => {
     const result = authorize([declared("Backup")], [declared("Backup")]);
@@ -85,33 +86,36 @@ describe("the authorization rule", () => {
   });
 
   it("refuses inferred on both sides", () => {
-    expect(() => authorize([inferred("Backup")], [inferred("Backup")]))
-      .toThrow(InferredRootHistoryError);
+    expect(() => authorize([inferred("Backup")], [inferred("Backup")])).toThrow(
+      InferredRootHistoryError,
+    );
   });
 
   it("refuses a root named now but not before", () => {
     // The previous key was a basename, so the thing being matched against may
     // not be this root at all. Naming it afterwards cannot fix that.
-    expect(() => authorize([inferred("Backup")], [declared("Backup")]))
-      .toThrow(/previously inferred, now declared/);
+    expect(() => authorize([inferred("Backup")], [declared("Backup")])).toThrow(
+      /previously inferred, now declared/,
+    );
   });
 
   it("refuses a root named before but not now", () => {
-    expect(() => authorize([declared("Backup")], [inferred("Backup")]))
-      .toThrow(/previously declared, now inferred/);
+    expect(() => authorize([declared("Backup")], [inferred("Backup")])).toThrow(
+      /previously declared, now inferred/,
+    );
   });
 
   it("refuses when any matched root is weak, even beside declared ones", () => {
-    expect(() => authorize(
-      [declared("OldSSD"), inferred("Backup")],
-      [declared("OldSSD"), inferred("Backup")],
-    )).toThrow(/'Backup'/);
+    expect(() =>
+      authorize([declared("OldSSD"), inferred("Backup")], [declared("OldSSD"), inferred("Backup")]),
+    ).toThrow(/'Backup'/);
   });
 
   it("reads a record with no identity class as inferred", () => {
     expect(identityClassOf(legacy("Backup"))).toBe("inferred");
-    expect(() => authorize([legacy("Backup")], [declared("Backup")]))
-      .toThrow(InferredRootHistoryError);
+    expect(() => authorize([legacy("Backup")], [declared("Backup")])).toThrow(
+      InferredRootHistoryError,
+    );
   });
 
   it("ignores a root that only one side has", () => {
@@ -175,11 +179,13 @@ describe("a scan", () => {
   it("refuses to diff an unnamed root against a previous snapshot", async () => {
     const root = rootNamed("Backup");
     const first = await runCorpusScan({ roots: [{ path: root }], producerVersion: "test" });
-    await expect(runCorpusScan({
-      roots: [{ path: root }],
-      producerVersion: "test",
-      previousSnapshot: first.snapshot,
-    })).rejects.toThrow(/refusing previous-snapshot diff/);
+    await expect(
+      runCorpusScan({
+        roots: [{ path: root }],
+        producerVersion: "test",
+        previousSnapshot: first.snapshot,
+      }),
+    ).rejects.toThrow(/refusing previous-snapshot diff/);
   });
 
   it("diffs an unnamed root when the operator accepts the weaker identity", async () => {
@@ -197,14 +203,14 @@ describe("a scan", () => {
     // the match was weak, the other says who accepted that.
     expect(second.diff?.longitudinal_identity_cautions.length).toBeGreaterThan(0);
     expect(second.diff?.inferred_root_history_override?.enabled).toBe(true);
-    expect(second.snapshot.operational_provenance?.inferred_root_history_override)
-      .toEqual({
-        enabled: true,
-        affected_root_ids: [corpusRootId("Backup")],
-        operations: ["previous-snapshot diff"],
-      });
-    expect(second.diagnostics.map((note) => note.code))
-      .toContain("corpus.inferred_root_history_override");
+    expect(second.snapshot.operational_provenance?.inferred_root_history_override).toEqual({
+      enabled: true,
+      affected_root_ids: [corpusRootId("Backup")],
+      operations: ["previous-snapshot diff"],
+    });
+    expect(second.diagnostics.map((note) => note.code)).toContain(
+      "corpus.inferred_root_history_override",
+    );
   });
 
   it("diffs a named root with no override and no caution", async () => {
@@ -227,15 +233,20 @@ describe("a scan", () => {
     const named = rootNamed("OldSSD");
     const unnamed = rootNamed("Backup");
     const first = await runCorpusScan({
-      roots: [{ path: named, name: "OldSSD" }, { path: unnamed, name: "Backup" }],
+      roots: [
+        { path: named, name: "OldSSD" },
+        { path: unnamed, name: "Backup" },
+      ],
       producerVersion: "test",
     });
-    await expect(runCorpusScan({
-      // The second root loses its name, so its continuity is now a guess.
-      roots: [{ path: named, name: "OldSSD" }, { path: unnamed }],
-      producerVersion: "test",
-      previousSnapshot: first.snapshot,
-    })).rejects.toThrow(/'Backup'/);
+    await expect(
+      runCorpusScan({
+        // The second root loses its name, so its continuity is now a guess.
+        roots: [{ path: named, name: "OldSSD" }, { path: unnamed }],
+        producerVersion: "test",
+        previousSnapshot: first.snapshot,
+      }),
+    ).rejects.toThrow(/'Backup'/);
   });
 
   it("refuses a snapshot written before the identity class existed", async () => {
@@ -253,22 +264,26 @@ describe("a scan", () => {
         return rest as typeof entry;
       }),
     };
-    await expect(runCorpusScan({
-      roots: [{ path: root, name: "Backup" }],
-      producerVersion: "test",
-      previousSnapshot: legacySnapshot,
-    })).rejects.toThrow(/previously inferred/);
+    await expect(
+      runCorpusScan({
+        roots: [{ path: root, name: "Backup" }],
+        producerVersion: "test",
+        previousSnapshot: legacySnapshot,
+      }),
+    ).rejects.toThrow(/previously inferred/);
   });
 
   it("refuses incremental hash reuse across an unnamed root", async () => {
     const root = rootNamed("Backup");
     const first = await runCorpusScan({ roots: [{ path: root }], producerVersion: "test" });
-    await expect(runCorpusScan({
-      roots: [{ path: root }],
-      producerVersion: "test",
-      previousSnapshot: first.snapshot,
-      verification: "incremental",
-    })).rejects.toThrow(/refusing/);
+    await expect(
+      runCorpusScan({
+        roots: [{ path: root }],
+        producerVersion: "test",
+        previousSnapshot: first.snapshot,
+        verification: "incremental",
+      }),
+    ).rejects.toThrow(/refusing/);
   });
 
   it("keeps the corpus source identity out of the operator's authorization", async () => {
@@ -283,10 +298,12 @@ describe("a scan", () => {
       previousSnapshot: first.snapshot,
       allowInferredRootHistory: true,
     });
-    expect(withOverride.snapshot.corpus_source_snapshot_id)
-      .toBe(first.snapshot.corpus_source_snapshot_id);
-    expect(withOverride.snapshot.analysis.corpus_analysis_id)
-      .toBe(first.snapshot.analysis.corpus_analysis_id);
+    expect(withOverride.snapshot.corpus_source_snapshot_id).toBe(
+      first.snapshot.corpus_source_snapshot_id,
+    );
+    expect(withOverride.snapshot.analysis.corpus_analysis_id).toBe(
+      first.snapshot.analysis.corpus_analysis_id,
+    );
   });
 
   it("refuses two unrelated directories that happen to share a basename", async () => {
@@ -297,11 +314,13 @@ describe("a scan", () => {
     });
     const other = rootNamed("Backup");
     fs.writeFileSync(path.join(other, "unrelated.md"), "# Something else entirely\n", "utf8");
-    await expect(runCorpusScan({
-      roots: [{ path: other }],
-      producerVersion: "test",
-      previousSnapshot: first.snapshot,
-    })).rejects.toThrow(/refusing previous-snapshot diff/);
+    await expect(
+      runCorpusScan({
+        roots: [{ path: other }],
+        producerVersion: "test",
+        previousSnapshot: first.snapshot,
+      }),
+    ).rejects.toThrow(/refusing previous-snapshot diff/);
   });
 });
 
@@ -311,12 +330,14 @@ describe("resuming a session", () => {
   function sessionFor(rootPath: string, key: string, declaredKey: boolean, resume: boolean) {
     return CorpusSessionStore.open({
       file: path.join(tmp("l9-root-history-session-"), "corpus-session.json"),
-      roots: [{
-        root_id: corpusRootId(key),
-        root_key: key,
-        absolute_path: rootPath,
-        ...(declaredKey ? { root_identity_class: "declared" as const } : {}),
-      }],
+      roots: [
+        {
+          root_id: corpusRootId(key),
+          root_key: key,
+          absolute_path: rootPath,
+          ...(declaredKey ? { root_identity_class: "declared" as const } : {}),
+        },
+      ],
       budgets: { ...DEFAULT_CORPUS_BUDGETS, archive: {} },
       now: "2026-01-01T00:00:00.000Z",
       resume,
@@ -339,8 +360,9 @@ describe("resuming a session", () => {
     const file = path.join(tmp("l9-root-history-session-"), "corpus-session.json");
     const roots = [{ root_id: corpusRootId("Backup"), root_key: "Backup", absolute_path: root }];
     const budgets = { ...DEFAULT_CORPUS_BUDGETS, archive: {} };
-    CorpusSessionStore.open({ file, roots, budgets, now: "2026-01-01T00:00:00.000Z" })
-      .save("2026-01-01T00:00:00.000Z");
+    CorpusSessionStore.open({ file, roots, budgets, now: "2026-01-01T00:00:00.000Z" }).save(
+      "2026-01-01T00:00:00.000Z",
+    );
 
     const resumed = CorpusSessionStore.open({
       file,
@@ -350,11 +372,13 @@ describe("resuming a session", () => {
       resume: true,
     });
     expect(resumed.resumedRoots.length).toBeGreaterThan(0);
-    await expect(runCorpusScan({
-      roots: [{ path: root }],
-      producerVersion: "test",
-      session: resumed,
-    })).rejects.toThrow(/refusing resume/);
+    await expect(
+      runCorpusScan({
+        roots: [{ path: root }],
+        producerVersion: "test",
+        session: resumed,
+      }),
+    ).rejects.toThrow(/refusing resume/);
   });
 
   it("adopts an unnamed root's completions when the operator accepts it", async () => {
@@ -362,8 +386,9 @@ describe("resuming a session", () => {
     const file = path.join(tmp("l9-root-history-session-"), "corpus-session.json");
     const roots = [{ root_id: corpusRootId("Backup"), root_key: "Backup", absolute_path: root }];
     const budgets = { ...DEFAULT_CORPUS_BUDGETS, archive: {} };
-    CorpusSessionStore.open({ file, roots, budgets, now: "2026-01-01T00:00:00.000Z" })
-      .save("2026-01-01T00:00:00.000Z");
+    CorpusSessionStore.open({ file, roots, budgets, now: "2026-01-01T00:00:00.000Z" }).save(
+      "2026-01-01T00:00:00.000Z",
+    );
 
     const result = await runCorpusScan({
       roots: [{ path: root }],
@@ -377,22 +402,26 @@ describe("resuming a session", () => {
         resume: true,
       }),
     });
-    expect(result.snapshot.operational_provenance?.inferred_root_history_override?.operations)
-      .toEqual(["resume"]);
+    expect(
+      result.snapshot.operational_provenance?.inferred_root_history_override?.operations,
+    ).toEqual(["resume"]);
   });
 
   it("adopts a named root's completions with no override", async () => {
     const root = rootNamed("Backup");
     const file = path.join(tmp("l9-root-history-session-"), "corpus-session.json");
-    const roots = [{
-      root_id: corpusRootId("Backup"),
-      root_key: "Backup",
-      absolute_path: root,
-      root_identity_class: "declared" as const,
-    }];
+    const roots = [
+      {
+        root_id: corpusRootId("Backup"),
+        root_key: "Backup",
+        absolute_path: root,
+        root_identity_class: "declared" as const,
+      },
+    ];
     const budgets = { ...DEFAULT_CORPUS_BUDGETS, archive: {} };
-    CorpusSessionStore.open({ file, roots, budgets, now: "2026-01-01T00:00:00.000Z" })
-      .save("2026-01-01T00:00:00.000Z");
+    CorpusSessionStore.open({ file, roots, budgets, now: "2026-01-01T00:00:00.000Z" }).save(
+      "2026-01-01T00:00:00.000Z",
+    );
 
     const result = await runCorpusScan({
       roots: [{ path: root, name: "Backup" }],
@@ -411,15 +440,18 @@ describe("resuming a session", () => {
   it("refuses a session manifest written before the identity class existed", async () => {
     const root = rootNamed("Backup");
     const file = path.join(tmp("l9-root-history-session-"), "corpus-session.json");
-    const roots = [{
-      root_id: corpusRootId("Backup"),
-      root_key: "Backup",
-      absolute_path: root,
-      root_identity_class: "declared" as const,
-    }];
+    const roots = [
+      {
+        root_id: corpusRootId("Backup"),
+        root_key: "Backup",
+        absolute_path: root,
+        root_identity_class: "declared" as const,
+      },
+    ];
     const budgets = { ...DEFAULT_CORPUS_BUDGETS, archive: {} };
-    CorpusSessionStore.open({ file, roots, budgets, now: "2026-01-01T00:00:00.000Z" })
-      .save("2026-01-01T00:00:00.000Z");
+    CorpusSessionStore.open({ file, roots, budgets, now: "2026-01-01T00:00:00.000Z" }).save(
+      "2026-01-01T00:00:00.000Z",
+    );
 
     // Strip the class the way a manifest from an earlier release would have it.
     const stored = JSON.parse(fs.readFileSync(file, "utf8")) as {
@@ -428,16 +460,18 @@ describe("resuming a session", () => {
     for (const entry of stored.roots) delete entry.root_identity_class;
     fs.writeFileSync(file, JSON.stringify(stored, null, 2), "utf8");
 
-    await expect(runCorpusScan({
-      roots: [{ path: root, name: "Backup" }],
-      producerVersion: "test",
-      session: CorpusSessionStore.open({
-        file,
-        roots,
-        budgets,
-        now: "2026-01-02T00:00:00.000Z",
-        resume: true,
+    await expect(
+      runCorpusScan({
+        roots: [{ path: root, name: "Backup" }],
+        producerVersion: "test",
+        session: CorpusSessionStore.open({
+          file,
+          roots,
+          budgets,
+          now: "2026-01-02T00:00:00.000Z",
+          resume: true,
+        }),
       }),
-    })).rejects.toThrow(/refusing resume/);
+    ).rejects.toThrow(/refusing resume/);
   });
 });

@@ -12,55 +12,68 @@
 // Each of those is a property that fails silently if it regresses, which is
 // exactly the kind that has to be asserted rather than reviewed.
 import { describe, expect, it } from "vitest";
-import {
-  DEFAULT_EMBEDDING_PAIR_THRESHOLD,
-} from "../src/corpus_fusion";
-import {
-  EmbeddingConfigurationError,
-  MAX_CHUNKS_PER_DOCUMENT,
-  StaticEmbeddingProvider,
-  assertEmbeddingConfiguration,
-  chunkDocument,
-  cosineSimilarity,
-  disabledEmbeddingReport,
-  embeddingCacheKey,
-  reproducibilityClassOf,
-  runEmbeddings,
-  vectorDigest,
-} from "../src/corpus_embeddings";
 import type {
   EmbeddableDocument,
   EmbeddingCache,
   EmbeddingModelConfiguration,
 } from "../src/corpus_embeddings";
+import {
+  assertEmbeddingConfiguration,
+  chunkDocument,
+  cosineSimilarity,
+  disabledEmbeddingReport,
+  EmbeddingConfigurationError,
+  embeddingCacheKey,
+  MAX_CHUNKS_PER_DOCUMENT,
+  reproducibilityClassOf,
+  runEmbeddings,
+  StaticEmbeddingProvider,
+  vectorDigest,
+} from "../src/corpus_embeddings";
+import { DEFAULT_EMBEDDING_PAIR_THRESHOLD } from "../src/corpus_fusion";
 
 const LOCAL: EmbeddingModelConfiguration = {
-  provider: "fixture-local", model_id: "fixture-1", locality: "local",
+  provider: "fixture-local",
+  model_id: "fixture-1",
+  locality: "local",
 };
 const REMOTE: EmbeddingModelConfiguration = {
-  provider: "fixture-remote", model_id: "fixture-1", locality: "remote",
+  provider: "fixture-remote",
+  model_id: "fixture-1",
+  locality: "remote",
   endpoint: "https://embeddings.example.com/v1",
 };
 
 function documents(): EmbeddableDocument[] {
   return [
     {
-      artifact_id: "a", normalized_document_id: "normdoc:a", decoded: true,
-      is_secret_candidate: false, title: "Temporal Assertion Persistence",
+      artifact_id: "a",
+      normalized_document_id: "normdoc:a",
+      decoded: true,
+      is_secret_candidate: false,
+      title: "Temporal Assertion Persistence",
       body: "Persist temporal assertions in the knowledge graph.",
     },
     {
-      artifact_id: "b", normalized_document_id: "normdoc:b", decoded: true,
-      is_secret_candidate: false, title: "Durable Semantic Memory",
+      artifact_id: "b",
+      normalized_document_id: "normdoc:b",
+      decoded: true,
+      is_secret_candidate: false,
+      title: "Durable Semantic Memory",
       body: "Store time-aware facts in durable semantic memory.",
     },
     {
-      artifact_id: "secret", normalized_document_id: "normdoc:secret", decoded: true,
-      is_secret_candidate: true, title: "Credentials",
+      artifact_id: "secret",
+      normalized_document_id: "normdoc:secret",
+      decoded: true,
+      is_secret_candidate: true,
+      title: "Credentials",
       body: "aws_secret_access_key = REDACTED-IN-FIXTURE",
     },
     {
-      artifact_id: "binary", normalized_document_id: null, decoded: false,
+      artifact_id: "binary",
+      normalized_document_id: null,
+      decoded: false,
       is_secret_candidate: false,
     },
   ];
@@ -68,11 +81,14 @@ function documents(): EmbeddableDocument[] {
 
 /** Two near-parallel vectors and one orthogonal, keyed by a phrase in each title. */
 function provider(configuration: EmbeddingModelConfiguration): StaticEmbeddingProvider {
-  return new StaticEmbeddingProvider(configuration, new Map([
-    ["Temporal Assertion Persistence", [1, 0.9, 0.1, 0]],
-    ["Durable Semantic Memory", [0.95, 1, 0.05, 0]],
-    ["Credentials", [0, 0, 0, 1]],
-  ]));
+  return new StaticEmbeddingProvider(
+    configuration,
+    new Map([
+      ["Temporal Assertion Persistence", [1, 0.9, 0.1, 0]],
+      ["Durable Semantic Memory", [0.95, 1, 0.05, 0]],
+      ["Credentials", [0, 0, 0, 1]],
+    ]),
+  );
 }
 
 describe("the default", () => {
@@ -86,53 +102,78 @@ describe("the default", () => {
   });
 
   it("needs no configuration when embeddings are not enabled", () => {
-    expect(() => assertEmbeddingConfiguration({
-      embeddingsEnabled: false, allowRemoteEmbeddings: false,
-    })).not.toThrow();
+    expect(() =>
+      assertEmbeddingConfiguration({
+        embeddingsEnabled: false,
+        allowRemoteEmbeddings: false,
+      }),
+    ).not.toThrow();
   });
 });
 
 describe("the configuration guard", () => {
   it("refuses embeddings with no provider, and names the flag that fixes it", () => {
-    expect(() => assertEmbeddingConfiguration({
-      embeddingsEnabled: true, allowRemoteEmbeddings: false,
-    })).toThrow(/--embedding-provider/);
+    expect(() =>
+      assertEmbeddingConfiguration({
+        embeddingsEnabled: true,
+        allowRemoteEmbeddings: false,
+      }),
+    ).toThrow(/--embedding-provider/);
   });
 
   it("refuses a remote provider without the separate remote opt-in", () => {
-    expect(() => assertEmbeddingConfiguration({
-      embeddingsEnabled: true, allowRemoteEmbeddings: false, configuration: REMOTE,
-    })).toThrow(EmbeddingConfigurationError);
-    expect(() => assertEmbeddingConfiguration({
-      embeddingsEnabled: true, allowRemoteEmbeddings: false, configuration: REMOTE,
-    })).toThrow(/--allow-remote-embeddings/);
+    expect(() =>
+      assertEmbeddingConfiguration({
+        embeddingsEnabled: true,
+        allowRemoteEmbeddings: false,
+        configuration: REMOTE,
+      }),
+    ).toThrow(EmbeddingConfigurationError);
+    expect(() =>
+      assertEmbeddingConfiguration({
+        embeddingsEnabled: true,
+        allowRemoteEmbeddings: false,
+        configuration: REMOTE,
+      }),
+    ).toThrow(/--allow-remote-embeddings/);
   });
 
   it("accepts the same remote provider once the operator opts in", () => {
-    expect(() => assertEmbeddingConfiguration({
-      embeddingsEnabled: true, allowRemoteEmbeddings: true, configuration: REMOTE,
-    })).not.toThrow();
+    expect(() =>
+      assertEmbeddingConfiguration({
+        embeddingsEnabled: true,
+        allowRemoteEmbeddings: true,
+        configuration: REMOTE,
+      }),
+    ).not.toThrow();
   });
 
   it("refuses a remote endpoint that is not https", () => {
-    expect(() => assertEmbeddingConfiguration({
-      embeddingsEnabled: true,
-      allowRemoteEmbeddings: true,
-      configuration: { ...REMOTE, endpoint: "http://embeddings.example.com/v1" },
-    })).toThrow(/https:\/\//);
+    expect(() =>
+      assertEmbeddingConfiguration({
+        embeddingsEnabled: true,
+        allowRemoteEmbeddings: true,
+        configuration: { ...REMOTE, endpoint: "http://embeddings.example.com/v1" },
+      }),
+    ).toThrow(/https:\/\//);
   });
 
   it("lets a local provider run without the remote flag, because nothing leaves", () => {
-    expect(() => assertEmbeddingConfiguration({
-      embeddingsEnabled: true, allowRemoteEmbeddings: false, configuration: LOCAL,
-    })).not.toThrow();
+    expect(() =>
+      assertEmbeddingConfiguration({
+        embeddingsEnabled: true,
+        allowRemoteEmbeddings: false,
+        configuration: LOCAL,
+      }),
+    ).not.toThrow();
   });
 });
 
 describe("what gets embedded", () => {
   it("never embeds a secret-candidate document, and counts the refusal", async () => {
     const result = await runEmbeddings({
-      documents: documents(), provider: provider(LOCAL),
+      documents: documents(),
+      provider: provider(LOCAL),
       pairThreshold: DEFAULT_EMBEDDING_PAIR_THRESHOLD,
     });
     expect(result.report.secret_candidates_skipped).toBe(1);
@@ -146,7 +187,8 @@ describe("what gets embedded", () => {
 
   it("skips an artifact no decoder opened", async () => {
     const result = await runEmbeddings({
-      documents: documents(), provider: provider(LOCAL),
+      documents: documents(),
+      provider: provider(LOCAL),
       pairThreshold: DEFAULT_EMBEDDING_PAIR_THRESHOLD,
     });
     const embedded = new Set(result.report.vector_digests.map((entry) => entry.artifact_id));
@@ -162,7 +204,8 @@ describe("what gets embedded", () => {
 
   it("reports what was sent, without sending a path or any content", async () => {
     const result = await runEmbeddings({
-      documents: documents(), provider: provider(LOCAL),
+      documents: documents(),
+      provider: provider(LOCAL),
       pairThreshold: DEFAULT_EMBEDDING_PAIR_THRESHOLD,
     });
     expect(result.report.artifact_count_sent).toBe(2);
@@ -175,7 +218,8 @@ describe("what gets embedded", () => {
 
   it("puts vector digests in the report and never a raw vector", async () => {
     const result = await runEmbeddings({
-      documents: documents(), provider: provider(LOCAL),
+      documents: documents(),
+      provider: provider(LOCAL),
       pairThreshold: DEFAULT_EMBEDDING_PAIR_THRESHOLD,
     });
     for (const entry of result.report.vector_digests) {
@@ -190,7 +234,8 @@ describe("what gets embedded", () => {
 describe("similarity", () => {
   it("finds the paraphrase pair the lexical layer misses", async () => {
     const result = await runEmbeddings({
-      documents: documents(), provider: provider(LOCAL),
+      documents: documents(),
+      provider: provider(LOCAL),
       pairThreshold: DEFAULT_EMBEDDING_PAIR_THRESHOLD,
     });
     const pair = result.pairs.find(
@@ -205,8 +250,9 @@ describe("similarity", () => {
     expect(cosineSimilarity([1, 0], [-1, 0])).toBe(-1);
     expect(cosineSimilarity([0, 0], [1, 0])).toBe(0);
     expect(cosineSimilarity([1, 0], [1, 0, 0])).toBe(0);
-    expect(String(cosineSimilarity([1, 2], [2, 1])).split(".")[1]?.length ?? 0)
-      .toBeLessThanOrEqual(6);
+    expect(String(cosineSimilarity([1, 2], [2, 1])).split(".")[1]?.length ?? 0).toBeLessThanOrEqual(
+      6,
+    );
   });
 });
 
@@ -221,8 +267,11 @@ describe("chunking", () => {
 
   it("keeps artifact identity and a block id on every chunk", () => {
     const chunks = chunkDocument({
-      artifactId: "a", normalizedDocumentId: "normdoc:a",
-      title: "Title", headings: ["One", "Two"], body: "body text",
+      artifactId: "a",
+      normalizedDocumentId: "normdoc:a",
+      title: "Title",
+      headings: ["One", "Two"],
+      body: "body text",
     });
     expect(chunks.length).toBeGreaterThan(0);
     for (const chunk of chunks) {
@@ -240,19 +289,31 @@ describe("chunking", () => {
 describe("the cache", () => {
   it("is keyed on the document and the model, not on where the file lives", () => {
     const identity = {
-      provider: "p", model_id: "m", model_revision: null, dimension: 0, chunk_profile: "cp",
+      provider: "p",
+      model_id: "m",
+      model_revision: null,
+      dimension: 0,
+      chunk_profile: "cp",
     };
     const left = embeddingCacheKey({
-      normalizedDocumentId: "normdoc:x", artifactId: "one", chunkProfile: "cp", identity,
+      normalizedDocumentId: "normdoc:x",
+      artifactId: "one",
+      chunkProfile: "cp",
+      identity,
     });
     const right = embeddingCacheKey({
-      normalizedDocumentId: "normdoc:x", artifactId: "two", chunkProfile: "cp", identity,
+      normalizedDocumentId: "normdoc:x",
+      artifactId: "two",
+      chunkProfile: "cp",
+      identity,
     });
     // Same document, two artifacts: one key, so a duplicate is embedded once.
     expect(right).toBe(left);
 
     const otherModel = embeddingCacheKey({
-      normalizedDocumentId: "normdoc:x", artifactId: "one", chunkProfile: "cp",
+      normalizedDocumentId: "normdoc:x",
+      artifactId: "one",
+      chunkProfile: "cp",
       identity: { ...identity, model_id: "m2" },
     });
     expect(otherModel).not.toBe(left);
@@ -262,25 +323,34 @@ describe("the cache", () => {
     const store = new Map<string, number[]>();
     const cache: EmbeddingCache = {
       get: (key) => store.get(key),
-      put: (key, vector) => { store.set(key, vector); },
+      put: (key, vector) => {
+        store.set(key, vector);
+      },
     };
 
     let calls = 0;
     const counting = provider(LOCAL);
     const wrapped = {
       configuration: counting.configuration,
-      embed: async (text: string) => { calls += 1; return counting.embed(text); },
+      embed: async (text: string) => {
+        calls += 1;
+        return counting.embed(text);
+      },
     };
 
     const cold = await runEmbeddings({
-      documents: documents(), provider: wrapped, cache,
+      documents: documents(),
+      provider: wrapped,
+      cache,
       pairThreshold: DEFAULT_EMBEDDING_PAIR_THRESHOLD,
     });
     const coldCalls = calls;
     expect(coldCalls).toBeGreaterThan(0);
 
     const warm = await runEmbeddings({
-      documents: documents(), provider: wrapped, cache,
+      documents: documents(),
+      provider: wrapped,
+      cache,
       pairThreshold: DEFAULT_EMBEDDING_PAIR_THRESHOLD,
     });
     expect(calls).toBe(coldCalls);
@@ -297,7 +367,8 @@ describe("reproducibility", () => {
 
   it("records a digest of every returned vector, so a replay can be checked", async () => {
     const result = await runEmbeddings({
-      documents: documents(), provider: provider(REMOTE),
+      documents: documents(),
+      provider: provider(REMOTE),
       pairThreshold: DEFAULT_EMBEDDING_PAIR_THRESHOLD,
     });
     expect(result.report.reproducibility_class).toBe("provider_bound");
@@ -314,7 +385,10 @@ describe("a failing or malformed provider stops the pass", () => {
     readonly configuration = LOCAL;
     readonly calls: { text: string; at: number }[] = [];
     constructor(
-      private readonly answer: (text: string, call: number) => Promise<{ vector: number[]; observed_model_revision?: string }>,
+      private readonly answer: (
+        text: string,
+        call: number,
+      ) => Promise<{ vector: number[]; observed_model_revision?: string }>,
     ) {}
     async embed(text: string) {
       this.calls.push({ text, at: Date.now() });
@@ -328,11 +402,17 @@ describe("a failing or malformed provider stops the pass", () => {
   }
   const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
   const doc = (id: string, body: string): EmbeddableDocument => ({
-    artifact_id: id, normalized_document_id: `normdoc:${id}`, decoded: true,
-    is_secret_candidate: false, title: id, body,
+    artifact_id: id,
+    normalized_document_id: `normdoc:${id}`,
+    decoded: true,
+    is_secret_candidate: false,
+    title: id,
+    body,
   });
   const numbered = (count: number): EmbeddableDocument[] =>
-    Array.from({ length: count }, (_, i) => doc(`doc-${String(i + 1).padStart(2, "0")}`, `body ${i}`));
+    Array.from({ length: count }, (_, i) =>
+      doc(`doc-${String(i + 1).padStart(2, "0")}`, `body ${i}`),
+    );
 
   it("REG-WU-051-RC-080-a: a failure at width 4 starts no further request and rejects once workers settle", async () => {
     let failedAt = Number.POSITIVE_INFINITY;
@@ -345,9 +425,14 @@ describe("a failing or malformed provider stops the pass", () => {
       }
       return { vector: [1, 0, 0] };
     });
-    await expect(runEmbeddings({
-      documents: numbered(20), provider: scripted, pairThreshold: 0.5, maxParallelRequests: 4,
-    })).rejects.toBe(failure);
+    await expect(
+      runEmbeddings({
+        documents: numbered(20),
+        provider: scripted,
+        pairThreshold: 0.5,
+        maxParallelRequests: 4,
+      }),
+    ).rejects.toBe(failure);
     const callsAtRejection = scripted.calls.length;
     // Give any stray worker time to show itself.
     await delay(60);
@@ -362,10 +447,19 @@ describe("a failing or malformed provider stops the pass", () => {
       if (text.startsWith("doc-03")) throw new Error("refused");
       return { vector: [1, 0, 0] };
     });
-    await expect(runEmbeddings({
-      documents: numbered(20), provider: scripted, pairThreshold: 0.5, maxParallelRequests: 1,
-    })).rejects.toThrow("refused");
-    expect(scripted.calls.map((call) => call.text.slice(0, 6))).toEqual(["doc-01", "doc-02", "doc-03"]);
+    await expect(
+      runEmbeddings({
+        documents: numbered(20),
+        provider: scripted,
+        pairThreshold: 0.5,
+        maxParallelRequests: 1,
+      }),
+    ).rejects.toThrow("refused");
+    expect(scripted.calls.map((call) => call.text.slice(0, 6))).toEqual([
+      "doc-01",
+      "doc-02",
+      "doc-03",
+    ]);
   });
 
   it("REG-WU-051-RC-080-c: a successful pass says the same thing at width 1 and width 8", async () => {
@@ -373,10 +467,16 @@ describe("a failing or malformed provider stops the pass", () => {
       vector: [text.length % 7, (text.length * 3) % 5, 1],
     });
     const one = await runEmbeddings({
-      documents: numbered(12), provider: new ScriptedProvider(answer), pairThreshold: 0.1, maxParallelRequests: 1,
+      documents: numbered(12),
+      provider: new ScriptedProvider(answer),
+      pairThreshold: 0.1,
+      maxParallelRequests: 1,
     });
     const eight = await runEmbeddings({
-      documents: numbered(12), provider: new ScriptedProvider(answer), pairThreshold: 0.1, maxParallelRequests: 8,
+      documents: numbered(12),
+      provider: new ScriptedProvider(answer),
+      pairThreshold: 0.1,
+      maxParallelRequests: 8,
     });
     expect(JSON.stringify(eight)).toBe(JSON.stringify(one));
   });
@@ -399,10 +499,14 @@ describe("a failing or malformed provider stops the pass", () => {
       await delay(25);
       return { vector: [0, 1] };
     });
-    await expect(runEmbeddings({
-      documents: [doc("a-doc", long("alphaword")), doc("b-doc", long("betaword"))],
-      provider: scripted, pairThreshold: 0.5, maxParallelRequests: 2,
-    })).rejects.toThrow("second chunk refused");
+    await expect(
+      runEmbeddings({
+        documents: [doc("a-doc", long("alphaword")), doc("b-doc", long("betaword"))],
+        provider: scripted,
+        pairThreshold: 0.5,
+        maxParallelRequests: 2,
+      }),
+    ).rejects.toThrow("second chunk refused");
     await delay(60);
     const betaAfter = scripted.calls.filter(
       (call) => call.text.includes("betaword") && call.at > failedAt,
@@ -415,9 +519,13 @@ describe("a failing or malformed provider stops the pass", () => {
     const scripted = new ScriptedProvider(async (text) => ({
       vector: text.startsWith("doc-01") ? [1, 0, 0] : [1, 0],
     }));
-    await expect(runEmbeddings({
-      documents: numbered(2), provider: scripted, pairThreshold: 0.5,
-    })).rejects.toThrow(/dimension/);
+    await expect(
+      runEmbeddings({
+        documents: numbered(2),
+        provider: scripted,
+        pairThreshold: 0.5,
+      }),
+    ).rejects.toThrow(/dimension/);
   });
 
   it("REG-WU-051-RC-084-b: one document's chunks in mixed dimensions fail rather than average", async () => {
@@ -425,16 +533,24 @@ describe("a failing or malformed provider stops the pass", () => {
     const scripted = new ScriptedProvider(async (_text, call) => ({
       vector: call === 1 ? [1, 0, 0] : [0, 1],
     }));
-    await expect(runEmbeddings({
-      documents: [doc("mixed", long)], provider: scripted, pairThreshold: 0.5,
-    })).rejects.toThrow(/dimension/);
+    await expect(
+      runEmbeddings({
+        documents: [doc("mixed", long)],
+        provider: scripted,
+        pairThreshold: 0.5,
+      }),
+    ).rejects.toThrow(/dimension/);
   });
 
   it("REG-WU-051-RC-084-b: a non-finite or mismatched cached vector is refused too", async () => {
     const scripted = new ScriptedProvider(async () => ({ vector: [Number.NaN, 1, 0] }));
-    await expect(runEmbeddings({
-      documents: numbered(1), provider: scripted, pairThreshold: 0.5,
-    })).rejects.toThrow(/non-finite/);
+    await expect(
+      runEmbeddings({
+        documents: numbered(1),
+        provider: scripted,
+        pairThreshold: 0.5,
+      }),
+    ).rejects.toThrow(/non-finite/);
 
     const cache: EmbeddingCache = {
       get: (key) => (key.length > 0 ? [1, 0] : undefined),
@@ -445,15 +561,23 @@ describe("a failing or malformed provider stops the pass", () => {
       get: () => (second++ === 0 ? [1, 0, 0] : [1, 0]),
       put: () => undefined,
     };
-    await expect(runEmbeddings({
-      documents: numbered(2), provider: new ScriptedProvider(async () => ({ vector: [1, 0, 0] })),
-      cache: cachedThenFresh, pairThreshold: 0.5,
-    })).rejects.toThrow(/dimension/);
+    await expect(
+      runEmbeddings({
+        documents: numbered(2),
+        provider: new ScriptedProvider(async () => ({ vector: [1, 0, 0] })),
+        cache: cachedThenFresh,
+        pairThreshold: 0.5,
+      }),
+    ).rejects.toThrow(/dimension/);
     // A consistent cache still replays.
-    await expect(runEmbeddings({
-      documents: numbered(2), provider: new ScriptedProvider(async () => ({ vector: [1, 0] })),
-      cache, pairThreshold: 0.5,
-    })).resolves.toBeDefined();
+    await expect(
+      runEmbeddings({
+        documents: numbered(2),
+        provider: new ScriptedProvider(async () => ({ vector: [1, 0] })),
+        cache,
+        pairThreshold: 0.5,
+      }),
+    ).resolves.toBeDefined();
   });
 
   it("REG-WU-051-RC-084-c: cosine of huge vectors stays finite", () => {
@@ -468,20 +592,32 @@ describe("a failing or malformed provider stops the pass", () => {
   });
 
   it("REG-WU-051-RC-085-c: the configured revision stays the identity; an observed one is recorded beside it", async () => {
-    const configured = new ScriptedProvider(async () => ({ vector: [1, 0], observed_model_revision: "r2" }));
+    const configured = new ScriptedProvider(async () => ({
+      vector: [1, 0],
+      observed_model_revision: "r2",
+    }));
     Object.assign(configured, { configuration: { ...LOCAL, model_revision: "r1" } });
-    const run = await runEmbeddings({ documents: numbered(2), provider: configured, pairThreshold: 0.5 });
+    const run = await runEmbeddings({
+      documents: numbered(2),
+      provider: configured,
+      pairThreshold: 0.5,
+    });
     expect(run.report.model_revision).toBe("r1");
     expect(run.report.reported_model_revision).toBe("r2");
   });
 
   it("REG-WU-051-RC-085-c: answers disagreeing on the revision within one pass fail it", async () => {
     const scripted = new ScriptedProvider(async (_text, call) => ({
-      vector: [1, 0], observed_model_revision: call === 1 ? "r2" : "r3",
+      vector: [1, 0],
+      observed_model_revision: call === 1 ? "r2" : "r3",
     }));
-    await expect(runEmbeddings({
-      documents: numbered(2), provider: scripted, pairThreshold: 0.5,
-    })).rejects.toThrow(/more than one model revision/);
+    await expect(
+      runEmbeddings({
+        documents: numbered(2),
+        provider: scripted,
+        pairThreshold: 0.5,
+      }),
+    ).rejects.toThrow(/more than one model revision/);
   });
 
   it("REG-WU-051-RC-085-d: a disabled pass reports no observed revision", () => {

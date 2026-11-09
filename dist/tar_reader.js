@@ -26,8 +26,8 @@ function readField(header, start, width) {
  */
 function readName(header) {
     const name = readField(header, 0, 100);
-    const posix = header.subarray(257, 263).equals(POSIX_USTAR_MAGIC)
-        && header.subarray(263, 265).equals(POSIX_USTAR_VERSION);
+    const posix = header.subarray(257, 263).equals(POSIX_USTAR_MAGIC) &&
+        header.subarray(263, 265).equals(POSIX_USTAR_VERSION);
     if (posix) {
         const prefix = readField(header, 345, 155);
         if (prefix.length > 0)
@@ -73,7 +73,13 @@ function readTarArchive(bytes) {
             return { ok: false, hold: "archive.entry_kind_unknown" };
         const content = bytes.subarray(offset + tar_format_1.TAR_BLOCK_SIZE, offset + tar_format_1.TAR_BLOCK_SIZE + size);
         const rawRecord = bytes.subarray(offset, offset + tar_format_1.TAR_BLOCK_SIZE + padded);
-        members.push({ name: readName(header), type, size, content: Buffer.from(content), rawRecord: Buffer.from(rawRecord) });
+        members.push({
+            name: readName(header),
+            type,
+            size,
+            content: Buffer.from(content),
+            rawRecord: Buffer.from(rawRecord),
+        });
         offset += tar_format_1.TAR_BLOCK_SIZE + padded;
     }
     return { ok: false, hold: "archive.tar_truncated" };

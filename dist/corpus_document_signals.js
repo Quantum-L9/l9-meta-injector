@@ -109,8 +109,7 @@ function buildCorpusDocumentSignals(input) {
             }
         }
     }
-    const accumulators = [...byFormat.values()]
-        .sort((a, b) => (0, ordering_1.compareCodePoints)(a.format, b.format));
+    const accumulators = [...byFormat.values()].sort((a, b) => (0, ordering_1.compareCodePoints)(a.format, b.format));
     const decodedTotal = accumulators.reduce((sum, entry) => sum + entry.decoded, 0);
     return {
         schema: exports.CORPUS_DOCUMENT_SIGNALS_SCHEMA,
@@ -153,10 +152,10 @@ function buildCorpusDocumentSignals(input) {
 }
 /** Total order over evidence records, so the listing never depends on run order. */
 function compareRecords(left, right) {
-    return ((0, ordering_1.compareCodePoints)(left.source_path, right.source_path)
-        || (0, ordering_1.compareCodePoints)(left.block_id, right.block_id)
-        || (0, ordering_1.compareCodePoints)(left.predicate, right.predicate)
-        || (0, ordering_1.compareCodePoints)(left.object, right.object));
+    return ((0, ordering_1.compareCodePoints)(left.source_path, right.source_path) ||
+        (0, ordering_1.compareCodePoints)(left.block_id, right.block_id) ||
+        (0, ordering_1.compareCodePoints)(left.predicate, right.predicate) ||
+        (0, ordering_1.compareCodePoints)(left.object, right.object));
 }
 function toRecord(signal) {
     return {

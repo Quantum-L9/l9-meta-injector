@@ -30,10 +30,18 @@ const STEPS = [
 
 for (const [command, args] of STEPS) {
   process.stdout.write(`${LABEL}: running ${command} ${args.join(" ")}\n`);
-  const result = spawnSync(command, args, { cwd: REPO, stdio: "inherit", shell: process.platform === "win32" });
+  const result = spawnSync(command, args, {
+    cwd: REPO,
+    stdio: "inherit",
+    shell: process.platform === "win32",
+  });
   if (result.status !== 0) {
-    process.stderr.write(`${LABEL}: FAILED at '${command} ${args.join(" ")}' (exit ${result.status ?? "signal"})\n`);
+    process.stderr.write(
+      `${LABEL}: FAILED at '${command} ${args.join(" ")}' (exit ${result.status ?? "signal"})\n`,
+    );
     process.exit(result.status ?? 1);
   }
 }
-process.stdout.write(`${LABEL}: OK — review 'git status', then commit the dependency change and CURRENT_VALIDATION_REPORT.md\n`);
+process.stdout.write(
+  `${LABEL}: OK — review 'git status', then commit the dependency change and CURRENT_VALIDATION_REPORT.md\n`,
+);

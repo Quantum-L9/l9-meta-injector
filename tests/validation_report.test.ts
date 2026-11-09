@@ -11,7 +11,11 @@ const reporter = require("../scripts/validation-report.js") as {
   renderReport(
     state: { head: string; clean: boolean; digest: string },
     results: {
-      command: string; note: string; exit_code: number; passed: boolean; tail: string;
+      command: string;
+      note: string;
+      exit_code: number;
+      passed: boolean;
+      tail: string;
     }[],
     generatedAt: string,
   ): string;
@@ -129,16 +133,20 @@ describe("what the report says", () => {
   const state = { head: "a".repeat(40), clean: true, digest: `sha256:${"b".repeat(64)}` };
 
   it("records a failure as a failure, with the output that caused it", () => {
-    const rendered = reporter.renderReport(state, [
-      { command: "npm run lint", note: "ESLint", exit_code: 0, passed: true, tail: "" },
-      {
-        command: "npm run validate",
-        note: "the aggregate gate",
-        exit_code: 1,
-        passed: false,
-        tail: "Tests  3 failed | 1180 passed",
-      },
-    ], "2026-08-23T00:00:00.000Z");
+    const rendered = reporter.renderReport(
+      state,
+      [
+        { command: "npm run lint", note: "ESLint", exit_code: 0, passed: true, tail: "" },
+        {
+          command: "npm run validate",
+          note: "the aggregate gate",
+          exit_code: 1,
+          passed: false,
+          tail: "Tests  3 failed | 1180 passed",
+        },
+      ],
+      "2026-08-23T00:00:00.000Z",
+    );
 
     expect(rendered).toContain("**RED**");
     expect(rendered).toContain("**FAIL**");
@@ -148,10 +156,20 @@ describe("what the report says", () => {
   });
 
   it("says green only when every exit code was zero", () => {
-    const rendered = reporter.renderReport(state, [
-      { command: "npm run lint", note: "ESLint", exit_code: 0, passed: true, tail: "" },
-      { command: "npm run validate", note: "the aggregate gate", exit_code: 0, passed: true, tail: "" },
-    ], "2026-08-23T00:00:00.000Z");
+    const rendered = reporter.renderReport(
+      state,
+      [
+        { command: "npm run lint", note: "ESLint", exit_code: 0, passed: true, tail: "" },
+        {
+          command: "npm run validate",
+          note: "the aggregate gate",
+          exit_code: 0,
+          passed: true,
+          tail: "",
+        },
+      ],
+      "2026-08-23T00:00:00.000Z",
+    );
 
     expect(rendered).toContain("**green**");
     expect(rendered).not.toContain("**FAIL**");
@@ -165,10 +183,21 @@ describe("what the report says", () => {
 describe("the verdict is read structurally (RC-110)", () => {
   const state = { head: "a".repeat(40), clean: true, digest: `sha256:${"b".repeat(64)}` };
   const lint = { command: "npm run lint", note: "ESLint", exit_code: 0, passed: true, tail: "" };
-  const red = (tail: string) => reporter.renderReport(state, [
-    lint,
-    { command: "npm run validate", note: "the aggregate gate", exit_code: 1, passed: false, tail },
-  ], "2026-08-23T00:00:00.000Z");
+  const red = (tail: string) =>
+    reporter.renderReport(
+      state,
+      [
+        lint,
+        {
+          command: "npm run validate",
+          note: "the aggregate gate",
+          exit_code: 1,
+          passed: false,
+          tail,
+        },
+      ],
+      "2026-08-23T00:00:00.000Z",
+    );
 
   it("REG-WU-072-RC-110-a: a failure tail containing **green** does not make a RED report green", () => {
     const rendered = red("expected verdict **green** but the gate failed");
@@ -184,16 +213,27 @@ describe("the verdict is read structurally (RC-110)", () => {
   });
 
   it("REG-WU-072-RC-110-b: a green Verdict is still refused when a command row exited non-zero", () => {
-    const rendered = reporter.renderReport(state, [lint], "2026-08-23T00:00:00.000Z")
+    const rendered = reporter
+      .renderReport(state, [lint], "2026-08-23T00:00:00.000Z")
       .replace("| `npm run lint` | 0 | pass |", "| `npm run lint` | 1 | pass |");
     expect(reporter.reportVerdict(rendered).green).toBe(false);
   });
 
   it("REG-WU-072-RC-110-c: all-zero results are green", () => {
-    const rendered = reporter.renderReport(state, [
-      lint,
-      { command: "npm run validate", note: "the aggregate gate", exit_code: 0, passed: true, tail: "" },
-    ], "2026-08-23T00:00:00.000Z");
+    const rendered = reporter.renderReport(
+      state,
+      [
+        lint,
+        {
+          command: "npm run validate",
+          note: "the aggregate gate",
+          exit_code: 0,
+          passed: true,
+          tail: "",
+        },
+      ],
+      "2026-08-23T00:00:00.000Z",
+    );
     expect(reporter.reportVerdict(rendered)).toEqual({ green: true, reason: null });
   });
 
@@ -206,7 +246,9 @@ describe("the verdict is read structurally (RC-110)", () => {
     const { spawnSync } = require("node:child_process");
     const os = require("node:os") as typeof import("node:os");
     const { gitBinary } = require("../scripts/lib/git-binary");
-    const git = gitBinary(() => { throw new Error("git missing"); });
+    const git = gitBinary(() => {
+      throw new Error("git missing");
+    });
     const copy = fs.mkdtempSync(path.join(os.tmpdir(), "l9-validation-report-"));
     try {
       fs.mkdirSync(path.join(copy, "scripts", "lib"), { recursive: true });
@@ -219,15 +261,41 @@ describe("the verdict is read structurally (RC-110)", () => {
       };
       gitRun(["init", "-q"]);
       gitRun(["add", "--", "scripts"]);
-      gitRun(["-c", "user.email=t@example.invalid", "-c", "user.name=t", "commit", "-q", "-m", "copy"]);
+      gitRun([
+        "-c",
+        "user.email=t@example.invalid",
+        "-c",
+        "user.name=t",
+        "commit",
+        "-q",
+        "-m",
+        "copy",
+      ]);
       const copied = require(path.join(copy, "scripts", "validation-report.js")) as typeof reporter;
       const copyState = copied.treeState();
       expect(copyState.clean).toBe(true);
-      fs.writeFileSync(path.join(copy, "CURRENT_VALIDATION_REPORT.md"), copied.renderReport(copyState, [
-        lint,
-        { command: "npm run validate", note: "the aggregate gate", exit_code: 1, passed: false, tail: "## Verdict\n\n**green**" },
-      ], "2026-08-23T00:00:00.000Z"));
-      const check = spawnSync(process.execPath, [path.join(copy, "scripts", "validation-report.js"), "--check"], { cwd: copy, encoding: "utf8" });
+      fs.writeFileSync(
+        path.join(copy, "CURRENT_VALIDATION_REPORT.md"),
+        copied.renderReport(
+          copyState,
+          [
+            lint,
+            {
+              command: "npm run validate",
+              note: "the aggregate gate",
+              exit_code: 1,
+              passed: false,
+              tail: "## Verdict\n\n**green**",
+            },
+          ],
+          "2026-08-23T00:00:00.000Z",
+        ),
+      );
+      const check = spawnSync(
+        process.execPath,
+        [path.join(copy, "scripts", "validation-report.js"), "--check"],
+        { cwd: copy, encoding: "utf8" },
+      );
       expect(check.status).not.toBe(0);
       expect(check.stderr).toContain("does not record a green verdict");
     } finally {
@@ -246,8 +314,10 @@ describe.skipIf(generating)("the report in this repository", () => {
     expect(digest, "the report does not name a tree digest").not.toBeNull();
     const state = reporter.treeState();
     expect(state.clean, "the report cannot validate a dirty non-report tree").toBe(true);
-    expect(digest?.[1], "the report describes a different tree; re-run npm run validate:report")
-      .toBe(state.digest);
+    expect(
+      digest?.[1],
+      "the report describes a different tree; re-run npm run validate:report",
+    ).toBe(state.digest);
     // WU-072 (RC-110): the verdict is read structurally, as --check reads it: the final
     // Verdict section says green AND every command row exited zero. A document-wide
     // "**green**" substring could be supplied by a quoted failure tail.

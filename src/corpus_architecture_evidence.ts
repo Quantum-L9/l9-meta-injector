@@ -33,7 +33,6 @@
 // whose role is undeclared has every class selected, because an unknown role is
 // not a reason to hide what the document said.
 import { canonicalCorpusJson } from "./corpus_analysis";
-import type { DocumentBlockView } from "./extractors/document_blocks";
 import {
   ARCHITECTURE_STATEMENT_CLASSES,
   ARCHITECTURE_STATEMENT_EXTRACTOR_ID,
@@ -45,6 +44,7 @@ import {
   architectureStatementRules,
   readArchitectureStatements,
 } from "./extractors/architecture_statements";
+import type { DocumentBlockView } from "./extractors/document_blocks";
 import { compareCodePoints } from "./ordering";
 import { semanticHash, sha256TextPrefixed, stableId } from "./repository_model";
 
@@ -67,12 +67,12 @@ export const ARCHITECTURE_SELECTION_PROFILE_ID = "architecture-development/v1";
 /** What every record is, epistemically. Stated on each one so no reader has to remember. */
 export const ARCHITECTURE_EVIDENCE_EPISTEMIC_CLASS = "source-declared";
 export const ARCHITECTURE_EVIDENCE_STATEMENT =
-  "Every record is a statement a document explicitly declared about itself, read from a "
-  + "labelled field, a labelled list or a labelled section at the cited coordinate. None is "
-  + "verified architecture: a decision_statement is a document recording a decision, not an "
-  + "accepted ADR, an authoritative contract or an approved implementation. Contradictory "
-  + "declarations are all retained. The selection profile marks which classes a reader of "
-  + "this kind of document is looking for; it removes nothing.";
+  "Every record is a statement a document explicitly declared about itself, read from a " +
+  "labelled field, a labelled list or a labelled section at the cited coordinate. None is " +
+  "verified architecture: a decision_statement is a document recording a decision, not an " +
+  "accepted ADR, an authoritative contract or an approved implementation. Contradictory " +
+  "declarations are all retained. The selection profile marks which classes a reader of " +
+  "this kind of document is looking for; it removes nothing.";
 
 /**
  * The roles the selection profile recognizes, each from explicit evidence only.
@@ -336,27 +336,33 @@ export interface BuildArchitectureEvidenceInput {
 }
 
 /** Total order over records. `evidence_id` last makes it total. */
-function compareRecords(left: ArchitectureEvidenceRecord, right: ArchitectureEvidenceRecord): number {
+function compareRecords(
+  left: ArchitectureEvidenceRecord,
+  right: ArchitectureEvidenceRecord,
+): number {
   return (
-    compareCodePoints(left.artifact_id, right.artifact_id)
-    || compareCodePoints(left.block_id, right.block_id)
-    || (left.unit_index ?? -1) - (right.unit_index ?? -1)
-    || compareCodePoints(left.statement_class, right.statement_class)
-    || compareCodePoints(left.declared_text, right.declared_text)
-    || compareCodePoints(left.evidence_id, right.evidence_id)
+    compareCodePoints(left.artifact_id, right.artifact_id) ||
+    compareCodePoints(left.block_id, right.block_id) ||
+    (left.unit_index ?? -1) - (right.unit_index ?? -1) ||
+    compareCodePoints(left.statement_class, right.statement_class) ||
+    compareCodePoints(left.declared_text, right.declared_text) ||
+    compareCodePoints(left.evidence_id, right.evidence_id)
   );
 }
 
 function compareRefs(left: WorkEvidenceRef, right: WorkEvidenceRef): number {
   return (
-    compareCodePoints(left.predicate, right.predicate)
-    || compareCodePoints(left.object, right.object)
-    || compareCodePoints(left.assertion_id, right.assertion_id)
+    compareCodePoints(left.predicate, right.predicate) ||
+    compareCodePoints(left.object, right.object) ||
+    compareCodePoints(left.assertion_id, right.assertion_id)
   );
 }
 
 /** Assertions of one predicate, as refs, in a fixed order. */
-function refsFor(assertions: readonly ExistingWorkAssertion[], predicate: string): WorkEvidenceRef[] {
+function refsFor(
+  assertions: readonly ExistingWorkAssertion[],
+  predicate: string,
+): WorkEvidenceRef[] {
   return assertions
     .filter((assertion) => assertion.predicate === predicate)
     .map((assertion) => ({
@@ -368,7 +374,10 @@ function refsFor(assertions: readonly ExistingWorkAssertion[], predicate: string
 }
 
 /** The lowest-ordered ref for a predicate, as the one example a role cites. */
-function exampleRef(assertions: readonly ExistingWorkAssertion[], predicate: string): WorkEvidenceRef | undefined {
+function exampleRef(
+  assertions: readonly ExistingWorkAssertion[],
+  predicate: string,
+): WorkEvidenceRef | undefined {
   return refsFor(assertions, predicate)[0];
 }
 
@@ -438,9 +447,7 @@ function selectForDocument(assertions: readonly ExistingWorkAssertion[]): Docume
   }
 
   roles.sort(compareCodePoints);
-  roleEvidence.sort(
-    (a, b) => compareCodePoints(a.role, b.role) || compareRefs(a, b),
-  );
+  roleEvidence.sort((a, b) => compareCodePoints(a.role, b.role) || compareRefs(a, b));
   return { roles, roleEvidence, reasonsByClass };
 }
 
@@ -449,7 +456,9 @@ export function renderArchitectureEvidenceRecord(record: ArchitectureEvidenceRec
   return canonicalCorpusJson(record, 0);
 }
 
-function tallyClasses(records: readonly ArchitectureEvidenceRecord[]): ArchitectureEvidenceManifest["by_class"] {
+function tallyClasses(
+  records: readonly ArchitectureEvidenceRecord[],
+): ArchitectureEvidenceManifest["by_class"] {
   return ARCHITECTURE_STATEMENT_CLASSES.map((statementClass) => {
     const matching = records.filter((record) => record.statement_class === statementClass);
     return {
@@ -460,7 +469,9 @@ function tallyClasses(records: readonly ArchitectureEvidenceRecord[]): Architect
   });
 }
 
-function tallyFormats(records: readonly ArchitectureEvidenceRecord[]): ArchitectureEvidenceManifest["by_format"] {
+function tallyFormats(
+  records: readonly ArchitectureEvidenceRecord[],
+): ArchitectureEvidenceManifest["by_format"] {
   const byFormat = new Map<string, { records: number; documents: Set<string> }>();
   for (const record of records) {
     const entry = byFormat.get(record.format) ?? { records: 0, documents: new Set<string>() };
@@ -469,11 +480,17 @@ function tallyFormats(records: readonly ArchitectureEvidenceRecord[]): Architect
     byFormat.set(record.format, entry);
   }
   return [...byFormat.entries()]
-    .map(([format, entry]) => ({ format, document_count: entry.documents.size, record_count: entry.records }))
+    .map(([format, entry]) => ({
+      format,
+      document_count: entry.documents.size,
+      record_count: entry.records,
+    }))
     .sort((a, b) => compareCodePoints(a.format, b.format));
 }
 
-function tallyRoles(records: readonly ArchitectureEvidenceRecord[]): ArchitectureEvidenceManifest["by_role"] {
+function tallyRoles(
+  records: readonly ArchitectureEvidenceRecord[],
+): ArchitectureEvidenceManifest["by_role"] {
   const byRole = new Map<string, Set<string>>();
   for (const record of records) {
     for (const role of record.selection.roles) {
@@ -487,7 +504,9 @@ function tallyRoles(records: readonly ArchitectureEvidenceRecord[]): Architectur
     .sort((a, b) => compareCodePoints(a.role, b.role));
 }
 
-function tallyForms(records: readonly ArchitectureEvidenceRecord[]): ArchitectureEvidenceManifest["by_recognition_form"] {
+function tallyForms(
+  records: readonly ArchitectureEvidenceRecord[],
+): ArchitectureEvidenceManifest["by_recognition_form"] {
   const byForm = new Map<string, number>();
   for (const record of records) {
     byForm.set(record.recognition.form, (byForm.get(record.recognition.form) ?? 0) + 1);
@@ -502,10 +521,10 @@ function compareDiagnostics(
   right: ArchitectureEvidenceDiagnosticRecord,
 ): number {
   return (
-    compareCodePoints(left.artifact_id, right.artifact_id)
-    || compareCodePoints(left.block_id, right.block_id)
-    || compareCodePoints(left.code, right.code)
-    || compareCodePoints(left.message, right.message)
+    compareCodePoints(left.artifact_id, right.artifact_id) ||
+    compareCodePoints(left.block_id, right.block_id) ||
+    compareCodePoints(left.code, right.code) ||
+    compareCodePoints(left.message, right.message)
   );
 }
 
@@ -527,7 +546,11 @@ export function buildArchitectureEvidenceExport(
   for (const document of input.documents) {
     const reading = readArchitectureStatements(document.blocks);
     for (const diagnostic of reading.diagnostics) {
-      diagnostics.push({ ...diagnostic, artifact_id: document.artifactId, source_path: document.sourcePath });
+      diagnostics.push({
+        ...diagnostic,
+        artifact_id: document.artifactId,
+        source_path: document.sourcePath,
+      });
     }
     diagnosticsOmitted += reading.diagnostics_omitted;
     if (reading.statements.length === 0) continue;
@@ -536,13 +559,14 @@ export function buildArchitectureEvidenceExport(
     const workContext: ArchitectureEvidenceRecord["work_context"] = {
       kinds: refsFor(document.workAssertions, "work.kind"),
       statuses: refsFor(document.workAssertions, "work.status"),
-      applicability: APPLICABILITY_PREDICATES.flatMap((predicate) => refsFor(document.workAssertions, predicate)),
-      handoff: HANDOFF_PREDICATES
-        .map((predicate) => ({
-          predicate,
-          count: document.workAssertions.filter((assertion) => assertion.predicate === predicate).length,
-        }))
-        .filter((entry) => entry.count > 0),
+      applicability: APPLICABILITY_PREDICATES.flatMap((predicate) =>
+        refsFor(document.workAssertions, predicate),
+      ),
+      handoff: HANDOFF_PREDICATES.map((predicate) => ({
+        predicate,
+        count: document.workAssertions.filter((assertion) => assertion.predicate === predicate)
+          .length,
+      })).filter((entry) => entry.count > 0),
     };
 
     for (const statement of reading.statements) {
@@ -568,7 +592,10 @@ export function buildArchitectureEvidenceExport(
         decoder_version: document.decoderVersion,
         block_id: statement.block.block_id,
         block_kind: statement.block.kind,
-        structured_locator: architectureStatementLocator(statement.block, statement.unit_index) as unknown as Record<string, unknown>,
+        structured_locator: architectureStatementLocator(
+          statement.block,
+          statement.unit_index,
+        ) as unknown as Record<string, unknown>,
         unit_index: statement.unit_index,
         statement_class: statement.statement_class,
         declared_text: statement.declared_text,
@@ -597,15 +624,17 @@ export function buildArchitectureEvidenceExport(
   for (const record of records) {
     if (seen.has(record.evidence_id)) {
       throw new Error(
-        `architecture-evidence: duplicate evidence_id ${record.evidence_id} `
-        + `(${record.source_path} ${record.statement_class}); the payload must carry each statement once`,
+        `architecture-evidence: duplicate evidence_id ${record.evidence_id} ` +
+          `(${record.source_path} ${record.statement_class}); the payload must carry each statement once`,
       );
     }
     seen.add(record.evidence_id);
   }
   diagnostics.sort(compareDiagnostics);
 
-  const payloadJsonl = records.map((record) => `${renderArchitectureEvidenceRecord(record)}\n`).join("");
+  const payloadJsonl = records
+    .map((record) => `${renderArchitectureEvidenceRecord(record)}\n`)
+    .join("");
   const manifest: ArchitectureEvidenceManifest = {
     schema: ARCHITECTURE_EVIDENCE_MANIFEST_SCHEMA,
     corpus_source_snapshot_id: input.corpusSourceSnapshotId,
@@ -646,7 +675,9 @@ export function buildArchitectureEvidenceExport(
 }
 
 /** The snapshot-sized reference to a payload. */
-export function architectureEvidenceRef(manifest: ArchitectureEvidenceManifest): ArchitectureEvidenceRef {
+export function architectureEvidenceRef(
+  manifest: ArchitectureEvidenceManifest,
+): ArchitectureEvidenceRef {
   return {
     schema: ARCHITECTURE_EVIDENCE_SCHEMA,
     manifest_ref: ARCHITECTURE_EVIDENCE_MANIFEST_FILE,
@@ -667,9 +698,10 @@ export interface VerifyArchitectureEvidenceExportInput {
   knownNormalizedDocumentIds: ReadonlySet<string>;
 }
 
-function readPayloadRecords(
-  payloadJsonl: string,
-): { records: ArchitectureEvidenceRecord[]; problems: string[] } {
+function readPayloadRecords(payloadJsonl: string): {
+  records: ArchitectureEvidenceRecord[];
+  problems: string[];
+} {
   const problems: string[] = [];
   const lines = payloadJsonl.length === 0 ? [] : payloadJsonl.split("\n");
   if (payloadJsonl.length > 0 && lines[lines.length - 1] !== "") {
@@ -707,38 +739,67 @@ export function verifyArchitectureEvidenceExport(
   const { records, problems } = readPayloadRecords(payloadJsonl);
 
   if (records.length !== manifest.record_count) {
-    problems.push(`manifest says ${manifest.record_count} record(s) and the payload carries ${records.length}`);
+    problems.push(
+      `manifest says ${manifest.record_count} record(s) and the payload carries ${records.length}`,
+    );
   }
   const byteLength = Buffer.byteLength(payloadJsonl, "utf8");
   if (byteLength !== manifest.payload_byte_length) {
-    problems.push(`manifest says ${manifest.payload_byte_length} byte(s) and the payload is ${byteLength}`);
+    problems.push(
+      `manifest says ${manifest.payload_byte_length} byte(s) and the payload is ${byteLength}`,
+    );
   }
   const artifactHash = sha256TextPrefixed(payloadJsonl);
   if (artifactHash !== manifest.payload_artifact_hash) {
-    problems.push(`payload artifact hash ${artifactHash} does not match the manifest's ${manifest.payload_artifact_hash}`);
+    problems.push(
+      `payload artifact hash ${artifactHash} does not match the manifest's ${manifest.payload_artifact_hash}`,
+    );
   }
   if (records.length === manifest.record_count) {
     const semanticHashValue = sha256TextPrefixed(
       canonicalCorpusJson({ schema: ARCHITECTURE_EVIDENCE_SCHEMA, records }, 0),
     );
     if (semanticHashValue !== manifest.payload_semantic_hash) {
-      problems.push(`payload semantic hash ${semanticHashValue} does not match the manifest's ${manifest.payload_semantic_hash}`);
+      problems.push(
+        `payload semantic hash ${semanticHashValue} does not match the manifest's ${manifest.payload_semantic_hash}`,
+      );
     }
     const selected = records.filter((record) => record.selection?.selected === true).length;
     if (selected !== manifest.selected_record_count) {
-      problems.push(`manifest selected_record_count is ${manifest.selected_record_count} and the payload marks ${selected} selected`);
+      problems.push(
+        `manifest selected_record_count is ${manifest.selected_record_count} and the payload marks ${selected} selected`,
+      );
     }
     const documentCount = new Set(records.map((record) => record.artifact_id)).size;
     if (documentCount !== manifest.document_count) {
-      problems.push(`manifest document_count is ${manifest.document_count} and the payload records name ${documentCount} distinct artifact(s)`);
+      problems.push(
+        `manifest document_count is ${manifest.document_count} and the payload records name ${documentCount} distinct artifact(s)`,
+      );
     }
     for (const [name, expected, actual] of [
-      ["by_class", canonicalCorpusJson(tallyClasses(records), 0), canonicalCorpusJson(manifest.by_class, 0)],
-      ["by_format", canonicalCorpusJson(tallyFormats(records), 0), canonicalCorpusJson(manifest.by_format, 0)],
-      ["by_role", canonicalCorpusJson(tallyRoles(records), 0), canonicalCorpusJson(manifest.by_role, 0)],
-      ["by_recognition_form", canonicalCorpusJson(tallyForms(records), 0), canonicalCorpusJson(manifest.by_recognition_form, 0)],
+      [
+        "by_class",
+        canonicalCorpusJson(tallyClasses(records), 0),
+        canonicalCorpusJson(manifest.by_class, 0),
+      ],
+      [
+        "by_format",
+        canonicalCorpusJson(tallyFormats(records), 0),
+        canonicalCorpusJson(manifest.by_format, 0),
+      ],
+      [
+        "by_role",
+        canonicalCorpusJson(tallyRoles(records), 0),
+        canonicalCorpusJson(manifest.by_role, 0),
+      ],
+      [
+        "by_recognition_form",
+        canonicalCorpusJson(tallyForms(records), 0),
+        canonicalCorpusJson(manifest.by_recognition_form, 0),
+      ],
     ] as const) {
-      if (expected !== actual) problems.push(`manifest ${name} does not match the payload records: expected ${expected}`);
+      if (expected !== actual)
+        problems.push(`manifest ${name} does not match the payload records: expected ${expected}`);
     }
   }
 
@@ -747,20 +808,36 @@ export function verifyArchitectureEvidenceExport(
     if (seen.has(record.evidence_id)) problems.push(`duplicate evidence_id ${record.evidence_id}`);
     seen.add(record.evidence_id);
     if (!input.knownArtifactIds.has(record.artifact_id)) {
-      problems.push(`record ${record.evidence_id} names artifact ${record.artifact_id}, which this corpus did not observe`);
+      problems.push(
+        `record ${record.evidence_id} names artifact ${record.artifact_id}, which this corpus did not observe`,
+      );
     }
-    if (record.normalized_document_id !== null && !input.knownNormalizedDocumentIds.has(record.normalized_document_id)) {
-      problems.push(`record ${record.evidence_id} names normalized document ${record.normalized_document_id}, which this corpus did not produce`);
+    if (
+      record.normalized_document_id !== null &&
+      !input.knownNormalizedDocumentIds.has(record.normalized_document_id)
+    ) {
+      problems.push(
+        `record ${record.evidence_id} names normalized document ${record.normalized_document_id}, which this corpus did not produce`,
+      );
     }
-    if (record.epistemic_class !== ARCHITECTURE_EVIDENCE_EPISTEMIC_CLASS || record.authority_verified !== false) {
-      problems.push(`record ${record.evidence_id} is not classed ${ARCHITECTURE_EVIDENCE_EPISTEMIC_CLASS} with authority_verified false`);
+    if (
+      record.epistemic_class !== ARCHITECTURE_EVIDENCE_EPISTEMIC_CLASS ||
+      record.authority_verified !== false
+    ) {
+      problems.push(
+        `record ${record.evidence_id} is not classed ${ARCHITECTURE_EVIDENCE_EPISTEMIC_CLASS} with authority_verified false`,
+      );
     }
     if (!(ARCHITECTURE_STATEMENT_CLASSES as readonly string[]).includes(record.statement_class)) {
-      problems.push(`record ${record.evidence_id} carries statement_class '${String(record.statement_class)}', which is not in the vocabulary`);
+      problems.push(
+        `record ${record.evidence_id} carries statement_class '${String(record.statement_class)}', which is not in the vocabulary`,
+      );
     }
   }
   if (manifest.diagnostic_count !== manifest.diagnostics.length) {
-    problems.push(`manifest diagnostic_count is ${manifest.diagnostic_count} and it lists ${manifest.diagnostics.length}`);
+    problems.push(
+      `manifest diagnostic_count is ${manifest.diagnostic_count} and it lists ${manifest.diagnostics.length}`,
+    );
   }
   const classTotal = manifest.by_class.reduce((sum, entry) => sum + entry.record_count, 0);
   if (classTotal !== manifest.record_count) {

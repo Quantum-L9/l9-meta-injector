@@ -5,23 +5,42 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { injectFile } from "../src/inject";
-import { buildMeta } from "../src/normalize_meta";
-import { extract, splitContent, contentHash } from "../src/extract";
 import { classify } from "../src/classify";
 import { sidecarPathFor } from "../src/comment";
+import { contentHash, extract, splitContent } from "../src/extract";
+import { injectFile } from "../src/inject";
 import { NamespaceConfig } from "../src/namespace";
+import { buildMeta } from "../src/normalize_meta";
 
-function tmp() { return fs.mkdtempSync(path.join(os.tmpdir(), "l9-inject-")); }
+function tmp() {
+  return fs.mkdtempSync(path.join(os.tmpdir(), "l9-inject-"));
+}
 
 const NS: NamespaceConfig = {
-  namespace: "l9", authority: "l9.auto", nearDupThreshold: 0.9,
-  hashPrefixLength: 16, outputDir: ".out", indexDir: ".",
+  namespace: "l9",
+  authority: "l9.auto",
+  nearDupThreshold: 0.9,
+  hashPrefixLength: 16,
+  outputDir: ".out",
+  indexDir: ".",
 };
-const OPTS = (outDir: string, dryRun = false) => ({ dryRun, outDir, verbose: false, writeInjectLog: true });
+const OPTS = (outDir: string, dryRun = false) => ({
+  dryRun,
+  outDir,
+  verbose: false,
+  writeInjectLog: true,
+});
 
 function metaFor(fp: string, body: string) {
-  return buildMeta(fp, body, extract(body), classify(fp, body, "none"), NS, "l9.auto", "2026-01-01T00:00:00.000Z");
+  return buildMeta(
+    fp,
+    body,
+    extract(body),
+    classify(fp, body, "none"),
+    NS,
+    "l9.auto",
+    "2026-01-01T00:00:00.000Z",
+  );
 }
 function inject(fp: string, outDir: string, dryRun = false) {
   const raw = fs.readFileSync(fp, "utf8");
@@ -95,7 +114,17 @@ describe("QTE-004 — dry-run writes a diff and mutates nothing", () => {
     const b = path.join(root, "src", "b", "index.ts");
     fs.writeFileSync(a, "export const a = 1;\n");
     fs.writeFileSync(b, "export const b = 2;\n");
-    const meta = (fp: string) => buildMeta(fp, fs.readFileSync(fp, "utf8"), extract(fs.readFileSync(fp, "utf8")), classify(fp, fs.readFileSync(fp, "utf8"), "none"), NS, "l9.auto", "2026-01-01T00:00:00.000Z", root);
+    const meta = (fp: string) =>
+      buildMeta(
+        fp,
+        fs.readFileSync(fp, "utf8"),
+        extract(fs.readFileSync(fp, "utf8")),
+        classify(fp, fs.readFileSync(fp, "utf8"), "none"),
+        NS,
+        "l9.auto",
+        "2026-01-01T00:00:00.000Z",
+        root,
+      );
     const recA = injectFile(a, meta(a), OPTS(out, true));
     const recB = injectFile(b, meta(b), OPTS(out, true));
     expect(recA.dryRunDiffPath).toBe(path.join(out, "src", "a", "index.ts.diff"));
@@ -158,7 +187,7 @@ describe("WU-074 RC-050 — an unchanged target is not replaced", () => {
   test("REG-WU-074-RC-050-RC050-g: an unchanged sidecar target is not replaced either", async () => {
     const root = tmp();
     const fp = path.join(root, "data.json");
-    fs.writeFileSync(fp, "{\"a\":1}\n");
+    fs.writeFileSync(fp, '{"a":1}\n');
     inject(fp, tmp());
     const sidecar = sidecarPathFor(fp);
     const before = fs.statSync(sidecar);

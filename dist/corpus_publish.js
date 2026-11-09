@@ -358,7 +358,8 @@ function resolveCurrentGeneration(outDir) {
 function listGenerations(outDir) {
     const root = path.join(outDir, exports.GENERATIONS_DIRECTORY);
     try {
-        return fs.readdirSync(root, { withFileTypes: true })
+        return fs
+            .readdirSync(root, { withFileTypes: true })
             .filter((entry) => entry.isDirectory())
             .map((entry) => entry.name)
             .sort(ordering_1.compareCodePoints);
@@ -417,7 +418,14 @@ function publishCorpusGeneration(input) {
     }
     const lock = acquirePublishLock(outDir);
     try {
-        return publishUnderLock(input, { outDir, id, directoryName, generationRef, generationDirectory, ordered });
+        return publishUnderLock(input, {
+            outDir,
+            id,
+            directoryName,
+            generationRef,
+            generationDirectory,
+            ordered,
+        });
     }
     finally {
         releaseOwned(lock);

@@ -1,5 +1,5 @@
-import type { DocumentBlockView } from "./extractors/document_blocks";
 import { ArchitectureCoverageDiagnostic, ArchitectureRecognitionForm, ArchitectureStatementClass } from "./extractors/architecture_statements";
+import type { DocumentBlockView } from "./extractors/document_blocks";
 /** Schema of the complete payload. One record per line. */
 export declare const ARCHITECTURE_EVIDENCE_SCHEMA = "l9.architecture-evidence/v1";
 /** Schema of the payload's completeness and integrity receipt. */

@@ -128,7 +128,11 @@ describe("legacy_writers: forbidden", () => {
 
   test("an active competing writer invocation blocks", () => {
     const root = governedRepo("forbidden");
-    write(root, ".github/workflows/meta.yml", "steps:\n  - run: python scripts/verify-l9-meta.py\n");
+    write(
+      root,
+      ".github/workflows/meta.yml",
+      "steps:\n  - run: python scripts/verify-l9-meta.py\n",
+    );
     const inspection = inspect(root);
     const conflict = inspection.conflicts.find((item) => item.code === "META_AUTHORITY_CONFLICT");
     expect(conflict?.message).toMatch(/invokes a competing metadata writer/);
@@ -176,8 +180,11 @@ describe("the canonical writer is never a competitor", () => {
   test("a pinned canonical Action invocation never conflicts, under either policy", () => {
     for (const policy of ["forbidden", "migration_only"] as const) {
       const root = governedRepo(policy);
-      write(root, ".github/workflows/meta.yml",
-        "steps:\n  - uses: Quantum-L9/l9-meta-injector@0123456789abcdef0123456789abcdef01234567\n    with:\n      mode: check\n");
+      write(
+        root,
+        ".github/workflows/meta.yml",
+        "steps:\n  - uses: Quantum-L9/l9-meta-injector@0123456789abcdef0123456789abcdef01234567\n    with:\n      mode: check\n",
+      );
       write(root, "scripts/run-meta.sh", "#!/bin/sh\nnpx l9-meta-injector apply .\n");
       const inspection = inspect(root);
       expect(inspection.evidence.some((item) => item.kind === "canonical_invocation")).toBe(true);
@@ -191,7 +198,11 @@ describe("the canonical writer is never a competitor", () => {
     // `l9-meta-injector` contains an L9 metadata token by construction, and a shell
     // redirect is a write signal. Together they must not make this package a competitor.
     const root = governedRepo("forbidden");
-    write(root, "scripts/sync-metadata.sh", "#!/bin/sh\nnpx l9-meta-injector apply . > build/meta.log\n");
+    write(
+      root,
+      "scripts/sync-metadata.sh",
+      "#!/bin/sh\nnpx l9-meta-injector apply . > build/meta.log\n",
+    );
     const inspection = inspect(root);
     expect(inspection.evidence.some((item) => item.kind === "writer_script")).toBe(false);
     expect(inspection.conflicts).toEqual([]);

@@ -1,6 +1,6 @@
-import type { OmitMatcher } from "./omit";
 import { ArchiveExecutionResolution } from "./archive_execution";
 import type { LocalArchivePolicy } from "./local_archive_policy";
+import type { OmitMatcher } from "./omit";
 /** Directory-name suffix for an expanded archive (sibling of the .zip). */
 export declare const EXTRACTED_DIR_SUFFIX = ".l9extracted";
 /** Archive extensions expanded in local-files mode (v1: zip only). Owned by `archive_formats.ts`. */

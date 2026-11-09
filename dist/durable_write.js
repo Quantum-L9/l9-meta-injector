@@ -65,7 +65,7 @@ const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
 /** The real thing, which every caller outside a test uses. */
 exports.nodeFileOps = {
-    openSync: (target, flags, mode) => (mode === undefined ? fs.openSync(target, flags) : fs.openSync(target, flags, mode)),
+    openSync: (target, flags, mode) => mode === undefined ? fs.openSync(target, flags) : fs.openSync(target, flags, mode),
     writeSync: (handle, contents) => {
         fs.writeFileSync(handle, contents, "utf8");
     },

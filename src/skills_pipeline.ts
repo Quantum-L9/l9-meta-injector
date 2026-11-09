@@ -6,27 +6,31 @@
 //   - Never invent a Cursor `triggers:` key or stamp L9 identity headers
 // Write only when there is at least one material field diff.
 
+import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { createHash } from "node:crypto";
-import { findFiles } from "./retrieval";
-import { frontMatterReconciliationView, inspectFrontMatterDocument, patchManagedFrontMatter } from "./frontmatter_patch";
-import { MetaRecord, UNKNOWN, FieldDiff } from "./schema";
-import { assistField, isGoodValue, hasUseWhenSignal, DEFAULT_ASSIST_CONFIG } from "./assist";
 import type { AssistConfig } from "./assist";
-import { buildMaterialityPrompt, parseMaterialityReply } from "./materiality";
-import { getAdapter, localAdapter, makeOpenAIAdapter, runWithAdapter } from "./llm";
-import { isSkillArtifactPath, buildOmitMatcher } from "./omit";
-import { MetricsCollector, MetricsSnapshot } from "./metrics";
+import { assistField, DEFAULT_ASSIST_CONFIG, hasUseWhenSignal, isGoodValue } from "./assist";
 import { inspectRepositoryAuthority } from "./authority_scan";
 import { CANONICAL_METADATA_WRITER } from "./carrier_operation";
 import {
   executeFileTransaction,
-  recoverPendingTransactions,
   type FileMutationIntent,
+  recoverPendingTransactions,
 } from "./file_transaction";
+import {
+  frontMatterReconciliationView,
+  inspectFrontMatterDocument,
+  patchManagedFrontMatter,
+} from "./frontmatter_patch";
+import { getAdapter, localAdapter, makeOpenAIAdapter, runWithAdapter } from "./llm";
+import { buildMaterialityPrompt, parseMaterialityReply } from "./materiality";
+import { MetricsCollector, MetricsSnapshot } from "./metrics";
+import { buildOmitMatcher, isSkillArtifactPath } from "./omit";
 import type { AuthorityConflict } from "./operation_contracts";
 import { compareCodePoints } from "./ordering";
+import { findFiles } from "./retrieval";
+import { FieldDiff, MetaRecord, UNKNOWN } from "./schema";
 
 function sha256(bytes: Buffer | string): string {
   return createHash("sha256").update(bytes).digest("hex");
@@ -79,7 +83,9 @@ function validateSkillsCommit(root: string, intents: readonly FileMutationIntent
   for (const intent of intents) {
     const target = path.join(root, ...intent.path.split("/"));
     if (sha256(fs.readFileSync(target)) !== sha256(intent.bytes)) {
-      throw new Error(`SKILLS_POSTCONDITION_FAILED: ${intent.path} committed bytes differ from plan`);
+      throw new Error(
+        `SKILLS_POSTCONDITION_FAILED: ${intent.path} committed bytes differ from plan`,
+      );
     }
   }
 }
@@ -94,7 +100,10 @@ function isMateriallyBetterSync(old: unknown, next: unknown): boolean {
 
 async function isMateriallyBetter(field: string, old: unknown, next: unknown): Promise<boolean> {
   if (!isGoodValue(next)) return false;
-  if (!isGoodValue(old) || (field === "description" && !hasUseWhenSignal(old) && hasUseWhenSignal(next))) {
+  if (
+    !isGoodValue(old) ||
+    (field === "description" && !hasUseWhenSignal(old) && hasUseWhenSignal(next))
+  ) {
     if (!isGoodValue(old)) return true;
     if (field === "description" && !hasUseWhenSignal(old) && hasUseWhenSignal(next)) return true;
   }
@@ -105,7 +114,12 @@ async function isMateriallyBetter(field: string, old: unknown, next: unknown): P
   return parseMaterialityReply(reply);
 }
 
-function parseExistingFrontMatter(raw: string): { meta: MetaRecord; body: string; hadFrontMatter: boolean; issue?: string } {
+function parseExistingFrontMatter(raw: string): {
+  meta: MetaRecord;
+  body: string;
+  hadFrontMatter: boolean;
+  issue?: string;
+} {
   const inspected = inspectFrontMatterDocument(raw);
   if (!inspected.safe) {
     return {
@@ -116,14 +130,25 @@ function parseExistingFrontMatter(raw: string): { meta: MetaRecord; body: string
     };
   }
   // Opaque values (e.g. `description: Use when: x`) are existing values, not missing ones.
-  return { meta: frontMatterReconciliationView(raw, inspected), body: inspected.body, hadFrontMatter: inspected.hadFrontMatter };
+  return {
+    meta: frontMatterReconciliationView(raw, inspected),
+    body: inspected.body,
+    hadFrontMatter: inspected.hadFrontMatter,
+  };
 }
 
 function parseSignalList(v: unknown): string[] {
   if (v === UNKNOWN || v === null || v === undefined) return [];
-  if (Array.isArray(v)) return v.map(String).map((s) => s.trim()).filter(Boolean);
+  if (Array.isArray(v))
+    return v
+      .map(String)
+      .map((s) => s.trim())
+      .filter(Boolean);
   if (typeof v === "string") {
-    return v.split(/[,;\n]/).map((s) => s.trim()).filter(Boolean);
+    return v
+      .split(/[,;\n]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
   }
   return [];
 }
@@ -135,23 +160,32 @@ async function improveDescription(
   metrics: MetricsCollector,
 ): Promise<FieldDiff | null> {
   const seedDesc = typeof existing.description === "string" ? existing.description : "";
-  const proposedDesc = await assistField("description", seedDesc || UNKNOWN, body, assistCfg, metrics);
+  const proposedDesc = await assistField(
+    "description",
+    seedDesc || UNKNOWN,
+    body,
+    assistCfg,
+    metrics,
+  );
   const descStr = typeof proposedDesc === "string" ? proposedDesc : "";
   if (!isGoodValue(descStr)) return null;
 
-  const missingOrWeak = !("description" in existing)
-    || !isGoodValue(existing.description)
-    || !hasUseWhenSignal(existing.description);
+  const missingOrWeak =
+    !("description" in existing) ||
+    !isGoodValue(existing.description) ||
+    !hasUseWhenSignal(existing.description);
 
   if (missingOrWeak) {
     const usable = hasUseWhenSignal(descStr) || !isGoodValue(existing.description);
     if (!usable) return null;
-    const better = !("description" in existing) || !isGoodValue(existing.description)
-      || await isMateriallyBetter("description", existing.description, descStr);
+    const better =
+      !("description" in existing) ||
+      !isGoodValue(existing.description) ||
+      (await isMateriallyBetter("description", existing.description, descStr));
     if (!better || descStr === existing.description) return null;
     return {
       field: "description",
-      action: ("description" in existing) ? "revise" : "add",
+      action: "description" in existing ? "revise" : "add",
       oldValue: existing.description,
       newValue: descStr.slice(0, 1024),
       reason: "Cursor-native description material improvement",
@@ -206,8 +240,17 @@ async function processSkillFile(
   const raw = rawBuffer.toString("utf8");
   const parsed = parseExistingFrontMatter(raw);
   if (parsed.issue) {
-    if (config.verbose) process.stderr.write(`[l9-meta-injector] skills: ${rel} skipped: ${parsed.issue}\n`);
-    return { result: { sourcePath: abs, relativePath: rel, changed: false, diffs: [], skippedReason: parsed.issue } };
+    if (config.verbose)
+      process.stderr.write(`[l9-meta-injector] skills: ${rel} skipped: ${parsed.issue}\n`);
+    return {
+      result: {
+        sourcePath: abs,
+        relativePath: rel,
+        changed: false,
+        diffs: [],
+        skippedReason: parsed.issue,
+      },
+    };
   }
   const { meta: existing, body, hadFrontMatter } = parsed;
   const next: MetaRecord = { ...existing };
@@ -243,11 +286,16 @@ async function processSkillFile(
   const patched = patchManagedFrontMatter(raw, managed);
   if (!patched.safe) {
     const skippedReason = `${patched.issue?.code ?? "FRONTMATTER_UNSAFE"}: ${patched.issue?.message ?? "unsafe header"}`;
-    if (config.verbose) process.stderr.write(`[l9-meta-injector] skills: ${rel} skipped: ${skippedReason}\n`);
-    return { result: { sourcePath: abs, relativePath: rel, changed: false, diffs: [], skippedReason } };
+    if (config.verbose)
+      process.stderr.write(`[l9-meta-injector] skills: ${rel} skipped: ${skippedReason}\n`);
+    return {
+      result: { sourcePath: abs, relativePath: rel, changed: false, diffs: [], skippedReason },
+    };
   }
   if (config.verbose) {
-    process.stderr.write(`[l9-meta-injector] skills: ${rel} → ${diffs.map((d) => d.field).join(",")}\n`);
+    process.stderr.write(
+      `[l9-meta-injector] skills: ${rel} → ${diffs.map((d) => d.field).join(",")}\n`,
+    );
   }
 
   // dry-run is a read-only preview: report the intended change, plan no mutation.
@@ -267,7 +315,9 @@ async function processSkillFile(
   };
 }
 
-export async function runSkillsPipelineAsync(config: SkillsPipelineConfig): Promise<SkillsPipelineResult> {
+export async function runSkillsPipelineAsync(
+  config: SkillsPipelineConfig,
+): Promise<SkillsPipelineResult> {
   const metrics = new MetricsCollector();
   // The run's adapter is scoped to this run (ADR-064, RC-018) and the process-global
   // adapter is never changed. Complete credentials scope an OpenAI adapter; a disabled
@@ -275,17 +325,23 @@ export async function runSkillsPipelineAsync(config: SkillsPipelineConfig): Prom
   // so the adapter the caller installed with setAdapter is the one consulted.
   if (config.llmEnabled && config.llmBaseUrl && config.llmApiKey && config.llmModel) {
     const adapter = makeOpenAIAdapter({
-      baseUrl: config.llmBaseUrl, apiKey: config.llmApiKey, model: config.llmModel,
+      baseUrl: config.llmBaseUrl,
+      apiKey: config.llmApiKey,
+      model: config.llmModel,
       onDiagnostic: metrics.onLlmDiagnostic,
       allowInsecure: config.llmAllowInsecure,
     });
     return runWithAdapter(adapter, () => runSkillsPipelineInScope(config, metrics));
   }
-  if (!config.llmEnabled) return runWithAdapter(localAdapter, () => runSkillsPipelineInScope(config, metrics));
+  if (!config.llmEnabled)
+    return runWithAdapter(localAdapter, () => runSkillsPipelineInScope(config, metrics));
   return runSkillsPipelineInScope(config, metrics);
 }
 
-async function runSkillsPipelineInScope(config: SkillsPipelineConfig, metrics: MetricsCollector): Promise<SkillsPipelineResult> {
+async function runSkillsPipelineInScope(
+  config: SkillsPipelineConfig,
+  metrics: MetricsCollector,
+): Promise<SkillsPipelineResult> {
   const root = path.resolve(config.root);
   fs.mkdirSync(config.outDir, { recursive: true });
 
@@ -357,7 +413,11 @@ async function runSkillsPipelineInScope(config: SkillsPipelineConfig, metrics: M
       skippedReason: f.skippedReason,
     })),
   };
-  fs.writeFileSync(path.join(config.outDir, "skills-report.json"), JSON.stringify(report, null, 2), "utf8");
+  fs.writeFileSync(
+    path.join(config.outDir, "skills-report.json"),
+    JSON.stringify(report, null, 2),
+    "utf8",
+  );
 
   return {
     considered: skillPaths.length,

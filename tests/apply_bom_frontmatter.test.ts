@@ -3,27 +3,31 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { runApplyAsync } from "../src/apply";
-import { runCheckAsync, type CheckConfig } from "../src/check";
+import { type CheckConfig, runCheckAsync } from "../src/check";
 import { splitContent, stripExistingFrontMatter } from "../src/extract";
 
 const BOM = "﻿";
-const PROMPT = "# Build prompt\n\nRole: repository auditor\nObjective: inspect the repository and report evidence.\nOutput format: markdown report.\n";
+const PROMPT =
+  "# Build prompt\n\nRole: repository auditor\nObjective: inspect the repository and report evidence.\nOutput format: markdown report.\n";
 const roots: string[] = [];
 
 function governedRoot(): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "l9-apply-bom-"));
   roots.push(root);
   fs.mkdirSync(path.join(root, ".l9"));
-  fs.writeFileSync(path.join(root, ".l9", "meta-authority.yaml"), [
-    "schema: l9.meta-authority/v1",
-    "writer:",
-    "  repository: Quantum-L9/l9-meta-injector",
-    "  ref: fc335977581ff556a8d071a80fd48dfb3686a5cb",
-    "default_carrier: inline_managed",
-    "legacy_writers: forbidden",
-    "inline_allow: [\"**/*.md\"]",
-    "",
-  ].join("\n"));
+  fs.writeFileSync(
+    path.join(root, ".l9", "meta-authority.yaml"),
+    [
+      "schema: l9.meta-authority/v1",
+      "writer:",
+      "  repository: Quantum-L9/l9-meta-injector",
+      "  ref: fc335977581ff556a8d071a80fd48dfb3686a5cb",
+      "default_carrier: inline_managed",
+      "legacy_writers: forbidden",
+      'inline_allow: ["**/*.md"]',
+      "",
+    ].join("\n"),
+  );
   return root;
 }
 

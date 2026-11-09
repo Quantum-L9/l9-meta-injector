@@ -1,8 +1,8 @@
+import { spawnSync } from "node:child_process";
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { spawnSync } from "node:child_process";
 
 const root = path.resolve(__dirname, "..");
 const facadeSha256 = "59d75892d7c8af83916187c5af612d2c9697741a68017265059567e4ea33cba6";
@@ -15,22 +15,29 @@ function sandbox(): { dir: string; env: NodeJS.ProcessEnv; log: string; cleanup:
   for (const name of ["Makefile", "Repo.mk"]) {
     fs.copyFileSync(path.join(root, name), path.join(dir, name));
   }
-  fs.writeFileSync(path.join(bin, "npm"), [
-    "#!/bin/sh",
-    "printf '%s\\n' \"npm $*\" >> \"$REPO_EXECUTION_LOG\"",
-    "if [ \"$*\" = \"${REPO_EXECUTION_FAIL:-}\" ]; then exit 23; fi",
-    "",
-  ].join("\n"), { mode: 0o755 });
-  fs.writeFileSync(path.join(bin, "git"), [
-    "#!/bin/sh",
-    "printf '%s\\n' \"git $*\" >> \"$REPO_EXECUTION_LOG\"",
-    "exit 0",
-    "",
-  ].join("\n"), { mode: 0o755 });
+  fs.writeFileSync(
+    path.join(bin, "npm"),
+    [
+      "#!/bin/sh",
+      'printf \'%s\\n\' "npm $*" >> "$REPO_EXECUTION_LOG"',
+      'if [ "$*" = "${REPO_EXECUTION_FAIL:-}" ]; then exit 23; fi',
+      "",
+    ].join("\n"),
+    { mode: 0o755 },
+  );
+  fs.writeFileSync(
+    path.join(bin, "git"),
+    ["#!/bin/sh", 'printf \'%s\\n\' "git $*" >> "$REPO_EXECUTION_LOG"', "exit 0", ""].join("\n"),
+    { mode: 0o755 },
+  );
   return {
     dir,
     log,
-    env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}`, REPO_EXECUTION_LOG: log },
+    env: {
+      ...process.env,
+      PATH: `${bin}${path.delimiter}${process.env.PATH}`,
+      REPO_EXECUTION_LOG: log,
+    },
     cleanup: () => fs.rmSync(dir, { recursive: true, force: true }),
   };
 }
@@ -51,7 +58,10 @@ describe("Core repository execution", () => {
       facade: "make-v1",
       required_phases: ["setup", "validate", "check", "test"],
     });
-    const digest = crypto.createHash("sha256").update(fs.readFileSync(path.join(root, "Makefile"))).digest("hex");
+    const digest = crypto
+      .createHash("sha256")
+      .update(fs.readFileSync(path.join(root, "Makefile")))
+      .digest("hex");
     expect(digest).toBe(facadeSha256);
   });
 
@@ -61,7 +71,8 @@ describe("Core repository execution", () => {
       fs.copyFileSync(path.join(root, ".gitignore"), path.join(dir, ".gitignore"));
       const init = spawnSync("git", ["init", "-q"], { cwd: dir, encoding: "utf8" });
       expect(init.status, init.stderr).toBe(0);
-      const ignored = (name: string) => spawnSync("git", ["check-ignore", "-q", name], { cwd: dir }).status;
+      const ignored = (name: string) =>
+        spawnSync("git", ["check-ignore", "-q", name], { cwd: dir }).status;
       expect(ignored(".l9/runtime/sdk/bin/l9-ci")).toBe(0);
       expect(ignored(".l9/runtime/toolchain-alignment.json")).toBe(0);
       expect(ignored(".l9/repo-workflow.json")).toBe(1);
@@ -94,7 +105,11 @@ describe("Core repository execution", () => {
   test("fails closed when a validation command fails", () => {
     const box = sandbox();
     try {
-      const result = make(box.dir, { ...box.env, REPO_EXECUTION_FAIL: "run check:authority" }, "validate");
+      const result = make(
+        box.dir,
+        { ...box.env, REPO_EXECUTION_FAIL: "run check:authority" },
+        "validate",
+      );
       expect(result.status).not.toBe(0);
       expect(commands(box.log)).toEqual(["npm run check:authority"]);
     } finally {

@@ -12,11 +12,11 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, expect, test } from "vitest";
-import { replaceFileAtomically, type DurableFileOps, nodeFileOps } from "../src/durable_write";
-import { runPipelineAsync } from "../src/pipeline";
-import { inventoryTree } from "../src/inventory";
 import { writeArchiveSidecar } from "../src/archives";
 import { sidecarPathFor } from "../src/comment";
+import { type DurableFileOps, nodeFileOps, replaceFileAtomically } from "../src/durable_write";
+import { inventoryTree } from "../src/inventory";
+import { runPipelineAsync } from "../src/pipeline";
 import { writeRawZip } from "./helpers/zip_fixtures";
 
 function tmp(): string {
@@ -30,15 +30,39 @@ describe("replaceFileAtomically", () => {
     fs.writeFileSync(target, "old");
     const calls: string[] = [];
     const ops: DurableFileOps = {
-      openSync: (p, flags, mode) => { calls.push(`open:${path.basename(p).replace(/-\d+-[a-z0-9]+$/, "-N")}:${flags}`); return nodeFileOps.openSync(p, flags, mode); },
-      writeSync: (h, c) => { calls.push("write"); nodeFileOps.writeSync(h, c); },
-      fsyncSync: (h) => { calls.push("fsync"); nodeFileOps.fsyncSync(h); },
-      closeSync: (h) => { calls.push("close"); nodeFileOps.closeSync(h); },
-      renameSync: (from, to) => { calls.push(`rename->${path.basename(to)}`); nodeFileOps.renameSync(from, to); },
+      openSync: (p, flags, mode) => {
+        calls.push(`open:${path.basename(p).replace(/-\d+-[a-z0-9]+$/, "-N")}:${flags}`);
+        return nodeFileOps.openSync(p, flags, mode);
+      },
+      writeSync: (h, c) => {
+        calls.push("write");
+        nodeFileOps.writeSync(h, c);
+      },
+      fsyncSync: (h) => {
+        calls.push("fsync");
+        nodeFileOps.fsyncSync(h);
+      },
+      closeSync: (h) => {
+        calls.push("close");
+        nodeFileOps.closeSync(h);
+      },
+      renameSync: (from, to) => {
+        calls.push(`rename->${path.basename(to)}`);
+        nodeFileOps.renameSync(from, to);
+      },
     };
     replaceFileAtomically(target, "new", { ops });
     expect(fs.readFileSync(target, "utf8")).toBe("new");
-    expect(calls).toEqual(["open:.a.txt.l9stage-N:wx", "write", "fsync", "close", "rename->a.txt", `open:${path.basename(root)}:r`, "fsync", "close"]);
+    expect(calls).toEqual([
+      "open:.a.txt.l9stage-N:wx",
+      "write",
+      "fsync",
+      "close",
+      "rename->a.txt",
+      `open:${path.basename(root)}:r`,
+      "fsync",
+      "close",
+    ]);
     expect(fs.readdirSync(root)).toEqual(["a.txt"]);
   });
 
@@ -78,7 +102,12 @@ describe("replaceFileAtomically", () => {
     const root = tmp();
     const target = path.join(root, "a.txt");
     fs.writeFileSync(target, "old");
-    const ops: DurableFileOps = { ...nodeFileOps, writeSync: () => { throw new Error("disk full"); } };
+    const ops: DurableFileOps = {
+      ...nodeFileOps,
+      writeSync: () => {
+        throw new Error("disk full");
+      },
+    };
     expect(() => replaceFileAtomically(target, "new", { ops })).toThrow(/disk full/);
     expect(fs.readFileSync(target, "utf8")).toBe("old");
     expect(fs.readdirSync(root)).toEqual(["a.txt"]);
@@ -105,9 +134,20 @@ describe("direct-write mutation paths go through the atomic replace", () => {
     fs.linkSync(outside, path.join(root, "linked.py"));
     const out = `${root}.out`;
     await runPipelineAsync({
-      root, glob: "**/*", dryRun: false, outDir: out, indexDir: out, namespace: "t", authority: "t",
-      nearDupThreshold: 0.9, hashPrefixLength: 16, verbose: false, llmEnabled: false,
-      normalizeFilenames: false, writeInjectLog: false, localFiles: false,
+      root,
+      glob: "**/*",
+      dryRun: false,
+      outDir: out,
+      indexDir: out,
+      namespace: "t",
+      authority: "t",
+      nearDupThreshold: 0.9,
+      hashPrefixLength: 16,
+      verbose: false,
+      llmEnabled: false,
+      normalizeFilenames: false,
+      writeInjectLog: false,
+      localFiles: false,
     });
     expect(fs.readFileSync(path.join(root, "linked.py"), "utf8")).toContain("l9:meta");
     expect(fs.readFileSync(outside, "utf8")).toBe("print('outside')\n");
@@ -134,7 +174,10 @@ describe("direct-write mutation paths go through the atomic replace", () => {
       const inPlace: string[] = [];
       for (const match of source.matchAll(/fs\.writeFileSync\(([^;]*)/g)) {
         const target = match[1];
-        if (/dryRunDiffPath|jsonPath|csvPath|mdPath|dupPath|LEGACY_EXTRACTION_OWNER_FILE/.test(target)) continue;
+        if (
+          /dryRunDiffPath|jsonPath|csvPath|mdPath|dupPath|LEGACY_EXTRACTION_OWNER_FILE/.test(target)
+        )
+          continue;
         inPlace.push(target.split("\n")[0].trim());
       }
       expect(inPlace, `${file}: ${inPlace.join(" | ")}`).toEqual([]);

@@ -85,9 +85,11 @@ print(json.dumps({
 `;
 
 function validateCorpusObservation(packet, observed) {
-  if (observed.is_canonical !== true) throw new Error("consumer adapted rather than accepted the canonical corpus packet");
+  if (observed.is_canonical !== true)
+    throw new Error("consumer adapted rather than accepted the canonical corpus packet");
   for (const field of ["packet_id", "semantic_hash", "packet_type", "packet_version"]) {
-    if (observed[field] !== packet[field]) throw new Error(`consumer reported a different corpus ${field}`);
+    if (observed[field] !== packet[field])
+      throw new Error(`consumer reported a different corpus ${field}`);
   }
 }
 
@@ -114,8 +116,12 @@ function compareCodeUnits(a, b) {
 const GIT_BINARY = gitBinary(fail);
 
 function gitRevision(checkout) {
-  const result = cp.spawnSync(GIT_BINARY, ["rev-parse", "HEAD"], { cwd: checkout, encoding: "utf8" });
-  if (result.status !== 0) fail(`cannot resolve the topology revision: ${result.stderr || result.stdout}`);
+  const result = cp.spawnSync(GIT_BINARY, ["rev-parse", "HEAD"], {
+    cwd: checkout,
+    encoding: "utf8",
+  });
+  if (result.status !== 0)
+    fail(`cannot resolve the topology revision: ${result.stderr || result.stdout}`);
   return result.stdout.trim();
 }
 
@@ -277,11 +283,16 @@ function main() {
     }
 
     let observed;
-    try { observed = JSON.parse(probe.stdout.trim().split(/\r?\n/).pop()); }
-    catch { fail(`could not parse the consumer probe output: ${probe.stdout}`); }
+    try {
+      observed = JSON.parse(probe.stdout.trim().split(/\r?\n/).pop());
+    } catch {
+      fail(`could not parse the consumer probe output: ${probe.stdout}`);
+    }
 
-    if (observed.packet_id !== packet.packet_id) fail(`consumer reported a different packet id than the ${entry.id} bundle`);
-    if (observed.semantic_hash !== packet.semantic_hash) fail(`consumer reported a different semantic hash than the ${entry.id} bundle`);
+    if (observed.packet_id !== packet.packet_id)
+      fail(`consumer reported a different packet id than the ${entry.id} bundle`);
+    if (observed.semantic_hash !== packet.semantic_hash)
+      fail(`consumer reported a different semantic hash than the ${entry.id} bundle`);
     adapterPacketVersion = observed.adapter_packet_version;
 
     subjects.push({
@@ -291,8 +302,10 @@ function main() {
       semantic_hash: packet.semantic_hash,
       packet_type: packet.packet_type,
       packet_version: packet.packet_version,
-      files: ["manifest.json", "packet.json", "receipts/validation-receipt.json"]
-        .map((rel) => ({ path: rel, content_hash: sha256(path.join(bundleRoot, rel)) })),
+      files: ["manifest.json", "packet.json", "receipts/validation-receipt.json"].map((rel) => ({
+        path: rel,
+        content_hash: sha256(path.join(bundleRoot, rel)),
+      })),
       normalized_counts: observed.counts,
     });
   }
@@ -301,26 +314,40 @@ function main() {
   // bundles. Exercise the real CLI so a green repository-model proof cannot hide
   // a corpus packet the sibling's closed model rejects.
   const corpusOut = path.join(scratch, "corpus-out");
-  const emitted = cp.spawnSync(process.execPath, [
-    path.join(REPO, "scripts", "local-source-cli.js"),
-    "--root", `${path.join(REPO, "fixtures", "local-source", "sample-source")}=sample-local-source`,
-    "--out", corpusOut, "--no-cache",
-  ], { cwd: REPO, encoding: "utf8" });
-  if (emitted.status !== 0) fail(`real corpus producer failed: ${emitted.stderr || emitted.stdout}`);
+  const emitted = cp.spawnSync(
+    process.execPath,
+    [
+      path.join(REPO, "scripts", "local-source-cli.js"),
+      "--root",
+      `${path.join(REPO, "fixtures", "local-source", "sample-source")}=sample-local-source`,
+      "--out",
+      corpusOut,
+      "--no-cache",
+    ],
+    { cwd: REPO, encoding: "utf8" },
+  );
+  if (emitted.status !== 0)
+    fail(`real corpus producer failed: ${emitted.stderr || emitted.stdout}`);
   const current = JSON.parse(fs.readFileSync(path.join(corpusOut, "CURRENT.json"), "utf8"));
   const generation = path.join(corpusOut, current.generation_ref);
-  const corpusPacket = JSON.parse(fs.readFileSync(path.join(generation, "corpus-intelligence", "packet.json"), "utf8"));
+  const corpusPacket = JSON.parse(
+    fs.readFileSync(path.join(generation, "corpus-intelligence", "packet.json"), "utf8"),
+  );
   fs.writeFileSync(scriptFile, CORPUS_PROBE, "utf8");
   const corpusProbe = cp.spawnSync(python, [scriptFile, generation], {
-    cwd: checkout, encoding: "utf8",
+    cwd: checkout,
+    encoding: "utf8",
     env: { ...process.env, PYTHONPATH: sourceRoot, PYTHONDONTWRITEBYTECODE: "1" },
   });
-  if (corpusProbe.status !== 0) fail(`consumer rejected the real corpus packet: ${corpusProbe.stderr || corpusProbe.stdout}`);
+  if (corpusProbe.status !== 0)
+    fail(`consumer rejected the real corpus packet: ${corpusProbe.stderr || corpusProbe.stdout}`);
   let corpusObserved;
   try {
     corpusObserved = JSON.parse(corpusProbe.stdout.trim().split(/\r?\n/).pop());
     validateCorpusObservation(corpusPacket, corpusObserved);
-  } catch (error) { fail(error.message); }
+  } catch (error) {
+    fail(error.message);
+  }
   const corpus = {
     source_fixture: "fixtures/local-source/sample-source",
     packet_id: corpusPacket.packet_id,
@@ -347,15 +374,16 @@ function main() {
   // not a claim in a document.
   if (mutated.length > 0) {
     fail(
-      `the topology checkout was modified by this run, which it must never be: `
-      + `${mutated.slice(0, 10).join(", ")}${mutated.length > 10 ? ` (+${mutated.length - 10} more)` : ""}`,
+      `the topology checkout was modified by this run, which it must never be: ` +
+        `${mutated.slice(0, 10).join(", ")}${mutated.length > 10 ? ` (+${mutated.length - 10} more)` : ""}`,
     );
   }
 
   const evidence = {
     schema: "l9.topology-conformance/v1",
     repository: "Quantum-L9/l9-meta-injector",
-    statement: "Both committed Repository Model Packet bundles and a corpus-intelligence packet emitted by the real CLI were accepted by the bound l9-constellation-topology consumer without a translation shim.",
+    statement:
+      "Both committed Repository Model Packet bundles and a corpus-intelligence packet emitted by the real CLI were accepted by the bound l9-constellation-topology consumer without a translation shim.",
     consumer: {
       repository: "Quantum-L9/l9-constellation-topology",
       revision,
@@ -374,12 +402,15 @@ function main() {
       translation_shim_required: false,
     },
 
-    verification_command: "L9_TOPOLOGY_CHECKOUT=<l9-constellation-topology checkout> npm run topology:conformance",
+    verification_command:
+      "L9_TOPOLOGY_CHECKOUT=<l9-constellation-topology checkout> npm run topology:conformance",
   };
 
   if (update) {
     fs.writeFileSync(EVIDENCE, `${JSON.stringify(evidence, null, 2)}\n`, "utf8");
-    console.log(`${LABEL}: OK (evidence updated for topology ${revision}; ${subjects.length} bundle(s))`);
+    console.log(
+      `${LABEL}: OK (evidence updated for topology ${revision}; ${subjects.length} bundle(s))`,
+    );
     return;
   }
 
@@ -388,7 +419,9 @@ function main() {
   if (recorded !== `${JSON.stringify(evidence, null, 2)}\n`) {
     fail("recorded conformance evidence is stale; re-run with --update");
   }
-  console.log(`${LABEL}: OK (topology ${revision} accepted ${subjects.map((item) => item.id).join(", ")})`);
+  console.log(
+    `${LABEL}: OK (topology ${revision} accepted ${subjects.map((item) => item.id).join(", ")})`,
+  );
 }
 
 // Run when invoked, exported when required. The read-only guard above is the

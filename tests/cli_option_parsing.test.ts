@@ -15,7 +15,10 @@ const dispatch = require("../scripts/lib/operation-dispatch") as {
   BOOLEAN_OPTIONS: readonly string[];
   REPEATABLE_OPTIONS: readonly string[];
   VALUE_OPTIONS: readonly string[];
-  parseArgOptions: (args: string[]) => { values: Map<string, string>; repeated: Map<string, string[]> };
+  parseArgOptions: (args: string[]) => {
+    values: Map<string, string>;
+    repeated: Map<string, string[]>;
+  };
   parseCommandLine: (argv: string[], env?: NodeJS.ProcessEnv) => Record<string, unknown>;
   parseBoolean: (name: string, raw: unknown, defaultValue: boolean) => boolean;
 };
@@ -33,7 +36,11 @@ function tempRepository(): { workspace: string; relative: string } {
 function withCwd<T>(directory: string, run: () => T): T {
   const previous = process.cwd();
   process.chdir(directory);
-  try { return run(); } finally { process.chdir(previous); }
+  try {
+    return run();
+  } finally {
+    process.chdir(previous);
+  }
 }
 
 afterEach(() => {
@@ -57,7 +64,9 @@ describe("boolean flags do not consume the next option", () => {
 
   test("--no-<flag> is the explicit false form and also consumes nothing", () => {
     const { values } = dispatch.parseArgOptions(["--no-fail-on-issues", "--namespace", "acme"]);
-    expect(dispatch.parseBoolean("fail-on-issues", values.get("--fail-on-issues"), true)).toBe(false);
+    expect(dispatch.parseBoolean("fail-on-issues", values.get("--fail-on-issues"), true)).toBe(
+      false,
+    );
     expect(values.get("--namespace")).toBe("acme");
   });
 
@@ -79,32 +88,44 @@ describe("compatibility rules survive the fix", () => {
   });
 
   test("repeatable options still collect every occurrence", () => {
-    const { repeated } = dispatch.parseArgOptions(["--omit", "a", "--omit", "b", "--namespace-glob", "x=y"]);
+    const { repeated } = dispatch.parseArgOptions([
+      "--omit",
+      "a",
+      "--omit",
+      "b",
+      "--namespace-glob",
+      "x=y",
+    ]);
     expect(repeated.get("--omit")).toEqual(["a", "b"]);
     expect(repeated.get("--namespace-glob")).toEqual(["x=y"]);
   });
 
   test("a value option is never silently satisfied by a following option token", () => {
     expect(() => dispatch.parseArgOptions(["--out"])).toThrow(/--out requires a value/);
-    expect(() => dispatch.parseArgOptions(["--out", "--glob", "**/*"]))
-      .toThrow(/--out requires a value, got option '--glob'/);
+    expect(() => dispatch.parseArgOptions(["--out", "--glob", "**/*"])).toThrow(
+      /--out requires a value, got option '--glob'/,
+    );
   });
 
   test("Action environment boolean strings keep their exact 'true'/'false' grammar", () => {
     expect(dispatch.parseBoolean("dry-run", "true", false)).toBe(true);
     expect(dispatch.parseBoolean("dry-run", "false", true)).toBe(false);
     expect(dispatch.parseBoolean("dry-run", "", true)).toBe(true);
-    expect(() => dispatch.parseBoolean("dry-run", "yes", false)).toThrow(/exactly 'true' or 'false'/);
+    expect(() => dispatch.parseBoolean("dry-run", "yes", false)).toThrow(
+      /exactly 'true' or 'false'/,
+    );
   });
 });
 
 describe("end-to-end command lines", () => {
   test("check accepts the bare --dry-run flag alongside --out", () => {
     const { workspace, relative } = tempRepository();
-    const config = withCwd(workspace, () => dispatch.parseCommandLine(
-      ["check", relative, "--dry-run", "--out", "reports", "--authority", "acme.owner"],
-      { RUNNER_TEMP: workspace },
-    )) as { dryRun: boolean; outDir: string; authority: string };
+    const config = withCwd(workspace, () =>
+      dispatch.parseCommandLine(
+        ["check", relative, "--dry-run", "--out", "reports", "--authority", "acme.owner"],
+        { RUNNER_TEMP: workspace },
+      ),
+    ) as { dryRun: boolean; outDir: string; authority: string };
     expect(config.dryRun).toBe(true);
     expect(config.authority).toBe("acme.owner");
     expect(config.outDir).toBe(path.join(workspace, relative, "reports"));
@@ -114,9 +135,13 @@ describe("end-to-end command lines", () => {
     const { workspace, relative } = tempRepository();
     // The pre-fix defect surfaced here as "unknown option 'reports'" or as a boolean
     // grammar complaint about '--out'. Both are parse errors and both are now gone.
-    expect(() => withCwd(workspace, () => dispatch.parseCommandLine(
-      ["apply", relative, "--dry-run", "--out", "reports", "--authority", "acme.owner"],
-      { RUNNER_TEMP: workspace },
-    ))).toThrow(/apply does not accept dry-run=true; use check/);
+    expect(() =>
+      withCwd(workspace, () =>
+        dispatch.parseCommandLine(
+          ["apply", relative, "--dry-run", "--out", "reports", "--authority", "acme.owner"],
+          { RUNNER_TEMP: workspace },
+        ),
+      ),
+    ).toThrow(/apply does not accept dry-run=true; use check/);
   });
 });

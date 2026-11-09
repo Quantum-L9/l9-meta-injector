@@ -13,13 +13,13 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
+import { runApplyAsync } from "../src/apply";
+import { type CheckConfig, runCheckAsync } from "../src/check";
+import { contentHash, splitContent } from "../src/extract";
+import { inspectFrontMatterDocument } from "../src/frontmatter_patch";
+import { managedCarrierFreeBody } from "../src/inject";
 import { runPipelineAsync } from "../src/pipeline";
 import type { PipelineConfig, PipelineResult } from "../src/schema";
-import { contentHash, splitContent } from "../src/extract";
-import { managedCarrierFreeBody } from "../src/inject";
-import { inspectFrontMatterDocument } from "../src/frontmatter_patch";
-import { runApplyAsync } from "../src/apply";
-import { runCheckAsync, type CheckConfig } from "../src/check";
 
 const dirs: string[] = [];
 
@@ -39,9 +39,18 @@ afterEach(() => {
 function cfg(root: string, dryRun = true, glob = "**/*.md"): PipelineConfig {
   const out = `${root}.out`;
   return {
-    root, glob, dryRun, outDir: out, indexDir: out, namespace: "l9",
-    authority: "l9.doctrine.platform", nearDupThreshold: 0.9, hashPrefixLength: 16,
-    verbose: false, llmEnabled: false, normalizeFilenames: false,
+    root,
+    glob,
+    dryRun,
+    outDir: out,
+    indexDir: out,
+    namespace: "l9",
+    authority: "l9.doctrine.platform",
+    nearDupThreshold: 0.9,
+    hashPrefixLength: 16,
+    verbose: false,
+    llmEnabled: false,
+    normalizeFilenames: false,
   };
 }
 
@@ -99,21 +108,26 @@ describe("WU-012 hashes for safe and header-less files are unchanged", () => {
 
   test("REG-WU-012-RC-022-d: safe frontmatter (LF, CRLF, BOM) hashes are stable across a real run and equal the pre-fix value", async () => {
     const root = tmpDir();
-    for (const [name, content] of Object.entries(SAFE)) fs.writeFileSync(path.join(root, name), content);
+    for (const [name, content] of Object.entries(SAFE))
+      fs.writeFileSync(path.join(root, name), content);
 
     const before = await runPipelineAsync(cfg(root));
     for (const [name, content] of Object.entries(SAFE)) {
       // The pre-fix producer hashed splitContent(raw).body; for a safe header it equals
       // the patcher-preserved body.
       expect(hashFor(before, name)).toBe(contentHash(splitContent(content).body));
-      expect(hashFor(before, name)).toBe(contentHash(managedCarrierFreeBody(path.join(root, name), content)));
+      expect(hashFor(before, name)).toBe(
+        contentHash(managedCarrierFreeBody(path.join(root, name), content)),
+      );
     }
 
     const real = await runPipelineAsync(cfg(root, false));
     expect(real.injected.length).toBe(3);
     const after = await runPipelineAsync(cfg(root));
     for (const name of Object.keys(SAFE)) {
-      expect(fs.readFileSync(path.join(root, name), "utf8")).not.toBe(SAFE[name as keyof typeof SAFE]);
+      expect(fs.readFileSync(path.join(root, name), "utf8")).not.toBe(
+        SAFE[name as keyof typeof SAFE],
+      );
       expect(hashFor(real, name)).toBe(hashFor(before, name));
       expect(hashFor(after, name)).toBe(hashFor(before, name));
     }
@@ -149,10 +163,20 @@ function authority(): string {
 function governed(root: string): CheckConfig {
   const external = `${root}.out`;
   return {
-    root, glob: "**/*.md", outDir: external, namespace: "fixture",
-    authority: "l9.doctrine.platform", nearDupThreshold: 0.9, hashPrefixLength: 16,
-    indexDir: external, verbose: false, llmEnabled: false, normalizeFilenames: false,
-    writeInjectLog: false, localFiles: false, persistOutputs: false,
+    root,
+    glob: "**/*.md",
+    outDir: external,
+    namespace: "fixture",
+    authority: "l9.doctrine.platform",
+    nearDupThreshold: 0.9,
+    hashPrefixLength: 16,
+    indexDir: external,
+    verbose: false,
+    llmEnabled: false,
+    normalizeFilenames: false,
+    writeInjectLog: false,
+    localFiles: false,
+    persistOutputs: false,
   };
 }
 
@@ -184,8 +208,10 @@ describe("WU-012 governed check sees edits in an unsafe leading section", () => 
     expect(check.check?.drift).toEqual([
       expect.objectContaining({ path: ".l9/metadata-index.jsonl", kind: "stale" }),
     ]);
-    const indexed = fs.readFileSync(path.join(root, ".l9", "metadata-index.jsonl"), "utf8")
-      .split("\n").filter((line) => line.includes("doc.md"));
+    const indexed = fs
+      .readFileSync(path.join(root, ".l9", "metadata-index.jsonl"), "utf8")
+      .split("\n")
+      .filter((line) => line.includes("doc.md"));
     expect(indexed.length).toBe(1);
     expect(indexed[0]).toContain(contentHash(COMPLEX(1)));
   }, 30000);

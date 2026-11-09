@@ -30,7 +30,7 @@
 // table — is reported as a coverage diagnostic, so an absence in the output can
 // be told from a document that declared nothing.
 import type { BlockKind, BlockLocator } from "../documents/decoder";
-import { MAX_EXCERPT_LENGTH, boundExcerpt, looksSecret } from "../interpretation";
+import { boundExcerpt, looksSecret, MAX_EXCERPT_LENGTH } from "../interpretation";
 import { compareCodePoints } from "../ordering";
 import type { DocumentBlockView } from "./document_blocks";
 import { documentText, readLabelledLine, readTextUnit } from "./work_intelligence";
@@ -103,7 +103,12 @@ export const MAX_ARCHITECTURE_DIAGNOSTICS_PER_DOCUMENT = 8;
  * header rather than a statement. A table under a labelled section is reported
  * as unsupported instead of guessed at.
  */
-const READABLE_BLOCK_KINDS: ReadonlySet<BlockKind> = new Set(["paragraph", "list_item", "note", "cell"]);
+const READABLE_BLOCK_KINDS: ReadonlySet<BlockKind> = new Set([
+  "paragraph",
+  "list_item",
+  "note",
+  "cell",
+]);
 const TITULAR_BLOCK_KINDS: ReadonlySet<BlockKind> = new Set(["title", "heading"]);
 
 /** One recognized statement, before identity and evidence plumbing is attached. */
@@ -147,7 +152,10 @@ function unitsOf(text: string): string[] {
 
 /** A heading's text as a vocabulary key: quoted, lowercased, trailing colon dropped. */
 function headingLabel(text: string): string {
-  return documentText(text).toLowerCase().replace(/\s*:\s*$/, "").trim();
+  return documentText(text)
+    .toLowerCase()
+    .replace(/\s*:\s*$/, "")
+    .trim();
 }
 
 /** The class a heading names, or null when the heading is not in the vocabulary. */
@@ -225,9 +233,19 @@ class StatementReader {
   readonly statements: ArchitectureStatementDraft[] = [];
   private readonly raised: ArchitectureCoverageDiagnostic[] = [];
   /** An open `## Constraints`-style section, until the next titular or code block. */
-  private section: { statementClass: ArchitectureStatementClass; label: string; members: number; block: DocumentBlockView } | null = null;
+  private section: {
+    statementClass: ArchitectureStatementClass;
+    label: string;
+    members: number;
+    block: DocumentBlockView;
+  } | null = null;
   /** An open `Constraints:` label waiting for the list items that follow it. */
-  private pendingList: { statementClass: ArchitectureStatementClass; label: string; members: number; block: DocumentBlockView } | null = null;
+  private pendingList: {
+    statementClass: ArchitectureStatementClass;
+    label: string;
+    members: number;
+    block: DocumentBlockView;
+  } | null = null;
 
   constructor(private readonly blocks: readonly DocumentBlockView[]) {}
 
@@ -243,7 +261,12 @@ class StatementReader {
     };
   }
 
-  private diagnostic(code: string, severity: "info" | "warning", message: string, block: DocumentBlockView): void {
+  private diagnostic(
+    code: string,
+    severity: "info" | "warning",
+    message: string,
+    block: DocumentBlockView,
+  ): void {
     this.raised.push({ code, severity, message, block_id: block.block_id });
   }
 
@@ -364,7 +387,14 @@ class StatementReader {
     // first block that is not one — the shape `milestoneSectionBullets` reads.
     if (this.pendingList !== null) {
       if (block.kind === "list_item") {
-        this.readMembers(block, units, this.pendingList.statementClass, "label_list", this.pendingList.label, this.pendingList);
+        this.readMembers(
+          block,
+          units,
+          this.pendingList.statementClass,
+          "label_list",
+          this.pendingList.label,
+          this.pendingList,
+        );
         return;
       }
       this.closePendingList();
@@ -376,12 +406,31 @@ class StatementReader {
       // one; each is quoted as the document wrote it. A unit the work vocabulary
       // claims is skipped, so `Status: blocked` under a section is not a constraint.
       if (block.kind === "list_item" || block.kind === "cell") {
-        this.readMembers(block, units, section.statementClass, "section_heading", section.label, section);
+        this.readMembers(
+          block,
+          units,
+          section.statementClass,
+          "section_heading",
+          section.label,
+          section,
+        );
         return;
       }
-      const kept = units.filter((unit) => unit.trim().length > 0 && !this.skipsMember(unit, section, block));
+      const kept = units.filter(
+        (unit) => unit.trim().length > 0 && !this.skipsMember(unit, section, block),
+      );
       if (kept.length > 0) {
-        if (this.emit(section.statementClass, kept.join("\n"), block.text, "section_heading", section.label, block, null)) {
+        if (
+          this.emit(
+            section.statementClass,
+            kept.join("\n"),
+            block.text,
+            "section_heading",
+            section.label,
+            block,
+            null,
+          )
+        ) {
           section.members += 1;
         }
       }
@@ -420,7 +469,8 @@ class StatementReader {
     owner: { members: number },
   ): void {
     for (const [index, unit] of units.entries()) {
-      if (unit.trim().length === 0 || this.skipsMember(unit, { statementClass, label }, block)) continue;
+      if (unit.trim().length === 0 || this.skipsMember(unit, { statementClass, label }, block))
+        continue;
       if (this.emit(statementClass, unit, unit, form, label, block, index)) owner.members += 1;
     }
   }
@@ -439,9 +489,17 @@ class StatementReader {
   private readLabelledBlock(
     block: DocumentBlockView,
     units: readonly string[],
-    labelled: readonly ({ label: string; statementClass: ArchitectureStatementClass; value: string } | null)[],
+    labelled: readonly ({
+      label: string;
+      statementClass: ArchitectureStatementClass;
+      value: string;
+    } | null)[],
   ): void {
-    let open: { statementClass: ArchitectureStatementClass; label: string; members: number } | null = null;
+    let open: {
+      statementClass: ArchitectureStatementClass;
+      label: string;
+      members: number;
+    } | null = null;
     for (const [index, unit] of units.entries()) {
       const hit = labelled[index];
       if (hit !== null) {
@@ -464,19 +522,35 @@ class StatementReader {
       if (unit.trim().length === 0) continue;
       if (open !== null) {
         if (this.skipsMember(unit, open, block)) continue;
-        if (this.emit(open.statementClass, unit, unit, "label_list", open.label, block, index)) open.members += 1;
+        if (this.emit(open.statementClass, unit, unit, "label_list", open.label, block, index))
+          open.members += 1;
         continue;
       }
       if (this.section !== null) {
         if (this.skipsMember(unit, this.section, block)) continue;
-        if (this.emit(this.section.statementClass, unit, unit, "section_heading", this.section.label, block, index)) {
+        if (
+          this.emit(
+            this.section.statementClass,
+            unit,
+            unit,
+            "section_heading",
+            this.section.label,
+            block,
+            index,
+          )
+        ) {
           this.section.members += 1;
         }
       }
     }
     if (open !== null && open.members === 0) {
       // Nothing in this block followed the label; the list items after it may.
-      this.pendingList = { statementClass: open.statementClass, label: open.label, members: 0, block };
+      this.pendingList = {
+        statementClass: open.statementClass,
+        label: open.label,
+        members: 0,
+        block,
+      };
     }
   }
 }

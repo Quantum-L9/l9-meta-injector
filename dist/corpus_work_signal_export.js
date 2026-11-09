@@ -49,11 +49,11 @@ exports.DOCUMENT_WORK_SIGNALS_MANIFEST_FILE = "document-work-signals.manifest.js
  * records agreeing on the id are the same record and are refused as duplicates.
  */
 function compareRecords(left, right) {
-    return ((0, ordering_1.compareCodePoints)(left.artifact_id, right.artifact_id)
-        || (0, ordering_1.compareCodePoints)(left.block_id, right.block_id)
-        || (0, ordering_1.compareCodePoints)(left.predicate, right.predicate)
-        || (0, ordering_1.compareCodePoints)(left.object, right.object)
-        || (0, ordering_1.compareCodePoints)(left.signal_id, right.signal_id));
+    return ((0, ordering_1.compareCodePoints)(left.artifact_id, right.artifact_id) ||
+        (0, ordering_1.compareCodePoints)(left.block_id, right.block_id) ||
+        (0, ordering_1.compareCodePoints)(left.predicate, right.predicate) ||
+        (0, ordering_1.compareCodePoints)(left.object, right.object) ||
+        (0, ordering_1.compareCodePoints)(left.signal_id, right.signal_id));
 }
 /** One record, canonically rendered onto a single line. */
 function renderDocumentWorkSignalRecord(record) {
@@ -98,15 +98,17 @@ function buildDocumentWorkSignalExport(input) {
     const seen = new Set();
     for (const record of records) {
         if (seen.has(record.signal_id)) {
-            throw new Error(`document-work-signals: duplicate signal_id ${record.signal_id} `
-                + `(${record.source_path} ${record.predicate}); the payload must carry each signal once`);
+            throw new Error(`document-work-signals: duplicate signal_id ${record.signal_id} ` +
+                `(${record.source_path} ${record.predicate}); the payload must carry each signal once`);
         }
         seen.add(record.signal_id);
     }
     // A trailing newline on every line, including the last: a JSONL reader that
     // splits on the separator then gets one empty trailing field rather than a
     // final record that looks truncated.
-    const payloadJsonl = records.map((record) => `${renderDocumentWorkSignalRecord(record)}\n`).join("");
+    const payloadJsonl = records
+        .map((record) => `${renderDocumentWorkSignalRecord(record)}\n`)
+        .join("");
     const manifest = {
         schema: exports.DOCUMENT_WORK_SIGNALS_MANIFEST_SCHEMA,
         corpus_source_snapshot_id: input.corpusSourceSnapshotId,
@@ -184,16 +186,16 @@ function checkPayloadAgainstManifest(manifest, payloadJsonl, records) {
     }
     const artifactHash = (0, repository_model_1.sha256TextPrefixed)(payloadJsonl);
     if (artifactHash !== manifest.payload_artifact_hash) {
-        problems.push(`payload artifact hash ${artifactHash} does not match the manifest's `
-            + `${manifest.payload_artifact_hash}`);
+        problems.push(`payload artifact hash ${artifactHash} does not match the manifest's ` +
+            `${manifest.payload_artifact_hash}`);
     }
     if (records.length === manifest.record_count) {
         // Only worth computing when the record set parsed whole; over a short read it
         // would report a second failure with the same cause as the first.
         const semanticHashValue = (0, repository_model_1.sha256TextPrefixed)((0, corpus_analysis_1.canonicalCorpusJson)({ schema: exports.DOCUMENT_WORK_SIGNALS_SCHEMA, records }, 0));
         if (semanticHashValue !== manifest.payload_semantic_hash) {
-            problems.push(`payload semantic hash ${semanticHashValue} does not match the manifest's `
-                + `${manifest.payload_semantic_hash}`);
+            problems.push(`payload semantic hash ${semanticHashValue} does not match the manifest's ` +
+                `${manifest.payload_semantic_hash}`);
         }
     }
     return problems;
@@ -210,10 +212,10 @@ function checkRecordIdentities(records, knownArtifactIds, knownNormalizedDocumen
         if (!knownArtifactIds.has(record.artifact_id)) {
             problems.push(`signal ${record.signal_id} names artifact ${record.artifact_id}, which this corpus did not observe`);
         }
-        if (record.normalized_document_id !== null
-            && !knownNormalizedDocumentIds.has(record.normalized_document_id)) {
-            problems.push(`signal ${record.signal_id} names normalized document ${record.normalized_document_id}, `
-                + "which this corpus did not produce");
+        if (record.normalized_document_id !== null &&
+            !knownNormalizedDocumentIds.has(record.normalized_document_id)) {
+            problems.push(`signal ${record.signal_id} names normalized document ${record.normalized_document_id}, ` +
+                "which this corpus did not produce");
         }
     }
     return problems;
@@ -233,8 +235,8 @@ function checkGroupTotals(manifest, records) {
     if (records.length === manifest.record_count) {
         const documentCount = new Set(records.map((record) => record.artifact_id)).size;
         if (documentCount !== manifest.document_count) {
-            problems.push(`manifest document_count is ${manifest.document_count} and the payload records name `
-                + `${documentCount} distinct artifact(s)`);
+            problems.push(`manifest document_count is ${manifest.document_count} and the payload records name ` +
+                `${documentCount} distinct artifact(s)`);
         }
         const formats = (0, corpus_analysis_1.canonicalCorpusJson)(tallyFormats(records), 0);
         if (formats !== (0, corpus_analysis_1.canonicalCorpusJson)(manifest.by_format, 0)) {
@@ -275,8 +277,8 @@ function verifyDocumentWorkSignalExport(input) {
     const { records, problems: readProblems } = readPayloadRecords(payloadJsonl);
     const reportProblems = [];
     if (manifest.record_count !== input.reportSignalCount) {
-        reportProblems.push(`the sampled report states ${input.reportSignalCount} signal(s) and the complete `
-            + `payload manifest states ${manifest.record_count}`);
+        reportProblems.push(`the sampled report states ${input.reportSignalCount} signal(s) and the complete ` +
+            `payload manifest states ${manifest.record_count}`);
     }
     return [
         ...readProblems,

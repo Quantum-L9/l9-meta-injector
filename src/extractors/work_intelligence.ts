@@ -17,8 +17,8 @@
 // would be reconciliation, which belongs downstream where the full corpus is in
 // view.
 import { AssertionDraft, Extractor, ExtractorFileInput } from "../interpretation";
-import { lineRange, toLines } from "./common";
 import { parseNativeMetadata } from "../native_metadata";
+import { lineRange, toLines } from "./common";
 
 // ───────────────────────────── file eligibility ─────────────────────────────
 
@@ -95,7 +95,13 @@ function readDocument(sourcePath: string, content: string): DocumentView {
     if (region.carrier === "frontmatter" || region.carrier === "managed-frontmatter") continue;
     for (let line = region.start_line; line <= region.end_line; line++) header[line - 1] = true;
   }
-  return { lines, frontmatterStart, frontmatterEnd, fenced: markFencedCode(lines, frontmatterEnd), header };
+  return {
+    lines,
+    frontmatterStart,
+    frontmatterEnd,
+    fenced: markFencedCode(lines, frontmatterEnd),
+    header,
+  };
 }
 
 /** The frontmatter body's line span, or `[-1, -1]` when the document has none. */
@@ -129,7 +135,8 @@ interface FenceLine {
 /** The fence run a line starts with, or null. A scan, so linear on any line. */
 function fenceLine(line: string): FenceLine | null {
   let position = 0;
-  while (position < line.length && position <= FENCE_MAX_INDENT && /\s/.test(line[position])) position++;
+  while (position < line.length && position <= FENCE_MAX_INDENT && /\s/.test(line[position]))
+    position++;
   if (position > FENCE_MAX_INDENT) return null;
   const character = line[position];
   if (character !== "`" && character !== "~") return null;
@@ -185,14 +192,17 @@ function markFencedCode(lines: string[], frontmatterEnd: number): boolean[] {
 }
 
 function inFrontmatter(view: DocumentView, index: number): boolean {
-  return view.frontmatterStart >= 0 && index >= view.frontmatterStart && index <= view.frontmatterEnd;
+  return (
+    view.frontmatterStart >= 0 && index >= view.frontmatterStart && index <= view.frontmatterEnd
+  );
 }
 
 /** True for a line that carries no readable body content: frontmatter or code. */
 function isProseLine(view: DocumentView, index: number): boolean {
   if (inFrontmatter(view, index)) return false;
   if (view.header[index]) return false;
-  if (view.frontmatterStart >= 0 && (index === 0 || index === view.frontmatterEnd + 1)) return false;
+  if (view.frontmatterStart >= 0 && (index === 0 || index === view.frontmatterEnd + 1))
+    return false;
   return !view.fenced[index];
 }
 
@@ -382,21 +392,41 @@ function labelledLine(rawLine: string): LabelledLine | null {
   if (colon < 0) return null;
   const label = plain(body.slice(0, colon)).toLowerCase();
   if (!LABEL_SHAPE.test(label)) return null;
-  const value = body.slice(colon + 1).trim().replace(/^[*_]+/, "").trim();
+  const value = body
+    .slice(colon + 1)
+    .trim()
+    .replace(/^[*_]+/, "")
+    .trim();
   return { label, value };
 }
 
 // ───────────────────────────── vocabulary ─────────────────────────────
 
 const WORK_STATUS_VALUES: readonly string[] = [
-  "active", "archived", "blocked", "cancelled", "complete", "done",
-  "draft", "paused", "planned", "superseded", "wip",
+  "active",
+  "archived",
+  "blocked",
+  "cancelled",
+  "complete",
+  "done",
+  "draft",
+  "paused",
+  "planned",
+  "superseded",
+  "wip",
 ];
 const WORK_STATUS: ReadonlySet<string> = new Set(WORK_STATUS_VALUES);
 
 const WORK_KIND_VALUES: readonly string[] = [
-  "checklist", "decision", "design", "notes", "plan", "proposal",
-  "research", "roadmap", "specification",
+  "checklist",
+  "decision",
+  "design",
+  "notes",
+  "plan",
+  "proposal",
+  "research",
+  "roadmap",
+  "specification",
 ];
 const WORK_KIND: ReadonlySet<string> = new Set(WORK_KIND_VALUES);
 
@@ -412,14 +442,14 @@ const BARE_TITLE_STATUS: ReadonlySet<string> = new Set(["draft", "wip"]);
 const RELATION_PREDICATE_BY_LABEL: Readonly<Record<string, string>> = {
   "depends on": "work.depends_on",
   "depends upon": "work.depends_on",
-  "requires": "work.depends_on",
+  requires: "work.depends_on",
   "blocked by": "work.blocked_by",
-  "reference": "work.references",
-  "references": "work.references",
+  reference: "work.references",
+  references: "work.references",
   "see also": "work.references",
-  "related": "work.references",
-  "supersedes": "work.supersedes",
-  "replaces": "work.supersedes",
+  related: "work.references",
+  supersedes: "work.supersedes",
+  replaces: "work.supersedes",
   "superseded by": "work.superseded_by",
   "replaced by": "work.superseded_by",
 };
@@ -427,7 +457,10 @@ const RELATION_PREDICATE_BY_LABEL: Readonly<Record<string, string>> = {
 /** A declared status word, or null when the value is not one of them. */
 function statusValue(raw: string): string | null {
   const bare = unwrap(plain(raw));
-  const candidate = trimRunEnd(trimRunStart(bare, isNotAlphanumeric), isNotAlphanumeric).toLowerCase();
+  const candidate = trimRunEnd(
+    trimRunStart(bare, isNotAlphanumeric),
+    isNotAlphanumeric,
+  ).toLowerCase();
   return WORK_STATUS.has(candidate) ? candidate : null;
 }
 
@@ -519,15 +552,22 @@ function withoutYamlComment(value: string): string {
     const char = value[i];
     if (quote === '"') {
       if (char === "\\") i++;
-      else if (char === '"') { quote = ""; previous = char; }
+      else if (char === '"') {
+        quote = "";
+        previous = char;
+      }
       continue;
     }
     if (quote === "'") {
       if (char === "'" && value[i + 1] === "'") i++;
-      else if (char === "'") { quote = ""; previous = char; }
+      else if (char === "'") {
+        quote = "";
+        previous = char;
+      }
       continue;
     }
-    if (char === "#" && (i === 0 || WHITESPACE.test(value[i - 1]))) return value.slice(0, i).trimEnd();
+    if (char === "#" && (i === 0 || WHITESPACE.test(value[i - 1])))
+      return value.slice(0, i).trimEnd();
     if (WHITESPACE.test(char)) continue;
     const startsScalar = previous === "" || previous === "[" || (flowDepth > 0 && previous === ",");
     if ((char === "'" || char === '"') && startsScalar) quote = char;
@@ -671,17 +711,28 @@ export const documentStructureExtractor: Extractor = {
     const drafts: AssertionDraft[] = [];
 
     for (const title of titleDeclarations(view)) {
-      drafts.push(draft("document.title", title.text, title.index, view.lines[title.index], "declared", "high"));
+      drafts.push(
+        draft(
+          "document.title",
+          title.text,
+          title.index,
+          view.lines[title.index],
+          "declared",
+          "high",
+        ),
+      );
     }
     for (const heading of headings(view)) {
-      drafts.push(draft(
-        "document.heading",
-        `H${heading.level}: ${heading.text}`,
-        heading.index,
-        view.lines[heading.index],
-        "observed",
-        "high",
-      ));
+      drafts.push(
+        draft(
+          "document.heading",
+          `H${heading.level}: ${heading.text}`,
+          heading.index,
+          view.lines[heading.index],
+          "observed",
+          "high",
+        ),
+      );
     }
     return drafts;
   },
@@ -745,7 +796,10 @@ function titleKinds(text: string): string[] {
   // are literal. Matching ` +[—–|] +` against a title carrying a long whitespace
   // run costs a quadratic number of steps for every split position it fails at.
   const segment = plain(text).split(TITLE_SEGMENT)[0];
-  const words = segment.toLowerCase().split(/[^\p{L}]+/u).filter((word) => word.length > 0);
+  const words = segment
+    .toLowerCase()
+    .split(/[^\p{L}]+/u)
+    .filter((word) => word.length > 0);
   if (words.length === 0) return [];
   const found: string[] = [];
   for (const word of new Set([words[0], words[words.length - 1]])) {
@@ -763,13 +817,17 @@ function milestoneSectionOpeners(view: DocumentView): number[] {
   for (let index = 0; index < view.lines.length; index++) {
     if (!isProseLine(view, index)) continue;
     if (ATX_HEADING.test(view.lines[index])) continue;
-    if (/^\s{0,3}(?:\*\*|__)?milestones(?:\*\*|__)?\s*:\s*$/i.test(view.lines[index])) openers.push(index);
+    if (/^\s{0,3}(?:\*\*|__)?milestones(?:\*\*|__)?\s*:\s*$/i.test(view.lines[index]))
+      openers.push(index);
   }
   return [...new Set(openers)].sort((left, right) => left - right);
 }
 
 /** Bullets belonging to one milestone section, up to the next heading or blank run. */
-function milestoneSectionBullets(view: DocumentView, opener: number): { index: number; text: string }[] {
+function milestoneSectionBullets(
+  view: DocumentView,
+  opener: number,
+): { index: number; text: string }[] {
   const out: { index: number; text: string }[] = [];
   for (let index = opener + 1; index < view.lines.length; index++) {
     if (!isProseLine(view, index)) break;
@@ -802,8 +860,10 @@ function frontmatterSignals(view: DocumentView): AssertionDraft[] {
   const drafts: AssertionDraft[] = [];
   for (const field of frontmatterFields(view)) {
     const line = view.lines[field.index];
-    const status = field.key === "status" || field.key === "state" ? statusValue(field.value) : null;
-    if (status !== null) drafts.push(draft("work.status", status, field.index, line, "declared", "high"));
+    const status =
+      field.key === "status" || field.key === "state" ? statusValue(field.value) : null;
+    if (status !== null)
+      drafts.push(draft("work.status", status, field.index, line, "declared", "high"));
     const kind = field.key === "type" || field.key === "kind" ? kindValue(field.value) : null;
     if (kind !== null) drafts.push(draft("work.kind", kind, field.index, line, "declared", "high"));
   }
@@ -835,7 +895,16 @@ function milestoneSectionSignals(view: DocumentView): AssertionDraft[] {
   const drafts: AssertionDraft[] = [];
   for (const opener of milestoneSectionOpeners(view)) {
     for (const bullet of milestoneSectionBullets(view, opener)) {
-      drafts.push(draft("work.milestone", bullet.text, bullet.index, view.lines[bullet.index], "observed", "high"));
+      drafts.push(
+        draft(
+          "work.milestone",
+          bullet.text,
+          bullet.index,
+          view.lines[bullet.index],
+          "observed",
+          "high",
+        ),
+      );
     }
   }
   return drafts;
@@ -919,11 +988,10 @@ function labelSignal(line: string): SignalReading | null {
  * exclusive: a line that opens with a list marker cannot be a blockquote
  * admonition, and a checkbox with no text has nothing after it to be a label.
  */
-const UNIT_READERS: readonly ((line: string, listMarkerImplied: boolean) => SignalReading | null)[] = [
-  taskSignal,
-  admonitionSignal,
-  labelSignal,
-];
+const UNIT_READERS: readonly ((
+  line: string,
+  listMarkerImplied: boolean,
+) => SignalReading | null)[] = [taskSignal, admonitionSignal, labelSignal];
 
 /**
  * Read one unit of text with the whole vocabulary, in precedence order.

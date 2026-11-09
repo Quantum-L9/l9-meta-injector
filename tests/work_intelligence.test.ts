@@ -61,8 +61,9 @@ describe("supported inputs", () => {
 
 describe("titles", () => {
   it("reads a Markdown H1", () => {
-    expect(objects(structure("a.md", ["# Corpus Plan", "", "body"]), "document.title"))
-      .toEqual(["Corpus Plan"]);
+    expect(objects(structure("a.md", ["# Corpus Plan", "", "body"]), "document.title")).toEqual([
+      "Corpus Plan",
+    ]);
   });
 
   it("reads a frontmatter title", () => {
@@ -71,20 +72,31 @@ describe("titles", () => {
   });
 
   it("reads a plain-text Title field", () => {
-    expect(objects(structure("a.txt", ["Title: Working Notes", "", "body"]), "document.title"))
-      .toEqual(["Working Notes"]);
+    expect(
+      objects(structure("a.txt", ["Title: Working Notes", "", "body"]), "document.title"),
+    ).toEqual(["Working Notes"]);
   });
 
   it("emits both titles when the two forms disagree", () => {
-    const drafts = structure("a.md", ["---", "title: From Frontmatter", "---", "", "# From Heading"]);
+    const drafts = structure("a.md", [
+      "---",
+      "title: From Frontmatter",
+      "---",
+      "",
+      "# From Heading",
+    ]);
     // Reconciliation is downstream. Choosing one here would erase the evidence
     // that the document contradicts itself.
     expect(objects(drafts, "document.title")).toEqual(["From Frontmatter", "From Heading"]);
   });
 
   it("emits no title when the document declares none", () => {
-    expect(objects(structure("a.md", ["Some prose that mentions a title in passing."]), "document.title"))
-      .toEqual([]);
+    expect(
+      objects(
+        structure("a.md", ["Some prose that mentions a title in passing."]),
+        "document.title",
+      ),
+    ).toEqual([]);
   });
 
   it("reads headings with their level and exact line", () => {
@@ -115,8 +127,9 @@ describe("declared status", () => {
   });
 
   it("reads a frontmatter status and a leading admonition", () => {
-    expect(objects(work("a.md", ["---", "status: blocked", "---", "", "body"]), "work.status"))
-      .toEqual(["blocked"]);
+    expect(
+      objects(work("a.md", ["---", "status: blocked", "---", "", "body"]), "work.status"),
+    ).toEqual(["blocked"]);
     expect(objects(work("a.md", ["> **WIP**", "", "body"]), "work.status")).toEqual(["wip"]);
   });
 
@@ -143,7 +156,9 @@ describe("declared status", () => {
   });
 
   it("records a title marker with lower confidence than a status field", () => {
-    const marker = work("a.md", ["# Routing Guide [DRAFT]"]).find((d) => d.predicate === "work.status");
+    const marker = work("a.md", ["# Routing Guide [DRAFT]"]).find(
+      (d) => d.predicate === "work.status",
+    );
     const field = work("a.md", ["Status: draft"]).find((d) => d.predicate === "work.status");
     expect(marker?.confidence).toBe("medium");
     expect(field?.confidence).toBe("high");
@@ -177,15 +192,20 @@ describe("declared kind", () => {
   it("reads a kind only where the title says what the document is", () => {
     // First or last word of the leading segment: those are the positions where a
     // kind word states what the document is rather than naming something in it.
-    expect(objects(work("a.md", ["# Implementation Roadmap — 6-Phase Rollout"]), "work.kind"))
-      .toEqual(["roadmap"]);
+    expect(
+      objects(work("a.md", ["# Implementation Roadmap — 6-Phase Rollout"]), "work.kind"),
+    ).toEqual(["roadmap"]);
     expect(objects(work("a.md", ["# Plan for the migration"]), "work.kind")).toEqual(["plan"]);
-    expect(objects(work("a.md", ["# L9 Conformance Checklist"]), "work.kind")).toEqual(["checklist"]);
+    expect(objects(work("a.md", ["# L9 Conformance Checklist"]), "work.kind")).toEqual([
+      "checklist",
+    ]);
     // Observed on a real repository: a research *agent* is not a piece of research.
-    expect(objects(work("a.md", ["# L9 Perplexity Research Agent — Tech Debt Pipeline"]), "work.kind"))
-      .toEqual([]);
-    expect(objects(work("a.md", ["# The design review meeting notes template guide"]), "work.kind"))
-      .toEqual([]);
+    expect(
+      objects(work("a.md", ["# L9 Perplexity Research Agent — Tech Debt Pipeline"]), "work.kind"),
+    ).toEqual([]);
+    expect(
+      objects(work("a.md", ["# The design review meeting notes template guide"]), "work.kind"),
+    ).toEqual([]);
   });
 });
 
@@ -195,31 +215,64 @@ describe("quoted text keeps the characters the document wrote", () => {
   // turns `ship_the_v2_pipeline` into a string that appears in no file and
   // matches no search, while the assertion still claims to quote the source.
   it.each([
-    ["a checkbox task", ["- [ ] wire up user_profile_service"], "work.task.open", "wire up user_profile_service"],
-    ["a TODO task", ["TODO: rotate api_key_v2 secret"], "work.task.open", "rotate api_key_v2 secret"],
-    ["a labelled milestone", ["Milestone: ship_the_v2_pipeline"], "work.milestone", "ship_the_v2_pipeline"],
-    ["a milestone bullet", ["## Milestones", "", "- deploy_the_edge_cache"], "work.milestone", "deploy_the_edge_cache"],
-    ["a relation target", ["Supersedes: l9_topology_contract"], "work.supersedes", "l9_topology_contract"],
+    [
+      "a checkbox task",
+      ["- [ ] wire up user_profile_service"],
+      "work.task.open",
+      "wire up user_profile_service",
+    ],
+    [
+      "a TODO task",
+      ["TODO: rotate api_key_v2 secret"],
+      "work.task.open",
+      "rotate api_key_v2 secret",
+    ],
+    [
+      "a labelled milestone",
+      ["Milestone: ship_the_v2_pipeline"],
+      "work.milestone",
+      "ship_the_v2_pipeline",
+    ],
+    [
+      "a milestone bullet",
+      ["## Milestones", "", "- deploy_the_edge_cache"],
+      "work.milestone",
+      "deploy_the_edge_cache",
+    ],
+    [
+      "a relation target",
+      ["Supersedes: l9_topology_contract"],
+      "work.supersedes",
+      "l9_topology_contract",
+    ],
   ])("preserves an identifier in %s", (_name, lines, predicate, expected) => {
     expect(objects(work("a.md", lines as string[]), predicate as string)).toEqual([expected]);
   });
 
   it("preserves an identifier in a heading", () => {
-    expect(objects(structure("a.md", ["# deploy_the_v2_pipeline"]), "document.heading"))
-      .toEqual(["H1: deploy_the_v2_pipeline"]);
+    expect(objects(structure("a.md", ["# deploy_the_v2_pipeline"]), "document.heading")).toEqual([
+      "H1: deploy_the_v2_pipeline",
+    ]);
   });
 
   it("still removes emphasis that wraps the whole value", () => {
-    expect(objects(work("a.md", ["- [ ] **Do the thing**"]), "work.task.open")).toEqual(["Do the thing"]);
-    expect(objects(work("a.md", ["- [ ] ***very important***"]), "work.task.open")).toEqual(["very important"]);
+    expect(objects(work("a.md", ["- [ ] **Do the thing**"]), "work.task.open")).toEqual([
+      "Do the thing",
+    ]);
+    expect(objects(work("a.md", ["- [ ] ***very important***"]), "work.task.open")).toEqual([
+      "very important",
+    ]);
   });
 
   it("leaves emphasis that marks up part of a sentence", () => {
     // Trimming only what touches an edge would leave `urgent** fix`, a string
     // the document does not contain.
-    expect(objects(work("a.md", ["- [ ] **urgent** fix"]), "work.task.open")).toEqual(["**urgent** fix"]);
-    expect(objects(work("a.md", ["- [ ] fix the **login** bug"]), "work.task.open"))
-      .toEqual(["fix the **login** bug"]);
+    expect(objects(work("a.md", ["- [ ] **urgent** fix"]), "work.task.open")).toEqual([
+      "**urgent** fix",
+    ]);
+    expect(objects(work("a.md", ["- [ ] fix the **login** bug"]), "work.task.open")).toEqual([
+      "fix the **login** bug",
+    ]);
   });
 
   it("leaves a value that is nothing but emphasis alone", () => {
@@ -229,18 +282,24 @@ describe("quoted text keeps the characters the document wrote", () => {
 
 describe("tasks", () => {
   it("reads an unchecked checkbox as an open task", () => {
-    expect(objects(work("a.md", ["- [ ] wire the thing"]), "work.task.open"))
-      .toEqual(["wire the thing"]);
+    expect(objects(work("a.md", ["- [ ] wire the thing"]), "work.task.open")).toEqual([
+      "wire the thing",
+    ]);
   });
 
   it("reads a checked checkbox as a completed task", () => {
-    expect(objects(work("a.md", ["- [x] read the spec", "* [X] file the report"]), "work.task.completed"))
-      .toEqual(["read the spec", "file the report"]);
+    expect(
+      objects(
+        work("a.md", ["- [x] read the spec", "* [X] file the report"]),
+        "work.task.completed",
+      ),
+    ).toEqual(["read the spec", "file the report"]);
   });
 
   it("reads an explicit TODO line", () => {
-    expect(objects(work("a.md", ["TODO: file the report"]), "work.task.open"))
-      .toEqual(["file the report"]);
+    expect(objects(work("a.md", ["TODO: file the report"]), "work.task.open")).toEqual([
+      "file the report",
+    ]);
   });
 
   it("does not read the word TODO inside a sentence as a task", () => {
@@ -254,22 +313,30 @@ describe("tasks", () => {
   });
 
   it("does not read a task inside fenced code", () => {
-    expect(objects(work("a.md", ["```", "- [ ] example only", "```"]), "work.task.open")).toEqual([]);
+    expect(objects(work("a.md", ["```", "- [ ] example only", "```"]), "work.task.open")).toEqual(
+      [],
+    );
   });
 
   it("cites the exact line of each task", () => {
     const drafts = work("a.md", ["intro", "", "- [ ] first", "- [ ] second"]);
-    expect(drafts.filter((d) => d.predicate === "work.task.open").map((d) => d.sourceRange))
-      .toEqual([{ start_line: 3, end_line: 3 }, { start_line: 4, end_line: 4 }]);
+    expect(
+      drafts.filter((d) => d.predicate === "work.task.open").map((d) => d.sourceRange),
+    ).toEqual([
+      { start_line: 3, end_line: 3 },
+      { start_line: 4, end_line: 4 },
+    ]);
   });
 });
 
 describe("milestones", () => {
   it("reads a labelled milestone with and without a number", () => {
-    expect(objects(work("a.md", ["Milestone: ship the reader"]), "work.milestone"))
-      .toEqual(["ship the reader"]);
-    expect(objects(work("a.md", ["Milestone 3: prove the consumer"]), "work.milestone"))
-      .toEqual(["prove the consumer"]);
+    expect(objects(work("a.md", ["Milestone: ship the reader"]), "work.milestone")).toEqual([
+      "ship the reader",
+    ]);
+    expect(objects(work("a.md", ["Milestone 3: prove the consumer"]), "work.milestone")).toEqual([
+      "prove the consumer",
+    ]);
   });
 
   it("reads bullets under an explicit Milestones heading", () => {
@@ -405,7 +472,14 @@ describe("hostile input", () => {
   });
 
   it("reads a frontmatter block with no colon on a long line without stalling", () => {
-    const lines = ["---", `${"a".repeat(HOSTILE_LENGTH / 2)}${" ".repeat(HOSTILE_LENGTH / 2)}`, "status: wip", "---", "", "body"];
+    const lines = [
+      "---",
+      `${"a".repeat(HOSTILE_LENGTH / 2)}${" ".repeat(HOSTILE_LENGTH / 2)}`,
+      "status: wip",
+      "---",
+      "",
+      "body",
+    ];
     within(BUDGET_MS, () => {
       expect(objects(work("a.md", lines), "work.status")).toEqual(["wip"]);
     });
@@ -437,8 +511,9 @@ describe("hostile input", () => {
     // numbering rather than in the text.
     const line = `[x] ${" ".repeat(HOSTILE_LENGTH)}shipped${STRAY_RETURN}tail`;
     within(BUDGET_MS, () => {
-      expect(readTextUnit(line, { admonitionsAllowed: false, listMarkerImplied: true })?.predicate)
-        .toBe("work.task.completed");
+      expect(
+        readTextUnit(line, { admonitionsAllowed: false, listMarkerImplied: true })?.predicate,
+      ).toBe("work.task.completed");
     });
   });
 
@@ -458,10 +533,18 @@ describe("hostile input", () => {
 
   it("still reads every construct correctly on ordinary input", () => {
     // The rewrite is only worth anything if it did not change what is read.
-    expect(objects(structure("a.md", ["# Heading ###"]), "document.heading")).toEqual(["H1: Heading"]);
-    expect(objects(structure("a.md", ["#  Spaced  Out  "]), "document.title")).toEqual(["Spaced Out"]);
-    expect(objects(work("a.md", ["Depends on: **plan.md**"]), "work.depends_on")).toEqual(["plan.md"]);
-    expect(objects(work("a.md", ["---", "status : wip", "---", "", "x"]), "work.status")).toEqual(["wip"]);
+    expect(objects(structure("a.md", ["# Heading ###"]), "document.heading")).toEqual([
+      "H1: Heading",
+    ]);
+    expect(objects(structure("a.md", ["#  Spaced  Out  "]), "document.title")).toEqual([
+      "Spaced Out",
+    ]);
+    expect(objects(work("a.md", ["Depends on: **plan.md**"]), "work.depends_on")).toEqual([
+      "plan.md",
+    ]);
+    expect(objects(work("a.md", ["---", "status : wip", "---", "", "x"]), "work.status")).toEqual([
+      "wip",
+    ]);
   });
 });
 

@@ -4,26 +4,27 @@
 // function of content and of the rules applied to it, an entry proves its own
 // integrity before it is believed, a broken entry is deleted rather than served,
 // and the store is never allowed to live inside a tree the tool observes.
+
+import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { execFileSync } from "node:child_process";
 import { afterAll, describe, expect, it } from "vitest";
 import {
+  archiveManifestKey,
   CORPUS_CACHE_ENTRY_SCHEMA,
   CORPUS_CACHE_LAYERS,
-  DETERMINISTIC_CACHE_LAYERS,
-  FileCorpusCache,
-  MemoryCorpusCache,
-  NullCorpusCache,
-  archiveManifestKey,
+  cached,
   cacheEntryPath,
   cachePayloadHash,
   cacheStatsDelta,
-  cached,
   candidateAnalysisKey,
+  DETERMINISTIC_CACHE_LAYERS,
   defaultCorpusCacheDir,
   embeddingKey,
+  FileCorpusCache,
+  MemoryCorpusCache,
+  NullCorpusCache,
   rawIdentityKey,
   statPrecheckMatches,
 } from "../src/corpus_cache";
@@ -49,7 +50,9 @@ describe("keys", () => {
     // …but adding a document does.
     expect(
       candidateAnalysisKey({ inputFeatureIdentities: ["a", "b", "c"], candidateProfileHash: "p" }),
-    ).not.toBe(candidateAnalysisKey({ inputFeatureIdentities: ["a", "b"], candidateProfileHash: "p" }));
+    ).not.toBe(
+      candidateAnalysisKey({ inputFeatureIdentities: ["a", "b"], candidateProfileHash: "p" }),
+    );
     expect(
       embeddingKey({
         normalizedDocumentIdentity: "n",
@@ -155,14 +158,18 @@ describe("a file-backed cache", () => {
     const payload = { decodes: false, reason: "unreadable" };
     const file = cacheEntryPath(root, "normalized_document", "normdoc:old");
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, JSON.stringify({
-      schema: "l9.corpus-cache-entry/v1",
-      layer: "normalized_document",
-      key: "normdoc:old",
-      payload_hash: cachePayloadHash(payload),
-      producer_version: "v1",
-      payload,
-    }), "utf8");
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        schema: "l9.corpus-cache-entry/v1",
+        layer: "normalized_document",
+        key: "normdoc:old",
+        payload_hash: cachePayloadHash(payload),
+        producer_version: "v1",
+        payload,
+      }),
+      "utf8",
+    );
 
     expect(cache.get("normalized_document", "normdoc:old")).toBeUndefined();
     expect(fs.existsSync(file)).toBe(false);
@@ -177,7 +184,10 @@ describe("a file-backed cache", () => {
     const entries = (memory as unknown as { entries: Map<string, { schema: string }> }).entries;
     const slot = entries.get("normalized_document/normdoc:old");
     expect(slot).toBeDefined();
-    entries.set("normalized_document/normdoc:old", { ...(slot as { schema: string }), schema: "l9.corpus-cache-entry/v1" });
+    entries.set("normalized_document/normdoc:old", {
+      ...(slot as { schema: string }),
+      schema: "l9.corpus-cache-entry/v1",
+    });
     expect(memory.get("normalized_document", "normdoc:old")).toBeUndefined();
     expect(memory.stats().stale_producer).toBe(1);
     expect(memory.stats().corrupt).toBe(0);
@@ -206,7 +216,8 @@ describe("a file-backed cache", () => {
     ).toThrow(/refusing a cache root inside an observed source tree/);
     // A sibling directory is fine.
     expect(
-      () => new FileCorpusCache({ root: tmp(), producerVersion: "v1", observedRootPaths: [source] }),
+      () =>
+        new FileCorpusCache({ root: tmp(), producerVersion: "v1", observedRootPaths: [source] }),
     ).not.toThrow();
   });
 
@@ -238,9 +249,15 @@ describe("accounting", () => {
 describe("the mtime precheck", () => {
   it("is a hint that requires both size and mtime, and has no prior by default", () => {
     expect(statPrecheckMatches(undefined, { size_bytes: 1, mtime_ms: 2 })).toBe(false);
-    expect(statPrecheckMatches({ size_bytes: 1, mtime_ms: 2 }, { size_bytes: 1, mtime_ms: 2 })).toBe(true);
-    expect(statPrecheckMatches({ size_bytes: 1, mtime_ms: 2 }, { size_bytes: 1, mtime_ms: 3 })).toBe(false);
-    expect(statPrecheckMatches({ size_bytes: 9, mtime_ms: 2 }, { size_bytes: 1, mtime_ms: 2 })).toBe(false);
+    expect(
+      statPrecheckMatches({ size_bytes: 1, mtime_ms: 2 }, { size_bytes: 1, mtime_ms: 2 }),
+    ).toBe(true);
+    expect(
+      statPrecheckMatches({ size_bytes: 1, mtime_ms: 2 }, { size_bytes: 1, mtime_ms: 3 }),
+    ).toBe(false);
+    expect(
+      statPrecheckMatches({ size_bytes: 9, mtime_ms: 2 }, { size_bytes: 1, mtime_ms: 2 }),
+    ).toBe(false);
   });
 });
 
@@ -255,11 +272,15 @@ describe("the archive manifest layer", () => {
     expect(archiveManifestKey(base)).toBe(archiveManifestKey({ ...base }));
     // A stricter policy asks a different question about the same archive, and
     // must never be answered out of the looser policy's entry.
-    expect(archiveManifestKey({ ...base, archivePolicyFingerprint: "lap1:bbbb" }))
-      .not.toBe(archiveManifestKey(base));
-    expect(archiveManifestKey({ ...base, archiveReaderVersion: "2.0.0" })).not.toBe(archiveManifestKey(base));
-    expect(archiveManifestKey({ ...base, archiveContentHash: `sha256:${"b".repeat(64)}` }))
-      .not.toBe(archiveManifestKey(base));
+    expect(archiveManifestKey({ ...base, archivePolicyFingerprint: "lap1:bbbb" })).not.toBe(
+      archiveManifestKey(base),
+    );
+    expect(archiveManifestKey({ ...base, archiveReaderVersion: "2.0.0" })).not.toBe(
+      archiveManifestKey(base),
+    );
+    expect(
+      archiveManifestKey({ ...base, archiveContentHash: `sha256:${"b".repeat(64)}` }),
+    ).not.toBe(archiveManifestKey(base));
   });
 
   it("rejects a fingerprint-free or version-derived key at compile time", () => {
@@ -273,17 +294,34 @@ describe("the archive manifest layer", () => {
     try {
       const probe = (body: string): string => {
         const src = path.join(temp, "probe.ts");
-        fs.writeFileSync(src, `import { archiveManifestKey } from "${process.cwd()}/src/corpus_cache";\n${body}\n`, "utf8");
+        fs.writeFileSync(
+          src,
+          `import { archiveManifestKey } from "${process.cwd()}/src/corpus_cache";\n${body}\n`,
+          "utf8",
+        );
         const cfg = path.join(temp, "tsconfig.json");
-        fs.writeFileSync(cfg, JSON.stringify({
-          compilerOptions: {
-            target: "ES2020", module: "commonjs", strict: true, noEmit: true, skipLibCheck: true,
-            baseUrl: process.cwd(), typeRoots: [path.join(process.cwd(), "node_modules/@types")],
-          },
-          files: [src],
-        }), "utf8");
+        fs.writeFileSync(
+          cfg,
+          JSON.stringify({
+            compilerOptions: {
+              target: "ES2020",
+              module: "commonjs",
+              strict: true,
+              noEmit: true,
+              skipLibCheck: true,
+              baseUrl: process.cwd(),
+              typeRoots: [path.join(process.cwd(), "node_modules/@types")],
+            },
+            files: [src],
+          }),
+          "utf8",
+        );
         try {
-          execFileSync(process.execPath, [path.join(process.cwd(), "node_modules/typescript/bin/tsc"), "-p", cfg], { stdio: "pipe" });
+          execFileSync(
+            process.execPath,
+            [path.join(process.cwd(), "node_modules/typescript/bin/tsc"), "-p", cfg],
+            { stdio: "pipe" },
+          );
           return "";
         } catch (error) {
           const out = error as { stdout?: Buffer };
@@ -292,7 +330,9 @@ describe("the archive manifest layer", () => {
       };
 
       // A key built without the fingerprint does not compile.
-      const missing = probe('archiveManifestKey({ archiveContentHash: "a", archiveReaderVersion: "1" });');
+      const missing = probe(
+        'archiveManifestKey({ archiveContentHash: "a", archiveReaderVersion: "1" });',
+      );
       expect(missing).toContain("archivePolicyFingerprint");
 
       // Neither does one that tries to reach for the policy version instead.
@@ -303,9 +343,11 @@ describe("the archive manifest layer", () => {
 
       // The supported shape still compiles, so the two rejections above are
       // about the missing fingerprint and not about a broken probe.
-      expect(probe(
-        'archiveManifestKey({ archiveContentHash: "a", archiveReaderVersion: "1", archivePolicyFingerprint: "lap1:aaaa" });',
-      )).toBe("");
+      expect(
+        probe(
+          'archiveManifestKey({ archiveContentHash: "a", archiveReaderVersion: "1", archivePolicyFingerprint: "lap1:aaaa" });',
+        ),
+      ).toBe("");
     } finally {
       fs.rmSync(temp, { recursive: true, force: true });
     }

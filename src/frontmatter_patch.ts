@@ -102,7 +102,12 @@ interface ScalarToken {
   valueEndOffset: number;
 }
 
-function issue(raw: string, code: FrontMatterIssueCode, message: string, extra: Partial<FrontMatterIssue> = {}): FrontMatterInspection {
+function issue(
+  raw: string,
+  code: FrontMatterIssueCode,
+  message: string,
+  extra: Partial<FrontMatterIssue> = {},
+): FrontMatterInspection {
   const bom = raw.startsWith("\uFEFF") ? "\uFEFF" : "";
   return {
     safe: false,
@@ -133,7 +138,14 @@ function splitLines(raw: string, start = 0): Line[] {
   while (offset < raw.length) {
     const nl = raw.indexOf("\n", offset);
     if (nl === -1) {
-      out.push({ number, start: offset, end: raw.length, fullEnd: raw.length, text: raw.slice(offset), eol: "" });
+      out.push({
+        number,
+        start: offset,
+        end: raw.length,
+        fullEnd: raw.length,
+        text: raw.slice(offset),
+        eol: "",
+      });
       break;
     }
     const hasCr = nl > offset && raw[nl - 1] === "\r";
@@ -143,7 +155,8 @@ function splitLines(raw: string, start = 0): Line[] {
     offset = nl + 1;
     number += 1;
   }
-  if (raw.length === start) out.push({ number, start, end: start, fullEnd: start, text: "", eol: "" });
+  if (raw.length === start)
+    out.push({ number, start, end: start, fullEnd: start, text: "", eol: "" });
   return out;
 }
 
@@ -181,11 +194,21 @@ function splitInlineComment(text: string): ScalarToken {
       else if (char === "'") single = false;
       continue;
     }
-    if (char === "'" && atScalarStart) { single = true; atScalarStart = false; continue; }
-    if (char === '"' && atScalarStart) { double = true; atScalarStart = false; continue; }
+    if (char === "'" && atScalarStart) {
+      single = true;
+      atScalarStart = false;
+      continue;
+    }
+    if (char === '"' && atScalarStart) {
+      double = true;
+      atScalarStart = false;
+      continue;
+    }
     if (char === "[" && atScalarStart) bracketDepth += 1;
-    else if (char === "]" && bracketDepth > 0) { bracketDepth -= 1; atScalarStart = false; }
-    else if (char === "," && bracketDepth > 0) atScalarStart = true;
+    else if (char === "]" && bracketDepth > 0) {
+      bracketDepth -= 1;
+      atScalarStart = false;
+    } else if (char === "," && bracketDepth > 0) atScalarStart = true;
     else if (!/\s/.test(char)) atScalarStart = false;
     if (char === "#" && bracketDepth === 0 && (i === 0 || /\s/.test(text[i - 1]))) {
       const before = text.slice(0, i);
@@ -220,14 +243,21 @@ function splitInlineList(text: string): string[] | null {
   for (let i = 0; i < inner.length; i++) {
     const char = inner[i];
     if (char === "'" && !double) {
-      if (single && inner[i + 1] === "'") { i += 1; continue; }
+      if (single && inner[i + 1] === "'") {
+        i += 1;
+        continue;
+      }
       single = !single;
     } else if (char === '"' && !single && (i === 0 || inner[i - 1] !== "\\")) {
       double = !double;
     } else if (char === "," && !single && !double) {
       items.push(inner.slice(start, i).trim());
       start = i + 1;
-    } else if (!single && !double && (char === "[" || char === "]" || char === "{" || char === "}")) {
+    } else if (
+      !single &&
+      !double &&
+      (char === "[" || char === "]" || char === "{" || char === "}")
+    ) {
       return null;
     }
   }
@@ -245,7 +275,9 @@ function parseQuotedScalar(value: string): ScalarParse | null {
     try {
       const parsed = JSON.parse(value);
       return typeof parsed === "string" ? { ok: true, value: parsed } : { ok: false };
-    } catch { return { ok: false }; }
+    } catch {
+      return { ok: false };
+    }
   }
   if (value.startsWith("'")) {
     if (!value.endsWith("'")) return { ok: false };
@@ -271,7 +303,14 @@ function parseInlineListScalar(value: string): ScalarParse | null {
 function parseSafeScalar(text: string): ScalarParse {
   const value = text.trim();
   if (value === "") return { ok: false };
-  if (value.startsWith("{") || value.endsWith("}") || /^[|>&*!?]/.test(value) || value === "---" || value === "...") return { ok: false };
+  if (
+    value.startsWith("{") ||
+    value.endsWith("}") ||
+    /^[|>&*!?]/.test(value) ||
+    value === "---" ||
+    value === "..."
+  )
+    return { ok: false };
   if (/^<<\s*:/.test(value) || /(^|\s)[&*][A-Za-z0-9_-]+/.test(value)) return { ok: false };
   const quoted = parseQuotedScalar(value);
   if (quoted) return quoted;
@@ -310,20 +349,28 @@ function renderSafeScalar(value: unknown): string {
   if (value === null) return "null";
   if (typeof value === "boolean") return value ? "true" : "false";
   if (typeof value === "number") {
-    if (!Number.isFinite(value)) throw new Error("managed frontmatter values must be finite numbers");
+    if (!Number.isFinite(value))
+      throw new Error("managed frontmatter values must be finite numbers");
     return String(value);
   }
   if (typeof value === "string") {
-    if (value.includes("\r") || value.includes("\n") || value.includes("\u0000")) throw new Error("managed frontmatter strings must be single-line text");
+    if (value.includes("\r") || value.includes("\n") || value.includes("\u0000"))
+      throw new Error("managed frontmatter strings must be single-line text");
     return JSON.stringify(value);
   }
   if (Array.isArray(value)) {
-    return `[${value.map((item) => {
-      if (Array.isArray(item) || (typeof item === "object" && item !== null) || item === undefined) {
-        throw new Error("managed frontmatter arrays may contain scalar values only");
-      }
-      return renderSafeScalar(item);
-    }).join(", ")}]`;
+    return `[${value
+      .map((item) => {
+        if (
+          Array.isArray(item) ||
+          (typeof item === "object" && item !== null) ||
+          item === undefined
+        ) {
+          throw new Error("managed frontmatter arrays may contain scalar values only");
+        }
+        return renderSafeScalar(item);
+      })
+      .join(", ")}]`;
   }
   throw new Error(`unsupported managed frontmatter value type: ${typeof value}`);
 }
@@ -361,43 +408,107 @@ function readHeaderBounds(
 ): { ok: true; value: HeaderBounds } | { ok: false; failure: FrontMatterInspection } {
   const first = lines[0];
   if (first.eol === "") {
-    return { ok: false, failure: issue(raw, "FRONTMATTER_CLOSING_FENCE_MISSING", "frontmatter opening fence has no closing fence", { line: 1 }) };
+    return {
+      ok: false,
+      failure: issue(
+        raw,
+        "FRONTMATTER_CLOSING_FENCE_MISSING",
+        "frontmatter opening fence has no closing fence",
+        { line: 1 },
+      ),
+    };
   }
   let closeIndex = -1;
   for (let i = 1; i < lines.length; i++) {
-    if (lines[i].text === "---") { closeIndex = i; break; }
+    if (lines[i].text === "---") {
+      closeIndex = i;
+      break;
+    }
   }
   if (closeIndex === -1) {
-    return { ok: false, failure: issue(raw, "FRONTMATTER_CLOSING_FENCE_MISSING", "frontmatter closing fence must be an exact '---' line") };
+    return {
+      ok: false,
+      failure: issue(
+        raw,
+        "FRONTMATTER_CLOSING_FENCE_MISSING",
+        "frontmatter closing fence must be an exact '---' line",
+      ),
+    };
   }
   const close = lines[closeIndex];
   const headerLines = lines.slice(1, closeIndex);
-  const headerNewlines = new Set(headerLines.concat([first, close]).map((line) => line.eol).filter(Boolean));
+  const headerNewlines = new Set(
+    headerLines
+      .concat([first, close])
+      .map((line) => line.eol)
+      .filter(Boolean),
+  );
   if (headerNewlines.size > 1) {
-    return { ok: false, failure: issue(raw, "FRONTMATTER_MIXED_NEWLINES", "frontmatter header mixes LF and CRLF line endings") };
+    return {
+      ok: false,
+      failure: issue(
+        raw,
+        "FRONTMATTER_MIXED_NEWLINES",
+        "frontmatter header mixes LF and CRLF line endings",
+      ),
+    };
   }
   if (headerLines.some((line) => line.text.includes("\t"))) {
-    return { ok: false, failure: issue(raw, "FRONTMATTER_TAB_CHARACTER", "frontmatter header contains a tab character") };
+    return {
+      ok: false,
+      failure: issue(
+        raw,
+        "FRONTMATTER_TAB_CHARACTER",
+        "frontmatter header contains a tab character",
+      ),
+    };
   }
   if (looksLikeDuplicateBlock(raw, close.fullEnd)) {
-    return { ok: false, failure: issue(raw, "FRONTMATTER_DUPLICATE_BLOCK", "a second leading frontmatter-like block follows the first") };
+    return {
+      ok: false,
+      failure: issue(
+        raw,
+        "FRONTMATTER_DUPLICATE_BLOCK",
+        "a second leading frontmatter-like block follows the first",
+      ),
+    };
   }
   return { ok: true, value: { close, headerLines, headerNewlines } };
 }
 
 /** The inline form: `key: value` on a single line, scalar or opaque. */
-function readScalarField(raw: string, headerLines: Line[], index: number, key: string, scalarToken: ScalarToken): FieldRead {
+function readScalarField(
+  raw: string,
+  headerLines: Line[],
+  index: number,
+  key: string,
+  scalarToken: ScalarToken,
+): FieldRead {
   const line = headerLines[index];
   const parsed = parseSafeScalar(scalarToken.valueText);
   // A value the canonical parser declines is not automatically a broken document.
   // A single-line plain scalar keeps its exact bytes and is carried as `opaque`.
   const opaque = !parsed.ok && isOpaqueScalar(scalarToken.valueText);
   if (!parsed.ok && !opaque) {
-    return { ok: false, failure: issue(raw, "FRONTMATTER_COMPLEX_YAML", `unsupported value for '${key}'`, { line: line.number, key }) };
+    return {
+      ok: false,
+      failure: issue(raw, "FRONTMATTER_COMPLEX_YAML", `unsupported value for '${key}'`, {
+        line: line.number,
+        key,
+      }),
+    };
   }
   const following = index + 1 < headerLines.length ? headerLines[index + 1] : null;
   if (following && /^\s+\S/.test(following.text) && !/^\s*#/.test(following.text)) {
-    return { ok: false, failure: issue(raw, "FRONTMATTER_COMPLEX_YAML", `multiline or nested value under '${key}' is not supported`, { line: following.number, key }) };
+    return {
+      ok: false,
+      failure: issue(
+        raw,
+        "FRONTMATTER_COMPLEX_YAML",
+        `multiline or nested value under '${key}' is not supported`,
+        { line: following.number, key },
+      ),
+    };
   }
   const tailStart = line.start + line.text.indexOf(":") + 1;
   const field: FrontMatterField = {
@@ -428,7 +539,10 @@ function collectSequenceItems(
   block: Line[],
   key: string,
 ): { ok: true; value: SequenceItems } | { ok: false; failure: FrontMatterInspection } {
-  const reject = (message: string, line: number): { ok: false; failure: FrontMatterInspection } => ({
+  const reject = (
+    message: string,
+    line: number,
+  ): { ok: false; failure: FrontMatterInspection } => ({
     ok: false,
     failure: issue(raw, "FRONTMATTER_COMPLEX_YAML", message, { line, key }),
   });
@@ -439,13 +553,23 @@ function collectSequenceItems(
     const blockLine = block[k];
     if (blockLine.text === "" || /^\s*#/.test(blockLine.text)) continue;
     const itemMatch = /^(\s+)-\s+(.+)$/.exec(blockLine.text);
-    if (!itemMatch) return reject(`nested map or multiline value under '${key}' is not supported`, blockLine.number);
+    if (!itemMatch)
+      return reject(
+        `nested map or multiline value under '${key}' is not supported`,
+        blockLine.number,
+      );
     if (!indent) indent = itemMatch[1];
-    if (itemMatch[1] !== indent) return reject(`inconsistent sequence indentation under '${key}'`, blockLine.number);
+    if (itemMatch[1] !== indent)
+      return reject(`inconsistent sequence indentation under '${key}'`, blockLine.number);
     const itemToken = splitInlineComment(itemMatch[2]);
-    if (itemToken.commentSuffix.includes("#")) return reject(`inline comments on sequence items under '${key}' are not safely patchable`, blockLine.number);
+    if (itemToken.commentSuffix.includes("#"))
+      return reject(
+        `inline comments on sequence items under '${key}' are not safely patchable`,
+        blockLine.number,
+      );
     const parsed = parseSafeScalar(itemToken.valueText);
-    if (!parsed.ok || Array.isArray(parsed.value)) return reject(`unsupported sequence item under '${key}'`, blockLine.number);
+    if (!parsed.ok || Array.isArray(parsed.value))
+      return reject(`unsupported sequence item under '${key}'`, blockLine.number);
     items.push(parsed.value);
     itemIndexes.push(k);
   }
@@ -453,11 +577,20 @@ function collectSequenceItems(
 }
 
 /** The block form: `key:` followed by an indented scalar sequence. */
-function readSequenceField(raw: string, headerLines: Line[], index: number, key: string, scalarToken: ScalarToken): FieldRead {
+function readSequenceField(
+  raw: string,
+  headerLines: Line[],
+  index: number,
+  key: string,
+  scalarToken: ScalarToken,
+): FieldRead {
   const line = headerLines[index];
   let next = index + 1;
   const block: Line[] = [];
-  while (next < headerLines.length && (/^\s/.test(headerLines[next].text) || headerLines[next].text === "")) {
+  while (
+    next < headerLines.length &&
+    (/^\s/.test(headerLines[next].text) || headerLines[next].text === "")
+  ) {
     block.push(headerLines[next]);
     next += 1;
   }
@@ -465,13 +598,29 @@ function readSequenceField(raw: string, headerLines: Line[], index: number, key:
   if (!collected.ok) return collected;
   const { items, itemIndexes, indent } = collected.value;
   if (items.length === 0) {
-    return { ok: false, failure: issue(raw, "FRONTMATTER_COMPLEX_YAML", `empty or nested block under '${key}' is not supported`, { line: line.number, key }) };
+    return {
+      ok: false,
+      failure: issue(
+        raw,
+        "FRONTMATTER_COMPLEX_YAML",
+        `empty or nested block under '${key}' is not supported`,
+        { line: line.number, key },
+      ),
+    };
   }
   const firstItem = itemIndexes[0];
   const lastItem = itemIndexes[itemIndexes.length - 1];
   for (let k = firstItem; k <= lastItem; k++) {
     if (block[k].text === "" || /^\s*#/.test(block[k].text)) {
-      return { ok: false, failure: issue(raw, "FRONTMATTER_COMPLEX_YAML", `interleaved comments inside sequence '${key}' are not safely patchable`, { line: block[k].number, key }) };
+      return {
+        ok: false,
+        failure: issue(
+          raw,
+          "FRONTMATTER_COMPLEX_YAML",
+          `interleaved comments inside sequence '${key}' are not safely patchable`,
+          { line: block[k].number, key },
+        ),
+      };
     }
   }
   const field: FrontMatterField = {
@@ -481,8 +630,14 @@ function readSequenceField(raw: string, headerLines: Line[], index: number, key:
     start: line.start,
     end: block.length ? block[block.length - 1].fullEnd : line.fullEnd,
     sequenceIndent: indent,
-    sequencePrefix: block.slice(0, firstItem).map((entry) => raw.slice(entry.start, entry.fullEnd)).join(""),
-    sequenceSuffix: block.slice(lastItem + 1).map((entry) => raw.slice(entry.start, entry.fullEnd)).join(""),
+    sequencePrefix: block
+      .slice(0, firstItem)
+      .map((entry) => raw.slice(entry.start, entry.fullEnd))
+      .join(""),
+    sequenceSuffix: block
+      .slice(lastItem + 1)
+      .map((entry) => raw.slice(entry.start, entry.fullEnd))
+      .join(""),
     commentSuffix: scalarToken.commentSuffix,
   };
   return { ok: true, field, meta: { value: items }, next };
@@ -498,7 +653,12 @@ export function inspectFrontMatterDocument(raw: string): FrontMatterInspection {
 
   if (first.text !== "---") {
     if (first.text.trimStart().startsWith("---")) {
-      return issue(raw, "FRONTMATTER_OPENING_FENCE_NOT_EXACT", "frontmatter opening fence must be exactly '---' with no indentation or trailing content", { line: 1 });
+      return issue(
+        raw,
+        "FRONTMATTER_OPENING_FENCE_NOT_EXACT",
+        "frontmatter opening fence must be exactly '---' with no indentation or trailing content",
+        { line: 1 },
+      );
     }
     return {
       safe: true,
@@ -525,18 +685,44 @@ export function inspectFrontMatterDocument(raw: string): FrontMatterInspection {
   let i = 0;
   while (i < headerLines.length) {
     const line = headerLines[i];
-    if (line.text === "" || /^\s*#/.test(line.text)) { i += 1; continue; }
-    if (/^\s/.test(line.text)) return issue(raw, "FRONTMATTER_COMPLEX_YAML", "unexpected indentation outside a supported scalar sequence", { line: line.number });
-    if (/^(?:%|\.\.\.|\?|!|&|\*|\{|\}|<<:)/.test(line.text)) return issue(raw, "FRONTMATTER_COMPLEX_YAML", "unsupported YAML directive, tag, anchor, alias, explicit key, or map", { line: line.number });
+    if (line.text === "" || /^\s*#/.test(line.text)) {
+      i += 1;
+      continue;
+    }
+    if (/^\s/.test(line.text))
+      return issue(
+        raw,
+        "FRONTMATTER_COMPLEX_YAML",
+        "unexpected indentation outside a supported scalar sequence",
+        { line: line.number },
+      );
+    if (/^(?:%|\.\.\.|\?|!|&|\*|\{|\}|<<:)/.test(line.text))
+      return issue(
+        raw,
+        "FRONTMATTER_COMPLEX_YAML",
+        "unsupported YAML directive, tag, anchor, alias, explicit key, or map",
+        { line: line.number },
+      );
     const match = /^([A-Za-z_][A-Za-z0-9_-]*):(.*)$/.exec(line.text);
-    if (!match) return issue(raw, "FRONTMATTER_INVALID_KEY", "frontmatter must contain simple top-level key/value fields", { line: line.number });
+    if (!match)
+      return issue(
+        raw,
+        "FRONTMATTER_INVALID_KEY",
+        "frontmatter must contain simple top-level key/value fields",
+        { line: line.number },
+      );
     const key = match[1];
-    if (seen.has(key)) return issue(raw, "FRONTMATTER_DUPLICATE_KEY", `duplicate frontmatter key '${key}'`, { line: line.number, key });
+    if (seen.has(key))
+      return issue(raw, "FRONTMATTER_DUPLICATE_KEY", `duplicate frontmatter key '${key}'`, {
+        line: line.number,
+        key,
+      });
     seen.add(key);
     const scalarToken = splitInlineComment(match[2]);
-    const read = scalarToken.valueText.trim() !== ""
-      ? readScalarField(raw, headerLines, i, key, scalarToken)
-      : readSequenceField(raw, headerLines, i, key, scalarToken);
+    const read =
+      scalarToken.valueText.trim() !== ""
+        ? readScalarField(raw, headerLines, i, key, scalarToken)
+        : readSequenceField(raw, headerLines, i, key, scalarToken);
     if (!read.ok) return read.failure;
     fields.push(read.field);
     if (read.meta) meta[key] = read.meta.value;
@@ -547,7 +733,10 @@ export function inspectFrontMatterDocument(raw: string): FrontMatterInspection {
     safe: true,
     hadFrontMatter: true,
     bom,
-    newline: ([...headerNewlines].find((value): value is "\n" | "\r\n" => value === "\n" || value === "\r\n") ?? newline),
+    newline:
+      [...headerNewlines].find(
+        (value): value is "\n" | "\r\n" => value === "\n" || value === "\r\n",
+      ) ?? newline,
     body: raw.slice(close.fullEnd),
     meta,
     fields,
@@ -567,11 +756,15 @@ export function inspectFrontMatterDocument(raw: string): FrontMatterInspection {
  * would lose to `Unknown` while its quoted spelling survives. This view carries the
  * exact bytes as an uninterpreted string beside `meta`, never inside it.
  */
-export function opaqueFieldText(raw: string, inspection: FrontMatterInspection): Record<string, string> {
+export function opaqueFieldText(
+  raw: string,
+  inspection: FrontMatterInspection,
+): Record<string, string> {
   const out = Object.create(null) as Record<string, string>;
   if (!inspection.safe) return out;
   for (const field of inspection.fields) {
-    if (field.kind !== "opaque" || field.valueStart === undefined || field.valueEnd === undefined) continue;
+    if (field.kind !== "opaque" || field.valueStart === undefined || field.valueEnd === undefined)
+      continue;
     out[field.key] = raw.slice(field.valueStart, field.valueEnd);
   }
   return out;
@@ -582,23 +775,49 @@ export function opaqueFieldText(raw: string, inspection: FrontMatterInspection):
  * verbatim text of opaque fields. The two key sets are disjoint by construction.
  * A fresh object is returned; `inspection.meta` is not modified.
  */
-export function frontMatterReconciliationView(raw: string, inspection: FrontMatterInspection): Record<string, unknown> {
+export function frontMatterReconciliationView(
+  raw: string,
+  inspection: FrontMatterInspection,
+): Record<string, unknown> {
   return { ...inspection.meta, ...opaqueFieldText(raw, inspection) };
 }
 
-function failureFromInspection(raw: string, inspection: FrontMatterInspection, managedKeys: string[]): FrontMatterPatchResult {
+function failureFromInspection(
+  raw: string,
+  inspection: FrontMatterInspection,
+  managedKeys: string[],
+): FrontMatterPatchResult {
   return { ...inspection, content: raw, changed: false, managedKeys };
 }
 
-export function patchManagedFrontMatter(raw: string, managed: Record<string, unknown>): FrontMatterPatchResult {
+export function patchManagedFrontMatter(
+  raw: string,
+  managed: Record<string, unknown>,
+): FrontMatterPatchResult {
   const managedKeys = Object.keys(managed);
   for (const key of managedKeys) {
     if (!/^[A-Za-z_][A-Za-z0-9_-]*$/.test(key)) {
-      return failureFromInspection(raw, issue(raw, "FRONTMATTER_INVALID_KEY", `managed frontmatter key '${key}' is invalid`, { key }), managedKeys);
+      return failureFromInspection(
+        raw,
+        issue(raw, "FRONTMATTER_INVALID_KEY", `managed frontmatter key '${key}' is invalid`, {
+          key,
+        }),
+        managedKeys,
+      );
     }
-    try { renderSafeScalar(managed[key]); }
-    catch (error) {
-      return failureFromInspection(raw, issue(raw, "FRONTMATTER_UNSUPPORTED_VALUE", error instanceof Error ? error.message : String(error), { key }), managedKeys);
+    try {
+      renderSafeScalar(managed[key]);
+    } catch (error) {
+      return failureFromInspection(
+        raw,
+        issue(
+          raw,
+          "FRONTMATTER_UNSUPPORTED_VALUE",
+          error instanceof Error ? error.message : String(error),
+          { key },
+        ),
+        managedKeys,
+      );
     }
   }
 
@@ -607,8 +826,11 @@ export function patchManagedFrontMatter(raw: string, managed: Record<string, unk
   const newline = inspection.newline;
 
   if (!inspection.hadFrontMatter) {
-    if (managedKeys.length === 0) return { ...inspection, content: raw, changed: false, managedKeys };
-    const header = managedKeys.map((key) => `${key}: ${renderSafeScalar(managed[key])}${newline}`).join("");
+    if (managedKeys.length === 0)
+      return { ...inspection, content: raw, changed: false, managedKeys };
+    const header = managedKeys
+      .map((key) => `${key}: ${renderSafeScalar(managed[key])}${newline}`)
+      .join("");
     const content = `${inspection.bom}---${newline}${header}---${newline}${inspection.body}`;
     const next = inspectFrontMatterDocument(content);
     if (!next.safe) return failureFromInspection(raw, next, managedKeys);
@@ -620,7 +842,10 @@ export function patchManagedFrontMatter(raw: string, managed: Record<string, unk
   const missing: string[] = [];
   for (const key of managedKeys) {
     const field = byKey.get(key);
-    if (!field) { missing.push(key); continue; }
+    if (!field) {
+      missing.push(key);
+      continue;
+    }
     const rendered = renderSafeScalar(managed[key]);
     // An opaque field patches exactly like a scalar: its value byte range is known, and a
     // managed key's canonical rendering replaces it wholesale. Unmanaged opaque values
@@ -629,19 +854,40 @@ export function patchManagedFrontMatter(raw: string, managed: Record<string, unk
     // re-spelling it would be a write with no change in value.
     if (field.kind === "scalar" || field.kind === "opaque") {
       if (field.valueStart === undefined || field.valueEnd === undefined) {
-        return failureFromInspection(raw, issue(raw, "FRONTMATTER_COMPLEX_YAML", `managed field '${key}' lacks a safe scalar range`, { key }), managedKeys);
+        return failureFromInspection(
+          raw,
+          issue(
+            raw,
+            "FRONTMATTER_COMPLEX_YAML",
+            `managed field '${key}' lacks a safe scalar range`,
+            { key },
+          ),
+          managedKeys,
+        );
       }
-      if (field.kind === "opaque" && managed[key] === raw.slice(field.valueStart, field.valueEnd)) continue;
+      if (field.kind === "opaque" && managed[key] === raw.slice(field.valueStart, field.valueEnd))
+        continue;
       edits.push({ start: field.valueStart, end: field.valueEnd, text: rendered });
     } else {
       if (!Array.isArray(managed[key])) {
-        return failureFromInspection(raw, issue(raw, "FRONTMATTER_UNSUPPORTED_VALUE", `managed sequence '${key}' must remain an array`, { key }), managedKeys);
+        return failureFromInspection(
+          raw,
+          issue(
+            raw,
+            "FRONTMATTER_UNSUPPORTED_VALUE",
+            `managed sequence '${key}' must remain an array`,
+            { key },
+          ),
+          managedKeys,
+        );
       }
       const lineEnd = raw.indexOf(newline, field.start);
       const keyLineEnd = lineEnd === -1 ? field.end : lineEnd + newline.length;
       const keyLine = raw.slice(field.start, keyLineEnd);
       const indent = field.sequenceIndent || "  ";
-      const sequence = (managed[key] as unknown[]).map((item) => `${indent}- ${renderSafeScalar(item)}${newline}`).join("");
+      const sequence = (managed[key] as unknown[])
+        .map((item) => `${indent}- ${renderSafeScalar(item)}${newline}`)
+        .join("");
       edits.push({
         start: field.start,
         end: field.end,
@@ -650,7 +896,9 @@ export function patchManagedFrontMatter(raw: string, managed: Record<string, unk
     }
   }
   if (missing.length > 0) {
-    const insertion = missing.map((key) => `${key}: ${renderSafeScalar(managed[key])}${newline}`).join("");
+    const insertion = missing
+      .map((key) => `${key}: ${renderSafeScalar(managed[key])}${newline}`)
+      .join("");
     edits.push({ start: inspection.closingStart, end: inspection.closingStart, text: insertion });
   }
 
@@ -662,7 +910,11 @@ export function patchManagedFrontMatter(raw: string, managed: Record<string, unk
   const next = inspectFrontMatterDocument(content);
   if (!next.safe) return failureFromInspection(raw, next, managedKeys);
   if (next.body !== inspection.body) {
-    return failureFromInspection(raw, issue(raw, "FRONTMATTER_COMPLEX_YAML", "managed patch changed document body bytes"), managedKeys);
+    return failureFromInspection(
+      raw,
+      issue(raw, "FRONTMATTER_COMPLEX_YAML", "managed patch changed document body bytes"),
+      managedKeys,
+    );
   }
   return { ...next, content, changed: content !== raw, managedKeys };
 }

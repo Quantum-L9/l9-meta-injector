@@ -518,8 +518,8 @@ class PdfFile {
                 this.notes.push({
                     code: "decoder.budget_exceeded",
                     severity: "warning",
-                    message: `object ${number}'s stream decompresses to more than the ${result.ceiling}-byte `
-                        + "per-stream ceiling and was not read",
+                    message: `object ${number}'s stream decompresses to more than the ${result.ceiling}-byte ` +
+                        "per-stream ceiling and was not read",
                     part: `object ${number}`,
                 });
             }
@@ -589,7 +589,11 @@ class PdfFile {
             const first = this.integerOf(dict.get("First"));
             const text = stream.kind === "ok" ? stream.bytes.toString("latin1") : "";
             const header = first === null ? [] : (text.slice(0, first).match(/\d+/g) ?? []).map(Number);
-            if (stream.kind !== "ok" || count === null || first === null || first > text.length || header.length < count * 2) {
+            if (stream.kind !== "ok" ||
+                count === null ||
+                first === null ||
+                first > text.length ||
+                header.length < count * 2) {
                 this.notes.push({
                     code: "decoder.malformed",
                     severity: "warning",
@@ -646,8 +650,8 @@ class PdfFile {
         return {
             code: "decoder.budget_exceeded",
             severity: "warning",
-            message: `the document's decompression allowance of ${this.allowance.total} bytes was exhausted; `
-                + `${this.allowance.skipped} stream(s) were not inflated`,
+            message: `the document's decompression allowance of ${this.allowance.total} bytes was exhausted; ` +
+                `${this.allowance.skipped} stream(s) were not inflated`,
         };
     }
 }
@@ -721,16 +725,46 @@ function walkPageTree(file, maxDepth) {
 }
 /** PDFDocEncoding's departures from Latin-1 (PDF 32000-1, Annex D). */
 const PDF_DOC_ENCODING = {
-    0x18: "\u02d8", 0x19: "\u02c7", 0x1a: "\u02c6", 0x1b: "\u02d9",
-    0x1c: "\u02dd", 0x1d: "\u02db", 0x1e: "\u02da", 0x1f: "\u02dc",
-    0x80: "\u2022", 0x81: "\u2020", 0x82: "\u2021", 0x83: "\u2026",
-    0x84: "\u2014", 0x85: "\u2013", 0x86: "\u0192", 0x87: "\u2044",
-    0x88: "\u2039", 0x89: "\u203a", 0x8a: "\u2212", 0x8b: "\u2030",
-    0x8c: "\u201e", 0x8d: "\u201c", 0x8e: "\u201d", 0x8f: "\u2018",
-    0x90: "\u2019", 0x91: "\u201a", 0x92: "\u2122", 0x93: "\ufb01",
-    0x94: "\ufb02", 0x95: "\u0141", 0x96: "\u0152", 0x97: "\u0160",
-    0x98: "\u0178", 0x99: "\u017d", 0x9a: "\u0131", 0x9b: "\u0142",
-    0x9c: "\u0153", 0x9d: "\u0161", 0x9e: "\u017e", 0xa0: "\u20ac",
+    0x18: "\u02d8",
+    0x19: "\u02c7",
+    0x1a: "\u02c6",
+    0x1b: "\u02d9",
+    0x1c: "\u02dd",
+    0x1d: "\u02db",
+    0x1e: "\u02da",
+    0x1f: "\u02dc",
+    0x80: "\u2022",
+    0x81: "\u2020",
+    0x82: "\u2021",
+    0x83: "\u2026",
+    0x84: "\u2014",
+    0x85: "\u2013",
+    0x86: "\u0192",
+    0x87: "\u2044",
+    0x88: "\u2039",
+    0x89: "\u203a",
+    0x8a: "\u2212",
+    0x8b: "\u2030",
+    0x8c: "\u201e",
+    0x8d: "\u201c",
+    0x8e: "\u201d",
+    0x8f: "\u2018",
+    0x90: "\u2019",
+    0x91: "\u201a",
+    0x92: "\u2122",
+    0x93: "\ufb01",
+    0x94: "\ufb02",
+    0x95: "\u0141",
+    0x96: "\u0152",
+    0x97: "\u0160",
+    0x98: "\u0178",
+    0x99: "\u017d",
+    0x9a: "\u0131",
+    0x9b: "\u0142",
+    0x9c: "\u0153",
+    0x9d: "\u0161",
+    0x9e: "\u017e",
+    0xa0: "\u20ac",
 };
 /**
  * A PDF text string — the type of a document's title — as Unicode.
@@ -821,7 +855,8 @@ function decodeLiteral(source) {
             case "\\":
                 out += "\\";
                 break;
-            case "\n": break;
+            case "\n":
+                break;
             case "\r":
                 if (source[cursor + 1] === "\n")
                     cursor += 1;
@@ -1040,7 +1075,9 @@ class ToUnicodeMap {
         let cursor = 0;
         while (cursor < bytes.length) {
             let taken = null;
-            const widths = this.codespace.length > 0 ? this.codespace : [{ width: defaultWidth, low: 0, high: Infinity }];
+            const widths = this.codespace.length > 0
+                ? this.codespace
+                : [{ width: defaultWidth, low: 0, high: Infinity }];
             for (const range of widths) {
                 if (cursor + range.width > bytes.length)
                     continue;
@@ -1106,7 +1143,10 @@ function parseToUnicode(cmap) {
         while (row !== null) {
             const low = hexCode(row[1]);
             const high = Number.parseInt(row[2], 16);
-            if (Number.isFinite(low.code) && Number.isFinite(high) && high >= low.code && high - low.code < 65536) {
+            if (Number.isFinite(low.code) &&
+                Number.isFinite(high) &&
+                high >= low.code &&
+                high - low.code < 65536) {
                 map.table(low.width).ranges.push({ low: low.code, high, dest: row[3] });
             }
             row = rows.exec(range[1]);
@@ -1132,24 +1172,24 @@ function fontDiagnostics(facts) {
         notes.push({
             code: "decoder.unsupported_feature",
             severity: "warning",
-            message: `text in composite font(s) ${fontList(facts.unmapped)} has no usable ToUnicode map; `
-                + "its character IDs cannot be mapped to text and it was not read",
+            message: `text in composite font(s) ${fontList(facts.unmapped)} has no usable ToUnicode map; ` +
+                "its character IDs cannot be mapped to text and it was not read",
         });
     }
     if (facts.byteEncoded.size > 0) {
         notes.push({
             code: "decoder.unsupported_feature",
             severity: "info",
-            message: `no ToUnicode map was found for font(s) ${fontList(facts.byteEncoded)}; `
-                + "text was read through the font's built-in byte encoding",
+            message: `no ToUnicode map was found for font(s) ${fontList(facts.byteEncoded)}; ` +
+                "text was read through the font's built-in byte encoding",
         });
     }
     if (facts.unknown.size > 0) {
         notes.push({
             code: "decoder.unsupported_feature",
             severity: "info",
-            message: `font(s) ${fontList(facts.unknown)} are selected by the content but not defined in the page's resources; `
-                + "their text was read as single bytes",
+            message: `font(s) ${fontList(facts.unknown)} are selected by the content but not defined in the page's resources; ` +
+                "their text was read as single bytes",
         });
     }
     return notes;
@@ -1274,7 +1314,7 @@ function extractContentText(content, resolveFont = () => undefined, facts = newT
                 flush();
                 show(stack[stack.length - 1]);
                 break;
-            case "\"":
+            case '"':
                 flush();
                 show(stack[stack.length - 1]);
                 break;
@@ -1300,7 +1340,10 @@ function extractContentText(content, resolveFont = () => undefined, facts = newT
         const char = content[cursor];
         if (char === "(") {
             const { raw, end } = scanLiteral(content, cursor);
-            push({ kind: "string", bytes: [...decodeLiteral(raw)].map((part) => part.charCodeAt(0) & 0xff) });
+            push({
+                kind: "string",
+                bytes: [...decodeLiteral(raw)].map((part) => part.charCodeAt(0) & 0xff),
+            });
             cursor = end + 1;
             continue;
         }
@@ -1475,7 +1518,7 @@ exports.pdfDecoder = {
         };
         const fontResolver = (resources) => {
             const fonts = file.dictOf(file.dictOf(resources)?.get("Font"));
-            return (name) => (fonts === null ? undefined : readFont(name, fonts.get(name.replace(/^\//, ""))));
+            return (name) => fonts === null ? undefined : readFont(name, fonts.get(name.replace(/^\//, "")));
         };
         // Pages in page-tree order. Only when there is no tree to walk are the page
         // objects read in file order, and the document says that is what happened.
@@ -1484,13 +1527,17 @@ exports.pdfDecoder = {
             pages = [...objects.entries()]
                 .filter(([, object]) => file.partsOf(object).dict.get("Type") === "/Page")
                 .sort((a, b) => a[1].offset - b[1].offset)
-                .map(([number, object]) => ({ number, object, resources: file.partsOf(object).dict.get("Resources") }));
+                .map(([number, object]) => ({
+                number,
+                object,
+                resources: file.partsOf(object).dict.get("Resources"),
+            }));
             if (pages.length > 0) {
                 file.notes.push({
                     code: "decoder.malformed",
                     severity: "info",
-                    message: "the page tree could not be resolved from the trailer's /Root; "
-                        + `${pages.length} page object(s) were read in file order`,
+                    message: "the page tree could not be resolved from the trailer's /Root; " +
+                        `${pages.length} page object(s) were read in file order`,
                 });
             }
         }
@@ -1575,40 +1622,51 @@ exports.pdfDecoder = {
         // Nothing was read because what there was to read exceeded the budget: that
         // is the reason, not a scan and not an unsupported feature.
         if (pagesWithText === 0 && pagesOverBudget > 0) {
-            const message = `${pagesOverBudget} page(s) had content streams that exceeded the decompression budget `
-                + "and no other page yielded text";
+            const message = `${pagesOverBudget} page(s) had content streams that exceeded the decompression budget ` +
+                "and no other page yielded text";
             return {
                 decoded: false,
                 reason: "decoder.budget_exceeded",
                 message,
-                diagnostics: [{ code: "decoder.budget_exceeded", severity: "warning", message }, ...budgetNotes],
+                diagnostics: [
+                    { code: "decoder.budget_exceeded", severity: "warning", message },
+                    ...budgetNotes,
+                ],
             };
         }
         const fontNotes = fontDiagnostics(facts);
         // The text is there, but in a composite font whose codes nothing maps to
         // characters: unsupported, and said so — never its glyph identifiers.
         if (pagesWithText === 0 && pagesUnmapped > 0) {
-            const message = `${pagesUnmapped} page(s) show text only in composite font(s) with no usable ToUnicode map; `
-                + "their character IDs cannot be mapped to text";
+            const message = `${pagesUnmapped} page(s) show text only in composite font(s) with no usable ToUnicode map; ` +
+                "their character IDs cannot be mapped to text";
             return {
                 decoded: false,
                 reason: "decoder.unsupported_feature",
                 message,
-                diagnostics: [{ code: "decoder.unsupported_feature", severity: "warning", message }, ...fontNotes, ...budgetNotes],
+                diagnostics: [
+                    { code: "decoder.unsupported_feature", severity: "warning", message },
+                    ...fontNotes,
+                    ...budgetNotes,
+                ],
             };
         }
         // The honest outcome for a scan: no text layer, images present, say so.
         if (pagesWithText === 0) {
             const message = imageObjects > 0
-                ? `no text layer was found across ${pages.length} page(s); `
-                    + `${imageObjects} image object(s) are present, so this is a scanned document requiring OCR`
+                ? `no text layer was found across ${pages.length} page(s); ` +
+                    `${imageObjects} image object(s) are present, so this is a scanned document requiring OCR`
                 : "no text layer was found and no image objects are present; the document yielded nothing readable";
             return {
                 decoded: false,
                 reason: imageObjects > 0 ? "decoder.ocr_required" : "decoder.unsupported_feature",
                 message,
                 diagnostics: [
-                    { code: imageObjects > 0 ? "decoder.ocr_required" : "decoder.unsupported_feature", severity: "warning", message },
+                    {
+                        code: imageObjects > 0 ? "decoder.ocr_required" : "decoder.unsupported_feature",
+                        severity: "warning",
+                        message,
+                    },
                     ...budgetNotes,
                 ],
             };
@@ -1618,8 +1676,8 @@ exports.pdfDecoder = {
             diagnostics.push({
                 code: "decoder.ocr_required",
                 severity: "info",
-                message: `${pagesWithoutText} of ${pages.length} page(s) carried no text layer and would need OCR; `
-                    + `${pagesWithText} page(s) were read`,
+                message: `${pagesWithoutText} of ${pages.length} page(s) carried no text layer and would need OCR; ` +
+                    `${pagesWithText} page(s) were read`,
             });
         }
         diagnostics.push(...fontNotes);
@@ -1639,5 +1697,12 @@ exports.pdfDecoder = {
     },
 };
 /** Exported for the decoder tests, which exercise the tokenizer directly. */
-exports.pdfInternals = { parsePdfDict, extractContentText, parseToUnicode, decodeLiteral, isWhitespace, isDelimiter };
+exports.pdfInternals = {
+    parsePdfDict,
+    extractContentText,
+    parseToUnicode,
+    decodeLiteral,
+    isWhitespace,
+    isDelimiter,
+};
 //# sourceMappingURL=pdf.js.map

@@ -6,35 +6,35 @@
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { sidecarPathFor } from "./comment";
-import { serializeYamlObject } from "./yaml_serialize";
-import type { OmitMatcher } from "./omit";
-import { compareCodePoints } from "./ordering";
-import {
-  EXTRACTION_OWNER_ID,
-  LEGACY_EXTRACTION_OWNER_FILE,
-  LOCAL_FILES_EXTRACTION_SCHEMA,
-  hasLegacyExtractionOwnership,
-  readExtractionOwnershipMarker,
-} from "./local_source";
-import { canonicalMemberPath } from "./archive_preflight";
 import {
   ArchiveExecutionContext,
   ArchiveExecutionHeldError,
   ArchiveExecutionResolution,
   resolveArchiveExecution,
 } from "./archive_execution";
+import { EXPANDABLE_ARCHIVE_EXTENSIONS, isExpandableArchivePath } from "./archive_formats";
+import type { PreflightMember } from "./archive_preflight";
+import { canonicalMemberPath } from "./archive_preflight";
+import { sidecarPathFor } from "./comment";
+import { replaceFileAtomically } from "./durable_write";
 import type { LocalArchivePolicy } from "./local_archive_policy";
 import {
+  EXTRACTION_OWNER_ID,
+  hasLegacyExtractionOwnership,
+  LEGACY_EXTRACTION_OWNER_FILE,
+  LOCAL_FILES_EXTRACTION_SCHEMA,
+  readExtractionOwnershipMarker,
+} from "./local_source";
+import type { OmitMatcher } from "./omit";
+import { compareCodePoints } from "./ordering";
+import { serializeYamlObject } from "./yaml_serialize";
+import {
+  readZipCentralDirectory,
+  streamZipMember,
   ZipBudgetExceededError,
   ZipFormatError,
   ZipSizeMismatchError,
-  readZipCentralDirectory,
-  streamZipMember,
 } from "./zip_reader";
-import type { PreflightMember } from "./archive_preflight";
-import { EXPANDABLE_ARCHIVE_EXTENSIONS, isExpandableArchivePath } from "./archive_formats";
-import { replaceFileAtomically } from "./durable_write";
 
 /** Directory-name suffix for an expanded archive (sibling of the .zip). */
 export const EXTRACTED_DIR_SUFFIX = ".l9extracted";
@@ -82,7 +82,8 @@ class ArchiveIntegrityError extends Error {
 /** Convert only expected archive/input refusals into held records. */
 function expectedArchiveHoldReason(error: unknown): string | null {
   if (error instanceof ArchiveIntegrityError) return `archive.integrity_failed: ${error.message}`;
-  if (error instanceof ArchiveExecutionHeldError) return `archive.resource_refused: ${error.message}`;
+  if (error instanceof ArchiveExecutionHeldError)
+    return `archive.resource_refused: ${error.message}`;
   if (error instanceof ZipBudgetExceededError) return `archive.resource_refused: ${error.message}`;
   // Produced bytes contradicting the declared size is an integrity failure, like
   // a CRC mismatch; it subclasses ZipFormatError, so it is tested first (ADR-061).
@@ -142,11 +143,17 @@ function readExtractionOwnershipV2(directory: string): ExtractionOwnershipV2 | n
     // gated reader (verified regular, non-symlink, bounded, non-blocking).
     const raw = readExtractionOwnershipMarker(directory) as Partial<ExtractionOwnershipV2> | null;
     if (raw === null || typeof raw !== "object") return null;
-    if (raw.schema !== LOCAL_FILES_EXTRACTION_SCHEMA || raw.owner !== EXTRACTION_OWNER_ID) return null;
+    if (raw.schema !== LOCAL_FILES_EXTRACTION_SCHEMA || raw.owner !== EXTRACTION_OWNER_ID)
+      return null;
     if (typeof raw.archive !== "string" || raw.archive.length === 0) return null;
-    if (typeof raw.archive_sha256 !== "string" || !/^sha256:[0-9a-f]{64}$/.test(raw.archive_sha256)) return null;
+    if (typeof raw.archive_sha256 !== "string" || !/^sha256:[0-9a-f]{64}$/.test(raw.archive_sha256))
+      return null;
     if (typeof raw.reader_version !== "string" || raw.reader_version.length === 0) return null;
-    if (typeof raw.policy_fingerprint !== "string" || !/^lap1:[0-9a-f]{64}$/.test(raw.policy_fingerprint)) return null;
+    if (
+      typeof raw.policy_fingerprint !== "string" ||
+      !/^lap1:[0-9a-f]{64}$/.test(raw.policy_fingerprint)
+    )
+      return null;
     if (typeof raw.created_at !== "string" || Number.isNaN(Date.parse(raw.created_at))) return null;
     return raw as ExtractionOwnershipV2;
   } catch {
@@ -294,7 +301,9 @@ function swapCandidateIntoPlace(candidate: string, extractDir: string, zipPath: 
     fs.renameSync(candidate, extractDir);
   } catch (error) {
     if (backup !== null) {
-      try { fs.renameSync(backup, extractDir); } catch {}
+      try {
+        fs.renameSync(backup, extractDir);
+      } catch {}
     }
     throw error;
   }
@@ -343,19 +352,21 @@ function writeMember(
 ): number {
   const target = path.join(extractDir, member.canonicalPath);
   const resolvedRoot = path.resolve(extractDir);
-  if (path.resolve(target) !== resolvedRoot && !path.resolve(target).startsWith(resolvedRoot + path.sep)) {
-    throw new Error(`local-files: refusing to write outside the extraction directory: ${member.canonicalPath}`);
+  if (
+    path.resolve(target) !== resolvedRoot &&
+    !path.resolve(target).startsWith(resolvedRoot + path.sep)
+  ) {
+    throw new Error(
+      `local-files: refusing to write outside the extraction directory: ${member.canonicalPath}`,
+    );
   }
   fs.mkdirSync(path.dirname(target), { recursive: true });
 
   const handle = fs.openSync(target, "w");
   try {
-    return streamVerifiedMember(
-      context,
-      member,
-      expandedBytes,
-      (chunk) => { fs.writeSync(handle, chunk); },
-    );
+    return streamVerifiedMember(context, member, expandedBytes, (chunk) => {
+      fs.writeSync(handle, chunk);
+    });
   } finally {
     fs.closeSync(handle);
   }
@@ -381,7 +392,8 @@ function verifyMembersWithoutMaterializing(
  */
 function walkFiles(dir: string, out: string[]): void {
   if (!fs.existsSync(dir)) return;
-  const entries = fs.readdirSync(dir, { withFileTypes: true })
+  const entries = fs
+    .readdirSync(dir, { withFileTypes: true })
     .sort((a, b) => compareCodePoints(a.name, b.name));
   for (const entry of entries) {
     const full = path.join(dir, entry.name);
@@ -416,8 +428,11 @@ export function findArchives(
 
   function walk(dir: string): void {
     let entries: fs.Dirent[];
-    try { entries = fs.readdirSync(dir, { withFileTypes: true }); }
-    catch { return; }
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
     for (const entry of entries) {
       const full = path.join(dir, entry.name);
       const rel = relPosix(absRoot, full);
@@ -457,9 +472,10 @@ export function writeArchiveSidecar(
   const suppliedHash = extras.content_hash;
   const suppliedSize = extras.size_bytes;
   const contentHash = typeof suppliedHash === "string" ? suppliedHash : contentHashFile(zipPath);
-  const sizeBytes = typeof suppliedSize === "number" && Number.isFinite(suppliedSize)
-    ? suppliedSize
-    : fs.statSync(zipPath).size;
+  const sizeBytes =
+    typeof suppliedSize === "number" && Number.isFinite(suppliedSize)
+      ? suppliedSize
+      : fs.statSync(zipPath).size;
   const obj: Record<string, unknown> = {
     schema: "l9.archive-sidecar/v1",
     artifact_type: "archive",
@@ -546,7 +562,13 @@ function expandOneArchive(
     }
     const sessionRefusal = context.sessionRefusalReason();
     if (sessionRefusal !== null) {
-      return { zipPath, extractDir, memberCount: 0, nestedDepth: depth, heldReason: sessionRefusal };
+      return {
+        zipPath,
+        extractDir,
+        memberCount: 0,
+        nestedDepth: depth,
+        heldReason: sessionRefusal,
+      };
     }
 
     const members = context.preflight.members.map((member) => member.canonicalPath);
@@ -614,10 +636,16 @@ function expandOneArchive(
 }
 
 /** Expand all ZIPs under root with one acquisition-wide policy and budget. */
-export function expandArchivesUnderRoot(root: string, opts: ExpandArchivesOptions): ExpandArchivesResult {
+export function expandArchivesUnderRoot(
+  root: string,
+  opts: ExpandArchivesOptions,
+): ExpandArchivesResult {
   const absRoot = path.resolve(root);
   const resolution = resolveArchiveExecution(opts.archivePolicy);
-  const maxDepth = Math.min(opts.maxDepth ?? resolution.policy.maxNestedDepth, resolution.policy.maxNestedDepth);
+  const maxDepth = Math.min(
+    opts.maxDepth ?? resolution.policy.maxNestedDepth,
+    resolution.policy.maxNestedDepth,
+  );
   const archives: ArchiveRecord[] = [];
   const extractedRoots: string[] = [];
   const omittedArchives: string[] = [];
@@ -640,7 +668,8 @@ export function expandArchivesUnderRoot(root: string, opts: ExpandArchivesOption
     const zipRel = relPosix(absRoot, zipPath);
     if (isOmitted(omit, zipRel)) {
       omittedArchives.push(zipRel);
-      if (opts.verbose) process.stderr.write(`[l9-meta-injector] local-files: omit archive ${zipRel}\n`);
+      if (opts.verbose)
+        process.stderr.write(`[l9-meta-injector] local-files: omit archive ${zipRel}\n`);
       continue;
     }
 

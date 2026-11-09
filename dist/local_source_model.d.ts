@@ -1,7 +1,7 @@
-import { InterpretationResult } from "./interpretation";
-import { LocalSourceAcquireInput, LocalSourceObservation } from "./local_source";
-import { LocalArchivePolicy } from "./local_archive_policy";
 import { CorpusIndex, NearDuplicateOptions } from "./corpus_analysis";
+import { InterpretationResult } from "./interpretation";
+import { LocalArchivePolicy } from "./local_archive_policy";
+import { LocalSourceAcquireInput, LocalSourceObservation } from "./local_source";
 import { RepositoryModelLocalSourceInput, RepositoryModelPacket } from "./repository_model";
 /** Schema of the acquisition manifest written beside a bundle. */
 export declare const LOCAL_SOURCE_MANIFEST_SCHEMA = "l9.local-source-manifest/v1";

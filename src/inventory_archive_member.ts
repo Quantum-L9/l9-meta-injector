@@ -5,17 +5,20 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as zlib from "node:zlib";
 import { archiveExtensionOf } from "./archive_formats";
-import { canonicalMemberPath, memberCollisionKey, pathSafetyHolds, preflightArchive } from "./archive_preflight";
+import {
+  canonicalMemberPath,
+  memberCollisionKey,
+  pathSafetyHolds,
+  preflightArchive,
+} from "./archive_preflight";
 import { replaceFileAtomically } from "./durable_write";
 import { DEFAULT_LOCAL_ARCHIVE_POLICY, LocalArchivePolicy } from "./local_archive_policy";
 import { peekTarRootMeta, readTarArchive, rootMetaKind as tarRootMetaKind } from "./tar_reader";
 import { injectGzipTarRootMeta, injectTarRootMeta } from "./tar_writer";
-import { injectZipRootMeta, peekZipRootMeta, rootMetaKind as zipRootMetaKind } from "./zip_writer";
 import { readZipCentralDirectory } from "./zip_reader";
+import { injectZipRootMeta, peekZipRootMeta, rootMetaKind as zipRootMetaKind } from "./zip_writer";
 
-export type BoundedInflateResult =
-  | { ok: true; bytes: Buffer }
-  | { ok: false; hold: string };
+export type BoundedInflateResult = { ok: true; bytes: Buffer } | { ok: false; hold: string };
 
 const INFLATION_BUDGET_HOLD = "archive.inflation_budget_exceeded";
 
@@ -28,9 +31,14 @@ function gunzipOptions(budget: number): zlib.ZlibOptions {
   return { maxOutputLength: Math.max(1, Math.min(budget, bufferConstants.MAX_LENGTH)) };
 }
 
-function inflateVerdict(err: Error | null, inflated: Buffer | undefined, budget: number): BoundedInflateResult {
+function inflateVerdict(
+  err: Error | null,
+  inflated: Buffer | undefined,
+  budget: number,
+): BoundedInflateResult {
   if (err) {
-    if ((err as NodeJS.ErrnoException).code === "ERR_BUFFER_TOO_LARGE") return { ok: false, hold: INFLATION_BUDGET_HOLD };
+    if ((err as NodeJS.ErrnoException).code === "ERR_BUFFER_TOO_LARGE")
+      return { ok: false, hold: INFLATION_BUDGET_HOLD };
     return { ok: false, hold: `archive.gzip_unreadable:${err.message}` };
   }
   const bytes = inflated ?? Buffer.alloc(0);
@@ -115,7 +123,7 @@ function admitTarNames(names: string[]): string | null {
   for (const name of names) {
     const holds = pathSafetyHolds(name, DEFAULT_LOCAL_ARCHIVE_POLICY);
     if (holds.length) return holds[0]!.code;
-    if (tarRootMetaKind(name) === null && (name.includes("/") && name.split("/").includes(".."))) {
+    if (tarRootMetaKind(name) === null && name.includes("/") && name.split("/").includes("..")) {
       return "archive.path_traversal";
     }
   }
@@ -151,9 +159,7 @@ function admitTarBytes(tar: Buffer): string | null {
   return admitTarNames(read.members.map((m) => m.name));
 }
 
-export type ArchiveMemberResult =
-  | { rewritten: true }
-  | { rewritten: false; hold: string };
+export type ArchiveMemberResult = { rewritten: true } | { rewritten: false; hold: string };
 
 /**
  * Hold code for a filesystem failure while reading or replacing the archive

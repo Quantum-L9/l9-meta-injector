@@ -67,7 +67,11 @@ export function writeMultiRootCorpus(base: string): MultiRootCorpus {
   const archives = path.join(base, "ArchiveZips");
 
   const plan = planDocument("Widget");
-  write(oldSsd, "widget-api/package.json", `${JSON.stringify({ name: "widget-api", version: "2.0.0" }, null, 2)}\n`);
+  write(
+    oldSsd,
+    "widget-api/package.json",
+    `${JSON.stringify({ name: "widget-api", version: "2.0.0" }, null, 2)}\n`,
+  );
   write(oldSsd, "widget-api/src/index.ts", "export const widget = 1;\n");
   write(oldSsd, "widget-api/src/router.ts", "export const route = () => 1;\n");
   write(oldSsd, "widget-api/tests/router.test.ts", "it('routes', () => {});\n");
@@ -86,25 +90,40 @@ export function writeMultiRootCorpus(base: string): MultiRootCorpus {
   write(oldSsd, "reports/quarterly.doc", "not really a doc\n");
   write(oldSsd, "photos/scan.png", "PNG not really a png\n");
 
-  write(backup, "widget-api/package.json", `${JSON.stringify({ name: "widget-api", version: "1.4.0" }, null, 2)}\n`);
+  write(
+    backup,
+    "widget-api/package.json",
+    `${JSON.stringify({ name: "widget-api", version: "1.4.0" }, null, 2)}\n`,
+  );
   write(backup, "widget-api/src/index.ts", "export const widget = 0;\n");
   write(backup, "widget-api/PLAN.md", plan);
-  write(backup, "widget-api/ROADMAP.md", [
-    "# Widget Roadmap",
-    "",
-    "Type: roadmap",
-    "",
-    "Milestone 1: ship the routing table",
-    "Milestone 2: promote the container image through staging",
-    "",
-    "Supersedes: the 2019 routing note",
-  ].join("\n"));
-  write(backup, "notes/monday.md", "# Monday\n\nA different short note about something else entirely.\n");
+  write(
+    backup,
+    "widget-api/ROADMAP.md",
+    [
+      "# Widget Roadmap",
+      "",
+      "Type: roadmap",
+      "",
+      "Milestone 1: ship the routing table",
+      "Milestone 2: promote the container image through staging",
+      "",
+      "Supersedes: the 2019 routing note",
+    ].join("\n"),
+  );
+  write(
+    backup,
+    "notes/monday.md",
+    "# Monday\n\nA different short note about something else entirely.\n",
+  );
 
   fs.mkdirSync(archives, { recursive: true });
   writeRawZip(path.join(archives, "old-work.zip"), [
     { name: "widget-api/PLAN.md", content: plan },
-    { name: "loose/README.md", content: "# Loose\n\nA readme that lives only inside the archive.\n" },
+    {
+      name: "loose/README.md",
+      content: "# Loose\n\nA readme that lives only inside the archive.\n",
+    },
   ]);
 
   return { base, oldSsd, backup, archives };
@@ -162,8 +181,7 @@ export interface ScaleCorpusResult extends ScaleCorpusSpec {
  * document to be the common vocabulary the prefix bound must exclude, and every
  * extra word is ten thousand more shingles for the near-duplicate pass to hash.
  */
-const SCALE_BOILERPLATE =
-  "This note was written during the migration and kept for the record.";
+const SCALE_BOILERPLATE = "This note was written during the migration and kept for the record.";
 
 /** Subjects the filler notes are drawn from, so real topic groups exist. */
 const SCALE_SUBJECTS: readonly string[] = [
@@ -261,9 +279,13 @@ function writeMixedDocuments(
     markdown: ["Status: draft", ...lines],
     code: ["print('never executed')"],
   });
-  writePdf(at(`research-${stamp}.pdf`), [`Research Summary ${stamp}`, "Status: complete", ...lines], {
-    title: `Research Summary ${stamp}`,
-  });
+  writePdf(
+    at(`research-${stamp}.pdf`),
+    [`Research Summary ${stamp}`, "Status: complete", ...lines],
+    {
+      title: `Research Summary ${stamp}`,
+    },
+  );
   writeHtml(at(`retro-${stamp}.html`), {
     title: `Retro Notes ${stamp}`,
     headings: ["Findings"],
@@ -291,8 +313,16 @@ export function writeScaleCorpus(base: string, spec: ScaleCorpusSpec): ScaleCorp
   for (let index = 0; index < spec.candidateProjects; index++) {
     const root = index % 2 === 0 ? rootA : rootB;
     const project = `svc-${String(index).padStart(3, "0")}`;
-    write(root, `projects/${project}/package.json`, `${JSON.stringify({ name: project, version: "1.0.0" }, null, 2)}\n`);
-    write(root, `projects/${project}/src/main.ts`, `export const ${project.replace(/-/g, "_")} = ${index};\n`);
+    write(
+      root,
+      `projects/${project}/package.json`,
+      `${JSON.stringify({ name: project, version: "1.0.0" }, null, 2)}\n`,
+    );
+    write(
+      root,
+      `projects/${project}/src/main.ts`,
+      `export const ${project.replace(/-/g, "_")} = ${index};\n`,
+    );
     write(root, `projects/${project}/tests/main.test.ts`, `it('${project}', () => {});\n`);
     write(root, `projects/${project}/PLAN.md`, planDocument(project));
     written += 4;
@@ -357,7 +387,10 @@ export function writeScaleCorpus(base: string, spec: ScaleCorpusSpec): ScaleCorp
     fs.mkdirSync(path.dirname(target), { recursive: true });
     const members = [
       { name: "notes/inner.md", content: `# Inner ${index}\n\nA member body numbered ${index}.\n` },
-      { name: "notes/shared.md", content: "# Shared member\n\nIdentical in every archive in this corpus.\n" },
+      {
+        name: "notes/shared.md",
+        content: "# Shared member\n\nIdentical in every archive in this corpus.\n",
+      },
     ];
     writeRawZip(target, members);
     archiveMembers += members.length;
@@ -372,14 +405,20 @@ export function writeScaleCorpus(base: string, spec: ScaleCorpusSpec): ScaleCorp
   for (let index = 0; index < spec.nestedArchives; index++) {
     const innerPath = path.join(scratch, `inner-${index}.zip`);
     const innerMembers = [
-      { name: "deep/buried.md", content: `# Buried ${index}\n\nTwo archives down, and still observed.\n` },
+      {
+        name: "deep/buried.md",
+        content: `# Buried ${index}\n\nTwo archives down, and still observed.\n`,
+      },
     ];
     writeRawZip(innerPath, innerMembers);
     const outer = path.join(rootC, "zips", `nested-${String(index).padStart(2, "0")}.zip`);
     fs.mkdirSync(path.dirname(outer), { recursive: true });
     writeRawZip(outer, [
       { name: "carried/inner.zip", content: fs.readFileSync(innerPath) },
-      { name: "readme.md", content: `# Nested ${index}\n\nThe archive beside this one holds another.\n` },
+      {
+        name: "readme.md",
+        content: `# Nested ${index}\n\nThe archive beside this one holds another.\n`,
+      },
     ]);
     archiveMembers += 2;
     nestedArchiveMembers += innerMembers.length;

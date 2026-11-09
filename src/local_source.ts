@@ -27,47 +27,47 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import {
-  InventoryArtifactType,
-  InventoryRecord,
-  InventoryResult,
-  buildDuplicateClusters,
-  classifyInventory,
-} from "./inventory";
-import { compareCodePoints } from "./ordering";
-import { isInsideContainer } from "./corpus_roots";
-import { EncodingProbe, probeFileEncoding } from "./encoding";
-import { OmitMatcher, buildOmitMatcher } from "./omit";
-import {
-  ArchiveHold,
-  ArchivePreflightResult,
-  PreflightMember,
-  canonicalMemberPath,
-  preflightArchive,
-} from "./archive_preflight";
 import { ARCHIVE_READER_VERSION, resolveArchiveExecution } from "./archive_execution";
-import {
-  ArchiveSessionBudget,
-  LocalArchivePolicy,
-  localArchivePolicyFingerprint,
-} from "./local_archive_policy";
-import {
-  ZipBudgetExceededError,
-  ZipFormatError,
-  ZipSizeMismatchError,
-  readZipCentralDirectory,
-  streamZipMember,
-} from "./zip_reader";
 import {
   ARCHIVE_SIGNATURE_PROBE_BYTES,
   ArchiveSignature,
-  EXPANDABLE_ARCHIVE_EXTENSIONS,
   archiveExtensionOf,
+  EXPANDABLE_ARCHIVE_EXTENSIONS,
   isExpandableArchivePath,
   isKnownUnexpandableArchivePath,
   signatureContradictsName,
   sniffArchiveSignature,
 } from "./archive_formats";
+import {
+  ArchiveHold,
+  ArchivePreflightResult,
+  canonicalMemberPath,
+  PreflightMember,
+  preflightArchive,
+} from "./archive_preflight";
+import { isInsideContainer } from "./corpus_roots";
+import { EncodingProbe, probeFileEncoding } from "./encoding";
+import {
+  buildDuplicateClusters,
+  classifyInventory,
+  InventoryArtifactType,
+  InventoryRecord,
+  InventoryResult,
+} from "./inventory";
+import {
+  ArchiveSessionBudget,
+  LocalArchivePolicy,
+  localArchivePolicyFingerprint,
+} from "./local_archive_policy";
+import { buildOmitMatcher, OmitMatcher } from "./omit";
+import { compareCodePoints } from "./ordering";
+import {
+  readZipCentralDirectory,
+  streamZipMember,
+  ZipBudgetExceededError,
+  ZipFormatError,
+  ZipSizeMismatchError,
+} from "./zip_reader";
 
 /**
  * Separator between an archive path and a member path in a virtual locator.
@@ -344,7 +344,11 @@ function realPathOrNearest(target: string): string {
  * boundary is the filesystem root directly. Internal: not re-exported from
  * `src/public` or `src/index.ts`.
  */
-export function assertScratchOutsideSource(scratchParent: string, absoluteSource: string, sourceKind: LocalSourceKind): void {
+export function assertScratchOutsideSource(
+  scratchParent: string,
+  absoluteSource: string,
+  sourceKind: LocalSourceKind,
+): void {
   const realSource = realPathOrNearest(absoluteSource);
   // For a file source the protected boundary is the directory holding it: that is
   // the tree the observation promises not to write into.
@@ -354,8 +358,8 @@ export function assertScratchOutsideSource(scratchParent: string, absoluteSource
   // `/` has boundary `/`, and `//` is a prefix no path has (RC-058).
   if (isInsideContainer(boundary, realParent)) {
     throw new Error(
-      "scratch parent resolves inside the observed source and would write into a read-only tree: "
-      + `${scratchParent} resolves to ${realParent}, inside ${boundary}`,
+      "scratch parent resolves inside the observed source and would write into a read-only tree: " +
+        `${scratchParent} resolves to ${realParent}, inside ${boundary}`,
     );
   }
 }
@@ -398,7 +402,9 @@ function createScratch(parent: string): ScratchHandle {
 export function removeOwnedScratch(root: string, token: string): void {
   let marker: { owner?: unknown; token?: unknown };
   try {
-    marker = JSON.parse(fs.readFileSync(path.join(root, SCRATCH_OWNER_FILE), "utf8")) as typeof marker;
+    marker = JSON.parse(
+      fs.readFileSync(path.join(root, SCRATCH_OWNER_FILE), "utf8"),
+    ) as typeof marker;
   } catch {
     return; // No provable ownership: leave the path alone.
   }
@@ -415,9 +421,8 @@ const EXTRACTION_MARKER_MAX_BYTES = 64 * 1024;
  * platform it contributes nothing, and the lstat that precedes every open below
  * stands in for it.
  */
-const READ_UNTRUSTED_FLAGS = fs.constants.O_RDONLY
-  | (fs.constants.O_NOFOLLOW ?? 0)
-  | (fs.constants.O_NONBLOCK ?? 0);
+const READ_UNTRUSTED_FLAGS =
+  fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0) | (fs.constants.O_NONBLOCK ?? 0);
 
 /** The opened object is not a regular file, so its bytes are never read. */
 class NotRegularFileError extends Error {
@@ -497,7 +502,9 @@ export function hasLegacyExtractionOwnership(directory: string): boolean {
   // `l9-meta-injector.evil` borrow this package's authority. This predicate
   // decides exclusion from observation, not destruction; the destructive path
   // additionally requires the v2 schema.
-  return marker !== null && typeof marker.owner === "string" && marker.owner === EXTRACTION_OWNER_ID;
+  return (
+    marker !== null && typeof marker.owner === "string" && marker.owner === EXTRACTION_OWNER_ID
+  );
 }
 
 /**
@@ -507,8 +514,15 @@ export function hasLegacyExtractionOwnership(directory: string): boolean {
  * the v2 schema field is a legacy or foreign file and never authorizes removal.
  */
 export function hasExtractionOwnershipV2(directory: string): boolean {
-  const marker = readExtractionOwnershipMarker(directory) as { schema?: unknown; owner?: unknown } | null;
-  return marker !== null && marker.schema === LOCAL_FILES_EXTRACTION_SCHEMA && marker.owner === EXTRACTION_OWNER_ID;
+  const marker = readExtractionOwnershipMarker(directory) as {
+    schema?: unknown;
+    owner?: unknown;
+  } | null;
+  return (
+    marker !== null &&
+    marker.schema === LOCAL_FILES_EXTRACTION_SCHEMA &&
+    marker.owner === EXTRACTION_OWNER_ID
+  );
 }
 
 /**
@@ -580,7 +594,9 @@ export interface PhysicalManifestEntry {
 export function physicalManifestDigest(entries: PhysicalManifestEntry[]): string {
   const ordered = [...entries].sort((a, b) => compareCodePoints(a.path, b.path));
   const rendered = ordered
-    .map((entry) => JSON.stringify([entry.path, entry.kind, entry.contentHash ?? null, entry.linkTarget ?? null]))
+    .map((entry) =>
+      JSON.stringify([entry.path, entry.kind, entry.contentHash ?? null, entry.linkTarget ?? null]),
+    )
     .join("\n");
   return sha256Prefixed(crypto.createHash("sha256").update(rendered, "utf8").digest("hex"));
 }
@@ -692,7 +708,9 @@ function enumerateDirectory(
     try {
       names = fs.readdirSync(directory);
     } catch (error) {
-      skippedDirs.push(`${toPosix(path.relative(root, directory)) || "."}: ${portableErrorCode(error)}`);
+      skippedDirs.push(
+        `${toPosix(path.relative(root, directory)) || "."}: ${portableErrorCode(error)}`,
+      );
       return;
     }
     for (const name of [...names].sort(compareCodePoints)) {
@@ -758,9 +776,12 @@ function enumerationDiffers(before: EnumeratedEntry[], after: EnumeratedEntry[])
   for (const entry of before) {
     const later = byPath.get(entry.relativePath);
     if (later === undefined) return `entry disappeared during observation: ${entry.relativePath}`;
-    if (later.kind !== entry.kind) return `entry kind changed during observation: ${entry.relativePath}`;
-    if (later.sizeBytes !== entry.sizeBytes) return `file size changed during observation: ${entry.relativePath}`;
-    if (!observedFileStateMatches(entry, later)) return `file mtime changed during observation: ${entry.relativePath}`;
+    if (later.kind !== entry.kind)
+      return `entry kind changed during observation: ${entry.relativePath}`;
+    if (later.sizeBytes !== entry.sizeBytes)
+      return `file size changed during observation: ${entry.relativePath}`;
+    if (!observedFileStateMatches(entry, later))
+      return `file mtime changed during observation: ${entry.relativePath}`;
   }
   return null;
 }
@@ -768,7 +789,9 @@ function enumerationDiffers(before: EnumeratedEntry[], after: EnumeratedEntry[])
 // ───────────────────────────── record construction ─────────────────────────────
 
 function inventoryIdFor(relativePath: string): string {
-  return "inv-" + crypto.createHash("sha256").update(relativePath, "utf8").digest("hex").slice(0, 16);
+  return (
+    "inv-" + crypto.createHash("sha256").update(relativePath, "utf8").digest("hex").slice(0, 16)
+  );
 }
 
 interface RecordDraft {
@@ -786,7 +809,9 @@ interface RecordDraft {
 
 function buildLocalRecord(draft: RecordDraft): InventoryRecord {
   const relative = draft.relativePath;
-  const fileName = relative.includes("/") ? relative.slice(relative.lastIndexOf("/") + 1) : relative;
+  const fileName = relative.includes("/")
+    ? relative.slice(relative.lastIndexOf("/") + 1)
+    : relative;
   const isDir = draft.kind === "directory";
   const extension = isDir ? "" : path.extname(fileName);
   const classified = classifyInventory(relative, fileName, extension, isDir);
@@ -983,14 +1008,16 @@ function stageOneMember(
       failure: null,
     };
   } catch (error) {
-    if (!(error instanceof ZipBudgetExceededError) && !(error instanceof ZipFormatError)) throw error;
+    if (!(error instanceof ZipBudgetExceededError) && !(error instanceof ZipFormatError))
+      throw error;
     // A member whose produced bytes contradict its declared size is the same
     // class of defect as a CRC mismatch: the bytes do not match the metadata.
-    const code = error instanceof ZipBudgetExceededError
-      ? "archive.extracted_bytes_exceeded"
-      : error instanceof ZipSizeMismatchError
-        ? "archive.member_integrity_failed"
-        : "archive.format_unreadable";
+    const code =
+      error instanceof ZipBudgetExceededError
+        ? "archive.extracted_bytes_exceeded"
+        : error instanceof ZipSizeMismatchError
+          ? "archive.member_integrity_failed"
+          : "archive.format_unreadable";
     return {
       observation: null,
       failure: {
@@ -1010,7 +1037,11 @@ function extractMembers(
   archiveHash: string,
   occurrence: number,
   preflight: ArchivePreflightResult,
-): { members: LocalArchiveMemberObservation[]; expandedBytes: number; failure: ArchiveHold | null } {
+): {
+  members: LocalArchiveMemberObservation[];
+  expandedBytes: number;
+  failure: ArchiveHold | null;
+} {
   const stagingRoot = memberStagingRoot(context.scratch.root, archiveHash, occurrence);
   const members: LocalArchiveMemberObservation[] = [];
   let expandedBytes = 0;
@@ -1108,7 +1139,8 @@ function stageArchive(
   // A top-level archive is read from the observed source; a nested one is read
   // from a member this run staged, which is scratch and therefore host-side.
   const readsObservedSource = task.parentArchiveHash === null;
-  const asSourceFailure = (error: unknown): unknown => (readsObservedSource ? new SourceReadError(error) : error);
+  const asSourceFailure = (error: unknown): unknown =>
+    readsObservedSource ? new SourceReadError(error) : error;
 
   const hash = crypto.createHash("sha256");
   let source: number | null = null;
@@ -1167,7 +1199,11 @@ function stageArchive(
  * Only a `ZipBudgetExceededError` reaches here: its message is a fact about the
  * archive's size and carries no host path.
  */
-function recordUnstageableArchive(context: ArchiveContext, task: ArchiveTask, error: ZipBudgetExceededError): void {
+function recordUnstageableArchive(
+  context: ArchiveContext,
+  task: ArchiveTask,
+  error: ZipBudgetExceededError,
+): void {
   const message = error.message;
   context.archives.push({
     sourcePath: task.sourcePath,
@@ -1240,13 +1276,14 @@ function preflightStaged(
   // Depth is part of what preflight decides on, and it is not part of the key:
   // the same archive nested one level deeper is a different question. Only a
   // top-level archive is served from the store, where depth is fixed at 0.
-  const cacheKey = task.depth === 0
-    ? {
-        archiveContentHash: staged.archiveHash,
-        readerVersion: ARCHIVE_READER_VERSION,
-        policyFingerprint: localArchivePolicyFingerprint(context.policy),
-      }
-    : null;
+  const cacheKey =
+    task.depth === 0
+      ? {
+          archiveContentHash: staged.archiveHash,
+          readerVersion: ARCHIVE_READER_VERSION,
+          policyFingerprint: localArchivePolicyFingerprint(context.policy),
+        }
+      : null;
   const cached = cacheKey === null ? undefined : context.manifests?.get(cacheKey);
   if (cached !== undefined) {
     if (!cached.accepted) {
@@ -1255,10 +1292,12 @@ function preflightStaged(
     }
     const refusal = context.budget.refuseReason(cached.declaredUncompressedBytes);
     if (refusal !== null) {
-      holdArchive(context, task, staged.archiveHash, staged.sizeBytes, [{
-        code: "archive.session_budget_exceeded",
-        message: refusal,
-      }]);
+      holdArchive(context, task, staged.archiveHash, staged.sizeBytes, [
+        {
+          code: "archive.session_budget_exceeded",
+          message: refusal,
+        },
+      ]);
       return null;
     }
     return cached;
@@ -1275,11 +1314,14 @@ function preflightStaged(
   } catch (error) {
     // Only what the archive's bytes caused is a format verdict. A host failure
     // reading the staged copy is the host's, and is rethrown.
-    if (!(error instanceof ZipFormatError) && !(error instanceof ZipBudgetExceededError)) throw error;
-    holdArchive(context, task, staged.archiveHash, staged.sizeBytes, [{
-      code: "archive.format_unreadable",
-      message: `central directory could not be read: ${error.message}`,
-    }]);
+    if (!(error instanceof ZipFormatError) && !(error instanceof ZipBudgetExceededError))
+      throw error;
+    holdArchive(context, task, staged.archiveHash, staged.sizeBytes, [
+      {
+        code: "archive.format_unreadable",
+        message: `central directory could not be read: ${error.message}`,
+      },
+    ]);
     return null;
   }
   // Stored before the session budget is consulted: the verdict is a fact about
@@ -1292,10 +1334,12 @@ function preflightStaged(
   }
   const sessionRefusal = context.budget.refuseReason(preflight.declaredUncompressedBytes);
   if (sessionRefusal !== null) {
-    holdArchive(context, task, staged.archiveHash, staged.sizeBytes, [{
-      code: "archive.session_budget_exceeded",
-      message: sessionRefusal,
-    }]);
+    holdArchive(context, task, staged.archiveHash, staged.sizeBytes, [
+      {
+        code: "archive.session_budget_exceeded",
+        message: sessionRefusal,
+      },
+    ]);
     return null;
   }
   return preflight;
@@ -1360,7 +1404,8 @@ export function memberArchiveAncestry(
   observation: Pick<LocalSourceObservation, "archives" | "virtualArtifacts">,
 ): Map<string, string[]> {
   const parentOf = new Map<string, string | null>();
-  for (const archive of observation.archives) parentOf.set(archive.sourcePath, archive.parentArchivePath);
+  for (const archive of observation.archives)
+    parentOf.set(archive.sourcePath, archive.parentArchivePath);
   const ancestry = new Map<string, string[]>();
   for (const member of observation.virtualArtifacts) {
     const chain: string[] = [];
@@ -1428,17 +1473,20 @@ function acquireArchive(context: ArchiveContext, task: ArchiveTask, queue: Archi
     context.diagnostics.push({
       code: "local-source.source_changed_during_observation",
       severity: "error",
-      message: "SOURCE_CHANGED_DURING_OBSERVATION: "
-        + `${task.sourcePath}: archive bytes changed between hashing and staging `
-        + `(snapshot ${task.expectedArchiveHash}, staged ${staged.archiveHash})`,
+      message:
+        "SOURCE_CHANGED_DURING_OBSERVATION: " +
+        `${task.sourcePath}: archive bytes changed between hashing and staging ` +
+        `(snapshot ${task.expectedArchiveHash}, staged ${staged.archiveHash})`,
     });
-    holdArchive(context, task, staged.archiveHash, staged.sizeBytes, [{
-      // The archive's bytes did not match the digest recorded for them, which is
-      // precisely an integrity failure. archive_preflight owns this vocabulary and
-      // is consume-only, so no new code is minted for the same meaning.
-      code: "archive.member_integrity_failed",
-      message: "archive bytes changed between hashing and staging; no member is claimed",
-    }]);
+    holdArchive(context, task, staged.archiveHash, staged.sizeBytes, [
+      {
+        // The archive's bytes did not match the digest recorded for them, which is
+        // precisely an integrity failure. archive_preflight owns this vocabulary and
+        // is consume-only, so no new code is minted for the same meaning.
+        code: "archive.member_integrity_failed",
+        message: "archive bytes changed between hashing and staging; no member is claimed",
+      },
+    ]);
     return;
   }
 
@@ -1499,10 +1547,14 @@ function resolveSourceKind(absolutePath: string, requested: RequestedSourceKind)
   const actual: LocalSourceKind = stats.isDirectory() ? "directory" : nonDirectoryKind;
   if (requested === "auto" || requested === undefined) return actual;
   if (requested === "directory" && !stats.isDirectory()) {
-    throw new Error(`local-source: --source-kind directory was requested but the path is not a directory`);
+    throw new Error(
+      `local-source: --source-kind directory was requested but the path is not a directory`,
+    );
   }
   if (requested !== "directory" && stats.isDirectory()) {
-    throw new Error(`local-source: --source-kind ${requested} was requested but the path is a directory`);
+    throw new Error(
+      `local-source: --source-kind ${requested} was requested but the path is a directory`,
+    );
   }
   return requested;
 }
@@ -1577,9 +1629,12 @@ function highResolutionMtime(absolutePath: string): string | null {
  * case that must make the whole observation unstable rather than degrade one entry:
  * a file that moved across its own hash after a bounded retry.
  */
-function hashStableFile(
-  entry: EnumeratedEntry,
-): { digest: string | null; reason: string; changed: boolean; stat?: HashingStat } {
+function hashStableFile(entry: EnumeratedEntry): {
+  digest: string | null;
+  reason: string;
+  changed: boolean;
+  stat?: HashingStat;
+} {
   let reason = "";
   for (let attempt = 0; attempt <= STABILITY_RETRY_LIMIT; attempt++) {
     let before: fs.Stats;
@@ -1607,11 +1662,20 @@ function hashStableFile(
     const after = fs.lstatSync(entry.absolutePath);
     const matches = observedFileStateMatches(
       { sizeBytes: before.size, mtimeMs: before.mtimeMs, mtimeNs: beforeNs },
-      { sizeBytes: after.size, mtimeMs: after.mtimeMs, mtimeNs: highResolutionMtime(entry.absolutePath) },
+      {
+        sizeBytes: after.size,
+        mtimeMs: after.mtimeMs,
+        mtimeNs: highResolutionMtime(entry.absolutePath),
+      },
     );
     if (matches) {
       // The bracket that held still across the read is the stat this digest describes.
-      return { digest: candidate, reason: "", changed: false, stat: hashingStatOf(before.size, before.mtimeMs, beforeNs) };
+      return {
+        digest: candidate,
+        reason: "",
+        changed: false,
+        stat: hashingStatOf(before.size, before.mtimeMs, beforeNs),
+      };
     }
     reason = "file changed while it was being hashed";
   }
@@ -1629,7 +1693,8 @@ function hashStableFile(
 function priorHashStillApplies(entry: EnumeratedEntry, known: KnownFileHash | undefined): boolean {
   if (known === undefined) return false;
   if (entry.sizeBytes === null || known.size_bytes !== entry.sizeBytes) return false;
-  if (known.mtime_ns !== undefined && entry.mtimeNs !== null) return known.mtime_ns === entry.mtimeNs;
+  if (known.mtime_ns !== undefined && entry.mtimeNs !== null)
+    return known.mtime_ns === entry.mtimeNs;
   return entry.mtimeMs !== null && known.mtime_ms === entry.mtimeMs;
 }
 
@@ -1668,7 +1733,9 @@ function noteArchiveSignature(
 ): void {
   // Text that is valid UTF-8 throughout cannot be one of these containers.
   if (encoding !== null && encoding.status === "utf8") return;
-  const signature: ArchiveSignature | null = sniffArchiveSignature(readPrefix(physicalPath, ARCHIVE_SIGNATURE_PROBE_BYTES));
+  const signature: ArchiveSignature | null = sniffArchiveSignature(
+    readPrefix(physicalPath, ARCHIVE_SIGNATURE_PROBE_BYTES),
+  );
   if (signature === null || !signatureContradictsName(sourcePath, signature)) return;
   unknowns.push(`archive_signature:${signature}`);
   diagnostics.push({
@@ -1725,7 +1792,10 @@ function hashOneEntry(
       message: `file exceeds the ${hashMaxBytes}-byte hash budget, so its content hash is absent`,
       sourcePath: entry.relativePath,
     });
-    return { hashed: { entry, contentHashHex: null, encoding: null, unknowns }, unstableReason: null };
+    return {
+      hashed: { entry, contentHashHex: null, encoding: null, unknowns },
+      unstableReason: null,
+    };
   }
 
   if (priorHashStillApplies(entry, known)) {
@@ -1744,7 +1814,11 @@ function hashOneEntry(
         unknowns,
         reused: true,
         // The enumeration stat is the one that validated the carried hash.
-        hashingStat: hashingStatOf(entry.sizeBytes as number, entry.mtimeMs as number, entry.mtimeNs),
+        hashingStat: hashingStatOf(
+          entry.sizeBytes as number,
+          entry.mtimeMs as number,
+          entry.mtimeNs,
+        ),
       },
       unstableReason: null,
     };
@@ -1765,7 +1839,10 @@ function hashOneEntry(
       message: `file could not be hashed (${attempt.reason})`,
       sourcePath: entry.relativePath,
     });
-    return { hashed: { entry, contentHashHex: null, encoding: null, unknowns }, unstableReason: null };
+    return {
+      hashed: { entry, contentHashHex: null, encoding: null, unknowns },
+      unstableReason: null,
+    };
   }
 
   const encoding = probeFileEncoding(entry.absolutePath);
@@ -1805,8 +1882,14 @@ function hashEntries(
       hashed.push({ entry, contentHashHex: null, encoding: null, unknowns: [] });
       continue;
     }
-    const result = hashOneEntry(entry, hashMaxBytes, diagnostics, knownHashes?.get(entry.relativePath));
-    if (result.unstableReason !== null) return { hashed, unstableReason: result.unstableReason, hashing };
+    const result = hashOneEntry(
+      entry,
+      hashMaxBytes,
+      diagnostics,
+      knownHashes?.get(entry.relativePath),
+    );
+    if (result.unstableReason !== null)
+      return { hashed, unstableReason: result.unstableReason, hashing };
     if (result.hashed.contentHashHex === null) hashing.unhashed_count += 1;
     else if (result.hashed.reused === true) hashing.cached_reuse_count += 1;
     else hashing.fully_rehashed_count += 1;
@@ -1835,17 +1918,19 @@ function enumerateSource(
     return enumerateDirectory(absoluteSource, omit, diagnostics, omittedPaths, skippedDirs);
   }
   const stats = fs.lstatSync(absoluteSource);
-  return [{
-    absolutePath: absoluteSource,
-    relativePath: path.basename(absoluteSource),
-    // Derived, not asserted: a source swapped since resolveSourceKind is observed
-    // as what it now is, and hashing reports the change instead of opening it.
-    kind: entryKindFromStats(stats),
-    sizeBytes: stats.size,
-    mtimeMs: stats.mtimeMs,
-    mtimeNs: highResolutionMtime(absoluteSource),
-    linkTarget: null,
-  }];
+  return [
+    {
+      absolutePath: absoluteSource,
+      relativePath: path.basename(absoluteSource),
+      // Derived, not asserted: a source swapped since resolveSourceKind is observed
+      // as what it now is, and hashing reports the change instead of opening it.
+      kind: entryKindFromStats(stats),
+      sizeBytes: stats.size,
+      mtimeMs: stats.mtimeMs,
+      mtimeNs: highResolutionMtime(absoluteSource),
+      linkTarget: null,
+    },
+  ];
 }
 
 /**
@@ -1898,18 +1983,29 @@ function deriveSourceIdentity(
   // The source is refused instead. A source that moved while it was hashed keeps
   // its observation so the instability is reported first, as it always was.
   if (sourceKind !== "directory" && singleFileHash === null && unstableReason === null) {
-    const why = hashed.length === 1 && hashed[0].unknowns.length > 0 ? ` (${hashed[0].unknowns.join(", ")})` : "";
-    throw new Error(`local-source: source bytes could not be read, so no ${sourceKind} revision exists${why}`);
+    const why =
+      hashed.length === 1 && hashed[0].unknowns.length > 0
+        ? ` (${hashed[0].unknowns.join(", ")})`
+        : "";
+    throw new Error(
+      `local-source: source bytes could not be read, so no ${sourceKind} revision exists${why}`,
+    );
   }
   const useFileHash = sourceKind !== "directory" && singleFileHash !== null;
   return {
     physicalSnapshotHash,
-    sourceRevision: revisionFor(sourceKind, useFileHash ? (singleFileHash as string) : physicalSnapshotHash),
+    sourceRevision: revisionFor(
+      sourceKind,
+      useFileHash ? (singleFileHash as string) : physicalSnapshotHash,
+    ),
   };
 }
 
 /** Queue the ZIP archives to expand, reporting the formats v1 does not open. */
-function planArchiveTasks(hashed: HashedEntry[], diagnostics: LocalSourceDiagnostic[]): ArchiveTask[] {
+function planArchiveTasks(
+  hashed: HashedEntry[],
+  diagnostics: LocalSourceDiagnostic[],
+): ArchiveTask[] {
   const queue: ArchiveTask[] = [];
   for (const { entry, contentHashHex } of hashed) {
     if (entry.kind !== "file") continue;
@@ -1940,13 +2036,17 @@ function planArchiveTasks(hashed: HashedEntry[], diagnostics: LocalSourceDiagnos
 }
 
 /** Report each archive left unopened because expansion was disabled. */
-function reportDisabledExpansion(hashed: HashedEntry[], diagnostics: LocalSourceDiagnostic[]): void {
+function reportDisabledExpansion(
+  hashed: HashedEntry[],
+  diagnostics: LocalSourceDiagnostic[],
+): void {
   for (const { entry } of hashed) {
     if (entry.kind !== "file" || !isZipPath(entry.relativePath)) continue;
     diagnostics.push({
       code: "local-source.archive_expansion_disabled",
       severity: "info",
-      message: "archive expansion is disabled; the archive is hashed and its members are not observed",
+      message:
+        "archive expansion is disabled; the archive is hashed and its members are not observed",
       sourcePath: entry.relativePath,
     });
   }
@@ -1958,9 +2058,10 @@ function reportUnopenedEntry(entry: EnumeratedEntry, diagnostics: LocalSourceDia
     diagnostics.push({
       code: "local-source.symlink_not_traversed",
       severity: "info",
-      message: entry.linkTarget === null
-        ? "symbolic link observed; its target was not read"
-        : `symbolic link observed; its literal target is '${entry.linkTarget}' and was not read`,
+      message:
+        entry.linkTarget === null
+          ? "symbolic link observed; its target was not read"
+          : `symbolic link observed; its literal target is '${entry.linkTarget}' and was not read`,
       sourcePath: entry.relativePath,
     });
     return;
@@ -1995,9 +2096,10 @@ function physicalRecord(hashedEntry: HashedEntry): InventoryRecord {
     ...(unopened
       ? {
           artifactTypeOverride: "unknown" as InventoryArtifactType,
-          evidenceOverride: entry.kind === "symlink"
-            ? "symbolic link, not traversed"
-            : "special filesystem entry, not opened",
+          evidenceOverride:
+            entry.kind === "symlink"
+              ? "symbolic link, not traversed"
+              : "special filesystem entry, not opened",
           confidenceOverride: 1,
         }
       : {}),
@@ -2018,14 +2120,16 @@ function buildRecords(
   for (const member of members) {
     const unknowns: string[] = [];
     noteArchiveSignature(member.virtualSourcePath, member.stagedPath, null, unknowns, diagnostics);
-    records.push(buildLocalRecord({
-      relativePath: member.virtualSourcePath,
-      absolutePath: member.stagedPath,
-      kind: "archive-member",
-      sizeBytes: member.sizeBytes,
-      contentHash: member.contentHash.replace("sha256:", ""),
-      unknowns,
-    }));
+    records.push(
+      buildLocalRecord({
+        relativePath: member.virtualSourcePath,
+        absolutePath: member.stagedPath,
+        kind: "archive-member",
+        sizeBytes: member.sizeBytes,
+        contentHash: member.contentHash.replace("sha256:", ""),
+        unknowns,
+      }),
+    );
   }
   records.sort((a, b) => compareCodePoints(a.relative_path, b.relative_path));
   // Acquisition holds every archive whose expansion could spell an existing
@@ -2049,10 +2153,12 @@ function buildInventoryResult(
   omittedPaths: string[],
 ): InventoryResult {
   const typeDistribution: Record<string, number> = {};
-  let files = 0, folders = 0;
+  let files = 0,
+    folders = 0;
   for (const record of records) {
     typeDistribution[record.artifact_type] = (typeDistribution[record.artifact_type] ?? 0) + 1;
-    if (record.artifact_type === "folder") folders++; else files++;
+    if (record.artifact_type === "folder") folders++;
+    else files++;
   }
   return {
     root,
@@ -2075,9 +2181,11 @@ function buildInventoryResult(
 
 /** Total order over diagnostics, so a packet's diagnostic list is reproducible. */
 function compareDiagnostics(a: LocalSourceDiagnostic, b: LocalSourceDiagnostic): number {
-  return compareCodePoints(a.code, b.code)
-    || compareCodePoints(a.sourcePath ?? "", b.sourcePath ?? "")
-    || compareCodePoints(a.message, b.message);
+  return (
+    compareCodePoints(a.code, b.code) ||
+    compareCodePoints(a.sourcePath ?? "", b.sourcePath ?? "") ||
+    compareCodePoints(a.message, b.message)
+  );
 }
 
 /**
@@ -2094,7 +2202,8 @@ export function acquireLocalSource(input: LocalSourceAcquireInput): LocalSourceO
     throw new Error(`local-source: path does not exist: ${absoluteSource}`);
   }
   const sourceKind = resolveSourceKind(absoluteSource, input.sourceKind ?? "auto");
-  const sourceName = input.name && input.name.length > 0 ? input.name : path.basename(absoluteSource);
+  const sourceName =
+    input.name && input.name.length > 0 ? input.name : path.basename(absoluteSource);
   // The single resolution point shared with the materialization path: one policy
   // and one session budget judge every archive, on both paths.
   const { policy, budget } = resolveArchiveExecution(input.archivePolicy);
@@ -2107,15 +2216,21 @@ export function acquireLocalSource(input: LocalSourceAcquireInput): LocalSourceO
 
   // Enumerate, hash, then re-enumerate. A source that moved between the first and
   // last read has no single snapshot to describe, and saying so is the whole point.
-  const entries = enumerateSource(absoluteSource, sourceKind, omit, diagnostics, omittedPaths, skippedDirs);
-  const { hashed, unstableReason: hashUnstable, hashing } = hashEntries(
-    entries,
-    input.hashMaxBytes,
+  const entries = enumerateSource(
+    absoluteSource,
+    sourceKind,
+    omit,
     diagnostics,
-    input.knownHashes,
+    omittedPaths,
+    skippedDirs,
   );
-  const unstableReason = hashUnstable
-    ?? verifySnapshotStability(absoluteSource, sourceKind, entries, omit);
+  const {
+    hashed,
+    unstableReason: hashUnstable,
+    hashing,
+  } = hashEntries(entries, input.hashMaxBytes, diagnostics, input.knownHashes);
+  const unstableReason =
+    hashUnstable ?? verifySnapshotStability(absoluteSource, sourceKind, entries, omit);
   if (unstableReason !== null) {
     diagnostics.push({
       code: "local-source.source_changed_during_observation",
@@ -2128,16 +2243,30 @@ export function acquireLocalSource(input: LocalSourceAcquireInput): LocalSourceO
 
   // One rule, applied once: absent or empty means the OS temp directory. The value
   // checked against the source is exactly the value scratch is created under.
-  const scratchParent = input.scratchParent !== undefined && input.scratchParent.length > 0
-    ? input.scratchParent
-    : os.tmpdir();
+  const scratchParent =
+    input.scratchParent !== undefined && input.scratchParent.length > 0
+      ? input.scratchParent
+      : os.tmpdir();
   // Before createScratch, which is the first thing here that writes.
   assertScratchOutsideSource(scratchParent, absoluteSource, sourceKind);
   const scratch = createScratch(scratchParent);
   try {
     return finishAcquisition({
-      input, absoluteSource, sourceKind, sourceName, policy, budget, omit, diagnostics, omittedPaths,
-      skippedDirs, hashed, hashing, unstableReason, identity, scratch,
+      input,
+      absoluteSource,
+      sourceKind,
+      sourceName,
+      policy,
+      budget,
+      omit,
+      diagnostics,
+      omittedPaths,
+      skippedDirs,
+      hashed,
+      hashing,
+      unstableReason,
+      identity,
+      scratch,
     });
   } catch (error) {
     // The scratch root is this run's only footprint. An exception past this point
@@ -2179,8 +2308,21 @@ function hashingStatsOf(hashed: HashedEntry[]): Map<string, HashingStat> {
 /** Archive expansion and record assembly, once the scratch root exists. */
 function finishAcquisition(tail: AcquisitionTail): LocalSourceObservation {
   const {
-    input, absoluteSource, sourceKind, sourceName, policy, budget, omit, diagnostics, omittedPaths,
-    skippedDirs, hashed, hashing, unstableReason, identity, scratch,
+    input,
+    absoluteSource,
+    sourceKind,
+    sourceName,
+    policy,
+    budget,
+    omit,
+    diagnostics,
+    omittedPaths,
+    skippedDirs,
+    hashed,
+    hashing,
+    unstableReason,
+    identity,
+    scratch,
   } = tail;
   const archives: LocalArchiveObservation[] = [];
   const members: LocalArchiveMemberObservation[] = [];
@@ -2192,7 +2334,14 @@ function finishAcquisition(tail: AcquisitionTail): LocalSourceObservation {
     reportDisabledExpansion(hashed, diagnostics);
   } else if (unstableReason === null) {
     const context: ArchiveContext = {
-      scratch, policy, budget, omit, diagnostics, archives, members, omittedPaths,
+      scratch,
+      policy,
+      budget,
+      omit,
+      diagnostics,
+      archives,
+      members,
+      omittedPaths,
       manifests: input.archiveManifests,
       physicalLocatorPrefixes: physicalLocatorPrefixesOf(hashed),
       sourceChanged: archiveSourceChanged,
@@ -2218,7 +2367,9 @@ function finishAcquisition(tail: AcquisitionTail): LocalSourceObservation {
     hashing,
     inventory: buildInventoryResult(absoluteSource, records, skippedDirs, omittedPaths),
     archives: [...archives].sort((a, b) => compareCodePoints(a.sourcePath, b.sourcePath)),
-    virtualArtifacts: [...members].sort((a, b) => compareCodePoints(a.virtualSourcePath, b.virtualSourcePath)),
+    virtualArtifacts: [...members].sort((a, b) =>
+      compareCodePoints(a.virtualSourcePath, b.virtualSourcePath),
+    ),
     diagnostics: [...diagnostics].sort(compareDiagnostics),
     archivePolicy: policy,
     stable: unstableReason === null && archiveSourceChanged.length === 0,

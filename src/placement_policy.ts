@@ -7,12 +7,8 @@
 // module never does.
 
 import * as path from "node:path";
-import {
-  classifyArtifact,
-  placementHintFor,
-  QUARANTINE_DIRECTORY,
-} from "./artifact_class";
-import { SemanticArtifactClass, ClassConfidence } from "./schema";
+import { classifyArtifact, placementHintFor, QUARANTINE_DIRECTORY } from "./artifact_class";
+import { ClassConfidence, SemanticArtifactClass } from "./schema";
 
 export interface PlacementOptions {
   /** Namespace stamped onto the plan. Default: "l9". */
@@ -77,7 +73,7 @@ function rank(confidence: ClassConfidence): number {
 export function compilePlacementPlan(
   sourcePath: string,
   body = "",
-  opts: PlacementOptions = {}
+  opts: PlacementOptions = {},
 ): PlacementPlan {
   const namespace = opts.namespace ?? DEFAULT_NAMESPACE;
   // Normalize the threshold to a known confidence key. A bad value (e.g. from
@@ -85,8 +81,12 @@ export function compilePlacementPlan(
   const rawThreshold = opts.quarantineAtOrBelow ?? "low";
   // Own-property check (not `in`, which also matches inherited props like
   // "constructor"/"toString") so an invalid threshold can't slip through.
-  const threshold: ClassConfidence =
-    Object.prototype.hasOwnProperty.call(CONFIDENCE_RANK, rawThreshold) ? rawThreshold : "low";
+  const threshold: ClassConfidence = Object.prototype.hasOwnProperty.call(
+    CONFIDENCE_RANK,
+    rawThreshold,
+  )
+    ? rawThreshold
+    : "low";
   const rootDir = sanitizeRootDir(opts.rootDir ?? "");
 
   const { artifactClass, confidence, signals } = classifyArtifact(sourcePath, body);
@@ -127,7 +127,7 @@ export function compilePlacementPlan(
  */
 export function compilePlacementPlans(
   inputs: Array<{ sourcePath: string; body?: string }>,
-  opts: PlacementOptions = {}
+  opts: PlacementOptions = {},
 ): PlacementPlan[] {
   return inputs.map((i) => compilePlacementPlan(i.sourcePath, i.body ?? "", opts));
 }

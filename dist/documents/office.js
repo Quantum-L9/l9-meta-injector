@@ -68,7 +68,12 @@ function coreProperties(container, maxDepth) {
     const xml = container.readPart("docProps/core.xml");
     if (xml === null)
         return {};
-    const wanted = new Map([["title", "title"], ["subject", "subject"], ["keywords", "keywords"], ["category", "category"]]);
+    const wanted = new Map([
+        ["title", "title"],
+        ["subject", "subject"],
+        ["keywords", "keywords"],
+        ["category", "category"],
+    ]);
     const metadata = {};
     let current = null;
     try {
@@ -145,7 +150,10 @@ exports.docxDecoder = {
                 decoded: false,
                 reason: "decoder.malformed",
                 message,
-                diagnostics: [...container.diagnostics, { code: "decoder.malformed", severity: "warning", message }],
+                diagnostics: [
+                    ...container.diagnostics,
+                    { code: "decoder.malformed", severity: "warning", message },
+                ],
             };
         }
         let blockIndex = 0;
@@ -363,7 +371,10 @@ exports.pptxDecoder = {
                 decoded: false,
                 reason: "decoder.malformed",
                 message,
-                diagnostics: [...container.diagnostics, { code: "decoder.malformed", severity: "warning", message }],
+                diagnostics: [
+                    ...container.diagnostics,
+                    { code: "decoder.malformed", severity: "warning", message },
+                ],
             };
         }
         const readShapes = (part, slideNumber, noteKind) => {
@@ -520,8 +531,8 @@ exports.pptxDecoder = {
             builder.note({
                 code: "decoder.malformed",
                 severity: "warning",
-                message: `slide${inferredNotes.length === 1 ? "" : "s"} ${inferredNotes.join(", ")} declare no relationship part; `
-                    + "their speaker notes were inferred from matching part numbers",
+                message: `slide${inferredNotes.length === 1 ? "" : "s"} ${inferredNotes.join(", ")} declare no relationship part; ` +
+                    "their speaker notes were inferred from matching part numbers",
             });
         }
         for (const diagnostic of container.diagnostics)
@@ -604,11 +615,10 @@ function readSheets(container, maxDepth) {
                 if (event.type === "open" && event.name === "sheet") {
                     // The relationship id is the attribute whose local name is `id` under
                     // a namespace prefix (`r:id`); prefix bindings are not resolved.
-                    const idAttribute = Object.keys(event.attributes)
-                        .find((attribute) => attribute.includes(":") && (0, xml_1.localName)(attribute) === "id");
+                    const idAttribute = Object.keys(event.attributes).find((attribute) => attribute.includes(":") && (0, xml_1.localName)(attribute) === "id");
                     declared.push({
                         name: event.attributes.name ?? `Sheet${declared.length + 1}`,
-                        id: idAttribute === undefined ? null : event.attributes[idAttribute] ?? null,
+                        id: idAttribute === undefined ? null : (event.attributes[idAttribute] ?? null),
                     });
                 }
             });
@@ -673,8 +683,8 @@ function readSheets(container, maxDepth) {
         container.diagnostics.push({
             code: "decoder.malformed",
             severity: "warning",
-            message: `sheet${inferred.length === 1 ? "" : "s"} ${inferred.map((name) => `'${name}'`).join(", ")} could not be `
-                + "resolved through xl/_rels/workbook.xml.rels; their worksheet parts were inferred by position",
+            message: `sheet${inferred.length === 1 ? "" : "s"} ${inferred.map((name) => `'${name}'`).join(", ")} could not be ` +
+                "resolved through xl/_rels/workbook.xml.rels; their worksheet parts were inferred by position",
             part: workbookPart,
         });
     }
@@ -737,7 +747,10 @@ exports.xlsxDecoder = {
                 decoded: false,
                 reason: "decoder.malformed",
                 message,
-                diagnostics: [...container.diagnostics, { code: "decoder.malformed", severity: "warning", message }],
+                diagnostics: [
+                    ...container.diagnostics,
+                    { code: "decoder.malformed", severity: "warning", message },
+                ],
             };
         }
         let sawFormula = false;
@@ -767,7 +780,8 @@ exports.xlsxDecoder = {
                         switch (event.name) {
                             case "row": {
                                 const declaredRow = Number.parseInt(event.attributes.r ?? "", 10);
-                                rowNumber = Number.isFinite(declaredRow) && declaredRow > 0 ? declaredRow : rowNumber + 1;
+                                rowNumber =
+                                    Number.isFinite(declaredRow) && declaredRow > 0 ? declaredRow : rowNumber + 1;
                                 lastColumn = 0;
                                 return;
                             }
@@ -829,9 +843,7 @@ exports.xlsxDecoder = {
                         case "c": {
                             const raw = value.join("");
                             // `t="s"` means the value is an index into the shared-string table.
-                            const text = cellType === "s"
-                                ? shared[Number.parseInt(raw, 10)] ?? ""
-                                : raw;
+                            const text = cellType === "s" ? (shared[Number.parseInt(raw, 10)] ?? "") : raw;
                             const declared = formula.join("");
                             // A formula is carried as the text it declares. Evaluating it would
                             // produce a number the operator never wrote down.

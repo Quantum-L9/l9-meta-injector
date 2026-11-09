@@ -11,15 +11,22 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.reconcileFieldsAsync = reconcileFieldsAsync;
 exports.reconcileFields = reconcileFields;
 exports.diffsToLogYaml = diffsToLogYaml;
-const schema_1 = require("./schema");
 const assist_1 = require("./assist");
 const llm_1 = require("./llm");
 const materiality_1 = require("./materiality");
 const metrics_1 = require("./metrics");
+const schema_1 = require("./schema");
 // List fields: always union + dedup, never overwrite — covers triggers, anti_triggers, entity_types
 const LIST_UNION_FIELDS = new Set([
-    "activation_signals", "triggers", "anti_triggers", "entity_types",
-    "constraints", "validation_gates", "stop_conditions", "phase_model", "input_variables",
+    "activation_signals",
+    "triggers",
+    "anti_triggers",
+    "entity_types",
+    "constraints",
+    "validation_gates",
+    "stop_conditions",
+    "phase_model",
+    "input_variables",
 ]);
 // Prose scalar fields where LLM boolean judgment earns its keep (~20 tokens).
 // "intent" was removed (DWL-007): it is not a field in the schema vocabulary
@@ -33,11 +40,23 @@ function takeDerivedField(field, oldVal, newVal, merged, diffs) {
         return false;
     if (JSON.stringify(oldVal) === JSON.stringify(newVal)) {
         merged[field] = oldVal;
-        diffs.push({ field, action: "keep", oldValue: oldVal, newValue: newVal, reason: "derived field recomputed" });
+        diffs.push({
+            field,
+            action: "keep",
+            oldValue: oldVal,
+            newValue: newVal,
+            reason: "derived field recomputed",
+        });
     }
     else {
         merged[field] = newVal;
-        diffs.push({ field, action: "revise", oldValue: oldVal, newValue: newVal, reason: "derived field recomputed" });
+        diffs.push({
+            field,
+            action: "revise",
+            oldValue: oldVal,
+            newValue: newVal,
+            reason: "derived field recomputed",
+        });
     }
     return true;
 }
@@ -60,7 +79,10 @@ function unionArrays(a, b) {
         if (Array.isArray(v))
             return v.map(String).filter((s) => s && s !== schema_1.UNKNOWN);
         if (typeof v === "string")
-            return v.split(",").map((s) => s.trim()).filter(Boolean);
+            return v
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean);
         return [];
     };
     const merged = [...new Set([...toArr(a), ...toArr(b)])];
@@ -105,7 +127,13 @@ async function reconcileFieldsAsync(existing, incoming, metrics) {
         const fieldExists = field in existing;
         if (!fieldExists) {
             merged[field] = newVal;
-            diffs.push({ field, action: "add", oldValue: undefined, newValue: newVal, reason: "field did not exist" });
+            diffs.push({
+                field,
+                action: "add",
+                oldValue: undefined,
+                newValue: newVal,
+                reason: "field did not exist",
+            });
             continue;
         }
         if (takeDerivedField(field, oldVal, newVal, merged, diffs))
@@ -116,17 +144,35 @@ async function reconcileFieldsAsync(existing, incoming, metrics) {
                 // Union produced no change — record as keep, not a mutation. Emitting
                 // append-union here would rewrite the .inject.log on every no-op re-run.
                 merged[field] = oldVal;
-                diffs.push({ field, action: "keep", oldValue: oldVal, newValue: unioned, reason: "list field — union unchanged" });
+                diffs.push({
+                    field,
+                    action: "keep",
+                    oldValue: oldVal,
+                    newValue: unioned,
+                    reason: "list field — union unchanged",
+                });
             }
             else {
                 merged[field] = unioned;
-                diffs.push({ field, action: "append-union", oldValue: oldVal, newValue: unioned, reason: "list field — union, never overwrite" });
+                diffs.push({
+                    field,
+                    action: "append-union",
+                    oldValue: oldVal,
+                    newValue: unioned,
+                    reason: "list field — union, never overwrite",
+                });
             }
             continue;
         }
         if (deprecated) {
             merged[field] = newVal;
-            diffs.push({ field, action: "replace", oldValue: oldVal, newValue: newVal, reason: "explicit deprecation/superseded_by marker present" });
+            diffs.push({
+                field,
+                action: "replace",
+                oldValue: oldVal,
+                newValue: newVal,
+                reason: "explicit deprecation/superseded_by marker present",
+            });
             continue;
         }
         // LLM boolean for prose scalar fields (description); sync heuristic for everything
@@ -146,10 +192,22 @@ async function reconcileFieldsAsync(existing, incoming, metrics) {
         metrics?.recordDecision(path);
         if (better) {
             merged[field] = newVal;
-            diffs.push({ field, action: "revise", oldValue: oldVal, newValue: newVal, reason: `new value materially better — ${(0, metrics_1.decisionPathLabel)(path)}` });
+            diffs.push({
+                field,
+                action: "revise",
+                oldValue: oldVal,
+                newValue: newVal,
+                reason: `new value materially better — ${(0, metrics_1.decisionPathLabel)(path)}`,
+            });
         }
         else {
-            diffs.push({ field, action: "keep", oldValue: oldVal, newValue: newVal, reason: `old value retained via ${(0, metrics_1.decisionPathLabel)(path)}; no material improvement` });
+            diffs.push({
+                field,
+                action: "keep",
+                oldValue: oldVal,
+                newValue: newVal,
+                reason: `old value retained via ${(0, metrics_1.decisionPathLabel)(path)}; no material improvement`,
+            });
         }
     }
     return { merged, diffs };
@@ -164,7 +222,13 @@ function reconcileFields(existing, incoming) {
         const fieldExists = field in existing;
         if (!fieldExists) {
             merged[field] = newVal;
-            diffs.push({ field, action: "add", oldValue: undefined, newValue: newVal, reason: "field did not exist" });
+            diffs.push({
+                field,
+                action: "add",
+                oldValue: undefined,
+                newValue: newVal,
+                reason: "field did not exist",
+            });
             continue;
         }
         if (takeDerivedField(field, oldVal, newVal, merged, diffs))
@@ -175,25 +239,55 @@ function reconcileFields(existing, incoming) {
                 // Union produced no change — record as keep, not a mutation. Emitting
                 // append-union here would rewrite the .inject.log on every no-op re-run.
                 merged[field] = oldVal;
-                diffs.push({ field, action: "keep", oldValue: oldVal, newValue: unioned, reason: "list field — union unchanged" });
+                diffs.push({
+                    field,
+                    action: "keep",
+                    oldValue: oldVal,
+                    newValue: unioned,
+                    reason: "list field — union unchanged",
+                });
             }
             else {
                 merged[field] = unioned;
-                diffs.push({ field, action: "append-union", oldValue: oldVal, newValue: unioned, reason: "list field — union, never overwrite" });
+                diffs.push({
+                    field,
+                    action: "append-union",
+                    oldValue: oldVal,
+                    newValue: unioned,
+                    reason: "list field — union, never overwrite",
+                });
             }
             continue;
         }
         if (deprecated) {
             merged[field] = newVal;
-            diffs.push({ field, action: "replace", oldValue: oldVal, newValue: newVal, reason: "explicit deprecation/superseded_by marker present" });
+            diffs.push({
+                field,
+                action: "replace",
+                oldValue: oldVal,
+                newValue: newVal,
+                reason: "explicit deprecation/superseded_by marker present",
+            });
             continue;
         }
         if (isMateriallyBetterSync(oldVal, newVal)) {
             merged[field] = newVal;
-            diffs.push({ field, action: "revise", oldValue: oldVal, newValue: newVal, reason: "new value materially more complete (>20% content)" });
+            diffs.push({
+                field,
+                action: "revise",
+                oldValue: oldVal,
+                newValue: newVal,
+                reason: "new value materially more complete (>20% content)",
+            });
         }
         else {
-            diffs.push({ field, action: "keep", oldValue: oldVal, newValue: newVal, reason: "old value passes 'good' predicate; no material improvement" });
+            diffs.push({
+                field,
+                action: "keep",
+                oldValue: oldVal,
+                newValue: newVal,
+                reason: "old value passes 'good' predicate; no material improvement",
+            });
         }
     }
     return { merged, diffs };

@@ -1,13 +1,22 @@
 // normalize_meta.ts - Build NormalizedMeta header as a pure transform.
 import * as path from "node:path";
-import {
-  ArtifactType, ClassifyResult, ExtractedFields, ExecutableRetrievalMeta, PromptMeta, DoctrineMeta,
-  ArtifactMeta, NormalizedMeta, UNKNOWN, PRIMITIVE_TAXONOMY, McpPrimitive,
-} from "./schema";
 import { contentHash, estimateTokens } from "./extract";
-import { resolveNamespace, NamespaceConfig } from "./namespace";
-import { serializeYamlObject } from "./yaml_serialize";
+import { NamespaceConfig, resolveNamespace } from "./namespace";
 import type { HeaderIdentityResolution } from "./operation_contracts";
+import {
+  ArtifactMeta,
+  ArtifactType,
+  ClassifyResult,
+  DoctrineMeta,
+  ExecutableRetrievalMeta,
+  ExtractedFields,
+  McpPrimitive,
+  NormalizedMeta,
+  PRIMITIVE_TAXONOMY,
+  PromptMeta,
+  UNKNOWN,
+} from "./schema";
+import { serializeYamlObject } from "./yaml_serialize";
 
 function toPosix(value: string): string {
   return value.split(path.sep).join("/");
@@ -16,7 +25,9 @@ function toPosix(value: string): string {
 function stableSourcePath(filePath: string, sourceRoot?: string): string {
   if (sourceRoot !== undefined) {
     const root = path.resolve(sourceRoot);
-    const absolute = path.isAbsolute(filePath) ? path.resolve(filePath) : path.resolve(root, filePath);
+    const absolute = path.isAbsolute(filePath)
+      ? path.resolve(filePath)
+      : path.resolve(root, filePath);
     const relative = path.relative(root, absolute);
     if (relative === "") return ".";
     if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
@@ -30,7 +41,11 @@ function stableSourcePath(filePath: string, sourceRoot?: string): string {
 }
 
 function slugTitle(filePath: string): string {
-  return path.basename(filePath, path.extname(filePath)).replace(/[-_.]/g, " ").replace(/^Prompt /i, "").trim();
+  return path
+    .basename(filePath, path.extname(filePath))
+    .replace(/[-_.]/g, " ")
+    .replace(/^Prompt /i, "")
+    .trim();
 }
 
 export { yamlScalar } from "./yaml_serialize";
@@ -97,7 +112,12 @@ export function buildMeta(
   };
 
   if (cr.artifactType === "doctrine") {
-    return { ...base, governs: UNKNOWN, decision_drivers: UNKNOWN, applies_to_domains: UNKNOWN } as DoctrineMeta;
+    return {
+      ...base,
+      governs: UNKNOWN,
+      decision_drivers: UNKNOWN,
+      applies_to_domains: UNKNOWN,
+    } as DoctrineMeta;
   }
   if (cr.artifactType === "test" || cr.artifactType === "script" || cr.artifactType === "source") {
     return { ...base, owner: identity?.product?.owner ?? UNKNOWN } as ArtifactMeta;

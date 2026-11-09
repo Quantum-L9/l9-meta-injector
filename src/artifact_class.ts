@@ -6,11 +6,7 @@
 // Additive to the coarse ArtifactType taxonomy in schema.ts.
 
 import * as path from "node:path";
-import {
-  SemanticArtifactClass,
-  ArtifactClassification,
-  ClassConfidence,
-} from "./schema";
+import { ArtifactClassification, ClassConfidence, SemanticArtifactClass } from "./schema";
 
 /** The 17 semantic classes, in canonical order. */
 export const SEMANTIC_ARTIFACT_CLASSES: readonly SemanticArtifactClass[] = [
@@ -59,7 +55,8 @@ const RULES: Rule[] = [
     artifactClass: "schema",
     confidence: "high",
     test: ({ base, norm }) => {
-      if (base.includes(".schema.") || base === "schema.ts" || base.endsWith("_schema.ts")) return ".schema.";
+      if (base.includes(".schema.") || base === "schema.ts" || base.endsWith("_schema.ts"))
+        return ".schema.";
       if (/\/schemas?\//.test(norm)) return "/schemas/";
       return null;
     },
@@ -67,7 +64,8 @@ const RULES: Rule[] = [
   {
     artifactClass: "changelog",
     confidence: "high",
-    test: ({ base }) => (/^changelog/i.test(base) || base.includes("changelog") ? "changelog" : null),
+    test: ({ base }) =>
+      /^changelog/i.test(base) || base.includes("changelog") ? "changelog" : null,
   },
   {
     artifactClass: "contract",
@@ -83,7 +81,8 @@ const RULES: Rule[] = [
     confidence: "high",
     test: ({ base, ext }) => {
       if (base === "package.json" || base === "package-lock.json") return base;
-      if (base.includes("manifest") && ![".md", ".mdx", ".rst", ".txt"].includes(ext)) return "manifest";
+      if (base.includes("manifest") && ![".md", ".mdx", ".rst", ".txt"].includes(ext))
+        return "manifest";
       return null;
     },
   },
@@ -117,7 +116,8 @@ const RULES: Rule[] = [
     artifactClass: "governance_doctrine",
     confidence: "high",
     test: ({ base, norm }) => {
-      if (base.includes(".doctrine.") || base.includes("doctrine") || base.includes("policy")) return "doctrine";
+      if (base.includes(".doctrine.") || base.includes("doctrine") || base.includes("policy"))
+        return "doctrine";
       if (/\/doctrines?\//.test(norm)) return "/doctrines/";
       return null;
     },
@@ -134,7 +134,9 @@ const RULES: Rule[] = [
     test: ({ base, norm }) =>
       // Jest's `__fixtures__/` and `__mocks__/` are the same test-support
       // directories as their bare spellings and classify the same way.
-      /\/(fixtures?|__fixtures__|examples?|mocks?|__mocks__)\//.test(norm) || base.includes("fixture") || base.includes("mock")
+      /\/(fixtures?|__fixtures__|examples?|mocks?|__mocks__)\//.test(norm) ||
+      base.includes("fixture") ||
+      base.includes("mock")
         ? "fixture"
         : null,
   },
@@ -151,7 +153,11 @@ const RULES: Rule[] = [
     artifactClass: "configuration",
     confidence: "high",
     test: ({ base, ext }) => {
-      if (/\.config\.[cm]?[jt]s$/.test(base) || /^tsconfig.*\.json$/.test(base) || /^\..*rc(\..+)?$/.test(base)) {
+      if (
+        /\.config\.[cm]?[jt]s$/.test(base) ||
+        /^tsconfig.*\.json$/.test(base) ||
+        /^\..*rc(\..+)?$/.test(base)
+      ) {
         return "config";
       }
       if ([".json", ".yaml", ".yml", ".toml", ".ini"].includes(ext)) return ext;
@@ -170,8 +176,7 @@ const RULES: Rule[] = [
   {
     artifactClass: "source_module",
     confidence: "medium",
-    test: ({ ext }) =>
-      [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"].includes(ext) ? ext : null,
+    test: ({ ext }) => ([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"].includes(ext) ? ext : null),
   },
 ];
 
@@ -221,23 +226,23 @@ export const QUARANTINE_DIRECTORY = "99_CONFLICTS_AND_UNKNOWN";
 
 /** Canonical placement hint for every one of the 17 semantic classes. */
 export const CLASS_PLACEMENT_HINTS: Record<SemanticArtifactClass, PlacementHint> = {
-  source_module:       { directory: "src",                    layer: "implementation" },
-  type_definitions:    { directory: "src/types",              layer: "implementation" },
-  test_suite:          { directory: "tests",                  layer: "verification" },
-  schema:              { directory: "schemas",                layer: "contract" },
-  configuration:       { directory: "config",                 layer: "operations" },
-  documentation:       { directory: "docs",                   layer: "documentation" },
-  contract:            { directory: "docs/contracts",         layer: "contract" },
-  build_manifest:      { directory: ".",                      layer: "operations" },
-  build_artifact:      { directory: "dist",                   layer: "build" },
-  fixture:             { directory: "tests/fixtures",         layer: "verification" },
-  script:              { directory: "scripts",                layer: "operations" },
-  pipeline:            { directory: "src/pipeline",           layer: "implementation" },
-  prompt_template:     { directory: "prompts",                layer: "content" },
-  skill_definition:    { directory: "skills",                 layer: "content" },
-  governance_doctrine: { directory: "doctrines",              layer: "governance" },
-  changelog:           { directory: ".",                      layer: "documentation" },
-  unknown:             { directory: QUARANTINE_DIRECTORY,     layer: "quarantine" },
+  source_module: { directory: "src", layer: "implementation" },
+  type_definitions: { directory: "src/types", layer: "implementation" },
+  test_suite: { directory: "tests", layer: "verification" },
+  schema: { directory: "schemas", layer: "contract" },
+  configuration: { directory: "config", layer: "operations" },
+  documentation: { directory: "docs", layer: "documentation" },
+  contract: { directory: "docs/contracts", layer: "contract" },
+  build_manifest: { directory: ".", layer: "operations" },
+  build_artifact: { directory: "dist", layer: "build" },
+  fixture: { directory: "tests/fixtures", layer: "verification" },
+  script: { directory: "scripts", layer: "operations" },
+  pipeline: { directory: "src/pipeline", layer: "implementation" },
+  prompt_template: { directory: "prompts", layer: "content" },
+  skill_definition: { directory: "skills", layer: "content" },
+  governance_doctrine: { directory: "doctrines", layer: "governance" },
+  changelog: { directory: ".", layer: "documentation" },
+  unknown: { directory: QUARANTINE_DIRECTORY, layer: "quarantine" },
 };
 
 /** Placement hint for a semantic class (falls back to the quarantine hint). */

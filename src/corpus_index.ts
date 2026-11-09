@@ -14,10 +14,10 @@
 // invite reading "3 project candidates" without knowing whether it came from
 // thirty files or thirty thousand.
 import { canonicalCorpusJson } from "./corpus_analysis";
-import { compareCodePoints } from "./ordering";
 import type { CorpusCoverage } from "./corpus_coverage";
 import type { CorpusDocumentSignals } from "./corpus_document_signals";
 import type { CorpusSnapshot } from "./corpus_snapshot";
+import { compareCodePoints } from "./ordering";
 
 /**
  * The corpus-mode table of contents' own schema id (ADR-067).
@@ -114,8 +114,8 @@ export interface CorpusIndexCoverage {
 }
 
 export const CORPUS_INDEX_STATEMENT =
-  "This index names what was observed and where each document was written. It contains no "
-  + "ranking, no priority and no recommendation, and the order of any list in it carries none.";
+  "This index names what was observed and where each document was written. It contains no " +
+  "ranking, no priority and no recommendation, and the order of any list in it carries none.";
 
 export interface BuildCorpusIndexInput {
   snapshot: CorpusSnapshot;
@@ -165,8 +165,7 @@ function coverageFor(
       topic_candidates: coverage.semantics.topic_candidate_count,
       project_candidates: coverage.semantics.project_candidate_count,
       consolidation_candidates: coverage.semantics.consolidation_candidate_count,
-      reasoning_eligible_candidates:
-        coverage.reasoning_handoff.reasoning_eligible_candidate_count,
+      reasoning_eligible_candidates: coverage.reasoning_handoff.reasoning_eligible_candidate_count,
     },
     embedding: {
       enabled: coverage.embeddings.enabled,
@@ -183,7 +182,11 @@ const KNOWN_DOCUMENTS: { name: string; path: string; schema: string | null }[] =
   { name: "snapshot", path: "corpus-snapshot.json", schema: "l9.corpus-snapshot/v1" },
   { name: "diff", path: "corpus-diff.json", schema: "l9.corpus-diff/v1" },
   { name: "coverage", path: "corpus-coverage.json", schema: "l9.corpus-coverage/v2" },
-  { name: "readiness_evidence", path: "readiness-evidence.json", schema: "l9.readiness-evidence/v1" },
+  {
+    name: "readiness_evidence",
+    path: "readiness-evidence.json",
+    schema: "l9.readiness-evidence/v1",
+  },
   { name: "candidates", path: "corpus-candidates.json", schema: "l9.corpus-candidates/v1" },
   { name: "document_index", path: "document-index.json", schema: "l9.document-index/v2" },
   {
@@ -213,9 +216,17 @@ const KNOWN_DOCUMENTS: { name: string; path: string; schema: string | null }[] =
     path: "architecture-evidence.manifest.json",
     schema: "l9.architecture-evidence-manifest/v1",
   },
-  { name: "semantic_relations", path: "semantic-relations.json", schema: "l9.semantic-relations/v1" },
+  {
+    name: "semantic_relations",
+    path: "semantic-relations.json",
+    schema: "l9.semantic-relations/v1",
+  },
   { name: "topic_candidates", path: "topic-candidates.json", schema: "l9.topic-candidates/v1" },
-  { name: "project_candidates", path: "project-candidates.json", schema: "l9.project-candidates/v1" },
+  {
+    name: "project_candidates",
+    path: "project-candidates.json",
+    schema: "l9.project-candidates/v1",
+  },
   {
     name: "consolidation_candidates",
     path: "consolidation-candidates.json",
@@ -242,29 +253,31 @@ export function buildCorpusIndex(input: BuildCorpusIndexInput): CorpusIndex {
     archivesByRoot.set(archive.root_id, (archivesByRoot.get(archive.root_id) ?? 0) + 1);
   }
 
-  const roots: CorpusIndexRoot[] = snapshot.roots.map((root) => {
-    const directory = input.rootDirectories.get(root.root_id);
-    const under = (file: string): string | null =>
-      directory === undefined ? null : `roots/${directory}/${file}`;
-    const tally = artifactsByRoot.get(root.root_id) ?? { count: 0, bytes: 0 };
-    return {
-      root_id: root.root_id,
-      root_key: root.root_key,
-      source_kind: root.source_kind,
-      source_revision: root.source_revision,
-      rmp_packet_id: root.rmp_packet_id,
-      rmp_semantic_hash: root.rmp_semantic_hash,
-      bundle_ref: root.bundle_ref,
-      document_index_ref: under("document-index.json"),
-      document_coverage_ref: under("document-coverage.json"),
-      acquisition_manifest_ref: under("local-source-manifest.json"),
-      observation_status: root.observation_status,
-      failure_reason: root.failure_reason,
-      artifact_count: tally.count,
-      archive_count: archivesByRoot.get(root.root_id) ?? 0,
-      total_bytes: tally.bytes,
-    };
-  }).sort((a, b) => compareCodePoints(a.root_id, b.root_id));
+  const roots: CorpusIndexRoot[] = snapshot.roots
+    .map((root) => {
+      const directory = input.rootDirectories.get(root.root_id);
+      const under = (file: string): string | null =>
+        directory === undefined ? null : `roots/${directory}/${file}`;
+      const tally = artifactsByRoot.get(root.root_id) ?? { count: 0, bytes: 0 };
+      return {
+        root_id: root.root_id,
+        root_key: root.root_key,
+        source_kind: root.source_kind,
+        source_revision: root.source_revision,
+        rmp_packet_id: root.rmp_packet_id,
+        rmp_semantic_hash: root.rmp_semantic_hash,
+        bundle_ref: root.bundle_ref,
+        document_index_ref: under("document-index.json"),
+        document_coverage_ref: under("document-coverage.json"),
+        acquisition_manifest_ref: under("local-source-manifest.json"),
+        observation_status: root.observation_status,
+        failure_reason: root.failure_reason,
+        artifact_count: tally.count,
+        archive_count: archivesByRoot.get(root.root_id) ?? 0,
+        total_bytes: tally.bytes,
+      };
+    })
+    .sort((a, b) => compareCodePoints(a.root_id, b.root_id));
 
   return {
     schema: CORPUS_INDEX_SCHEMA,
@@ -327,14 +340,16 @@ function coverageSection(index: CorpusIndex): string[] {
     "",
     row(["format", "decoder", "eligible", "decoded", "understood", "refused"]),
     row(["---", "---", "---", "---", "---", "---"]),
-    ...coverage.decoding.map((entry) => row([
-      entry.format,
-      `\`${entry.decoder_id}\``,
-      `${entry.eligible_count}`,
-      `${entry.decoded_count}`,
-      `${entry.interpreted_count}`,
-      entry.refusals.map((refusal) => `${refusal.name} ${refusal.count}`).join(", ") || "—",
-    ])),
+    ...coverage.decoding.map((entry) =>
+      row([
+        entry.format,
+        `\`${entry.decoder_id}\``,
+        `${entry.eligible_count}`,
+        `${entry.decoded_count}`,
+        `${entry.interpreted_count}`,
+        entry.refusals.map((refusal) => `${refusal.name} ${refusal.count}`).join(", ") || "—",
+      ]),
+    ),
     "",
     row(["gap", "count"]),
     row(["---", "---"]),
@@ -350,11 +365,9 @@ function coverageSection(index: CorpusIndex): string[] {
       "",
       row(["extension", "artifacts", "bytes"]),
       row(["---", "---", "---"]),
-      ...coverage.unsupported_legacy_counts.map((entry) => row([
-        `\`${entry.extension}\``,
-        `${entry.count}`,
-        `${entry.bytes}`,
-      ])),
+      ...coverage.unsupported_legacy_counts.map((entry) =>
+        row([`\`${entry.extension}\``, `${entry.count}`, `${entry.bytes}`]),
+      ),
       "",
     );
   }
@@ -369,7 +382,10 @@ function coverageSection(index: CorpusIndex): string[] {
     row(["topic candidates", `${coverage.intelligence.topic_candidates}`]),
     row(["project candidates", `${coverage.intelligence.project_candidates}`]),
     row(["consolidation candidates", `${coverage.intelligence.consolidation_candidates}`]),
-    row(["reasoning-eligible candidates", `${coverage.intelligence.reasoning_eligible_candidates}`]),
+    row([
+      "reasoning-eligible candidates",
+      `${coverage.intelligence.reasoning_eligible_candidates}`,
+    ]),
     "",
     "Every row above is a candidate or an observation. None is a ranking, a",
     "priority, or an instruction to do anything with the files it names.",
@@ -413,15 +429,17 @@ export function renderCorpusIndexReport(index: CorpusIndex): string {
     "",
     row(["root", "kind", "status", "artifacts", "archives", "bytes", "packet"]),
     row(["---", "---", "---", "---", "---", "---", "---"]),
-    ...index.roots.map((root) => row([
-      root.root_key,
-      root.source_kind,
-      root.observation_status,
-      `${root.artifact_count}`,
-      `${root.archive_count}`,
-      `${root.total_bytes}`,
-      root.rmp_packet_id === "" ? "—" : root.rmp_packet_id,
-    ])),
+    ...index.roots.map((root) =>
+      row([
+        root.root_key,
+        root.source_kind,
+        root.observation_status,
+        `${root.artifact_count}`,
+        `${root.archive_count}`,
+        `${root.total_bytes}`,
+        root.rmp_packet_id === "" ? "—" : root.rmp_packet_id,
+      ]),
+    ),
     "",
     "Each root keeps its own Repository Model Packet under `roots/`. The corpus is an",
     "analysis across them; it is not a merged filesystem that replaces them.",
@@ -442,11 +460,9 @@ export function renderCorpusIndexReport(index: CorpusIndex): string {
     "",
     row(["document", "path", "written"]),
     row(["---", "---", "---"]),
-    ...index.documents.map((document) => row([
-      document.name,
-      `\`${document.path}\``,
-      document.present ? "yes" : "no",
-    ])),
+    ...index.documents.map((document) =>
+      row([document.name, `\`${document.path}\``, document.present ? "yes" : "no"]),
+    ),
     "",
     ...coverageSection(index),
     index.statement,

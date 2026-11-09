@@ -39,11 +39,11 @@ exports.harvestExistingMeta = harvestExistingMeta;
 // inventory_existing_meta.ts — harvest existing L9 meta before classify (ADR-049).
 const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
-const frontmatter_patch_1 = require("./frontmatter_patch");
 const comment_1 = require("./comment");
-const meta_schema_1 = require("./meta_schema");
 const encoding_1 = require("./encoding");
+const frontmatter_patch_1 = require("./frontmatter_patch");
 const inventory_archive_member_1 = require("./inventory_archive_member");
+const meta_schema_1 = require("./meta_schema");
 function parseMetaYaml(text) {
     try {
         const obj = (0, meta_schema_1.parseCanonicalYaml)(text);

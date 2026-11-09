@@ -82,14 +82,23 @@ export function yamlScalar(v: unknown, forbidden: readonly string[] = []): strin
     const json = JSON.stringify(v);
     const hit = containsForbidden(json, forbidden);
     if (hit !== undefined) {
-      throw new Error(`CARRIER_UNREPRESENTABLE: an inlined value contains ${JSON.stringify(hit)}, which its carrier cannot hold`);
+      throw new Error(
+        `CARRIER_UNREPRESENTABLE: an inlined value contains ${JSON.stringify(hit)}, which its carrier cannot hold`,
+      );
     }
     return json;
   }
   const s = String(v);
   if (s === "") return '""';
   const marks = forbiddenStarts(s, forbidden);
-  if (marks.size > 0 || NEEDS_QUOTES.test(s) || CONTROL.test(s) || s.trim() !== s || READS_AS_NON_STRING.test(s)) return quoted(s, marks);
+  if (
+    marks.size > 0 ||
+    NEEDS_QUOTES.test(s) ||
+    CONTROL.test(s) ||
+    s.trim() !== s ||
+    READS_AS_NON_STRING.test(s)
+  )
+    return quoted(s, marks);
   return s;
 }
 
@@ -110,7 +119,10 @@ export interface SerializeYamlOptions {
 //   key: scalar | key: [] | key:\n  - item…
 // Array values become block lists (empty → inline `[]`); every other value is a
 // scalar via yamlScalar. Not a general YAML emitter — matches the parser's subset.
-export function serializeYamlObject(obj: Record<string, unknown>, opts: SerializeYamlOptions = {}): string {
+export function serializeYamlObject(
+  obj: Record<string, unknown>,
+  opts: SerializeYamlOptions = {},
+): string {
   const withFences = opts.fences !== false;
   const forbidden = opts.forbidden ?? [];
   const lines: string[] = [];
@@ -118,11 +130,18 @@ export function serializeYamlObject(obj: Record<string, unknown>, opts: Serializ
   for (const [k, v] of Object.entries(obj)) {
     const hit = containsForbidden(k, forbidden);
     if (hit !== undefined) {
-      throw new Error(`CARRIER_UNREPRESENTABLE: key ${JSON.stringify(k)} contains ${JSON.stringify(hit)}, which its carrier cannot hold`);
+      throw new Error(
+        `CARRIER_UNREPRESENTABLE: key ${JSON.stringify(k)} contains ${JSON.stringify(hit)}, which its carrier cannot hold`,
+      );
     }
     if (Array.isArray(v)) {
       if (v.length === 0) lines.push(`${k}: []`);
-      else { lines.push(`${k}:`); v.forEach((i) => lines.push(`  - ${yamlScalar(i, forbidden)}`)); }
+      else {
+        lines.push(`${k}:`);
+        v.forEach((i) => {
+          lines.push(`  - ${yamlScalar(i, forbidden)}`);
+        });
+      }
     } else {
       lines.push(`${k}: ${yamlScalar(v, forbidden)}`);
     }

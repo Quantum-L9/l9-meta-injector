@@ -52,9 +52,18 @@ test("pipeline injects headers and produces indexes", async () => {
   fs.writeFileSync(path.join(promptsDir, "Prompt-LegalAnalysis.md"), PROMPT_MD);
 
   const cfg: PipelineConfig = {
-    root, glob: "**/*.md", dryRun: false, outDir: out, namespace: "l9",
-    authority: "l9.doctrine.platform", nearDupThreshold: 0.9, hashPrefixLength: 16,
-    indexDir: out, verbose: false, llmEnabled: false, normalizeFilenames: false,
+    root,
+    glob: "**/*.md",
+    dryRun: false,
+    outDir: out,
+    namespace: "l9",
+    authority: "l9.doctrine.platform",
+    nearDupThreshold: 0.9,
+    hashPrefixLength: 16,
+    indexDir: out,
+    verbose: false,
+    llmEnabled: false,
+    normalizeFilenames: false,
   };
 
   const result = await runPipelineAsync(cfg);
@@ -80,9 +89,18 @@ test("dry-run does not write to source files", async () => {
   const before = fs.readFileSync(fp, "utf8");
 
   const cfg: PipelineConfig = {
-    root, glob: "**/*.md", dryRun: true, outDir: out, namespace: "l9",
-    authority: "l9.doctrine.platform", nearDupThreshold: 0.9, hashPrefixLength: 16,
-    indexDir: out, verbose: false, llmEnabled: false, normalizeFilenames: false,
+    root,
+    glob: "**/*.md",
+    dryRun: true,
+    outDir: out,
+    namespace: "l9",
+    authority: "l9.doctrine.platform",
+    nearDupThreshold: 0.9,
+    hashPrefixLength: 16,
+    indexDir: out,
+    verbose: false,
+    llmEnabled: false,
+    normalizeFilenames: false,
   };
 
   await runPipelineAsync(cfg);
@@ -98,9 +116,18 @@ test("dry-run writes .diff artifact to outDir", async () => {
   fs.writeFileSync(fp, SKILL_MD);
 
   const cfg: PipelineConfig = {
-    root, glob: "**/*.md", dryRun: true, outDir: out, namespace: "l9",
-    authority: "l9.doctrine.platform", nearDupThreshold: 0.9, hashPrefixLength: 16,
-    indexDir: out, verbose: false, llmEnabled: false, normalizeFilenames: false,
+    root,
+    glob: "**/*.md",
+    dryRun: true,
+    outDir: out,
+    namespace: "l9",
+    authority: "l9.doctrine.platform",
+    nearDupThreshold: 0.9,
+    hashPrefixLength: 16,
+    indexDir: out,
+    verbose: false,
+    llmEnabled: false,
+    normalizeFilenames: false,
   };
 
   await runPipelineAsync(cfg);
@@ -121,9 +148,18 @@ test("pipeline is idempotent — second run is byte-identical with no inject.log
   fs.writeFileSync(path.join(skillsDir, "lint_file.md"), SKILL_MD);
 
   const cfg: PipelineConfig = {
-    root, glob: "**/*.md", dryRun: false, outDir: out, namespace: "l9",
-    authority: "l9.doctrine.platform", nearDupThreshold: 0.9, hashPrefixLength: 16,
-    indexDir: out, verbose: false, llmEnabled: false, normalizeFilenames: false,
+    root,
+    glob: "**/*.md",
+    dryRun: false,
+    outDir: out,
+    namespace: "l9",
+    authority: "l9.doctrine.platform",
+    nearDupThreshold: 0.9,
+    hashPrefixLength: 16,
+    indexDir: out,
+    verbose: false,
+    llmEnabled: false,
+    normalizeFilenames: false,
   };
 
   const run1 = await runPipelineAsync(cfg);
@@ -133,48 +169,78 @@ test("pipeline is idempotent — second run is byte-identical with no inject.log
   const contentAfterRun2 = fs.readFileSync(path.join(skillsDir, "lint_file.md"), "utf8");
 
   expect(contentAfterRun2).toBe(contentAfterRun1);
-  run1.injected.forEach((r) => expect(r.bodyPreserved).toBe(true));
-  run2.injected.forEach((r) => expect(r.bodyPreserved).toBe(true));
+  run1.injected.forEach((r) => {
+    expect(r.bodyPreserved).toBe(true);
+  });
+  run2.injected.forEach((r) => {
+    expect(r.bodyPreserved).toBe(true);
+  });
   const bad = run2.injected.filter((r) => r.injectLogPath !== undefined);
   if (bad.length) {
-    console.error('BAD', bad.map((r) => ({ path: r.sourcePath, log: r.injectLogPath, type: r.meta.artifact_type })));
-    console.error('root listing', fs.readdirSync(root, { recursive: true }));
-    console.error('out listing', fs.readdirSync(out, { recursive: true }));
+    console.error(
+      "BAD",
+      bad.map((r) => ({ path: r.sourcePath, log: r.injectLogPath, type: r.meta.artifact_type })),
+    );
+    console.error("root listing", fs.readdirSync(root, { recursive: true }));
+    console.error("out listing", fs.readdirSync(out, { recursive: true }));
   }
   expect(run2.injected.every((r) => r.injectLogPath === undefined)).toBe(true);
 }, 25000);
 
 test("a hyphen and an underscore that normalize to one id refuse the run", async () => {
-  const root = tmpDir(); const out = tmpDir();
+  const root = tmpDir();
+  const out = tmpDir();
   const left = path.join(root, "a-b.md");
   const right = path.join(root, "a_b.md");
   fs.writeFileSync(left, "## A\nbody\n");
   fs.writeFileSync(right, "## B\nbody\n");
   const cfg: PipelineConfig = {
-    root, glob: "**/*.md", dryRun: true, outDir: out, namespace: "l9",
-    authority: "l9.doctrine.platform", nearDupThreshold: 0.9, hashPrefixLength: 16,
-    indexDir: out, verbose: false, llmEnabled: false, normalizeFilenames: false,
+    root,
+    glob: "**/*.md",
+    dryRun: true,
+    outDir: out,
+    namespace: "l9",
+    authority: "l9.doctrine.platform",
+    nearDupThreshold: 0.9,
+    hashPrefixLength: 16,
+    indexDir: out,
+    verbose: false,
+    llmEnabled: false,
+    normalizeFilenames: false,
   };
-  await expect(runPipelineAsync(cfg)).rejects.toThrow(/DUPLICATE_METADATA_ID: 1 id\(s\) map to more than one path: .*a_b__md/);
+  await expect(runPipelineAsync(cfg)).rejects.toThrow(
+    /DUPLICATE_METADATA_ID: 1 id\(s\) map to more than one path: .*a_b__md/,
+  );
   expect(fs.readFileSync(left, "utf8")).toBe("## A\nbody\n");
   expect(fs.readFileSync(right, "utf8")).toBe("## B\nbody\n");
   expect(fs.existsSync(path.join(out, "coverage-report.json"))).toBe(false);
 }, 15000);
 
 test("files that differ only by extension keep distinct stable ids", async () => {
-  const root = tmpDir(); const out = tmpDir();
+  const root = tmpDir();
+  const out = tmpDir();
   fs.writeFileSync(path.join(root, "config.ts"), "export const n = 1;\n");
   fs.writeFileSync(path.join(root, "config.json"), "{}\n");
   fs.writeFileSync(path.join(root, "notes.md"), "## Notes\nplain\n");
   fs.writeFileSync(path.join(root, "notes.txt"), "plain\n");
   const cfg: PipelineConfig = {
-    root, glob: "**/*", dryRun: true, outDir: out, namespace: "l9",
-    authority: "l9.doctrine.platform", nearDupThreshold: 0.9, hashPrefixLength: 16,
-    indexDir: out, verbose: false, llmEnabled: false, normalizeFilenames: false,
+    root,
+    glob: "**/*",
+    dryRun: true,
+    outDir: out,
+    namespace: "l9",
+    authority: "l9.doctrine.platform",
+    nearDupThreshold: 0.9,
+    hashPrefixLength: 16,
+    indexDir: out,
+    verbose: false,
+    llmEnabled: false,
+    normalizeFilenames: false,
   };
   const first = await runPipelineAsync(cfg);
   const second = await runPipelineAsync(cfg);
-  const ids = (result: typeof first) => result.metadataSubjects.map((subject) => String(subject.metadata["id"])).sort();
+  const ids = (result: typeof first) =>
+    result.metadataSubjects.map((subject) => String(subject.metadata["id"])).sort();
   expect(ids(first)).toEqual(ids(second));
   expect(new Set(ids(first)).size).toBe(ids(first).length);
   expect(ids(first).join("\n")).toMatch(/config__ts/);

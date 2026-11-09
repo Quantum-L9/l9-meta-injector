@@ -140,7 +140,8 @@ function stripYamlComment(value) {
             quote = character;
             continue;
         }
-        if (character === "#" && (index === 0 || value[index - 1] === " " || value[index - 1] === "\t")) {
+        if (character === "#" &&
+            (index === 0 || value[index - 1] === " " || value[index - 1] === "\t")) {
             return value.slice(0, index).trimEnd();
         }
     }

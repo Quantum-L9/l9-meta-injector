@@ -33,7 +33,9 @@ describe("fail-closed omit sources", () => {
 
   test("rejects missing and non-file explicit omit paths", () => {
     const root = tempRoot();
-    expect(() => buildOmitMatcher({ root, omitFile: "missing.ignore" })).toThrow(/cannot be inspected/);
+    expect(() => buildOmitMatcher({ root, omitFile: "missing.ignore" })).toThrow(
+      /cannot be inspected/,
+    );
     fs.mkdirSync(path.join(root, "rules"));
     expect(() => buildOmitMatcher({ root, omitFile: "rules" })).toThrow(/must be a regular file/);
   });
