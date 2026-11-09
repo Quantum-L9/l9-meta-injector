@@ -822,7 +822,7 @@
     },
     {
       "path": "scripts/local-source-cli.js",
-      "git_blob_sha1": "523550320cebbc5ec7d74a8a7b28902b9b0b3cb8"
+      "git_blob_sha1": "d3e43742cc05ff745f99860fbcef8040c3badf95"
     },
     {
       "path": "scripts/qualify-tracked-snapshot.js",

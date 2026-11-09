@@ -53,10 +53,11 @@ We choose **Option B**.
    (root packets) and `observedAt` (each root's acquisition manifest), to every root's
    Repository Model bundle (bundle manifest, validation receipt), and as the
    corpus-intelligence packet and bundle-manifest `createdAt`.
-2. The value must be an exact UTC ISO-8601 instant, `YYYY-MM-DDTHH:MM:SS[.sss]Z`, that
-   names a real date; anything else is refused with exit 2 before any source is read, so a
-   malformed value is never written into a generation and one instant written two ways
-   cannot publish two generations.
+2. The value must be an exact UTC ISO-8601 instant, `YYYY-MM-DDTHH:MM:SSZ` with up to three
+   fractional-second digits, that names a real date; anything else is refused with exit 2
+   before any source is read, so a malformed value is never written into a generation. The
+   accepted value is recorded in its canonical millisecond form (`toISOString()`), so one
+   instant written two ways (`…00Z`, `…00.000Z`) publishes one generation.
 3. Without the flag nothing changes: root packets record the epoch, `observed_at` and the
    corpus-intelligence `created_at` record the wall clock.
 4. `CURRENT.json`'s `committed_at` and the session file stay the wall clock: they record when

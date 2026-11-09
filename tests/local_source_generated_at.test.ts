@@ -144,3 +144,14 @@ describe("a pinned --generated-at in corpus mode", () => {
     expect(result.stderr).toContain("--generated-at needs a value");
   });
 });
+
+describe("one instant written two ways", () => {
+  it("publishes one generation, recording the canonical millisecond form", () => {
+    const short = run(["--generated-at", "2026-11-09T00:00:00Z"]);
+    const tenth = run(["--generated-at", "2026-11-09T00:00:00.0Z"]);
+    for (const result of [short, tenth]) expect(result.status).toBe(0);
+    expect(published(short.out).generationId).toBe(first.generationId);
+    expect(published(tenth.out).generationId).toBe(first.generationId);
+    expect(json(published(short.out).dir, "corpus-intelligence/packet.json").created_at).toBe(PINNED);
+  });
+});

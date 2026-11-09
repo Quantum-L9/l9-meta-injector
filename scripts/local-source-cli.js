@@ -34,8 +34,10 @@ const USAGE = [
   "                             In corpus mode, also the time recorded in each root packet,",
   "                             each root's acquisition manifest (observed_at) and the",
   "                             corpus-intelligence packet (created_at), so two runs over the",
-  "                             same bytes publish the same generation (ADR-092). Must be a",
-  "                             UTC timestamp: YYYY-MM-DDTHH:MM:SS[.sss]Z",
+  "                             same bytes publish the same generation (ADR-092). In corpus",
+  "                             mode it must be a UTC instant, YYYY-MM-DDTHH:MM:SSZ with up to",
+  "                             3 fractional-second digits, and is recorded as its canonical",
+  "                             millisecond form (2026-11-09T00:00:00Z -> ...00:00.000Z)",
   "  --no-expand-archives       hash archives but do not observe their members",
   "  --no-interpret             skip the deterministic interpretation pass",
   "  --omit PATTERN             gitignore-style omit pattern (repeatable)",
@@ -154,9 +156,9 @@ function parseArgs(argv) {
  * The pinned timestamp of a corpus run, or undefined when none was given.
  *
  * Refused unless it is an exact UTC ISO-8601 instant: a value the reader could
- * not parse would be recorded verbatim into every generation file, and a
- * value with a local offset would publish a different generation for the same
- * instant written two ways (ADR-092).
+ * not parse would be recorded verbatim into every generation file. Returned in
+ * its canonical millisecond form (`toISOString()`), so one instant written two
+ * ways — `…00Z`, `…00.0Z`, `…00.000Z` — publishes one generation (ADR-092).
  */
 function generatedAtOpt(cli) {
   if (!cli.argv.includes("--generated-at")) return undefined;
@@ -165,9 +167,9 @@ function generatedAtOpt(cli) {
   const shape = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
   const time = Date.parse(raw);
   if (!shape.test(raw) || Number.isNaN(time) || new Date(time).toISOString().slice(0, 19) !== raw.slice(0, 19)) {
-    fail(`--generated-at must be a UTC timestamp YYYY-MM-DDTHH:MM:SS[.sss]Z, got '${raw}'`, 2);
+    fail(`--generated-at must be a UTC timestamp YYYY-MM-DDTHH:MM:SSZ with up to 3 fractional-second digits, got '${raw}'`, 2);
   }
-  return raw;
+  return new Date(time).toISOString();
 }
 
 /** Parse a fractional flag in [0,1], or exit with a precise message. */
