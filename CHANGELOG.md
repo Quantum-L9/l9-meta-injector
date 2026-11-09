@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Document-role selection closure (ADR-090, Proposed)
+
+- Selection `architecture-development/v2` (policy 2.0.0) adds the `decision_record`, `research` and `historical_record` roles and reads the declarations that establish them from the document's own blocks: `document.declared_status` (`## Status` → `Accepted.`, `- **Status:** Proposed`; closed vocabulary `accepted`/`deprecated`/`proposed`/`rejected`/`superseded`, never a value the work reader already reads) and `document.decision_record_title` (`ADR-NNN` titles). Each declaration is cited by `declaration_id`, block and coordinate in `work_context.declarations` and in role evidence (`source: document_declaration`).
+- Contradictory statuses are kept: `selection.status_families` / `status_conflict`. Every record is still emitted; the payload verifier refuses a selected record without reasons or role evidence.
+- The policy is hashed on its own (`selection_policy_hash` in the manifest) and inside the profile hash (profile 1.2.0); no `evidence_id`, source snapshot or packet moves.
+- `corpus-query --role NAME` and `--selected-only`: opt-in, architecture-evidence only; the request echo names them only when given, so default responses are byte-identical.
+
 ### Per-PR generated evidence retired (ADR-093)
 
 - `CURRENT_VALIDATION_REPORT.md` and `docs/architecture-manifest.json` are no longer committed. Both moved on almost every pull request and made every open pull request conflict with every other.

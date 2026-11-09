@@ -274,8 +274,9 @@ and from nothing else. It reuses the work reader's `Label: value` grammar, skips
 unit the work vocabulary claims, and cites the exact line for a `line_span` block and the
 block locator verbatim for every other kind. `src/corpus_architecture_evidence.ts` emits
 the complete payload (`l9.architecture-evidence/v1`) with a manifest built like the
-work-signal export's, applies the static `architecture-development/v1` selection table,
-and binds its profile into `corpus_analysis_id` only when selected (ADR-087, Proposed).
+work-signal export's, applies the static `architecture-development/v2` selection table (ADR-090: decision-record,
+research and historical roles, block-read status declarations, contradictions kept), and
+binds its profile into `corpus_analysis_id` only when selected (ADR-087, Proposed).
 
 Exact duplicates are content-hash equality over the unified record set, so a physical
 file and a member of a nested archive can share a cluster. `DUPLICATE_OF` is rendered

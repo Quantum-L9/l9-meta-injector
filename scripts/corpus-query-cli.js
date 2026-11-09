@@ -30,6 +30,11 @@ const USAGE = [
   "  --kind VALUE               documents that declared this work.kind (any declaration)",
   "  --status VALUE             documents that declared this work.status (any declaration)",
   "  --source NAME              architecture_evidence | document_work_signals | repository_model_packet",
+  "  --role NAME                architecture-evidence records whose document holds this selection",
+  "                             role: decision_record, development_handoff, historical_record,",
+  "                             research, specification, unknown, wip_proposal (ADR-090)",
+  "  --selected-only            architecture-evidence records the selection profile marked",
+  "                             selected; nothing is removed from the generation",
   "  --limit N                  records returned (default 50, max 500); more is truncation,",
   "                             not a page: narrow the query",
   "  --max-excerpt-bytes N      excerpt byte ceiling on the wire (default 1024)",
@@ -42,8 +47,10 @@ const USAGE = [
 
 const VALUE_FLAGS = new Set([
   "--out", "--root", "--artifact", "--predicate", "--class", "--text", "--kind",
-  "--status", "--source", "--limit", "--max-excerpt-bytes",
+  "--status", "--source", "--role", "--limit", "--max-excerpt-bytes",
 ]);
+/** Flags that take no value. */
+const BOOLEAN_FLAGS = new Set(["--selected-only"]);
 
 function fail(message, code = 2) {
   console.error(`${LABEL}: ${message}`);
@@ -58,6 +65,11 @@ function parseArgs(argv) {
     if (flag === "--help" || flag === "-h") {
       console.log(USAGE);
       process.exit(0);
+    }
+    if (BOOLEAN_FLAGS.has(flag)) {
+      if (flag in options) fail(`${flag} was given twice`);
+      options[flag] = true;
+      continue;
     }
     if (!VALUE_FLAGS.has(flag)) fail(`unknown option '${flag}'\n\n${USAGE}`);
     const value = argv[index + 1];
@@ -102,12 +114,14 @@ function main() {
     kind: "--kind",
     status: "--status",
     source: "--source",
+    role: "--role",
   };
   for (const [key, flag] of Object.entries(strings)) {
     if (options[flag] !== undefined) input[key] = options[flag];
   }
   const limit = integer(options, "--limit");
   const maxExcerptBytes = integer(options, "--max-excerpt-bytes");
+  if (options["--selected-only"] === true) input.selectedOnly = true;
   if (limit !== undefined) input.limit = limit;
   if (maxExcerptBytes !== undefined) input.maxExcerptBytes = maxExcerptBytes;
 

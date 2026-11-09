@@ -617,9 +617,13 @@ function queryCorpusEvidence(input) {
         kind: emptyText(input.kind),
         status: emptyText(input.status),
         source: input.source ?? null,
+        ...(emptyText(input.role) !== null ? { role: emptyText(input.role) } : {}),
+        ...(input.selectedOnly === true ? { selected_only: true } : {}),
         limit: exports.DEFAULT_QUERY_LIMIT,
         max_excerpt_bytes: exports.DEFAULT_MAX_EXCERPT_BYTES,
     };
+    const roleFilter = query.role ?? null;
+    const selectedOnly = query.selected_only === true;
     const refuse = (outcome, code, message, generation = null, sources = []) => ({
         schema: exports.CORPUS_EVIDENCE_QUERY_SCHEMA,
         query,
@@ -638,6 +642,9 @@ function queryCorpusEvidence(input) {
         query.max_excerpt_bytes = normalizeExcerptBytes(input.maxExcerptBytes);
         if (query.statement_class !== null && !architecture_statements_1.ARCHITECTURE_STATEMENT_CLASSES.includes(query.statement_class)) {
             return refuse("unsupported", "query.unknown_statement_class", `'${query.statement_class}' is not a statement class; the vocabulary is ${architecture_statements_1.ARCHITECTURE_STATEMENT_CLASSES.join(", ")}`);
+        }
+        if (roleFilter !== null && !corpus_architecture_evidence_1.ARCHITECTURE_DOCUMENT_ROLES.includes(roleFilter)) {
+            return refuse("unsupported", "query.unknown_role", `'${roleFilter}' is not a selection role; the roles are ${corpus_architecture_evidence_1.ARCHITECTURE_DOCUMENT_ROLES.join(", ")}`);
         }
         if (query.source !== null && !exports.EVIDENCE_SOURCES.includes(query.source)) {
             return refuse("unsupported", "query.unknown_source", `'${String(query.source)}' is not an evidence source`);
@@ -681,6 +688,11 @@ function queryCorpusEvidence(input) {
     if (query.statement_class !== null && loaded.architecture === null) {
         return refuse("unsupported", "query.architecture_evidence_not_run", "the pinned generation was produced without --architecture-evidence, so statement classes cannot be queried from it", generation, loaded.sources);
     }
+    // A role or selection filter asks about the selection profile's view, which only
+    // a generation that read statements has.
+    if ((roleFilter !== null || selectedOnly) && loaded.architecture === null) {
+        return refuse("unsupported", "query.architecture_evidence_not_run", "the pinned generation was produced without --architecture-evidence, so selection roles cannot be queried from it", generation, loaded.sources);
+    }
     // Root filter resolves against the snapshot: a key or id the snapshot does not
     // know is a wrong question; a root the snapshot names as missing is a known
     // absence and gets an explicit unavailable outcome rather than zero results.
@@ -719,6 +731,10 @@ function queryCorpusEvidence(input) {
         if (query.predicate !== null && record.predicate !== query.predicate)
             return false;
         if (query.statement_class !== null && record.statement_class !== query.statement_class)
+            return false;
+        if (roleFilter !== null && !record.selection?.roles?.includes(roleFilter))
+            return false;
+        if (selectedOnly && record.selection?.selected !== true)
             return false;
         if (query.kind !== null && !record.document_declarations.kinds.some((ref) => ref.object === query.kind))
             return false;

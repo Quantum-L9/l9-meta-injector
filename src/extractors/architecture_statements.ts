@@ -227,6 +227,17 @@ function headingLabel(text: string): string {
   return label;
 }
 
+/**
+ * A heading's text normalized under this reader's heading grammar: quoted,
+ * lowercased, one section number and one parenthetical qualifier removed.
+ * Exported so a selection over the same blocks reads `## 1. Status` the way this
+ * reader reads `## 1. Constraints`; it says nothing about the vocabulary.
+ */
+export function architectureHeadingLabel(text: string): string {
+  const firstLine = unitsOf(text).find((line) => line.trim().length > 0);
+  return firstLine === undefined ? "" : headingLabel(firstLine);
+}
+
 /** The class a heading names, or null when the heading is not in the vocabulary. */
 export function architectureHeadingClass(text: string): ArchitectureStatementClass | null {
   const firstLine = unitsOf(text).find((line) => line.trim().length > 0);

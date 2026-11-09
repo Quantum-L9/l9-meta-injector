@@ -28,8 +28,15 @@ node scripts/corpus-query-cli.js --out <corpus output dir> [filters] [--limit N]
 | `--kind VALUE` | documents that declared this `work.kind`, by any of their declarations |
 | `--status VALUE` | documents that declared this `work.status`, by any of their declarations |
 | `--source NAME` | `architecture_evidence`, `document_work_signals` or `repository_model_packet` |
+| `--role NAME` | architecture-evidence records whose document holds this selection role: `decision_record`, `development_handoff`, `historical_record`, `research`, `specification`, `unknown`, `wip_proposal` (ADR-090). Other sources carry no role and are not returned. An unknown role is `unsupported` |
+| `--selected-only` | architecture-evidence records the selection profile marked selected. Nothing is removed from the generation; this narrows the answer only |
 | `--limit N` | records returned, default 50, max 500 |
 | `--max-excerpt-bytes N` | excerpt byte ceiling on the wire, default 1024 |
+
+Both selection flags are opt-in. A query that does not pass them gets the request echo and
+the results it always got, byte for byte: the echo names `role` and `selected_only` only
+when they were asked for. A generation produced without `--architecture-evidence` answers
+either flag `unsupported` (`query.architecture_evidence_not_run`), not `empty`.
 
 Exit codes: `0` for `ok`, `empty`, `incomplete`; `3` for `unavailable`, `unsupported`; `1`
 for `invalid`; `2` for a usage error. Unknown flags are refused (ADR-069).

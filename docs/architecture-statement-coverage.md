@@ -1,7 +1,7 @@
 # Architecture statement coverage
 
 The exact supported-input definition of `architecture-statements/v1` 1.1.0
-(projection profile 1.1.0). The machine form is
+(projection profile 1.2.0). The machine form is
 [`architecture-statement-coverage.json`](architecture-statement-coverage.json)
 (`l9.architecture-statement-coverage/v1`); this page renders it.
 
