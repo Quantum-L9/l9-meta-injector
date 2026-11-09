@@ -250,6 +250,50 @@ function vocabularyWordInHeading(text: string): string | null {
   return null;
 }
 
+/**
+ * True when position `at` of a line lies inside a CommonMark inline code span.
+ *
+ * A span opens at a run of N backticks and closes at the next run of exactly N
+ * (``Decision:`` is one span, `a``b` another); a run with no closing run of the
+ * same length is literal text, not a span.
+ */
+function insideCodeSpan(line: string, at: number): boolean {
+  const runEnd = (from: number): number => {
+    let end = from;
+    while (end < line.length && line[end] === "`") end += 1;
+    return end;
+  };
+  let index = 0;
+  while (index < line.length && index <= at) {
+    if (line[index] !== "`") {
+      index += 1;
+      continue;
+    }
+    const openEnd = runEnd(index);
+    const length = openEnd - index;
+    let close = -1;
+    for (let scan = openEnd; scan < line.length; ) {
+      if (line[scan] !== "`") {
+        scan += 1;
+        continue;
+      }
+      const end = runEnd(scan);
+      if (end - scan === length) {
+        close = scan;
+        break;
+      }
+      scan = end;
+    }
+    if (close < 0) {
+      index = openEnd;
+      continue;
+    }
+    if (at >= openEnd && at < close) return true;
+    index = close + length;
+  }
+  return false;
+}
+
 /** A labelled line whose label is in the vocabulary, with its class and value. */
 export function architectureLabelOf(
   line: string,
@@ -257,10 +301,8 @@ export function architectureLabelOf(
   const labelled = readLabelledLine(line);
   if (labelled === null) return null;
   // `` `Decision:` — is read by … `` mentions a label inside an inline code span;
-  // it declares nothing. The colon is inside a span when an odd number of
-  // backticks precede it.
-  const beforeColon = line.slice(0, line.indexOf(":"));
-  if ((beforeColon.match(/`/g) ?? []).length % 2 === 1) return null;
+  // it declares nothing.
+  if (insideCodeSpan(line, line.indexOf(":"))) return null;
   const statementClass = ARCHITECTURE_LABEL_VOCABULARY[labelled.label];
   if (statementClass === undefined) return null;
   return { label: labelled.label, statementClass, value: labelled.value };
@@ -380,7 +422,9 @@ function findFrontmatterRegion(blocks: readonly DocumentBlockView[]): Frontmatte
     for (const [index, unit] of unitsOf(block.text).entries()) {
       const line = start + index;
       if (line === 1) continue;
-      if (line >= FRONTMATTER_LINE_LIMIT) return null;
+      // The work reader scans lines 2..FRONTMATTER_LINE_LIMIT (1-based) for the
+      // closing delimiter; the bound is inclusive here too.
+      if (line > FRONTMATTER_LINE_LIMIT) return null;
       if (FRONTMATTER_CLOSE_DELIMITERS.includes(unit.trim())) return { firstLine: 1, lastLine: line };
     }
   }
