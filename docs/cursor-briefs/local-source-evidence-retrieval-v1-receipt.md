@@ -41,7 +41,11 @@ One `l9.corpus-evidence-query/v1` JSON document on stdout; exit `0` for `ok`/`em
 `incomplete`, `3` for `unavailable`/`unsupported`, `1` for `invalid`, `2` for usage. The
 full field list is in `docs/corpus-evidence-query.md`.
 
-## Representative responses (from a real generation of the mixed corpus)
+## Representative responses (abridged from a real generation of the mixed corpus)
+
+These samples are abridged: fields are omitted (`"…"`) and hashes shortened, but every key
+shown is a real `l9.corpus-evidence-query/v1` key in its real position. The complete shape is
+`EvidenceQueryResponse` in `src/corpus_query.ts`, listed in `docs/corpus-evidence-query.md`.
 
 `--class decision_statement --status wip --limit 1` — a WIP proposal's recorded decision,
 returned beside the two statuses the document declared (`wip` in frontmatter, `blocked` at
@@ -49,7 +53,7 @@ the bottom), truncated at the limit with the whole match count stated:
 
 ```json
 {"outcome": "ok", "match_count": 2, "returned_count": 1, "truncated": true,
- "generation": {"corpus_status": "complete", "verification_class": "fully_verified", "…": "…"},
+ "generation": {"corpus_status": "complete", "verification": {"verification_class": "fully_verified", "…": "…"}, "…": "…"},
  "results": [{
    "source": "architecture_evidence",
    "record_id": "architecture_evidence:1d6177e0…",
@@ -72,14 +76,19 @@ specification's block, and the Markdown documents' lines read from their packet:
 
 ```json
 {"outcome": "ok", "match_count": 3,
- "sources": [["architecture_evidence", "verified", 16], ["document_work_signals", "verified", 4], ["repository_model_packet", "verified", 46]],
+ "sources": [{"source": "architecture_evidence", "status": "verified", "record_count": 16, "…": "…"},
+             {"source": "document_work_signals", "status": "verified", "record_count": 4, "…": "…"},
+             {"source": "repository_model_packet", "status": "verified", "record_count": 46, "…": "…"}],
  "results": [
   {"source": "document_work_signals", "source_path": "specs/transport-packet-spec.docx", "value": "active",
-   "locator": {"kind": "docx_block", "block_index": 3, "part": "word/document.xml"}, "excerpt": "Status: active"},
+   "structured_locator": {"kind": "docx_block", "block_index": 3, "part": "word/document.xml"}, "source_range": null,
+   "bounded_excerpt": "Status: active", "…": "…"},
   {"source": "repository_model_packet", "source_path": "handoffs/chassis-auth-handoff.md", "value": "blocked",
-   "locator": {"start_line": 3, "end_line": 3}, "excerpt": "Status: blocked"},
+   "structured_locator": null, "source_range": {"start_line": 3, "end_line": 3},
+   "bounded_excerpt": "Status: blocked", "…": "…"},
   {"source": "repository_model_packet", "source_path": "plans/gate-routing-proposal.md", "value": "wip",
-   "locator": {"start_line": 3, "end_line": 3}, "excerpt": "status: wip"}]}
+   "structured_locator": null, "source_range": {"start_line": 3, "end_line": 3},
+   "bounded_excerpt": "status: wip", "…": "…"}]}
 ```
 
 ## Acceptance (tests/corpus_query.test.ts, 18 tests, all against real CLI-produced generations)
