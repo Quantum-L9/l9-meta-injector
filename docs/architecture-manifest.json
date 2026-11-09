@@ -18,7 +18,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "git_blob_sha1": "78da833355af6df221883a37d362e755cffab980"
+      "git_blob_sha1": "d7d539a904ae566d73fad3c8fc42dc071c25da14"
     },
     {
       "path": "dist/apply.d.ts",
@@ -558,7 +558,7 @@
     },
     {
       "path": "docs/decision_log.md",
-      "git_blob_sha1": "015ea59ae2789cb5fd50b10a361cb213310164cd"
+      "git_blob_sha1": "373b96778541f0a3aa794a7ba8efd774af58bd6a"
     },
     {
       "path": "docs/decisions/036-read-only-local-source-acquisition.md",
@@ -822,7 +822,7 @@
     },
     {
       "path": "scripts/local-source-cli.js",
-      "git_blob_sha1": "769d146ac0faaacb20a30091b37a69ee1bc36dfa"
+      "git_blob_sha1": "523550320cebbc5ec7d74a8a7b28902b9b0b3cb8"
     },
     {
       "path": "scripts/qualify-tracked-snapshot.js",

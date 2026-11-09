@@ -68,6 +68,7 @@ Accepted ADRs are not deleted. A replacement ADR links back to the decision it s
 | [ADR-079](079-consumer-install-paths-and-runtime-only-tarball.md) | Consumer install paths are proven by test, and the tarball ships runtime scripts only | Accepted |
 | [ADR-082](082-authority-bound-metadata-and-evidence-production.md) | Authority-bound metadata and evidence production (Phase 1 producer foundation) | Accepted |
 | [ADR-087](087-architecture-evidence-projection.md) | Source-declared architectural statements as an opt-in evidence projection | Proposed |
+| [ADR-092](092-corpus-generated-at-pins-recorded-times.md) | A pinned --generated-at pins every time a corpus generation records | Proposed |
 
 ## Authority boundary
 

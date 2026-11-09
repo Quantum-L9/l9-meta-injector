@@ -30,7 +30,12 @@ const USAGE = [
   "  --name NAME                canonical source name (default: basename of <path>)",
   "  --source-kind KIND         auto|file|directory|archive (default: auto)",
   "  --out DIR                  output directory (default: <tmpdir>/l9-local-source-out)",
-  "  --generated-at ISO         timestamp recorded in the bundle (default: deterministic epoch)",
+  "  --generated-at ISO         timestamp recorded in the bundle (default: deterministic epoch).",
+  "                             In corpus mode, also the time recorded in each root packet,",
+  "                             each root's acquisition manifest (observed_at) and the",
+  "                             corpus-intelligence packet (created_at), so two runs over the",
+  "                             same bytes publish the same generation (ADR-092). Must be a",
+  "                             UTC timestamp: YYYY-MM-DDTHH:MM:SS[.sss]Z",
   "  --no-expand-archives       hash archives but do not observe their members",
   "  --no-interpret             skip the deterministic interpretation pass",
   "  --omit PATTERN             gitignore-style omit pattern (repeatable)",
@@ -143,6 +148,26 @@ function parseArgs(argv) {
     return out;
   };
   return { argv, flag, opt, optAll, corpusMode, target: corpusMode ? null : argv[0] };
+}
+
+/**
+ * The pinned timestamp of a corpus run, or undefined when none was given.
+ *
+ * Refused unless it is an exact UTC ISO-8601 instant: a value the reader could
+ * not parse would be recorded verbatim into every generation file, and a
+ * value with a local offset would publish a different generation for the same
+ * instant written two ways (ADR-092).
+ */
+function generatedAtOpt(cli) {
+  if (!cli.argv.includes("--generated-at")) return undefined;
+  const raw = cli.opt("--generated-at", null);
+  if (raw === null || raw.startsWith("--")) fail("--generated-at needs a value", 2);
+  const shape = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
+  const time = Date.parse(raw);
+  if (!shape.test(raw) || Number.isNaN(time) || new Date(time).toISOString().slice(0, 19) !== raw.slice(0, 19)) {
+    fail(`--generated-at must be a UTC timestamp YYYY-MM-DDTHH:MM:SS[.sss]Z, got '${raw}'`, 2);
+  }
+  return raw;
 }
 
 /** Parse a fractional flag in [0,1], or exit with a precise message. */
@@ -520,6 +545,11 @@ function reportCorpusRun(context) {
 }
 
 async function runCorpusMode(cli) {
+  // One instant for every time this run records inside the generation, when the
+  // operator pinned one; otherwise the observation and packet times stay the
+  // wall clock they always were. CURRENT.json's committed_at is not pinned: it
+  // records when the pointer moved and is not part of any generation (ADR-092).
+  const pinnedAt = generatedAtOpt(cli);
   const repo = path.resolve(__dirname, "..");
   const scan = requireBuilt(path.join(repo, "dist", "corpus_scan.js"));
   const roots = requireBuilt(path.join(repo, "dist", "corpus_roots.js"));
@@ -748,7 +778,8 @@ async function runCorpusMode(cli) {
       },
       budgets: collectBudgets(cli),
       corpusId,
-      observedAt: new Date().toISOString(),
+      ...(pinnedAt !== undefined ? { generatedAt: pinnedAt } : {}),
+      observedAt: pinnedAt ?? new Date().toISOString(),
       verification: cli.flag("--incremental") ? "incremental" : "full",
       verifyContent: cli.flag("--verify-content"),
       allowInferredRootHistory: cli.flag("--allow-inferred-root-history"),
@@ -826,7 +857,12 @@ async function runCorpusMode(cli) {
     for (const root of result.rootPackets) {
       const rootDir = `roots/${root.directory}`;
       const staged = path.join(bundleScratch, root.directory);
-      repositoryModel.emitRepositoryModelBundle(root.packet, { outDir: staged });
+      // The bundle manifest and validation receipt record the same pinned time
+      // the packet does, as the single-source bundle already does (ADR-092).
+      repositoryModel.emitRepositoryModelBundle(root.packet, {
+        outDir: staged,
+        ...(pinnedAt !== undefined ? { generatedAt: pinnedAt } : {}),
+      });
       for (const relative of listFilesRecursively(staged, ordering.compareCodePoints)) {
         outputs.push({
           path: `${rootDir}/bundle/${relative.split(path.sep).join("/")}`,
@@ -869,7 +905,7 @@ async function runCorpusMode(cli) {
   // A packet that fails its own referential validation fails the run. Publishing
   // the generation without it would leave a consumer to fall back to reading the
   // directory, which is the arrangement this packet exists to end.
-  const corpusIntelligenceCreatedAt = new Date().toISOString();
+  const corpusIntelligenceCreatedAt = pinnedAt ?? new Date().toISOString();
   try {
     const built = corpusIntelligence.buildCorpusIntelligencePacket(
       corpusIntelligenceInput.corpusIntelligenceInput(result, {

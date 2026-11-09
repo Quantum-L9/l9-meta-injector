@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Reproducible corpus generations under --generated-at (ADR-092, Proposed)
+
+- `local-source` corpus mode now honours `--generated-at`: the value is recorded in every root packet and Repository Model bundle, every root's acquisition manifest (`observed_at`) and the corpus-intelligence packet and bundle manifest (`created_at`), so two runs over the same bytes with the same flags publish the same `generation_id`. The value must be an exact UTC instant (`YYYY-MM-DDTHH:MM:SS[.sss]Z`); anything else exits 2 before reading. Without the flag nothing changes. No semantic identity moves; `CURRENT.json` `committed_at` stays the wall clock.
+
 ### Architecture evidence projection (ADR-087, Proposed)
 
 - `architecture-statements/v1` reads the explicit `intent`, `constraint`, `assumption`, `open_question` and `decision_statement` declarations a document makes — labelled fields (`Objective:`, `Decision:`), labelled lists (`Constraints:` then items) and labelled sections (`## Open Questions`) — over the normalized blocks every decoder already produces, so Markdown and Word are read by one implementation. A text statement cites its exact line; every other format cites its block locator. Constructs outside the grammar (empty labels, empty sections, tables, foreign `Label: value` lines, credential-shaped text) are coverage diagnostics, never guesses.
