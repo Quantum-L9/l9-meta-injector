@@ -382,11 +382,18 @@ function candidatesFor(document: FieldSelectionDocumentInput): Map<FieldSelectio
   return out;
 }
 
+/** One field an intent or a declared role asks for, with the rules that asked. */
+interface PlannedField {
+  field: FieldSelectionField;
+  tier: "core" | "supporting";
+  because: string[];
+}
+
 /** The ordered candidate fields for an intent and a set of roles, with the rule that put each there. */
 function plannedFields(
   intent: FieldSelectionIntent,
   roles: readonly ArchitectureDocumentRole[],
-): { field: FieldSelectionField; tier: "core" | "supporting"; because: string[] }[] {
+): PlannedField[] {
   const planned = new Map<FieldSelectionField, { tier: "core" | "supporting"; because: string[] }>();
   for (const field of INTENT_FIELDS[intent].core) {
     planned.set(field, { tier: "core", because: [`intent ${intent} asks for ${field} (core)`] });
@@ -405,90 +412,111 @@ function plannedFields(
   return [...planned.entries()].map(([field, entry]) => ({ field, ...entry }));
 }
 
-/** Decide one document's view. Pure and total. */
-export function selectFieldsForDocument(
-  document: FieldSelectionDocumentInput,
-  intent: FieldSelectionIntent,
-  budget: FieldSelectionBudget,
-): FieldSelectionRecord {
-  const first = document.architectureRecords[0];
-  const roles: ArchitectureDocumentRole[] = first !== undefined ? [...first.selection.roles] : ["unknown"];
-  const roleEvidenceIds = first !== undefined
-    ? [...new Set(first.selection.role_evidence.map((item) => item.assertion_id))].sort(compareCodePoints)
-    : [];
-  const candidates = candidatesFor(document);
-  const planned = plannedFields(intent, roles);
-  const decisions: FieldSelectionFieldDecision[] = [];
-  const seen = new Set<string>();
-  let characters = 0;
-  let selectedFields = 0;
+/** The running totals one document's view accumulates as its fields are decided. */
+interface ViewTally {
+  seen: Set<string>;
+  characters: number;
+  selectedFields: number;
+}
 
-  const duplicate = document.exactDuplicate;
-  const nonRepresentative = duplicate !== null && duplicate.representativeArtifactId !== document.artifactId;
-
-  for (const { field, tier, because } of planned) {
-    const available = candidates.get(field) ?? [];
-    const decision: FieldSelectionFieldDecision = {
-      field,
-      tier,
-      disposition: "unavailable",
-      reasons: [...because],
-      available_value_count: available.length,
-      new_value_count: 0,
-      selected_values: [],
-      values_omitted: 0,
-    };
-    decisions.push(decision);
-    if (available.length === 0) {
-      decision.reasons.push(`the document declares no ${field}`);
-      continue;
-    }
-    if (nonRepresentative) {
-      decision.disposition = "redundant";
-      decision.reasons.push(
-        `the document is byte-identical to ${duplicate?.representativeArtifactId} (exact duplicate cluster ${duplicate?.clusterId}); its values are surfaced there`,
-      );
-      continue;
-    }
-    const fresh = available.filter((candidate) => !seen.has(valueKey(candidate.value)));
-    const distinctFresh = fresh.filter(
-      (candidate, index) => fresh.findIndex((other) => valueKey(other.value) === valueKey(candidate.value)) === index,
-    );
-    decision.new_value_count = distinctFresh.length;
-    if (distinctFresh.length === 0) {
-      decision.disposition = "redundant";
-      decision.reasons.push(`every value of ${field} is already in this document's view under an earlier field`);
-      continue;
-    }
-    if (selectedFields >= budget.maxFields) {
-      decision.disposition = "omitted_by_budget";
-      decision.values_omitted = distinctFresh.length;
-      decision.reasons.push(`the view already holds ${budget.maxFields} field(s), the budget's maximum`);
-      continue;
-    }
-    for (const candidate of distinctFresh) {
-      if (decision.selected_values.length >= budget.maxValuesPerField) break;
-      const value = boundExcerpt(candidate.value);
-      if (characters + value.length > budget.maxCharacters) break;
-      decision.selected_values.push({ record_id: candidate.record_id, source: candidate.source, value });
-      characters += value.length;
-      seen.add(valueKey(candidate.value));
-    }
-    decision.values_omitted = distinctFresh.length - decision.selected_values.length;
-    if (decision.selected_values.length === 0) {
-      decision.disposition = "omitted_by_budget";
-      decision.reasons.push(`the view's ${budget.maxCharacters}-character budget has no room left for a ${field} value`);
-      continue;
-    }
-    decision.disposition = "selected";
-    selectedFields += 1;
-    decision.reasons.push(
-      `selected ${decision.selected_values.length} of ${distinctFresh.length} new value(s)`
-      + (decision.values_omitted > 0 ? `; ${decision.values_omitted} left out by the budget (${budget.maxValuesPerField} per field, ${budget.maxCharacters} characters)` : ""),
-    );
+/** Every distinct value of `available` the view does not already hold, in order. */
+function freshDistinct(available: readonly FieldValueCandidate[], seen: ReadonlySet<string>): FieldValueCandidate[] {
+  const keys = new Set<string>();
+  const fresh: FieldValueCandidate[] = [];
+  for (const candidate of available) {
+    const key = valueKey(candidate.value);
+    if (seen.has(key) || keys.has(key)) continue;
+    keys.add(key);
+    fresh.push(candidate);
   }
+  return fresh;
+}
 
+/** Take values in order until the per-field or character budget stops it. */
+function fillValues(
+  decision: FieldSelectionFieldDecision,
+  fresh: readonly FieldValueCandidate[],
+  budget: FieldSelectionBudget,
+  tally: ViewTally,
+): void {
+  for (const candidate of fresh) {
+    if (decision.selected_values.length >= budget.maxValuesPerField) break;
+    const value = boundExcerpt(candidate.value);
+    if (tally.characters + value.length > budget.maxCharacters) break;
+    decision.selected_values.push({ record_id: candidate.record_id, source: candidate.source, value });
+    tally.characters += value.length;
+    tally.seen.add(valueKey(candidate.value));
+  }
+  decision.values_omitted = fresh.length - decision.selected_values.length;
+}
+
+/** Decide one planned field: unavailable, redundant, omitted by the budget, or selected. */
+function decidePlannedField(
+  planned: PlannedField,
+  available: readonly FieldValueCandidate[],
+  duplicate: FieldSelectionDocumentInput["exactDuplicate"],
+  budget: FieldSelectionBudget,
+  tally: ViewTally,
+): FieldSelectionFieldDecision {
+  const { field } = planned;
+  const decision: FieldSelectionFieldDecision = {
+    field,
+    tier: planned.tier,
+    disposition: "unavailable",
+    reasons: [...planned.because],
+    available_value_count: available.length,
+    new_value_count: 0,
+    selected_values: [],
+    values_omitted: 0,
+  };
+  if (available.length === 0) {
+    decision.reasons.push(`the document declares no ${field}`);
+    return decision;
+  }
+  if (duplicate !== null) {
+    decision.disposition = "redundant";
+    decision.reasons.push(
+      `the document is byte-identical to ${duplicate.representativeArtifactId} (exact duplicate cluster ${duplicate.clusterId}); its values are surfaced there`,
+    );
+    return decision;
+  }
+  const fresh = freshDistinct(available, tally.seen);
+  decision.new_value_count = fresh.length;
+  if (fresh.length === 0) {
+    decision.disposition = "redundant";
+    decision.reasons.push(`every value of ${field} is already in this document's view under an earlier field`);
+    return decision;
+  }
+  if (tally.selectedFields >= budget.maxFields) {
+    decision.disposition = "omitted_by_budget";
+    decision.values_omitted = fresh.length;
+    decision.reasons.push(`the view already holds ${budget.maxFields} field(s), the budget's maximum`);
+    return decision;
+  }
+  fillValues(decision, fresh, budget, tally);
+  if (decision.selected_values.length === 0) {
+    decision.disposition = "omitted_by_budget";
+    decision.reasons.push(`the view's ${budget.maxCharacters}-character budget has no room left for a ${field} value`);
+    return decision;
+  }
+  decision.disposition = "selected";
+  tally.selectedFields += 1;
+  decision.reasons.push(
+    `selected ${decision.selected_values.length} of ${fresh.length} new value(s)`
+    + (decision.values_omitted > 0 ? `; ${decision.values_omitted} left out by the budget (${budget.maxValuesPerField} per field, ${budget.maxCharacters} characters)` : ""),
+  );
+  return decision;
+}
+
+/** Fields the intent did not plan but the document declares: listed, never selected. */
+function unplannedDecisions(
+  candidates: ReadonlyMap<FieldSelectionField, readonly FieldValueCandidate[]>,
+  planned: readonly PlannedField[],
+  intent: FieldSelectionIntent,
+  roles: readonly ArchitectureDocumentRole[],
+): FieldSelectionFieldDecision[] {
   const plannedSet = new Set(planned.map((entry) => entry.field));
+  const decisions: FieldSelectionFieldDecision[] = [];
   for (const field of [...FIELD_SELECTION_FIELDS].sort(compareCodePoints)) {
     if (plannedSet.has(field)) continue;
     const available = candidates.get(field) ?? [];
@@ -504,6 +532,31 @@ export function selectFieldsForDocument(
       values_omitted: 0,
     });
   }
+  return decisions;
+}
+
+/** Decide one document's view. Pure and total. */
+export function selectFieldsForDocument(
+  document: FieldSelectionDocumentInput,
+  intent: FieldSelectionIntent,
+  budget: FieldSelectionBudget,
+): FieldSelectionRecord {
+  const first = document.architectureRecords[0];
+  const roles: ArchitectureDocumentRole[] = first !== undefined ? [...first.selection.roles] : ["unknown"];
+  const roleEvidenceIds = first !== undefined
+    ? [...new Set(first.selection.role_evidence.map((item) => item.assertion_id))].sort(compareCodePoints)
+    : [];
+  const candidates = candidatesFor(document);
+  const planned = plannedFields(intent, roles);
+  const tally: ViewTally = { seen: new Set<string>(), characters: 0, selectedFields: 0 };
+  const duplicate = document.exactDuplicate;
+  const nonRepresentative = duplicate !== null && duplicate.representativeArtifactId !== document.artifactId ? duplicate : null;
+  const decisions: FieldSelectionFieldDecision[] = [
+    ...planned.map((entry) => decidePlannedField(entry, candidates.get(entry.field) ?? [], nonRepresentative, budget, tally)),
+    ...unplannedDecisions(candidates, planned, intent, roles),
+  ];
+  const characters = tally.characters;
+  const selectedFields = tally.selectedFields;
 
   return {
     view_id: stableId("field_selection", {
@@ -612,14 +665,8 @@ export interface VerifyFieldSelectionInput {
   knownArtifactIds: ReadonlySet<string>;
 }
 
-/**
- * Prove the view is what its manifest claims and cites only what the generation
- * holds, before it is published. A view that cited a value no payload carries
- * would be the view inventing evidence.
- */
-export function verifyFieldSelectionExport(input: VerifyFieldSelectionInput): string[] {
-  const { manifest, payloadJsonl } = input;
-  const problems: string[] = [];
+/** Parse the payload lines, reporting every line that is not JSON. */
+function parseSelectionPayload(payloadJsonl: string, problems: string[]): FieldSelectionRecord[] {
   const lines = payloadJsonl.length === 0 ? [] : payloadJsonl.split("\n");
   if (payloadJsonl.length > 0 && lines[lines.length - 1] !== "") problems.push("payload does not end with a newline");
   const records: FieldSelectionRecord[] = [];
@@ -631,6 +678,12 @@ export function verifyFieldSelectionExport(input: VerifyFieldSelectionInput): st
       problems.push(`payload line ${index + 1} is not valid JSON: ${(error as Error).message}`);
     }
   }
+  return records;
+}
+
+/** The manifest's counts, hashes, tallies and carrier against the parsed payload. */
+function manifestProblems(manifest: FieldSelectionManifest, payloadJsonl: string, records: readonly FieldSelectionRecord[]): string[] {
+  const problems: string[] = [];
   if (records.length !== manifest.record_count) problems.push(`manifest says ${manifest.record_count} record(s) and the payload carries ${records.length}`);
   if (Buffer.byteLength(payloadJsonl, "utf8") !== manifest.payload_byte_length) problems.push("payload byte length does not match the manifest");
   if (sha256TextPrefixed(payloadJsonl) !== manifest.payload_artifact_hash) problems.push("payload artifact hash does not match the manifest");
@@ -643,41 +696,73 @@ export function verifyFieldSelectionExport(input: VerifyFieldSelectionInput): st
   if (manifest.carrier.disposition !== "external_generation" || manifest.carrier.observed_files_mutated !== false) {
     problems.push("the view's carrier must be the external generation, with no observed file mutated");
   }
+  return problems;
+}
+
+/** One record's identity, class, budget, policy and carrier. */
+function recordProblems(record: FieldSelectionRecord, manifest: FieldSelectionManifest, knownArtifactIds: ReadonlySet<string>): string[] {
+  const problems: string[] = [];
+  if (!knownArtifactIds.has(record.artifact_id)) problems.push(`view ${record.view_id} names artifact ${record.artifact_id}, which this corpus did not observe`);
+  if (record.epistemic_class !== "source-declared" || record.authority_verified !== false) {
+    problems.push(`view ${record.view_id} is not classed source-declared with authority_verified false`);
+  }
+  if (record.selected_field_count > manifest.budget.max_fields || record.selected_character_count > manifest.budget.max_characters) {
+    problems.push(`view ${record.view_id} exceeds the budget`);
+  }
+  if (record.intent !== manifest.intent || record.policy_id !== manifest.policy_id || record.policy_version !== manifest.policy_version) {
+    problems.push(`view ${record.view_id} was not selected under the manifest's intent and policy`);
+  }
+  if (record.carrier_disposition !== "external_generation") {
+    problems.push(`view ${record.view_id} names carrier '${String(record.carrier_disposition)}', not the external generation`);
+  }
+  return problems;
+}
+
+/** One field decision's vocabulary, budget, disposition, reasons and citations. */
+function decisionProblems(
+  viewId: string,
+  decision: FieldSelectionFieldDecision,
+  manifest: FieldSelectionManifest,
+  knownRecordIds: ReadonlySet<string>,
+): string[] {
+  const problems: string[] = [];
+  if (!(FIELD_SELECTION_FIELDS as readonly string[]).includes(decision.field)) {
+    problems.push(`view ${viewId} decides '${String(decision.field)}', which is not in the field vocabulary`);
+  }
+  if (decision.selected_values.length > manifest.budget.max_values_per_field) {
+    problems.push(
+      `view ${viewId} selects ${decision.selected_values.length} value(s) of ${decision.field}, over the budget's ${manifest.budget.max_values_per_field} per field`,
+    );
+  }
+  if (!(FIELD_DISPOSITIONS as readonly string[]).includes(decision.disposition)) {
+    problems.push(`view ${viewId} gives ${decision.field} the unknown disposition '${decision.disposition}'`);
+  }
+  if (decision.reasons.length === 0) problems.push(`view ${viewId} decides ${decision.field} without a reason`);
+  if ((decision.disposition === "selected") !== (decision.selected_values.length > 0)) {
+    problems.push(`view ${viewId} field ${decision.field} is ${decision.disposition} with ${decision.selected_values.length} value(s)`);
+  }
+  for (const value of decision.selected_values) {
+    if (!knownRecordIds.has(value.record_id)) {
+      problems.push(`view ${viewId} cites ${value.record_id}, which no payload of this generation carries`);
+    }
+  }
+  return problems;
+}
+
+/**
+ * Prove the view is what its manifest claims and cites only what the generation
+ * holds, before it is published. A view that cited a value no payload carries
+ * would be the view inventing evidence.
+ */
+export function verifyFieldSelectionExport(input: VerifyFieldSelectionInput): string[] {
+  const { manifest, payloadJsonl } = input;
+  const problems: string[] = [];
+  const records = parseSelectionPayload(payloadJsonl, problems);
+  problems.push(...manifestProblems(manifest, payloadJsonl, records));
   for (const record of records) {
-    if (!input.knownArtifactIds.has(record.artifact_id)) problems.push(`view ${record.view_id} names artifact ${record.artifact_id}, which this corpus did not observe`);
-    if (record.epistemic_class !== "source-declared" || record.authority_verified !== false) {
-      problems.push(`view ${record.view_id} is not classed source-declared with authority_verified false`);
-    }
-    if (record.selected_field_count > manifest.budget.max_fields || record.selected_character_count > manifest.budget.max_characters) {
-      problems.push(`view ${record.view_id} exceeds the budget`);
-    }
-    if (record.intent !== manifest.intent || record.policy_id !== manifest.policy_id || record.policy_version !== manifest.policy_version) {
-      problems.push(`view ${record.view_id} was not selected under the manifest's intent and policy`);
-    }
-    if (record.carrier_disposition !== "external_generation") {
-      problems.push(`view ${record.view_id} names carrier '${String(record.carrier_disposition)}', not the external generation`);
-    }
+    problems.push(...recordProblems(record, manifest, input.knownArtifactIds));
     for (const decision of record.fields) {
-      if (!(FIELD_SELECTION_FIELDS as readonly string[]).includes(decision.field)) {
-        problems.push(`view ${record.view_id} decides '${String(decision.field)}', which is not in the field vocabulary`);
-      }
-      if (decision.selected_values.length > manifest.budget.max_values_per_field) {
-        problems.push(
-          `view ${record.view_id} selects ${decision.selected_values.length} value(s) of ${decision.field}, over the budget's ${manifest.budget.max_values_per_field} per field`,
-        );
-      }
-      if (!(FIELD_DISPOSITIONS as readonly string[]).includes(decision.disposition)) {
-        problems.push(`view ${record.view_id} gives ${decision.field} the unknown disposition '${decision.disposition}'`);
-      }
-      if (decision.reasons.length === 0) problems.push(`view ${record.view_id} decides ${decision.field} without a reason`);
-      if ((decision.disposition === "selected") !== (decision.selected_values.length > 0)) {
-        problems.push(`view ${record.view_id} field ${decision.field} is ${decision.disposition} with ${decision.selected_values.length} value(s)`);
-      }
-      for (const value of decision.selected_values) {
-        if (!input.knownRecordIds.has(value.record_id)) {
-          problems.push(`view ${record.view_id} cites ${value.record_id}, which no payload of this generation carries`);
-        }
-      }
+      problems.push(...decisionProblems(record.view_id, decision, manifest, input.knownRecordIds));
     }
   }
   return problems;

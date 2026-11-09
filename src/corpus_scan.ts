@@ -369,7 +369,7 @@ export interface CorpusScanInput {
    * which existing evidence fields the intent surfaces and why, within the
    * budget. Binds its profile into `corpus_analysis_id` and into nothing else.
    */
-  fieldSelection?: { intent: string; budget?: Partial<FieldSelectionBudget> };
+  fieldSelection?: { intent: FieldSelectionIntent; budget?: Partial<FieldSelectionBudget> };
 }
 
 export interface CorpusScanDiagnostic {
