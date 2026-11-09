@@ -73,6 +73,7 @@
     "skills": "npm run build && node scripts/skills-cli.js",
     "repository-model": "npm run build && node scripts/repository-model-cli.js",
     "local-source": "npm run build && node scripts/local-source-cli.js",
+    "corpus-query": "npm run build && node scripts/corpus-query-cli.js",
     "topology:conformance": "node scripts/topology-conformance.js",
     "qualify:corpus": "node scripts/corpus-qualification.js",
     "check:api": "node scripts/check-public-api.js",
