@@ -405,8 +405,16 @@ describe("a failing or malformed provider stops the pass", () => {
       // yields one macrotask so the runner sees the rejection. Its answer always
       // arrives after the failure, whatever the timers do under load; a fixed
       // sleep let it land first on a busy runner and legitimately send a second
-      // chunk. The bounded race keeps a broken runner from hanging the test.
-      await Promise.race([failed, delay(2000)]);
+      // chunk. The bounded race keeps a broken runner from hanging the test, and its
+      // timer is cleared once the failure wins so no handle is left pending.
+      let fallback: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([
+        failed,
+        new Promise<void>((resolve) => {
+          fallback = setTimeout(resolve, 2000);
+        }),
+      ]);
+      clearTimeout(fallback);
       await delay(1);
       return { vector: [0, 1] };
     });
