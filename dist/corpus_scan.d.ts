@@ -11,7 +11,7 @@ import { CorpusResourceBudgets, CorpusSessionStore } from "./corpus_session";
 import { DecoderRegistry } from "./documents";
 import { DocumentWorkSignalExport } from "./corpus_work_signal_export";
 import { ArchitectureEvidenceExport } from "./corpus_architecture_evidence";
-import type { FieldSelectionBudget, FieldSelectionExport } from "./corpus_field_selection";
+import type { FieldSelectionBudget, FieldSelectionExport, FieldSelectionIntent } from "./corpus_field_selection";
 import { LocalArchivePolicy } from "./local_archive_policy";
 import type { DocumentIndex, DocumentIndexSummary } from "./corpus_documents";
 import type { SemanticAnalysisResult } from "./corpus_semantic_run";
@@ -126,7 +126,7 @@ export interface CorpusScanInput {
      * budget. Binds its profile into `corpus_analysis_id` and into nothing else.
      */
     fieldSelection?: {
-        intent: string;
+        intent: FieldSelectionIntent;
         budget?: Partial<FieldSelectionBudget>;
     };
 }
