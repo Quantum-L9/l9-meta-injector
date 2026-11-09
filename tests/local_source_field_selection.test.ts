@@ -178,10 +178,22 @@ function treeHash(dir: string): string {
   const walk = (current: string): void => {
     for (const entry of fs.readdirSync(current, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))) {
       const absolute = path.join(current, entry.name);
-      const stat = fs.statSync(absolute);
-      hash.update(`${path.relative(dir, absolute)}\0${stat.mode}\0${stat.mtimeMs}\0`);
-      if (entry.isDirectory()) walk(absolute);
-      else hash.update(fs.readFileSync(absolute));
+      const label = path.relative(dir, absolute);
+      if (entry.isDirectory()) {
+        const stat = fs.statSync(absolute);
+        hash.update(`${label}\0${stat.mode}\0${stat.mtimeMs}\0`);
+        walk(absolute);
+        continue;
+      }
+      // One descriptor for the metadata and the bytes, so both describe the same file.
+      const fd = fs.openSync(absolute, "r");
+      try {
+        const stat = fs.fstatSync(fd);
+        hash.update(`${label}\0${stat.mode}\0${stat.mtimeMs}\0`);
+        hash.update(fs.readFileSync(fd));
+      } finally {
+        fs.closeSync(fd);
+      }
     }
   };
   walk(dir);
