@@ -43,4 +43,4 @@ All gates report PASS / FAIL / SKIPPED / Unknown. No fake validation.
 tracked and untracked file, with the report itself excluded. Every edit moves
 the digest — including a second edit of a file that was already dirty.
 `npm run validate:report -- --check` fails when the report was written against
-a different tree.
+a different tree. The report is gitignored and never committed (ADR-093).

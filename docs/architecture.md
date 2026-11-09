@@ -7,7 +7,7 @@
 
 The TypeScript pipeline under `src/` is the sole active engine. `runPipelineAsync` owns the complete classify, extract, assist, inject, verify, report, placement, MetaV3, and indexing sequence. The Python consolidation engine under `tools/consolidation/` is historical reference material and is neither shipped nor CI-gated.
 
-`docs/architecture-authority.json` is the machine-readable authority index. Authority-critical file identities are recorded in `docs/architecture-manifest.json`.
+`docs/architecture-authority.json` is the machine-readable authority index. Authority-critical file identities are computed by `npm run check:manifest` from the tree under test and never committed (ADR-093).
 
 ## Semantic authority
 
@@ -398,12 +398,11 @@ npm run validate
 git status --porcelain --untracked-files=all
 ```
 
-The canonical aggregate command checks source types, Vitest, the exact API contract, architecture authority, deterministic architecture manifest, committed distribution parity, selfpack, and installed-tarball consumption. ESLint is an additive independent gate. Validation must leave the checkout clean.
+The canonical aggregate command checks source types, Vitest, the exact API contract, architecture authority, computed architecture manifest, committed distribution parity, selfpack, and installed-tarball consumption. ESLint is an additive independent gate. Validation must leave the checkout clean.
 
 Any change to this document requires:
 
 ```bash
-npm run manifest:update
 npm run validate
 ```
 
