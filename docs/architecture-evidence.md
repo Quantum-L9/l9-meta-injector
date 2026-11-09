@@ -39,6 +39,21 @@ hash, bound into `corpus_analysis_id`) and `architecture_evidence` (the payload'
 count and two hashes). Programmatically: `runCorpusScan({ …, architectureEvidence: true })`
 returns `result.architectureEvidence`; it is `null` when not selected.
 
+## Reader 1.1.0 and the exact coverage matrix
+
+[ADR-089](decisions/089-architecture-statement-coverage-closure.md) (Proposed) moves the
+reader to 1.1.0 without changing its id, classes, vocabulary or forms. What it reads, what
+it reports and what it leaves alone is stated case by case — with the complete records and
+diagnostics a real file of each form produces — in
+[architecture-statement-coverage.md](architecture-statement-coverage.md), and enforced by
+`tests/architecture_statement_coverage.test.ts`. In short, 1.1.0 adds numbered
+(`## 2.1 Open Questions`), qualified (`## Assumptions (v2)`) and setext section headings;
+joins a Markdown list item's lazy continuation and a soft-broken labelled value or Word list
+item into one statement (records carry `continuation_block_ids`, and a `line_span` ends on
+the statement's last line); reads frontmatter with the work reader's YAML scalar rules; and
+never quotes a thematic break or a label inside an inline code span. Where this page and the
+matrix differ, the matrix is the current statement.
+
 ## Statement classes and how each is recognized
 
 Five classes, closed. A statement is recognized from one of three explicit forms and

@@ -69,6 +69,7 @@ Accepted ADRs are not deleted. A replacement ADR links back to the decision it s
 | [ADR-082](082-authority-bound-metadata-and-evidence-production.md) | Authority-bound metadata and evidence production (Phase 1 producer foundation) | Accepted |
 | [ADR-087](087-architecture-evidence-projection.md) | Source-declared architectural statements as an opt-in evidence projection | Proposed |
 | [ADR-088](088-read-only-corpus-evidence-query.md) | A read-only evidence query over one pinned corpus generation | Proposed |
+| [ADR-089](089-architecture-statement-coverage-closure.md) | Architecture statement reader 1.1.0: coverage closure under an exact matrix | Proposed |
 | [ADR-093](093-retire-committed-per-pr-generated-artifacts.md) | Retire the committed validation report and architecture manifest | Accepted |
 
 ## Authority boundary

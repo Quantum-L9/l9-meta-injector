@@ -77,6 +77,25 @@ export declare function readLabelledLine(line: string): {
     label: string;
     value: string;
 } | null;
+/**
+ * One frontmatter line under the YAML scalar rules this reader applies (RC-024).
+ *
+ * Exported for the architecture-statement reader, which meets frontmatter as
+ * decoded blocks rather than as `DocumentView` lines but must agree with this
+ * module about what a frontmatter key, a trailing comment and a block-scalar
+ * header are. `blockScalar` is the header (`|`, `>-` …) when the value is one,
+ * and `value` is then empty: the header announces a value on the following lines
+ * and is never the value itself. Null when the line is not a `key: value` line.
+ */
+export declare function readFrontmatterLine(line: string): {
+    key: string;
+    value: string;
+    blockScalar: string | null;
+} | null;
+/** The frontmatter delimiters `findFrontmatter` accepts, and its line bound. */
+export declare const FRONTMATTER_OPEN_DELIMITER = "---";
+export declare const FRONTMATTER_CLOSE_DELIMITERS: readonly string[];
+export declare const FRONTMATTER_LINE_LIMIT = 200;
 /** How far into a document a bare status admonition still counts as leading. */
 export declare const LEADING_ADMONITION_UNITS = 10;
 /**

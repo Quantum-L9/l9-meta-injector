@@ -1,8 +1,16 @@
 import type { BlockLocator } from "../documents/decoder";
 import type { DocumentBlockView } from "./document_blocks";
-/** Identity of this reader. Bumped when the vocabulary or the grammar changes. */
+/**
+ * Identity of this reader. The version moves when the grammar changes; the id
+ * moves only when the vocabulary or the record identity does, because the id is
+ * hashed into every `evidence_id` and an unchanged statement must keep its id.
+ *
+ * 1.1.0: numbered and qualified section headings, setext headings, lazy and
+ * soft-break continuation, YAML frontmatter scalars, thematic breaks, and the
+ * `heading_not_recognized` diagnostic.
+ */
 export declare const ARCHITECTURE_STATEMENT_EXTRACTOR_ID = "architecture-statements/v1";
-export declare const ARCHITECTURE_STATEMENT_EXTRACTOR_VERSION = "1.0.0";
+export declare const ARCHITECTURE_STATEMENT_EXTRACTOR_VERSION = "1.1.0";
 /** The five statement classes, in code-point order. Closed. */
 export declare const ARCHITECTURE_STATEMENT_CLASSES: readonly ["assumption", "constraint", "decision_statement", "intent", "open_question"];
 export type ArchitectureStatementClass = (typeof ARCHITECTURE_STATEMENT_CLASSES)[number];
@@ -48,6 +56,17 @@ export interface ArchitectureStatementDraft {
      * checkable against the block's text wherever it came from.
      */
     unit_index: number | null;
+    /**
+     * The last line of the block's text the statement covers (0-based), when it
+     * continues past `unit_index` inside the same block — a wrapped labelled value
+     * or a block-scalar frontmatter value. Null when the statement is one unit.
+     */
+    unit_end_index: number | null;
+    /**
+     * Blocks after `block` that the statement continues into, in order: the lazy
+     * continuation lines of a Markdown list item. Empty for a one-block statement.
+     */
+    continuation_blocks: DocumentBlockView[];
 }
 export interface ArchitectureCoverageDiagnostic {
     code: string;
@@ -83,12 +102,13 @@ export declare function readArchitectureStatements(blocks: readonly DocumentBloc
  * A `line_span` block maps its text lines onto source lines one to one — the
  * text decoder joins the lines of a paragraph with `\n` and starts the span at
  * the first of them — so a statement on unit *k* of the block is on line
- * `line_start + k`, and the locator says exactly that line. Every other locator
- * kind has no coordinate finer than the block, and the block's own locator is
- * cited verbatim; the unit offset is carried beside it rather than converted
- * into a line number the format does not have.
+ * `line_start + k`, and the locator says exactly that line; a statement that
+ * continues to unit *m*, or into the next blocks, ends on the line it ends on.
+ * Every other locator kind has no coordinate finer than the block, and the
+ * block's own locator is cited verbatim; the unit offset is carried beside it
+ * rather than converted into a line number the format does not have.
  */
-export declare function architectureStatementLocator(block: DocumentBlockView, unitIndex: number | null): BlockLocator;
+export declare function architectureStatementLocator(block: DocumentBlockView, unitIndex: number | null, unitEndIndex?: number | null, continuationBlocks?: readonly DocumentBlockView[]): BlockLocator;
 /**
  * The reader's identity, for the profile hash.
  *
