@@ -178,9 +178,9 @@ The npm artifact must satisfy the package path contract, install into a clean co
 
 ### INV-006: Architecture evidence is content-bound
 
-Authority-critical files must match `docs/architecture-manifest.json`. Any change to `docs/architecture.md` or another listed path requires deterministic manifest regeneration.
+The architecture manifest is computed from the tree under test and never committed (ADR-093). Every authority-critical path must exist exactly once as a regular file, never a symlink, and a committed `docs/architecture-manifest.json` is refused.
 
-**Enforced by:** `npm run manifest:update`, `npm run check:manifest`.
+**Enforced by:** `npm run check:manifest`, `tests/architecture_authority.test.ts`.
 
 ## Validation and CI
 
@@ -339,11 +339,12 @@ comparison resting on an inferred key raises a caution rather than an unqualifie
 claim of continuity.
 
 Evidence is bound to what it describes. A validation report names a digest of the
-tree it ran over and is invalid the moment that tree moves; a conformance record
+tree it ran over and is invalid the moment that tree moves; it is local or
+release-artifact evidence and is never committed (ADR-093); a conformance record
 names the exact bytes of every bundle it accepted; a real-archive acceptance run
 scans the roots an operator declared and never discovers one. A dependency update
-is a tree change like any other: it is rebound with `npm run deps:rebind`, never
-exempted (ADR-056).
+is a tree change like any other: CI validates its head, and `npm run deps:rebind`
+is the local equivalent, never an exemption (ADR-056, ADR-093).
 
 **Enforced by:** `tests/corpus_document_participation.test.ts`,
 `tests/document_decoders.test.ts`, `tests/corpus_candidate_diff.test.ts`,

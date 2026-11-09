@@ -1,0 +1,1052 @@
+{
+  "schema": "l9.architecture-statement-coverage/v1",
+  "extractor_id": "architecture-statements/v1",
+  "extractor_version": "1.1.0",
+  "profile_version": "1.2.0",
+  "statement": "Every case is run by tests/architecture_statement_coverage.test.ts through runCorpusScan with the projection selected, over a real file (a real .docx for the Word cases). expect is the complete observation for that file: every record the reader emitted and every coverage diagnostic it raised, in source order. Every line_span record is also checked against the file's own lines, and every docx record against its block's text. A supported case emits; an unsupported case is reported; an excluded case is deliberately not quoted. Nothing outside these cases is claimed.",
+  "cases": [
+    {
+      "id": "S01",
+      "status": "supported",
+      "form": "field_label",
+      "title": "Plain labelled field",
+      "format": "markdown",
+      "path": "s01.md",
+      "source": "# Doc\n\nConstraint: TransportPacket is the only wire format.\n",
+      "note": "A `Label: value` line with a vocabulary label.",
+      "expect": {
+        "records": [
+          {
+            "statement_class": "constraint",
+            "form": "field_label",
+            "label": "constraint",
+            "declared_text": "TransportPacket is the only wire format.",
+            "locator": {
+              "kind": "line_span",
+              "line_start": 3,
+              "line_end": 3
+            },
+            "unit_index": 0,
+            "continuation_blocks": 0
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "S02",
+      "status": "supported",
+      "form": "field_label",
+      "title": "Emphasised label",
+      "format": "markdown",
+      "path": "s02.md",
+      "source": "# Doc\n\n**Decision:** Gate is the only routing authority.\n",
+      "note": "Emphasis around the label is ignored, as the work reader ignores it.",
+      "expect": {
+        "records": [
+          {
+            "statement_class": "decision_statement",
+            "form": "field_label",
+            "label": "decision",
+            "declared_text": "Gate is the only routing authority.",
+            "locator": {
+              "kind": "line_span",
+              "line_start": 3,
+              "line_end": 3
+            },
+            "unit_index": 0,
+            "continuation_blocks": 0
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "S03",
+      "status": "supported",
+      "form": "field_label",
+      "title": "Labelled field inside an ordered list",
+      "format": "markdown",
+      "path": "s03.md",
+      "source": "# Doc\n\n1. Constraint: Nodes never call each other.\n",
+      "note": "The list marker is not part of the label.",
+      "expect": {
+        "records": [
+          {
+            "statement_class": "constraint",
+            "form": "field_label",
+            "label": "constraint",
+            "declared_text": "Nodes never call each other.",
+            "locator": {
+              "kind": "line_span",
+              "line_start": 3,
+              "line_end": 3
+            },
+            "unit_index": 0,
+            "continuation_blocks": 0
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "S04",
+      "status": "supported",
+      "form": "label_list",
+      "title": "Label followed by list items",
+      "format": "markdown",
+      "path": "s04.md",
+      "source": "# Doc\n\nConstraints:\n\n- Secrets are never committed.\n- The audit log is append-only.\n",
+      "note": "`Label:` with an empty value opens a list; the following list items are its members.",
+      "expect": {
+        "records": [
+          {
+            "statement_class": "constraint",
+            "form": "label_list",
+            "label": "constraints",
+            "declared_text": "Secrets are never committed.",
+            "locator": {
+              "kind": "line_span",
+              "line_start": 5,
+              "line_end": 5
+            },
+            "unit_index": 0,
+            "continuation_blocks": 0
+          },
+          {
+            "statement_class": "constraint",
+            "form": "label_list",
+            "label": "constraints",
+            "declared_text": "The audit log is append-only.",
+            "locator": {
+              "kind": "line_span",
+              "line_start": 6,
+              "line_end": 6
+            },
+            "unit_index": 0,
+            "continuation_blocks": 0
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "S05",
+      "status": "supported",
+      "form": "label_list",
+      "title": "Label followed by lines in the same block",
+      "format": "markdown",
+      "path": "s05.md",
+      "source": "# Doc\n\nAssumptions:\nNodes are stateless.\nGate is reachable.\n",
+      "note": "Units after the label inside the same block are its members.",
+      "expect": {
+        "records": [
+          {
+            "statement_class": "assumption",
+            "form": "label_list",
+            "label": "assumptions",
+            "declared_text": "Nodes are stateless.",
+            "locator": {
+              "kind": "line_span",
+              "line_start": 4,
+              "line_end": 4
+            },
+            "unit_index": 1,
+            "continuation_blocks": 0
+          },
+          {
+            "statement_class": "assumption",
+            "form": "label_list",
+            "label": "assumptions",
+            "declared_text": "Gate is reachable.",
+            "locator": {
+              "kind": "line_span",
+              "line_start": 5,
+              "line_end": 5
+            },
+            "unit_index": 2,
+            "continuation_blocks": 0
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "S06",
+      "status": "supported",
+      "form": "section_heading",
+      "title": "ATX section heading",
+      "format": "markdown",
+      "path": "s06.md",
+      "source": "# Doc\n\n## Open Questions\n\n- Should Gate own retries?\n\nWho rotates the signing key?\n",
+      "note": "A list item is one statement; a paragraph is one statement.",
+      "expect": {
+        "records": [
+          {
+            "statement_class": "open_question",
+            "form": "section_heading",
+            "label": "open questions",
+            "declared_text": "Should Gate own retries?",
+            "locator": {
+              "kind": "line_span",
+              "line_start": 5,
+              "line_end": 5
+            },
+            "unit_index": 0,
+            "continuation_blocks": 0
+          },
+          {
+            "statement_class": "open_question",
+            "form": "section_heading",
+            "label": "open questions",
+            "declared_text": "Who rotates the signing key?",
+            "locator": {
+              "kind": "line_span",
+              "line_start": 7,
+              "line_end": 7
+            },
+            "unit_index": null,
+            "continuation_blocks": 0
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "S07",
+      "status": "supported",
+      "form": "section_heading",
+      "title": "Numbered section heading (1.1.0)",
+      "format": "markdown",
+      "path": "s07.md",
+      "source": "# Doc\n\n### 2.1 Open Questions\n\n- Should hop limits live in Gate?\n",
+      "note": "A decimal section number before the label is not part of it.",
+      "expect": {
+        "records": [
+          {
+            "statement_class": "open_question",
+            "form": "section_heading",
+            "label": "open questions",
+            "declared_text": "Should hop limits live in Gate?",
+            "locator": {
+              "kind": "line_span",
+              "line_start": 5,
+              "line_end": 5
+            },
+            "unit_index": 0,
+            "continuation_blocks": 0
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "S08",
+      "status": "supported",
+      "form": "section_heading",
+      "title": "Lettered section heading (1.1.0)",
+      "format": "markdown",
+      "path": "s08.md",
+      "source": "# Doc\n\n## A. Decisions\n\n- Gate routes every inter-node call.\n",
+      "note": "One letter followed by `.` or `)` is a section number.",
+      "expect": {
+        "records": [
+          {
+            "statement_class": "decision_statement",
+            "form": "section_heading",
+            "label": "decisions",
+            "declared_text": "Gate routes every inter-node call.",
+            "locator": {
+              "kind": "line_span",
+              "line_start": 5,
+              "line_end": 5
+            },
+            "unit_index": 0,
+            "continuation_blocks": 0
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "S09",
+      "status": "supported",
+      "form": "section_heading",
+      "title": "Qualified section heading (1.1.0)",
+      "format": "markdown",
+      "path": "s09.md",
+      "source": "# Doc\n\n## Assumptions (v2)\n\n- Nodes are stateless.\n",
+      "note": "One trailing parenthetical qualifier is not part of the label.",
+      "expect": {
+        "records": [
+          {
+            "statement_class": "assumption",
+            "form": "section_heading",
+            "label": "assumptions",
+            "declared_text": "Nodes are stateless.",
+            "locator": {
+              "kind": "line_span",
+              "line_start": 5,
+              "line_end": 5
+            },
+            "unit_index": 0,
+            "continuation_blocks": 0
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "S10",
+      "status": "supported",
+      "form": "section_heading",
+      "title": "Setext section heading (1.1.0)",
+      "format": "markdown",
+      "path": "s10.md",
+      "source": "Doc\n===\n\nConstraints\n-----------\n\n- Engines own no HTTP routes.\n",
+      "note": "An underlined heading is a heading.",
+      "expect": {
+        "records": [
+          {
+            "statement_class": "constraint",
+            "form": "section_heading",
+            "label": "constraints",
+            "declared_text": "Engines own no HTTP routes.",
+            "locator": {
+              "kind": "line_span",
+              "line_start": 7,
+              "line_end": 7
+            },
+            "unit_index": 0,
+            "continuation_blocks": 0
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "S11",
+      "status": "supported",
+      "form": "section_heading",
+      "title": "Indented lazy continuation of a list item (1.1.0)",
+      "format": "markdown",
+      "path": "s11.md",
+      "source": "# Doc\n\n## Constraints\n\n- Every packet change uses derive or\n  withHop; nothing mutates in place.\n- Gate is the only routing authority.\n",
+      "note": "The continuation line belongs to its list item; the statement cites both lines.",
+      "expect": {
+        "records": [
+          {
+            "statement_class": "constraint",
+            "form": "section_heading",
+            "label": "constraints",
+            "declared_text": "Every packet change uses derive or withHop; nothing mutates in place.",
+            "locator": {
+              "kind": "line_span",
+              "line_start": 5,
+              "line_end": 6
+            },
+            "unit_index": 0,
+            "continuation_blocks": 1
+          },
+          {
+            "statement_class": "constraint",
+            "form": "section_heading",
+            "label": "constraints",
+            "declared_text": "Gate is the only routing authority.",
+            "locator": {
+              "kind": "line_span",
+              "line_start": 7,
+              "line_end": 7
+            },
+            "unit_index": 0,
+            "continuation_blocks": 0
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "S12",
+      "status": "supported",
+      "form": "label_list",
+      "title": "Unindented lazy continuation inside a label list under a section (1.1.0)",
+      "format": "markdown",
+      "path": "s12.md",
+      "source": "# Doc\n\n## Constraints\n\n- Chassis owns auth.\n\nAssumptions:\n\n- The chassis owns ingress\nand logging.\n- Engines are execution-only.\n",
+      "note": "A lazy continuation does not end the label list: the next item is still an assumption, not a constraint of the enclosing section.",
+      "expect": {
+        "records": [
+          {
+            "statement_class": "constraint",
+            "form": "section_heading",
+            "label": "constraints",
+            "declared_text": "Chassis owns auth.",
+            "locator": {
+              "kind": "line_span",
+              "line_start": 5,
+              "line_end": 5
+            },
+            "unit_index": 0,
+            "continuation_blocks": 0
+          },
+          {
+            "statement_class": "assumption",
+            "form": "label_list",
+            "label": "assumptions",
+            "declared_text": "The chassis owns ingress and logging.",
+            "locator": {
+              "kind": "line_span",
+              "line_start": 9,
+              "line_end": 10
+            },
+            "unit_index": 0,
+            "continuation_blocks": 1
+          },
+          {
+            "statement_class": "assumption",
+            "form": "label_list",
+            "label": "assumptions",
+            "declared_text": "Engines are execution-only.",
+            "locator": {
+              "kind": "line_span",
+              "line_start": 11,
+              "line_end": 11
+            },
+            "unit_index": 0,
+            "continuation_blocks": 0
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "S13",
+      "status": "supported",
+      "form": "field_label",
+      "title": "Labelled value wrapped across a soft line break (1.1.0)",
+      "format": "markdown",
+      "path": "s13.md",
+      "source": "# Doc\n\nDecision: Gate routes\nevery inter-node call.\nOwner: platform\n",
+      "note": "Running text after a labelled value continues it; a line with its own label does not.",
+      "expect": {
+        "records": [
+          {
+            "statement_class": "decision_statement",
+            "form": "field_label",
+            "label": "decision",
+            "declared_text": "Gate routes every inter-node call.",
+            "locator": {
+              "kind": "line_span",
+              "line_start": 3,
+              "line_end": 4
+            },
+            "unit_index": 0,
+            "continuation_blocks": 0
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "S14",
+      "status": "supported",
+      "form": "field_label",
+      "title": "Frontmatter scalar with a YAML comment (1.1.0)",
+      "format": "markdown",
+      "path": "s14.md",
+      "source": "---\ntype: proposal\nobjective: Ship the router # owner: platform\n---\n# Doc\n",
+      "note": "A trailing YAML comment is not part of the value.",
+      "expect": {
+        "records": [
+          {
+            "statement_class": "intent",
+            "form": "field_label",
+            "label": "objective",
+            "declared_text": "Ship the router",
+            "locator": {
+              "kind": "line_span",
+              "line_start": 3,
+              "line_end": 3
+            },
+            "unit_index": 2,
+            "continuation_blocks": 0
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "S15",
+      "status": "supported",
+      "form": "field_label",
+      "title": "Frontmatter quoted scalars (1.1.0)",
+      "format": "markdown",
+      "path": "s15.md",
+      "source": "---\nobjective: \"Quoted objective\"\nassumption: 'It''s stateless'\n---\n# Doc\n",
+      "note": "A YAML quoted scalar is unquoted.",
+      "expect": {
+        "records": [
+          {
+            "statement_class": "intent",
+            "form": "field_label",
+            "label": "objective",
+            "declared_text": "Quoted objective",
+            "locator": {
+              "kind": "line_span",
+              "line_start": 2,
+              "line_end": 2
+            },
+            "unit_index": 1,
+            "continuation_blocks": 0
+          },
+          {
+            "statement_class": "assumption",
+            "form": "field_label",
+            "label": "assumption",
+            "declared_text": "It's stateless",
+            "locator": {
+              "kind": "line_span",
+              "line_start": 3,
+              "line_end": 3
+            },
+            "unit_index": 2,
+            "continuation_blocks": 0
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "S16",
+      "status": "supported",
+      "form": "field_label",
+      "title": "Frontmatter block scalars (1.1.0)",
+      "format": "markdown",
+      "path": "s16.md",
+      "source": "---\nobjective: |\n  Ship the router.\nconstraint: >-\n  Never mutate\n  packets.\n---\n# Doc\n",
+      "note": "A block scalar's value is its indented lines, not its `|` / `>` header.",
+      "expect": {
+        "records": [
+          {
+            "statement_class": "intent",
+            "form": "field_label",
+            "label": "objective",
+            "declared_text": "Ship the router.",
+            "locator": {
+              "kind": "line_span",
+              "line_start": 2,
+              "line_end": 3
+            },
+            "unit_index": 1,
+            "continuation_blocks": 0
+          },
+          {
+            "statement_class": "constraint",
+            "form": "field_label",
+            "label": "constraint",
+            "declared_text": "Never mutate packets.",
+            "locator": {
+              "kind": "line_span",
+              "line_start": 4,
+              "line_end": 6
+            },
+            "unit_index": 3,
+            "continuation_blocks": 0
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "S17",
+      "status": "supported",
+      "form": "label_list",
+      "title": "Frontmatter block sequence",
+      "format": "markdown",
+      "path": "s17.md",
+      "source": "---\nconstraints:\n  - One wire format.\n  - One routing authority.\n---\n# Doc\n",
+      "note": "A YAML block sequence under a vocabulary key is a label list.",
+      "expect": {
+        "records": [
+          {
+            "statement_class": "constraint",
+            "form": "label_list",
+            "label": "constraints",
+            "declared_text": "One wire format.",
+            "locator": {
+              "kind": "line_span",
+              "line_start": 3,
+              "line_end": 3
+            },
+            "unit_index": 0,
+            "continuation_blocks": 0
+          },
+          {
+            "statement_class": "constraint",
+            "form": "label_list",
+            "label": "constraints",
+            "declared_text": "One routing authority.",
+            "locator": {
+              "kind": "line_span",
+              "line_start": 4,
+              "line_end": 4
+            },
+            "unit_index": 0,
+            "continuation_blocks": 0
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "S18",
+      "status": "supported",
+      "form": "section_heading",
+      "title": "CRLF line endings",
+      "format": "markdown",
+      "path": "s18.md",
+      "source": "# Doc\r\n\r\n## Decisions\r\n\r\n- First decision.\r\n\r\nObjective: Line seven objective.\r\n",
+      "note": "CRLF, LF and lone CR all end one line; coordinates match an editor's.",
+      "expect": {
+        "records": [
+          {
+            "statement_class": "decision_statement",
+            "form": "section_heading",
+            "label": "decisions",
+            "declared_text": "First decision.",
+            "locator": {
+              "kind": "line_span",
+              "line_start": 5,
+              "line_end": 5
+            },
+            "unit_index": 0,
+            "continuation_blocks": 0
+          },
+          {
+            "statement_class": "intent",
+            "form": "field_label",
+            "label": "objective",
+            "declared_text": "Line seven objective.",
+            "locator": {
+              "kind": "line_span",
+              "line_start": 7,
+              "line_end": 7
+            },
+            "unit_index": 0,
+            "continuation_blocks": 0
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "S19",
+      "status": "supported",
+      "form": "section_heading",
+      "title": "Word heading section with a soft-broken list item (1.1.0)",
+      "format": "docx",
+      "path": "s19.docx",
+      "docx": {
+        "title": "Spec",
+        "headings": [
+          "Constraints"
+        ],
+        "paragraphs": [],
+        "listItems": [
+          "TransportPacket is the only\nwire format.",
+          "Gate is the only routing authority."
+        ]
+      },
+      "note": "A Word list paragraph with a soft line break is one item.",
+      "expect": {
+        "records": [
+          {
+            "statement_class": "constraint",
+            "form": "section_heading",
+            "label": "constraints",
+            "declared_text": "TransportPacket is the only wire format.",
+            "locator": {
+              "kind": "docx_block",
+              "block_index": 3,
+              "part": "word/document.xml"
+            },
+            "unit_index": 0,
+            "continuation_blocks": 0
+          },
+          {
+            "statement_class": "constraint",
+            "form": "section_heading",
+            "label": "constraints",
+            "declared_text": "Gate is the only routing authority.",
+            "locator": {
+              "kind": "docx_block",
+              "block_index": 4,
+              "part": "word/document.xml"
+            },
+            "unit_index": 0,
+            "continuation_blocks": 0
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "S20",
+      "status": "supported",
+      "form": "field_label",
+      "title": "Word labelled paragraph with a soft line break (1.1.0)",
+      "format": "docx",
+      "path": "s20.docx",
+      "docx": {
+        "title": "Spec",
+        "headings": [],
+        "paragraphs": [
+          "Decision: Gate routes\nevery inter-node call."
+        ]
+      },
+      "note": "A soft line break inside a labelled Word paragraph does not start a second statement.",
+      "expect": {
+        "records": [
+          {
+            "statement_class": "decision_statement",
+            "form": "field_label",
+            "label": "decision",
+            "declared_text": "Gate routes every inter-node call.",
+            "locator": {
+              "kind": "docx_block",
+              "block_index": 2,
+              "part": "word/document.xml"
+            },
+            "unit_index": 0,
+            "continuation_blocks": 0
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "S21",
+      "status": "supported",
+      "form": "field_label",
+      "title": "Statement longer than the 1024-character bound",
+      "format": "markdown",
+      "path": "s21.md",
+      "source": "# Doc\n\nConstraint: clause000 clause001 clause002 clause003 clause004 clause005 clause006 clause007 clause008 clause009 clause010 clause011 clause012 clause013 clause014 clause015 clause016 clause017 clause018 clause019 clause020 clause021 clause022 clause023 clause024 clause025 clause026 clause027 clause028 clause029 clause030 clause031 clause032 clause033 clause034 clause035 clause036 clause037 clause038 clause039 clause040 clause041 clause042 clause043 clause044 clause045 clause046 clause047 clause048 clause049 clause050 clause051 clause052 clause053 clause054 clause055 clause056 clause057 clause058 clause059 clause060 clause061 clause062 clause063 clause064 clause065 clause066 clause067 clause068 clause069 clause070 clause071 clause072 clause073 clause074 clause075 clause076 clause077 clause078 clause079 clause080 clause081 clause082 clause083 clause084 clause085 clause086 clause087 clause088 clause089 clause090 clause091 clause092 clause093 clause094 clause095 clause096 clause097 clause098 clause099 clause100 clause101 clause102 clause103 clause104 clause105 clause106 clause107 clause108 clause109 clause110 clause111 clause112 clause113 clause114 clause115 clause116 clause117 clause118 clause119 clause120 clause121 clause122 clause123 clause124 clause125 clause126 clause127 clause128 clause129 clause130 clause131 clause132 clause133 clause134 clause135 clause136 clause137 clause138 clause139 clause140 clause141 clause142 clause143 clause144 clause145 clause146 clause147 clause148 clause149 clause150 clause151 clause152 clause153 clause154 clause155 clause156 clause157 clause158 clause159 clause160 clause161 clause162 clause163 clause164 clause165 clause166 clause167 clause168 clause169\n",
+      "note": "Cut at 1024 characters with declared_text_truncated true; the coordinate still identifies it. Reported.",
+      "expect": {
+        "records": [
+          {
+            "statement_class": "constraint",
+            "form": "field_label",
+            "label": "constraint",
+            "declared_text": "clause000 clause001 clause002 clause003 clause004 clause005 clause006 clause007 clause008 clause009 clause010 clause011 clause012 clause013 clause014 clause015 clause016 clause017 clause018 clause019 clause020 clause021 clause022 clause023 clause024 clause025 clause026 clause027 clause028 clause029 clause030 clause031 clause032 clause033 clause034 clause035 clause036 clause037 clause038 clause039 clause040 clause041 clause042 clause043 clause044 clause045 clause046 clause047 clause048 clause049 clause050 clause051 clause052 clause053 clause054 clause055 clause056 clause057 clause058 clause059 clause060 clause061 clause062 clause063 clause064 clause065 clause066 clause067 clause068 clause069 clause070 clause071 clause072 clause073 clause074 clause075 clause076 clause077 clause078 clause079 clause080 clause081 clause082 clause083 clause084 clause085 clause086 clause087 clause088 clause089 clause090 clause091 clause092 clause093 clause094 clause095 clause096 clause097 clause098 clause099 clause100 clause101 cla…",
+            "locator": {
+              "kind": "line_span",
+              "line_start": 3,
+              "line_end": 3
+            },
+            "unit_index": 0,
+            "continuation_blocks": 0
+          }
+        ],
+        "diagnostics": [
+          "architecture_evidence.statement_truncated"
+        ]
+      }
+    },
+    {
+      "id": "U01",
+      "status": "unsupported",
+      "form": "section_heading",
+      "title": "Heading naming two labels",
+      "format": "markdown",
+      "path": "u01.md",
+      "source": "# Doc\n\n## Constraints and Assumptions\n\n- Mixed item.\n",
+      "note": "Ambiguous class; never guessed. Reported.",
+      "expect": {
+        "records": [],
+        "diagnostics": [
+          "architecture_evidence.heading_not_recognized"
+        ]
+      }
+    },
+    {
+      "id": "U02",
+      "status": "unsupported",
+      "form": "section_heading",
+      "title": "Heading naming a label inside a longer phrase",
+      "format": "markdown",
+      "path": "u02.md",
+      "source": "# Doc\n\n## Decision Outcome\n\n- Chosen option.\n",
+      "note": "Only the label itself (with an optional number and qualifier) opens a section. Reported.",
+      "expect": {
+        "records": [],
+        "diagnostics": [
+          "architecture_evidence.heading_not_recognized"
+        ]
+      }
+    },
+    {
+      "id": "U03",
+      "status": "excluded",
+      "form": "section_heading",
+      "title": "Bare Questions heading",
+      "format": "markdown",
+      "path": "u03.md",
+      "source": "# Doc\n\n## Questions\n\n- How do I install it?\n",
+      "note": "A FAQ heading is not a list of unresolved questions. Deliberately silent: `questions` is not a vocabulary word.",
+      "expect": {
+        "records": [],
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "U04",
+      "status": "unsupported",
+      "form": "section_heading",
+      "title": "Pipe table under a labelled section",
+      "format": "markdown",
+      "path": "u04.md",
+      "source": "# Doc\n\n## Decisions\n\n| Decision | Owner |\n| --- | --- |\n| Use Gate | platform |\n",
+      "note": "Tables are never interpreted. Reported, and the empty section is reported.",
+      "expect": {
+        "records": [],
+        "diagnostics": [
+          "architecture_evidence.section_without_items",
+          "architecture_evidence.unsupported_member_block"
+        ]
+      }
+    },
+    {
+      "id": "U05",
+      "status": "unsupported",
+      "form": "field_label",
+      "title": "Frontmatter flow collection",
+      "format": "markdown",
+      "path": "u05.md",
+      "source": "---\nconstraints: [one, two]\n---\n# Doc\n",
+      "note": "A flow collection is not quoted as one statement. Reported.",
+      "expect": {
+        "records": [],
+        "diagnostics": [
+          "architecture_evidence.frontmatter_flow_collection_unsupported"
+        ]
+      }
+    },
+    {
+      "id": "U06",
+      "status": "unsupported",
+      "form": "field_label",
+      "title": "Frontmatter block scalar continued after a blank line",
+      "format": "markdown",
+      "path": "u06.md",
+      "source": "---\nobjective: |\n\n  Ship it.\n---\n# Doc\n",
+      "note": "A block scalar is read only inside its block. Reported.",
+      "expect": {
+        "records": [],
+        "diagnostics": [
+          "architecture_evidence.frontmatter_block_scalar_unread"
+        ]
+      }
+    },
+    {
+      "id": "U07",
+      "status": "unsupported",
+      "form": "label_list",
+      "title": "Empty label list",
+      "format": "markdown",
+      "path": "u07.md",
+      "source": "# Doc\n\nConstraints:\n\nNothing listed here.\n",
+      "note": "Reported as an empty declaration.",
+      "expect": {
+        "records": [],
+        "diagnostics": [
+          "architecture_evidence.empty_declaration"
+        ]
+      }
+    },
+    {
+      "id": "U08",
+      "status": "unsupported",
+      "form": "section_heading",
+      "title": "Empty section",
+      "format": "markdown",
+      "path": "u08.md",
+      "source": "# Doc\n\n## Decisions\n\n## Next\n",
+      "note": "Reported as a section without items.",
+      "expect": {
+        "records": [],
+        "diagnostics": [
+          "architecture_evidence.section_without_items"
+        ]
+      }
+    },
+    {
+      "id": "U09",
+      "status": "excluded",
+      "form": "section_heading",
+      "title": "Foreign label under a section",
+      "format": "markdown",
+      "path": "u09.md",
+      "source": "# Doc\n\n## Constraints\n\nOwner: mel\n",
+      "note": "A label of no vocabulary is not a constraint. Reported.",
+      "expect": {
+        "records": [],
+        "diagnostics": [
+          "architecture_evidence.section_without_items",
+          "architecture_evidence.labelled_member_skipped"
+        ]
+      }
+    },
+    {
+      "id": "U10",
+      "status": "excluded",
+      "form": "section_heading",
+      "title": "Work signal under a section",
+      "format": "markdown",
+      "path": "u10.md",
+      "source": "# Doc\n\n## Constraints\n\n- [ ] ship it\n",
+      "note": "Already a work signal; silently not quoted. The empty section is reported.",
+      "expect": {
+        "records": [],
+        "diagnostics": [
+          "architecture_evidence.section_without_items"
+        ]
+      }
+    },
+    {
+      "id": "U11",
+      "status": "excluded",
+      "form": "field_label",
+      "title": "Label mentioned inside inline code (1.1.0)",
+      "format": "markdown",
+      "path": "u11.md",
+      "source": "# Doc\n\nThe reader recognizes\n`Decision:` — and quotes what follows.\n",
+      "note": "A colon inside a code span is a mention, not a declaration.",
+      "expect": {
+        "records": [],
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "U12",
+      "status": "excluded",
+      "form": "section_heading",
+      "title": "Fenced code ends a section",
+      "format": "markdown",
+      "path": "u12.md",
+      "source": "# Doc\n\n## Constraints\n\n```\nConstraint: example only\n```\n\nAfter the fence.\n",
+      "note": "Code is never read, and a fence ends the section. Reported as empty.",
+      "expect": {
+        "records": [],
+        "diagnostics": [
+          "architecture_evidence.section_without_items"
+        ]
+      }
+    },
+    {
+      "id": "U13",
+      "status": "excluded",
+      "form": "section_heading",
+      "title": "Thematic break under a section (1.1.0)",
+      "format": "markdown",
+      "path": "u13.md",
+      "source": "# Doc\n\n## Constraints\n\nFirst constraint.\n\n---\n\nSecond constraint.\n",
+      "note": "A thematic break is never a statement.",
+      "expect": {
+        "records": [
+          {
+            "statement_class": "constraint",
+            "form": "section_heading",
+            "label": "constraints",
+            "declared_text": "First constraint.",
+            "locator": {
+              "kind": "line_span",
+              "line_start": 5,
+              "line_end": 5
+            },
+            "unit_index": null,
+            "continuation_blocks": 0
+          },
+          {
+            "statement_class": "constraint",
+            "form": "section_heading",
+            "label": "constraints",
+            "declared_text": "Second constraint.",
+            "locator": {
+              "kind": "line_span",
+              "line_start": 9,
+              "line_end": 9
+            },
+            "unit_index": null,
+            "continuation_blocks": 0
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "U14",
+      "status": "excluded",
+      "form": "field_label",
+      "title": "Credential-shaped value",
+      "format": "markdown",
+      "path": "u14.md",
+      "source": "# Doc\n\nConstraint: AKIAIOSFODNN7EXAMPLE is the key\n",
+      "note": "Dropped, never redacted. Reported.",
+      "expect": {
+        "records": [],
+        "diagnostics": [
+          "architecture_evidence.secret_value_suppressed"
+        ]
+      }
+    },
+    {
+      "id": "U15",
+      "status": "excluded",
+      "form": "none",
+      "title": "Prose that only sounds like a constraint",
+      "format": "markdown",
+      "path": "u15.md",
+      "source": "# Doc\n\nWe must never mutate packets in place.\n",
+      "note": "No inference: an unlabelled sentence declares nothing.",
+      "expect": {
+        "records": [],
+        "diagnostics": []
+      }
+    },
+    {
+      "id": "U16",
+      "status": "unsupported",
+      "form": "section_heading",
+      "title": "Word table under a heading",
+      "format": "docx",
+      "path": "u16.docx",
+      "docx": {
+        "title": "Spec",
+        "headings": [
+          "Decisions"
+        ],
+        "paragraphs": [],
+        "table": [
+          [
+            "Decision",
+            "Owner"
+          ],
+          [
+            "Use Gate",
+            "platform"
+          ]
+        ]
+      },
+      "note": "Tables are never interpreted. Reported.",
+      "expect": {
+        "records": [],
+        "diagnostics": [
+          "architecture_evidence.section_without_items",
+          "architecture_evidence.unsupported_member_block"
+        ]
+      }
+    }
+  ]
+}

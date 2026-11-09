@@ -433,10 +433,20 @@ npm run local-source -- \
   text file has or the block a Word document has. Every record is **source-declared and
   never authority-verified** — a recorded decision is not an accepted one — and carries
   both artifact identities, the document's own `work.kind`/`work.status` declarations by
-  assertion id, and the `architecture-development/v1` selection verdict with the rule and
+  assertion id, and the `architecture-development/v2` selection verdict with the rule and
   evidence that decided it. Complete, hashed and manifest-bound like the work signals;
   selecting it moves `corpus_analysis_id` and nothing else. See
   [`docs/architecture-evidence.md`](docs/architecture-evidence.md) (ADR-087, Proposed).
+- **`corpus-query-cli.js`** asks one bounded question of a completed generation and
+  answers from its own records: `--class open_question --text Gate`,
+  `--class decision_statement --status wip`, `--predicate work.status --root Designs`.
+  It pins `CURRENT.json` once, verifies every file against the pointer and every payload
+  with the scan's own verifiers, reads the architecture evidence, the work-signal payload
+  and each root packet, and returns records with their identities, native coordinates and
+  bounded excerpts — every declaration retained, nothing ranked, inferred, resolved or
+  written. A partial snapshot is `incomplete`, an unobserved root `unavailable`, a failed
+  verification `invalid`. See [`docs/corpus-evidence-query.md`](docs/corpus-evidence-query.md)
+  (ADR-088, Proposed).
 - **`document-index.json`** (`l9.document-index/v2`) names, for every decoded document,
   the decoder that actually read it, the format it was read as, its block count and its
   locator type — and derives `normalized_document_id` from that decoder, because that id
@@ -561,15 +571,16 @@ npm ci
 npm run validate
 ```
 
-The canonical gate covers typing, tests, the exact API contract, architecture authority, deterministic manifest, committed distribution parity, selfpack, and an installed-tarball consumer. Developing this repository needs Node `>=22.13` (vitest 5, eslint 10); the published package still runs on Node `>=18`.
+The canonical gate covers typing, tests, the exact API contract, architecture authority, computed architecture manifest, committed distribution parity, selfpack, and an installed-tarball consumer. Developing this repository needs Node `>=22.13` (vitest 5, eslint 10); the published package still runs on Node `>=18`.
 
-Consumer alignment is proved separately: `npm run topology:conformance` runs the committed golden bundles through the real `Quantum-L9/l9-constellation-topology` consumer named in `docs/topology-conformance.json`, and the `Topology conformance` workflow does the same on every pull request, plus a packet of this tree. A dependency update is landed with `npm run deps:rebind` (ADR-056).
+Consumer alignment is proved separately: `npm run topology:conformance` runs the committed golden bundles through the real `Quantum-L9/l9-constellation-topology` consumer named in `docs/topology-conformance.json`, and the `Topology conformance` workflow does the same on every pull request, plus a packet of this tree. A dependency update is verified locally with `npm run deps:rebind` (ADR-056, ADR-093).
 
 `npm run validate:report` runs the gate and writes `CURRENT_VALIDATION_REPORT.md`,
 recording the exit code each command actually returned and binding the result to a digest
 of the tree it ran over. `npm run validate:report -- --check` fails when that digest has
 moved, so a report written against an earlier tree cannot be presented as evidence for
-this one.
+this one. The report is gitignored and never committed; release preparation uploads it as
+a workflow artifact (ADR-093).
 
 `L9_ACCEPTANCE_CORPUS_MANIFEST=<manifest.json> npm test` additionally scans a real
 archive an operator names — roots the manifest declares and nothing else. Nothing

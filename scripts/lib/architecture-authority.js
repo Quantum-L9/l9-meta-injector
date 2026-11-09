@@ -492,8 +492,15 @@ function verifyLegacyArchive(root = REPO) {
   }
   return errors;
 }
-function buildManifest(root = REPO) {
-  const entries = AUTHORITY_CRITICAL_PATHS.map((rel) => {
+// ADR-093: the manifest is computed from the tree under test and never committed.
+// A file at this path is a revived per-PR artifact and is refused by check:manifest.
+const RETIRED_MANIFEST = "docs/architecture-manifest.json";
+function buildManifest(root = REPO, paths = AUTHORITY_CRITICAL_PATHS) {
+  const seen = new Set();
+  const entries = paths.map((rel) => {
+    if (seen.has(rel)) fail(`authority-critical file listed twice: ${rel}`);
+    seen.add(rel);
+    if (rel === RETIRED_MANIFEST) fail(`authority-critical list names the retired manifest: ${rel}`);
     if (!isRegularFile(root, rel)) fail(`missing or unsafe authority-critical file: ${rel}`);
     const content = fs.readFileSync(path.join(root, rel));
     return { path: rel, git_blob_sha1: gitBlobSha(content) };
@@ -502,13 +509,13 @@ function buildManifest(root = REPO) {
     schema: "l9.architecture-manifest/v1",
     repository: "Quantum-L9/l9-meta-injector",
     authority: "docs/architecture-authority.json",
-    note: "The manifest excludes itself to avoid a self-referential digest. Git blob identities are content-bound and verified from the working tree.",
+    note: "Computed from the working tree under test and never committed (ADR-093). Git blob identities are content-bound.",
     entries,
   };
 }
 function stableJson(value) { return JSON.stringify(value, null, 2) + "\n"; }
 module.exports = {
-  REPO, EXPECTED_PERSISTED_OUTPUTS, AUTHORITY_CRITICAL_PATHS, LEGACY_ARCHIVE_BLOBS,
+  REPO, EXPECTED_PERSISTED_OUTPUTS, AUTHORITY_CRITICAL_PATHS, LEGACY_ARCHIVE_BLOBS, RETIRED_MANIFEST,
   buildManifest, stableJson, readJson, fail, gitBlobSha, isRegularFile, isDirectory,
   validateAuthorityDocument, validateAuthoritySchemaDocument, validateTraceabilityDocument,
   verifyLegacyArchive,

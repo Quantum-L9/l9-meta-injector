@@ -6,6 +6,34 @@
 
 - `local-source` corpus mode now honours `--generated-at`: the value is recorded in every root packet and Repository Model bundle, every root's acquisition manifest (`observed_at`) and the corpus-intelligence packet and bundle manifest (`created_at`), so two runs over the same bytes with the same flags publish the same `generation_id`. The value must be an exact UTC instant (`YYYY-MM-DDTHH:MM:SS[.sss]Z`); anything else exits 2 before reading. Without the flag nothing changes. No semantic identity moves; `CURRENT.json` `committed_at` stays the wall clock.
 
+### Document-role selection closure (ADR-090, Proposed)
+
+- Selection `architecture-development/v2` (policy 2.0.0) adds the `decision_record`, `research` and `historical_record` roles and reads the declarations that establish them from the document's own blocks: `document.declared_status` (`## Status` → `Accepted.`, `- **Status:** Proposed`; closed vocabulary `accepted`/`deprecated`/`proposed`/`rejected`/`superseded`, never a value the work reader already reads) and `document.decision_record_title` (`ADR-NNN` titles). Each declaration is cited by `declaration_id`, block and coordinate in `work_context.declarations` and in role evidence (`source: document_declaration`).
+- Contradictory statuses are kept: `selection.status_families` / `status_conflict`. Every record is still emitted; the payload verifier refuses a selected record without reasons or role evidence.
+- The policy is hashed on its own (`selection_policy_hash` in the manifest) and inside the profile hash (profile 1.2.0); no `evidence_id`, source snapshot or packet moves.
+- `corpus-query --role NAME` and `--selected-only`: opt-in, architecture-evidence only; the request echo names them only when given, so default responses are byte-identical.
+
+### Per-PR generated evidence retired (ADR-093)
+
+- `CURRENT_VALIDATION_REPORT.md` and `docs/architecture-manifest.json` are no longer committed. Both moved on almost every pull request and made every open pull request conflict with every other.
+- `npm run check:manifest` computes the manifest in memory: every authority-critical path must exist once as a regular file, and a committed `docs/architecture-manifest.json` is refused. `npm run manifest:update` is removed; `node scripts/generate-architecture-manifest.js` prints the computed manifest without writing it.
+- `npm run validate:report` and `--check` are unchanged; the report path is gitignored, and `release-prep.yml` uploads it as a workflow artifact instead of committing it.
+- `npm run deps:rebind` now runs `npm ci`, `build`, `lint` and `validate`; there is nothing left to rebind.
+
+### Architecture statement reader 1.1.0 — coverage closure (ADR-089, Proposed)
+
+- `architecture-statements/v1` 1.1.0 (id unchanged, so every statement read as before keeps its `evidence_id`): section headings may carry a section number (`## 2.1 Open Questions`, `## A. Decisions`) and one parenthetical qualifier (`## Assumptions (v2)`); setext headings are headings; a CommonMark lazy continuation line is joined to its list item and no longer ends the enclosing label list, so an `Assumptions:` list under `## Constraints` stays assumptions; running text after a labelled value continues it across a soft line break, and a Word list paragraph with soft breaks is one item; frontmatter is read with the work reader's YAML scalar rules (comments cut, quoted scalars unquoted, block-scalar values read, flow collections reported); thematic breaks and labels inside inline code spans are not statements.
+- New coverage diagnostics: `heading_not_recognized`, `frontmatter_flow_collection_unsupported`, `frontmatter_block_scalar_unread`.
+- Records carry `continuation_block_ids`; a `line_span` locator ends on the statement's last line. Profile 1.1.0; the profile hash moves `corpus_analysis_id` only for runs that select the projection.
+- `docs/architecture-statement-coverage.json` / `.md`: the exact supported-input matrix (37 cases), enforced by `tests/architecture_statement_coverage.test.ts` against real files with source-coordinate verification.
+
+### Read-only corpus evidence query (ADR-088, Proposed)
+
+- `node scripts/corpus-query-cli.js --out <dir> [--root|--artifact|--predicate|--class|--text|--kind|--status|--source] [--limit N] [--max-excerpt-bytes N]` (`npm run corpus-query`) asks one bounded question of one completed generation. `CURRENT.json` is resolved once; every file read must be named by it, sit inside the generation (no symlinks), and hash to its record; `document-work-signals.jsonl` and `architecture-evidence.jsonl` are verified with the scan's own verifiers and each root packet must be the one the snapshot recorded. Any failure is an `invalid` outcome with no results.
+- Three sources answer: the architecture evidence (by statement class), the work-signal payload (by predicate) and each root packet's artifact-scoped assertions (by predicate), so Markdown line spans and Word block locators both come back under their own field names. Every record carries its identities, native coordinate, bounded excerpt, every `work.kind`/`work.status` the document declared, `epistemic_class: "source-declared"` and `authority_verified: false`.
+- Each root packet is also re-validated with `validateRepositoryModelPacket` (recomputed semantic hash and referential invariants), so a rewritten assertion whose pointer hash was updated to match is still refused; a pointer without a well-formed file list is `invalid`, not a crash. Both from review of PR #140.
+- Outcomes: `ok`, `empty`, `incomplete` (partial snapshot), `unavailable` (unknown or unobserved root/artifact), `unsupported`, `invalid`. The snapshot's verification class is carried verbatim with an evidence-age statement. Deterministic order, stated truncation, no paging, no wall clock, no absolute path. One response contract, `l9.corpus-evidence-query/v1`; no package export, no pipeline, identity or output change.
+
 ### Architecture evidence projection (ADR-087, Proposed)
 
 - `architecture-statements/v1` reads the explicit `intent`, `constraint`, `assumption`, `open_question` and `decision_statement` declarations a document makes — labelled fields (`Objective:`, `Decision:`), labelled lists (`Constraints:` then items) and labelled sections (`## Open Questions`) — over the normalized blocks every decoder already produces, so Markdown and Word are read by one implementation. A text statement cites its exact line; every other format cites its block locator. Constructs outside the grammar (empty labels, empty sections, tables, foreign `Label: value` lines, credential-shaped text) are coverage diagnostics, never guesses.
