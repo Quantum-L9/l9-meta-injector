@@ -651,7 +651,21 @@ export function verifyFieldSelectionExport(input: VerifyFieldSelectionInput): st
     if (record.selected_field_count > manifest.budget.max_fields || record.selected_character_count > manifest.budget.max_characters) {
       problems.push(`view ${record.view_id} exceeds the budget`);
     }
+    if (record.intent !== manifest.intent || record.policy_id !== manifest.policy_id || record.policy_version !== manifest.policy_version) {
+      problems.push(`view ${record.view_id} was not selected under the manifest's intent and policy`);
+    }
+    if (record.carrier_disposition !== "external_generation") {
+      problems.push(`view ${record.view_id} names carrier '${String(record.carrier_disposition)}', not the external generation`);
+    }
     for (const decision of record.fields) {
+      if (!(FIELD_SELECTION_FIELDS as readonly string[]).includes(decision.field)) {
+        problems.push(`view ${record.view_id} decides '${String(decision.field)}', which is not in the field vocabulary`);
+      }
+      if (decision.selected_values.length > manifest.budget.max_values_per_field) {
+        problems.push(
+          `view ${record.view_id} selects ${decision.selected_values.length} value(s) of ${decision.field}, over the budget's ${manifest.budget.max_values_per_field} per field`,
+        );
+      }
       if (!(FIELD_DISPOSITIONS as readonly string[]).includes(decision.disposition)) {
         problems.push(`view ${record.view_id} gives ${decision.field} the unknown disposition '${decision.disposition}'`);
       }

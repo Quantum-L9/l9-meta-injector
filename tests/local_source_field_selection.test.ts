@@ -21,8 +21,10 @@ import {
   FIELD_SELECTION_POLICY_ID,
   STATEMENT_FIELDS_COVER_CLASSES,
   fieldSelectionPolicyHash,
+  buildFieldSelectionExport,
   fieldSelectionProfileHash,
   selectFieldsForDocument,
+  verifyFieldSelectionExport,
 } from "../src/corpus_field_selection";
 import type { FieldSelectionManifest, FieldSelectionRecord } from "../src/corpus_field_selection";
 
@@ -427,5 +429,55 @@ describe("marginal utility inside one document", () => {
     );
     expect(record.roles).toEqual(["unknown"]);
     expect(STATEMENT_FIELDS_COVER_CLASSES).toBe(true);
+  });
+});
+
+describe("the view's own verifier enforces every budget and identity it states", () => {
+  it("refuses a view over the per-field value budget, under another intent, or naming another carrier", () => {
+    const built = buildFieldSelectionExport({
+      corpusSourceSnapshotId: "corpus-source-snapshot:x",
+      corpusAnalysisId: "corpus-analysis:x",
+      intent: "history_audit",
+      budget: { maxFields: 6, maxValuesPerField: 1, maxCharacters: 2000 },
+      documents: [
+        {
+          artifactId: "vsrc:a",
+          rmpArtifactId: "artifact:a",
+          sourcePath: "a.md",
+          format: "markdown",
+          architectureRecords: [],
+          workValues: [{ record_id: "assertion:1", source: "repository_model_packet", predicate: "work.status", object: "superseded" }],
+          exactDuplicate: null,
+          nearDuplicateCandidateIds: [],
+        },
+      ],
+    });
+    const verify = (records: FieldSelectionRecord[]) => {
+      const payloadJsonl = records.map((record) => `${JSON.stringify(record)}\n`).join("");
+      return verifyFieldSelectionExport({
+        manifest: built.manifest,
+        payloadJsonl,
+        knownRecordIds: new Set(["assertion:1", "assertion:2"]),
+        knownArtifactIds: new Set(["vsrc:a"]),
+      });
+    };
+    const record = built.records[0] as FieldSelectionRecord;
+    const status = record.fields.find((field) => field.field === "work.status");
+    const overBudget = {
+      ...record,
+      fields: record.fields.map((field) =>
+        field === status
+          ? { ...field, selected_values: [...field.selected_values, { record_id: "assertion:2", source: "repository_model_packet" as const, value: "archived" }] }
+          : field),
+    };
+    expect(verify([overBudget])).toContain(
+      `view ${record.view_id} selects 2 value(s) of work.status, over the budget's 1 per field`,
+    );
+    expect(verify([{ ...record, intent: "architecture_review" }])).toContain(
+      `view ${record.view_id} was not selected under the manifest's intent and policy`,
+    );
+    expect(verify([{ ...record, carrier_disposition: "inline_managed" as never }])).toContain(
+      `view ${record.view_id} names carrier 'inline_managed', not the external generation`,
+    );
   });
 });
