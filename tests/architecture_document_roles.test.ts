@@ -39,115 +39,70 @@ afterAll(() => {
 // Titles are chosen so they declare no work.kind: the work reader reads the first
 // and last title word as a kind (`# Notes` is a notes document, `# Rollout plan` a
 // plan), and a role test must not get its role from a title by accident.
+
+/** A Markdown document: blocks separated by one blank line, ending in a newline. */
+function markdown(...blocks: string[]): string {
+  return `${blocks.join("\n\n")}\n`;
+}
+
+/** A `## heading` and the lines under it, as one block. */
+function section(heading: string, ...lines: string[]): string {
+  return `## ${heading}\n\n${lines.join("\n")}`;
+}
+
+/** YAML frontmatter, immediately followed by the document. */
+function withFrontmatter(fields: string[], document: string): string {
+  return `---\n${fields.join("\n")}\n---\n${document}`;
+}
+
 const CORPUS: Record<string, string> = {
-  "decisions/adr-012-gate-routing.md": [
+  "decisions/adr-012-gate-routing.md": markdown(
     "# ADR-012: Gate is the routing authority",
-    "",
-    "## Status",
-    "",
-    "Accepted.",
-    "",
-    "## Decision",
-    "",
-    "Gate is the only routing authority.",
-    "",
-    "## Constraints",
-    "",
-    "- Nodes never call each other.",
-    "",
-    "## Assumptions",
-    "",
-    "- Nodes are stateless.",
-    "",
-    "## Open Questions",
-    "",
-    "- Should Gate own retries?",
-    "",
-  ].join("\n"),
-  "decisions/adr-003-peer-routing.md": [
+    section("Status", "Accepted."),
+    section("Decision", "Gate is the only routing authority."),
+    section("Constraints", "- Nodes never call each other."),
+    section("Assumptions", "- Nodes are stateless."),
+    section("Open Questions", "- Should Gate own retries?"),
+  ),
+  "decisions/adr-003-peer-routing.md": markdown(
     "# ADR-003: Peer routing",
-    "",
-    "## Status",
-    "",
-    "Superseded by ADR-012.",
-    "",
-    "## Decision",
-    "",
-    "Nodes resolve their peers from configuration.",
-    "",
-    "## Objectives",
-    "",
-    "- Keep routing out of the hub.",
-    "",
-  ].join("\n"),
-  "decisions/adr-020-retry-budget.md": [
+    section("Status", "Superseded by ADR-012."),
+    section("Decision", "Nodes resolve their peers from configuration."),
+    section("Objectives", "- Keep routing out of the hub."),
+  ),
+  "decisions/adr-020-retry-budget.md": markdown(
     "# ADR-020: Retry budgets",
-    "",
-    "## Status",
-    "",
-    "**Proposed** (2026-11-08)",
-    "",
+    section("Status", "**Proposed** (2026-11-08)"),
     "Decision: Gate owns a retry budget per tenant.",
-    "",
-  ].join("\n"),
-  "research/caching-study.md": [
-    "---",
-    "type: research",
-    "---",
-    "# Caching study",
-    "",
-    "Objective: Measure whether packet caching pays for itself.",
-    "Assumption: Most packets are read once.",
-    "Open question: Is the cache tenant-scoped?",
-    "Constraint: The study writes nothing to production.",
-    "",
-  ].join("\n"),
-  "archive/old-plan.md": [
+  ),
+  "research/caching-study.md": withFrontmatter(
+    ["type: research"],
+    markdown(
+      "# Caching study",
+      [
+        "Objective: Measure whether packet caching pays for itself.",
+        "Assumption: Most packets are read once.",
+        "Open question: Is the cache tenant-scoped?",
+        "Constraint: The study writes nothing to production.",
+      ].join("\n"),
+    ),
+  ),
+  "archive/old-plan.md": markdown(
     "# Rollout of peer routing",
-    "",
     "Status: archived",
-    "",
-    "Objective: Roll out peer routing to every node.",
-    "Constraint: One node at a time.",
-    "",
-  ].join("\n"),
-  "plans/conflicted.md": [
-    "---",
-    "status: wip",
-    "---",
-    "# Retry plan",
-    "",
-    "## Status",
-    "",
-    "Accepted.",
-    "",
-    "Decision: Retries live in Gate.",
-    "",
-  ].join("\n"),
-  "notes/prose-status.md": [
+    "Objective: Roll out peer routing to every node.\nConstraint: One node at a time.",
+  ),
+  "plans/conflicted.md": withFrontmatter(
+    ["status: wip"],
+    markdown("# Retry plan", section("Status", "Accepted."), "Decision: Retries live in Gate."),
+  ),
+  "notes/prose-status.md": markdown(
     "# Meeting log",
-    "",
     "The status is accepted by everyone we asked.",
-    "",
     "Objective: Keep the notes short.",
-    "",
-  ].join("\n"),
-  "notes/label-accepted.md": [
-    "# Label check",
-    "",
-    "Status: Accepted",
-    "",
-    "Decision: Labels are read as declarations.",
-    "",
-  ].join("\n"),
-  "notes/label-superseded.md": [
-    "# Replaced approach",
-    "",
-    "Status: superseded",
-    "",
-    "Decision: This was replaced.",
-    "",
-  ].join("\n"),
+  ),
+  "notes/label-accepted.md": markdown("# Label check", "Status: Accepted", "Decision: Labels are read as declarations."),
+  "notes/label-superseded.md": markdown("# Replaced approach", "Status: superseded", "Decision: This was replaced."),
 };
 
 let out: string;
