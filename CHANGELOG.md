@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Reproducible corpus generations under --generated-at (ADR-092, Proposed)
+
+- `local-source` corpus mode now honours `--generated-at`: the value is recorded in every root packet and Repository Model bundle, every root's acquisition manifest (`observed_at`) and the corpus-intelligence packet and bundle manifest (`created_at`), so two runs over the same bytes with the same flags publish the same `generation_id`. The value must be an exact UTC instant (`YYYY-MM-DDTHH:MM:SS[.sss]Z`); anything else exits 2 before reading. Without the flag nothing changes. No semantic identity moves; `CURRENT.json` `committed_at` stays the wall clock.
+
 ### Document-role selection closure (ADR-090, Proposed)
 
 - Selection `architecture-development/v2` (policy 2.0.0) adds the `decision_record`, `research` and `historical_record` roles and reads the declarations that establish them from the document's own blocks: `document.declared_status` (`## Status` → `Accepted.`, `- **Status:** Proposed`; closed vocabulary `accepted`/`deprecated`/`proposed`/`rejected`/`superseded`, never a value the work reader already reads) and `document.decision_record_title` (`ADR-NNN` titles). Each declaration is cited by `declaration_id`, block and coordinate in `work_context.declarations` and in role evidence (`source: document_declaration`).
