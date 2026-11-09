@@ -386,17 +386,28 @@ describe("a failing or malformed provider stops the pass", () => {
     const long = (word: string) => Array.from({ length: 600 }, () => word).join(" ");
     let failedAt = Number.POSITIVE_INFINITY;
     let alphaCalls = 0;
+    let signalFailure: () => void = () => undefined;
+    const failed = new Promise<void>((resolve) => {
+      signalFailure = resolve;
+    });
     const scripted = new ScriptedProvider(async (text) => {
       if (text.includes("alphaword")) {
         alphaCalls += 1;
         await delay(5);
         if (alphaCalls === 2) {
           failedAt = Date.now();
+          signalFailure();
           throw new Error("second chunk refused");
         }
         return { vector: [1, 0] };
       }
-      await delay(25);
+      // Beta's first chunk stays in flight until alpha's failure has fired, then
+      // yields one macrotask so the runner sees the rejection. Its answer always
+      // arrives after the failure, whatever the timers do under load; a fixed
+      // sleep let it land first on a busy runner and legitimately send a second
+      // chunk. The bounded race keeps a broken runner from hanging the test.
+      await Promise.race([failed, delay(2000)]);
+      await delay(1);
       return { vector: [0, 1] };
     });
     await expect(runEmbeddings({
