@@ -226,7 +226,7 @@
     },
     {
       "path": "dist/corpus_scan.d.ts",
-      "git_blob_sha1": "3d9118cbcfc25cb6240ac18b4199e3a42cb7c9a3"
+      "git_blob_sha1": "695194539f1a780debb22b808c220437c4f5ccd4"
     },
     {
       "path": "dist/corpus_scan.js",
@@ -922,7 +922,7 @@
     },
     {
       "path": "src/corpus_scan.ts",
-      "git_blob_sha1": "324e22c7dc6f1d8897412d94e4be2e010e8666d3"
+      "git_blob_sha1": "30cc98bf855e12ed1d09b2588fb92b690237c1d1"
     },
     {
       "path": "src/corpus_semantic_run.ts",
