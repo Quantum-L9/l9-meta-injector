@@ -39,6 +39,7 @@ import {
   ARCHITECTURE_DOCUMENT_ROLES,
   ARCHITECTURE_EVIDENCE_SCHEMA,
   verifyArchitectureEvidenceExport,
+  type ArchitectureDocumentRole,
 } from "./corpus_architecture_evidence";
 import type {
   ArchitectureEvidenceManifest,
@@ -139,9 +140,11 @@ export interface EvidenceQueryInput {
   source?: EvidenceSource;
   /**
    * Only architecture-evidence records whose document holds this selection role
-   * (ADR-090). Other sources carry no role and are not returned.
+   * (ADR-090). Other sources carry no role and are not returned. Callers that
+   * cannot be type-checked (the CLI) may still pass any string; an unknown role
+   * is answered `unsupported` at run time.
    */
-  role?: string;
+  role?: ArchitectureDocumentRole;
   /**
    * Only architecture-evidence records the selection profile marked selected.
    * Every other record stays in the generation; this narrows the answer only.

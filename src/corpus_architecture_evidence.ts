@@ -1035,7 +1035,7 @@ export function verifyArchitectureEvidenceExport(
       problems.push(`record ${record.evidence_id} is not classed ${ARCHITECTURE_EVIDENCE_EPISTEMIC_CLASS} with authority_verified false`);
     }
     const selection = record.selection;
-    if (selection !== undefined && selection.selected !== (selection.reasons?.length ?? 0) > 0) {
+    if (selection !== undefined && selection.selected !== ((selection.reasons?.length ?? 0) > 0)) {
       problems.push(`record ${record.evidence_id} is marked selected=${String(selection.selected)} with ${selection.reasons?.length ?? 0} reason(s)`);
     }
     if (
