@@ -17,6 +17,7 @@ import { ARCHITECTURE_EVIDENCE_PROFILE_VERSION } from "../src/corpus_architectur
 import {
   ARCHITECTURE_STATEMENT_EXTRACTOR_ID,
   ARCHITECTURE_STATEMENT_EXTRACTOR_VERSION,
+  readArchitectureStatements,
 } from "../src/extractors/architecture_statements";
 import { containsWords, loadCoverageMatrix, observeCase, wordsOf } from "./helpers/architecture_coverage";
 
@@ -95,4 +96,47 @@ describe("the architecture-statement coverage matrix", () => {
       }
     });
   }
+});
+
+// Review of #147 (Copilot, two medium findings): the frontmatter bound must equal
+// the work reader's, and a code span is delimited by equal backtick runs, not by
+// an odd count. Both are read through the real block reader.
+describe("frontmatter bound and code spans agree with the readers they mirror", () => {
+  const paragraph = (lines: string[], start = 1) => ({
+    block_id: `block:${start}`,
+    kind: "paragraph" as const,
+    text: lines.join("\n"),
+    locator: { kind: "line_span" as const, line_start: start, line_end: start + lines.length - 1 },
+  });
+
+  /** Frontmatter whose closing delimiter sits on `closeLine` (1-based). */
+  function frontmatter(closeLine: number): string[] {
+    const filler = Array.from({ length: closeLine - 3 }, (_unused, index) => `key${index}: value`);
+    return ["---", "objective: Ship it # owner: platform", ...filler, "---"];
+  }
+
+  it("reads frontmatter closed on the last line the work reader allows (200)", () => {
+    const lines = frontmatter(200);
+    expect(lines).toHaveLength(200);
+    const reading = readArchitectureStatements([paragraph(lines)]);
+    // Read as YAML: the trailing comment is not part of the value.
+    expect(reading.statements.map((statement) => statement.declared_text)).toEqual(["Ship it"]);
+  });
+
+  it("treats an opener closed past the bound (201) as not frontmatter, as the work reader does", () => {
+    // Not frontmatter, the block is a paragraph underlined by `---`: a CommonMark
+    // setext heading, which declares nothing.
+    const reading = readArchitectureStatements([paragraph(frontmatter(201))]);
+    expect(reading.statements).toEqual([]);
+  });
+
+  it("does not read a label inside a double-backtick code span", () => {
+    const reading = readArchitectureStatements([paragraph(["``Decision:`` is read by a second pass."])]);
+    expect(reading.statements).toEqual([]);
+  });
+
+  it("reads a label that follows a closed code span on the same line", () => {
+    const reading = readArchitectureStatements([paragraph(["Decision: keep ``a`b`` literal"])]);
+    expect(reading.statements.map((statement) => statement.declared_text)).toEqual(["keep ``a`b`` literal"]);
+  });
 });
