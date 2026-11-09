@@ -253,8 +253,11 @@ describe("the report is not repository content (ADR-093)", () => {
   });
 
   it("is ignored where validate:report writes it", () => {
-    const ignored = gitRun(["check-ignore", "--no-index", "--", "CURRENT_VALIDATION_REPORT.md"]);
+    // -v names the rule that matched, so a global excludesfile or .git/info/exclude
+    // on one machine cannot stand in for the repository's own .gitignore entry.
+    const ignored = gitRun(["check-ignore", "-v", "--no-index", "--", "CURRENT_VALIDATION_REPORT.md"]);
     expect(ignored.status, "CURRENT_VALIDATION_REPORT.md must be gitignored").toBe(0);
+    expect(ignored.stdout, "the ignore rule must come from the repository's .gitignore").toMatch(/^\.gitignore:\d+:/);
     expect(path.relative(REPO, REPORT)).toBe("CURRENT_VALIDATION_REPORT.md");
   });
 

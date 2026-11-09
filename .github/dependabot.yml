@@ -1,7 +1,7 @@
 # Dependabot groups npm updates so that fewer, larger branches are reviewed and
-# validated (ADR-056). Since ADR-093 no committed validation report or
-# architecture manifest is bound to the tree, so a Dependabot branch needs no
-# rebind commit: CI runs the full gate on its head like any other pull request.
+# validated (ADR-056). Since ADR-093, the tree carries no committed validation
+# report or architecture manifest, so a Dependabot branch needs no rebind commit:
+# CI runs the full gate on its head like any other pull request.
 version: 2
 updates:
   - package-ecosystem: "npm"
