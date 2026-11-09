@@ -74,7 +74,8 @@ One JSON document: `query` (every parameter, normalized), `generation` (id, outp
 ref, corpus identities, `corpus_status`, `missing_root_ids`, the snapshot's `verification`
 verbatim, and the evidence-age statement), `sources` (each source's schema, status —
 `verified`, `not_run` or `refused` — and record count), `outcome`, `match_count`,
-`returned_count`, `limit`, `truncated`, `truncation_statement`, `results`, `diagnostics`.
+`returned_count`, `truncated`, `truncation_statement`, `results`, `diagnostics`. The limit
+is echoed as `query.limit`; there is no top-level `limit` field.
 
 | Outcome | Meaning |
 |---|---|
