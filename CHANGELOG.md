@@ -14,6 +14,13 @@
 - The policy is hashed on its own (`selection_policy_hash` in the manifest) and inside the profile hash (profile 1.2.0); no `evidence_id`, source snapshot or packet moves.
 - `corpus-query --role NAME` and `--selected-only`: opt-in, architecture-evidence only; the request echo names them only when given, so default responses are byte-identical.
 
+### Per-PR generated evidence retired (ADR-093)
+
+- `CURRENT_VALIDATION_REPORT.md` and `docs/architecture-manifest.json` are no longer committed. Both moved on almost every pull request and made every open pull request conflict with every other.
+- `npm run check:manifest` computes the manifest in memory: every authority-critical path must exist once as a regular file, and a committed `docs/architecture-manifest.json` is refused. `npm run manifest:update` is removed; `node scripts/generate-architecture-manifest.js` prints the computed manifest without writing it.
+- `npm run validate:report` and `--check` are unchanged; the report path is gitignored, and `release-prep.yml` uploads it as a workflow artifact instead of committing it.
+- `npm run deps:rebind` now runs `npm ci`, `build`, `lint` and `validate`; there is nothing left to rebind.
+
 ### Architecture statement reader 1.1.0 — coverage closure (ADR-089, Proposed)
 
 - `architecture-statements/v1` 1.1.0 (id unchanged, so every statement read as before keeps its `evidence_id`): section headings may carry a section number (`## 2.1 Open Questions`, `## A. Decisions`) and one parenthetical qualifier (`## Assumptions (v2)`); setext headings are headings; a CommonMark lazy continuation line is joined to its list item and no longer ends the enclosing label list, so an `Assumptions:` list under `## Constraints` stays assumptions; running text after a labelled value continues it across a soft line break, and a Word list paragraph with soft breaks is one item; frontmatter is read with the work reader's YAML scalar rules (comments cut, quoted scalars unquoted, block-scalar values read, flow collections reported); thematic breaks and labels inside inline code spans are not statements.

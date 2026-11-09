@@ -15,6 +15,8 @@ existed. Extends
 
 Amended by [ADR-059](059-corpus-cache-epoch-v2-and-decoder-dialect-identity.md) (normalized document identity binds a decoder-declared dialect, and the derive stage verifies the bytes it decodes) and [ADR-066](066-generation-retention-order-and-exclusive-publisher-lock.md) (generation retention order and the exclusive publisher lock).
 
+Superseded in part by [ADR-093](093-retire-committed-per-pr-generated-artifacts.md): `CURRENT_VALIDATION_REPORT.md` is still generated and bound to the tree digest, but it is no longer committed.
+
 ## Date
 
 2026-08-23

@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 "use strict";
 // validation-report.js — run the gate, then write down what it did.
+//
+// The report is local or CI-artifact evidence, never repository content (ADR-093):
+// `CURRENT_VALIDATION_REPORT.md` is gitignored, `release-prep.yml` uploads it as a
+// workflow artifact, and the authority for a pull request is the CI run on its head.
 const cp = require("node:child_process");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
@@ -165,9 +169,10 @@ command below and records the exit code it received rather than a claim about it
 
 It is bound to the **tree digest**, not to the commit id: a NUL-framed digest over
 every tracked and untracked path's actual bytes/type and executable bit, with
-this report itself excluded. Committing the report therefore does not invalidate
-it, and changing one byte, executable mode, or unusual Git path changes the
-digest — including a second edit of a file that was already dirty.
+this report itself excluded. Changing one byte, executable mode, or unusual Git
+path changes the digest — including a second edit of a file that was already
+dirty. The report is never committed (ADR-093): it is local or CI-artifact
+evidence about the tree named above, and nothing else.
 \`npm run validate:report -- --check\` recomputes the digest and also requires the
 non-report tree to be clean, so stale evidence cannot be carried over a dirty
 checkout.
