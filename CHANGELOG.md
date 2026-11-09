@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Per-PR generated evidence retired (ADR-093)
+
+- `CURRENT_VALIDATION_REPORT.md` and `docs/architecture-manifest.json` are no longer committed. Both moved on almost every pull request and made every open pull request conflict with every other.
+- `npm run check:manifest` computes the manifest in memory: every authority-critical path must exist once as a regular file, and a committed `docs/architecture-manifest.json` is refused. `npm run manifest:update` is removed; `node scripts/generate-architecture-manifest.js` prints the computed manifest without writing it.
+- `npm run validate:report` and `--check` are unchanged; the report path is gitignored, and `release-prep.yml` uploads it as a workflow artifact instead of committing it.
+- `npm run deps:rebind` now runs `npm ci`, `build`, `lint` and `validate`; there is nothing left to rebind.
+
 ### Architecture evidence projection (ADR-087, Proposed)
 
 - `architecture-statements/v1` reads the explicit `intent`, `constraint`, `assumption`, `open_question` and `decision_statement` declarations a document makes — labelled fields (`Objective:`, `Decision:`), labelled lists (`Constraints:` then items) and labelled sections (`## Open Questions`) — over the normalized blocks every decoder already produces, so Markdown and Word are read by one implementation. A text statement cites its exact line; every other format cites its block locator. Constructs outside the grammar (empty labels, empty sections, tables, foreign `Label: value` lines, credential-shaped text) are coverage diagnostics, never guesses.
