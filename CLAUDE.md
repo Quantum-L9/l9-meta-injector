@@ -28,14 +28,9 @@ git status --porcelain --untracked-files=all
 
 The final command must produce no output.
 
-`npm run validate` is the canonical aggregate gate. It runs source type checking, Vitest, public API validation, architecture-authority validation, deterministic architecture-manifest validation, committed `dist/` parity, selfpack, and clean installed-tarball consumer proof. ESLint is separate and must also pass.
+`npm run validate` is the canonical aggregate gate. It runs source type checking, Vitest, public API validation, architecture-authority validation, architecture-manifest computation (in memory; never committed, ADR-093), committed `dist/` parity, selfpack, and clean installed-tarball consumer proof. ESLint is separate and must also pass.
 
-After changing `docs/architecture.md` or another authority-critical file:
-
-```bash
-npm run manifest:update
-npm run validate
-```
+No generated evidence is committed per pull request (ADR-093). `docs/architecture-manifest.json` and `CURRENT_VALIDATION_REPORT.md` are retired: `check:manifest` computes the manifest from the tree and refuses a committed copy, and `npm run validate:report` writes a gitignored local report. CI on the head is the validation authority for that head.
 
 After changing `src/`, keep `dist/` in the same commit. Do not hand-edit generated output as the source of truth.
 

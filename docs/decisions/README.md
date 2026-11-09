@@ -42,7 +42,7 @@ Accepted ADRs are not deleted. A replacement ADR links back to the decision it s
 | [ADR-053](053-semantic-binding-propagation.md) | A bound root stamps owner, refuses foreign namespace globs, relaxes the literal-namespace verify rule, and records run provenance | Accepted |
 | [ADR-054](054-pipeline-identity-and-carrier-lifecycle.md) | Pipeline identity is path-derived and duplicate-refusing; classification is boundary-safe; carrier tiers gate the subject lifecycle | Accepted |
 | [ADR-055](055-manifest-interpretation.md) | Every repository record is evidence-backed, and dependency coverage diagnostics defer to the manifest claims the seam already makes | Accepted, supersedes the ADR-031/032 manifest deferral |
-| [ADR-056](056-dependency-updates-and-report-binding.md) | Dependency updates land through one maintainer rebind, and the validation report stays bound to the whole tree | Accepted |
+| [ADR-056](056-dependency-updates-and-report-binding.md) | Dependency updates land through one maintainer rebind, and the validation report stays bound to the whole tree | Accepted; superseded in part by ADR-093 |
 | [ADR-057](057-comment-carrier-position-detection-and-value-safety.md) | Comment carriers sit after every mandatory prologue, are recognised only at the head, and escape what their host comment cannot hold | Accepted |
 | [ADR-058](058-scoped-governed-runs-and-canonical-metadata-index-ordering-validation.md) | Scoped governed runs merge with the existing metadata index, which is code-point ordered and schema-enforced | Accepted |
 | [ADR-059](059-corpus-cache-epoch-v2-and-decoder-dialect-identity.md) | The corpus cache verifies bytes before deriving, moves to epoch v2, and binds the decoder dialect into document identity | Accepted |
@@ -70,6 +70,7 @@ Accepted ADRs are not deleted. A replacement ADR links back to the decision it s
 | [ADR-087](087-architecture-evidence-projection.md) | Source-declared architectural statements as an opt-in evidence projection | Proposed |
 | [ADR-088](088-read-only-corpus-evidence-query.md) | A read-only evidence query over one pinned corpus generation | Proposed |
 | [ADR-089](089-architecture-statement-coverage-closure.md) | Architecture statement reader 1.1.0: coverage closure under an exact matrix | Proposed |
+| [ADR-093](093-retire-committed-per-pr-generated-artifacts.md) | Retire the committed validation report and architecture manifest | Accepted |
 
 ## Authority boundary
 
