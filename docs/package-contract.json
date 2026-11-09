@@ -63,6 +63,7 @@
     "scripts/check-publication-readiness.js",
     "scripts/check-release-candidate.js",
     "scripts/corpus-qualification.js",
+    "scripts/corpus-query-cli.js",
     "scripts/deps-rebind.js",
     "scripts/generate-architecture-manifest.js",
     "scripts/lib/architecture-authority.js",

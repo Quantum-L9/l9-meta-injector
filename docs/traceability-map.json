@@ -348,6 +348,19 @@
       "stability": "experimental"
     },
     {
+      "capability": "corpus_evidence_query",
+      "source": "src/corpus_query.ts and scripts/corpus-query-cli.js",
+      "public_entrypoint": null,
+      "tests": [
+        "tests/corpus_query.test.ts"
+      ],
+      "validators": [
+        "npm test",
+        "npm run validate"
+      ],
+      "stability": "experimental"
+    },
+    {
       "capability": "semantic_candidate_discovery",
       "source": "src/corpus_semantics.ts and src/corpus_pairs.ts and src/corpus_fusion.ts",
       "public_entrypoint": null,

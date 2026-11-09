@@ -437,6 +437,16 @@ npm run local-source -- \
   evidence that decided it. Complete, hashed and manifest-bound like the work signals;
   selecting it moves `corpus_analysis_id` and nothing else. See
   [`docs/architecture-evidence.md`](docs/architecture-evidence.md) (ADR-087, Proposed).
+- **`corpus-query-cli.js`** asks one bounded question of a completed generation and
+  answers from its own records: `--class open_question --text Gate`,
+  `--class decision_statement --status wip`, `--predicate work.status --root Designs`.
+  It pins `CURRENT.json` once, verifies every file against the pointer and every payload
+  with the scan's own verifiers, reads the architecture evidence, the work-signal payload
+  and each root packet, and returns records with their identities, native coordinates and
+  bounded excerpts — every declaration retained, nothing ranked, inferred, resolved or
+  written. A partial snapshot is `incomplete`, an unobserved root `unavailable`, a failed
+  verification `invalid`. See [`docs/corpus-evidence-query.md`](docs/corpus-evidence-query.md)
+  (ADR-088, Proposed).
 - **`document-index.json`** (`l9.document-index/v2`) names, for every decoded document,
   the decoder that actually read it, the format it was read as, its block count and its
   locator type — and derives `normalized_document_id` from that decoder, because that id
