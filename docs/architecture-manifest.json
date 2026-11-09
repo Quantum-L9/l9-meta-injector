@@ -18,7 +18,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "git_blob_sha1": "5cf29047f2b03508f2d4ef52a3a9f560fa586e51"
+      "git_blob_sha1": "d240503dbf78d620b1296cb4074c3cf03b2abdf6"
     },
     {
       "path": "dist/apply.d.ts",
@@ -310,15 +310,15 @@
     },
     {
       "path": "dist/extractors/work_intelligence.d.ts",
-      "git_blob_sha1": "9f3f538da6ed654993a30eb34206bbc73421c32d"
+      "git_blob_sha1": "7e09395c6df52161262b1462aa339fceb2857066"
     },
     {
       "path": "dist/extractors/work_intelligence.js",
-      "git_blob_sha1": "53cb982f71307b3223f592efefbf948838f9fd16"
+      "git_blob_sha1": "9cffa03e197b993f7c7b9ce50583bb26cd13f7af"
     },
     {
       "path": "dist/extractors/work_intelligence.js.map",
-      "git_blob_sha1": "986109cba14deec1cd4a5596ac2e805512dbf6f0"
+      "git_blob_sha1": "d3ea734638417beeba054ce17170bd3282088822"
     },
     {
       "path": "dist/git_runtime.d.ts",
@@ -558,7 +558,7 @@
     },
     {
       "path": "docs/decision_log.md",
-      "git_blob_sha1": "989826fe8a340f0f947953ada7489676b38fc05f"
+      "git_blob_sha1": "c8190da2f30a1cd3e6c6575e0ce9b59990f0447c"
     },
     {
       "path": "docs/decisions/036-read-only-local-source-acquisition.md",
@@ -954,7 +954,7 @@
     },
     {
       "path": "src/extractors/work_intelligence.ts",
-      "git_blob_sha1": "a827102609a2059e42681c6a12bde2f29bfed009"
+      "git_blob_sha1": "38767c5fab678388c6119682eb3b3a609fb0b9f9"
     },
     {
       "path": "src/git_runtime.ts",

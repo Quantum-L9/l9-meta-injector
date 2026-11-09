@@ -53,7 +53,10 @@ exports.ARCHITECTURE_EVIDENCE_PAYLOAD_FILE = "architecture-evidence.jsonl";
 exports.ARCHITECTURE_EVIDENCE_MANIFEST_FILE = "architecture-evidence.manifest.json";
 /** Identity of the whole projection: the reader plus the selection profile. */
 exports.ARCHITECTURE_EVIDENCE_PROFILE_ID = "meta-injector-architecture-evidence";
-exports.ARCHITECTURE_EVIDENCE_PROFILE_VERSION = "1.0.0";
+// 1.1.0: reader 1.1.0 (numbered/qualified/setext headings, continuation lines,
+// YAML frontmatter scalars); records carry `continuation_block_ids` and a
+// locator that ends on the statement's last line.
+exports.ARCHITECTURE_EVIDENCE_PROFILE_VERSION = "1.1.0";
 /** The one selection profile this release ships. A view over the records, not a vocabulary. */
 exports.ARCHITECTURE_SELECTION_PROFILE_ID = "architecture-development/v1";
 /** What every record is, epistemically. Stated on each one so no reader has to remember. */
@@ -355,7 +358,8 @@ function buildArchitectureEvidenceExport(input) {
                 decoder_version: document.decoderVersion,
                 block_id: statement.block.block_id,
                 block_kind: statement.block.kind,
-                structured_locator: (0, architecture_statements_1.architectureStatementLocator)(statement.block, statement.unit_index),
+                continuation_block_ids: statement.continuation_blocks.map((block) => block.block_id),
+                structured_locator: (0, architecture_statements_1.architectureStatementLocator)(statement.block, statement.unit_index, statement.unit_end_index, statement.continuation_blocks),
                 unit_index: statement.unit_index,
                 statement_class: statement.statement_class,
                 declared_text: statement.declared_text,

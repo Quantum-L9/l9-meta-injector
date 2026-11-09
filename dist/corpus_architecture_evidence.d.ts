@@ -9,7 +9,7 @@ export declare const ARCHITECTURE_EVIDENCE_PAYLOAD_FILE = "architecture-evidence
 export declare const ARCHITECTURE_EVIDENCE_MANIFEST_FILE = "architecture-evidence.manifest.json";
 /** Identity of the whole projection: the reader plus the selection profile. */
 export declare const ARCHITECTURE_EVIDENCE_PROFILE_ID = "meta-injector-architecture-evidence";
-export declare const ARCHITECTURE_EVIDENCE_PROFILE_VERSION = "1.0.0";
+export declare const ARCHITECTURE_EVIDENCE_PROFILE_VERSION = "1.1.0";
 /** The one selection profile this release ships. A view over the records, not a vocabulary. */
 export declare const ARCHITECTURE_SELECTION_PROFILE_ID = "architecture-development/v1";
 /** What every record is, epistemically. Stated on each one so no reader has to remember. */
@@ -78,7 +78,15 @@ export interface ArchitectureEvidenceRecord {
     decoder_version: string;
     block_id: string;
     block_kind: string;
-    /** The exact coordinate, in the format's own terms. Its `kind` says which shape. */
+    /**
+     * Blocks after `block_id` the statement continues into (a Markdown list item's
+     * lazy continuation lines), in order. Empty for a one-block statement.
+     */
+    continuation_block_ids: string[];
+    /**
+     * The exact coordinate, in the format's own terms. Its `kind` says which shape.
+     * A `line_span` starts on the statement's first line and ends on its last.
+     */
     structured_locator: Record<string, unknown>;
     /** Line of the block's text the statement is on, or null for a whole-block statement. */
     unit_index: number | null;
