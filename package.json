@@ -78,7 +78,6 @@
     "check:api": "node scripts/check-public-api.js",
     "check:authority": "node scripts/check-architecture-authority.js",
     "check:manifest": "node scripts/generate-architecture-manifest.js --check",
-    "manifest:update": "node scripts/generate-architecture-manifest.js",
     "check:dist": "node scripts/check-dist-sync.js",
     "test:packed": "node scripts/test-packed-consumer.js",
     "check:publication": "node scripts/check-publication-readiness.js",

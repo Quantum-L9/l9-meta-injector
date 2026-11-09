@@ -1,7 +1,7 @@
-# Dependabot groups npm updates so that one maintainer-run report rebind lands a
-# whole group (ADR-056). Every branch Dependabot opens changes package-lock.json,
-# which moves the tree digest CURRENT_VALIDATION_REPORT.md is bound to; a bot
-# cannot regenerate that report, so fewer, larger branches cost fewer rebinds.
+# Dependabot groups npm updates so that fewer, larger branches are reviewed and
+# validated (ADR-056). Since ADR-093 no committed validation report or
+# architecture manifest is bound to the tree, so a Dependabot branch needs no
+# rebind commit: CI runs the full gate on its head like any other pull request.
 version: 2
 updates:
   - package-ecosystem: "npm"

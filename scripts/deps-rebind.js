@@ -1,19 +1,20 @@
 #!/usr/bin/env node
-// deps-rebind.js — land a dependency update as one validated commit pair.
+// deps-rebind.js — verify a dependency update locally before it is pushed.
 //
-// CURRENT_VALIDATION_REPORT.md is bound to a digest of every tracked and untracked
-// file except itself, so any change to package-lock.json invalidates it and the
-// report test fails. A bot cannot regenerate the report: that means running the
-// whole gate and committing the result. This script is the maintainer's one
-// command for a Dependabot group or any other lockfile change (ADR-056):
+// ADR-056 introduced this as the maintainer's one command for rebinding the
+// committed validation report after a lockfile change. ADR-093 retired the
+// committed report and the committed architecture manifest, so a dependency
+// update no longer has anything to rebind: CI runs the full gate on the head of
+// every pull request, Dependabot's included. The command remains the local
+// equivalent of that gate for a lockfile change:
 //
-//   1. npm ci                 — install exactly what the lockfile says
-//   2. npm run build          — dist/ follows src/ (committed output)
-//   3. npm run manifest:update — architecture manifest follows the tree
-//   4. npm run validate:report — lint + validate, then rebind the report
+//   1. npm ci            — install exactly what the lockfile says
+//   2. npm run build     — dist/ follows src/ (committed output; a TypeScript
+//                          bump can change emitted bytes)
+//   3. npm run lint      — ESLint, the separate required gate
+//   4. npm run validate  — the aggregate gate
 //
-// It stops at the first failure and never commits; the maintainer reviews the
-// diff and commits the code change and the rebound report as two commits.
+// It stops at the first failure and never commits.
 "use strict";
 
 const { spawnSync } = require("node:child_process");
@@ -24,8 +25,8 @@ const LABEL = "deps-rebind";
 const STEPS = [
   ["npm", ["ci", "--ignore-scripts"]],
   ["npm", ["run", "build"]],
-  ["npm", ["run", "manifest:update"]],
-  ["npm", ["run", "validate:report"]],
+  ["npm", ["run", "lint"]],
+  ["npm", ["run", "validate"]],
 ];
 
 for (const [command, args] of STEPS) {
@@ -36,4 +37,4 @@ for (const [command, args] of STEPS) {
     process.exit(result.status ?? 1);
   }
 }
-process.stdout.write(`${LABEL}: OK — review 'git status', then commit the dependency change and CURRENT_VALIDATION_REPORT.md\n`);
+process.stdout.write(`${LABEL}: OK — review 'git status'; commit any dist/ change with the dependency update\n`);
