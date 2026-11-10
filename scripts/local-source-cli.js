@@ -100,6 +100,15 @@ const USAGE = [
   "                             set as architecture-evidence.jsonl (+ manifest). Opt-in;",
   "                             binds the projection's rules into corpus_analysis_id",
   "                             and leaves every other identity and output unchanged.",
+  "  --field-selection INTENT   also write field-selection.jsonl (+ manifest): per document,",
+  "                             which existing evidence fields the run intent surfaces and",
+  "                             why (architecture_review, design_exploration,",
+  "                             development_handoff, history_audit). Needs",
+  "                             --architecture-evidence. A derived view: nothing is",
+  "                             removed from any payload and no observed file is written",
+  "  --field-selection-max-fields N   selected fields per document (default 6)",
+  "  --field-selection-max-values N   values per selected field (default 5)",
+  "  --field-selection-max-chars N    selected characters per document (default 2000)",
   "  --no-semantic-analysis     skip candidate discovery; duplicates still reported",
   "  --embeddings               enable optional semantic embeddings (default: off)",
   "  --embedding-provider NAME  required when --embeddings is given; 'http-json' is",
@@ -420,6 +429,14 @@ function reportCorpusRun(context) {
     );
     console.log("  every statement is source-declared and none is authority-verified");
   }
+  // Printed only when asked for, so a default run's summary is the one it always was.
+  if (result.fieldSelection !== null && result.fieldSelection !== undefined) {
+    const view = result.fieldSelection.manifest;
+    console.log(
+      `  field selection  ${view.selected_field_count} field(s) selected for intent ${view.intent} across `
+      + `${view.record_count} document(s) by ${view.policy_id}; written to the external generation only`,
+    );
+  }
   if (result.semantic === null) {
     console.log("  semantic         off (--no-semantic-analysis)");
   } else {
@@ -604,6 +621,13 @@ async function runCorpusMode(cli) {
     fail("--architecture-evidence needs the interpretation pass that --no-interpret disables. "
       + "Drop one of the two switches.", 2);
   }
+  // The field-selection view reads the roles the architecture-evidence selection
+  // assigns. Refused before anything is read, never run with every role unknown.
+  const fieldSelectionIntent = cli.opt("--field-selection", null);
+  if (cli.flag("--field-selection") && fieldSelectionIntent === null) fail("--field-selection needs an intent", 2);
+  if (fieldSelectionIntent !== null && !cli.flag("--architecture-evidence")) {
+    fail("--field-selection reads the document roles --architecture-evidence assigns; pass both.", 2);
+  }
   const cacheEnabled = !cli.flag("--no-cache");
   // The session manifest names the work that was finished; the cache holds what
   // that work produced. Resuming without the cache could only skip work whose
@@ -756,6 +780,18 @@ async function runCorpusMode(cli) {
   if (packMaxArtifacts !== undefined) packBudget.maxArtifactsPerPack = packMaxArtifacts;
   if (packMaxChars !== undefined) packBudget.maxTotalPackCharacters = packMaxChars;
 
+  const fieldSelectionBudget = {};
+  for (const [flag, key] of [
+    ["--field-selection-max-fields", "maxFields"],
+    ["--field-selection-max-values", "maxValuesPerField"],
+    ["--field-selection-max-chars", "maxCharacters"],
+  ]) {
+    const value = numericOpt(cli, flag);
+    if (value === undefined) continue;
+    if (fieldSelectionIntent === null) fail(`${flag} needs --field-selection`, 2);
+    fieldSelectionBudget[key] = value;
+  }
+
   let result;
   try {
     result = await scan.runCorpusScan({
@@ -790,6 +826,9 @@ async function runCorpusMode(cli) {
       // Opt-in: an operator who did not ask for the projection gets the run they
       // always got, identities included.
       ...(cli.flag("--architecture-evidence") ? { architectureEvidence: true } : {}),
+      ...(fieldSelectionIntent !== null
+        ? { fieldSelection: { intent: fieldSelectionIntent, budget: fieldSelectionBudget } }
+        : {}),
       ...(embeddingProvider !== undefined ? { embeddingProvider } : {}),
       ...(embeddingPairThreshold !== undefined ? { embeddingPairThreshold } : {}),
       ...(Object.keys(packBudget).length > 0 ? { packBudget } : {}),
@@ -827,6 +866,14 @@ async function runCorpusMode(cli) {
     outputs.push(
       { path: "architecture-evidence.jsonl", contents: result.architectureEvidence.payloadJsonl },
       { path: "architecture-evidence.manifest.json", contents: result.architectureEvidence.manifestJson },
+    );
+  }
+  // The field-selection view, in the same generation as everything it cites:
+  // its carrier is this external generation, never an observed file.
+  if (result.fieldSelection !== null) {
+    outputs.push(
+      { path: "field-selection.jsonl", contents: result.fieldSelection.payloadJsonl },
+      { path: "field-selection.manifest.json", contents: result.fieldSelection.manifestJson },
     );
   }
   if (result.semantic !== null) {

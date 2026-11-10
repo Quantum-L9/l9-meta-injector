@@ -71,6 +71,7 @@ Accepted ADRs are not deleted. A replacement ADR links back to the decision it s
 | [ADR-088](088-read-only-corpus-evidence-query.md) | A read-only evidence query over one pinned corpus generation | Proposed |
 | [ADR-089](089-architecture-statement-coverage-closure.md) | Architecture statement reader 1.1.0: coverage closure under an exact matrix | Proposed |
 | [ADR-090](090-document-role-selection-closure.md) | Document-role selection closure: decision records, research and historical material | Proposed |
+| [ADR-091](091-local-source-adaptive-field-selection.md) | Adaptive field selection for local-source, as a derived view | Proposed |
 | [ADR-092](092-corpus-generated-at-pins-recorded-times.md) | A pinned --generated-at pins every time a corpus generation records | Proposed |
 | [ADR-093](093-retire-committed-per-pr-generated-artifacts.md) | Retire the committed validation report and architecture manifest | Accepted |
 

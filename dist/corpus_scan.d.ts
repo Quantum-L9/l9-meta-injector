@@ -11,6 +11,7 @@ import { CorpusResourceBudgets, CorpusSessionStore } from "./corpus_session";
 import { DecoderRegistry } from "./documents";
 import { DocumentWorkSignalExport } from "./corpus_work_signal_export";
 import { ArchitectureEvidenceExport } from "./corpus_architecture_evidence";
+import type { FieldSelectionBudget, FieldSelectionExport, FieldSelectionIntent } from "./corpus_field_selection";
 import { LocalArchivePolicy } from "./local_archive_policy";
 import type { DocumentIndex, DocumentIndexSummary } from "./corpus_documents";
 import type { SemanticAnalysisResult } from "./corpus_semantic_run";
@@ -117,6 +118,17 @@ export interface CorpusScanInput {
      * cache layer are the same with or without it.
      */
     architectureEvidence?: boolean;
+    /**
+     * Select the field-selection view (`local-source-field-selection/v1`, ADR-091)
+     * for one run intent. Off by default; requires `architectureEvidence`, whose
+     * roles it reads. Writes `field-selection.jsonl` with a manifest: per document,
+     * which existing evidence fields the intent surfaces and why, within the
+     * budget. Binds its profile into `corpus_analysis_id` and into nothing else.
+     */
+    fieldSelection?: {
+        intent: FieldSelectionIntent;
+        budget?: Partial<FieldSelectionBudget>;
+    };
 }
 export interface CorpusScanDiagnostic {
     code: string;
@@ -262,6 +274,8 @@ export interface CorpusScanResult {
      * mistake "not asked for" for "found nothing" (ADR-068).
      */
     architectureEvidence: ArchitectureEvidenceExport | null;
+    /** The field-selection view. Null when it was not asked for (ADR-068). */
+    fieldSelection: FieldSelectionExport | null;
     /** Candidate discovery over recorded evidence. Null when it was switched off. */
     semantic: SemanticAnalysisResult | null;
 }
