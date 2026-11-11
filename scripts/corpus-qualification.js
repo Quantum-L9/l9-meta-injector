@@ -73,32 +73,34 @@ console.log(`corpus-qualification: OK — ${out}`);
 console.log(`  roots            ${report.roots.map((root) => root.root_label).join(", ")}`);
 console.log(`  files scanned    ${report.files_scanned}`);
 console.log(`  bytes scanned    ${report.bytes_scanned}`);
-console.log(`  archives         ${report.corpus.archive_count}, ${report.corpus.archive_member_count} member(s)`);
 console.log(
-  `  decoded          ${report.decoder_coverage.normalized_document.covered}`
-  + `/${report.decoder_coverage.normalized_document.eligible}`
-  + ` (${report.corpus.artifact_count} artifacts, ${report.corpus.distinct_extension_count} extensions)`,
+  `  archives         ${report.corpus.archive_count}, ${report.corpus.archive_member_count} member(s)`,
 );
 console.log(
-  `  second run       hit ratio ${report.cache_hit_ratio_second_run.hit_ratio}`
-  + ` (${report.cache_hit_ratio_second_run.hits} hit(s), ${report.cache_hit_ratio_second_run.misses} miss(es))`,
+  `  decoded          ${report.decoder_coverage.normalized_document.covered}` +
+    `/${report.decoder_coverage.normalized_document.eligible}` +
+    ` (${report.corpus.artifact_count} artifacts, ${report.corpus.distinct_extension_count} extensions)`,
 );
 console.log(
-  `  duplicates       ${report.duplicate_counts.exact_duplicate_cluster_count} exact cluster(s), `
-  + `${report.duplicate_counts.cross_root_duplicate_cluster_count} crossing a root boundary; `
-  + `${report.duplicate_counts.near_duplicate_candidate_count} near-duplicate candidate(s)`,
+  `  second run       hit ratio ${report.cache_hit_ratio_second_run.hit_ratio}` +
+    ` (${report.cache_hit_ratio_second_run.hits} hit(s), ${report.cache_hit_ratio_second_run.misses} miss(es))`,
 );
 console.log(
-  `  candidates       ${report.topic_candidate_counts.candidate_count} topic, `
-  + `${report.project_candidate_counts.candidate_count} project, `
-  + `${report.reasoning_eligible_count} reasoning-eligible`,
+  `  duplicates       ${report.duplicate_counts.exact_duplicate_cluster_count} exact cluster(s), ` +
+    `${report.duplicate_counts.cross_root_duplicate_cluster_count} crossing a root boundary; ` +
+    `${report.duplicate_counts.near_duplicate_candidate_count} near-duplicate candidate(s)`,
 );
 console.log(
-  `  not read         ${report.unsupported_counts.unsupported_format_total} unsupported, `
-  + `${report.unsupported_counts.ocr_required_count} OCR-required, `
-  + `${report.unsupported_counts.secret_skipped_count} secret-skipped`,
+  `  candidates       ${report.topic_candidate_counts.candidate_count} topic, ` +
+    `${report.project_candidate_counts.candidate_count} project, ` +
+    `${report.reasoning_eligible_count} reasoning-eligible`,
 );
 console.log(
-  `  cold == warm     ${report.cold_warm_equivalence.semantic_output_identical}`
-  + `   source mutated paths: ${report.source_mutation.mutated_path_count}`,
+  `  not read         ${report.unsupported_counts.unsupported_format_total} unsupported, ` +
+    `${report.unsupported_counts.ocr_required_count} OCR-required, ` +
+    `${report.unsupported_counts.secret_skipped_count} secret-skipped`,
+);
+console.log(
+  `  cold == warm     ${report.cold_warm_equivalence.semantic_output_identical}` +
+    `   source mutated paths: ${report.source_mutation.mutated_path_count}`,
 );

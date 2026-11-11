@@ -7,13 +7,7 @@
     "coverageInput": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "root",
-        "revision",
-        "repositoryId",
-        "contract",
-        "producerVersion"
-      ],
+      "required": ["root", "revision", "repositoryId", "contract", "producerVersion"],
       "properties": {
         "root": {
           "type": "string",
@@ -48,13 +42,7 @@
     "checkInput": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "root",
-        "revision",
-        "repositoryId",
-        "contract",
-        "producerVersion"
-      ],
+      "required": ["root", "revision", "repositoryId", "contract", "producerVersion"],
       "properties": {
         "root": {
           "type": "string",
@@ -92,13 +80,7 @@
     "applyInput": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "root",
-        "revision",
-        "repositoryId",
-        "contract",
-        "producerVersion"
-      ],
+      "required": ["root", "revision", "repositoryId", "contract", "producerVersion"],
       "properties": {
         "root": {
           "type": "string",
@@ -213,10 +195,7 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-              "code",
-              "message"
-            ],
+            "required": ["code", "message"],
             "properties": {
               "code": {
                 "enum": [
@@ -251,16 +230,10 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-              "code",
-              "message"
-            ],
+            "required": ["code", "message"],
             "properties": {
               "code": {
-                "enum": [
-                  "META_LEGACY_METADATA_PRESENT",
-                  "META_LEGACY_WRITER_MIGRATION"
-                ]
+                "enum": ["META_LEGACY_METADATA_PRESENT", "META_LEGACY_WRITER_MIGRATION"]
               },
               "message": {
                 "type": "string"
@@ -281,10 +254,7 @@
           "$ref": "tracked-operations-v2.schema.json#/$defs/compilation"
         },
         "migrationEvidence": {
-          "anyOf": [
-            { "type": "null" },
-            { "$ref": "metadata-index-migration-v2.schema.json" }
-          ]
+          "anyOf": [{ "type": "null" }, { "$ref": "metadata-index-migration-v2.schema.json" }]
         },
         "mode": {
           "const": "tracked-check"
@@ -294,23 +264,13 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-              "path",
-              "kind",
-              "message"
-            ],
+            "required": ["path", "kind", "message"],
             "properties": {
               "path": {
                 "type": "string"
               },
               "kind": {
-                "enum": [
-                  "missing",
-                  "stale",
-                  "extra",
-                  "conflict",
-                  "unsupported"
-                ]
+                "enum": ["missing", "stale", "extra", "conflict", "unsupported"]
               },
               "message": {
                 "type": "string"
@@ -361,10 +321,7 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-              "code",
-              "message"
-            ],
+            "required": ["code", "message"],
             "properties": {
               "code": {
                 "enum": [
@@ -399,16 +356,10 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-              "code",
-              "message"
-            ],
+            "required": ["code", "message"],
             "properties": {
               "code": {
-                "enum": [
-                  "META_LEGACY_METADATA_PRESENT",
-                  "META_LEGACY_WRITER_MIGRATION"
-                ]
+                "enum": ["META_LEGACY_METADATA_PRESENT", "META_LEGACY_WRITER_MIGRATION"]
               },
               "message": {
                 "type": "string"
@@ -429,10 +380,7 @@
           "$ref": "tracked-operations-v2.schema.json#/$defs/compilation"
         },
         "migrationEvidence": {
-          "anyOf": [
-            { "type": "null" },
-            { "$ref": "metadata-index-migration-v2.schema.json" }
-          ]
+          "anyOf": [{ "type": "null" }, { "$ref": "metadata-index-migration-v2.schema.json" }]
         },
         "mode": {
           "const": "tracked-apply"
@@ -450,10 +398,7 @@
           ],
           "properties": {
             "transactionId": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "plannedWrites": {
               "type": "integer",
@@ -476,19 +421,12 @@
               "const": false
             },
             "journalPath": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "cleanupPending": {
               "type": "object",
               "additionalProperties": false,
-              "required": [
-                "journalPath",
-                "retainedBackups",
-                "errors"
-              ],
+              "required": ["journalPath", "retainedBackups", "errors"],
               "properties": {
                 "journalPath": {
                   "type": "string"
