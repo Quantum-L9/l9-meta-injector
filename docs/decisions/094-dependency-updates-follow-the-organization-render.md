@@ -96,13 +96,13 @@ We choose **Option C**.
 - **Residual: `dist/`.** `dist/` stays committed and parity-checked
   (ADR-033), so a minor or patch `typescript` update that changes emitted
   output fails `check:dist` on its branch until `dist/` is rebuilt.
-  - The organization's dependency lane (ADR-0019 dependency-lane revision,
-    2026-11-11; implemented in `Quantum-L9/l9-ci-core`, not yet shipped)
-    regenerates committed generated output and enables auto-merge for eligible
-    updates.
-  - Until it ships, such a branch needs `npm run build` and a commit of
-    `dist/`.
-  - This repository declares nothing for that lane yet. Core's repository
-    contract admits exactly three keys in `.l9/repo-workflow.json`, so the
-    declaration waits for Core to extend it.
-- Every Dependabot pull request remains advisory until that lane ships.
+  - Such a branch needs `npm run build` and a commit of `dist/` by a
+    maintainer.
+  - Nothing does that automatically. The organization's dependency lane
+    (`Quantum-L9/.github` ADR-0019 dependency-lane revision, 2026-11-11) only
+    enables auto-merge with the built-in token. By operator decision it never
+    pushes to a Dependabot branch and holds no App or secret, so this branch
+    stays red and is never auto-merged.
+- Every Dependabot pull request remains advisory until the lane ships and this
+  repository is enrolled through `policies/repo-settings.yml` in
+  `Quantum-L9/.github`. Enrollment declares nothing in this repository.
