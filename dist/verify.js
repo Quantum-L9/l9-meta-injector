@@ -115,7 +115,7 @@ function verify(filePath, origHash, meta, options) {
         taxonomyValid = false;
     }
     const scopeIssues = checkSharingScope(meta, options?.semanticallyBound === true);
-    scopeIssues.forEach((i) => issues.push(i));
+    scopeIssues.forEach((i) => { issues.push(i); });
     const sharingScopeValid = scopeIssues.length === 0;
     let promptSchemaComplete = true;
     if (isPromptMeta(meta)) {

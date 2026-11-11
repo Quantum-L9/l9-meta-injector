@@ -15,7 +15,7 @@ import {
   writeArchiveSidecar,
 } from "../src/archives";
 import { sidecarPathFor } from "../src/comment";
-import { UNIX_SYMLINK, treeSnapshot, writeRawZip } from "./helpers/zip_fixtures";
+import { UNIX_SYMLINK, writeRawZip } from "./helpers/zip_fixtures";
 
 // Candidate directories are named from randomUUID; a fixed value makes the
 // pre-existing-candidate collision test deterministic. Every other test in this

@@ -77,7 +77,7 @@ const ZIP64_EXTRA_ID = 0x0001;
 /** Build a Zip64 extended-information payload for the placeholders requested. */
 function zip64ExtraField(values: number[]): Buffer {
   const payload = Buffer.alloc(values.length * 8);
-  values.forEach((value, index) => payload.writeBigUInt64LE(BigInt(value), index * 8));
+  values.forEach((value, index) => { payload.writeBigUInt64LE(BigInt(value), index * 8); });
   const field = Buffer.alloc(4 + payload.length);
   field.writeUInt16LE(ZIP64_EXTRA_ID, 0);
   field.writeUInt16LE(payload.length, 2);

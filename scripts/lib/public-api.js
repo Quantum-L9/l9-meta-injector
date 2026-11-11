@@ -23,8 +23,7 @@ function sourceRuntimeNames(source) {
     /export\s*\{([\s\S]*?)\}\s*from\s*["'][^"']+["']/g,
     /export\s+(?:const|function|class)\s+([A-Za-z_$][\w$]*)/g,
   ];
-  let m;
-  while ((m = patterns[0].exec(source))) {
+  for (const m of source.matchAll(patterns[0])) {
     for (const part of m[1].split(",")) {
       const clean = part.replace(/\/\*[\s\S]*?\*\//g, "").trim();
       if (!clean || clean.startsWith("type ")) continue;
@@ -32,14 +31,13 @@ function sourceRuntimeNames(source) {
       names.push(alias[1] || alias[0]);
     }
   }
-  while ((m = patterns[1].exec(source))) names.push(m[1]);
+  for (const m of source.matchAll(patterns[1])) names.push(m[1]);
   return uniqueSorted(names);
 }
 function sourceTypeNames(source) {
   const names = [];
   const re = /export\s+type\s*\{([\s\S]*?)\}\s*from\s*["'][^"']+["']/g;
-  let m;
-  while ((m = re.exec(source))) {
+  for (const m of source.matchAll(re)) {
     for (const part of m[1].split(",")) {
       const clean = part.replace(/\/\*[\s\S]*?\*\//g, "").trim();
       if (!clean) continue;

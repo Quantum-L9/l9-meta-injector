@@ -120,7 +120,7 @@ describe("content-free census subprocess and filesystem boundaries", () => {
     writeFixtureFile(root, "untracked", "noise\n");
     const before = filesystemState(root);
     state.commands.length = 0;
-    let snapshot;
+    let snapshot: ReturnType<typeof readTrackedGitSnapshot> | undefined;
     try {
       for (const control of [".git", ".git/config", ".git/commondir", ".git/config.worktree"]) state.allowedControlPaths.add(path.join(root, control));
       state.forbidFs = true;

@@ -122,7 +122,7 @@ export function serializeYamlObject(obj: Record<string, unknown>, opts: Serializ
     }
     if (Array.isArray(v)) {
       if (v.length === 0) lines.push(`${k}: []`);
-      else { lines.push(`${k}:`); v.forEach((i) => lines.push(`  - ${yamlScalar(i, forbidden)}`)); }
+      else { lines.push(`${k}:`); v.forEach((i) => { lines.push(`  - ${yamlScalar(i, forbidden)}`); }); }
     } else {
       lines.push(`${k}: ${yamlScalar(v, forbidden)}`);
     }

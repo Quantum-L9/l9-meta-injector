@@ -95,7 +95,7 @@ export function verify(
   if (meta.callable && meta.mcp_primitive === "none") { issues.push("callable=true but mcp_primitive=none"); taxonomyValid = false; }
 
   const scopeIssues = checkSharingScope(meta, options?.semanticallyBound === true);
-  scopeIssues.forEach((i) => issues.push(i));
+  scopeIssues.forEach((i) => { issues.push(i); });
   const sharingScopeValid = scopeIssues.length === 0;
 
   let promptSchemaComplete = true;

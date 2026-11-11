@@ -126,7 +126,7 @@ function serializeYamlObject(obj, opts = {}) {
                 lines.push(`${k}: []`);
             else {
                 lines.push(`${k}:`);
-                v.forEach((i) => lines.push(`  - ${yamlScalar(i, forbidden)}`));
+                v.forEach((i) => { lines.push(`  - ${yamlScalar(i, forbidden)}`); });
             }
         }
         else {
