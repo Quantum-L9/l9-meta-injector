@@ -1,9 +1,15 @@
 // verify.ts — Validate injected files; enforce sharing_scope invariants; fail on violation.
 import * as fs from "node:fs";
-import { VerifyResult, NormalizedMeta, UNKNOWN, PromptMeta, asRecord } from "./schema";
-import { splitContent, contentHash, stripExistingFrontMatter } from "./extract";
+import {
+  hasInjectedBlock,
+  resolveStrategy,
+  StrategySpec,
+  sidecarPathFor,
+  stripInjectedBlock,
+} from "./comment";
+import { contentHash, splitContent, stripExistingFrontMatter } from "./extract";
 import { inspectFrontMatterDocument } from "./frontmatter_patch";
-import { StrategySpec, resolveStrategy, hasInjectedBlock, stripInjectedBlock, sidecarPathFor } from "./comment";
+import { asRecord, NormalizedMeta, PromptMeta, UNKNOWN, VerifyResult } from "./schema";
 
 // Recover the clean body from an injected file, mirroring how inject.ts derived
 // cleanBody per strategy, so the hash lines up with the recorded originalBodyHash.
@@ -46,13 +52,17 @@ function metaHeaderValid(filePath: string, content: string, issues: string[]): b
   return false;
 }
 
-function isPromptMeta(m: NormalizedMeta): m is PromptMeta { return m.artifact_type === "prompt"; }
+function isPromptMeta(m: NormalizedMeta): m is PromptMeta {
+  return m.artifact_type === "prompt";
+}
 
 function checkSharingScope(meta: NormalizedMeta, semanticallyBound: boolean): string[] {
   const issues: string[] = [];
   if (semanticallyBound) return issues;
   if (meta.sharing_scope === "shared" && meta.namespace !== "shared" && meta.namespace !== "core") {
-    issues.push(`sharing_scope=shared but namespace=${meta.namespace}; shared primitives must live in shared/ or core/ paths`);
+    issues.push(
+      `sharing_scope=shared but namespace=${meta.namespace}; shared primitives must live in shared/ or core/ paths`,
+    );
   }
   return issues;
 }
@@ -92,19 +102,35 @@ export function verify(
   }
 
   let taxonomyValid = true;
-  if (meta.callable && meta.mcp_primitive === "none") { issues.push("callable=true but mcp_primitive=none"); taxonomyValid = false; }
+  if (meta.callable && meta.mcp_primitive === "none") {
+    issues.push("callable=true but mcp_primitive=none");
+    taxonomyValid = false;
+  }
 
   const scopeIssues = checkSharingScope(meta, options?.semanticallyBound === true);
-  scopeIssues.forEach((i) => issues.push(i));
+  scopeIssues.forEach((i) => {
+    issues.push(i);
+  });
   const sharingScopeValid = scopeIssues.length === 0;
 
   let promptSchemaComplete = true;
   if (isPromptMeta(meta)) {
     const pm = asRecord(meta);
     for (const f of ["role", "objective", "input_variables", "output_format", "model_target"]) {
-      if (pm[f] === UNKNOWN) { issues.push(`Prompt schema '${f}' is Unknown`); promptSchemaComplete = false; }
+      if (pm[f] === UNKNOWN) {
+        issues.push(`Prompt schema '${f}' is Unknown`);
+        promptSchemaComplete = false;
+      }
     }
   }
 
-  return { sourcePath: filePath, yamlValid, bodyPreserved, taxonomyValid, promptSchemaComplete, sharingScopeValid, issues };
+  return {
+    sourcePath: filePath,
+    yamlValid,
+    bodyPreserved,
+    taxonomyValid,
+    promptSchemaComplete,
+    sharingScopeValid,
+    issues,
+  };
 }

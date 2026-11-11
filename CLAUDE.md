@@ -50,6 +50,8 @@ Required branch-protection contexts are repository settings outside the tree. Ve
 
 ESLint covers `src/**/*.ts` and `tests/**/*.ts`. It intentionally ignores generated output, dependencies, coverage, fixtures, examples, scripts, and JavaScript-family files. `@typescript-eslint/no-unused-vars` is warning-level and ignores names beginning `_`.
 
+Biome also runs, alongside ESLint (ADR-094). The root `biome.json` is the Core-locked Biome 2.5.8 contract, copied from `Quantum-L9/l9-ci-core` `presets/typescript/`. It formats, organizes imports, and applies the recommended linter to every hand-authored JS, TS and JSON file, `scripts/` included. Do not edit its `formatter`, `linter`, `javascript` or `json` blocks. The repository adds only two things: path excludes appended to `files.includes`, and scoped rule `overrides`. Core's `Analyze (central Core)` runs `biome ci .` as a blocking step. Verify locally with `npx --yes @biomejs/biome@2.5.8 ci .` and fix with `npx --yes @biomejs/biome@2.5.8 check --write --only=assist/source/organizeImports . && npx --yes @biomejs/biome@2.5.8 format --write .`. Rebuild `dist/` after formatting `src/`.
+
 `tsconfig.json` is strict and enables `noUnusedLocals` and `noImplicitReturns`; the declaration build includes `src/**/*`.
 
 No repository pre-commit framework is configured. CI commands are the authority.

@@ -30,7 +30,9 @@ import { canonicalFloat, canonicalJson, semanticHash } from "../src/repository_m
  */
 function pythonCanonical(values: readonly number[], asInt = false): string[] {
   const buffer = Buffer.alloc(8 * values.length);
-  values.forEach((value, index) => buffer.writeDoubleLE(value, index * 8));
+  values.forEach((value, index) => {
+    buffer.writeDoubleLE(value, index * 8);
+  });
   const program = [
     "import json,struct,sys",
     "raw=sys.stdin.buffer.read()",
@@ -45,20 +47,48 @@ function pythonCanonical(values: readonly number[], asInt = false): string[] {
 
 /** Values chosen for where the two runtimes are known to disagree. */
 const BOUNDARIES: number[] = [
-  0, -0, 1, -1, 0.5, -0.5,
+  0,
+  -0,
+  1,
+  -1,
+  0.5,
+  -0.5,
   // The exact value a categorical signal carries when it fires.
-  1.0, 0.0,
+  1.0,
+  0.0,
   // CPython leaves decimal notation at decpt <= -4; this runtime at -6.
-  1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8,
+  1e-3,
+  1e-4,
+  1e-5,
+  1e-6,
+  1e-7,
+  1e-8,
   // CPython enters exponential at decpt > 16; this runtime at 21.
-  1e14, 1e15, 1e16, 1e17, 1e20, 1e21, 1e22,
+  1e14,
+  1e15,
+  1e16,
+  1e17,
+  1e20,
+  1e21,
+  1e22,
   // Shortest-repr values with a long digit string.
-  0.1 + 0.2, 1 / 3, 2 / 3, 0.063548, 0.8500000000000001,
+  0.1 + 0.2,
+  1 / 3,
+  2 / 3,
+  0.063548,
+  0.8500000000000001,
   // Sub-normal and extreme magnitudes.
-  Number.MIN_VALUE, Number.MAX_VALUE, Number.EPSILON,
-  -1e-7, -1e21, -0.063548,
+  Number.MIN_VALUE,
+  Number.MAX_VALUE,
+  Number.EPSILON,
+  -1e-7,
+  -1e21,
+  -0.063548,
   // Integers that stay integers.
-  42, 1000000, -999, 9007199254740991,
+  42,
+  1000000,
+  -999,
+  9007199254740991,
 ];
 
 describe("canonical numbers cross the language boundary unchanged", () => {

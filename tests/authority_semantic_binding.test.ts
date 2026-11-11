@@ -1,8 +1,8 @@
+import { spawnSync } from "node:child_process";
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { spawnSync } from "node:child_process";
 import { describe, expect, test, vi } from "vitest";
 import {
   META_AUTHORITY_RELATIVE_PATH,
@@ -10,32 +10,42 @@ import {
   resolveHeaderIdentity,
   verifySemanticFoundation,
 } from "../src/authority";
-import { isAuthorityConfig, isSupportedAuthoritySchema } from "../src/operation_contracts";
 import { inventoryTree } from "../src/inventory";
-import { runPipelineAsync } from "../src/pipeline";
-import { verify } from "../src/verify";
-import type { PipelineConfig } from "../src/schema";
 import { toMetaSchema } from "../src/meta_schema";
+import { isAuthorityConfig, isSupportedAuthoritySchema } from "../src/operation_contracts";
+import { runPipelineAsync } from "../src/pipeline";
+import type { PipelineConfig } from "../src/schema";
+import { verify } from "../src/verify";
 
 const dispatch = require("../scripts/lib/operation-dispatch") as {
   normalizeEnvironment: (env: NodeJS.ProcessEnv) => Record<string, unknown>;
 };
 
 const DIGESTS = {
-  "l9.authority-model/global@1": "sha256:ef536f5e233a84fd4a4d24a5fe101e9cf9a78563fafbf1e638faa383208bc451",
-  "l9.artifact-model/global@1": "sha256:21f8bb783d7611ae1b3c60474c6ca31f6096f29d7ef0e94ef81f12e6d2defe09",
-  "l9.vocabulary/global@1": "sha256:75e146e90e9f3e976c75382a5928d04c18531fa076f4096f8e5c5d4f468b0084",
-  "l9.identity-model/global@1": "sha256:b9245eca99501a38976e909e1d151942c1253b2eee2bd6bab9c6382687db4288",
-  "l9.product-kinds/global@1": "sha256:6bc39e7376650601570301fe486bdc6f2897fe461321e92c41250f9426688e7d",
-  "l9.dependency-archetypes/global@1": "sha256:909db431aa0ccc7668ce3f2dcd46addc26df39c8f3e7303925469b47d6a4617d",
+  "l9.authority-model/global@1":
+    "sha256:ef536f5e233a84fd4a4d24a5fe101e9cf9a78563fafbf1e638faa383208bc451",
+  "l9.artifact-model/global@1":
+    "sha256:21f8bb783d7611ae1b3c60474c6ca31f6096f29d7ef0e94ef81f12e6d2defe09",
+  "l9.vocabulary/global@1":
+    "sha256:75e146e90e9f3e976c75382a5928d04c18531fa076f4096f8e5c5d4f468b0084",
+  "l9.identity-model/global@1":
+    "sha256:b9245eca99501a38976e909e1d151942c1253b2eee2bd6bab9c6382687db4288",
+  "l9.product-kinds/global@1":
+    "sha256:6bc39e7376650601570301fe486bdc6f2897fe461321e92c41250f9426688e7d",
+  "l9.dependency-archetypes/global@1":
+    "sha256:909db431aa0ccc7668ce3f2dcd46addc26df39c8f3e7303925469b47d6a4617d",
 } as const;
 
 function ledgerLines(extra: Record<string, string> = {}): string {
   const all = { ...DIGESTS, ...extra };
-  return Object.entries(all).map(([id, digest]) => `    ${id}: ${digest}`).join("\n");
+  return Object.entries(all)
+    .map(([id, digest]) => `    ${id}: ${digest}`)
+    .join("\n");
 }
 
-function v2Doc(overrides: { ledgers?: string; kind?: string; archetype?: string; revision?: string } = {}): string {
+function v2Doc(
+  overrides: { ledgers?: string; kind?: string; archetype?: string; revision?: string } = {},
+): string {
   return `schema: l9.meta-authority/v2
 writer:
   repository: Example/product
@@ -118,7 +128,9 @@ describe("l9.meta-authority/v2 parse", () => {
   test("parses the product after the foundation without leaking the private cursor", () => {
     const parsed = parseAuthorityYaml(v2Doc());
     expect(parsed.semantic_foundation?.repository).toBe("Quantum-L9/.github");
-    expect(parsed.semantic_foundation?.ledgers["l9.vocabulary/global@1"]).toBe(DIGESTS["l9.vocabulary/global@1"]);
+    expect(parsed.semantic_foundation?.ledgers["l9.vocabulary/global@1"]).toBe(
+      DIGESTS["l9.vocabulary/global@1"],
+    );
     expect(parsed.product).toMatchObject({
       id: "example-product",
       owner: "Example/product",
@@ -126,7 +138,13 @@ describe("l9.meta-authority/v2 parse", () => {
       archetype: "l9.dependency-archetype/semantic-subsystem@1",
     });
 
-    for (const map of [parsed, parsed.writer, parsed.semantic_foundation, parsed.semantic_foundation?.ledgers, parsed.product]) {
+    for (const map of [
+      parsed,
+      parsed.writer,
+      parsed.semantic_foundation,
+      parsed.semantic_foundation?.ledgers,
+      parsed.product,
+    ]) {
       expect(map).toBeDefined();
       expect(Object.getPrototypeOf(map)).toBeNull();
       expect(Object.prototype.hasOwnProperty.call(map, "_end")).toBe(false);
@@ -139,9 +157,16 @@ describe("l9.meta-authority/v2 parse", () => {
     let copiedPrivateCursor: boolean;
     try {
       parseAuthorityYaml(v2Doc());
-      copiedPrivateCursor = assign.mock.calls.some((args) => args.slice(1).some((source) =>
-        source !== null && typeof source === "object" && Object.prototype.hasOwnProperty.call(source, "_end"),
-      ));
+      copiedPrivateCursor = assign.mock.calls.some((args) =>
+        args
+          .slice(1)
+          .some(
+            (source) =>
+              source !== null &&
+              typeof source === "object" &&
+              Object.prototype.hasOwnProperty.call(source, "_end"),
+          ),
+      );
     } finally {
       assign.mockRestore();
     }
@@ -161,17 +186,23 @@ describe("l9.meta-authority/v2 parse", () => {
     },
     {
       name: "semantic_foundation",
-      document: (key: string) => v2Doc().replace("  admission: candidate\n", `  admission: candidate\n  ${key}: marker\n`),
+      document: (key: string) =>
+        v2Doc().replace("  admission: candidate\n", `  admission: candidate\n  ${key}: marker\n`),
       error: (key: string) => `unsupported semantic_foundation key '${key}'`,
     },
     {
       name: "ledgers",
-      document: (key: string) => v2Doc({ ledgers: `    ${key}: ${DIGESTS["l9.vocabulary/global@1"]}\n${ledgerLines()}` }),
+      document: (key: string) =>
+        v2Doc({ ledgers: `    ${key}: ${DIGESTS["l9.vocabulary/global@1"]}\n${ledgerLines()}` }),
       error: () => "invalid ledger key",
     },
     {
       name: "product",
-      document: (key: string) => v2Doc().replace("  owner: Example/product\n", `  owner: Example/product\n  ${key}: marker\n`),
+      document: (key: string) =>
+        v2Doc().replace(
+          "  owner: Example/product\n",
+          `  owner: Example/product\n  ${key}: marker\n`,
+        ),
       error: (key: string) => `unsupported product key '${key}'`,
     },
   ];
@@ -194,7 +225,9 @@ describe("l9.meta-authority/v2 parse", () => {
   test("rejects a missing required ledger", () => {
     const ledgers = ledgerLines();
     const missing = ledgers.replace(/    l9.vocabulary\/global@1: .*\n/, "");
-    expect(() => parseAuthorityYaml(v2Doc({ ledgers: missing }))).toThrow(/META_SEMANTIC_BINDING_INVALID|does not satisfy/);
+    expect(() => parseAuthorityYaml(v2Doc({ ledgers: missing }))).toThrow(
+      /META_SEMANTIC_BINDING_INVALID|does not satisfy/,
+    );
   });
 
   test("rejects a malformed digest", () => {
@@ -203,18 +236,26 @@ describe("l9.meta-authority/v2 parse", () => {
   });
 
   test("rejects a revision that is not 40 hex characters", () => {
-    expect(() => parseAuthorityYaml(v2Doc({ revision: "31b4f4f" }))).toThrow(/does not satisfy|META_SEMANTIC_BINDING_INVALID/);
+    expect(() => parseAuthorityYaml(v2Doc({ revision: "31b4f4f" }))).toThrow(
+      /does not satisfy|META_SEMANTIC_BINDING_INVALID/,
+    );
   });
 
   test("rejects an unadmitted kind", () => {
-    expect(() => parseAuthorityYaml(v2Doc({ kind: "sdk", archetype: "Unknown" }))).toThrow(/does not satisfy|META_SEMANTIC_BINDING_INVALID/);
+    expect(() => parseAuthorityYaml(v2Doc({ kind: "sdk", archetype: "Unknown" }))).toThrow(
+      /does not satisfy|META_SEMANTIC_BINDING_INVALID/,
+    );
   });
 
   test("rejects an archetype prefix that does not match kind", () => {
-    expect(() => parseAuthorityYaml(v2Doc({
-      kind: "dependency",
-      archetype: "l9.node-archetype/runnable@1",
-    }))).toThrow(/does not satisfy|META_SEMANTIC_BINDING_INVALID/);
+    expect(() =>
+      parseAuthorityYaml(
+        v2Doc({
+          kind: "dependency",
+          archetype: "l9.node-archetype/runnable@1",
+        }),
+      ),
+    ).toThrow(/does not satisfy|META_SEMANTIC_BINDING_INVALID/);
   });
 
   test("v1 documents still parse", () => {
@@ -283,7 +324,10 @@ describe("resolveHeaderIdentity", () => {
     const root = tempRoot();
     const missing = resolveHeaderIdentity(root, {});
     expect(missing.conflicts[0]?.code).toBe("META_AUTHORITY_FILE_MISSING");
-    const operator = resolveHeaderIdentity(root, { authority: "Operator/repo", unboundNamespaceDefault: "folder" });
+    const operator = resolveHeaderIdentity(root, {
+      authority: "Operator/repo",
+      unboundNamespaceDefault: "folder",
+    });
     expect(operator.conflicts).toEqual([]);
     expect(operator.authority).toBe("Operator/repo");
     expect(operator.namespace).toBe("folder");
@@ -320,9 +364,13 @@ describe("pipeline and inventory consume the binding", () => {
     write(root, META_AUTHORITY_RELATIVE_PATH, v2Doc());
     write(root, "notes.md", "# Notes\n\nbody\n");
     const script = path.join(__dirname, "..", "scripts", "pipeline-cli.js");
-    const ok = spawnSync(process.execPath, [script, root, "--dry-run", "--no-fail-on-issues"], { encoding: "utf8" });
+    const ok = spawnSync(process.execPath, [script, root, "--dry-run", "--no-fail-on-issues"], {
+      encoding: "utf8",
+    });
     expect(ok.status).toBe(0);
-    const bad = spawnSync(process.execPath, [script, root, "--dry-run", "--authority", "other/x"], { encoding: "utf8" });
+    const bad = spawnSync(process.execPath, [script, root, "--dry-run", "--authority", "other/x"], {
+      encoding: "utf8",
+    });
     expect(bad.status).toBe(2);
     expect(bad.stderr).toMatch(/META_AUTHORITY_IDENTITY_MISMATCH/);
   });
@@ -330,30 +378,36 @@ describe("pipeline and inventory consume the binding", () => {
   test("unbound pipeline still requires authority", async () => {
     const root = tempRoot();
     write(root, "notes.md", "# Notes\n\nbody\n");
-    await expect(runPipelineAsync({
-      root,
-      glob: "**/*.md",
-      dryRun: true,
-      outDir: path.join(root, ".out"),
-      indexDir: path.join(root, ".out"),
-      nearDupThreshold: 0.9,
-      hashPrefixLength: 16,
-      verbose: false,
-      llmEnabled: false,
-      normalizeFilenames: false,
-    })).rejects.toThrow("META_AUTHORITY_FILE_MISSING");
+    await expect(
+      runPipelineAsync({
+        root,
+        glob: "**/*.md",
+        dryRun: true,
+        outDir: path.join(root, ".out"),
+        indexDir: path.join(root, ".out"),
+        nearDupThreshold: 0.9,
+        hashPrefixLength: 16,
+        verbose: false,
+        llmEnabled: false,
+        normalizeFilenames: false,
+      }),
+    ).rejects.toThrow("META_AUTHORITY_FILE_MISSING");
   });
 
   test("bound inventory migrates a previously harvested authority and namespace", () => {
     const root = tempRoot();
     write(root, META_AUTHORITY_RELATIVE_PATH, v2Doc());
-    write(root, "stale.py", [
-      "# >>> l9:meta >>>",
-      "# namespace: foreign-ns",
-      "# authority: Other/owner",
-      "# <<< l9:meta <<<",
-      "print(1)\n",
-    ].join("\n"));
+    write(
+      root,
+      "stale.py",
+      [
+        "# >>> l9:meta >>>",
+        "# namespace: foreign-ns",
+        "# authority: Other/owner",
+        "# <<< l9:meta <<<",
+        "print(1)\n",
+      ].join("\n"),
+    );
     inventoryTree({ root, outDir: path.join(root, ".l9inventory"), dryRun: false });
     const header = fs.readFileSync(path.join(root, "stale.py"), "utf8");
     expect(header).toMatch(/authority:\s*"?Example\/product"?/);
@@ -389,18 +443,20 @@ describe("binding propagation", () => {
     const boundResult = await runPipelineAsync(pipelineConfig(bound, { glob: "**/*.ts" }));
     const boundMeta = boundResult.injected.find((row) => row.meta.artifact_type === "source");
     expect(boundMeta).toBeDefined();
-    expect((boundMeta?.meta as { owner?: string }).owner).toBe("Example/product");
+    expect((boundMeta?.meta as { owner?: string } | undefined)?.owner).toBe("Example/product");
     const boundV3 = boundResult.metaV3.find((row) => row.sourcePath === boundMeta?.sourcePath);
     expect(boundV3?.metaV3.governance.owner).toBe("Example/product");
 
     const unbound = tempRoot();
     write(unbound, "src/mod.ts", "export const n = 1;\n");
-    const unboundResult = await runPipelineAsync(pipelineConfig(unbound, {
-      glob: "**/*.ts",
-      authority: "Operator/repo",
-    }));
+    const unboundResult = await runPipelineAsync(
+      pipelineConfig(unbound, {
+        glob: "**/*.ts",
+        authority: "Operator/repo",
+      }),
+    );
     const unboundMeta = unboundResult.injected.find((row) => row.meta.artifact_type === "source");
-    expect((unboundMeta?.meta as { owner?: string }).owner).toBe("Unknown");
+    expect((unboundMeta?.meta as { owner?: string } | undefined)?.owner).toBe("Unknown");
     expect(unboundResult.semanticBinding).toBeUndefined();
   });
 
@@ -408,27 +464,39 @@ describe("binding propagation", () => {
     const root = tempRoot();
     write(root, META_AUTHORITY_RELATIVE_PATH, v2Doc());
     write(root, "notes.md", "# Notes\n\nbody\n");
-    await expect(runPipelineAsync(pipelineConfig(root, {
-      glob: "**/*.md",
-      namespaceGlobs: [{ glob: "plastos/**", namespace: "plastos" }],
-    }))).rejects.toThrow(/META_AUTHORITY_IDENTITY_MISMATCH/);
+    await expect(
+      runPipelineAsync(
+        pipelineConfig(root, {
+          glob: "**/*.md",
+          namespaceGlobs: [{ glob: "plastos/**", namespace: "plastos" }],
+        }),
+      ),
+    ).rejects.toThrow(/META_AUTHORITY_IDENTITY_MISMATCH/);
 
-    const allowed = await runPipelineAsync(pipelineConfig(root, {
-      glob: "**/*.md",
-      namespaceGlobs: [{ glob: "notes.md", namespace: "example-product" }],
-    }));
+    const allowed = await runPipelineAsync(
+      pipelineConfig(root, {
+        glob: "**/*.md",
+        namespaceGlobs: [{ glob: "notes.md", namespace: "example-product" }],
+      }),
+    );
     expect(allowed.injected.length).toBeGreaterThan(0);
 
     const script = path.join(__dirname, "..", "scripts", "pipeline-cli.js");
-    const refused = spawnSync(process.execPath, [
-      script, root, "--dry-run", "--no-fail-on-issues", "--namespace-glob", "plastos/**=plastos",
-    ], { encoding: "utf8" });
+    const refused = spawnSync(
+      process.execPath,
+      [script, root, "--dry-run", "--no-fail-on-issues", "--namespace-glob", "plastos/**=plastos"],
+      { encoding: "utf8" },
+    );
     expect(refused.status).toBe(2);
     expect(`${refused.stderr}${refused.stdout}`).toMatch(/META_AUTHORITY_IDENTITY_MISMATCH/);
 
-    expect(() => dispatch.normalizeEnvironment(actionEnv(root, {
-      L9_INPUT_NAMESPACE_GLOBS: "plastos/**=plastos",
-    }))).toThrow(/META_AUTHORITY_IDENTITY_MISMATCH/);
+    expect(() =>
+      dispatch.normalizeEnvironment(
+        actionEnv(root, {
+          L9_INPUT_NAMESPACE_GLOBS: "plastos/**=plastos",
+        }),
+      ),
+    ).toThrow(/META_AUTHORITY_IDENTITY_MISMATCH/);
   });
 
   test("bound identity survives a custom meta-schema that collides with owner, authority and namespace", async () => {
@@ -468,17 +536,27 @@ describe("binding propagation", () => {
     const boundVerified = verify(boundRow.sourcePath, boundRow.originalBodyHash, boundRow.meta, {
       semanticallyBound: true,
     });
-    expect(boundVerified.issues.some((issue) => issue.includes("sharing_scope=shared"))).toBe(false);
+    expect(boundVerified.issues.some((issue) => issue.includes("sharing_scope=shared"))).toBe(
+      false,
+    );
 
     const unbound = tempRoot();
     write(unbound, "docs/shared/x.md", "# Shared\n\nbody\n");
-    const unboundResult = await runPipelineAsync(pipelineConfig(unbound, {
-      glob: "**/*.md",
-      authority: "Operator/repo",
-    }));
+    const unboundResult = await runPipelineAsync(
+      pipelineConfig(unbound, {
+        glob: "**/*.md",
+        authority: "Operator/repo",
+      }),
+    );
     const unboundRow = unboundResult.injected[0];
-    const unboundVerified = verify(unboundRow.sourcePath, unboundRow.originalBodyHash, unboundRow.meta);
-    expect(unboundVerified.issues.some((issue) => issue.includes("sharing_scope=shared"))).toBe(true);
+    const unboundVerified = verify(
+      unboundRow.sourcePath,
+      unboundRow.originalBodyHash,
+      unboundRow.meta,
+    );
+    expect(unboundVerified.issues.some((issue) => issue.includes("sharing_scope=shared"))).toBe(
+      true,
+    );
   });
 
   test("bound runs persist semantic_binding; unbound runs omit it", async () => {
@@ -494,18 +572,25 @@ describe("binding propagation", () => {
     expect(Object.keys(boundResult.semanticBinding?.semantic_foundation.ledgers ?? {})).toEqual(
       expect.arrayContaining(Object.keys(DIGESTS)),
     );
-    const report = JSON.parse(fs.readFileSync(path.join(bound, ".out", "coverage-report.json"), "utf8")) as {
-      semantic_binding?: { product?: { id?: string }; semantic_foundation?: { admission?: string } };
+    const report = JSON.parse(
+      fs.readFileSync(path.join(bound, ".out", "coverage-report.json"), "utf8"),
+    ) as {
+      semantic_binding?: {
+        product?: { id?: string };
+        semantic_foundation?: { admission?: string };
+      };
     };
     expect(report.semantic_binding?.product?.id).toBe("example-product");
     expect(report.semantic_binding?.semantic_foundation?.admission).toBe("candidate");
 
     const unbound = tempRoot();
     write(unbound, "notes.md", "# Notes\n\nbody\n");
-    const unboundResult = await runPipelineAsync(pipelineConfig(unbound, {
-      glob: "**/*.md",
-      authority: "Operator/repo",
-    }));
+    const unboundResult = await runPipelineAsync(
+      pipelineConfig(unbound, {
+        glob: "**/*.md",
+        authority: "Operator/repo",
+      }),
+    );
     expect(unboundResult.semanticBinding).toBeUndefined();
     const unboundReport = JSON.parse(
       fs.readFileSync(path.join(unbound, ".out", "coverage-report.json"), "utf8"),
@@ -524,7 +609,8 @@ describe("verifySemanticFoundation", () => {
       const name = id.split("/")[0].replace("l9.", "") + ".yaml";
       const body = `schema: test\nartifact_id: ${id}\n`;
       fs.writeFileSync(path.join(dir, name), body);
-      bindingLedgers[id] = `sha256:${crypto.createHash("sha256").update(body, "utf8").digest("hex")}`;
+      bindingLedgers[id] =
+        `sha256:${crypto.createHash("sha256").update(body, "utf8").digest("hex")}`;
     }
     const binding = {
       repository: "Quantum-L9/.github",
@@ -537,22 +623,31 @@ describe("verifySemanticFoundation", () => {
 
     const tampered = { ...binding, ledgers: { ...bindingLedgers } };
     const first = Object.keys(tampered.ledgers)[0];
-    tampered.ledgers[first] = tampered.ledgers[first].replace(/[0-9a-f]$/, (ch) => (ch === "0" ? "1" : "0"));
-    expect(verifySemanticFoundation(tampered, semantics)[0]?.code).toBe("META_SEMANTIC_BINDING_INVALID");
+    tampered.ledgers[first] = tampered.ledgers[first].replace(/[0-9a-f]$/, (ch) =>
+      ch === "0" ? "1" : "0",
+    );
+    expect(verifySemanticFoundation(tampered, semantics)[0]?.code).toBe(
+      "META_SEMANTIC_BINDING_INVALID",
+    );
 
     const checkout = tempRoot();
     spawnSync("git", ["init"], { cwd: checkout, encoding: "utf8" });
     fs.writeFileSync(path.join(checkout, "README.md"), "x\n");
     spawnSync("git", ["add", "README.md"], { cwd: checkout });
-    spawnSync("git", ["-c", "user.email=t@t.t", "-c", "user.name=t", "commit", "-m", "init"], { cwd: checkout });
-    const head = spawnSync("git", ["rev-parse", "HEAD"], { cwd: checkout, encoding: "utf8" }).stdout.trim();
+    spawnSync("git", ["-c", "user.email=t@t.t", "-c", "user.name=t", "commit", "-m", "init"], {
+      cwd: checkout,
+    });
+    const head = spawnSync("git", ["rev-parse", "HEAD"], {
+      cwd: checkout,
+      encoding: "utf8",
+    }).stdout.trim();
     expect(head).toHaveLength(40);
     expect(head).not.toBe(binding.revision);
-    const cli = spawnSync(process.execPath, [
-      path.join(__dirname, "..", "scripts", "semantics-verify.js"),
-      "--semantics-root",
-      checkout,
-    ], { encoding: "utf8" });
+    const cli = spawnSync(
+      process.execPath,
+      [path.join(__dirname, "..", "scripts", "semantics-verify.js"), "--semantics-root", checkout],
+      { encoding: "utf8" },
+    );
     expect(cli.status).toBe(2);
     expect(cli.stderr).toMatch(/does not match bound revision/);
   });
@@ -560,7 +655,8 @@ describe("verifySemanticFoundation", () => {
 
 describe("verifySemanticFoundation refuses ambiguous ledger claims (WU-027, RC-036)", () => {
   const ID = "l9.vocabulary/global@1";
-  const sha = (body: string) => `sha256:${crypto.createHash("sha256").update(body, "utf8").digest("hex")}`;
+  const sha = (body: string) =>
+    `sha256:${crypto.createHash("sha256").update(body, "utf8").digest("hex")}`;
   const binding = (ledgers: Record<string, string>) => ({
     repository: "Quantum-L9/.github",
     revision: "31b4f4f699becb1437b4804c308650bbad60c00e",
@@ -580,21 +676,33 @@ describe("verifySemanticFoundation refuses ambiguous ledger claims (WU-027, RC-0
   }
 
   test("REG-WU-027-RC-036-a: a cited id claimed twice is refused even when the later claimant matches", () => {
-    const { root, dir } = semanticsWith({ "a-vocabulary-stale.yaml": STALE, "vocabulary.yaml": MATCHING });
+    const { root, dir } = semanticsWith({
+      "a-vocabulary-stale.yaml": STALE,
+      "vocabulary.yaml": MATCHING,
+    });
     const conflicts = verifySemanticFoundation(binding({ [ID]: sha(MATCHING) }), root);
     expect(conflicts).toHaveLength(1);
     expect(conflicts[0].code).toBe("META_SEMANTIC_BINDING_INVALID");
     expect(conflicts[0].message).toContain(ID);
-    expect(conflicts[0].evidence).toEqual([path.join(dir, "a-vocabulary-stale.yaml"), path.join(dir, "vocabulary.yaml")]);
+    expect(conflicts[0].evidence).toEqual([
+      path.join(dir, "a-vocabulary-stale.yaml"),
+      path.join(dir, "vocabulary.yaml"),
+    ]);
   });
 
   test("REG-WU-027-RC-036-b: the same single conflict when the earlier claimant matches", () => {
-    const { root, dir } = semanticsWith({ "a-vocabulary.yaml": MATCHING, "vocabulary-stale.yaml": STALE });
+    const { root, dir } = semanticsWith({
+      "a-vocabulary.yaml": MATCHING,
+      "vocabulary-stale.yaml": STALE,
+    });
     const conflicts = verifySemanticFoundation(binding({ [ID]: sha(MATCHING) }), root);
     expect(conflicts).toHaveLength(1);
     expect(conflicts[0].code).toBe("META_SEMANTIC_BINDING_INVALID");
     expect(conflicts[0].message).toContain("more than one");
-    expect(conflicts[0].evidence).toEqual([path.join(dir, "a-vocabulary.yaml"), path.join(dir, "vocabulary-stale.yaml")]);
+    expect(conflicts[0].evidence).toEqual([
+      path.join(dir, "a-vocabulary.yaml"),
+      path.join(dir, "vocabulary-stale.yaml"),
+    ]);
   });
 
   test("REG-WU-027-RC-036-c: unique ids with matching digests still verify clean", () => {

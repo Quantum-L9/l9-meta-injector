@@ -12,21 +12,22 @@
 //     supports them; absence stays absent and is reported as a diagnostic.
 //   - Unknowns are preserved as explicit values and diagnostics, never silently
 //     upgraded into certainty.
+
+import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import * as crypto from "node:crypto";
-import { InventoryRecord, InventoryResult, inventoryTree } from "./inventory";
-import { compareCodePoints } from "./ordering";
-import { InterpretationResult, interpretRepository, looksSecret } from "./interpretation";
-import { defaultExtractors } from "./extractors";
-import { UNKNOWN } from "./schema";
-import { listGitIgnoredUntracked } from "./git_ignored";
 import {
-  SEMANTIC_BINDING_VERIFICATION_SCOPE,
   observeSemanticBinding,
+  SEMANTIC_BINDING_VERIFICATION_SCOPE,
   type SemanticBindingObservation,
 } from "./authority";
+import { defaultExtractors } from "./extractors";
+import { listGitIgnoredUntracked } from "./git_ignored";
+import { InterpretationResult, interpretRepository, looksSecret } from "./interpretation";
+import { InventoryRecord, InventoryResult, inventoryTree } from "./inventory";
+import { compareCodePoints } from "./ordering";
+import { UNKNOWN } from "./schema";
 
 /** Re-exported so packet consumers keep one ordering import site. */
 export { compareCodePoints } from "./ordering";
@@ -80,7 +81,9 @@ const DEFAULT_GENERATED_AT = "1970-01-01T00:00:00.000Z";
 export class CanonicalFloat {
   constructor(readonly value: number) {
     if (!Number.isFinite(value)) {
-      throw new TypeError(`repository-model: a float measurement must be finite, got ${String(value)}`);
+      throw new TypeError(
+        `repository-model: a float measurement must be finite, got ${String(value)}`,
+      );
     }
   }
 }
@@ -100,11 +103,20 @@ export type CanonicalValue =
   | { [key: string]: CanonicalValue };
 
 const VOLATILE_KEYS: ReadonlySet<string> = new Set([
-  "created_at", "checked_at", "generated_at", "committed_at", "frozen_at",
-  "run_id", "stage_id", "trace_id", "workflow_id",
-  "artifact_hash", "semantic_hash", "packet_id", "receipt_id",
+  "created_at",
+  "checked_at",
+  "generated_at",
+  "committed_at",
+  "frozen_at",
+  "run_id",
+  "stage_id",
+  "trace_id",
+  "workflow_id",
+  "artifact_hash",
+  "semantic_hash",
+  "packet_id",
+  "receipt_id",
 ]);
-
 
 function canonicalize(value: unknown): CanonicalValue {
   if (value === null) return null;
@@ -138,7 +150,9 @@ function canonicalize(value: unknown): CanonicalValue {
     // (`json.dumps(..., allow_nan=False)`). Finite floats are canonical, and
     // `renderNumber` below is what makes them safe to cross the boundary.
     if (!Number.isFinite(value)) {
-      throw new TypeError(`repository-model: only finite numbers are canonical, got ${String(value)}`);
+      throw new TypeError(
+        `repository-model: only finite numbers are canonical, got ${String(value)}`,
+      );
     }
     return value;
   }
@@ -300,8 +314,18 @@ export function repositoryModelArtifactId(repositoryId: string, sourcePath: stri
 export type RepositoryModelConfidenceLevel = "low" | "medium" | "high";
 export type RepositoryModelEvidenceStrength = "none" | "weak" | "corroborated" | "direct";
 export type RepositoryModelDerivationMethod =
-  | "declared" | "deterministic" | "cross-record" | "heuristic" | "model-assisted" | "unknown";
-export type RepositoryModelAuthority = "source" | "validated-machine" | "derived" | "candidate" | "unknown";
+  | "declared"
+  | "deterministic"
+  | "cross-record"
+  | "heuristic"
+  | "model-assisted"
+  | "unknown";
+export type RepositoryModelAuthority =
+  | "source"
+  | "validated-machine"
+  | "derived"
+  | "candidate"
+  | "unknown";
 export type RepositoryModelCompleteness = "partial" | "sufficient" | "complete";
 export type RepositoryModelConflictStatus = "none" | "possible" | "confirmed";
 
@@ -322,8 +346,19 @@ export interface RepositoryModelSourceRef {
 }
 
 export type RepositoryModelEvidenceClass =
-  | "observed" | "declared" | "derived" | "assisted" | "projected" | "validated" | "committed";
-export type RepositoryModelEvidenceSourceType = "file" | "packet" | "inference" | "validation" | "unknown";
+  | "observed"
+  | "declared"
+  | "derived"
+  | "assisted"
+  | "projected"
+  | "validated"
+  | "committed";
+export type RepositoryModelEvidenceSourceType =
+  | "file"
+  | "packet"
+  | "inference"
+  | "validation"
+  | "unknown";
 
 export interface RepositoryModelEvidenceRecord {
   evidence_id: string;
@@ -391,9 +426,21 @@ export interface RepositoryModelCapabilityRecord {
 }
 
 export type RepositoryModelEdgeType =
-  | "CONTAINS" | "DEPENDS_ON" | "IMPLEMENTS" | "EXPOSES" | "VALIDATED_BY" | "GOVERNED_BY"
-  | "OWNED_BY" | "DOCUMENTED_BY" | "PRODUCES" | "CONSUMES" | "DERIVED_FROM" | "SUPERSEDES"
-  | "ROUTES_TO" | "PUBLISHES_TO" | "MEMBER_OF";
+  | "CONTAINS"
+  | "DEPENDS_ON"
+  | "IMPLEMENTS"
+  | "EXPOSES"
+  | "VALIDATED_BY"
+  | "GOVERNED_BY"
+  | "OWNED_BY"
+  | "DOCUMENTED_BY"
+  | "PRODUCES"
+  | "CONSUMES"
+  | "DERIVED_FROM"
+  | "SUPERSEDES"
+  | "ROUTES_TO"
+  | "PUBLISHES_TO"
+  | "MEMBER_OF";
 
 export interface RepositoryModelEdgeRecord {
   edge_id: string;
@@ -648,8 +695,12 @@ function confidence(
   completeness: RepositoryModelCompleteness,
 ): RepositoryModelConfidence {
   return {
-    level, evidence_strength: strength, derivation_method: method,
-    authority, completeness, conflict_status: "none",
+    level,
+    evidence_strength: strength,
+    derivation_method: method,
+    authority,
+    completeness,
+    conflict_status: "none",
   };
 }
 
@@ -661,29 +712,63 @@ function confidence(
  */
 function artifactConfidence(score: number, hashed: boolean): RepositoryModelConfidence {
   const completeness: RepositoryModelCompleteness = hashed ? "sufficient" : "partial";
-  if (score >= 0.9) return confidence("high", "corroborated", "deterministic", "validated-machine", completeness);
-  if (score >= 0.5) return confidence("medium", "direct", "deterministic", "validated-machine", completeness);
+  if (score >= 0.9)
+    return confidence("high", "corroborated", "deterministic", "validated-machine", completeness);
+  if (score >= 0.5)
+    return confidence("medium", "direct", "deterministic", "validated-machine", completeness);
   return confidence("low", "weak", "heuristic", "candidate", "partial");
 }
 
 /** Facts derived deterministically from observed repository paths. */
-const DERIVED_CONFIDENCE = confidence("medium", "direct", "deterministic", "validated-machine", "sufficient");
+const DERIVED_CONFIDENCE = confidence(
+  "medium",
+  "direct",
+  "deterministic",
+  "validated-machine",
+  "sufficient",
+);
 
 /**
  * The repository record aggregates observed artifacts but leaves role, ownership and
  * dependency direction unresolved, so it is deliberately never better than `partial`.
  */
-const REPOSITORY_CONFIDENCE = confidence("medium", "direct", "deterministic", "validated-machine", "partial");
+const REPOSITORY_CONFIDENCE = confidence(
+  "medium",
+  "direct",
+  "deterministic",
+  "validated-machine",
+  "partial",
+);
 
 // ───────────────────────────── path-evidence derivation ─────────────────────────────
 
 const LANGUAGE_BY_EXTENSION: Readonly<Record<string, string>> = {
-  ".ts": "TypeScript", ".tsx": "TypeScript", ".mts": "TypeScript", ".cts": "TypeScript",
-  ".js": "JavaScript", ".jsx": "JavaScript", ".mjs": "JavaScript", ".cjs": "JavaScript",
-  ".py": "Python", ".rs": "Rust", ".go": "Go", ".rb": "Ruby", ".java": "Java",
-  ".kt": "Kotlin", ".kts": "Kotlin", ".swift": "Swift", ".cs": "C#", ".php": "PHP",
-  ".c": "C", ".h": "C", ".cc": "C++", ".cpp": "C++", ".hpp": "C++",
-  ".sh": "Shell", ".bash": "Shell", ".sql": "SQL",
+  ".ts": "TypeScript",
+  ".tsx": "TypeScript",
+  ".mts": "TypeScript",
+  ".cts": "TypeScript",
+  ".js": "JavaScript",
+  ".jsx": "JavaScript",
+  ".mjs": "JavaScript",
+  ".cjs": "JavaScript",
+  ".py": "Python",
+  ".rs": "Rust",
+  ".go": "Go",
+  ".rb": "Ruby",
+  ".java": "Java",
+  ".kt": "Kotlin",
+  ".kts": "Kotlin",
+  ".swift": "Swift",
+  ".cs": "C#",
+  ".php": "PHP",
+  ".c": "C",
+  ".h": "C",
+  ".cc": "C++",
+  ".cpp": "C++",
+  ".hpp": "C++",
+  ".sh": "Shell",
+  ".bash": "Shell",
+  ".sql": "SQL",
 };
 
 /**
@@ -692,11 +777,20 @@ const LANGUAGE_BY_EXTENSION: Readonly<Record<string, string>> = {
  * `tests/fixtures/` describes that fixture, not the repository that contains it.
  */
 const PACKAGE_MANAGER_BY_FILENAME: Readonly<Record<string, string>> = {
-  "package-lock.json": "npm", "npm-shrinkwrap.json": "npm",
-  "pnpm-lock.yaml": "pnpm", "yarn.lock": "yarn",
-  "requirements.txt": "pip", "poetry.lock": "poetry", "uv.lock": "uv", "Pipfile": "pipenv",
-  "Cargo.toml": "cargo", "go.mod": "go", "Gemfile": "bundler",
-  "pom.xml": "maven", "build.gradle": "gradle", "build.gradle.kts": "gradle",
+  "package-lock.json": "npm",
+  "npm-shrinkwrap.json": "npm",
+  "pnpm-lock.yaml": "pnpm",
+  "yarn.lock": "yarn",
+  "requirements.txt": "pip",
+  "poetry.lock": "poetry",
+  "uv.lock": "uv",
+  Pipfile: "pipenv",
+  "Cargo.toml": "cargo",
+  "go.mod": "go",
+  Gemfile: "bundler",
+  "pom.xml": "maven",
+  "build.gradle": "gradle",
+  "build.gradle.kts": "gradle",
   "composer.json": "composer",
 };
 
@@ -708,18 +802,34 @@ const PACKAGE_MANAGER_BY_FILENAME: Readonly<Record<string, string>> = {
  * ADR-031 to it): the lockfile beside it decides. These are recorded as an explicit coverage
  * gap rather than resolved to a guess.
  */
-const AMBIGUOUS_PACKAGE_MANIFESTS: ReadonlySet<string> = new Set(["package.json", "pyproject.toml"]);
+const AMBIGUOUS_PACKAGE_MANIFESTS: ReadonlySet<string> = new Set([
+  "package.json",
+  "pyproject.toml",
+]);
 
 const GOVERNANCE_FILENAMES: ReadonlySet<string> = new Set([
-  "CODEOWNERS", "AGENTS.md", "CLAUDE.md", "GOVERNANCE.md", "SECURITY.md",
-  "CONTRIBUTING.md", "LICENSE", "INVARIANTS.md", "CODE_OF_CONDUCT.md",
+  "CODEOWNERS",
+  "AGENTS.md",
+  "CLAUDE.md",
+  "GOVERNANCE.md",
+  "SECURITY.md",
+  "CONTRIBUTING.md",
+  "LICENSE",
+  "INVARIANTS.md",
+  "CODE_OF_CONDUCT.md",
 ]);
 
 const FAMILY_BY_INVENTORY_TYPE: Readonly<Record<string, string>> = {
-  code: "code", test: "test", prompt: "prompt", archive: "archive",
-  schema: "configuration", config: "configuration",
-  spec: "documentation", documentation: "documentation",
-  research_markdown: "documentation", research_pdf: "documentation",
+  code: "code",
+  test: "test",
+  prompt: "prompt",
+  archive: "archive",
+  schema: "configuration",
+  config: "configuration",
+  spec: "documentation",
+  documentation: "documentation",
+  research_markdown: "documentation",
+  research_pdf: "documentation",
 };
 
 function isWorkflowPath(relativePath: string): boolean {
@@ -764,9 +874,11 @@ const NON_SEMANTIC_UNKNOWN_PREFIXES: readonly string[] = ["clock_skew:"];
 
 /** The inventory unknowns that are about the repository, sorted. */
 function semanticUnknowns(record: InventoryRecord): string[] {
-  return sortStrings(record.unknowns.filter(
-    (unknown) => !NON_SEMANTIC_UNKNOWN_PREFIXES.some((prefix) => unknown.startsWith(prefix)),
-  ));
+  return sortStrings(
+    record.unknowns.filter(
+      (unknown) => !NON_SEMANTIC_UNKNOWN_PREFIXES.some((prefix) => unknown.startsWith(prefix)),
+    ),
+  );
 }
 
 /** Deterministic identity of the observation set, independent of where it was checked out. */
@@ -787,11 +899,27 @@ const SCHEMA_HASH = semanticHash({
   packet_type: REPOSITORY_MODEL_PACKET_TYPE,
   packet_version: REPOSITORY_MODEL_PACKET_VERSION,
   shell: [
-    "packet_type", "packet_version", "packet_id", "subject", "source_snapshot", "validation",
-    "producer", "profile", "schema_hash", "semantic_hash", "artifact_hash", "payload_refs", "payload",
+    "packet_type",
+    "packet_version",
+    "packet_id",
+    "subject",
+    "source_snapshot",
+    "validation",
+    "producer",
+    "profile",
+    "schema_hash",
+    "semantic_hash",
+    "artifact_hash",
+    "payload_refs",
+    "payload",
   ],
   payload_domains: [
-    "repositories", "artifacts", "capabilities", "relationships", "evidence", "diagnostics",
+    "repositories",
+    "artifacts",
+    "capabilities",
+    "relationships",
+    "evidence",
+    "diagnostics",
     // 1.1.0 adds semantic assertions as a first-class domain.
     "assertions",
   ],
@@ -823,7 +951,11 @@ const PROFILE_HASH = semanticHash({
 const LOCAL_SOURCE_PROFILE_ID = "meta-injector-local-source-observation";
 const LOCAL_SOURCE_PROFILE_VERSION = "1.0.0";
 
-function localSourceProfile(input: RepositoryModelLocalSourceInput): { id: string; version: string; hash: string } {
+function localSourceProfile(input: RepositoryModelLocalSourceInput): {
+  id: string;
+  version: string;
+  hash: string;
+} {
   return {
     id: LOCAL_SOURCE_PROFILE_ID,
     version: LOCAL_SOURCE_PROFILE_VERSION,
@@ -897,17 +1029,22 @@ function makeEvidence(
  * no supporting evidence stay empty and are reported as diagnostics rather than filled
  * with plausible-looking inference.
  */
-export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): RepositoryModelPacket {
+export function buildRepositoryModelPacket(
+  input: RepositoryModelBuildInput,
+): RepositoryModelPacket {
   const generatedAt = input.generatedAt ?? DEFAULT_GENERATED_AT;
   const producerVersion = input.producerVersion;
   if (!input.repositoryName) throw new Error("repository-model: repositoryName is required");
-  if (!input.sourceRevision) throw new Error("repository-model: sourceRevision is required and is never inferred");
+  if (!input.sourceRevision)
+    throw new Error("repository-model: sourceRevision is required and is never inferred");
   if (!producerVersion) throw new Error("repository-model: producerVersion is required");
 
   const repositoryId = `repo:${input.repositoryName}`;
   // Folders carry no artifact identity of their own; they are reported as a diagnostic
   // rather than silently dropped.
-  const allRecords = [...input.inventory.records].sort((a, b) => compareCodePoints(a.relative_path, b.relative_path));
+  const allRecords = [...input.inventory.records].sort((a, b) =>
+    compareCodePoints(a.relative_path, b.relative_path),
+  );
   const fileRecords = allRecords.filter((record) => record.artifact_type !== "folder");
   const folderCount = allRecords.length - fileRecords.length;
 
@@ -919,7 +1056,7 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
   const relationships: RepositoryModelEdgeRecord[] = [];
   const diagnostics: RepositoryModelDiagnostic[] = [];
 
-  const languages = new Map<string, string>();       // language -> first evidencing path
+  const languages = new Map<string, string>(); // language -> first evidencing path
   const packageManagers = new Map<string, string>();
   const ambiguousManifests = new Map<string, string>(); // manifest filename -> first evidencing path
   const workflows: string[] = [];
@@ -935,21 +1072,27 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
     const artifactId = repositoryModelArtifactId(repositoryId, relativePath);
     const recordConfidence = artifactConfidence(record.classification_confidence, hashed);
 
-    const observation = makeEvidence({
-      subjectId: artifactId,
-      field: "artifact_type",
-      evidenceClass: "observed",
-      sourceRef: {
-        source_path: relativePath,
-        source_revision: input.sourceRevision,
-        ...(hashed ? { content_hash: contentHash } : {}),
+    const observation = makeEvidence(
+      {
+        subjectId: artifactId,
+        field: "artifact_type",
+        evidenceClass: "observed",
+        sourceRef: {
+          source_path: relativePath,
+          source_revision: input.sourceRevision,
+          ...(hashed ? { content_hash: contentHash } : {}),
+        },
+        value: {
+          artifact_type: record.artifact_type,
+          ...(record.evidence_excerpt !== null
+            ? { evidence_excerpt: record.evidence_excerpt }
+            : {}),
+        },
+        confidence: recordConfidence,
       },
-      value: {
-        artifact_type: record.artifact_type,
-        ...(record.evidence_excerpt !== null ? { evidence_excerpt: record.evidence_excerpt } : {}),
-      },
-      confidence: recordConfidence,
-    }, producerVersion, generatedAt);
+      producerVersion,
+      generatedAt,
+    );
     evidence.push(observation);
 
     const artifact: RepositoryModelArtifactRecord = {
@@ -1004,8 +1147,12 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
     // over every observed file; workflows are already anchored at `.github/workflows/`.
     if (isRepositoryRootPath(relativePath)) {
       const manager = PACKAGE_MANAGER_BY_FILENAME[record.file_name];
-      if (manager !== undefined && !packageManagers.has(manager)) packageManagers.set(manager, relativePath);
-      if (AMBIGUOUS_PACKAGE_MANIFESTS.has(record.file_name) && !ambiguousManifests.has(record.file_name)) {
+      if (manager !== undefined && !packageManagers.has(manager))
+        packageManagers.set(manager, relativePath);
+      if (
+        AMBIGUOUS_PACKAGE_MANIFESTS.has(record.file_name) &&
+        !ambiguousManifests.has(record.file_name)
+      ) {
         ambiguousManifests.set(record.file_name, relativePath);
       }
     }
@@ -1046,7 +1193,9 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
       },
     });
 
-    for (const archive of [...local.archives].sort((a, b) => compareCodePoints(a.sourcePath, b.sourcePath))) {
+    for (const archive of [...local.archives].sort((a, b) =>
+      compareCodePoints(a.sourcePath, b.sourcePath),
+    )) {
       if (archive.expanded) continue;
       // A held archive is still an observation: its bytes were hashed, its members
       // were not claimed, and the reason is explicit rather than an absence.
@@ -1071,7 +1220,8 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
     }
 
     const orderedMembers = [...local.members].sort((a, b) =>
-      compareCodePoints(a.virtualSourcePath, b.virtualSourcePath));
+      compareCodePoints(a.virtualSourcePath, b.virtualSourcePath),
+    );
     for (const member of orderedMembers) {
       const memberArtifactId = artifactIdFor(member.virtualSourcePath);
       const archiveArtifactId = artifactIdFor(member.parentArchivePath);
@@ -1087,7 +1237,10 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
           stage: OBSERVATION_STAGE,
           category: "coverage",
           subject_id: repositoryId,
-          details: { member_path: member.virtualSourcePath, archive_path: member.parentArchivePath },
+          details: {
+            member_path: member.virtualSourcePath,
+            archive_path: member.parentArchivePath,
+          },
         });
         continue;
       }
@@ -1099,24 +1252,28 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
         member_path: member.memberPath,
         member_content_hash: member.contentHash,
       });
-      const provenance = makeEvidence({
-        subjectId: memberArtifactId,
-        field: "derived_from",
-        evidenceClass: "observed",
-        sourceRef: {
-          source_path: member.virtualSourcePath,
-          source_revision: input.sourceRevision,
-          content_hash: member.contentHash,
+      const provenance = makeEvidence(
+        {
+          subjectId: memberArtifactId,
+          field: "derived_from",
+          evidenceClass: "observed",
+          sourceRef: {
+            source_path: member.virtualSourcePath,
+            source_revision: input.sourceRevision,
+            content_hash: member.contentHash,
+          },
+          value: {
+            member_id: memberId,
+            member_path: member.memberPath,
+            nested_depth: member.nestedDepth,
+            archive_digest: member.parentArchiveHash,
+            archive_source_path: member.parentArchivePath,
+          },
+          confidence: DERIVED_CONFIDENCE,
         },
-        value: {
-          member_id: memberId,
-          member_path: member.memberPath,
-          nested_depth: member.nestedDepth,
-          archive_digest: member.parentArchiveHash,
-          archive_source_path: member.parentArchivePath,
-        },
-        confidence: DERIVED_CONFIDENCE,
-      }, producerVersion, generatedAt);
+        producerVersion,
+        generatedAt,
+      );
       evidence.push(provenance);
 
       const derivedIdentity = {
@@ -1141,14 +1298,17 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
       });
     }
 
-    for (const diagnostic of [...local.diagnostics].sort((a, b) =>
-      compareCodePoints(a.code, b.code)
-      || compareCodePoints(a.sourcePath ?? "", b.sourcePath ?? "")
-      || compareCodePoints(a.message, b.message))) {
-      const subjectId = diagnostic.sourcePath !== undefined
-        && emittedArtifactIds.has(artifactIdFor(diagnostic.sourcePath))
-        ? artifactIdFor(diagnostic.sourcePath)
-        : repositoryId;
+    for (const diagnostic of [...local.diagnostics].sort(
+      (a, b) =>
+        compareCodePoints(a.code, b.code) ||
+        compareCodePoints(a.sourcePath ?? "", b.sourcePath ?? "") ||
+        compareCodePoints(a.message, b.message),
+    )) {
+      const subjectId =
+        diagnostic.sourcePath !== undefined &&
+        emittedArtifactIds.has(artifactIdFor(diagnostic.sourcePath))
+          ? artifactIdFor(diagnostic.sourcePath)
+          : repositoryId;
       diagnostics.push({
         code: diagnostic.code,
         severity: diagnostic.severity,
@@ -1166,14 +1326,18 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
   // validated-machine authority, and the consumer refuses such a claim that carries
   // no evidence, so this record exists even when no derived fact below does.
   const repositoryEvidenceRefs: string[] = [];
-  const repositoryObservation = makeEvidence({
-    subjectId: repositoryId,
-    field: "artifact_ids",
-    evidenceClass: "observed",
-    sourceRef: { source_path: ".", source_revision: input.sourceRevision },
-    value: { artifact_count: fileRecords.length, snapshot_semantic_hash: snapshotHash },
-    confidence: REPOSITORY_CONFIDENCE,
-  }, producerVersion, generatedAt);
+  const repositoryObservation = makeEvidence(
+    {
+      subjectId: repositoryId,
+      field: "artifact_ids",
+      evidenceClass: "observed",
+      sourceRef: { source_path: ".", source_revision: input.sourceRevision },
+      value: { artifact_count: fileRecords.length, snapshot_semantic_hash: snapshotHash },
+      confidence: REPOSITORY_CONFIDENCE,
+    },
+    producerVersion,
+    generatedAt,
+  );
   evidence.push(repositoryObservation);
   repositoryEvidenceRefs.push(repositoryObservation.evidence_id);
 
@@ -1185,7 +1349,8 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
   // `repository_id`, and a verified digest is a separate validation record that
   // grants no admission.
   const binding = input.semanticBinding;
-  const bindingDeclared = binding?.status === "bound" && binding.semanticFoundation && binding.product;
+  const bindingDeclared =
+    binding?.status === "bound" && binding.semanticFoundation && binding.product;
   if (binding && bindingDeclared && binding.semanticFoundation && binding.product) {
     const foundation = binding.semanticFoundation;
     const bindingRef: RepositoryModelSourceRef = {
@@ -1193,61 +1358,78 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
       source_revision: input.sourceRevision,
       ...(binding.bindingDigest ? { content_hash: binding.bindingDigest } : {}),
     };
-    const declaredBinding = makeEvidence({
-      subjectId: repositoryId,
-      field: "semantic_binding",
-      evidenceClass: "declared",
-      sourceRef: bindingRef,
-      value: {
-        authority_schema: binding.authoritySchema ?? UNKNOWN,
-        semantic_foundation: {
-          repository: foundation.repository,
-          revision: foundation.revision,
-          release: foundation.release,
-          admission: foundation.admission,
-          ledgers: Object.fromEntries(
-            Object.keys(foundation.ledgers).sort(compareCodePoints).map((id) => [id, foundation.ledgers[id]]),
-          ),
+    const declaredBinding = makeEvidence(
+      {
+        subjectId: repositoryId,
+        field: "semantic_binding",
+        evidenceClass: "declared",
+        sourceRef: bindingRef,
+        value: {
+          authority_schema: binding.authoritySchema ?? UNKNOWN,
+          semantic_foundation: {
+            repository: foundation.repository,
+            revision: foundation.revision,
+            release: foundation.release,
+            admission: foundation.admission,
+            ledgers: Object.fromEntries(
+              Object.keys(foundation.ledgers)
+                .sort(compareCodePoints)
+                .map((id) => [id, foundation.ledgers[id]]),
+            ),
+          },
+          // Declared, as written. Neither value is resolved against an identity
+          // registry here, and neither becomes an owner or repository identity.
+          product: {
+            id: binding.product.id,
+            owner: binding.product.owner,
+            kind: binding.product.kind,
+            archetype: binding.product.archetype,
+          },
         },
-        // Declared, as written. Neither value is resolved against an identity
-        // registry here, and neither becomes an owner or repository identity.
-        product: {
-          id: binding.product.id,
-          owner: binding.product.owner,
-          kind: binding.product.kind,
-          archetype: binding.product.archetype,
-        },
+        confidence: confidence("medium", "direct", "declared", "source", "partial"),
       },
-      confidence: confidence("medium", "direct", "declared", "source", "partial"),
-    }, producerVersion, generatedAt);
+      producerVersion,
+      generatedAt,
+    );
     evidence.push(declaredBinding);
     repositoryEvidenceRefs.push(declaredBinding.evidence_id);
 
     if (binding.verification.status === "verified") {
-      const verifiedBinding = makeEvidence({
-        subjectId: repositoryId,
-        field: "semantic_binding.verification",
-        evidenceClass: "validated",
-        sourceType: "validation",
-        sourceRef: bindingRef,
-        value: {
-          status: "verified",
-          scope: [...SEMANTIC_BINDING_VERIFICATION_SCOPE],
-          foundation_revision: foundation.revision,
-          ledgers_verified: binding.verification.ledgersVerified ?? 0,
-          admission: foundation.admission,
-          // Digest identity is not semantic admission (ADR-052): stated, not implied.
-          admission_granted_by_verification: false,
+      const verifiedBinding = makeEvidence(
+        {
+          subjectId: repositoryId,
+          field: "semantic_binding.verification",
+          evidenceClass: "validated",
+          sourceType: "validation",
+          sourceRef: bindingRef,
+          value: {
+            status: "verified",
+            scope: [...SEMANTIC_BINDING_VERIFICATION_SCOPE],
+            foundation_revision: foundation.revision,
+            ledgers_verified: binding.verification.ledgersVerified ?? 0,
+            admission: foundation.admission,
+            // Digest identity is not semantic admission (ADR-052): stated, not implied.
+            admission_granted_by_verification: false,
+          },
+          confidence: confidence(
+            "high",
+            "direct",
+            "deterministic",
+            "validated-machine",
+            "sufficient",
+          ),
         },
-        confidence: confidence("high", "direct", "deterministic", "validated-machine", "sufficient"),
-      }, producerVersion, generatedAt);
+        producerVersion,
+        generatedAt,
+      );
       evidence.push(verifiedBinding);
       repositoryEvidenceRefs.push(verifiedBinding.evidence_id);
     } else {
       diagnostics.push({
         code: "semantic-binding-unverified",
         severity: "info",
-        message: "The Semantic Foundation binding is declared but its cited ledgers were not verified; no Foundation checkout was supplied.",
+        message:
+          "The Semantic Foundation binding is declared but its cited ledgers were not verified; no Foundation checkout was supplied.",
         stage: OBSERVATION_STAGE,
         category: "authority",
         subject_id: repositoryId,
@@ -1269,8 +1451,9 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
     }
   }
   if (binding) {
-    for (const item of [...binding.conflicts].sort((a, b) =>
-      compareCodePoints(a.code, b.code) || compareCodePoints(a.message, b.message))) {
+    for (const item of [...binding.conflicts].sort(
+      (a, b) => compareCodePoints(a.code, b.code) || compareCodePoints(a.message, b.message),
+    )) {
       diagnostics.push({
         code: "semantic-binding-conflict",
         severity: "error",
@@ -1305,22 +1488,29 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
 
   // Repository-level facts derived from observed paths, each with its own evidence.
   const addDerived = (field: string, value: string, sourcePath: string): void => {
-    const record = makeEvidence({
-      subjectId: repositoryId,
-      field,
-      evidenceClass: "derived",
-      sourceRef: { source_path: sourcePath, source_revision: input.sourceRevision },
-      value,
-      confidence: DERIVED_CONFIDENCE,
-    }, producerVersion, generatedAt);
+    const record = makeEvidence(
+      {
+        subjectId: repositoryId,
+        field,
+        evidenceClass: "derived",
+        sourceRef: { source_path: sourcePath, source_revision: input.sourceRevision },
+        value,
+        confidence: DERIVED_CONFIDENCE,
+      },
+      producerVersion,
+      generatedAt,
+    );
     evidence.push(record);
     repositoryEvidenceRefs.push(record.evidence_id);
   };
-  for (const language of sortStrings(languages.keys())) addDerived("languages", language, languages.get(language) as string);
-  for (const manager of sortStrings(packageManagers.keys())) addDerived("package_managers", manager, packageManagers.get(manager) as string);
+  for (const language of sortStrings(languages.keys()))
+    addDerived("languages", language, languages.get(language) as string);
+  for (const manager of sortStrings(packageManagers.keys()))
+    addDerived("package_managers", manager, packageManagers.get(manager) as string);
   for (const workflow of sortStrings(workflows)) addDerived("workflows", workflow, workflow);
   for (const adr of sortStrings(adrRefs)) addDerived("adr_refs", adr, adr);
-  for (const governance of sortStrings(governanceRefs)) addDerived("governance_refs", governance, governance);
+  for (const governance of sortStrings(governanceRefs))
+    addDerived("governance_refs", governance, governance);
 
   const artifactIds = artifacts.map((artifact) => artifact.artifact_id);
   const repository: RepositoryModelRepositoryRecord = {
@@ -1357,18 +1547,36 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
   // unsupported on the same page it asserts it. Entrypoints wait for a consumer
   // predicate; the producer does not invent one.
   const declaresDependencies = (input.interpretation?.assertions ?? []).some(
-    (assertion) => assertion.predicate === "package.dependency" && assertion.subject_id === repositoryId,
+    (assertion) =>
+      assertion.predicate === "package.dependency" && assertion.subject_id === repositoryId,
   );
   const unsupported: [string, string][] = [
-    ["primary_role", "Repository role is not derivable from inventory evidence; primary_role stays 'unknown'."],
-    ["capabilities", "No capability evidence is available to this producer; capabilities is empty by policy."],
-    ["entrypoints", "Entrypoints require package-manifest interpretation beyond inventory observation."],
-    ["owner_ids", bindingDeclared
-      ? "Ownership is not promoted from the semantic binding: product.owner is carried as declared evidence, not as owner_ids."
-      : "Ownership is not observable from inventory evidence."],
+    [
+      "primary_role",
+      "Repository role is not derivable from inventory evidence; primary_role stays 'unknown'.",
+    ],
+    [
+      "capabilities",
+      "No capability evidence is available to this producer; capabilities is empty by policy.",
+    ],
+    [
+      "entrypoints",
+      "Entrypoints require package-manifest interpretation beyond inventory observation.",
+    ],
+    [
+      "owner_ids",
+      bindingDeclared
+        ? "Ownership is not promoted from the semantic binding: product.owner is carried as declared evidence, not as owner_ids."
+        : "Ownership is not observable from inventory evidence.",
+    ],
     ...(declaresDependencies
       ? []
-      : [["dependencies", "No package manifest declared a dependency; dependency claims require manifest interpretation."] as [string, string]]),
+      : [
+          [
+            "dependencies",
+            "No package manifest declared a dependency; dependency claims require manifest interpretation.",
+          ] as [string, string],
+        ]),
   ];
   for (const [field, message] of unsupported) {
     diagnostics.push({
@@ -1421,9 +1629,10 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
     // directory as `<repository-relative POSIX dir>: <errno code>`, so the entry is
     // already machine-independent; it is only split here, never scrubbed.
     const separator = skipped.lastIndexOf(": ");
-    const details: Record<string, CanonicalValue> = separator < 0
-      ? { directory: skipped }
-      : { directory: skipped.slice(0, separator), reason: skipped.slice(separator + 2) };
+    const details: Record<string, CanonicalValue> =
+      separator < 0
+        ? { directory: skipped }
+        : { directory: skipped.slice(0, separator), reason: skipped.slice(separator + 2) };
     diagnostics.push({
       code: "directory-unreadable",
       severity: "error",
@@ -1452,9 +1661,10 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
   // construct. Each one is filed against the artifact it concerns when that
   // artifact is in this packet.
   for (const item of input.interpretation?.diagnostics ?? []) {
-    const subjectId = item.source_path !== undefined && emittedArtifactIds.has(artifactIdFor(item.source_path))
-      ? artifactIdFor(item.source_path)
-      : repositoryId;
+    const subjectId =
+      item.source_path !== undefined && emittedArtifactIds.has(artifactIdFor(item.source_path))
+        ? artifactIdFor(item.source_path)
+        : repositoryId;
     diagnostics.push({
       code: item.code,
       severity: item.severity,
@@ -1475,10 +1685,12 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
     capabilities: [],
     relationships: relationships.sort((a, b) => compareCodePoints(a.edge_id, b.edge_id)),
     evidence: evidence.sort((a, b) => compareCodePoints(a.evidence_id, b.evidence_id)),
-    diagnostics: diagnostics.sort((a, b) =>
-      compareCodePoints(a.code, b.code)
-      || compareCodePoints(a.subject_id ?? "", b.subject_id ?? "")
-      || compareCodePoints(a.message, b.message)),
+    diagnostics: diagnostics.sort(
+      (a, b) =>
+        compareCodePoints(a.code, b.code) ||
+        compareCodePoints(a.subject_id ?? "", b.subject_id ?? "") ||
+        compareCodePoints(a.message, b.message),
+    ),
     // Already ordered by the interpretation pass; re-sorted here so the packet's
     // ordering guarantee does not depend on the producer of the input.
     //
@@ -1488,14 +1700,15 @@ export function buildRepositoryModelPacket(input: RepositoryModelBuildInput): Re
     // which is a different and much weaker claim. Validation below refuses an
     // assertion whose subject is neither an emitted repository nor an emitted
     // artifact, so preserving the subject cannot strand one.
-    assertions: [...(input.interpretation?.assertions ?? [])]
-      .sort((a, b) =>
-        compareCodePoints(a.source_path, b.source_path)
-        || a.source_range.start_line - b.source_range.start_line
-        || compareCodePoints(a.predicate, b.predicate)
-        || compareCodePoints(a.object, b.object)
-        || compareCodePoints(a.extractor_id, b.extractor_id)
-        || compareCodePoints(a.subject_id, b.subject_id)),
+    assertions: [...(input.interpretation?.assertions ?? [])].sort(
+      (a, b) =>
+        compareCodePoints(a.source_path, b.source_path) ||
+        a.source_range.start_line - b.source_range.start_line ||
+        compareCodePoints(a.predicate, b.predicate) ||
+        compareCodePoints(a.object, b.object) ||
+        compareCodePoints(a.extractor_id, b.extractor_id) ||
+        compareCodePoints(a.subject_id, b.subject_id),
+    ),
   };
 
   const shell = {
@@ -1553,8 +1766,13 @@ function check(
   details: Record<string, CanonicalValue> = {},
 ): RepositoryModelValidationCheck {
   return {
-    check_id: checkId, check_class: checkClass, rule,
-    status: ok ? "passed" : "failed", message, evidence_refs: [], details,
+    check_id: checkId,
+    check_class: checkClass,
+    rule,
+    status: ok ? "passed" : "failed",
+    message,
+    evidence_refs: [],
+    details,
   };
 }
 
@@ -1562,21 +1780,47 @@ function check(
  * Validate a packet against the contract this producer is responsible for, before it
  * ever reaches a consumer. Failures are reported, never repaired silently.
  */
-export function validateRepositoryModelPacket(packet: RepositoryModelPacket): RepositoryModelValidationResult {
+export function validateRepositoryModelPacket(
+  packet: RepositoryModelPacket,
+): RepositoryModelValidationResult {
   const checks: RepositoryModelValidationCheck[] = [];
 
-  checks.push(check("packet-type", "schema", "packet_type_is_repository_model",
-    packet.packet_type === REPOSITORY_MODEL_PACKET_TYPE,
-    `packet_type is ${packet.packet_type}`));
-  checks.push(check("packet-version", "schema", "packet_version_is_supported",
-    packet.packet_version === REPOSITORY_MODEL_PACKET_VERSION,
-    `packet_version is ${packet.packet_version}`));
-  checks.push(check("source-revision", "schema", "source_revision_is_explicit",
-    packet.source_snapshot.revision.length > 0,
-    "source snapshot revision is present"));
-  checks.push(check("payload-present", "schema", "payload_is_resolved",
-    packet.payload !== undefined && packet.payload !== null,
-    "payload is inline and resolved"));
+  checks.push(
+    check(
+      "packet-type",
+      "schema",
+      "packet_type_is_repository_model",
+      packet.packet_type === REPOSITORY_MODEL_PACKET_TYPE,
+      `packet_type is ${packet.packet_type}`,
+    ),
+  );
+  checks.push(
+    check(
+      "packet-version",
+      "schema",
+      "packet_version_is_supported",
+      packet.packet_version === REPOSITORY_MODEL_PACKET_VERSION,
+      `packet_version is ${packet.packet_version}`,
+    ),
+  );
+  checks.push(
+    check(
+      "source-revision",
+      "schema",
+      "source_revision_is_explicit",
+      packet.source_snapshot.revision.length > 0,
+      "source snapshot revision is present",
+    ),
+  );
+  checks.push(
+    check(
+      "payload-present",
+      "schema",
+      "payload_is_resolved",
+      packet.payload !== undefined && packet.payload !== null,
+      "payload is inline and resolved",
+    ),
+  );
 
   const { payload } = packet;
   const recomputed = semanticHash({
@@ -1596,40 +1840,77 @@ export function validateRepositoryModelPacket(packet: RepositoryModelPacket): Re
       ? { interpretation_profile: packet.interpretation_profile }
       : {}),
   });
-  checks.push(check("semantic-hash", "invariant", "semantic_hash_is_reproducible",
-    recomputed === packet.semantic_hash,
-    "declared semantic hash matches recomputation",
-    { declared: packet.semantic_hash, calculated: recomputed }));
-  checks.push(check("packet-id", "invariant", "packet_id_is_semantically_derived",
-    packet.packet_id === `packet:${packet.semantic_hash.slice(SHA_PREFIX.length)}`,
-    "packet id is derived from the semantic hash"));
+  checks.push(
+    check(
+      "semantic-hash",
+      "invariant",
+      "semantic_hash_is_reproducible",
+      recomputed === packet.semantic_hash,
+      "declared semantic hash matches recomputation",
+      { declared: packet.semantic_hash, calculated: recomputed },
+    ),
+  );
+  checks.push(
+    check(
+      "packet-id",
+      "invariant",
+      "packet_id_is_semantically_derived",
+      packet.packet_id === `packet:${packet.semantic_hash.slice(SHA_PREFIX.length)}`,
+      "packet id is derived from the semantic hash",
+    ),
+  );
 
-  const absolute = payload.artifacts.filter((a) =>
-    a.source_path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(a.source_path) || a.source_path.includes("\\"));
-  checks.push(check("portable-paths", "invariant", "source_paths_are_repository_relative",
-    absolute.length === 0,
-    "every artifact source path is a portable repository-relative POSIX path",
-    { offending_count: absolute.length }));
+  const absolute = payload.artifacts.filter(
+    (a) =>
+      a.source_path.startsWith("/") ||
+      /^[A-Za-z]:[\\/]/.test(a.source_path) ||
+      a.source_path.includes("\\"),
+  );
+  checks.push(
+    check(
+      "portable-paths",
+      "invariant",
+      "source_paths_are_repository_relative",
+      absolute.length === 0,
+      "every artifact source path is a portable repository-relative POSIX path",
+      { offending_count: absolute.length },
+    ),
+  );
 
-  const orderedArtifacts = payload.artifacts.every((a, i) =>
-    i === 0 || compareCodePoints(payload.artifacts[i - 1].source_path, a.source_path) < 0);
-  checks.push(check("stable-ordering", "invariant", "ordering_is_explicit_and_stable",
-    orderedArtifacts,
-    "artifacts are ordered by repository-relative path"));
+  const orderedArtifacts = payload.artifacts.every(
+    (a, i) => i === 0 || compareCodePoints(payload.artifacts[i - 1].source_path, a.source_path) < 0,
+  );
+  checks.push(
+    check(
+      "stable-ordering",
+      "invariant",
+      "ordering_is_explicit_and_stable",
+      orderedArtifacts,
+      "artifacts are ordered by repository-relative path",
+    ),
+  );
 
   // An assertion without a resolvable, hashed span is not evidence of anything,
   // so the producer refuses to emit one rather than letting it reach a consumer.
-  const unsupportedAssertions = payload.assertions.filter((assertion) =>
-    !assertion.source_path
-    || !/^sha256:[a-f0-9]{64}$/.test(assertion.source_content_hash)
-    || assertion.source_range.start_line < 1
-    || assertion.source_range.end_line < assertion.source_range.start_line
-    || assertion.evidence_excerpt.length === 0
-    || !assertion.extractor_id);
-  checks.push(check("assertion-evidence", "evidence", "assertions_cite_exact_sources",
-    unsupportedAssertions.length === 0,
-    "every assertion cites an exact source span and a hashed source file",
-    { unsupported_count: unsupportedAssertions.length }));
+  const unsupportedAssertions = payload.assertions.filter(
+    (assertion) =>
+      !assertion.source_path ||
+      !/^sha256:[a-f0-9]{64}$/.test(assertion.source_content_hash) ||
+      assertion.source_range.start_line < 1 ||
+      assertion.source_range.end_line < assertion.source_range.start_line ||
+      assertion.evidence_excerpt.length === 0 ||
+      !assertion.extractor_id,
+  );
+  checks.push(
+    check(
+      "assertion-evidence",
+      "evidence",
+      "assertions_cite_exact_sources",
+      unsupportedAssertions.length === 0,
+      "every assertion cites an exact source span and a hashed source file",
+      { unsupported_count: unsupportedAssertions.length },
+    ),
+  );
 
   // An assertion may attach to the repository as a whole or to one artifact in
   // it. Both are emitted records in this packet, and an assertion pointing at
@@ -1639,46 +1920,84 @@ export function validateRepositoryModelPacket(packet: RepositoryModelPacket): Re
     ...payload.artifacts.map((a) => a.artifact_id),
   ]);
   const orphanAssertions = payload.assertions.filter(
-    (assertion) => !assertionSubjects.has(assertion.subject_id));
-  checks.push(check("assertion-subject", "cross-reference", "assertions_resolve_to_a_subject",
-    orphanAssertions.length === 0,
-    "every assertion attaches to a repository or an artifact in this packet",
-    { orphan_count: orphanAssertions.length }));
+    (assertion) => !assertionSubjects.has(assertion.subject_id),
+  );
+  checks.push(
+    check(
+      "assertion-subject",
+      "cross-reference",
+      "assertions_resolve_to_a_subject",
+      orphanAssertions.length === 0,
+      "every assertion attaches to a repository or an artifact in this packet",
+      { orphan_count: orphanAssertions.length },
+    ),
+  );
 
   // ADR-082: an assertion is a source claim. Its authority can be no higher than
   // `source`, its path must be portable, its id unique, and its excerpt must not
   // resemble a credential — the interpreter drops such drafts, and a packet that
   // carries one anyway was not produced by that interpreter.
   const ASSERTION_AUTHORITIES: ReadonlySet<string> = new Set(["source", "candidate", "unknown"]);
-  const escalated = payload.assertions.filter((assertion) =>
-    !ASSERTION_AUTHORITIES.has(assertion.authority)
-    || (assertion.evidence_class !== "declared" && assertion.evidence_class !== "observed"));
-  checks.push(check("assertion-authority", "invariant", "assertions_do_not_escalate_authority",
-    escalated.length === 0,
-    "no assertion claims authority above its source or an evidence class the interpreter cannot produce",
-    { escalated_count: escalated.length }));
-  const nonPortable = payload.assertions.filter((assertion) =>
-    assertion.source_path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(assertion.source_path) || assertion.source_path.includes("\\"));
-  checks.push(check("assertion-portable-paths", "invariant", "assertion_paths_are_repository_relative",
-    nonPortable.length === 0,
-    "every assertion cites a portable repository-relative path",
-    { offending_count: nonPortable.length }));
+  const escalated = payload.assertions.filter(
+    (assertion) =>
+      !ASSERTION_AUTHORITIES.has(assertion.authority) ||
+      (assertion.evidence_class !== "declared" && assertion.evidence_class !== "observed"),
+  );
+  checks.push(
+    check(
+      "assertion-authority",
+      "invariant",
+      "assertions_do_not_escalate_authority",
+      escalated.length === 0,
+      "no assertion claims authority above its source or an evidence class the interpreter cannot produce",
+      { escalated_count: escalated.length },
+    ),
+  );
+  const nonPortable = payload.assertions.filter(
+    (assertion) =>
+      assertion.source_path.startsWith("/") ||
+      /^[A-Za-z]:[\\/]/.test(assertion.source_path) ||
+      assertion.source_path.includes("\\"),
+  );
+  checks.push(
+    check(
+      "assertion-portable-paths",
+      "invariant",
+      "assertion_paths_are_repository_relative",
+      nonPortable.length === 0,
+      "every assertion cites a portable repository-relative path",
+      { offending_count: nonPortable.length },
+    ),
+  );
   const assertionIds = new Set<string>();
   let duplicateAssertions = 0;
   for (const assertion of payload.assertions) {
     if (assertionIds.has(assertion.assertion_id)) duplicateAssertions++;
     assertionIds.add(assertion.assertion_id);
   }
-  checks.push(check("assertion-unique", "invariant", "assertion_ids_are_unique",
-    duplicateAssertions === 0,
-    "no assertion is emitted twice",
-    { duplicate_count: duplicateAssertions }));
-  const secretExcerpts = payload.assertions.filter((assertion) =>
-    looksSecret(assertion.evidence_excerpt) || looksSecret(assertion.object)).length;
-  checks.push(check("assertion-secret-free", "evidence", "assertion_excerpts_are_secret_free",
-    secretExcerpts === 0,
-    "no assertion excerpt or object resembles a credential",
-    { offending_count: secretExcerpts }));
+  checks.push(
+    check(
+      "assertion-unique",
+      "invariant",
+      "assertion_ids_are_unique",
+      duplicateAssertions === 0,
+      "no assertion is emitted twice",
+      { duplicate_count: duplicateAssertions },
+    ),
+  );
+  const secretExcerpts = payload.assertions.filter(
+    (assertion) => looksSecret(assertion.evidence_excerpt) || looksSecret(assertion.object),
+  ).length;
+  checks.push(
+    check(
+      "assertion-secret-free",
+      "evidence",
+      "assertion_excerpts_are_secret_free",
+      secretExcerpts === 0,
+      "no assertion excerpt or object resembles a credential",
+      { offending_count: secretExcerpts },
+    ),
+  );
 
   // This producer observes containment and archive ancestry, and nothing else.
   // Every other relationship is the consumer's projection of a claim, so an edge
@@ -1688,69 +2007,130 @@ export function validateRepositoryModelPacket(packet: RepositoryModelPacket): Re
   // An edge's confidence is the confidence of the record it connects (a CONTAINS
   // edge borrows its artifact's classification), so the derivation method is not
   // a statement about the edge; its type and its evidence are.
-  const unsupportedEdges = payload.relationships.filter((edge) =>
-    !OBSERVED_EDGE_TYPES.has(edge.edge_type)
-    || edge.confidence.derivation_method === "model-assisted"
-    || edge.evidence_refs.length === 0);
-  checks.push(check("relationship-support", "evidence", "relationships_are_observed_with_evidence",
-    unsupportedEdges.length === 0,
-    "every relationship is an observed containment or ancestry edge with evidence",
-    { unsupported_count: unsupportedEdges.length }));
-  const promotedOwners = payload.repositories.filter((repository) => repository.owner_ids.length > 0).length;
-  checks.push(check("ownership-not-promoted", "invariant", "owner_ids_are_never_promoted",
-    promotedOwners === 0,
-    "no ownership is promoted into owner_ids; declared ownership stays declared evidence",
-    { promoted_count: promotedOwners }));
-  const admissionClaims = payload.evidence.filter((record) =>
-    record.field === "semantic_binding.verification"
-    && (typeof record.value !== "object" || record.value === null || Array.isArray(record.value)
-      || record.value instanceof CanonicalFloat
-      || (record.value as Record<string, CanonicalValue>).admission_granted_by_verification !== false));
-  checks.push(check("semantic-admission", "invariant", "verification_grants_no_admission",
-    admissionClaims.length === 0,
-    "a verified Foundation digest never claims semantic admission",
-    { offending_count: admissionClaims.length }));
+  const unsupportedEdges = payload.relationships.filter(
+    (edge) =>
+      !OBSERVED_EDGE_TYPES.has(edge.edge_type) ||
+      edge.confidence.derivation_method === "model-assisted" ||
+      edge.evidence_refs.length === 0,
+  );
+  checks.push(
+    check(
+      "relationship-support",
+      "evidence",
+      "relationships_are_observed_with_evidence",
+      unsupportedEdges.length === 0,
+      "every relationship is an observed containment or ancestry edge with evidence",
+      { unsupported_count: unsupportedEdges.length },
+    ),
+  );
+  const promotedOwners = payload.repositories.filter(
+    (repository) => repository.owner_ids.length > 0,
+  ).length;
+  checks.push(
+    check(
+      "ownership-not-promoted",
+      "invariant",
+      "owner_ids_are_never_promoted",
+      promotedOwners === 0,
+      "no ownership is promoted into owner_ids; declared ownership stays declared evidence",
+      { promoted_count: promotedOwners },
+    ),
+  );
+  const admissionClaims = payload.evidence.filter(
+    (record) =>
+      record.field === "semantic_binding.verification" &&
+      (typeof record.value !== "object" ||
+        record.value === null ||
+        Array.isArray(record.value) ||
+        record.value instanceof CanonicalFloat ||
+        (record.value as Record<string, CanonicalValue>).admission_granted_by_verification !==
+          false),
+  );
+  checks.push(
+    check(
+      "semantic-admission",
+      "invariant",
+      "verification_grants_no_admission",
+      admissionClaims.length === 0,
+      "a verified Foundation digest never claims semantic admission",
+      { offending_count: admissionClaims.length },
+    ),
+  );
 
   const evidenceIds = new Set(payload.evidence.map((e) => e.evidence_id));
   const danglingEvidence: string[] = [];
   const collect = (refs: string[]): void => {
     for (const ref of refs) if (!evidenceIds.has(ref)) danglingEvidence.push(ref);
   };
-  payload.artifacts.forEach((a) => collect(a.evidence_refs));
-  payload.repositories.forEach((r) => collect(r.evidence_refs));
-  payload.capabilities.forEach((c) => collect(c.evidence_refs));
-  payload.relationships.forEach((e) => collect(e.evidence_refs));
-  checks.push(check("evidence-resolves", "evidence", "evidence_refs_resolve",
-    danglingEvidence.length === 0,
-    "every evidence reference resolves to an emitted evidence record",
-    { dangling_count: danglingEvidence.length }));
+  payload.artifacts.forEach((a) => {
+    collect(a.evidence_refs);
+  });
+  payload.repositories.forEach((r) => {
+    collect(r.evidence_refs);
+  });
+  payload.capabilities.forEach((c) => {
+    collect(c.evidence_refs);
+  });
+  payload.relationships.forEach((e) => {
+    collect(e.evidence_refs);
+  });
+  checks.push(
+    check(
+      "evidence-resolves",
+      "evidence",
+      "evidence_refs_resolve",
+      danglingEvidence.length === 0,
+      "every evidence reference resolves to an emitted evidence record",
+      { dangling_count: danglingEvidence.length },
+    ),
+  );
 
   const preservedUnknowns = payload.artifacts.filter((a) => a.content_hash === UNKNOWN).length;
   const declaredUnknowns = payload.diagnostics
     .filter((d) => d.code === "content-hash-unavailable")
     .reduce((total, d) => total + Number(d.details?.artifact_count ?? 0), 0);
-  checks.push(check("unknowns-preserved", "evidence", "unknowns_are_explicit",
-    preservedUnknowns === declaredUnknowns,
-    "explicit Unknown content hashes are reported as diagnostics",
-    { unknown_artifacts: preservedUnknowns }));
+  checks.push(
+    check(
+      "unknowns-preserved",
+      "evidence",
+      "unknowns_are_explicit",
+      preservedUnknowns === declaredUnknowns,
+      "explicit Unknown content hashes are reported as diagnostics",
+      { unknown_artifacts: preservedUnknowns },
+    ),
+  );
 
   const artifactIds = new Set(payload.artifacts.map((a) => a.artifact_id));
   const missingArtifacts = payload.repositories
     .flatMap((r) => r.artifact_ids)
     .filter((id) => !artifactIds.has(id));
-  checks.push(check("artifact-cross-reference", "cross-reference", "repository_artifact_ids_resolve",
-    missingArtifacts.length === 0,
-    "every repository artifact reference resolves",
-    { missing_count: missingArtifacts.length }));
+  checks.push(
+    check(
+      "artifact-cross-reference",
+      "cross-reference",
+      "repository_artifact_ids_resolve",
+      missingArtifacts.length === 0,
+      "every repository artifact reference resolves",
+      { missing_count: missingArtifacts.length },
+    ),
+  );
 
   const repositoryIds = new Set(payload.repositories.map((r) => r.repository_id));
-  const danglingEdges = payload.relationships.filter((edge) =>
-    !(repositoryIds.has(edge.source_id) || artifactIds.has(edge.source_id))
-    || !(repositoryIds.has(edge.target_id) || artifactIds.has(edge.target_id)));
-  checks.push(check("edge-cross-reference", "cross-reference", "relationship_endpoints_resolve",
-    danglingEdges.length === 0,
-    "every relationship endpoint resolves to an emitted record",
-    { dangling_count: danglingEdges.length }));
+  const danglingEdges = payload.relationships.filter(
+    (edge) =>
+      !(repositoryIds.has(edge.source_id) || artifactIds.has(edge.source_id)) ||
+      !(repositoryIds.has(edge.target_id) || artifactIds.has(edge.target_id)),
+  );
+  checks.push(
+    check(
+      "edge-cross-reference",
+      "cross-reference",
+      "relationship_endpoints_resolve",
+      danglingEdges.length === 0,
+      "every relationship endpoint resolves to an emitted record",
+      { dangling_count: danglingEdges.length },
+    ),
+  );
 
   const failed = checks.filter((c) => c.status !== "passed");
   return { status: failed.length === 0 ? "passed" : "failed", checks };
@@ -1762,8 +2142,9 @@ function buildReceipt(
   producerVersion: string,
   generatedAt: string,
 ): RepositoryModelValidationReceipt {
-  const byClass = (checkClass: RepositoryModelValidationCheck["check_class"]): RepositoryModelValidationCheck[] =>
-    result.checks.filter((c) => c.check_class === checkClass);
+  const byClass = (
+    checkClass: RepositoryModelValidationCheck["check_class"],
+  ): RepositoryModelValidationCheck[] => result.checks.filter((c) => c.check_class === checkClass);
   const view = {
     packet_type: RECEIPT_PACKET_TYPE,
     packet_version: RECEIPT_PACKET_VERSION,
@@ -1787,7 +2168,10 @@ function buildReceipt(
 
 // ───────────────────────────── emitter ─────────────────────────────
 
-function writeCanonicalFile(absolutePath: string, value: unknown): { content_hash: string; size_bytes: number } {
+function writeCanonicalFile(
+  absolutePath: string,
+  value: unknown,
+): { content_hash: string; size_bytes: number } {
   // The consumer reads canonical JSON with a single trailing newline.
   const content = Buffer.from(`${canonicalJson(value)}\n`, "utf8");
   fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
@@ -1808,13 +2192,19 @@ export function emitRepositoryModelBundle(
   const producerVersion = options.producerVersion ?? packet.producer.version;
   const result = validateRepositoryModelPacket(packet);
   if (result.status !== "passed") {
-    const failures = result.checks.filter((c) => c.status !== "passed").map((c) => `${c.check_id}: ${c.message}`);
-    throw new Error(`repository-model: refusing to emit a packet that failed producer validation:\n  - ${failures.join("\n  - ")}`);
+    const failures = result.checks
+      .filter((c) => c.status !== "passed")
+      .map((c) => `${c.check_id}: ${c.message}`);
+    throw new Error(
+      `repository-model: refusing to emit a packet that failed producer validation:\n  - ${failures.join("\n  - ")}`,
+    );
   }
 
   const bundleRoot = path.resolve(options.outDir);
   if (fs.existsSync(bundleRoot) && fs.readdirSync(bundleRoot).length > 0) {
-    throw new Error(`repository-model: packet bundles are immutable; refusing to write into a non-empty directory: ${bundleRoot}`);
+    throw new Error(
+      `repository-model: packet bundles are immutable; refusing to write into a non-empty directory: ${bundleRoot}`,
+    );
   }
   fs.mkdirSync(bundleRoot, { recursive: true });
 
@@ -1874,21 +2264,31 @@ function assertSemanticBindingPolicy(
   input: RepositoryModelObservationInput,
 ): void {
   const reasons = binding.conflicts.map((item) => `${item.code}: ${item.message}`);
-  if (input.semanticsRoot !== undefined && binding.status === "bound" && binding.verification.status !== "verified") {
-    throw new Error(`repository-model: Semantic Foundation verification failed:\n  - ${reasons.join("\n  - ")}`);
+  if (
+    input.semanticsRoot !== undefined &&
+    binding.status === "bound" &&
+    binding.verification.status !== "verified"
+  ) {
+    throw new Error(
+      `repository-model: Semantic Foundation verification failed:\n  - ${reasons.join("\n  - ")}`,
+    );
   }
   if (!input.requireSemanticBinding) return;
   if (binding.status !== "bound") {
     throw new Error(
       `repository-model: an authority-bound observation requires an l9.meta-authority/v2 binding; ${binding.bindingPath} is ${binding.status}` +
-      (reasons.length ? `:\n  - ${reasons.join("\n  - ")}` : ""),
+        (reasons.length ? `:\n  - ${reasons.join("\n  - ")}` : ""),
     );
   }
   if (input.semanticsRoot === undefined) {
-    throw new Error("repository-model: an authority-bound observation requires a Semantic Foundation checkout (semanticsRoot); none was supplied");
+    throw new Error(
+      "repository-model: an authority-bound observation requires a Semantic Foundation checkout (semanticsRoot); none was supplied",
+    );
   }
   if (reasons.length) {
-    throw new Error(`repository-model: the Semantic Foundation binding has conflicts:\n  - ${reasons.join("\n  - ")}`);
+    throw new Error(
+      `repository-model: the Semantic Foundation binding has conflicts:\n  - ${reasons.join("\n  - ")}`,
+    );
   }
 }
 
@@ -1898,7 +2298,9 @@ function assertSemanticBindingPolicy(
  * own manifests are written to a temporary directory that is removed afterwards, so
  * the observed repository is never mutated.
  */
-export function observeRepositoryModel(input: RepositoryModelObservationInput): RepositoryModelPacket {
+export function observeRepositoryModel(
+  input: RepositoryModelObservationInput,
+): RepositoryModelPacket {
   // Authority first: a refused binding should refuse before any tree is walked.
   const semanticBinding = observeSemanticBinding(input.root, {
     repositoryName: input.repositoryName,
