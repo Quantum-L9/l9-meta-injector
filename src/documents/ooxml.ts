@@ -83,7 +83,7 @@ const MACRO_PARTS = /(vbaProject\.bin|vbaData\.xml|\/macros?\/)/i;
  * "empty success" this layer exists to prevent.
  */
 export function openOoxml(archivePath: string, budget: DecoderBudget): OoxmlContainer {
-  let directory;
+  let directory: ReturnType<typeof readZipCentralDirectory>;
   try {
     directory = readZipCentralDirectory(archivePath);
   } catch (error) {

@@ -1716,10 +1716,10 @@ export function validateRepositoryModelPacket(packet: RepositoryModelPacket): Re
   const collect = (refs: string[]): void => {
     for (const ref of refs) if (!evidenceIds.has(ref)) danglingEvidence.push(ref);
   };
-  payload.artifacts.forEach((a) => collect(a.evidence_refs));
-  payload.repositories.forEach((r) => collect(r.evidence_refs));
-  payload.capabilities.forEach((c) => collect(c.evidence_refs));
-  payload.relationships.forEach((e) => collect(e.evidence_refs));
+  payload.artifacts.forEach((a) => { collect(a.evidence_refs); });
+  payload.repositories.forEach((r) => { collect(r.evidence_refs); });
+  payload.capabilities.forEach((c) => { collect(c.evidence_refs); });
+  payload.relationships.forEach((e) => { collect(e.evidence_refs); });
   checks.push(check("evidence-resolves", "evidence", "evidence_refs_resolve",
     danglingEvidence.length === 0,
     "every evidence reference resolves to an emitted evidence record",

@@ -82,7 +82,7 @@ export function buildPrimitiveLibraryIndex(records: InjectionRecord[]): Executab
 
 export function dedupReportToMarkdown(report: ReturnType<typeof buildDedupReport>): string {
   const lines = [`# Dedup Report — ${report.generatedAt}`, ``, `Total scanned: ${report.totalScanned}  |  Unique: ${report.uniqueCount}  |  Exact twins: ${report.auditorTwins.length}  |  Near duplicates: ${report.nearDuplicates.length}`, ``];
-  if (report.auditorTwins.length > 0) { lines.push("## Exact Duplicates"); for (const t of report.auditorTwins) { lines.push(`- \`${t.contentHash.slice(0, 16)}\``); t.paths.forEach((p) => lines.push(`  - ${p}`)); } }
-  if (report.nearDuplicates.length > 0) { lines.push("", "## Near Duplicates"); for (const n of report.nearDuplicates) { lines.push(`- similarity ${n.similarity}`); n.paths.forEach((p) => lines.push(`  - ${p}`)); } }
+  if (report.auditorTwins.length > 0) { lines.push("## Exact Duplicates"); for (const t of report.auditorTwins) { lines.push(`- \`${t.contentHash.slice(0, 16)}\``); t.paths.forEach((p) => { lines.push(`  - ${p}`); }); } }
+  if (report.nearDuplicates.length > 0) { lines.push("", "## Near Duplicates"); for (const n of report.nearDuplicates) { lines.push(`- similarity ${n.similarity}`); n.paths.forEach((p) => { lines.push(`  - ${p}`); }); } }
   return lines.join("\n") + "\n";
 }

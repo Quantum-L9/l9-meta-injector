@@ -389,7 +389,7 @@ describe("binding propagation", () => {
     const boundResult = await runPipelineAsync(pipelineConfig(bound, { glob: "**/*.ts" }));
     const boundMeta = boundResult.injected.find((row) => row.meta.artifact_type === "source");
     expect(boundMeta).toBeDefined();
-    expect((boundMeta?.meta as { owner?: string }).owner).toBe("Example/product");
+    expect((boundMeta?.meta as { owner?: string } | undefined)?.owner).toBe("Example/product");
     const boundV3 = boundResult.metaV3.find((row) => row.sourcePath === boundMeta?.sourcePath);
     expect(boundV3?.metaV3.governance.owner).toBe("Example/product");
 
@@ -400,7 +400,7 @@ describe("binding propagation", () => {
       authority: "Operator/repo",
     }));
     const unboundMeta = unboundResult.injected.find((row) => row.meta.artifact_type === "source");
-    expect((unboundMeta?.meta as { owner?: string }).owner).toBe("Unknown");
+    expect((unboundMeta?.meta as { owner?: string } | undefined)?.owner).toBe("Unknown");
     expect(unboundResult.semanticBinding).toBeUndefined();
   });
 

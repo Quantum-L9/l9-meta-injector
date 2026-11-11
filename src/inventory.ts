@@ -1251,7 +1251,7 @@ function writeManifests(outDir: string, root: string, records: InventoryRecord[]
       `| # | count | repeated bytes | keeper | other paths |`,
       `|---|---|---|---|---|`,
     );
-    duplicates.slice(0, 100).forEach((d, i) => md.push(`| ${i + 1} | ${d.count} | ${d.wasted_bytes} | \`${d.keeper}\` | ${d.paths.filter((p) => p !== d.keeper).join("<br>")} |`));
+    duplicates.slice(0, 100).forEach((d, i) => { md.push(`| ${i + 1} | ${d.count} | ${d.wasted_bytes} | \`${d.keeper}\` | ${d.paths.filter((p) => p !== d.keeper).join("<br>")} |`); });
   }
   md.push(``, `## Entries`, ``, `| path | type | conf | size | evidence |`, `|---|---|---|---|---|`, ...records.slice(0, 500).map((r) => `| ${r.relative_path} | ${r.artifact_type} | ${r.classification_confidence} | ${r.size_bytes ?? ""} | ${r.evidence_excerpt ?? ""} |`));
   if (records.length > 500) md.push(``, `_(${records.length - 500} more entries in inventory.json / inventory.csv)_`);
