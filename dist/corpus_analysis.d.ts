@@ -1,5 +1,5 @@
-import { InventoryResult } from "./inventory";
 import { InterpretationResult } from "./interpretation";
+import { InventoryResult } from "./inventory";
 import { RepositoryModelPacket } from "./repository_model";
 export declare const CORPUS_INDEX_SCHEMA = "l9.corpus-index/v1";
 /**

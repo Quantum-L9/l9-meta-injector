@@ -425,7 +425,10 @@ function requirementsAssertions(lines, input) {
         const bare = line.replace(/(^|\s)#.*$/, "").trim();
         if (bare === "")
             continue;
-        if (bare.startsWith("-") || /^[a-z][a-z0-9+.-]*:\/\//i.test(bare) || bare.startsWith(".") || bare.startsWith("/")) {
+        if (bare.startsWith("-") ||
+            /^[a-z][a-z0-9+.-]*:\/\//i.test(bare) ||
+            bare.startsWith(".") ||
+            bare.startsWith("/")) {
             skipped++;
             continue;
         }
@@ -502,8 +505,13 @@ exports.contractReferenceExtractor = {
                 return;
             const range = (0, common_1.spanRange)(index, index);
             const claim = (predicate, object) => ({
-                predicate, object, sourceRange: range, evidenceExcerpt: line,
-                evidenceClass: "declared", authority: "source", confidence: "high",
+                predicate,
+                object,
+                sourceRange: range,
+                evidenceExcerpt: line,
+                evidenceClass: "declared",
+                authority: "source",
+                confidence: "high",
             });
             if (/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) {
                 drafts.push(claim("contract.reference.remote", value));

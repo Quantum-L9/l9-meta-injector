@@ -6,10 +6,10 @@
  * automation, infrastructure, structured data, and inventory-only artifacts.
  * This module never creates adjacent sidecars or inject logs.
  */
-import type { ArtifactType } from "./schema";
-import type { AuthorityConfig, CarrierDecision, MetadataCarrier, OperationMode } from "./operation_contracts";
+import { type LegacyTrackedAliasGroup, TRACKED_COVERAGE_SCHEMA, TRACKED_POLICY_SCHEMA, type TrackedCarrierDecision, type TrackedGitEntry, type TrackedGitSnapshot } from "./discovery_contracts";
 import { type CarrierSubject } from "./mutation_policy";
-import { TRACKED_COVERAGE_SCHEMA, TRACKED_POLICY_SCHEMA, type TrackedGitEntry, type TrackedGitSnapshot, type TrackedCarrierDecision, type LegacyTrackedAliasGroup } from "./discovery_contracts";
+import type { AuthorityConfig, CarrierDecision, MetadataCarrier, OperationMode } from "./operation_contracts";
+import type { ArtifactType } from "./schema";
 export declare const METADATA_INDEX_SCHEMA: "l9.metadata-index/v1";
 export declare const METADATA_INDEX_RELATIVE_PATH: ".l9/metadata-index.jsonl";
 export type MaterializedMetadataCarrier = Exclude<MetadataCarrier, "hard_skip">;

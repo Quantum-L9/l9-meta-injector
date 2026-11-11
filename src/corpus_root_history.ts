@@ -23,8 +23,9 @@
 // a warning that scrolls past is indistinguishable from no warning, and the
 // operator is exactly the person who knows whether two disks called `Backup` are
 // the same disk.
-import { compareCodePoints } from "./ordering";
+
 import type { RootIdentityClass } from "./corpus_roots";
+import { compareCodePoints } from "./ordering";
 
 /** A longitudinal operation, named as the refusal will name it. */
 export const LONGITUDINAL_OPERATIONS = [
@@ -108,8 +109,9 @@ export function identityClassOf(record: RootIdentityRecord): RootIdentityClass {
  * a basename, so the thing being matched against may not be this root at all.
  */
 function isWeak(claim: RootContinuityClaim): boolean {
-  return claim.previous_identity_class !== "declared"
-    || claim.current_identity_class !== "declared";
+  return (
+    claim.previous_identity_class !== "declared" || claim.current_identity_class !== "declared"
+  );
 }
 
 function refusalMessage(
@@ -117,16 +119,18 @@ function refusalMessage(
   claims: readonly RootContinuityClaim[],
 ): string {
   const roots = claims
-    .map((claim) =>
-      `'${claim.root_key}' (previously ${claim.previous_identity_class}, `
-      + `now ${claim.current_identity_class})`)
+    .map(
+      (claim) =>
+        `'${claim.root_key}' (previously ${claim.previous_identity_class}, ` +
+        `now ${claim.current_identity_class})`,
+    )
     .join(", ");
   return (
-    `corpus: refusing ${operation} for ${claims.length === 1 ? "root" : "roots"} ${roots}: `
-    + "root continuity depends on an inferred basename identity, which two unrelated "
-    + "directories can share. Name the root explicitly with --root <path>=<key> or a "
-    + "corpus manifest. If you intentionally accept this weaker identity, pass "
-    + "--allow-inferred-root-history."
+    `corpus: refusing ${operation} for ${claims.length === 1 ? "root" : "roots"} ${roots}: ` +
+    "root continuity depends on an inferred basename identity, which two unrelated " +
+    "directories can share. Name the root explicitly with --root <path>=<key> or a " +
+    "corpus manifest. If you intentionally accept this weaker identity, pass " +
+    "--allow-inferred-root-history."
   );
 }
 
@@ -189,7 +193,10 @@ export function assertLongitudinalRootIdentityAuthorized(
  * the field that matters.
  */
 export function inferredRootHistoryOverride(
-  authorizations: readonly { operation: LongitudinalOperation; result: LongitudinalAuthorization }[],
+  authorizations: readonly {
+    operation: LongitudinalOperation;
+    result: LongitudinalAuthorization;
+  }[],
 ): InferredRootHistoryOverride | null {
   const rootIds = new Set<string>();
   const operations = new Set<string>();
@@ -209,9 +216,9 @@ export function inferredRootHistoryOverride(
 /** The caution a run states when it proceeded on an identity it was told to accept. */
 export function inferredRootHistoryWarning(override: InferredRootHistoryOverride): string {
   return (
-    `--allow-inferred-root-history was supplied: ${override.operations.join(", ")} `
-    + `proceeded for root(s) ${override.affected_root_ids.join(", ")} on an inferred `
-    + "basename identity. Continuity across runs is the operator's claim here, not this "
-    + "tool's."
+    `--allow-inferred-root-history was supplied: ${override.operations.join(", ")} ` +
+    `proceeded for root(s) ${override.affected_root_ids.join(", ")} on an inferred ` +
+    "basename identity. Continuity across runs is the operator's claim here, not this " +
+    "tool's."
   );
 }

@@ -68,9 +68,23 @@ exports.EXPANDABLE_ARCHIVE_EXTENSIONS = new Set([".zip"]);
  * here: there is no TAR reader in v1, and no external tool is consulted.
  */
 exports.KNOWN_UNEXPANDABLE_ARCHIVE_EXTENSIONS = new Set([
-    ".tar", ".tgz", ".tbz", ".tbz2", ".txz", ".tzst",
-    ".gz", ".bz2", ".xz", ".zst", ".lz4",
-    ".7z", ".rar", ".jar", ".war", ".cab", ".iso",
+    ".tar",
+    ".tgz",
+    ".tbz",
+    ".tbz2",
+    ".txz",
+    ".tzst",
+    ".gz",
+    ".bz2",
+    ".xz",
+    ".zst",
+    ".lz4",
+    ".7z",
+    ".rar",
+    ".jar",
+    ".war",
+    ".cab",
+    ".iso",
 ]);
 /** Every extension this package classifies as an archive, expandable or not. */
 exports.ARCHIVE_EXTENSIONS = new Set([
@@ -101,9 +115,11 @@ const USTAR_OFFSET = 257;
  * recognized by its local-header, empty-archive or spanning signature.
  */
 function sniffArchiveSignature(prefix) {
-    const at = (offset, bytes) => prefix.length >= offset + bytes.length
-        && bytes.every((byte, index) => prefix[offset + index] === byte);
-    if (at(0, [0x50, 0x4b, 0x03, 0x04]) || at(0, [0x50, 0x4b, 0x05, 0x06]) || at(0, [0x50, 0x4b, 0x07, 0x08]))
+    const at = (offset, bytes) => prefix.length >= offset + bytes.length &&
+        bytes.every((byte, index) => prefix[offset + index] === byte);
+    if (at(0, [0x50, 0x4b, 0x03, 0x04]) ||
+        at(0, [0x50, 0x4b, 0x05, 0x06]) ||
+        at(0, [0x50, 0x4b, 0x07, 0x08]))
         return "zip";
     if (at(0, [0x1f, 0x8b]))
         return "gzip";
@@ -118,8 +134,9 @@ function sniffArchiveSignature(prefix) {
     if (at(0, [0x52, 0x61, 0x72, 0x21, 0x1a, 0x07]))
         return "rar";
     // "ustar\0" (POSIX) or "ustar " (GNU) at the magic offset.
-    if (at(USTAR_OFFSET, [0x75, 0x73, 0x74, 0x61, 0x72]) && prefix.length > USTAR_OFFSET + 5
-        && (prefix[USTAR_OFFSET + 5] === 0x00 || prefix[USTAR_OFFSET + 5] === 0x20))
+    if (at(USTAR_OFFSET, [0x75, 0x73, 0x74, 0x61, 0x72]) &&
+        prefix.length > USTAR_OFFSET + 5 &&
+        (prefix[USTAR_OFFSET + 5] === 0x00 || prefix[USTAR_OFFSET + 5] === 0x20))
         return "tar";
     return null;
 }
@@ -129,7 +146,16 @@ function sniffArchiveSignature(prefix) {
  * the expected shape of the document, not a disguised archive.
  */
 exports.ZIP_CONTAINER_DOCUMENT_EXTENSIONS = new Set([
-    ".docx", ".xlsx", ".pptx", ".docm", ".xlsm", ".pptm", ".odt", ".ods", ".odp", ".epub",
+    ".docx",
+    ".xlsx",
+    ".pptx",
+    ".docm",
+    ".xlsm",
+    ".pptm",
+    ".odt",
+    ".ods",
+    ".odp",
+    ".epub",
 ]);
 /**
  * Whether a signature found under `name` is worth reporting: the file's name

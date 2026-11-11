@@ -29,8 +29,8 @@ const ordering_1 = require("./ordering");
  * shape, so they must not share an id a consumer dispatches on.
  */
 exports.CORPUS_INDEX_SCHEMA = "l9.corpus-mode-index/v1";
-exports.CORPUS_INDEX_STATEMENT = "This index names what was observed and where each document was written. It contains no "
-    + "ranking, no priority and no recommendation, and the order of any list in it carries none.";
+exports.CORPUS_INDEX_STATEMENT = "This index names what was observed and where each document was written. It contains no " +
+    "ranking, no priority and no recommendation, and the order of any list in it carries none.";
 /**
  * Join the two coverage documents into the counts the report states.
  *
@@ -78,7 +78,11 @@ const KNOWN_DOCUMENTS = [
     { name: "snapshot", path: "corpus-snapshot.json", schema: "l9.corpus-snapshot/v1" },
     { name: "diff", path: "corpus-diff.json", schema: "l9.corpus-diff/v1" },
     { name: "coverage", path: "corpus-coverage.json", schema: "l9.corpus-coverage/v2" },
-    { name: "readiness_evidence", path: "readiness-evidence.json", schema: "l9.readiness-evidence/v1" },
+    {
+        name: "readiness_evidence",
+        path: "readiness-evidence.json",
+        schema: "l9.readiness-evidence/v1",
+    },
     { name: "candidates", path: "corpus-candidates.json", schema: "l9.corpus-candidates/v1" },
     { name: "document_index", path: "document-index.json", schema: "l9.document-index/v2" },
     {
@@ -108,9 +112,17 @@ const KNOWN_DOCUMENTS = [
         path: "architecture-evidence.manifest.json",
         schema: "l9.architecture-evidence-manifest/v1",
     },
-    { name: "semantic_relations", path: "semantic-relations.json", schema: "l9.semantic-relations/v1" },
+    {
+        name: "semantic_relations",
+        path: "semantic-relations.json",
+        schema: "l9.semantic-relations/v1",
+    },
     { name: "topic_candidates", path: "topic-candidates.json", schema: "l9.topic-candidates/v1" },
-    { name: "project_candidates", path: "project-candidates.json", schema: "l9.project-candidates/v1" },
+    {
+        name: "project_candidates",
+        path: "project-candidates.json",
+        schema: "l9.project-candidates/v1",
+    },
     {
         name: "consolidation_candidates",
         path: "consolidation-candidates.json",
@@ -147,7 +159,8 @@ function buildCorpusIndex(input) {
     for (const archive of snapshot.archives) {
         archivesByRoot.set(archive.root_id, (archivesByRoot.get(archive.root_id) ?? 0) + 1);
     }
-    const roots = snapshot.roots.map((root) => {
+    const roots = snapshot.roots
+        .map((root) => {
         const directory = input.rootDirectories.get(root.root_id);
         const under = (file) => directory === undefined ? null : `roots/${directory}/${file}`;
         const tally = artifactsByRoot.get(root.root_id) ?? { count: 0, bytes: 0 };
@@ -168,7 +181,8 @@ function buildCorpusIndex(input) {
             archive_count: archivesByRoot.get(root.root_id) ?? 0,
             total_bytes: tally.bytes,
         };
-    }).sort((a, b) => (0, ordering_1.compareCodePoints)(a.root_id, b.root_id));
+    })
+        .sort((a, b) => (0, ordering_1.compareCodePoints)(a.root_id, b.root_id));
     return {
         schema: exports.CORPUS_INDEX_SCHEMA,
         corpus_id: snapshot.corpus_id,
@@ -254,13 +268,12 @@ function coverageSection(index) {
         "",
     ];
     if (coverage.unsupported_legacy_counts.length > 0) {
-        lines.push("Formats no decoder in this release claims, by extension. Counted rather than", "omitted: an operator has to be able to see how much of an archive is invisible.", "", row(["extension", "artifacts", "bytes"]), row(["---", "---", "---"]), ...coverage.unsupported_legacy_counts.map((entry) => row([
-            `\`${entry.extension}\``,
-            `${entry.count}`,
-            `${entry.bytes}`,
-        ])), "");
+        lines.push("Formats no decoder in this release claims, by extension. Counted rather than", "omitted: an operator has to be able to see how much of an archive is invisible.", "", row(["extension", "artifacts", "bytes"]), row(["---", "---", "---"]), ...coverage.unsupported_legacy_counts.map((entry) => row([`\`${entry.extension}\``, `${entry.count}`, `${entry.bytes}`])), "");
     }
-    lines.push("## Intelligence", "", row(["finding", "count"]), row(["---", "---"]), row(["artifacts with work signals", `${coverage.intelligence.artifacts_with_work_signals}`]), row(["exact duplicate clusters", `${coverage.intelligence.exact_duplicate_clusters}`]), row(["near-duplicate candidates", `${coverage.intelligence.near_duplicate_candidates}`]), row(["topic candidates", `${coverage.intelligence.topic_candidates}`]), row(["project candidates", `${coverage.intelligence.project_candidates}`]), row(["consolidation candidates", `${coverage.intelligence.consolidation_candidates}`]), row(["reasoning-eligible candidates", `${coverage.intelligence.reasoning_eligible_candidates}`]), "", "Every row above is a candidate or an observation. None is a ranking, a", "priority, or an instruction to do anything with the files it names.", "", "## Embedding", "", row(["field", "value"]), row(["---", "---"]), row(["enabled", embedding.enabled ? "yes" : "no"]), row(["eligible artifacts", value(embedding.eligible_artifacts)]), row(["embedded artifacts", value(embedding.embedded_artifacts)]), row(["skipped as secret candidates", value(embedding.skipped_secret_artifacts)]), row(["provider failures", value(embedding.provider_failures)]), "");
+    lines.push("## Intelligence", "", row(["finding", "count"]), row(["---", "---"]), row(["artifacts with work signals", `${coverage.intelligence.artifacts_with_work_signals}`]), row(["exact duplicate clusters", `${coverage.intelligence.exact_duplicate_clusters}`]), row(["near-duplicate candidates", `${coverage.intelligence.near_duplicate_candidates}`]), row(["topic candidates", `${coverage.intelligence.topic_candidates}`]), row(["project candidates", `${coverage.intelligence.project_candidates}`]), row(["consolidation candidates", `${coverage.intelligence.consolidation_candidates}`]), row([
+        "reasoning-eligible candidates",
+        `${coverage.intelligence.reasoning_eligible_candidates}`,
+    ]), "", "Every row above is a candidate or an observation. None is a ranking, a", "priority, or an instruction to do anything with the files it names.", "", "## Embedding", "", row(["field", "value"]), row(["---", "---"]), row(["enabled", embedding.enabled ? "yes" : "no"]), row(["eligible artifacts", value(embedding.eligible_artifacts)]), row(["embedded artifacts", value(embedding.embedded_artifacts)]), row(["skipped as secret candidates", value(embedding.skipped_secret_artifacts)]), row(["provider failures", value(embedding.provider_failures)]), "");
     return lines;
 }
 /** The same index, rendered for a person. */
@@ -317,11 +330,7 @@ function renderCorpusIndexReport(index) {
         "",
         row(["document", "path", "written"]),
         row(["---", "---", "---"]),
-        ...index.documents.map((document) => row([
-            document.name,
-            `\`${document.path}\``,
-            document.present ? "yes" : "no",
-        ])),
+        ...index.documents.map((document) => row([document.name, `\`${document.path}\``, document.present ? "yes" : "no"])),
         "",
         ...coverageSection(index),
         index.statement,

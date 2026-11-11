@@ -48,11 +48,15 @@ export function decodeXmlText(raw: string): string {
   return raw.replace(/&(#x?[0-9A-Fa-f]+|[A-Za-z][A-Za-z0-9]*);/g, (match, body: string) => {
     if (body.startsWith("#x") || body.startsWith("#X")) {
       const code = Number.parseInt(body.slice(2), 16);
-      return Number.isFinite(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : match;
+      return Number.isFinite(code) && code > 0 && code <= 0x10ffff
+        ? String.fromCodePoint(code)
+        : match;
     }
     if (body.startsWith("#")) {
       const code = Number.parseInt(body.slice(1), 10);
-      return Number.isFinite(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : match;
+      return Number.isFinite(code) && code > 0 && code <= 0x10ffff
+        ? String.fromCodePoint(code)
+        : match;
     }
     return PREDEFINED_ENTITIES[body] ?? match;
   });

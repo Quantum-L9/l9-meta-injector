@@ -1,11 +1,11 @@
 // inventory_existing_meta.ts — harvest existing L9 meta before classify (ADR-049).
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { frontMatterReconciliationView, inspectFrontMatterDocument } from "./frontmatter_patch";
 import { extractInjectedYaml, resolveStrategy, sidecarPathFor } from "./comment";
-import { parseCanonicalYaml } from "./meta_schema";
 import { probeFileEncoding } from "./encoding";
+import { frontMatterReconciliationView, inspectFrontMatterDocument } from "./frontmatter_patch";
 import { peekArchiveRootMeta } from "./inventory_archive_member";
+import { parseCanonicalYaml } from "./meta_schema";
 
 export function parseMetaYaml(text: string): Record<string, unknown> {
   try {

@@ -7,24 +7,40 @@
  * This module never creates adjacent sidecars or inject logs.
  */
 
+import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { createHash } from "node:crypto";
-import type { ArtifactType } from "./schema";
-import type { AuthorityConfig, CarrierDecision, MetadataCarrier, OperationMode } from "./operation_contracts";
-import { compareCodePoints } from "./ordering";
+import {
+  type LegacyTrackedAliasGroup,
+  TRACKED_COVERAGE_SCHEMA,
+  TRACKED_POLICY_SCHEMA,
+  type TrackedCarrierDecision,
+  type TrackedGitEntry,
+  type TrackedGitSnapshot,
+} from "./discovery_contracts";
+import { explicitHiddenControlPattern } from "./hidden_control";
 import {
   assertCarrierDecisionCoverage,
-  resolveCarrierDecisions,
+  assertTrackedPathSpelling,
   type CarrierSubject,
+  resolveCarrierDecisions,
+  resolveTrackedCarrierDecision,
+  resolveTrackedCarrierDecisions,
 } from "./mutation_policy";
-import { assertTrackedPathSpelling, resolveTrackedCarrierDecision, resolveTrackedCarrierDecisions } from "./mutation_policy";
 import {
-  TRACKED_COVERAGE_SCHEMA, TRACKED_POLICY_SCHEMA,
-  type TrackedGitEntry, type TrackedGitSnapshot, type TrackedCarrierDecision, type LegacyTrackedAliasGroup,
-} from "./discovery_contracts";
-import { assertPortableRepositoryIdentity, compareTrackedPaths, trackedPathIdentity, resolveNamespace } from "./namespace";
-import { explicitHiddenControlPattern } from "./hidden_control";
+  assertPortableRepositoryIdentity,
+  compareTrackedPaths,
+  resolveNamespace,
+  trackedPathIdentity,
+} from "./namespace";
+import type {
+  AuthorityConfig,
+  CarrierDecision,
+  MetadataCarrier,
+  OperationMode,
+} from "./operation_contracts";
+import { compareCodePoints } from "./ordering";
+import type { ArtifactType } from "./schema";
 
 export const METADATA_INDEX_SCHEMA = "l9.metadata-index/v1" as const;
 export const METADATA_INDEX_RELATIVE_PATH = ".l9/metadata-index.jsonl" as const;
@@ -32,11 +48,21 @@ export const METADATA_INDEX_RELATIVE_PATH = ".l9/metadata-index.jsonl" as const;
 export type MaterializedMetadataCarrier = Exclude<MetadataCarrier, "hard_skip">;
 
 const MATERIALIZED_CARRIERS = new Set<MetadataCarrier>([
-  "inventory_only", "central_manifest", "inline_managed",
+  "inventory_only",
+  "central_manifest",
+  "inline_managed",
 ]);
 const ARTIFACT_TYPES = new Set<ArtifactType>([
-  "skill", "playbook", "kernel", "context", "prompt", "doctrine",
-  "test", "script", "source", "unknown",
+  "skill",
+  "playbook",
+  "kernel",
+  "context",
+  "prompt",
+  "doctrine",
+  "test",
+  "script",
+  "source",
+  "unknown",
 ]);
 
 export interface ManagedMetadataSubject extends CarrierSubject {
@@ -93,7 +119,14 @@ const FORBIDDEN_VOLATILE_KEYS = new Set([
 ]);
 
 /** The record keys `schemas/metadata-index-record.schema.json` allows (additionalProperties: false). */
-const RECORD_KEYS = ["artifact_type", "carrier", "content_hash", "metadata", "path", "schema"] as const;
+const RECORD_KEYS = [
+  "artifact_type",
+  "carrier",
+  "content_hash",
+  "metadata",
+  "path",
+  "schema",
+] as const;
 const MAX_PATH_CODE_POINTS = 4096;
 // The schema's path pattern forbids exactly these characters.
 const CONTROL_CHARACTER = /[\u0001-\u001F\u007F]/u;
@@ -101,11 +134,13 @@ const CONTROL_CHARACTER = /[\u0001-\u001F\u007F]/u;
 /** Canonical repository-relative POSIX structure, required of every subject path. */
 function normalizeRelativePath(value: string): string {
   if (value.includes("\u0000")) throw new Error("metadata index path contains NUL");
-  if (value.includes("\\")) throw new Error(`metadata index path must use POSIX separators: ${value}`);
+  if (value.includes("\\"))
+    throw new Error(`metadata index path must use POSIX separators: ${value}`);
   if (value.startsWith("/") || value.startsWith("./")) {
     throw new Error(`metadata index path must be canonical repository-relative POSIX: ${value}`);
   }
-  if (value.includes("//")) throw new Error(`metadata index path contains an empty segment: ${value}`);
+  if (value.includes("//"))
+    throw new Error(`metadata index path contains an empty segment: ${value}`);
   const segments = value.split("/");
   if (segments.some((segment) => !segment || segment === "." || segment === "..")) {
     throw new Error(`metadata index path contains a non-canonical segment: ${value}`);
@@ -184,7 +219,12 @@ function canonicalizeObject(
       throw new Error(`${location}.${key} is runtime- or machine-specific and cannot be persisted`);
     }
     const item = value[key];
-    if (item === undefined || typeof item === "bigint" || typeof item === "function" || typeof item === "symbol") {
+    if (
+      item === undefined ||
+      typeof item === "bigint" ||
+      typeof item === "function" ||
+      typeof item === "symbol"
+    ) {
       throw new Error(`${location}.${key} contains a non-JSON value`);
     }
     output[key] = canonicalize(item, `${location}.${key}`, seen);
@@ -250,7 +290,9 @@ function assertRecordKeys(record: MetadataIndexRecord): void {
   const keys = Object.keys(record).sort(byCodeUnit);
   if (keys.length !== RECORD_KEYS.length || keys.some((key, index) => key !== RECORD_KEYS[index])) {
     const pathName = typeof record.path === "string" ? record.path : "<unknown>";
-    throw new Error(`metadata index record for ${pathName} must have exactly the keys ${RECORD_KEYS.join(", ")}; got ${keys.join(", ")}`);
+    throw new Error(
+      `metadata index record for ${pathName} must have exactly the keys ${RECORD_KEYS.join(", ")}; got ${keys.join(", ")}`,
+    );
   }
 }
 
@@ -263,19 +305,28 @@ export function serializeMetadataIndex(records: readonly MetadataIndexRecord[]):
     assertRecordPath(pathName);
     if (seen.has(pathName)) throw new Error(`duplicate metadata index path: ${pathName}`);
     seen.add(pathName);
-    if (record.schema !== METADATA_INDEX_SCHEMA) throw new Error(`unsupported metadata index schema for ${pathName}`);
+    if (record.schema !== METADATA_INDEX_SCHEMA)
+      throw new Error(`unsupported metadata index schema for ${pathName}`);
     if (!MATERIALIZED_CARRIERS.has(record.carrier)) {
-      throw new Error(`unsupported materialized carrier '${String(record.carrier)}' for ${pathName}`);
+      throw new Error(
+        `unsupported materialized carrier '${String(record.carrier)}' for ${pathName}`,
+      );
     }
     if (!ARTIFACT_TYPES.has(record.artifact_type)) {
-      throw new Error(`unsupported artifact type '${String(record.artifact_type)}' for ${pathName}`);
+      throw new Error(
+        `unsupported artifact type '${String(record.artifact_type)}' for ${pathName}`,
+      );
     }
     assertContentHash(record.content_hash, pathName);
-    if (!isPlainObject(record.metadata)) throw new Error(`metadata for ${pathName} must be a plain object`);
+    if (!isPlainObject(record.metadata))
+      throw new Error(`metadata for ${pathName} must be a plain object`);
     if (record.metadata.source_path !== undefined && record.metadata.source_path !== pathName) {
       throw new Error(`metadata source_path mismatch for ${pathName}`);
     }
-    if (record.metadata.content_hash !== undefined && record.metadata.content_hash !== record.content_hash) {
+    if (
+      record.metadata.content_hash !== undefined &&
+      record.metadata.content_hash !== record.content_hash
+    ) {
       throw new Error(`metadata content_hash mismatch for ${pathName}`);
     }
   }
@@ -298,7 +349,9 @@ function assertUniqueMergedMetadataIds(
   const duplicates = [...byId.entries()].filter(([, paths]) => paths.length > 1);
   if (duplicates.length === 0) return;
   const detail = duplicates.map(([id, paths]) => `${id}: ${paths.join(", ")}`).join("; ");
-  throw new Error(`DUPLICATE_METADATA_ID: ${duplicates.length} id(s) map to more than one path across the merged metadata index: ${detail}`);
+  throw new Error(
+    `DUPLICATE_METADATA_ID: ${duplicates.length} id(s) map to more than one path across the merged metadata index: ${detail}`,
+  );
 }
 
 export function compileMetadataIndex(input: CompileMetadataIndexInput): MetadataIndexCompilation {
@@ -308,7 +361,9 @@ export function compileMetadataIndex(input: CompileMetadataIndexInput): Metadata
     subjects: input.subjects,
   });
   assertCarrierDecisionCoverage(input.subjects, carrierDecisions);
-  const subjectByPath = new Map(input.subjects.map((subject) => [normalizeRelativePath(subject.path), subject]));
+  const subjectByPath = new Map(
+    input.subjects.map((subject) => [normalizeRelativePath(subject.path), subject]),
+  );
   const records: MetadataIndexRecord[] = [];
   for (const decision of carrierDecisions) {
     const subject = subjectByPath.get(decision.path);
@@ -320,7 +375,10 @@ export function compileMetadataIndex(input: CompileMetadataIndexInput): Metadata
   if (preserved.length > 0) {
     assertUniqueMergedMetadataIds(input.subjects, preserved);
     for (const record of preserved) {
-      if (subjectByPath.has(record.path)) throw new Error(`preserved metadata index record overlaps a compiled subject: ${record.path}`);
+      if (subjectByPath.has(record.path))
+        throw new Error(
+          `preserved metadata index record overlaps a compiled subject: ${record.path}`,
+        );
       records.push(record);
     }
   }
@@ -347,11 +405,13 @@ function assertSafeOutput(root: string): { root: string; directory: string; targ
   }
   if (fs.existsSync(directory)) {
     const stat = fs.lstatSync(directory);
-    if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error(`.l9 must be a real directory: ${directory}`);
+    if (stat.isSymbolicLink() || !stat.isDirectory())
+      throw new Error(`.l9 must be a real directory: ${directory}`);
   }
   if (fs.existsSync(target)) {
     const stat = fs.lstatSync(target);
-    if (stat.isSymbolicLink() || !stat.isFile()) throw new Error(`metadata index target must be a regular file: ${target}`);
+    if (stat.isSymbolicLink() || !stat.isFile())
+      throw new Error(`metadata index target must be a regular file: ${target}`);
   }
   return { root: absoluteRoot, directory, target };
 }
@@ -370,7 +430,8 @@ export function writeMetadataIndex(
   if (!options.dryRun && changed) {
     fs.mkdirSync(output.directory, { recursive: true });
     const temp = path.join(output.directory, `.metadata-index.jsonl.tmp-${process.pid}`);
-    if (fs.existsSync(temp)) throw new Error(`metadata index temporary path already exists: ${temp}`);
+    if (fs.existsSync(temp))
+      throw new Error(`metadata index temporary path already exists: ${temp}`);
     try {
       fs.writeFileSync(temp, compiled.bytes, { encoding: "utf8", flag: "wx", mode: 0o644 });
       fs.renameSync(temp, output.target);
@@ -390,17 +451,28 @@ export function writeMetadataIndex(
 export function parseMetadataIndex(bytes: string): MetadataIndexRecord[] {
   if (bytes === "") return [];
   if (!bytes.endsWith("\n")) throw new Error("metadata index must end with a newline");
-  const records = bytes.slice(0, -1).split("\n").map((line, index) => {
-    let value: unknown;
-    try { value = JSON.parse(line); }
-    catch (error) { throw new Error(`metadata index line ${index + 1} is invalid JSON: ${error instanceof Error ? error.message : String(error)}`); }
-    if (!isPlainObject(value)) throw new Error(`metadata index line ${index + 1} must be an object`);
-    const record = value as unknown as MetadataIndexRecord;
-    if (canonicalJson(record) !== line) throw new Error(`metadata index line ${index + 1} is not canonical JSON`);
-    return record;
-  });
+  const records = bytes
+    .slice(0, -1)
+    .split("\n")
+    .map((line, index) => {
+      let value: unknown;
+      try {
+        value = JSON.parse(line);
+      } catch (error) {
+        throw new Error(
+          `metadata index line ${index + 1} is invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      if (!isPlainObject(value))
+        throw new Error(`metadata index line ${index + 1} must be an object`);
+      const record = value as unknown as MetadataIndexRecord;
+      if (canonicalJson(record) !== line)
+        throw new Error(`metadata index line ${index + 1} is not canonical JSON`);
+      return record;
+    });
   const canonical = serializeMetadataIndex(records);
-  if (canonical !== bytes) throw new Error("metadata index records are not in canonical path order");
+  if (canonical !== bytes)
+    throw new Error("metadata index records are not in canonical path order");
   return records;
 }
 
@@ -445,14 +517,20 @@ export interface TrackedCoverageReceipt {
   policy_contract: typeof TRACKED_POLICY_SCHEMA;
   producer_version: string;
   repository_id: string;
-  snapshot: { revision: string; tree_oid: string; object_format: TrackedGitSnapshot["object_format"] };
+  snapshot: {
+    revision: string;
+    tree_oid: string;
+    object_format: TrackedGitSnapshot["object_format"];
+  };
   population: "tracked_tree_leaves";
   subject_content_reads: false;
   source_mutation: "never";
   host_materializability: "not_assessed";
   authority_inspection: "not_performed";
   index: { schema: typeof METADATA_INDEX_SCHEMA_V2; sha256: string };
-  entries: Array<TrackedCarrierDecision & { id: string; content_hash: null; content_hash_scope: "not_inspected" }>;
+  entries: Array<
+    TrackedCarrierDecision & { id: string; content_hash: null; content_hash_scope: "not_inspected" }
+  >;
   alias_ambiguities: LegacyTrackedAliasGroup[];
   totals: { tree_leaves: number; indexed: number; protected: number; unsupported: number };
   closure: "exact_set_verified";
@@ -477,15 +555,27 @@ export interface CompileTrackedMetadataInput {
   legacyIdentityClaims?: MetadataIndexLegacyIdentityClaimsV2;
 }
 
-function exactKeys(value: unknown, keys: readonly string[], location: string): asserts value is Record<string, unknown> {
-  if (!isPlainObject(value) || Object.keys(value).length !== keys.length || keys.some((key) => !Object.prototype.hasOwnProperty.call(value, key))) {
+function exactKeys(
+  value: unknown,
+  keys: readonly string[],
+  location: string,
+): asserts value is Record<string, unknown> {
+  if (
+    !isPlainObject(value) ||
+    Object.keys(value).length !== keys.length ||
+    keys.some((key) => !Object.prototype.hasOwnProperty.call(value, key))
+  ) {
     throw new Error(`${location} must have exactly the keys ${keys.join(", ")}`);
   }
 }
 
 function assertGitOid(oid: string, format: TrackedGitSnapshot["object_format"]): void {
-  if (format !== "sha1" && format !== "sha256") throw new Error("unsupported tracked object format");
-  if (typeof oid !== "string" || !(format === "sha1" ? /^[a-f0-9]{40}$/ : /^[a-f0-9]{64}$/).test(oid)) {
+  if (format !== "sha1" && format !== "sha256")
+    throw new Error("unsupported tracked object format");
+  if (
+    typeof oid !== "string" ||
+    !(format === "sha1" ? /^[a-f0-9]{40}$/ : /^[a-f0-9]{64}$/).test(oid)
+  ) {
     throw new Error("tracked object identity does not match object format");
   }
 }
@@ -496,7 +586,11 @@ function assertTrackedSnapshot(snapshot: TrackedGitSnapshot): void {
   assertGitOid(snapshot.tree_oid, snapshot.object_format);
   const seen = new Set<string>();
   for (const entry of snapshot.entries) {
-    exactKeys(entry, ["path", "path_bytes_base64", "mode", "object_type", "object_oid"], "tracked census entry");
+    exactKeys(
+      entry,
+      ["path", "path_bytes_base64", "mode", "object_type", "object_oid"],
+      "tracked census entry",
+    );
     assertTrackedPathSpelling(entry);
     assertGitOid(entry.object_oid, snapshot.object_format);
     if (seen.has(entry.path_bytes_base64)) throw new Error("duplicate tracked census path");
@@ -505,47 +599,110 @@ function assertTrackedSnapshot(snapshot: TrackedGitSnapshot): void {
 }
 
 /** Counts are informational. Equality is established on raw paths and all Git evidence. */
-export function assertTrackedDecisionCoverage(snapshot: TrackedGitSnapshot, decisions: readonly TrackedCarrierDecision[]): void {
+export function assertTrackedDecisionCoverage(
+  snapshot: TrackedGitSnapshot,
+  decisions: readonly TrackedCarrierDecision[],
+): void {
   assertTrackedSnapshot(snapshot);
   const expected = new Map(snapshot.entries.map((entry) => [entry.path_bytes_base64, entry]));
   const seen = new Set<string>();
   for (const item of decisions) {
-    exactKeys(item, ["path", "path_bytes_base64", "mode", "object_type", "object_oid", "carrier", "disposition", "reason"], "tracked decision");
+    exactKeys(
+      item,
+      [
+        "path",
+        "path_bytes_base64",
+        "mode",
+        "object_type",
+        "object_oid",
+        "carrier",
+        "disposition",
+        "reason",
+      ],
+      "tracked decision",
+    );
     if (seen.has(item.path_bytes_base64)) throw new Error("duplicate tracked decision path");
     seen.add(item.path_bytes_base64);
     const entry = expected.get(item.path_bytes_base64);
     if (!entry) throw new Error("extra tracked decision path");
-    if (item.path !== entry.path || item.mode !== entry.mode || item.object_type !== entry.object_type || item.object_oid !== entry.object_oid) {
+    if (
+      item.path !== entry.path ||
+      item.mode !== entry.mode ||
+      item.object_type !== entry.object_type ||
+      item.object_oid !== entry.object_oid
+    ) {
       throw new Error("tracked decision evidence mismatch");
     }
     const policy = resolveTrackedCarrierDecision(entry);
-    if (item.carrier !== policy.carrier || item.disposition !== policy.disposition || item.reason !== policy.reason) {
+    if (
+      item.carrier !== policy.carrier ||
+      item.disposition !== policy.disposition ||
+      item.reason !== policy.reason
+    ) {
       throw new Error("unjustified tracked decision exception or carrier");
     }
   }
   if (seen.size !== expected.size) throw new Error("missing tracked decision path");
 }
 
-function legacyAlias(repositoryId: string, sourcePath: string): MetadataIndexRecordV2["metadata"]["legacy_alias"] {
-  return { schema: LEGACY_ALIAS_SCHEMA, id: resolveNamespace(sourcePath, { namespace: repositoryId }, "unknown").idStem };
+function legacyAlias(
+  repositoryId: string,
+  sourcePath: string,
+): MetadataIndexRecordV2["metadata"]["legacy_alias"] {
+  return {
+    schema: LEGACY_ALIAS_SCHEMA,
+    id: resolveNamespace(sourcePath, { namespace: repositoryId }, "unknown").idStem,
+  };
 }
 
 function validateV2Record(value: MetadataIndexRecordV2): void {
-  exactKeys(value, ["schema", "path", "path_bytes_base64", "carrier", "artifact_type", "content_kind", "content_hash", "content_hash_scope", "git", "metadata"], "v2 metadata record");
-  if (value.schema !== METADATA_INDEX_SCHEMA_V2 || value.artifact_type !== "unknown" || value.content_kind !== "Unknown"
-    || value.content_hash !== null || value.content_hash_scope !== "not_inspected") throw new Error("unsupported v2 metadata evidence contract");
+  exactKeys(
+    value,
+    [
+      "schema",
+      "path",
+      "path_bytes_base64",
+      "carrier",
+      "artifact_type",
+      "content_kind",
+      "content_hash",
+      "content_hash_scope",
+      "git",
+      "metadata",
+    ],
+    "v2 metadata record",
+  );
+  if (
+    value.schema !== METADATA_INDEX_SCHEMA_V2 ||
+    value.artifact_type !== "unknown" ||
+    value.content_kind !== "Unknown" ||
+    value.content_hash !== null ||
+    value.content_hash_scope !== "not_inspected"
+  )
+    throw new Error("unsupported v2 metadata evidence contract");
   exactKeys(value.git, ["mode", "object_type", "object_oid", "object_format"], "v2 Git provenance");
   exactKeys(value.metadata, ["id", "repository_id", "legacy_alias"], "v2 metadata identity");
   exactKeys(value.metadata.legacy_alias, ["schema", "id"], "v2 legacy alias");
   assertGitOid(value.git.object_oid, value.git.object_format);
   const entry: TrackedGitEntry = {
-    path: value.path, path_bytes_base64: value.path_bytes_base64,
-    mode: value.git.mode, object_type: value.git.object_type, object_oid: value.git.object_oid,
+    path: value.path,
+    path_bytes_base64: value.path_bytes_base64,
+    mode: value.git.mode,
+    object_type: value.git.object_type,
+    object_oid: value.git.object_oid,
   };
   const policy = resolveTrackedCarrierDecision(entry);
-  if (policy.disposition !== "indexed" || value.carrier !== policy.carrier) throw new Error("v2 record cannot represent protected/unsupported entry or divergent carrier");
-  if (value.metadata.id !== trackedPathIdentity(value.metadata.repository_id, value.path_bytes_base64)) throw new Error("v2 canonical identity mismatch");
-  if (canonicalJson(value.metadata.legacy_alias) !== canonicalJson(legacyAlias(value.metadata.repository_id, value.path))) throw new Error("v2 legacy alias projection mismatch");
+  if (policy.disposition !== "indexed" || value.carrier !== policy.carrier)
+    throw new Error("v2 record cannot represent protected/unsupported entry or divergent carrier");
+  if (
+    value.metadata.id !== trackedPathIdentity(value.metadata.repository_id, value.path_bytes_base64)
+  )
+    throw new Error("v2 canonical identity mismatch");
+  if (
+    canonicalJson(value.metadata.legacy_alias) !==
+    canonicalJson(legacyAlias(value.metadata.repository_id, value.path))
+  )
+    throw new Error("v2 legacy alias projection mismatch");
 }
 
 function validatedV2Records(records: readonly MetadataIndexRecordV2[]): MetadataIndexRecordV2[] {
@@ -559,38 +716,68 @@ function validatedV2Records(records: readonly MetadataIndexRecordV2[]): Metadata
     seen.add(record.path_bytes_base64);
     repositoryId ??= record.metadata.repository_id;
     objectFormat ??= record.git.object_format;
-    if (repositoryId !== record.metadata.repository_id || objectFormat !== record.git.object_format) throw new Error("v2 metadata index must bind one repository and object format");
+    if (repositoryId !== record.metadata.repository_id || objectFormat !== record.git.object_format)
+      throw new Error("v2 metadata index must bind one repository and object format");
   }
   return sorted;
 }
 
 function assertV2Header(header: MetadataIndexHeaderV2): void {
-  const historical = isPlainObject(header) && Object.prototype.hasOwnProperty.call(header, "legacy_identity_claims");
-  exactKeys(header, ["schema", "kind", "repository_id", "producer_version", "policy_contract", ...(historical ? ["legacy_identity_claims"] : [])], "v2 index header");
-  if (header.schema !== METADATA_INDEX_SCHEMA_V2 || header.kind !== "header" || header.policy_contract !== TRACKED_POLICY_SCHEMA
-    || !/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(header.producer_version)) throw new Error("unsupported v2 index header contract");
+  const historical =
+    isPlainObject(header) && Object.prototype.hasOwnProperty.call(header, "legacy_identity_claims");
+  exactKeys(
+    header,
+    [
+      "schema",
+      "kind",
+      "repository_id",
+      "producer_version",
+      "policy_contract",
+      ...(historical ? ["legacy_identity_claims"] : []),
+    ],
+    "v2 index header",
+  );
+  if (
+    header.schema !== METADATA_INDEX_SCHEMA_V2 ||
+    header.kind !== "header" ||
+    header.policy_contract !== TRACKED_POLICY_SCHEMA ||
+    !/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(header.producer_version)
+  )
+    throw new Error("unsupported v2 index header contract");
   assertPortableRepositoryIdentity(header.repository_id);
   if (historical) assertLegacyIdentityClaims(header.legacy_identity_claims, header.repository_id);
 }
 
-export function serializeMetadataIndexV2(records: readonly MetadataIndexRecordV2[], header: MetadataIndexHeaderV2): string {
+export function serializeMetadataIndexV2(
+  records: readonly MetadataIndexRecordV2[],
+  header: MetadataIndexHeaderV2,
+): string {
   assertV2Header(header);
   const sorted = validatedV2Records(records);
-  if (sorted.some((record) => record.metadata.repository_id !== header.repository_id)) throw new Error("v2 record repository differs from header");
+  if (sorted.some((record) => record.metadata.repository_id !== header.repository_id))
+    throw new Error("v2 record repository differs from header");
   return `${[header, ...sorted].map(canonicalJson).join("\n")}\n`;
 }
 
 export function parseMetadataIndexV2(bytes: string): MetadataIndexRecordV2[] {
   if (bytes === "") throw new Error("v2 metadata index requires a versioned header");
   if (!bytes.endsWith("\n")) throw new Error("v2 metadata index must end with a newline");
-  const [header, ...records] = bytes.slice(0, -1).split("\n").map((line) => JSON.parse(line)) as [MetadataIndexHeaderV2, ...MetadataIndexRecordV2[]];
-  if (serializeMetadataIndexV2(records, header) !== bytes) throw new Error("v2 metadata index must use canonical JSON and raw-byte path order");
+  const [header, ...records] = bytes
+    .slice(0, -1)
+    .split("\n")
+    .map((line) => JSON.parse(line)) as [MetadataIndexHeaderV2, ...MetadataIndexRecordV2[]];
+  if (serializeMetadataIndexV2(records, header) !== bytes)
+    throw new Error("v2 metadata index must use canonical JSON and raw-byte path order");
   return records;
 }
 
 export type VersionedMetadataIndex =
   | { schema: typeof METADATA_INDEX_SCHEMA; records: MetadataIndexRecord[] }
-  | { schema: typeof METADATA_INDEX_SCHEMA_V2; header: MetadataIndexHeaderV2; records: MetadataIndexRecordV2[] };
+  | {
+      schema: typeof METADATA_INDEX_SCHEMA_V2;
+      header: MetadataIndexHeaderV2;
+      records: MetadataIndexRecordV2[];
+    };
 
 /** v1 admits empty JSONL; v2 always requires its explicit header. */
 export function readVersionedMetadataIndex(bytes: string): VersionedMetadataIndex {
@@ -598,30 +785,66 @@ export function readVersionedMetadataIndex(bytes: string): VersionedMetadataInde
     return { schema: METADATA_INDEX_SCHEMA, records: [] };
   }
   if (!bytes.endsWith("\n")) throw new Error("metadata index must end with a newline");
-  const schemas = new Set(bytes.slice(0, -1).split("\n").map((line) => {
-    const value: unknown = JSON.parse(line);
-    if (!isPlainObject(value)) throw new Error("metadata index record must be an object");
-    return value.schema;
-  }));
+  const schemas = new Set(
+    bytes
+      .slice(0, -1)
+      .split("\n")
+      .map((line) => {
+        const value: unknown = JSON.parse(line);
+        if (!isPlainObject(value)) throw new Error("metadata index record must be an object");
+        return value.schema;
+      }),
+  );
   if (schemas.size !== 1) throw new Error("mixed metadata index versions are forbidden");
-  if (schemas.has(METADATA_INDEX_SCHEMA)) return { schema: METADATA_INDEX_SCHEMA, records: parseMetadataIndex(bytes) };
-  if (schemas.has(METADATA_INDEX_SCHEMA_V2)) return { schema: METADATA_INDEX_SCHEMA_V2, header: JSON.parse(bytes.split("\n")[0]) as MetadataIndexHeaderV2, records: parseMetadataIndexV2(bytes) };
+  if (schemas.has(METADATA_INDEX_SCHEMA))
+    return { schema: METADATA_INDEX_SCHEMA, records: parseMetadataIndex(bytes) };
+  if (schemas.has(METADATA_INDEX_SCHEMA_V2))
+    return {
+      schema: METADATA_INDEX_SCHEMA_V2,
+      header: JSON.parse(bytes.split("\n")[0]) as MetadataIndexHeaderV2,
+      records: parseMetadataIndexV2(bytes),
+    };
   throw new Error("unsupported metadata index version");
 }
 
-function trackedMetadataRecord(entry: TrackedCarrierDecision, snapshot: TrackedGitSnapshot): MetadataIndexRecordV2 {
-  if (entry.path === null || entry.carrier === "hard_skip") throw new Error("indexed entry lacks safe representable path");
+function trackedMetadataRecord(
+  entry: TrackedCarrierDecision,
+  snapshot: TrackedGitSnapshot,
+): MetadataIndexRecordV2 {
+  if (entry.path === null || entry.carrier === "hard_skip")
+    throw new Error("indexed entry lacks safe representable path");
   return {
-    schema: METADATA_INDEX_SCHEMA_V2, path: entry.path, path_bytes_base64: entry.path_bytes_base64,
-    carrier: entry.carrier, artifact_type: "unknown", content_kind: "Unknown", content_hash: null, content_hash_scope: "not_inspected",
-    git: { mode: entry.mode, object_type: entry.object_type, object_oid: entry.object_oid, object_format: snapshot.object_format },
-    metadata: { id: trackedPathIdentity(snapshot.repository_id, entry.path_bytes_base64), repository_id: snapshot.repository_id, legacy_alias: legacyAlias(snapshot.repository_id, entry.path) },
+    schema: METADATA_INDEX_SCHEMA_V2,
+    path: entry.path,
+    path_bytes_base64: entry.path_bytes_base64,
+    carrier: entry.carrier,
+    artifact_type: "unknown",
+    content_kind: "Unknown",
+    content_hash: null,
+    content_hash_scope: "not_inspected",
+    git: {
+      mode: entry.mode,
+      object_type: entry.object_type,
+      object_oid: entry.object_oid,
+      object_format: snapshot.object_format,
+    },
+    metadata: {
+      id: trackedPathIdentity(snapshot.repository_id, entry.path_bytes_base64),
+      repository_id: snapshot.repository_id,
+      legacy_alias: legacyAlias(snapshot.repository_id, entry.path),
+    },
   };
 }
 
 function trackedMetadataHeader(input: CompileTrackedMetadataInput): MetadataIndexHeaderV2 {
   const { snapshot } = input;
-  const header: MetadataIndexHeaderV2 = { schema: METADATA_INDEX_SCHEMA_V2, kind: "header", repository_id: snapshot.repository_id, producer_version: input.producerVersion, policy_contract: TRACKED_POLICY_SCHEMA };
+  const header: MetadataIndexHeaderV2 = {
+    schema: METADATA_INDEX_SCHEMA_V2,
+    kind: "header",
+    repository_id: snapshot.repository_id,
+    producer_version: input.producerVersion,
+    policy_contract: TRACKED_POLICY_SCHEMA,
+  };
   if (input.legacyIdentityClaims !== undefined) {
     assertLegacyIdentityClaims(input.legacyIdentityClaims, snapshot.repository_id);
     header.legacy_identity_claims = freezeHistoricalClaims(input.legacyIdentityClaims);
@@ -629,73 +852,159 @@ function trackedMetadataHeader(input: CompileTrackedMetadataInput): MetadataInde
   return header;
 }
 
-function trackedAliasAmbiguities(records: readonly MetadataIndexRecordV2[]): LegacyTrackedAliasGroup[] {
+function trackedAliasAmbiguities(
+  records: readonly MetadataIndexRecordV2[],
+): LegacyTrackedAliasGroup[] {
   const byAlias = new Map<string, string[]>();
   for (const record of records) {
     const alias = record.metadata.legacy_alias.id;
     byAlias.set(alias, [...(byAlias.get(alias) ?? []), record.metadata.id]);
   }
   return [...byAlias.entries()]
-    .filter(([, ids]) => ids.length > 1).sort(([a], [b]) => compareCodePoints(a, b))
+    .filter(([, ids]) => ids.length > 1)
+    .sort(([a], [b]) => compareCodePoints(a, b))
     .map(([alias, ids]) => ({ schema: LEGACY_ALIAS_SCHEMA, alias, ids }));
 }
 
-export function compileTrackedMetadataIndex(input: CompileTrackedMetadataInput): TrackedMetadataCompilation {
+export function compileTrackedMetadataIndex(
+  input: CompileTrackedMetadataInput,
+): TrackedMetadataCompilation {
   const { snapshot } = input;
-  if (typeof input.producerVersion !== "string" || !/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(input.producerVersion)) throw new Error("explicit producer version required");
-  const decisions = [...(input.decisions ?? resolveTrackedCarrierDecisions(snapshot.entries))].sort(compareTrackedPaths);
+  if (
+    typeof input.producerVersion !== "string" ||
+    !/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(input.producerVersion)
+  )
+    throw new Error("explicit producer version required");
+  const decisions = [...(input.decisions ?? resolveTrackedCarrierDecisions(snapshot.entries))].sort(
+    compareTrackedPaths,
+  );
   assertTrackedDecisionCoverage(snapshot, decisions);
-  const records = decisions.filter((entry) => entry.disposition === "indexed").map((entry) => trackedMetadataRecord(entry, snapshot));
+  const records = decisions
+    .filter((entry) => entry.disposition === "indexed")
+    .map((entry) => trackedMetadataRecord(entry, snapshot));
   const header = trackedMetadataHeader(input);
   const bytes = serializeMetadataIndexV2(records, header);
   const sha256 = createHash("sha256").update(bytes).digest("hex");
   const alias_ambiguities = trackedAliasAmbiguities(records);
   const coverage: TrackedCoverageReceipt = {
-    schema: TRACKED_COVERAGE_SCHEMA, policy_contract: TRACKED_POLICY_SCHEMA, producer_version: input.producerVersion,
+    schema: TRACKED_COVERAGE_SCHEMA,
+    policy_contract: TRACKED_POLICY_SCHEMA,
+    producer_version: input.producerVersion,
     repository_id: snapshot.repository_id,
-    snapshot: { revision: snapshot.revision, tree_oid: snapshot.tree_oid, object_format: snapshot.object_format },
-    population: "tracked_tree_leaves", subject_content_reads: false, source_mutation: "never", authority_inspection: "not_performed",
+    snapshot: {
+      revision: snapshot.revision,
+      tree_oid: snapshot.tree_oid,
+      object_format: snapshot.object_format,
+    },
+    population: "tracked_tree_leaves",
+    subject_content_reads: false,
+    source_mutation: "never",
+    authority_inspection: "not_performed",
     host_materializability: "not_assessed",
     index: { schema: METADATA_INDEX_SCHEMA_V2, sha256 },
-    entries: decisions.map((entry) => ({ ...entry, id: trackedPathIdentity(snapshot.repository_id, entry.path_bytes_base64), content_hash: null, content_hash_scope: "not_inspected" })),
+    entries: decisions.map((entry) => ({
+      ...entry,
+      id: trackedPathIdentity(snapshot.repository_id, entry.path_bytes_base64),
+      content_hash: null,
+      content_hash_scope: "not_inspected",
+    })),
     alias_ambiguities,
     totals: {
-      tree_leaves: snapshot.entries.length, indexed: records.length,
+      tree_leaves: snapshot.entries.length,
+      indexed: records.length,
       protected: decisions.filter((entry) => entry.disposition === "protected").length,
       unsupported: decisions.filter((entry) => entry.disposition === "unsupported").length,
     },
     closure: "exact_set_verified",
   };
   assertTrackedIndexCoverage(snapshot, decisions, records);
-  return { header, records, bytes, sha256, carrierDecisions: decisions, coverage, coverageBytes: `${canonicalJson(coverage)}\n` };
+  return {
+    header,
+    records,
+    bytes,
+    sha256,
+    carrierDecisions: decisions,
+    coverage,
+    coverageBytes: `${canonicalJson(coverage)}\n`,
+  };
 }
 
 /** Bind materialization to the census and reject missing/extra/evidence-swapped records. */
-export function assertTrackedIndexCoverage(snapshot: TrackedGitSnapshot, decisions: readonly TrackedCarrierDecision[], records: readonly MetadataIndexRecordV2[]): void {
+export function assertTrackedIndexCoverage(
+  snapshot: TrackedGitSnapshot,
+  decisions: readonly TrackedCarrierDecision[],
+  records: readonly MetadataIndexRecordV2[],
+): void {
   assertTrackedDecisionCoverage(snapshot, decisions);
   validatedV2Records(records);
-  const indexed = new Map(decisions.filter((entry) => entry.disposition === "indexed").map((entry) => [entry.path_bytes_base64, entry]));
+  const indexed = new Map(
+    decisions
+      .filter((entry) => entry.disposition === "indexed")
+      .map((entry) => [entry.path_bytes_base64, entry]),
+  );
   const seen = new Set<string>();
   for (const record of records) {
     const expected = indexed.get(record.path_bytes_base64);
     if (!expected) throw new Error("extra tracked index record");
     if (seen.has(record.path_bytes_base64)) throw new Error("duplicate tracked index record");
     seen.add(record.path_bytes_base64);
-    if (record.metadata.repository_id !== snapshot.repository_id || record.git.object_format !== snapshot.object_format
-      || record.path !== expected.path || record.git.mode !== expected.mode || record.git.object_type !== expected.object_type
-      || record.git.object_oid !== expected.object_oid || record.carrier !== expected.carrier) throw new Error("tracked index evidence mismatch");
+    if (
+      record.metadata.repository_id !== snapshot.repository_id ||
+      record.git.object_format !== snapshot.object_format ||
+      record.path !== expected.path ||
+      record.git.mode !== expected.mode ||
+      record.git.object_type !== expected.object_type ||
+      record.git.object_oid !== expected.object_oid ||
+      record.carrier !== expected.carrier
+    )
+      throw new Error("tracked index evidence mismatch");
   }
   if (seen.size !== indexed.size) throw new Error("missing tracked index record");
 }
 
 /** Receipt-only verification reconstructs the declared population; an external census binds its truth. */
-export function parseTrackedCoverage(bytes: string, snapshot: TrackedGitSnapshot, records: readonly MetadataIndexRecordV2[], header?: MetadataIndexHeaderV2): TrackedCoverageReceipt {
+export function parseTrackedCoverage(
+  bytes: string,
+  snapshot: TrackedGitSnapshot,
+  records: readonly MetadataIndexRecordV2[],
+  header?: MetadataIndexHeaderV2,
+): TrackedCoverageReceipt {
   const value: unknown = JSON.parse(bytes);
-  exactKeys(value, ["schema", "policy_contract", "producer_version", "repository_id", "snapshot", "population", "subject_content_reads", "source_mutation", "host_materializability", "authority_inspection", "index", "entries", "alias_ambiguities", "totals", "closure"], "tracked coverage receipt");
+  exactKeys(
+    value,
+    [
+      "schema",
+      "policy_contract",
+      "producer_version",
+      "repository_id",
+      "snapshot",
+      "population",
+      "subject_content_reads",
+      "source_mutation",
+      "host_materializability",
+      "authority_inspection",
+      "index",
+      "entries",
+      "alias_ambiguities",
+      "totals",
+      "closure",
+    ],
+    "tracked coverage receipt",
+  );
   const receipt = value as unknown as TrackedCoverageReceipt;
-  const compiled = compileTrackedMetadataIndex({ snapshot, producerVersion: receipt.producer_version, ...(header?.legacy_identity_claims ? { legacyIdentityClaims: header.legacy_identity_claims } : {}) });
+  const compiled = compileTrackedMetadataIndex({
+    snapshot,
+    producerVersion: receipt.producer_version,
+    ...(header?.legacy_identity_claims
+      ? { legacyIdentityClaims: header.legacy_identity_claims }
+      : {}),
+  });
   assertTrackedIndexCoverage(snapshot, compiled.carrierDecisions, records);
-  if (serializeMetadataIndexV2(records, header ?? compiled.header) !== compiled.bytes || compiled.coverageBytes !== bytes) throw new Error("tracked coverage receipt evidence/canonical closure mismatch");
+  if (
+    serializeMetadataIndexV2(records, header ?? compiled.header) !== compiled.bytes ||
+    compiled.coverageBytes !== bytes
+  )
+    throw new Error("tracked coverage receipt evidence/canonical closure mismatch");
   return receipt;
 }
 
@@ -705,7 +1014,9 @@ export function assertLegacyMetadataIndexWrite(bytes: string): void {
   // per-line pass below cannot see; scan the whole byte sequence as well.
   for (const match of bytes.matchAll(/"schema"\s*:\s*"(l9\.metadata-index\/[^"\r\n]+)"/g)) {
     if (match[1] !== METADATA_INDEX_SCHEMA) {
-      throw new Error(`legacy metadata operation cannot downgrade active ${match[1]}; use explicit versioned workflow`);
+      throw new Error(
+        `legacy metadata operation cannot downgrade active ${match[1]}; use explicit versioned workflow`,
+      );
     }
   }
   for (const line of bytes.split("\n")) {
@@ -717,8 +1028,14 @@ export function assertLegacyMetadataIndexWrite(bytes: string): void {
       // Preserve corrupt-v1 rebuild behavior, but retain an explicit version marker even in a damaged record.
       schema = /"schema"\s*:\s*"(l9\.metadata-index\/[^"\r\n]+)"/.exec(line)?.[1];
     }
-    if (typeof schema === "string" && schema.startsWith("l9.metadata-index/") && schema !== METADATA_INDEX_SCHEMA) {
-      throw new Error(`legacy metadata operation cannot downgrade active ${schema}; use explicit versioned workflow`);
+    if (
+      typeof schema === "string" &&
+      schema.startsWith("l9.metadata-index/") &&
+      schema !== METADATA_INDEX_SCHEMA
+    ) {
+      throw new Error(
+        `legacy metadata operation cannot downgrade active ${schema}; use explicit versioned workflow`,
+      );
     }
   }
 }
@@ -742,13 +1059,22 @@ function sameFileIdentity(left: fs.Stats, right: fs.Stats): boolean {
 }
 
 /** Check names against held directory descriptors, not against a prior existence probe. */
-function assertMetadataIndexDirectories(directories: readonly MetadataIndexDirectoryObservation[]): void {
+function assertMetadataIndexDirectories(
+  directories: readonly MetadataIndexDirectoryObservation[],
+): void {
   for (const directory of directories) {
     const named = fs.lstatSync(directory.path);
     const held = fs.fstatSync(directory.descriptor);
-    if (named.isSymbolicLink() || !named.isDirectory() || !held.isDirectory()
-      || !sameFileIdentity(named, directory.stat) || !sameFileIdentity(held, directory.stat)) {
-      throw new Error("metadata index parent changed during inspection; ancestry must remain real directories");
+    if (
+      named.isSymbolicLink() ||
+      !named.isDirectory() ||
+      !held.isDirectory() ||
+      !sameFileIdentity(named, directory.stat) ||
+      !sameFileIdentity(held, directory.stat)
+    ) {
+      throw new Error(
+        "metadata index parent changed during inspection; ancestry must remain real directories",
+      );
     }
   }
 }
@@ -768,12 +1094,21 @@ function metadataIndexChildPath(parent: MetadataIndexDirectoryObservation, name:
 function openMetadataIndexEntry(target: string, directory: boolean): number {
   try {
     // NONBLOCK prevents a substituted FIFO from hanging before fstat can refuse it.
-    return fs.openSync(target, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK
-      | (directory ? fs.constants.O_DIRECTORY : 0));
+    return fs.openSync(
+      target,
+      fs.constants.O_RDONLY |
+        fs.constants.O_NOFOLLOW |
+        fs.constants.O_NONBLOCK |
+        (directory ? fs.constants.O_DIRECTORY : 0),
+    );
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === "ELOOP" || code === "ENOTDIR") {
-      throw new Error(directory ? "metadata index ancestry must be a real directory" : "metadata index target must be a regular file");
+      throw new Error(
+        directory
+          ? "metadata index ancestry must be a real directory"
+          : "metadata index target must be a regular file",
+      );
     }
     throw error;
   }
@@ -781,8 +1116,9 @@ function openMetadataIndexEntry(target: string, directory: boolean): number {
 
 /** Optional paths are absent only when their direct open fails with ENOENT. */
 function openOptionalMetadataIndexEntry(target: string, directory: boolean): number | undefined {
-  try { return openMetadataIndexEntry(target, directory); }
-  catch (error) {
+  try {
+    return openMetadataIndexEntry(target, directory);
+  } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw error;
   }
@@ -794,17 +1130,28 @@ function ownMetadataIndexDirectory(
   directories: MetadataIndexDirectoryObservation[],
 ): MetadataIndexDirectoryObservation {
   let stat: fs.Stats;
-  try { stat = fs.fstatSync(descriptor); }
-  catch (error) { fs.closeSync(descriptor); throw error; }
+  try {
+    stat = fs.fstatSync(descriptor);
+  } catch (error) {
+    fs.closeSync(descriptor);
+    throw error;
+  }
   const directory = { path: namedPath, descriptor, stat };
   directories.push(directory);
   if (!stat.isDirectory()) throw new Error("metadata index ancestry must be a real directory");
   return directory;
 }
 
-function observeMetadataIndexDirectories(root: string, directories: MetadataIndexDirectoryObservation[]): boolean {
+function observeMetadataIndexDirectories(
+  root: string,
+  directories: MetadataIndexDirectoryObservation[],
+): boolean {
   const filesystemRoot = path.parse(root).root;
-  let parent = ownMetadataIndexDirectory(filesystemRoot, openMetadataIndexEntry(filesystemRoot, true), directories);
+  let parent = ownMetadataIndexDirectory(
+    filesystemRoot,
+    openMetadataIndexEntry(filesystemRoot, true),
+    directories,
+  );
   if (process.platform === "linux") {
     // Establish the descriptor namespace outside the optional-path ENOENT catches.
     const pinned = fs.statSync(`/proc/self/fd/${parent.descriptor}`);
@@ -813,8 +1160,11 @@ function observeMetadataIndexDirectories(root: string, directories: MetadataInde
     }
   }
   for (const segment of root.slice(filesystemRoot.length).split(path.sep).filter(Boolean)) {
-    parent = ownMetadataIndexDirectory(path.join(parent.path, segment),
-      openMetadataIndexEntry(metadataIndexChildPath(parent, segment), true), directories);
+    parent = ownMetadataIndexDirectory(
+      path.join(parent.path, segment),
+      openMetadataIndexEntry(metadataIndexChildPath(parent, segment), true),
+      directories,
+    );
   }
   const descriptor = openOptionalMetadataIndexEntry(metadataIndexChildPath(parent, ".l9"), true);
   if (descriptor === undefined) {
@@ -839,8 +1189,14 @@ function assertMetadataIndexTarget(
 }
 
 function assertMetadataIndexRead(before: fs.Stats, after: fs.Stats, raw: Buffer): void {
-  if (!after.isFile() || !sameFileIdentity(after, before) || raw.length !== before.size
-    || after.size !== before.size || after.mtimeMs !== before.mtimeMs || after.ctimeMs !== before.ctimeMs) {
+  if (
+    !after.isFile() ||
+    !sameFileIdentity(after, before) ||
+    raw.length !== before.size ||
+    after.size !== before.size ||
+    after.mtimeMs !== before.mtimeMs ||
+    after.ctimeMs !== before.ctimeMs
+  ) {
     throw new Error("metadata index target changed during inspection");
   }
 }
@@ -851,15 +1207,19 @@ function assertMetadataIndexRead(before: fs.Stats, after: fs.Stats, raw: Buffer)
  * entries are refused. Hash the same FD bytes that the caller classifies. Parsing
  * stays with the version owner so legacy corrupt-v1 repair remains compatible.
  */
-export function readMetadataIndexBaseBytes(rootInput: string):
-  { exists: false } | { exists: true; raw: Buffer; sha256: string } {
+export function readMetadataIndexBaseBytes(
+  rootInput: string,
+): { exists: false } | { exists: true; raw: Buffer; sha256: string } {
   const root = path.resolve(rootInput);
   const directories: MetadataIndexDirectoryObservation[] = [];
   let descriptor: number | undefined;
   try {
     if (!observeMetadataIndexDirectories(root, directories)) return { exists: false };
     const parent = directories.at(-1)!;
-    descriptor = openOptionalMetadataIndexEntry(metadataIndexChildPath(parent, "metadata-index.jsonl"), false);
+    descriptor = openOptionalMetadataIndexEntry(
+      metadataIndexChildPath(parent, "metadata-index.jsonl"),
+      false,
+    );
     if (descriptor === undefined) {
       assertMetadataIndexDirectories(directories);
       return { exists: false };
@@ -902,7 +1262,11 @@ export interface MetadataIndexLegacyRecordV2 {
 /** Historical/unverified claims in the one active header; deliberately no target hash. */
 export interface MetadataIndexLegacyIdentityClaimsV2 {
   source_index: { schema: typeof METADATA_INDEX_SCHEMA; sha256: string };
-  snapshot_at_migration: { revision: string; tree_oid: string; object_format: TrackedGitSnapshot["object_format"] };
+  snapshot_at_migration: {
+    revision: string;
+    tree_oid: string;
+    object_format: TrackedGitSnapshot["object_format"];
+  };
   legacy_records: MetadataIndexLegacyRecordV2[];
 }
 
@@ -910,50 +1274,98 @@ export interface MetadataIndexLegacyIdentityClaimsV2 {
 export interface MetadataIndexMigrationEvidenceV2 {
   schema: typeof METADATA_INDEX_MIGRATION_SCHEMA_V2;
   repository_id: string;
-  snapshot: { revision: string; tree_oid: string; object_format: TrackedGitSnapshot["object_format"] };
+  snapshot: {
+    revision: string;
+    tree_oid: string;
+    object_format: TrackedGitSnapshot["object_format"];
+  };
   source_index: { schema: typeof METADATA_INDEX_SCHEMA; sha256: string };
   target_index: { schema: typeof METADATA_INDEX_SCHEMA_V2; sha256: string };
   legacy_records: MetadataIndexLegacyRecordV2[];
 }
 
-function assertLegacyIdentityClaims(value: unknown, repositoryId: string): asserts value is MetadataIndexLegacyIdentityClaimsV2 {
-  exactKeys(value, ["source_index", "snapshot_at_migration", "legacy_records"], "v2 historical identity claims");
+function assertLegacyIdentityClaims(
+  value: unknown,
+  repositoryId: string,
+): asserts value is MetadataIndexLegacyIdentityClaimsV2 {
+  exactKeys(
+    value,
+    ["source_index", "snapshot_at_migration", "legacy_records"],
+    "v2 historical identity claims",
+  );
   exactKeys(value.source_index, ["schema", "sha256"], "historical source index");
-  if (value.source_index.schema !== METADATA_INDEX_SCHEMA) throw new Error("historical claims require a v1 source index");
+  if (value.source_index.schema !== METADATA_INDEX_SCHEMA)
+    throw new Error("historical claims require a v1 source index");
   assertContentHash(value.source_index.sha256 as string, "historical source index bytes");
-  exactKeys(value.snapshot_at_migration, ["revision", "tree_oid", "object_format"], "historical migration snapshot");
-  const snapshot = value.snapshot_at_migration as MetadataIndexLegacyIdentityClaimsV2["snapshot_at_migration"];
+  exactKeys(
+    value.snapshot_at_migration,
+    ["revision", "tree_oid", "object_format"],
+    "historical migration snapshot",
+  );
+  const snapshot =
+    value.snapshot_at_migration as MetadataIndexLegacyIdentityClaimsV2["snapshot_at_migration"];
   assertGitOid(snapshot.revision, snapshot.object_format);
   assertGitOid(snapshot.tree_oid, snapshot.object_format);
-  if (!Array.isArray(value.legacy_records)) throw new Error("historical legacy_records must be an array");
+  if (!Array.isArray(value.legacy_records))
+    throw new Error("historical legacy_records must be an array");
   let previous: MetadataIndexLegacyRecordV2 | undefined;
   for (const item of value.legacy_records) {
-    exactKeys(item, ["path", "path_bytes_base64", "canonical_id", "legacy_metadata_id", "legacy_id_state", "legacy_content_hash_claim", "legacy_content_hash_scope", "snapshot_presence"], "historical legacy record");
+    exactKeys(
+      item,
+      [
+        "path",
+        "path_bytes_base64",
+        "canonical_id",
+        "legacy_metadata_id",
+        "legacy_id_state",
+        "legacy_content_hash_claim",
+        "legacy_content_hash_scope",
+        "snapshot_presence",
+      ],
+      "historical legacy record",
+    );
     const record = item as unknown as MetadataIndexLegacyRecordV2;
     if (typeof record.path !== "string") throw new Error("historical path must be a v1 path");
     normalizeRelativePath(record.path);
     assertRecordPath(record.path);
     const raw = Buffer.from(record.path, "utf8");
-    if (new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(raw) !== record.path
-      || raw.toString("base64") !== record.path_bytes_base64) throw new Error("historical raw path spelling mismatch");
-    if (record.canonical_id !== trackedPathIdentity(repositoryId, record.path_bytes_base64)) throw new Error("historical canonical identity mismatch");
-    if (previous && compareTrackedPaths(previous, record) >= 0) throw new Error("historical records require unique canonical raw path order");
+    if (
+      new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(raw) !== record.path ||
+      raw.toString("base64") !== record.path_bytes_base64
+    )
+      throw new Error("historical raw path spelling mismatch");
+    if (record.canonical_id !== trackedPathIdentity(repositoryId, record.path_bytes_base64))
+      throw new Error("historical canonical identity mismatch");
+    if (previous && compareTrackedPaths(previous, record) >= 0)
+      throw new Error("historical records require unique canonical raw path order");
     previous = record;
-    if (record.legacy_id_state !== "present" && record.legacy_id_state !== "absent") throw new Error("unsupported historical legacy ID state");
-    if (record.legacy_id_state === "absent" && record.legacy_metadata_id !== null) throw new Error("absent historical legacy ID must be null");
+    if (record.legacy_id_state !== "present" && record.legacy_id_state !== "absent")
+      throw new Error("unsupported historical legacy ID state");
+    if (record.legacy_id_state === "absent" && record.legacy_metadata_id !== null)
+      throw new Error("absent historical legacy ID must be null");
     if (typeof record.legacy_metadata_id === "string") {
-      try { assertPortableRepositoryIdentity(record.legacy_metadata_id); }
-      catch { throw new Error("historical legacy ID must be a nonempty safe exact UTF-8 string"); }
+      try {
+        assertPortableRepositoryIdentity(record.legacy_metadata_id);
+      } catch {
+        throw new Error("historical legacy ID must be a nonempty safe exact UTF-8 string");
+      }
     }
     canonicalJson(record.legacy_metadata_id);
     assertContentHash(record.legacy_content_hash_claim, record.path);
-    if (record.legacy_content_hash_scope !== "legacy_v1_claim_not_revalidated") throw new Error("unsupported historical content hash scope");
-    if (record.snapshot_presence !== "tracked" && record.snapshot_presence !== "absent_from_snapshot") throw new Error("unsupported historical snapshot presence");
+    if (record.legacy_content_hash_scope !== "legacy_v1_claim_not_revalidated")
+      throw new Error("unsupported historical content hash scope");
+    if (
+      record.snapshot_presence !== "tracked" &&
+      record.snapshot_presence !== "absent_from_snapshot"
+    )
+      throw new Error("unsupported historical snapshot presence");
   }
   canonicalJson(value);
 }
 
-function freezeHistoricalClaims(claims: MetadataIndexLegacyIdentityClaimsV2): MetadataIndexLegacyIdentityClaimsV2 {
+function freezeHistoricalClaims(
+  claims: MetadataIndexLegacyIdentityClaimsV2,
+): MetadataIndexLegacyIdentityClaimsV2 {
   const copy = JSON.parse(canonicalJson(claims)) as MetadataIndexLegacyIdentityClaimsV2;
   const freeze = (value: unknown): void => {
     if (value === null || typeof value !== "object") return;
@@ -970,24 +1382,43 @@ export function compileMetadataIndexLegacyIdentityClaims(
   sourceSha256: string,
   snapshot: TrackedGitSnapshot,
 ): MetadataIndexLegacyIdentityClaimsV2 {
-  if (base.schema !== METADATA_INDEX_SCHEMA) throw new Error("migration claims require a v1 source index");
+  if (base.schema !== METADATA_INDEX_SCHEMA)
+    throw new Error("migration claims require a v1 source index");
   assertTrackedSnapshot(snapshot);
   assertContentHash(sourceSha256, "legacy index bytes");
-  if (createHash("sha256").update(serializeMetadataIndex(base.records)).digest("hex") !== sourceSha256) throw new Error("migration source hash must bind actual prior active index bytes");
+  if (
+    createHash("sha256").update(serializeMetadataIndex(base.records)).digest("hex") !== sourceSha256
+  )
+    throw new Error("migration source hash must bind actual prior active index bytes");
   const tracked = new Set(snapshot.entries.map((entry) => entry.path_bytes_base64));
-  const legacy_records = base.records.map((record) => {
-    const raw = Buffer.from(record.path, "utf8").toString("base64");
-    return {
-      path: record.path, path_bytes_base64: raw, canonical_id: trackedPathIdentity(snapshot.repository_id, raw),
-      legacy_metadata_id: Object.prototype.hasOwnProperty.call(record.metadata, "id") ? record.metadata.id : null,
-      legacy_id_state: Object.prototype.hasOwnProperty.call(record.metadata, "id") ? "present" as const : "absent" as const,
-      legacy_content_hash_claim: record.content_hash, legacy_content_hash_scope: "legacy_v1_claim_not_revalidated" as const,
-      snapshot_presence: tracked.has(raw) ? "tracked" as const : "absent_from_snapshot" as const,
-    };
-  }).sort(compareTrackedPaths);
+  const legacy_records = base.records
+    .map((record) => {
+      const raw = Buffer.from(record.path, "utf8").toString("base64");
+      return {
+        path: record.path,
+        path_bytes_base64: raw,
+        canonical_id: trackedPathIdentity(snapshot.repository_id, raw),
+        legacy_metadata_id: Object.prototype.hasOwnProperty.call(record.metadata, "id")
+          ? record.metadata.id
+          : null,
+        legacy_id_state: Object.prototype.hasOwnProperty.call(record.metadata, "id")
+          ? ("present" as const)
+          : ("absent" as const),
+        legacy_content_hash_claim: record.content_hash,
+        legacy_content_hash_scope: "legacy_v1_claim_not_revalidated" as const,
+        snapshot_presence: tracked.has(raw)
+          ? ("tracked" as const)
+          : ("absent_from_snapshot" as const),
+      };
+    })
+    .sort(compareTrackedPaths);
   const claims: MetadataIndexLegacyIdentityClaimsV2 = {
     source_index: { schema: METADATA_INDEX_SCHEMA, sha256: sourceSha256 },
-    snapshot_at_migration: { revision: snapshot.revision, tree_oid: snapshot.tree_oid, object_format: snapshot.object_format },
+    snapshot_at_migration: {
+      revision: snapshot.revision,
+      tree_oid: snapshot.tree_oid,
+      object_format: snapshot.object_format,
+    },
     legacy_records,
   };
   assertLegacyIdentityClaims(claims, snapshot.repository_id);
@@ -1001,40 +1432,71 @@ export function compileMetadataIndexMigrationEvidence(
   target: TrackedMetadataCompilation,
   snapshot: TrackedGitSnapshot,
 ): MetadataIndexMigrationEvidenceV2 {
-  const claims = base.schema === METADATA_INDEX_SCHEMA
-    ? compileMetadataIndexLegacyIdentityClaims(base, sourceSha256, snapshot) : base.header.legacy_identity_claims;
+  const claims =
+    base.schema === METADATA_INDEX_SCHEMA
+      ? compileMetadataIndexLegacyIdentityClaims(base, sourceSha256, snapshot)
+      : base.header.legacy_identity_claims;
   if (!claims) throw new Error("migration evidence requires retained historical claims");
   assertLegacyIdentityClaims(claims, snapshot.repository_id);
-  if (canonicalJson(claims) !== canonicalJson(target.header.legacy_identity_claims)) throw new Error("migration evidence historical retention mismatch");
-  if (serializeMetadataIndexV2(target.records, target.header) !== target.bytes
-    || createHash("sha256").update(target.bytes).digest("hex") !== target.sha256) throw new Error("migration evidence target hash must bind final serialized index bytes");
+  if (canonicalJson(claims) !== canonicalJson(target.header.legacy_identity_claims))
+    throw new Error("migration evidence historical retention mismatch");
+  if (
+    serializeMetadataIndexV2(target.records, target.header) !== target.bytes ||
+    createHash("sha256").update(target.bytes).digest("hex") !== target.sha256
+  )
+    throw new Error("migration evidence target hash must bind final serialized index bytes");
   const evidence: MetadataIndexMigrationEvidenceV2 = {
-    schema: METADATA_INDEX_MIGRATION_SCHEMA_V2, repository_id: snapshot.repository_id,
-    snapshot: claims.snapshot_at_migration, source_index: claims.source_index,
-    target_index: { schema: METADATA_INDEX_SCHEMA_V2, sha256: target.sha256 }, legacy_records: claims.legacy_records,
+    schema: METADATA_INDEX_MIGRATION_SCHEMA_V2,
+    repository_id: snapshot.repository_id,
+    snapshot: claims.snapshot_at_migration,
+    source_index: claims.source_index,
+    target_index: { schema: METADATA_INDEX_SCHEMA_V2, sha256: target.sha256 },
+    legacy_records: claims.legacy_records,
   };
   canonicalJson(evidence);
   return evidence;
 }
 
 /** Retention is historical, never an override of the deterministic active alias projection. */
-export function metadataIndexMigrationAliasProblem(base: VersionedMetadataIndex, target: TrackedMetadataCompilation): string | null {
+export function metadataIndexMigrationAliasProblem(
+  base: VersionedMetadataIndex,
+  target: TrackedMetadataCompilation,
+): string | null {
   try {
     serializeMetadataIndexV2(target.records, target.header);
     if (base.schema === METADATA_INDEX_SCHEMA_V2) {
-      if (base.header.legacy_identity_claims) assertLegacyIdentityClaims(base.header.legacy_identity_claims, base.header.repository_id);
+      if (base.header.legacy_identity_claims)
+        assertLegacyIdentityClaims(base.header.legacy_identity_claims, base.header.repository_id);
       const oldClaims = base.header.legacy_identity_claims;
       const newClaims = target.header.legacy_identity_claims;
-      if ((oldClaims === undefined) !== (newClaims === undefined)
-        || (oldClaims !== undefined && canonicalJson(oldClaims) !== canonicalJson(newClaims))) throw new Error("active v2 historical claims must remain unchanged");
+      if (
+        (oldClaims === undefined) !== (newClaims === undefined) ||
+        (oldClaims !== undefined && canonicalJson(oldClaims) !== canonicalJson(newClaims))
+      )
+        throw new Error("active v2 historical claims must remain unchanged");
     } else {
-      const sourceSha256 = createHash("sha256").update(serializeMetadataIndex(base.records)).digest("hex");
+      const sourceSha256 = createHash("sha256")
+        .update(serializeMetadataIndex(base.records))
+        .digest("hex");
       const snapshot: TrackedGitSnapshot = {
-        repository_id: target.header.repository_id, ...target.coverage.snapshot,
-        entries: target.carrierDecisions.map(({ path, path_bytes_base64, mode, object_type, object_oid }) => ({ path, path_bytes_base64, mode, object_type, object_oid })),
+        repository_id: target.header.repository_id,
+        ...target.coverage.snapshot,
+        entries: target.carrierDecisions.map(
+          ({ path, path_bytes_base64, mode, object_type, object_oid }) => ({
+            path,
+            path_bytes_base64,
+            mode,
+            object_type,
+            object_oid,
+          }),
+        ),
       };
       const expected = compileMetadataIndexLegacyIdentityClaims(base, sourceSha256, snapshot);
-      if (!target.header.legacy_identity_claims || canonicalJson(expected) !== canonicalJson(target.header.legacy_identity_claims)) throw new Error("historical block must retain every known v1 ID and record claim");
+      if (
+        !target.header.legacy_identity_claims ||
+        canonicalJson(expected) !== canonicalJson(target.header.legacy_identity_claims)
+      )
+        throw new Error("historical block must retain every known v1 ID and record claim");
     }
     return null;
   } catch (error) {

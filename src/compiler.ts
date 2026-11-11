@@ -1,8 +1,12 @@
 // compiler.ts — Build dedup + library indexes from InjectionRecord[]
-import { InjectionRecord, PromptMeta, ExecutableRetrievalMeta } from "./schema";
+import { ExecutableRetrievalMeta, InjectionRecord, PromptMeta } from "./schema";
 
 function isPromptMeta(m: unknown): m is PromptMeta {
-  return typeof m === "object" && m !== null && (m as { artifact_type?: string }).artifact_type === "prompt";
+  return (
+    typeof m === "object" &&
+    m !== null &&
+    (m as { artifact_type?: string }).artifact_type === "prompt"
+  );
 }
 
 // Word-shingle signature used for near-duplicate similarity. Exact-hash twins are
@@ -16,7 +20,8 @@ function shingles(text: string): Set<string> {
   if (toks.length === 0) return new Set();
   if (toks.length < SHINGLE_K) return new Set([toks.join(" ")]);
   const out = new Set<string>();
-  for (let i = 0; i + SHINGLE_K <= toks.length; i++) out.add(toks.slice(i, i + SHINGLE_K).join(" "));
+  for (let i = 0; i + SHINGLE_K <= toks.length; i++)
+    out.add(toks.slice(i, i + SHINGLE_K).join(" "));
   return out;
 }
 function jaccard(a: Set<string>, b: Set<string>): number {
@@ -33,26 +38,41 @@ function jaccard(a: Set<string>, b: Set<string>): number {
 // supplied, each entry carries a shingle signature enabling near-duplicate
 // detection; when omitted, signatures are empty and near-dup detection reports
 // nothing (by construction, not by silent stubbing) — the pipeline always supplies it.
-export function buildDedupEntries(records: InjectionRecord[], prefixLen: number, bodies?: Map<string, string>) {
+export function buildDedupEntries(
+  records: InjectionRecord[],
+  prefixLen: number,
+  bodies?: Map<string, string>,
+) {
   return records.map((r) => ({
-    id: r.meta.id, sourcePath: r.sourcePath,
-    contentHash: r.originalBodyHash, hashPrefix: r.originalBodyHash.slice(0, prefixLen),
+    id: r.meta.id,
+    sourcePath: r.sourcePath,
+    contentHash: r.originalBodyHash,
+    hashPrefix: r.originalBodyHash.slice(0, prefixLen),
     family: isPromptMeta(r.meta) ? r.meta.family : "Unknown",
     artifactType: r.meta.artifact_type,
     shingles: shingles(bodies?.get(r.sourcePath) ?? ""),
   }));
 }
 
-export interface NearDuplicate { paths: [string, string]; similarity: number; }
+export interface NearDuplicate {
+  paths: [string, string];
+  similarity: number;
+}
 
-export function buildDedupReport(entries: ReturnType<typeof buildDedupEntries>, threshold: number, _prefixLen: number) {
+export function buildDedupReport(
+  entries: ReturnType<typeof buildDedupEntries>,
+  threshold: number,
+  _prefixLen: number,
+) {
   const hashGroups = new Map<string, string[]>();
   for (const e of entries) {
     const g = hashGroups.get(e.contentHash) ?? [];
     g.push(e.sourcePath);
     hashGroups.set(e.contentHash, g);
   }
-  const twins = [...hashGroups.entries()].filter(([, paths]) => paths.length > 1).map(([contentHash, paths]) => ({ paths, contentHash }));
+  const twins = [...hashGroups.entries()]
+    .filter(([, paths]) => paths.length > 1)
+    .map(([contentHash, paths]) => ({ paths, contentHash }));
 
   // Near-duplicates: pairs whose body similarity ≥ threshold but whose full
   // content hash differs (byte-identical pairs are already reported as twins).
@@ -63,13 +83,22 @@ export function buildDedupReport(entries: ReturnType<typeof buildDedupEntries>, 
       if (entries[i].contentHash === entries[j].contentHash) continue; // exact twin, not "near"
       const sim = jaccard(entries[i].shingles, entries[j].shingles);
       if (sim >= threshold) {
-        nearDuplicates.push({ paths: [entries[i].sourcePath, entries[j].sourcePath], similarity: Math.round(sim * 1000) / 1000 });
+        nearDuplicates.push({
+          paths: [entries[i].sourcePath, entries[j].sourcePath],
+          similarity: Math.round(sim * 1000) / 1000,
+        });
       }
     }
   }
   nearDuplicates.sort((a, b) => b.similarity - a.similarity);
 
-  return { generatedAt: new Date().toISOString(), totalScanned: entries.length, auditorTwins: twins, nearDuplicates, uniqueCount: entries.length - twins.reduce((a, t) => a + t.paths.length - 1, 0) };
+  return {
+    generatedAt: new Date().toISOString(),
+    totalScanned: entries.length,
+    auditorTwins: twins,
+    nearDuplicates,
+    uniqueCount: entries.length - twins.reduce((a, t) => a + t.paths.length - 1, 0),
+  };
 }
 
 export function buildPromptLibraryIndex(records: InjectionRecord[]): PromptMeta[] {
@@ -77,12 +106,35 @@ export function buildPromptLibraryIndex(records: InjectionRecord[]): PromptMeta[
 }
 
 export function buildPrimitiveLibraryIndex(records: InjectionRecord[]): ExecutableRetrievalMeta[] {
-  return records.filter((r) => !isPromptMeta(r.meta) && r.meta.injectable).map((r) => r.meta as ExecutableRetrievalMeta);
+  return records
+    .filter((r) => !isPromptMeta(r.meta) && r.meta.injectable)
+    .map((r) => r.meta as ExecutableRetrievalMeta);
 }
 
 export function dedupReportToMarkdown(report: ReturnType<typeof buildDedupReport>): string {
-  const lines = [`# Dedup Report — ${report.generatedAt}`, ``, `Total scanned: ${report.totalScanned}  |  Unique: ${report.uniqueCount}  |  Exact twins: ${report.auditorTwins.length}  |  Near duplicates: ${report.nearDuplicates.length}`, ``];
-  if (report.auditorTwins.length > 0) { lines.push("## Exact Duplicates"); for (const t of report.auditorTwins) { lines.push(`- \`${t.contentHash.slice(0, 16)}\``); t.paths.forEach((p) => { lines.push(`  - ${p}`); }); } }
-  if (report.nearDuplicates.length > 0) { lines.push("", "## Near Duplicates"); for (const n of report.nearDuplicates) { lines.push(`- similarity ${n.similarity}`); n.paths.forEach((p) => { lines.push(`  - ${p}`); }); } }
+  const lines = [
+    `# Dedup Report — ${report.generatedAt}`,
+    ``,
+    `Total scanned: ${report.totalScanned}  |  Unique: ${report.uniqueCount}  |  Exact twins: ${report.auditorTwins.length}  |  Near duplicates: ${report.nearDuplicates.length}`,
+    ``,
+  ];
+  if (report.auditorTwins.length > 0) {
+    lines.push("## Exact Duplicates");
+    for (const t of report.auditorTwins) {
+      lines.push(`- \`${t.contentHash.slice(0, 16)}\``);
+      t.paths.forEach((p) => {
+        lines.push(`  - ${p}`);
+      });
+    }
+  }
+  if (report.nearDuplicates.length > 0) {
+    lines.push("", "## Near Duplicates");
+    for (const n of report.nearDuplicates) {
+      lines.push(`- similarity ${n.similarity}`);
+      n.paths.forEach((p) => {
+        lines.push(`  - ${p}`);
+      });
+    }
+  }
   return lines.join("\n") + "\n";
 }

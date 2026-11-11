@@ -73,16 +73,98 @@ exports.TOPIC_MIN_TERM_LENGTH = 3;
  * document to every other one.
  */
 exports.TOPIC_STOPWORDS = [
-    "about", "after", "again", "all", "also", "and", "any", "are", "because", "been",
-    "before", "being", "between", "both", "but", "can", "could", "did", "does", "doing",
-    "done", "down", "each", "even", "every", "for", "from", "further", "had", "has",
-    "have", "here", "how", "into", "its", "itself", "just", "may", "more", "most",
-    "much", "must", "not", "now", "off", "once", "one", "only", "other", "our", "out",
-    "over", "own", "same", "she", "should", "since", "some", "such", "than", "that",
-    "the", "their", "them", "then", "there", "these", "they", "this", "those",
-    "through", "too", "under", "until", "use", "used", "very", "was", "way", "were",
-    "what", "when", "where", "which", "while", "who", "why", "will", "with", "would",
-    "you", "your",
+    "about",
+    "after",
+    "again",
+    "all",
+    "also",
+    "and",
+    "any",
+    "are",
+    "because",
+    "been",
+    "before",
+    "being",
+    "between",
+    "both",
+    "but",
+    "can",
+    "could",
+    "did",
+    "does",
+    "doing",
+    "done",
+    "down",
+    "each",
+    "even",
+    "every",
+    "for",
+    "from",
+    "further",
+    "had",
+    "has",
+    "have",
+    "here",
+    "how",
+    "into",
+    "its",
+    "itself",
+    "just",
+    "may",
+    "more",
+    "most",
+    "much",
+    "must",
+    "not",
+    "now",
+    "off",
+    "once",
+    "one",
+    "only",
+    "other",
+    "our",
+    "out",
+    "over",
+    "own",
+    "same",
+    "she",
+    "should",
+    "since",
+    "some",
+    "such",
+    "than",
+    "that",
+    "the",
+    "their",
+    "them",
+    "then",
+    "there",
+    "these",
+    "they",
+    "this",
+    "those",
+    "through",
+    "too",
+    "under",
+    "until",
+    "use",
+    "used",
+    "very",
+    "was",
+    "way",
+    "were",
+    "what",
+    "when",
+    "where",
+    "which",
+    "while",
+    "who",
+    "why",
+    "will",
+    "with",
+    "would",
+    "you",
+    "your",
 ];
 const STOPWORDS = new Set(exports.TOPIC_STOPWORDS);
 /** Directory half of a root-relative path, honouring archive locators. */
@@ -175,7 +257,8 @@ function buildProjectCandidates(input) {
         const existing = containers.get(slot) ?? {
             root_id: marker.root_id,
             container_path: containerPath,
-            corpus_container_path: marker.corpus_path.slice(0, marker.corpus_path.length - marker.root_relative_path.length) + containerPath,
+            corpus_container_path: marker.corpus_path.slice(0, marker.corpus_path.length - marker.root_relative_path.length) +
+                containerPath,
             marker_ids: [],
             marker_kinds: [],
             declared_identifiers: [],
@@ -184,8 +267,8 @@ function buildProjectCandidates(input) {
         if (!existing.marker_kinds.includes(marker.marker_kind)) {
             existing.marker_kinds.push(marker.marker_kind);
         }
-        if (marker.declared_identifier !== undefined
-            && !existing.declared_identifiers.includes(marker.declared_identifier)) {
+        if (marker.declared_identifier !== undefined &&
+            !existing.declared_identifiers.includes(marker.declared_identifier)) {
             existing.declared_identifiers.push(marker.declared_identifier);
         }
         containers.set(slot, existing);
@@ -200,8 +283,8 @@ function buildProjectCandidates(input) {
             bucket.push(container);
     }
     for (const bucket of byRoot.values()) {
-        bucket.sort((a, b) => b.container_path.length - a.container_path.length
-            || (0, ordering_1.compareCodePoints)(a.container_path, b.container_path));
+        bucket.sort((a, b) => b.container_path.length - a.container_path.length ||
+            (0, ordering_1.compareCodePoints)(a.container_path, b.container_path));
     }
     const assignment = new Map();
     for (const member of input.members) {
@@ -240,7 +323,8 @@ function buildProjectCandidates(input) {
         const orderedContainers = [...group.containers].sort((a, b) => (0, ordering_1.compareCodePoints)(a.corpus_container_path, b.corpus_container_path));
         const memberIds = new Set();
         for (const container of orderedContainers) {
-            for (const id of assignment.get(`${container.root_id}\u001f${container.container_path}`) ?? []) {
+            for (const id of assignment.get(`${container.root_id}\u001f${container.container_path}`) ??
+                []) {
                 memberIds.add(id);
             }
             container.marker_ids.sort(ordering_1.compareCodePoints);
@@ -252,8 +336,7 @@ function buildProjectCandidates(input) {
         // emitting it would hand the packet a cluster that names no member.
         if (memberIds.size === 0)
             continue;
-        const rootIds = [...new Set(orderedContainers.map((container) => container.root_id))]
-            .sort(ordering_1.compareCodePoints);
+        const rootIds = [...new Set(orderedContainers.map((container) => container.root_id))].sort(ordering_1.compareCodePoints);
         candidates.push({
             candidate_id: (0, repository_model_1.stableId)("project-candidate", {
                 algorithm_id: exports.PROJECT_CANDIDATE_METHOD,
@@ -275,8 +358,14 @@ function buildProjectCandidates(input) {
 }
 /** Manifest basenames whose body this module knows how to read a name out of. */
 exports.DECLARED_IDENTIFIER_MANIFESTS = [
-    "cargo.toml", "composer.json", "deno.json", "deno.jsonc", "go.mod", "package.json",
-    "pom.xml", "pyproject.toml",
+    "cargo.toml",
+    "composer.json",
+    "deno.json",
+    "deno.jsonc",
+    "go.mod",
+    "package.json",
+    "pom.xml",
+    "pyproject.toml",
 ];
 /** True when `readDeclaredIdentifier` claims this basename. */
 function readsDeclaredIdentifier(basename) {
@@ -441,7 +530,8 @@ function pomProjectArtifactId(text) {
                     if (close < 0)
                         return undefined;
                     const value = text.slice(end + 1, close).trim();
-                    if (value.length === 0 || !/^<\/(?:[^\s:>]+:)?artifactId\s*>/.test(text.slice(close, close + 64))) {
+                    if (value.length === 0 ||
+                        !/^<\/(?:[^\s:>]+:)?artifactId\s*>/.test(text.slice(close, close + 64))) {
                         return undefined;
                     }
                     return { identifier: value, line: lineAtOffset(text, index) };
@@ -493,7 +583,9 @@ function readDeclaredIdentifier(basename, text) {
     }
     if (name === "pom.xml") {
         const own = pomProjectArtifactId(text);
-        return own === undefined ? undefined : { identifier: own.identifier, field: "artifactId", line: own.line };
+        return own === undefined
+            ? undefined
+            : { identifier: own.identifier, field: "artifactId", line: own.line };
     }
     const sections = TOML_NAME_SECTIONS[name];
     if (sections !== undefined) {
@@ -677,7 +769,9 @@ function buildTopicCandidates(input) {
     // component, which is what "every pair joins" means.
     if (roundTopicScore(threshold) <= 0) {
         return {
-            candidates: [buildTopicCandidate(eligible.map((document) => ({ document, terms: new Set() })), threshold, input.rootById)],
+            candidates: [
+                buildTopicCandidate(eligible.map((document) => ({ document, terms: new Set() })), threshold, input.rootById),
+            ],
             pair_work: emptyWork(),
         };
     }
@@ -695,14 +789,14 @@ function buildTopicCandidates(input) {
     // it puts the vocabulary a corpus shares — a boilerplate heading, a licence
     // line, a word every plan contains — at the end, where it falls outside every
     // prefix and is never indexed.
-    const globalOrder = (left, right) => (documentFrequency.get(left) ?? 0) - (documentFrequency.get(right) ?? 0)
-        || (0, ordering_1.compareCodePoints)(left, right);
+    const globalOrder = (left, right) => (documentFrequency.get(left) ?? 0) - (documentFrequency.get(right) ?? 0) ||
+        (0, ordering_1.compareCodePoints)(left, right);
     // Smallest salient set first, so a document meets every partner that could
     // satisfy the size bound from below before it is itself indexed.
     const order = features
         .map((feature, index) => ({ feature, index }))
-        .sort((left, right) => left.feature.terms.size - right.feature.terms.size
-        || (0, ordering_1.compareCodePoints)(left.feature.document.virtual_source_id, right.feature.document.virtual_source_id));
+        .sort((left, right) => left.feature.terms.size - right.feature.terms.size ||
+        (0, ordering_1.compareCodePoints)(left.feature.document.virtual_source_id, right.feature.document.virtual_source_id));
     const parent = features.map((_feature, index) => index);
     const find = (index) => {
         let root = index;
@@ -790,9 +884,9 @@ function buildTopicCandidates(input) {
             continue;
         candidates.push(buildTopicCandidate(bucket.map((index) => features[index]), threshold, input.rootById));
     }
-    candidates.sort((a, b) => b.member_count - a.member_count
-        || (0, ordering_1.compareCodePoints)(a.member_paths[0] ?? "", b.member_paths[0] ?? "")
-        || (0, ordering_1.compareCodePoints)(a.candidate_id, b.candidate_id));
+    candidates.sort((a, b) => b.member_count - a.member_count ||
+        (0, ordering_1.compareCodePoints)(a.member_paths[0] ?? "", b.member_paths[0] ?? "") ||
+        (0, ordering_1.compareCodePoints)(a.candidate_id, b.candidate_id));
     const salientTermCount = new Set(features.flatMap((feature) => [...feature.terms])).size;
     return {
         candidates,
@@ -818,7 +912,9 @@ function buildTopicCandidatesExhaustive(input) {
     if (eligible.length < 2)
         return [];
     if (roundTopicScore(threshold) <= 0) {
-        return [buildTopicCandidate(eligible.map((document) => ({ document, terms: new Set() })), threshold, input.rootById)];
+        return [
+            buildTopicCandidate(eligible.map((document) => ({ document, terms: new Set() })), threshold, input.rootById),
+        ];
     }
     const documentFrequency = new Map();
     for (const document of eligible) {
@@ -861,9 +957,9 @@ function buildTopicCandidatesExhaustive(input) {
             continue;
         candidates.push(buildTopicCandidate(bucket.map((index) => features[index]), threshold, input.rootById));
     }
-    return candidates.sort((a, b) => b.member_count - a.member_count
-        || (0, ordering_1.compareCodePoints)(a.member_paths[0] ?? "", b.member_paths[0] ?? "")
-        || (0, ordering_1.compareCodePoints)(a.candidate_id, b.candidate_id));
+    return candidates.sort((a, b) => b.member_count - a.member_count ||
+        (0, ordering_1.compareCodePoints)(a.member_paths[0] ?? "", b.member_paths[0] ?? "") ||
+        (0, ordering_1.compareCodePoints)(a.candidate_id, b.candidate_id));
 }
 /** Hash binding every rule the candidate passes apply. */
 function candidateProfileHash(input) {

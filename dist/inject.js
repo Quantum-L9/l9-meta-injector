@@ -44,17 +44,17 @@ exports.injectFile = injectFile;
 // re-run replaces it instead of duplicating. Writes <file>.inject.log on any mutation.
 const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
-const schema_1 = require("./schema");
-const normalize_meta_1 = require("./normalize_meta");
-const extract_1 = require("./extract");
+const comment_1 = require("./comment");
+const durable_write_1 = require("./durable_write");
 const encoding_1 = require("./encoding");
-const reconcile_fields_1 = require("./reconcile_fields");
+const extract_1 = require("./extract");
+const frontmatter_patch_1 = require("./frontmatter_patch");
 const llm_1 = require("./llm");
 const meta_schema_1 = require("./meta_schema");
-const frontmatter_patch_1 = require("./frontmatter_patch");
-const comment_1 = require("./comment");
+const normalize_meta_1 = require("./normalize_meta");
+const reconcile_fields_1 = require("./reconcile_fields");
+const schema_1 = require("./schema");
 const yaml_serialize_1 = require("./yaml_serialize");
-const durable_write_1 = require("./durable_write");
 // Parse the inner YAML of an existing injected header into a plain object.
 // Delegates to the canonical parser (meta_schema.ts) so all parsing rules —
 // quoted-string escaping, inline lists, depth guards — are applied consistently.
@@ -122,7 +122,13 @@ function readForInjection(filePath) {
     if (spec.strategy === "line-comment" || spec.strategy === "block-comment") {
         const cleanBody = managedCarrierFreeBody(filePath, raw);
         const existingYaml = (0, comment_1.extractInjectedYaml)(raw, spec);
-        return { raw, spec, cleanBody, originalBodyHash: (0, extract_1.contentHash)(cleanBody), existingMeta: parseExistingMeta(existingYaml) };
+        return {
+            raw,
+            spec,
+            cleanBody,
+            originalBodyHash: (0, extract_1.contentHash)(cleanBody),
+            existingMeta: parseExistingMeta(existingYaml),
+        };
     }
     // sidecar (and skip-binary, which callers guard against): file body is untouched.
     let existingMeta = {};
@@ -154,24 +160,40 @@ function buildInjection(filePath, finalMeta, ctx) {
         const newline = (0, comment_1.detectNewlineConvention)(ctx.cleanBody);
         // Values are escaped for this carrier so none can end or invalidate the host
         // comment (ADR-057); benign values serialize exactly as in `yamlFm`.
-        const inner = (0, yaml_serialize_1.serializeYamlObject)((0, schema_1.asRecord)(finalMeta), { fences: false, forbidden: (0, comment_1.carrierForbiddenSequences)(ctx.spec) });
+        const inner = (0, yaml_serialize_1.serializeYamlObject)((0, schema_1.asRecord)(finalMeta), {
+            fences: false,
+            forbidden: (0, comment_1.carrierForbiddenSequences)(ctx.spec),
+        });
         const block = (0, comment_1.yamlToBlock)(inner, ctx.spec, newline);
         const newContent = (0, comment_1.applyCommentInjection)(ctx.cleanBody, block, newline, ctx.spec);
         const postBodyHash = (0, extract_1.contentHash)((0, comment_1.stripInjectedBlock)(newContent, ctx.spec));
-        return { targetPath: filePath, newContent, addedLines: block, postBodyHash, strategy: ctx.spec.strategy };
+        return {
+            targetPath: filePath,
+            newContent,
+            addedLines: block,
+            postBodyHash,
+            strategy: ctx.spec.strategy,
+        };
     }
     // sidecar: source file is left byte-for-byte; metadata goes to <file>.l9meta.yaml
     const sidecar = (0, comment_1.sidecarPathFor)(filePath);
     return {
-        targetPath: sidecar, newContent: yamlFm + "\n", addedLines: yamlFm,
-        postBodyHash: ctx.originalBodyHash, sidecarPath: sidecar, strategy: ctx.spec.strategy,
+        targetPath: sidecar,
+        newContent: yamlFm + "\n",
+        addedLines: yamlFm,
+        postBodyHash: ctx.originalBodyHash,
+        sidecarPath: sidecar,
+        strategy: ctx.spec.strategy,
     };
 }
 /** Mirrored dry-run path. Refuses a source_path that would leave outDir. */
 function containedDiffPath(outDir, sourcePath) {
     const posix = sourcePath.split(path.sep).join("/");
     const segments = posix.split("/");
-    if (!posix || posix === "." || posix.startsWith("/") || segments.some((segment) => segment === "" || segment === "." || segment === "..")) {
+    if (!posix ||
+        posix === "." ||
+        posix.startsWith("/") ||
+        segments.some((segment) => segment === "" || segment === "." || segment === "..")) {
         throw new Error(`dry-run diff escapes output directory: ${sourcePath}`);
     }
     const leaf = segments[segments.length - 1];
@@ -200,7 +222,10 @@ function writeInjection(filePath, built, diffs, opts, sourcePath) {
         if (opts.writeDryRunDiff !== false) {
             out.dryRunDiffPath = containedDiffPath(opts.outDir, sourcePath);
             fs.mkdirSync(path.dirname(out.dryRunDiffPath), { recursive: true });
-            const added = built.addedLines.split("\n").map((l) => `+ ${l}`).join("\n");
+            const added = built.addedLines
+                .split("\n")
+                .map((l) => `+ ${l}`)
+                .join("\n");
             const tgt = built.sidecarPath ? built.sidecarPath : filePath;
             fs.writeFileSync(out.dryRunDiffPath, `--- ${filePath}\n+++ ${tgt} (${built.strategy})\n${added}\n`, "utf8");
             if (opts.verbose)

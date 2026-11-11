@@ -147,16 +147,13 @@ export interface DocumentWorkSignalsRef {
  * otherwise sort non-deterministically. Ties there are impossible, because two
  * records agreeing on the id are the same record and are refused as duplicates.
  */
-function compareRecords(
-  left: DocumentWorkSignalRecord,
-  right: DocumentWorkSignalRecord,
-): number {
+function compareRecords(left: DocumentWorkSignalRecord, right: DocumentWorkSignalRecord): number {
   return (
-    compareCodePoints(left.artifact_id, right.artifact_id)
-    || compareCodePoints(left.block_id, right.block_id)
-    || compareCodePoints(left.predicate, right.predicate)
-    || compareCodePoints(left.object, right.object)
-    || compareCodePoints(left.signal_id, right.signal_id)
+    compareCodePoints(left.artifact_id, right.artifact_id) ||
+    compareCodePoints(left.block_id, right.block_id) ||
+    compareCodePoints(left.predicate, right.predicate) ||
+    compareCodePoints(left.object, right.object) ||
+    compareCodePoints(left.signal_id, right.signal_id)
   );
 }
 
@@ -165,7 +162,9 @@ export function renderDocumentWorkSignalRecord(record: DocumentWorkSignalRecord)
   return canonicalCorpusJson(record, 0);
 }
 
-function tallyFormats(records: readonly DocumentWorkSignalRecord[]): DocumentWorkSignalFormatCount[] {
+function tallyFormats(
+  records: readonly DocumentWorkSignalRecord[],
+): DocumentWorkSignalFormatCount[] {
   const byFormat = new Map<string, { signals: number; documents: Set<string> }>();
   for (const record of records) {
     const entry = byFormat.get(record.format) ?? { signals: 0, documents: new Set<string>() };
@@ -224,8 +223,8 @@ export function buildDocumentWorkSignalExport(
   for (const record of records) {
     if (seen.has(record.signal_id)) {
       throw new Error(
-        `document-work-signals: duplicate signal_id ${record.signal_id} `
-        + `(${record.source_path} ${record.predicate}); the payload must carry each signal once`,
+        `document-work-signals: duplicate signal_id ${record.signal_id} ` +
+          `(${record.source_path} ${record.predicate}); the payload must carry each signal once`,
       );
     }
     seen.add(record.signal_id);
@@ -234,7 +233,9 @@ export function buildDocumentWorkSignalExport(
   // A trailing newline on every line, including the last: a JSONL reader that
   // splits on the separator then gets one empty trailing field rather than a
   // final record that looks truncated.
-  const payloadJsonl = records.map((record) => `${renderDocumentWorkSignalRecord(record)}\n`).join("");
+  const payloadJsonl = records
+    .map((record) => `${renderDocumentWorkSignalRecord(record)}\n`)
+    .join("");
 
   const manifest: DocumentWorkSignalManifest = {
     schema: DOCUMENT_WORK_SIGNALS_MANIFEST_SCHEMA,
@@ -304,9 +305,10 @@ export interface VerifyDocumentWorkSignalExportInput {
  * last line is a record is a payload that was truncated mid-write, and a reader
  * splitting on newlines cannot tell that from a complete one.
  */
-function readPayloadRecords(
-  payloadJsonl: string,
-): { records: DocumentWorkSignalRecord[]; problems: string[] } {
+function readPayloadRecords(payloadJsonl: string): {
+  records: DocumentWorkSignalRecord[];
+  problems: string[];
+} {
   const problems: string[] = [];
   const lines = payloadJsonl.length === 0 ? [] : payloadJsonl.split("\n");
   if (payloadJsonl.length > 0 && lines[lines.length - 1] !== "") {
@@ -350,8 +352,8 @@ function checkPayloadAgainstManifest(
   const artifactHash = sha256TextPrefixed(payloadJsonl);
   if (artifactHash !== manifest.payload_artifact_hash) {
     problems.push(
-      `payload artifact hash ${artifactHash} does not match the manifest's `
-      + `${manifest.payload_artifact_hash}`,
+      `payload artifact hash ${artifactHash} does not match the manifest's ` +
+        `${manifest.payload_artifact_hash}`,
     );
   }
   if (records.length === manifest.record_count) {
@@ -362,8 +364,8 @@ function checkPayloadAgainstManifest(
     );
     if (semanticHashValue !== manifest.payload_semantic_hash) {
       problems.push(
-        `payload semantic hash ${semanticHashValue} does not match the manifest's `
-        + `${manifest.payload_semantic_hash}`,
+        `payload semantic hash ${semanticHashValue} does not match the manifest's ` +
+          `${manifest.payload_semantic_hash}`,
       );
     }
   }
@@ -389,12 +391,12 @@ function checkRecordIdentities(
       );
     }
     if (
-      record.normalized_document_id !== null
-      && !knownNormalizedDocumentIds.has(record.normalized_document_id)
+      record.normalized_document_id !== null &&
+      !knownNormalizedDocumentIds.has(record.normalized_document_id)
     ) {
       problems.push(
-        `signal ${record.signal_id} names normalized document ${record.normalized_document_id}, `
-        + "which this corpus did not produce",
+        `signal ${record.signal_id} names normalized document ${record.normalized_document_id}, ` +
+          "which this corpus did not produce",
       );
     }
   }
@@ -420,8 +422,8 @@ function checkGroupTotals(
     const documentCount = new Set(records.map((record) => record.artifact_id)).size;
     if (documentCount !== manifest.document_count) {
       problems.push(
-        `manifest document_count is ${manifest.document_count} and the payload records name `
-        + `${documentCount} distinct artifact(s)`,
+        `manifest document_count is ${manifest.document_count} and the payload records name ` +
+          `${documentCount} distinct artifact(s)`,
       );
     }
     const formats = canonicalCorpusJson(tallyFormats(records), 0);
@@ -430,7 +432,9 @@ function checkGroupTotals(
     }
     const predicates = canonicalCorpusJson(tallyPredicates(records), 0);
     if (predicates !== canonicalCorpusJson(manifest.by_predicate, 0)) {
-      problems.push(`manifest by_predicate does not match the payload records: expected ${predicates}`);
+      problems.push(
+        `manifest by_predicate does not match the payload records: expected ${predicates}`,
+      );
     }
   }
   const formatTotal = manifest.by_format.reduce((sum, entry) => sum + entry.signal_count, 0);
@@ -472,8 +476,8 @@ export function verifyDocumentWorkSignalExport(
   const reportProblems: string[] = [];
   if (manifest.record_count !== input.reportSignalCount) {
     reportProblems.push(
-      `the sampled report states ${input.reportSignalCount} signal(s) and the complete `
-      + `payload manifest states ${manifest.record_count}`,
+      `the sampled report states ${input.reportSignalCount} signal(s) and the complete ` +
+        `payload manifest states ${manifest.record_count}`,
     );
   }
 

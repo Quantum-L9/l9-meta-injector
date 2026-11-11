@@ -11,32 +11,83 @@ const semantic_mapping_1 = require("../semantic_mapping");
 const NATIVE_VOCABULARY = Object.fromEntries(semantic_mapping_1.NATIVE_HEADER_FIELDS.map((mapping) => [mapping.field, mapping.category]));
 /** Field vocabulary of the managed header this package writes. */
 const MANAGED_VOCABULARY = {
-    id: "identity", title: "identity", namespace: "identity", source_path: "identity",
-    artifact_type: "classification", family: "classification", mcp_primitive: "classification",
-    callable: "classification", retrievable: "classification", injectable: "classification",
-    authority: "governance", owner: "governance", sharing_scope: "governance",
+    id: "identity",
+    title: "identity",
+    namespace: "identity",
+    source_path: "identity",
+    artifact_type: "classification",
+    family: "classification",
+    mcp_primitive: "classification",
+    callable: "classification",
+    retrievable: "classification",
+    injectable: "classification",
+    authority: "governance",
+    owner: "governance",
+    sharing_scope: "governance",
 };
 /** Declared schemas with a known field vocabulary, and the predicate namespace each uses. */
 const KNOWN_SCHEMAS = {
-    ...Object.fromEntries(Object.entries(semantic_mapping_1.RECOGNIZED_DECLARED_SCHEMAS).map(([schema, ns]) => [schema, { ns, vocabulary: NATIVE_VOCABULARY }])),
+    ...Object.fromEntries(Object.entries(semantic_mapping_1.RECOGNIZED_DECLARED_SCHEMAS).map(([schema, ns]) => [
+        schema,
+        { ns, vocabulary: NATIVE_VOCABULARY },
+    ])),
     // The managed header is this package's own; its meaning is producer-owned and is
     // not governed by the artifact-header ledger, which defines native L9_META only.
     [native_metadata_1.MANAGED_DECLARED_SCHEMA]: { ns: "managed", vocabulary: MANAGED_VOCABULARY },
 };
 /** Extensions and basenames whose files can carry a native header. Path-only. */
 const CARRIER_EXTENSIONS = new Set([
-    ".md", ".markdown", ".mdx", ".py", ".pyi", ".yaml", ".yml", ".toml", ".sh", ".bash", ".zsh",
-    ".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".html", ".htm", ".xml",
-    ".css", ".scss", ".sql", ".rb", ".go", ".rs", ".java", ".ini", ".cfg", ".conf",
+    ".md",
+    ".markdown",
+    ".mdx",
+    ".py",
+    ".pyi",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".sh",
+    ".bash",
+    ".zsh",
+    ".ts",
+    ".tsx",
+    ".mts",
+    ".cts",
+    ".js",
+    ".jsx",
+    ".mjs",
+    ".cjs",
+    ".html",
+    ".htm",
+    ".xml",
+    ".css",
+    ".scss",
+    ".sql",
+    ".rb",
+    ".go",
+    ".rs",
+    ".java",
+    ".ini",
+    ".cfg",
+    ".conf",
     // Hash-comment formats the constellation's L9_META headers are observed in
     // (CEG main.tf, env.template, .env.template): measured, not assumed.
-    ".tf", ".tfvars", ".hcl", ".template", ".example", ".dockerfile",
+    ".tf",
+    ".tfvars",
+    ".hcl",
+    ".template",
+    ".example",
+    ".dockerfile",
 ]);
 const CARRIER_BASENAMES = new Set([
-    "makefile", "dockerfile", "gnumakefile", "codeowners", ".cursorrules",
+    "makefile",
+    "dockerfile",
+    "gnumakefile",
+    "codeowners",
+    ".cursorrules",
     // Hash-comment dotfiles the comment layer already supports (`comment.ts`
     // BASENAME_LINE_COMMENT). Their declarations were read nowhere (ADR-085).
-    ".editorconfig", ".gitignore",
+    ".editorconfig",
+    ".gitignore",
 ]);
 function carriesHeaders(sourcePath) {
     const base = (sourcePath.split("/").pop() ?? sourcePath).toLowerCase();
@@ -65,17 +116,25 @@ function fieldDrafts(declaration, field) {
     const known = KNOWN_SCHEMAS[declaration.declared_schema];
     if (!known) {
         // A schema this reader does not know: the key is preserved, its meaning is not assigned.
-        return [draft("meta.unversioned.field", field.key, field.start_line, field.end_line, field.excerpt, "declared", "low")];
+        return [
+            draft("meta.unversioned.field", field.key, field.start_line, field.end_line, field.excerpt, "declared", "low"),
+        ];
     }
     if (field.state === "unsupported") {
-        return [draft(`meta.${known.ns}.unsupported_field`, field.key, field.start_line, field.end_line, field.excerpt, "observed", "high")];
+        return [
+            draft(`meta.${known.ns}.unsupported_field`, field.key, field.start_line, field.end_line, field.excerpt, "observed", "high"),
+        ];
     }
     if (field.state === "unresolved") {
-        return [draft(`meta.${known.ns}.unresolved_field`, field.key, field.start_line, field.end_line, field.excerpt, "declared", "medium")];
+        return [
+            draft(`meta.${known.ns}.unresolved_field`, field.key, field.start_line, field.end_line, field.excerpt, "declared", "medium"),
+        ];
     }
     const category = known.vocabulary[field.key];
     if (category === undefined) {
-        return [draft(`meta.${known.ns}.unsupported_field`, field.key, field.start_line, field.end_line, field.excerpt, "observed", "high")];
+        return [
+            draft(`meta.${known.ns}.unsupported_field`, field.key, field.start_line, field.end_line, field.excerpt, "observed", "high"),
+        ];
     }
     // One claim per declared value, each cited at the line that wrote it. The
     // parse is exact; whether the claim is true is not this extractor's to say, so
@@ -102,7 +161,9 @@ exports.nativeMetadataExtractor = {
             input.report?.({
                 code: diagnostic.code,
                 severity: diagnostic.severity,
-                message: diagnostic.line !== undefined ? `line ${diagnostic.line}: ${diagnostic.message}` : diagnostic.message,
+                message: diagnostic.line !== undefined
+                    ? `line ${diagnostic.line}: ${diagnostic.message}`
+                    : diagnostic.message,
             });
         }
         const drafts = [];

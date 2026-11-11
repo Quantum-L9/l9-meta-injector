@@ -25,22 +25,19 @@
 // "Reasoning eligible" is therefore not a compliment. It does not mean a candidate
 // is important, correct, or worth building. It means the evidence is ambiguous in
 // a way that reading might resolve.
-import { compareCodePoints } from "./ordering";
-import { stableId } from "./repository_model";
+
 import { canonicalCorpusJson } from "./corpus_analysis";
+import type { ConsolidationCandidate, ProjectCandidate, TopicCandidate } from "./corpus_fusion";
 import {
   AMBIGUITY_AMBIGUOUS_SUPERSESSION,
   AMBIGUITY_CONFLICTING_STATUS,
   AMBIGUITY_MIXED_VERSION_LINEAGE,
   AMBIGUITY_MULTIPLE_PROJECT_NAMES,
 } from "./corpus_fusion";
-import type {
-  ConsolidationCandidate,
-  ProjectCandidate,
-  TopicCandidate,
-} from "./corpus_fusion";
-import type { ArtifactFeatureView } from "./corpus_semantics";
 import type { SemanticPair } from "./corpus_pairs";
+import type { ArtifactFeatureView } from "./corpus_semantics";
+import { compareCodePoints } from "./ordering";
+import { stableId } from "./repository_model";
 
 export const REASONING_ROUTING_PROFILE_ID = "reasoning-routing/v1";
 export const REASONING_ROUTING_PROFILE_VERSION = "1.0.0";
@@ -137,14 +134,15 @@ function routeTopic(candidate: TopicCandidate): { type: ReasoningType; reason: s
       reason: "weak topic candidate: no corroborated evidence to adjudicate",
     };
   }
-  const independentFamilies = (["lexical", "declared_identity", "graph", "semantic_model"] as const)
-    .filter((family) => candidate.evidence_family_counts[family] > 0).length;
+  const independentFamilies = (
+    ["lexical", "declared_identity", "graph", "semantic_model"] as const
+  ).filter((family) => candidate.evidence_family_counts[family] > 0).length;
   if (candidate.confidence_class === "strong" && independentFamilies >= 2) {
     return {
       type: "SAME_BODY_OF_WORK_ADJUDICATION",
       reason:
-        `strong topic candidate with ${independentFamilies} independent evidence families: `
-        + "whether these documents describe one body of work is not decidable from overlap alone",
+        `strong topic candidate with ${independentFamilies} independent evidence families: ` +
+        "whether these documents describe one body of work is not decidable from overlap alone",
     };
   }
   return {
@@ -159,33 +157,34 @@ function routeProject(candidate: ProjectCandidate): { type: ReasoningType; reaso
     return {
       type: "CONFLICT_RESOLUTION_ANALYSIS",
       reason:
-        `members declare conflicting statuses (${candidate.work_statuses.join(", ")}); `
-        + "the source says two things and does not say which is current",
+        `members declare conflicting statuses (${candidate.work_statuses.join(", ")}); ` +
+        "the source says two things and does not say which is current",
     };
   }
   if (
-    candidate.ambiguity_class.includes(AMBIGUITY_AMBIGUOUS_SUPERSESSION)
-    && candidate.ambiguity_class.includes(AMBIGUITY_MIXED_VERSION_LINEAGE)
+    candidate.ambiguity_class.includes(AMBIGUITY_AMBIGUOUS_SUPERSESSION) &&
+    candidate.ambiguity_class.includes(AMBIGUITY_MIXED_VERSION_LINEAGE)
   ) {
     return {
       type: "SUPERSESSION_ANALYSIS",
-      reason: "several supersession declarations over a mixed version lineage: direction is ambiguous",
+      reason:
+        "several supersession declarations over a mixed version lineage: direction is ambiguous",
     };
   }
   if (candidate.cross_archive && candidate.duplicate_cluster_count > 0) {
     return {
       type: "VERSION_EVOLUTION_ANALYSIS",
       reason:
-        "the same body of work appears in more than one archive with duplicate clusters: "
-        + "which copy is the later one is not decidable from content alone",
+        "the same body of work appears in more than one archive with duplicate clusters: " +
+        "which copy is the later one is not decidable from content alone",
     };
   }
   if (candidate.ambiguity_class.includes(AMBIGUITY_MULTIPLE_PROJECT_NAMES)) {
     return {
       type: "PROJECT_IDENTITY_ADJUDICATION",
       reason:
-        `members declare ${candidate.declared_identifiers.length} different project identifiers: `
-        + "whether that is one project renamed or two projects is a question about intent",
+        `members declare ${candidate.declared_identifiers.length} different project identifiers: ` +
+        "whether that is one project renamed or two projects is a question about intent",
     };
   }
   if (candidate.confidence_class === "weak") {
@@ -193,14 +192,16 @@ function routeProject(candidate: ProjectCandidate): { type: ReasoningType; reaso
   }
   return {
     type: "NONE",
-    reason: "project candidate carries declared identity or an explicit graph edge; nothing is ambiguous",
+    reason:
+      "project candidate carries declared identity or an explicit graph edge; nothing is ambiguous",
   };
 }
 
 /** Decide the reasoning type for one consolidation candidate. */
-function routeConsolidation(
-  candidate: ConsolidationCandidate,
-): { type: ReasoningType; reason: string } {
+function routeConsolidation(candidate: ConsolidationCandidate): {
+  type: ReasoningType;
+  reason: string;
+} {
   if (candidate.unique_content_variant_count <= 1) {
     return {
       type: "NONE",
@@ -218,15 +219,15 @@ function routeConsolidation(
     return {
       type: "SUPERSESSION_ANALYSIS",
       reason:
-        `${candidate.supersession_assertion_ids.length} supersession declaration(s) across `
-        + `${candidate.unique_content_variant_count} content variants`,
+        `${candidate.supersession_assertion_ids.length} supersession declaration(s) across ` +
+        `${candidate.unique_content_variant_count} content variants`,
     };
   }
   return {
     type: "CONSOLIDATION_ANALYSIS",
     reason:
-      `${candidate.unique_content_variant_count} unique content variants: what each copy holds `
-      + "that the others do not is not decidable from hashes",
+      `${candidate.unique_content_variant_count} unique content variants: what each copy holds ` +
+      "that the others do not is not decidable from hashes",
   };
 }
 
@@ -275,11 +276,13 @@ export function routeReasoningCandidates(input: RouteReasoningInput): ReasoningC
 
   for (const candidate of input.topicCandidates) push(candidate, routeTopic(candidate));
   for (const candidate of input.projectCandidates) push(candidate, routeProject(candidate));
-  for (const candidate of input.consolidationCandidates) push(candidate, routeConsolidation(candidate));
+  for (const candidate of input.consolidationCandidates)
+    push(candidate, routeConsolidation(candidate));
 
   return rows.sort(
-    (a, b) => compareCodePoints(a.candidate_type, b.candidate_type)
-      || compareCodePoints(a.candidate_id, b.candidate_id),
+    (a, b) =>
+      compareCodePoints(a.candidate_type, b.candidate_type) ||
+      compareCodePoints(a.candidate_id, b.candidate_id),
   );
 }
 
@@ -462,9 +465,10 @@ export function buildReasoningEvidencePacks(input: BuildPacksInput): ReasoningEv
       }
       const artifactIndex = builders.length;
       const all = [...(input.assertionsByArtifact.get(artifactId) ?? [])].sort(
-        (a, b) => assertionPriority(a.predicate) - assertionPriority(b.predicate)
-          || compareCodePoints(a.predicate, b.predicate)
-          || compareCodePoints(a.assertion_id, b.assertion_id),
+        (a, b) =>
+          assertionPriority(a.predicate) - assertionPriority(b.predicate) ||
+          compareCodePoints(a.predicate, b.predicate) ||
+          compareCodePoints(a.assertion_id, b.assertion_id),
       );
       if (all.length === 0) coverageGaps.push(`no assertions recorded for ${artifactId}`);
 
@@ -528,9 +532,13 @@ export function buildReasoningEvidencePacks(input: BuildPacksInput): ReasoningEv
         return () => values.filter((_, position) => kept[position] === true);
       };
       const statuses = listField(0, 1, view.statuses);
-      const supersessions = listField(1, 2, view.supersession_declarations.map(
-        (declaration) => `${declaration.predicate} ${declaration.object}`,
-      ));
+      const supersessions = listField(
+        1,
+        2,
+        view.supersession_declarations.map(
+          (declaration) => `${declaration.predicate} ${declaration.object}`,
+        ),
+      );
       const references = listField(1, 3, view.normalized_reference_targets);
       const dependencies = listField(1, 4, view.declared_dependencies);
       const titles = listField(2, 5, view.normalized_title_tokens);
@@ -559,10 +567,7 @@ export function buildReasoningEvidencePacks(input: BuildPacksInput): ReasoningEv
     }
 
     items.sort(
-      (a, b) => a.band - b.band
-        || a.artifact - b.artifact
-        || a.kind - b.kind
-        || a.index - b.index,
+      (a, b) => a.band - b.band || a.artifact - b.artifact || a.kind - b.kind || a.index - b.index,
     );
     for (const item of items) {
       if (usedCharacters + item.charge > budget.maxTotalPackCharacters) {
@@ -586,9 +591,15 @@ export function buildReasoningEvidencePacks(input: BuildPacksInput): ReasoningEv
     for (const pair of relevantPairs) {
       for (const signal of pair.signals) {
         if (signal.kind === "exact_duplicate") exactRelations.push(...signal.detail);
-        else if (signal.kind === "near_duplicate") nearScores.push({ pair_id: pair.pair_id, score: signal.score });
-        else if (signal.kind === "embedding_similarity") embeddingScores.push({ pair_id: pair.pair_id, score: signal.score });
-        else if (signal.kind === "title_overlap" || signal.kind === "heading_overlap" || signal.kind === "keyphrase_overlap") {
+        else if (signal.kind === "near_duplicate")
+          nearScores.push({ pair_id: pair.pair_id, score: signal.score });
+        else if (signal.kind === "embedding_similarity")
+          embeddingScores.push({ pair_id: pair.pair_id, score: signal.score });
+        else if (
+          signal.kind === "title_overlap" ||
+          signal.kind === "heading_overlap" ||
+          signal.kind === "keyphrase_overlap"
+        ) {
           lexicalSignals.push({ pair_id: pair.pair_id, kind: signal.kind, score: signal.score });
         }
       }
@@ -599,7 +610,10 @@ export function buildReasoningEvidencePacks(input: BuildPacksInput): ReasoningEv
     for (const artifactId of members) {
       for (const status of byId.get(artifactId)?.statuses ?? []) statuses.add(status);
     }
-    if (statuses.size > 1) conflictFlags.push(`declared statuses differ: ${[...statuses].sort(compareCodePoints).join(", ")}`);
+    if (statuses.size > 1)
+      conflictFlags.push(
+        `declared statuses differ: ${[...statuses].sort(compareCodePoints).join(", ")}`,
+      );
 
     nearScores.sort((a, b) => compareCodePoints(a.pair_id, b.pair_id));
     lexicalSignals.sort(
@@ -613,7 +627,8 @@ export function buildReasoningEvidencePacks(input: BuildPacksInput): ReasoningEv
       pack_profile: { budget, selection_priority: PACK_SELECTION_PRIORITY },
       reasoning_candidate_id: row.reasoning_candidate_id,
       selected_evidence_refs: artifacts.flatMap((artifact) =>
-        artifact.excerpts.map((excerpt) => excerpt.assertion_id)),
+        artifact.excerpts.map((excerpt) => excerpt.assertion_id),
+      ),
     });
 
     packs.push({
@@ -652,5 +667,8 @@ export function buildReasoningEvidencePacks(input: BuildPacksInput): ReasoningEv
 
 /** Canonical JSONL: one record per line, in the order given. */
 export function renderJsonl(records: readonly unknown[]): string {
-  return records.map((record) => canonicalCorpusJson(record, 0)).join("\n") + (records.length > 0 ? "\n" : "");
+  return (
+    records.map((record) => canonicalCorpusJson(record, 0)).join("\n") +
+    (records.length > 0 ? "\n" : "")
+  );
 }

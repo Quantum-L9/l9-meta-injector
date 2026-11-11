@@ -12,10 +12,12 @@
 
 /** Order two strings by Unicode code point. Never locale-aware. */
 export function compareCodePoints(a: string, b: string): number {
-  const left = [...a], right = [...b];
+  const left = [...a],
+    right = [...b];
   const shared = Math.min(left.length, right.length);
   for (let i = 0; i < shared; i++) {
-    const l = left[i].codePointAt(0) ?? 0, r = right[i].codePointAt(0) ?? 0;
+    const l = left[i].codePointAt(0) ?? 0,
+      r = right[i].codePointAt(0) ?? 0;
     if (l !== r) return l < r ? -1 : 1;
   }
   if (left.length === right.length) return 0;

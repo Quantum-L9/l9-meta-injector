@@ -28,11 +28,12 @@
 // Exact duplication stays a fact and is carried through unchanged. It is also,
 // deliberately, not evidence of a shared project: two byte-identical files prove
 // a copy happened, and copies happen across projects all the time.
+
+import type { EvidenceFamily, PairSignal, PairSignalKind, SemanticPair } from "./corpus_pairs";
+import { SIGNAL_FAMILY } from "./corpus_pairs";
+import type { ArtifactFeatureView } from "./corpus_semantics";
 import { compareCodePoints } from "./ordering";
 import { stableId } from "./repository_model";
-import { SIGNAL_FAMILY } from "./corpus_pairs";
-import type { EvidenceFamily, PairSignal, PairSignalKind, SemanticPair } from "./corpus_pairs";
-import type { ArtifactFeatureView } from "./corpus_semantics";
 
 export const FUSION_PROFILE_ID = "semantic-fusion/v1";
 export const FUSION_PROFILE_VERSION = "1.1.0";
@@ -84,8 +85,9 @@ export function fusionProfileHash(options: FusionOptions = {}): string {
     if (value !== undefined) thresholds[kind] = value.toFixed(6);
   }
   return stableId("fusion-profile", {
-    embedding_strong_threshold:
-      (options.embeddingStrongThreshold ?? DEFAULT_EMBEDDING_STRONG_THRESHOLD).toFixed(6),
+    embedding_strong_threshold: (
+      options.embeddingStrongThreshold ?? DEFAULT_EMBEDDING_STRONG_THRESHOLD
+    ).toFixed(6),
     profile_id: FUSION_PROFILE_ID,
     profile_version: FUSION_PROFILE_VERSION,
     signal_families: SIGNAL_FAMILY,
@@ -126,15 +128,16 @@ export interface PairClassification {
  * every candidate builder below refuses them: a shared folder is where two files
  * are, not what they are about.
  */
-export function classifyPair(
-  pair: SemanticPair,
-  options: FusionOptions = {},
-): PairClassification {
+export function classifyPair(pair: SemanticPair, options: FusionOptions = {}): PairClassification {
   const embeddingStrongThreshold =
     options.embeddingStrongThreshold ?? DEFAULT_EMBEDDING_STRONG_THRESHOLD;
 
   const familyCounts: Record<EvidenceFamily, number> = {
-    lexical: 0, declared_identity: 0, graph: 0, semantic_model: 0, context: 0,
+    lexical: 0,
+    declared_identity: 0,
+    graph: 0,
+    semantic_model: 0,
+    context: 0,
   };
   const supporting = new Set<EvidenceFamily>();
   const strong = new Set<EvidenceFamily>();
@@ -223,9 +226,7 @@ export function classifyPair(
  * person can check by following edges, and every edge in it is in the output.
  * A modularity score is not checkable that way.
  */
-function connectedComponents(
-  edges: readonly { a: string; b: string }[],
-): string[][] {
+function connectedComponents(edges: readonly { a: string; b: string }[]): string[][] {
   const parent = new Map<string, string>();
   const find = (node: string): string => {
     let root = parent.get(node) ?? node;
@@ -463,7 +464,11 @@ export function buildTopicCandidates(input: BuildCandidatesInput): TopicCandidat
   return connectedComponents(edges).map((members) => {
     const within = pairsWithin(members, context.classifications, context.pairById);
     const families: Record<EvidenceFamily, number> = {
-      lexical: 0, declared_identity: 0, graph: 0, semantic_model: 0, context: 0,
+      lexical: 0,
+      declared_identity: 0,
+      graph: 0,
+      semantic_model: 0,
+      context: 0,
     };
     for (const entry of within.classifications) {
       for (const family of Object.keys(families) as EvidenceFamily[]) {
@@ -490,7 +495,9 @@ export function buildTopicCandidates(input: BuildCandidatesInput): TopicCandidat
       candidate_id: candidateId,
       candidate_type: "TOPIC_CANDIDATE" as const,
       member_artifact_ids: members,
-      supporting_pair_ids: within.classifications.map((entry) => entry.pair_id).sort(compareCodePoints),
+      supporting_pair_ids: within.classifications
+        .map((entry) => entry.pair_id)
+        .sort(compareCodePoints),
       evidence_family_counts: families,
       lexical_signal_count: signalCount(within.pairs, (s) => SIGNAL_FAMILY[s.kind] === "lexical"),
       semantic_signal_count: signalCount(within.pairs, (s) => s.kind === "embedding_similarity"),
@@ -584,7 +591,9 @@ export function buildProjectCandidates(input: BuildCandidatesInput): ProjectCand
       candidate_id: candidateId,
       candidate_type: "PROJECT_CANDIDATE" as const,
       member_artifact_ids: members,
-      supporting_pair_ids: within.classifications.map((entry) => entry.pair_id).sort(compareCodePoints),
+      supporting_pair_ids: within.classifications
+        .map((entry) => entry.pair_id)
+        .sort(compareCodePoints),
       declared_identifiers: [...identifiers].sort(compareCodePoints),
       explicit_reference_count: signalCount(within.pairs, (s) => s.kind === "explicit_reference"),
       dependency_signal_count: signalCount(within.pairs, (s) => s.kind === "dependency_overlap"),
@@ -697,10 +706,11 @@ export function buildConsolidationCandidates(
     if (hashes.size < 2) continue;
 
     const hasVersionLineage = input.pairs.some(
-      (pair) => members.has(pair.artifact_a_id)
-        && members.has(pair.artifact_b_id)
-        && (pair.signals.some((signal) => signal.kind === "near_duplicate")
-          || resolvedSupersessions(pair).length > 0),
+      (pair) =>
+        members.has(pair.artifact_a_id) &&
+        members.has(pair.artifact_b_id) &&
+        (pair.signals.some((signal) => signal.kind === "near_duplicate") ||
+          resolvedSupersessions(pair).length > 0),
     );
     if (!hasVersionLineage) continue;
 
@@ -718,7 +728,9 @@ export function buildConsolidationCandidates(
       .filter((view): view is ArtifactFeatureView => view !== undefined);
 
     const hashes = new Set(
-      views.map((view) => view.content_hash).filter((hash): hash is string => typeof hash === "string"),
+      views
+        .map((view) => view.content_hash)
+        .filter((hash): hash is string => typeof hash === "string"),
     );
     const clusters = new Set(
       views

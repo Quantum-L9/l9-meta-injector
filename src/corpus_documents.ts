@@ -258,9 +258,7 @@ function entryFor(
     structured_locator_type: locatorKinds.length === 1 ? (locatorKinds[0] as string) : null,
     structured_locator_types: locatorKinds,
     decoded,
-    undecoded_reason: decoded
-      ? null
-      : (normalized?.reason ?? UNDECODED_REASON_NOT_ELIGIBLE),
+    undecoded_reason: decoded ? null : (normalized?.reason ?? UNDECODED_REASON_NOT_ELIGIBLE),
     byte_length: normalized?.byte_length ?? artifact.sizeBytes ?? null,
     token_count: decoded ? (normalized?.token_count ?? 0) : null,
     normalized_content_hash: decoded ? (normalized?.normalized_content_hash ?? null) : null,
@@ -349,8 +347,9 @@ export function buildDocumentIndex(input: BuildDocumentIndexInput): DocumentInde
   const documents = input.artifacts
     .map((artifact) => entryFor(artifact, input.decoderId, input.decoderVersion))
     .sort(
-      (a, b) => compareCodePoints(a.corpus_path, b.corpus_path)
-        || compareCodePoints(a.artifact_id, b.artifact_id),
+      (a, b) =>
+        compareCodePoints(a.corpus_path, b.corpus_path) ||
+        compareCodePoints(a.artifact_id, b.artifact_id),
     );
 
   return {

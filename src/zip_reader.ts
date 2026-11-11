@@ -134,7 +134,8 @@ function readExact(fd: number, length: number, position: number): Buffer {
   let read = 0;
   while (read < length) {
     const count = fs.readSync(fd, buffer, read, length - read, position + read);
-    if (count === 0) throw new ZipFormatError(`unexpected end of archive at offset ${position + read}`);
+    if (count === 0)
+      throw new ZipFormatError(`unexpected end of archive at offset ${position + read}`);
     read += count;
   }
   return buffer;
@@ -158,7 +159,11 @@ function decodeMemberName(raw: Buffer, flags: number): { name: string; suspect: 
   }
 }
 
-function entryKindFor(versionMadeBy: number, externalAttributes: number, name: string): {
+function entryKindFor(
+  versionMadeBy: number,
+  externalAttributes: number,
+  name: string,
+): {
   kind: ZipEntryKind;
   unixMode: number | null;
 } {
@@ -172,14 +177,19 @@ function entryKindFor(versionMadeBy: number, externalAttributes: number, name: s
     if (mode !== 0 && (mode & S_IFMT) === 0) return { kind: byName, unixMode: mode };
     if (mode !== 0) {
       switch (mode & S_IFMT) {
-        case S_IFLNK: return { kind: "symlink", unixMode: mode };
-        case S_IFDIR: return { kind: "directory", unixMode: mode };
-        case S_IFREG: return { kind: "file", unixMode: mode };
+        case S_IFLNK:
+          return { kind: "symlink", unixMode: mode };
+        case S_IFDIR:
+          return { kind: "directory", unixMode: mode };
+        case S_IFREG:
+          return { kind: "file", unixMode: mode };
         case S_IFIFO:
         case S_IFCHR:
         case S_IFBLK:
-        case S_IFSOCK: return { kind: "special", unixMode: mode };
-        default: return { kind: "unknown", unixMode: mode };
+        case S_IFSOCK:
+          return { kind: "special", unixMode: mode };
+        default:
+          return { kind: "unknown", unixMode: mode };
       }
     }
   }
@@ -231,16 +241,23 @@ function readZip64Eocd(
     throw new ZipFormatError("multi-disk (split) ZIP archives are not supported");
   }
 
-  const recordOffset = readSafeUInt64LE(tail, locatorOffset + 8, "zip64 end-of-central-directory offset");
+  const recordOffset = readSafeUInt64LE(
+    tail,
+    locatorOffset + 8,
+    "zip64 end-of-central-directory offset",
+  );
   const prefix = readExact(fd, 12, recordOffset);
   if (prefix.readUInt32LE(0) !== ZIP64_EOCD_SIGNATURE) {
     throw new ZipFormatError("zip64 end-of-central-directory record signature is invalid");
   }
   const payloadSize = readSafeUInt64LE(prefix, 4, "zip64 end-of-central-directory size");
-  if (payloadSize < 44) throw new ZipFormatError("zip64 end-of-central-directory record is truncated");
+  if (payloadSize < 44)
+    throw new ZipFormatError("zip64 end-of-central-directory record is truncated");
   const totalRecordSize = 12 + payloadSize;
   if (recordOffset + totalRecordSize !== locatorAbsoluteOffset) {
-    throw new ZipFormatError("zip64 end-of-central-directory record does not terminate at its locator");
+    throw new ZipFormatError(
+      "zip64 end-of-central-directory record does not terminate at its locator",
+    );
   }
 
   const record = readExact(fd, totalRecordSize, recordOffset);
@@ -281,11 +298,13 @@ function locateEocd(fd: number, fileSize: number): LocatedEocd {
     throw new ZipFormatError("multi-disk (split) ZIP archives are not supported");
   }
 
-  const needsZip64 = classic.entryCount === U16_MAX
-    || classic.centralDirectorySize === U32_MAX
-    || classic.centralDirectoryOffset === U32_MAX;
+  const needsZip64 =
+    classic.entryCount === U16_MAX ||
+    classic.centralDirectorySize === U32_MAX ||
+    classic.centralDirectoryOffset === U32_MAX;
   const locatorOffset = eocdOffset - ZIP64_LOCATOR_SIZE;
-  const hasLocator = locatorOffset >= 0 && tail.readUInt32LE(locatorOffset) === ZIP64_LOCATOR_SIGNATURE;
+  const hasLocator =
+    locatorOffset >= 0 && tail.readUInt32LE(locatorOffset) === ZIP64_LOCATOR_SIGNATURE;
   if (needsZip64 && !hasLocator) {
     throw new ZipFormatError("zip64 archive is missing its end-of-central-directory locator");
   }
@@ -308,7 +327,9 @@ function locateEocd(fd: number, fileSize: number): LocatedEocd {
       throw new ZipFormatError("central directory does not terminate at the zip64 end record");
     }
   } else if (centralEnd !== eocdAbsoluteOffset) {
-    throw new ZipFormatError("central directory does not terminate at the end-of-central-directory record");
+    throw new ZipFormatError(
+      "central directory does not terminate at the end-of-central-directory record",
+    );
   }
   return {
     ...resolved,
@@ -382,7 +403,8 @@ function readCentralEntry(
   const extraStart = nameStart + nameLength;
   const commentStart = extraStart + extraLength;
   const next = commentStart + commentLength;
-  if (next > central.length) throw new ZipFormatError("central-directory entry runs past the directory");
+  if (next > central.length)
+    throw new ZipFormatError("central-directory entry runs past the directory");
 
   applyZip64Extra(central.subarray(extraStart, commentStart), sizes);
   const decoded = decodeMemberName(central.subarray(nameStart, extraStart), generalPurposeFlags);
@@ -429,19 +451,27 @@ function assertDataExtentsPrecedeCentralDirectory(
   entries: ZipCentralEntry[],
   centralDirectoryOffset: number,
 ): void {
-  const refuse = (entry: ZipCentralEntry): ZipFormatError => new ZipFormatError(
-    `member ${entry.name} declares a data extent that extends past the start of the central directory ` +
-    `(local header offset ${entry.localHeaderOffset}, compressed size ${entry.compressedSize}, ` +
-    `uncompressed size ${entry.uncompressedSize}, central directory at ${centralDirectoryOffset})`,
-  );
+  const refuse = (entry: ZipCentralEntry): ZipFormatError =>
+    new ZipFormatError(
+      `member ${entry.name} declares a data extent that extends past the start of the central directory ` +
+        `(local header offset ${entry.localHeaderOffset}, compressed size ${entry.compressedSize}, ` +
+        `uncompressed size ${entry.uncompressedSize}, central directory at ${centralDirectoryOffset})`,
+    );
   for (const entry of entries) {
     // The fixed header alone already overruns: refuse without reading at an
     // offset the archive cannot contain.
-    if (entry.localHeaderOffset + LOCAL_FIXED_SIZE + entry.compressedSize > centralDirectoryOffset) {
+    if (
+      entry.localHeaderOffset + LOCAL_FIXED_SIZE + entry.compressedSize >
+      centralDirectoryOffset
+    ) {
       throw refuse(entry);
     }
     const header = readExact(fd, LOCAL_FIXED_SIZE, entry.localHeaderOffset);
-    const dataStart = entry.localHeaderOffset + LOCAL_FIXED_SIZE + header.readUInt16LE(26) + header.readUInt16LE(28);
+    const dataStart =
+      entry.localHeaderOffset +
+      LOCAL_FIXED_SIZE +
+      header.readUInt16LE(26) +
+      header.readUInt16LE(28);
     if (dataStart + entry.compressedSize > centralDirectoryOffset) throw refuse(entry);
   }
 }
@@ -557,7 +587,10 @@ function readStoredMember(
 }
 
 /** The caller's ceiling was reached: a budget refusal, whatever the member declared. */
-function ceilingError(entry: ZipCentralEntry, maxUncompressedBytes: number): ZipBudgetExceededError {
+function ceilingError(
+  entry: ZipCentralEntry,
+  maxUncompressedBytes: number,
+): ZipBudgetExceededError {
   return new ZipBudgetExceededError(
     `member ${entry.name} exceeded the ${maxUncompressedBytes}-byte extraction ceiling`,
   );
@@ -622,9 +655,12 @@ function memberDataStart(fd: number, entry: ZipCentralEntry): number {
   if (header.readUInt32LE(0) !== LOCAL_SIGNATURE) {
     throw new ZipFormatError(`local header signature is invalid for ${entry.name}`);
   }
-  const dataStart = entry.localHeaderOffset + LOCAL_FIXED_SIZE + header.readUInt16LE(26) + header.readUInt16LE(28);
+  const dataStart =
+    entry.localHeaderOffset + LOCAL_FIXED_SIZE + header.readUInt16LE(26) + header.readUInt16LE(28);
   if (dataStart + entry.compressedSize > fs.fstatSync(fd).size) {
-    throw new ZipFormatError(`member ${entry.name} declares a data extent past the end of the archive`);
+    throw new ZipFormatError(
+      `member ${entry.name} declares a data extent past the end of the archive`,
+    );
   }
   return dataStart;
 }
@@ -636,8 +672,13 @@ export function streamZipMember(
   limits: ZipMemberStreamLimits,
   sink: (chunk: Buffer) => void,
 ): ZipMemberStreamResult {
-  if (entry.compressionMethod !== COMPRESSION_STORED && entry.compressionMethod !== COMPRESSION_DEFLATE) {
-    throw new ZipFormatError(`unsupported compression method ${entry.compressionMethod} for ${entry.name}`);
+  if (
+    entry.compressionMethod !== COMPRESSION_STORED &&
+    entry.compressionMethod !== COMPRESSION_DEFLATE
+  ) {
+    throw new ZipFormatError(
+      `unsupported compression method ${entry.compressionMethod} for ${entry.name}`,
+    );
   }
   if (limits.maxUncompressedBytes <= 0) {
     throw new ZipBudgetExceededError(
@@ -657,7 +698,8 @@ export function streamZipMember(
     const emit = (chunk: Buffer): void => {
       produced += chunk.length;
       if (produced > limit) {
-        throw produced > limits.maxUncompressedBytes || entry.compressedSize > limits.maxUncompressedBytes
+        throw produced > limits.maxUncompressedBytes ||
+          entry.compressedSize > limits.maxUncompressedBytes
           ? ceilingError(entry, limits.maxUncompressedBytes)
           : overDeclaredError(entry);
       }

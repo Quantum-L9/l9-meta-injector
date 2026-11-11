@@ -82,7 +82,9 @@ function compilePlacementPlan(sourcePath, body = "", opts = {}) {
     const rawThreshold = opts.quarantineAtOrBelow ?? "low";
     // Own-property check (not `in`, which also matches inherited props like
     // "constructor"/"toString") so an invalid threshold can't slip through.
-    const threshold = Object.prototype.hasOwnProperty.call(CONFIDENCE_RANK, rawThreshold) ? rawThreshold : "low";
+    const threshold = Object.prototype.hasOwnProperty.call(CONFIDENCE_RANK, rawThreshold)
+        ? rawThreshold
+        : "low";
     const rootDir = sanitizeRootDir(opts.rootDir ?? "");
     const { artifactClass, confidence, signals } = (0, artifact_class_1.classifyArtifact)(sourcePath, body);
     const hint = (0, artifact_class_1.placementHintFor)(artifactClass);

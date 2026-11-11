@@ -1,12 +1,4 @@
 "use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.OoxmlError = void 0;
-exports.isSafePartName = isSafePartName;
-exports.openOoxml = openOoxml;
-exports.relationshipPartName = relationshipPartName;
-exports.resolveRelationshipTarget = resolveRelationshipTarget;
-exports.readRelationships = readRelationships;
-exports.noteExternalRelationships = noteExternalRelationships;
 // ooxml.ts — the container Word, PowerPoint and Excel files actually are.
 //
 // A `.docx` is a ZIP of XML parts. That is convenient and it is also the reason
@@ -29,9 +21,17 @@ exports.noteExternalRelationships = noteExternalRelationships;
 //     allowance shared by every part of the document — a declared size is a
 //     claim, not a bound;
 //   - macro parts are noted and never executed.
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.OoxmlError = void 0;
+exports.isSafePartName = isSafePartName;
+exports.openOoxml = openOoxml;
+exports.relationshipPartName = relationshipPartName;
+exports.resolveRelationshipTarget = resolveRelationshipTarget;
+exports.readRelationships = readRelationships;
+exports.noteExternalRelationships = noteExternalRelationships;
+const ordering_1 = require("../ordering");
 const zip_reader_1 = require("../zip_reader");
 const xml_1 = require("./xml");
-const ordering_1 = require("../ordering");
 class OoxmlError extends Error {
     constructor(code, message) {
         super(message);
@@ -154,8 +154,8 @@ function openOoxml(archivePath, budget) {
             diagnostics.push({
                 code: "decoder.budget_exceeded",
                 severity: "warning",
-                message: `part '${name}' declares a compression ratio of ${Math.round(ratio)}:1, above the `
-                    + `${budget.maxCompressionRatio}:1 ceiling, and was not expanded`,
+                message: `part '${name}' declares a compression ratio of ${Math.round(ratio)}:1, above the ` +
+                    `${budget.maxCompressionRatio}:1 ceiling, and was not expanded`,
                 part: name,
             });
             return null;
@@ -181,9 +181,9 @@ function openOoxml(archivePath, budget) {
                 code: budgeted ? "decoder.budget_exceeded" : "decoder.malformed",
                 severity: "warning",
                 message: budgeted
-                    ? `part '${name}' would expand past ${ceiling} bytes — the least of the ${budget.maxPartBytes}-byte part `
-                        + `ceiling, ${budget.maxCompressionRatio}x its ${entry.compressedSize} compressed bytes, and what this `
-                        + "container may still expand — and was not read"
+                    ? `part '${name}' would expand past ${ceiling} bytes — the least of the ${budget.maxPartBytes}-byte part ` +
+                        `ceiling, ${budget.maxCompressionRatio}x its ${entry.compressedSize} compressed bytes, and what this ` +
+                        "container may still expand — and was not read"
                     : `part '${name}' could not be read: ${error instanceof Error ? error.message : String(error)}`,
                 part: name,
             });
@@ -356,8 +356,8 @@ function noteExternalRelationships(container, budget) {
         notes.push({
             code: "decoder.budget_exceeded",
             severity: "warning",
-            message: `${skipped.length} part${skipped.length === 1 ? " was" : "s were"} not read: the container's `
-                + `${budget.maxContainerUncompressedBytes}-byte decompression allowance was spent`,
+            message: `${skipped.length} part${skipped.length === 1 ? " was" : "s were"} not read: the container's ` +
+                `${budget.maxContainerUncompressedBytes}-byte decompression allowance was spent`,
         });
     }
     return notes;

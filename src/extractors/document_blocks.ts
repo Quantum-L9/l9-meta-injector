@@ -28,9 +28,9 @@ import { boundExcerpt, looksSecret } from "../interpretation";
 import { compareCodePoints } from "../ordering";
 import { semanticHash, stableId } from "../repository_model";
 import {
-  LEADING_ADMONITION_UNITS,
   documentText,
   isMilestoneSectionHeading,
+  LEADING_ADMONITION_UNITS,
   readTextUnit,
   readTitleMarkers,
 } from "./work_intelligence";
@@ -260,14 +260,16 @@ function titularBlockDrafts(
   text: string,
   isName: boolean,
 ): BlockDraft[] {
-  const drafts: BlockDraft[] = [{
-    predicate: isName ? "document.title" : "document.heading",
-    object: text,
-    excerpt: line,
-    evidenceClass: isName ? "declared" : "observed",
-    confidence: "high",
-    block,
-  }];
+  const drafts: BlockDraft[] = [
+    {
+      predicate: isName ? "document.title" : "document.heading",
+      object: text,
+      excerpt: line,
+      evidenceClass: isName ? "declared" : "observed",
+      confidence: "high",
+      block,
+    },
+  ];
   if (block.kind !== "title") return drafts;
   for (const marker of readTitleMarkers(text, line)) {
     drafts.push({
@@ -337,16 +339,13 @@ function statementDrafts(blocks: readonly DocumentBlockView[]): BlockDraft[] {
 }
 
 /** Total order over assertions, so the output never depends on reading order. */
-function compareAssertions(
-  left: DocumentBlockAssertion,
-  right: DocumentBlockAssertion,
-): number {
+function compareAssertions(left: DocumentBlockAssertion, right: DocumentBlockAssertion): number {
   return (
-    compareCodePoints(left.source_path, right.source_path)
-    || compareCodePoints(left.evidence.block_id, right.evidence.block_id)
-    || compareCodePoints(left.predicate, right.predicate)
-    || compareCodePoints(left.object, right.object)
-    || compareCodePoints(left.assertion_id, right.assertion_id)
+    compareCodePoints(left.source_path, right.source_path) ||
+    compareCodePoints(left.evidence.block_id, right.evidence.block_id) ||
+    compareCodePoints(left.predicate, right.predicate) ||
+    compareCodePoints(left.object, right.object) ||
+    compareCodePoints(left.assertion_id, right.assertion_id)
   );
 }
 
@@ -357,9 +356,7 @@ function compareAssertions(
  * about the corpus rather than a crash, and the decoder has already recorded the
  * ones that could not be opened at all.
  */
-export function readDocumentBlockSignals(
-  input: ReadDocumentBlocksInput,
-): DocumentBlockAssertion[] {
+export function readDocumentBlockSignals(input: ReadDocumentBlocksInput): DocumentBlockAssertion[] {
   const drafts = [
     ...titularDrafts(input.blocks),
     ...milestoneSectionDrafts(input.blocks),

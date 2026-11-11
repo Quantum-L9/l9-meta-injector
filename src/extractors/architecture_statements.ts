@@ -53,14 +53,14 @@
 // because it is part of every evidence id: a statement this release reads exactly
 // as 1.0.0 did keeps the id it had.
 import type { BlockKind, BlockLocator } from "../documents/decoder";
-import { MAX_EXCERPT_LENGTH, boundExcerpt, looksSecret } from "../interpretation";
+import { boundExcerpt, looksSecret, MAX_EXCERPT_LENGTH } from "../interpretation";
 import { compareCodePoints } from "../ordering";
 import type { DocumentBlockView } from "./document_blocks";
 import {
+  documentText,
   FRONTMATTER_CLOSE_DELIMITERS,
   FRONTMATTER_LINE_LIMIT,
   FRONTMATTER_OPEN_DELIMITER,
-  documentText,
   readFrontmatterLine,
   readLabelledLine,
   readTextUnit,
@@ -142,7 +142,12 @@ export const MAX_ARCHITECTURE_DIAGNOSTICS_PER_DOCUMENT = 8;
  * header rather than a statement. A table under a labelled section is reported
  * as unsupported instead of guessed at.
  */
-const READABLE_BLOCK_KINDS: ReadonlySet<BlockKind> = new Set(["paragraph", "list_item", "note", "cell"]);
+const READABLE_BLOCK_KINDS: ReadonlySet<BlockKind> = new Set([
+  "paragraph",
+  "list_item",
+  "note",
+  "cell",
+]);
 const TITULAR_BLOCK_KINDS: ReadonlySet<BlockKind> = new Set(["title", "heading"]);
 
 /** One recognized statement, before identity and evidence plumbing is attached. */
@@ -372,11 +377,11 @@ function isForeignLabelledUnit(line: string): boolean {
  */
 function isPlainUnit(line: string): boolean {
   return (
-    line.trim().length > 0
-    && !isTableRow(line)
-    && !THEMATIC_BREAK.test(line)
-    && !isWorkSignalUnit(line)
-    && !isForeignLabelledUnit(line)
+    line.trim().length > 0 &&
+    !isTableRow(line) &&
+    !THEMATIC_BREAK.test(line) &&
+    !isWorkSignalUnit(line) &&
+    !isForeignLabelledUnit(line)
   );
 }
 
@@ -425,7 +430,8 @@ interface FrontmatterRegion {
  */
 function findFrontmatterRegion(blocks: readonly DocumentBlockView[]): FrontmatterRegion | null {
   const first = blocks[0];
-  if (first === undefined || first.locator.kind !== "line_span" || first.locator.line_start !== 1) return null;
+  if (first === undefined || first.locator.kind !== "line_span" || first.locator.line_start !== 1)
+    return null;
   if (unitsOf(first.text)[0]?.trim() !== FRONTMATTER_OPEN_DELIMITER) return null;
   for (const block of blocks) {
     if (block.locator.kind !== "line_span") return null;
@@ -436,7 +442,8 @@ function findFrontmatterRegion(blocks: readonly DocumentBlockView[]): Frontmatte
       // The work reader scans lines 2..FRONTMATTER_LINE_LIMIT (1-based) for the
       // closing delimiter; the bound is inclusive here too.
       if (line > FRONTMATTER_LINE_LIMIT) return null;
-      if (FRONTMATTER_CLOSE_DELIMITERS.includes(unit.trim())) return { firstLine: 1, lastLine: line };
+      if (FRONTMATTER_CLOSE_DELIMITERS.includes(unit.trim()))
+        return { firstLine: 1, lastLine: line };
     }
   }
   return null;
@@ -454,14 +461,29 @@ class StatementReader {
   readonly statements: ArchitectureStatementDraft[] = [];
   private readonly raised: ArchitectureCoverageDiagnostic[] = [];
   /** An open `## Constraints`-style section, until the next titular or code block. */
-  private section: { statementClass: ArchitectureStatementClass; label: string; members: number; block: DocumentBlockView } | null = null;
+  private section: {
+    statementClass: ArchitectureStatementClass;
+    label: string;
+    members: number;
+    block: DocumentBlockView;
+  } | null = null;
   /** An open `Constraints:` label waiting for the list items that follow it. */
-  private pendingList: { statementClass: ArchitectureStatementClass; label: string; members: number; block: DocumentBlockView } | null = null;
+  private pendingList: {
+    statementClass: ArchitectureStatementClass;
+    label: string;
+    members: number;
+    block: DocumentBlockView;
+  } | null = null;
   /**
    * The statement read from the Markdown list item just before this block, which
    * a lazy continuation paragraph on the very next line extends.
    */
-  private lastListItem: { draft: ArchitectureStatementDraft; raw: string; excerpt: string; lineEnd: number } | null = null;
+  private lastListItem: {
+    draft: ArchitectureStatementDraft;
+    raw: string;
+    excerpt: string;
+    lineEnd: number;
+  } | null = null;
   private readonly frontmatter: FrontmatterRegion | null;
 
   constructor(private readonly blocks: readonly DocumentBlockView[]) {
@@ -480,7 +502,12 @@ class StatementReader {
     };
   }
 
-  private diagnostic(code: string, severity: "info" | "warning", message: string, block: DocumentBlockView): void {
+  private diagnostic(
+    code: string,
+    severity: "info" | "warning",
+    message: string,
+    block: DocumentBlockView,
+  ): void {
     this.raised.push({ code, severity, message, block_id: block.block_id });
   }
 
@@ -627,9 +654,11 @@ class StatementReader {
    */
   private continuesListItem(block: DocumentBlockView, units: readonly string[]): boolean {
     const item = this.lastListItem;
-    if (item === null || block.kind !== "paragraph" || block.locator.kind !== "line_span") return false;
+    if (item === null || block.kind !== "paragraph" || block.locator.kind !== "line_span")
+      return false;
     if (block.locator.line_start !== item.lineEnd + 1) return false;
-    if (units.some((unit) => !isPlainUnit(unit) || architectureLabelOf(unit) !== null)) return false;
+    if (units.some((unit) => !isPlainUnit(unit) || architectureLabelOf(unit) !== null))
+      return false;
     if (setextHeadingText(block, units) !== null) return false;
     const raw = `${item.raw}\n${units.join("\n")}`;
     const excerpt = `${item.excerpt}\n${units.join("\n")}`;
@@ -691,10 +720,13 @@ class StatementReader {
           end += 1;
         }
         out.push({
-          text: body.some((line) => line.length > 0) ? `${field.key}: ${body.join(field.blockScalar.startsWith("|") ? "\n" : " ")}` : unit,
+          text: body.some((line) => line.length > 0)
+            ? `${field.key}: ${body.join(field.blockScalar.startsWith("|") ? "\n" : " ")}`
+            : unit,
           endIndex: end > index ? end : null,
         });
-        for (let skipped = index + 1; skipped <= end; skipped += 1) out.push({ text: "", endIndex: null });
+        for (let skipped = index + 1; skipped <= end; skipped += 1)
+          out.push({ text: "", endIndex: null });
         if (vocabulary !== undefined && !body.some((line) => line.length > 0)) {
           this.diagnostic(
             "architecture_evidence.frontmatter_block_scalar_unread",
@@ -782,7 +814,14 @@ class StatementReader {
     // first block that is not one — the shape `milestoneSectionBullets` reads.
     if (this.pendingList !== null) {
       if (block.kind === "list_item") {
-        this.readMembers(block, units, this.pendingList.statementClass, "label_list", this.pendingList.label, this.pendingList);
+        this.readMembers(
+          block,
+          units,
+          this.pendingList.statementClass,
+          "label_list",
+          this.pendingList.label,
+          this.pendingList,
+        );
         return;
       }
       this.closePendingList();
@@ -794,12 +833,34 @@ class StatementReader {
       // one; each is quoted as the document wrote it. A unit the work vocabulary
       // claims is skipped, so `Status: blocked` under a section is not a constraint.
       if (block.kind === "list_item" || block.kind === "cell") {
-        this.readMembers(block, units, section.statementClass, "section_heading", section.label, section);
+        this.readMembers(
+          block,
+          units,
+          section.statementClass,
+          "section_heading",
+          section.label,
+          section,
+        );
         return;
       }
-      const kept = units.filter((unit) => unit.trim().length > 0 && !THEMATIC_BREAK.test(unit) && !this.skipsMember(unit, section, block));
+      const kept = units.filter(
+        (unit) =>
+          unit.trim().length > 0 &&
+          !THEMATIC_BREAK.test(unit) &&
+          !this.skipsMember(unit, section, block),
+      );
       if (kept.length > 0) {
-        if (this.emit(section.statementClass, kept.join("\n"), block.text, "section_heading", section.label, block, null)) {
+        if (
+          this.emit(
+            section.statementClass,
+            kept.join("\n"),
+            block.text,
+            "section_heading",
+            section.label,
+            block,
+            null,
+          )
+        ) {
           section.members += 1;
         }
       }
@@ -807,7 +868,11 @@ class StatementReader {
   }
 
   private inFrontmatter(block: DocumentBlockView): boolean {
-    return this.frontmatter !== null && block.locator.kind === "line_span" && block.locator.line_start <= this.frontmatter.lastLine;
+    return (
+      this.frontmatter !== null &&
+      block.locator.kind === "line_span" &&
+      block.locator.line_start <= this.frontmatter.lastLine
+    );
   }
 
   /**
@@ -851,14 +916,20 @@ class StatementReader {
   ): void {
     const kept: { index: number; unit: string }[] = [];
     for (const [index, unit] of units.entries()) {
-      if (unit.trim().length === 0 || THEMATIC_BREAK.test(unit) || this.skipsMember(unit, { statementClass, label }, block)) continue;
+      if (
+        unit.trim().length === 0 ||
+        THEMATIC_BREAK.test(unit) ||
+        this.skipsMember(unit, { statementClass, label }, block)
+      )
+        continue;
       kept.push({ index, unit });
     }
     if (block.kind === "list_item" && kept.length > 1) {
       const first = kept[0] as { index: number; unit: string };
       const last = kept[kept.length - 1] as { index: number; unit: string };
       const joined = kept.map((entry) => entry.unit).join("\n");
-      if (this.emit(statementClass, joined, joined, form, label, block, first.index, last.index)) owner.members += 1;
+      if (this.emit(statementClass, joined, joined, form, label, block, first.index, last.index))
+        owner.members += 1;
       return;
     }
     for (const { index, unit } of kept) {
@@ -886,10 +957,18 @@ class StatementReader {
   private readLabelledBlock(
     block: DocumentBlockView,
     units: readonly string[],
-    labelled: readonly ({ label: string; statementClass: ArchitectureStatementClass; value: string } | null)[],
+    labelled: readonly ({
+      label: string;
+      statementClass: ArchitectureStatementClass;
+      value: string;
+    } | null)[],
     readable: readonly ReadableUnit[],
   ): void {
-    let open: { statementClass: ArchitectureStatementClass; label: string; members: number } | null = null;
+    let open: {
+      statementClass: ArchitectureStatementClass;
+      label: string;
+      members: number;
+    } | null = null;
     let field: { draft: ArchitectureStatementDraft; raw: string; excerpt: string } | null = null;
     for (const [index, unit] of units.entries()) {
       const hit = labelled[index];
@@ -906,7 +985,16 @@ class StatementReader {
         field = null;
         if (hit.value.length > 0) {
           const endIndex = readable[index]?.endIndex ?? null;
-          const draft = this.emit(hit.statementClass, hit.value, unit, "field_label", hit.label, block, index, endIndex);
+          const draft = this.emit(
+            hit.statementClass,
+            hit.value,
+            unit,
+            "field_label",
+            hit.label,
+            block,
+            index,
+            endIndex,
+          );
           // A block-scalar value already holds its own lines; nothing continues it.
           if (draft !== null && endIndex === null) field = { draft, raw: hit.value, excerpt: unit };
         } else {
@@ -933,19 +1021,35 @@ class StatementReader {
       field = null;
       if (open !== null) {
         if (this.skipsMember(unit, open, block)) continue;
-        if (this.emit(open.statementClass, unit, unit, "label_list", open.label, block, index)) open.members += 1;
+        if (this.emit(open.statementClass, unit, unit, "label_list", open.label, block, index))
+          open.members += 1;
         continue;
       }
       if (this.section !== null) {
         if (this.skipsMember(unit, this.section, block)) continue;
-        if (this.emit(this.section.statementClass, unit, unit, "section_heading", this.section.label, block, index)) {
+        if (
+          this.emit(
+            this.section.statementClass,
+            unit,
+            unit,
+            "section_heading",
+            this.section.label,
+            block,
+            index,
+          )
+        ) {
           this.section.members += 1;
         }
       }
     }
     if (open !== null && open.members === 0) {
       // Nothing in this block followed the label; the list items after it may.
-      this.pendingList = { statementClass: open.statementClass, label: open.label, members: 0, block };
+      this.pendingList = {
+        statementClass: open.statementClass,
+        label: open.label,
+        members: 0,
+        block,
+      };
     }
   }
 }
@@ -987,7 +1091,8 @@ export function architectureStatementLocator(
     let end = locator.line_start + (unitEndIndex ?? unitIndex);
     const last = continuationBlocks[continuationBlocks.length - 1];
     if (last !== undefined && last.locator.kind === "line_span") end = last.locator.line_end;
-    if (line <= locator.line_end && end >= line) return { kind: "line_span", line_start: line, line_end: end };
+    if (line <= locator.line_end && end >= line)
+      return { kind: "line_span", line_start: line, line_end: end };
   }
   return locator;
 }

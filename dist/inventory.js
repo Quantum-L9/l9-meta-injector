@@ -1,4 +1,25 @@
 "use strict";
+// inventory.ts — Filesystem/Dropbox inventory mode.
+//
+// This mode ANNOTATES by default. It classifies every file and folder under a root,
+// and unless told otherwise it also appends metadata headers to text files (through
+// the filetype-aware injector) and writes `.l9meta.yaml` sidecars for comment-less
+// text, recognized archives (adjacent `<archive>.l9meta.yaml`), and folders,
+// alongside a manifest (JSON + CSV + MD) in the ArtifactInventory shape.
+//
+// Three distinct behaviors are worth naming, because conflating them is how a
+// "read-only" claim becomes false:
+//
+//   observation     — classify and hash; the source is untouched.
+//   annotation      — write metadata into or beside source files. THIS IS A MUTATION.
+//   materialization — expand an archive into the source tree (see archives.ts).
+//
+// Defaults here are observation + annotation. `dryRun` reduces it to observation.
+// It never moves, renames, or deletes anything, but "never deletes" is not the same
+// as non-destructive, and this module must not be described as read-only.
+//
+// For read-only observation of an arbitrary local source — including one that is not
+// a Git repository — use `local_source.ts`, which annotates nothing (ADR-036).
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     var desc = Object.getOwnPropertyDescriptor(m, k);
@@ -38,50 +59,29 @@ exports.buildDuplicateClusters = buildDuplicateClusters;
 exports.classifyInventory = classifyInventory;
 exports.buildRecord = buildRecord;
 exports.inventoryTree = inventoryTree;
-// inventory.ts — Filesystem/Dropbox inventory mode.
-//
-// This mode ANNOTATES by default. It classifies every file and folder under a root,
-// and unless told otherwise it also appends metadata headers to text files (through
-// the filetype-aware injector) and writes `.l9meta.yaml` sidecars for comment-less
-// text, recognized archives (adjacent `<archive>.l9meta.yaml`), and folders,
-// alongside a manifest (JSON + CSV + MD) in the ArtifactInventory shape.
-//
-// Three distinct behaviors are worth naming, because conflating them is how a
-// "read-only" claim becomes false:
-//
-//   observation     — classify and hash; the source is untouched.
-//   annotation      — write metadata into or beside source files. THIS IS A MUTATION.
-//   materialization — expand an archive into the source tree (see archives.ts).
-//
-// Defaults here are observation + annotation. `dryRun` reduces it to observation.
-// It never moves, renames, or deletes anything, but "never deletes" is not the same
-// as non-destructive, and this module must not be described as read-only.
-//
-// For read-only observation of an arbitrary local source — including one that is not
-// a Git repository — use `local_source.ts`, which annotates nothing (ADR-036).
+const crypto = __importStar(require("node:crypto"));
 const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
-const crypto = __importStar(require("node:crypto"));
-const extract_1 = require("./extract");
+const archive_formats_1 = require("./archive_formats");
+const authority_1 = require("./authority");
+const classify_1 = require("./classify");
 const comment_1 = require("./comment");
+const durable_write_1 = require("./durable_write");
+const encoding_1 = require("./encoding");
+const extract_1 = require("./extract");
 const frontmatter_patch_1 = require("./frontmatter_patch");
 const inject_1 = require("./inject");
-const schema_1 = require("./schema");
-const normalize_meta_1 = require("./normalize_meta");
-const metadata_index_1 = require("./metadata_index");
-const classify_1 = require("./classify");
-const namespace_1 = require("./namespace");
-const authority_1 = require("./authority");
-const yaml_serialize_1 = require("./yaml_serialize");
-const meta_schema_1 = require("./meta_schema");
-const omit_1 = require("./omit");
-const encoding_1 = require("./encoding");
-const ordering_1 = require("./ordering");
-const archive_formats_1 = require("./archive_formats");
-const durable_write_1 = require("./durable_write");
-const inventory_existing_meta_1 = require("./inventory_existing_meta");
 const inventory_archive_member_1 = require("./inventory_archive_member");
 const inventory_darwin_search_1 = require("./inventory_darwin_search");
+const inventory_existing_meta_1 = require("./inventory_existing_meta");
+const meta_schema_1 = require("./meta_schema");
+const metadata_index_1 = require("./metadata_index");
+const namespace_1 = require("./namespace");
+const normalize_meta_1 = require("./normalize_meta");
+const omit_1 = require("./omit");
+const ordering_1 = require("./ordering");
+const schema_1 = require("./schema");
+const yaml_serialize_1 = require("./yaml_serialize");
 /** Load and validate a canonical meta-schema YAML file. */
 function loadMetaSchema(filePath) {
     return (0, meta_schema_1.toMetaSchema)((0, meta_schema_1.parseCanonicalYaml)(fs.readFileSync(filePath, "utf8")));
@@ -130,12 +130,65 @@ function buildDuplicateClusters(records) {
             paths,
         });
     }
-    return clusters.sort((a, b) => b.wasted_bytes - a.wasted_bytes
-        || b.count - a.count
-        || (0, ordering_1.compareCodePoints)(a.content_hash, b.content_hash));
+    return clusters.sort((a, b) => b.wasted_bytes - a.wasted_bytes ||
+        b.count - a.count ||
+        (0, ordering_1.compareCodePoints)(a.content_hash, b.content_hash));
 }
-const CODE_EXTS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".go", ".rs", ".java", ".c", ".h", ".cpp", ".hpp", ".cc", ".cs", ".rb", ".php", ".swift", ".kt", ".kts", ".scala", ".sh", ".bash", ".zsh", ".lua", ".r", ".jl", ".pl", ".pm", ".dart", ".ex", ".exs", ".ql", ".qls"]);
-const CONFIG_EXTS = new Set([".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", ".properties", ".env", ".lock", ".plist", ".tf", ".tfvars", ".sha256", ".sha1", ".md5"]);
+const CODE_EXTS = new Set([
+    ".ts",
+    ".tsx",
+    ".js",
+    ".jsx",
+    ".mjs",
+    ".cjs",
+    ".py",
+    ".go",
+    ".rs",
+    ".java",
+    ".c",
+    ".h",
+    ".cpp",
+    ".hpp",
+    ".cc",
+    ".cs",
+    ".rb",
+    ".php",
+    ".swift",
+    ".kt",
+    ".kts",
+    ".scala",
+    ".sh",
+    ".bash",
+    ".zsh",
+    ".lua",
+    ".r",
+    ".jl",
+    ".pl",
+    ".pm",
+    ".dart",
+    ".ex",
+    ".exs",
+    ".ql",
+    ".qls",
+]);
+const CONFIG_EXTS = new Set([
+    ".json",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".ini",
+    ".cfg",
+    ".conf",
+    ".properties",
+    ".env",
+    ".lock",
+    ".plist",
+    ".tf",
+    ".tfvars",
+    ".sha256",
+    ".sha1",
+    ".md5",
+]);
 // One owner for "what is an archive": the acquirer's diagnostics and this
 // classifier's `artifact_type` used to disagree about `.zst`, `.lz4`, `.cab`, `.iso`.
 const ARCHIVE_EXTS = archive_formats_1.ARCHIVE_EXTENSIONS;
@@ -147,12 +200,12 @@ const BASENAME_TYPES = {
     ".editorconfig": { type: "config", confidence: 0.85, evidence: "editorconfig file" },
     ".npmignore": { type: "config", confidence: 0.85, evidence: "npm ignore file" },
     ".dockerignore": { type: "config", confidence: 0.85, evidence: "docker ignore file" },
-    "codeowners": { type: "config", confidence: 0.85, evidence: "CODEOWNERS file" },
-    "license": { type: "documentation", confidence: 0.8, evidence: "license file" },
+    codeowners: { type: "config", confidence: 0.85, evidence: "CODEOWNERS file" },
+    license: { type: "documentation", confidence: 0.8, evidence: "license file" },
     "license.md": { type: "documentation", confidence: 0.8, evidence: "license file" },
     "license.txt": { type: "documentation", confidence: 0.8, evidence: "license file" },
-    "notice": { type: "documentation", confidence: 0.75, evidence: "notice file" },
-    "copying": { type: "documentation", confidence: 0.75, evidence: "copying/license file" },
+    notice: { type: "documentation", confidence: 0.75, evidence: "notice file" },
+    copying: { type: "documentation", confidence: 0.75, evidence: "copying/license file" },
     "manifest.sha256": { type: "config", confidence: 0.85, evidence: "checksum manifest" },
 };
 /**
@@ -161,18 +214,52 @@ const BASENAME_TYPES = {
  * rather than a `.txt` document and `Dockerfile` is a build definition rather than an unknown.
  */
 const BASENAME_PATTERNS = [
-    { pattern: /^dockerfile([.\-_]|$)/, type: "config", confidence: 0.85, evidence: "container build definition" },
-    { pattern: /^makefile([.\-_]|$)/, type: "config", confidence: 0.85, evidence: "make build definition" },
-    { pattern: /^requirements([.\-_][a-z0-9]+)*\.txt$/, type: "config", confidence: 0.85, evidence: "dependency manifest" },
-    { pattern: /^\.env([.\-_]|$)/, type: "config", confidence: 0.85, evidence: "environment variable template" },
+    {
+        pattern: /^dockerfile([.\-_]|$)/,
+        type: "config",
+        confidence: 0.85,
+        evidence: "container build definition",
+    },
+    {
+        pattern: /^makefile([.\-_]|$)/,
+        type: "config",
+        confidence: 0.85,
+        evidence: "make build definition",
+    },
+    {
+        pattern: /^requirements([.\-_][a-z0-9]+)*\.txt$/,
+        type: "config",
+        confidence: 0.85,
+        evidence: "dependency manifest",
+    },
+    {
+        pattern: /^\.env([.\-_]|$)/,
+        type: "config",
+        confidence: 0.85,
+        evidence: "environment variable template",
+    },
 ];
 const MIME = {
-    ".md": "text/markdown", ".txt": "text/plain", ".pdf": "application/pdf",
-    ".json": "application/json", ".yaml": "application/yaml", ".yml": "application/yaml",
-    ".csv": "text/csv", ".html": "text/html", ".xml": "application/xml",
-    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
-    ".svg": "image/svg+xml", ".mp4": "video/mp4", ".mp3": "audio/mpeg", ".zip": "application/zip",
-    ".ts": "text/x-typescript", ".js": "text/javascript", ".py": "text/x-python",
+    ".md": "text/markdown",
+    ".txt": "text/plain",
+    ".pdf": "application/pdf",
+    ".json": "application/json",
+    ".yaml": "application/yaml",
+    ".yml": "application/yaml",
+    ".csv": "text/csv",
+    ".html": "text/html",
+    ".xml": "application/xml",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".svg": "image/svg+xml",
+    ".mp4": "video/mp4",
+    ".mp3": "audio/mpeg",
+    ".zip": "application/zip",
+    ".ts": "text/x-typescript",
+    ".js": "text/javascript",
+    ".py": "text/x-python",
 };
 /** Deterministic, evidence-based classification into the ArtifactInventory taxonomy. */
 function classifyInventory(relPath, fileName, ext, isDir) {
@@ -182,7 +269,12 @@ function classifyInventory(relPath, fileName, ext, isDir) {
     const norm = relPath.replace(/\\/g, "/").toLowerCase();
     const e = ext.toLowerCase();
     if (/\.schema\.(json|ya?ml)$/.test(fn) || fn.endsWith(".schema.json"))
-        return { type: "schema", confidence: 0.92, evidence: "schema filename convention", unknowns: [] };
+        return {
+            type: "schema",
+            confidence: 0.92,
+            evidence: "schema filename convention",
+            unknowns: [],
+        };
     if (/\.(test|spec)\.[a-z0-9]+$/.test(fn) || /(^|\/)(tests?|__tests__|spec)\//.test(norm))
         return { type: "test", confidence: 0.85, evidence: "test filename/path", unknowns: [] };
     if (/^prompt[-_]/i.test(fileName) || /(^|\/)prompts?\//.test(norm))
@@ -193,29 +285,55 @@ function classifyInventory(relPath, fileName, ext, isDir) {
         return { type: "research_pdf", confidence: 0.9, evidence: "pdf document", unknowns: [] };
     if (CODE_EXTS.has(e))
         return { type: "code", confidence: 0.9, evidence: `code extension ${e}`, unknowns: [] };
-    if (/(^|\/|[-_])spec([-_.]|s?\/)/.test(norm) && (e === ".md" || e === ".markdown" || e === ".yaml" || e === ".yml"))
+    if (/(^|\/|[-_])spec([-_.]|s?\/)/.test(norm) &&
+        (e === ".md" || e === ".markdown" || e === ".yaml" || e === ".yml"))
         return { type: "spec", confidence: 0.7, evidence: "spec naming", unknowns: [] };
     // Filename-first: an exact well-known name outranks whatever its extension would default to.
     const baseHit = BASENAME_TYPES[fn];
     if (baseHit)
-        return { type: baseHit.type, confidence: baseHit.confidence, evidence: baseHit.evidence, unknowns: [] };
+        return {
+            type: baseHit.type,
+            confidence: baseHit.confidence,
+            evidence: baseHit.evidence,
+            unknowns: [],
+        };
     for (const rule of BASENAME_PATTERNS) {
         if (rule.pattern.test(fn))
-            return { type: rule.type, confidence: rule.confidence, evidence: rule.evidence, unknowns: [] };
+            return {
+                type: rule.type,
+                confidence: rule.confidence,
+                evidence: rule.evidence,
+                unknowns: [],
+            };
     }
     if (CONFIG_EXTS.has(e))
         return { type: "config", confidence: 0.8, evidence: `config extension ${e}`, unknowns: [] };
     if (e === ".md" || e === ".markdown" || e === ".mdx") {
         if (/(^|\/)(research|notes?|papers?)\//.test(norm))
-            return { type: "research_markdown", confidence: 0.75, evidence: "markdown under research/notes path", unknowns: [] };
+            return {
+                type: "research_markdown",
+                confidence: 0.75,
+                evidence: "markdown under research/notes path",
+                unknowns: [],
+            };
         return { type: "documentation", confidence: 0.6, evidence: "markdown document", unknowns: [] };
     }
     if (DOC_EXTS.has(e))
-        return { type: "documentation", confidence: 0.7, evidence: `document extension ${e}`, unknowns: [] };
+        return {
+            type: "documentation",
+            confidence: 0.7,
+            evidence: `document extension ${e}`,
+            unknowns: [],
+        };
     // LICENSE.* (e.g. LICENSE-MIT, LICENSE.Apache-2.0)
     if (/^license([.\-_]|$)/i.test(fn))
         return { type: "documentation", confidence: 0.8, evidence: "license file", unknowns: [] };
-    return { type: "unknown", confidence: 0.2, evidence: "no recognized signal", unknowns: [e ? `unrecognized_extension:${e}` : "no_extension"] };
+    return {
+        type: "unknown",
+        confidence: 0.2,
+        evidence: "no recognized signal",
+        unknowns: [e ? `unrecognized_extension:${e}` : "no_extension"],
+    };
 }
 function idFor(relPath) {
     return "inv-" + (0, extract_1.contentHash)(relPath).slice(0, 16);
@@ -432,9 +550,10 @@ function buildRecord(root, abs, isDir, cfg, kind = isDir ? "directory" : "file",
             size = st.size;
             const isArchive = archive_formats_1.ARCHIVE_EXTENSIONS.has((0, archive_formats_1.archiveExtensionOf)(abs));
             const utf8Body = isArchive ? null : tryReadUtf8Body(abs, size, cfg.hashMaxBytes);
-            hash = utf8Body !== null
-                ? (0, extract_1.contentHash)(utf8Body)
-                : hashRegularFile(abs, fileName, size, cfg.hashMaxBytes, unknowns);
+            hash =
+                utf8Body !== null
+                    ? (0, extract_1.contentHash)(utf8Body)
+                    : hashRegularFile(abs, fileName, size, cfg.hashMaxBytes, unknowns);
         }
     }
     catch (err) {
@@ -488,7 +607,8 @@ function inventoryTree(config) {
     if (purpose !== "annotate" && purpose !== "observe") {
         throw new Error(`inventory: unknown purpose ${JSON.stringify(purpose)}; expected 'annotate' or 'observe'`);
     }
-    if (purpose === "observe" && (!cfg.dryRun || cfg.injectHeaders || cfg.writeSidecars || cfg.folderSidecars)) {
+    if (purpose === "observe" &&
+        (!cfg.dryRun || cfg.injectHeaders || cfg.writeSidecars || cfg.folderSidecars)) {
         throw new Error("inventory: purpose 'observe' is write-free; it requires dryRun with injectHeaders, writeSidecars and folderSidecars all disabled");
     }
     // Absolutize root so absolute_path is truly absolute and relative_path/manifest
@@ -525,11 +645,13 @@ function inventoryTree(config) {
         ignoreDirNames: [...ignoreDirs],
         ...(config.gitIgnored !== undefined ? { gitIgnored: config.gitIgnored } : {}),
     });
-    const omit = outDirRel === null ? baseOmit : {
-        patterns: baseOmit.patterns,
-        sources: baseOmit.sources,
-        shouldOmit: (rel) => rel === outDirRel || baseOmit.shouldOmit(rel),
-    };
+    const omit = outDirRel === null
+        ? baseOmit
+        : {
+            patterns: baseOmit.patterns,
+            sources: baseOmit.sources,
+            shouldOmit: (rel) => rel === outDirRel || baseOmit.shouldOmit(rel),
+        };
     const skippedDirs = [];
     const skippedDetails = [];
     const omittedPaths = [];
@@ -565,7 +687,10 @@ function inventoryTree(config) {
         // Carriers carry the artifact's clocks; the record keeps the observation (ADR-060).
         const clocks = carrierClocks(rec, harvest, contentHashKey);
         if (!schema) {
-            return { clocks, metaObj: annotationFields(rec, harvest, { body, clocks, boundAuthority, boundNamespace }) };
+            return {
+                clocks,
+                metaObj: annotationFields(rec, harvest, { body, clocks, boundAuthority, boundNamespace }),
+            };
         }
         const observed = (0, meta_schema_1.applySchema)((0, schema_1.asRecord)(rec), schema);
         if (observed.missingRequired.length)
@@ -577,7 +702,10 @@ function inventoryTree(config) {
         // flows into inventory.json (otherwise "manifest" in target would be a no-op).
         if ((0, meta_schema_1.targetIncludes)(schema, "manifest"))
             rec.meta = observed.fields;
-        return { clocks, metaObj: omitSmashedClock({ ...sanitizeHarvest(harvest), ...carried.fields }) };
+        return {
+            clocks,
+            metaObj: omitSmashedClock({ ...sanitizeHarvest(harvest), ...carried.fields }),
+        };
     }
     /**
      * Re-observe an archive that annotation just rewrote (RC-053): the record and
@@ -590,7 +718,9 @@ function inventoryTree(config) {
      */
     function reobserveArchive(abs, rec, harvest, observedUnknowns) {
         const fresh = buildRecord(root, abs, false, cfg, "file", harvest);
-        const later = rec.unknowns.slice(observedUnknowns).filter((u) => !u.startsWith("missing_required:"));
+        const later = rec.unknowns
+            .slice(observedUnknowns)
+            .filter((u) => !u.startsWith("missing_required:"));
         rec.size_bytes = fresh.size_bytes;
         rec.modified_at = fresh.modified_at;
         rec.created_at = fresh.created_at;
@@ -637,7 +767,10 @@ function inventoryTree(config) {
         const raw = read.text;
         const strategy = raw === null ? "skip-binary" : (0, comment_1.resolveStrategy)(abs, raw).strategy;
         const isRecognizedArchive = archive_formats_1.ARCHIVE_EXTENSIONS.has((0, archive_formats_1.archiveExtensionOf)(abs));
-        const canHeader = raw !== null && (strategy === "yaml-frontmatter" || strategy === "line-comment" || strategy === "block-comment");
+        const canHeader = raw !== null &&
+            (strategy === "yaml-frontmatter" ||
+                strategy === "line-comment" ||
+                strategy === "block-comment");
         // The member is upserted before any adjacent carrier is written, so a rewrite
         // is re-observed and the sidecar records the archive's final bytes (RC-053).
         if (isRecognizedArchive && annotateArchive(abs, rec, metaObj, harvest, archiveVolatileKeys)) {
@@ -672,9 +805,9 @@ function inventoryTree(config) {
                     writeSidecar(abs, metaObj, rec.unknowns);
             }
         }
-        else if (cfg.writeSidecars
-            && (0, meta_schema_1.targetIncludes)(schema, "sidecar")
-            && (isRecognizedArchive || strategy !== "skip-binary")) {
+        else if (cfg.writeSidecars &&
+            (0, meta_schema_1.targetIncludes)(schema, "sidecar") &&
+            (isRecognizedArchive || strategy !== "skip-binary")) {
             writeSidecar(abs, metaObj, rec.unknowns);
         }
     }
@@ -683,7 +816,18 @@ function inventoryTree(config) {
     }
     const duplicates = buildDuplicateClusters(records);
     const manifestPaths = writeManifests(config.outDir, root, records, typeDistribution, duplicates, cfg.now, cfg.dryRun);
-    return { root, total: records.length, files, folders, typeDistribution, manifestPaths, duplicates, records, skippedDirs, omittedPaths };
+    return {
+        root,
+        total: records.length,
+        files,
+        folders,
+        typeDistribution,
+        manifestPaths,
+        duplicates,
+        records,
+        skippedDirs,
+        omittedPaths,
+    };
 }
 // Decide text-vs-binary from the WHOLE file, then read only the first 8 KB of a
 // file that qualifies — enough to pick a strategy without loading a large file
@@ -744,7 +888,9 @@ function inspectExistingSidecar(p, codes) {
     }
     catch (err) {
         const code = portableErrorCode(err);
-        return code === "ENOENT" ? { state: "absent" } : { state: "held", diagnostic: `${codes.readFailed}:${code}` };
+        return code === "ENOENT"
+            ? { state: "absent" }
+            : { state: "held", diagnostic: `${codes.readFailed}:${code}` };
     }
     if (!st.isFile())
         return { state: "non_regular" };
@@ -828,8 +974,9 @@ function writeFolderSidecar(dir, metaObj, unknowns) {
         // A folder has no content anchor to carry clocks against, and every write
         // inside it moves its mtime. A tool-format sidecar that differs only in the
         // filesystem clocks is kept, as an archive member is (ADR-049 / ADR-060).
-        if (existing.parsed !== null
-            && serializeYaml(withoutFolderClocks(existing.parsed)) === serializeYaml(withoutFolderClocks(metaObj))) {
+        if (existing.parsed !== null &&
+            serializeYaml(withoutFolderClocks(existing.parsed)) ===
+                serializeYaml(withoutFolderClocks(metaObj))) {
             return;
         }
     }
@@ -925,7 +1072,9 @@ function stripSmashedClockFromWritten(abs) {
         catch {
             return false;
         }
-        if (typeof parsed !== "object" || parsed === null || !Object.prototype.hasOwnProperty.call(parsed, "created_or_detected_at")) {
+        if (typeof parsed !== "object" ||
+            parsed === null ||
+            !Object.prototype.hasOwnProperty.call(parsed, "created_or_detected_at")) {
             return false;
         }
         const stripped = omitSmashedClock(parsed);
@@ -973,13 +1122,21 @@ const TRAILING_ANNOTATION_KEYS = [
     "inspected_at",
 ];
 const ARTIFACT_TYPE_VALUES = new Set([
-    "skill", "playbook", "kernel", "context", "prompt",
-    "doctrine", "test", "script", "source", "unknown",
+    "skill",
+    "playbook",
+    "kernel",
+    "context",
+    "prompt",
+    "doctrine",
+    "test",
+    "script",
+    "source",
+    "unknown",
 ]);
 const SHARING_SCOPE_VALUES = new Set(["private", "shared", "agnostic"]);
 function isLegacyPlaceholder(key, value) {
-    return Object.prototype.hasOwnProperty.call(LEGACY_INVENTORY_PLACEHOLDERS, key)
-        && Object.is(LEGACY_INVENTORY_PLACEHOLDERS[key], value);
+    return (Object.prototype.hasOwnProperty.call(LEGACY_INVENTORY_PLACEHOLDERS, key) &&
+        Object.is(LEGACY_INVENTORY_PLACEHOLDERS[key], value));
 }
 function harvestedOperatorString(value, key) {
     if (typeof value !== "string" || value.trim() === "")
@@ -1004,7 +1161,9 @@ function asSharingScope(value) {
 }
 function annotationFields(rec, harvest, ctx) {
     const rawHarvest = sanitizeHarvest(harvest);
-    const harvestedTitle = typeof rawHarvest.title === "string" && rawHarvest.title.trim() ? rawHarvest.title : rec.file_name;
+    const harvestedTitle = typeof rawHarvest.title === "string" && rawHarvest.title.trim()
+        ? rawHarvest.title
+        : rec.file_name;
     const harvestedType = asArtifactType(rawHarvest.artifact_type);
     const harvestedNamespace = harvestedOperatorString(rawHarvest.namespace, "namespace");
     const harvestedAuthority = harvestedOperatorString(rawHarvest.authority, "authority");
@@ -1022,7 +1181,9 @@ function annotationFields(rec, harvest, ctx) {
     for (const key of TRAILING_ANNOTATION_KEYS)
         delete kept[key];
     const derivable = ctx.body !== null;
-    const classified = derivable ? (0, classify_1.classify)(rec.relative_path, ctx.body ?? "", "none").artifactType : undefined;
+    const classified = derivable
+        ? (0, classify_1.classify)(rec.relative_path, ctx.body ?? "", "none").artifactType
+        : undefined;
     const artifactType = harvestedType ?? classified;
     const tax = artifactType !== undefined
         ? (0, normalize_meta_1.projectPrimitiveTaxonomy)(artifactType)
@@ -1033,11 +1194,11 @@ function annotationFields(rec, harvest, ctx) {
             retrievable: schema_1.UNKNOWN,
             injectable: schema_1.UNKNOWN,
         };
-    const sharingScope = harvestedScope
-        ?? (derivable
+    const sharingScope = harvestedScope ??
+        (derivable
             ? (0, namespace_1.resolveNamespace)(rec.relative_path, { namespace: "l9" }, artifactType).sharingScope
-            : undefined)
-        ?? schema_1.UNKNOWN;
+            : undefined) ??
+        schema_1.UNKNOWN;
     const tokens = derivable && ctx.body !== null ? (0, extract_1.estimateTokens)(ctx.body) : schema_1.UNKNOWN;
     return omitSmashedClock({
         artifact_type: tax.artifact_type,
@@ -1076,7 +1237,11 @@ function harvestedStringList(value) {
     return [];
 }
 /** Record fields whose value the member upsert itself changes (RC-053, G05). */
-const ARCHIVE_VOLATILE_SOURCES = new Set(["content_hash", "created_at", "modified_at"]);
+const ARCHIVE_VOLATILE_SOURCES = new Set([
+    "content_hash",
+    "created_at",
+    "modified_at",
+]);
 /**
  * Upsert the archive's root member and project Darwin search metadata.
  * Returns whether the archive's bytes were replaced, so the caller can
@@ -1122,20 +1287,63 @@ function writeManifests(outDir, root, records, dist, duplicates, now, _dryRun) {
     const csvPath = path.join(outDir, "inventory.csv");
     const mdPath = path.join(outDir, "inventory.md");
     const dupPath = path.join(outDir, "inventory-duplicates.json");
-    fs.writeFileSync(jsonPath, JSON.stringify({ generatedAt: now, root, total: records.length, typeDistribution: dist, duplicateClusters: duplicates.length, records }, null, 2), "utf8");
+    fs.writeFileSync(jsonPath, JSON.stringify({
+        generatedAt: now,
+        root,
+        total: records.length,
+        typeDistribution: dist,
+        duplicateClusters: duplicates.length,
+        records,
+    }, null, 2), "utf8");
     const totalWasted = duplicates.reduce((a, d) => a + d.wasted_bytes, 0);
-    fs.writeFileSync(dupPath, JSON.stringify({ generatedAt: now, root, clusters: duplicates.length, totalWastedBytes: totalWasted, duplicates }, null, 2), "utf8");
-    const cols = ["relative_path", "file_name", "extension", "artifact_type", "size_bytes", "created_at", "modified_at", "inspected_at", "content_hash", "depth", "classification_confidence", "evidence_excerpt", "unknowns"];
+    fs.writeFileSync(dupPath, JSON.stringify({
+        generatedAt: now,
+        root,
+        clusters: duplicates.length,
+        totalWastedBytes: totalWasted,
+        duplicates,
+    }, null, 2), "utf8");
+    const cols = [
+        "relative_path",
+        "file_name",
+        "extension",
+        "artifact_type",
+        "size_bytes",
+        "created_at",
+        "modified_at",
+        "inspected_at",
+        "content_hash",
+        "depth",
+        "classification_confidence",
+        "evidence_excerpt",
+        "unknowns",
+    ];
     const rows = [cols.join(",")];
     for (const r of records)
-        rows.push(cols.map((c) => csvCell(Array.isArray(r[c]) ? r[c].join("; ") : r[c])).join(","));
+        rows.push(cols
+            .map((c) => csvCell(Array.isArray(r[c]) ? r[c].join("; ") : r[c]))
+            .join(","));
     fs.writeFileSync(csvPath, rows.join("\n") + "\n", "utf8");
-    const md = [`# Inventory — ${root}`, ``, `Generated: ${now}  |  Total entries: ${records.length}  |  Duplicate clusters: ${duplicates.length}  |  Repeated content: ${totalWasted} bytes`, ``, `## Type distribution`, ``, ...Object.entries(dist).sort((a, b) => b[1] - a[1]).map(([k, v]) => `- **${k}**: ${v}`)];
+    const md = [
+        `# Inventory — ${root}`,
+        ``,
+        `Generated: ${now}  |  Total entries: ${records.length}  |  Duplicate clusters: ${duplicates.length}  |  Repeated content: ${totalWasted} bytes`,
+        ``,
+        `## Type distribution`,
+        ``,
+        ...Object.entries(dist)
+            .sort((a, b) => b[1] - a[1])
+            .map(([k, v]) => `- **${k}**: ${v}`),
+    ];
     if (duplicates.length) {
         md.push(``, `## Duplicate clusters (same carrier-free content)`, ``, `Files sharing a content_hash across the tree. For text files the hash excludes the metadata carrier — the L9 header and any YAML front matter (ADR-051, ADR-065) — so members have the same carrier-free content, while their headers or front matter may differ. Compare that metadata before removing a copy. Read-only — nothing is deleted.`, ``, `| # | count | repeated bytes | keeper | other paths |`, `|---|---|---|---|---|`);
-        duplicates.slice(0, 100).forEach((d, i) => { md.push(`| ${i + 1} | ${d.count} | ${d.wasted_bytes} | \`${d.keeper}\` | ${d.paths.filter((p) => p !== d.keeper).join("<br>")} |`); });
+        duplicates.slice(0, 100).forEach((d, i) => {
+            md.push(`| ${i + 1} | ${d.count} | ${d.wasted_bytes} | \`${d.keeper}\` | ${d.paths.filter((p) => p !== d.keeper).join("<br>")} |`);
+        });
     }
-    md.push(``, `## Entries`, ``, `| path | type | conf | size | evidence |`, `|---|---|---|---|---|`, ...records.slice(0, 500).map((r) => `| ${r.relative_path} | ${r.artifact_type} | ${r.classification_confidence} | ${r.size_bytes ?? ""} | ${r.evidence_excerpt ?? ""} |`));
+    md.push(``, `## Entries`, ``, `| path | type | conf | size | evidence |`, `|---|---|---|---|---|`, ...records
+        .slice(0, 500)
+        .map((r) => `| ${r.relative_path} | ${r.artifact_type} | ${r.classification_confidence} | ${r.size_bytes ?? ""} | ${r.evidence_excerpt ?? ""} |`));
     if (records.length > 500)
         md.push(``, `_(${records.length - 500} more entries in inventory.json / inventory.csv)_`);
     fs.writeFileSync(mdPath, md.join("\n") + "\n", "utf8");

@@ -153,14 +153,19 @@ function entryKindFor(versionMadeBy, externalAttributes, name) {
             return { kind: byName, unixMode: mode };
         if (mode !== 0) {
             switch (mode & S_IFMT) {
-                case S_IFLNK: return { kind: "symlink", unixMode: mode };
-                case S_IFDIR: return { kind: "directory", unixMode: mode };
-                case S_IFREG: return { kind: "file", unixMode: mode };
+                case S_IFLNK:
+                    return { kind: "symlink", unixMode: mode };
+                case S_IFDIR:
+                    return { kind: "directory", unixMode: mode };
+                case S_IFREG:
+                    return { kind: "file", unixMode: mode };
                 case S_IFIFO:
                 case S_IFCHR:
                 case S_IFBLK:
-                case S_IFSOCK: return { kind: "special", unixMode: mode };
-                default: return { kind: "unknown", unixMode: mode };
+                case S_IFSOCK:
+                    return { kind: "special", unixMode: mode };
+                default:
+                    return { kind: "unknown", unixMode: mode };
             }
         }
     }
@@ -239,9 +244,9 @@ function locateEocd(fd, fileSize) {
     if (diskNumber !== 0 || centralDirectoryDisk !== 0 || entriesOnDisk !== classic.entryCount) {
         throw new ZipFormatError("multi-disk (split) ZIP archives are not supported");
     }
-    const needsZip64 = classic.entryCount === U16_MAX
-        || classic.centralDirectorySize === U32_MAX
-        || classic.centralDirectoryOffset === U32_MAX;
+    const needsZip64 = classic.entryCount === U16_MAX ||
+        classic.centralDirectorySize === U32_MAX ||
+        classic.centralDirectoryOffset === U32_MAX;
     const locatorOffset = eocdOffset - ZIP64_LOCATOR_SIZE;
     const hasLocator = locatorOffset >= 0 && tail.readUInt32LE(locatorOffset) === ZIP64_LOCATOR_SIGNATURE;
     if (needsZip64 && !hasLocator) {
@@ -373,11 +378,15 @@ function assertDataExtentsPrecedeCentralDirectory(fd, entries, centralDirectoryO
     for (const entry of entries) {
         // The fixed header alone already overruns: refuse without reading at an
         // offset the archive cannot contain.
-        if (entry.localHeaderOffset + LOCAL_FIXED_SIZE + entry.compressedSize > centralDirectoryOffset) {
+        if (entry.localHeaderOffset + LOCAL_FIXED_SIZE + entry.compressedSize >
+            centralDirectoryOffset) {
             throw refuse(entry);
         }
         const header = readExact(fd, LOCAL_FIXED_SIZE, entry.localHeaderOffset);
-        const dataStart = entry.localHeaderOffset + LOCAL_FIXED_SIZE + header.readUInt16LE(26) + header.readUInt16LE(28);
+        const dataStart = entry.localHeaderOffset +
+            LOCAL_FIXED_SIZE +
+            header.readUInt16LE(26) +
+            header.readUInt16LE(28);
         if (dataStart + entry.compressedSize > centralDirectoryOffset)
             throw refuse(entry);
     }
@@ -523,7 +532,8 @@ function memberDataStart(fd, entry) {
 }
 /** Read one member and hand its bytes to `sink` in chunks. */
 function streamZipMember(archivePath, entry, limits, sink) {
-    if (entry.compressionMethod !== exports.COMPRESSION_STORED && entry.compressionMethod !== exports.COMPRESSION_DEFLATE) {
+    if (entry.compressionMethod !== exports.COMPRESSION_STORED &&
+        entry.compressionMethod !== exports.COMPRESSION_DEFLATE) {
         throw new ZipFormatError(`unsupported compression method ${entry.compressionMethod} for ${entry.name}`);
     }
     if (limits.maxUncompressedBytes <= 0) {
@@ -541,7 +551,8 @@ function streamZipMember(archivePath, entry, limits, sink) {
         const emit = (chunk) => {
             produced += chunk.length;
             if (produced > limit) {
-                throw produced > limits.maxUncompressedBytes || entry.compressedSize > limits.maxUncompressedBytes
+                throw produced > limits.maxUncompressedBytes ||
+                    entry.compressedSize > limits.maxUncompressedBytes
                     ? ceilingError(entry, limits.maxUncompressedBytes)
                     : overDeclaredError(entry);
             }

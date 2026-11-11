@@ -145,7 +145,12 @@ function probeFileEncoding(absolutePath, chunkBytes = exports.ENCODING_CHUNK_BYT
 function probeBufferEncoding(bytes) {
     const hasBom = bytes.length >= BOM.length && bytes.subarray(0, BOM.length).equals(BOM);
     if (bytes.includes(0)) {
-        return { status: "binary", reason: "NUL byte detected", sizeBytes: bytes.length, hasBom: false };
+        return {
+            status: "binary",
+            reason: "NUL byte detected",
+            sizeBytes: bytes.length,
+            hasBom: false,
+        };
     }
     try {
         new TextDecoder("utf-8", { fatal: true }).decode(bytes);

@@ -22,10 +22,10 @@
 //     were found, never which one to build. That boundary belongs to
 //     `corpus_readiness.ts`, and this report stays on the same side of it.
 import { canonicalCorpusJson } from "./corpus_analysis";
-import { compareCodePoints } from "./ordering";
 import type { CorpusCacheStats } from "./corpus_cache";
 import type { CoverageRatio, FormatCount } from "./corpus_coverage";
 import type { CorpusScanResult } from "./corpus_scan";
+import { compareCodePoints } from "./ordering";
 
 /**
  * Schema of the real-corpus qualification report.
@@ -198,9 +198,9 @@ export interface CorpusQualificationReport {
 }
 
 export const QUALIFICATION_NO_PRIORITY_STATEMENT =
-  "This report measures one run over one corpus. Every field in it is a count, a ratio or "
-  + "an identity. It contains no priority, no ranking and no recommendation about any "
-  + "artifact, candidate or body of work it describes.";
+  "This report measures one run over one corpus. Every field in it is a count, a ratio or " +
+  "an identity. It contains no priority, no ranking and no recommendation about any " +
+  "artifact, candidate or body of work it describes.";
 
 export interface CorpusQualificationInput {
   /** The run made with an empty cache. */
@@ -306,7 +306,9 @@ export function buildCorpusQualificationReport(
     files_scanned: cold.scanned.files,
     cache_hit_ratio_second_run: secondRunCache(warm.cacheStats),
     decoder_coverage: {
-      decoder_profiles: [...cold.snapshot.analysis.document_decoder_profiles].sort(compareCodePoints),
+      decoder_profiles: [...cold.snapshot.analysis.document_decoder_profiles].sort(
+        compareCodePoints,
+      ),
       normalized_document: coverage.normalized_document_coverage,
       interpretation_enabled: coverage.interpretation_enabled,
       interpretation: coverage.interpretation_coverage,

@@ -19,8 +19,8 @@
 
 export interface MetaFieldDef {
   name: string;
-  source?: string;          // an InventoryRecord field name (e.g. artifact_id, artifact_type)
-  default?: unknown;        // literal fallback
+  source?: string; // an InventoryRecord field name (e.g. artifact_id, artifact_type)
+  default?: unknown; // literal fallback
   required?: boolean;
 }
 
@@ -28,7 +28,7 @@ export interface MetaSchema {
   schema_id: string;
   version: string;
   description?: string;
-  target: string[];         // any of: file_header, sidecar, manifest
+  target: string[]; // any of: file_header, sidecar, manifest
   fields: MetaFieldDef[];
 }
 
@@ -47,21 +47,23 @@ function unescapeDoubleQuotedChar(c: string): string {
 
 const SCALAR = (raw: string): unknown => {
   const s = raw.trim();
-  if (s === "" ) return "";
+  if (s === "") return "";
   if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) {
     // Double-quoted: unescape the standard YAML escape sequences so values like
     // Windows paths ("C:\\tmp") or embedded \n/\" round-trip correctly.
     // `\xNN` / `\uXXXX` / `\UXXXXXXXX` are the standard YAML escapes the serializer
     // uses to keep carrier-forbidden sequences out of host comments (ADR-057).
-    return s.slice(1, -1).replace(
-      /\\(?:x([0-9A-Fa-f]{2})|u([0-9A-Fa-f]{4})|U([0-9A-Fa-f]{8})|(["\\/nrt]))/g,
-      (_m: string, x?: string, u?: string, big?: string, c?: string) => {
-        const hex = x ?? u ?? big;
-        if (hex === undefined) return unescapeDoubleQuotedChar(c ?? "");
-        const code = Number.parseInt(hex, 16);
-        return code > 0x10ffff ? _m : String.fromCodePoint(code);
-      },
-    );
+    return s
+      .slice(1, -1)
+      .replace(
+        /\\(?:x([0-9A-Fa-f]{2})|u([0-9A-Fa-f]{4})|U([0-9A-Fa-f]{8})|(["\\/nrt]))/g,
+        (_m: string, x?: string, u?: string, big?: string, c?: string) => {
+          const hex = x ?? u ?? big;
+          if (hex === undefined) return unescapeDoubleQuotedChar(c ?? "");
+          const code = Number.parseInt(hex, 16);
+          return code > 0x10ffff ? _m : String.fromCodePoint(code);
+        },
+      );
   }
   if (s.length >= 2 && s.startsWith("'") && s.endsWith("'")) {
     // Single-quoted: the only escape is a doubled quote ('').
@@ -75,7 +77,12 @@ const SCALAR = (raw: string): unknown => {
   if (/^-?\d+$/.test(s)) return Number.parseInt(s, 10);
   if (/^-?\d*\.\d+$/.test(s)) return Number.parseFloat(s);
   if (s.startsWith("[") && s.endsWith("]")) {
-    return s.slice(1, -1).split(",").map((x) => x.trim()).filter((x) => x !== "").map(SCALAR);
+    return s
+      .slice(1, -1)
+      .split(",")
+      .map((x) => x.trim())
+      .filter((x) => x !== "")
+      .map(SCALAR);
   }
   return s;
 };
@@ -143,7 +150,8 @@ const strip = (line: string): string => {
  * list of scalars or a list of maps (2-space indented). Not a general YAML parser.
  */
 export function parseCanonicalYaml(text: string): Record<string, unknown> {
-  const lines = text.split("\n")
+  const lines = text
+    .split("\n")
     .map(strip)
     .filter((l) => l.trim() !== "" && !/^\s*#/.test(l));
   // Object.create(null): parsed keys come from operator-supplied YAML, so a
@@ -154,18 +162,31 @@ export function parseCanonicalYaml(text: string): Record<string, unknown> {
 
   while (i < lines.length) {
     const line = lines[i];
-    if (indentOf(line) !== 0) { i++; continue; }
+    if (indentOf(line) !== 0) {
+      i++;
+      continue;
+    }
     const m = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(line);
-    if (!m) { i++; continue; }
+    if (!m) {
+      i++;
+      continue;
+    }
     const key = m[1];
     const rest = m[2];
 
-    if (rest !== "") { root[key] = SCALAR(rest); i++; continue; }
+    if (rest !== "") {
+      root[key] = SCALAR(rest);
+      i++;
+      continue;
+    }
 
     // Block value: gather indented lines
     i++;
     const block: string[] = [];
-    while (i < lines.length && indentOf(lines[i]) > 0) { block.push(lines[i]); i++; }
+    while (i < lines.length && indentOf(lines[i]) > 0) {
+      block.push(lines[i]);
+      i++;
+    }
     root[key] = parseBlock(block);
   }
   return root;
@@ -186,7 +207,8 @@ function parseBlock(block: string[]): unknown {
       }
       const mm = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(l.trim());
       if (mm) {
-        if (mm[2] === "") throw new Error(`canonical YAML: nested map under '${mm[1]}' is not supported`);
+        if (mm[2] === "")
+          throw new Error(`canonical YAML: nested map under '${mm[1]}' is not supported`);
         map[mm[1]] = SCALAR(mm[2]);
       }
     }
@@ -198,9 +220,9 @@ function parseBlock(block: string[]): unknown {
   for (const l of block) {
     if (indentOf(l) === base && l.slice(base).startsWith("- ")) {
       if (cur) items.push(parseItem(cur));
-      cur = [l.slice(base + 2)];               // first inline segment of the item
+      cur = [l.slice(base + 2)]; // first inline segment of the item
     } else if (cur) {
-      cur.push(l.trim());                        // continuation lines of the current map item
+      cur.push(l.trim()); // continuation lines of the current map item
     }
   }
   if (cur) items.push(parseItem(cur));
@@ -223,12 +245,16 @@ function parseItem(seg: string[]): unknown {
 
 /** Validate parsed object into a MetaSchema; throws on structural error. */
 export function toMetaSchema(obj: Record<string, unknown>): MetaSchema {
-  if (!obj.schema_id || typeof obj.schema_id !== "string") throw new Error("meta-schema: missing string 'schema_id'");
-  if (!Array.isArray(obj.fields) || obj.fields.length === 0) throw new Error("meta-schema: 'fields' must be a non-empty list");
+  if (!obj.schema_id || typeof obj.schema_id !== "string")
+    throw new Error("meta-schema: missing string 'schema_id'");
+  if (!Array.isArray(obj.fields) || obj.fields.length === 0)
+    throw new Error("meta-schema: 'fields' must be a non-empty list");
   const fields: MetaFieldDef[] = obj.fields.map((f, idx) => {
-    if (typeof f !== "object" || f === null) throw new Error(`meta-schema: fields[${idx}] must be a map`);
+    if (typeof f !== "object" || f === null)
+      throw new Error(`meta-schema: fields[${idx}] must be a map`);
     const fd = f as Record<string, unknown>;
-    if (!fd.name || typeof fd.name !== "string") throw new Error(`meta-schema: fields[${idx}] missing 'name'`);
+    if (!fd.name || typeof fd.name !== "string")
+      throw new Error(`meta-schema: fields[${idx}] missing 'name'`);
     return {
       name: fd.name,
       source: typeof fd.source === "string" ? fd.source : undefined,
@@ -236,7 +262,9 @@ export function toMetaSchema(obj: Record<string, unknown>): MetaSchema {
       required: fd.required === true,
     };
   });
-  const target = Array.isArray(obj.target) ? (obj.target as unknown[]).map(String) : ["file_header", "sidecar", "manifest"];
+  const target = Array.isArray(obj.target)
+    ? (obj.target as unknown[]).map(String)
+    : ["file_header", "sidecar", "manifest"];
   return {
     schema_id: obj.schema_id,
     version: typeof obj.version === "string" ? obj.version : "0.0.0",
@@ -263,6 +291,9 @@ export function applySchema(record: Record<string, unknown>, schema: MetaSchema)
   return { fields, missingRequired };
 }
 
-export function targetIncludes(schema: MetaSchema | undefined, t: "file_header" | "sidecar" | "manifest"): boolean {
+export function targetIncludes(
+  schema: MetaSchema | undefined,
+  t: "file_header" | "sidecar" | "manifest",
+): boolean {
   return !schema || schema.target.includes(t);
 }

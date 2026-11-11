@@ -28,9 +28,12 @@
 // resolves no authority. A selected `decision_statement` from a record that
 // declared itself `Accepted` is still a source declaration.
 import { canonicalCorpusJson } from "./corpus_analysis";
-import type { ArchitectureDocumentRole, ArchitectureEvidenceRecord } from "./corpus_architecture_evidence";
+import type {
+  ArchitectureDocumentRole,
+  ArchitectureEvidenceRecord,
+} from "./corpus_architecture_evidence";
 import { ARCHITECTURE_STATEMENT_CLASSES } from "./extractors/architecture_statements";
-import { MAX_EXCERPT_LENGTH, boundExcerpt } from "./interpretation";
+import { boundExcerpt, MAX_EXCERPT_LENGTH } from "./interpretation";
 import { compareCodePoints } from "./ordering";
 import { semanticHash, sha256TextPrefixed, stableId } from "./repository_model";
 
@@ -44,13 +47,13 @@ export const FIELD_SELECTION_POLICY_ID = "local-source-field-selection/v1";
 export const FIELD_SELECTION_POLICY_VERSION = "1.0.0";
 
 export const FIELD_SELECTION_STATEMENT =
-  "A derived view over this generation's own evidence. Every selected value is an existing "
-  + "record, cited by the id its payload gave it; nothing was removed from, rewritten in or "
-  + "re-ranked within any payload. Selection follows the declared run intent, the document's "
-  + "source-declared roles, which fields carry a value, whether a value is new to the view, and "
-  + "the stated budget. Roles and statuses are what documents declared about themselves, not "
-  + "verified authority. The view is written to the external generation only; no observed file "
-  + "was modified.";
+  "A derived view over this generation's own evidence. Every selected value is an existing " +
+  "record, cited by the id its payload gave it; nothing was removed from, rewritten in or " +
+  "re-ranked within any payload. Selection follows the declared run intent, the document's " +
+  "source-declared roles, which fields carry a value, whether a value is new to the view, and " +
+  "the stated budget. Roles and statuses are what documents declared about themselves, not " +
+  "verified authority. The view is written to the external generation only; no observed file " +
+  "was modified.";
 
 /** The run intents the policy knows. Closed. */
 export const FIELD_SELECTION_INTENTS = [
@@ -62,7 +65,10 @@ export const FIELD_SELECTION_INTENTS = [
 export type FieldSelectionIntent = (typeof FIELD_SELECTION_INTENTS)[number];
 
 /** Where a field's values come from. Each is a payload the generation already holds. */
-export type FieldSource = "architecture_evidence" | "document_work_signals" | "repository_model_packet";
+export type FieldSource =
+  | "architecture_evidence"
+  | "document_work_signals"
+  | "repository_model_packet";
 
 /**
  * The field vocabulary: every field is an existing evidence field. Statement
@@ -104,21 +110,48 @@ export const FIELD_DISPOSITIONS = [
 export type FieldDisposition = (typeof FIELD_DISPOSITIONS)[number];
 
 /** The intent table: the fields a reader with this intent asks for, core first. */
-const INTENT_FIELDS: Readonly<Record<FieldSelectionIntent, { core: readonly FieldSelectionField[]; supporting: readonly FieldSelectionField[] }>> = {
+const INTENT_FIELDS: Readonly<
+  Record<
+    FieldSelectionIntent,
+    { core: readonly FieldSelectionField[]; supporting: readonly FieldSelectionField[] }
+  >
+> = {
   architecture_review: {
     core: ["statement.decision_statement", "statement.constraint", "declaration.declared_status"],
-    supporting: ["statement.assumption", "statement.intent", "work.status", "work.superseded_by", "declaration.decision_record_title"],
+    supporting: [
+      "statement.assumption",
+      "statement.intent",
+      "work.status",
+      "work.superseded_by",
+      "declaration.decision_record_title",
+    ],
   },
   design_exploration: {
     core: ["statement.intent", "statement.open_question", "statement.assumption"],
-    supporting: ["statement.constraint", "work.references", "work.status", "statement.decision_statement"],
+    supporting: [
+      "statement.constraint",
+      "work.references",
+      "work.status",
+      "statement.decision_statement",
+    ],
   },
   development_handoff: {
     core: ["work.task.open", "work.blocked_by", "statement.open_question", "statement.constraint"],
-    supporting: ["work.depends_on", "work.status", "statement.decision_statement", "work.milestone"],
+    supporting: [
+      "work.depends_on",
+      "work.status",
+      "statement.decision_statement",
+      "work.milestone",
+    ],
   },
   history_audit: {
-    core: ["declaration.declared_status", "work.status", "work.superseded_by", "work.supersedes", "statement.decision_statement"],
+    core: [
+      "declaration.declared_status",
+      "work.status",
+      "work.superseded_by",
+      "work.supersedes",
+      "statement.decision_statement",
+    ],
     supporting: ["statement.intent", "document.title", "work.references"],
   },
 };
@@ -128,15 +161,16 @@ const INTENT_FIELDS: Readonly<Record<FieldSelectionIntent, { core: readonly Fiel
  * intent. This is what makes the view adapt to the document: a historical record
  * surfaces its successor under any intent, a handoff its open tasks.
  */
-const ROLE_PROMOTIONS: Readonly<Record<ArchitectureDocumentRole, readonly FieldSelectionField[]>> = {
-  decision_record: ["statement.decision_statement", "declaration.declared_status"],
-  development_handoff: ["work.task.open", "work.blocked_by", "work.depends_on"],
-  historical_record: ["work.superseded_by", "declaration.declared_status", "work.status"],
-  research: ["statement.assumption", "statement.open_question"],
-  specification: ["statement.constraint"],
-  unknown: [],
-  wip_proposal: ["statement.open_question", "statement.assumption", "work.status"],
-};
+const ROLE_PROMOTIONS: Readonly<Record<ArchitectureDocumentRole, readonly FieldSelectionField[]>> =
+  {
+    decision_record: ["statement.decision_statement", "declaration.declared_status"],
+    development_handoff: ["work.task.open", "work.blocked_by", "work.depends_on"],
+    historical_record: ["work.superseded_by", "declaration.declared_status", "work.status"],
+    research: ["statement.assumption", "statement.open_question"],
+    specification: ["statement.constraint"],
+    unknown: [],
+    wip_proposal: ["statement.open_question", "statement.assumption", "work.status"],
+  };
 
 /** The output bound, per document. Part of the profile hash. */
 export interface FieldSelectionBudget {
@@ -159,11 +193,13 @@ export const FIELD_SELECTION_CARRIER = {
   refused: [
     {
       carrier: "central_manifest",
-      reason: "a central manifest is written into the observed repository; local-source never writes under an observed root (ADR-036)",
+      reason:
+        "a central manifest is written into the observed repository; local-source never writes under an observed root (ADR-036)",
     },
     {
       carrier: "inline_managed",
-      reason: "an inline carrier rewrites the observed file; local-source never modifies an observed file (ADR-036)",
+      reason:
+        "an inline carrier rewrites the observed file; local-source never modifies an observed file (ADR-036)",
     },
   ],
 } as const;
@@ -198,10 +234,12 @@ export function fieldSelectionPolicy(): Record<string, unknown> {
     role_promotions: Object.keys(ROLE_PROMOTIONS)
       .sort(compareCodePoints)
       .map((role) => [role, [...ROLE_PROMOTIONS[role as ArchitectureDocumentRole]]]),
-    order: "core (intent order, then role promotions in role order) > supporting > rest by field name",
+    order:
+      "core (intent order, then role promotions in role order) > supporting > rest by field name",
     redundancy: {
       value_identity: "trimmed, lowercased, whitespace-collapsed text",
-      exact_duplicate_non_representative: "every available field redundant with the cluster representative",
+      exact_duplicate_non_representative:
+        "every available field redundant with the cluster representative",
       near_duplicates: "reported, never suppressing (they are candidates, not facts)",
     },
     value_bound_characters: MAX_EXCERPT_LENGTH,
@@ -220,11 +258,18 @@ export function fieldSelectionPolicyHash(): string {
  * selected, so two runs with different intents or bounds never share an
  * analysis identity.
  */
-export function fieldSelectionProfileHash(intent: FieldSelectionIntent, budget: FieldSelectionBudget): string {
+export function fieldSelectionProfileHash(
+  intent: FieldSelectionIntent,
+  budget: FieldSelectionBudget,
+): string {
   return semanticHash({
     policy_hash: fieldSelectionPolicyHash(),
     intent,
-    budget: { max_fields: budget.maxFields, max_values_per_field: budget.maxValuesPerField, max_characters: budget.maxCharacters },
+    budget: {
+      max_fields: budget.maxFields,
+      max_values_per_field: budget.maxValuesPerField,
+      max_characters: budget.maxCharacters,
+    },
   });
 }
 
@@ -246,7 +291,12 @@ export interface FieldSelectionDocumentInput {
   /** Architecture-evidence records of this document (they carry its roles). */
   architectureRecords: readonly ArchitectureEvidenceRecord[];
   /** Existing work assertions about this document, from the packet or the block signals. */
-  workValues: readonly { record_id: string; source: FieldSource; predicate: string; object: string }[];
+  workValues: readonly {
+    record_id: string;
+    source: FieldSource;
+    predicate: string;
+    object: string;
+  }[];
   exactDuplicate: { clusterId: string; representativeArtifactId: string } | null;
   nearDuplicateCandidateIds: readonly string[];
 }
@@ -309,7 +359,14 @@ export interface FieldSelectionManifest {
   /** Documents that carry any statement or work value: every one has a record. */
   record_count: number;
   selected_field_count: number;
-  by_field: { field: string; selected: number; redundant: number; omitted_by_budget: number; unavailable: number; not_selected_for_intent: number }[];
+  by_field: {
+    field: string;
+    selected: number;
+    redundant: number;
+    omitted_by_budget: number;
+    unavailable: number;
+    not_selected_for_intent: number;
+  }[];
   payload_byte_length: number;
   payload_artifact_hash: string;
   payload_semantic_hash: string;
@@ -347,7 +404,9 @@ function locatorPosition(locator: Record<string, unknown>): number {
 }
 
 /** Every value each field could surface for one document, in a fixed order. */
-function candidatesFor(document: FieldSelectionDocumentInput): Map<FieldSelectionField, FieldValueCandidate[]> {
+function candidatesFor(
+  document: FieldSelectionDocumentInput,
+): Map<FieldSelectionField, FieldValueCandidate[]> {
   const out = new Map<FieldSelectionField, FieldValueCandidate[]>();
   const add = (field: FieldSelectionField, candidate: FieldValueCandidate): void => {
     const list = out.get(field) ?? [];
@@ -362,7 +421,8 @@ function candidatesFor(document: FieldSelectionDocumentInput): Map<FieldSelectio
       position: locatorPosition(record.structured_locator),
     });
     for (const declaration of record.work_context.declarations ?? []) {
-      const field = `declaration.${declaration.predicate.replace(/^document\./, "")}` as FieldSelectionField;
+      const field =
+        `declaration.${declaration.predicate.replace(/^document\./, "")}` as FieldSelectionField;
       if (!(FIELD_SELECTION_FIELDS as readonly string[]).includes(field)) continue;
       add(field, {
         record_id: declaration.declaration_id,
@@ -374,10 +434,20 @@ function candidatesFor(document: FieldSelectionDocumentInput): Map<FieldSelectio
   }
   for (const work of document.workValues) {
     if (!(FIELD_SELECTION_FIELDS as readonly string[]).includes(work.predicate)) continue;
-    add(work.predicate as FieldSelectionField, { record_id: work.record_id, source: work.source, value: work.object, position: -1 });
+    add(work.predicate as FieldSelectionField, {
+      record_id: work.record_id,
+      source: work.source,
+      value: work.object,
+      position: -1,
+    });
   }
   for (const list of out.values()) {
-    list.sort((a, b) => a.position - b.position || compareCodePoints(a.value, b.value) || compareCodePoints(a.record_id, b.record_id));
+    list.sort(
+      (a, b) =>
+        a.position - b.position ||
+        compareCodePoints(a.value, b.value) ||
+        compareCodePoints(a.record_id, b.record_id),
+    );
   }
   return out;
 }
@@ -394,7 +464,10 @@ function plannedFields(
   intent: FieldSelectionIntent,
   roles: readonly ArchitectureDocumentRole[],
 ): PlannedField[] {
-  const planned = new Map<FieldSelectionField, { tier: "core" | "supporting"; because: string[] }>();
+  const planned = new Map<
+    FieldSelectionField,
+    { tier: "core" | "supporting"; because: string[] }
+  >();
   for (const field of INTENT_FIELDS[intent].core) {
     planned.set(field, { tier: "core", because: [`intent ${intent} asks for ${field} (core)`] });
   }
@@ -407,7 +480,11 @@ function plannedFields(
     }
   }
   for (const field of INTENT_FIELDS[intent].supporting) {
-    if (!planned.has(field)) planned.set(field, { tier: "supporting", because: [`intent ${intent} asks for ${field} (supporting)`] });
+    if (!planned.has(field))
+      planned.set(field, {
+        tier: "supporting",
+        because: [`intent ${intent} asks for ${field} (supporting)`],
+      });
   }
   return [...planned.entries()].map(([field, entry]) => ({ field, ...entry }));
 }
@@ -420,7 +497,10 @@ interface ViewTally {
 }
 
 /** Every distinct value of `available` the view does not already hold, in order. */
-function freshDistinct(available: readonly FieldValueCandidate[], seen: ReadonlySet<string>): FieldValueCandidate[] {
+function freshDistinct(
+  available: readonly FieldValueCandidate[],
+  seen: ReadonlySet<string>,
+): FieldValueCandidate[] {
   const keys = new Set<string>();
   const fresh: FieldValueCandidate[] = [];
   for (const candidate of available) {
@@ -443,7 +523,11 @@ function fillValues(
     if (decision.selected_values.length >= budget.maxValuesPerField) break;
     const value = boundExcerpt(candidate.value);
     if (tally.characters + value.length > budget.maxCharacters) break;
-    decision.selected_values.push({ record_id: candidate.record_id, source: candidate.source, value });
+    decision.selected_values.push({
+      record_id: candidate.record_id,
+      source: candidate.source,
+      value,
+    });
     tally.characters += value.length;
     tally.seen.add(valueKey(candidate.value));
   }
@@ -484,26 +568,34 @@ function decidePlannedField(
   decision.new_value_count = fresh.length;
   if (fresh.length === 0) {
     decision.disposition = "redundant";
-    decision.reasons.push(`every value of ${field} is already in this document's view under an earlier field`);
+    decision.reasons.push(
+      `every value of ${field} is already in this document's view under an earlier field`,
+    );
     return decision;
   }
   if (tally.selectedFields >= budget.maxFields) {
     decision.disposition = "omitted_by_budget";
     decision.values_omitted = fresh.length;
-    decision.reasons.push(`the view already holds ${budget.maxFields} field(s), the budget's maximum`);
+    decision.reasons.push(
+      `the view already holds ${budget.maxFields} field(s), the budget's maximum`,
+    );
     return decision;
   }
   fillValues(decision, fresh, budget, tally);
   if (decision.selected_values.length === 0) {
     decision.disposition = "omitted_by_budget";
-    decision.reasons.push(`the view's ${budget.maxCharacters}-character budget has no room left for a ${field} value`);
+    decision.reasons.push(
+      `the view's ${budget.maxCharacters}-character budget has no room left for a ${field} value`,
+    );
     return decision;
   }
   decision.disposition = "selected";
   tally.selectedFields += 1;
   decision.reasons.push(
-    `selected ${decision.selected_values.length} of ${fresh.length} new value(s)`
-    + (decision.values_omitted > 0 ? `; ${decision.values_omitted} left out by the budget (${budget.maxValuesPerField} per field, ${budget.maxCharacters} characters)` : ""),
+    `selected ${decision.selected_values.length} of ${fresh.length} new value(s)` +
+      (decision.values_omitted > 0
+        ? `; ${decision.values_omitted} left out by the budget (${budget.maxValuesPerField} per field, ${budget.maxCharacters} characters)`
+        : ""),
   );
   return decision;
 }
@@ -525,7 +617,9 @@ function unplannedDecisions(
       field,
       tier: null,
       disposition: "not_selected_for_intent",
-      reasons: [`intent ${intent} does not ask for ${field} and no declared role (${roles.join(", ")}) promotes it`],
+      reasons: [
+        `intent ${intent} does not ask for ${field} and no declared role (${roles.join(", ")}) promotes it`,
+      ],
       available_value_count: available.length,
       new_value_count: 0,
       selected_values: [],
@@ -542,17 +636,32 @@ export function selectFieldsForDocument(
   budget: FieldSelectionBudget,
 ): FieldSelectionRecord {
   const first = document.architectureRecords[0];
-  const roles: ArchitectureDocumentRole[] = first !== undefined ? [...first.selection.roles] : ["unknown"];
-  const roleEvidenceIds = first !== undefined
-    ? [...new Set(first.selection.role_evidence.map((item) => item.assertion_id))].sort(compareCodePoints)
-    : [];
+  const roles: ArchitectureDocumentRole[] =
+    first !== undefined ? [...first.selection.roles] : ["unknown"];
+  const roleEvidenceIds =
+    first !== undefined
+      ? [...new Set(first.selection.role_evidence.map((item) => item.assertion_id))].sort(
+          compareCodePoints,
+        )
+      : [];
   const candidates = candidatesFor(document);
   const planned = plannedFields(intent, roles);
   const tally: ViewTally = { seen: new Set<string>(), characters: 0, selectedFields: 0 };
   const duplicate = document.exactDuplicate;
-  const nonRepresentative = duplicate !== null && duplicate.representativeArtifactId !== document.artifactId ? duplicate : null;
+  const nonRepresentative =
+    duplicate !== null && duplicate.representativeArtifactId !== document.artifactId
+      ? duplicate
+      : null;
   const decisions: FieldSelectionFieldDecision[] = [
-    ...planned.map((entry) => decidePlannedField(entry, candidates.get(entry.field) ?? [], nonRepresentative, budget, tally)),
+    ...planned.map((entry) =>
+      decidePlannedField(
+        entry,
+        candidates.get(entry.field) ?? [],
+        nonRepresentative,
+        budget,
+        tally,
+      ),
+    ),
     ...unplannedDecisions(candidates, planned, intent, roles),
   ];
   const characters = tally.characters;
@@ -586,7 +695,9 @@ export function selectFieldsForDocument(
 
 function tallyFields(records: readonly FieldSelectionRecord[]): FieldSelectionManifest["by_field"] {
   return [...FIELD_SELECTION_FIELDS].sort(compareCodePoints).map((field) => {
-    const decisions = records.flatMap((record) => record.fields.filter((decision) => decision.field === field));
+    const decisions = records.flatMap((record) =>
+      record.fields.filter((decision) => decision.field === field),
+    );
     const count = (disposition: FieldDisposition): number =>
       decisions.filter((decision) => decision.disposition === disposition).length;
     return {
@@ -638,7 +749,9 @@ export function buildFieldSelectionExport(input: BuildFieldSelectionInput): Fiel
     by_field: tallyFields(records),
     payload_byte_length: Buffer.byteLength(payloadJsonl, "utf8"),
     payload_artifact_hash: sha256TextPrefixed(payloadJsonl),
-    payload_semantic_hash: sha256TextPrefixed(canonicalCorpusJson({ schema: FIELD_SELECTION_SCHEMA, records }, 0)),
+    payload_semantic_hash: sha256TextPrefixed(
+      canonicalCorpusJson({ schema: FIELD_SELECTION_SCHEMA, records }, 0),
+    ),
     epistemic_class: "source-declared",
     statement: FIELD_SELECTION_STATEMENT,
   };
@@ -668,7 +781,8 @@ export interface VerifyFieldSelectionInput {
 /** Parse the payload lines, reporting every line that is not JSON. */
 function parseSelectionPayload(payloadJsonl: string, problems: string[]): FieldSelectionRecord[] {
   const lines = payloadJsonl.length === 0 ? [] : payloadJsonl.split("\n");
-  if (payloadJsonl.length > 0 && lines[lines.length - 1] !== "") problems.push("payload does not end with a newline");
+  if (payloadJsonl.length > 0 && lines[lines.length - 1] !== "")
+    problems.push("payload does not end with a newline");
   const records: FieldSelectionRecord[] = [];
   for (const [index, line] of lines.entries()) {
     if (index === lines.length - 1 && line === "") continue;
@@ -682,38 +796,73 @@ function parseSelectionPayload(payloadJsonl: string, problems: string[]): FieldS
 }
 
 /** The manifest's counts, hashes, tallies and carrier against the parsed payload. */
-function manifestProblems(manifest: FieldSelectionManifest, payloadJsonl: string, records: readonly FieldSelectionRecord[]): string[] {
+function manifestProblems(
+  manifest: FieldSelectionManifest,
+  payloadJsonl: string,
+  records: readonly FieldSelectionRecord[],
+): string[] {
   const problems: string[] = [];
-  if (records.length !== manifest.record_count) problems.push(`manifest says ${manifest.record_count} record(s) and the payload carries ${records.length}`);
-  if (Buffer.byteLength(payloadJsonl, "utf8") !== manifest.payload_byte_length) problems.push("payload byte length does not match the manifest");
-  if (sha256TextPrefixed(payloadJsonl) !== manifest.payload_artifact_hash) problems.push("payload artifact hash does not match the manifest");
-  if (sha256TextPrefixed(canonicalCorpusJson({ schema: FIELD_SELECTION_SCHEMA, records }, 0)) !== manifest.payload_semantic_hash) {
+  if (records.length !== manifest.record_count)
+    problems.push(
+      `manifest says ${manifest.record_count} record(s) and the payload carries ${records.length}`,
+    );
+  if (Buffer.byteLength(payloadJsonl, "utf8") !== manifest.payload_byte_length)
+    problems.push("payload byte length does not match the manifest");
+  if (sha256TextPrefixed(payloadJsonl) !== manifest.payload_artifact_hash)
+    problems.push("payload artifact hash does not match the manifest");
+  if (
+    sha256TextPrefixed(canonicalCorpusJson({ schema: FIELD_SELECTION_SCHEMA, records }, 0)) !==
+    manifest.payload_semantic_hash
+  ) {
     problems.push("payload semantic hash does not match the manifest");
   }
   if (canonicalCorpusJson(tallyFields(records), 0) !== canonicalCorpusJson(manifest.by_field, 0)) {
     problems.push("manifest by_field does not match the payload records");
   }
-  if (manifest.carrier.disposition !== "external_generation" || manifest.carrier.observed_files_mutated !== false) {
-    problems.push("the view's carrier must be the external generation, with no observed file mutated");
+  if (
+    manifest.carrier.disposition !== "external_generation" ||
+    manifest.carrier.observed_files_mutated !== false
+  ) {
+    problems.push(
+      "the view's carrier must be the external generation, with no observed file mutated",
+    );
   }
   return problems;
 }
 
 /** One record's identity, class, budget, policy and carrier. */
-function recordProblems(record: FieldSelectionRecord, manifest: FieldSelectionManifest, knownArtifactIds: ReadonlySet<string>): string[] {
+function recordProblems(
+  record: FieldSelectionRecord,
+  manifest: FieldSelectionManifest,
+  knownArtifactIds: ReadonlySet<string>,
+): string[] {
   const problems: string[] = [];
-  if (!knownArtifactIds.has(record.artifact_id)) problems.push(`view ${record.view_id} names artifact ${record.artifact_id}, which this corpus did not observe`);
+  if (!knownArtifactIds.has(record.artifact_id))
+    problems.push(
+      `view ${record.view_id} names artifact ${record.artifact_id}, which this corpus did not observe`,
+    );
   if (record.epistemic_class !== "source-declared" || record.authority_verified !== false) {
-    problems.push(`view ${record.view_id} is not classed source-declared with authority_verified false`);
+    problems.push(
+      `view ${record.view_id} is not classed source-declared with authority_verified false`,
+    );
   }
-  if (record.selected_field_count > manifest.budget.max_fields || record.selected_character_count > manifest.budget.max_characters) {
+  if (
+    record.selected_field_count > manifest.budget.max_fields ||
+    record.selected_character_count > manifest.budget.max_characters
+  ) {
     problems.push(`view ${record.view_id} exceeds the budget`);
   }
-  if (record.intent !== manifest.intent || record.policy_id !== manifest.policy_id || record.policy_version !== manifest.policy_version) {
+  if (
+    record.intent !== manifest.intent ||
+    record.policy_id !== manifest.policy_id ||
+    record.policy_version !== manifest.policy_version
+  ) {
     problems.push(`view ${record.view_id} was not selected under the manifest's intent and policy`);
   }
   if (record.carrier_disposition !== "external_generation") {
-    problems.push(`view ${record.view_id} names carrier '${String(record.carrier_disposition)}', not the external generation`);
+    problems.push(
+      `view ${record.view_id} names carrier '${String(record.carrier_disposition)}', not the external generation`,
+    );
   }
   return problems;
 }
@@ -727,7 +876,9 @@ function decisionProblems(
 ): string[] {
   const problems: string[] = [];
   if (!(FIELD_SELECTION_FIELDS as readonly string[]).includes(decision.field)) {
-    problems.push(`view ${viewId} decides '${String(decision.field)}', which is not in the field vocabulary`);
+    problems.push(
+      `view ${viewId} decides '${String(decision.field)}', which is not in the field vocabulary`,
+    );
   }
   if (decision.selected_values.length > manifest.budget.max_values_per_field) {
     problems.push(
@@ -735,15 +886,22 @@ function decisionProblems(
     );
   }
   if (!(FIELD_DISPOSITIONS as readonly string[]).includes(decision.disposition)) {
-    problems.push(`view ${viewId} gives ${decision.field} the unknown disposition '${decision.disposition}'`);
+    problems.push(
+      `view ${viewId} gives ${decision.field} the unknown disposition '${decision.disposition}'`,
+    );
   }
-  if (decision.reasons.length === 0) problems.push(`view ${viewId} decides ${decision.field} without a reason`);
-  if ((decision.disposition === "selected") !== (decision.selected_values.length > 0)) {
-    problems.push(`view ${viewId} field ${decision.field} is ${decision.disposition} with ${decision.selected_values.length} value(s)`);
+  if (decision.reasons.length === 0)
+    problems.push(`view ${viewId} decides ${decision.field} without a reason`);
+  if ((decision.disposition === "selected") !== decision.selected_values.length > 0) {
+    problems.push(
+      `view ${viewId} field ${decision.field} is ${decision.disposition} with ${decision.selected_values.length} value(s)`,
+    );
   }
   for (const value of decision.selected_values) {
     if (!knownRecordIds.has(value.record_id)) {
-      problems.push(`view ${viewId} cites ${value.record_id}, which no payload of this generation carries`);
+      problems.push(
+        `view ${viewId} cites ${value.record_id}, which no payload of this generation carries`,
+      );
     }
   }
   return problems;
@@ -774,6 +932,7 @@ export function isFieldSelectionIntent(value: string): value is FieldSelectionIn
 }
 
 /** Every statement class has a field, so a new class cannot silently fall outside the view. */
-export const STATEMENT_FIELDS_COVER_CLASSES = ARCHITECTURE_STATEMENT_CLASSES.every((statementClass) =>
-  (FIELD_SELECTION_FIELDS as readonly string[]).includes(`statement.${statementClass}`),
+export const STATEMENT_FIELDS_COVER_CLASSES = ARCHITECTURE_STATEMENT_CLASSES.every(
+  (statementClass) =>
+    (FIELD_SELECTION_FIELDS as readonly string[]).includes(`statement.${statementClass}`),
 );

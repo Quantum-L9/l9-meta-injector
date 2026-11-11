@@ -6,7 +6,11 @@
 // phrasing or expected reply format can never silently drift between call sites.
 
 /** Build the "is B materially better than A?" prompt for a field. */
-export function buildMaterialityPrompt(field: string, oldValue: unknown, newValue: unknown): string {
+export function buildMaterialityPrompt(
+  field: string,
+  oldValue: unknown,
+  newValue: unknown,
+): string {
   return `Field: ${field}\nA: ${JSON.stringify(oldValue)}\nB: ${JSON.stringify(newValue)}\nIs B materially more informative than A? Reply only: yes or no`;
 }
 

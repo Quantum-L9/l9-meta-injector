@@ -76,7 +76,12 @@ exports.MAX_ARCHITECTURE_DIAGNOSTICS_PER_DOCUMENT = 8;
  * header rather than a statement. A table under a labelled section is reported
  * as unsupported instead of guessed at.
  */
-const READABLE_BLOCK_KINDS = new Set(["paragraph", "list_item", "note", "cell"]);
+const READABLE_BLOCK_KINDS = new Set([
+    "paragraph",
+    "list_item",
+    "note",
+    "cell",
+]);
 const TITULAR_BLOCK_KINDS = new Set(["title", "heading"]);
 /** A unit of text, as the block-signal reader splits one: CRLF, LF or lone CR. */
 function unitsOf(text) {
@@ -252,11 +257,11 @@ function isForeignLabelledUnit(line) {
  * statement across a soft line break; anything else keeps the meaning it had.
  */
 function isPlainUnit(line) {
-    return (line.trim().length > 0
-        && !isTableRow(line)
-        && !THEMATIC_BREAK.test(line)
-        && !isWorkSignalUnit(line)
-        && !isForeignLabelledUnit(line));
+    return (line.trim().length > 0 &&
+        !isTableRow(line) &&
+        !THEMATIC_BREAK.test(line) &&
+        !isWorkSignalUnit(line) &&
+        !isForeignLabelledUnit(line));
 }
 /** The heading text of a setext heading block, or null when the block is not one. */
 function setextHeadingText(block, units) {
@@ -521,7 +526,9 @@ class StatementReader {
                     end += 1;
                 }
                 out.push({
-                    text: body.some((line) => line.length > 0) ? `${field.key}: ${body.join(field.blockScalar.startsWith("|") ? "\n" : " ")}` : unit,
+                    text: body.some((line) => line.length > 0)
+                        ? `${field.key}: ${body.join(field.blockScalar.startsWith("|") ? "\n" : " ")}`
+                        : unit,
                     endIndex: end > index ? end : null,
                 });
                 for (let skipped = index + 1; skipped <= end; skipped += 1)
@@ -610,7 +617,9 @@ class StatementReader {
                 this.readMembers(block, units, section.statementClass, "section_heading", section.label, section);
                 return;
             }
-            const kept = units.filter((unit) => unit.trim().length > 0 && !THEMATIC_BREAK.test(unit) && !this.skipsMember(unit, section, block));
+            const kept = units.filter((unit) => unit.trim().length > 0 &&
+                !THEMATIC_BREAK.test(unit) &&
+                !this.skipsMember(unit, section, block));
             if (kept.length > 0) {
                 if (this.emit(section.statementClass, kept.join("\n"), block.text, "section_heading", section.label, block, null)) {
                     section.members += 1;
@@ -619,7 +628,9 @@ class StatementReader {
         }
     }
     inFrontmatter(block) {
-        return this.frontmatter !== null && block.locator.kind === "line_span" && block.locator.line_start <= this.frontmatter.lastLine;
+        return (this.frontmatter !== null &&
+            block.locator.kind === "line_span" &&
+            block.locator.line_start <= this.frontmatter.lastLine);
     }
     /**
      * True for a unit that is not attributed to the open declaration: one the work
@@ -647,7 +658,9 @@ class StatementReader {
     readMembers(block, units, statementClass, form, label, owner) {
         const kept = [];
         for (const [index, unit] of units.entries()) {
-            if (unit.trim().length === 0 || THEMATIC_BREAK.test(unit) || this.skipsMember(unit, { statementClass, label }, block))
+            if (unit.trim().length === 0 ||
+                THEMATIC_BREAK.test(unit) ||
+                this.skipsMember(unit, { statementClass, label }, block))
                 continue;
             kept.push({ index, unit });
         }
@@ -739,7 +752,12 @@ class StatementReader {
         }
         if (open !== null && open.members === 0) {
             // Nothing in this block followed the label; the list items after it may.
-            this.pendingList = { statementClass: open.statementClass, label: open.label, members: 0, block };
+            this.pendingList = {
+                statementClass: open.statementClass,
+                label: open.label,
+                members: 0,
+                block,
+            };
         }
     }
 }

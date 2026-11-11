@@ -26,7 +26,11 @@ function needsValues(lines, at) {
         if (!at.value.endsWith("]") || /[[\]{}]/.test(at.value.slice(1, -1)))
             return { values: [], unsupported: "needs is not a flat inline list" };
         return {
-            values: at.value.slice(1, -1).split(",").map((item) => (0, common_1.unquote)(item)).filter(Boolean)
+            values: at.value
+                .slice(1, -1)
+                .split(",")
+                .map((item) => (0, common_1.unquote)(item))
+                .filter(Boolean)
                 .map((name) => ({ name, index: at.index })),
         };
     }
@@ -48,7 +52,11 @@ function classifyUses(value, jobLevel, index, line, input) {
     const reference = (0, common_1.unquote)(value);
     const range = (0, common_1.spanRange)(index, index);
     if (reference.includes("${{")) {
-        input.report?.({ code: "workflow.uses_expression", severity: "info", message: `line ${index + 1}: uses is an expression and was not classified` });
+        input.report?.({
+            code: "workflow.uses_expression",
+            severity: "info",
+            message: `line ${index + 1}: uses is an expression and was not classified`,
+        });
         return [];
     }
     if (reference.startsWith("docker://")) {
@@ -66,9 +74,15 @@ function classifyUses(value, jobLevel, index, line, input) {
         return [(0, common_1.observed)("workflow.uses_local_unresolved", reference, range, line)];
     }
     if (REMOTE_USES.test(reference)) {
-        return [(0, common_1.observed)(jobLevel ? "workflow.uses_reusable_workflow" : "workflow.uses_action", reference, range, line)];
+        return [
+            (0, common_1.observed)(jobLevel ? "workflow.uses_reusable_workflow" : "workflow.uses_action", reference, range, line),
+        ];
     }
-    input.report?.({ code: "workflow.uses_unrecognized", severity: "info", message: `line ${index + 1}: uses reference is not a recognized form` });
+    input.report?.({
+        code: "workflow.uses_unrecognized",
+        severity: "info",
+        message: `line ${index + 1}: uses reference is not a recognized form`,
+    });
     return [];
 }
 function workflowAssertions(input) {
@@ -82,7 +96,11 @@ function workflowAssertions(input) {
         return drafts;
     const jobsKey = keyLine(lines[jobsIndex], jobsIndex);
     if (jobsKey && jobsKey.value !== "") {
-        input.report?.({ code: "workflow.jobs_unsupported", severity: "warning", message: `line ${jobsIndex + 1}: jobs is not a block mapping and was not read` });
+        input.report?.({
+            code: "workflow.jobs_unsupported",
+            severity: "warning",
+            message: `line ${jobsIndex + 1}: jobs is not a block mapping and was not read`,
+        });
         return drafts;
     }
     const jobs = [];
@@ -131,16 +149,26 @@ function workflowAssertions(input) {
                 continue;
             }
             if (key.value.startsWith("{")) {
-                input.report?.({ code: "workflow.flow_mapping", severity: "info", message: `line ${index + 1}: flow mapping under job '${job.id}' was not read` });
+                input.report?.({
+                    code: "workflow.flow_mapping",
+                    severity: "info",
+                    message: `line ${index + 1}: flow mapping under job '${job.id}' was not read`,
+                });
                 continue;
             }
             if (key.key === "needs" && key.indent === fieldIndent && !key.item) {
                 const needs = needsValues(lines, key);
                 if (needs.unsupported) {
-                    input.report?.({ code: "workflow.needs_unsupported", severity: "info", message: `line ${index + 1}: ${needs.unsupported}` });
+                    input.report?.({
+                        code: "workflow.needs_unsupported",
+                        severity: "info",
+                        message: `line ${index + 1}: ${needs.unsupported}`,
+                    });
                 }
                 for (const need of needs.values) {
-                    const predicate = jobIds.has(need.name) ? "workflow.job_needs" : "workflow.job_needs_unresolved";
+                    const predicate = jobIds.has(need.name)
+                        ? "workflow.job_needs"
+                        : "workflow.job_needs_unresolved";
                     drafts.push((0, common_1.observed)(predicate, `${job.id} -> ${need.name}`, (0, common_1.spanRange)(need.index, need.index), lines[need.index]));
                 }
                 continue;

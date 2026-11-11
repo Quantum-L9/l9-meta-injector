@@ -21,12 +21,12 @@
 // back on the next disk the operator plugs in, and the work already done on those
 // bytes is still correct.
 import { canonicalCorpusJson } from "./corpus_analysis";
-import { diffAnalysisManifests } from "./corpus_analysis_manifest";
 import type { CandidateKind } from "./corpus_analysis_manifest";
+import { diffAnalysisManifests } from "./corpus_analysis_manifest";
+import type { InferredRootHistoryOverride } from "./corpus_root_history";
 import type { RootIdentityClass } from "./corpus_roots";
 import { CorpusSnapshot, CorpusSnapshotArchive, CorpusSnapshotArtifact } from "./corpus_snapshot";
 import { compareCodePoints } from "./ordering";
-import type { InferredRootHistoryOverride } from "./corpus_root_history";
 
 export const CORPUS_DIFF_SCHEMA = "l9.corpus-diff/v1";
 
@@ -162,9 +162,9 @@ export interface CrossRootMoveCandidate {
 }
 
 export const CROSS_ROOT_MOVE_STATEMENT =
-  "A cross-root move candidate is identical bytes absent from one root and present in another. "
-  + "It is not a claim that the file was moved: a copy whose original was deleted, and two "
-  + "unrelated identical files, produce exactly the same evidence.";
+  "A cross-root move candidate is identical bytes absent from one root and present in another. " +
+  "It is not a claim that the file was moved: a copy whose original was deleted, and two " +
+  "unrelated identical files, produce exactly the same evidence.";
 
 export interface CorpusDiffCounts {
   added: number;
@@ -252,9 +252,9 @@ export interface CorpusDiff {
 }
 
 export const RENAMED_CANDIDATE_STATEMENT =
-  "A renamed candidate is one content hash absent at an old corpus path and present at a "
-  + "new one. It is not evidence that a file was moved, that a move was intentional, or "
-  + "that the two paths mean the same thing.";
+  "A renamed candidate is one content hash absent at an old corpus path and present at a " +
+  "new one. It is not evidence that a file was moved, that a move was intentional, or " +
+  "that the two paths mean the same thing.";
 
 function emptyCounts(): CorpusDiffCounts {
   return {
@@ -286,15 +286,16 @@ function archivesByPath(
 
 function contentHashSet(artifacts: readonly CorpusSnapshotArtifact[]): Set<string> {
   const out = new Set<string>();
-  for (const artifact of artifacts) if (artifact.content_hash !== null) out.add(artifact.content_hash);
+  for (const artifact of artifacts)
+    if (artifact.content_hash !== null) out.add(artifact.content_hash);
   return out;
 }
 
 function compareEntries(a: CorpusDiffEntry, b: CorpusDiffEntry): number {
   return (
-    compareCodePoints(a.category, b.category)
-    || compareCodePoints(a.corpus_path, b.corpus_path)
-    || compareCodePoints(a.virtual_source_id, b.virtual_source_id)
+    compareCodePoints(a.category, b.category) ||
+    compareCodePoints(a.corpus_path, b.corpus_path) ||
+    compareCodePoints(a.virtual_source_id, b.virtual_source_id)
   );
 }
 
@@ -314,7 +315,9 @@ function pairRenames(
   unpairedRemoved: CorpusSnapshotArtifact[];
   unpairedAdded: CorpusSnapshotArtifact[];
 } {
-  const group = (artifacts: readonly CorpusSnapshotArtifact[]): Map<string, CorpusSnapshotArtifact[]> => {
+  const group = (
+    artifacts: readonly CorpusSnapshotArtifact[],
+  ): Map<string, CorpusSnapshotArtifact[]> => {
     const out = new Map<string, CorpusSnapshotArtifact[]>();
     for (const artifact of artifacts) {
       if (artifact.content_hash === null) continue;
@@ -374,7 +377,7 @@ function analysisProfileFingerprint(snapshot: CorpusSnapshot): string {
       const value = analysis[key];
       const rendered = Array.isArray(value)
         ? [...(value as string[])].sort(compareCodePoints)
-        : value ?? null;
+        : (value ?? null);
       return [key, rendered];
     });
   return JSON.stringify(fields);
@@ -403,7 +406,8 @@ function analysisDelta(
   profileChanged: boolean,
 ): CorpusDiff["analysis"] {
   const sourceChanged = previous.corpus_source_snapshot_id !== current.corpus_source_snapshot_id;
-  const analysisChanged = previous.analysis.corpus_analysis_id !== current.analysis.corpus_analysis_id;
+  const analysisChanged =
+    previous.analysis.corpus_analysis_id !== current.analysis.corpus_analysis_id;
   const delta = diffAnalysisManifests(previous.analysis_manifest, current.analysis_manifest);
   return {
     candidate_added: delta.candidate_added,
@@ -474,7 +478,9 @@ export function buildCorpusDiff(previous: CorpusSnapshot, current: CorpusSnapsho
       content_hash: rename.to.content_hash,
       previous_corpus_path: rename.from.corpus_path,
       previous_virtual_source_id: rename.from.virtual_source_id,
-      ...(rename.from.content_hash !== null ? { previous_content_hash: rename.from.content_hash } : {}),
+      ...(rename.from.content_hash !== null
+        ? { previous_content_hash: rename.from.content_hash }
+        : {}),
       size_bytes: rename.to.size_bytes,
     });
   }
@@ -503,7 +509,9 @@ export function buildCorpusDiff(previous: CorpusSnapshot, current: CorpusSnapsho
 
   const previousArchives = archivesByPath(previous.archives);
   const currentArchives = archivesByPath(current.archives);
-  for (const [corpusPath, archive] of [...currentArchives].sort(([a], [b]) => compareCodePoints(a, b))) {
+  for (const [corpusPath, archive] of [...currentArchives].sort(([a], [b]) =>
+    compareCodePoints(a, b),
+  )) {
     const before = previousArchives.get(corpusPath);
     if (before === undefined) {
       counts.archive_added += 1;
@@ -540,7 +548,9 @@ export function buildCorpusDiff(previous: CorpusSnapshot, current: CorpusSnapsho
       });
     }
   }
-  for (const [corpusPath, archive] of [...previousArchives].sort(([a], [b]) => compareCodePoints(a, b))) {
+  for (const [corpusPath, archive] of [...previousArchives].sort(([a], [b]) =>
+    compareCodePoints(a, b),
+  )) {
     if (currentArchives.has(corpusPath)) continue;
     counts.archive_removed += 1;
     entries.push({
@@ -555,19 +565,26 @@ export function buildCorpusDiff(previous: CorpusSnapshot, current: CorpusSnapsho
 
   const previousHashes = contentHashSet(previous.artifacts);
   const currentHashes = contentHashSet(current.artifacts);
-  const newHashes = [...currentHashes].filter((hash) => !previousHashes.has(hash)).sort(compareCodePoints);
-  const retiredHashes = [...previousHashes].filter((hash) => !currentHashes.has(hash)).sort(compareCodePoints);
+  const newHashes = [...currentHashes]
+    .filter((hash) => !previousHashes.has(hash))
+    .sort(compareCodePoints);
+  const retiredHashes = [...previousHashes]
+    .filter((hash) => !currentHashes.has(hash))
+    .sort(compareCodePoints);
   const retained = [...currentHashes].filter((hash) => previousHashes.has(hash)).length;
   // Analysis identity, not source identity. A raised threshold or a new decoder
   // changes what was concluded and changes no byte on any disk, and a diff that
   // reported the two together would tell an operator their archive had been
   // rewritten every time they changed a setting.
-  const profileChanged = analysisProfileFingerprint(previous) !== analysisProfileFingerprint(current);
+  const profileChanged =
+    analysisProfileFingerprint(previous) !== analysisProfileFingerprint(current);
   const sourceChanged = previous.corpus_source_snapshot_id !== current.corpus_source_snapshot_id;
   // From the diff's own classifications. A hash multiset misses a pure rename
   // (same bytes, new path) and a content swap between two paths, and corpus-
   // scoped results depend on paths as well as bytes.
-  const membershipChanged = entries.some((entry) => MEMBERSHIP_CHANGE_CATEGORIES.has(entry.category));
+  const membershipChanged = entries.some((entry) =>
+    MEMBERSHIP_CHANGE_CATEGORIES.has(entry.category),
+  );
 
   // Roots, compared by identity rather than by position. A corpus that gained a
   // drive and a corpus whose drives were listed in another order are not the same
@@ -602,9 +619,8 @@ export function buildCorpusDiff(previous: CorpusSnapshot, current: CorpusSnapsho
     }
     const previousClass = classOf(before);
     const currentClass = classOf(root);
-    const basis: RootIdentityClass | "mixed" = previousClass === currentClass
-      ? previousClass
-      : "mixed";
+    const basis: RootIdentityClass | "mixed" =
+      previousClass === currentClass ? previousClass : "mixed";
     if (basis !== "declared") {
       cautions.push({
         root_id: rootId,
@@ -612,15 +628,16 @@ export function buildCorpusDiff(previous: CorpusSnapshot, current: CorpusSnapsho
         previous_class: previousClass,
         current_class: currentClass,
         message:
-          `root '${root.root_key}' was matched across runs on a key that was not declared on `
-          + `${basis === "mixed" ? "one of the two runs" : "either run"}; the key is a mount `
-          + "point's final segment, so two different disks mounted at paths ending the same "
-          + "way are one root under this rule. Declare a key with --root <key>=<path> to make "
-          + "the comparison rest on a name rather than on a path.",
+          `root '${root.root_key}' was matched across runs on a key that was not declared on ` +
+          `${basis === "mixed" ? "one of the two runs" : "either run"}; the key is a mount ` +
+          "point's final segment, so two different disks mounted at paths ending the same " +
+          "way are one root under this rule. Declare a key with --root <key>=<path> to make " +
+          "the comparison rest on a name rather than on a path.",
       });
     }
-    const changed = before.source_revision !== root.source_revision
-      || before.rmp_packet_id !== root.rmp_packet_id;
+    const changed =
+      before.source_revision !== root.source_revision ||
+      before.rmp_packet_id !== root.rmp_packet_id;
     if (changed) counts.root_changed += 1;
     else counts.root_unchanged += 1;
     rootEntries.push({
@@ -677,8 +694,9 @@ export function buildCorpusDiff(previous: CorpusSnapshot, current: CorpusSnapsho
     }
   }
   crossRootMoves.sort(
-    (a, b) => compareCodePoints(a.from_corpus_path, b.from_corpus_path)
-      || compareCodePoints(a.to_corpus_path, b.to_corpus_path),
+    (a, b) =>
+      compareCodePoints(a.from_corpus_path, b.from_corpus_path) ||
+      compareCodePoints(a.to_corpus_path, b.to_corpus_path),
   );
 
   const previousRootIds = [...previous.roots.map((root) => root.root_id)].sort(compareCodePoints);

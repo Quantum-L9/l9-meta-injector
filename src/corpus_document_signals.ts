@@ -306,8 +306,7 @@ export function buildCorpusDocumentSignals(input: DocumentSignalsInput): CorpusD
     }
   }
 
-  const accumulators = [...byFormat.values()]
-    .sort((a, b) => compareCodePoints(a.format, b.format));
+  const accumulators = [...byFormat.values()].sort((a, b) => compareCodePoints(a.format, b.format));
 
   const decodedTotal = accumulators.reduce((sum, entry) => sum + entry.decoded, 0);
 
@@ -353,10 +352,10 @@ export function buildCorpusDocumentSignals(input: DocumentSignalsInput): CorpusD
 /** Total order over evidence records, so the listing never depends on run order. */
 function compareRecords(left: DocumentSignalRecord, right: DocumentSignalRecord): number {
   return (
-    compareCodePoints(left.source_path, right.source_path)
-    || compareCodePoints(left.block_id, right.block_id)
-    || compareCodePoints(left.predicate, right.predicate)
-    || compareCodePoints(left.object, right.object)
+    compareCodePoints(left.source_path, right.source_path) ||
+    compareCodePoints(left.block_id, right.block_id) ||
+    compareCodePoints(left.predicate, right.predicate) ||
+    compareCodePoints(left.object, right.object)
   );
 }
 

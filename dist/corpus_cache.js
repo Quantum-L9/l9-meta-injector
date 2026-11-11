@@ -95,13 +95,15 @@ exports.CORPUS_CACHE_ENTRY_SCHEMA = "l9.corpus-cache-entry/v2";
  * version wrote — and discarded quietly, rather than reported as corrupt once
  * per entry on the first run after an upgrade.
  */
-const PREVIOUS_CORPUS_CACHE_ENTRY_SCHEMAS = new Set(["l9.corpus-cache-entry/v1"]);
+const PREVIOUS_CORPUS_CACHE_ENTRY_SCHEMAS = new Set([
+    "l9.corpus-cache-entry/v1",
+]);
 /** True when an entry was written by another producer version or a previous epoch. */
 function isStaleEntry(entry, producerVersion) {
     const record = entry;
     if (record?.producer_version !== producerVersion)
         return true;
-    return typeof record.schema === "string" && PREVIOUS_CORPUS_CACHE_ENTRY_SCHEMAS.has(record.schema);
+    return (typeof record.schema === "string" && PREVIOUS_CORPUS_CACHE_ENTRY_SCHEMAS.has(record.schema));
 }
 /** Environment variable that overrides the default cache location. */
 exports.CORPUS_CACHE_ENV = "L9_CORPUS_CACHE";
@@ -285,9 +287,9 @@ class CacheAccounting {
         };
     }
     diagnostics() {
-        return [...this.notes].sort((a, b) => (0, ordering_1.compareCodePoints)(a.code, b.code)
-            || (0, ordering_1.compareCodePoints)(a.layer, b.layer)
-            || (0, ordering_1.compareCodePoints)(a.key, b.key));
+        return [...this.notes].sort((a, b) => (0, ordering_1.compareCodePoints)(a.code, b.code) ||
+            (0, ordering_1.compareCodePoints)(a.layer, b.layer) ||
+            (0, ordering_1.compareCodePoints)(a.key, b.key));
     }
 }
 // ───────────────────────────── implementations ─────────────────────────────
@@ -469,8 +471,8 @@ class FileCorpusCache {
                 severity: "warning",
                 layer,
                 key,
-                message: `entry is not valid JSON (${error instanceof Error ? error.message : String(error)}); `
-                    + "the entry was discarded and the value recomputed",
+                message: `entry is not valid JSON (${error instanceof Error ? error.message : String(error)}); ` +
+                    "the entry was discarded and the value recomputed",
             });
             this.discard(file);
             return undefined;

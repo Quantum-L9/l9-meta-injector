@@ -31,7 +31,11 @@
 // What this file does NOT do is decide anything about the vectors. It returns
 // numbers. Whether a cosine between two of them means anything is settled in
 // `corpus_fusion.ts`, and the answer there is still "it is a candidate".
-import { EmbeddingModelConfiguration, EmbeddingProvider, EmbeddingResult } from "./corpus_embeddings";
+import {
+  EmbeddingModelConfiguration,
+  EmbeddingProvider,
+  EmbeddingResult,
+} from "./corpus_embeddings";
 import { compareCodePoints } from "./ordering";
 
 /** The provider name an operator passes to `--embedding-provider`. */
@@ -230,9 +234,7 @@ async function readCapped(
       total += value.length;
       if (total > maxBytes) {
         await reader.cancel();
-        throw new EmbeddingProviderError(
-          `embedding response exceeded the ${maxBytes}-byte cap`,
-        );
+        throw new EmbeddingProviderError(`embedding response exceeded the ${maxBytes}-byte cap`);
       }
       chunks.push(value);
     }
@@ -277,9 +279,9 @@ export class HttpJsonEmbeddingProvider implements EmbeddingProvider {
     }
     if (options.locality === "local" && !isLoopbackEndpoint(endpoint)) {
       throw new EmbeddingProviderError(
-        `--embedding-locality local requires a loopback endpoint; '${url.host}' is not one. `
-        + "A local provider that posts document text to another host is a remote provider, "
-        + "and this one is declared remote or not used",
+        `--embedding-locality local requires a loopback endpoint; '${url.host}' is not one. ` +
+          "A local provider that posts document text to another host is a remote provider, " +
+          "and this one is declared remote or not used",
       );
     }
     if (options.locality === "remote" && url.protocol !== "https:") {
@@ -363,7 +365,9 @@ export class HttpJsonEmbeddingProvider implements EmbeddingProvider {
       let excerpt = "";
       try {
         excerpt = (await readCapped(response, 2_048, signal, timeoutMessage))
-          .slice(0, 200).replace(/\s+/g, " ").trim();
+          .slice(0, 200)
+          .replace(/\s+/g, " ")
+          .trim();
       } catch {
         excerpt = "";
       }

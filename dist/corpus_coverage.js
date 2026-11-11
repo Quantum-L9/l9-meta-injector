@@ -64,8 +64,8 @@ function documentGaps(registry = (0, documents_1.defaultDecoderRegistry)()) {
     }
     return { unsupported: exports.UNDECODED_DOCUMENT_EXTENSIONS, ocrRequired: exports.OCR_REQUIRED_EXTENSIONS };
 }
-exports.NO_PRIORITY_STATEMENT = "This handoff carries evidence and counts. It contains no priority, no ranking and "
-    + "no recommendation, and none can be read out of the order of any list in it.";
+exports.NO_PRIORITY_STATEMENT = "This handoff carries evidence and counts. It contains no priority, no ranking and " +
+    "no recommendation, and none can be read out of the order of any list in it.";
 /** Build a ratio, treating "nothing was eligible" as complete coverage. */
 function coverageRatio(covered, eligible) {
     return {

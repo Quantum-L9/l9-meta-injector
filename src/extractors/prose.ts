@@ -55,13 +55,7 @@ export const declaredAuthorityExtractor: Extractor = {
         if (!input.pathExists(referenced)) {
           // The document's authority claim is real; its target is not present.
           drafts.push(
-            declared(
-              "authority.unresolved_reference",
-              referenced,
-              cursor,
-              lines[cursor],
-              "medium",
-            ),
+            declared("authority.unresolved_reference", referenced, cursor, lines[cursor], "medium"),
           );
         }
         found++;
@@ -112,7 +106,10 @@ const REPLACEMENT_PATTERNS: { pattern: RegExp; tail: boolean }[] = [
 ];
 
 /** The replacement pointer a line states, or null when no pattern matches it. */
-function replacementPointer(text: string, entry: { pattern: RegExp; tail: boolean }): string | null {
+function replacementPointer(
+  text: string,
+  entry: { pattern: RegExp; tail: boolean },
+): string | null {
   const match = entry.pattern.exec(text);
   if (!match) return null;
   if (!entry.tail) return match[1];
@@ -199,7 +196,8 @@ export const repositoryStatusExtractor: Extractor = {
 // ─────────────────── python-route-observation/v1 ───────────────────
 
 /** `@app.get("/health")` and friends, including `@router.post(...)`. */
-const ROUTE_DECORATOR = /^\s*@([A-Za-z_]\w*)\.(get|post|put|patch|delete|head|options)\s*\(\s*["']([^"']+)["']/;
+const ROUTE_DECORATOR =
+  /^\s*@([A-Za-z_]\w*)\.(get|post|put|patch|delete|head|options)\s*\(\s*["']([^"']+)["']/;
 const DEF_LINE = /^\s*(?:async\s+)?def\s+([A-Za-z_]\w*)\s*\(/;
 
 /** Markers observable inside a handler body. Reported, never interpreted. */
