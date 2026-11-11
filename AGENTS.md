@@ -67,7 +67,7 @@ Workflow-level blocking means the job has no `continue-on-error`. Whether a cont
 | `Release` | `release` | Push to `main` touching `package.json` | Lint and validate, then create the exact tag and GitHub Release and move the major tag (ADR-050); a version whose tag already exists is a no-op |
 | `Organization CI (Core)` | `Analyze (central Core)` | Pull requests; push; merge group | Organization-required workflow from `Quantum-L9/l9-ci-core` `main` `.github/workflows/org-ci.yml`: Semgrep analysis, SDK admission, governance, enforcement, publication. Not a file in this repository. |
 
-`L9 Meta Injector — LLM self-test` is manual only. Dependency updates are grouped by `.github/dependabot.yml` and landed with `npm run deps:rebind` (ADR-056).
+`L9 Meta Injector — LLM self-test` is manual only. `.github/dependabot.yml` is the organization's render for this root (minor and patch only, majors ignored). Never hand-edit it; change `Quantum-L9/.github` `policies/dependabot/` instead (ADR-094). A Dependabot branch is validated like any other head; `npm run deps:rebind` is the local equivalent of that gate.
 
 ### Organization-managed L9 CI (2026-09-05)
 

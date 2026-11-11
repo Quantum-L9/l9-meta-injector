@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Dependency updates follow the organization render (ADR-094)
+
+- `.github/dependabot.yml` is now byte-identical to the `Quantum-L9/.github` render for this root (ADR-0019): `npm` and `github-actions`, minor and patch only, every semver-major ignored, Core-owned tools ignored, 7-day cooldown. The hand-written groups (ADR-056) are retired; their reasons ended with ADR-093 and the org safe-only render.
+- GitHub Actions pins now receive minor/patch updates; `check:authority` requires a 40-hex pin, not a specific SHA, so they need no other edit.
+
 ### Adaptive field selection for local-source (ADR-091, Proposed)
 
 - `--field-selection <intent>` (with `--architecture-evidence`): `field-selection.jsonl` + manifest (`l9.local-source-field-selection/v1`) — per document, which existing evidence fields the run intent (`architecture_review`, `design_exploration`, `development_handoff`, `history_audit`) surfaces, with role promotions from the document's source-declared roles, availability, redundancy (repeated values; non-representative exact duplicates) and a per-document budget (`--field-selection-max-fields|-values|-chars`). Every field carries a disposition and reasons; every selected value cites an existing record id.
