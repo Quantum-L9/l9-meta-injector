@@ -22,9 +22,14 @@ import { runCorpusScan } from "../src/corpus_scan";
  */
 const UNREADABLE_BASENAME = "vanished-at-derive.md";
 const realReadFile = fs.promises.readFile.bind(fs.promises);
-vi.spyOn(fs.promises, "readFile").mockImplementation(((target: fs.PathLike | fs.promises.FileHandle, ...rest: unknown[]) => {
+vi.spyOn(fs.promises, "readFile").mockImplementation(((
+  target: fs.PathLike | fs.promises.FileHandle,
+  ...rest: unknown[]
+) => {
   if (typeof target === "string" && path.basename(target) === UNREADABLE_BASENAME) {
-    return Promise.reject(Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" }));
+    return Promise.reject(
+      Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" }),
+    );
   }
   return (realReadFile as (...args: unknown[]) => Promise<unknown>)(target, ...rest);
 }) as typeof fs.promises.readFile);
@@ -41,13 +46,21 @@ afterAll(() => {
 
 async function decodeGapOf(files: Record<string, Buffer | string>) {
   const root = tmp();
-  for (const [name, content] of Object.entries(files)) fs.writeFileSync(path.join(root, name), content);
+  for (const [name, content] of Object.entries(files))
+    fs.writeFileSync(path.join(root, name), content);
   const result = await runCorpusScan({ roots: [{ path: root }], producerVersion: "test" });
   return result.coverage.documents.decode_gap;
 }
 
-const latin1 = Buffer.from("Caf\xe9 cr\xe8me br\xfbl\xe9e, a note written on an old machine.\n", "latin1");
-const nul = Buffer.concat([Buffer.from("header text "), Buffer.from([0x00, 0x01, 0x02]), Buffer.from(" tail\n")]);
+const latin1 = Buffer.from(
+  "Caf\xe9 cr\xe8me br\xfbl\xe9e, a note written on an old machine.\n",
+  "latin1",
+);
+const nul = Buffer.concat([
+  Buffer.from("header text "),
+  Buffer.from([0x00, 0x01, 0x02]),
+  Buffer.from(" tail\n"),
+]);
 
 describe("decode_gap.encoding_rejected", () => {
   it("REG-WU-044-RC-065-a: counts a Latin-1 note and a NUL-bearing text file as encoding rejections", async () => {
@@ -77,7 +90,10 @@ describe("decode_gap.encoding_rejected", () => {
   });
 
   it("REG-WU-044-RC-065-d: leaves a file unreadable at derive time in other_refusal", async () => {
-    const gap = await decodeGapOf({ [UNREADABLE_BASENAME]: "# Present at inventory\n", "dump.txt": nul });
+    const gap = await decodeGapOf({
+      [UNREADABLE_BASENAME]: "# Present at inventory\n",
+      "dump.txt": nul,
+    });
     expect(gap.other_refusal).toBe(1);
     expect(gap.encoding_rejected).toBe(1);
     expect(gap.unaccounted).toBe(0);

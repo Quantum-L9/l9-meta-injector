@@ -43,13 +43,15 @@ describe("frontmatter integration safety", () => {
     const target = path.join(dir, "doc.md");
     const original = "---\nowner:\n  name: alice\n---\nBody\n";
     fs.writeFileSync(target, original, "utf8");
-    expect(() => injectFile(target, META, {
-      dryRun: false,
-      outDir: dir,
-      verbose: false,
-      writeInjectLog: false,
-      writeDryRunDiff: false,
-    })).toThrow(/FRONTMATTER_UNSAFE/);
+    expect(() =>
+      injectFile(target, META, {
+        dryRun: false,
+        outDir: dir,
+        verbose: false,
+        writeInjectLog: false,
+        writeDryRunDiff: false,
+      }),
+    ).toThrow(/FRONTMATTER_UNSAFE/);
     expect(fs.readFileSync(target, "utf8")).toBe(original);
     fs.rmSync(dir, { recursive: true, force: true });
   });

@@ -1,15 +1,15 @@
+import { spawnSync } from "child_process";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { describe, it, expect, beforeEach, afterEach, afterAll } from "vitest";
-import { spawnSync } from "child_process";
-import { inventoryTree, classifyInventory } from "../src/inventory";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { hasUseWhenSignal } from "../src/assist";
+import { resolveStrategy } from "../src/comment";
+import { classifyInventory, inventoryTree } from "../src/inventory";
+import { resetAdapter, setAdapter } from "../src/llm";
+import { buildOmitMatcher, isSkillArtifactPath, isSkillMdBasename } from "../src/omit";
 import { runPipelineAsync } from "../src/pipeline";
 import { runSkillsPipelineAsync } from "../src/skills_pipeline";
-import { resolveStrategy } from "../src/comment";
-import { buildOmitMatcher, isSkillMdBasename, isSkillArtifactPath } from "../src/omit";
-import { setAdapter, resetAdapter } from "../src/llm";
-import { hasUseWhenSignal } from "../src/assist";
 
 function tmp(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "l9-edge-"));
@@ -18,16 +18,19 @@ function tmp(): string {
 /** Declare the canonical repository authority so governed skills mode may write. */
 function writeAuthority(root: string): void {
   fs.mkdirSync(path.join(root, ".l9"), { recursive: true });
-  fs.writeFileSync(path.join(root, ".l9", "meta-authority.yaml"), [
-    "schema: l9.meta-authority/v1",
-    "writer:",
-    "  repository: Quantum-L9/l9-meta-injector",
-    "  ref: v4.0.0",
-    "default_carrier: central_manifest",
-    "legacy_writers: forbidden",
-    "inline_allow: [\"**/*.md\"]",
-    "",
-  ].join("\n"));
+  fs.writeFileSync(
+    path.join(root, ".l9", "meta-authority.yaml"),
+    [
+      "schema: l9.meta-authority/v1",
+      "writer:",
+      "  repository: Quantum-L9/l9-meta-injector",
+      "  ref: v4.0.0",
+      "default_carrier: central_manifest",
+      "legacy_writers: forbidden",
+      'inline_allow: ["**/*.md"]',
+      "",
+    ].join("\n"),
+  );
 }
 
 describe("omit matcher", () => {
@@ -104,14 +107,25 @@ describe("SKILL.md protect — inventory + pipeline never mutate", () => {
     const skillDir = path.join(root, "skills", "demo");
     fs.mkdirSync(skillDir, { recursive: true });
     const skillPath = path.join(skillDir, "SKILL.md");
-    const original = "---\nname: demo\ndescription: Demo skill. Use when testing pipeline protect.\n---\n\n# Demo\n";
+    const original =
+      "---\nname: demo\ndescription: Demo skill. Use when testing pipeline protect.\n---\n\n# Demo\n";
     fs.writeFileSync(skillPath, original);
     fs.writeFileSync(path.join(root, "note.md"), "# note\n");
     const out = tmp();
     await runPipelineAsync({
-      root, glob: "**/*", dryRun: false, outDir: out, namespace: "t", authority: "t",
-      nearDupThreshold: 0.9, hashPrefixLength: 16, indexDir: out, verbose: false,
-      llmEnabled: false, normalizeFilenames: false, writeInjectLog: false,
+      root,
+      glob: "**/*",
+      dryRun: false,
+      outDir: out,
+      namespace: "t",
+      authority: "t",
+      nearDupThreshold: 0.9,
+      hashPrefixLength: 16,
+      indexDir: out,
+      verbose: false,
+      llmEnabled: false,
+      normalizeFilenames: false,
+      writeInjectLog: false,
     });
     expect(fs.readFileSync(skillPath, "utf8")).toBe(original);
   });
@@ -125,7 +139,7 @@ describe("inventory sidecar leak + noise omit", () => {
     fs.writeFileSync(path.join(cache, "x.pyc"), Buffer.from([0, 1, 2, 0]));
     fs.writeFileSync(path.join(root, "debug.log"), "noise\n");
     fs.writeFileSync(path.join(root, "blob.bin"), Buffer.from([0, 1, 2, 0, 3]));
-    fs.writeFileSync(path.join(root, "data.json"), "{\"a\":1}\n");
+    fs.writeFileSync(path.join(root, "data.json"), '{"a":1}\n');
     const out = tmp();
     const r = inventoryTree({ root, outDir: out, dryRun: false, now: "2026-01-01T00:00:00.000Z" });
     expect(fs.existsSync(path.join(root, "blob.bin.l9meta.yaml"))).toBe(false);
@@ -136,7 +150,10 @@ describe("inventory sidecar leak + noise omit", () => {
 
   it("LICENSE gets a sidecar and config classification", () => {
     const root = tmp();
-    fs.writeFileSync(path.join(root, "LICENSE"), "Proprietary license text for testing purposes only.\n");
+    fs.writeFileSync(
+      path.join(root, "LICENSE"),
+      "Proprietary license text for testing purposes only.\n",
+    );
     const out = tmp();
     const r = inventoryTree({ root, outDir: out, dryRun: false, now: "2026-01-01T00:00:00.000Z" });
     const lic = r.records.find((x) => x.file_name === "LICENSE");
@@ -179,11 +196,19 @@ describe("skills mode — Cursor-native description", () => {
     const skillDir = path.join(root, "skills", "review");
     fs.mkdirSync(skillDir, { recursive: true });
     const skillPath = path.join(skillDir, "SKILL.md");
-    fs.writeFileSync(skillPath, "---\nname: review\ndescription: Reviews stuff\n---\n\n# Review\n\nCheck PRs carefully.\n");
+    fs.writeFileSync(
+      skillPath,
+      "---\nname: review\ndescription: Reviews stuff\n---\n\n# Review\n\nCheck PRs carefully.\n",
+    );
     writeAuthority(root);
     const out = tmp();
     const r = await runSkillsPipelineAsync({
-      root, authority: "l9.doctrine.platform", outDir: out, dryRun: false, verbose: false, llmEnabled: true,
+      root,
+      authority: "l9.doctrine.platform",
+      outDir: out,
+      dryRun: false,
+      verbose: false,
+      llmEnabled: true,
     });
     expect(r.authorityResolved).toBe(true);
     expect(r.repositoryMutated).toBe(true);
@@ -205,12 +230,18 @@ describe("skills mode — Cursor-native description", () => {
     const skillDir = path.join(root, "skills", "ok");
     fs.mkdirSync(skillDir, { recursive: true });
     const skillPath = path.join(skillDir, "SKILL.md");
-    const original = "---\nname: ok\ndescription: Handles inventory omit rules carefully. Use when editing omit patterns or SKILL.md protect behavior.\nactivation_signals:\n  - omit rules\n  - skill protect\n---\n\n# Ok\n";
+    const original =
+      "---\nname: ok\ndescription: Handles inventory omit rules carefully. Use when editing omit patterns or SKILL.md protect behavior.\nactivation_signals:\n  - omit rules\n  - skill protect\n---\n\n# Ok\n";
     fs.writeFileSync(skillPath, original);
     writeAuthority(root);
     const out = tmp();
     const r = await runSkillsPipelineAsync({
-      root, authority: "l9.doctrine.platform", outDir: out, dryRun: false, verbose: false, llmEnabled: true,
+      root,
+      authority: "l9.doctrine.platform",
+      outDir: out,
+      dryRun: false,
+      verbose: false,
+      llmEnabled: true,
     });
     expect(r.authorityResolved).toBe(true);
     expect(r.repositoryMutated).toBe(false);
@@ -223,7 +254,8 @@ describe("WU-006 omit patterns anchor as gitignore does (RC-014)", () => {
   // An empty root, so no ambient .l9metaignore contributes rules.
   const emptyRoot = tmp();
   afterAll(() => fs.rmSync(emptyRoot, { recursive: true, force: true }));
-  const matcher = (patterns: string[]) => buildOmitMatcher({ root: emptyRoot, patterns, protectSkillMd: false });
+  const matcher = (patterns: string[]) =>
+    buildOmitMatcher({ root: emptyRoot, patterns, protectSkillMd: false });
 
   it("REG-WU-006-RC-014-a: an interior-slash negation re-includes only the root-relative path", () => {
     const m = matcher(["*.md", "!docs/keep.md"]);
@@ -262,15 +294,37 @@ describe("WU-006 omit patterns anchor as gitignore does (RC-014)", () => {
     try {
       const init = spawnSync("git", ["init", "-q", root], { encoding: "utf8" });
       expect(init.status, init.stderr).toBe(0);
-      const patterns = ["*.md", "!docs/keep.md", "docs/a.txt", "/top.txt", "**/deep/x.txt", "src/*.txt", "build/"];
+      const patterns = [
+        "*.md",
+        "!docs/keep.md",
+        "docs/a.txt",
+        "/top.txt",
+        "**/deep/x.txt",
+        "src/*.txt",
+        "build/",
+      ];
       fs.writeFileSync(path.join(root, ".gitignore"), `${patterns.join("\n")}\n`);
       const m = matcher(patterns);
       const candidates = [
-        "docs/keep.md", "vendor/docs/keep.md", "readme.md", "docs/a.txt", "x/docs/a.txt", "top.txt", "sub/top.txt",
-        "deep/x.txt", "a/b/deep/x.txt", "src/y.txt", "lib/src/y.txt", "src/sub/y.txt", "build/out.js", "pkg/build/out.js",
+        "docs/keep.md",
+        "vendor/docs/keep.md",
+        "readme.md",
+        "docs/a.txt",
+        "x/docs/a.txt",
+        "top.txt",
+        "sub/top.txt",
+        "deep/x.txt",
+        "a/b/deep/x.txt",
+        "src/y.txt",
+        "lib/src/y.txt",
+        "src/sub/y.txt",
+        "build/out.js",
+        "pkg/build/out.js",
       ];
       for (const candidate of candidates) {
-        const git = spawnSync("git", ["-C", root, "check-ignore", "--no-index", "-q", candidate], { encoding: "utf8" });
+        const git = spawnSync("git", ["-C", root, "check-ignore", "--no-index", "-q", candidate], {
+          encoding: "utf8",
+        });
         expect([0, 1], git.stderr).toContain(git.status);
         expect(m.shouldOmit(candidate), candidate).toBe(git.status === 0);
       }

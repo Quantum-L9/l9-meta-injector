@@ -42,7 +42,13 @@ function runCli(extraArgs: string[] = []): Run {
     [CLI, source, "--name", "sample-corpus", "--out", outDir, ...extraArgs],
     { encoding: "utf8" },
   );
-  return { status: result.status, stdout: result.stdout ?? "", stderr: result.stderr ?? "", outDir, source };
+  return {
+    status: result.status,
+    stdout: result.stdout ?? "",
+    stderr: result.stderr ?? "",
+    outDir,
+    source,
+  };
 }
 
 describe("local-source CLI", () => {
@@ -69,7 +75,9 @@ describe("local-source CLI", () => {
       expect(fs.existsSync(path.join(run.outDir, relative)), relative).toBe(true);
     }
     const index = JSON.parse(fs.readFileSync(path.join(run.outDir, "corpus-index.json"), "utf8"));
-    const packet = JSON.parse(fs.readFileSync(path.join(run.outDir, "bundle", "packet.json"), "utf8"));
+    const packet = JSON.parse(
+      fs.readFileSync(path.join(run.outDir, "bundle", "packet.json"), "utf8"),
+    );
     expect(index.schema).toBe("l9.corpus-index/v1");
     expect(index.repository_model.packet_id).toBe(packet.packet_id);
     expect(index.repository_model.semantic_hash).toBe(packet.semantic_hash);
@@ -103,7 +111,9 @@ describe("local-source CLI", () => {
     const source = writeCorpusFixture(path.join(tmp(), "corpus"));
     const before = treeSnapshot(source);
     const outDir = path.join(tmp("l9-cli-out-"), "observation");
-    const result = cp.spawnSync(process.execPath, [CLI, source, "--out", outDir], { encoding: "utf8" });
+    const result = cp.spawnSync(process.execPath, [CLI, source, "--out", outDir], {
+      encoding: "utf8",
+    });
     expect(result.status, result.stderr).toBe(0);
     expect(treeSnapshot(source)).toEqual(before);
     expect(fs.existsSync(path.join(source, "corpus-index.json"))).toBe(false);
@@ -147,10 +157,9 @@ describe("local-source CLI", () => {
     expect(first.status, first.stderr).toBe(0);
     expect(second.status, second.stderr).toBe(0);
     for (const relative of ["corpus-index.json", "corpus-report.md", "bundle/packet.json"]) {
-      expect(
-        fs.readFileSync(path.join(first.outDir, relative), "utf8"),
-        relative,
-      ).toBe(fs.readFileSync(path.join(second.outDir, relative), "utf8"));
+      expect(fs.readFileSync(path.join(first.outDir, relative), "utf8"), relative).toBe(
+        fs.readFileSync(path.join(second.outDir, relative), "utf8"),
+      );
     }
   });
 });

@@ -33,11 +33,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { FileCorpusCache } from "../src/corpus_cache";
 import { renderCorpusCoverage } from "../src/corpus_coverage";
 import { renderCorpusDocumentSignals } from "../src/corpus_document_signals";
-import {
-  renderCorpusCandidates,
-  renderReadinessEvidence,
-  runCorpusScan,
-} from "../src/corpus_scan";
+import { renderCorpusCandidates, renderReadinessEvidence, runCorpusScan } from "../src/corpus_scan";
 import { renderCorpusSnapshot } from "../src/corpus_snapshot";
 import { mutatedPaths, treeDigest } from "./helpers/real_world_corpus";
 
@@ -70,8 +66,8 @@ function readManifest(file: string): AcceptanceManifest {
     parsed = JSON.parse(fs.readFileSync(file, "utf8"));
   } catch (error) {
     throw new ManifestError(
-      `${MANIFEST_ENV} names '${file}', which could not be read as JSON: `
-      + `${error instanceof Error ? error.message : String(error)}`,
+      `${MANIFEST_ENV} names '${file}', which could not be read as JSON: ` +
+        `${error instanceof Error ? error.message : String(error)}`,
     );
   }
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
@@ -201,16 +197,17 @@ describe.skipIf(!enabled)("a real archive an operator named", () => {
       .filter((entry) => entry.decoded_count > 0)
       .map((entry) => entry.format);
     const binaryFormats = ["pdf", "docx", "pptx", "xlsx", "ipynb", "html", "csv"];
-    const presentBinary = cold.documentSignals.formats
-      .filter((entry) => binaryFormats.includes(entry.format) && entry.eligible_count > 0);
+    const presentBinary = cold.documentSignals.formats.filter(
+      (entry) => binaryFormats.includes(entry.format) && entry.eligible_count > 0,
+    );
     for (const entry of presentBinary) {
       // Present and eligible, so at least one has to have opened — unless every
       // one of them was refused for a stated reason, which is a finding rather
       // than a failure and is why the refusals are printed on the way past.
       expect(
         entry.decoded_count > 0 || entry.refusals.length > 0,
-        `${entry.format}: ${entry.eligible_count} eligible, ${entry.decoded_count} decoded, `
-        + `refusals ${JSON.stringify(entry.refusals)}`,
+        `${entry.format}: ${entry.eligible_count} eligible, ${entry.decoded_count} decoded, ` +
+          `refusals ${JSON.stringify(entry.refusals)}`,
       ).toBe(true);
     }
     for (const format of manifest.expect_formats ?? []) {
@@ -240,8 +237,9 @@ describe.skipIf(!enabled)("a real archive an operator named", () => {
       }
     }
     for (const format of manifest.expect_formats ?? []) {
-      const decoded = cold.documentSignals.analysis_participation.by_format
-        .find((entry) => entry.format === format);
+      const decoded = cold.documentSignals.analysis_participation.by_format.find(
+        (entry) => entry.format === format,
+      );
       // Decoded and understood are different claims, and both are recorded.
       expect(decoded?.decoded_count, `${format} decoded`).toBeGreaterThan(0);
     }
@@ -283,7 +281,11 @@ describe.skipIf(!enabled)("a real archive an operator named", () => {
         },
       };
       fs.mkdirSync(path.dirname(path.resolve(evidencePath)), { recursive: true });
-      fs.writeFileSync(path.resolve(evidencePath), `${JSON.stringify(evidence, null, 2)}\n`, "utf8");
+      fs.writeFileSync(
+        path.resolve(evidencePath),
+        `${JSON.stringify(evidence, null, 2)}\n`,
+        "utf8",
+      );
     }
   }, 3_600_000);
 });
@@ -322,8 +324,9 @@ describe("the acceptance gate itself", () => {
     // from, which is how a test ends up scanning a checkout and calling it an
     // archive.
     expect(() => readManifest(write('{"roots":[{"path":"../elsewhere"}]}'))).toThrow(/absolute/);
-    expect(() => readManifest(write(`{"roots":[{"path":"${path.join(dir, "absent")}"}]}`)))
-      .toThrow(/does not exist/);
+    expect(() => readManifest(write(`{"roots":[{"path":"${path.join(dir, "absent")}"}]}`))).toThrow(
+      /does not exist/,
+    );
 
     const file = path.join(dir, "a-file");
     fs.writeFileSync(file, "x", "utf8");

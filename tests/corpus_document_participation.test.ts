@@ -74,7 +74,8 @@ describe("a decoded document reaches the analysis, not only the coverage report"
     });
 
     const candidate = result.candidates.near_duplicate_candidates.find((entry) =>
-      [entry.source_path_a, entry.source_path_b].some((p) => p.endsWith(".docx")));
+      [entry.source_path_a, entry.source_path_b].some((p) => p.endsWith(".docx")),
+    );
     expect(candidate).toBeDefined();
     // Both sides named, and the pair genuinely crosses the format boundary: a
     // .docx paired with another .docx would prove only that the decoder is
@@ -86,8 +87,9 @@ describe("a decoded document reaches the analysis, not only the coverage report"
 
     // And the signals document reports it as participation rather than leaving a
     // reader to infer it from the candidate list.
-    const docx = result.documentSignals.analysis_participation.by_format
-      .find((entry) => entry.format === "docx");
+    const docx = result.documentSignals.analysis_participation.by_format.find(
+      (entry) => entry.format === "docx",
+    );
     expect(docx?.decoded_count).toBe(1);
     expect(docx?.lexically_analyzed_count).toBe(1);
     expect(docx?.candidate_member_count).toBe(1);
@@ -107,19 +109,35 @@ describe("a decoded document reaches the analysis, not only the coverage report"
     );
     writePdf(path.join(root, "plan.pdf"), SHARED_BODY, { title: "Storage Migration Plan" });
     writeDocx(path.join(root, "plan.docx"), {
-      title: "Storage Migration Plan", headings: [], paragraphs: SHARED_BODY,
+      title: "Storage Migration Plan",
+      headings: [],
+      paragraphs: SHARED_BODY,
     });
     writePptx(path.join(root, "review.pptx"), [
-      { title: "Acquisition layer", bullets: SHARED_BODY.slice(0, 3), notes: SHARED_BODY[3] as string },
+      {
+        title: "Acquisition layer",
+        bullets: SHARED_BODY.slice(0, 3),
+        notes: SHARED_BODY[3] as string,
+      },
     ]);
     writeXlsx(path.join(root, "model.xlsx"), [
-      { name: "runs", rows: [["stage", "note"], ["cold", body.slice(0, 120)]] },
+      {
+        name: "runs",
+        rows: [
+          ["stage", "note"],
+          ["cold", body.slice(0, 120)],
+        ],
+      },
     ]);
     writeNotebook(path.join(root, "measure.ipynb"), {
-      title: "Hit ratio", markdown: SHARED_BODY.slice(0, 2), code: ["ratio = hits / total"],
+      title: "Hit ratio",
+      markdown: SHARED_BODY.slice(0, 2),
+      code: ["ratio = hits / total"],
     });
     writeHtml(path.join(root, "report.html"), {
-      title: "Ingest report", headings: ["Ingest report"], paragraphs: SHARED_BODY.slice(0, 2),
+      title: "Ingest report",
+      headings: ["Ingest report"],
+      paragraphs: SHARED_BODY.slice(0, 2),
     });
 
     const result = await runCorpusScan({ roots: [{ path: root }], producerVersion: "test" });
@@ -150,19 +168,26 @@ describe("a decoded document reaches the analysis, not only the coverage report"
     // Source code is deliberately not swept in: the text decoder claims `.ts`
     // alongside `.md`, and shingling a repository's TypeScript would report every
     // file sharing an import block as a near-duplicate of every other.
-    expect(byFormat.get("text")?.lexically_analyzed_count ?? 0)
-      .toBeLessThanOrEqual(byFormat.get("text")?.decoded_count ?? 0);
+    expect(byFormat.get("text")?.lexically_analyzed_count ?? 0).toBeLessThanOrEqual(
+      byFormat.get("text")?.decoded_count ?? 0,
+    );
   });
 
   it("cites each format's own coordinate, and invents a line number for none", async () => {
     const root = tmp();
     writePdf(path.join(root, "plan.pdf"), SHARED_BODY, { title: "Plan" });
     writeDocx(path.join(root, "plan.docx"), {
-      title: "Plan", headings: ["Scope"], paragraphs: SHARED_BODY,
+      title: "Plan",
+      headings: ["Scope"],
+      paragraphs: SHARED_BODY,
     });
     writePptx(path.join(root, "deck.pptx"), [{ title: "Scope", bullets: ["one", "two"] }]);
     writeXlsx(path.join(root, "sheet.xlsx"), [{ name: "s", rows: [["a", "b"]] }]);
-    writeNotebook(path.join(root, "nb.ipynb"), { title: "NB", markdown: ["prose"], code: ["x = 1"] });
+    writeNotebook(path.join(root, "nb.ipynb"), {
+      title: "NB",
+      markdown: ["prose"],
+      code: ["x = 1"],
+    });
     fs.writeFileSync(path.join(root, "notes.md"), "# Notes\n\nSome prose.\n", "utf8");
 
     const result = await runCorpusScan({ roots: [{ path: root }], producerVersion: "test" });
@@ -181,8 +206,9 @@ describe("a decoded document reaches the analysis, not only the coverage report"
     }
 
     // The printed examples are real locators from real blocks, not a schema.
-    const pdfExample = result.documentSignals.locator_examples
-      .find((entry) => entry.format === "pdf");
+    const pdfExample = result.documentSignals.locator_examples.find(
+      (entry) => entry.format === "pdf",
+    );
     expect(pdfExample?.locator.kind).toBe("pdf_page_block");
     expect(pdfExample?.locator.page_number).toBe(1);
     expect(pdfExample?.block_id.length).toBeGreaterThan(0);
@@ -235,13 +261,21 @@ describe("a decoded document reaches the analysis, not only the coverage report"
       blockSignals: [],
       documents: [
         {
-          virtual_source_id: "b", format: "pdf", decoder_id: "l9.pdf-decoder",
-          decoder_version: "1.0.0", decoded: true, reason: null,
+          virtual_source_id: "b",
+          format: "pdf",
+          decoder_id: "l9.pdf-decoder",
+          decoder_version: "1.0.0",
+          decoded: true,
+          reason: null,
           blocks: [{ block_id: "block:2", kind: "paragraph", locator: { kind: "pdf_page_block" } }],
         },
         {
-          virtual_source_id: "a", format: "docx", decoder_id: "l9.docx-decoder",
-          decoder_version: "1.0.0", decoded: true, reason: null,
+          virtual_source_id: "a",
+          format: "docx",
+          decoder_id: "l9.docx-decoder",
+          decoder_version: "1.0.0",
+          decoded: true,
+          reason: null,
           blocks: [{ block_id: "block:1", kind: "title", locator: { kind: "docx_block" } }],
         },
       ],
@@ -306,8 +340,10 @@ describe("the document index names the decoder that actually read each file", ()
     const decoders = new Set((index?.summary.by_format ?? []).map((entry) => entry.decoder_id));
     expect(decoders.size).toBe(2);
 
-    const decodedByFormat = (index?.summary.by_format ?? [])
-      .reduce((sum, entry) => sum + entry.decoded_count, 0);
+    const decodedByFormat = (index?.summary.by_format ?? []).reduce(
+      (sum, entry) => sum + entry.decoded_count,
+      0,
+    );
     expect(decodedByFormat).toBe(index?.summary.decoded_count);
 
     // One root, so the per-root coverage and the corpus index must agree exactly.
@@ -320,8 +356,9 @@ describe("the document index names the decoder that actually read each file", ()
   it("reports no format and no blocks for an artifact nothing decoded", async () => {
     const root = participationRoot();
     const result = await runCorpusScan({ roots: [{ path: root }], producerVersion: "test" });
-    const undecoded = (result.rootPackets[0]?.documentIndex.documents ?? [])
-      .filter((document) => !document.decoded);
+    const undecoded = (result.rootPackets[0]?.documentIndex.documents ?? []).filter(
+      (document) => !document.decoded,
+    );
     for (const document of undecoded) {
       expect(document.format).toBeNull();
       expect(document.block_count).toBeNull();

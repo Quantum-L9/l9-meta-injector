@@ -4,7 +4,11 @@ import * as path from "path";
 import { runPipelineAsync } from "../src/pipeline";
 import { PipelineConfig } from "../src/schema";
 
-function tmpDir() { const d = path.join(os.tmpdir(), `l9-cov-${Date.now()}-${Math.random().toString(36).slice(2)}`); fs.mkdirSync(d, { recursive: true }); return d; }
+function tmpDir() {
+  const d = path.join(os.tmpdir(), `l9-cov-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  fs.mkdirSync(d, { recursive: true });
+  return d;
+}
 
 const SKILL_MD = `## Role
 Auditor agent.
@@ -14,18 +18,30 @@ Auditor agent.
 `;
 
 test("coverage tally accounts for injected and skipped-non-injectable files (OBS-003)", async () => {
-  const root = tmpDir(); const out = tmpDir();
-  const skills = path.join(root, "skills"); fs.mkdirSync(skills);
+  const root = tmpDir();
+  const out = tmpDir();
+  const skills = path.join(root, "skills");
+  fs.mkdirSync(skills);
   fs.writeFileSync(path.join(skills, "lint_file.md"), SKILL_MD);
   // A file under tests/ classifies as artifact_type "test" → injectable:false → skipped.
-  const testsDir = path.join(root, "tests"); fs.mkdirSync(testsDir);
+  const testsDir = path.join(root, "tests");
+  fs.mkdirSync(testsDir);
   const skippedPath = path.join(testsDir, "example_spec.md");
   fs.writeFileSync(skippedPath, "## Test fixture\nSome spec content.\n");
 
   const cfg: PipelineConfig = {
-    root, glob: "**/*.md", dryRun: false, outDir: out, namespace: "l9",
-    authority: "l9.doctrine.platform", nearDupThreshold: 0.9, hashPrefixLength: 16,
-    indexDir: out, verbose: false, llmEnabled: false, normalizeFilenames: false,
+    root,
+    glob: "**/*.md",
+    dryRun: false,
+    outDir: out,
+    namespace: "l9",
+    authority: "l9.doctrine.platform",
+    nearDupThreshold: 0.9,
+    hashPrefixLength: 16,
+    indexDir: out,
+    verbose: false,
+    llmEnabled: false,
+    normalizeFilenames: false,
   };
 
   const result = await runPipelineAsync(cfg);
@@ -47,26 +63,40 @@ test("coverage tally accounts for injected and skipped-non-injectable files (OBS
   expect(fs.existsSync(result.coverage.reportPath)).toBe(true);
 
   // Internal consistency: every scanned file is either injected or skipped.
-  const accounted = result.coverage.injected + result.coverage.skippedBinary + result.coverage.skippedNonInjectable;
+  const accounted =
+    result.coverage.injected + result.coverage.skippedBinary + result.coverage.skippedNonInjectable;
   expect(accounted).toBe(result.coverage.scanned);
 }, 15000);
 
 test("dry-run writes coverage-report.json with skip details (ADR-018)", async () => {
-  const root = tmpDir(); const out = tmpDir();
-  const testsDir = path.join(root, "tests"); fs.mkdirSync(testsDir);
+  const root = tmpDir();
+  const out = tmpDir();
+  const testsDir = path.join(root, "tests");
+  fs.mkdirSync(testsDir);
   const skippedPath = path.join(testsDir, "example_spec.md");
   fs.writeFileSync(skippedPath, "## Spec\nContent.\n");
 
   const cfg: PipelineConfig = {
-    root, glob: "**/*.md", dryRun: true, outDir: out, namespace: "l9",
-    authority: "l9.doctrine.platform", nearDupThreshold: 0.9, hashPrefixLength: 16,
-    indexDir: out, verbose: false, llmEnabled: false, normalizeFilenames: false,
+    root,
+    glob: "**/*.md",
+    dryRun: true,
+    outDir: out,
+    namespace: "l9",
+    authority: "l9.doctrine.platform",
+    nearDupThreshold: 0.9,
+    hashPrefixLength: 16,
+    indexDir: out,
+    verbose: false,
+    llmEnabled: false,
+    normalizeFilenames: false,
   };
 
   const result = await runPipelineAsync(cfg);
   expect(result.coverage.skippedNonInjectable).toBe(1);
   expect(result.coverage.reportPath).toBe(path.join(out, "coverage-report.json"));
-  const report = JSON.parse(fs.readFileSync(result.coverage.reportPath, "utf8")) as typeof result.coverage;
+  const report = JSON.parse(
+    fs.readFileSync(result.coverage.reportPath, "utf8"),
+  ) as typeof result.coverage;
   expect(report.skipped.nonInjectable).toContain(skippedPath);
   expect(report.skipped.nonInjectableDetails[0]).toMatchObject({
     path: skippedPath,
@@ -76,7 +106,8 @@ test("dry-run writes coverage-report.json with skip details (ADR-018)", async ()
 }, 15000);
 
 test("false-positive prose (testing/specification) is injected, not skipped (ADR-018)", async () => {
-  const root = tmpDir(); const out = tmpDir();
+  const root = tmpDir();
+  const out = tmpDir();
   const prosePath = path.join(root, "evidence-report.md");
   fs.writeFileSync(
     prosePath,
@@ -84,9 +115,18 @@ test("false-positive prose (testing/specification) is injected, not skipped (ADR
   );
 
   const cfg: PipelineConfig = {
-    root, glob: "**/*.md", dryRun: true, outDir: out, namespace: "l9",
-    authority: "l9.doctrine.platform", nearDupThreshold: 0.9, hashPrefixLength: 16,
-    indexDir: out, verbose: false, llmEnabled: false, normalizeFilenames: false,
+    root,
+    glob: "**/*.md",
+    dryRun: true,
+    outDir: out,
+    namespace: "l9",
+    authority: "l9.doctrine.platform",
+    nearDupThreshold: 0.9,
+    hashPrefixLength: 16,
+    indexDir: out,
+    verbose: false,
+    llmEnabled: false,
+    normalizeFilenames: false,
   };
 
   const result = await runPipelineAsync(cfg);
@@ -98,25 +138,44 @@ test("false-positive prose (testing/specification) is injected, not skipped (ADR
 
 function cfgFor(root: string, out: string, glob: string): PipelineConfig {
   return {
-    root, glob, dryRun: true, outDir: out, namespace: "l9",
-    authority: "l9.doctrine.platform", nearDupThreshold: 0.9, hashPrefixLength: 16,
-    indexDir: out, verbose: false, llmEnabled: false, normalizeFilenames: false,
+    root,
+    glob,
+    dryRun: true,
+    outDir: out,
+    namespace: "l9",
+    authority: "l9.doctrine.platform",
+    nearDupThreshold: 0.9,
+    hashPrefixLength: 16,
+    indexDir: out,
+    verbose: false,
+    llmEnabled: false,
+    normalizeFilenames: false,
   };
 }
 
 test("inventory_only stays a metadata subject and is never injected", async () => {
-  const root = tmpDir(); const out = tmpDir();
+  const root = tmpDir();
+  const out = tmpDir();
   fs.mkdirSync(path.join(root, "dist"), { recursive: true });
   fs.mkdirSync(path.join(root, "skills"), { recursive: true });
   fs.writeFileSync(path.join(root, "dist", "a.js"), "module.exports = 1;\n");
   fs.writeFileSync(path.join(root, "skills", "lint_file.md"), SKILL_MD);
   const result = await runPipelineAsync(cfgFor(root, out, "**/*"));
-  expect(result.metadataSubjects.map((subject) => subject.path).sort()).toEqual(["dist/a.js", "skills/lint_file.md"]);
-  expect(result.metadataSubjects.every((subject) => subject.path !== ".git/config")).toBe(true);
-  expect(result.injected.map((record) => record.sourcePath)).toEqual([path.join(root, "skills", "lint_file.md")]);
-  expect(result.coverage.skipped.nonInjectableDetails).toEqual([
-    expect.objectContaining({ path: path.join(root, "dist", "a.js"), reason: "carrier_inventory_only" }),
+  expect(result.metadataSubjects.map((subject) => subject.path).sort()).toEqual([
+    "dist/a.js",
+    "skills/lint_file.md",
   ]);
-  const accounted = result.coverage.injected + result.coverage.skippedBinary + result.coverage.skippedNonInjectable;
+  expect(result.metadataSubjects.every((subject) => subject.path !== ".git/config")).toBe(true);
+  expect(result.injected.map((record) => record.sourcePath)).toEqual([
+    path.join(root, "skills", "lint_file.md"),
+  ]);
+  expect(result.coverage.skipped.nonInjectableDetails).toEqual([
+    expect.objectContaining({
+      path: path.join(root, "dist", "a.js"),
+      reason: "carrier_inventory_only",
+    }),
+  ]);
+  const accounted =
+    result.coverage.injected + result.coverage.skippedBinary + result.coverage.skippedNonInjectable;
   expect(accounted).toBe(result.coverage.scanned);
 }, 15000);

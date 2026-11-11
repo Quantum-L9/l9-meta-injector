@@ -19,7 +19,9 @@ describe("operation-cli help and root guidance", () => {
   test.each([["--help"], ["-h"]])("%s prints usage on stdout and exits 0", (flag) => {
     const result = runCli([flag], os.tmpdir());
     expect(result.status).toBe(0);
-    expect(result.stdout).toMatch(/^usage: l9-meta-injector <inventory\|check\|apply\|skills\|pipeline> <root>/);
+    expect(result.stdout).toMatch(
+      /^usage: l9-meta-injector <inventory\|check\|apply\|skills\|pipeline> <root>/,
+    );
     expect(result.stdout).toContain(".l9/meta-authority.yaml");
     expect(result.stderr).toBe("");
   });

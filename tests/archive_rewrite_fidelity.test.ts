@@ -8,7 +8,11 @@ import * as os from "node:os";
 import * as path from "node:path";
 import * as zlib from "node:zlib";
 import { describe, expect, test } from "vitest";
-import { canonicalMemberPath, memberCollisionKey, preflightArchive } from "../src/archive_preflight";
+import {
+  canonicalMemberPath,
+  memberCollisionKey,
+  preflightArchive,
+} from "../src/archive_preflight";
 import { inventoryTree } from "../src/inventory";
 import { peekArchiveRootMeta, upsertArchiveRootMeta } from "../src/inventory_archive_member";
 import { DEFAULT_LOCAL_ARCHIVE_POLICY } from "../src/local_archive_policy";
@@ -35,7 +39,10 @@ interface RawCentral {
 function parseZip(bytes: Buffer): { centrals: RawCentral[]; comment: Buffer } {
   let eocd = -1;
   for (let i = bytes.length - 22; i >= 0; i--) {
-    if (bytes.readUInt32LE(i) === 0x06054b50 && i + 22 + bytes.readUInt16LE(i + 20) === bytes.length) {
+    if (
+      bytes.readUInt32LE(i) === 0x06054b50 &&
+      i + 22 + bytes.readUInt16LE(i + 20) === bytes.length
+    ) {
       eocd = i;
       break;
     }
@@ -46,14 +53,17 @@ function parseZip(bytes: Buffer): { centrals: RawCentral[]; comment: Buffer } {
   const centrals: RawCentral[] = [];
   for (let k = 0; k < count; k++) {
     const nameLength = bytes.readUInt16LE(cursor + 28);
-    const length = 46 + nameLength + bytes.readUInt16LE(cursor + 30) + bytes.readUInt16LE(cursor + 32);
+    const length =
+      46 + nameLength + bytes.readUInt16LE(cursor + 30) + bytes.readUInt16LE(cursor + 32);
     const record = Buffer.from(bytes.subarray(cursor, cursor + length));
     const localHeaderOffset = record.readUInt32LE(42);
     const localNameLength = bytes.readUInt16LE(localHeaderOffset + 26);
     centrals.push({
       record,
       nameBytes: record.subarray(46, 46 + nameLength),
-      localNameBytes: Buffer.from(bytes.subarray(localHeaderOffset + 30, localHeaderOffset + 30 + localNameLength)),
+      localNameBytes: Buffer.from(
+        bytes.subarray(localHeaderOffset + 30, localHeaderOffset + 30 + localNameLength),
+      ),
       localHeaderOffset,
     });
     cursor += length;
@@ -85,7 +95,7 @@ function memberBytes(abs: string, name: string): { data: Buffer; crcMatches: boo
     chunks.push(Buffer.from(chunk));
   });
   const data = Buffer.concat(chunks);
-  return { data, crcMatches: (zlib.crc32(data) >>> 0) === entry.crc32 };
+  return { data, crcMatches: zlib.crc32(data) >>> 0 === entry.crc32 };
 }
 
 function rootMetaCount(names: string[]): number {
@@ -187,7 +197,12 @@ describe("WU-031 RC-037 ZIP rewrite copies original central records", () => {
     eocd.writeUInt32LE(cd.length, 12);
     eocd.writeUInt32LE(localBlob.length, 16);
     fs.writeFileSync(abs, Buffer.concat([localBlob, cd, eocd]));
-    const result = inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false, now: "2026-09-11T18:00:00.000Z" });
+    const result = inventoryTree({
+      root,
+      outDir: path.join(tmp(), "out"),
+      folderSidecars: false,
+      now: "2026-09-11T18:00:00.000Z",
+    });
     expect(peekZipRootMeta(abs)).toContain("2026-09-11T18:00:00.000Z");
     const unknowns = result.records.find((row) => row.file_name === "dd.zip")?.unknowns ?? [];
     expect(unknowns.some((u) => u.startsWith("archive_rewrite_held"))).toBe(false);
@@ -211,7 +226,13 @@ describe("WU-031 RC-037 ZIP rewrite copies original central records", () => {
       abs,
       [
         { name: "caf?.txt", nameBytes: CP437_NAME, utf8Flag: false, content: "legacy\n" },
-        { name: "kept.txt", content: "kept\n", comment: "member comment", centralExtra: UT_EXTRA, internalAttributes: 1 },
+        {
+          name: "kept.txt",
+          content: "kept\n",
+          comment: "member comment",
+          centralExtra: UT_EXTRA,
+          internalAttributes: 1,
+        },
       ],
       { comment: "archive comment" },
     );
@@ -242,7 +263,11 @@ describe("WU-031 RC-037 ZIP rewrite copies original central records", () => {
     expect(upsertArchiveRootMeta(abs, YAML)).toEqual({ rewritten: true });
     const names = readZipCentralDirectory(abs).entries.map((e) => e.name);
     expect(names).toEqual(["one.txt", "two.txt", ".l9meta.yaml"]);
-    for (const [name, text] of [["one.txt", "one\n"], ["two.txt", "two two\n"], [".l9meta.yaml", YAML]] as const) {
+    for (const [name, text] of [
+      ["one.txt", "one\n"],
+      ["two.txt", "two two\n"],
+      [".l9meta.yaml", YAML],
+    ] as const) {
       const member = memberBytes(abs, name);
       expect(member.data.toString("utf8")).toBe(text);
       expect(member.crcMatches).toBe(true);
@@ -255,15 +280,27 @@ describe("WU-031 RC-039 TAR member path is ustar prefix + name", () => {
 
   test("REG-WU-031-RC-039-039-a: a nested long-path .l9meta.yaml is never peeked and survives the rewrite", () => {
     const abs = path.join(tmp(), "nested.tar");
-    const nested = tarEntry({ name: ".l9meta.yaml", prefix: nestedPrefix, content: "title: nested user metadata\n" });
-    const bytes = Buffer.concat([tarEntry({ name: "keep.txt", content: "keep\n" }), nested, Buffer.alloc(1024)]);
+    const nested = tarEntry({
+      name: ".l9meta.yaml",
+      prefix: nestedPrefix,
+      content: "title: nested user metadata\n",
+    });
+    const bytes = Buffer.concat([
+      tarEntry({ name: "keep.txt", content: "keep\n" }),
+      nested,
+      Buffer.alloc(1024),
+    ]);
     fs.writeFileSync(abs, bytes);
     expect(peekTarRootMeta(bytes)).toBeNull();
     expect(upsertArchiveRootMeta(abs, YAML)).toEqual({ rewritten: true });
     const read = readTarArchive(fs.readFileSync(abs));
     expect(read.ok).toBe(true);
     if (!read.ok) return;
-    expect(read.members.map((m) => m.name)).toEqual(["keep.txt", `${nestedPrefix}/.l9meta.yaml`, ".l9meta.yaml"]);
+    expect(read.members.map((m) => m.name)).toEqual([
+      "keep.txt",
+      `${nestedPrefix}/.l9meta.yaml`,
+      ".l9meta.yaml",
+    ]);
     expect(read.members[1]!.rawRecord.equals(nested)).toBe(true);
     expect(read.members[2]!.content.toString("utf8")).toBe(YAML);
   });
@@ -272,16 +309,22 @@ describe("WU-031 RC-039 TAR member path is ustar prefix + name", () => {
     const abs = path.join(tmp(), "traversal.tar");
     const bytes = tarBytes([{ name: "evil.txt", prefix: `../${"b".repeat(110)}`, content: "x" }]);
     fs.writeFileSync(abs, bytes);
-    expect(upsertArchiveRootMeta(abs, YAML)).toEqual({ rewritten: false, hold: "archive.path_traversal" });
+    expect(upsertArchiveRootMeta(abs, YAML)).toEqual({
+      rewritten: false,
+      hold: "archive.path_traversal",
+    });
     expect(fs.readFileSync(abs).equals(bytes)).toBe(true);
   });
 
   test("REG-WU-031-RC-039-039-c: equal name fields under different prefixes are not duplicates", () => {
     const abs = path.join(tmp(), "prefixes.tar");
-    fs.writeFileSync(abs, tarBytes([
-      { name: "x.txt", prefix: "a".repeat(120), content: "a" },
-      { name: "x.txt", prefix: "b".repeat(120), content: "b" },
-    ]));
+    fs.writeFileSync(
+      abs,
+      tarBytes([
+        { name: "x.txt", prefix: "a".repeat(120), content: "a" },
+        { name: "x.txt", prefix: "b".repeat(120), content: "b" },
+      ]),
+    );
     expect(upsertArchiveRootMeta(abs, YAML)).toEqual({ rewritten: true });
   });
 
@@ -289,33 +332,51 @@ describe("WU-031 RC-039 TAR member path is ustar prefix + name", () => {
     const abs = path.join(tmp(), "absolute.tar");
     const bytes = tarBytes([{ name: "passwd", prefix: `/${"e".repeat(110)}`, content: "x" }]);
     fs.writeFileSync(abs, bytes);
-    expect(upsertArchiveRootMeta(abs, YAML)).toEqual({ rewritten: false, hold: "archive.path_absolute" });
+    expect(upsertArchiveRootMeta(abs, YAML)).toEqual({
+      rewritten: false,
+      hold: "archive.path_absolute",
+    });
     expect(fs.readFileSync(abs).equals(bytes)).toBe(true);
   });
 
   test("REG-WU-031-RC-039-039-e: a GNU-magic header never splices bytes at offset 345 into the name", () => {
     const atime = Buffer.from("14652000000\0", "latin1");
-    const read = readTarArchive(tarBytes([{ name: "gnu.txt", gnuMagic: true, prefix: atime, content: "g" }]));
+    const read = readTarArchive(
+      tarBytes([{ name: "gnu.txt", gnuMagic: true, prefix: atime, content: "g" }]),
+    );
     expect(read.ok).toBe(true);
     if (!read.ok) return;
     expect(read.members.map((m) => m.name)).toEqual(["gnu.txt"]);
   });
 
   test("REG-WU-031-RC-039-039-f: zero-prefix fixtures keep their names and dispositions", () => {
-    const read = readTarArchive(tarBytes([
-      { name: "docs/", type: "5", mode: 0o755 },
-      { name: "docs/a.md", content: "# A\n" },
-    ]));
+    const read = readTarArchive(
+      tarBytes([
+        { name: "docs/", type: "5", mode: 0o755 },
+        { name: "docs/a.md", content: "# A\n" },
+      ]),
+    );
     expect(read.ok).toBe(true);
     if (!read.ok) return;
     expect(read.members.map((m) => m.name)).toEqual(["docs/", "docs/a.md"]);
     const abs = path.join(tmp(), "dup.tar");
-    fs.writeFileSync(abs, tarBytes([{ name: "same.txt", content: "one" }, { name: "same.txt", content: "two" }]));
-    expect(upsertArchiveRootMeta(abs, YAML)).toEqual({ rewritten: false, hold: "archive.duplicate_member" });
+    fs.writeFileSync(
+      abs,
+      tarBytes([
+        { name: "same.txt", content: "one" },
+        { name: "same.txt", content: "two" },
+      ]),
+    );
+    expect(upsertArchiveRootMeta(abs, YAML)).toEqual({
+      rewritten: false,
+      hold: "archive.duplicate_member",
+    });
   });
 
   test("REG-WU-031-RC-039-039-g: a full-width prefix and name compose a 256-character path", () => {
-    const read = readTarArchive(tarBytes([{ name: "n".repeat(100), prefix: "p".repeat(155), content: "x" }]));
+    const read = readTarArchive(
+      tarBytes([{ name: "n".repeat(100), prefix: "p".repeat(155), content: "x" }]),
+    );
     expect(read.ok).toBe(true);
     if (!read.ok) return;
     expect(read.members[0]!.name).toBe(`${"p".repeat(155)}/${"n".repeat(100)}`);
@@ -347,10 +408,13 @@ describe("WU-031 RC-042 root-meta identity is the admission identity", () => {
     expect(upsertArchiveRootMeta(zipAbs, YAML)).toEqual({ rewritten: true });
 
     const tarAbs = path.join(tmp(), "dotdot.tar");
-    fs.writeFileSync(tarAbs, tarBytes([
-      { name: "keep.txt", content: "keep\n" },
-      { name: ".//./.l9meta.yaml", content: "title: user meta\n" },
-    ]));
+    fs.writeFileSync(
+      tarAbs,
+      tarBytes([
+        { name: "keep.txt", content: "keep\n" },
+        { name: ".//./.l9meta.yaml", content: "title: user meta\n" },
+      ]),
+    );
     expect(peekArchiveRootMeta(tarAbs)).toBe("title: user meta\n");
     expect(upsertArchiveRootMeta(tarAbs, YAML)).toEqual({ rewritten: true });
     expect(upsertArchiveRootMeta(tarAbs, YAML)).toEqual({ rewritten: true });
@@ -368,7 +432,10 @@ describe("WU-031 RC-042 root-meta identity is the admission identity", () => {
     ]);
     expect(peekArchiveRootMeta(abs)).toBe("title: shouty\n");
     expect(upsertArchiveRootMeta(abs, YAML)).toEqual({ rewritten: true });
-    expect(readZipCentralDirectory(abs).entries.map((e) => e.name)).toEqual(["keep.txt", ".l9meta.yaml"]);
+    expect(readZipCentralDirectory(abs).entries.map((e) => e.name)).toEqual([
+      "keep.txt",
+      ".l9meta.yaml",
+    ]);
     expect(upsertArchiveRootMeta(abs, YAML)).toEqual({ rewritten: true });
   });
 
@@ -392,7 +459,10 @@ describe("WU-031 RC-042 root-meta identity is the admission identity", () => {
       { name: "x/../.l9meta.yaml", content: "title: sneaky\n" },
     ]);
     expect(peekArchiveRootMeta(traversalAbs)).toBeNull();
-    expect(upsertArchiveRootMeta(traversalAbs, YAML)).toEqual({ rewritten: false, hold: "archive.path_traversal" });
+    expect(upsertArchiveRootMeta(traversalAbs, YAML)).toEqual({
+      rewritten: false,
+      hold: "archive.path_traversal",
+    });
   });
 
   test("REG-WU-031-RC-042-042-e: a legacy root 'l9meta.yaml' is peeked and replaced by '.l9meta.yaml'", () => {
@@ -403,25 +473,46 @@ describe("WU-031 RC-042 root-meta identity is the admission identity", () => {
     ]);
     expect(peekArchiveRootMeta(abs)).toBe("title: legacy\n");
     expect(upsertArchiveRootMeta(abs, YAML)).toEqual({ rewritten: true });
-    expect(readZipCentralDirectory(abs).entries.map((e) => e.name)).toEqual(["keep.txt", ".l9meta.yaml"]);
+    expect(readZipCentralDirectory(abs).entries.map((e) => e.name)).toEqual([
+      "keep.txt",
+      ".l9meta.yaml",
+    ]);
   });
 
   test("REG-WU-031-RC-042-042-f: TAR duplicate detection uses the canonical key, matching ZIP preflight", () => {
     const tarAbs = path.join(tmp(), "dup.tar");
-    const bytes = tarBytes([{ name: "a.txt", content: "one" }, { name: "./a.txt", content: "two" }]);
+    const bytes = tarBytes([
+      { name: "a.txt", content: "one" },
+      { name: "./a.txt", content: "two" },
+    ]);
     fs.writeFileSync(tarAbs, bytes);
-    expect(upsertArchiveRootMeta(tarAbs, YAML)).toEqual({ rewritten: false, hold: "archive.duplicate_member" });
+    expect(upsertArchiveRootMeta(tarAbs, YAML)).toEqual({
+      rewritten: false,
+      hold: "archive.duplicate_member",
+    });
     expect(fs.readFileSync(tarAbs).equals(bytes)).toBe(true);
 
     // Interior '.' and empty segments are the same member for ZIP preflight too.
     const interiorAbs = path.join(tmp(), "interior.tar");
-    const interior = tarBytes([{ name: "docs/a.txt", content: "one" }, { name: "docs/.//a.txt", content: "two" }]);
+    const interior = tarBytes([
+      { name: "docs/a.txt", content: "one" },
+      { name: "docs/.//a.txt", content: "two" },
+    ]);
     fs.writeFileSync(interiorAbs, interior);
-    expect(upsertArchiveRootMeta(interiorAbs, YAML)).toEqual({ rewritten: false, hold: "archive.duplicate_member" });
+    expect(upsertArchiveRootMeta(interiorAbs, YAML)).toEqual({
+      rewritten: false,
+      hold: "archive.duplicate_member",
+    });
     expect(fs.readFileSync(interiorAbs).equals(interior)).toBe(true);
 
     const zipAbs = path.join(tmp(), "dup.zip");
-    writeRawZip(zipAbs, [{ name: "a.txt", content: "one" }, { name: "./a.txt", content: "two" }]);
-    expect(upsertArchiveRootMeta(zipAbs, YAML)).toEqual({ rewritten: false, hold: "archive.duplicate_member" });
+    writeRawZip(zipAbs, [
+      { name: "a.txt", content: "one" },
+      { name: "./a.txt", content: "two" },
+    ]);
+    expect(upsertArchiveRootMeta(zipAbs, YAML)).toEqual({
+      rewritten: false,
+      hold: "archive.duplicate_member",
+    });
   });
 });

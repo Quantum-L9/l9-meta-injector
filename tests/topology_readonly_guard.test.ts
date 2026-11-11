@@ -21,11 +21,11 @@ import { afterAll, describe, expect, it } from "vitest";
 const guard = require("../scripts/topology-conformance.js") as {
   checkoutDigest(root: string): { digest: string; entries: Record<string, string> };
   dropPycache(root: string, before: Record<string, string>): void;
-  mutatedCheckoutPaths(
-    before: Record<string, string>,
-    after: Record<string, string>,
-  ): string[];
-  validateCorpusObservation(packet: Record<string, unknown>, observed: Record<string, unknown>): void;
+  mutatedCheckoutPaths(before: Record<string, string>, after: Record<string, string>): string[];
+  validateCorpusObservation(
+    packet: Record<string, unknown>,
+    observed: Record<string, unknown>,
+  ): void;
 };
 
 const scratch: string[] = [];
@@ -93,8 +93,9 @@ describe("the checkout digest", () => {
     fs.chmodSync(target, 0o600);
     // A run that left the bytes alone and changed a mode has still modified
     // somebody else's repository.
-    expect(guard.mutatedCheckoutPaths(before.entries, guard.checkoutDigest(root).entries))
-      .toEqual(["pyproject.toml"]);
+    expect(guard.mutatedCheckoutPaths(before.entries, guard.checkoutDigest(root).entries)).toEqual([
+      "pyproject.toml",
+    ]);
   });
 
   it("ignores git's own bookkeeping, which changes when git is merely asked a question", () => {
@@ -106,8 +107,9 @@ describe("the checkout digest", () => {
     // `git rev-parse HEAD` is the first thing the harness runs, and git is
     // entitled to touch its own store while answering. That is not this
     // repository writing into the consumer's source.
-    expect(guard.mutatedCheckoutPaths(before.entries, guard.checkoutDigest(root).entries))
-      .toEqual([]);
+    expect(guard.mutatedCheckoutPaths(before.entries, guard.checkoutDigest(root).entries)).toEqual(
+      [],
+    );
   });
 });
 
@@ -133,8 +135,9 @@ describe("the bytecode caches an interpreter leaves behind", () => {
     // And what the harness compares is then identical to what it started with,
     // so a real write is not lost in the noise of a bytecode cache.
     expect(guard.checkoutDigest(root).digest).toBe(before.digest);
-    expect(guard.mutatedCheckoutPaths(before.entries, guard.checkoutDigest(root).entries))
-      .toEqual([]);
+    expect(guard.mutatedCheckoutPaths(before.entries, guard.checkoutDigest(root).entries)).toEqual(
+      [],
+    );
   });
 
   it("does not take anything else with them (REG-WU-073-RC-111-e)", () => {
@@ -147,8 +150,9 @@ describe("the bytecode caches an interpreter leaves behind", () => {
     guard.dropPycache(root, before.entries);
     expect(fs.existsSync(path.join(decoy, "keep.py"))).toBe(true);
     // And the consumer's own source is untouched by the cleanup.
-    expect(fs.existsSync(path.join(root, "src", "l9_constellation_topology", "__init__.py")))
-      .toBe(true);
+    expect(fs.existsSync(path.join(root, "src", "l9_constellation_topology", "__init__.py"))).toBe(
+      true,
+    );
   });
 });
 
@@ -168,7 +172,9 @@ describe("caches are judged by provenance, not by name (WU-073, RC-111)", () => 
     guard.dropPycache(root, before.entries);
     expect(fs.existsSync(path.join(source, "x.cpython-311.pyc"))).toBe(true);
     expect(fs.existsSync(path.join(venv, "x.cpython-311.pyc"))).toBe(true);
-    expect(guard.mutatedCheckoutPaths(before.entries, guard.checkoutDigest(root).entries)).toEqual([]);
+    expect(guard.mutatedCheckoutPaths(before.entries, guard.checkoutDigest(root).entries)).toEqual(
+      [],
+    );
   });
 
   it("REG-WU-073-RC-111-b: a run-written regular file named __pycache__ is a reported mutation", () => {
@@ -176,7 +182,9 @@ describe("caches are judged by provenance, not by name (WU-073, RC-111)", () => 
     const before = guard.checkoutDigest(root);
     fs.writeFileSync(path.join(root, "src", "__pycache__"), "not a cache\n", "utf8");
     guard.dropPycache(root, before.entries);
-    expect(guard.mutatedCheckoutPaths(before.entries, guard.checkoutDigest(root).entries)).toEqual(["src/__pycache__"]);
+    expect(guard.mutatedCheckoutPaths(before.entries, guard.checkoutDigest(root).entries)).toEqual([
+      "src/__pycache__",
+    ]);
   });
 
   it("REG-WU-073-RC-111-c: deleting a pre-existing cache is a reported mutation", () => {
@@ -196,8 +204,9 @@ describe("caches are judged by provenance, not by name (WU-073, RC-111)", () => 
     const before = guard.checkoutDigest(root);
     fs.writeFileSync(path.join(cache, "loader.cpython-311.pyc"), "compiled by the run\n", "utf8");
     guard.dropPycache(root, before.entries);
-    expect(guard.mutatedCheckoutPaths(before.entries, guard.checkoutDigest(root).entries))
-      .toEqual(["src/l9_constellation_topology/__pycache__/loader.cpython-311.pyc"]);
+    expect(guard.mutatedCheckoutPaths(before.entries, guard.checkoutDigest(root).entries)).toEqual([
+      "src/l9_constellation_topology/__pycache__/loader.cpython-311.pyc",
+    ]);
   });
 
   it("refuses to clean without the before snapshot that proves provenance", () => {
@@ -208,22 +217,35 @@ describe("caches are judged by provenance, not by name (WU-073, RC-111)", () => 
 
 describe("canonical corpus identity at the sibling boundary", () => {
   const packet = {
-    packet_type: "l9.corpus-intelligence", packet_version: "1.1.0",
-    packet_id: "packet:unit-fixture", semantic_hash: "sha256:unit-fixture",
+    packet_type: "l9.corpus-intelligence",
+    packet_version: "1.1.0",
+    packet_id: "packet:unit-fixture",
+    semantic_hash: "sha256:unit-fixture",
   };
 
   it("accepts exactly the producer identity at canonical ingress", () => {
-    expect(() => guard.validateCorpusObservation(packet, { ...packet, is_canonical: true })).not.toThrow();
+    expect(() =>
+      guard.validateCorpusObservation(packet, { ...packet, is_canonical: true }),
+    ).not.toThrow();
   });
 
   it("rejects reconstructed output even when its identity matches", () => {
-    expect(() => guard.validateCorpusObservation(packet, { ...packet, is_canonical: false })).toThrow(/adapted/);
+    expect(() =>
+      guard.validateCorpusObservation(packet, { ...packet, is_canonical: false }),
+    ).toThrow(/adapted/);
     expect(() => guard.validateCorpusObservation(packet, { ...packet })).toThrow(/adapted/);
   });
 
-  it.each(["packet_id", "semantic_hash", "packet_type", "packet_version"])("rejects a mismatched %s", (field) => {
-    expect(() => guard.validateCorpusObservation(packet, {
-      ...packet, is_canonical: true, [field]: "different",
-    })).toThrow(/different corpus/);
-  });
+  it.each(["packet_id", "semantic_hash", "packet_type", "packet_version"])(
+    "rejects a mismatched %s",
+    (field) => {
+      expect(() =>
+        guard.validateCorpusObservation(packet, {
+          ...packet,
+          is_canonical: true,
+          [field]: "different",
+        }),
+      ).toThrow(/different corpus/);
+    },
+  );
 });

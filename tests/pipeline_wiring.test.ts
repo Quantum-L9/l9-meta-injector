@@ -1,11 +1,15 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { runPipelineAsync } from "../src/pipeline";
 import { hasAllPlanes } from "../src/meta_v3";
+import { runPipelineAsync } from "../src/pipeline";
 import { PipelineConfig } from "../src/schema";
 
-function tmpDir() { const d = path.join(os.tmpdir(), `l9-wire-${Date.now()}-${Math.random().toString(36).slice(2)}`); fs.mkdirSync(d, { recursive: true }); return d; }
+function tmpDir() {
+  const d = path.join(os.tmpdir(), `l9-wire-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  fs.mkdirSync(d, { recursive: true });
+  return d;
+}
 
 const SKILL_MD = `## Role
 Senior auditor agent reviewing code for lint violations.
@@ -21,14 +25,25 @@ Senior auditor agent reviewing code for lint violations.
 `;
 
 test("pipeline wires in semantic classifier, placement compiler, and MetaV3 (DWL-001/002/003)", async () => {
-  const root = tmpDir(); const out = tmpDir();
-  const skills = path.join(root, "skills"); fs.mkdirSync(skills);
+  const root = tmpDir();
+  const out = tmpDir();
+  const skills = path.join(root, "skills");
+  fs.mkdirSync(skills);
   fs.writeFileSync(path.join(skills, "lint_file.md"), SKILL_MD);
 
   const cfg: PipelineConfig = {
-    root, glob: "**/*.md", dryRun: false, outDir: out, namespace: "l9",
-    authority: "l9.doctrine.platform", nearDupThreshold: 0.9, hashPrefixLength: 16,
-    indexDir: out, verbose: false, llmEnabled: false, normalizeFilenames: false,
+    root,
+    glob: "**/*.md",
+    dryRun: false,
+    outDir: out,
+    namespace: "l9",
+    authority: "l9.doctrine.platform",
+    nearDupThreshold: 0.9,
+    hashPrefixLength: 16,
+    indexDir: out,
+    verbose: false,
+    llmEnabled: false,
+    normalizeFilenames: false,
   };
 
   const result = await runPipelineAsync(cfg);
@@ -62,14 +77,25 @@ test("pipeline wires in semantic classifier, placement compiler, and MetaV3 (DWL
 }, 15000);
 
 test("dry-run computes wiring in-memory but writes no index files", async () => {
-  const root = tmpDir(); const out = tmpDir();
-  const skills = path.join(root, "skills"); fs.mkdirSync(skills);
+  const root = tmpDir();
+  const out = tmpDir();
+  const skills = path.join(root, "skills");
+  fs.mkdirSync(skills);
   fs.writeFileSync(path.join(skills, "lint_file.md"), SKILL_MD);
 
   const cfg: PipelineConfig = {
-    root, glob: "**/*.md", dryRun: true, outDir: out, namespace: "l9",
-    authority: "l9.doctrine.platform", nearDupThreshold: 0.9, hashPrefixLength: 16,
-    indexDir: out, verbose: false, llmEnabled: false, normalizeFilenames: false,
+    root,
+    glob: "**/*.md",
+    dryRun: true,
+    outDir: out,
+    namespace: "l9",
+    authority: "l9.doctrine.platform",
+    nearDupThreshold: 0.9,
+    hashPrefixLength: 16,
+    indexDir: out,
+    verbose: false,
+    llmEnabled: false,
+    normalizeFilenames: false,
   };
 
   const result = await runPipelineAsync(cfg);

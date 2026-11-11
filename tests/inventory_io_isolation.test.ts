@@ -23,13 +23,19 @@ const seam = vi.hoisted(() => ({
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
   const failure = (syscall: string, target: string): NodeJS.ErrnoException => {
-    const error = new Error(`EACCES: simulated failure, ${syscall} '${target}'`) as NodeJS.ErrnoException;
+    const error = new Error(
+      `EACCES: simulated failure, ${syscall} '${target}'`,
+    ) as NodeJS.ErrnoException;
     error.code = "EACCES";
     return error;
   };
   const openSync = ((target: fs.PathLike, flags?: fs.OpenMode, ...rest: unknown[]) => {
     const base = path.basename(String(target));
-    if (seam.stagingLockedFor && flags === "wx" && base.startsWith(`.${seam.stagingLockedFor}.l9stage-`)) {
+    if (
+      seam.stagingLockedFor &&
+      flags === "wx" &&
+      base.startsWith(`.${seam.stagingLockedFor}.l9stage-`)
+    ) {
       throw failure("open", String(target));
     }
     if (seam.unreadable && base === seam.unreadable && (flags === undefined || flags === "r")) {
@@ -38,7 +44,11 @@ vi.mock("node:fs", async (importOriginal) => {
     return (actual.openSync as (...args: unknown[]) => number)(target, flags, ...rest);
   }) as typeof fs.openSync;
   const readFileSync = ((target: fs.PathOrFileDescriptor, ...rest: unknown[]) => {
-    if (seam.unreadable && typeof target !== "number" && path.basename(String(target)) === seam.unreadable) {
+    if (
+      seam.unreadable &&
+      typeof target !== "number" &&
+      path.basename(String(target)) === seam.unreadable
+    ) {
       throw failure("open", String(target));
     }
     return (actual.readFileSync as (...args: unknown[]) => unknown)(target, ...rest);
@@ -69,7 +79,12 @@ describe("WU-074 RC-056: archive rewrite I/O failures are isolated to their reco
     fs.writeFileSync(path.join(root, "z_later.md"), "# later\n");
     seam.stagingLockedFor = "pack.zip";
     const out = path.join(tmp(), "out");
-    const result = inventoryTree({ root, outDir: out, folderSidecars: false, now: "2030-01-01T00:00:00.000Z" });
+    const result = inventoryTree({
+      root,
+      outDir: out,
+      folderSidecars: false,
+      now: "2030-01-01T00:00:00.000Z",
+    });
     const rec = result.records.find((r) => r.relative_path === "pack.zip")!;
     expect(rec.unknowns).toContain("archive_rewrite_held:archive.rewrite_io_failed:EACCES");
     expect(fs.readFileSync(path.join(root, "pack.zip"))).toEqual(zip);
@@ -86,7 +101,12 @@ describe("WU-074 RC-056: archive rewrite I/O failures are isolated to their reco
     fs.writeFileSync(path.join(root, "z_later.md"), "# later\n");
     seam.unreadable = "locked.tar";
     const out = path.join(tmp(), "out");
-    const result = inventoryTree({ root, outDir: out, folderSidecars: false, now: "2030-01-01T00:00:00.000Z" });
+    const result = inventoryTree({
+      root,
+      outDir: out,
+      folderSidecars: false,
+      now: "2030-01-01T00:00:00.000Z",
+    });
     const rec = result.records.find((r) => r.relative_path === "locked.tar")!;
     expect(rec.unknowns).toContain("archive_rewrite_held:archive.rewrite_io_failed:EACCES");
     expect(fs.readFileSync(path.join(root, "z_later.md"), "utf8")).toContain("inspected_at:");

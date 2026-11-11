@@ -11,8 +11,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { discoverFiles } from "../src/retrieval";
 import { runPipelineAsync } from "../src/pipeline";
+import { discoverFiles } from "../src/retrieval";
 import type { PipelineConfig } from "../src/schema";
 
 const dirs: string[] = [];
@@ -30,18 +30,31 @@ afterEach(() => {
 function cfg(root: string, dryRun: boolean): PipelineConfig {
   const out = tmpDir("l9-wu013-out-");
   return {
-    root, glob: "**/*", dryRun, outDir: out, indexDir: out, namespace: "l9",
-    authority: "l9.doctrine.platform", nearDupThreshold: 0.9, hashPrefixLength: 16,
-    verbose: false, llmEnabled: false, normalizeFilenames: true,
+    root,
+    glob: "**/*",
+    dryRun,
+    outDir: out,
+    indexDir: out,
+    namespace: "l9",
+    authority: "l9.doctrine.platform",
+    nearDupThreshold: 0.9,
+    hashPrefixLength: 16,
+    verbose: false,
+    llmEnabled: false,
+    normalizeFilenames: true,
   };
 }
 
 function sidecars(root: string): string[] {
-  return fs.readdirSync(root).filter((name) => name.endsWith(".normalize.log.yaml")).sort();
+  return fs
+    .readdirSync(root)
+    .filter((name) => name.endsWith(".normalize.log.yaml"))
+    .sort();
 }
 
 function disposition(root: string, relative: string): string | undefined {
-  return discoverFiles(root, "**/*").summary.entries.find((entry) => entry.path === relative)?.disposition;
+  return discoverFiles(root, "**/*").summary.entries.find((entry) => entry.path === relative)
+    ?.disposition;
 }
 
 describe("WU-013 normalize sidecars are excluded from discovery", () => {

@@ -11,7 +11,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { runApplyAsync } from "../src/apply";
-import { runCheckAsync, type CheckConfig } from "../src/check";
+import { type CheckConfig, runCheckAsync } from "../src/check";
 
 const report = require("../scripts/lib/operation-report") as {
   redact: (value: string) => string;
@@ -37,7 +37,8 @@ function tempRoot(authority?: string): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "l9-failure-report-"));
   roots.push(root);
   fs.mkdirSync(path.join(root, ".l9"), { recursive: true });
-  if (authority !== undefined) fs.writeFileSync(path.join(root, ".l9", "meta-authority.yaml"), authority, "utf8");
+  if (authority !== undefined)
+    fs.writeFileSync(path.join(root, ".l9", "meta-authority.yaml"), authority, "utf8");
   fs.writeFileSync(path.join(root, "guide.md"), "# Guide\n\nBody text.\n", "utf8");
   return root;
 }
@@ -70,7 +71,12 @@ afterEach(() => {
 });
 
 /** Every governed refusal an operator can hit, and the evidence each must produce. */
-const PROBES: Array<{ name: string; setup: (root: string) => void; authority?: string; expect: RegExp[] }> = [
+const PROBES: Array<{
+  name: string;
+  setup: (root: string) => void;
+  authority?: string;
+  expect: RegExp[];
+}> = [
   {
     name: "missing_authority",
     expect: [/META_AUTHORITY_FILE_MISSING/, /meta-authority\.yaml/],
@@ -94,8 +100,11 @@ const PROBES: Array<{ name: string; setup: (root: string) => void; authority?: s
     expect: [/META_AUTHORITY_CONFLICT/, /scripts\/inject-l9-meta\.py/],
     setup: (root) => {
       fs.mkdirSync(path.join(root, "scripts"), { recursive: true });
-      fs.writeFileSync(path.join(root, "scripts", "inject-l9-meta.py"),
-        'from pathlib import Path\n\ndef inject(target, header):\n    Path(target).write_text(header)\n', "utf8");
+      fs.writeFileSync(
+        path.join(root, "scripts", "inject-l9-meta.py"),
+        "from pathlib import Path\n\ndef inject(target, header):\n    Path(target).write_text(header)\n",
+        "utf8",
+      );
     },
   },
   {
@@ -103,7 +112,11 @@ const PROBES: Array<{ name: string; setup: (root: string) => void; authority?: s
     authority: VALID_AUTHORITY,
     expect: [/META_AUTHORITY_CONFLICT/, /broken\.md/, /FRONTMATTER_CLOSING_FENCE_MISSING/],
     setup: (root) => {
-      fs.writeFileSync(path.join(root, "broken.md"), "---\ntitle: Broken\n\n# No closing fence\n", "utf8");
+      fs.writeFileSync(
+        path.join(root, "broken.md"),
+        "---\ntitle: Broken\n\n# No closing fence\n",
+        "utf8",
+      );
     },
   },
 ];
@@ -133,7 +146,9 @@ describe("check failures are self-explaining", () => {
 
     const rendered = report.renderCheck("check-cli", result.check, result.warnings).join("\n");
     expect(rendered).toMatch(/stale: guide\.md: authorized inline metadata differs/);
-    expect(rendered).toMatch(/missing: \.l9\/metadata-index\.jsonl: canonical central metadata index is missing/);
+    expect(rendered).toMatch(
+      /missing: \.l9\/metadata-index\.jsonl: canonical central metadata index is missing/,
+    );
     // Expected/actual hashes accompany the drift so it can be reproduced, not guessed at.
     expect(rendered).toMatch(/expected [0-9a-f]{64}, actual [0-9a-f]{64}/);
   });
@@ -170,20 +185,24 @@ describe("ordering and containment", () => {
   });
 
   test("credential-shaped values are redacted from quoted evidence", () => {
-    const rendered = report.renderApply("apply-cli", {
-      authorityConflicts: [{
-        code: "META_AUTHORITY_CONFLICT",
-        path: ".github/workflows/meta.yml",
-        message: "active control surface invokes a competing metadata writer",
-        evidence: [
-          "legacy-writer-invocation at line 7",
-          'run: python sync.py --api-key=aB3dEfG9hIjKlMnOpQrStUvWxYz012345',
-          "Authorization: Bearer aB3dEfG9hIjKlMnOpQrStUvWxYz012345",
+    const rendered = report
+      .renderApply("apply-cli", {
+        authorityConflicts: [
+          {
+            code: "META_AUTHORITY_CONFLICT",
+            path: ".github/workflows/meta.yml",
+            message: "active control surface invokes a competing metadata writer",
+            evidence: [
+              "legacy-writer-invocation at line 7",
+              "run: python sync.py --api-key=aB3dEfG9hIjKlMnOpQrStUvWxYz012345",
+              "Authorization: Bearer aB3dEfG9hIjKlMnOpQrStUvWxYz012345",
+            ],
+          },
         ],
-      }],
-      authorityNotices: [],
-      carrierDecisions: [],
-    }).join("\n");
+        authorityNotices: [],
+        carrierDecisions: [],
+      })
+      .join("\n");
     expect(rendered).not.toContain("aB3dEfG9hIjKlMnOpQrStUvWxYz012345");
     expect(rendered).toContain("[redacted]");
     // The actionable parts survive redaction.
@@ -200,25 +219,37 @@ describe("ordering and containment", () => {
 
   test("a thrown error renders a message, not a stack, unless debugging", () => {
     const error = new Error("APPLY_POSTCONDITION_FAILED: index differs from planned bytes");
-    expect(report.renderThrow("apply-cli", error, {}).join("\n"))
-      .toBe("apply-cli: FAILED: APPLY_POSTCONDITION_FAILED: index differs from planned bytes");
+    expect(report.renderThrow("apply-cli", error, {}).join("\n")).toBe(
+      "apply-cli: FAILED: APPLY_POSTCONDITION_FAILED: index differs from planned bytes",
+    );
     expect(report.renderThrow("apply-cli", error, { L9_DEBUG: "1" })).toHaveLength(2);
   });
 });
 
 describe("non-blocking findings stay visible", () => {
   test("a migration allowance and a frontmatter fallback are both reported as notes", async () => {
-    const root = tempRoot(VALID_AUTHORITY.replace("legacy_writers: forbidden", "legacy_writers: migration_only"));
+    const root = tempRoot(
+      VALID_AUTHORITY.replace("legacy_writers: forbidden", "legacy_writers: migration_only"),
+    );
     fs.mkdirSync(path.join(root, "scripts"), { recursive: true });
-    fs.writeFileSync(path.join(root, "scripts", "inject-l9-meta.py"),
-      'from pathlib import Path\n\ndef inject(target, header):\n    Path(target).write_text(header)\n', "utf8");
-    fs.writeFileSync(path.join(root, "service.md"), "---\ntitle: Service\nlimits:\n  cpu: 2\n---\n\n# Service\n", "utf8");
+    fs.writeFileSync(
+      path.join(root, "scripts", "inject-l9-meta.py"),
+      "from pathlib import Path\n\ndef inject(target, header):\n    Path(target).write_text(header)\n",
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(root, "service.md"),
+      "---\ntitle: Service\nlimits:\n  cpu: 2\n---\n\n# Service\n",
+      "utf8",
+    );
 
     const result = await runApplyAsync(config(root));
     expect(result.passed).toBe(true);
 
     const rendered = report.renderApply("apply-cli", result.apply, result.warnings).join("\n");
     expect(rendered).toMatch(/note: META_LEGACY_WRITER_MIGRATION at scripts\/inject-l9-meta\.py/);
-    expect(rendered).toMatch(/note: service\.md: .*frontmatter_unsupported:FRONTMATTER_COMPLEX_YAML/);
+    expect(rendered).toMatch(
+      /note: service\.md: .*frontmatter_unsupported:FRONTMATTER_COMPLEX_YAML/,
+    );
   });
 });

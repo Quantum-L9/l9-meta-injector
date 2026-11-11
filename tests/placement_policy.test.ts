@@ -1,14 +1,11 @@
 import * as fs from "fs";
 import {
-  compilePlacementPlan,
-  compilePlacementPlans,
-} from "../src/placement_policy";
-import {
   CLASS_PLACEMENT_HINTS,
-  SEMANTIC_ARTIFACT_CLASSES,
   placementHintFor,
   QUARANTINE_DIRECTORY,
+  SEMANTIC_ARTIFACT_CLASSES,
 } from "../src/artifact_class";
+import { compilePlacementPlan, compilePlacementPlans } from "../src/placement_policy";
 
 // --- placement wiring -------------------------------------------------------
 
@@ -21,7 +18,7 @@ test.each([...SEMANTIC_ARTIFACT_CLASSES])(
     const h = placementHintFor(c);
     expect(h.directory.length).toBeGreaterThan(0);
     expect(h.layer.length).toBeGreaterThan(0);
-  }
+  },
 );
 
 // --- compilePlacementPlan ---------------------------------------------------
@@ -37,7 +34,7 @@ test("source module places under src/", () => {
 
 test("schema places under schemas/", () =>
   expect(compilePlacementPlan("schemas/l9_meta_v3.schema.yaml").targetPath).toBe(
-    "schemas/l9_meta_v3.schema.yaml"
+    "schemas/l9_meta_v3.schema.yaml",
   ));
 
 test("test file places under tests/", () =>
@@ -123,18 +120,13 @@ test("compilePlacementPlans preserves order and length", () => {
     { sourcePath: "docs/x.md" },
   ]);
   expect(plans).toHaveLength(3);
-  expect(plans.map((p) => p.artifactClass)).toEqual([
-    "source_module",
-    "unknown",
-    "documentation",
-  ]);
+  expect(plans.map((p) => p.artifactClass)).toEqual(["source_module", "unknown", "documentation"]);
 });
 
 test("compilePlacementPlans applies options to every item", () => {
-  const plans = compilePlacementPlans(
-    [{ sourcePath: "src/a.ts" }, { sourcePath: "docs/x.md" }],
-    { namespace: "acme" }
-  );
+  const plans = compilePlacementPlans([{ sourcePath: "src/a.ts" }, { sourcePath: "docs/x.md" }], {
+    namespace: "acme",
+  });
   expect(plans.every((p) => p.namespace === "acme")).toBe(true);
 });
 

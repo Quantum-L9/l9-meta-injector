@@ -9,20 +9,21 @@
 // The containment rules get the same treatment. A `local` provider aimed at a
 // public host, a redirect to another origin, a bearer over cleartext, a response
 // that never ends: each is a real attempt against a real server, refused.
-import * as http from "node:http";
+
 import * as fs from "node:fs";
+import * as http from "node:http";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import {
   EmbeddingProviderError,
+  extractVector,
   HTTP_JSON_PROVIDER,
   HttpJsonEmbeddingProvider,
-  extractVector,
   isLoopbackEndpoint,
 } from "../src/corpus_embedding_http";
-import { runCorpusScan } from "../src/corpus_scan";
 import { runEmbeddings } from "../src/corpus_embeddings";
+import { runCorpusScan } from "../src/corpus_scan";
 
 const servers: http.Server[] = [];
 const scratch: string[] = [];
@@ -74,7 +75,10 @@ async function serve(
  */
 function toyVector(text: string, dimension = 16): number[] {
   const vector = new Array<number>(dimension).fill(0);
-  for (const word of text.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2)) {
+  for (const word of text
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length > 2)) {
     let hash = 0;
     for (const character of word) hash = (hash * 31 + character.charCodeAt(0)) % 100_003;
     vector[hash % dimension] = (vector[hash % dimension] as number) + 1;
@@ -95,13 +99,19 @@ describe("the http-json embedding provider", () => {
     const { url, requests } = await serve((_request, response, body) => {
       const input = (JSON.parse(body) as { input: string }).input;
       response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify({
-        model: "toy-v3", model_revision: "toy-v3", embedding: toyVector(input),
-      }));
+      response.end(
+        JSON.stringify({
+          model: "toy-v3",
+          model_revision: "toy-v3",
+          embedding: toyVector(input),
+        }),
+      );
     });
 
     const provider = new HttpJsonEmbeddingProvider({
-      endpoint: url, modelId: "toy", locality: "local",
+      endpoint: url,
+      modelId: "toy",
+      locality: "local",
     });
     const result = await provider.embed("content-addressed storage for an archive");
 
@@ -130,7 +140,9 @@ describe("the http-json embedding provider", () => {
       response.end(JSON.stringify({ model: "toy", embedding: [1, 0, 0] }));
     });
     const provider = new HttpJsonEmbeddingProvider({
-      endpoint: url, modelId: "toy", locality: "local",
+      endpoint: url,
+      modelId: "toy",
+      locality: "local",
     });
     const result = await provider.embed("text");
     expect(result.provider_metadata.reported_model).toBe("toy");
@@ -138,11 +150,18 @@ describe("the http-json embedding provider", () => {
     expect(provider.reportedRevision).toBeNull();
 
     const run = await runEmbeddings({
-      documents: [{
-        artifact_id: "a", normalized_document_id: "normdoc:a", decoded: true,
-        is_secret_candidate: false, title: "A", body: "text",
-      }],
-      provider, pairThreshold: 0.5,
+      documents: [
+        {
+          artifact_id: "a",
+          normalized_document_id: "normdoc:a",
+          decoded: true,
+          is_secret_candidate: false,
+          title: "A",
+          body: "text",
+        },
+      ],
+      provider,
+      pairThreshold: 0.5,
     });
     expect(run.report.reported_model_revision).toBeNull();
     expect(run.report.model_revision).toBeNull();
@@ -154,10 +173,16 @@ describe("the http-json embedding provider", () => {
       response.end(JSON.stringify({ model_revision: "toy-v3", embedding: [1, 0, 0] }));
     });
     const run = await runEmbeddings({
-      documents: [{
-        artifact_id: "a", normalized_document_id: "normdoc:a", decoded: true,
-        is_secret_candidate: false, title: "A", body: "text",
-      }],
+      documents: [
+        {
+          artifact_id: "a",
+          normalized_document_id: "normdoc:a",
+          decoded: true,
+          is_secret_candidate: false,
+          title: "A",
+          body: "text",
+        },
+      ],
       provider: new HttpJsonEmbeddingProvider({ endpoint: url, modelId: "toy", locality: "local" }),
       pairThreshold: 0.5,
     });
@@ -197,23 +222,42 @@ describe("the http-json embedding provider", () => {
     // A name that merely contains a loopback literal is not a loopback host.
     expect(isLoopbackEndpoint("https://127.0.0.1.example.com/v1")).toBe(false);
 
-    expect(() => new HttpJsonEmbeddingProvider({
-      endpoint: "https://embeddings.example.com/v1", modelId: "m", locality: "local",
-    })).toThrow(/loopback/);
+    expect(
+      () =>
+        new HttpJsonEmbeddingProvider({
+          endpoint: "https://embeddings.example.com/v1",
+          modelId: "m",
+          locality: "local",
+        }),
+    ).toThrow(/loopback/);
   });
 
   it("requires https of a remote provider, and refuses a bearer over cleartext", () => {
-    expect(() => new HttpJsonEmbeddingProvider({
-      endpoint: "http://embeddings.example.com/v1", modelId: "m", locality: "remote",
-    })).toThrow(/https/);
+    expect(
+      () =>
+        new HttpJsonEmbeddingProvider({
+          endpoint: "http://embeddings.example.com/v1",
+          modelId: "m",
+          locality: "remote",
+        }),
+    ).toThrow(/https/);
 
-    expect(() => new HttpJsonEmbeddingProvider({
-      endpoint: "http://127.0.0.1:9000/embed", modelId: "m", locality: "local", token: "secret",
-    })).toThrow(/cleartext/);
+    expect(
+      () =>
+        new HttpJsonEmbeddingProvider({
+          endpoint: "http://127.0.0.1:9000/embed",
+          modelId: "m",
+          locality: "local",
+          token: "secret",
+        }),
+    ).toThrow(/cleartext/);
 
     // And over https the same token is accepted.
     const provider = new HttpJsonEmbeddingProvider({
-      endpoint: "https://127.0.0.1:9000/embed", modelId: "m", locality: "local", token: "secret",
+      endpoint: "https://127.0.0.1:9000/embed",
+      modelId: "m",
+      locality: "local",
+      token: "secret",
     });
     expect(provider.configuration.endpoint).toBe("https://127.0.0.1:9000/embed");
   });
@@ -224,7 +268,9 @@ describe("the http-json embedding provider", () => {
       response.end();
     });
     const provider = new HttpJsonEmbeddingProvider({
-      endpoint: url, modelId: "toy", locality: "local",
+      endpoint: url,
+      modelId: "toy",
+      locality: "local",
     });
     // The failure is the point: a followed redirect would have posted the
     // document text to a host the operator never approved.
@@ -237,7 +283,9 @@ describe("the http-json embedding provider", () => {
       response.end(JSON.stringify({ error: "unknown model 'toy'" }));
     });
     const provider = new HttpJsonEmbeddingProvider({
-      endpoint: url, modelId: "toy", locality: "local",
+      endpoint: url,
+      modelId: "toy",
+      locality: "local",
     });
     await expect(provider.embed("text")).rejects.toThrow(/answered 400.*unknown model/);
   });
@@ -251,7 +299,10 @@ describe("the http-json embedding provider", () => {
       response.end("1]");
     });
     const provider = new HttpJsonEmbeddingProvider({
-      endpoint: url, modelId: "toy", locality: "local", maxResponseBytes: 512,
+      endpoint: url,
+      modelId: "toy",
+      locality: "local",
+      maxResponseBytes: 512,
     });
     await expect(provider.embed("text")).rejects.toThrow(/cap/);
   });
@@ -263,7 +314,10 @@ describe("the http-json embedding provider", () => {
       // ...and never another byte.
     });
     const provider = new HttpJsonEmbeddingProvider({
-      endpoint: url, modelId: "toy", locality: "local", timeoutMs: 300,
+      endpoint: url,
+      modelId: "toy",
+      locality: "local",
+      timeoutMs: 300,
     });
     const started = Date.now();
     await expect(provider.embed("text")).rejects.toThrow("embedding request timed out after 300ms");
@@ -276,7 +330,10 @@ describe("the http-json embedding provider", () => {
       response.write("internal");
     });
     const provider = new HttpJsonEmbeddingProvider({
-      endpoint: url, modelId: "toy", locality: "local", timeoutMs: 300,
+      endpoint: url,
+      modelId: "toy",
+      locality: "local",
+      timeoutMs: 300,
     });
     const started = Date.now();
     await expect(provider.embed("text")).rejects.toThrow(/answered 500|timed out after 300ms/);
@@ -294,7 +351,9 @@ describe("the http-json embedding provider", () => {
     const realSet = globalThis.setTimeout;
     const realClear = globalThis.clearTimeout;
     const setSpy = vi.spyOn(globalThis, "setTimeout").mockImplementation(((
-      handler: () => void, ms?: number, ...rest: unknown[]
+      handler: () => void,
+      ms?: number,
+      ...rest: unknown[]
     ) => {
       const id = realSet(handler, ms, ...rest);
       if (ms === deadline) armed.push(id);
@@ -306,7 +365,10 @@ describe("the http-json embedding provider", () => {
     }) as typeof clearTimeout);
     try {
       const provider = new HttpJsonEmbeddingProvider({
-        endpoint: url, modelId: "toy", locality: "local", timeoutMs: deadline,
+        endpoint: url,
+        modelId: "toy",
+        locality: "local",
+        timeoutMs: deadline,
       });
       const result = await provider.embed("text");
       expect(result.vector).toEqual([1, 0, 0]);
@@ -326,7 +388,11 @@ describe("the http-json embedding provider", () => {
       response.end("1]");
     });
     const provider = new HttpJsonEmbeddingProvider({
-      endpoint: url, modelId: "toy", locality: "local", maxResponseBytes: 512, timeoutMs: 5_000,
+      endpoint: url,
+      modelId: "toy",
+      locality: "local",
+      maxResponseBytes: 512,
+      timeoutMs: 5_000,
     });
     await expect(provider.embed("text")).rejects.toThrow(/byte cap/);
   });
@@ -358,25 +424,25 @@ describe("a corpus scan with an embedding provider", () => {
     const root = tmp();
     fs.writeFileSync(
       path.join(root, "graph-memory.md"),
-      "# Temporal knowledge graph\n\n"
-      + "Persist temporal assertions in the knowledge graph so that a later query can "
-      + "recover what was believed at a given moment. Assertions are versioned, never "
-      + "overwritten, and every edge carries the interval it was valid over.\n",
+      "# Temporal knowledge graph\n\n" +
+        "Persist temporal assertions in the knowledge graph so that a later query can " +
+        "recover what was believed at a given moment. Assertions are versioned, never " +
+        "overwritten, and every edge carries the interval it was valid over.\n",
       "utf8",
     );
     fs.writeFileSync(
       path.join(root, "durable-facts.md"),
-      "# Time-aware durable memory\n\n"
-      + "Store time-aware facts in durable semantic memory so a later question can "
-      + "recover what was believed at a given moment. Facts are versioned, never "
-      + "overwritten, and every relation carries the interval it was valid over.\n",
+      "# Time-aware durable memory\n\n" +
+        "Store time-aware facts in durable semantic memory so a later question can " +
+        "recover what was believed at a given moment. Facts are versioned, never " +
+        "overwritten, and every relation carries the interval it was valid over.\n",
       "utf8",
     );
     fs.writeFileSync(
       path.join(root, "billing.md"),
-      "# Invoice reconciliation\n\n"
-      + "Match settled payments against outstanding invoices and raise a discrepancy "
-      + "when the totals differ by more than the rounding tolerance.\n",
+      "# Invoice reconciliation\n\n" +
+        "Match settled payments against outstanding invoices and raise a discrepancy " +
+        "when the totals differ by more than the rounding tolerance.\n",
       "utf8",
     );
     // Never embedded, at any setting, and proven so below.
@@ -392,14 +458,18 @@ describe("a corpus scan with an embedding provider", () => {
     const { url, requests } = await serve((_request, response, body) => {
       const input = (JSON.parse(body) as { input: string }).input;
       response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify({ model: "toy-v3", data: [{ embedding: toyVector(input, 24) }] }));
+      response.end(
+        JSON.stringify({ model: "toy-v3", data: [{ embedding: toyVector(input, 24) }] }),
+      );
     });
 
     const result = await runCorpusScan({
       roots: [{ path: embeddingCorpus() }],
       producerVersion: "test",
       embeddingProvider: new HttpJsonEmbeddingProvider({
-        endpoint: url, modelId: "toy", locality: "local",
+        endpoint: url,
+        modelId: "toy",
+        locality: "local",
       }),
       embeddingPairThreshold: 0.5,
     });
@@ -455,7 +525,9 @@ describe("a corpus scan with an embedding provider", () => {
       roots: [{ path: embeddingCorpus() }],
       producerVersion: "test",
       embeddingProvider: new HttpJsonEmbeddingProvider({
-        endpoint: url, modelId: "toy", locality: "local",
+        endpoint: url,
+        modelId: "toy",
+        locality: "local",
       }),
       embeddingPairThreshold: 0.5,
     });
@@ -464,7 +536,8 @@ describe("a corpus scan with an embedding provider", () => {
     // relation, and it never becomes a fact or a project.
     const pairs = result.semantic?.relations.pairs ?? [];
     const embeddingSignals = pairs.filter((pair) =>
-      pair.signals.some((signal) => signal.kind === "embedding_similarity"));
+      pair.signals.some((signal) => signal.kind === "embedding_similarity"),
+    );
     expect(embeddingSignals.length).toBeGreaterThan(0);
     for (const pair of embeddingSignals) {
       for (const signal of pair.signals) {
@@ -491,15 +564,18 @@ describe("a corpus scan with an embedding provider", () => {
       response.end(JSON.stringify({ embedding: toyVector(input, 24) }));
     });
     const root = embeddingCorpus();
-    const scan = async (workers: number): ReturnType<typeof runCorpusScan> => runCorpusScan({
-      roots: [{ path: root }],
-      producerVersion: "test",
-      embeddingProvider: new HttpJsonEmbeddingProvider({
-        endpoint: url, modelId: "toy", locality: "local",
-      }),
-      embeddingPairThreshold: 0.5,
-      budgets: { max_parallel_embedding_requests: workers },
-    });
+    const scan = async (workers: number): ReturnType<typeof runCorpusScan> =>
+      runCorpusScan({
+        roots: [{ path: root }],
+        producerVersion: "test",
+        embeddingProvider: new HttpJsonEmbeddingProvider({
+          endpoint: url,
+          modelId: "toy",
+          locality: "local",
+        }),
+        embeddingPairThreshold: 0.5,
+        budgets: { max_parallel_embedding_requests: workers },
+      });
 
     const sequential = await scan(1);
     const parallel = await scan(8);
@@ -507,12 +583,15 @@ describe("a corpus scan with an embedding provider", () => {
     // The bound changes when requests are issued and nothing else. Vector
     // digests, the reported dimension and the pair list are all identical,
     // which is what makes raising it safe rather than merely faster.
-    expect(parallel.semantic?.embeddingReport.vector_digests)
-      .toEqual(sequential.semantic?.embeddingReport.vector_digests);
-    expect(parallel.semantic?.embeddingReport.dimension)
-      .toBe(sequential.semantic?.embeddingReport.dimension);
-    expect(parallel.semantic?.embeddingReport.artifact_count_sent)
-      .toBe(sequential.semantic?.embeddingReport.artifact_count_sent);
+    expect(parallel.semantic?.embeddingReport.vector_digests).toEqual(
+      sequential.semantic?.embeddingReport.vector_digests,
+    );
+    expect(parallel.semantic?.embeddingReport.dimension).toBe(
+      sequential.semantic?.embeddingReport.dimension,
+    );
+    expect(parallel.semantic?.embeddingReport.artifact_count_sent).toBe(
+      sequential.semantic?.embeddingReport.artifact_count_sent,
+    );
     expect(parallel.coverage.embeddings).toEqual(sequential.coverage.embeddings);
   });
 
@@ -543,7 +622,9 @@ describe("a corpus scan with an embedding provider", () => {
       roots: [{ path: root }],
       producerVersion: "test",
       embeddingProvider: new HttpJsonEmbeddingProvider({
-        endpoint: url, modelId: "toy", locality: "local",
+        endpoint: url,
+        modelId: "toy",
+        locality: "local",
       }),
       budgets: { max_parallel_embedding_requests: 4 },
     });
@@ -576,7 +657,9 @@ describe("a corpus scan with an embedding provider", () => {
       roots: [{ path: root }],
       producerVersion: "test",
       embeddingProvider: new HttpJsonEmbeddingProvider({
-        endpoint: url, modelId: "toy", locality: "local",
+        endpoint: url,
+        modelId: "toy",
+        locality: "local",
       }),
       budgets: { max_parallel_embedding_requests: 1 },
     });
@@ -588,13 +671,17 @@ describe("a corpus scan with an embedding provider", () => {
       response.writeHead(503);
       response.end("model server is restarting");
     });
-    await expect(runCorpusScan({
-      roots: [{ path: embeddingCorpus() }],
-      producerVersion: "test",
-      embeddingProvider: new HttpJsonEmbeddingProvider({
-        endpoint: url, modelId: "toy", locality: "local",
+    await expect(
+      runCorpusScan({
+        roots: [{ path: embeddingCorpus() }],
+        producerVersion: "test",
+        embeddingProvider: new HttpJsonEmbeddingProvider({
+          endpoint: url,
+          modelId: "toy",
+          locality: "local",
+        }),
       }),
-    })).rejects.toThrow(/embedding pass failed.*503/);
+    ).rejects.toThrow(/embedding pass failed.*503/);
   });
 
   it("changes the analysis identity, and not the source snapshot", async () => {
@@ -610,17 +697,21 @@ describe("a corpus scan with an embedding provider", () => {
       roots: [{ path: root }],
       producerVersion: "test",
       embeddingProvider: new HttpJsonEmbeddingProvider({
-        endpoint: url, modelId: "toy", locality: "local",
+        endpoint: url,
+        modelId: "toy",
+        locality: "local",
       }),
     });
 
     // The bytes on the disk did not change, so the source snapshot must not.
-    expect(with_.snapshot.corpus_source_snapshot_id)
-      .toBe(without.snapshot.corpus_source_snapshot_id);
+    expect(with_.snapshot.corpus_source_snapshot_id).toBe(
+      without.snapshot.corpus_source_snapshot_id,
+    );
     // What was computed over them did, so the analysis identity must — and the
     // embedding profile is the field that carries the difference.
-    expect(with_.snapshot.analysis.corpus_analysis_id)
-      .not.toBe(without.snapshot.analysis.corpus_analysis_id);
+    expect(with_.snapshot.analysis.corpus_analysis_id).not.toBe(
+      without.snapshot.analysis.corpus_analysis_id,
+    );
     expect(without.snapshot.analysis.embedding_profile).toBeNull();
     expect(with_.snapshot.analysis.embedding_profile).not.toBeNull();
   });

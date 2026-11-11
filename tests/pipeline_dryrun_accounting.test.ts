@@ -30,16 +30,27 @@ afterEach(() => {
 
 function cfg(root: string, out: string, dryRun: boolean, glob = "**/*"): PipelineConfig {
   return {
-    root, glob, dryRun, outDir: out, namespace: "l9",
-    authority: "l9.doctrine.platform", nearDupThreshold: 0.9, hashPrefixLength: 16,
-    indexDir: out, verbose: false, llmEnabled: false, normalizeFilenames: false,
+    root,
+    glob,
+    dryRun,
+    outDir: out,
+    namespace: "l9",
+    authority: "l9.doctrine.platform",
+    nearDupThreshold: 0.9,
+    hashPrefixLength: 16,
+    indexDir: out,
+    verbose: false,
+    llmEnabled: false,
+    normalizeFilenames: false,
   };
 }
 
 function treeHash(root: string): string {
   const hash = createHash("sha256");
   const walk = (dir: string): void => {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
+    for (const entry of fs
+      .readdirSync(dir, { withFileTypes: true })
+      .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
       const full = path.join(dir, entry.name);
       hash.update(`${entry.isDirectory() ? "d" : "f"}:${path.relative(root, full)}\0`);
       if (entry.isDirectory()) walk(full);
@@ -51,14 +62,19 @@ function treeHash(root: string): string {
 }
 
 function persistedCoverage(out: string): Record<string, unknown> {
-  return JSON.parse(fs.readFileSync(path.join(out, "coverage-report.json"), "utf8")) as Record<string, unknown>;
+  return JSON.parse(fs.readFileSync(path.join(out, "coverage-report.json"), "utf8")) as Record<
+    string,
+    unknown
+  >;
 }
 
-const HEADER_ISSUES = /No full-YAML front matter detected|No l9:meta comment block detected|No l9meta sidecar file detected|Body content changed/;
+const HEADER_ISSUES =
+  /No full-YAML front matter detected|No l9:meta comment block detected|No l9meta sidecar file detected|Body content changed/;
 
 describe("WU-009 RC-015 dry-run verification", () => {
   test("REG-WU-009-RC-015-a: dry-run over an unannotated tree passes and persists verifyFailed=0, tree unchanged", async () => {
-    const root = tmpDir(); const out = tmpDir();
+    const root = tmpDir();
+    const out = tmpDir();
     fs.writeFileSync(path.join(root, "notes.md"), "# Notes\n\nSome notes.\n");
     fs.writeFileSync(path.join(root, "app.ts"), "export const answer = 42;\n");
     const before = treeHash(root);
@@ -75,7 +91,8 @@ describe("WU-009 RC-015 dry-run verification", () => {
   }, 20000);
 
   test("REG-WU-009-RC-015-b: meta-derived issues are still reported in dry-run, header issues are not", async () => {
-    const root = tmpDir(); const out = tmpDir();
+    const root = tmpDir();
+    const out = tmpDir();
     fs.mkdirSync(path.join(root, "common"));
     const fp = path.join(root, "common", "guide.md");
     fs.writeFileSync(fp, "# Guide\n\nShared guidance.\n");
@@ -94,10 +111,14 @@ describe("WU-009 RC-015 dry-run verification", () => {
   }, 20000);
 
   test("REG-WU-009-RC-015-c: a real run still fails verification for the incomplete-prompt fixture", async () => {
-    const root = tmpDir(); const out = tmpDir();
+    const root = tmpDir();
+    const out = tmpDir();
     fs.mkdirSync(path.join(root, "prompts"));
     const fp = path.join(root, "prompts", "Prompt-Incomplete.md");
-    fs.writeFileSync(fp, "Some freeform prose with no role, objective, inputs, output format, or model target.\n");
+    fs.writeFileSync(
+      fp,
+      "Some freeform prose with no role, objective, inputs, output format, or model target.\n",
+    );
 
     const result = await runPipelineAsync(cfg(root, out, false, "**/*.md"));
 
@@ -133,12 +154,17 @@ describe("WU-009 RC-015 dry-run verification", () => {
   }, 30000);
 
   test("REG-WU-009-RC-015-e: pipeline-cli --dry-run exits 0 on a correct plan", () => {
-    const root = tmpDir(); const out = tmpDir();
+    const root = tmpDir();
+    const out = tmpDir();
     fs.writeFileSync(path.join(root, "notes.md"), "# Notes\n\nSome notes.\n");
     fs.writeFileSync(path.join(root, "app.ts"), "export const answer = 42;\n");
     const before = treeHash(root);
     const script = path.join(__dirname, "..", "scripts", "pipeline-cli.js");
-    const run = spawnSync(process.execPath, [script, root, "--dry-run", "--authority", "x", "--out", out, "--index-dir", out], { encoding: "utf8" });
+    const run = spawnSync(
+      process.execPath,
+      [script, root, "--dry-run", "--authority", "x", "--out", out, "--index-dir", out],
+      { encoding: "utf8" },
+    );
     expect(run.stderr).not.toMatch(/verification FAILED/);
     expect(run.status).toBe(0);
     expect(treeHash(root)).toBe(before);
@@ -150,7 +176,8 @@ const MALFORMED_DOC = "---\ntitle: x\n# Never closed\n\nBody.\n";
 
 describe("WU-009 RC-021 inline-carrier-blocked files are accounted", () => {
   test("REG-WU-009-RC-021-a: a blocked file is listed with its reason and issue code", async () => {
-    const root = tmpDir(); const out = tmpDir();
+    const root = tmpDir();
+    const out = tmpDir();
     fs.writeFileSync(path.join(root, "ok.md"), "# Ok\n\nFine.\n");
     const nested = path.join(root, "nested.md");
     fs.writeFileSync(nested, NESTED_DOC);
@@ -166,27 +193,37 @@ describe("WU-009 RC-021 inline-carrier-blocked files are accounted", () => {
     expect(detail?.reason).toBe("carrier_inline_blocked");
     expect(detail?.inlineCarrierBlock?.code).toBe("FRONTMATTER_COMPLEX_YAML");
     expect(detail?.inlineCarrierBlock?.malformed).toBe(false);
-    expect(result.coverage.injected + result.coverage.skippedBinary + result.coverage.skippedNonInjectable).toBe(result.coverage.scanned);
+    expect(
+      result.coverage.injected +
+        result.coverage.skippedBinary +
+        result.coverage.skippedNonInjectable,
+    ).toBe(result.coverage.scanned);
     expect(fs.readFileSync(nested, "utf8")).toBe(NESTED_DOC);
   }, 20000);
 
   test("REG-WU-009-RC-021-b: the persisted coverage report names the blocked file and its issue code", async () => {
-    const root = tmpDir(); const out = tmpDir();
+    const root = tmpDir();
+    const out = tmpDir();
     fs.writeFileSync(path.join(root, "ok.md"), "# Ok\n\nFine.\n");
     const nested = path.join(root, "nested.md");
     fs.writeFileSync(nested, NESTED_DOC);
 
     await runPipelineAsync(cfg(root, out, false, "**/*.md"));
 
-    const persisted = persistedCoverage(out) as { skipped: { nonInjectable: string[]; nonInjectableDetails: Array<Record<string, unknown>> } };
+    const persisted = persistedCoverage(out) as {
+      skipped: { nonInjectable: string[]; nonInjectableDetails: Array<Record<string, unknown>> };
+    };
     expect(persisted.skipped.nonInjectable).toContain(nested);
     const detail = persisted.skipped.nonInjectableDetails.find((d) => d.path === nested);
     expect(detail?.reason).toBe("carrier_inline_blocked");
-    expect((detail?.inlineCarrierBlock as { code?: string } | undefined)?.code).toBe("FRONTMATTER_COMPLEX_YAML");
+    expect((detail?.inlineCarrierBlock as { code?: string } | undefined)?.code).toBe(
+      "FRONTMATTER_COMPLEX_YAML",
+    );
   }, 20000);
 
   test("REG-WU-009-RC-021-c: a malformed header is listed with malformed:true in dry-run, bytes unchanged", async () => {
-    const root = tmpDir(); const out = tmpDir();
+    const root = tmpDir();
+    const out = tmpDir();
     const broken = path.join(root, "broken.md");
     fs.writeFileSync(broken, MALFORMED_DOC);
 
@@ -195,7 +232,11 @@ describe("WU-009 RC-021 inline-carrier-blocked files are accounted", () => {
     const detail = result.coverage.skipped.nonInjectableDetails.find((d) => d.path === broken);
     expect(detail?.reason).toBe("carrier_inline_blocked");
     expect(detail?.inlineCarrierBlock?.malformed).toBe(true);
-    expect(result.coverage.injected + result.coverage.skippedBinary + result.coverage.skippedNonInjectable).toBe(result.coverage.scanned);
+    expect(
+      result.coverage.injected +
+        result.coverage.skippedBinary +
+        result.coverage.skippedNonInjectable,
+    ).toBe(result.coverage.scanned);
     expect(fs.readFileSync(broken, "utf8")).toBe(MALFORMED_DOC);
   }, 20000);
 });

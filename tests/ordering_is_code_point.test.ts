@@ -5,12 +5,12 @@
 // list could serialize differently on two hosts. `src/ordering.ts` is the one
 // total order; this test holds the seam to it.
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { describe, expect, test } from "vitest";
-import { compareCodePoints } from "../src/ordering";
 import { normalizeFilename } from "../src/normalize_filename";
+import { compareCodePoints } from "../src/ordering";
 import { discoverFiles } from "../src/retrieval";
-import * as os from "node:os";
 
 const SRC = path.join(__dirname, "..", "src");
 
@@ -20,11 +20,15 @@ describe("code-point ordering on the seam", () => {
     const walk = (dir: string): void => {
       for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) { walk(full); continue; }
+        if (entry.isDirectory()) {
+          walk(full);
+          continue;
+        }
         if (!entry.name.endsWith(".ts") || entry.name === "ordering.ts") continue;
         const lines = fs.readFileSync(full, "utf8").split("\n");
         lines.forEach((line, index) => {
-          if (/\.localeCompare\(/.test(line) && !/^\s*(\/\/|\*)/.test(line)) offenders.push(`${path.relative(SRC, full)}:${index + 1}`);
+          if (/\.localeCompare\(/.test(line) && !/^\s*(\/\/|\*)/.test(line))
+            offenders.push(`${path.relative(SRC, full)}:${index + 1}`);
         });
       }
     };

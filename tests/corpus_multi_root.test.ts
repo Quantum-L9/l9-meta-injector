@@ -9,12 +9,12 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import {
-  CORPUS_ROOTS_SCHEMA,
   bindCorpusRoots,
+  CORPUS_ROOTS_SCHEMA,
+  corpusAnalysisId,
   corpusPath,
   corpusRootId,
   corpusRootSnapshotId,
-  corpusAnalysisId,
   corpusSourceSnapshotId,
   defaultRootKey,
   parseRootArgument,
@@ -59,11 +59,17 @@ describe("root identity", () => {
     const forward = corpusSourceSnapshotId([root("a", "r1", "p1"), root("b", "r2", "p2")]);
     // The order the operator typed the roots in is not a fact about the corpus.
     expect(corpusSourceSnapshotId([root("b", "r2", "p2"), root("a", "r1", "p1")])).toBe(forward);
-    expect(corpusSourceSnapshotId([root("a", "r9", "p1"), root("b", "r2", "p2")])).not.toBe(forward);
+    expect(corpusSourceSnapshotId([root("a", "r9", "p1"), root("b", "r2", "p2")])).not.toBe(
+      forward,
+    );
     // Two runs that read the same bytes but modelled them differently are not the
     // same observation, so the packet id participates.
-    expect(corpusSourceSnapshotId([root("a", "r1", "p9"), root("b", "r2", "p2")])).not.toBe(forward);
-    expect(corpusSourceSnapshotId([root("z", "r1", "p1"), root("b", "r2", "p2")])).not.toBe(forward);
+    expect(corpusSourceSnapshotId([root("a", "r1", "p9"), root("b", "r2", "p2")])).not.toBe(
+      forward,
+    );
+    expect(corpusSourceSnapshotId([root("z", "r1", "p1"), root("b", "r2", "p2")])).not.toBe(
+      forward,
+    );
   });
 
   it("keeps analysis policy out of the source identity and in the analysis identity", () => {
@@ -87,7 +93,9 @@ describe("root identity", () => {
       { ...profiles, readiness_profile: "other" },
       { ...profiles, embedding_profile: "text-embedding-3" },
     ]) {
-      expect(corpusAnalysisId({ corpusSourceSnapshotId: source, profiles: changed })).not.toBe(base);
+      expect(corpusAnalysisId({ corpusSourceSnapshotId: source, profiles: changed })).not.toBe(
+        base,
+      );
     }
 
     // ...and none of them moves the source identity. Swapping an embedding model
@@ -170,8 +178,14 @@ describe("root arguments and manifests", () => {
 
   it("refuse a JSON manifest that declares another schema", () => {
     const dir = tmp();
-    fs.writeFileSync(path.join(dir, "roots.json"), JSON.stringify({ schema: "other/v1", roots: [] }), "utf8");
-    expect(() => readRootManifest(path.join(dir, "roots.json"))).toThrow(/expected 'l9.corpus-roots\/v1'/);
+    fs.writeFileSync(
+      path.join(dir, "roots.json"),
+      JSON.stringify({ schema: "other/v1", roots: [] }),
+      "utf8",
+    );
+    expect(() => readRootManifest(path.join(dir, "roots.json"))).toThrow(
+      /expected 'l9.corpus-roots\/v1'/,
+    );
   });
 });
 
@@ -191,8 +205,14 @@ describe("binding", () => {
   }
 
   it("orders roots by identity, so the order they were typed in does not matter", () => {
-    const forward = bindCorpusRoots([binding("B", "sha256:b", "/b"), binding("A", "sha256:a", "/a")]);
-    const backward = bindCorpusRoots([binding("A", "sha256:a", "/a"), binding("B", "sha256:b", "/b")]);
+    const forward = bindCorpusRoots([
+      binding("B", "sha256:b", "/b"),
+      binding("A", "sha256:a", "/a"),
+    ]);
+    const backward = bindCorpusRoots([
+      binding("A", "sha256:a", "/a"),
+      binding("B", "sha256:b", "/b"),
+    ]);
     expect(forward.roots.map((r) => r.root_key)).toEqual(backward.roots.map((r) => r.root_key));
   });
 
@@ -240,7 +260,9 @@ describe("analysis across the root boundary", () => {
 
     // A duplicate relation points every non-representative member at one centre.
     expect(result.candidates.relations.every((relation) => relation.symmetric)).toBe(true);
-    expect(result.candidates.relations.every((relation) => relation.type === "DUPLICATE_OF")).toBe(true);
+    expect(result.candidates.relations.every((relation) => relation.type === "DUPLICATE_OF")).toBe(
+      true,
+    );
   });
 
   it("reports coverage of what it could not read, without calling it a failure", async () => {
@@ -258,7 +280,9 @@ describe("analysis across the root boundary", () => {
     expect(result.coverage.exact_hash_coverage.ratio).toBe(1);
     expect(result.coverage.reasoning_handoff.no_priority_statement).toContain("no priority");
     expect(result.coverage.reasoning_handoff.unique_content_estimate).toBeGreaterThan(0);
-    expect(result.coverage.reasoning_handoff.readiness_evidence_refs.file).toBe("readiness-evidence.json");
+    expect(result.coverage.reasoning_handoff.readiness_evidence_refs.file).toBe(
+      "readiness-evidence.json",
+    );
   });
 
   it("decodes everything an extractor claims, not only the lexical extensions", async () => {
@@ -269,7 +293,11 @@ describe("analysis across the root boundary", () => {
     const root = path.join(tmp(), "svc");
     fs.mkdirSync(path.join(root, "src"), { recursive: true });
     fs.writeFileSync(path.join(root, "pyproject.toml"), '[project]\nname = "svc"\n', "utf8");
-    fs.writeFileSync(path.join(root, "src", "main.py"), '"""Entry point."""\n\n\ndef main():\n    return 1\n', "utf8");
+    fs.writeFileSync(
+      path.join(root, "src", "main.py"),
+      '"""Entry point."""\n\n\ndef main():\n    return 1\n',
+      "utf8",
+    );
     const result = await runCorpusScan({ roots: [{ path: root }], producerVersion: "test" });
     expect(result.coverage.interpretation_coverage.eligible).toBeGreaterThan(0);
     expect(result.coverage.interpretation_coverage.ratio).toBe(1);

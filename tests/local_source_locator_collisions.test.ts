@@ -40,7 +40,8 @@ vi.mock("../src/corpus_readiness", async (importOriginal) => {
   return {
     ...actual,
     buildReadinessEvidence: (input: Parameters<typeof actual.buildReadinessEvidence>[0]) => {
-      for (const artifact of input.artifacts) readinessArchiveIds.set(artifact.root_relative_path, artifact.archive_id);
+      for (const artifact of input.artifacts)
+        readinessArchiveIds.set(artifact.root_relative_path, artifact.archive_id);
       return actual.buildReadinessEvidence(input);
     },
   };
@@ -94,7 +95,9 @@ describe("RC-045 — a locator names exactly one record", () => {
       expect(observation.archives).toHaveLength(1);
       expect(observation.archives[0].expanded).toBe(false);
       expect(observation.archives[0].contentHash).toMatch(/^sha256:[0-9a-f]{64}$/);
-      expect(observation.archives[0].holds.map((hold) => hold.code)).toEqual(["archive.locator_ambiguous"]);
+      expect(observation.archives[0].holds.map((hold) => hold.code)).toEqual([
+        "archive.locator_ambiguous",
+      ]);
       expect(observation.virtualArtifacts).toEqual([]);
       const record = observation.inventory.records.find((r) => r.relative_path === "a.zip!/m.txt");
       expect(record?.absolute_path).toBe(path.join(root, "a.zip!", "m.txt"));
@@ -103,7 +106,10 @@ describe("RC-045 — a locator names exactly one record", () => {
     }
 
     // REG-WU-034-RC-045-f: the packet built from it validates.
-    const packet = withLocalSourceModel({ path: root, name: "a", producerVersion: PRODUCER_VERSION }, (r) => r.packet);
+    const packet = withLocalSourceModel(
+      { path: root, name: "a", producerVersion: PRODUCER_VERSION },
+      (r) => r.packet,
+    );
     expectUnique(packet.payload.artifacts.map((artifact) => artifact.artifact_id));
     expect(validateRepositoryModelPacket(packet).status).toBe("passed");
     expect(treeSnapshot(root)).toEqual(before);
@@ -120,8 +126,9 @@ describe("RC-045 — a locator names exactly one record", () => {
     try {
       expect(observation.archives.map((archive) => archive.sourcePath)).toEqual(["outer.zip"]);
       expect(observation.archives[0].expanded).toBe(false);
-      expect(observation.archives[0].holds.map((hold) => [hold.code, hold.memberPath]))
-        .toEqual([["archive.locator_ambiguous", "in.zip!/y.txt"]]);
+      expect(observation.archives[0].holds.map((hold) => [hold.code, hold.memberPath])).toEqual([
+        ["archive.locator_ambiguous", "in.zip!/y.txt"],
+      ]);
       expect(observation.virtualArtifacts).toEqual([]);
       expectUnique(observation.inventory.records.map((record) => record.relative_path));
     } finally {
@@ -129,7 +136,10 @@ describe("RC-045 — a locator names exactly one record", () => {
     }
 
     // REG-WU-034-RC-045-f
-    const packet = withLocalSourceModel({ path: root, name: "outer", producerVersion: PRODUCER_VERSION }, (r) => r.packet);
+    const packet = withLocalSourceModel(
+      { path: root, name: "outer", producerVersion: PRODUCER_VERSION },
+      (r) => r.packet,
+    );
     expect(validateRepositoryModelPacket(packet).status).toBe("passed");
   });
 
@@ -140,17 +150,25 @@ describe("RC-045 — a locator names exactly one record", () => {
 
     expectUnique(relativePaths(root));
     semanticAncestry.clear();
-    withLocalSourceModel({ path: root, name: "notes", producerVersion: PRODUCER_VERSION }, (result) => {
-      expect(memberArchiveAncestry(result.observation).get("notes!/x.md")).toBeUndefined();
-      expect(validateRepositoryModelPacket(result.packet).status).toBe("passed");
-      buildLocalSourceCorpus(result);
-    });
+    withLocalSourceModel(
+      { path: root, name: "notes", producerVersion: PRODUCER_VERSION },
+      (result) => {
+        expect(memberArchiveAncestry(result.observation).get("notes!/x.md")).toBeUndefined();
+        expect(validateRepositoryModelPacket(result.packet).status).toBe("passed");
+        buildLocalSourceCorpus(result);
+      },
+    );
     expect(semanticAncestry.get("notes!/x.md")).toEqual([]);
 
     semanticAncestry.clear();
     readinessArchiveIds.clear();
-    const scan = await runCorpusScan({ roots: [{ path: root, name: "disk" }], producerVersion: "test" });
-    const document = scan.documentIndex.documents.find((doc) => doc.root_relative_path === "notes!/x.md");
+    const scan = await runCorpusScan({
+      roots: [{ path: root, name: "disk" }],
+      producerVersion: "test",
+    });
+    const document = scan.documentIndex.documents.find(
+      (doc) => doc.root_relative_path === "notes!/x.md",
+    );
     expect(document?.archive_ancestry).toEqual([]);
     expect(document?.is_archive_member).toBe(false);
     expect(readinessArchiveIds.get("notes!/x.md")).toBeNull();
@@ -164,7 +182,9 @@ describe("RC-045 — a locator names exactly one record", () => {
     const observation = acquireLocalSource({ path: root, scratchParent: tmp() });
     try {
       expect(observation.archives[0].expanded).toBe(true);
-      expect(observation.virtualArtifacts.map((member) => member.virtualSourcePath)).toEqual(["Wow!/b.zip!/m.txt"]);
+      expect(observation.virtualArtifacts.map((member) => member.virtualSourcePath)).toEqual([
+        "Wow!/b.zip!/m.txt",
+      ]);
       const ancestry = memberArchiveAncestry(observation);
       expect(ancestry.get("Wow!/b.zip!/m.txt")).toEqual(["Wow!/b.zip"]);
       expect(ancestry.get("Wow!/b.zip")).toBeUndefined();
@@ -173,17 +193,25 @@ describe("RC-045 — a locator names exactly one record", () => {
     }
 
     semanticAncestry.clear();
-    withLocalSourceModel({ path: root, name: "wow", producerVersion: PRODUCER_VERSION }, (result) => {
-      // REG-WU-034-RC-045-f
-      expect(validateRepositoryModelPacket(result.packet).status).toBe("passed");
-      buildLocalSourceCorpus(result);
-    });
+    withLocalSourceModel(
+      { path: root, name: "wow", producerVersion: PRODUCER_VERSION },
+      (result) => {
+        // REG-WU-034-RC-045-f
+        expect(validateRepositoryModelPacket(result.packet).status).toBe("passed");
+        buildLocalSourceCorpus(result);
+      },
+    );
     expect(semanticAncestry.get("Wow!/b.zip!/m.txt")).toEqual(["Wow!/b.zip"]);
     expect(semanticAncestry.get("Wow!/b.zip")).toEqual([]);
 
     readinessArchiveIds.clear();
-    const scan = await runCorpusScan({ roots: [{ path: root, name: "disk" }], producerVersion: "test" });
-    const member = scan.documentIndex.documents.find((doc) => doc.root_relative_path === "Wow!/b.zip!/m.txt");
+    const scan = await runCorpusScan({
+      roots: [{ path: root, name: "disk" }],
+      producerVersion: "test",
+    });
+    const member = scan.documentIndex.documents.find(
+      (doc) => doc.root_relative_path === "Wow!/b.zip!/m.txt",
+    );
     expect(member?.archive_ancestry).toEqual(["Wow!/b.zip"]);
     expect(scan.snapshot.archives).toHaveLength(1);
     expect(scan.snapshot.archives[0].corpus_path.endsWith("Wow!/b.zip")).toBe(true);
@@ -194,13 +222,20 @@ describe("RC-045 — a locator names exactly one record", () => {
   test("REG-WU-034-RC-045-d: nested ancestry is the parent chain, outermost first", () => {
     const root = tmp();
     writeRawZip(path.join(root, "outer.zip"), [
-      { name: "in.zip", content: zipBytes([{ name: "deep/y.txt", content: "nested\n" }]), stored: true },
+      {
+        name: "in.zip",
+        content: zipBytes([{ name: "deep/y.txt", content: "nested\n" }]),
+        stored: true,
+      },
     ]);
     const observation = acquireLocalSource({ path: root, scratchParent: tmp() });
     try {
       const ancestry = memberArchiveAncestry(observation);
       expect(ancestry.get("outer.zip!/in.zip")).toEqual(["outer.zip"]);
-      expect(ancestry.get("outer.zip!/in.zip!/deep/y.txt")).toEqual(["outer.zip", "outer.zip!/in.zip"]);
+      expect(ancestry.get("outer.zip!/in.zip!/deep/y.txt")).toEqual([
+        "outer.zip",
+        "outer.zip!/in.zip",
+      ]);
     } finally {
       observation.dispose();
     }
@@ -216,7 +251,8 @@ describe("RC-045 — a locator names exactly one record", () => {
     );
     const emitted = path.join(tmp(), "bundle");
     emitRepositoryModelBundle(packet, { outDir: emitted });
-    expect(fs.readFileSync(path.join(emitted, "packet.json"), "utf8"))
-      .toBe(fs.readFileSync(path.join(golden, "packet.json"), "utf8"));
+    expect(fs.readFileSync(path.join(emitted, "packet.json"), "utf8")).toBe(
+      fs.readFileSync(path.join(golden, "packet.json"), "utf8"),
+    );
   });
 });

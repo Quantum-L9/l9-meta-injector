@@ -11,22 +11,27 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { runSemanticAnalysis } from "../src/corpus_semantic_run";
+import type { ConfidenceClass, PairClassification } from "../src/corpus_fusion";
 import {
   AMBIGUITY_WEAKLY_CONNECTED,
-  CONSOLIDATION_EVIDENCE_PROJECT_VERSIONS,
-  CONSOLIDATION_EVIDENCE_SUPERSESSION,
   buildProjectCandidates,
   buildTopicCandidates,
+  CONSOLIDATION_EVIDENCE_PROJECT_VERSIONS,
+  CONSOLIDATION_EVIDENCE_SUPERSESSION,
 } from "../src/corpus_fusion";
-import type { ConfidenceClass, PairClassification } from "../src/corpus_fusion";
+import { CorpusIntelligenceError } from "../src/corpus_intelligence";
+import { corpusIntelligenceInput } from "../src/corpus_intelligence_input";
 import type { PairSignal, SemanticPair } from "../src/corpus_pairs";
 import { runCorpusScan } from "../src/corpus_scan";
-import { corpusIntelligenceInput } from "../src/corpus_intelligence_input";
-import { CorpusIntelligenceError } from "../src/corpus_intelligence";
-import { artifact, exactDuplicates, lexicalRelated, supersession } from "./helpers/semantic_fixtures";
-import { writeMultiRootCorpus } from "./helpers/multi_root_fixtures";
+import { runSemanticAnalysis } from "../src/corpus_semantic_run";
 import type { SemanticArtifactInput } from "../src/corpus_semantics";
+import { writeMultiRootCorpus } from "./helpers/multi_root_fixtures";
+import {
+  artifact,
+  exactDuplicates,
+  lexicalRelated,
+  supersession,
+} from "./helpers/semantic_fixtures";
 
 const scratch: string[] = [];
 function tmp(prefix: string): string {
@@ -59,13 +64,23 @@ const PLAN_BODY = [
 function planOnTwoRoots(): SemanticArtifactInput[] {
   return [
     artifact({
-      id: "plan-r1", path: "widget-api/PLAN.md", root: "r1", hash: "sha256:plan",
-      title: "Widget API Plan", headings: ["Routing", "Rollout"], body: PLAN_BODY,
+      id: "plan-r1",
+      path: "widget-api/PLAN.md",
+      root: "r1",
+      hash: "sha256:plan",
+      title: "Widget API Plan",
+      headings: ["Routing", "Rollout"],
+      body: PLAN_BODY,
       duplicateCluster: "cluster:plan",
     }),
     artifact({
-      id: "plan-r2", path: "widget-api/PLAN.md", root: "r2", hash: "sha256:plan",
-      title: "Widget API Plan", headings: ["Routing", "Rollout"], body: PLAN_BODY,
+      id: "plan-r2",
+      path: "widget-api/PLAN.md",
+      root: "r2",
+      hash: "sha256:plan",
+      title: "Widget API Plan",
+      headings: ["Routing", "Rollout"],
+      body: PLAN_BODY,
       duplicateCluster: "cluster:plan",
     }),
   ];
@@ -84,15 +99,19 @@ describe("cross_root is computed by fusion from the members' roots", () => {
     const spans = (members: readonly string[]): boolean =>
       new Set(members.map((id) => rootOf.get(id))).size > 1;
 
-    const planTopic = result.topics.candidates.find((c) => c.member_artifact_ids.includes("plan-r1"));
-    const ingestTopic = result.topics.candidates.find((c) => c.member_artifact_ids.includes("ingest-a"));
+    const planTopic = result.topics.candidates.find((c) =>
+      c.member_artifact_ids.includes("plan-r1"),
+    );
+    const ingestTopic = result.topics.candidates.find((c) =>
+      c.member_artifact_ids.includes("ingest-a"),
+    );
     expect(planTopic).toBeDefined();
     expect(ingestTopic).toBeDefined();
     expect(planTopic!.cross_root).toBe(true);
     expect(ingestTopic!.cross_root).toBe(false);
 
-    const planConsolidation = result.consolidations.candidates.find(
-      (c) => c.member_artifact_ids.includes("plan-r1"),
+    const planConsolidation = result.consolidations.candidates.find((c) =>
+      c.member_artifact_ids.includes("plan-r1"),
     );
     expect(planConsolidation).toBeDefined();
     expect(planConsolidation!.cross_root).toBe(true);
@@ -103,13 +122,16 @@ describe("cross_root is computed by fusion from the members' roots", () => {
       ...result.projects.candidates,
       ...result.consolidations.candidates,
     ]) {
-      expect(candidate.cross_root, candidate.candidate_id).toBe(spans(candidate.member_artifact_ids));
+      expect(candidate.cross_root, candidate.candidate_id).toBe(
+        spans(candidate.member_artifact_ids),
+      );
     }
 
     // And within one root it is false for a consolidation too.
     const single = run(exactDuplicates());
     expect(single.consolidations.candidates.length).toBeGreaterThan(0);
-    for (const candidate of single.consolidations.candidates) expect(candidate.cross_root).toBe(false);
+    for (const candidate of single.consolidations.candidates)
+      expect(candidate.cross_root).toBe(false);
   });
 });
 
@@ -121,8 +143,8 @@ describe("a consolidation candidate's confidence class", () => {
     const result = run(
       exactDuplicates().map((input) => ({ ...input, declared_identifiers: declared })),
     );
-    const candidate = result.consolidations.candidates.find(
-      (c) => c.exact_duplicate_cluster_ids.includes("cluster:dup"),
+    const candidate = result.consolidations.candidates.find((c) =>
+      c.exact_duplicate_cluster_ids.includes("cluster:dup"),
     );
     expect(candidate).toBeDefined();
     const members = new Set(candidate!.member_artifact_ids);
@@ -191,10 +213,11 @@ describe("the packet translation reads the producer's values and refuses when th
   it("REG-WU-048-RC-074-d: a lexical project candidate keeps spans_roots and the documented weak floor", async () => {
     const result = await scanTwoRoots();
     const input = corpusIntelligenceInput(result, {
-      producerVersion: "test", createdAt: "2026-01-01T00:00:00.000Z",
+      producerVersion: "test",
+      createdAt: "2026-01-01T00:00:00.000Z",
     });
-    const lexical = result.candidates.project_candidates.find(
-      (candidate) => candidate.project_key.includes("widget-api"),
+    const lexical = result.candidates.project_candidates.find((candidate) =>
+      candidate.project_key.includes("widget-api"),
     );
     expect(lexical).toBeDefined();
     expect(lexical!.spans_roots).toBe(true);
@@ -211,7 +234,8 @@ describe("the packet translation reads the producer's values and refuses when th
   it("REG-WU-048-RC-074-e: every semantic packet cluster's cross_root agrees with its members' roots", async () => {
     const result = await scanTwoRoots();
     const input = corpusIntelligenceInput(result, {
-      producerVersion: "test", createdAt: "2026-01-01T00:00:00.000Z",
+      producerVersion: "test",
+      createdAt: "2026-01-01T00:00:00.000Z",
     });
     const semantic = result.semantic!;
     const rootOf = new Map(semantic.views.map((view) => [view.artifact_id, view.root_id]));
@@ -245,13 +269,20 @@ describe("supersession is a declaration that resolves between two members", () =
   function projectSupersedingOutsider(): SemanticArtifactInput[] {
     return [
       artifact({
-        id: "proj-plan", path: "gateway/plan.md", title: "Gateway Plan", headings: ["Routing"],
-        body: "The gateway plan routes requests by tenant.", references: ["gateway/spec.md"],
+        id: "proj-plan",
+        path: "gateway/plan.md",
+        title: "Gateway Plan",
+        headings: ["Routing"],
+        body: "The gateway plan routes requests by tenant.",
+        references: ["gateway/spec.md"],
         identifiers: [{ identifier: "gateway", manifest: "package.json", field: "name" }],
         supersedes: "archive/old-gateway-notes.md",
       }),
       artifact({
-        id: "proj-spec", path: "gateway/spec.md", title: "Gateway Spec", headings: ["Limits"],
+        id: "proj-spec",
+        path: "gateway/spec.md",
+        title: "Gateway Spec",
+        headings: ["Limits"],
         body: "The gateway spec fixes the per-tenant limits.",
         identifiers: [{ identifier: "gateway", manifest: "package.json", field: "name" }],
       }),
@@ -270,12 +301,19 @@ describe("supersession is a declaration that resolves between two members", () =
   it("REG-WU-048-RC-081-b: a plain reference to a path spelling 'superseded' is not a supersession", () => {
     const result = run([
       artifact({
-        id: "b1", path: "notes/index.md", title: "Design Index", headings: ["Designs"],
-        body: "The index lists the design documents.", references: ["notes/superseded-designs.md"],
+        id: "b1",
+        path: "notes/index.md",
+        title: "Design Index",
+        headings: ["Designs"],
+        body: "The index lists the design documents.",
+        references: ["notes/superseded-designs.md"],
       }),
       artifact({
-        id: "b2", path: "notes/superseded-designs.md", title: "Earlier Designs",
-        headings: ["Designs"], body: "Designs considered and set aside.",
+        id: "b2",
+        path: "notes/superseded-designs.md",
+        title: "Earlier Designs",
+        headings: ["Designs"],
+        body: "Designs considered and set aside.",
       }),
     ]);
     // The reference resolved, so the pair exists and carries the reference.
@@ -292,12 +330,13 @@ describe("supersession is a declaration that resolves between two members", () =
 
   it("REG-WU-048-RC-081-c: a genuine member-to-member supersession is still admitted and routed", () => {
     const result = run(supersession());
-    const candidate = result.consolidations.candidates.find(
-      (c) => c.evidence_class.includes(CONSOLIDATION_EVIDENCE_SUPERSESSION),
+    const candidate = result.consolidations.candidates.find((c) =>
+      c.evidence_class.includes(CONSOLIDATION_EVIDENCE_SUPERSESSION),
     );
     expect(candidate).toBeDefined();
     expect(candidate!.member_artifact_ids).toEqual(["design-v1", "design-v2"]);
-    const declared = result.views.find((view) => view.artifact_id === "design-v2")!
+    const declared = result.views
+      .find((view) => view.artifact_id === "design-v2")!
       .supersession_declarations.map((d) => d.assertion_id);
     expect(candidate!.supersession_assertion_ids).toEqual(declared);
     const routed = result.reasoningCandidates.find(
@@ -311,8 +350,8 @@ describe("supersession is a declaration that resolves between two members", () =
       { artifact_a_id: "proj-plan", artifact_b_id: "proj-spec", score: 0.9 },
     ]);
     const project = result.projects.candidates[0]!;
-    const versions = result.consolidations.candidates.find(
-      (c) => c.evidence_class.includes(CONSOLIDATION_EVIDENCE_PROJECT_VERSIONS),
+    const versions = result.consolidations.candidates.find((c) =>
+      c.evidence_class.includes(CONSOLIDATION_EVIDENCE_PROJECT_VERSIONS),
     );
     expect(versions).toBeDefined();
     expect(versions!.project_candidate_ids).toEqual([project.candidate_id]);
@@ -324,19 +363,34 @@ describe("supersession is a declaration that resolves between two members", () =
 
 describe("weakly connected members: one rule for topics and projects", () => {
   const PROFILE = {
-    pair_signal_profile_id: "test", pair_signal_profile_version: "1", pair_signal_profile_hash: "h",
+    pair_signal_profile_id: "test",
+    pair_signal_profile_version: "1",
+    pair_signal_profile_hash: "h",
   };
   function signal(kind: PairSignal["kind"], score: number): PairSignal {
     return { kind, method: `test:${kind}`, score, categorical: false, fact: false, detail: [] };
   }
   /** One strong lexical metric plus a sub-threshold model score: two families, one strong. */
-  const moderate = (): PairSignal[] => [signal("title_overlap", 0.6), signal("embedding_similarity", 0.5)];
+  const moderate = (): PairSignal[] => [
+    signal("title_overlap", 0.6),
+    signal("embedding_similarity", 0.5),
+  ];
   /** Two families, both strong. */
-  const strong = (): PairSignal[] => [signal("title_overlap", 0.6), signal("embedding_similarity", 0.9)];
+  const strong = (): PairSignal[] => [
+    signal("title_overlap", 0.6),
+    signal("embedding_similarity", 0.9),
+  ];
   /** One lexical metric below its threshold. */
   const weak = (): PairSignal[] => [signal("title_overlap", 0.2)];
   function pair(id: string, a: string, b: string, signals: PairSignal[]): SemanticPair {
-    return { pair_id: id, artifact_a_id: a, artifact_b_id: b, signals, evidence_refs: [], analysis_profile: PROFILE };
+    return {
+      pair_id: id,
+      artifact_a_id: a,
+      artifact_b_id: b,
+      signals,
+      evidence_refs: [],
+      analysis_profile: PROFILE,
+    };
   }
 
   it("REG-WU-048-RC-083-a: a moderate-only component keeps the flag when a weak pair is added inside it", () => {
@@ -368,6 +422,7 @@ describe("weakly connected members: one rule for topics and projects", () => {
     expect(topics[0]!.ambiguity_class).toContain(AMBIGUITY_WEAKLY_CONNECTED);
     // The project rule is the same predicate.
     const projects = buildProjectCandidates({ views: [], pairs });
-    for (const project of projects) expect(project.ambiguity_class).toContain(AMBIGUITY_WEAKLY_CONNECTED);
+    for (const project of projects)
+      expect(project.ambiguity_class).toContain(AMBIGUITY_WEAKLY_CONNECTED);
   });
 });

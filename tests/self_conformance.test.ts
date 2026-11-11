@@ -23,9 +23,18 @@ function copyOfSrc(): string {
 
 function cfg(root: string, out: string): PipelineConfig {
   return {
-    root, glob: "**/*.ts", dryRun: false, outDir: out, namespace: "l9",
-    authority: "l9.meta-injector", nearDupThreshold: 0.9, hashPrefixLength: 16,
-    indexDir: out, verbose: false, llmEnabled: false, normalizeFilenames: false,
+    root,
+    glob: "**/*.ts",
+    dryRun: false,
+    outDir: out,
+    namespace: "l9",
+    authority: "l9.meta-injector",
+    nearDupThreshold: 0.9,
+    hashPrefixLength: 16,
+    indexDir: out,
+    verbose: false,
+    llmEnabled: false,
+    normalizeFilenames: false,
   };
 }
 
@@ -41,11 +50,14 @@ describe("RAA-004 — the injector dogfoods its own src/ tree", () => {
     expect(result.injected.length).toBeGreaterThan(5);
 
     // Every processed source file preserves its body under injection.
-    const notPreserved = result.injected.filter((r) => !r.bodyPreserved).map((r) => path.basename(r.sourcePath));
+    const notPreserved = result.injected
+      .filter((r) => !r.bodyPreserved)
+      .map((r) => path.basename(r.sourcePath));
     expect(notPreserved).toEqual([]);
 
     // The toolkit's own sources verify clean through its own verifier.
-    const issues = result.verified.filter((v) => v.issues.length > 0)
+    const issues = result.verified
+      .filter((v) => v.issues.length > 0)
       .map((v) => `${path.basename(v.sourcePath)}: ${v.issues.join("; ")}`);
     expect(issues).toEqual([]);
     expect(result.verification.passed).toBe(true);

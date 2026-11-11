@@ -57,16 +57,22 @@ export function loadCoverageMatrix(repo: string): CoverageMatrix {
 }
 
 /** Write a case's document as a real file under a fresh root. */
-export function materializeCase(testCase: CoverageCase): { root: string; file: string; cleanup: () => void } {
+export function materializeCase(testCase: CoverageCase): {
+  root: string;
+  file: string;
+  cleanup: () => void;
+} {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "l9-arch-coverage-"));
   const root = path.join(base, "Coverage");
   fs.mkdirSync(root);
   const file = path.join(root, testCase.path);
   if (testCase.format === "docx") {
-    if (testCase.docx === undefined) throw new Error(`${testCase.id}: a docx case needs a docx spec`);
+    if (testCase.docx === undefined)
+      throw new Error(`${testCase.id}: a docx case needs a docx spec`);
     writeDocx(file, testCase.docx);
   } else {
-    if (testCase.source === undefined) throw new Error(`${testCase.id}: a markdown case needs a source`);
+    if (testCase.source === undefined)
+      throw new Error(`${testCase.id}: a markdown case needs a source`);
     fs.writeFileSync(file, testCase.source, "utf8");
   }
   return { root, file, cleanup: () => fs.rmSync(base, { recursive: true, force: true }) };
@@ -80,14 +86,24 @@ function startOf(record: CoverageRecord): number {
 
 /** Source order, so the matrix reads top to bottom as the document does. */
 function compareCoverageRecords(left: CoverageRecord, right: CoverageRecord): number {
-  return startOf(left) - startOf(right) || (left.unit_index ?? -1) - (right.unit_index ?? -1)
-    || (left.declared_text < right.declared_text ? -1 : left.declared_text > right.declared_text ? 1 : 0);
+  return (
+    startOf(left) - startOf(right) ||
+    (left.unit_index ?? -1) - (right.unit_index ?? -1) ||
+    (left.declared_text < right.declared_text
+      ? -1
+      : left.declared_text > right.declared_text
+        ? 1
+        : 0)
+  );
 }
 
 /** What the reader emitted and reported for one case, in a fixed order. */
-export async function observeCase(
-  testCase: CoverageCase,
-): Promise<{ observation: CoverageObservation; records: ArchitectureEvidenceRecord[]; root: string; cleanup: () => void }> {
+export async function observeCase(testCase: CoverageCase): Promise<{
+  observation: CoverageObservation;
+  records: ArchitectureEvidenceRecord[];
+  root: string;
+  cleanup: () => void;
+}> {
   const { root, cleanup } = materializeCase(testCase);
   const result = await runCorpusScan({
     roots: [{ path: root, name: "Coverage" }],
@@ -98,15 +114,17 @@ export async function observeCase(
   if (evidence === null) throw new Error("the projection was not selected");
   const records = evidence.records.filter((record) => record.source_path === testCase.path);
   const observation: CoverageObservation = {
-    records: records.map((record) => ({
-      statement_class: record.statement_class,
-      form: record.recognition.form,
-      label: record.recognition.label,
-      declared_text: record.declared_text,
-      locator: record.structured_locator,
-      unit_index: record.unit_index,
-      continuation_blocks: record.continuation_block_ids.length,
-    })).sort(compareCoverageRecords),
+    records: records
+      .map((record) => ({
+        statement_class: record.statement_class,
+        form: record.recognition.form,
+        label: record.recognition.label,
+        declared_text: record.declared_text,
+        locator: record.structured_locator,
+        unit_index: record.unit_index,
+        continuation_blocks: record.continuation_block_ids.length,
+      }))
+      .sort(compareCoverageRecords),
     diagnostics: evidence.manifest.diagnostics
       .filter((diagnostic) => diagnostic.source_path === testCase.path)
       .map((diagnostic) => diagnostic.code),

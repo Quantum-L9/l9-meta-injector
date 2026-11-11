@@ -1,6 +1,6 @@
+import { LlmDiagnostic, makeOpenAIAdapter } from "../src/llm";
 import { parseCanonicalYaml } from "../src/meta_schema";
-import { resolveNamespace, NamespaceConfig } from "../src/namespace";
-import { makeOpenAIAdapter, LlmDiagnostic } from "../src/llm";
+import { NamespaceConfig, resolveNamespace } from "../src/namespace";
 
 describe("SEC-001 — parsed YAML cannot pollute Object.prototype", () => {
   test("a __proto__ key lands on a null-prototype bag, not Object.prototype", () => {
@@ -15,8 +15,12 @@ describe("SEC-001 — parsed YAML cannot pollute Object.prototype", () => {
 
 describe("SEC-002 — namespace globs with regex metacharacters are safe", () => {
   const base: NamespaceConfig = {
-    namespace: "l9", authority: "a", nearDupThreshold: 0.9, hashPrefixLength: 16,
-    outputDir: ".", indexDir: ".",
+    namespace: "l9",
+    authority: "a",
+    nearDupThreshold: 0.9,
+    hashPrefixLength: 16,
+    outputDir: ".",
+    indexDir: ".",
   };
   test("an unbalanced-bracket glob neither throws nor matches", () => {
     const cfg = { ...base, namespaceGlobs: [{ glob: "plastos/[unclosed(+", namespace: "x" }] };
@@ -32,7 +36,12 @@ describe("SEC-002 — namespace globs with regex metacharacters are safe", () =>
 describe("SEC-003 — no bearer token over cleartext", () => {
   test("non-https baseUrl refuses and reports, without a network call", async () => {
     const diags: LlmDiagnostic[] = [];
-    const a = makeOpenAIAdapter({ baseUrl: "http://insecure.test", apiKey: "k", model: "m", onDiagnostic: (d) => diags.push(d) });
+    const a = makeOpenAIAdapter({
+      baseUrl: "http://insecure.test",
+      apiKey: "k",
+      model: "m",
+      onDiagnostic: (d) => diags.push(d),
+    });
     const out = await a.classify!("prompt");
     expect(out).toBeNull();
     expect(diags[0].outcome).toBe("network_error");

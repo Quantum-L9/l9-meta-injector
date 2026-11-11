@@ -1,10 +1,17 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import {
+  applyCommentInjection,
+  hasInjectedBlock,
+  resolveStrategy,
+  sidecarPathFor,
+  stripInjectedBlock,
+  yamlToBlock,
+} from "../src/comment";
 import { runPipelineAsync } from "../src/pipeline";
-import { PipelineConfig } from "../src/schema";
 import { findFiles } from "../src/retrieval";
-import { resolveStrategy, sidecarPathFor, yamlToBlock, applyCommentInjection, stripInjectedBlock, hasInjectedBlock } from "../src/comment";
+import { PipelineConfig } from "../src/schema";
 
 describe("CRLF handling (Copilot PR#3): injected block strip/detect on Windows line endings", () => {
   it("line-comment: strip restores a CRLF body exactly and detects the block", () => {
@@ -35,26 +42,56 @@ describe("findFiles binary exclusion under extension filter (Copilot PR#3)", () 
   });
 });
 
-function tmpDir() { const d = fs.mkdtempSync(path.join(os.tmpdir(), "l9-mft-")); return d; }
+function tmpDir() {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), "l9-mft-"));
+  return d;
+}
 function cfg(root: string, out: string): PipelineConfig {
   return {
-    root, glob: "**/*", dryRun: false, outDir: out, namespace: "l9",
-    authority: "l9.doctrine.platform", nearDupThreshold: 0.9, hashPrefixLength: 16,
-    indexDir: out, verbose: false, llmEnabled: false, normalizeFilenames: false,
+    root,
+    glob: "**/*",
+    dryRun: false,
+    outDir: out,
+    namespace: "l9",
+    authority: "l9.doctrine.platform",
+    nearDupThreshold: 0.9,
+    hashPrefixLength: 16,
+    indexDir: out,
+    verbose: false,
+    llmEnabled: false,
+    normalizeFilenames: false,
   };
 }
 
 describe("resolveStrategy — per-extension routing", () => {
   const cases: Array<[string, string]> = [
-    ["a.ts", "line-comment"], ["a.tsx", "line-comment"], ["a.py", "line-comment"],
-    ["a.go", "line-comment"], ["a.rs", "line-comment"], ["a.yaml", "line-comment"],
-    ["a.sql", "line-comment"], ["a.css", "block-comment"], ["a.scss", "block-comment"],
-    ["a.html", "block-comment"], ["a.svg", "block-comment"], ["a.vue", "block-comment"],
-    ["a.md", "yaml-frontmatter"], ["a.txt", "sidecar"], ["a.json", "sidecar"],
-    ["a.csv", "sidecar"], ["a.png", "skip-binary"], ["a.mp4", "skip-binary"], ["a.zip", "skip-binary"],
-    ["Dockerfile", "line-comment"], ["Makefile", "line-comment"], [".gitignore", "line-comment"],
-    ["CODEOWNERS", "line-comment"], ["a.ql", "line-comment"], ["a.qls", "line-comment"],
-    ["a.pyc", "skip-binary"], ["a.log", "skip-binary"],
+    ["a.ts", "line-comment"],
+    ["a.tsx", "line-comment"],
+    ["a.py", "line-comment"],
+    ["a.go", "line-comment"],
+    ["a.rs", "line-comment"],
+    ["a.yaml", "line-comment"],
+    ["a.sql", "line-comment"],
+    ["a.css", "block-comment"],
+    ["a.scss", "block-comment"],
+    ["a.html", "block-comment"],
+    ["a.svg", "block-comment"],
+    ["a.vue", "block-comment"],
+    ["a.md", "yaml-frontmatter"],
+    ["a.txt", "sidecar"],
+    ["a.json", "sidecar"],
+    ["a.csv", "sidecar"],
+    ["a.png", "skip-binary"],
+    ["a.mp4", "skip-binary"],
+    ["a.zip", "skip-binary"],
+    ["Dockerfile", "line-comment"],
+    ["Makefile", "line-comment"],
+    [".gitignore", "line-comment"],
+    ["CODEOWNERS", "line-comment"],
+    ["a.ql", "line-comment"],
+    ["a.qls", "line-comment"],
+    ["a.pyc", "skip-binary"],
+    ["a.log", "skip-binary"],
   ];
   for (const [file, strat] of cases) {
     it(`${file} → ${strat}`, () => expect(resolveStrategy(file, "").strategy).toBe(strat));
@@ -72,17 +109,20 @@ describe("multi-filetype injection", () => {
     "style.css": "body { color: red; }\n",
     "page.html": "<!doctype html>\n<html></html>\n",
     "config.yaml": "key: value\n",
-    "data.json": "{\n  \"a\": 1\n}\n",
+    "data.json": '{\n  "a": 1\n}\n',
   };
 
   it("injects valid, filetype-appropriate headers and preserves bodies", async () => {
-    const root = tmpDir(); const out = tmpDir();
+    const root = tmpDir();
+    const out = tmpDir();
     for (const [n, c] of Object.entries(files)) fs.writeFileSync(path.join(root, n), c);
     const result = await runPipelineAsync(cfg(root, out));
 
     // every injected/verified file is clean
     expect(result.verified.length).toBeGreaterThanOrEqual(6);
-    expect(result.verified.every((v) => v.yamlValid && v.bodyPreserved && v.taxonomyValid)).toBe(true);
+    expect(result.verified.every((v) => v.yamlValid && v.bodyPreserved && v.taxonomyValid)).toBe(
+      true,
+    );
 
     const ts = fs.readFileSync(path.join(root, "app.ts"), "utf8");
     expect(ts).toContain("// >>> l9:meta >>>");
@@ -123,7 +163,8 @@ describe("multi-filetype injection", () => {
   });
 
   it("is idempotent — re-injection replaces the block, no duplication", async () => {
-    const root = tmpDir(); const out = tmpDir();
+    const root = tmpDir();
+    const out = tmpDir();
     fs.writeFileSync(path.join(root, "app.ts"), files["app.ts"]);
     await runPipelineAsync(cfg(root, out));
     const once = fs.readFileSync(path.join(root, "app.ts"), "utf8");

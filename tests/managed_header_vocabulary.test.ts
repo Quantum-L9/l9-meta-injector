@@ -5,16 +5,16 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { describe, expect, test } from "vitest";
-import { buildMeta } from "../src/normalize_meta";
 import { extract, splitContent } from "../src/extract";
+import { nativeMetadataExtractor } from "../src/extractors/native_metadata";
 import { injectFile } from "../src/inject";
 import { inventoryTree } from "../src/inventory";
-import { nativeMetadataExtractor } from "../src/extractors/native_metadata";
-import { MANAGED_DECLARED_SCHEMA } from "../src/native_metadata";
-import { PRIMITIVE_TAXONOMY } from "../src/schema";
-import type { ArtifactType, ClassifyResult } from "../src/schema";
 import type { NamespaceConfig } from "../src/namespace";
+import { MANAGED_DECLARED_SCHEMA } from "../src/native_metadata";
+import { buildMeta } from "../src/normalize_meta";
 import type { HeaderIdentityResolution } from "../src/operation_contracts";
+import type { ArtifactType, ClassifyResult } from "../src/schema";
+import { PRIMITIVE_TAXONOMY } from "../src/schema";
 
 interface ContractField {
   field: string;
@@ -25,7 +25,9 @@ interface ContractField {
 }
 
 const REPO = path.resolve(__dirname, "..");
-const CONTRACT = JSON.parse(fs.readFileSync(path.join(REPO, "docs/managed-header-vocabulary.json"), "utf8")) as {
+const CONTRACT = JSON.parse(
+  fs.readFileSync(path.join(REPO, "docs/managed-header-vocabulary.json"), "utf8"),
+) as {
   vocabulary: string;
   version: string;
   identity: string;
@@ -33,16 +35,24 @@ const CONTRACT = JSON.parse(fs.readFileSync(path.join(REPO, "docs/managed-header
   declared_schema: string;
   meaning: { projection: string };
   writers: Array<{ writer: string }>;
-  unresolved_and_out_of_vocabulary: { written_outside_vocabulary: { annotate: string[]; inventory: string[] } };
+  unresolved_and_out_of_vocabulary: {
+    written_outside_vocabulary: { annotate: string[]; inventory: string[] };
+  };
   variants: { family: string[]; owner: string[]; neither: string[] };
-  writer_invariants: { taxonomy: Record<string, { mcp_primitive: string; callable: boolean; injectable: boolean }> };
+  writer_invariants: {
+    taxonomy: Record<string, { mcp_primitive: string; callable: boolean; injectable: boolean }>;
+  };
   fields: ContractField[];
 };
 const FIELD = new Map(CONTRACT.fields.map((entry) => [entry.field, entry]));
 
 const NS: NamespaceConfig = {
-  namespace: "l9", authority: "Quantum-L9/example", nearDupThreshold: 0.9,
-  hashPrefixLength: 16, outputDir: ".out", indexDir: ".",
+  namespace: "l9",
+  authority: "Quantum-L9/example",
+  nearDupThreshold: 0.9,
+  hashPrefixLength: 16,
+  outputDir: ".out",
+  indexDir: ".",
 };
 const IDENTITY = {
   authority: "Quantum-L9/example",
@@ -63,8 +73,23 @@ function roundTrip(fileName: string, body: string, artifactType: ArtifactType) {
   fs.writeFileSync(fp, body);
   const raw = fs.readFileSync(fp, "utf8");
   const content = fp.endsWith(".md") ? splitContent(raw).body : raw;
-  const meta = buildMeta(fp, content, extract(content), cls(artifactType), NS, IDENTITY.authority, "2026-01-01T00:00:00.000Z", root, IDENTITY);
-  injectFile(fp, meta, { dryRun: false, outDir: fs.mkdtempSync(path.join(os.tmpdir(), "l9-managed-out-")), verbose: false, writeInjectLog: false });
+  const meta = buildMeta(
+    fp,
+    content,
+    extract(content),
+    cls(artifactType),
+    NS,
+    IDENTITY.authority,
+    "2026-01-01T00:00:00.000Z",
+    root,
+    IDENTITY,
+  );
+  injectFile(fp, meta, {
+    dryRun: false,
+    outDir: fs.mkdtempSync(path.join(os.tmpdir(), "l9-managed-out-")),
+    verbose: false,
+    writeInjectLog: false,
+  });
   const drafts = nativeMetadataExtractor.extract({
     subjectId: "artifact:x",
     sourcePath: fileName,
@@ -81,20 +106,28 @@ function inventoryRoundTrip(files: Record<string, string>) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "l9-managed-inv-"));
   for (const [name, body] of Object.entries(files)) fs.writeFileSync(path.join(root, name), body);
   inventoryTree({
-    root, outDir: fs.mkdtempSync(path.join(os.tmpdir(), "l9-managed-inv-out-")),
-    writeSidecars: false, folderSidecars: false, now: "2026-01-01T00:00:00.000Z",
+    root,
+    outDir: fs.mkdtempSync(path.join(os.tmpdir(), "l9-managed-inv-out-")),
+    writeSidecars: false,
+    folderSidecars: false,
+    now: "2026-01-01T00:00:00.000Z",
   });
-  return Object.keys(files).map((name) => nativeMetadataExtractor.extract({
-    subjectId: "artifact:x",
-    sourcePath: name,
-    content: fs.readFileSync(path.join(root, name), "utf8"),
-    contentHash: "sha256:0",
-    pathExists: () => false,
-    report: () => undefined,
-  }));
+  return Object.keys(files).map((name) =>
+    nativeMetadataExtractor.extract({
+      subjectId: "artifact:x",
+      sourcePath: name,
+      content: fs.readFileSync(path.join(root, name), "utf8"),
+      contentHash: "sha256:0",
+      pathExists: () => false,
+      report: () => undefined,
+    }),
+  );
 }
 
-const INVENTORY_DRAFTS = inventoryRoundTrip({ "research-skill.md": "## Role\nAn agent.\n", "tool.py": "print(1)\n" });
+const INVENTORY_DRAFTS = inventoryRoundTrip({
+  "research-skill.md": "## Role\nAn agent.\n",
+  "tool.py": "print(1)\n",
+});
 
 const ROUND_TRIPS = [
   roundTrip("research-skill.md", "## Role\nAn agent.\n", "skill"),
@@ -126,7 +159,9 @@ describe("managed-header vocabulary contract (ADR-086)", () => {
     const read = new Map<string, string>();
     for (const { drafts } of ROUND_TRIPS) {
       for (const { predicate } of drafts) {
-        const match = /^meta\.managed\.(identity|classification|governance)\.([a-z_]+)$/.exec(predicate);
+        const match = /^meta\.managed\.(identity|classification|governance)\.([a-z_]+)$/.exec(
+          predicate,
+        );
         if (match) read.set(match[2], match[1]);
       }
     }
@@ -136,14 +171,18 @@ describe("managed-header vocabulary contract (ADR-086)", () => {
   });
 
   test("every written field is either a contract field or listed as written outside the vocabulary", () => {
-    const outside = new Set(CONTRACT.unresolved_and_out_of_vocabulary.written_outside_vocabulary.annotate);
+    const outside = new Set(
+      CONTRACT.unresolved_and_out_of_vocabulary.written_outside_vocabulary.annotate,
+    );
     const written = new Set<string>();
     for (const { meta, drafts } of ROUND_TRIPS) {
       for (const key of Object.keys(meta)) {
         written.add(key);
         expect(FIELD.has(key) || outside.has(key), key).toBe(true);
       }
-      for (const draft of drafts.filter((item) => item.predicate === "meta.managed.unsupported_field")) {
+      for (const draft of drafts.filter(
+        (item) => item.predicate === "meta.managed.unsupported_field",
+      )) {
         expect(outside.has(draft.object), draft.object).toBe(true);
       }
     }
@@ -167,21 +206,47 @@ describe("managed-header vocabulary contract (ADR-086)", () => {
     expect(FIELD.get("mcp_primitive")?.allowed_values).toEqual(schemaUnion("McpPrimitive"));
     expect(FIELD.get("sharing_scope")?.allowed_values).toEqual(schemaUnion("SharingScope"));
     // "Unknown" is how the writer records an undetected family; it is read back as unresolved, never as a value.
-    expect(FIELD.get("family")?.allowed_values).toEqual(schemaUnion("ArtifactFamily").filter((value) => value !== "Unknown"));
+    expect(FIELD.get("family")?.allowed_values).toEqual(
+      schemaUnion("ArtifactFamily").filter((value) => value !== "Unknown"),
+    );
     for (const field of ["callable", "retrievable", "injectable"]) {
-      expect(FIELD.get(field)).toMatchObject({ value_kind: "boolean", allowed_values: ["true", "false"] });
+      expect(FIELD.get(field)).toMatchObject({
+        value_kind: "boolean",
+        allowed_values: ["true", "false"],
+      });
     }
-    const taxonomy = Object.fromEntries(Object.entries(PRIMITIVE_TAXONOMY).map(([type, entry]) => [
-      type, { mcp_primitive: entry.mcpPrimitive, callable: entry.callable, injectable: entry.injectable },
-    ]));
+    const taxonomy = Object.fromEntries(
+      Object.entries(PRIMITIVE_TAXONOMY).map(([type, entry]) => [
+        type,
+        {
+          mcp_primitive: entry.mcpPrimitive,
+          callable: entry.callable,
+          injectable: entry.injectable,
+        },
+      ]),
+    );
     expect(CONTRACT.writer_invariants.taxonomy).toEqual(taxonomy);
   });
 
   test("family and owner presence by artifact type matches the writer's variants", () => {
-    const covered = [...CONTRACT.variants.family, ...CONTRACT.variants.owner, ...CONTRACT.variants.neither].sort();
+    const covered = [
+      ...CONTRACT.variants.family,
+      ...CONTRACT.variants.owner,
+      ...CONTRACT.variants.neither,
+    ].sort();
     expect(covered).toEqual(Object.keys(PRIMITIVE_TAXONOMY).sort());
     for (const type of Object.keys(PRIMITIVE_TAXONOMY) as ArtifactType[]) {
-      const meta = buildMeta("x.md", "body\n", extract("body\n"), cls(type), NS, IDENTITY.authority, "2026-01-01T00:00:00.000Z", undefined, IDENTITY) as unknown as Record<string, unknown>;
+      const meta = buildMeta(
+        "x.md",
+        "body\n",
+        extract("body\n"),
+        cls(type),
+        NS,
+        IDENTITY.authority,
+        "2026-01-01T00:00:00.000Z",
+        undefined,
+        IDENTITY,
+      ) as unknown as Record<string, unknown>;
       expect("family" in meta, `${type} family`).toBe(CONTRACT.variants.family.includes(type));
       expect("owner" in meta, `${type} owner`).toBe(CONTRACT.variants.owner.includes(type));
       expect(meta.retrievable, `${type} retrievable`).toBe(meta.injectable);
@@ -190,13 +255,17 @@ describe("managed-header vocabulary contract (ADR-086)", () => {
 
   test("the inventory writer stays inside the contract: no family or owner, and only its listed extra fields", () => {
     expect(CONTRACT.writers.map((entry) => entry.writer)).toEqual(["annotate", "inventory"]);
-    const outside = new Set(CONTRACT.unresolved_and_out_of_vocabulary.written_outside_vocabulary.inventory);
+    const outside = new Set(
+      CONTRACT.unresolved_and_out_of_vocabulary.written_outside_vocabulary.inventory,
+    );
     const valued = new Set<string>();
     const outsideKeys = new Set<string>();
     for (const drafts of INVENTORY_DRAFTS) {
       expect(drafts.length).toBeGreaterThan(0);
       for (const { predicate, object } of drafts) {
-        const match = /^meta\.managed\.(identity|classification|governance)\.([a-z_]+)$/.exec(predicate);
+        const match = /^meta\.managed\.(identity|classification|governance)\.([a-z_]+)$/.exec(
+          predicate,
+        );
         if (match) {
           valued.add(match[2]);
           expect(FIELD.get(match[2])?.category, match[2]).toBe(match[1]);
@@ -205,16 +274,29 @@ describe("managed-header vocabulary contract (ADR-086)", () => {
         }
         // An out-of-vocabulary key with no value (here an unavailable created_at) is unresolved, not unsupported.
         if (predicate === "meta.managed.unsupported_field") outsideKeys.add(object);
-        if (predicate === "meta.managed.unresolved_field" && !FIELD.has(object)) outsideKeys.add(object);
+        if (predicate === "meta.managed.unresolved_field" && !FIELD.has(object))
+          outsideKeys.add(object);
       }
     }
     expect(valued.has("family")).toBe(false);
     expect(valued.has("owner")).toBe(false);
-    for (const field of ["id", "title", "source_path", "artifact_type", "mcp_primitive", "callable", "retrievable", "injectable", "sharing_scope"]) {
+    for (const field of [
+      "id",
+      "title",
+      "source_path",
+      "artifact_type",
+      "mcp_primitive",
+      "callable",
+      "retrievable",
+      "injectable",
+      "sharing_scope",
+    ]) {
       expect(valued.has(field), field).toBe(true);
     }
     expect([...outsideKeys].sort()).toEqual([...outside].sort());
-    const id = INVENTORY_DRAFTS[0].find((draft) => draft.predicate === "meta.managed.identity.id")?.object;
+    const id = INVENTORY_DRAFTS[0].find(
+      (draft) => draft.predicate === "meta.managed.identity.id",
+    )?.object;
     expect(id).toMatch(/^inv-[0-9a-f]{16}$/);
   });
 

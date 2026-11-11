@@ -13,13 +13,16 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type {
+  ArchitectureEvidenceManifest,
+  ArchitectureEvidenceRecord,
+} from "../src/corpus_architecture_evidence";
 import {
   ARCHITECTURE_DOCUMENT_ROLES,
   ARCHITECTURE_SELECTION_POLICY_VERSION,
   ARCHITECTURE_SELECTION_PROFILE_ID,
   architectureSelectionPolicyHash,
 } from "../src/corpus_architecture_evidence";
-import type { ArchitectureEvidenceManifest, ArchitectureEvidenceRecord } from "../src/corpus_architecture_evidence";
 import type { EvidenceQueryResponse } from "../src/corpus_query";
 
 const REPO = path.resolve(__dirname, "..");
@@ -101,8 +104,16 @@ const CORPUS: Record<string, string> = {
     "The status is accepted by everyone we asked.",
     "Objective: Keep the notes short.",
   ),
-  "notes/label-accepted.md": markdown("# Label check", "Status: Accepted", "Decision: Labels are read as declarations."),
-  "notes/label-superseded.md": markdown("# Replaced approach", "Status: superseded", "Decision: This was replaced."),
+  "notes/label-accepted.md": markdown(
+    "# Label check",
+    "Status: Accepted",
+    "Decision: Labels are read as declarations.",
+  ),
+  "notes/label-superseded.md": markdown(
+    "# Replaced approach",
+    "Status: superseded",
+    "Decision: This was replaced.",
+  ),
 };
 
 let out: string;
@@ -115,7 +126,17 @@ function scan(root: string, extra: string[]): string {
   const cache = path.join(tmp("l9-roles-cache-"), "cache");
   const result = cp.spawnSync(
     process.execPath,
-    [SCAN_CLI, "--root", `${root}=Designs`, "--out", target, "--cache-dir", cache, "--no-diff", ...extra],
+    [
+      SCAN_CLI,
+      "--root",
+      `${root}=Designs`,
+      "--out",
+      target,
+      "--cache-dir",
+      cache,
+      "--no-diff",
+      ...extra,
+    ],
     { encoding: "utf8" },
   );
   if (result.status !== 0) throw new Error(`scan failed: ${result.stderr}`);
@@ -127,9 +148,17 @@ function generationDir(target: string): string {
   return path.join(target, ...String(current.generation_ref).split("/"));
 }
 
-function query(args: string[]): { status: number | null; response: EvidenceQueryResponse; stdout: string } {
+function query(args: string[]): {
+  status: number | null;
+  response: EvidenceQueryResponse;
+  stdout: string;
+} {
   const result = cp.spawnSync(process.execPath, [QUERY_CLI, ...args], { encoding: "utf8" });
-  return { status: result.status, response: JSON.parse(result.stdout) as EvidenceQueryResponse, stdout: result.stdout };
+  return {
+    status: result.status,
+    response: JSON.parse(result.stdout) as EvidenceQueryResponse,
+    stdout: result.stdout,
+  };
 }
 
 function of(sourcePath: string): ArchitectureEvidenceRecord[] {
@@ -154,7 +183,9 @@ beforeAll(() => {
     .split("\n")
     .filter((line) => line.length > 0)
     .map((line) => JSON.parse(line) as ArchitectureEvidenceRecord);
-  manifest = JSON.parse(fs.readFileSync(path.join(generation, "architecture-evidence.manifest.json"), "utf8"));
+  manifest = JSON.parse(
+    fs.readFileSync(path.join(generation, "architecture-evidence.manifest.json"), "utf8"),
+  );
 });
 
 describe("roles are established by what the document declared", () => {
@@ -176,18 +207,25 @@ describe("roles are established by what the document declared", () => {
     expect(status?.assertion_id.startsWith("architecture_declaration:")).toBe(true);
     // A decision record selects decisions, constraints and assumptions. The open
     // question is still emitted, outside the selected view.
-    const byClass = new Map(adr.map((record) => [record.statement_class, record.selection.selected]));
-    expect(byClass).toEqual(new Map([
-      ["assumption", true],
-      ["constraint", true],
-      ["decision_statement", true],
-      ["open_question", false],
-    ]));
+    const byClass = new Map(
+      adr.map((record) => [record.statement_class, record.selection.selected]),
+    );
+    expect(byClass).toEqual(
+      new Map([
+        ["assumption", true],
+        ["constraint", true],
+        ["decision_statement", true],
+        ["open_question", false],
+      ]),
+    );
   });
 
   it("reads a superseded decision record as both a decision record and historical material", () => {
     const old = of("decisions/adr-003-peer-routing.md");
-    expect(old.map((record) => record.statement_class).sort()).toEqual(["decision_statement", "intent"]);
+    expect(old.map((record) => record.statement_class).sort()).toEqual([
+      "decision_statement",
+      "intent",
+    ]);
     expect(old[0]?.selection.roles).toEqual(["decision_record", "historical_record"]);
     expect(old[0]?.selection.status_families).toEqual(["retired"]);
     for (const record of old) {
@@ -197,7 +235,9 @@ describe("roles are established by what the document declared", () => {
     }
     const intent = old.find((record) => record.statement_class === "intent");
     expect(intent?.selection.reasons).toEqual([
-      expect.stringContaining("historical_record selects intent: document.declared_status=superseded"),
+      expect.stringContaining(
+        "historical_record selects intent: document.declared_status=superseded",
+      ),
     ]);
   });
 
@@ -210,16 +250,29 @@ describe("roles are established by what the document declared", () => {
   it("reads research from its declared kind and selects what a research reader is after", () => {
     const study = of("research/caching-study.md");
     expect(study[0]?.selection.roles).toEqual(["research"]);
-    expect(study[0]?.selection.role_evidence[0]).toMatchObject({ predicate: "work.kind", object: "research", source: "work_assertion" });
-    const selected = study.filter((record) => record.selection.selected).map((record) => record.statement_class).sort();
+    expect(study[0]?.selection.role_evidence[0]).toMatchObject({
+      predicate: "work.kind",
+      object: "research",
+      source: "work_assertion",
+    });
+    const selected = study
+      .filter((record) => record.selection.selected)
+      .map((record) => record.statement_class)
+      .sort();
     expect(selected).toEqual(["assumption", "intent", "open_question"]);
-    expect(study.find((record) => record.statement_class === "constraint")?.selection.selected).toBe(false);
+    expect(
+      study.find((record) => record.statement_class === "constraint")?.selection.selected,
+    ).toBe(false);
   });
 
   it("reads archived work as historical material from the existing work.status assertion", () => {
     const old = of("archive/old-plan.md");
     expect(old[0]?.selection.roles).toEqual(["historical_record"]);
-    expect(old[0]?.selection.role_evidence[0]).toMatchObject({ predicate: "work.status", object: "archived", source: "work_assertion" });
+    expect(old[0]?.selection.role_evidence[0]).toMatchObject({
+      predicate: "work.status",
+      object: "archived",
+      source: "work_assertion",
+    });
     expect(old[0]?.work_context.declarations).toEqual([]);
   });
 
@@ -231,7 +284,9 @@ describe("roles are established by what the document declared", () => {
     expect(selection?.status_families).toEqual(["in_progress", "settled"]);
     expect(selection?.status_conflict).toBe(true);
     expect(conflicted[0]?.work_context.statuses.map((ref) => ref.object)).toEqual(["wip"]);
-    expect(conflicted[0]?.work_context.declarations.map((item) => item.object)).toEqual(["accepted"]);
+    expect(conflicted[0]?.work_context.declarations.map((item) => item.object)).toEqual([
+      "accepted",
+    ]);
   });
 
   it("does not read a status from prose, and an unknown role keeps every class", () => {
@@ -246,7 +301,9 @@ describe("roles are established by what the document declared", () => {
     const superseded = of("notes/label-superseded.md")[0];
     expect(superseded?.selection.roles).toEqual(["historical_record"]);
     expect(superseded?.work_context.declarations).toEqual([]);
-    expect(superseded?.selection.role_evidence.map((item) => item.source)).toEqual(["work_assertion"]);
+    expect(superseded?.selection.role_evidence.map((item) => item.source)).toEqual([
+      "work_assertion",
+    ]);
   });
 });
 
@@ -256,7 +313,8 @@ describe("the selection view is inspectable and removes nothing", () => {
       expect(record.selection.profile_id).toBe(ARCHITECTURE_SELECTION_PROFILE_ID);
       expect(record.selection.policy_version).toBe(ARCHITECTURE_SELECTION_POLICY_VERSION);
       expect(record.selection.selected).toBe(record.selection.reasons.length > 0);
-      for (const role of record.selection.roles) expect(ARCHITECTURE_DOCUMENT_ROLES).toContain(role);
+      for (const role of record.selection.roles)
+        expect(ARCHITECTURE_DOCUMENT_ROLES).toContain(role);
       if (record.selection.selected && !record.selection.roles.includes("unknown")) {
         expect(record.selection.role_evidence.length).toBeGreaterThan(0);
       }
@@ -269,8 +327,12 @@ describe("the selection view is inspectable and removes nothing", () => {
     expect(manifest.selection_profile_id).toBe(ARCHITECTURE_SELECTION_PROFILE_ID);
     expect(manifest.selection_policy_version).toBe(ARCHITECTURE_SELECTION_POLICY_VERSION);
     expect(manifest.selection_policy_hash).toBe(architectureSelectionPolicyHash());
-    const withIt = JSON.parse(fs.readFileSync(path.join(generationDir(out), "corpus-snapshot.json"), "utf8"));
-    const without = JSON.parse(fs.readFileSync(path.join(generationDir(plainOut), "corpus-snapshot.json"), "utf8"));
+    const withIt = JSON.parse(
+      fs.readFileSync(path.join(generationDir(out), "corpus-snapshot.json"), "utf8"),
+    );
+    const without = JSON.parse(
+      fs.readFileSync(path.join(generationDir(plainOut), "corpus-snapshot.json"), "utf8"),
+    );
     expect(withIt.corpus_source_snapshot_id).toBe(without.corpus_source_snapshot_id);
     expect(withIt.analysis.corpus_analysis_id).not.toBe(without.analysis.corpus_analysis_id);
     expect(withIt.analysis.architecture_evidence_profile).toBe(manifest.profile_hash);
@@ -279,11 +341,22 @@ describe("the selection view is inspectable and removes nothing", () => {
 
 describe("the corpus-query CLI asks for roles and the selected view, opt-in", () => {
   it("returns only records whose document holds the role", () => {
-    const { status, response } = query(["--out", out, "--role", "historical_record", "--limit", "500"]);
+    const { status, response } = query([
+      "--out",
+      out,
+      "--role",
+      "historical_record",
+      "--limit",
+      "500",
+    ]);
     expect(status).toBe(0);
     expect(response.query.role).toBe("historical_record");
     const paths = [...new Set(response.results.map((result) => result.source_path))].sort();
-    expect(paths).toEqual(["archive/old-plan.md", "decisions/adr-003-peer-routing.md", "notes/label-superseded.md"]);
+    expect(paths).toEqual([
+      "archive/old-plan.md",
+      "decisions/adr-003-peer-routing.md",
+      "notes/label-superseded.md",
+    ]);
     for (const result of response.results) {
       expect(result.source).toBe("architecture_evidence");
       expect(result.selection?.roles).toContain("historical_record");
@@ -295,15 +368,37 @@ describe("the corpus-query CLI asks for roles and the selected view, opt-in", ()
     expect(selected.query.selected_only).toBe(true);
     expect(selected.match_count).toBe(manifest.selected_record_count);
     expect(selected.results.every((result) => result.selection?.selected === true)).toBe(true);
-    const all = query(["--out", out, "--source", "architecture_evidence", "--limit", "500"]).response;
+    const all = query([
+      "--out",
+      out,
+      "--source",
+      "architecture_evidence",
+      "--limit",
+      "500",
+    ]).response;
     expect(all.match_count).toBe(manifest.record_count);
   });
 
   it("leaves a default query's request echo and results exactly as they were", () => {
-    const { response, stdout } = query(["--out", out, "--class", "decision_statement", "--limit", "500"]);
+    const { response, stdout } = query([
+      "--out",
+      out,
+      "--class",
+      "decision_statement",
+      "--limit",
+      "500",
+    ]);
     expect(Object.keys(response.query)).not.toContain("role");
     expect(Object.keys(response.query)).not.toContain("selected_only");
-    const sameWithFlags = query(["--out", out, "--class", "decision_statement", "--limit", "500", "--selected-only"]).response;
+    const sameWithFlags = query([
+      "--out",
+      out,
+      "--class",
+      "decision_statement",
+      "--limit",
+      "500",
+      "--selected-only",
+    ]).response;
     // Every decision in this corpus is selected, so the opt-in narrows nothing here
     // and the only difference is the echoed flag.
     expect(sameWithFlags.results).toEqual(response.results);

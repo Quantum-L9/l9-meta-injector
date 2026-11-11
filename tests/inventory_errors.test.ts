@@ -1,18 +1,25 @@
-import { vi, describe, test, expect, beforeEach, afterEach, type MockInstance } from "vitest";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import { afterEach, beforeEach, describe, expect, type MockInstance, test, vi } from "vitest";
 import { inventoryTree } from "../src/inventory";
 
-function tmp() { return fs.mkdtempSync(path.join(os.tmpdir(), "l9-inverr-")); }
+function tmp() {
+  return fs.mkdtempSync(path.join(os.tmpdir(), "l9-inverr-"));
+}
 
 let stderr: MockInstance;
-beforeEach(() => { stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true); });
-afterEach(() => { vi.restoreAllMocks(); });
+beforeEach(() => {
+  stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+});
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("inventory surfaces swallowed errors (OBS-004/006/007, PRD-002)", () => {
   test("normal run exposes an empty skippedDirs array (OBS-007 API)", () => {
-    const root = tmp(); fs.writeFileSync(path.join(root, "a.md"), "# a\n");
+    const root = tmp();
+    fs.writeFileSync(path.join(root, "a.md"), "# a\n");
     const r = inventoryTree({ root, outDir: tmp(), dryRun: true, now: "2026-01-01T00:00:00.000Z" });
     expect(Array.isArray(r.skippedDirs)).toBe(true);
     expect(r.skippedDirs).toEqual([]);
@@ -21,9 +28,15 @@ describe("inventory surfaces swallowed errors (OBS-004/006/007, PRD-002)", () =>
   test("REG-WU-028-RC-032-B04-e: an unreadable directory is recorded in skippedDirs, not silently dropped (OBS-007)", () => {
     // Point the walk root at a FILE: readdirSync throws ENOTDIR, exercising the
     // recorded-skip path deterministically (no permission games, works as root).
-    const root = tmp(); const asFile = path.join(root, "not-a-dir");
+    const root = tmp();
+    const asFile = path.join(root, "not-a-dir");
     fs.writeFileSync(asFile, "x\n");
-    const r = inventoryTree({ root: asFile, outDir: tmp(), dryRun: true, now: "2026-01-01T00:00:00.000Z" });
+    const r = inventoryTree({
+      root: asFile,
+      outDir: tmp(),
+      dryRun: true,
+      now: "2026-01-01T00:00:00.000Z",
+    });
     expect(r.skippedDirs).toHaveLength(1);
     // The entry is the root-relative directory plus the errno code: the absolute
     // checkout path would make every packet built from this inventory depend on
@@ -40,9 +53,14 @@ describe("inventory surfaces swallowed errors (OBS-004/006/007, PRD-002)", () =>
     // JSON uses sidecar strategy. Pre-create a DIRECTORY where the sidecar file
     // must go so the write throws EISDIR — no permissions needed.
     const jsonPath = path.join(root, "data.json");
-    fs.writeFileSync(jsonPath, "{\"a\":1}\n");
+    fs.writeFileSync(jsonPath, '{"a":1}\n');
     fs.mkdirSync(jsonPath + ".l9meta.yaml");
-    const r = inventoryTree({ root, outDir: tmp(), dryRun: false, now: "2026-01-01T00:00:00.000Z" });
+    const r = inventoryTree({
+      root,
+      outDir: tmp(),
+      dryRun: false,
+      now: "2026-01-01T00:00:00.000Z",
+    });
     const rec = r.records.find((x) => x.file_name === "data.json")!;
     expect(rec.unknowns.some((u) => u.startsWith("sidecar_write_failed:"))).toBe(true);
   });

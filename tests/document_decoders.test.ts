@@ -12,11 +12,10 @@ import { afterAll, describe, expect, it } from "vitest";
 import {
   DEFAULT_DECODER_BUDGET,
   DecodeInput,
-  UNSUPPORTED_LEGACY_EXTENSIONS,
   defaultDecoderRegistry,
   isSafePartName,
+  UNSUPPORTED_LEGACY_EXTENSIONS,
 } from "../src/documents";
-import { writeRawZip } from "./helpers/zip_fixtures";
 import {
   writeDocx,
   writeEncryptedPdf,
@@ -27,6 +26,7 @@ import {
   writeScannedPdf,
   writeXlsx,
 } from "./helpers/document_fixtures";
+import { writeRawZip } from "./helpers/zip_fixtures";
 
 const scratch: string[] = [];
 function tmp(prefix = "l9-decoders-"): string {
@@ -71,7 +71,10 @@ describe("a Word document", () => {
         "Status: WIP",
       ],
       listItems: ["wire the routing table", "pick a hosting region"],
-      table: [["milestone", "state"], ["schema freeze", "done"]],
+      table: [
+        ["milestone", "state"],
+        ["schema freeze", "done"],
+      ],
     });
 
     const outcome = decode(file);
@@ -94,8 +97,9 @@ describe("a Word document", () => {
     const title = document.blocks.find((block) => block.text === "World Model Plan");
     expect(title?.kind).toBe("title");
     expect(document.blocks.find((block) => block.text === "Ingest")?.kind).toBe("heading");
-    expect(document.blocks.find((block) => block.text === "wire the routing table")?.kind)
-      .toBe("list_item");
+    expect(document.blocks.find((block) => block.text === "wire the routing table")?.kind).toBe(
+      "list_item",
+    );
 
     // Every locator is a docx block index in a named part — never a line number,
     // which a Word document does not have.
@@ -107,7 +111,10 @@ describe("a Word document", () => {
     }
 
     expect(document.tables).toHaveLength(1);
-    expect(document.tables[0]?.rows).toEqual([["milestone", "state"], ["schema freeze", "done"]]);
+    expect(document.tables[0]?.rows).toEqual([
+      ["milestone", "state"],
+      ["schema freeze", "done"],
+    ]);
   });
 
   it("records an external relationship and does not fetch it", () => {
@@ -131,7 +138,11 @@ describe("a Word document", () => {
 describe("a PowerPoint deck", () => {
   it("yields slide titles, shape text and speaker notes with slide locators", () => {
     const file = writePptx(path.join(tmp(), "roadmap.pptx"), [
-      { title: "Roadmap 2019", bullets: ["Ship the indexer", "Blocked by: procurement"], notes: "The real argument lives here." },
+      {
+        title: "Roadmap 2019",
+        bullets: ["Ship the indexer", "Blocked by: procurement"],
+        notes: "The real argument lives here.",
+      },
       { title: "Next", bullets: ["Consolidate the archives"] },
     ]);
 
@@ -155,7 +166,9 @@ describe("a PowerPoint deck", () => {
     });
 
     // Notes are their own kind, and cite the slide they belong to.
-    const note = outcome.document.blocks.find((block) => block.text === "The real argument lives here.");
+    const note = outcome.document.blocks.find(
+      (block) => block.text === "The real argument lives here.",
+    );
     expect(note?.kind).toBe("note");
     if (note?.locator.kind === "pptx_shape") {
       expect(note.locator.slide_number).toBe(1);
@@ -166,9 +179,9 @@ describe("a PowerPoint deck", () => {
     const second = outcome.document.blocks.find((block) => block.text === "Next");
     if (second?.locator.kind === "pptx_shape") expect(second.locator.slide_number).toBe(2);
     // Notes are found through each slide's relationship, so nothing is inferred.
-    expect(outcome.document.diagnostics.some(
-      (diagnostic) => diagnostic.message.includes("inferred"),
-    )).toBe(false);
+    expect(
+      outcome.document.diagnostics.some((diagnostic) => diagnostic.message.includes("inferred")),
+    ).toBe(false);
   });
 });
 
@@ -206,14 +219,16 @@ describe("a spreadsheet", () => {
     const formula = all.find((text) => text.startsWith("=SUM"));
     expect(formula).toBeDefined();
     expect(formula).toContain("=SUM(C2:C9)");
-    expect(outcome.document.diagnostics.some(
-      (diagnostic) => diagnostic.message.includes("were not evaluated"),
-    )).toBe(true);
+    expect(
+      outcome.document.diagnostics.some((diagnostic) =>
+        diagnostic.message.includes("were not evaluated"),
+      ),
+    ).toBe(true);
     // REG-WU-061-RC-118-g: a conformant workbook resolves each sheet through
     // its relationship, so nothing about the pairing is inferred.
-    expect(outcome.document.diagnostics.some(
-      (diagnostic) => diagnostic.message.includes("inferred"),
-    )).toBe(false);
+    expect(
+      outcome.document.diagnostics.some((diagnostic) => diagnostic.message.includes("inferred")),
+    ).toBe(false);
   });
 });
 
@@ -240,12 +255,16 @@ describe("a Jupyter notebook", () => {
 
     // The output holds a <script> tag. It must appear nowhere.
     expect(JSON.stringify(outcome.document)).not.toContain("never()");
-    expect(outcome.document.diagnostics.some(
-      (diagnostic) => diagnostic.message.includes("no cell was executed"),
-    )).toBe(true);
+    expect(
+      outcome.document.diagnostics.some((diagnostic) =>
+        diagnostic.message.includes("no cell was executed"),
+      ),
+    ).toBe(true);
 
     // A notebook locator cites the cell, not a line in the JSON nobody reads.
-    const title = outcome.document.blocks.find((block) => block.text === "Temporal Memory Research");
+    const title = outcome.document.blocks.find(
+      (block) => block.text === "Temporal Memory Research",
+    );
     expect(title?.locator.kind).toBe("notebook_cell");
     if (title?.locator.kind === "notebook_cell") {
       expect(title.locator.cell_index).toBe(0);
@@ -258,15 +277,25 @@ describe("a Jupyter notebook", () => {
     // Markdown cells already end a line at a lone CR (TEXT 1.3.0); a code cell
     // counted only LF and CRLF, so the same notebook cited two line models.
     const file = path.join(tmp(), "classic-mac.ipynb");
-    fs.writeFileSync(file, JSON.stringify({
-      cells: [
-        { cell_type: "markdown", metadata: {}, source: "First paragraph\r\rSecond paragraph" },
-        { cell_type: "code", metadata: {}, execution_count: null, outputs: [], source: "x = 1\ry = 2\rz = 3" },
-      ],
-      metadata: {},
-      nbformat: 4,
-      nbformat_minor: 5,
-    }), "utf8");
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        cells: [
+          { cell_type: "markdown", metadata: {}, source: "First paragraph\r\rSecond paragraph" },
+          {
+            cell_type: "code",
+            metadata: {},
+            execution_count: null,
+            outputs: [],
+            source: "x = 1\ry = 2\rz = 3",
+          },
+        ],
+        metadata: {},
+        nbformat: 4,
+        nbformat_minor: 5,
+      }),
+      "utf8",
+    );
 
     const outcome = decode(file);
     expect(outcome.decoded).toBe(true);
@@ -274,9 +303,19 @@ describe("a Jupyter notebook", () => {
     expect(outcome.document.decoder_version).toBe("1.2.0");
 
     const second = outcome.document.blocks.find((block) => block.text === "Second paragraph");
-    expect(second?.locator).toMatchObject({ kind: "notebook_cell", cell_index: 0, line_start: 3, line_end: 3 });
+    expect(second?.locator).toMatchObject({
+      kind: "notebook_cell",
+      cell_index: 0,
+      line_start: 3,
+      line_end: 3,
+    });
     const code = outcome.document.blocks.find((block) => block.text.includes("x = 1"));
-    expect(code?.locator).toMatchObject({ kind: "notebook_cell", cell_index: 1, line_start: 1, line_end: 3 });
+    expect(code?.locator).toMatchObject({
+      kind: "notebook_cell",
+      cell_index: 1,
+      line_start: 1,
+      line_end: 3,
+    });
   });
 });
 
@@ -287,7 +326,10 @@ describe("a saved web page", () => {
       headings: ["Ingest Specification", "Constraints"],
       paragraphs: ["The corpus is read only.", "Depends on: alpha-service"],
       link: { href: "https://example.invalid/upstream", text: "upstream" },
-      table: [["field", "type"], ["root_id", "string"]],
+      table: [
+        ["field", "type"],
+        ["root_id", "string"],
+      ],
     });
 
     const outcome = decode(file);
@@ -304,10 +346,14 @@ describe("a saved web page", () => {
     expect(serialized).not.toContain("this must never run");
     expect(serialized).not.toContain("rebeccapurple");
 
-    expect(outcome.document.links.map((link) => link.href))
-      .toContain("https://example.invalid/upstream");
+    expect(outcome.document.links.map((link) => link.href)).toContain(
+      "https://example.invalid/upstream",
+    );
     expect(outcome.document.metadata.title).toBe("Ingest Specification");
-    expect(outcome.document.tables[0]?.rows).toEqual([["field", "type"], ["root_id", "string"]]);
+    expect(outcome.document.tables[0]?.rows).toEqual([
+      ["field", "type"],
+      ["root_id", "string"],
+    ]);
 
     const heading = outcome.document.blocks.find((block) => block.text === "Constraints");
     expect(heading?.locator.kind).toBe("html_node");
@@ -388,7 +434,8 @@ describe("container defences", () => {
       { name: "word/vbaProject.bin", content: "MZ-macro-bytes", stored: true },
       {
         name: "word/document.xml",
-        content: '<w:document xmlns:w="x"><w:body><w:p><w:r><w:t>Plain prose.</w:t></w:r></w:p></w:body></w:document>',
+        content:
+          '<w:document xmlns:w="x"><w:body><w:p><w:r><w:t>Plain prose.</w:t></w:r></w:p></w:body></w:document>',
       },
     ]);
     const outcome = decode(file);
@@ -409,8 +456,8 @@ describe("container defences", () => {
       {
         name: "word/document.xml",
         content:
-          '<?xml version="1.0"?><!DOCTYPE d [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>'
-          + '<w:document xmlns:w="x"><w:body><w:p><w:r><w:t>&xxe;</w:t></w:r></w:p></w:body></w:document>',
+          '<?xml version="1.0"?><!DOCTYPE d [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>' +
+          '<w:document xmlns:w="x"><w:body><w:p><w:r><w:t>&xxe;</w:t></w:r></w:p></w:body></w:document>',
       },
     ]);
     const outcome = decode(file);
@@ -431,7 +478,15 @@ describe("the registry", () => {
   it("claims every format the closure contract requires", () => {
     const claimed = new Set(registry.extensions());
     for (const extension of [
-      ".md", ".txt", ".csv", ".html", ".ipynb", ".pdf", ".docx", ".pptx", ".xlsx",
+      ".md",
+      ".txt",
+      ".csv",
+      ".html",
+      ".ipynb",
+      ".pdf",
+      ".docx",
+      ".pptx",
+      ".xlsx",
     ]) {
       expect(claimed.has(extension), `no decoder claims ${extension}`).toBe(true);
     }
@@ -445,13 +500,20 @@ describe("the registry", () => {
 
   it("refuses two decoders competing for one extension", () => {
     const conflicting = defaultDecoderRegistry();
-    expect(() => conflicting.register({
-      id: "other",
-      version: "1.0.0",
-      format: "text",
-      extensions: [".md"],
-      decode: () => ({ decoded: false, reason: "decoder.malformed", message: "x", diagnostics: [] }),
-    })).toThrow(/claimed by both/);
+    expect(() =>
+      conflicting.register({
+        id: "other",
+        version: "1.0.0",
+        format: "text",
+        extensions: [".md"],
+        decode: () => ({
+          decoded: false,
+          reason: "decoder.malformed",
+          message: "x",
+          diagnostics: [],
+        }),
+      }),
+    ).toThrow(/claimed by both/);
   });
 
   it("carries decoder identity into every normalized document id", () => {

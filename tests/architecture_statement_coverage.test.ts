@@ -19,7 +19,12 @@ import {
   ARCHITECTURE_STATEMENT_EXTRACTOR_VERSION,
   readArchitectureStatements,
 } from "../src/extractors/architecture_statements";
-import { containsWords, loadCoverageMatrix, observeCase, wordsOf } from "./helpers/architecture_coverage";
+import {
+  containsWords,
+  loadCoverageMatrix,
+  observeCase,
+  wordsOf,
+} from "./helpers/architecture_coverage";
 
 const REPO = path.resolve(__dirname, "..");
 const matrix = loadCoverageMatrix(REPO);
@@ -37,21 +42,30 @@ describe("the architecture-statement coverage matrix", () => {
   it("states, for every case, a verdict the observation can support", () => {
     for (const testCase of matrix.cases) {
       expect(["supported", "unsupported", "excluded"]).toContain(testCase.status);
-      if (testCase.status === "supported") expect(testCase.expect.records.length, testCase.id).toBeGreaterThan(0);
-      if (testCase.status === "unsupported") expect(testCase.expect.diagnostics.length, testCase.id).toBeGreaterThan(0);
+      if (testCase.status === "supported")
+        expect(testCase.expect.records.length, testCase.id).toBeGreaterThan(0);
+      if (testCase.status === "unsupported")
+        expect(testCase.expect.diagnostics.length, testCase.id).toBeGreaterThan(0);
     }
   });
 
   it("covers every coverage diagnostic the reader can raise", () => {
-    const source = fs.readFileSync(path.join(REPO, "src", "extractors", "architecture_statements.ts"), "utf8");
+    const source = fs.readFileSync(
+      path.join(REPO, "src", "extractors", "architecture_statements.ts"),
+      "utf8",
+    );
     const raised = new Set(source.match(/architecture_evidence\.[a-z_]+/g) ?? []);
     const covered = new Set(matrix.cases.flatMap((testCase) => testCase.expect.diagnostics));
     for (const code of raised) expect(covered.has(code), `${code} has no coverage case`).toBe(true);
   });
 
   it("is rendered in the coverage document, case by case", () => {
-    const document = fs.readFileSync(path.join(REPO, "docs", "architecture-statement-coverage.md"), "utf8");
-    for (const testCase of matrix.cases) expect(document, testCase.id).toContain(`| ${testCase.id} |`);
+    const document = fs.readFileSync(
+      path.join(REPO, "docs", "architecture-statement-coverage.md"),
+      "utf8",
+    );
+    for (const testCase of matrix.cases)
+      expect(document, testCase.id).toContain(`| ${testCase.id} |`);
   });
 
   for (const testCase of matrix.cases) {
@@ -61,20 +75,45 @@ describe("the architecture-statement coverage matrix", () => {
         expect(observation).toEqual(testCase.expect);
         for (const record of records) {
           // A truncated quotation ends inside a word; that partial word is not in the source.
-          const declared = wordsOf(record.declared_text).slice(0, record.declared_text_truncated ? -1 : undefined);
-          const locator = record.structured_locator as { kind: string; line_start?: number; line_end?: number };
+          const declared = wordsOf(record.declared_text).slice(
+            0,
+            record.declared_text_truncated ? -1 : undefined,
+          );
+          const locator = record.structured_locator as {
+            kind: string;
+            line_start?: number;
+            line_end?: number;
+          };
           if (locator.kind === "line_span") {
-            const lines = fs.readFileSync(path.join(root, record.source_path), "utf8").split(/\r\n|\r|\n/);
-            const cited = lines.slice((locator.line_start as number) - 1, locator.line_end as number).join("\n");
-            expect(containsWords(wordsOf(cited), declared), `${record.declared_text} not at ${JSON.stringify(locator)}`).toBe(true);
+            const lines = fs
+              .readFileSync(path.join(root, record.source_path), "utf8")
+              .split(/\r\n|\r|\n/);
+            const cited = lines
+              .slice((locator.line_start as number) - 1, locator.line_end as number)
+              .join("\n");
+            expect(
+              containsWords(wordsOf(cited), declared),
+              `${record.declared_text} not at ${JSON.stringify(locator)}`,
+            ).toBe(true);
             // The span is exact: its first line carries the statement or the label
             // that declared it (a block-scalar value starts on its key's line), and
             // its last line carries statement words.
-            const first = wordsOf((lines[(locator.line_start as number) - 1] as string).toLowerCase());
+            const first = wordsOf(
+              (lines[(locator.line_start as number) - 1] as string).toLowerCase(),
+            );
             const last = wordsOf(lines[(locator.line_end as number) - 1] as string);
-            const opening = [...declared.map((word) => word.toLowerCase()), ...wordsOf(record.recognition.label)];
-            expect(first.some((word) => opening.includes(word)), "first cited line").toBe(true);
-            expect(last.some((word) => declared.includes(word)), "last cited line").toBe(true);
+            const opening = [
+              ...declared.map((word) => word.toLowerCase()),
+              ...wordsOf(record.recognition.label),
+            ];
+            expect(
+              first.some((word) => opening.includes(word)),
+              "first cited line",
+            ).toBe(true);
+            expect(
+              last.some((word) => declared.includes(word)),
+              "last cited line",
+            ).toBe(true);
           } else {
             const spec = testCase.docx;
             expect(spec).toBeDefined();
@@ -131,12 +170,16 @@ describe("frontmatter bound and code spans agree with the readers they mirror", 
   });
 
   it("does not read a label inside a double-backtick code span", () => {
-    const reading = readArchitectureStatements([paragraph(["``Decision:`` is read by a second pass."])]);
+    const reading = readArchitectureStatements([
+      paragraph(["``Decision:`` is read by a second pass."]),
+    ]);
     expect(reading.statements).toEqual([]);
   });
 
   it("reads a label that follows a closed code span on the same line", () => {
     const reading = readArchitectureStatements([paragraph(["Decision: keep ``a`b`` literal"])]);
-    expect(reading.statements.map((statement) => statement.declared_text)).toEqual(["keep ``a`b`` literal"]);
+    expect(reading.statements.map((statement) => statement.declared_text)).toEqual([
+      "keep ``a`b`` literal",
+    ]);
   });
 });

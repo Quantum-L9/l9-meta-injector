@@ -46,8 +46,12 @@ function runAsync(args: string[]): Promise<Run> {
     const child = cp.spawn(process.execPath, [CLI, ...args]);
     let stdout = "";
     let stderr = "";
-    child.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString("utf8"); });
-    child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString("utf8"); });
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdout += chunk.toString("utf8");
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString("utf8");
+    });
     child.on("close", (status) => resolve({ status, stdout, stderr }));
   });
 }
@@ -77,7 +81,9 @@ describe("local-source CLI cleanup on every exit (RC-102)", () => {
     const result = run([SAMPLE, "--name", "sample", "--out", out], { TMPDIR: tmpdir });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("packet bundles are immutable");
-    expect(fs.readdirSync(tmpdir).filter((name) => name.startsWith("l9-local-source-"))).toEqual([]);
+    expect(fs.readdirSync(tmpdir).filter((name) => name.startsWith("l9-local-source-"))).toEqual(
+      [],
+    );
     expect(treeSnapshot(SAMPLE)).toEqual(before);
   });
 
@@ -86,7 +92,9 @@ describe("local-source CLI cleanup on every exit (RC-102)", () => {
     const out = path.join(tmp(), "out");
     const result = run([SAMPLE, "--name", "sample", "--out", out], { TMPDIR: tmpdir });
     expect(result.status, result.stderr).toBe(0);
-    expect(fs.readdirSync(tmpdir).filter((name) => name.startsWith("l9-local-source-"))).toEqual([]);
+    expect(fs.readdirSync(tmpdir).filter((name) => name.startsWith("l9-local-source-"))).toEqual(
+      [],
+    );
   });
 
   test("REG-WU-067-RC-102-c: a corpus-mode per-root bundle failure removes the bundle scratch", () => {
@@ -94,31 +102,41 @@ describe("local-source CLI cleanup on every exit (RC-102)", () => {
     // Fails only the per-root bundle emission into the CLI's bundle scratch, so
     // the scan itself completes and the failure lands in the cleanup region.
     const preload = path.join(tmp(), "fail-root-bundle.js");
-    fs.writeFileSync(preload, [
-      `const model = require(${JSON.stringify(path.join(REPO, "dist", "repository_model.js"))});`,
-      "const original = model.emitRepositoryModelBundle;",
-      "model.emitRepositoryModelBundle = (packet, options) => {",
-      "  if (String(options && options.outDir).includes('l9-corpus-bundles-')) {",
-      "    throw new Error('simulated per-root bundle emission failure');",
-      "  }",
-      "  return original(packet, options);",
-      "};",
-      "",
-    ].join("\n"));
-    const root = corpusRoot();
-    const result = run(
-      ["--root", `${root}=root`, "--out", path.join(tmp(), "out"), "--no-cache"],
-      { TMPDIR: tmpdir, NODE_OPTIONS: `--require ${preload}` },
+    fs.writeFileSync(
+      preload,
+      [
+        `const model = require(${JSON.stringify(path.join(REPO, "dist", "repository_model.js"))});`,
+        "const original = model.emitRepositoryModelBundle;",
+        "model.emitRepositoryModelBundle = (packet, options) => {",
+        "  if (String(options && options.outDir).includes('l9-corpus-bundles-')) {",
+        "    throw new Error('simulated per-root bundle emission failure');",
+        "  }",
+        "  return original(packet, options);",
+        "};",
+        "",
+      ].join("\n"),
     );
+    const root = corpusRoot();
+    const result = run(["--root", `${root}=root`, "--out", path.join(tmp(), "out"), "--no-cache"], {
+      TMPDIR: tmpdir,
+      NODE_OPTIONS: `--require ${preload}`,
+    });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("simulated per-root bundle emission failure");
-    expect(fs.readdirSync(tmpdir).filter((name) => name.startsWith("l9-corpus-bundles-"))).toEqual([]);
+    expect(fs.readdirSync(tmpdir).filter((name) => name.startsWith("l9-corpus-bundles-"))).toEqual(
+      [],
+    );
   });
 });
 
 describe("--embedding-pair-threshold is a unit-interval cosine (RC-104)", () => {
   const corpusArgs = (root: string, extra: string[]): string[] => [
-    "--root", `${root}=root`, "--out", path.join(tmp(), "out"), "--no-cache", ...extra,
+    "--root",
+    `${root}=root`,
+    "--out",
+    path.join(tmp(), "out"),
+    "--no-cache",
+    ...extra,
   ];
 
   test("REG-WU-067-RC-104-a: a fractional threshold is accepted", () => {
@@ -127,11 +145,14 @@ describe("--embedding-pair-threshold is a unit-interval cosine (RC-104)", () => 
     expect(result.status).toBe(0);
   });
 
-  test.each(["2", "-0.1", "abc"])("REG-WU-067-RC-104-b: an out-of-range or non-numeric threshold (%s) exits 2", (value) => {
-    const result = run(corpusArgs(corpusRoot(), ["--embedding-pair-threshold", value]));
-    expect(result.status).toBe(2);
-    expect(result.stderr).toContain("--embedding-pair-threshold");
-  });
+  test.each(["2", "-0.1", "abc"])(
+    "REG-WU-067-RC-104-b: an out-of-range or non-numeric threshold (%s) exits 2",
+    (value) => {
+      const result = run(corpusArgs(corpusRoot(), ["--embedding-pair-threshold", value]));
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain("--embedding-pair-threshold");
+    },
+  );
 
   test.each(["0", "1"])("REG-WU-067-RC-104-d: the bounds (%s) are accepted", (value) => {
     const result = run(corpusArgs(corpusRoot(), ["--embedding-pair-threshold", value]));
@@ -144,7 +165,9 @@ describe("--embedding-pair-threshold is a unit-interval cosine (RC-104)", () => 
       const chunks: Buffer[] = [];
       request.on("data", (chunk: Buffer) => chunks.push(chunk));
       request.on("end", () => {
-        const text = (JSON.parse(Buffer.concat(chunks).toString("utf8")) as { input: string }).input.toLowerCase();
+        const text = (
+          JSON.parse(Buffer.concat(chunks).toString("utf8")) as { input: string }
+        ).input.toLowerCase();
         const embedding = text.includes("alpha")
           ? [1, 0, 0]
           : text.includes("bravo")
@@ -164,16 +187,25 @@ describe("--embedding-pair-threshold is a unit-interval cosine (RC-104)", () => 
         fs.mkdirSync(root);
         fs.writeFileSync(path.join(root, "first.md"), "# First\n\nThe alpha document.\n");
         fs.writeFileSync(path.join(root, "second.md"), "# Second\n\nThe bravo document.\n");
-        const result = await runAsync(corpusArgs(root, [
-          "--embeddings",
-          "--embedding-provider", "http-json",
-          "--embedding-model", "toy",
-          "--embedding-endpoint", url,
-          "--embedding-locality", "local",
-          "--embedding-pair-threshold", threshold,
-        ]));
+        const result = await runAsync(
+          corpusArgs(root, [
+            "--embeddings",
+            "--embedding-provider",
+            "http-json",
+            "--embedding-model",
+            "toy",
+            "--embedding-endpoint",
+            url,
+            "--embedding-locality",
+            "local",
+            "--embedding-pair-threshold",
+            threshold,
+          ]),
+        );
         expect(result.status, result.stderr).toBe(0);
-        const match = /relationships\s+\d+ lexical\/structural, (\d+) embedding/.exec(result.stdout);
+        const match = /relationships\s+\d+ lexical\/structural, (\d+) embedding/.exec(
+          result.stdout,
+        );
         expect(match, result.stdout).not.toBeNull();
         return Number((match as RegExpExecArray)[1]);
       };

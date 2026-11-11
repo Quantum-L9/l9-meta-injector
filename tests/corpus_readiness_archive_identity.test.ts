@@ -43,7 +43,10 @@ function widgetRoot(note: string, extraMembers: { name: string; content: string 
   const root = tmp();
   fs.mkdirSync(path.join(root, "widget"), { recursive: true });
   fs.writeFileSync(path.join(root, "widget", "package.json"), '{\n  "name": "widget"\n}\n', "utf8");
-  writeRawZip(path.join(root, "widget", "old.zip"), [{ name: "notes.md", content: note }, ...extraMembers]);
+  writeRawZip(path.join(root, "widget", "old.zip"), [
+    { name: "notes.md", content: note },
+    ...extraMembers,
+  ]);
   return root;
 }
 
@@ -54,7 +57,8 @@ async function widgetBody(roots: { path: string; name: string }[]) {
     .filter((artifact) => artifact.root_relative_path === "widget/package.json")
     .map((artifact) => artifact.virtual_source_id);
   const body = result.readiness.bodies_of_work.find((candidate) =>
-    manifests.every((id) => candidate.member_ids.includes(id)));
+    manifests.every((id) => candidate.member_ids.includes(id)),
+  );
   return { result, body };
 }
 
@@ -72,7 +76,9 @@ describe("readiness archive identity", () => {
   it("REG-WU-046-RC-090-b: still counts two members of one archive as one", async () => {
     const { body } = await widgetBody([
       {
-        path: widgetRoot("# Old notes\nOne archive.\n", [{ name: "more.md", content: "# More\nSame archive.\n" }]),
+        path: widgetRoot("# Old notes\nOne archive.\n", [
+          { name: "more.md", content: "# More\nSame archive.\n" },
+        ]),
         name: "disk-a",
       },
     ]);
@@ -85,7 +91,9 @@ describe("readiness archive identity", () => {
       { path: widgetRoot("# Old notes\nFrom the first disk.\n"), name: "disk-a" },
       { path: widgetRoot("# Old notes\nFrom the second disk, different words.\n"), name: "disk-b" },
     ]);
-    const snapshotArchiveIds = new Set(result.snapshot.archives.map((archive) => archive.archive_id));
+    const snapshotArchiveIds = new Set(
+      result.snapshot.archives.map((archive) => archive.archive_id),
+    );
     const readinessArchiveIds = seenArchiveIds.filter((id): id is string => typeof id === "string");
     expect(readinessArchiveIds.length).toBeGreaterThan(0);
     for (const id of readinessArchiveIds) expect(snapshotArchiveIds.has(id), id).toBe(true);
