@@ -28,12 +28,12 @@ import * as zlib from "node:zlib";
 import { compareCodePoints } from "../ordering";
 import {
   BlockBuilder,
+  buildNormalizedDocument,
   DecodeInput,
-  DecoderBudget,
   DecodeOutcome,
+  DecoderBudget,
   DecoderDiagnostic,
   DocumentDecoder,
-  buildNormalizedDocument,
   normalizedDocumentId,
 } from "./decoder";
 
@@ -166,7 +166,11 @@ function dictBody(source: string): string | null {
  * when the string does not close before it; every step advances, so an
  * unterminated string costs one pass.
  */
-function scanLiteral(source: string, open: number, limit = source.length): { raw: string; end: number } {
+function scanLiteral(
+  source: string,
+  open: number,
+  limit = source.length,
+): { raw: string; end: number } {
   let depth = 1;
   let index = open + 1;
   let raw = "";
@@ -215,7 +219,10 @@ const STREAM_KEYWORD = new RegExp(STREAM_KEYWORD_SOURCE);
  * - A header's numbers are whole digit runs: `(?<!\d)` refuses to start inside a
  *   run, and the bounded counts stop a long run being backtracked over.
  */
-const HEADER_SCAN = new RegExp(String.raw`(?<!\d)(\d{1,10})\s+(\d{1,5})\s+obj\b|\(|%|` + STREAM_KEYWORD_SOURCE, "g");
+const HEADER_SCAN = new RegExp(
+  String.raw`(?<!\d)(\d{1,10})\s+(\d{1,5})\s+obj\b|\(|%|` + STREAM_KEYWORD_SOURCE,
+  "g",
+);
 
 /**
  * Every `N M obj` in the file, found by scanning.
@@ -385,7 +392,8 @@ function inflate(raw: Buffer, allowance: InflateAllowance): InflateResult {
   for (const attempt of [
     () => zlib.inflateSync(raw, { maxOutputLength: ceiling }),
     () => zlib.inflateRawSync(raw, { maxOutputLength: ceiling }),
-    () => zlib.inflateSync(raw, { maxOutputLength: ceiling, finishFlush: zlib.constants.Z_SYNC_FLUSH }),
+    () =>
+      zlib.inflateSync(raw, { maxOutputLength: ceiling, finishFlush: zlib.constants.Z_SYNC_FLUSH }),
   ]) {
     try {
       const bytes = attempt();
@@ -533,8 +541,8 @@ class PdfFile {
           code: "decoder.budget_exceeded",
           severity: "warning",
           message:
-            `object ${number}'s stream decompresses to more than the ${result.ceiling}-byte `
-            + "per-stream ceiling and was not read",
+            `object ${number}'s stream decompresses to more than the ${result.ceiling}-byte ` +
+            "per-stream ceiling and was not read",
           part: `object ${number}`,
         });
       }
@@ -578,8 +586,11 @@ class PdfFile {
     if (value === undefined) return [];
     const target = this.resolve(value);
     const text = target === undefined ? value : this.partsOf(target).body;
-    if (target !== undefined && !text.trim().startsWith("[")) return [referenceNumber(value) as number];
-    return [...text.matchAll(/(\d+)\s+\d+\s+R/g)].map((match) => Number.parseInt(match[1] as string, 10));
+    if (target !== undefined && !text.trim().startsWith("["))
+      return [referenceNumber(value) as number];
+    return [...text.matchAll(/(\d+)\s+\d+\s+R/g)].map((match) =>
+      Number.parseInt(match[1] as string, 10),
+    );
   }
 
   /**
@@ -592,7 +603,10 @@ class PdfFile {
    */
   expandObjectStreams(): void {
     const streams = [...this.objects.entries()]
-      .filter(([, object]) => object.inStream === undefined && this.partsOf(object).dict.get("Type") === "/ObjStm")
+      .filter(
+        ([, object]) =>
+          object.inStream === undefined && this.partsOf(object).dict.get("Type") === "/ObjStm",
+      )
       .sort((a, b) => a[1].offset - b[1].offset);
     for (const [number, container] of streams) {
       const dict = this.partsOf(container).dict;
@@ -602,7 +616,13 @@ class PdfFile {
       const first = this.integerOf(dict.get("First"));
       const text = stream.kind === "ok" ? stream.bytes.toString("latin1") : "";
       const header = first === null ? [] : (text.slice(0, first).match(/\d+/g) ?? []).map(Number);
-      if (stream.kind !== "ok" || count === null || first === null || first > text.length || header.length < count * 2) {
+      if (
+        stream.kind !== "ok" ||
+        count === null ||
+        first === null ||
+        first > text.length ||
+        header.length < count * 2
+      ) {
         this.notes.push({
           code: "decoder.malformed",
           severity: "warning",
@@ -643,7 +663,8 @@ class PdfFile {
     for (const object of new Set(this.objects.values())) {
       if (object.inStream !== undefined) continue;
       const parts = this.partsOf(object);
-      if (parts.dict.get("Type") === "/XRef") found.push({ position: object.offset, dict: parts.dict });
+      if (parts.dict.get("Type") === "/XRef")
+        found.push({ position: object.offset, dict: parts.dict });
     }
     this.trailerCache = found.sort((a, b) => b.position - a.position).map((entry) => entry.dict);
     return this.trailerCache;
@@ -658,8 +679,8 @@ class PdfFile {
       code: "decoder.budget_exceeded",
       severity: "warning",
       message:
-        `the document's decompression allowance of ${this.allowance.total} bytes was exhausted; `
-        + `${this.allowance.skipped} stream(s) were not inflated`,
+        `the document's decompression allowance of ${this.allowance.total} bytes was exhausted; ` +
+        `${this.allowance.skipped} stream(s) were not inflated`,
     };
   }
 }
@@ -739,16 +760,46 @@ function walkPageTree(file: PdfFile, maxDepth: number): PdfPage[] | null {
 
 /** PDFDocEncoding's departures from Latin-1 (PDF 32000-1, Annex D). */
 const PDF_DOC_ENCODING: Record<number, string> = {
-  0x18: "\u02d8", 0x19: "\u02c7", 0x1a: "\u02c6", 0x1b: "\u02d9",
-  0x1c: "\u02dd", 0x1d: "\u02db", 0x1e: "\u02da", 0x1f: "\u02dc",
-  0x80: "\u2022", 0x81: "\u2020", 0x82: "\u2021", 0x83: "\u2026",
-  0x84: "\u2014", 0x85: "\u2013", 0x86: "\u0192", 0x87: "\u2044",
-  0x88: "\u2039", 0x89: "\u203a", 0x8a: "\u2212", 0x8b: "\u2030",
-  0x8c: "\u201e", 0x8d: "\u201c", 0x8e: "\u201d", 0x8f: "\u2018",
-  0x90: "\u2019", 0x91: "\u201a", 0x92: "\u2122", 0x93: "\ufb01",
-  0x94: "\ufb02", 0x95: "\u0141", 0x96: "\u0152", 0x97: "\u0160",
-  0x98: "\u0178", 0x99: "\u017d", 0x9a: "\u0131", 0x9b: "\u0142",
-  0x9c: "\u0153", 0x9d: "\u0161", 0x9e: "\u017e", 0xa0: "\u20ac",
+  0x18: "\u02d8",
+  0x19: "\u02c7",
+  0x1a: "\u02c6",
+  0x1b: "\u02d9",
+  0x1c: "\u02dd",
+  0x1d: "\u02db",
+  0x1e: "\u02da",
+  0x1f: "\u02dc",
+  0x80: "\u2022",
+  0x81: "\u2020",
+  0x82: "\u2021",
+  0x83: "\u2026",
+  0x84: "\u2014",
+  0x85: "\u2013",
+  0x86: "\u0192",
+  0x87: "\u2044",
+  0x88: "\u2039",
+  0x89: "\u203a",
+  0x8a: "\u2212",
+  0x8b: "\u2030",
+  0x8c: "\u201e",
+  0x8d: "\u201c",
+  0x8e: "\u201d",
+  0x8f: "\u2018",
+  0x90: "\u2019",
+  0x91: "\u201a",
+  0x92: "\u2122",
+  0x93: "\ufb01",
+  0x94: "\ufb02",
+  0x95: "\u0141",
+  0x96: "\u0152",
+  0x97: "\u0160",
+  0x98: "\u0178",
+  0x99: "\u017d",
+  0x9a: "\u0131",
+  0x9b: "\u0142",
+  0x9c: "\u0153",
+  0x9d: "\u0161",
+  0x9e: "\u017e",
+  0xa0: "\u20ac",
 };
 
 /**
@@ -766,7 +817,8 @@ function decodeTextString(bytes: string): string {
     swapped.swap16();
     return swapped.toString("utf16le");
   }
-  if (raw[0] === 0xef && raw[1] === 0xbb && raw[2] === 0xbf) return raw.subarray(3).toString("utf8");
+  if (raw[0] === 0xef && raw[1] === 0xbb && raw[2] === 0xbf)
+    return raw.subarray(3).toString("utf8");
   let out = "";
   for (const byte of raw) out += PDF_DOC_ENCODING[byte] ?? String.fromCharCode(byte);
   return out;
@@ -813,16 +865,35 @@ function decodeLiteral(source: string): string {
     if (next === undefined) break;
     cursor += 1;
     switch (next) {
-      case "n": out += "\n"; break;
-      case "r": out += "\r"; break;
-      case "t": out += "\t"; break;
-      case "b": out += "\b"; break;
-      case "f": out += "\f"; break;
-      case "(": out += "("; break;
-      case ")": out += ")"; break;
-      case "\\": out += "\\"; break;
-      case "\n": break;
-      case "\r": if (source[cursor + 1] === "\n") cursor += 1; break;
+      case "n":
+        out += "\n";
+        break;
+      case "r":
+        out += "\r";
+        break;
+      case "t":
+        out += "\t";
+        break;
+      case "b":
+        out += "\b";
+        break;
+      case "f":
+        out += "\f";
+        break;
+      case "(":
+        out += "(";
+        break;
+      case ")":
+        out += ")";
+        break;
+      case "\\":
+        out += "\\";
+        break;
+      case "\n":
+        break;
+      case "\r":
+        if (source[cursor + 1] === "\n") cursor += 1;
+        break;
       default: {
         if (next >= "0" && next <= "7") {
           let octal = next;
@@ -886,7 +957,8 @@ class LatestRowHeap {
       const left = index * 2 + 1;
       if (left >= items.length) break;
       const right = left + 1;
-      const child = right < items.length && (items[right] as number) > (items[left] as number) ? right : left;
+      const child =
+        right < items.length && (items[right] as number) > (items[left] as number) ? right : left;
       if ((items[child] as number) <= last) break;
       items[index] = items[child] as number;
       index = child;
@@ -927,7 +999,8 @@ function flattenRanges(rows: CodeRange[]): CodeSegment[] {
     const row = rows[open.top] as CodeRange;
     const high = (points[index + 1] as number) - 1;
     const previous = segments[segments.length - 1];
-    if (previous !== undefined && previous.row === row && previous.high + 1 === point) previous.high = high;
+    if (previous !== undefined && previous.row === row && previous.high + 1 === point)
+      previous.high = high;
     else segments.push({ low: point, high, row });
   }
   return segments;
@@ -1048,11 +1121,15 @@ class ToUnicodeMap {
     let cursor = 0;
     while (cursor < bytes.length) {
       let taken: { code: number; width: number } | null = null;
-      const widths = this.codespace.length > 0 ? this.codespace : [{ width: defaultWidth, low: 0, high: Infinity }];
+      const widths =
+        this.codespace.length > 0
+          ? this.codespace
+          : [{ width: defaultWidth, low: 0, high: Infinity }];
       for (const range of widths) {
         if (cursor + range.width > bytes.length) continue;
         let code = 0;
-        for (let index = 0; index < range.width; index += 1) code = code * 256 + (bytes[cursor + index] as number);
+        for (let index = 0; index < range.width; index += 1)
+          code = code * 256 + (bytes[cursor + index] as number);
         if (code >= range.low && code <= range.high) {
           taken = { code, width: range.width };
           break;
@@ -1114,7 +1191,12 @@ function parseToUnicode(cmap: string): ToUnicodeMap {
     while (row !== null) {
       const low = hexCode(row[1] as string);
       const high = Number.parseInt(row[2] as string, 16);
-      if (Number.isFinite(low.code) && Number.isFinite(high) && high >= low.code && high - low.code < 65_536) {
+      if (
+        Number.isFinite(low.code) &&
+        Number.isFinite(high) &&
+        high >= low.code &&
+        high - low.code < 65_536
+      ) {
         map.table(low.width).ranges.push({ low: low.code, high, dest: row[3] as string });
       }
       row = rows.exec(range[1] as string);
@@ -1169,8 +1251,8 @@ function fontDiagnostics(facts: TextFacts): DecoderDiagnostic[] {
       code: "decoder.unsupported_feature",
       severity: "warning",
       message:
-        `text in composite font(s) ${fontList(facts.unmapped)} has no usable ToUnicode map; `
-        + "its character IDs cannot be mapped to text and it was not read",
+        `text in composite font(s) ${fontList(facts.unmapped)} has no usable ToUnicode map; ` +
+        "its character IDs cannot be mapped to text and it was not read",
     });
   }
   if (facts.byteEncoded.size > 0) {
@@ -1178,8 +1260,8 @@ function fontDiagnostics(facts: TextFacts): DecoderDiagnostic[] {
       code: "decoder.unsupported_feature",
       severity: "info",
       message:
-        `no ToUnicode map was found for font(s) ${fontList(facts.byteEncoded)}; `
-        + "text was read through the font's built-in byte encoding",
+        `no ToUnicode map was found for font(s) ${fontList(facts.byteEncoded)}; ` +
+        "text was read through the font's built-in byte encoding",
     });
   }
   if (facts.unknown.size > 0) {
@@ -1187,8 +1269,8 @@ function fontDiagnostics(facts: TextFacts): DecoderDiagnostic[] {
       code: "decoder.unsupported_feature",
       severity: "info",
       message:
-        `font(s) ${fontList(facts.unknown)} are selected by the content but not defined in the page's resources; `
-        + "their text was read as single bytes",
+        `font(s) ${fontList(facts.unknown)} are selected by the content but not defined in the page's resources; ` +
+        "their text was read as single bytes",
     });
   }
   return notes;
@@ -1261,8 +1343,10 @@ function extractContentText(
       // A simple font addresses single bytes; a byte its map does not cover
       // keeps its byte meaning.
       let out = "";
-      for (const byte of bytes) out += font?.map?.get(byte, 1) ?? font?.map?.get(byte) ?? String.fromCharCode(byte);
-      if (font !== undefined && font.map === null && out.trim().length > 0) facts.byteEncoded.add(font.label);
+      for (const byte of bytes)
+        out += font?.map?.get(byte, 1) ?? font?.map?.get(byte) ?? String.fromCharCode(byte);
+      if (font !== undefined && font.map === null && out.trim().length > 0)
+        facts.byteEncoded.add(font.label);
       return out;
     }
     if (font.map === null) {
@@ -1320,7 +1404,7 @@ function extractContentText(
         flush();
         show(stack[stack.length - 1]);
         break;
-      case "\"":
+      case '"':
         flush();
         show(stack[stack.length - 1]);
         break;
@@ -1344,7 +1428,10 @@ function extractContentText(
     const char = content[cursor] as string;
     if (char === "(") {
       const { raw, end } = scanLiteral(content, cursor);
-      push({ kind: "string", bytes: [...decodeLiteral(raw)].map((part) => part.charCodeAt(0) & 0xff) });
+      push({
+        kind: "string",
+        bytes: [...decodeLiteral(raw)].map((part) => part.charCodeAt(0) & 0xff),
+      });
       cursor = end + 1;
       continue;
     }
@@ -1515,9 +1602,12 @@ export const pdfDecoder: DocumentDecoder = {
       if (target !== undefined) fontCache.set(target, font);
       return font;
     };
-    const fontResolver = (resources: string | undefined): ((name: string) => PdfFont | undefined) => {
+    const fontResolver = (
+      resources: string | undefined,
+    ): ((name: string) => PdfFont | undefined) => {
       const fonts = file.dictOf(file.dictOf(resources)?.get("Font"));
-      return (name) => (fonts === null ? undefined : readFont(name, fonts.get(name.replace(/^\//, ""))));
+      return (name) =>
+        fonts === null ? undefined : readFont(name, fonts.get(name.replace(/^\//, "")));
     };
 
     // Pages in page-tree order. Only when there is no tree to walk are the page
@@ -1527,14 +1617,18 @@ export const pdfDecoder: DocumentDecoder = {
       pages = [...objects.entries()]
         .filter(([, object]) => file.partsOf(object).dict.get("Type") === "/Page")
         .sort((a, b) => a[1].offset - b[1].offset)
-        .map(([number, object]) => ({ number, object, resources: file.partsOf(object).dict.get("Resources") }));
+        .map(([number, object]) => ({
+          number,
+          object,
+          resources: file.partsOf(object).dict.get("Resources"),
+        }));
       if (pages.length > 0) {
         file.notes.push({
           code: "decoder.malformed",
           severity: "info",
           message:
-            "the page tree could not be resolved from the trailer's /Root; "
-            + `${pages.length} page object(s) were read in file order`,
+            "the page tree could not be resolved from the trailer's /Root; " +
+            `${pages.length} page object(s) were read in file order`,
         });
       }
     }
@@ -1575,7 +1669,8 @@ export const pdfDecoder: DocumentDecoder = {
         if (stream.kind !== "ok") continue;
         parts.push(stream.bytes.toString("latin1"));
       }
-      const lines = parts.length === 0 ? [] : extractContentText(parts.join("\n"), resolveFont, facts);
+      const lines =
+        parts.length === 0 ? [] : extractContentText(parts.join("\n"), resolveFont, facts);
       return { lines, overBudget };
     };
 
@@ -1620,13 +1715,16 @@ export const pdfDecoder: DocumentDecoder = {
     // is the reason, not a scan and not an unsupported feature.
     if (pagesWithText === 0 && pagesOverBudget > 0) {
       const message =
-        `${pagesOverBudget} page(s) had content streams that exceeded the decompression budget `
-        + "and no other page yielded text";
+        `${pagesOverBudget} page(s) had content streams that exceeded the decompression budget ` +
+        "and no other page yielded text";
       return {
         decoded: false,
         reason: "decoder.budget_exceeded",
         message,
-        diagnostics: [{ code: "decoder.budget_exceeded", severity: "warning", message }, ...budgetNotes],
+        diagnostics: [
+          { code: "decoder.budget_exceeded", severity: "warning", message },
+          ...budgetNotes,
+        ],
       };
     }
 
@@ -1636,28 +1734,37 @@ export const pdfDecoder: DocumentDecoder = {
     // characters: unsupported, and said so — never its glyph identifiers.
     if (pagesWithText === 0 && pagesUnmapped > 0) {
       const message =
-        `${pagesUnmapped} page(s) show text only in composite font(s) with no usable ToUnicode map; `
-        + "their character IDs cannot be mapped to text";
+        `${pagesUnmapped} page(s) show text only in composite font(s) with no usable ToUnicode map; ` +
+        "their character IDs cannot be mapped to text";
       return {
         decoded: false,
         reason: "decoder.unsupported_feature",
         message,
-        diagnostics: [{ code: "decoder.unsupported_feature", severity: "warning", message }, ...fontNotes, ...budgetNotes],
+        diagnostics: [
+          { code: "decoder.unsupported_feature", severity: "warning", message },
+          ...fontNotes,
+          ...budgetNotes,
+        ],
       };
     }
 
     // The honest outcome for a scan: no text layer, images present, say so.
     if (pagesWithText === 0) {
-      const message = imageObjects > 0
-        ? `no text layer was found across ${pages.length} page(s); `
-          + `${imageObjects} image object(s) are present, so this is a scanned document requiring OCR`
-        : "no text layer was found and no image objects are present; the document yielded nothing readable";
+      const message =
+        imageObjects > 0
+          ? `no text layer was found across ${pages.length} page(s); ` +
+            `${imageObjects} image object(s) are present, so this is a scanned document requiring OCR`
+          : "no text layer was found and no image objects are present; the document yielded nothing readable";
       return {
         decoded: false,
         reason: imageObjects > 0 ? "decoder.ocr_required" : "decoder.unsupported_feature",
         message,
         diagnostics: [
-          { code: imageObjects > 0 ? "decoder.ocr_required" : "decoder.unsupported_feature", severity: "warning", message },
+          {
+            code: imageObjects > 0 ? "decoder.ocr_required" : "decoder.unsupported_feature",
+            severity: "warning",
+            message,
+          },
           ...budgetNotes,
         ],
       };
@@ -1668,8 +1775,8 @@ export const pdfDecoder: DocumentDecoder = {
         code: "decoder.ocr_required",
         severity: "info",
         message:
-          `${pagesWithoutText} of ${pages.length} page(s) carried no text layer and would need OCR; `
-          + `${pagesWithText} page(s) were read`,
+          `${pagesWithoutText} of ${pages.length} page(s) carried no text layer and would need OCR; ` +
+          `${pagesWithText} page(s) were read`,
       });
     }
     diagnostics.push(...fontNotes);
@@ -1690,4 +1797,11 @@ export const pdfDecoder: DocumentDecoder = {
 };
 
 /** Exported for the decoder tests, which exercise the tokenizer directly. */
-export const pdfInternals = { parsePdfDict, extractContentText, parseToUnicode, decodeLiteral, isWhitespace, isDelimiter };
+export const pdfInternals = {
+  parsePdfDict,
+  extractContentText,
+  parseToUnicode,
+  decodeLiteral,
+  isWhitespace,
+  isDelimiter,
+};

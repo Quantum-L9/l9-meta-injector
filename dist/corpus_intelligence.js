@@ -379,8 +379,9 @@ function buildCorpusIntelligencePacket(input) {
     const fieldOrder = new Map(exports.CORPUS_PAYLOAD_FIELDS.map((field, index) => [field, index]));
     const domainsNotRun = input.domainsNotRun
         .map((entry) => ({ domain: entry.domain, reason: entry.reason }))
-        .sort((a, b) => (fieldOrder.get(a.domain) ?? Number.MAX_SAFE_INTEGER) - (fieldOrder.get(b.domain) ?? Number.MAX_SAFE_INTEGER)
-        || (0, ordering_1.compareCodePoints)(a.domain, b.domain));
+        .sort((a, b) => (fieldOrder.get(a.domain) ?? Number.MAX_SAFE_INTEGER) -
+        (fieldOrder.get(b.domain) ?? Number.MAX_SAFE_INTEGER) ||
+        (0, ordering_1.compareCodePoints)(a.domain, b.domain));
     const payload_refs = {};
     const payload_hashes = {};
     for (const field of exports.CORPUS_PAYLOAD_FIELDS) {

@@ -67,7 +67,8 @@ describe("the validation stamp records an executed validation (RC-035)", () => {
     const broken = {
       ...interpretation,
       assertions: interpretation.assertions.map((assertion, index) =>
-        index === 0 ? { ...assertion, subject_id: "artifact:not-in-packet" } : assertion),
+        index === 0 ? { ...assertion, subject_id: "artifact:not-in-packet" } : assertion,
+      ),
     };
     const packet = buildRepositoryModelPacket({
       inventory,
@@ -91,10 +92,19 @@ describe("the validation stamp records an executed validation (RC-035)", () => {
     const emitted = path.join(scratch("emit"), "bundle");
     emitRepositoryModelBundle(observeSample(), { outDir: emitted });
     const packet = JSON.parse(fs.readFileSync(path.join(emitted, "packet.json"), "utf8"));
-    expect(packet.validation).toEqual({ status: "passed", receipt_ref: "receipts/validation-receipt.json" });
+    expect(packet.validation).toEqual({
+      status: "passed",
+      receipt_ref: "receipts/validation-receipt.json",
+    });
     expect(fs.existsSync(path.join(emitted, packet.validation.receipt_ref))).toBe(true);
-    for (const rel of ["packet.json", "manifest.json", path.join("receipts", "validation-receipt.json")]) {
-      expect(fs.readFileSync(path.join(emitted, rel), "utf8")).toBe(fs.readFileSync(path.join(GOLDEN, rel), "utf8"));
+    for (const rel of [
+      "packet.json",
+      "manifest.json",
+      path.join("receipts", "validation-receipt.json"),
+    ]) {
+      expect(fs.readFileSync(path.join(emitted, rel), "utf8")).toBe(
+        fs.readFileSync(path.join(GOLDEN, rel), "utf8"),
+      );
     }
   });
 
@@ -119,11 +129,16 @@ describe("the validation stamp records an executed validation (RC-035)", () => {
         ...rootPacket,
         packet: {
           ...rootPacket.packet,
-          validation: { status: "passed" as const, receipt_ref: "receipts/validation-receipt.json" },
+          validation: {
+            status: "passed" as const,
+            receipt_ref: "receipts/validation-receipt.json",
+          },
         },
       })),
     };
-    const legacy = buildCorpusIntelligencePacket(corpusIntelligenceInput(legacyStamped, options)).packet;
+    const legacy = buildCorpusIntelligencePacket(
+      corpusIntelligenceInput(legacyStamped, options),
+    ).packet;
     expect(current.packet_id).toBe(legacy.packet_id);
   });
 });

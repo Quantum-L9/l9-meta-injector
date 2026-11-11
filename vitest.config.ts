@@ -15,9 +15,10 @@ import { defineConfig } from "vitest/config";
 // `availableParallelism` was added after the earliest Node 18 releases while
 // package.json supports all Node >=18. Fall back to `cpus().length` so the
 // stability cap does not narrow the declared runtime contract.
-const parallelism = typeof os.availableParallelism === "function"
-  ? os.availableParallelism()
-  : Math.max(1, os.cpus().length);
+const parallelism =
+  typeof os.availableParallelism === "function"
+    ? os.availableParallelism()
+    : Math.max(1, os.cpus().length);
 
 export default defineConfig({
   test: {

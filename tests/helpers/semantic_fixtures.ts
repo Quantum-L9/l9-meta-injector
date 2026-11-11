@@ -103,14 +103,20 @@ const WORLD_MODEL_NOTES_BODY = [
 export function explicitSameProject(): SemanticArtifactInput[] {
   return [
     artifact({
-      id: "wm-plan", path: "world-model/plan.md", title: "World Model Plan",
-      headings: ["Reasoning Plane", "Evidence Packs"], body: WORLD_MODEL_BODY,
+      id: "wm-plan",
+      path: "world-model/plan.md",
+      title: "World Model Plan",
+      headings: ["Reasoning Plane", "Evidence Packs"],
+      body: WORLD_MODEL_BODY,
       references: ["world-model/notes.md"],
       identifiers: [{ identifier: "world-model", manifest: "package.json", field: "name" }],
     }),
     artifact({
-      id: "wm-notes", path: "world-model/notes.md", title: "World Model Implementation Notes",
-      headings: ["Reasoning Plane", "Knowledge Graph"], body: WORLD_MODEL_NOTES_BODY,
+      id: "wm-notes",
+      path: "world-model/notes.md",
+      title: "World Model Implementation Notes",
+      headings: ["Reasoning Plane", "Knowledge Graph"],
+      body: WORLD_MODEL_NOTES_BODY,
       identifiers: [{ identifier: "world-model", manifest: "package.json", field: "name" }],
     }),
   ];
@@ -124,11 +130,16 @@ export function lexicalRelated(): SemanticArtifactInput[] {
   ].join(" ");
   return [
     artifact({
-      id: "ingest-a", path: "notes/ingest-scheduler.md", title: "Ingest Scheduler",
-      headings: ["Backpressure", "Decoder Cost"], body: shared,
+      id: "ingest-a",
+      path: "notes/ingest-scheduler.md",
+      title: "Ingest Scheduler",
+      headings: ["Backpressure", "Decoder Cost"],
+      body: shared,
     }),
     artifact({
-      id: "ingest-b", path: "notes/scheduler-review.md", title: "Ingest Scheduler Review",
+      id: "ingest-b",
+      path: "notes/scheduler-review.md",
+      title: "Ingest Scheduler Review",
       headings: ["Backpressure", "Decoder Cost"],
       body: shared + " The review confirms the backpressure model and the decoder cost estimates.",
     }),
@@ -145,11 +156,15 @@ export function lexicalRelated(): SemanticArtifactInput[] {
 export function semanticParaphrase(): SemanticArtifactInput[] {
   return [
     artifact({
-      id: "para-a", path: "notes/persistence.md", title: "Temporal Assertion Persistence",
+      id: "para-a",
+      path: "notes/persistence.md",
+      title: "Temporal Assertion Persistence",
       body: "Persist temporal assertions in the knowledge graph.",
     }),
     artifact({
-      id: "para-b", path: "notes/durable.md", title: "Durable Semantic Memory",
+      id: "para-b",
+      path: "notes/durable.md",
+      title: "Durable Semantic Memory",
       body: "Store time-aware facts in durable semantic memory.",
     }),
   ];
@@ -159,12 +174,16 @@ export function semanticParaphrase(): SemanticArtifactInput[] {
 export function genericOverlapFalsePositive(): SemanticArtifactInput[] {
   return [
     artifact({
-      id: "generic-a", path: "notes/kitchen-plan.md", title: "Kitchen Renovation Plan",
+      id: "generic-a",
+      path: "notes/kitchen-plan.md",
+      title: "Kitchen Renovation Plan",
       headings: ["System", "Design"],
       body: "Plan the kitchen renovation. The system design covers cabinets, worktops and the sink.",
     }),
     artifact({
-      id: "generic-b", path: "notes/payroll-plan.md", title: "Payroll Migration Plan",
+      id: "generic-b",
+      path: "notes/payroll-plan.md",
+      title: "Payroll Migration Plan",
       headings: ["System", "Design"],
       body: "Plan the payroll migration. The system design covers tax tables, payslips and banking.",
     }),
@@ -175,14 +194,20 @@ export function genericOverlapFalsePositive(): SemanticArtifactInput[] {
 export function crossArchiveVersions(): SemanticArtifactInput[] {
   return [
     artifact({
-      id: "arch-old", path: "old.zip!/world-model-plan.md", title: "World Model Plan",
-      headings: ["Reasoning Plane"], body: WORLD_MODEL_BODY, archiveAncestry: ["old.zip"],
+      id: "arch-old",
+      path: "old.zip!/world-model-plan.md",
+      title: "World Model Plan",
+      headings: ["Reasoning Plane"],
+      body: WORLD_MODEL_BODY,
+      archiveAncestry: ["old.zip"],
       identifiers: [{ identifier: "world-model", manifest: "package.json", field: "name" }],
       duplicateCluster: "cluster:wm",
     }),
     artifact({
-      id: "arch-new", path: "backup.zip!/world-model-plan-revised.md",
-      title: "World Model Plan Revised", headings: ["Reasoning Plane"],
+      id: "arch-new",
+      path: "backup.zip!/world-model-plan-revised.md",
+      title: "World Model Plan Revised",
+      headings: ["Reasoning Plane"],
       body: WORLD_MODEL_BODY + " Revised after the reasoning plane review.",
       archiveAncestry: ["backup.zip"],
       identifiers: [{ identifier: "world-model", manifest: "package.json", field: "name" }],
@@ -195,12 +220,18 @@ export function crossArchiveVersions(): SemanticArtifactInput[] {
 export function exactDuplicates(): SemanticArtifactInput[] {
   return [
     artifact({
-      id: "dup-a", path: "a/report.md", hash: "sha256:identical", title: "Quarterly Report",
+      id: "dup-a",
+      path: "a/report.md",
+      hash: "sha256:identical",
+      title: "Quarterly Report",
       body: "The quarterly report covers revenue, churn and headcount.",
       duplicateCluster: "cluster:dup",
     }),
     artifact({
-      id: "dup-b", path: "b/report.md", hash: "sha256:identical", title: "Quarterly Report",
+      id: "dup-b",
+      path: "b/report.md",
+      hash: "sha256:identical",
+      title: "Quarterly Report",
       body: "The quarterly report covers revenue, churn and headcount.",
       duplicateCluster: "cluster:dup",
     }),
@@ -211,14 +242,22 @@ export function exactDuplicates(): SemanticArtifactInput[] {
 export function statusConflict(): SemanticArtifactInput[] {
   return [
     artifact({
-      id: "status-a", path: "gateway/design.md", title: "Gateway Design", status: "WIP",
-      headings: ["Routing"], body: "The gateway routes requests by tenant and applies rate limits.",
+      id: "status-a",
+      path: "gateway/design.md",
+      title: "Gateway Design",
+      status: "WIP",
+      headings: ["Routing"],
+      body: "The gateway routes requests by tenant and applies rate limits.",
       identifiers: [{ identifier: "gateway", manifest: "package.json", field: "name" }],
       references: ["gateway/rollout.md"],
     }),
     artifact({
-      id: "status-b", path: "gateway/rollout.md", title: "Gateway Rollout", status: "Complete",
-      headings: ["Routing"], body: "The gateway rollout applies rate limits per tenant in production.",
+      id: "status-b",
+      path: "gateway/rollout.md",
+      title: "Gateway Rollout",
+      status: "Complete",
+      headings: ["Routing"],
+      body: "The gateway rollout applies rate limits per tenant in production.",
       identifiers: [{ identifier: "gateway", manifest: "package.json", field: "name" }],
     }),
   ];
@@ -228,13 +267,20 @@ export function statusConflict(): SemanticArtifactInput[] {
 export function supersession(): SemanticArtifactInput[] {
   return [
     artifact({
-      id: "design-v2", path: "design-v2.md", title: "Design v2", supersedes: "design-v1.md",
-      headings: ["Storage"], body: "Design v2 replaces the storage layer with content addressing.",
+      id: "design-v2",
+      path: "design-v2.md",
+      title: "Design v2",
+      supersedes: "design-v1.md",
+      headings: ["Storage"],
+      body: "Design v2 replaces the storage layer with content addressing.",
       identifiers: [{ identifier: "storage", manifest: "package.json", field: "name" }],
     }),
     artifact({
-      id: "design-v1", path: "design-v1.md", title: "Design v1",
-      headings: ["Storage"], body: "Design v1 describes the storage layer before content addressing.",
+      id: "design-v1",
+      path: "design-v1.md",
+      title: "Design v1",
+      headings: ["Storage"],
+      body: "Design v1 describes the storage layer before content addressing.",
       identifiers: [{ identifier: "storage", manifest: "package.json", field: "name" }],
     }),
   ];
@@ -245,15 +291,25 @@ export function consolidationSet(): SemanticArtifactInput[] {
   const body = "The migration runbook lists the cutover steps and the rollback plan.";
   return [
     artifact({
-      id: "cons-orig", path: "runbook.md", hash: "sha256:runbook", title: "Migration Runbook",
-      body, duplicateCluster: "cluster:runbook",
+      id: "cons-orig",
+      path: "runbook.md",
+      hash: "sha256:runbook",
+      title: "Migration Runbook",
+      body,
+      duplicateCluster: "cluster:runbook",
     }),
     artifact({
-      id: "cons-copy", path: "backup/runbook.md", hash: "sha256:runbook", title: "Migration Runbook",
-      body, duplicateCluster: "cluster:runbook",
+      id: "cons-copy",
+      path: "backup/runbook.md",
+      hash: "sha256:runbook",
+      title: "Migration Runbook",
+      body,
+      duplicateCluster: "cluster:runbook",
     }),
     artifact({
-      id: "cons-revised", path: "runbook-revised.md", hash: "sha256:runbook-revised",
+      id: "cons-revised",
+      path: "runbook-revised.md",
+      hash: "sha256:runbook-revised",
       title: "Migration Runbook Revised",
       body: body + " The revision adds a verification step and a comms checklist.",
       supersedes: "runbook.md",

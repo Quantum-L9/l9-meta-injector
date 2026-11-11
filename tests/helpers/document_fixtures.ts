@@ -16,7 +16,10 @@ function xmlHeader(): string {
 }
 
 /** The two parts every OOXML container needs before it is one. */
-function ooxmlSkeleton(contentTypes: string, relationships: string): { name: string; content: string }[] {
+function ooxmlSkeleton(
+  contentTypes: string,
+  relationships: string,
+): { name: string; content: string }[] {
   return [
     { name: "[Content_Types].xml", content: `${xmlHeader()}${contentTypes}` },
     { name: "_rels/.rels", content: `${xmlHeader()}${relationships}` },
@@ -44,18 +47,22 @@ export function writeDocx(target: string, spec: DocxSpec): string {
       .join("<w:br/>");
 
   const paragraph = (text: string, style?: string): string =>
-    `<w:p>${style ? `<w:pPr><w:pStyle w:val="${style}"/></w:pPr>` : ""}`
-    + `<w:r>${runText(text)}</w:r></w:p>`;
+    `<w:p>${style ? `<w:pPr><w:pStyle w:val="${style}"/></w:pPr>` : ""}` +
+    `<w:r>${runText(text)}</w:r></w:p>`;
 
   const listItem = (text: string): string =>
-    `<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>`
-    + `<w:r>${runText(text)}</w:r></w:p>`;
+    `<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>` +
+    `<w:r>${runText(text)}</w:r></w:p>`;
 
-  const tableXml = spec.table === undefined
-    ? ""
-    : `<w:tbl>${spec.table
-      .map((row) => `<w:tr>${row.map((cell) => `<w:tc>${paragraph(cell)}</w:tc>`).join("")}</w:tr>`)
-      .join("")}</w:tbl>`;
+  const tableXml =
+    spec.table === undefined
+      ? ""
+      : `<w:tbl>${spec.table
+          .map(
+            (row) =>
+              `<w:tr>${row.map((cell) => `<w:tc>${paragraph(cell)}</w:tc>`).join("")}</w:tr>`,
+          )
+          .join("")}</w:tbl>`;
 
   const body = [
     paragraph(spec.title, "Title"),
@@ -67,38 +74,44 @@ export function writeDocx(target: string, spec: DocxSpec): string {
 
   const parts = [
     ...ooxmlSkeleton(
-      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
-      + '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
-      + '<Default Extension="xml" ContentType="application/xml"/>'
-      + '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
-      + "</Types>",
-      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-      + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>'
-      + "</Relationships>",
+      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+        '<Default Extension="xml" ContentType="application/xml"/>' +
+        '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
+        "</Types>",
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>' +
+        "</Relationships>",
     ),
     {
       name: "docProps/core.xml",
-      content: `${xmlHeader()}<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" `
-        + 'xmlns:dc="http://purl.org/dc/elements/1.1/">'
-        + `<dc:title>${escapeXml(spec.title)}</dc:title></cp:coreProperties>`,
+      content:
+        `${xmlHeader()}<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" ` +
+        'xmlns:dc="http://purl.org/dc/elements/1.1/">' +
+        `<dc:title>${escapeXml(spec.title)}</dc:title></cp:coreProperties>`,
     },
     {
       name: "word/document.xml",
-      content: `${xmlHeader()}<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">`
-        + `<w:body>${body}</w:body></w:document>`,
+      content:
+        `${xmlHeader()}<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+        `<w:body>${body}</w:body></w:document>`,
     },
   ];
 
   if (spec.externalLink !== undefined) {
     parts.push({
       name: "word/_rels/document.xml.rels",
-      content: `${xmlHeader()}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`
-        + `<Relationship Id="rId9" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" `
-        + `Target="${escapeXml(spec.externalLink)}" TargetMode="External"/></Relationships>`,
+      content:
+        `${xmlHeader()}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+        `<Relationship Id="rId9" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" ` +
+        `Target="${escapeXml(spec.externalLink)}" TargetMode="External"/></Relationships>`,
     });
   }
 
-  writeRawZip(target, parts.map((part) => ({ name: part.name, content: part.content })));
+  writeRawZip(
+    target,
+    parts.map((part) => ({ name: part.name, content: part.content })),
+  );
   return target;
 }
 
@@ -111,33 +124,33 @@ export interface PptxSlide {
 /** A real .pptx, with title placeholders and speaker notes. */
 export function writePptx(target: string, slides: PptxSlide[]): string {
   const shape = (text: string, isTitle: boolean): string =>
-    "<p:sp><p:nvSpPr><p:nvPr>"
-    + (isTitle ? '<p:ph type="title"/>' : "")
-    + "</p:nvPr></p:nvSpPr><p:txBody>"
-    + `<a:p><a:r><a:t>${escapeXml(text)}</a:t></a:r></a:p>`
-    + "</p:txBody></p:sp>";
+    "<p:sp><p:nvSpPr><p:nvPr>" +
+    (isTitle ? '<p:ph type="title"/>' : "") +
+    "</p:nvPr></p:nvSpPr><p:txBody>" +
+    `<a:p><a:r><a:t>${escapeXml(text)}</a:t></a:r></a:p>` +
+    "</p:txBody></p:sp>";
 
   const slidePart = (slide: PptxSlide): string =>
-    `${xmlHeader()}<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" `
-    + 'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><p:cSld><p:spTree>'
-    + shape(slide.title, true)
-    + slide.bullets.map((bullet) => shape(bullet, false)).join("")
-    + "</p:spTree></p:cSld></p:sld>";
+    `${xmlHeader()}<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" ` +
+    'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><p:cSld><p:spTree>' +
+    shape(slide.title, true) +
+    slide.bullets.map((bullet) => shape(bullet, false)).join("") +
+    "</p:spTree></p:cSld></p:sld>";
 
   const notesPart = (notes: string): string =>
-    `${xmlHeader()}<p:notes xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" `
-    + 'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><p:cSld><p:spTree>'
-    + shape(notes, false)
-    + "</p:spTree></p:cSld></p:notes>";
+    `${xmlHeader()}<p:notes xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" ` +
+    'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><p:cSld><p:spTree>' +
+    shape(notes, false) +
+    "</p:spTree></p:cSld></p:notes>";
 
   const parts = [
     ...ooxmlSkeleton(
-      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
-      + '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
-      + '<Default Extension="xml" ContentType="application/xml"/></Types>',
-      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-      + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/>'
-      + "</Relationships>",
+      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+        '<Default Extension="xml" ContentType="application/xml"/></Types>',
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/>' +
+        "</Relationships>",
     ),
     {
       name: "ppt/presentation.xml",
@@ -150,18 +163,25 @@ export function writePptx(target: string, slides: PptxSlide[]): string {
     // not through matching numbers, and the decoder resolves it that way.
     parts.push({
       name: `ppt/slides/_rels/slide${index + 1}.xml.rels`,
-      content: `${xmlHeader()}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`
-        + (slide.notes === undefined
+      content:
+        `${xmlHeader()}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+        (slide.notes === undefined
           ? ""
-          : '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide" '
-            + `Target="../notesSlides/notesSlide${index + 1}.xml"/>`)
-        + "</Relationships>",
+          : '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide" ' +
+            `Target="../notesSlides/notesSlide${index + 1}.xml"/>`) +
+        "</Relationships>",
     });
     if (slide.notes !== undefined) {
-      parts.push({ name: `ppt/notesSlides/notesSlide${index + 1}.xml`, content: notesPart(slide.notes) });
+      parts.push({
+        name: `ppt/notesSlides/notesSlide${index + 1}.xml`,
+        content: notesPart(slide.notes),
+      });
     }
   });
-  writeRawZip(target, parts.map((part) => ({ name: part.name, content: part.content })));
+  writeRawZip(
+    target,
+    parts.map((part) => ({ name: part.name, content: part.content })),
+  );
   return target;
 }
 
@@ -195,84 +215,121 @@ export function writeXlsx(target: string, sheets: XlsxSheet[]): string {
   };
 
   const sheetParts = sheets.map((sheet, sheetIndex) => {
-    const rows = sheet.rows.map((row, rowIndex) => {
-      const cells = row.map((value, columnIndex) => {
-        const reference = `${columnName(columnIndex)}${rowIndex + 1}`;
-        if (value.startsWith("=")) {
-          return `<c r="${reference}"><f>${escapeXml(value.slice(1))}</f><v>0</v></c>`;
-        }
-        return `<c r="${reference}" t="s"><v>${intern(value)}</v></c>`;
-      }).join("");
-      return `<row r="${rowIndex + 1}">${cells}</row>`;
-    }).join("");
+    const rows = sheet.rows
+      .map((row, rowIndex) => {
+        const cells = row
+          .map((value, columnIndex) => {
+            const reference = `${columnName(columnIndex)}${rowIndex + 1}`;
+            if (value.startsWith("=")) {
+              return `<c r="${reference}"><f>${escapeXml(value.slice(1))}</f><v>0</v></c>`;
+            }
+            return `<c r="${reference}" t="s"><v>${intern(value)}</v></c>`;
+          })
+          .join("");
+        return `<row r="${rowIndex + 1}">${cells}</row>`;
+      })
+      .join("");
     return {
       name: `xl/worksheets/sheet${sheetIndex + 1}.xml`,
-      content: `${xmlHeader()}<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">`
-        + `<sheetData>${rows}</sheetData></worksheet>`,
+      content:
+        `${xmlHeader()}<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
+        `<sheetData>${rows}</sheetData></worksheet>`,
     };
   });
 
   const parts = [
     ...ooxmlSkeleton(
-      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
-      + '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
-      + '<Default Extension="xml" ContentType="application/xml"/></Types>',
-      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-      + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
-      + "</Relationships>",
+      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+        '<Default Extension="xml" ContentType="application/xml"/></Types>',
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>' +
+        "</Relationships>",
     ),
     {
       name: "xl/workbook.xml",
-      content: `${xmlHeader()}<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" `
-        + 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>'
-        + sheets.map((sheet, index) => `<sheet name="${escapeXml(sheet.name)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`).join("")
-        + "</sheets></workbook>",
+      content:
+        `${xmlHeader()}<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ` +
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>' +
+        sheets
+          .map(
+            (sheet, index) =>
+              `<sheet name="${escapeXml(sheet.name)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`,
+          )
+          .join("") +
+        "</sheets></workbook>",
     },
     {
       // Each `<sheet r:id>` names its worksheet part through this relationship
       // part; Excel always writes it.
       name: "xl/_rels/workbook.xml.rels",
-      content: `${xmlHeader()}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`
-        + sheets.map((_sheet, index) =>
-          `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" `
-          + `Target="worksheets/sheet${index + 1}.xml"/>`).join("")
-        + "</Relationships>",
+      content:
+        `${xmlHeader()}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+        sheets
+          .map(
+            (_sheet, index) =>
+              `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" ` +
+              `Target="worksheets/sheet${index + 1}.xml"/>`,
+          )
+          .join("") +
+        "</Relationships>",
     },
     ...sheetParts,
     {
       name: "xl/sharedStrings.xml",
-      content: `${xmlHeader()}<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${shared.length}" uniqueCount="${shared.length}">`
-        + shared.map((value) => `<si><t xml:space="preserve">${escapeXml(value)}</t></si>`).join("")
-        + "</sst>",
+      content:
+        `${xmlHeader()}<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${shared.length}" uniqueCount="${shared.length}">` +
+        shared.map((value) => `<si><t xml:space="preserve">${escapeXml(value)}</t></si>`).join("") +
+        "</sst>",
     },
   ];
-  writeRawZip(target, parts.map((part) => ({ name: part.name, content: part.content })));
+  writeRawZip(
+    target,
+    parts.map((part) => ({ name: part.name, content: part.content })),
+  );
   return target;
 }
 
 /** A real .ipynb, with markdown and code cells and an output that must not be read. */
-export function writeNotebook(target: string, spec: {
-  title: string;
-  markdown: string[];
-  code: string[];
-  withOutputs?: boolean;
-}): string {
+export function writeNotebook(
+  target: string,
+  spec: {
+    title: string;
+    markdown: string[];
+    code: string[];
+    withOutputs?: boolean;
+  },
+): string {
   const cells: unknown[] = [
     { cell_type: "markdown", metadata: {}, source: [`# ${spec.title}\n`] },
-    ...spec.markdown.map((text) => ({ cell_type: "markdown", metadata: {}, source: [`${text}\n`] })),
+    ...spec.markdown.map((text) => ({
+      cell_type: "markdown",
+      metadata: {},
+      source: [`${text}\n`],
+    })),
     ...spec.code.map((source) => ({
       cell_type: "code",
       execution_count: 1,
       metadata: {},
       source: [`${source}\n`],
-      outputs: spec.withOutputs === true
-        ? [{ output_type: "display_data", data: { "text/html": ["<script>never()</script>"] }, metadata: {} }]
-        : [],
+      outputs:
+        spec.withOutputs === true
+          ? [
+              {
+                output_type: "display_data",
+                data: { "text/html": ["<script>never()</script>"] },
+                metadata: {},
+              },
+            ]
+          : [],
     })),
   ];
   const notebook = {
     cells,
-    metadata: { kernelspec: { display_name: "Python 3", name: "python3" }, language_info: { name: "python" } },
+    metadata: {
+      kernelspec: { display_name: "Python 3", name: "python3" },
+      language_info: { name: "python" },
+    },
     nbformat: 4,
     nbformat_minor: 5,
   };
@@ -282,23 +339,29 @@ export function writeNotebook(target: string, spec: {
 }
 
 /** A saved page, with a script and a stylesheet the decoder must not read. */
-export function writeHtml(target: string, spec: {
-  title: string;
-  headings: string[];
-  paragraphs: string[];
-  link?: { href: string; text: string };
-  table?: string[][];
-}): string {
-  const table = spec.table === undefined
-    ? ""
-    : `<table>${spec.table.map((row) => `<tr>${row.map((cell) => `<td>${cell}</td>`).join("")}</tr>`).join("")}</table>`;
+export function writeHtml(
+  target: string,
+  spec: {
+    title: string;
+    headings: string[];
+    paragraphs: string[];
+    link?: { href: string; text: string };
+    table?: string[][];
+  },
+): string {
+  const table =
+    spec.table === undefined
+      ? ""
+      : `<table>${spec.table.map((row) => `<tr>${row.map((cell) => `<td>${cell}</td>`).join("")}</tr>`).join("")}</table>`;
   const html = [
     "<!doctype html><html><head>",
     `<title>${spec.title}</title>`,
     '<meta name="description" content="A saved page kept for the record.">',
     "<style>body { color: rebeccapurple; }</style>",
     "</head><body>",
-    ...spec.headings.map((heading, index) => `<h${index === 0 ? 1 : 2}>${heading}</h${index === 0 ? 1 : 2}>`),
+    ...spec.headings.map(
+      (heading, index) => `<h${index === 0 ? 1 : 2}>${heading}</h${index === 0 ? 1 : 2}>`,
+    ),
     ...spec.paragraphs.map((text) => `<p>${text}</p>`),
     spec.link === undefined ? "" : `<p><a href="${spec.link.href}">${spec.link.text}</a></p>`,
     table,
@@ -317,7 +380,11 @@ export function writeHtml(target: string, spec: {
  * so what the decoder reads is a PDF and not a fixture shaped like one. Any PDF
  * reader opens the result.
  */
-export function writePdf(target: string, lines: string[], options: { title?: string } = {}): string {
+export function writePdf(
+  target: string,
+  lines: string[],
+  options: { title?: string } = {},
+): string {
   const content = [
     "BT",
     "/F1 12 Tf",
@@ -337,7 +404,9 @@ export function writePdf(target: string, lines: string[], options: { title?: str
   // A title is stated where a PDF states it: in an Info dictionary the trailer
   // names, as every producer writes it.
   if (options.title !== undefined) {
-    objects.push(`<< /Title (${options.title.replace(/([()\\])/g, "\\$1")}) /Producer (l9 fixtures) >>`);
+    objects.push(
+      `<< /Title (${options.title.replace(/([()\\])/g, "\\$1")}) /Producer (l9 fixtures) >>`,
+    );
   }
 
   const chunks: Buffer[] = [];
@@ -354,7 +423,12 @@ export function writePdf(target: string, lines: string[], options: { title?: str
     offsets.push(offset);
     const number = index + 1;
     if (body === "__STREAM__") {
-      push(Buffer.from(`${number} 0 obj\n<< /Length ${compressed.length} /Filter /FlateDecode >>\nstream\n`, "latin1"));
+      push(
+        Buffer.from(
+          `${number} 0 obj\n<< /Length ${compressed.length} /Filter /FlateDecode >>\nstream\n`,
+          "latin1",
+        ),
+      );
       push(compressed);
       push(Buffer.from("\nendstream\nendobj\n", "latin1"));
       return;
@@ -366,11 +440,13 @@ export function writePdf(target: string, lines: string[], options: { title?: str
   const xrefLines = ["xref", `0 ${objects.length + 1}`, "0000000000 65535 f "];
   for (const entry of offsets) xrefLines.push(`${String(entry).padStart(10, "0")} 00000 n `);
   const info = options.title === undefined ? "" : ` /Info ${objects.length} 0 R`;
-  push(Buffer.from(
-    `${xrefLines.join("\n")}\ntrailer\n<< /Size ${objects.length + 1} /Root 1 0 R${info} >>\n`
-    + `startxref\n${xrefOffset}\n%%EOF\n`,
-    "latin1",
-  ));
+  push(
+    Buffer.from(
+      `${xrefLines.join("\n")}\ntrailer\n<< /Size ${objects.length + 1} /Root 1 0 R${info} >>\n` +
+        `startxref\n${xrefOffset}\n%%EOF\n`,
+      "latin1",
+    ),
+  );
 
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, Buffer.concat(chunks));
@@ -399,10 +475,12 @@ export function writeScannedPdf(target: string): string {
     offsets.push(offset);
     const number = index + 1;
     if (body === "__IMAGE__") {
-      push(Buffer.from(
-        `${number} 0 obj\n<< /Type /XObject /Subtype /Image /Width 100 /Height 100 /Filter /DCTDecode /Length ${image.length} >>\nstream\n`,
-        "latin1",
-      ));
+      push(
+        Buffer.from(
+          `${number} 0 obj\n<< /Type /XObject /Subtype /Image /Width 100 /Height 100 /Filter /DCTDecode /Length ${image.length} >>\nstream\n`,
+          "latin1",
+        ),
+      );
       push(image);
       push(Buffer.from("\nendstream\nendobj\n", "latin1"));
       return;
@@ -419,10 +497,12 @@ export function writeScannedPdf(target: string): string {
   const xrefOffset = offset;
   const xrefLines = ["xref", `0 ${objects.length + 1}`, "0000000000 65535 f "];
   for (const entry of offsets) xrefLines.push(`${String(entry).padStart(10, "0")} 00000 n `);
-  push(Buffer.from(
-    `${xrefLines.join("\n")}\ntrailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`,
-    "latin1",
-  ));
+  push(
+    Buffer.from(
+      `${xrefLines.join("\n")}\ntrailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`,
+      "latin1",
+    ),
+  );
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, Buffer.concat(chunks));
   return target;
@@ -496,7 +576,9 @@ export function buildPdf(
     xrefLines.push(`${entry.number} 1`, `${String(entry.offset).padStart(10, "0")} 00000 n `);
   }
   const trailer = options.trailer === null ? "" : `trailer\n<< ${options.trailer} >>\n`;
-  push(Buffer.from(`${xrefLines.join("\n")}\n${trailer}startxref\n${xrefOffset}\n%%EOF\n`, "latin1"));
+  push(
+    Buffer.from(`${xrefLines.join("\n")}\n${trailer}startxref\n${xrefOffset}\n%%EOF\n`, "latin1"),
+  );
   return Buffer.concat(chunks);
 }
 
@@ -504,7 +586,10 @@ export function buildPdf(
  * A Flate `/Type /ObjStm` object holding `members`, as PDF 1.5 writers emit
  * them: a header of `number offset` pairs, then the member bodies.
  */
-export function objectStreamObject(number: number, members: { number: number; body: string }[]): PdfFixtureObject {
+export function objectStreamObject(
+  number: number,
+  members: { number: number; body: string }[],
+): PdfFixtureObject {
   const bodies: string[] = [];
   const pairs: string[] = [];
   let offset = 0;
@@ -583,9 +668,11 @@ export function fontPagePdf(
     else if (font.toUnicode !== undefined) toUnicode = ` /ToUnicode ${cmapNumber} 0 R`;
     structural.push({ number: 10 + index * 2, body: `<< /Type /Font ${font.dict}${toUnicode} >>` });
     if (font.toUnicode !== undefined) {
-      streams.push(font.toUnicode.compressed
-        ? flateStreamObject(cmapNumber, font.toUnicode.cmap)
-        : plainStreamObject(cmapNumber, font.toUnicode.cmap));
+      streams.push(
+        font.toUnicode.compressed
+          ? flateStreamObject(cmapNumber, font.toUnicode.cmap)
+          : plainStreamObject(cmapNumber, font.toUnicode.cmap),
+      );
     }
   });
   if (options.objectStream === true) {
@@ -593,12 +680,18 @@ export function fontPagePdf(
       [
         objectStreamObject(50, structural),
         ...streams,
-        { number: 51, body: "<< /Type /XRef /Size 52 /Root 1 0 R /W [1 2 1] /Length __LENGTH__ >>", stream: Buffer.alloc(0) },
+        {
+          number: 51,
+          body: "<< /Type /XRef /Size 52 /Root 1 0 R /W [1 2 1] /Length __LENGTH__ >>",
+          stream: Buffer.alloc(0),
+        },
       ],
       { trailer: null, version: "1.5" },
     );
   }
-  return buildPdf([...structural, ...streams], { trailer: `/Size ${11 + fonts.length * 2} /Root 1 0 R` });
+  return buildPdf([...structural, ...streams], {
+    trailer: `/Size ${11 + fonts.length * 2} /Root 1 0 R`,
+  });
 }
 
 /** Write bytes to a fixture path, creating its directory. */
@@ -609,7 +702,11 @@ export function writeBytes(target: string, bytes: Buffer): string {
 }
 
 /** A Flate-compressed stream object holding `content`. */
-export function flateStreamObject(number: number, content: string | Buffer, extraDict = ""): PdfFixtureObject {
+export function flateStreamObject(
+  number: number,
+  content: string | Buffer,
+  extraDict = "",
+): PdfFixtureObject {
   const raw = typeof content === "string" ? Buffer.from(content, "latin1") : content;
   return {
     number,
@@ -619,7 +716,11 @@ export function flateStreamObject(number: number, content: string | Buffer, extr
 }
 
 /** An uncompressed stream object holding `content`. */
-export function plainStreamObject(number: number, content: string | Buffer, extraDict = ""): PdfFixtureObject {
+export function plainStreamObject(
+  number: number,
+  content: string | Buffer,
+  extraDict = "",
+): PdfFixtureObject {
   const raw = typeof content === "string" ? Buffer.from(content, "latin1") : content;
   return { number, body: `<< /Length __LENGTH__${extraDict} >>`, stream: raw };
 }
@@ -649,7 +750,11 @@ export function multiPagePdf(
       number: pageNumber,
       body: `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents ${contentNumber} 0 R >>`,
     });
-    objects.push(typeof page === "string" ? flateStreamObject(contentNumber, page) : page.object(contentNumber));
+    objects.push(
+      typeof page === "string"
+        ? flateStreamObject(contentNumber, page)
+        : page.object(contentNumber),
+    );
   });
   return buildPdf(objects, { trailer: `/Size ${3 + pages.length * 2 + 1} /Root 1 0 R` });
 }

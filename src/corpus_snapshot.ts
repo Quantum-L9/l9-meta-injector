@@ -13,13 +13,13 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { canonicalCorpusJson } from "./corpus_analysis";
-import { compareCodePoints } from "./ordering";
-import { CorpusRootIdentity } from "./corpus_roots";
 import type { CorpusAnalysisManifest } from "./corpus_analysis_manifest";
-import type { DocumentWorkSignalsRef } from "./corpus_work_signal_export";
 import type { ArchitectureEvidenceRef } from "./corpus_architecture_evidence";
 import type { FieldSelectionRef } from "./corpus_field_selection";
 import type { InferredRootHistoryOverride } from "./corpus_root_history";
+import { CorpusRootIdentity } from "./corpus_roots";
+import type { DocumentWorkSignalsRef } from "./corpus_work_signal_export";
+import { compareCodePoints } from "./ordering";
 
 export const CORPUS_SNAPSHOT_SCHEMA = "l9.corpus-snapshot/v1";
 
@@ -82,14 +82,14 @@ export interface CorpusVerification {
 }
 
 export const FULLY_VERIFIED_STATEMENT =
-  "Every regular file under every root was read in full on this run, so each content hash "
-  + "describes bytes this run observed.";
+  "Every regular file under every root was read in full on this run, so each content hash " +
+  "describes bytes this run observed.";
 
 export const CACHED_ASSUMPTION_STATEMENT =
-  "Some content hashes were carried over from a previous run because the file's size and "
-  + "mtime had not moved. Filesystem metadata is a revalidation signal, not content truth: "
-  + "this run did not read those bytes, and this snapshot is not byte-verified. Run with "
-  + "--verify-content to establish one that is.";
+  "Some content hashes were carried over from a previous run because the file's size and " +
+  "mtime had not moved. Filesystem metadata is a revalidation signal, not content truth: " +
+  "this run did not read those bytes, and this snapshot is not byte-verified. Run with " +
+  "--verify-content to establish one that is.";
 
 /** How a corpus as a whole observed. */
 export const CORPUS_STATUSES = ["complete", "partial", "failed"] as const;
@@ -209,8 +209,9 @@ function orderManifest(manifest: CorpusAnalysisManifest): CorpusAnalysisManifest
   return {
     ...manifest,
     entries: [...manifest.entries].sort(
-      (a, b) => compareCodePoints(a.candidate_kind, b.candidate_kind)
-        || compareCodePoints(a.candidate_id, b.candidate_id),
+      (a, b) =>
+        compareCodePoints(a.candidate_kind, b.candidate_kind) ||
+        compareCodePoints(a.candidate_id, b.candidate_id),
     ),
   };
 }
@@ -221,17 +222,22 @@ export function orderCorpusSnapshot(snapshot: CorpusSnapshot): CorpusSnapshot {
     missing_root_ids: [...snapshot.missing_root_ids].sort(compareCodePoints),
     analysis: {
       ...snapshot.analysis,
-      document_decoder_profiles: [...snapshot.analysis.document_decoder_profiles].sort(compareCodePoints),
+      document_decoder_profiles: [...snapshot.analysis.document_decoder_profiles].sort(
+        compareCodePoints,
+      ),
     },
     ...(snapshot.analysis_manifest !== undefined
       ? { analysis_manifest: orderManifest(snapshot.analysis_manifest) }
       : {}),
     roots: [...snapshot.roots].sort((a, b) => compareCodePoints(a.root_id, b.root_id)),
     artifacts: [...snapshot.artifacts].sort(
-      (a, b) => compareCodePoints(a.corpus_path, b.corpus_path)
-        || compareCodePoints(a.virtual_source_id, b.virtual_source_id),
+      (a, b) =>
+        compareCodePoints(a.corpus_path, b.corpus_path) ||
+        compareCodePoints(a.virtual_source_id, b.virtual_source_id),
     ),
-    archives: [...snapshot.archives].sort((a, b) => compareCodePoints(a.corpus_path, b.corpus_path)),
+    archives: [...snapshot.archives].sort((a, b) =>
+      compareCodePoints(a.corpus_path, b.corpus_path),
+    ),
   };
 }
 
@@ -249,7 +255,11 @@ export function readCorpusSnapshot(snapshotPath: string): CorpusSnapshot {
       `corpus: ${absolute} declares schema '${String(parsed.schema)}'; expected '${CORPUS_SNAPSHOT_SCHEMA}'`,
     );
   }
-  if (!Array.isArray(parsed.artifacts) || !Array.isArray(parsed.archives) || !Array.isArray(parsed.roots)) {
+  if (
+    !Array.isArray(parsed.artifacts) ||
+    !Array.isArray(parsed.archives) ||
+    !Array.isArray(parsed.roots)
+  ) {
     throw new Error(`corpus: ${absolute} is not a complete corpus snapshot`);
   }
   // A snapshot written before source identity and analysis identity were split
@@ -259,8 +269,8 @@ export function readCorpusSnapshot(snapshotPath: string): CorpusSnapshot {
   // by version.
   if (typeof parsed.corpus_source_snapshot_id !== "string" || parsed.analysis === undefined) {
     throw new Error(
-      `corpus: ${absolute} predates the split between source identity and analysis `
-      + "identity and cannot be diffed against; run a full scan to write a current snapshot",
+      `corpus: ${absolute} predates the split between source identity and analysis ` +
+        "identity and cannot be diffed against; run a full scan to write a current snapshot",
     );
   }
   return parsed as CorpusSnapshot;
@@ -272,7 +282,8 @@ export function snapshotPrechecks(
 ): Map<string, { size_bytes: number; mtime_ms: number }> {
   const out = new Map<string, { size_bytes: number; mtime_ms: number }>();
   for (const artifact of snapshot.artifacts) {
-    if (artifact.stat_precheck !== undefined) out.set(artifact.virtual_source_id, artifact.stat_precheck);
+    if (artifact.stat_precheck !== undefined)
+      out.set(artifact.virtual_source_id, artifact.stat_precheck);
   }
   return out;
 }

@@ -7,27 +7,27 @@
  * an invitation to infer repository policy.
  */
 
+import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as crypto from "node:crypto";
+import { readOnlyGitRunner } from "./git_runtime";
 import {
-  META_AUTHORITY_SCHEMA,
-  META_AUTHORITY_SCHEMA_V2,
-  SEMANTIC_LEDGER_DIGEST_RE,
-  SEMANTIC_LEDGER_ID_RE,
-  isAuthorityConfig,
-  isSupportedAuthoritySchema,
   type AuthorityConfig,
   type AuthorityConflict,
   type AuthorityConflictCode,
   type AuthorityWriter,
   type HeaderIdentityRequest,
   type HeaderIdentityResolution,
+  isAuthorityConfig,
+  isSupportedAuthoritySchema,
+  META_AUTHORITY_SCHEMA,
+  META_AUTHORITY_SCHEMA_V2,
   type ProductDeclaration,
+  SEMANTIC_LEDGER_DIGEST_RE,
+  SEMANTIC_LEDGER_ID_RE,
   type SemanticFoundationBinding,
 } from "./operation_contracts";
 import { compareCodePoints } from "./ordering";
-import { readOnlyGitRunner } from "./git_runtime";
 
 export const META_AUTHORITY_RELATIVE_PATH = ".l9/meta-authority.yaml" as const;
 
@@ -140,10 +140,16 @@ function scalar(raw: string): string {
   // A plain null/bool token is not a string in YAML, and ': ' (or a trailing ':')
   // inside a plain value starts a nested mapping; both are outside the grammar.
   if (NON_STRING_PLAIN.test(value)) {
-    fail("META_AUTHORITY_CONFIG_INVALID", `plain '${value}' is a YAML null or bool, not a string; quote it`);
+    fail(
+      "META_AUTHORITY_CONFIG_INVALID",
+      `plain '${value}' is a YAML null or bool, not a string; quote it`,
+    );
   }
   if (value.includes(": ") || value.endsWith(":")) {
-    fail("META_AUTHORITY_CONFIG_INVALID", `plain scalar '${value}' contains a mapping separator; quote it`);
+    fail(
+      "META_AUTHORITY_CONFIG_INVALID",
+      `plain scalar '${value}' contains a mapping separator; quote it`,
+    );
   }
   return value;
 }
@@ -204,13 +210,15 @@ function parseInlineList(raw: string): string[] {
 }
 
 function assertIndent(line: string): number {
-  if (line.includes("\t")) fail("META_AUTHORITY_CONFIG_INVALID", "tabs are forbidden in authority YAML");
+  if (line.includes("\t"))
+    fail("META_AUTHORITY_CONFIG_INVALID", "tabs are forbidden in authority YAML");
   return line.length - line.replace(/^ +/, "").length;
 }
 
 /** Parse the intentionally small l9.meta-authority/v1 YAML grammar. */
 export function parseAuthorityYaml(text: string): AuthorityConfig {
-  const lines = text.replace(/^\uFEFF/, "")
+  const lines = text
+    .replace(/^\uFEFF/, "")
     .split(/\r?\n/)
     .map(stripInlineComment)
     .filter((line) => line.trim().length > 0);
@@ -239,15 +247,20 @@ export function parseAuthorityYaml(text: string): AuthorityConfig {
       while (index < lines.length && assertIndent(lines[index]) > 0) {
         const child = lines[index];
         if (assertIndent(child) !== 2) {
-          fail("META_AUTHORITY_CONFIG_INVALID", `writer entries must use two spaces at line ${index + 1}`);
+          fail(
+            "META_AUTHORITY_CONFIG_INVALID",
+            `writer entries must use two spaces at line ${index + 1}`,
+          );
         }
         const childMatch = /^([A-Za-z_][\w-]*): +(.+)$/.exec(child.trim());
-        if (!childMatch) fail("META_AUTHORITY_CONFIG_INVALID", `invalid writer entry at line ${index + 1}`);
+        if (!childMatch)
+          fail("META_AUTHORITY_CONFIG_INVALID", `invalid writer entry at line ${index + 1}`);
         const childKey = childMatch[1];
         if (childKey !== "repository" && childKey !== "ref") {
           fail("META_AUTHORITY_CONFIG_INVALID", `unsupported writer key '${childKey}'`);
         }
-        if (childKey in writer) fail("META_AUTHORITY_CONFIG_INVALID", `duplicate writer key '${childKey}'`);
+        if (childKey in writer)
+          fail("META_AUTHORITY_CONFIG_INVALID", `duplicate writer key '${childKey}'`);
         writer[childKey] = scalar(childMatch[2]);
         index++;
       }
@@ -266,20 +279,28 @@ export function parseAuthorityYaml(text: string): AuthorityConfig {
       while (index < lines.length && assertIndent(lines[index]) > 0) {
         const child = lines[index];
         if (assertIndent(child) !== 2 || !child.trim().startsWith("- ")) {
-          fail("META_AUTHORITY_CONFIG_INVALID", `${key} entries must be two-space list items at line ${index + 1}`);
+          fail(
+            "META_AUTHORITY_CONFIG_INVALID",
+            `${key} entries must be two-space list items at line ${index + 1}`,
+          );
         }
         values.push(scalar(child.trim().slice(2)));
         index++;
       }
       // YAML reads `key:` with no items as null, not as an empty list; an empty
       // list is written `key: []` (RC-024).
-      if (values.length === 0) fail("META_AUTHORITY_CONFIG_INVALID", `${key} has no list items; write '${key}: []' for an empty list`);
+      if (values.length === 0)
+        fail(
+          "META_AUTHORITY_CONFIG_INVALID",
+          `${key} has no list items; write '${key}: []' for an empty list`,
+        );
       result[key] = values;
       continue;
     }
 
     if (key === "semantic_foundation") {
-      if (rest) fail("META_AUTHORITY_CONFIG_INVALID", "semantic_foundation must be a nested mapping");
+      if (rest)
+        fail("META_AUTHORITY_CONFIG_INVALID", "semantic_foundation must be a nested mapping");
       index++;
       const foundation = parseSemanticFoundation(lines, index);
       index = foundation.end;
@@ -294,15 +315,20 @@ export function parseAuthorityYaml(text: string): AuthorityConfig {
       while (index < lines.length && assertIndent(lines[index]) > 0) {
         const child = lines[index];
         if (assertIndent(child) !== 2) {
-          fail("META_AUTHORITY_CONFIG_INVALID", `product entries must use two spaces at line ${index + 1}`);
+          fail(
+            "META_AUTHORITY_CONFIG_INVALID",
+            `product entries must use two spaces at line ${index + 1}`,
+          );
         }
         const childMatch = /^([A-Za-z_][\w-]*): +(.+)$/.exec(child.trim());
-        if (!childMatch) fail("META_AUTHORITY_CONFIG_INVALID", `invalid product entry at line ${index + 1}`);
+        if (!childMatch)
+          fail("META_AUTHORITY_CONFIG_INVALID", `invalid product entry at line ${index + 1}`);
         const childKey = childMatch[1];
         if (!["id", "owner", "kind", "archetype"].includes(childKey)) {
           fail("META_AUTHORITY_CONFIG_INVALID", `unsupported product key '${childKey}'`);
         }
-        if (childKey in product) fail("META_AUTHORITY_CONFIG_INVALID", `duplicate product key '${childKey}'`);
+        if (childKey in product)
+          fail("META_AUTHORITY_CONFIG_INVALID", `duplicate product key '${childKey}'`);
         product[childKey] = scalar(childMatch[2]);
         index++;
       }
@@ -324,32 +350,51 @@ export function parseAuthorityYaml(text: string): AuthorityConfig {
       `unsupported authority schema '${String(result.schema ?? "<missing>")}'`,
     );
   }
-  if (result.schema === META_AUTHORITY_SCHEMA && ("semantic_foundation" in result || "product" in result)) {
-    fail("META_AUTHORITY_CONFIG_INVALID", "l9.meta-authority/v1 does not admit semantic_foundation or product");
+  if (
+    result.schema === META_AUTHORITY_SCHEMA &&
+    ("semantic_foundation" in result || "product" in result)
+  ) {
+    fail(
+      "META_AUTHORITY_CONFIG_INVALID",
+      "l9.meta-authority/v1 does not admit semantic_foundation or product",
+    );
   }
   if (!isAuthorityConfig(result)) {
     const schema = String(result.schema ?? "<missing>");
     fail(
-      result.schema === META_AUTHORITY_SCHEMA_V2 ? "META_SEMANTIC_BINDING_INVALID" : "META_AUTHORITY_CONFIG_INVALID",
+      result.schema === META_AUTHORITY_SCHEMA_V2
+        ? "META_SEMANTIC_BINDING_INVALID"
+        : "META_AUTHORITY_CONFIG_INVALID",
       `authority document does not satisfy ${schema}`,
     );
   }
   return result;
 }
 
-function parseSemanticFoundation(lines: string[], start: number): { block: Record<string, unknown>; end: number } {
+function parseSemanticFoundation(
+  lines: string[],
+  start: number,
+): { block: Record<string, unknown>; end: number } {
   const block: Record<string, unknown> = Object.create(null);
   let index = start;
   while (index < lines.length && assertIndent(lines[index]) > 0) {
     if (assertIndent(lines[index]) !== 2) {
-      fail("META_SEMANTIC_BINDING_INVALID", `semantic_foundation entries must use two spaces at line ${index + 1}`);
+      fail(
+        "META_SEMANTIC_BINDING_INVALID",
+        `semantic_foundation entries must use two spaces at line ${index + 1}`,
+      );
     }
     const child = lines[index];
     const childMatch = /^([A-Za-z_][\w-]*):(?: +(.*))?$/.exec(child.trim());
-    if (!childMatch) fail("META_SEMANTIC_BINDING_INVALID", `invalid semantic_foundation entry at line ${index + 1}`);
+    if (!childMatch)
+      fail(
+        "META_SEMANTIC_BINDING_INVALID",
+        `invalid semantic_foundation entry at line ${index + 1}`,
+      );
     const childKey = childMatch[1];
     const rest = childMatch[2] ?? "";
-    if (childKey in block) fail("META_SEMANTIC_BINDING_INVALID", `duplicate semantic_foundation key '${childKey}'`);
+    if (childKey in block)
+      fail("META_SEMANTIC_BINDING_INVALID", `duplicate semantic_foundation key '${childKey}'`);
     if (!["repository", "revision", "release", "admission", "ledgers"].includes(childKey)) {
       fail("META_SEMANTIC_BINDING_INVALID", `unsupported semantic_foundation key '${childKey}'`);
     }
@@ -360,13 +405,17 @@ function parseSemanticFoundation(lines: string[], start: number): { block: Recor
       while (index < lines.length && assertIndent(lines[index]) > 2) {
         const ledgerLine = lines[index];
         if (assertIndent(ledgerLine) !== 4) {
-          fail("META_SEMANTIC_BINDING_INVALID", `ledger entries must use four spaces at line ${index + 1}`);
+          fail(
+            "META_SEMANTIC_BINDING_INVALID",
+            `ledger entries must use four spaces at line ${index + 1}`,
+          );
         }
         const ledgerMatch = /^(l9\.[a-z0-9-]+\/[a-z0-9-]+@\d+): +(.+)$/.exec(ledgerLine.trim());
         if (!ledgerMatch || !SEMANTIC_LEDGER_ID_RE.test(ledgerMatch[1])) {
           fail("META_SEMANTIC_BINDING_INVALID", `invalid ledger key at line ${index + 1}`);
         }
-        if (ledgerMatch[1] in ledgers) fail("META_SEMANTIC_BINDING_INVALID", `duplicate ledger '${ledgerMatch[1]}'`);
+        if (ledgerMatch[1] in ledgers)
+          fail("META_SEMANTIC_BINDING_INVALID", `duplicate ledger '${ledgerMatch[1]}'`);
         const digest = scalar(ledgerMatch[2]);
         if (!SEMANTIC_LEDGER_DIGEST_RE.test(digest)) {
           fail("META_SEMANTIC_BINDING_INVALID", `malformed ledger digest for '${ledgerMatch[1]}'`);
@@ -384,7 +433,12 @@ function parseSemanticFoundation(lines: string[], start: number): { block: Recor
   return { block, end: index };
 }
 
-function conflict(code: AuthorityConflictCode, message: string, filePath: string, evidence?: string[]): AuthorityConflict {
+function conflict(
+  code: AuthorityConflictCode,
+  message: string,
+  filePath: string,
+  evidence?: string[],
+): AuthorityConflict {
   return { code, message, path: filePath, evidence };
 }
 
@@ -396,17 +450,29 @@ function conflict(code: AuthorityConflictCode, message: string, filePath: string
  * on a component means the document is missing; every other failure is a configuration
  * error. The root itself may be reached through a link.
  */
-function authorityPathConflict(repositoryRoot: string, authorityPath: string, relative: string): AuthorityConflict | null {
+function authorityPathConflict(
+  repositoryRoot: string,
+  authorityPath: string,
+  relative: string,
+): AuthorityConflict | null {
   // The root is not an authority path component: a root that is absent or is not a
   // directory simply holds no authority document, exactly as before.
   try {
     if (!fs.statSync(repositoryRoot).isDirectory()) {
-      return conflict("META_AUTHORITY_FILE_MISSING", `missing ${META_AUTHORITY_RELATIVE_PATH}`, authorityPath);
+      return conflict(
+        "META_AUTHORITY_FILE_MISSING",
+        `missing ${META_AUTHORITY_RELATIVE_PATH}`,
+        authorityPath,
+      );
     }
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === "ENOENT" || code === "ENOTDIR") {
-      return conflict("META_AUTHORITY_FILE_MISSING", `missing ${META_AUTHORITY_RELATIVE_PATH}`, authorityPath);
+      return conflict(
+        "META_AUTHORITY_FILE_MISSING",
+        `missing ${META_AUTHORITY_RELATIVE_PATH}`,
+        authorityPath,
+      );
     }
     return conflict(
       "META_AUTHORITY_CONFIG_INVALID",
@@ -425,7 +491,11 @@ function authorityPathConflict(repositoryRoot: string, authorityPath: string, re
       stat = fs.lstatSync(cursor);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        return conflict("META_AUTHORITY_FILE_MISSING", `missing ${META_AUTHORITY_RELATIVE_PATH}`, authorityPath);
+        return conflict(
+          "META_AUTHORITY_FILE_MISSING",
+          `missing ${META_AUTHORITY_RELATIVE_PATH}`,
+          authorityPath,
+        );
       }
       return conflict(
         "META_AUTHORITY_CONFIG_INVALID",
@@ -436,21 +506,38 @@ function authorityPathConflict(repositoryRoot: string, authorityPath: string, re
     if (stat.isSymbolicLink()) {
       return conflict(
         "META_AUTHORITY_CONFIG_INVALID",
-        leaf ? "authority file must not be a symbolic link" : `authority path component must not be a symbolic link: ${component}`,
+        leaf
+          ? "authority file must not be a symbolic link"
+          : `authority path component must not be a symbolic link: ${component}`,
         authorityPath,
       );
     }
     if (!leaf && !stat.isDirectory()) {
-      return conflict("META_AUTHORITY_CONFIG_INVALID", `authority path component is not a directory: ${component}`, authorityPath);
+      return conflict(
+        "META_AUTHORITY_CONFIG_INVALID",
+        `authority path component is not a directory: ${component}`,
+        authorityPath,
+      );
     }
     if (leaf && !stat.isFile()) {
-      return conflict("META_AUTHORITY_CONFIG_INVALID", "authority path is not a regular file", authorityPath);
+      return conflict(
+        "META_AUTHORITY_CONFIG_INVALID",
+        "authority path is not a regular file",
+        authorityPath,
+      );
     }
   }
   try {
-    const contained = path.relative(fs.realpathSync(repositoryRoot), fs.realpathSync(authorityPath));
+    const contained = path.relative(
+      fs.realpathSync(repositoryRoot),
+      fs.realpathSync(authorityPath),
+    );
     if (!contained || contained.startsWith("..") || path.isAbsolute(contained)) {
-      return conflict("META_AUTHORITY_CONFIG_INVALID", "authority path escapes repository root", authorityPath);
+      return conflict(
+        "META_AUTHORITY_CONFIG_INVALID",
+        "authority path escapes repository root",
+        authorityPath,
+      );
     }
   } catch (error) {
     return conflict(
@@ -462,14 +549,26 @@ function authorityPathConflict(repositoryRoot: string, authorityPath: string, re
   return null;
 }
 
-export function loadRepositoryAuthority(root: string, options: AuthorityLoadOptions = {}): AuthorityLoadResult {
+export function loadRepositoryAuthority(
+  root: string,
+  options: AuthorityLoadOptions = {},
+): AuthorityLoadResult {
   const repositoryRoot = path.resolve(root);
-  const authorityPath = path.resolve(repositoryRoot, options.authorityPath ?? META_AUTHORITY_RELATIVE_PATH);
+  const authorityPath = path.resolve(
+    repositoryRoot,
+    options.authorityPath ?? META_AUTHORITY_RELATIVE_PATH,
+  );
   const relative = path.relative(repositoryRoot, authorityPath);
   if (relative.startsWith("..") || path.isAbsolute(relative)) {
     return {
       path: authorityPath,
-      conflicts: [conflict("META_AUTHORITY_CONFIG_INVALID", "authority path escapes repository root", authorityPath)],
+      conflicts: [
+        conflict(
+          "META_AUTHORITY_CONFIG_INVALID",
+          "authority path escapes repository root",
+          authorityPath,
+        ),
+      ],
     };
   }
   const pathConflict = authorityPathConflict(repositoryRoot, authorityPath, relative);
@@ -484,7 +583,9 @@ export function loadRepositoryAuthority(root: string, options: AuthorityLoadOpti
     const expected = options.expectedWriter;
     const mismatches: string[] = [];
     if (expected?.repository && authority.writer.repository !== expected.repository) {
-      mismatches.push(`repository expected ${expected.repository}, got ${authority.writer.repository}`);
+      mismatches.push(
+        `repository expected ${expected.repository}, got ${authority.writer.repository}`,
+      );
     }
     if (expected?.ref && authority.writer.ref !== expected.ref) {
       mismatches.push(`ref expected ${expected.ref}, got ${authority.writer.ref}`);
@@ -493,14 +594,25 @@ export function loadRepositoryAuthority(root: string, options: AuthorityLoadOpti
       return {
         path: authorityPath,
         authority,
-        conflicts: [conflict("META_AUTHORITY_WRITER_MISMATCH", "configured metadata writer does not match policy", authorityPath, mismatches)],
+        conflicts: [
+          conflict(
+            "META_AUTHORITY_WRITER_MISMATCH",
+            "configured metadata writer does not match policy",
+            authorityPath,
+            mismatches,
+          ),
+        ],
         digest,
       };
     }
     return { path: authorityPath, authority, conflicts: [], digest };
   } catch (error) {
     if (error instanceof AuthorityParseError) {
-      return { path: authorityPath, conflicts: [conflict(error.code, error.message, authorityPath)], ...(digest ? { digest } : {}) };
+      return {
+        path: authorityPath,
+        conflicts: [conflict(error.code, error.message, authorityPath)],
+        ...(digest ? { digest } : {}),
+      };
     }
     return {
       path: authorityPath,
@@ -516,14 +628,18 @@ export function loadRepositoryAuthority(root: string, options: AuthorityLoadOpti
   }
 }
 
-export function resolveHeaderIdentity(root: string, request: HeaderIdentityRequest = {}): HeaderIdentityResolution {
+export function resolveHeaderIdentity(
+  root: string,
+  request: HeaderIdentityRequest = {},
+): HeaderIdentityResolution {
   const loaded = loadRepositoryAuthority(root);
   const operatorAuthority = request.authority?.trim() || undefined;
   const operatorNamespace = request.namespace?.trim() || undefined;
-  const folderNamespace = request.unboundNamespaceDefault?.trim() || path.basename(path.resolve(root));
+  const folderNamespace =
+    request.unboundNamespaceDefault?.trim() || path.basename(path.resolve(root));
 
-  const bindingConflicts = loaded.conflicts.filter((item) =>
-    item.code !== "META_AUTHORITY_FILE_MISSING",
+  const bindingConflicts = loaded.conflicts.filter(
+    (item) => item.code !== "META_AUTHORITY_FILE_MISSING",
   );
   if (bindingConflicts.length) {
     return {
@@ -535,32 +651,39 @@ export function resolveHeaderIdentity(root: string, request: HeaderIdentityReque
   }
 
   const authority = loaded.authority;
-  const bound = authority?.schema === META_AUTHORITY_SCHEMA_V2
-    && authority.product
-    && authority.semantic_foundation;
+  const bound =
+    authority?.schema === META_AUTHORITY_SCHEMA_V2 &&
+    authority.product &&
+    authority.semantic_foundation;
   if (bound && authority.product) {
     const conflicts: AuthorityConflict[] = [];
     if (operatorAuthority && operatorAuthority !== authority.product.owner) {
-      conflicts.push(conflict(
-        "META_AUTHORITY_IDENTITY_MISMATCH",
-        `operator authority '${operatorAuthority}' does not match bound product.owner '${authority.product.owner}'`,
-        loaded.path,
-      ));
+      conflicts.push(
+        conflict(
+          "META_AUTHORITY_IDENTITY_MISMATCH",
+          `operator authority '${operatorAuthority}' does not match bound product.owner '${authority.product.owner}'`,
+          loaded.path,
+        ),
+      );
     }
     if (operatorNamespace && operatorNamespace !== authority.product.id) {
-      conflicts.push(conflict(
-        "META_AUTHORITY_IDENTITY_MISMATCH",
-        `operator namespace '${operatorNamespace}' does not match bound product.id '${authority.product.id}'`,
-        loaded.path,
-      ));
+      conflicts.push(
+        conflict(
+          "META_AUTHORITY_IDENTITY_MISMATCH",
+          `operator namespace '${operatorNamespace}' does not match bound product.id '${authority.product.id}'`,
+          loaded.path,
+        ),
+      );
     }
     for (const rule of request.namespaceGlobs ?? []) {
       if (rule.namespace === authority.product.id) continue;
-      conflicts.push(conflict(
-        "META_AUTHORITY_IDENTITY_MISMATCH",
-        `namespace glob '${rule.glob}' maps to '${rule.namespace}', which does not match bound product.id '${authority.product.id}'`,
-        loaded.path,
-      ));
+      conflicts.push(
+        conflict(
+          "META_AUTHORITY_IDENTITY_MISMATCH",
+          `namespace glob '${rule.glob}' maps to '${rule.namespace}', which does not match bound product.id '${authority.product.id}'`,
+          loaded.path,
+        ),
+      );
     }
     return {
       authority: authority.product.owner,
@@ -585,11 +708,13 @@ export function resolveHeaderIdentity(root: string, request: HeaderIdentityReque
       authority: "",
       namespace: operatorNamespace ?? folderNamespace,
       source: operatorNamespace ? "operator" : "folder",
-      conflicts: [conflict(
-        "META_AUTHORITY_FILE_MISSING",
-        "header authority is required when no l9.meta-authority/v2 product binding is present",
-        loaded.path,
-      )],
+      conflicts: [
+        conflict(
+          "META_AUTHORITY_FILE_MISSING",
+          "header authority is required when no l9.meta-authority/v2 product binding is present",
+          loaded.path,
+        ),
+      ],
     };
   }
   return {
@@ -600,7 +725,9 @@ export function resolveHeaderIdentity(root: string, request: HeaderIdentityReque
   };
 }
 
-export function assertHeaderIdentity(resolution: HeaderIdentityResolution): HeaderIdentityResolution {
+export function assertHeaderIdentity(
+  resolution: HeaderIdentityResolution,
+): HeaderIdentityResolution {
   if (resolution.conflicts.length) {
     const first = resolution.conflicts[0];
     throw new Error(`${first.code}: ${first.message}`);
@@ -618,11 +745,13 @@ export function verifySemanticFoundation(
   const conflicts: AuthorityConflict[] = [];
   const semanticsDir = path.join(root, "semantics");
   if (!fs.existsSync(semanticsDir) || !fs.statSync(semanticsDir).isDirectory()) {
-    return [conflict(
-      "META_SEMANTIC_BINDING_INVALID",
-      `semantics directory missing under ${root}`,
-      semanticsDir,
-    )];
+    return [
+      conflict(
+        "META_SEMANTIC_BINDING_INVALID",
+        `semantics directory missing under ${root}`,
+        semanticsDir,
+      ),
+    ];
   }
   // Every claimant is kept: a cited id claimed by more than one file does not identify
   // one ledger, so it is refused rather than resolved by file order (RC-036).
@@ -648,29 +777,35 @@ export function verifySemanticFoundation(
     const claimants = byId.get(id) ?? [];
     if (claimants.length > 1) {
       const paths = claimants.map((item) => item.path).sort(compareCodePoints);
-      conflicts.push(conflict(
-        "META_SEMANTIC_BINDING_INVALID",
-        `cited ledger ${id} is claimed by more than one file under ${semanticsDir}`,
-        semanticsDir,
-        paths,
-      ));
+      conflicts.push(
+        conflict(
+          "META_SEMANTIC_BINDING_INVALID",
+          `cited ledger ${id} is claimed by more than one file under ${semanticsDir}`,
+          semanticsDir,
+          paths,
+        ),
+      );
       continue;
     }
     const found = claimants[0];
     if (!found) {
-      conflicts.push(conflict(
-        "META_SEMANTIC_BINDING_INVALID",
-        `cited ledger ${id} is not present under ${semanticsDir}`,
-        semanticsDir,
-      ));
+      conflicts.push(
+        conflict(
+          "META_SEMANTIC_BINDING_INVALID",
+          `cited ledger ${id} is not present under ${semanticsDir}`,
+          semanticsDir,
+        ),
+      );
       continue;
     }
     if (found.digest !== expected) {
-      conflicts.push(conflict(
-        "META_SEMANTIC_BINDING_INVALID",
-        `digest mismatch for ${id}: bound ${expected}, observed ${found.digest}`,
-        found.path,
-      ));
+      conflicts.push(
+        conflict(
+          "META_SEMANTIC_BINDING_INVALID",
+          `digest mismatch for ${id}: bound ${expected}, observed ${found.digest}`,
+          found.path,
+        ),
+      );
     }
   }
   return conflicts;
@@ -746,7 +881,10 @@ export interface SemanticBindingObservationOptions {
 /** `owner/name` from a GitHub remote URL, or null when it is not one. */
 function githubRepositoryFromRemote(url: string): string | null {
   const trimmed = url.trim();
-  const match = /^(?:https:\/\/github\.com\/|ssh:\/\/git@github\.com\/|git@github\.com:)([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/.exec(trimmed);
+  const match =
+    /^(?:https:\/\/github\.com\/|ssh:\/\/git@github\.com\/|git@github\.com:)([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/.exec(
+      trimmed,
+    );
   return match ? `${match[1]}/${match[2]}` : null;
 }
 
@@ -767,24 +905,40 @@ export function observeSemanticBinding(
     bindingPath: META_AUTHORITY_RELATIVE_PATH,
     ...(loaded.digest ? { bindingDigest: loaded.digest } : {}),
   };
-  const missing = loaded.conflicts.length === 1 && loaded.conflicts[0].code === "META_AUTHORITY_FILE_MISSING";
+  const missing =
+    loaded.conflicts.length === 1 && loaded.conflicts[0].code === "META_AUTHORITY_FILE_MISSING";
   if (missing) {
     return { ...base, status: "unbound", verification: { status: "not_run" }, conflicts: [] };
   }
   // A writer mismatch is a policy verdict about apply, not about the binding; the
   // parsed document is still what the repository declares.
-  const blocking = loaded.conflicts.filter((item) => item.code !== "META_AUTHORITY_WRITER_MISMATCH");
+  const blocking = loaded.conflicts.filter(
+    (item) => item.code !== "META_AUTHORITY_WRITER_MISMATCH",
+  );
   if (blocking.length || !loaded.authority) {
     return {
       ...base,
       status: "invalid",
       verification: { status: "not_run" },
-      conflicts: blocking.map((item) => ({ code: item.code, message: item.message.split(path.resolve(root)).join(".") })),
+      conflicts: blocking.map((item) => ({
+        code: item.code,
+        message: item.message.split(path.resolve(root)).join("."),
+      })),
     };
   }
   const authority = loaded.authority;
-  if (authority.schema !== META_AUTHORITY_SCHEMA_V2 || !authority.semantic_foundation || !authority.product) {
-    return { ...base, status: "v1", authoritySchema: authority.schema, verification: { status: "not_run" }, conflicts: [] };
+  if (
+    authority.schema !== META_AUTHORITY_SCHEMA_V2 ||
+    !authority.semantic_foundation ||
+    !authority.product
+  ) {
+    return {
+      ...base,
+      status: "v1",
+      authoritySchema: authority.schema,
+      verification: { status: "not_run" },
+      conflicts: [],
+    };
   }
 
   const binding = authority.semantic_foundation;
@@ -830,7 +984,8 @@ export function observeSemanticBinding(
     if (origin === null) {
       conflicts.push({
         code: "META_SEMANTIC_BINDING_INVALID",
-        message: "Semantic Foundation checkout repository identity could not be established: it has no GitHub origin remote",
+        message:
+          "Semantic Foundation checkout repository identity could not be established: it has no GitHub origin remote",
       });
     } else if (origin.toLowerCase() !== SEMANTIC_FOUNDATION_REPOSITORY.toLowerCase()) {
       conflicts.push({
@@ -845,7 +1000,10 @@ export function observeSemanticBinding(
     });
   }
   for (const item of verifySemanticFoundation(binding, semanticsRoot)) {
-    conflicts.push({ code: item.code, message: item.message.split(semanticsRoot).join("<semantics-root>") });
+    conflicts.push({
+      code: item.code,
+      message: item.message.split(semanticsRoot).join("<semantics-root>"),
+    });
   }
   // Verified means every check in scope passed, including the identity checks made
   // before the checkout was opened. Any conflict at all is a failed verification.

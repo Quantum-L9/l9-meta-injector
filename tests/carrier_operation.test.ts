@@ -1,7 +1,11 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { buildCarrierOperationPlan, inlinePlanDrift, metadataIndexDrift } from "../src/carrier_operation";
+import {
+  buildCarrierOperationPlan,
+  inlinePlanDrift,
+  metadataIndexDrift,
+} from "../src/carrier_operation";
 import { compileMetadataIndex, type ManagedMetadataSubject } from "../src/metadata_index";
 import type { AuthorityConfig } from "../src/operation_contracts";
 import type { PipelineResult } from "../src/pipeline";
@@ -33,7 +37,11 @@ function pipeline(root: string): PipelineResult {
         bodyPreserved: true,
         headerInjected: false,
         injectionStrategy: "yaml-frontmatter",
-        meta: { artifact_type: "prompt", source_path: "prompts/a.md", content_hash: "a".repeat(64) } as never,
+        meta: {
+          artifact_type: "prompt",
+          source_path: "prompts/a.md",
+          content_hash: "a".repeat(64),
+        } as never,
       },
       {
         sourcePath: source,
@@ -47,16 +55,53 @@ function pipeline(root: string): PipelineResult {
         headerInjected: false,
         injectionStrategy: "sidecar",
         sidecarPath: `${source}.l9meta.yaml`,
-        meta: { artifact_type: "source", source_path: "src/a.ts", content_hash: "b".repeat(64) } as never,
+        meta: {
+          artifact_type: "source",
+          source_path: "src/a.ts",
+          content_hash: "b".repeat(64),
+        } as never,
       },
     ],
     verified: [],
     verification: { total: 0, clean: 0, withIssues: 0, passed: true, failures: [] },
-    coverage: { scanned: 2, injected: 2, skippedBinary: 0, skippedNonInjectable: 0, verifyFailed: 0, archivesExpanded: 0, skipped: { binary: [], nonInjectable: [], nonInjectableDetails: [] }, reportPath: "", discovery: { entries: [], encountered: 0, blocking: 0, counts: {} } },
-    placementPlans: [], metaV3: [], metrics: {} as never, archives: [],
+    coverage: {
+      scanned: 2,
+      injected: 2,
+      skippedBinary: 0,
+      skippedNonInjectable: 0,
+      verifyFailed: 0,
+      archivesExpanded: 0,
+      skipped: { binary: [], nonInjectable: [], nonInjectableDetails: [] },
+      reportPath: "",
+      discovery: { entries: [], encountered: 0, blocking: 0, counts: {} },
+    },
+    placementPlans: [],
+    metaV3: [],
+    metrics: {} as never,
+    archives: [],
     metadataSubjects: [
-      { path: "prompts/a.md", artifactType: "prompt", strategy: "yaml-frontmatter", contentHash: "a".repeat(64), metadata: { artifact_type: "prompt", source_path: "prompts/a.md", content_hash: "a".repeat(64) } },
-      { path: "src/a.ts", artifactType: "source", strategy: "sidecar", contentHash: "b".repeat(64), metadata: { artifact_type: "source", source_path: "src/a.ts", content_hash: "b".repeat(64) } },
+      {
+        path: "prompts/a.md",
+        artifactType: "prompt",
+        strategy: "yaml-frontmatter",
+        contentHash: "a".repeat(64),
+        metadata: {
+          artifact_type: "prompt",
+          source_path: "prompts/a.md",
+          content_hash: "a".repeat(64),
+        },
+      },
+      {
+        path: "src/a.ts",
+        artifactType: "source",
+        strategy: "sidecar",
+        contentHash: "b".repeat(64),
+        metadata: {
+          artifact_type: "source",
+          source_path: "src/a.ts",
+          content_hash: "b".repeat(64),
+        },
+      },
     ],
   };
 }
@@ -78,7 +123,15 @@ describe("carrier-aware operation planning", () => {
   test("reports only authorized inline drift; legacy sidecar plans are ignored", () => {
     const root = path.resolve("/tmp/repo");
     const plan = buildCarrierOperationPlan("check", root, AUTHORITY, pipeline(root));
-    expect(inlinePlanDrift(plan)).toEqual([{ path: "prompts/a.md", kind: "stale", message: "authorized inline metadata differs from canonical expected bytes", expectedHash: "e".repeat(64), actualHash: "f".repeat(64) }]);
+    expect(inlinePlanDrift(plan)).toEqual([
+      {
+        path: "prompts/a.md",
+        kind: "stale",
+        message: "authorized inline metadata differs from canonical expected bytes",
+        expectedHash: "e".repeat(64),
+        actualHash: "f".repeat(64),
+      },
+    ]);
   });
 
   test("demotes a comment strategy unsupported by the filename to the central manifest", () => {
@@ -87,7 +140,9 @@ describe("carrier-aware operation planning", () => {
     p.injected[0].injectionStrategy = "line-comment";
     p.metadataSubjects[0].strategy = "line-comment";
     const plan = buildCarrierOperationPlan("apply", root, AUTHORITY, p);
-    expect(plan.carrierDecisions.find((item) => item.path === "prompts/a.md")?.carrier).toBe("central_manifest");
+    expect(plan.carrierDecisions.find((item) => item.path === "prompts/a.md")?.carrier).toBe(
+      "central_manifest",
+    );
     expect(plan.inlinePlans).toHaveLength(0);
   });
 
@@ -102,7 +157,9 @@ describe("carrier-aware operation planning", () => {
     const authority = { ...AUTHORITY, inline_allow: ["src/**"] };
     expect(buildCarrierOperationPlan("apply", root, authority, p).inlinePlans).toEqual([source]);
     source.injectionStrategy = "block-comment";
-    expect(() => buildCarrierOperationPlan("apply", root, authority, p)).toThrow(/matching safe strategy/);
+    expect(() => buildCarrierOperationPlan("apply", root, authority, p)).toThrow(
+      /matching safe strategy/,
+    );
   });
 });
 
@@ -148,35 +205,60 @@ describe("WU-005 scoped plans merge with the existing metadata index (RC-009)", 
     const p = pipeline(root);
     const plan = buildCarrierOperationPlan("check", root, AUTHORITY, p);
     expect(plan.metadataIndexBase ?? null).toBeNull();
-    const expected = compileMetadataIndex({ authority: AUTHORITY, mode: "check", subjects: p.metadataSubjects });
+    const expected = compileMetadataIndex({
+      authority: AUTHORITY,
+      mode: "check",
+      subjects: p.metadataSubjects,
+    });
     expect(plan.metadataIndex.bytes).toBe(expected.bytes);
     expect(plan.metadataIndex.sha256).toBe(expected.sha256);
     // The synthetic root that does not exist keeps compiling without touching the filesystem.
     const missing = path.resolve("/tmp/repo-does-not-exist-l9");
-    expect(buildCarrierOperationPlan("check", missing, AUTHORITY, pipeline(missing)).metadataIndex.bytes).toBe(expected.bytes);
+    expect(
+      buildCarrierOperationPlan("check", missing, AUTHORITY, pipeline(missing)).metadataIndex.bytes,
+    ).toBe(expected.bytes);
   });
 
   test("REG-WU-005-RC-009-a: scope-filtered records are carried forward verbatim and in-scope records are recompiled", () => {
     const base = compileMetadataIndex({
       authority: AUTHORITY,
       mode: "apply",
-      subjects: [outOfScopeSubject("vendor/z.ts"), outOfScopeSubject("prompts/a.md"), outOfScopeSubject("prompts/gone.md")],
+      subjects: [
+        outOfScopeSubject("vendor/z.ts"),
+        outOfScopeSubject("prompts/a.md"),
+        outOfScopeSubject("prompts/gone.md"),
+      ],
     });
     const root = tempRepo(base.bytes);
     const p = scoped(pipeline(root), "vendor/z.ts");
     const plan = buildCarrierOperationPlan("check", root, AUTHORITY, p);
-    expect(plan.metadataIndex.records.map((record) => record.path)).toEqual(["prompts/a.md", "src/a.ts", "vendor/z.ts"]);
-    const line = (bytes: string, name: string) => bytes.split("\n").find((item) => item.includes(`"path":"${name}"`));
+    expect(plan.metadataIndex.records.map((record) => record.path)).toEqual([
+      "prompts/a.md",
+      "src/a.ts",
+      "vendor/z.ts",
+    ]);
+    const line = (bytes: string, name: string) =>
+      bytes.split("\n").find((item) => item.includes(`"path":"${name}"`));
     expect(line(plan.metadataIndex.bytes, "vendor/z.ts")).toBe(line(base.bytes, "vendor/z.ts"));
-    expect(line(plan.metadataIndex.bytes, "prompts/a.md")).not.toBe(line(base.bytes, "prompts/a.md"));
-    expect(plan.metadataIndex.carrierDecisions.map((item) => item.path)).toEqual(["prompts/a.md", "src/a.ts"]);
+    expect(line(plan.metadataIndex.bytes, "prompts/a.md")).not.toBe(
+      line(base.bytes, "prompts/a.md"),
+    );
+    expect(plan.metadataIndex.carrierDecisions.map((item) => item.path)).toEqual([
+      "prompts/a.md",
+      "src/a.ts",
+    ]);
     expect(plan.metadataIndexBase).toEqual({ exists: true, sha256: base.sha256 });
     expect(metadataIndexDrift(plan)?.kind).toBe("stale");
   });
 
   test("REG-WU-005-RC-009-e: an unparseable base index makes a scoped plan unmergeable and check reports it", () => {
-    const root = tempRepo("{\"broken\": true}\n");
-    const plan = buildCarrierOperationPlan("check", root, AUTHORITY, scoped(pipeline(root), "vendor/z.ts"));
+    const root = tempRepo('{"broken": true}\n');
+    const plan = buildCarrierOperationPlan(
+      "check",
+      root,
+      AUTHORITY,
+      scoped(pipeline(root), "vendor/z.ts"),
+    );
     expect(plan.metadataIndexBase?.unmergeableReason).toMatch(/cannot be parsed/);
     const drift = metadataIndexDrift(plan);
     expect(drift?.kind).toBe("conflict");
@@ -185,16 +267,30 @@ describe("WU-005 scoped plans merge with the existing metadata index (RC-009)", 
 
   test("REG-WU-005-RC-009-a: a scoped plan on a repository without an index records an absent base", () => {
     const root = tempRepo();
-    const plan = buildCarrierOperationPlan("apply", root, AUTHORITY, scoped(pipeline(root), "vendor/z.ts"));
+    const plan = buildCarrierOperationPlan(
+      "apply",
+      root,
+      AUTHORITY,
+      scoped(pipeline(root), "vendor/z.ts"),
+    );
     expect(plan.metadataIndexBase).toEqual({ exists: false });
-    expect(plan.metadataIndex.records.map((record) => record.path)).toEqual(["prompts/a.md", "src/a.ts"]);
+    expect(plan.metadataIndex.records.map((record) => record.path)).toEqual([
+      "prompts/a.md",
+      "src/a.ts",
+    ]);
   });
 
   test("REG-WU-005-RC-009-a: a preserved record that reuses an in-scope metadata id is refused", () => {
-    const base = compileMetadataIndex({ authority: AUTHORITY, mode: "apply", subjects: [outOfScopeSubject("vendor/z.ts", "dup-id")] });
+    const base = compileMetadataIndex({
+      authority: AUTHORITY,
+      mode: "apply",
+      subjects: [outOfScopeSubject("vendor/z.ts", "dup-id")],
+    });
     const root = tempRepo(base.bytes);
     const p = scoped(pipeline(root), "vendor/z.ts");
     (p.metadataSubjects[1].metadata as Record<string, unknown>).id = "dup-id";
-    expect(() => buildCarrierOperationPlan("apply", root, AUTHORITY, p)).toThrow(/DUPLICATE_METADATA_ID.*dup-id/);
+    expect(() => buildCarrierOperationPlan("apply", root, AUTHORITY, p)).toThrow(
+      /DUPLICATE_METADATA_ID.*dup-id/,
+    );
   });
 });

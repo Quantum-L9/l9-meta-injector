@@ -1,21 +1,30 @@
+import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { execFileSync } from "node:child_process";
-import { describe, expect, test, vi } from "vitest";
-import { inventoryTree, buildRecord } from "../src/inventory";
-import { contentHash } from "../src/extract";
-import { harvestExistingMeta } from "../src/inventory_existing_meta";
-import { buildTarArchive } from "../src/tar_writer";
-import { peekTarRootMeta, readTarArchive } from "../src/tar_reader";
-import { buildZipBuffer, peekZipRootMeta, injectZipRootMeta } from "../src/zip_writer";
 import * as zlib from "node:zlib";
-import { inventoryRewriteKind, boundedGunzip, boundedGunzipSync } from "../src/inventory_archive_member";
-import { DEFAULT_LOCAL_ARCHIVE_POLICY } from "../src/local_archive_policy";
-import { buildFinderComment, buildFinderTags, isInventoryFinderComment, versionTokenFromFileName } from "../src/inventory_darwin_search";
-import { gzipTar, hostileTarCorpus } from "./helpers/tar_fixtures";
+import { describe, expect, test, vi } from "vitest";
 import { runApplyAsync } from "../src/apply";
+import { contentHash } from "../src/extract";
+import { buildRecord, inventoryTree } from "../src/inventory";
+import {
+  boundedGunzip,
+  boundedGunzipSync,
+  inventoryRewriteKind,
+} from "../src/inventory_archive_member";
+import {
+  buildFinderComment,
+  buildFinderTags,
+  isInventoryFinderComment,
+  versionTokenFromFileName,
+} from "../src/inventory_darwin_search";
+import { harvestExistingMeta } from "../src/inventory_existing_meta";
+import { DEFAULT_LOCAL_ARCHIVE_POLICY } from "../src/local_archive_policy";
 import { acquireLocalSource } from "../src/local_source";
+import { peekTarRootMeta, readTarArchive } from "../src/tar_reader";
+import { buildTarArchive } from "../src/tar_writer";
+import { buildZipBuffer, injectZipRootMeta, peekZipRootMeta } from "../src/zip_writer";
+import { gzipTar, hostileTarCorpus } from "./helpers/tar_fixtures";
 
 function tmp(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "l9-inv-drive-"));
@@ -23,16 +32,19 @@ function tmp(): string {
 
 function writeAuthority(root: string): void {
   fs.mkdirSync(path.join(root, ".l9"));
-  fs.writeFileSync(path.join(root, ".l9", "meta-authority.yaml"), [
-    "schema: l9.meta-authority/v1",
-    "writer:",
-    "  repository: Quantum-L9/l9-meta-injector",
-    "  ref: fc335977581ff556a8d071a80fd48dfb3686a5cb",
-    "default_carrier: inline_managed",
-    "legacy_writers: forbidden",
-    "inline_allow: [\"**/*.md\"]",
-    "",
-  ].join("\n"));
+  fs.writeFileSync(
+    path.join(root, ".l9", "meta-authority.yaml"),
+    [
+      "schema: l9.meta-authority/v1",
+      "writer:",
+      "  repository: Quantum-L9/l9-meta-injector",
+      "  ref: fc335977581ff556a8d071a80fd48dfb3686a5cb",
+      "default_carrier: inline_managed",
+      "legacy_writers: forbidden",
+      'inline_allow: ["**/*.md"]',
+      "",
+    ].join("\n"),
+  );
 }
 
 describe("inventory rewrite kind", () => {
@@ -65,7 +77,7 @@ describe("three clocks", () => {
   test("live headers and sidecars emit the three clocks and not created_or_detected_at", () => {
     const root = tmp();
     fs.writeFileSync(path.join(root, "a.md"), "# A\n");
-    fs.writeFileSync(path.join(root, "cfg.json"), "{\"x\":1}\n");
+    fs.writeFileSync(path.join(root, "cfg.json"), '{"x":1}\n');
     const zip = buildZipBuffer([{ name: "docs/a.md", data: Buffer.from("# A\n") }]);
     fs.writeFileSync(path.join(root, "pack.zip"), zip);
     const result = inventoryTree({
@@ -89,15 +101,28 @@ describe("three clocks", () => {
 
   test("re-inventory drops leftover created_or_detected_at from an existing header", () => {
     const root = tmp();
-    fs.writeFileSync(path.join(root, "note.md"), [
-      "---",
-      "title: note.md",
-      "created_or_detected_at: \"2026-09-11T16:22:12.503Z\"",
-      "---",
-      "# body\n",
-    ].join("\n"));
-    inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false, now: "2026-09-11T18:00:00.000Z" });
-    inventoryTree({ root, outDir: path.join(tmp(), "out2"), folderSidecars: false, now: "2026-09-11T19:00:00.000Z" });
+    fs.writeFileSync(
+      path.join(root, "note.md"),
+      [
+        "---",
+        "title: note.md",
+        'created_or_detected_at: "2026-09-11T16:22:12.503Z"',
+        "---",
+        "# body\n",
+      ].join("\n"),
+    );
+    inventoryTree({
+      root,
+      outDir: path.join(tmp(), "out"),
+      folderSidecars: false,
+      now: "2026-09-11T18:00:00.000Z",
+    });
+    inventoryTree({
+      root,
+      outDir: path.join(tmp(), "out2"),
+      folderSidecars: false,
+      now: "2026-09-11T19:00:00.000Z",
+    });
     const md = fs.readFileSync(path.join(root, "note.md"), "utf8");
     expect(md).toContain("inspected_at:");
     expect(md).toContain("2026-09-11T19:00:00.000Z");
@@ -107,15 +132,28 @@ describe("three clocks", () => {
 
   test("re-inventory drops leftover created_or_detected_at from a comment header", () => {
     const root = tmp();
-    fs.writeFileSync(path.join(root, "mod.py"), [
-      "# >>> l9:meta >>>",
-      "# title: mod.py",
-      "# created_or_detected_at: \"2026-09-11T16:22:12.503Z\"",
-      "# <<< l9:meta <<<",
-      "print(1)\n",
-    ].join("\n"));
-    inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false, now: "2026-09-11T18:00:00.000Z" });
-    inventoryTree({ root, outDir: path.join(tmp(), "out2"), folderSidecars: false, now: "2026-09-11T19:00:00.000Z" });
+    fs.writeFileSync(
+      path.join(root, "mod.py"),
+      [
+        "# >>> l9:meta >>>",
+        "# title: mod.py",
+        '# created_or_detected_at: "2026-09-11T16:22:12.503Z"',
+        "# <<< l9:meta <<<",
+        "print(1)\n",
+      ].join("\n"),
+    );
+    inventoryTree({
+      root,
+      outDir: path.join(tmp(), "out"),
+      folderSidecars: false,
+      now: "2026-09-11T18:00:00.000Z",
+    });
+    inventoryTree({
+      root,
+      outDir: path.join(tmp(), "out2"),
+      folderSidecars: false,
+      now: "2026-09-11T19:00:00.000Z",
+    });
     const py = fs.readFileSync(path.join(root, "mod.py"), "utf8");
     expect(py).toContain("inspected_at:");
     expect(py).toContain("2026-09-11T19:00:00.000Z");
@@ -129,7 +167,12 @@ describe("derived annotation fields", () => {
     const root = tmp();
     fs.mkdirSync(path.join(root, "docs", "prompts"), { recursive: true });
     fs.writeFileSync(path.join(root, "docs", "prompts", "foo.md"), "# Use when classifying\n");
-    inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false, now: "2099-01-01T00:00:00.000Z" });
+    inventoryTree({
+      root,
+      outDir: path.join(tmp(), "out"),
+      folderSidecars: false,
+      now: "2099-01-01T00:00:00.000Z",
+    });
     const md = fs.readFileSync(path.join(root, "docs", "prompts", "foo.md"), "utf8");
     expect(md).toMatch(/artifact_type:\s*"?prompt"?/);
     expect(md).toMatch(/mcp_primitive:\s*"?prompt"?/);
@@ -141,7 +184,12 @@ describe("derived annotation fields", () => {
   test("a yaml file derives source taxonomy, a token estimate, and Unknown namespace/authority", () => {
     const root = tmp();
     fs.writeFileSync(path.join(root, "cfg.yaml"), "name: sample\n");
-    inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false, now: "2099-01-01T00:00:00.000Z" });
+    inventoryTree({
+      root,
+      outDir: path.join(tmp(), "out"),
+      folderSidecars: false,
+      now: "2099-01-01T00:00:00.000Z",
+    });
     const yaml = fs.readFileSync(path.join(root, "cfg.yaml"), "utf8");
     expect(yaml).toContain("artifact_type: source");
     expect(yaml).toContain("inventory_type: config");
@@ -160,7 +208,12 @@ describe("derived annotation fields", () => {
     fs.writeFileSync(path.join(root, "docs", "a.md"), "# A\n");
     const zip = buildZipBuffer([{ name: "readme.txt", data: Buffer.from("hello\n") }]);
     fs.writeFileSync(path.join(root, "pack.zip"), zip);
-    inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: true, now: "2099-01-01T00:00:00.000Z" });
+    inventoryTree({
+      root,
+      outDir: path.join(tmp(), "out"),
+      folderSidecars: true,
+      now: "2099-01-01T00:00:00.000Z",
+    });
     const folder = fs.readFileSync(path.join(root, "docs", ".l9meta.yaml"), "utf8");
     const archive = fs.readFileSync(path.join(root, "pack.zip.l9meta.yaml"), "utf8");
     for (const text of [folder, archive]) {
@@ -179,10 +232,20 @@ describe("derived annotation fields", () => {
     const body = "name: stable\n";
     fs.writeFileSync(path.join(root, "cfg.yaml"), body);
     const expected = contentHash(body);
-    inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false, now: "2099-01-01T00:00:00.000Z" });
+    inventoryTree({
+      root,
+      outDir: path.join(tmp(), "out"),
+      folderSidecars: false,
+      now: "2099-01-01T00:00:00.000Z",
+    });
     const once = fs.readFileSync(path.join(root, "cfg.yaml"), "utf8");
     expect(once).toContain(`content_hash: ${expected}`);
-    inventoryTree({ root, outDir: path.join(tmp(), "out2"), folderSidecars: false, now: "2099-01-01T00:00:00.000Z" });
+    inventoryTree({
+      root,
+      outDir: path.join(tmp(), "out2"),
+      folderSidecars: false,
+      now: "2099-01-01T00:00:00.000Z",
+    });
     const twice = fs.readFileSync(path.join(root, "cfg.yaml"), "utf8");
     expect(twice).toContain(`content_hash: ${expected}`);
   });
@@ -190,11 +253,25 @@ describe("derived annotation fields", () => {
   test("token_cost_estimate describes the carrier-free body and is stable across two live runs", () => {
     const root = tmp();
     fs.writeFileSync(path.join(root, "cfg.yaml"), "name: stable\n");
-    inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false, now: "2099-01-01T00:00:00.000Z" });
-    const once = /token_cost_estimate: (\d+)/.exec(fs.readFileSync(path.join(root, "cfg.yaml"), "utf8"));
+    inventoryTree({
+      root,
+      outDir: path.join(tmp(), "out"),
+      folderSidecars: false,
+      now: "2099-01-01T00:00:00.000Z",
+    });
+    const once = /token_cost_estimate: (\d+)/.exec(
+      fs.readFileSync(path.join(root, "cfg.yaml"), "utf8"),
+    );
     expect(once).not.toBeNull();
-    inventoryTree({ root, outDir: path.join(tmp(), "out2"), folderSidecars: false, now: "2099-01-01T00:00:00.000Z" });
-    const twice = /token_cost_estimate: (\d+)/.exec(fs.readFileSync(path.join(root, "cfg.yaml"), "utf8"));
+    inventoryTree({
+      root,
+      outDir: path.join(tmp(), "out2"),
+      folderSidecars: false,
+      now: "2099-01-01T00:00:00.000Z",
+    });
+    const twice = /token_cost_estimate: (\d+)/.exec(
+      fs.readFileSync(path.join(root, "cfg.yaml"), "utf8"),
+    );
     expect(twice).not.toBeNull();
     // The second run reads a file that now carries the generated header; the
     // estimate must still describe the 13-byte body, not the header.
@@ -224,7 +301,12 @@ describe("derived annotation fields", () => {
     const body = "shared body\n";
     fs.writeFileSync(path.join(root, "a.yaml"), body);
     fs.writeFileSync(path.join(root, "b.yaml"), body);
-    const result = inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false, now: "2099-01-01T00:00:00.000Z" });
+    const result = inventoryTree({
+      root,
+      outDir: path.join(tmp(), "out"),
+      folderSidecars: false,
+      now: "2099-01-01T00:00:00.000Z",
+    });
     expect(result.duplicates).toHaveLength(1);
     expect(result.duplicates[0]?.count).toBe(2);
     expect(result.duplicates[0]?.content_hash).toBe(contentHash(body));
@@ -232,27 +314,33 @@ describe("derived annotation fields", () => {
 
   test("a pre-seeded legacy header is migrated and an operator namespace is preserved", () => {
     const root = tmp();
-    fs.writeFileSync(path.join(root, "legacy.py"), [
-      "# >>> l9:meta >>>",
-      "# artifact_type: source",
-      "# mcp_primitive: resource",
-      "# callable: false",
-      "# retrievable: true",
-      "# injectable: true",
-      "# namespace: inventory",
-      "# sharing_scope: agnostic",
-      "# token_cost_estimate: 0",
-      "# authority: inventory",
-      "# <<< l9:meta <<<",
-      "print(1)\n",
-    ].join("\n"));
-    fs.writeFileSync(path.join(root, "kept.py"), [
-      "# >>> l9:meta >>>",
-      "# namespace: myns",
-      "# <<< l9:meta <<<",
-      "print(2)\n",
-    ].join("\n"));
-    inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false, now: "2099-01-01T00:00:00.000Z" });
+    fs.writeFileSync(
+      path.join(root, "legacy.py"),
+      [
+        "# >>> l9:meta >>>",
+        "# artifact_type: source",
+        "# mcp_primitive: resource",
+        "# callable: false",
+        "# retrievable: true",
+        "# injectable: true",
+        "# namespace: inventory",
+        "# sharing_scope: agnostic",
+        "# token_cost_estimate: 0",
+        "# authority: inventory",
+        "# <<< l9:meta <<<",
+        "print(1)\n",
+      ].join("\n"),
+    );
+    fs.writeFileSync(
+      path.join(root, "kept.py"),
+      ["# >>> l9:meta >>>", "# namespace: myns", "# <<< l9:meta <<<", "print(2)\n"].join("\n"),
+    );
+    inventoryTree({
+      root,
+      outDir: path.join(tmp(), "out"),
+      folderSidecars: false,
+      now: "2099-01-01T00:00:00.000Z",
+    });
     const legacy = fs.readFileSync(path.join(root, "legacy.py"), "utf8");
     expect(legacy).toContain("namespace: Unknown");
     expect(legacy).toContain("authority: Unknown");
@@ -289,8 +377,16 @@ describe("derived annotation fields", () => {
 describe("WU-081 harvested_type compares like taxonomies", () => {
   test("REG-WU-081-RC-060-RC060-a: a pipeline artifact_type in front matter is not an inventory_type conflict", () => {
     const root = tmp();
-    fs.writeFileSync(path.join(root, "guide.md"), "---\nartifact_type: doctrine\ntitle: Guide\n---\n# Guide\n");
-    const result = inventoryTree({ root, outDir: path.join(tmp(), "out"), dryRun: true, now: "2026-09-11T12:00:00.000Z" });
+    fs.writeFileSync(
+      path.join(root, "guide.md"),
+      "---\nartifact_type: doctrine\ntitle: Guide\n---\n# Guide\n",
+    );
+    const result = inventoryTree({
+      root,
+      outDir: path.join(tmp(), "out"),
+      dryRun: true,
+      now: "2026-09-11T12:00:00.000Z",
+    });
     const record = result.records.find((r) => r.relative_path === "guide.md");
     expect(record).toBeDefined();
     expect(record?.unknowns.some((u) => u.startsWith("harvested_type:"))).toBe(false);
@@ -300,7 +396,12 @@ describe("WU-081 harvested_type compares like taxonomies", () => {
     const root = tmp();
     fs.writeFileSync(path.join(root, "notes.md"), "# Notes\n");
     fs.writeFileSync(path.join(root, "notes.md.l9meta.yaml"), "inventory_type: code\n");
-    const result = inventoryTree({ root, outDir: path.join(tmp(), "out"), dryRun: true, now: "2026-09-11T12:00:00.000Z" });
+    const result = inventoryTree({
+      root,
+      outDir: path.join(tmp(), "out"),
+      dryRun: true,
+      now: "2026-09-11T12:00:00.000Z",
+    });
     const record = result.records.find((r) => r.relative_path === "notes.md");
     expect(record?.artifact_type).not.toBe("code");
     expect(record?.unknowns).toContain("harvested_type:code");
@@ -312,8 +413,11 @@ describe("harvest-first", () => {
     const root = tmp();
     fs.mkdirSync(path.join(root, "docs"));
     fs.writeFileSync(path.join(root, "docs", ".l9meta.yaml"), "---\ntitle: FolderTitle\n---\n");
-    fs.writeFileSync(path.join(root, "cfg.json"), "{\"a\":1}\n");
-    fs.writeFileSync(path.join(root, "cfg.json.l9meta.yaml"), "---\ntitle: OperatorTitle\ntags:\n  - harvested\n---\n");
+    fs.writeFileSync(path.join(root, "cfg.json"), '{"a":1}\n');
+    fs.writeFileSync(
+      path.join(root, "cfg.json.l9meta.yaml"),
+      "---\ntitle: OperatorTitle\ntags:\n  - harvested\n---\n",
+    );
     const harvested = harvestExistingMeta(path.join(root, "cfg.json"), false);
     expect(harvested.title).toBe("OperatorTitle");
     const folder = harvestExistingMeta(path.join(root, "docs"), true);
@@ -330,35 +434,53 @@ describe("harvest-first", () => {
     const zip = buildZipBuffer([{ name: "readme.txt", data: Buffer.from("hello\n") }]);
     const zipPath = path.join(root, "pack.zip");
     fs.writeFileSync(zipPath, zip);
-    const injected = injectZipRootMeta(zipPath, "---\ntitle: PackedTitle\ntags:\n  - harvested\n---\n");
+    const injected = injectZipRootMeta(
+      zipPath,
+      "---\ntitle: PackedTitle\ntags:\n  - harvested\n---\n",
+    );
     expect(injected.ok).toBe(true);
     if (injected.ok) fs.writeFileSync(zipPath, injected.bytes);
     const harvested = harvestExistingMeta(zipPath, false);
     expect(harvested.title).toBe("PackedTitle");
-    inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false, now: "2026-09-11T12:00:00.000Z" });
+    inventoryTree({
+      root,
+      outDir: path.join(tmp(), "out"),
+      folderSidecars: false,
+      now: "2026-09-11T12:00:00.000Z",
+    });
     const member = peekZipRootMeta(zipPath);
     expect(member).toContain("title: PackedTitle");
     expect(member).toContain("inspected_at:");
-    expect(fs.readFileSync(path.join(root, "pack.zip.l9meta.yaml"), "utf8")).toContain("title: PackedTitle");
+    expect(fs.readFileSync(path.join(root, "pack.zip.l9meta.yaml"), "utf8")).toContain(
+      "title: PackedTitle",
+    );
   });
 
   test("does not re-emit a prior inventory dump's absolute_path into the sidecar", () => {
     const root = tmp();
     const zip = buildZipBuffer([{ name: "readme.txt", data: Buffer.from("hello\n") }]);
     fs.writeFileSync(path.join(root, "pack.zip"), zip);
-    fs.writeFileSync(path.join(root, "pack.zip.l9meta.yaml"), [
-      "---",
-      "title: OperatorTitle",
-      "artifact_id: inv-old",
-      "absolute_path: /Users/someone/L9 live drive/pack.zip",
-      "relative_path: pack.zip",
-      "file_name: pack.zip",
-      "unknowns: []",
-      "created_or_detected_at: \"2026-09-11T16:22:12.503Z\"",
-      "---",
-      "",
-    ].join("\n"));
-    inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false, now: "2026-09-11T18:00:00.000Z" });
+    fs.writeFileSync(
+      path.join(root, "pack.zip.l9meta.yaml"),
+      [
+        "---",
+        "title: OperatorTitle",
+        "artifact_id: inv-old",
+        "absolute_path: /Users/someone/L9 live drive/pack.zip",
+        "relative_path: pack.zip",
+        "file_name: pack.zip",
+        "unknowns: []",
+        'created_or_detected_at: "2026-09-11T16:22:12.503Z"',
+        "---",
+        "",
+      ].join("\n"),
+    );
+    inventoryTree({
+      root,
+      outDir: path.join(tmp(), "out"),
+      folderSidecars: false,
+      now: "2026-09-11T18:00:00.000Z",
+    });
     const sidecar = fs.readFileSync(path.join(root, "pack.zip.l9meta.yaml"), "utf8");
     expect(sidecar).toContain("title: OperatorTitle");
     expect(sidecar).not.toContain("/Users/someone");
@@ -388,7 +510,9 @@ custom_field: value
       folderSidecars: true,
       now: "2026-09-11T12:00:00.000Z",
     });
-    const folderRec = result.records.find((r) => r.file_name === "docs" && r.artifact_type === "folder");
+    const folderRec = result.records.find(
+      (r) => r.file_name === "docs" && r.artifact_type === "folder",
+    );
     const afterContent = fs.readFileSync(sidecarPath, "utf8");
     if (afterContent === originalContent) {
       expect(folderRec?.unknowns).toContain("folder_sidecar_lossy_roundtrip");
@@ -425,7 +549,12 @@ describe("archive member inject", () => {
     const root = tmp();
     const zipPath = path.join(root, "dd.zip");
     fs.writeFileSync(zipPath, zipWithDataDescriptor("readme.txt", Buffer.from("hello\n")));
-    const result = inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false, now: "2026-09-11T18:00:00.000Z" });
+    const result = inventoryTree({
+      root,
+      outDir: path.join(tmp(), "out"),
+      folderSidecars: false,
+      now: "2026-09-11T18:00:00.000Z",
+    });
     const member = peekZipRootMeta(zipPath);
     expect(member).toContain("2026-09-11T18:00:00.000Z");
     expect(member).toContain("inspected_at:");
@@ -466,7 +595,9 @@ describe("archive member inject", () => {
     const result = boundedGunzipSync(compressed, smallBudgetPolicy);
     expect(result.ok).toBe(false);
     expect(result.hold).toBe("archive.inflation_budget_exceeded");
-    const largeBudgetResult = boundedGunzipSync(compressed, { maxTotalUncompressedBytesPerArchive: 2048 });
+    const largeBudgetResult = boundedGunzipSync(compressed, {
+      maxTotalUncompressedBytesPerArchive: 2048,
+    });
     expect(largeBudgetResult.ok).toBe(true);
     if (largeBudgetResult.ok) {
       expect(largeBudgetResult.bytes.length).toBe(1024);
@@ -493,7 +624,10 @@ describe("archive member inject", () => {
       const bomb = zlib.gzipSync(Buffer.alloc(64 * MiB));
       const spy = spyGunzipSync();
       try {
-        const result = boundedGunzipSync(bomb, { ...DEFAULT_LOCAL_ARCHIVE_POLICY, maxTotalUncompressedBytesPerArchive: MiB });
+        const result = boundedGunzipSync(bomb, {
+          ...DEFAULT_LOCAL_ARCHIVE_POLICY,
+          maxTotalUncompressedBytesPerArchive: MiB,
+        });
         expect(result).toEqual({ ok: false, hold: "archive.inflation_budget_exceeded" });
         expect(spy).toHaveBeenCalled();
         for (const call of spy.mock.calls) {
@@ -506,15 +640,27 @@ describe("archive member inject", () => {
 
     test("REG-WU-077-RC-054-RC054-b: output exactly equal to the budget is accepted", () => {
       const exact = zlib.gzipSync(Buffer.alloc(4096, 0x61));
-      const result = boundedGunzipSync(exact, { ...DEFAULT_LOCAL_ARCHIVE_POLICY, maxTotalUncompressedBytesPerArchive: 4096 });
+      const result = boundedGunzipSync(exact, {
+        ...DEFAULT_LOCAL_ARCHIVE_POLICY,
+        maxTotalUncompressedBytesPerArchive: 4096,
+      });
       expect(result.ok).toBe(true);
       if (result.ok) expect(result.bytes.length).toBe(4096);
-      expect(boundedGunzipSync(exact, { ...DEFAULT_LOCAL_ARCHIVE_POLICY, maxTotalUncompressedBytesPerArchive: 4095 }))
-        .toEqual({ ok: false, hold: "archive.inflation_budget_exceeded" });
+      expect(
+        boundedGunzipSync(exact, {
+          ...DEFAULT_LOCAL_ARCHIVE_POLICY,
+          maxTotalUncompressedBytesPerArchive: 4095,
+        }),
+      ).toEqual({ ok: false, hold: "archive.inflation_budget_exceeded" });
     });
 
-    test("REG-WU-077-RC-054-RC054-c: the async variant settles for every size", { timeout: 5_000 }, async () => {
-      const policy = { ...DEFAULT_LOCAL_ARCHIVE_POLICY, maxTotalUncompressedBytesPerArchive: 2 * MiB };
+    test("REG-WU-077-RC-054-RC054-c: the async variant settles for every size", {
+      timeout: 5_000,
+    }, async () => {
+      const policy = {
+        ...DEFAULT_LOCAL_ARCHIVE_POLICY,
+        maxTotalUncompressedBytesPerArchive: 2 * MiB,
+      };
       for (const size of [1024, 64 * 1024, MiB]) {
         const result = await boundedGunzip(zlib.gzipSync(Buffer.alloc(size, 0x62)), policy);
         expect(result.ok).toBe(true);
@@ -525,7 +671,9 @@ describe("archive member inject", () => {
     });
 
     test("REG-WU-077-RC-054-RC054-d: corrupt gzip is an unreadable hold in both variants", async () => {
-      const corrupt = Buffer.from([0x1f, 0x8b, 0x08, 0x00, 0xde, 0xad, 0xbe, 0xef, 0x00, 0x03, 0xff, 0xff]);
+      const corrupt = Buffer.from([
+        0x1f, 0x8b, 0x08, 0x00, 0xde, 0xad, 0xbe, 0xef, 0x00, 0x03, 0xff, 0xff,
+      ]);
       const sync = boundedGunzipSync(corrupt);
       expect(sync.ok).toBe(false);
       if (!sync.ok) expect(sync.hold).toMatch(/^archive\.gzip_unreadable:/);
@@ -540,7 +688,12 @@ describe("archive member inject", () => {
       fs.writeFileSync(path.join(root, "pack.tar.gz"), gzipTar(tar));
       const spy = spyGunzipSync();
       try {
-        const result = inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false, dryRun: true });
+        const result = inventoryTree({
+          root,
+          outDir: path.join(tmp(), "out"),
+          folderSidecars: false,
+          dryRun: true,
+        });
         expect(result.records.some((r) => r.file_name === "pack.tar.gz")).toBe(true);
         expect(spy).toHaveBeenCalled();
         for (const call of spy.mock.calls) {
@@ -585,29 +738,40 @@ describe("archive member inject", () => {
 
 describe("Darwin comment/tag builders", () => {
   test("builds a concise L9 comment and allowlisted tags", () => {
-    const input = { fileName: "l9_runtime_pack_v1.9.0.zip", kind: "zip", harvestedTags: ["kernel"] };
+    const input = {
+      fileName: "l9_runtime_pack_v1.9.0.zip",
+      kind: "zip",
+      harvestedTags: ["kernel"],
+    };
     expect(buildFinderComment(input)).toBe("L9: l9_runtime_pack_v1.9.0 · zip · archive");
-    expect(buildFinderTags(input)).toEqual(expect.arrayContaining(["l9", "archive", "zip", "kernel", "v1.9.0"]));
+    expect(buildFinderTags(input)).toEqual(
+      expect.arrayContaining(["l9", "archive", "zip", "kernel", "v1.9.0"]),
+    );
     expect(versionTokenFromFileName("l9_runtime_pack_v1.9.0.zip")).toBe("v1.9.0");
     expect(isInventoryFinderComment("")).toBe(true);
     expect(isInventoryFinderComment("L9: already")).toBe(true);
     expect(isInventoryFinderComment("human note")).toBe(false);
   });
 
-  test.skipIf(process.platform !== "darwin")("writes Finder comment/tags and preserves a human comment", () => {
-    const root = tmp();
-    const zip = buildZipBuffer([{ name: "readme.txt", data: Buffer.from("hello\n") }]);
-    const zipPath = path.join(root, "l9_runtime_pack_v1.9.0.zip");
-    fs.writeFileSync(zipPath, zip);
-    const human = path.join(root, "human.zip");
-    fs.writeFileSync(human, zip);
-    writeFinderComment(human, "keep this note");
-    inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false });
-    expect(readFinderComment(zipPath)).toBe("L9: l9_runtime_pack_v1.9.0 · zip · archive");
-    expect(readFinderTags(zipPath)).toEqual(expect.arrayContaining(["l9", "archive", "zip", "v1.9.0"]));
-    expect(readFinderComment(human)).toBe("keep this note");
-    expect(readFinderTags(human)).toEqual(expect.arrayContaining(["l9", "archive", "zip"]));
-  });
+  test.skipIf(process.platform !== "darwin")(
+    "writes Finder comment/tags and preserves a human comment",
+    () => {
+      const root = tmp();
+      const zip = buildZipBuffer([{ name: "readme.txt", data: Buffer.from("hello\n") }]);
+      const zipPath = path.join(root, "l9_runtime_pack_v1.9.0.zip");
+      fs.writeFileSync(zipPath, zip);
+      const human = path.join(root, "human.zip");
+      fs.writeFileSync(human, zip);
+      writeFinderComment(human, "keep this note");
+      inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false });
+      expect(readFinderComment(zipPath)).toBe("L9: l9_runtime_pack_v1.9.0 · zip · archive");
+      expect(readFinderTags(zipPath)).toEqual(
+        expect.arrayContaining(["l9", "archive", "zip", "v1.9.0"]),
+      );
+      expect(readFinderComment(human)).toBe("keep this note");
+      expect(readFinderTags(human)).toEqual(expect.arrayContaining(["l9", "archive", "zip"]));
+    },
+  );
 });
 
 // REG-WU-079-RC-057-RC057-c needs a real macOS host: real `plutil -convert xml1`
@@ -615,27 +779,43 @@ describe("Darwin comment/tag builders", () => {
 // process.platform === "darwin"; every CI workflow is ubuntu-latest, so macOS
 // closure of WU-079 is outstanding until this case is run on a Mac.
 describe("WU-079 Darwin tag projection on a real macOS host", () => {
-  test.skipIf(process.platform !== "darwin")("REG-WU-079-RC-057-RC057-c: a Finder tag 'R&D' survives two live inventories once", () => {
-    const root = tmp();
-    const zipPath = path.join(root, "tagged.zip");
-    fs.writeFileSync(zipPath, buildZipBuffer([{ name: "readme.txt", data: Buffer.from("hello\n") }]));
-    writeFinderTags(zipPath, ["R&D"]);
-    inventoryTree({ root, outDir: path.join(tmp(), "out1"), folderSidecars: false });
-    inventoryTree({ root, outDir: path.join(tmp(), "out2"), folderSidecars: false });
-    const tags = readFinderTags(zipPath).map((t) => t.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&"));
-    expect(tags.filter((t) => t === "R&D")).toHaveLength(1);
-    expect(tags.some((t) => t.includes("&amp;"))).toBe(false);
-  });
+  test.skipIf(process.platform !== "darwin")(
+    "REG-WU-079-RC-057-RC057-c: a Finder tag 'R&D' survives two live inventories once",
+    () => {
+      const root = tmp();
+      const zipPath = path.join(root, "tagged.zip");
+      fs.writeFileSync(
+        zipPath,
+        buildZipBuffer([{ name: "readme.txt", data: Buffer.from("hello\n") }]),
+      );
+      writeFinderTags(zipPath, ["R&D"]);
+      inventoryTree({ root, outDir: path.join(tmp(), "out1"), folderSidecars: false });
+      inventoryTree({ root, outDir: path.join(tmp(), "out2"), folderSidecars: false });
+      const tags = readFinderTags(zipPath).map((t) =>
+        t.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&"),
+      );
+      expect(tags.filter((t) => t === "R&D")).toHaveLength(1);
+      expect(tags.some((t) => t.includes("&amp;"))).toBe(false);
+    },
+  );
 });
 
 function writeFinderTags(abs: string, tags: string[]): void {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "l9-plist-test-"));
   const file = path.join(dir, "x.plist");
-  const esc = (v: string): string => v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const esc = (v: string): string =>
+    v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const items = tags.map((t) => `<string>${esc(t)}\n0</string>`).join("");
-  fs.writeFileSync(file, `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><array>${items}</array></plist>\n`);
+  fs.writeFileSync(
+    file,
+    `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><array>${items}</array></plist>\n`,
+  );
   execFileSync("plutil", ["-convert", "binary1", file], { stdio: "pipe" });
-  execFileSync("xattr", ["-wx", "com.apple.metadata:_kMDItemUserTags", fs.readFileSync(file).toString("hex"), abs], { stdio: "pipe" });
+  execFileSync(
+    "xattr",
+    ["-wx", "com.apple.metadata:_kMDItemUserTags", fs.readFileSync(file).toString("hex"), abs],
+    { stdio: "pipe" },
+  );
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
@@ -675,15 +855,25 @@ function zipWithDataDescriptor(name: string, data: Buffer): Buffer {
 function writeFinderComment(abs: string, value: string): void {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "l9-plist-test-"));
   const file = path.join(dir, "x.plist");
-  fs.writeFileSync(file, `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><string>${value}</string></plist>\n`);
+  fs.writeFileSync(
+    file,
+    `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><string>${value}</string></plist>\n`,
+  );
   execFileSync("plutil", ["-convert", "binary1", file], { stdio: "pipe" });
-  execFileSync("xattr", ["-wx", "com.apple.metadata:kMDItemFinderComment", fs.readFileSync(file).toString("hex"), abs], { stdio: "pipe" });
+  execFileSync(
+    "xattr",
+    ["-wx", "com.apple.metadata:kMDItemFinderComment", fs.readFileSync(file).toString("hex"), abs],
+    { stdio: "pipe" },
+  );
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
 function readFinderComment(abs: string): string | null {
   try {
-    const hex = execFileSync("xattr", ["-px", "com.apple.metadata:kMDItemFinderComment", abs], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+    const hex = execFileSync("xattr", ["-px", "com.apple.metadata:kMDItemFinderComment", abs], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "l9-plist-test-"));
     const file = path.join(dir, "x.plist");
     fs.writeFileSync(file, Buffer.from(hex.replace(/\s+/g, ""), "hex"));
@@ -698,14 +888,19 @@ function readFinderComment(abs: string): string | null {
 
 function readFinderTags(abs: string): string[] {
   try {
-    const hex = execFileSync("xattr", ["-px", "com.apple.metadata:_kMDItemUserTags", abs], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+    const hex = execFileSync("xattr", ["-px", "com.apple.metadata:_kMDItemUserTags", abs], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "l9-plist-test-"));
     const file = path.join(dir, "x.plist");
     fs.writeFileSync(file, Buffer.from(hex.replace(/\s+/g, ""), "hex"));
     execFileSync("plutil", ["-convert", "xml1", file], { stdio: "pipe" });
     const xml = fs.readFileSync(file, "utf8");
     fs.rmSync(dir, { recursive: true, force: true });
-    return [...xml.matchAll(/<string>([\s\S]*?)<\/string>/g)].map((m) => m[1]!.split("\n")[0]!).filter(Boolean);
+    return [...xml.matchAll(/<string>([\s\S]*?)<\/string>/g)]
+      .map((m) => m[1]!.split("\n")[0]!)
+      .filter(Boolean);
   } catch {
     return [];
   }
@@ -713,16 +908,26 @@ function readFinderTags(abs: string): string[] {
 
 describe("apply and local-source isolation", () => {
   test("apply, check, skills, and local-source do not import inventory archive writers", () => {
-    for (const rel of ["src/apply.ts", "src/check.ts", "src/skills_pipeline.ts", "src/local_source.ts"]) {
+    for (const rel of [
+      "src/apply.ts",
+      "src/check.ts",
+      "src/skills_pipeline.ts",
+      "src/local_source.ts",
+    ]) {
       const src = fs.readFileSync(path.join(process.cwd(), rel), "utf8");
-      expect(src).not.toMatch(/inventory_archive_member|zip_writer|tar_writer|inventory_darwin_search/);
+      expect(src).not.toMatch(
+        /inventory_archive_member|zip_writer|tar_writer|inventory_darwin_search/,
+      );
     }
   });
 
   test("runApplyAsync on a temp authority tree leaves zip bytes unchanged", async () => {
     const root = tmp();
     writeAuthority(root);
-    fs.writeFileSync(path.join(root, "note.md"), "# Build prompt\n\nRole: auditor\nObjective: inspect.\nOutput format: markdown.\n");
+    fs.writeFileSync(
+      path.join(root, "note.md"),
+      "# Build prompt\n\nRole: auditor\nObjective: inspect.\nOutput format: markdown.\n",
+    );
     const zip = buildZipBuffer([{ name: "inside.md", data: Buffer.from("# in\n") }]);
     const zipPath = path.join(root, "pack.zip");
     fs.writeFileSync(zipPath, zip);
@@ -765,10 +970,15 @@ describe("apply and local-source isolation", () => {
 
 describe("WU-076 RC-053: the record and sidecar describe the archive bytes left on disk", () => {
   const NOW = "2026-09-11T12:00:00.000Z";
-  const sha256 = (bytes: Buffer): string => require("node:crypto").createHash("sha256").update(bytes).digest("hex") as string;
+  const sha256 = (bytes: Buffer): string =>
+    require("node:crypto").createHash("sha256").update(bytes).digest("hex") as string;
   const sidecarHash = (abs: string): string | undefined =>
     /^content_hash: "?([0-9a-f]{64})"?$/m.exec(fs.readFileSync(`${abs}.l9meta.yaml`, "utf8"))?.[1];
-  function expectTruthful(result: ReturnType<typeof inventoryTree>, root: string, name: string): void {
+  function expectTruthful(
+    result: ReturnType<typeof inventoryTree>,
+    root: string,
+    name: string,
+  ): void {
     const abs = path.join(root, name);
     const bytes = fs.readFileSync(abs);
     const rec = result.records.find((r) => r.relative_path === name);
@@ -776,15 +986,31 @@ describe("WU-076 RC-053: the record and sidecar describe the archive bytes left 
     expect(rec?.size_bytes, `${name} record size`).toBe(bytes.length);
     expect(rec?.modified_at, `${name} record mtime`).toBe(fs.lstatSync(abs).mtime.toISOString());
     expect(sidecarHash(abs), `${name} sidecar hash`).toBe(sha256(bytes));
-    const manifest = JSON.parse(fs.readFileSync(result.manifestPaths.json, "utf8")) as { records: Array<{ relative_path: string; content_hash: string }> };
-    expect(manifest.records.find((r) => r.relative_path === name)?.content_hash, `${name} inventory.json hash`).toBe(sha256(bytes));
+    const manifest = JSON.parse(fs.readFileSync(result.manifestPaths.json, "utf8")) as {
+      records: Array<{ relative_path: string; content_hash: string }>;
+    };
+    expect(
+      manifest.records.find((r) => r.relative_path === name)?.content_hash,
+      `${name} inventory.json hash`,
+    ).toBe(sha256(bytes));
   }
 
   test("REG-WU-076-RC-053-RC053-a: rewritten zip and tar are recorded with their post-rewrite hash and size", () => {
     const root = tmp();
-    fs.writeFileSync(path.join(root, "pack.zip"), buildZipBuffer([{ name: "readme.txt", data: Buffer.from("hello\n") }]));
-    fs.writeFileSync(path.join(root, "pack.tar"), buildTarArchive([{ name: "readme.txt", content: "hello\n" }]));
-    const result = inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false, now: NOW });
+    fs.writeFileSync(
+      path.join(root, "pack.zip"),
+      buildZipBuffer([{ name: "readme.txt", data: Buffer.from("hello\n") }]),
+    );
+    fs.writeFileSync(
+      path.join(root, "pack.tar"),
+      buildTarArchive([{ name: "readme.txt", content: "hello\n" }]),
+    );
+    const result = inventoryTree({
+      root,
+      outDir: path.join(tmp(), "out"),
+      folderSidecars: false,
+      now: NOW,
+    });
     expect(peekZipRootMeta(path.join(root, "pack.zip"))).toContain("inspected_at:");
     expect(peekTarRootMeta(fs.readFileSync(path.join(root, "pack.tar")))).not.toBeNull();
     expectTruthful(result, root, "pack.zip");
@@ -793,8 +1019,16 @@ describe("WU-076 RC-053: the record and sidecar describe the archive bytes left 
 
   test("REG-WU-076-RC-053-RC053-b: a rewritten tar.gz is recorded with its post-rewrite hash", () => {
     const root = tmp();
-    fs.writeFileSync(path.join(root, "pack.tar.gz"), gzipTar(buildTarArchive([{ name: "readme.txt", content: "hello\n" }])));
-    const result = inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false, now: NOW });
+    fs.writeFileSync(
+      path.join(root, "pack.tar.gz"),
+      gzipTar(buildTarArchive([{ name: "readme.txt", content: "hello\n" }])),
+    );
+    const result = inventoryTree({
+      root,
+      outDir: path.join(tmp(), "out"),
+      folderSidecars: false,
+      now: NOW,
+    });
     expectTruthful(result, root, "pack.tar.gz");
   });
 
@@ -806,29 +1040,52 @@ describe("WU-076 RC-053: the record and sidecar describe the archive bytes left 
       "only.gz": Buffer.from([0x1f, 0x8b, 0x08, 0x00, 0, 0, 0, 0, 0, 3]),
       "fake.zip": Buffer.from("not a zip at all\n"),
     };
-    for (const [name, bytes] of Object.entries(held)) fs.writeFileSync(path.join(root, name), bytes);
-    const result = inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false, now: NOW });
+    for (const [name, bytes] of Object.entries(held))
+      fs.writeFileSync(path.join(root, name), bytes);
+    const result = inventoryTree({
+      root,
+      outDir: path.join(tmp(), "out"),
+      folderSidecars: false,
+      now: NOW,
+    });
     for (const [name, bytes] of Object.entries(held)) {
       expect(fs.readFileSync(path.join(root, name)), name).toEqual(bytes);
       const rec = result.records.find((r) => r.relative_path === name);
       expect(rec?.content_hash, name).toBe(sha256(bytes));
       expect(sidecarHash(path.join(root, name)), name).toBe(sha256(bytes));
-      expect(rec?.unknowns.some((u) => u.startsWith("archive_rewrite_held:")), name).toBe(true);
+      expect(
+        rec?.unknowns.some((u) => u.startsWith("archive_rewrite_held:")),
+        name,
+      ).toBe(true);
     }
   });
 
   test("REG-WU-076-RC-053-RC053-d: a rewritten archive and its sidecar converge on the second run", () => {
     const root = tmp();
     const zipPath = path.join(root, "pack.zip");
-    fs.writeFileSync(zipPath, buildZipBuffer([{ name: "readme.txt", data: Buffer.from("hello\n") }]));
-    const first = inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false, now: NOW });
+    fs.writeFileSync(
+      zipPath,
+      buildZipBuffer([{ name: "readme.txt", data: Buffer.from("hello\n") }]),
+    );
+    const first = inventoryTree({
+      root,
+      outDir: path.join(tmp(), "out"),
+      folderSidecars: false,
+      now: NOW,
+    });
     const zipAfterFirst = fs.readFileSync(zipPath);
     const sidecarAfterFirst = fs.readFileSync(`${zipPath}.l9meta.yaml`, "utf8");
-    const second = inventoryTree({ root, outDir: path.join(tmp(), "out2"), folderSidecars: false, now: NOW });
+    const second = inventoryTree({
+      root,
+      outDir: path.join(tmp(), "out2"),
+      folderSidecars: false,
+      now: NOW,
+    });
     expect(fs.readFileSync(zipPath)).toEqual(zipAfterFirst);
     expect(fs.readFileSync(`${zipPath}.l9meta.yaml`, "utf8")).toBe(sidecarAfterFirst);
-    expect(second.records.find((r) => r.relative_path === "pack.zip")?.content_hash)
-      .toBe(first.records.find((r) => r.relative_path === "pack.zip")?.content_hash);
+    expect(second.records.find((r) => r.relative_path === "pack.zip")?.content_hash).toBe(
+      first.records.find((r) => r.relative_path === "pack.zip")?.content_hash,
+    );
     expectTruthful(second, root, "pack.zip");
   });
 
@@ -838,7 +1095,12 @@ describe("WU-076 RC-053: the record and sidecar describe the archive bytes left 
     fs.mkdirSync(path.join(root, "copy"));
     fs.writeFileSync(path.join(root, "pack.zip"), zip);
     fs.writeFileSync(path.join(root, "copy", "pack.zip"), zip);
-    const result = inventoryTree({ root, outDir: path.join(tmp(), "out"), folderSidecars: false, now: NOW });
+    const result = inventoryTree({
+      root,
+      outDir: path.join(tmp(), "out"),
+      folderSidecars: false,
+      now: NOW,
+    });
     const a = fs.readFileSync(path.join(root, "pack.zip"));
     const b = fs.readFileSync(path.join(root, "copy", "pack.zip"));
     expect(sha256(a)).not.toBe(sha256(b));

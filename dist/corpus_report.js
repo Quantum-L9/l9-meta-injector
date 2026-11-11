@@ -86,7 +86,12 @@ function summaryRows(index) {
         ["physical snapshot", code(index.source.physical_snapshot_hash)],
         ["repository model packet", code(model.packet_id)],
         ["packet semantic hash", code(model.semantic_hash)],
-        ["interpretation profile", code(interpretation ? `${interpretation.profile_id}@${interpretation.profile_version}` : "not run")],
+        [
+            "interpretation profile",
+            code(interpretation
+                ? `${interpretation.profile_id}@${interpretation.profile_version}`
+                : "not run"),
+        ],
         ["corpus profile", code(`${profile.corpus_profile_id}@${profile.corpus_profile_version}`)],
         ["artifacts", `${summary.artifact_count}`],
         ["archives", `${summary.archive_count}`],
@@ -146,9 +151,7 @@ function relationSections(index) {
 function diagnosticsSections(index) {
     const counted = (rows) => rows.map((entry) => [code(entry.code), entry.severity, `${entry.count}`]);
     return [
-        ...section("## Diagnostics and Coverage Gaps", [
-            "What the observation could not establish, carried forward rather than rounded away.",
-        ], []),
+        ...section("## Diagnostics and Coverage Gaps", ["What the observation could not establish, carried forward rather than rounded away."], []),
         ...section("### Packet diagnostics", [], table(["code", "severity", "count"], counted(index.diagnostics.packet), "The packet reported no diagnostics.")),
         ...section("### Interpretation diagnostics", [], table(["code", "severity", "count"], counted(index.diagnostics.interpretation), "Interpretation reported no diagnostics.")),
         ...section("### Artifacts outside the similarity analysis", [], table(["reason", "count"], [...index.diagnostics.near_duplicate_excluded]
@@ -185,8 +188,10 @@ function semanticSections(index) {
         const out = new Map();
         for (const artifact of index.artifacts) {
             for (const candidateId of pick(byArtifact[artifact.artifact_id] ?? {
-                topic_candidate_ids: [], project_candidate_ids: [],
-                consolidation_candidate_ids: [], reasoning_candidate_ids: [],
+                topic_candidate_ids: [],
+                project_candidate_ids: [],
+                consolidation_candidate_ids: [],
+                reasoning_candidate_ids: [],
             })) {
                 const members = out.get(candidateId) ?? [];
                 members.push(artifact.source_path);
@@ -225,9 +230,7 @@ function semanticSections(index) {
             "Reasoning-eligible means spending attention on it may be useful. It does not mean the",
             "candidate is important, correct, or valuable, and this package does not adjudicate it.",
         ], table(["candidate", "members", "artifacts"], rowsFor(artifactsIn((entry) => entry.reasoning_candidate_ids)), "No candidate carries the kind of ambiguity that later reasoning could settle.")),
-        ...section("## Semantic Analysis Coverage", [
-            "What the semantic pass computed, and under which versioned profiles.",
-        ], table(["measure", "value"], [
+        ...section("## Semantic Analysis Coverage", ["What the semantic pass computed, and under which versioned profiles."], table(["measure", "value"], [
             ["pair relations scored", `${semantic.semantic_pair_count}`],
             ["topic candidates", `${semantic.topic_candidate_count}`],
             ["candidate bodies of work", `${semantic.project_candidate_count}`],
@@ -296,6 +299,9 @@ function renderCorpusReport(index) {
         ...semanticSections(index),
         ...diagnosticsSections(index),
     ];
-    return `${lines.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd()}\n`;
+    return `${lines
+        .join("\n")
+        .replace(/\n{3,}/g, "\n\n")
+        .trimEnd()}\n`;
 }
 //# sourceMappingURL=corpus_report.js.map

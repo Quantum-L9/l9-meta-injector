@@ -26,14 +26,14 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { loadRepositoryAuthority, type AuthorityLoadOptions } from "./authority";
+import { type AuthorityLoadOptions, loadRepositoryAuthority } from "./authority";
 import {
-  operationRequiresAuthority,
   type AuthorityConfig,
   type AuthorityConflict,
   type AuthorityLegacyPolicy,
   type AuthorityNotice,
   type OperationMode,
+  operationRequiresAuthority,
 } from "./operation_contracts";
 import { compareCodePoints } from "./ordering";
 
@@ -122,7 +122,8 @@ const CONTROL_PREFIXES = [
   "tools/",
 ];
 
-const SUSPICIOUS_NAME = /(?:inject|verify|write|writer|generate|sync)[-_.a-z0-9]*meta(?:data)?|meta(?:data)?[-_.a-z0-9]*(?:inject|verify|write|writer|generate|sync)/i;
+const SUSPICIOUS_NAME =
+  /(?:inject|verify|write|writer|generate|sync)[-_.a-z0-9]*meta(?:data)?|meta(?:data)?[-_.a-z0-9]*(?:inject|verify|write|writer|generate|sync)/i;
 const LEGACY_MARKERS = [
   { value: "L9_ARTIFACT_META", rule: "legacy-marker-l9-artifact-meta" },
   { value: "x-l9-meta", rule: "legacy-marker-x-l9-meta" },
@@ -136,12 +137,15 @@ const LEGACY_MARKERS = [
  * same line" and an `open(` is "a quote-`w` before the next `)`", both found with
  * forward pointers instead of an unanchored greedy pattern rescanned from every start.
  */
-const LITERAL_WRITE_SIGNAL = /writeFileSync|writeFile\s*\(|write_text\s*\(|write_bytes\s*\(|fs\.write|yaml\.safe_dump|json\.dump/gi;
+const LITERAL_WRITE_SIGNAL =
+  /writeFileSync|writeFile\s*\(|write_text\s*\(|write_bytes\s*\(|fs\.write|yaml\.safe_dump|json\.dump/gi;
 const OPEN_CALL = /open\s*\(/gi;
 const QUOTE_W = /["'][wW]/g;
 const META_WORD = /meta/i;
-const WRITER_INVOCATION = /(?:^|[\s"'`])(?:python(?:3)?\s+|node\s+|bash\s+|sh\s+)?(?:\.\/)?[^\s"'`]*(?:inject|verify)[-_]?l9[-_]?meta[^\s"'`]*/im;
-const CANONICAL_INVOCATION = /Quantum-L9\/l9-meta-injector@[0-9a-f]{40}|(?:^|[\s"'`])l9-meta-injector(?:[\s"'`/:]|$)/im;
+const WRITER_INVOCATION =
+  /(?:^|[\s"'`])(?:python(?:3)?\s+|node\s+|bash\s+|sh\s+)?(?:\.\/)?[^\s"'`]*(?:inject|verify)[-_]?l9[-_]?meta[^\s"'`]*/im;
+const CANONICAL_INVOCATION =
+  /Quantum-L9\/l9-meta-injector@[0-9a-f]{40}|(?:^|[\s"'`])l9-meta-injector(?:[\s"'`/:]|$)/im;
 
 /**
  * Names of the L9 metadata surface itself.
@@ -150,7 +154,8 @@ const CANONICAL_INVOCATION = /Quantum-L9\/l9-meta-injector@[0-9a-f]{40}|(?:^|[\s
  * discriminator that separates "this file happens to call json.dump" from "this file
  * writes competing L9 metadata".
  */
-const L9_METADATA_TOKEN = /L9_ARTIFACT_META|x-l9-meta|L9_META|l9:meta:start|l9meta|l9[-_]meta|\.l9\/metadata-index/i;
+const L9_METADATA_TOKEN =
+  /L9_ARTIFACT_META|x-l9-meta|L9_META|l9:meta:start|l9meta|l9[-_]meta|\.l9\/metadata-index/i;
 /** A filename that itself claims to be an L9 metadata writer. */
 const L9_METADATA_FILENAME = /l9[-_.]?meta/i;
 
@@ -169,7 +174,13 @@ function excerptAt(content: string, index: number): string {
   return content.slice(start, end).trim().slice(0, 240);
 }
 
-function evidence(pathName: string, kind: AuthorityEvidenceKind, rule: string, content: string, index: number): AuthorityEvidence {
+function evidence(
+  pathName: string,
+  kind: AuthorityEvidenceKind,
+  rule: string,
+  content: string,
+  index: number,
+): AuthorityEvidence {
   return {
     path: pathName,
     kind,
@@ -197,7 +208,9 @@ function isCandidate(relativePath: string): boolean {
  */
 function isControlSurfaceLink(relativePath: string): boolean {
   if (isCandidate(relativePath)) return true;
-  return CONTROL_PREFIXES.some((prefix) => prefix.slice(0, -1) === relativePath || prefix.startsWith(`${relativePath}/`));
+  return CONTROL_PREFIXES.some(
+    (prefix) => prefix.slice(0, -1) === relativePath || prefix.startsWith(`${relativePath}/`),
+  );
 }
 
 interface WalkResult {
@@ -220,12 +233,18 @@ const AUTHORITY_FILE_NAME = "meta-authority.yaml";
  * exception is VCS internals and dependency install trees, which a repository does not
  * author and whose walk cost is unbounded.
  */
-const NESTED_AUTHORITY_SKIPPED_DIRECTORIES = new Set([".git", "node_modules", ".venv", "__pycache__"]);
+const NESTED_AUTHORITY_SKIPPED_DIRECTORIES = new Set([
+  ".git",
+  "node_modules",
+  ".venv",
+  "__pycache__",
+]);
 
 function nestedAuthorityConflict(relativePath: string): AuthorityConflict {
   return {
     code: "META_AUTHORITY_CONFLICT",
-    message: "nested authority declaration competes with the root .l9/meta-authority.yaml; one repository has one authority",
+    message:
+      "nested authority declaration competes with the root .l9/meta-authority.yaml; one repository has one authority",
     path: relativePath,
   };
 }
@@ -253,16 +272,27 @@ function walkFiles(root: string, excluded: Set<string>): WalkResult {
       entries = fs.readdirSync(directory, { withFileTypes: true });
     } catch (error) {
       const relative = toPosix(path.relative(root, directory)) || ".";
-      gaps.push(scanGap(relative, `unable to enumerate path during authority scan: ${error instanceof Error ? error.message : String(error)}`));
+      gaps.push(
+        scanGap(
+          relative,
+          `unable to enumerate path during authority scan: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
       return;
     }
     for (const entry of entries) {
       const full = path.join(directory, entry.name);
       const relative = toPosix(path.relative(root, full));
-      const nestedAuthorityDirectory = entry.name === AUTHORITY_DIRECTORY_NAME && directory !== root;
+      const nestedAuthorityDirectory =
+        entry.name === AUTHORITY_DIRECTORY_NAME && directory !== root;
       if (entry.isSymbolicLink()) {
         if (nestedAuthorityDirectory) {
-          gaps.push(scanGap(relative, "authority scan does not follow a symlinked nested .l9; its declaration cannot be inspected"));
+          gaps.push(
+            scanGap(
+              relative,
+              "authority scan does not follow a symlinked nested .l9; its declaration cannot be inspected",
+            ),
+          );
         } else if (collect && isControlSurfaceLink(relative)) {
           gaps.push(scanGap(relative, "authority scan does not follow control-surface symlinks"));
         }
@@ -316,14 +346,20 @@ export function dispositionForEvidence(
 }
 
 function evidenceDetail(item: AuthorityEvidence): string[] {
-  return [`${item.rule}${item.line ? ` at line ${item.line}` : ""}`, item.excerpt ?? ""].filter(Boolean);
+  return [`${item.rule}${item.line ? ` at line ${item.line}` : ""}`, item.excerpt ?? ""].filter(
+    Boolean,
+  );
 }
 
-function conflictFor(item: AuthorityEvidence, policy: AuthorityLegacyPolicy | undefined): AuthorityConflict | null {
+function conflictFor(
+  item: AuthorityEvidence,
+  policy: AuthorityLegacyPolicy | undefined,
+): AuthorityConflict | null {
   if (dispositionForEvidence(item.kind, policy) !== "conflict") return null;
-  const message = item.kind === "writer_invocation"
-    ? "active control surface invokes a competing metadata writer"
-    : `competing metadata writer artifact detected under legacy_writers: ${policy ?? "unresolved"}`;
+  const message =
+    item.kind === "writer_invocation"
+      ? "active control surface invokes a competing metadata writer"
+      : `competing metadata writer artifact detected under legacy_writers: ${policy ?? "unresolved"}`;
   return {
     code: "META_AUTHORITY_CONFLICT",
     message,
@@ -332,12 +368,16 @@ function conflictFor(item: AuthorityEvidence, policy: AuthorityLegacyPolicy | un
   };
 }
 
-function noticeFor(item: AuthorityEvidence, policy: AuthorityLegacyPolicy | undefined): AuthorityNotice | null {
+function noticeFor(
+  item: AuthorityEvidence,
+  policy: AuthorityLegacyPolicy | undefined,
+): AuthorityNotice | null {
   const disposition = dispositionForEvidence(item.kind, policy);
   if (disposition === "migration") {
     return {
       code: "META_LEGACY_WRITER_MIGRATION",
-      message: "dormant competing metadata writer artifact retained under legacy_writers: migration_only",
+      message:
+        "dormant competing metadata writer artifact retained under legacy_writers: migration_only",
       path: item.path,
       evidence: evidenceDetail(item),
     };
@@ -345,7 +385,8 @@ function noticeFor(item: AuthorityEvidence, policy: AuthorityLegacyPolicy | unde
   if (item.kind === "legacy_marker") {
     return {
       code: "META_LEGACY_METADATA_PRESENT",
-      message: "historical L9 metadata marker present; no evidence that this surface writes L9 metadata",
+      message:
+        "historical L9 metadata marker present; no evidence that this surface writes L9 metadata",
       path: item.path,
       evidence: evidenceDetail(item),
     };
@@ -357,28 +398,49 @@ function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-type ControlSurfaceRead = { relative: string; content: string } | { relative: string; gap: AuthorityConflict };
+type ControlSurfaceRead =
+  | { relative: string; content: string }
+  | { relative: string; gap: AuthorityConflict };
 
 /** Read one control surface, returning its text or a scan gap explaining why it was skipped. */
-function readControlSurface(filePath: string, repositoryRoot: string, maxFileBytes: number): ControlSurfaceRead {
+function readControlSurface(
+  filePath: string,
+  repositoryRoot: string,
+  maxFileBytes: number,
+): ControlSurfaceRead {
   const relative = toPosix(path.relative(repositoryRoot, filePath));
   let stat: fs.Stats;
   try {
     stat = fs.statSync(filePath);
   } catch (error) {
-    return { relative, gap: scanGap(relative, `unable to stat control surface: ${describeError(error)}`) };
+    return {
+      relative,
+      gap: scanGap(relative, `unable to stat control surface: ${describeError(error)}`),
+    };
   }
   if (stat.size > maxFileBytes) {
-    return { relative, gap: scanGap(relative, `control surface exceeds authority-scan limit of ${maxFileBytes} bytes`) };
+    return {
+      relative,
+      gap: scanGap(
+        relative,
+        `control surface exceeds authority-scan limit of ${maxFileBytes} bytes`,
+      ),
+    };
   }
   let content: string;
   try {
     content = fs.readFileSync(filePath, "utf8");
   } catch (error) {
-    return { relative, gap: scanGap(relative, `unable to read control surface: ${describeError(error)}`) };
+    return {
+      relative,
+      gap: scanGap(relative, `unable to read control surface: ${describeError(error)}`),
+    };
   }
   if (content.includes("\u0000") || content.includes("\uFFFD")) {
-    return { relative, gap: scanGap(relative, "control surface is binary or not valid UTF-8 text") };
+    return {
+      relative,
+      gap: scanGap(relative, "control surface is binary or not valid UTF-8 text"),
+    };
   }
   return { relative, content };
 }
@@ -394,7 +456,8 @@ function legacyMarkerEvidence(relative: string, content: string): AuthorityEvide
   for (const marker of LEGACY_MARKERS) {
     if (marker.value === "l9:meta:start") continue; // the canonical block marker, not a legacy one
     const markerIndex = content.indexOf(marker.value);
-    if (markerIndex !== -1) found.push(evidence(relative, "legacy_marker", marker.rule, content, markerIndex));
+    if (markerIndex !== -1)
+      found.push(evidence(relative, "legacy_marker", marker.rule, content, markerIndex));
   }
   return found;
 }
@@ -402,7 +465,8 @@ function legacyMarkerEvidence(relative: string, content: string): AuthorityEvide
 /** Start offset of every line, so a position maps to its line without rescanning. */
 function lineStarts(content: string): number[] {
   const starts = [0];
-  for (let index = content.indexOf("\n"); index !== -1; index = content.indexOf("\n", index + 1)) starts.push(index + 1);
+  for (let index = content.indexOf("\n"); index !== -1; index = content.indexOf("\n", index + 1))
+    starts.push(index + 1);
   return starts;
 }
 
@@ -445,12 +509,14 @@ function writeSignalLines(content: string, starts: readonly number[]): Map<numbe
     // the content once.
     if (nextQuoteW !== -1 && nextQuoteW < after) nextQuoteW = nextMatch(quoteW, content, after);
     if (nextClose !== -1 && nextClose < after) nextClose = content.indexOf(")", after);
-    if (nextQuoteW !== -1 && (nextClose === -1 || nextQuoteW < nextClose)) positions.push(match.index);
+    if (nextQuoteW !== -1 && (nextClose === -1 || nextQuoteW < nextClose))
+      positions.push(match.index);
   }
   for (let line = 0; line < starts.length; line++) {
     const text = lineText(content, starts, line);
     const redirect = text.indexOf(">");
-    if (redirect !== -1 && META_WORD.test(text.slice(redirect + 1))) positions.push(starts[line] + redirect);
+    if (redirect !== -1 && META_WORD.test(text.slice(redirect + 1)))
+      positions.push(starts[line] + redirect);
   }
   positions.sort((a, b) => a - b);
   let line = 0;
@@ -470,7 +536,11 @@ function writeSignalLines(content: string, starts: readonly number[]): Map<numbe
  * qualify, which is exactly the historical-marker false positive this repairs. Each line
  * carrying a signal is judged once.
  */
-function findMetadataWriteIndex(relative: string, content: string, starts: readonly number[]): number | null {
+function findMetadataWriteIndex(
+  relative: string,
+  content: string,
+  starts: readonly number[],
+): number | null {
   const signals = writeSignalLines(content, starts);
   if (signals.size === 0) return null;
   for (const [line, index] of signals) {
@@ -482,7 +552,8 @@ function findMetadataWriteIndex(relative: string, content: string, starts: reado
     if (L9_METADATA_TOKEN.test(text)) return index;
   }
   const basename = path.posix.basename(relative);
-  if (SUSPICIOUS_NAME.test(basename) && L9_METADATA_FILENAME.test(basename)) return signals.values().next().value ?? null;
+  if (SUSPICIOUS_NAME.test(basename) && L9_METADATA_FILENAME.test(basename))
+    return signals.values().next().value ?? null;
   return null;
 }
 
@@ -509,21 +580,36 @@ function collectSurfaceEvidence(relative: string, content: string): AuthorityEvi
   const starts = lineStarts(content);
   const canonicalMatch = CANONICAL_INVOCATION.exec(content);
   if (canonicalMatch?.index !== undefined) {
-    found.push(evidence(relative, "canonical_invocation", "canonical-l9-meta-injector-invocation", content, canonicalMatch.index));
+    found.push(
+      evidence(
+        relative,
+        "canonical_invocation",
+        "canonical-l9-meta-injector-invocation",
+        content,
+        canonicalMatch.index,
+      ),
+    );
   }
   const invocationIndex = findWriterInvocationIndex(content, starts);
   if (invocationIndex !== null) {
-    found.push(evidence(relative, "writer_invocation", "legacy-writer-invocation", content, invocationIndex));
+    found.push(
+      evidence(relative, "writer_invocation", "legacy-writer-invocation", content, invocationIndex),
+    );
   }
   const metadataWriteIndex = findMetadataWriteIndex(relative, content, starts);
   if (metadataWriteIndex !== null) {
-    found.push(evidence(relative, "writer_script", "l9-metadata-write-signal", content, metadataWriteIndex));
+    found.push(
+      evidence(relative, "writer_script", "l9-metadata-write-signal", content, metadataWriteIndex),
+    );
   }
   found.push(...legacyMarkerEvidence(relative, content));
   return found;
 }
 
-export function scanRepositoryAuthority(root: string, options: AuthorityScanOptions = {}): AuthorityScanResult {
+export function scanRepositoryAuthority(
+  root: string,
+  options: AuthorityScanOptions = {},
+): AuthorityScanResult {
   const repositoryRoot = path.resolve(root);
   const excluded = new Set(DEFAULT_EXCLUDED_DIRECTORIES);
   for (const item of options.excludedDirectoryNames ?? []) excluded.add(item);
@@ -544,13 +630,18 @@ export function scanRepositoryAuthority(root: string, options: AuthorityScanOpti
     found.push(...collectSurfaceEvidence(surface.relative, surface.content));
   }
 
-  const deduped = [...new Map(found.map((item) => [`${item.path}:${item.kind}:${item.rule}`, item])).values()]
-    .sort((a, b) => compareCodePoints(`${a.path}:${a.kind}:${a.rule}`, `${b.path}:${b.kind}:${b.rule}`));
+  const deduped = [
+    ...new Map(found.map((item) => [`${item.path}:${item.kind}:${item.rule}`, item])).values(),
+  ].sort((a, b) =>
+    compareCodePoints(`${a.path}:${a.kind}:${a.rule}`, `${b.path}:${b.kind}:${b.rule}`),
+  );
   const policy = options.legacyPolicy;
   const conflicts = [
     ...scanGaps,
     ...walked.nestedAuthorities.map(nestedAuthorityConflict),
-    ...deduped.map((item) => conflictFor(item, policy)).filter((item): item is AuthorityConflict => item !== null),
+    ...deduped
+      .map((item) => conflictFor(item, policy))
+      .filter((item): item is AuthorityConflict => item !== null),
   ];
   const notices = deduped
     .map((item) => noticeFor(item, policy))
@@ -569,7 +660,10 @@ export function inspectRepositoryAuthority(
   // the repository's own contract rather than by a second, independent rule set. An
   // unresolved authority leaves the policy undefined and the scan fails closed.
   const legacyPolicy = loaded.authority?.legacy_writers ?? options.legacyPolicy;
-  const scanned = scanRepositoryAuthority(repositoryRoot, { ...options, ...(legacyPolicy !== undefined ? { legacyPolicy } : {}) });
+  const scanned = scanRepositoryAuthority(repositoryRoot, {
+    ...options,
+    ...(legacyPolicy !== undefined ? { legacyPolicy } : {}),
+  });
   const conflicts = [...loaded.conflicts, ...scanned.conflicts];
   return {
     root: repositoryRoot,
@@ -591,12 +685,17 @@ export function assertRepositoryAuthorityForOperation(
 ): AuthorityConfig | undefined {
   if (!operationRequiresAuthority(mode)) return inspection.authority;
   if (!inspection.authority) {
-    const codes = inspection.conflicts.map((item) => item.code).join(", ") || "META_AUTHORITY_FILE_MISSING";
+    const codes =
+      inspection.conflicts.map((item) => item.code).join(", ") || "META_AUTHORITY_FILE_MISSING";
     throw new Error(`operation mode '${mode}' requires resolved repository authority (${codes})`);
   }
   if (inspection.conflicts.length > 0) {
-    const summary = inspection.conflicts.map((item) => `${item.code}:${item.path ?? "<repository>"}`).join(", ");
-    throw new Error(`operation mode '${mode}' blocked by repository metadata authority conflict: ${summary}`);
+    const summary = inspection.conflicts
+      .map((item) => `${item.code}:${item.path ?? "<repository>"}`)
+      .join(", ");
+    throw new Error(
+      `operation mode '${mode}' blocked by repository metadata authority conflict: ${summary}`,
+    );
   }
   return inspection.authority;
 }

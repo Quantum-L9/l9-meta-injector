@@ -1,32 +1,100 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.semanticBindingErrors = exports.resolveOperationMode = exports.operationRequiresAuthority = exports.isSupportedAuthoritySchema = exports.isSemanticFoundationBinding = exports.isProductDeclaration = exports.isAuthorityConfig = exports.assertAuthorityForOperation = exports.REQUIRED_SEMANTIC_LEDGERS = exports.OPERATION_MODES = exports.META_AUTHORITY_SCHEMA_V2 = exports.META_AUTHORITY_SCHEMA = exports.LEGACY_OPERATION_ALIASES = exports.META_V3_PLANES = exports.META_V3_SCHEMA_VERSION = exports.PRIMITIVE_TAXONOMY = exports.UNKNOWN = void 0;
+exports.semanticBindingErrors = exports.resolveOperationMode = exports.REQUIRED_SEMANTIC_LEDGERS = exports.operationRequiresAuthority = exports.OPERATION_MODES = exports.META_AUTHORITY_SCHEMA_V2 = exports.META_AUTHORITY_SCHEMA = exports.LEGACY_OPERATION_ALIASES = exports.isSupportedAuthoritySchema = exports.isSemanticFoundationBinding = exports.isProductDeclaration = exports.isAuthorityConfig = exports.assertAuthorityForOperation = exports.META_V3_PLANES = exports.META_V3_SCHEMA_VERSION = exports.PRIMITIVE_TAXONOMY = exports.UNKNOWN = void 0;
 exports.asRecord = asRecord;
 exports.normalizeMetaRecord = normalizeMetaRecord;
 exports.coerceNormalizedMeta = coerceNormalizedMeta;
 exports.isPromptMeta = isPromptMeta;
 exports.UNKNOWN = "Unknown";
 exports.PRIMITIVE_TAXONOMY = {
-    skill: { type: "skill", meaning: "atomic capability", callable: true, mcpPrimitive: "tool", injectable: true },
-    playbook: { type: "playbook", meaning: "multi-step orchestration", callable: true, mcpPrimitive: "tool", injectable: true },
-    kernel: { type: "kernel", meaning: "sandboxed execution or rule set", callable: true, mcpPrimitive: "tool", injectable: true },
-    context: { type: "context", meaning: "retrievable knowledge", callable: true, mcpPrimitive: "resource", injectable: true },
-    prompt: { type: "prompt", meaning: "parameterized prompt contract", callable: true, mcpPrimitive: "prompt", injectable: true },
-    doctrine: { type: "doctrine", meaning: "governance artifact", callable: false, mcpPrimitive: "none", injectable: true },
-    test: { type: "test", meaning: "test artifact", callable: false, mcpPrimitive: "none", injectable: false },
-    script: { type: "script", meaning: "script artifact", callable: false, mcpPrimitive: "none", injectable: false },
-    source: { type: "source", meaning: "source or config file", callable: false, mcpPrimitive: "resource", injectable: true },
-    unknown: { type: "unknown", meaning: "unclassified", callable: false, mcpPrimitive: "none", injectable: false },
+    skill: {
+        type: "skill",
+        meaning: "atomic capability",
+        callable: true,
+        mcpPrimitive: "tool",
+        injectable: true,
+    },
+    playbook: {
+        type: "playbook",
+        meaning: "multi-step orchestration",
+        callable: true,
+        mcpPrimitive: "tool",
+        injectable: true,
+    },
+    kernel: {
+        type: "kernel",
+        meaning: "sandboxed execution or rule set",
+        callable: true,
+        mcpPrimitive: "tool",
+        injectable: true,
+    },
+    context: {
+        type: "context",
+        meaning: "retrievable knowledge",
+        callable: true,
+        mcpPrimitive: "resource",
+        injectable: true,
+    },
+    prompt: {
+        type: "prompt",
+        meaning: "parameterized prompt contract",
+        callable: true,
+        mcpPrimitive: "prompt",
+        injectable: true,
+    },
+    doctrine: {
+        type: "doctrine",
+        meaning: "governance artifact",
+        callable: false,
+        mcpPrimitive: "none",
+        injectable: true,
+    },
+    test: {
+        type: "test",
+        meaning: "test artifact",
+        callable: false,
+        mcpPrimitive: "none",
+        injectable: false,
+    },
+    script: {
+        type: "script",
+        meaning: "script artifact",
+        callable: false,
+        mcpPrimitive: "none",
+        injectable: false,
+    },
+    source: {
+        type: "source",
+        meaning: "source or config file",
+        callable: false,
+        mcpPrimitive: "resource",
+        injectable: true,
+    },
+    unknown: {
+        type: "unknown",
+        meaning: "unclassified",
+        callable: false,
+        mcpPrimitive: "none",
+        injectable: false,
+    },
 };
 // The identity block every NormalizedMeta variant shares, with the runtime type
 // each field must carry. Single-sourced here so coerceNormalizedMeta and the
 // interfaces above cannot drift apart.
 const BASE_HEADER_TYPES = [
-    ["id", "string"], ["title", "string"], ["artifact_type", "string"],
-    ["mcp_primitive", "string"], ["callable", "boolean"], ["retrievable", "boolean"],
-    ["injectable", "boolean"], ["namespace", "string"], ["sharing_scope", "string"],
-    ["source_path", "string"], ["content_hash", "string"],
-    ["token_cost_estimate", "number"], ["authority", "string"],
+    ["id", "string"],
+    ["title", "string"],
+    ["artifact_type", "string"],
+    ["mcp_primitive", "string"],
+    ["callable", "boolean"],
+    ["retrievable", "boolean"],
+    ["injectable", "boolean"],
+    ["namespace", "string"],
+    ["sharing_scope", "string"],
+    ["source_path", "string"],
+    ["content_hash", "string"],
+    ["token_cost_estimate", "number"],
+    ["authority", "string"],
     ["created_or_detected_at", "string"],
 ];
 /**
@@ -109,21 +177,22 @@ exports.META_V3_PLANES = [
 // do NOT redefine locally in compiler.ts, pipeline.ts, or verify.ts.
 // ---------------------------------------------------------------------------
 function isPromptMeta(m) {
-    return typeof m === "object" && m !== null &&
-        m.artifact_type === "prompt";
+    return (typeof m === "object" &&
+        m !== null &&
+        m.artifact_type === "prompt");
 }
 var operation_contracts_1 = require("./operation_contracts");
-Object.defineProperty(exports, "LEGACY_OPERATION_ALIASES", { enumerable: true, get: function () { return operation_contracts_1.LEGACY_OPERATION_ALIASES; } });
-Object.defineProperty(exports, "META_AUTHORITY_SCHEMA", { enumerable: true, get: function () { return operation_contracts_1.META_AUTHORITY_SCHEMA; } });
-Object.defineProperty(exports, "META_AUTHORITY_SCHEMA_V2", { enumerable: true, get: function () { return operation_contracts_1.META_AUTHORITY_SCHEMA_V2; } });
-Object.defineProperty(exports, "OPERATION_MODES", { enumerable: true, get: function () { return operation_contracts_1.OPERATION_MODES; } });
-Object.defineProperty(exports, "REQUIRED_SEMANTIC_LEDGERS", { enumerable: true, get: function () { return operation_contracts_1.REQUIRED_SEMANTIC_LEDGERS; } });
 Object.defineProperty(exports, "assertAuthorityForOperation", { enumerable: true, get: function () { return operation_contracts_1.assertAuthorityForOperation; } });
 Object.defineProperty(exports, "isAuthorityConfig", { enumerable: true, get: function () { return operation_contracts_1.isAuthorityConfig; } });
 Object.defineProperty(exports, "isProductDeclaration", { enumerable: true, get: function () { return operation_contracts_1.isProductDeclaration; } });
 Object.defineProperty(exports, "isSemanticFoundationBinding", { enumerable: true, get: function () { return operation_contracts_1.isSemanticFoundationBinding; } });
 Object.defineProperty(exports, "isSupportedAuthoritySchema", { enumerable: true, get: function () { return operation_contracts_1.isSupportedAuthoritySchema; } });
+Object.defineProperty(exports, "LEGACY_OPERATION_ALIASES", { enumerable: true, get: function () { return operation_contracts_1.LEGACY_OPERATION_ALIASES; } });
+Object.defineProperty(exports, "META_AUTHORITY_SCHEMA", { enumerable: true, get: function () { return operation_contracts_1.META_AUTHORITY_SCHEMA; } });
+Object.defineProperty(exports, "META_AUTHORITY_SCHEMA_V2", { enumerable: true, get: function () { return operation_contracts_1.META_AUTHORITY_SCHEMA_V2; } });
+Object.defineProperty(exports, "OPERATION_MODES", { enumerable: true, get: function () { return operation_contracts_1.OPERATION_MODES; } });
 Object.defineProperty(exports, "operationRequiresAuthority", { enumerable: true, get: function () { return operation_contracts_1.operationRequiresAuthority; } });
+Object.defineProperty(exports, "REQUIRED_SEMANTIC_LEDGERS", { enumerable: true, get: function () { return operation_contracts_1.REQUIRED_SEMANTIC_LEDGERS; } });
 Object.defineProperty(exports, "resolveOperationMode", { enumerable: true, get: function () { return operation_contracts_1.resolveOperationMode; } });
 Object.defineProperty(exports, "semanticBindingErrors", { enumerable: true, get: function () { return operation_contracts_1.semanticBindingErrors; } });
 //# sourceMappingURL=schema.js.map

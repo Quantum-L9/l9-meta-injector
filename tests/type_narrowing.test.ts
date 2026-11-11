@@ -5,10 +5,19 @@ import { asRecord, coerceNormalizedMeta, NormalizedMeta } from "../src/schema";
 
 function fullHeader(): Record<string, unknown> {
   return {
-    id: "l9.source.x", title: "X", artifact_type: "source",
-    mcp_primitive: "resource", callable: false, retrievable: true, injectable: true,
-    namespace: "l9", sharing_scope: "agnostic", source_path: "a/x.ts",
-    content_hash: "abc", token_cost_estimate: 0, authority: "auto",
+    id: "l9.source.x",
+    title: "X",
+    artifact_type: "source",
+    mcp_primitive: "resource",
+    callable: false,
+    retrievable: true,
+    injectable: true,
+    namespace: "l9",
+    sharing_scope: "agnostic",
+    source_path: "a/x.ts",
+    content_hash: "abc",
+    token_cost_estimate: 0,
+    authority: "auto",
     created_or_detected_at: "2026-07-19",
   };
 }

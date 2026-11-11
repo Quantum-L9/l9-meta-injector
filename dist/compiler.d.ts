@@ -1,4 +1,4 @@
-import { InjectionRecord, PromptMeta, ExecutableRetrievalMeta } from "./schema";
+import { ExecutableRetrievalMeta, InjectionRecord, PromptMeta } from "./schema";
 export declare function buildDedupEntries(records: InjectionRecord[], prefixLen: number, bodies?: Map<string, string>): {
     id: string;
     sourcePath: string;

@@ -6,13 +6,13 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
+import { withLocalSourceModel } from "../src/local_source_model";
 import {
   observeRepositoryModel,
+  type RepositoryModelPacket,
   repositoryModelArtifactId,
   validateRepositoryModelPacket,
-  type RepositoryModelPacket,
 } from "../src/repository_model";
-import { withLocalSourceModel } from "../src/local_source_model";
 import { writeRawZip } from "./helpers/zip_fixtures";
 
 const REPO = path.resolve(__dirname, "..");
@@ -43,11 +43,16 @@ function observe(root: string, name = "fixture"): RepositoryModelPacket {
   });
 }
 
-function hasUnsupported(packet: RepositoryModelPacket, field: string, sourcePath?: string): boolean {
+function hasUnsupported(
+  packet: RepositoryModelPacket,
+  field: string,
+  sourcePath?: string,
+): boolean {
   return packet.payload.diagnostics.some(
-    (d) => d.code === "unsupported-by-evidence"
-      && d.details?.field === field
-      && (sourcePath === undefined || d.details?.source_path === sourcePath),
+    (d) =>
+      d.code === "unsupported-by-evidence" &&
+      d.details?.field === field &&
+      (sourcePath === undefined || d.details?.source_path === sourcePath),
   );
 }
 
@@ -69,10 +74,13 @@ describe("WU-029 RC-033: repository-level facts are root-anchored", () => {
     const repository = packet.payload.repositories[0];
     expect(repository.package_managers).toEqual(["uv"]);
 
-    const dependencies = packet.payload.assertions.filter((a) => a.predicate === "package.dependency");
+    const dependencies = packet.payload.assertions.filter(
+      (a) => a.predicate === "package.dependency",
+    );
     expect(dependencies.filter((a) => a.subject_id === repository.repository_id)).toEqual([]);
     const fixtureArtifact = repositoryModelArtifactId(
-      repository.repository_id, "tests/fixtures/js-app/package.json",
+      repository.repository_id,
+      "tests/fixtures/js-app/package.json",
     );
     for (const claim of dependencies) expect(claim.subject_id).toBe(fixtureArtifact);
     // The nested claim is emitted, filed against its own file.
@@ -84,7 +92,8 @@ describe("WU-029 RC-033: repository-level facts are root-anchored", () => {
 
   it("REG-WU-029-RC-033-b: a root manifest still declares the repository's dependencies", () => {
     const root = materialize({
-      "package.json": '{\n  "name": "deps-repo",\n  "dependencies": {\n    "express": "^4.0.0"\n  }\n}\n',
+      "package.json":
+        '{\n  "name": "deps-repo",\n  "dependencies": {\n    "express": "^4.0.0"\n  }\n}\n',
     });
     const packet = observe(root, "deps-repo");
     const claim = packet.payload.assertions.find((a) => a.predicate === "package.dependency");
@@ -115,7 +124,11 @@ describe("WU-029 RC-033: repository-level facts are root-anchored", () => {
       "adr-002-root.md": "# ADR-002\n",
     });
     const repository = observe(root).payload.repositories[0];
-    expect(repository.governance_refs).toEqual([".github/CODEOWNERS", "CODE_OF_CONDUCT.md", "docs/CODEOWNERS"]);
+    expect(repository.governance_refs).toEqual([
+      ".github/CODEOWNERS",
+      "CODE_OF_CONDUCT.md",
+      "docs/CODEOWNERS",
+    ]);
     expect(repository.adr_refs).toEqual(["adr-002-root.md", "docs/decisions/adr-001.md"]);
   });
 
@@ -134,8 +147,12 @@ describe("WU-029 RC-033: repository-level facts are root-anchored", () => {
     ]) {
       expect(String(value)).not.toMatch(/^fixtures\//);
     }
-    expect(repository.governance_refs).not.toContain("fixtures/repository-model/sample-repo/CODEOWNERS");
-    expect(repository.adr_refs).not.toContain("fixtures/repository-model/sample-repo/docs/decisions/adr-001-example.md");
+    expect(repository.governance_refs).not.toContain(
+      "fixtures/repository-model/sample-repo/CODEOWNERS",
+    );
+    expect(repository.adr_refs).not.toContain(
+      "fixtures/repository-model/sample-repo/docs/decisions/adr-001-example.md",
+    );
     // The root package.json alone does not name npm; package-lock.json does.
     expect(repository.package_managers).toEqual(["npm"]);
     expect(evidencePathsFor(packet, "package_managers")).toEqual(["package-lock.json"]);
@@ -157,8 +174,9 @@ describe("WU-029 RC-033: repository-level facts are root-anchored", () => {
     const repositoryId = packet.payload.repositories[0].repository_id;
     const byPath = new Map(statuses.map((a) => [a.source_path, a.subject_id]));
     expect(byPath.get("README.md")).toBe(repositoryId);
-    expect(byPath.get("Bundle.zip!/README.md"))
-      .toBe(repositoryModelArtifactId(repositoryId, "Bundle.zip!/README.md"));
+    expect(byPath.get("Bundle.zip!/README.md")).toBe(
+      repositoryModelArtifactId(repositoryId, "Bundle.zip!/README.md"),
+    );
     expect(validateRepositoryModelPacket(packet).status).toBe("passed");
   });
 });
@@ -171,9 +189,14 @@ describe("WU-029 RC-034: package.json is a shared manifest", () => {
     });
     const packet = observe(root);
     expect(packet.payload.repositories[0].package_managers).toEqual(["pnpm"]);
-    expect(packet.payload.evidence.some(
-      (e) => e.field === "package_managers" && JSON.stringify(e.value).includes("npm") && !JSON.stringify(e.value).includes("pnpm"),
-    )).toBe(false);
+    expect(
+      packet.payload.evidence.some(
+        (e) =>
+          e.field === "package_managers" &&
+          JSON.stringify(e.value).includes("npm") &&
+          !JSON.stringify(e.value).includes("pnpm"),
+      ),
+    ).toBe(false);
     expect(evidencePathsFor(packet, "package_managers")).toEqual(["pnpm-lock.yaml"]);
   });
 
@@ -199,9 +222,13 @@ describe("WU-029 RC-034: package.json is a shared manifest", () => {
     const alone = observe(materialize({ "pyproject.toml": '[project]\nname = "svc"\n' }));
     expect(alone.payload.repositories[0].package_managers).toEqual([]);
     expect(hasUnsupported(alone, "package_managers", "pyproject.toml")).toBe(true);
-    const poetry = observe(materialize({ "pyproject.toml": '[tool.poetry]\nname = "svc"\n', "poetry.lock": "#\n" }));
+    const poetry = observe(
+      materialize({ "pyproject.toml": '[tool.poetry]\nname = "svc"\n', "poetry.lock": "#\n" }),
+    );
     expect(poetry.payload.repositories[0].package_managers).toEqual(["poetry"]);
-    const uv = observe(materialize({ "pyproject.toml": '[project]\nname = "svc"\n', "uv.lock": "version = 1\n" }));
+    const uv = observe(
+      materialize({ "pyproject.toml": '[project]\nname = "svc"\n', "uv.lock": "version = 1\n" }),
+    );
     expect(uv.payload.repositories[0].package_managers).toEqual(["uv"]);
   });
 });
@@ -212,7 +239,11 @@ describe("WU-078 (ADR-078): the observation omits what git ignores, never what g
   const pnpmLock = "lockfileVersion: '9.0'\n";
 
   function git(root: string, ...args: string[]): void {
-    const result = spawnSync("git", ["-c", "user.email=t@example.invalid", "-c", "user.name=t", ...args], { cwd: root, encoding: "utf8" });
+    const result = spawnSync(
+      "git",
+      ["-c", "user.email=t@example.invalid", "-c", "user.name=t", ...args],
+      { cwd: root, encoding: "utf8" },
+    );
     if (result.status !== 0) throw new Error(`git ${args.join(" ")}: ${result.stderr}`);
   }
   /** A git work tree with `tracked` committed (force-added, so ignored-but-tracked is possible). */
@@ -229,7 +260,12 @@ describe("WU-078 (ADR-078): the observation omits what git ignores, never what g
 
   it("REG-WU-078-a: an untracked, git-ignored root lockfile is not a repository fact", () => {
     const root = repository(
-      { "package.json": manifest, "package-lock.json": npmLock, "pnpm-lock.yaml": pnpmLock, ".gitignore": "pnpm-lock.yaml\n" },
+      {
+        "package.json": manifest,
+        "package-lock.json": npmLock,
+        "pnpm-lock.yaml": pnpmLock,
+        ".gitignore": "pnpm-lock.yaml\n",
+      },
       ["package.json", "package-lock.json", ".gitignore"],
     );
     const packet = observe(root);
@@ -240,7 +276,12 @@ describe("WU-078 (ADR-078): the observation omits what git ignores, never what g
 
   it("REG-WU-078-b: the same lockfile, not ignored, is still reported", () => {
     const root = repository(
-      { "package.json": manifest, "package-lock.json": npmLock, "pnpm-lock.yaml": pnpmLock, ".gitignore": "node_modules/\n" },
+      {
+        "package.json": manifest,
+        "package-lock.json": npmLock,
+        "pnpm-lock.yaml": pnpmLock,
+        ".gitignore": "node_modules/\n",
+      },
       ["package.json", "package-lock.json", ".gitignore"],
     );
     expect(managers(root)).toEqual(["npm", "pnpm"]);
@@ -248,14 +289,21 @@ describe("WU-078 (ADR-078): the observation omits what git ignores, never what g
 
   it("REG-WU-078-c: a tracked file that matches .gitignore stays a repository fact", () => {
     const root = repository(
-      { "package.json": manifest, "package-lock.json": npmLock, "pnpm-lock.yaml": pnpmLock, ".gitignore": "pnpm-lock.yaml\n" },
+      {
+        "package.json": manifest,
+        "package-lock.json": npmLock,
+        "pnpm-lock.yaml": pnpmLock,
+        ".gitignore": "pnpm-lock.yaml\n",
+      },
       ["package.json", "package-lock.json", "pnpm-lock.yaml", ".gitignore"],
     );
     expect(managers(root)).toEqual(["npm", "pnpm"]);
   });
 
   it("REG-WU-078-d: .git/info/exclude and nested .gitignore apply, and .l9metaignore negation keeps the last word", () => {
-    const excluded = repository({ "package.json": manifest, "yarn.lock": "# yarn\n" }, ["package.json"]);
+    const excluded = repository({ "package.json": manifest, "yarn.lock": "# yarn\n" }, [
+      "package.json",
+    ]);
     fs.writeFileSync(path.join(excluded, ".git", "info", "exclude"), "yarn.lock\n", "utf8");
     expect(managers(excluded)).toEqual([]);
 
@@ -266,14 +314,24 @@ describe("WU-078 (ADR-078): the observation omits what git ignores, never what g
     expect(observe(nested).payload.repositories[0].adr_refs).not.toContain("docs/adr/001-x.md");
 
     const reinstated = repository(
-      { "package.json": manifest, "yarn.lock": "# yarn\n", ".gitignore": "yarn.lock\n", ".l9metaignore": "!yarn.lock\n" },
+      {
+        "package.json": manifest,
+        "yarn.lock": "# yarn\n",
+        ".gitignore": "yarn.lock\n",
+        ".l9metaignore": "!yarn.lock\n",
+      },
       ["package.json", ".gitignore", ".l9metaignore"],
     );
     expect(managers(reinstated)).toEqual(["yarn"]);
   });
 
   it("REG-WU-078-e: outside a git work tree a .gitignore file has no effect", () => {
-    const root = materialize({ "package.json": manifest, "package-lock.json": npmLock, "pnpm-lock.yaml": pnpmLock, ".gitignore": "pnpm-lock.yaml\n" });
+    const root = materialize({
+      "package.json": manifest,
+      "package-lock.json": npmLock,
+      "pnpm-lock.yaml": pnpmLock,
+      ".gitignore": "pnpm-lock.yaml\n",
+    });
     expect(managers(root)).toEqual(["npm", "pnpm"]);
   });
 });

@@ -9,13 +9,15 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, expect, test } from "vitest";
-import { acquireLocalSource } from "../src/local_source";
-import { expandArchivesUnderRoot } from "../src/archives";
-import { preflightArchive } from "../src/archive_preflight";
-import { resolveLocalArchivePolicy } from "../src/local_archive_policy";
-import { readZipCentralDirectory } from "../src/zip_reader";
 import { ARCHIVE_READER_VERSION } from "../src/archive_execution";
-import { ARCHIVE_READER_VERSION as LOCAL_SOURCE_READER_VERSION } from "../src/local_source";
+import { preflightArchive } from "../src/archive_preflight";
+import { expandArchivesUnderRoot } from "../src/archives";
+import { resolveLocalArchivePolicy } from "../src/local_archive_policy";
+import {
+  acquireLocalSource,
+  ARCHIVE_READER_VERSION as LOCAL_SOURCE_READER_VERSION,
+} from "../src/local_source";
+import { readZipCentralDirectory } from "../src/zip_reader";
 import { treeSnapshot, writeRawZip, type ZipMemberSpec } from "./helpers/zip_fixtures";
 
 function tmp(): string {
@@ -35,24 +37,40 @@ function preflight(specs: ZipMemberSpec[]) {
 
 describe("archive preflight — file/directory path conflicts", () => {
   test("a file followed by a child under it is held", () => {
-    const result = preflight([{ name: "a", content: "x" }, { name: "a/b", content: "y" }]);
+    const result = preflight([
+      { name: "a", content: "x" },
+      { name: "a/b", content: "y" },
+    ]);
     expect(result.accepted).toBe(false);
-    expect(result.holds.map((h) => [h.code, h.memberPath])).toEqual([["archive.path_conflict", "a"]]);
+    expect(result.holds.map((h) => [h.code, h.memberPath])).toEqual([
+      ["archive.path_conflict", "a"],
+    ]);
   });
 
   test("the reverse order receives the identical verdict", () => {
-    const result = preflight([{ name: "a/b", content: "y" }, { name: "a", content: "x" }]);
+    const result = preflight([
+      { name: "a/b", content: "y" },
+      { name: "a", content: "x" },
+    ]);
     expect(result.accepted).toBe(false);
-    expect(result.holds.map((h) => [h.code, h.memberPath])).toEqual([["archive.path_conflict", "a"]]);
+    expect(result.holds.map((h) => [h.code, h.memberPath])).toEqual([
+      ["archive.path_conflict", "a"],
+    ]);
   });
 
   test("a deeper ancestor declared as a file is caught too", () => {
-    const result = preflight([{ name: "x/y/z.txt", content: "1" }, { name: "x/y", content: "2" }]);
+    const result = preflight([
+      { name: "x/y/z.txt", content: "1" },
+      { name: "x/y", content: "2" },
+    ]);
     expect(result.holds.map((h) => h.code)).toEqual(["archive.path_conflict"]);
   });
 
   test("an explicit directory entry beside a file of the same path stays a duplicate", () => {
-    const result = preflight([{ name: "docs/", content: "" }, { name: "docs", content: "file" }]);
+    const result = preflight([
+      { name: "docs/", content: "" },
+      { name: "docs", content: "file" },
+    ]);
     expect(result.holds.map((h) => h.code)).toEqual(["archive.duplicate_member"]);
   });
 
@@ -75,8 +93,20 @@ describe("archive preflight — file/directory path conflicts", () => {
 
 describe("archive path conflicts — both archive paths hold, neither throws, nothing leaks", () => {
   for (const [label, specs] of [
-    ["file-then-child", [{ name: "a", content: "x" }, { name: "a/b", content: "y" }]],
-    ["child-then-file", [{ name: "a/b", content: "y" }, { name: "a", content: "x" }]],
+    [
+      "file-then-child",
+      [
+        { name: "a", content: "x" },
+        { name: "a/b", content: "y" },
+      ],
+    ],
+    [
+      "child-then-file",
+      [
+        { name: "a/b", content: "y" },
+        { name: "a", content: "x" },
+      ],
+    ],
   ] as Array<[string, ZipMemberSpec[]]>) {
     test(`read-only observation holds ${label} and disposes its scratch`, () => {
       const root = tmp();
@@ -110,47 +140,85 @@ describe("archive path conflicts — both archive paths hold, neither throws, no
 // collision rule, so a file and a directory that one filesystem would merge are
 // held on every host instead of throwing EEXIST/ENOTDIR on a case-insensitive one.
 describe("archive preflight — path conflicts under the collision fold", () => {
-  const holdsOf = (specs: ZipMemberSpec[]) => preflight(specs).holds.map((h) => [h.code, h.memberPath]);
+  const holdsOf = (specs: ZipMemberSpec[]) =>
+    preflight(specs).holds.map((h) => [h.code, h.memberPath]);
 
   test("REG-WU-032-RC-040-040-a: a file 'Docs' beside 'docs/readme.txt' is a path conflict", () => {
-    const result = preflight([{ name: "Docs", content: "x" }, { name: "docs/readme.txt", content: "y" }]);
+    const result = preflight([
+      { name: "Docs", content: "x" },
+      { name: "docs/readme.txt", content: "y" },
+    ]);
     expect(result.accepted).toBe(false);
-    expect(result.holds.map((h) => [h.code, h.memberPath])).toEqual([["archive.path_conflict", "Docs"]]);
+    expect(result.holds.map((h) => [h.code, h.memberPath])).toEqual([
+      ["archive.path_conflict", "Docs"],
+    ]);
   });
 
   test("REG-WU-032-RC-040-040-b: the reverse order receives the identical verdict", () => {
-    expect(holdsOf([{ name: "docs/readme.txt", content: "y" }, { name: "Docs", content: "x" }]))
-      .toEqual([["archive.path_conflict", "Docs"]]);
+    expect(
+      holdsOf([
+        { name: "docs/readme.txt", content: "y" },
+        { name: "Docs", content: "x" },
+      ]),
+    ).toEqual([["archive.path_conflict", "Docs"]]);
   });
 
   test("REG-WU-032-RC-040-040-c: an NFC file and an NFD directory of the same name conflict", () => {
-    expect(holdsOf([{ name: "caf\u00e9", content: "x" }, { name: "cafe\u0301/x.txt", content: "y" }]))
-      .toEqual([["archive.path_conflict", "caf\u00e9"]]);
+    expect(
+      holdsOf([
+        { name: "caf\u00e9", content: "x" },
+        { name: "cafe\u0301/x.txt", content: "y" },
+      ]),
+    ).toEqual([["archive.path_conflict", "caf\u00e9"]]);
   });
 
   test("REG-WU-032-RC-040-040-d: the same name in another directory is not a conflict", () => {
-    expect(preflight([{ name: "docs", content: "x" }, { name: "other/docs", content: "y" }]).accepted).toBe(true);
+    expect(
+      preflight([
+        { name: "docs", content: "x" },
+        { name: "other/docs", content: "y" },
+      ]).accepted,
+    ).toBe(true);
   });
 
   test("REG-WU-032-RC-040-040-e: 'docs/' beside 'docs' is one duplicate, not also a conflict", () => {
-    expect(holdsOf([{ name: "docs/", content: "" }, { name: "docs", content: "file" }]).map(([code]) => code))
-      .toEqual(["archive.duplicate_member"]);
+    expect(
+      holdsOf([
+        { name: "docs/", content: "" },
+        { name: "docs", content: "file" },
+      ]).map(([code]) => code),
+    ).toEqual(["archive.duplicate_member"]);
   });
 
   test("REG-WU-032-RC-040-040-f: 'Docs/' beside 'docs' is one case collision, not also a conflict", () => {
-    expect(holdsOf([{ name: "Docs/", content: "" }, { name: "docs", content: "file" }]).map(([code]) => code))
-      .toEqual(["archive.case_collision"]);
+    expect(
+      holdsOf([
+        { name: "Docs/", content: "" },
+        { name: "docs", content: "file" },
+      ]).map(([code]) => code),
+    ).toEqual(["archive.case_collision"]);
   });
 
   test("REG-WU-032-RC-040-040-h: exact-path conflicts keep their existing holds", () => {
-    expect(holdsOf([{ name: "a", content: "x" }, { name: "a/b", content: "y" }]))
-      .toEqual([["archive.path_conflict", "a"]]);
-    expect(holdsOf([{ name: "x/y/z.txt", content: "1" }, { name: "x/y", content: "2" }]))
-      .toEqual([["archive.path_conflict", "x/y"]]);
+    expect(
+      holdsOf([
+        { name: "a", content: "x" },
+        { name: "a/b", content: "y" },
+      ]),
+    ).toEqual([["archive.path_conflict", "a"]]);
+    expect(
+      holdsOf([
+        { name: "x/y/z.txt", content: "1" },
+        { name: "x/y", content: "2" },
+      ]),
+    ).toEqual([["archive.path_conflict", "x/y"]]);
   });
 
   test("REG-WU-032-RC-040-040-g: both archive paths hold a folded conflict, neither throws, nothing leaks", () => {
-    const specs: ZipMemberSpec[] = [{ name: "Docs", content: "x" }, { name: "docs/readme.txt", content: "y" }];
+    const specs: ZipMemberSpec[] = [
+      { name: "Docs", content: "x" },
+      { name: "docs/readme.txt", content: "y" },
+    ];
     const root = tmp();
     const scratchParent = tmp();
     writeRawZip(path.join(root, "Case.zip"), specs);
@@ -179,13 +247,19 @@ describe("reader version", () => {
 
   test("a warm 1.1.0 verdict is not consulted for a 1.2.0 reader", () => {
     const root = tmp();
-    writeRawZip(path.join(root, "Case.zip"), [{ name: "a", content: "x" }, { name: "a/b", content: "y" }]);
+    writeRawZip(path.join(root, "Case.zip"), [
+      { name: "a", content: "x" },
+      { name: "a/b", content: "y" },
+    ]);
     const seen: string[] = [];
     const observation = acquireLocalSource({
       path: root,
       scratchParent: tmp(),
       archiveManifests: {
-        get: (key) => { seen.push(key.readerVersion); return undefined; },
+        get: (key) => {
+          seen.push(key.readerVersion);
+          return undefined;
+        },
         put: () => {},
       },
     });

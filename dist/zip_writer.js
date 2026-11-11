@@ -72,7 +72,9 @@ function holdZipRewrite(directory, centralRecordOf) {
     for (const entry of directory.entries) {
         if (entry.encrypted)
             return "archive.member_encrypted";
-        if (entry.compressedSize > U32_MAX || entry.uncompressedSize > U32_MAX || entry.localHeaderOffset > U32_MAX) {
+        if (entry.compressedSize > U32_MAX ||
+            entry.uncompressedSize > U32_MAX ||
+            entry.localHeaderOffset > U32_MAX) {
             return "archive.zip64";
         }
     }
@@ -192,7 +194,9 @@ function writeEocd(entryCount, centralSize, centralOffset, comment = Buffer.allo
 function dosTimeNow() {
     const d = new Date();
     const modTime = ((d.getSeconds() >> 1) & 0x1f) | ((d.getMinutes() & 0x3f) << 5) | ((d.getHours() & 0x1f) << 11);
-    const modDate = (d.getDate() & 0x1f) | (((d.getMonth() + 1) & 0x0f) << 5) | (((d.getFullYear() - 1980) & 0x7f) << 9);
+    const modDate = (d.getDate() & 0x1f) |
+        (((d.getMonth() + 1) & 0x0f) << 5) |
+        (((d.getFullYear() - 1980) & 0x7f) << 9);
     return { modTime, modDate };
 }
 function buildZipBuffer(members) {
@@ -211,7 +215,7 @@ function buildZipBuffer(members) {
             uncompressedSize: member.data.length,
             localHeaderOffset: offset,
             externalAttributes: (0o100644 << 16) >>> 0,
-            versionMadeBy: (3 << 8),
+            versionMadeBy: 3 << 8,
             ...dosTimeNow(),
         }));
         offset += local.length;
@@ -266,9 +270,10 @@ function injectZipRootMeta(archivePath, yaml) {
             offset += blob.length;
         }
         const commentLength = directory.eocdCommentLength ?? 0;
-        archiveComment = commentLength > 0 && directory.eocdCommentOffset !== undefined
-            ? readExact(fd, commentLength, directory.eocdCommentOffset)
-            : Buffer.alloc(0);
+        archiveComment =
+            commentLength > 0 && directory.eocdCommentOffset !== undefined
+                ? readExact(fd, commentLength, directory.eocdCommentOffset)
+                : Buffer.alloc(0);
     }
     catch (err) {
         return { ok: false, hold: `archive.zip_copy_failed:${err.message}` };
@@ -287,7 +292,7 @@ function injectZipRootMeta(archivePath, yaml) {
         uncompressedSize: yamlBytes.length,
         localHeaderOffset: offset,
         externalAttributes: (0o100644 << 16) >>> 0,
-        versionMadeBy: (3 << 8),
+        versionMadeBy: 3 << 8,
         ...dosTimeNow(),
     }));
     offset += metaLocal.length;
@@ -295,7 +300,11 @@ function injectZipRootMeta(archivePath, yaml) {
     try {
         return {
             ok: true,
-            bytes: Buffer.concat([...locals, central, writeEocd(centrals.length, central.length, offset, archiveComment)]),
+            bytes: Buffer.concat([
+                ...locals,
+                central,
+                writeEocd(centrals.length, central.length, offset, archiveComment),
+            ]),
         };
     }
     catch (err) {
@@ -310,13 +319,14 @@ function peekZipRootMeta(archivePath) {
     catch {
         return null;
     }
-    const entry = directory.entries.find((e) => rootMetaKind(e.name) === "canonical")
-        ?? directory.entries.find((e) => rootMetaKind(e.name) === "legacy");
+    const entry = directory.entries.find((e) => rootMetaKind(e.name) === "canonical") ??
+        directory.entries.find((e) => rootMetaKind(e.name) === "legacy");
     if (!entry)
         return null;
     if (entry.encrypted)
         return null;
-    if (entry.compressionMethod !== zip_reader_1.COMPRESSION_STORED && entry.compressionMethod !== zip_reader_1.COMPRESSION_DEFLATE)
+    if (entry.compressionMethod !== zip_reader_1.COMPRESSION_STORED &&
+        entry.compressionMethod !== zip_reader_1.COMPRESSION_DEFLATE)
         return null;
     const chunks = [];
     try {

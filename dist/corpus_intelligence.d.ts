@@ -1,4 +1,4 @@
-import { type CanonicalValue, CanonicalFloat } from "./repository_model";
+import { CanonicalFloat, type CanonicalValue } from "./repository_model";
 export declare const CORPUS_INTELLIGENCE_PACKET_TYPE = "l9.corpus-intelligence";
 /**
  * 1.1.0 adds `domains_not_run` (ADR-068): a payload domain no pass populated is

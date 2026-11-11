@@ -18,15 +18,15 @@
 // discover something those four did not already establish, and it never writes
 // anything into the observed source.
 import * as fs from "node:fs";
-import { InventoryRecord, InventoryResult } from "./inventory";
+import { probeFileEncoding } from "./encoding";
 import {
   DEFAULT_MAX_FILE_BYTES,
   InterpretationResult,
   InterpretedAssertion,
   isSecretCandidatePath,
 } from "./interpretation";
+import { InventoryRecord, InventoryResult } from "./inventory";
 import { canonicalPair, compareCodePoints } from "./ordering";
-import { probeFileEncoding } from "./encoding";
 import {
   RepositoryModelArtifactRecord,
   RepositoryModelDiagnostic,
@@ -84,7 +84,8 @@ export function canonicalCorpusJson(value: unknown, indent = 2): string {
     if (node === null) return "null";
     if (typeof node === "boolean") return node ? "true" : "false";
     if (typeof node === "number") {
-      if (!Number.isFinite(node)) throw new Error(`corpus-index: ${String(node)} is not serializable`);
+      if (!Number.isFinite(node))
+        throw new Error(`corpus-index: ${String(node)} is not serializable`);
       return String(node);
     }
     if (typeof node === "string") return JSON.stringify(node);
@@ -95,10 +96,13 @@ export function canonicalCorpusJson(value: unknown, indent = 2): string {
     }
     if (typeof node === "object") {
       const source = node as Record<string, unknown>;
-      const keys = Object.keys(source).filter((key) => source[key] !== undefined).sort(compareCodePoints);
+      const keys = Object.keys(source)
+        .filter((key) => source[key] !== undefined)
+        .sort(compareCodePoints);
       if (keys.length === 0) return "{}";
       const items = keys.map(
-        (key) => `${pad(depth + 1)}${JSON.stringify(key)}:${indent > 0 ? " " : ""}${render(source[key], depth + 1)}`,
+        (key) =>
+          `${pad(depth + 1)}${JSON.stringify(key)}:${indent > 0 ? " " : ""}${render(source[key], depth + 1)}`,
       );
       return `{${items.join(",")}${pad(depth)}}`;
     }
@@ -128,12 +132,7 @@ function scoreKey(value: number): string {
  * analysis is explicitly lexical rather than semantic.
  */
 export function normalizeForAnalysis(text: string): string {
-  return text
-    .normalize("NFKC")
-    .replace(/\r\n?/g, "\n")
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .trim();
+  return text.normalize("NFKC").replace(/\r\n?/g, "\n").toLowerCase().replace(/\s+/g, " ").trim();
 }
 
 const TOKEN = /[\p{L}\p{N}_]+/gu;
@@ -259,12 +258,15 @@ function pairIneligible(left: NearDuplicateDocument, right: NearDuplicateDocumen
   return left.contentHash === right.contentHash;
 }
 
-export function compareCandidates(left: NearDuplicateCandidate, right: NearDuplicateCandidate): number {
+export function compareCandidates(
+  left: NearDuplicateCandidate,
+  right: NearDuplicateCandidate,
+): number {
   return (
-    right.score - left.score
-    || compareCodePoints(left.artifact_a_id, right.artifact_a_id)
-    || compareCodePoints(left.artifact_b_id, right.artifact_b_id)
-    || compareCodePoints(left.candidate_id, right.candidate_id)
+    right.score - left.score ||
+    compareCodePoints(left.artifact_a_id, right.artifact_a_id) ||
+    compareCodePoints(left.artifact_b_id, right.artifact_b_id) ||
+    compareCodePoints(left.candidate_id, right.candidate_id)
   );
 }
 
@@ -366,8 +368,8 @@ export function nearDuplicateCandidates(
     }
   }
   const globalOrder = (left: string, right: string): number =>
-    (documentFrequency.get(left) ?? 0) - (documentFrequency.get(right) ?? 0)
-    || compareCodePoints(left, right);
+    (documentFrequency.get(left) ?? 0) - (documentFrequency.get(right) ?? 0) ||
+    compareCodePoints(left, right);
 
   // Smallest set first, so that when a document is compared it has already seen
   // every partner that could satisfy the size bound from below.
@@ -375,8 +377,8 @@ export function nearDuplicateCandidates(
     .map((document, index) => ({ document, index }))
     .sort(
       (left, right) =>
-        left.document.shingles.size - right.document.shingles.size
-        || compareCodePoints(left.document.artifactId, right.document.artifactId),
+        left.document.shingles.size - right.document.shingles.size ||
+        compareCodePoints(left.document.artifactId, right.document.artifactId),
     );
 
   const postings = new Map<string, number[]>();
@@ -403,7 +405,8 @@ export function nearDuplicateCandidates(
         // Size bound: `partner` is no larger than `current`, so a pair can only
         // reach the threshold when the smaller set is at least `L` of the larger
         // — compared in integers, so no float product can overshoot.
-        if (ADMITTED_JACCARD_DENOMINATOR * partner.shingles.size < admittedNumerator * size) continue;
+        if (ADMITTED_JACCARD_DENOMINATOR * partner.shingles.size < admittedNumerator * size)
+          continue;
         if (pairIneligible(current, partner)) continue;
         const measured = jaccard(current.shingles, partner.shingles);
         if (roundScore(measured.score) < roundScore(threshold)) continue;
@@ -617,12 +620,15 @@ export interface CorpusSemanticProjection {
   embedding_eligible_artifact_count: number;
   embedded_artifact_count: number;
   /** Candidate ids per artifact id, for the per-artifact rows below. */
-  candidate_ids_by_artifact: Record<string, {
-    topic_candidate_ids: string[];
-    project_candidate_ids: string[];
-    consolidation_candidate_ids: string[];
-    reasoning_candidate_ids: string[];
-  }>;
+  candidate_ids_by_artifact: Record<
+    string,
+    {
+      topic_candidate_ids: string[];
+      project_candidate_ids: string[];
+      consolidation_candidate_ids: string[];
+      reasoning_candidate_ids: string[];
+    }
+  >;
   /** Restated so a reader of the index alone sees the boundary. */
   candidate_statement: string;
 }
@@ -698,9 +704,18 @@ export const CORPUS_WORK_PREDICATES: readonly string[] = [
 
 function emptySummary(): CorpusWorkSignalSummary {
   return {
-    statuses: [], kinds: [], titles: [], heading_count: 0,
-    open_task_count: 0, completed_task_count: 0, milestone_count: 0,
-    depends_on: [], blocked_by: [], references: [], supersedes: [], superseded_by: [],
+    statuses: [],
+    kinds: [],
+    titles: [],
+    heading_count: 0,
+    open_task_count: 0,
+    completed_task_count: 0,
+    milestone_count: 0,
+    depends_on: [],
+    blocked_by: [],
+    references: [],
+    supersedes: [],
+    superseded_by: [],
     signal_count: 0,
   };
 }
@@ -708,14 +723,29 @@ function emptySummary(): CorpusWorkSignalSummary {
 function addSignal(summary: CorpusWorkSignalSummary, assertion: InterpretedAssertion): void {
   summary.signal_count++;
   switch (assertion.predicate) {
-    case STATUS_PREDICATE: summary.statuses.push(assertion.object); return;
-    case KIND_PREDICATE: summary.kinds.push(assertion.object); return;
-    case TITLE_PREDICATE: summary.titles.push(assertion.object); return;
-    case HEADING_PREDICATE: summary.heading_count++; return;
-    case OPEN_TASK_PREDICATE: summary.open_task_count++; return;
-    case COMPLETED_TASK_PREDICATE: summary.completed_task_count++; return;
-    case MILESTONE_PREDICATE: summary.milestone_count++; return;
-    default: break;
+    case STATUS_PREDICATE:
+      summary.statuses.push(assertion.object);
+      return;
+    case KIND_PREDICATE:
+      summary.kinds.push(assertion.object);
+      return;
+    case TITLE_PREDICATE:
+      summary.titles.push(assertion.object);
+      return;
+    case HEADING_PREDICATE:
+      summary.heading_count++;
+      return;
+    case OPEN_TASK_PREDICATE:
+      summary.open_task_count++;
+      return;
+    case COMPLETED_TASK_PREDICATE:
+      summary.completed_task_count++;
+      return;
+    case MILESTONE_PREDICATE:
+      summary.milestone_count++;
+      return;
+    default:
+      break;
   }
   const bucket = RELATION_PREDICATES[assertion.predicate];
   if (bucket !== undefined) (summary[bucket] as string[]).push(assertion.object);
@@ -751,11 +781,13 @@ function clusterId(contentHash: string): string {
  * byte-equal to every other, so no member is the original, the canonical copy or
  * the one to keep.
  */
-export function duplicateRepresentative<T extends { sourcePath: string }>(members: readonly T[]): T {
+export function duplicateRepresentative<T extends { sourcePath: string }>(
+  members: readonly T[],
+): T {
   return [...members].sort(
     (left, right) =>
-      left.sourcePath.length - right.sourcePath.length
-      || compareCodePoints(left.sourcePath, right.sourcePath),
+      left.sourcePath.length - right.sourcePath.length ||
+      compareCodePoints(left.sourcePath, right.sourcePath),
   )[0];
 }
 
@@ -765,9 +797,9 @@ export function compareDuplicateClusters(
   right: CorpusDuplicateCluster,
 ): number {
   return (
-    right.recoverable_bytes - left.recoverable_bytes
-    || right.count - left.count
-    || compareCodePoints(left.cluster_id, right.cluster_id)
+    right.recoverable_bytes - left.recoverable_bytes ||
+    right.count - left.count ||
+    compareCodePoints(left.cluster_id, right.cluster_id)
   );
 }
 
@@ -800,7 +832,9 @@ export function clusterExactDuplicates(
   const clusters: CorpusDuplicateCluster[] = [];
   for (const [hash, group] of byHash) {
     if (group.length < 2) continue;
-    const members = [...group].sort((left, right) => compareCodePoints(left.sourcePath, right.sourcePath));
+    const members = [...group].sort((left, right) =>
+      compareCodePoints(left.sourcePath, right.sourcePath),
+    );
     const representative = duplicateRepresentative(members);
     const size = members[0].sizeBytes ?? 0;
     clusters.push({
@@ -833,7 +867,10 @@ export function buildCorpusDuplicateClusters(
   for (const cluster of inventory.duplicates) {
     const paths = [...cluster.paths].sort(compareCodePoints);
     const resolved = paths
-      .map((sourcePath) => ({ sourcePath, artifactId: repositoryModelArtifactId(repositoryId, sourcePath) }))
+      .map((sourcePath) => ({
+        sourcePath,
+        artifactId: repositoryModelArtifactId(repositoryId, sourcePath),
+      }))
       .filter((entry) => emittedArtifactIds.has(entry.artifactId));
     if (resolved.length < 2) continue;
     const representative = duplicateRepresentative(resolved);
@@ -860,7 +897,9 @@ export function buildCorpusDuplicateClusters(
  * can see that the equivalence is cluster-wide and symmetric rather than a
  * hub-and-spoke claim.
  */
-export function buildDuplicateRelations(clusters: readonly CorpusDuplicateCluster[]): CorpusRelation[] {
+export function buildDuplicateRelations(
+  clusters: readonly CorpusDuplicateCluster[],
+): CorpusRelation[] {
   const relations: CorpusRelation[] = [];
   for (const cluster of clusters) {
     for (const artifactId of cluster.artifact_ids) {
@@ -883,8 +922,8 @@ export function buildDuplicateRelations(clusters: readonly CorpusDuplicateCluste
   }
   return relations.sort(
     (left, right) =>
-      compareCodePoints(left.duplicate_cluster_id, right.duplicate_cluster_id)
-      || compareCodePoints(left.source_artifact_id, right.source_artifact_id),
+      compareCodePoints(left.duplicate_cluster_id, right.duplicate_cluster_id) ||
+      compareCodePoints(left.source_artifact_id, right.source_artifact_id),
   );
 }
 
@@ -990,11 +1029,13 @@ function countByCode(
   for (const entry of entries) {
     const key = `${entry.code} ${entry.severity}`;
     const existing = counts.get(key);
-    if (existing === undefined) counts.set(key, { code: entry.code, severity: entry.severity, count: 1 });
+    if (existing === undefined)
+      counts.set(key, { code: entry.code, severity: entry.severity, count: 1 });
     else existing.count++;
   }
   return [...counts.values()].sort(
-    (left, right) => compareCodePoints(left.code, right.code) || compareCodePoints(left.severity, right.severity),
+    (left, right) =>
+      compareCodePoints(left.code, right.code) || compareCodePoints(left.severity, right.severity),
   );
 }
 
@@ -1026,7 +1067,10 @@ function resolveInterpretationProfile(
 }
 
 function corpusProfileHash(
-  interpretationProfile: { profile_version: string; extractor_versions: Record<string, string> } | null,
+  interpretationProfile: {
+    profile_version: string;
+    extractor_versions: Record<string, string>;
+  } | null,
   threshold: number,
   nearDuplicatesEnabled: boolean,
 ): string {
@@ -1057,20 +1101,25 @@ function corpusProfileHash(
 export function buildCorpusIndex(input: CorpusAnalysisInput): CorpusIndex {
   const { acquisition, packet } = input;
   const repositoryId = packet.subject.repository_id;
-  const artifactIdFor = (sourcePath: string): string => repositoryModelArtifactId(repositoryId, sourcePath);
+  const artifactIdFor = (sourcePath: string): string =>
+    repositoryModelArtifactId(repositoryId, sourcePath);
 
   const artifactRecords: RepositoryModelArtifactRecord[] = [...packet.payload.artifacts];
   const emittedArtifactIds = new Set(artifactRecords.map((artifact) => artifact.artifact_id));
   const sizeByPath = new Map(
     acquisition.inventory.records.map((record) => [record.relative_path, record.size_bytes]),
   );
-  const memberPaths = new Set(acquisition.virtualArtifacts.map((member) => member.virtualSourcePath));
+  const memberPaths = new Set(
+    acquisition.virtualArtifacts.map((member) => member.virtualSourcePath),
+  );
 
   const nearDuplicateOptions = input.nearDuplicates ?? {};
   const nearDuplicatesEnabled = nearDuplicateOptions.enabled !== false;
   const rawThreshold = nearDuplicateOptions.threshold ?? DEFAULT_NEAR_DUPLICATE_THRESHOLD;
   if (!Number.isFinite(rawThreshold) || rawThreshold < 0 || rawThreshold > 1) {
-    throw new Error(`corpus-analysis: the near-duplicate threshold must be within [0, 1], got ${rawThreshold}`);
+    throw new Error(
+      `corpus-analysis: the near-duplicate threshold must be within [0, 1], got ${rawThreshold}`,
+    );
   }
   const threshold = roundScore(rawThreshold);
 
@@ -1105,11 +1154,16 @@ export function buildCorpusIndex(input: CorpusAnalysisInput): CorpusIndex {
     });
   }
 
-  const clusters = buildCorpusDuplicateClusters(acquisition.inventory, repositoryId, emittedArtifactIds);
+  const clusters = buildCorpusDuplicateClusters(
+    acquisition.inventory,
+    repositoryId,
+    emittedArtifactIds,
+  );
   const relations = buildDuplicateRelations(clusters);
   const clusterByArtifact = new Map<string, string>();
   for (const cluster of clusters) {
-    for (const artifactId of cluster.artifact_ids) clusterByArtifact.set(artifactId, cluster.cluster_id);
+    for (const artifactId of cluster.artifact_ids)
+      clusterByArtifact.set(artifactId, cluster.cluster_id);
   }
 
   const near: NearDuplicateOutcome = nearDuplicatesEnabled
@@ -1130,7 +1184,9 @@ export function buildCorpusIndex(input: CorpusAnalysisInput): CorpusIndex {
   // Candidate ids per artifact, or four empty lists when the pass did not run.
   // `index.semantic` is what tells those two cases apart; empty lists here never
   // claim on their own that a corpus has no candidates.
-  const semanticIdsFor = (artifactId: string): {
+  const semanticIdsFor = (
+    artifactId: string,
+  ): {
     topic_candidate_ids: string[];
     project_candidate_ids: string[];
     consolidation_candidate_ids: string[];
@@ -1140,7 +1196,9 @@ export function buildCorpusIndex(input: CorpusAnalysisInput): CorpusIndex {
     return {
       topic_candidate_ids: [...(entry?.topic_candidate_ids ?? [])].sort(compareCodePoints),
       project_candidate_ids: [...(entry?.project_candidate_ids ?? [])].sort(compareCodePoints),
-      consolidation_candidate_ids: [...(entry?.consolidation_candidate_ids ?? [])].sort(compareCodePoints),
+      consolidation_candidate_ids: [...(entry?.consolidation_candidate_ids ?? [])].sort(
+        compareCodePoints,
+      ),
       reasoning_candidate_ids: [...(entry?.reasoning_candidate_ids ?? [])].sort(compareCodePoints),
     };
   };
@@ -1153,15 +1211,21 @@ export function buildCorpusIndex(input: CorpusAnalysisInput): CorpusIndex {
       content_hash: artifact.content_hash,
       size_bytes: sizeByPath.get(artifact.source_path) ?? null,
       is_archive_member: memberPaths.has(artifact.source_path),
-      assertion_ids: (assertionIdsByArtifact.get(artifact.artifact_id) ?? []).sort(compareCodePoints),
+      assertion_ids: (assertionIdsByArtifact.get(artifact.artifact_id) ?? []).sort(
+        compareCodePoints,
+      ),
       work_signal_summary: settleSummary(summaries.get(artifact.artifact_id) ?? emptySummary()),
       exact_duplicate_cluster_id: clusterByArtifact.get(artifact.artifact_id) ?? null,
-      near_duplicate_candidate_ids: (candidateIdsByArtifact.get(artifact.artifact_id) ?? []).sort(compareCodePoints),
+      near_duplicate_candidate_ids: (candidateIdsByArtifact.get(artifact.artifact_id) ?? []).sort(
+        compareCodePoints,
+      ),
       ...semanticIdsFor(artifact.artifact_id),
     }))
     .sort((left, right) => compareCodePoints(left.source_path, right.source_path));
 
-  const withWorkSignals = artifacts.filter((artifact) => artifact.work_signal_summary.signal_count > 0);
+  const withWorkSignals = artifacts.filter(
+    (artifact) => artifact.work_signal_summary.signal_count > 0,
+  );
   const statusCount = (status: string): number =>
     artifacts.filter((artifact) => artifact.work_signal_summary.statuses.includes(status)).length;
   const kindCount = (kind: string): number =>
@@ -1178,7 +1242,10 @@ export function buildCorpusIndex(input: CorpusAnalysisInput): CorpusIndex {
     artifacts_with_work_signals: withWorkSignals.length,
     exact_duplicate_cluster_count: clusters.length,
     exact_duplicate_artifact_count: clusters.reduce((total, cluster) => total + cluster.count, 0),
-    recoverable_duplicate_bytes: clusters.reduce((total, cluster) => total + cluster.recoverable_bytes, 0),
+    recoverable_duplicate_bytes: clusters.reduce(
+      (total, cluster) => total + cluster.recoverable_bytes,
+      0,
+    ),
     near_duplicate_candidate_count: near.candidates.length,
     open_task_count: signalCount(OPEN_TASK_PREDICATE),
     completed_task_count: signalCount(COMPLETED_TASK_PREDICATE),
@@ -1207,11 +1274,11 @@ export function buildCorpusIndex(input: CorpusAnalysisInput): CorpusIndex {
 
   const orderedWorkSignals = [...workSignals].sort(
     (left, right) =>
-      compareCodePoints(left.source_path, right.source_path)
-      || left.source_range.start_line - right.source_range.start_line
-      || compareCodePoints(left.predicate, right.predicate)
-      || compareCodePoints(left.object, right.object)
-      || compareCodePoints(left.assertion_id, right.assertion_id),
+      compareCodePoints(left.source_path, right.source_path) ||
+      left.source_range.start_line - right.source_range.start_line ||
+      compareCodePoints(left.predicate, right.predicate) ||
+      compareCodePoints(left.object, right.object) ||
+      compareCodePoints(left.assertion_id, right.assertion_id),
   );
 
   const packetDiagnostics: readonly RepositoryModelDiagnostic[] = packet.payload.diagnostics;
@@ -1237,7 +1304,11 @@ export function buildCorpusIndex(input: CorpusAnalysisInput): CorpusIndex {
     analysis_profile: {
       corpus_profile_id: CORPUS_PROFILE_ID,
       corpus_profile_version: CORPUS_PROFILE_VERSION,
-      corpus_profile_hash: corpusProfileHash(interpretationProfile, threshold, nearDuplicatesEnabled),
+      corpus_profile_hash: corpusProfileHash(
+        interpretationProfile,
+        threshold,
+        nearDuplicatesEnabled,
+      ),
       exact_duplicate_method: EXACT_DUPLICATE_METHOD,
       exact_duplicate_version: EXACT_DUPLICATE_METHOD_VERSION,
       near_duplicate_method: NEAR_DUPLICATE_METHOD,

@@ -9,7 +9,9 @@ exports.makeOpenAIAdapter = makeOpenAIAdapter;
 // llm.ts — LLM adapter. Local default makes NO external calls.
 const node_async_hooks_1 = require("node:async_hooks");
 exports.localAdapter = {
-    estimateTokens(text) { return Math.max(1, Math.ceil(text.length / 4)); },
+    estimateTokens(text) {
+        return Math.max(1, Math.ceil(text.length / 4));
+    },
     classify: undefined,
 };
 // The process-global adapter is the out-of-run default that setAdapter/resetAdapter
@@ -20,9 +22,15 @@ exports.localAdapter = {
 // run leaves the global exactly as it found it (RC-018).
 let _active = exports.localAdapter;
 const runScope = new node_async_hooks_1.AsyncLocalStorage();
-function setAdapter(a) { _active = a; }
-function getAdapter() { return runScope.getStore() ?? _active; }
-function resetAdapter() { _active = exports.localAdapter; }
+function setAdapter(a) {
+    _active = a;
+}
+function getAdapter() {
+    return runScope.getStore() ?? _active;
+}
+function resetAdapter() {
+    _active = exports.localAdapter;
+}
 /**
  * Run `body` with `adapter` as the adapter of this async context. Internal to the
  * runners; not re-exported from the `./advanced/llm` subpath.
@@ -41,7 +49,9 @@ function reportDiagnostic(cb, d) {
         try {
             cb(d);
         }
-        catch { /* diagnostics must never break the caller */ }
+        catch {
+            /* diagnostics must never break the caller */
+        }
     }
     if (d.outcome !== "ok") {
         const status = d.status !== undefined ? ` (status ${d.status})` : "";
@@ -59,7 +69,9 @@ function isReasoningModel(model) {
 }
 function makeOpenAIAdapter(opts) {
     return {
-        estimateTokens(text) { return Math.max(1, Math.ceil(text.length / 4)); },
+        estimateTokens(text) {
+            return Math.max(1, Math.ceil(text.length / 4));
+        },
         async classify(prompt) {
             const ctrl = new AbortController();
             const started = Date.now();
@@ -68,11 +80,18 @@ function makeOpenAIAdapter(opts) {
             try {
                 // Never transmit the Authorization bearer over cleartext (SEC-003 / CWE-319).
                 if (!/^https:/i.test(opts.baseUrl) && !opts.allowInsecure) {
-                    emit({ outcome: "network_error", detail: "refusing to send credential to non-https baseUrl", durationMs: Date.now() - started });
+                    emit({
+                        outcome: "network_error",
+                        detail: "refusing to send credential to non-https baseUrl",
+                        durationMs: Date.now() - started,
+                    });
                     return null;
                 }
                 const tokenLimit = opts.maxTokens ?? 80;
-                const body = { model: opts.model, messages: [{ role: "user", content: prompt }] };
+                const body = {
+                    model: opts.model,
+                    messages: [{ role: "user", content: prompt }],
+                };
                 if (isReasoningModel(opts.model)) {
                     body.max_completion_tokens = tokenLimit;
                 }
@@ -91,16 +110,28 @@ function makeOpenAIAdapter(opts) {
                     try {
                         body = (await res.text()).slice(0, 200);
                     }
-                    catch { /* body unreadable */ }
-                    emit({ outcome: "http_error", status: res.status, detail: body || undefined, durationMs: Date.now() - started });
+                    catch {
+                        /* body unreadable */
+                    }
+                    emit({
+                        outcome: "http_error",
+                        status: res.status,
+                        detail: body || undefined,
+                        durationMs: Date.now() - started,
+                    });
                     return null;
                 }
                 let data;
                 try {
-                    data = await res.json();
+                    data = (await res.json());
                 }
                 catch (e) {
-                    emit({ outcome: "parse_error", status: res.status, detail: e?.message, durationMs: Date.now() - started });
+                    emit({
+                        outcome: "parse_error",
+                        status: res.status,
+                        detail: e?.message,
+                        durationMs: Date.now() - started,
+                    });
                     return null;
                 }
                 const content = data.choices?.[0]?.message?.content ?? null;

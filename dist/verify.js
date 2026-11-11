@@ -36,10 +36,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.verify = verify;
 // verify.ts — Validate injected files; enforce sharing_scope invariants; fail on violation.
 const fs = __importStar(require("node:fs"));
-const schema_1 = require("./schema");
+const comment_1 = require("./comment");
 const extract_1 = require("./extract");
 const frontmatter_patch_1 = require("./frontmatter_patch");
-const comment_1 = require("./comment");
+const schema_1 = require("./schema");
 // Recover the clean body from an injected file, mirroring how inject.ts derived
 // cleanBody per strategy, so the hash lines up with the recorded originalBodyHash.
 //
@@ -82,7 +82,9 @@ function metaHeaderValid(filePath, content, issues) {
     issues.push("No l9meta sidecar file detected");
     return false;
 }
-function isPromptMeta(m) { return m.artifact_type === "prompt"; }
+function isPromptMeta(m) {
+    return m.artifact_type === "prompt";
+}
 function checkSharingScope(meta, semanticallyBound) {
     const issues = [];
     if (semanticallyBound)
@@ -115,7 +117,9 @@ function verify(filePath, origHash, meta, options) {
         taxonomyValid = false;
     }
     const scopeIssues = checkSharingScope(meta, options?.semanticallyBound === true);
-    scopeIssues.forEach((i) => issues.push(i));
+    scopeIssues.forEach((i) => {
+        issues.push(i);
+    });
     const sharingScopeValid = scopeIssues.length === 0;
     let promptSchemaComplete = true;
     if (isPromptMeta(meta)) {
@@ -127,6 +131,14 @@ function verify(filePath, origHash, meta, options) {
             }
         }
     }
-    return { sourcePath: filePath, yamlValid, bodyPreserved, taxonomyValid, promptSchemaComplete, sharingScopeValid, issues };
+    return {
+        sourcePath: filePath,
+        yamlValid,
+        bodyPreserved,
+        taxonomyValid,
+        promptSchemaComplete,
+        sharingScopeValid,
+        issues,
+    };
 }
 //# sourceMappingURL=verify.js.map

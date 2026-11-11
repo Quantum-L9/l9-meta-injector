@@ -39,9 +39,9 @@ exports.serializeToYamlFrontMatter = serializeToYamlFrontMatter;
 exports.buildMeta = buildMeta;
 // normalize_meta.ts - Build NormalizedMeta header as a pure transform.
 const path = __importStar(require("node:path"));
-const schema_1 = require("./schema");
 const extract_1 = require("./extract");
 const namespace_1 = require("./namespace");
+const schema_1 = require("./schema");
 const yaml_serialize_1 = require("./yaml_serialize");
 function toPosix(value) {
     return value.split(path.sep).join("/");
@@ -49,7 +49,9 @@ function toPosix(value) {
 function stableSourcePath(filePath, sourceRoot) {
     if (sourceRoot !== undefined) {
         const root = path.resolve(sourceRoot);
-        const absolute = path.isAbsolute(filePath) ? path.resolve(filePath) : path.resolve(root, filePath);
+        const absolute = path.isAbsolute(filePath)
+            ? path.resolve(filePath)
+            : path.resolve(root, filePath);
         const relative = path.relative(root, absolute);
         if (relative === "")
             return ".";
@@ -64,7 +66,11 @@ function stableSourcePath(filePath, sourceRoot) {
     return normalized || ".";
 }
 function slugTitle(filePath) {
-    return path.basename(filePath, path.extname(filePath)).replace(/[-_.]/g, " ").replace(/^Prompt /i, "").trim();
+    return path
+        .basename(filePath, path.extname(filePath))
+        .replace(/[-_.]/g, " ")
+        .replace(/^Prompt /i, "")
+        .trim();
 }
 var yaml_serialize_2 = require("./yaml_serialize");
 Object.defineProperty(exports, "yamlScalar", { enumerable: true, get: function () { return yaml_serialize_2.yamlScalar; } });
@@ -107,7 +113,12 @@ function buildMeta(filePath, originalBody, ef, cr, nsCfg, authority, detectedAt,
         created_or_detected_at: timestamp,
     };
     if (cr.artifactType === "doctrine") {
-        return { ...base, governs: schema_1.UNKNOWN, decision_drivers: schema_1.UNKNOWN, applies_to_domains: schema_1.UNKNOWN };
+        return {
+            ...base,
+            governs: schema_1.UNKNOWN,
+            decision_drivers: schema_1.UNKNOWN,
+            applies_to_domains: schema_1.UNKNOWN,
+        };
     }
     if (cr.artifactType === "test" || cr.artifactType === "script" || cr.artifactType === "source") {
         return { ...base, owner: identity?.product?.owner ?? schema_1.UNKNOWN };

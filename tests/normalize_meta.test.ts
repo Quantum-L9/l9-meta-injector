@@ -2,35 +2,86 @@
 // previously exercised only transitively. Direct unit coverage: per-artifact_type
 // field set + taxonomy, and the serializer's scalar quoting / escaping / empty-array
 // handling.
-import { buildMeta, serializeToYamlFrontMatter } from "../src/normalize_meta";
+
 import { extract } from "../src/extract";
-import { ClassifyResult, ExtractedFields, NormalizedMeta, UNKNOWN, PRIMITIVE_TAXONOMY, asRecord } from "../src/schema";
 import { NamespaceConfig } from "../src/namespace";
+import { buildMeta, serializeToYamlFrontMatter } from "../src/normalize_meta";
+import {
+  asRecord,
+  ClassifyResult,
+  ExtractedFields,
+  NormalizedMeta,
+  PRIMITIVE_TAXONOMY,
+  UNKNOWN,
+} from "../src/schema";
 
 const NS: NamespaceConfig = {
-  namespace: "l9", authority: "l9.auto", nearDupThreshold: 0.9, hashPrefixLength: 16,
-  outputDir: ".", indexDir: ".",
+  namespace: "l9",
+  authority: "l9.auto",
+  nearDupThreshold: 0.9,
+  hashPrefixLength: 16,
+  outputDir: ".",
+  indexDir: ".",
 };
 const NOW = "2026-07-19T00:00:00.000Z";
 
-function cr(artifactType: ClassifyResult["artifactType"], family: ClassifyResult["family"] = "Unknown"): ClassifyResult {
+function cr(
+  artifactType: ClassifyResult["artifactType"],
+  family: ClassifyResult["family"] = "Unknown",
+): ClassifyResult {
   return { artifactType, family, signals: [], confidence: "low" };
 }
-function ef(): ExtractedFields { return extract(""); }
+function ef(): ExtractedFields {
+  return extract("");
+}
 
 // The identity block every variant must carry.
 const BASE_KEYS = [
-  "id", "title", "artifact_type", "mcp_primitive", "callable", "retrievable",
-  "injectable", "namespace", "sharing_scope", "source_path", "content_hash",
-  "token_cost_estimate", "authority", "created_or_detected_at",
+  "id",
+  "title",
+  "artifact_type",
+  "mcp_primitive",
+  "callable",
+  "retrievable",
+  "injectable",
+  "namespace",
+  "sharing_scope",
+  "source_path",
+  "content_hash",
+  "token_cost_estimate",
+  "authority",
+  "created_or_detected_at",
 ];
 
 describe("QTE-003 — buildMeta emits the correct field set + taxonomy per type", () => {
   test("prompt carries the full prompt schema and prompt taxonomy", () => {
-    const m = asRecord(buildMeta("prompts/Prompt-Foo.md", "body text here", ef(), cr("prompt", "planner"), NS, "l9.auto", NOW));
-    for (const k of [...BASE_KEYS, "role", "objective", "input_variables", "output_format",
-      "model_target", "constraints", "phase_model", "description", "activation_signals",
-      "input_contract", "output_contract", "validation_gates", "stop_conditions"]) {
+    const m = asRecord(
+      buildMeta(
+        "prompts/Prompt-Foo.md",
+        "body text here",
+        ef(),
+        cr("prompt", "planner"),
+        NS,
+        "l9.auto",
+        NOW,
+      ),
+    );
+    for (const k of [
+      ...BASE_KEYS,
+      "role",
+      "objective",
+      "input_variables",
+      "output_format",
+      "model_target",
+      "constraints",
+      "phase_model",
+      "description",
+      "activation_signals",
+      "input_contract",
+      "output_contract",
+      "validation_gates",
+      "stop_conditions",
+    ]) {
       expect(m).toHaveProperty(k);
     }
     expect(m.artifact_type).toBe("prompt");
@@ -59,7 +110,15 @@ describe("QTE-003 — buildMeta emits the correct field set + taxonomy per type"
   });
 
   test("token_cost_estimate is a number and content_hash is populated", () => {
-    const m = buildMeta("skills/s.md", "some body", ef(), cr("skill", "builder"), NS, "l9.auto", NOW);
+    const m = buildMeta(
+      "skills/s.md",
+      "some body",
+      ef(),
+      cr("skill", "builder"),
+      NS,
+      "l9.auto",
+      NOW,
+    );
     expect(typeof m.token_cost_estimate).toBe("number");
     expect(typeof m.content_hash).toBe("string");
     expect(m.content_hash.length).toBeGreaterThan(0);

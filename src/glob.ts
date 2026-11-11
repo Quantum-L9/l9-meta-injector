@@ -62,27 +62,40 @@ const CONTROL_CHARACTER = /[\u0000-\u001F\u007F]/;
  * refused with the reason, never narrowed or widened silently.
  */
 export function assertDiscoveryGlob(pattern: string): string {
-  if (typeof pattern !== "string" || pattern.length === 0) throw new Error("discovery glob must be a non-empty pattern");
-  if (pattern.trim() !== pattern) throw new Error(`discovery glob must not carry surrounding whitespace: ${JSON.stringify(pattern)}`);
+  if (typeof pattern !== "string" || pattern.length === 0)
+    throw new Error("discovery glob must be a non-empty pattern");
+  if (pattern.trim() !== pattern)
+    throw new Error(
+      `discovery glob must not carry surrounding whitespace: ${JSON.stringify(pattern)}`,
+    );
   if (pattern.length > 512) throw new Error("discovery glob must be at most 512 characters");
-  if (CONTROL_CHARACTER.test(pattern)) throw new Error("discovery glob contains a forbidden control character");
-  if (pattern.includes("\\")) throw new Error(`discovery glob must use forward slashes: ${pattern}`);
-  if (pattern.startsWith("/")) throw new Error(`discovery glob must be repository-relative, not absolute: ${pattern}`);
-  if (pattern.startsWith("./")) throw new Error(`discovery glob must not start with ./: ${pattern}`);
-  if (pattern.includes("//")) throw new Error(`discovery glob must not contain an empty segment: ${pattern}`);
+  if (CONTROL_CHARACTER.test(pattern))
+    throw new Error("discovery glob contains a forbidden control character");
+  if (pattern.includes("\\"))
+    throw new Error(`discovery glob must use forward slashes: ${pattern}`);
+  if (pattern.startsWith("/"))
+    throw new Error(`discovery glob must be repository-relative, not absolute: ${pattern}`);
+  if (pattern.startsWith("./"))
+    throw new Error(`discovery glob must not start with ./: ${pattern}`);
+  if (pattern.includes("//"))
+    throw new Error(`discovery glob must not contain an empty segment: ${pattern}`);
   const segments = pattern.split("/");
   // A trailing '/' leaves an empty final segment: the pattern names a directory, can
   // never match a file, and would let a governed run pass over nothing (RC-010).
   if (segments.some((segment) => segment === "")) {
     const directory = pattern.replace(/\/+$/, "");
     const intended = directory.endsWith("**") ? directory : `${directory}/**`;
-    throw new Error(`discovery glob must not contain an empty segment (a trailing '/' matches no file; use '${intended}'): ${pattern}`);
+    throw new Error(
+      `discovery glob must not contain an empty segment (a trailing '/' matches no file; use '${intended}'): ${pattern}`,
+    );
   }
   if (segments.some((segment) => segment === "." || segment === "..")) {
     throw new Error(`discovery glob must not contain . or .. segments: ${pattern}`);
   }
   if (UNSUPPORTED_SCOPE_SYNTAX.test(pattern)) {
-    throw new Error(`discovery glob uses unsupported syntax (brace alternation, character classes and negation are not part of the dialect): ${pattern}`);
+    throw new Error(
+      `discovery glob uses unsupported syntax (brace alternation, character classes and negation are not part of the dialect): ${pattern}`,
+    );
   }
   return pattern;
 }

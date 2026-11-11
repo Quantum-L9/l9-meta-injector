@@ -19,7 +19,9 @@ const tracked = require("./tracked-metadata-cli");
 function outputLine(key, value) {
   const text = String(value);
   if (hasControlChar(key) || hasControlChar(text)) {
-    throw new ActionInputError(`output '${JSON.stringify(key)}' contains a forbidden control character`);
+    throw new ActionInputError(
+      `output '${JSON.stringify(key)}' contains a forbidden control character`,
+    );
   }
   return `${key}=${text}\n`;
 }
@@ -37,7 +39,8 @@ function writeOutputs(file, entries) {
 }
 
 function execute(config) {
-  for (const warning of config.warnings) process.stderr.write(`operation-cli: warning: ${warning}\n`);
+  for (const warning of config.warnings)
+    process.stderr.write(`operation-cli: warning: ${warning}\n`);
   const invocation = buildInvocation(config);
   process.stderr.write(`operation-cli: mode=${config.mode} target=${config.targetRoot}\n`);
   const child = spawnSync(invocation.command, invocation.args, {
@@ -68,7 +71,9 @@ function execute(config) {
 
 function main() {
   if (tracked.TRACKED_MODES.includes(process.argv[2])) {
-    tracked.main(process.argv.slice(2)).then(code => { process.exitCode = code; });
+    tracked.main(process.argv.slice(2)).then((code) => {
+      process.exitCode = code;
+    });
     return;
   }
   if (isHelpRequest(process.argv.slice(2))) {
@@ -86,7 +91,9 @@ function main() {
     execute(config);
   } catch (error) {
     const prefix = error instanceof ActionInputError ? "invalid input" : "failed";
-    process.stderr.write(`operation-cli: ${prefix}: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.stderr.write(
+      `operation-cli: ${prefix}: ${error instanceof Error ? error.message : String(error)}\n`,
+    );
     process.exit(2);
   }
 }

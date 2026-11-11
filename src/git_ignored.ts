@@ -18,10 +18,17 @@ export interface GitIgnoredPaths {
   readonly directories: readonly string[];
 }
 
-function runGit(root: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+function runGit(
+  root: string,
+  args: string[],
+): { status: number | null; stdout: string; stderr: string } {
   const git = gitExecutable();
   if (git === null) return { status: null, stdout: "", stderr: "git not found" };
-  const result = spawnSync(git, args, { cwd: root, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
+  const result = spawnSync(git, args, {
+    cwd: root,
+    encoding: "utf8",
+    maxBuffer: 256 * 1024 * 1024,
+  });
   return { status: result.status, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
 }
 
@@ -35,7 +42,14 @@ export function listGitIgnoredUntracked(root: string): GitIgnoredPaths | undefin
   const absolute = path.resolve(root);
   const probe = runGit(absolute, ["rev-parse", "--is-inside-work-tree"]);
   if (probe.status !== 0 || probe.stdout.trim() !== "true") return undefined;
-  const listed = runGit(absolute, ["ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"]);
+  const listed = runGit(absolute, [
+    "ls-files",
+    "--others",
+    "--ignored",
+    "--exclude-standard",
+    "--directory",
+    "-z",
+  ]);
   if (listed.status !== 0) {
     const detail = listed.stderr.trim() || "exit " + String(listed.status);
     throw new Error(`git ls-files failed under ${absolute}: ${detail}`);

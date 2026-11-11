@@ -5,20 +5,34 @@
 // The second assertion is the one that matters — a reader that refuses a
 // traversal path in its return value but has already written the file has not
 // prevented anything.
-import * as fs from "node:fs";
+
 import { createHash } from "node:crypto";
+import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, expect, test } from "vitest";
-import { acquireLocalSource } from "../src/local_source";
-import type { ArchiveManifestStore } from "../src/local_source";
-import { canonicalMemberPath, memberCollisionKey, preflightArchive } from "../src/archive_preflight";
 import type { ArchivePreflightResult } from "../src/archive_preflight";
-import { DEFAULT_LOCAL_ARCHIVE_POLICY, localArchivePolicyFingerprint, resolveLocalArchivePolicy } from "../src/local_archive_policy";
-import { ZipBudgetExceededError, ZipFormatError, readZipCentralDirectory, streamZipMember } from "../src/zip_reader";
-import { UNIX_FIFO, UNIX_SYMLINK, treeSnapshot, writeRawZip } from "./helpers/zip_fixtures";
-import type { ZipMemberSpec } from "./helpers/zip_fixtures";
+import {
+  canonicalMemberPath,
+  memberCollisionKey,
+  preflightArchive,
+} from "../src/archive_preflight";
 import type { LocalArchivePolicy } from "../src/local_archive_policy";
+import {
+  DEFAULT_LOCAL_ARCHIVE_POLICY,
+  localArchivePolicyFingerprint,
+  resolveLocalArchivePolicy,
+} from "../src/local_archive_policy";
+import type { ArchiveManifestStore } from "../src/local_source";
+import { acquireLocalSource } from "../src/local_source";
+import {
+  readZipCentralDirectory,
+  streamZipMember,
+  ZipBudgetExceededError,
+  ZipFormatError,
+} from "../src/zip_reader";
+import type { ZipMemberSpec } from "./helpers/zip_fixtures";
+import { treeSnapshot, UNIX_FIFO, UNIX_SYMLINK, writeRawZip } from "./helpers/zip_fixtures";
 
 function tmp(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "l9-archive-sec-"));
@@ -34,7 +48,10 @@ interface HeldOutcome {
 }
 
 /** Observe one archive and report both its verdict and the filesystem effect. */
-function observeArchive(members: ZipMemberSpec[], policy?: Partial<LocalArchivePolicy>): HeldOutcome {
+function observeArchive(
+  members: ZipMemberSpec[],
+  policy?: Partial<LocalArchivePolicy>,
+): HeldOutcome {
   const parent = tmp();
   const root = path.join(parent, "src");
   fs.mkdirSync(root, { recursive: true });
@@ -72,11 +89,17 @@ function expectHeld(outcome: HeldOutcome, code: string): void {
 
 describe("archive preflight — hostile member paths", () => {
   test("a parent-traversal path is rejected", () => {
-    expectHeld(observeArchive([{ name: "../escape.txt", content: "no" }]), "archive.path_traversal");
+    expectHeld(
+      observeArchive([{ name: "../escape.txt", content: "no" }]),
+      "archive.path_traversal",
+    );
   });
 
   test("a traversal buried mid-path is rejected", () => {
-    expectHeld(observeArchive([{ name: "docs/../../escape.txt", content: "no" }]), "archive.path_traversal");
+    expectHeld(
+      observeArchive([{ name: "docs/../../escape.txt", content: "no" }]),
+      "archive.path_traversal",
+    );
   });
 
   test("a POSIX-absolute path is rejected", () => {
@@ -84,17 +107,26 @@ describe("archive preflight — hostile member paths", () => {
   });
 
   test("a Windows drive-absolute path is rejected", () => {
-    expectHeld(observeArchive([{ name: "C:\\escape.txt", content: "no" }]), "archive.path_drive_absolute");
+    expectHeld(
+      observeArchive([{ name: "C:\\escape.txt", content: "no" }]),
+      "archive.path_drive_absolute",
+    );
   });
 
   test("a UNC path is rejected", () => {
-    expectHeld(observeArchive([{ name: "\\\\server\\share\\x.txt", content: "no" }]), "archive.path_unc");
+    expectHeld(
+      observeArchive([{ name: "\\\\server\\share\\x.txt", content: "no" }]),
+      "archive.path_unc",
+    );
   });
 
   test("a backslash traversal is rejected rather than treated as a filename", () => {
     // On a POSIX host a backslash is an ordinary character; on Windows it is a
     // separator. Normalizing first means the same archive is judged the same way.
-    expectHeld(observeArchive([{ name: "..\\escape.txt", content: "no" }]), "archive.path_traversal");
+    expectHeld(
+      observeArchive([{ name: "..\\escape.txt", content: "no" }]),
+      "archive.path_traversal",
+    );
   });
 
   test("an embedded NUL in a member path is rejected", () => {
@@ -103,24 +135,35 @@ describe("archive preflight — hostile member paths", () => {
 
   test("an over-long member path is rejected", () => {
     const long = `${"a/".repeat(40)}file.txt`;
-    expectHeld(observeArchive([{ name: long, content: "x" }], { maxPathLength: 16 }), "archive.path_too_long");
+    expectHeld(
+      observeArchive([{ name: long, content: "x" }], { maxPathLength: 16 }),
+      "archive.path_too_long",
+    );
   });
 });
 
 describe("archive preflight — entry kinds and encryption", () => {
   test("a symlink member is rejected", () => {
     expectHeld(
-      observeArchive([{ name: "link", content: "/etc/passwd", unixMode: UNIX_SYMLINK, stored: true }]),
+      observeArchive([
+        { name: "link", content: "/etc/passwd", unixMode: UNIX_SYMLINK, stored: true },
+      ]),
       "archive.entry_symlink",
     );
   });
 
   test("a FIFO member is rejected", () => {
-    expectHeld(observeArchive([{ name: "pipe", unixMode: UNIX_FIFO, stored: true }]), "archive.entry_special");
+    expectHeld(
+      observeArchive([{ name: "pipe", unixMode: UNIX_FIFO, stored: true }]),
+      "archive.entry_special",
+    );
   });
 
   test("an encrypted member is rejected", () => {
-    expectHeld(observeArchive([{ name: "secret.md", content: "x", encrypted: true }]), "archive.member_encrypted");
+    expectHeld(
+      observeArchive([{ name: "secret.md", content: "x", encrypted: true }]),
+      "archive.member_encrypted",
+    );
   });
 
   test("an unsupported compression method is rejected", () => {
@@ -135,14 +178,20 @@ describe("archive preflight — entry kinds and encryption", () => {
 describe("archive preflight — collisions", () => {
   test("an exactly duplicated member path is rejected", () => {
     expectHeld(
-      observeArchive([{ name: "a.txt", content: "first" }, { name: "a.txt", content: "second" }]),
+      observeArchive([
+        { name: "a.txt", content: "first" },
+        { name: "a.txt", content: "second" },
+      ]),
       "archive.duplicate_member",
     );
   });
 
   test("a case-only collision is rejected", () => {
     expectHeld(
-      observeArchive([{ name: "A.txt", content: "upper" }, { name: "a.txt", content: "lower" }]),
+      observeArchive([
+        { name: "A.txt", content: "upper" },
+        { name: "a.txt", content: "lower" },
+      ]),
       "archive.case_collision",
     );
   });
@@ -160,7 +209,10 @@ describe("archive preflight — collisions", () => {
 
   test("a directory entry that shadows a file is rejected", () => {
     expectHeld(
-      observeArchive([{ name: "docs/", content: "" }, { name: "docs", content: "file" }]),
+      observeArchive([
+        { name: "docs/", content: "" },
+        { name: "docs", content: "file" },
+      ]),
       "archive.duplicate_member",
     );
   });
@@ -204,7 +256,10 @@ describe("archive budgets", () => {
   test("an oversized total expansion is refused", () => {
     expectHeld(
       observeArchive(
-        [{ name: "a.txt", content: "x".repeat(512) }, { name: "b.txt", content: "y".repeat(512) }],
+        [
+          { name: "a.txt", content: "x".repeat(512) },
+          { name: "b.txt", content: "y".repeat(512) },
+        ],
         { maxTotalUncompressedBytesPerArchive: 600, maxCompressionRatio: 100000 },
       ),
       "archive.total_uncompressed_exceeded",
@@ -214,7 +269,9 @@ describe("archive budgets", () => {
   test("an excessive compression ratio is refused", () => {
     // 512 KiB of a single repeated byte deflates to a few hundred bytes.
     expectHeld(
-      observeArchive([{ name: "bomb.txt", content: "A".repeat(512 * 1024) }], { maxCompressionRatio: 10 }),
+      observeArchive([{ name: "bomb.txt", content: "A".repeat(512 * 1024) }], {
+        maxCompressionRatio: 10,
+      }),
       "archive.compression_ratio_exceeded",
     );
   });
@@ -249,8 +306,11 @@ describe("archive budgets", () => {
       const held = observation.archives.filter((archive) => !archive.expanded);
       expect(expanded).toHaveLength(2);
       expect(held).toHaveLength(2);
-      expect(held.every((archive) =>
-        archive.holds.some((hold) => hold.code === "archive.session_budget_exceeded"))).toBe(true);
+      expect(
+        held.every((archive) =>
+          archive.holds.some((hold) => hold.code === "archive.session_budget_exceeded"),
+        ),
+      ).toBe(true);
       expect(observation.virtualArtifacts).toHaveLength(2);
       expect(treeSnapshot(root)).toEqual(before);
     } finally {
@@ -263,15 +323,21 @@ describe("archive budgets", () => {
     const staging = tmp();
     writeRawZip(path.join(staging, "inner.zip"), [{ name: "deep.md", content: "# Deep\n" }]);
     writeRawZip(path.join(root, "outer.zip"), [
-      { name: "inner.zip", content: fs.readFileSync(path.join(staging, "inner.zip")), stored: true },
+      {
+        name: "inner.zip",
+        content: fs.readFileSync(path.join(staging, "inner.zip")),
+        stored: true,
+      },
     ]);
 
     const observation = acquireLocalSource({ path: root, archivePolicy: { maxNestedDepth: 0 } });
     try {
-      expect(observation.virtualArtifacts.map((member) => member.virtualSourcePath))
-        .toEqual(["outer.zip!/inner.zip"]);
-      expect(observation.diagnostics.map((diagnostic) => diagnostic.code))
-        .toContain("archive.nesting_depth_exceeded");
+      expect(observation.virtualArtifacts.map((member) => member.virtualSourcePath)).toEqual([
+        "outer.zip!/inner.zip",
+      ]);
+      expect(observation.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+        "archive.nesting_depth_exceeded",
+      );
     } finally {
       observation.dispose();
     }
@@ -285,8 +351,9 @@ describe("archive budgets", () => {
       maxNestedDepth: DEFAULT_LOCAL_ARCHIVE_POLICY.maxNestedDepth,
     });
     // A caller override never silently loosens an unrelated limit.
-    expect(resolveLocalArchivePolicy({ maxMemberCount: 3 }).maxCompressionRatio)
-      .toBe(DEFAULT_LOCAL_ARCHIVE_POLICY.maxCompressionRatio);
+    expect(resolveLocalArchivePolicy({ maxMemberCount: 3 }).maxCompressionRatio).toBe(
+      DEFAULT_LOCAL_ARCHIVE_POLICY.maxCompressionRatio,
+    );
   });
 });
 
@@ -309,13 +376,17 @@ describe("resolved-policy fingerprint", () => {
     const seen = new Map<string, string>();
     for (const key of Object.keys(base) as (keyof typeof base)[]) {
       const current = base[key];
-      const altered = typeof current === "number"
-        ? { ...base, [key]: current + 1 }
-        : { ...base, [key]: `${String(current)}-x` };
+      const altered =
+        typeof current === "number"
+          ? { ...base, [key]: current + 1 }
+          : { ...base, [key]: `${String(current)}-x` };
       const moved = localArchivePolicyFingerprint(altered);
       expect(moved, `changing ${String(key)} left the fingerprint unchanged`).not.toBe(baseline);
       const collided = seen.get(moved);
-      expect(collided, `${String(key)} and ${collided} produced the same fingerprint`).toBeUndefined();
+      expect(
+        collided,
+        `${String(key)} and ${collided} produced the same fingerprint`,
+      ).toBeUndefined();
       seen.set(moved, String(key));
     }
     expect(seen.size).toBe(Object.keys(base).length);
@@ -326,7 +397,9 @@ describe("resolved-policy fingerprint", () => {
     const permissive = resolveLocalArchivePolicy({ maxCompressionRatio: 200 });
     const strict = resolveLocalArchivePolicy({ maxCompressionRatio: 10 });
     expect(permissive.version).toBe(strict.version);
-    expect(localArchivePolicyFingerprint(permissive)).not.toBe(localArchivePolicyFingerprint(strict));
+    expect(localArchivePolicyFingerprint(permissive)).not.toBe(
+      localArchivePolicyFingerprint(strict),
+    );
   });
 
   test("key ordering is by code point, so the fingerprint cannot vary by host locale", () => {
@@ -339,7 +412,10 @@ describe("resolved-policy fingerprint", () => {
     const once = localArchivePolicyFingerprint(policy);
     // Same fields presented in a deliberately different insertion order.
     const shuffled = Object.fromEntries(
-      Object.keys(policy).sort().reverse().map((key) => [key, (policy as Record<string, unknown>)[key]]),
+      Object.keys(policy)
+        .sort()
+        .reverse()
+        .map((key) => [key, (policy as Record<string, unknown>)[key]]),
     ) as unknown as LocalArchivePolicy;
     expect(localArchivePolicyFingerprint(shuffled)).toBe(once);
     expect(once).toMatch(/^lap1:[0-9a-f]{64}$/);
@@ -347,8 +423,9 @@ describe("resolved-policy fingerprint", () => {
 
   test("the defaults and an explicit restatement of them agree", () => {
     // A caller who passes the defaults back in must not miss their own warm cache.
-    expect(localArchivePolicyFingerprint(resolveLocalArchivePolicy()))
-      .toBe(localArchivePolicyFingerprint({ ...DEFAULT_LOCAL_ARCHIVE_POLICY }));
+    expect(localArchivePolicyFingerprint(resolveLocalArchivePolicy())).toBe(
+      localArchivePolicyFingerprint({ ...DEFAULT_LOCAL_ARCHIVE_POLICY }),
+    );
   });
 
   test("a warm permissive verdict cannot answer a stricter same-version policy", () => {
@@ -364,7 +441,9 @@ describe("resolved-policy fingerprint", () => {
         lookups.push(key.policyFingerprint);
         return entries.get(JSON.stringify(key));
       },
-      put: (key, value) => { entries.set(JSON.stringify(key), value); },
+      put: (key, value) => {
+        entries.set(JSON.stringify(key), value);
+      },
     };
 
     const parent = tmp();
@@ -372,7 +451,9 @@ describe("resolved-policy fingerprint", () => {
     fs.mkdirSync(root, { recursive: true });
     // 512 KiB of one repeated byte deflates around a thousand to one: accepted
     // under a ratio ceiling of 100000, refused under one of 10.
-    writeRawZip(path.join(root, "Case.zip"), [{ name: "bomb.txt", content: "A".repeat(512 * 1024) }]);
+    writeRawZip(path.join(root, "Case.zip"), [
+      { name: "bomb.txt", content: "A".repeat(512 * 1024) },
+    ]);
 
     const observe = (policy: Partial<LocalArchivePolicy>) => {
       const observation = acquireLocalSource({
@@ -403,8 +484,9 @@ describe("resolved-policy fingerprint", () => {
     expect(lookups).toHaveLength(2);
     expect(lookups[0]).not.toBe(lookups[1]);
     // And the versions really were identical, which is what made this reachable.
-    expect(resolveLocalArchivePolicy({ maxCompressionRatio: 100000 }).version)
-      .toBe(resolveLocalArchivePolicy({ maxCompressionRatio: 10 }).version);
+    expect(resolveLocalArchivePolicy({ maxCompressionRatio: 100000 }).version).toBe(
+      resolveLocalArchivePolicy({ maxCompressionRatio: 10 }).version,
+    );
   });
 
   test("an unchanged policy still reuses its own warm verdict", () => {
@@ -419,7 +501,9 @@ describe("resolved-policy fingerprint", () => {
         if (found !== undefined) hits += 1;
         return found;
       },
-      put: (key, value) => { entries.set(JSON.stringify(key), value); },
+      put: (key, value) => {
+        entries.set(JSON.stringify(key), value);
+      },
     };
 
     const parent = tmp();
@@ -454,7 +538,9 @@ describe("archive reader", () => {
     ]);
     const directory = readZipCentralDirectory(path.join(root, "meta.zip"));
     expect(directory.declaredEntryCount).toBe(3);
-    expect(directory.entries.map((entry) => [entry.name, entry.kind, entry.compressionMethod])).toEqual([
+    expect(
+      directory.entries.map((entry) => [entry.name, entry.kind, entry.compressionMethod]),
+    ).toEqual([
       ["stored.txt", "file", 0],
       ["deflated.md", "file", 8],
       ["dir/", "directory", 0],
@@ -474,7 +560,9 @@ describe("archive reader", () => {
     const observation = acquireLocalSource({ path: archivePath });
     try {
       expect(observation.archives[0].expanded).toBe(false);
-      expect(observation.archives[0].holds.map((hold) => hold.code)).toContain("archive.format_unreadable");
+      expect(observation.archives[0].holds.map((hold) => hold.code)).toContain(
+        "archive.format_unreadable",
+      );
       expect(observation.virtualArtifacts).toEqual([]);
       expect(treeSnapshot(root)).toEqual(before);
     } finally {
@@ -523,8 +611,9 @@ describe("unsupported archive formats", () => {
     try {
       expect(observation.virtualArtifacts).toEqual([]);
       expect(observation.archives).toEqual([]);
-      expect(observation.diagnostics.map((d) => d.code))
-        .toContain("local-source.archive_expansion_disabled");
+      expect(observation.diagnostics.map((d) => d.code)).toContain(
+        "local-source.archive_expansion_disabled",
+      );
       const record = observation.inventory.records.find((r) => r.relative_path === "Bundle.zip");
       expect(record?.content_hash).toMatch(/^[a-f0-9]{64}$/);
     } finally {
@@ -614,8 +703,10 @@ describe("audit regressions", () => {
     const observation = acquireLocalSource({ path: root });
     try {
       const members = observation.virtualArtifacts;
-      expect(members.map((member) => member.virtualSourcePath))
-        .toEqual(["first.zip!/m.txt", "second.zip!/m.txt"]);
+      expect(members.map((member) => member.virtualSourcePath)).toEqual([
+        "first.zip!/m.txt",
+        "second.zip!/m.txt",
+      ]);
       // Same bytes, same digest, but two distinct staged files.
       expect(members[0].contentHash).toBe(members[1].contentHash);
       expect(members[0].stagedPath).not.toBe(members[1].stagedPath);
@@ -661,13 +752,15 @@ describe("zip64 central-directory records", () => {
     const observation = acquireLocalSource({ path: path.join(root, "big.zip") });
     try {
       expect(observation.archives[0].expanded).toBe(true);
-      expect(observation.virtualArtifacts.map((member) => member.virtualSourcePath))
-        .toEqual(["big.zip!/docs/second.md", "big.zip!/first.txt"]);
-      const second = observation.virtualArtifacts
-        .find((member) => member.memberPath === "docs/second.md");
+      expect(observation.virtualArtifacts.map((member) => member.virtualSourcePath)).toEqual([
+        "big.zip!/docs/second.md",
+        "big.zip!/first.txt",
+      ]);
+      const second = observation.virtualArtifacts.find(
+        (member) => member.memberPath === "docs/second.md",
+      );
       expect(second?.sizeBytes).toBe(body.length);
-      expect(second?.contentHash)
-        .toBe(`sha256:${createHash("sha256").update(body).digest("hex")}`);
+      expect(second?.contentHash).toBe(`sha256:${createHash("sha256").update(body).digest("hex")}`);
       expect(treeSnapshot(root)).toEqual(before);
     } finally {
       observation.dispose();
@@ -695,7 +788,10 @@ describe("zip64 central-directory records", () => {
     // this test for a reason it is not about.
     const eocd = bytes.subarray(eocdOffset);
     eocd.writeUInt32LE(eocd.readUInt32LE(12) - 16, 12);
-    fs.writeFileSync(path.join(root, "ok.zip"), Buffer.concat([bytes.subarray(0, eocdOffset - 16), eocd]));
+    fs.writeFileSync(
+      path.join(root, "ok.zip"),
+      Buffer.concat([bytes.subarray(0, eocdOffset - 16), eocd]),
+    );
 
     // The first placeholder resolved; the two the payload could not cover stayed
     // put. Since reader 1.2.0 (ADR-061) an entry whose data extent cannot fit
@@ -767,9 +863,8 @@ describe("zip64 central-directory records", () => {
     // Reading stopped when the records ran out and returned the short list as if
     // it were the archive. Every member the declaration accounts for and the
     // directory does not is a member preflight would never have seen.
-    const { read, outcome } = corruptedArchive(
-      [{ name: "a.md", content: "# A\n" }],
-      (bytes) => declareEntryCount(bytes, 3),
+    const { read, outcome } = corruptedArchive([{ name: "a.md", content: "# A\n" }], (bytes) =>
+      declareEntryCount(bytes, 3),
     );
     expect(read).toThrow(/declares 3 entries but 1 could be parsed/);
     expectHeld(outcome, "archive.format_unreadable");
@@ -779,7 +874,10 @@ describe("zip64 central-directory records", () => {
     // The mirror case: members present but unaccounted for. Refusing both keeps
     // the count an equality rather than a floor.
     const { read, outcome } = corruptedArchive(
-      [{ name: "a.md", content: "# A\n" }, { name: "b.md", content: "# B\n" }],
+      [
+        { name: "a.md", content: "# A\n" },
+        { name: "b.md", content: "# B\n" },
+      ],
       (bytes) => declareEntryCount(bytes, 1),
     );
     expect(read).toThrow(/declares 1 entries but 2 could be parsed/);
@@ -790,15 +888,12 @@ describe("zip64 central-directory records", () => {
     // The parse loop exits when fewer than a fixed header's bytes remain, so
     // padding after the final record used to be discarded in silence. The
     // declared byte span must be consumed exactly, not merely covered.
-    const { read, outcome } = corruptedArchive(
-      [{ name: "a.md", content: "# A\n" }],
-      (bytes) => {
-        const eocdOffset = bytes.length - 22;
-        const eocd = Buffer.from(bytes.subarray(eocdOffset));
-        eocd.writeUInt32LE(eocd.readUInt32LE(12) + 8, 12);
-        return Buffer.concat([bytes.subarray(0, eocdOffset), Buffer.alloc(8), eocd]);
-      },
-    );
+    const { read, outcome } = corruptedArchive([{ name: "a.md", content: "# A\n" }], (bytes) => {
+      const eocdOffset = bytes.length - 22;
+      const eocd = Buffer.from(bytes.subarray(eocdOffset));
+      eocd.writeUInt32LE(eocd.readUInt32LE(12) + 8, 12);
+      return Buffer.concat([bytes.subarray(0, eocdOffset), Buffer.alloc(8), eocd]);
+    });
     expect(read).toThrow(/declares \d+ bytes but \d+ were consumed/);
     expectHeld(outcome, "archive.format_unreadable");
   });
@@ -806,15 +901,12 @@ describe("zip64 central-directory records", () => {
   test("an incomplete final central-directory record is refused", () => {
     // Fewer than CENTRAL_FIXED_SIZE trailing bytes: too short to parse as a
     // record, and previously too short to notice.
-    const { read, outcome } = corruptedArchive(
-      [{ name: "a.md", content: "# A\n" }],
-      (bytes) => {
-        const eocdOffset = bytes.length - 22;
-        const eocd = Buffer.from(bytes.subarray(eocdOffset));
-        eocd.writeUInt32LE(eocd.readUInt32LE(12) + 10, 12);
-        return Buffer.concat([bytes.subarray(0, eocdOffset), Buffer.alloc(10), eocd]);
-      },
-    );
+    const { read, outcome } = corruptedArchive([{ name: "a.md", content: "# A\n" }], (bytes) => {
+      const eocdOffset = bytes.length - 22;
+      const eocd = Buffer.from(bytes.subarray(eocdOffset));
+      eocd.writeUInt32LE(eocd.readUInt32LE(12) + 10, 12);
+      return Buffer.concat([bytes.subarray(0, eocdOffset), Buffer.alloc(10), eocd]);
+    });
     expect(read).toThrow(/declares \d+ bytes but \d+ were consumed/);
     expectHeld(outcome, "archive.format_unreadable");
   });
@@ -831,12 +923,11 @@ describe("zip64 central-directory records", () => {
     expect(entry.compressionMethod).toBe(8);
 
     const chunks: Buffer[] = [];
-    expect(() => streamZipMember(
-      archivePath,
-      entry,
-      { maxUncompressedBytes: 4096 },
-      (chunk) => { chunks.push(chunk); },
-    )).toThrow(ZipBudgetExceededError);
+    expect(() =>
+      streamZipMember(archivePath, entry, { maxUncompressedBytes: 4096 }, (chunk) => {
+        chunks.push(chunk);
+      }),
+    ).toThrow(ZipBudgetExceededError);
     // Nothing reached the sink: the refusal happened inside the inflate, before
     // any chunk existed to hand on.
     expect(chunks).toEqual([]);
@@ -848,7 +939,9 @@ describe("zip64 central-directory records", () => {
       archivePath,
       entry,
       { maxUncompressedBytes: 1024 * 1024 },
-      (chunk) => { ok.push(chunk); },
+      (chunk) => {
+        ok.push(chunk);
+      },
     );
     expect(result.bytesWritten).toBe(512 * 1024);
     expect(Buffer.concat(ok).toString()).toBe("A".repeat(512 * 1024));
@@ -870,26 +963,33 @@ describe("archive bytes bound to the snapshot", () => {
     const stats = fs.statSync(archive, { bigint: true });
 
     // A prior run's record whose stat matches exactly but whose digest is wrong.
-    const stale = new Map([["Case.zip", {
-      content_hash: `sha256:${"f".repeat(64)}`,
-      size_bytes: Number(stats.size),
-      mtime_ms: Number(stats.mtimeMs),
-      mtime_ns: stats.mtimeNs.toString(),
-    }]]);
+    const stale = new Map([
+      [
+        "Case.zip",
+        {
+          content_hash: `sha256:${"f".repeat(64)}`,
+          size_bytes: Number(stats.size),
+          mtime_ms: Number(stats.mtimeMs),
+          mtime_ns: stats.mtimeNs.toString(),
+        },
+      ],
+    ]);
 
     const observation = acquireLocalSource({ path: archive, knownHashes: stale });
     try {
       const observed = observation.archives[0];
-      expect(observed.holds.map((hold) => hold.message))
-        .toContain("archive bytes changed between hashing and staging; no member is claimed");
+      expect(observed.holds.map((hold) => hold.message)).toContain(
+        "archive bytes changed between hashing and staging; no member is claimed",
+      );
       expect(observed.expanded).toBe(false);
       expect(observed.memberCount).toBe(0);
       // The whole point: no member is claimed out of an archive whose identity is
       // in doubt, and the observation says so rather than reporting a clean read.
       expect(observation.virtualArtifacts).toEqual([]);
       expect(observation.stable).toBe(false);
-      expect(observation.diagnostics.map((d) => d.code))
-        .toContain("local-source.source_changed_during_observation");
+      expect(observation.diagnostics.map((d) => d.code)).toContain(
+        "local-source.source_changed_during_observation",
+      );
     } finally {
       observation.dispose();
     }
@@ -909,10 +1009,13 @@ describe("archive bytes bound to the snapshot", () => {
     try {
       expect(observation.archives.length).toBeGreaterThan(1);
       for (const observed of observation.archives) {
-        expect(observed.holds.map((hold) => hold.message))
-          .not.toContain("archive bytes changed between hashing and staging; no member is claimed");
+        expect(observed.holds.map((hold) => hold.message)).not.toContain(
+          "archive bytes changed between hashing and staging; no member is claimed",
+        );
       }
-      expect(observation.virtualArtifacts.some((m) => m.virtualSourcePath.includes("leaf.txt"))).toBe(true);
+      expect(
+        observation.virtualArtifacts.some((m) => m.virtualSourcePath.includes("leaf.txt")),
+      ).toBe(true);
     } finally {
       observation.dispose();
     }

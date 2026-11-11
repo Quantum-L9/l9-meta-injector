@@ -27,8 +27,15 @@ function qualificationOutput(root, requested) {
     throw new Error("qualification output ancestry must be canonical and outside source");
   }
   const stat = fs.lstatSync(out);
-  if (!stat.isDirectory() || typeof process.getuid !== "function" || stat.uid !== process.getuid() || (stat.mode & 0o777) !== 0o700) {
-    throw new Error("qualification output must be an existing caller-owned private directory (mode 0700)");
+  if (
+    !stat.isDirectory() ||
+    typeof process.getuid !== "function" ||
+    stat.uid !== process.getuid() ||
+    (stat.mode & 0o777) !== 0o700
+  ) {
+    throw new Error(
+      "qualification output must be an existing caller-owned private directory (mode 0700)",
+    );
   }
   for (const name of OUTPUT_NAMES) {
     validateExternalReportPath(root, path.join(out, name));
@@ -42,7 +49,14 @@ function filesystemState(dir) {
     for (const name of fs.readdirSync(current).sort()) {
       const file = path.join(current, name);
       const stat = fs.lstatSync(file, { bigint: true });
-      rows.push([path.relative(dir, file), String(stat.mode), String(stat.size), String(stat.mtimeNs), String(stat.ino), String(stat.nlink)]);
+      rows.push([
+        path.relative(dir, file),
+        String(stat.mode),
+        String(stat.size),
+        String(stat.mtimeNs),
+        String(stat.ino),
+        String(stat.nlink),
+      ]);
       if (stat.isDirectory() && !stat.isSymbolicLink()) {
         visit(file);
       }
@@ -52,7 +66,8 @@ function filesystemState(dir) {
   return JSON.stringify(rows);
 }
 
-const [rootArg, repositoryId, revision, outArg, producerDir, producerCommit] = process.argv.slice(2);
+const [rootArg, repositoryId, revision, outArg, producerDir, producerCommit] =
+  process.argv.slice(2);
 if (!producerCommit || !/^[a-f0-9]{40}$/.test(producerCommit)) {
   throw new Error("exact producer implementation commit required");
 }
@@ -65,7 +80,13 @@ const timings = [];
 let first;
 for (let run = 0; run < 2; run++) {
   const start = performance.now();
-  const value = producer.runTrackedCoverage({ root, repositoryId, revision, contract: "l9.tracked-carrier-policy/v2", producerVersion: version });
+  const value = producer.runTrackedCoverage({
+    root,
+    repositoryId,
+    revision,
+    contract: "l9.tracked-carrier-policy/v2",
+    producerVersion: version,
+  });
   timings.push(performance.now() - start);
   if (first) {
     assert.equal(value.bytes, first.bytes);
@@ -90,7 +111,23 @@ env.GIT_NO_REPLACE_OBJECTS = "1";
 env.GIT_ALLOW_PROTOCOL = "";
 env.GIT_TERMINAL_PROMPT = "0";
 env.LC_ALL = "C";
-const git = spawnSync("/usr/bin/git", ["--no-optional-locks", "--no-replace-objects", "-c", "extensions.partialClone=", "-c", "core.fsmonitor=false", "ls-tree", "-r", "-z", "--full-tree", first.coverage.snapshot.tree_oid], { cwd: root, env, shell: false, timeout: 30000, maxBuffer: 64 * 1024 * 1024 });
+const git = spawnSync(
+  "/usr/bin/git",
+  [
+    "--no-optional-locks",
+    "--no-replace-objects",
+    "-c",
+    "extensions.partialClone=",
+    "-c",
+    "core.fsmonitor=false",
+    "ls-tree",
+    "-r",
+    "-z",
+    "--full-tree",
+    first.coverage.snapshot.tree_oid,
+  ],
+  { cwd: root, env, shell: false, timeout: 30000, maxBuffer: 64 * 1024 * 1024 },
+);
 if (git.error || git.status !== 0) {
   throw new Error("independent tree metadata observation failed");
 }
@@ -105,7 +142,9 @@ while (offset < raw.length) {
   const row = raw.subarray(offset, end);
   const tab = row.indexOf(9);
   assert(tab > 0);
-  const match = /^(\d{6}) (blob|commit) ([a-f0-9]{40}|[a-f0-9]{64})$/.exec(row.subarray(0, tab).toString("ascii"));
+  const match = /^(\d{6}) (blob|commit) ([a-f0-9]{40}|[a-f0-9]{64})$/.exec(
+    row.subarray(0, tab).toString("ascii"),
+  );
   assert(match);
   const bytes = row.subarray(tab + 1);
   const key = bytes.toString("base64");
@@ -152,10 +191,26 @@ for (const entry of receipts.values()) {
   }
 }
 assert.equal(first.coverage.totals.tree_leaves, tree.size);
-assert.equal(first.coverage.totals.indexed + first.coverage.totals.protected + first.coverage.totals.unsupported, tree.size);
+assert.equal(
+  first.coverage.totals.indexed +
+    first.coverage.totals.protected +
+    first.coverage.totals.unsupported,
+  tree.size,
+);
 assert.equal(first.coverage.closure, "exact_set_verified");
-assert.equal(crypto.createHash("sha256").update(first.bytes).digest("hex"), first.coverage.index.sha256);
-const counts = { blobs: 0, gitlinks: 0, symlinks: 0, hidden: 0, archives: 0, central_manifest: 0, inventory_only: 0 };
+assert.equal(
+  crypto.createHash("sha256").update(first.bytes).digest("hex"),
+  first.coverage.index.sha256,
+);
+const counts = {
+  blobs: 0,
+  gitlinks: 0,
+  symlinks: 0,
+  hidden: 0,
+  archives: 0,
+  central_manifest: 0,
+  inventory_only: 0,
+};
 for (const entry of first.coverage.entries) {
   if (entry.object_type === "blob") {
     counts.blobs++;
@@ -165,7 +220,7 @@ for (const entry of first.coverage.entries) {
   if (entry.mode === "120000") {
     counts.symlinks++;
   }
-  if (entry.path?.split("/").some(segment => segment.startsWith("."))) {
+  if (entry.path?.split("/").some((segment) => segment.startsWith("."))) {
     counts.hidden++;
   }
   if (entry.path && /\.(tar\.gz|tgz|zip|pdf)$/i.test(entry.path)) {
@@ -184,6 +239,28 @@ function save(name, bytes) {
 }
 save("metadata-index.snapshot.jsonl", first.bytes);
 save("coverage-receipt.json", first.coverageBytes);
-const result = { status: "passed", repository: repositoryId, requested_revision: revision, resolved_revision: first.coverage.snapshot.revision, tree_oid: first.coverage.snapshot.tree_oid, producer_commit: producerCommit, producer_version: version, totals: first.coverage.totals, counts, index_sha256: first.sha256, receipt_sha256: crypto.createHash("sha256").update(first.coverageBytes).digest("hex"), exact_set_verified: true, repeat_bytes_identical: true, source_filesystem_unchanged: true, subject_payload_inspection: false, authority_inspection: "not_performed", host_materializability: "not_assessed", timings_ms: timings, max_rss_kib: process.resourceUsage().maxRSS, node: process.version, git_version: spawnSync("/usr/bin/git", ["--version"], { encoding: "utf8" }).stdout.trim() };
+const result = {
+  status: "passed",
+  repository: repositoryId,
+  requested_revision: revision,
+  resolved_revision: first.coverage.snapshot.revision,
+  tree_oid: first.coverage.snapshot.tree_oid,
+  producer_commit: producerCommit,
+  producer_version: version,
+  totals: first.coverage.totals,
+  counts,
+  index_sha256: first.sha256,
+  receipt_sha256: crypto.createHash("sha256").update(first.coverageBytes).digest("hex"),
+  exact_set_verified: true,
+  repeat_bytes_identical: true,
+  source_filesystem_unchanged: true,
+  subject_payload_inspection: false,
+  authority_inspection: "not_performed",
+  host_materializability: "not_assessed",
+  timings_ms: timings,
+  max_rss_kib: process.resourceUsage().maxRSS,
+  node: process.version,
+  git_version: spawnSync("/usr/bin/git", ["--version"], { encoding: "utf8" }).stdout.trim(),
+};
 save("result.json", JSON.stringify(result, null, 2) + "\n");
 process.stdout.write(JSON.stringify(result) + "\n");

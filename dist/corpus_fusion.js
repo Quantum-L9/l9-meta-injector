@@ -1,12 +1,4 @@
 "use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.CONSOLIDATION_EVIDENCE_PROJECT_VERSIONS = exports.CONSOLIDATION_EVIDENCE_SUPERSESSION = exports.CONSOLIDATION_EVIDENCE_NEAR_DUPLICATE = exports.CONSOLIDATION_EVIDENCE_EXACT_DUPLICATE = exports.AMBIGUITY_WEAKLY_CONNECTED = exports.AMBIGUITY_MIXED_VERSION_LINEAGE = exports.AMBIGUITY_AMBIGUOUS_SUPERSESSION = exports.AMBIGUITY_MULTIPLE_PROJECT_NAMES = exports.AMBIGUITY_CONFLICTING_STATUS = exports.DEFAULT_EMBEDDING_STRONG_THRESHOLD = exports.DEFAULT_EMBEDDING_PAIR_THRESHOLD = exports.STRONG_SIGNAL_THRESHOLDS = exports.SEMANTIC_RELATIONS_SCHEMA = exports.CONSOLIDATION_CANDIDATE_SCHEMA = exports.PROJECT_CANDIDATE_SCHEMA = exports.TOPIC_CANDIDATE_SCHEMA = exports.FUSION_PROFILE_VERSION = exports.FUSION_PROFILE_ID = void 0;
-exports.fusionProfileHash = fusionProfileHash;
-exports.classifyPair = classifyPair;
-exports.buildTopicCandidates = buildTopicCandidates;
-exports.isProjectEligibleEdge = isProjectEligibleEdge;
-exports.buildProjectCandidates = buildProjectCandidates;
-exports.buildConsolidationCandidates = buildConsolidationCandidates;
 // corpus_fusion.ts — from pair signals to typed candidates, under a stated policy.
 //
 // A pair with signals on it is not yet a claim. This module turns pairs into three
@@ -37,9 +29,17 @@ exports.buildConsolidationCandidates = buildConsolidationCandidates;
 // Exact duplication stays a fact and is carried through unchanged. It is also,
 // deliberately, not evidence of a shared project: two byte-identical files prove
 // a copy happened, and copies happen across projects all the time.
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.CONSOLIDATION_EVIDENCE_PROJECT_VERSIONS = exports.CONSOLIDATION_EVIDENCE_SUPERSESSION = exports.CONSOLIDATION_EVIDENCE_NEAR_DUPLICATE = exports.CONSOLIDATION_EVIDENCE_EXACT_DUPLICATE = exports.AMBIGUITY_WEAKLY_CONNECTED = exports.AMBIGUITY_MIXED_VERSION_LINEAGE = exports.AMBIGUITY_AMBIGUOUS_SUPERSESSION = exports.AMBIGUITY_MULTIPLE_PROJECT_NAMES = exports.AMBIGUITY_CONFLICTING_STATUS = exports.DEFAULT_EMBEDDING_STRONG_THRESHOLD = exports.DEFAULT_EMBEDDING_PAIR_THRESHOLD = exports.STRONG_SIGNAL_THRESHOLDS = exports.SEMANTIC_RELATIONS_SCHEMA = exports.CONSOLIDATION_CANDIDATE_SCHEMA = exports.PROJECT_CANDIDATE_SCHEMA = exports.TOPIC_CANDIDATE_SCHEMA = exports.FUSION_PROFILE_VERSION = exports.FUSION_PROFILE_ID = void 0;
+exports.fusionProfileHash = fusionProfileHash;
+exports.classifyPair = classifyPair;
+exports.buildTopicCandidates = buildTopicCandidates;
+exports.isProjectEligibleEdge = isProjectEligibleEdge;
+exports.buildProjectCandidates = buildProjectCandidates;
+exports.buildConsolidationCandidates = buildConsolidationCandidates;
+const corpus_pairs_1 = require("./corpus_pairs");
 const ordering_1 = require("./ordering");
 const repository_model_1 = require("./repository_model");
-const corpus_pairs_1 = require("./corpus_pairs");
 exports.FUSION_PROFILE_ID = "semantic-fusion/v1";
 exports.FUSION_PROFILE_VERSION = "1.1.0";
 exports.TOPIC_CANDIDATE_SCHEMA = "l9.topic-candidates/v1";
@@ -108,7 +108,11 @@ function isStrong(signal, embeddingStrongThreshold) {
 function classifyPair(pair, options = {}) {
     const embeddingStrongThreshold = options.embeddingStrongThreshold ?? exports.DEFAULT_EMBEDDING_STRONG_THRESHOLD;
     const familyCounts = {
-        lexical: 0, declared_identity: 0, graph: 0, semantic_model: 0, context: 0,
+        lexical: 0,
+        declared_identity: 0,
+        graph: 0,
+        semantic_model: 0,
+        context: 0,
     };
     const supporting = new Set();
     const strong = new Set();
@@ -331,7 +335,11 @@ function buildTopicCandidates(input) {
     return connectedComponents(edges).map((members) => {
         const within = pairsWithin(members, context.classifications, context.pairById);
         const families = {
-            lexical: 0, declared_identity: 0, graph: 0, semantic_model: 0, context: 0,
+            lexical: 0,
+            declared_identity: 0,
+            graph: 0,
+            semantic_model: 0,
+            context: 0,
         };
         for (const entry of within.classifications) {
             for (const family of Object.keys(families)) {
@@ -352,7 +360,9 @@ function buildTopicCandidates(input) {
             candidate_id: candidateId,
             candidate_type: "TOPIC_CANDIDATE",
             member_artifact_ids: members,
-            supporting_pair_ids: within.classifications.map((entry) => entry.pair_id).sort(ordering_1.compareCodePoints),
+            supporting_pair_ids: within.classifications
+                .map((entry) => entry.pair_id)
+                .sort(ordering_1.compareCodePoints),
             evidence_family_counts: families,
             lexical_signal_count: signalCount(within.pairs, (s) => corpus_pairs_1.SIGNAL_FAMILY[s.kind] === "lexical"),
             semantic_signal_count: signalCount(within.pairs, (s) => s.kind === "embedding_similarity"),
@@ -446,7 +456,9 @@ function buildProjectCandidates(input) {
             candidate_id: candidateId,
             candidate_type: "PROJECT_CANDIDATE",
             member_artifact_ids: members,
-            supporting_pair_ids: within.classifications.map((entry) => entry.pair_id).sort(ordering_1.compareCodePoints),
+            supporting_pair_ids: within.classifications
+                .map((entry) => entry.pair_id)
+                .sort(ordering_1.compareCodePoints),
             declared_identifiers: [...identifiers].sort(ordering_1.compareCodePoints),
             explicit_reference_count: signalCount(within.pairs, (s) => s.kind === "explicit_reference"),
             dependency_signal_count: signalCount(within.pairs, (s) => s.kind === "dependency_overlap"),
@@ -541,10 +553,10 @@ function buildConsolidationCandidates(input) {
             .filter((hash) => typeof hash === "string"));
         if (hashes.size < 2)
             continue;
-        const hasVersionLineage = input.pairs.some((pair) => members.has(pair.artifact_a_id)
-            && members.has(pair.artifact_b_id)
-            && (pair.signals.some((signal) => signal.kind === "near_duplicate")
-                || resolvedSupersessions(pair).length > 0));
+        const hasVersionLineage = input.pairs.some((pair) => members.has(pair.artifact_a_id) &&
+            members.has(pair.artifact_b_id) &&
+            (pair.signals.some((signal) => signal.kind === "near_duplicate") ||
+                resolvedSupersessions(pair).length > 0));
         if (!hasVersionLineage)
             continue;
         const key = `project:${project.candidate_id}`;
@@ -559,7 +571,9 @@ function buildConsolidationCandidates(input) {
         const views = members
             .map((id) => context.byId.get(id))
             .filter((view) => view !== undefined);
-        const hashes = new Set(views.map((view) => view.content_hash).filter((hash) => typeof hash === "string"));
+        const hashes = new Set(views
+            .map((view) => view.content_hash)
+            .filter((hash) => typeof hash === "string"));
         const clusters = new Set(views
             .map((view) => view.exact_duplicate_cluster_id)
             .filter((id) => typeof id === "string"));

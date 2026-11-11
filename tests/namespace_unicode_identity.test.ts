@@ -11,7 +11,14 @@ import { resolveNamespace, toSnakeStem } from "../src/namespace";
 import { runPipelineAsync } from "../src/pipeline";
 import type { PipelineConfig } from "../src/schema";
 
-const base = { namespace: "l9", authority: "l9.doctrine.platform", nearDupThreshold: 0.9, hashPrefixLength: 16, outputDir: ".out", indexDir: "." };
+const base = {
+  namespace: "l9",
+  authority: "l9.doctrine.platform",
+  nearDupThreshold: 0.9,
+  hashPrefixLength: 16,
+  outputDir: ".out",
+  indexDir: ".",
+};
 const id = (p: string, hint = "context"): string => resolveNamespace(p, base, hint).idStem;
 
 describe("WU-016: identity stems for non-ASCII path segments", () => {
@@ -60,8 +67,15 @@ describe("WU-016: identity stems for non-ASCII path segments", () => {
 
   it("REG-WU-016-RC-023-g: non-ASCII ids stay within [a-z0-9_.] and emit '__' only as the extension separator", () => {
     const samples = [
-      "docs/日本.md", "notes/résumé.md", "é/x.md", "Ünïcödé/Straße.TXT", "emoji/😀 file.md",
-      "mixed/naïve-Café.md", "deep/日本/中文/ファイル.md", "nbsp/a b.md", "x.日本",
+      "docs/日本.md",
+      "notes/résumé.md",
+      "é/x.md",
+      "Ünïcödé/Straße.TXT",
+      "emoji/😀 file.md",
+      "mixed/naïve-Café.md",
+      "deep/日本/中文/ファイル.md",
+      "nbsp/a b.md",
+      "x.日本",
     ];
     for (const sample of samples) {
       const stem = id(sample);
@@ -69,7 +83,8 @@ describe("WU-016: identity stems for non-ASCII path segments", () => {
       const tail = stem.slice("l9.context.".length);
       const separators = tail.match(/__/g) ?? [];
       expect(separators.length).toBeLessThanOrEqual(1);
-      if (separators.length === 1) expect(tail).toMatch(/^[a-z0-9]+(?:_[a-z0-9]+)*__[a-z0-9]+(?:_[a-z0-9]+)*$/);
+      if (separators.length === 1)
+        expect(tail).toMatch(/^[a-z0-9]+(?:_[a-z0-9]+)*__[a-z0-9]+(?:_[a-z0-9]+)*$/);
     }
     expect(id("emoji/😀 file.md")).toBe("l9.context.emoji_u1f600_file__md");
     expect(id("x.日本")).toBe("l9.context.x__u65e5_u672c");
@@ -82,9 +97,18 @@ function tmpDir(): string {
 
 function pipelineConfig(root: string, out: string): PipelineConfig {
   return {
-    root, glob: "**/*.md", dryRun: true, outDir: out, indexDir: out, namespace: "l9",
-    authority: "l9.doctrine.platform", nearDupThreshold: 0.9, hashPrefixLength: 16,
-    verbose: false, llmEnabled: false, normalizeFilenames: false,
+    root,
+    glob: "**/*.md",
+    dryRun: true,
+    outDir: out,
+    indexDir: out,
+    namespace: "l9",
+    authority: "l9.doctrine.platform",
+    nearDupThreshold: 0.9,
+    hashPrefixLength: 16,
+    verbose: false,
+    llmEnabled: false,
+    normalizeFilenames: false,
   };
 }
 
@@ -107,7 +131,9 @@ describe("WU-016: pipeline over non-ASCII names", () => {
     const out = tmpDir();
     fs.writeFileSync(path.join(root, "a-b.md"), "## A\nbody\n");
     fs.writeFileSync(path.join(root, "a_b.md"), "## B\nbody\n");
-    await expect(runPipelineAsync(pipelineConfig(root, out))).rejects.toThrow(/DUPLICATE_METADATA_ID: 1 id\(s\) map to more than one path: .*a_b__md: a-b\.md, a_b\.md/);
+    await expect(runPipelineAsync(pipelineConfig(root, out))).rejects.toThrow(
+      /DUPLICATE_METADATA_ID: 1 id\(s\) map to more than one path: .*a_b__md: a-b\.md, a_b\.md/,
+    );
     expect(fs.readFileSync(path.join(root, "a-b.md"), "utf8")).toBe("## A\nbody\n");
     expect(fs.existsSync(path.join(out, "coverage-report.json"))).toBe(false);
   }, 15000);

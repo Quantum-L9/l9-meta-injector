@@ -139,23 +139,35 @@ function run(command) {
     exit_code: status,
     passed: status === 0,
     duration_ms: Date.now() - started,
-    tail: status === 0
-      ? ""
-      : `${result.stdout || ""}${result.stderr || ""}`.trim().split(/\r?\n/).slice(-25).join("\n"),
+    tail:
+      status === 0
+        ? ""
+        : `${result.stdout || ""}${result.stderr || ""}`
+            .trim()
+            .split(/\r?\n/)
+            .slice(-25)
+            .join("\n"),
   };
 }
 
 function renderReport(state, results, generatedAt) {
   const verdict = results.every((entry) => entry.passed) ? "green" : "RED";
   const rows = results
-    .map((entry) => `| \`${entry.command}\` | ${entry.exit_code} | ${entry.passed ? "pass" : "**FAIL**"} | ${entry.note} |`)
+    .map(
+      (entry) =>
+        `| \`${entry.command}\` | ${entry.exit_code} | ${entry.passed ? "pass" : "**FAIL**"} | ${entry.note} |`,
+    )
     .join("\n");
   const failures = results.filter((entry) => !entry.passed);
-  const failureSection = failures.length === 0
-    ? ""
-    : `\n## Failures\n\n${failures
-      .map((entry) => `### \`${entry.command}\` — exit ${entry.exit_code}\n\n\`\`\`\n${entry.tail}\n\`\`\`\n`)
-      .join("\n")}`;
+  const failureSection =
+    failures.length === 0
+      ? ""
+      : `\n## Failures\n\n${failures
+          .map(
+            (entry) =>
+              `### \`${entry.command}\` — exit ${entry.exit_code}\n\n\`\`\`\n${entry.tail}\n\`\`\`\n`,
+          )
+          .join("\n")}`;
 
   return `# Current validation report
 
@@ -187,9 +199,11 @@ ${failureSection}
 
 **${verdict}**
 
-${verdict === "green"
+${
+  verdict === "green"
     ? "Every command above exited zero on the tree named at the top of this file."
-    : "At least one command failed. The tail of its output is above; this tree is not green."}
+    : "At least one command failed. The tail of its output is above; this tree is not green."
+}
 
 ## What this report does not say
 
@@ -220,20 +234,29 @@ function reportVerdict(contents) {
   const verdictAt = lines.lastIndexOf("## Verdict");
   if (verdictAt === -1) return { green: false, reason: "the report has no Verdict section" };
   const stated = lines.slice(verdictAt + 1).find((line) => line.trim() !== "");
-  if (stated !== "**green**") return { green: false, reason: `the Verdict section states ${stated === undefined ? "nothing" : stated.trim()}` };
+  if (stated !== "**green**")
+    return {
+      green: false,
+      reason: `the Verdict section states ${stated === undefined ? "nothing" : stated.trim()}`,
+    };
 
   const commandsAt = lines.indexOf("## Commands");
   if (commandsAt === -1) return { green: false, reason: "the report has no Commands table" };
   let cursor = commandsAt + 1;
   while (cursor < lines.length && lines[cursor].trim() === "") cursor += 1;
-  if (lines[cursor] !== "| Command | Exit | Result | Covers |" || lines[cursor + 1] !== "|---|---:|---|---|") {
+  if (
+    lines[cursor] !== "| Command | Exit | Result | Covers |" ||
+    lines[cursor + 1] !== "|---|---:|---|---|"
+  ) {
     return { green: false, reason: "the Commands table is malformed" };
   }
   let rows = 0;
   for (cursor += 2; cursor < lines.length && lines[cursor].startsWith("|"); cursor += 1) {
     const row = /^\| `.*` \| (-?\d+) \| (pass|\*\*FAIL\*\*) \| .* \|$/.exec(lines[cursor]);
-    if (row === null) return { green: false, reason: `the Commands table has a malformed row: ${lines[cursor]}` };
-    if (row[1] !== "0" || row[2] !== "pass") return { green: false, reason: `a command exited ${row[1]}: ${lines[cursor]}` };
+    if (row === null)
+      return { green: false, reason: `the Commands table has a malformed row: ${lines[cursor]}` };
+    if (row[1] !== "0" || row[2] !== "pass")
+      return { green: false, reason: `a command exited ${row[1]}: ${lines[cursor]}` };
     rows += 1;
   }
   if (rows === 0) return { green: false, reason: "the Commands table records no command" };
@@ -259,9 +282,9 @@ function main() {
     }
     if (digest[1] !== state.digest) {
       fail(
-        `${path.basename(REPORT)} was written against a different tree `
-        + `(it names ${digest[1].slice(7, 19)}, this tree is ${state.digest.slice(7, 19)}). `
-        + "It describes a tree that is not this one; re-run `npm run validate:report`.",
+        `${path.basename(REPORT)} was written against a different tree ` +
+          `(it names ${digest[1].slice(7, 19)}, this tree is ${state.digest.slice(7, 19)}). ` +
+          "It describes a tree that is not this one; re-run `npm run validate:report`.",
       );
     }
     const verdict = reportVerdict(contents);
@@ -284,14 +307,14 @@ function main() {
   const failed = results.filter((entry) => !entry.passed);
   if (failed.length > 0) {
     console.error(
-      `${LABEL}: RED — ${failed.map((entry) => entry.command).join(", ")} failed; `
-      + `report written to ${path.relative(REPO, REPORT)}`,
+      `${LABEL}: RED — ${failed.map((entry) => entry.command).join(", ")} failed; ` +
+        `report written to ${path.relative(REPO, REPORT)}`,
     );
     process.exit(1);
   }
   console.log(
-    `${LABEL}: OK (green at ${after.head.slice(0, 12)}${after.clean ? "" : ", dirty tree"}; `
-    + `wrote ${path.relative(REPO, REPORT)})`,
+    `${LABEL}: OK (green at ${after.head.slice(0, 12)}${after.clean ? "" : ", dirty tree"}; ` +
+      `wrote ${path.relative(REPO, REPORT)})`,
   );
 }
 

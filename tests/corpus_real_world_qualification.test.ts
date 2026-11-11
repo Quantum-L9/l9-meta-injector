@@ -21,19 +21,15 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { FileCorpusCache, MemoryCorpusCache } from "../src/corpus_cache";
+import { renderCorpusCoverage } from "../src/corpus_coverage";
 import {
-  CORPUS_QUALIFICATION_SCHEMA,
   buildCorpusQualificationReport,
+  CORPUS_QUALIFICATION_SCHEMA,
   renderCorpusQualificationReport,
 } from "../src/corpus_qualification";
 import { FORBIDDEN_READINESS_METRICS } from "../src/corpus_readiness";
-import {
-  renderCorpusCandidates,
-  renderReadinessEvidence,
-  runCorpusScan,
-} from "../src/corpus_scan";
+import { renderCorpusCandidates, renderReadinessEvidence, runCorpusScan } from "../src/corpus_scan";
 import { renderCorpusSnapshot } from "../src/corpus_snapshot";
-import { renderCorpusCoverage } from "../src/corpus_coverage";
 import { defaultDecoderRegistry } from "../src/documents";
 import {
   lockReadOnly,
@@ -98,25 +94,27 @@ async function qualify(cacheKind: "file" | "memory") {
   };
 
   const cacheDir = path.join(workspace, "cache");
-  const cache = cacheKind === "file"
-    // `observedRootPaths` is passed rather than omitted so the cache refuses, on
-    // this run, to sit inside either disk it is caching.
-    ? new FileCorpusCache({
-      root: cacheDir,
-      producerVersion: PRODUCER_VERSION,
-      observedRootPaths: [corpus.driveRoot, corpus.backupRoot],
-    })
-    : new MemoryCorpusCache(PRODUCER_VERSION);
+  const cache =
+    cacheKind === "file"
+      ? // `observedRootPaths` is passed rather than omitted so the cache refuses, on
+        // this run, to sit inside either disk it is caching.
+        new FileCorpusCache({
+          root: cacheDir,
+          producerVersion: PRODUCER_VERSION,
+          observedRootPaths: [corpus.driveRoot, corpus.backupRoot],
+        })
+      : new MemoryCorpusCache(PRODUCER_VERSION);
   const scratchParent = path.join(workspace, "scratch");
   fs.mkdirSync(scratchParent, { recursive: true });
 
   const roots = corpus.roots.map((root) => ({ path: root.path, name: root.name }));
-  const run = async (useCache: boolean) => runCorpusScan({
-    roots,
-    producerVersion: PRODUCER_VERSION,
-    scratchParent,
-    ...(useCache ? { cache } : {}),
-  });
+  const run = async (useCache: boolean) =>
+    runCorpusScan({
+      roots,
+      producerVersion: PRODUCER_VERSION,
+      scratchParent,
+      ...(useCache ? { cache } : {}),
+    });
 
   // Cold: nothing may be read from the cache, so the first run is given none.
   const cold = await run(false);
@@ -190,8 +188,11 @@ describe("a real mixed corpus on three read-only roots", () => {
     // REG-WU-049-RC-089-c: counted from root-relative basenames, still >= 15.
     expect(report.corpus.distinct_extension_count).toBeGreaterThanOrEqual(15);
     expect(report.roots).toHaveLength(3);
-    expect(report.roots.map((root) => root.root_label).sort())
-      .toEqual(["backup", "old-ssd", "zip-shelf"]);
+    expect(report.roots.map((root) => root.root_label).sort()).toEqual([
+      "backup",
+      "old-ssd",
+      "zip-shelf",
+    ]);
 
     // Every root kept its own Repository Model Packet. The corpus is an analysis
     // across three roots, not a synthetic tree that replaced them.
@@ -234,14 +235,17 @@ describe("a real mixed corpus on three read-only roots", () => {
     // 4. decoder_coverage
     // The decoders the run actually used, not one stale text-decoder name
     // (REG-WU-049-RC-088-a; ADR-068).
-    expect(report.decoder_coverage.decoder_profiles)
-      .toEqual([...cold.snapshot.analysis.document_decoder_profiles].sort());
+    expect(report.decoder_coverage.decoder_profiles).toEqual(
+      [...cold.snapshot.analysis.document_decoder_profiles].sort(),
+    );
     for (const entry of defaultDecoderRegistry().profile()) {
       expect(report.decoder_coverage.decoder_profiles).toContain(entry);
     }
     expect(report.decoder_coverage.interpretation_enabled).toBe(true);
     // REG-WU-049-RC-088-c: the ratios are the coverage projection's, unchanged.
-    expect(report.decoder_coverage.normalized_document).toEqual(coverage.normalized_document_coverage);
+    expect(report.decoder_coverage.normalized_document).toEqual(
+      coverage.normalized_document_coverage,
+    );
     expect(report.decoder_coverage.interpretation).toEqual(coverage.interpretation_coverage);
     expect(report.decoder_coverage.lexical_analysis).toEqual(coverage.lexical_analysis_coverage);
     expect(report.decoder_coverage.normalized_document.covered).toBeGreaterThan(0);
@@ -260,20 +264,26 @@ describe("a real mixed corpus on three read-only roots", () => {
     // account for the whole of the shortfall. That reconciliation is the claim
     // worth pinning, because a decode that silently failed would land in
     // `unaccounted` rather than disappearing into a difference of two totals.
-    expect(report.decoder_coverage.normalized_document.eligible)
-      .toBeLessThan(report.corpus.artifact_count);
+    expect(report.decoder_coverage.normalized_document.eligible).toBeLessThan(
+      report.corpus.artifact_count,
+    );
     const gap = coverage.documents.decode_gap;
     expect(gap.unaccounted).toBe(0);
     expect(gap.secret_skipped).toBe(2);
     expect(gap.ocr_required).toBe(1);
     expect(gap.malformed).toBe(0);
     expect(
-      report.decoder_coverage.normalized_document.eligible
-      - report.decoder_coverage.normalized_document.covered,
+      report.decoder_coverage.normalized_document.eligible -
+        report.decoder_coverage.normalized_document.covered,
     ).toBe(
-      gap.secret_skipped + gap.oversized + gap.encoding_rejected
-      + gap.ocr_required + gap.encrypted + gap.malformed
-      + gap.other_refusal + gap.unaccounted,
+      gap.secret_skipped +
+        gap.oversized +
+        gap.encoding_rejected +
+        gap.ocr_required +
+        gap.encrypted +
+        gap.malformed +
+        gap.other_refusal +
+        gap.unaccounted,
     );
     // Embeddings are not enabled in this release, and the report says so rather
     // than reporting a coverage of zero that would read as a failure.
@@ -287,8 +297,9 @@ describe("a real mixed corpus on three read-only roots", () => {
     expect(report.duplicate_counts.recoverable_duplicate_bytes).toBeGreaterThan(0);
     expect(report.duplicate_counts.near_duplicate_candidate_count).toBeGreaterThan(0);
     expect(report.duplicate_counts.unique_content_estimate).toBeGreaterThan(0);
-    expect(report.duplicate_counts.unique_content_estimate)
-      .toBeLessThan(report.corpus.artifact_count);
+    expect(report.duplicate_counts.unique_content_estimate).toBeLessThan(
+      report.corpus.artifact_count,
+    );
 
     // 6. topic_candidate_counts / 7. project_candidate_counts
     expect(report.topic_candidate_counts.candidate_count).toBeGreaterThanOrEqual(0);
@@ -305,8 +316,9 @@ describe("a real mixed corpus on three read-only roots", () => {
     const unsupported = report.unsupported_counts;
     expect(unsupported.unsupported_format_total).toBeGreaterThanOrEqual(3);
     expect(unsupported.unsupported_format_bytes).toBeGreaterThan(0);
-    const unsupportedExtensions = unsupported.unsupported_format_counts
-      .map((entry) => entry.extension);
+    const unsupportedExtensions = unsupported.unsupported_format_counts.map(
+      (entry) => entry.extension,
+    );
     expect(unsupportedExtensions).toEqual(expect.arrayContaining([".doc", ".odt", ".rtf"]));
     expect(unsupportedExtensions).not.toContain(".docx");
     expect(unsupportedExtensions).not.toContain(".pdf");
@@ -316,8 +328,9 @@ describe("a real mixed corpus on three read-only roots", () => {
     // The source, after all of it.
     expect(mutated).toEqual([]);
     expect(report.source_mutation.mutated_path_count).toBe(0);
-    expect(report.source_mutation.tree_digest_after)
-      .toBe(report.source_mutation.tree_digest_before);
+    expect(report.source_mutation.tree_digest_after).toBe(
+      report.source_mutation.tree_digest_before,
+    );
 
     emitReport(renderCorpusQualificationReport(report));
   });
@@ -331,8 +344,9 @@ describe("a real mixed corpus on three read-only roots", () => {
 
     // The warm run still hashes every byte: identity is never taken from the
     // cache, so the file and byte counts are unchanged by a hit.
-    expect(report.cold_warm_equivalence.warm_files_scanned)
-      .toBe(report.cold_warm_equivalence.cold_files_scanned);
+    expect(report.cold_warm_equivalence.warm_files_scanned).toBe(
+      report.cold_warm_equivalence.cold_files_scanned,
+    );
     expect(warm.scanned.bytes).toBe(cold.scanned.bytes);
 
     // The cold run was given no cache at all, which is what makes it cold.
@@ -378,9 +392,15 @@ describe("the coverage projection of the same run", () => {
     const { cold, report } = await qualify("memory");
     const coverage = JSON.parse(renderCorpusCoverage(cold.coverage)) as Record<string, unknown>;
 
-    expect(coverage.documents.ocr_required_count).toBe(report.unsupported_counts.ocr_required_count);
-    expect(coverage.documents.secret_skipped_count).toBe(report.unsupported_counts.secret_skipped_count);
-    expect(coverage.reasoning_handoff.reasoning_eligible_candidate_count).toBe(report.reasoning_eligible_count);
+    expect(coverage.documents.ocr_required_count).toBe(
+      report.unsupported_counts.ocr_required_count,
+    );
+    expect(coverage.documents.secret_skipped_count).toBe(
+      report.unsupported_counts.secret_skipped_count,
+    );
+    expect(coverage.reasoning_handoff.reasoning_eligible_candidate_count).toBe(
+      report.reasoning_eligible_count,
+    );
     expect(coverage.corpus.archive_count).toBe(report.corpus.archive_count);
   });
 
@@ -391,10 +411,18 @@ describe("the coverage projection of the same run", () => {
       const gap = documents.decode_gap;
       expect(gap.unaccounted).toBe(0);
       expect(documents.decoder_eligible_count - documents.normalized_document_count).toBe(
-        gap.secret_skipped + gap.oversized + gap.encoding_rejected + gap.ocr_required
-        + gap.encrypted + gap.malformed + gap.other_refusal + gap.unaccounted,
+        gap.secret_skipped +
+          gap.oversized +
+          gap.encoding_rejected +
+          gap.ocr_required +
+          gap.encrypted +
+          gap.malformed +
+          gap.other_refusal +
+          gap.unaccounted,
       );
-      expect(run.diagnostics.some((d) => d.code === "corpus.document_changed_during_scan")).toBe(false);
+      expect(run.diagnostics.some((d) => d.code === "corpus.document_changed_during_scan")).toBe(
+        false,
+      );
     }
   });
 });

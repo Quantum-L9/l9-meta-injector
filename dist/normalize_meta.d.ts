@@ -1,6 +1,6 @@
-import { ArtifactType, ClassifyResult, ExtractedFields, NormalizedMeta, McpPrimitive } from "./schema";
 import { NamespaceConfig } from "./namespace";
 import type { HeaderIdentityResolution } from "./operation_contracts";
+import { ArtifactType, ClassifyResult, ExtractedFields, McpPrimitive, NormalizedMeta } from "./schema";
 export { yamlScalar } from "./yaml_serialize";
 /** Taxonomy fields that must stay a single derived unit. */
 export interface TaxonomyProjection {

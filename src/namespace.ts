@@ -1,7 +1,7 @@
 // namespace.ts — Deterministic path → namespace + sharing_scope + primitive_folder
 import * as path from "node:path";
-import { SharingScope } from "./schema";
 import { FRONTMATTER_EXTS } from "./comment";
+import { SharingScope } from "./schema";
 
 // SharingScope is single-sourced in schema.ts (finding ICC-002 / RAA-002).
 export type { SharingScope } from "./schema";
@@ -38,8 +38,8 @@ function matchGlob(filePath: string, glob: string): boolean {
   // reached RegExp and could throw (DoS) or backtrack (ReDoS) — finding SEC-002.
   const pat = glob
     .replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`) // escape all metachars (including the "*" re-added next)
-    .replace(/\\\*\\\*/g, "DSTAR")          // "**" (now "\*\*") → cross-segment placeholder
-    .replace(/\\\*/g, "[^/]*")              // "*"  (now "\*")   → single-segment wildcard
+    .replace(/\\\*\\\*/g, "DSTAR") // "**" (now "\*\*") → cross-segment placeholder
+    .replace(/\\\*/g, "[^/]*") // "*"  (now "\*")   → single-segment wildcard
     .replace(/DSTAR/g, ".*");
   try {
     return new RegExp(`(^|/)${pat}($|/)`).test(norm);
@@ -73,8 +73,14 @@ function derivePrimitiveFolder(filePath: string): string {
   // nested one (`repo/skills/x.md`) does. `includes("/skills/")` misses the first.
   const bounded = `/${norm.replace(/^\/+/, "")}`;
   const segMap: Record<string, string> = {
-    skills: "skill", playbooks: "playbook", kernels: "kernel", contexts: "context",
-    prompts: "prompt", doctrines: "doctrine", tests: "test", scripts: "script",
+    skills: "skill",
+    playbooks: "playbook",
+    kernels: "kernel",
+    contexts: "context",
+    prompts: "prompt",
+    doctrines: "doctrine",
+    tests: "test",
+    scripts: "script",
   };
   for (const [seg, prim] of Object.entries(segMap)) {
     if (bounded.includes(`/${seg}/`)) return prim;
@@ -92,7 +98,10 @@ function derivePrimitiveFolder(filePath: string): string {
 function encodeNonAscii(value: string): string {
   let encoded = "";
   for (const char of value) {
-    if (char.charCodeAt(0) < 0x80) { encoded += char; continue; }
+    if (char.charCodeAt(0) < 0x80) {
+      encoded += char;
+      continue;
+    }
     for (const folded of char.toLowerCase()) {
       const codePoint = folded.codePointAt(0) ?? 0;
       encoded += codePoint < 0x80 ? folded : `_u${codePoint.toString(16)}_`;
@@ -109,9 +118,15 @@ function encodeNonAscii(value: string): string {
  * ASCII token, so ids keep to `[a-z0-9_]` and ASCII-only segments are unchanged.
  */
 function snakeSegment(value: string): string {
-  const separated = value.normalize("NFC").replace(/([a-z])([A-Z])/g, "$1_$2").replace(/[-\s]+/g, "_");
+  const separated = value
+    .normalize("NFC")
+    .replace(/([a-z])([A-Z])/g, "$1_$2")
+    .replace(/[-\s]+/g, "_");
   return encodeNonAscii(separated)
-    .replace(/[^a-z0-9_]/gi, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toLowerCase();
+    .replace(/[^a-z0-9_]/gi, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_|_$/g, "")
+    .toLowerCase();
 }
 
 /**
@@ -134,49 +149,80 @@ function identityStem(filePath: string): string {
 }
 
 export function toSnakeStem(filename: string): string {
-  const stem = path.basename(filename, path.extname(filename))
+  const stem = path
+    .basename(filename, path.extname(filename))
     .replace(/^Prompt-/i, "")
     .replace(/\.[a-z]+$/i, "");
-  return stem.replace(/([a-z])([A-Z])/g, "$1_$2").replace(/[-\s]+/g, "_")
-    .replace(/[^a-z0-9_]/gi, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toLowerCase();
+  return stem
+    .replace(/([a-z])([A-Z])/g, "$1_$2")
+    .replace(/[-\s]+/g, "_")
+    .replace(/[^a-z0-9_]/gi, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_|_$/g, "")
+    .toLowerCase();
 }
 
-export function resolveNamespace(filePath: string, cfg: NamespaceInput, typeHint?: string): NamespaceResolution {
+export function resolveNamespace(
+  filePath: string,
+  cfg: NamespaceInput,
+  typeHint?: string,
+): NamespaceResolution {
   const norm = filePath.replace(/\\/g, "/");
   let namespace = cfg.namespace ?? "l9";
   if (cfg.namespaceGlobs) {
     for (const e of cfg.namespaceGlobs) {
-      if (matchGlob(norm, e.glob)) { namespace = e.namespace; break; }
+      if (matchGlob(norm, e.glob)) {
+        namespace = e.namespace;
+        break;
+      }
     }
   }
   const sharingScope = deriveSharingScope(filePath);
   // Folder derivation wins; when the path yields no primitive folder, fall back to the
   // resolved artifact_type so the id reads e.g. l9.source.app rather than l9.unknown.app.
   let primitiveFolder = derivePrimitiveFolder(filePath);
-  if (primitiveFolder === "unknown" && typeHint && typeHint !== "unknown") primitiveFolder = typeHint;
+  if (primitiveFolder === "unknown" && typeHint && typeHint !== "unknown")
+    primitiveFolder = typeHint;
   const stem = identityStem(filePath);
-  return { namespace, sharingScope, primitiveFolder, idStem: `${namespace}.${primitiveFolder}.${stem}` };
+  return {
+    namespace,
+    sharingScope,
+    primitiveFolder,
+    idStem: `${namespace}.${primitiveFolder}.${stem}`,
+  };
 }
 
 export const TRACKED_IDENTITY_PREFIX = "l9.path/v2:" as const;
 
 /** Reject lone surrogates instead of silently replacing repository identity bytes. */
 export function assertPortableRepositoryIdentity(repositoryId: string): void {
-  if (typeof repositoryId !== "string" || !repositoryId || /[\u0000-\u001f\u007f]/u.test(repositoryId)) {
+  if (
+    typeof repositoryId !== "string" ||
+    !repositoryId ||
+    /[\u0000-\u001f\u007f]/u.test(repositoryId)
+  ) {
     throw new Error("tracked repository identity must be a nonempty portable string");
   }
-  if (new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(Buffer.from(repositoryId, "utf8")) !== repositoryId) {
+  if (
+    new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
+      Buffer.from(repositoryId, "utf8"),
+    ) !== repositoryId
+  ) {
     throw new Error("tracked repository identity must be exact UTF-8");
   }
 }
 
 /** Canonical lossless byte decoder. Buffer's permissive base64 decoder is not validation. */
 export function decodeTrackedPathBytes(encoded: string): Buffer {
-  if (typeof encoded !== "string" || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)) {
+  if (
+    typeof encoded !== "string" ||
+    !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)
+  ) {
     throw new Error("tracked path bytes must be canonical base64");
   }
   const bytes = Buffer.from(encoded, "base64");
-  if (bytes.toString("base64") !== encoded) throw new Error("tracked path bytes must be canonical base64");
+  if (bytes.toString("base64") !== encoded)
+    throw new Error("tracked path bytes must be canonical base64");
   return bytes;
 }
 
@@ -187,19 +233,32 @@ export function trackedPathIdentity(repositoryId: string, pathBytesBase64: strin
   return `${TRACKED_IDENTITY_PREFIX}${Buffer.from(repositoryId, "utf8").toString("base64url")}.${bytes.toString("base64url")}`;
 }
 
-export function decodeTrackedPathIdentity(id: string): { repositoryId: string; pathBytesBase64: string } {
-  if (!id.startsWith(TRACKED_IDENTITY_PREFIX)) throw new Error("unsupported tracked identity version");
+export function decodeTrackedPathIdentity(id: string): {
+  repositoryId: string;
+  pathBytesBase64: string;
+} {
+  if (!id.startsWith(TRACKED_IDENTITY_PREFIX))
+    throw new Error("unsupported tracked identity version");
   const tuple = id.slice(TRACKED_IDENTITY_PREFIX.length).split(".");
   if (tuple.length !== 2 || tuple.some((part) => !/^[A-Za-z0-9_-]*$/.test(part))) {
     throw new Error("invalid tracked identity tuple");
   }
-  const repositoryId = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(Buffer.from(tuple[0], "base64url"));
+  const repositoryId = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
+    Buffer.from(tuple[0], "base64url"),
+  );
   const pathBytesBase64 = Buffer.from(tuple[1], "base64url").toString("base64");
-  if (trackedPathIdentity(repositoryId, pathBytesBase64) !== id) throw new Error("noncanonical tracked identity tuple");
+  if (trackedPathIdentity(repositoryId, pathBytesBase64) !== id)
+    throw new Error("noncanonical tracked identity tuple");
   return { repositoryId, pathBytesBase64 };
 }
 
 /** Git path order is an unsigned raw-byte lexicographic total order, never locale/NFC order. */
-export function compareTrackedPaths(left: { path_bytes_base64: string }, right: { path_bytes_base64: string }): number {
-  return Buffer.compare(decodeTrackedPathBytes(left.path_bytes_base64), decodeTrackedPathBytes(right.path_bytes_base64));
+export function compareTrackedPaths(
+  left: { path_bytes_base64: string },
+  right: { path_bytes_base64: string },
+): number {
+  return Buffer.compare(
+    decodeTrackedPathBytes(left.path_bytes_base64),
+    decodeTrackedPathBytes(right.path_bytes_base64),
+  );
 }

@@ -29,42 +29,50 @@ afterEach(() => {
 const posixOnly = process.platform === "win32" ? test.skip : test;
 
 describe("one scratch-parent rule (RC-048)", () => {
-  posixOnly("REG-WU-037-RC-048-a: an empty scratch parent whose default lies inside the source is refused", () => {
-    const src = tmp();
-    fs.writeFileSync(path.join(src, "a.md"), "# A\n");
-    fs.mkdirSync(path.join(src, "tmp"));
-    const before = treeSnapshot(src);
-    process.env.TMPDIR = path.join(src, "tmp");
-    try {
-      expect(os.tmpdir()).toBe(path.join(src, "tmp"));
-      expect(() => acquireLocalSource({ path: src, scratchParent: "" }))
-        .toThrow(/resolves inside the observed source/);
-    } finally {
-      process.env.TMPDIR = savedTmpdir;
-      if (savedTmpdir === undefined) delete process.env.TMPDIR;
-    }
-    expect(treeSnapshot(src)).toEqual(before);
-  });
+  posixOnly(
+    "REG-WU-037-RC-048-a: an empty scratch parent whose default lies inside the source is refused",
+    () => {
+      const src = tmp();
+      fs.writeFileSync(path.join(src, "a.md"), "# A\n");
+      fs.mkdirSync(path.join(src, "tmp"));
+      const before = treeSnapshot(src);
+      process.env.TMPDIR = path.join(src, "tmp");
+      try {
+        expect(os.tmpdir()).toBe(path.join(src, "tmp"));
+        expect(() => acquireLocalSource({ path: src, scratchParent: "" })).toThrow(
+          /resolves inside the observed source/,
+        );
+      } finally {
+        process.env.TMPDIR = savedTmpdir;
+        if (savedTmpdir === undefined) delete process.env.TMPDIR;
+      }
+      expect(treeSnapshot(src)).toEqual(before);
+    },
+  );
 
-  posixOnly("REG-WU-037-RC-048-b: an empty scratch parent with an outside default uses os.tmpdir()", () => {
-    const src = tmp();
-    fs.writeFileSync(path.join(src, "a.md"), "# A\n");
-    const outside = tmp();
-    process.env.TMPDIR = outside;
-    const observation = acquireLocalSource({ path: src, scratchParent: "" });
-    try {
-      expect(path.dirname(observation.scratchRoot)).toBe(outside);
-    } finally {
-      observation.dispose();
-    }
-  });
+  posixOnly(
+    "REG-WU-037-RC-048-b: an empty scratch parent with an outside default uses os.tmpdir()",
+    () => {
+      const src = tmp();
+      fs.writeFileSync(path.join(src, "a.md"), "# A\n");
+      const outside = tmp();
+      process.env.TMPDIR = outside;
+      const observation = acquireLocalSource({ path: src, scratchParent: "" });
+      try {
+        expect(path.dirname(observation.scratchRoot)).toBe(outside);
+      } finally {
+        observation.dispose();
+      }
+    },
+  );
 
   test("REG-WU-037-RC-048-c: an explicit scratch parent inside the source is still refused before any write", () => {
     const src = tmp();
     fs.writeFileSync(path.join(src, "a.md"), "# A\n");
     const before = treeSnapshot(src);
-    expect(() => acquireLocalSource({ path: src, scratchParent: path.join(src, ".scratch") }))
-      .toThrow(/resolves inside the observed source/);
+    expect(() =>
+      acquireLocalSource({ path: src, scratchParent: path.join(src, ".scratch") }),
+    ).toThrow(/resolves inside the observed source/);
     expect(treeSnapshot(src)).toEqual(before);
   });
 });
@@ -91,8 +99,9 @@ describe("a file source directly under the filesystem root (RC-058)", () => {
       path.join(root, `l9-audit-f14-missing-${process.pid}`, "scratch"),
     ];
     for (const parent of parents) {
-      expect(() => assertScratchOutsideSource(parent, rootFileSource, "file"), parent)
-        .toThrow(/resolves inside the observed source/);
+      expect(() => assertScratchOutsideSource(parent, rootFileSource, "file"), parent).toThrow(
+        /resolves inside the observed source/,
+      );
     }
   });
 });

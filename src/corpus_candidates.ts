@@ -67,16 +67,98 @@ export const TOPIC_MIN_TERM_LENGTH = 3;
  * document to every other one.
  */
 export const TOPIC_STOPWORDS: readonly string[] = [
-  "about", "after", "again", "all", "also", "and", "any", "are", "because", "been",
-  "before", "being", "between", "both", "but", "can", "could", "did", "does", "doing",
-  "done", "down", "each", "even", "every", "for", "from", "further", "had", "has",
-  "have", "here", "how", "into", "its", "itself", "just", "may", "more", "most",
-  "much", "must", "not", "now", "off", "once", "one", "only", "other", "our", "out",
-  "over", "own", "same", "she", "should", "since", "some", "such", "than", "that",
-  "the", "their", "them", "then", "there", "these", "they", "this", "those",
-  "through", "too", "under", "until", "use", "used", "very", "was", "way", "were",
-  "what", "when", "where", "which", "while", "who", "why", "will", "with", "would",
-  "you", "your",
+  "about",
+  "after",
+  "again",
+  "all",
+  "also",
+  "and",
+  "any",
+  "are",
+  "because",
+  "been",
+  "before",
+  "being",
+  "between",
+  "both",
+  "but",
+  "can",
+  "could",
+  "did",
+  "does",
+  "doing",
+  "done",
+  "down",
+  "each",
+  "even",
+  "every",
+  "for",
+  "from",
+  "further",
+  "had",
+  "has",
+  "have",
+  "here",
+  "how",
+  "into",
+  "its",
+  "itself",
+  "just",
+  "may",
+  "more",
+  "most",
+  "much",
+  "must",
+  "not",
+  "now",
+  "off",
+  "once",
+  "one",
+  "only",
+  "other",
+  "our",
+  "out",
+  "over",
+  "own",
+  "same",
+  "she",
+  "should",
+  "since",
+  "some",
+  "such",
+  "than",
+  "that",
+  "the",
+  "their",
+  "them",
+  "then",
+  "there",
+  "these",
+  "they",
+  "this",
+  "those",
+  "through",
+  "too",
+  "under",
+  "until",
+  "use",
+  "used",
+  "very",
+  "was",
+  "way",
+  "were",
+  "what",
+  "when",
+  "where",
+  "which",
+  "while",
+  "who",
+  "why",
+  "will",
+  "with",
+  "would",
+  "you",
+  "your",
 ];
 
 const STOPWORDS = new Set(TOPIC_STOPWORDS);
@@ -234,10 +316,9 @@ export function buildProjectCandidates(input: BuildProjectCandidatesInput): Proj
     const existing = containers.get(slot) ?? {
       root_id: marker.root_id,
       container_path: containerPath,
-      corpus_container_path: marker.corpus_path.slice(
-        0,
-        marker.corpus_path.length - marker.root_relative_path.length,
-      ) + containerPath,
+      corpus_container_path:
+        marker.corpus_path.slice(0, marker.corpus_path.length - marker.root_relative_path.length) +
+        containerPath,
       marker_ids: [],
       marker_kinds: [],
       declared_identifiers: [],
@@ -247,8 +328,8 @@ export function buildProjectCandidates(input: BuildProjectCandidatesInput): Proj
       existing.marker_kinds.push(marker.marker_kind);
     }
     if (
-      marker.declared_identifier !== undefined
-      && !existing.declared_identifiers.includes(marker.declared_identifier)
+      marker.declared_identifier !== undefined &&
+      !existing.declared_identifiers.includes(marker.declared_identifier)
     ) {
       existing.declared_identifiers.push(marker.declared_identifier);
     }
@@ -263,8 +344,11 @@ export function buildProjectCandidates(input: BuildProjectCandidatesInput): Proj
     else bucket.push(container);
   }
   for (const bucket of byRoot.values()) {
-    bucket.sort((a, b) => b.container_path.length - a.container_path.length
-      || compareCodePoints(a.container_path, b.container_path));
+    bucket.sort(
+      (a, b) =>
+        b.container_path.length - a.container_path.length ||
+        compareCodePoints(a.container_path, b.container_path),
+    );
   }
 
   const assignment = new Map<string, string[]>();
@@ -272,7 +356,8 @@ export function buildProjectCandidates(input: BuildProjectCandidatesInput): Proj
     const bucket = byRoot.get(member.root_id);
     if (bucket === undefined) continue;
     const owner = bucket.find((container) =>
-      isUnderContainer(container.container_path, member.root_relative_path));
+      isUnderContainer(container.container_path, member.root_relative_path),
+    );
     if (owner === undefined) continue;
     const slot = `${owner.root_id}\u001f${owner.container_path}`;
     const members = assignment.get(slot);
@@ -300,12 +385,13 @@ export function buildProjectCandidates(input: BuildProjectCandidatesInput): Proj
 
   const candidates: ProjectCandidate[] = [];
   for (const [projectKey, group] of grouped) {
-    const orderedContainers = [...group.containers].sort(
-      (a, b) => compareCodePoints(a.corpus_container_path, b.corpus_container_path),
+    const orderedContainers = [...group.containers].sort((a, b) =>
+      compareCodePoints(a.corpus_container_path, b.corpus_container_path),
     );
     const memberIds = new Set<string>();
     for (const container of orderedContainers) {
-      for (const id of assignment.get(`${container.root_id}\u001f${container.container_path}`) ?? []) {
+      for (const id of assignment.get(`${container.root_id}\u001f${container.container_path}`) ??
+        []) {
         memberIds.add(id);
       }
       container.marker_ids.sort(compareCodePoints);
@@ -316,8 +402,9 @@ export function buildProjectCandidates(input: BuildProjectCandidatesInput): Proj
     // given none (every file claimed by a longer container) states nothing, and
     // emitting it would hand the packet a cluster that names no member.
     if (memberIds.size === 0) continue;
-    const rootIds = [...new Set(orderedContainers.map((container) => container.root_id))]
-      .sort(compareCodePoints);
+    const rootIds = [...new Set(orderedContainers.map((container) => container.root_id))].sort(
+      compareCodePoints,
+    );
     candidates.push({
       candidate_id: stableId("project-candidate", {
         algorithm_id: PROJECT_CANDIDATE_METHOD,
@@ -349,8 +436,14 @@ export interface DeclaredIdentifier {
 
 /** Manifest basenames whose body this module knows how to read a name out of. */
 export const DECLARED_IDENTIFIER_MANIFESTS: readonly string[] = [
-  "cargo.toml", "composer.json", "deno.json", "deno.jsonc", "go.mod", "package.json",
-  "pom.xml", "pyproject.toml",
+  "cargo.toml",
+  "composer.json",
+  "deno.json",
+  "deno.jsonc",
+  "go.mod",
+  "package.json",
+  "pom.xml",
+  "pyproject.toml",
 ];
 
 /** True when `readDeclaredIdentifier` claims this basename. */
@@ -373,7 +466,11 @@ const TOML_NAME_SECTIONS: Readonly<Record<string, readonly string[]>> = {
 /** 1-based line of a character offset, counting `\n` as the line break `split` uses. */
 function lineAtOffset(text: string, offset: number): number {
   let line = 1;
-  for (let index = text.indexOf("\n"); index >= 0 && index < offset; index = text.indexOf("\n", index + 1)) {
+  for (
+    let index = text.indexOf("\n");
+    index >= 0 && index < offset;
+    index = text.indexOf("\n", index + 1)
+  ) {
     line++;
   }
   return line;
@@ -501,7 +598,10 @@ function pomProjectArtifactId(text: string): { identifier: string; line: number 
           const close = text.indexOf("<", end + 1);
           if (close < 0) return undefined;
           const value = text.slice(end + 1, close).trim();
-          if (value.length === 0 || !/^<\/(?:[^\s:>]+:)?artifactId\s*>/.test(text.slice(close, close + 64))) {
+          if (
+            value.length === 0 ||
+            !/^<\/(?:[^\s:>]+:)?artifactId\s*>/.test(text.slice(close, close + 64))
+          ) {
             return undefined;
           }
           return { identifier: value, line: lineAtOffset(text, index) };
@@ -556,7 +656,9 @@ export function readDeclaredIdentifier(
 
   if (name === "pom.xml") {
     const own = pomProjectArtifactId(text);
-    return own === undefined ? undefined : { identifier: own.identifier, field: "artifactId", line: own.line };
+    return own === undefined
+      ? undefined
+      : { identifier: own.identifier, field: "artifactId", line: own.line };
   }
 
   const sections = TOML_NAME_SECTIONS[name];
@@ -609,9 +711,10 @@ export function salientTerms(
   documentFrequency: ReadonlyMap<string, number>,
   eligibleDocumentCount: number,
 ): string[] {
-  const ceiling = eligibleDocumentCount < TOPIC_DOCUMENT_FREQUENCY_MIN_DOCUMENTS
-    ? Number.POSITIVE_INFINITY
-    : eligibleDocumentCount * TOPIC_DOCUMENT_FREQUENCY_CEILING;
+  const ceiling =
+    eligibleDocumentCount < TOPIC_DOCUMENT_FREQUENCY_MIN_DOCUMENTS
+      ? Number.POSITIVE_INFINITY
+      : eligibleDocumentCount * TOPIC_DOCUMENT_FREQUENCY_CEILING;
   const kept = document.term_counts.filter(([term]) => {
     if (term.length < TOPIC_MIN_TERM_LENGTH) return false;
     if (STOPWORDS.has(term)) return false;
@@ -660,8 +763,8 @@ function buildTopicCandidate(
   threshold: number,
   rootById: ReadonlyMap<string, string>,
 ): TopicCandidate {
-  const ordered = [...members].sort(
-    (a, b) => compareCodePoints(a.document.corpus_path, b.document.corpus_path),
+  const ordered = [...members].sort((a, b) =>
+    compareCodePoints(a.document.corpus_path, b.document.corpus_path),
   );
   const memberIds = ordered.map((member) => member.document.virtual_source_id);
   const termCounts = new Map<string, number>();
@@ -810,11 +913,13 @@ export function buildTopicCandidates(input: BuildTopicCandidatesInput): TopicCan
   // component, which is what "every pair joins" means.
   if (roundTopicScore(threshold) <= 0) {
     return {
-      candidates: [buildTopicCandidate(
-        eligible.map((document) => ({ document, terms: new Set<string>() })),
-        threshold,
-        input.rootById,
-      )],
+      candidates: [
+        buildTopicCandidate(
+          eligible.map((document) => ({ document, terms: new Set<string>() })),
+          threshold,
+          input.rootById,
+        ),
+      ],
       pair_work: emptyWork(),
     };
   }
@@ -836,16 +941,17 @@ export function buildTopicCandidates(input: BuildTopicCandidatesInput): TopicCan
   // line, a word every plan contains — at the end, where it falls outside every
   // prefix and is never indexed.
   const globalOrder = (left: string, right: string): number =>
-    (documentFrequency.get(left) ?? 0) - (documentFrequency.get(right) ?? 0)
-    || compareCodePoints(left, right);
+    (documentFrequency.get(left) ?? 0) - (documentFrequency.get(right) ?? 0) ||
+    compareCodePoints(left, right);
 
   // Smallest salient set first, so a document meets every partner that could
   // satisfy the size bound from below before it is itself indexed.
   const order = features
     .map((feature, index) => ({ feature, index }))
     .sort(
-      (left, right) => left.feature.terms.size - right.feature.terms.size
-        || compareCodePoints(
+      (left, right) =>
+        left.feature.terms.size - right.feature.terms.size ||
+        compareCodePoints(
           left.feature.document.virtual_source_id,
           right.feature.document.virtual_source_id,
         ),
@@ -931,17 +1037,19 @@ export function buildTopicCandidates(input: BuildTopicCandidatesInput): TopicCan
   const candidates: TopicCandidate[] = [];
   for (const bucket of components.values()) {
     if (bucket.length < 2) continue;
-    candidates.push(buildTopicCandidate(
-      bucket.map((index) => features[index]),
-      threshold,
-      input.rootById,
-    ));
+    candidates.push(
+      buildTopicCandidate(
+        bucket.map((index) => features[index]),
+        threshold,
+        input.rootById,
+      ),
+    );
   }
   candidates.sort(
     (a, b) =>
-      b.member_count - a.member_count
-      || compareCodePoints(a.member_paths[0] ?? "", b.member_paths[0] ?? "")
-      || compareCodePoints(a.candidate_id, b.candidate_id),
+      b.member_count - a.member_count ||
+      compareCodePoints(a.member_paths[0] ?? "", b.member_paths[0] ?? "") ||
+      compareCodePoints(a.candidate_id, b.candidate_id),
   );
 
   const salientTermCount = new Set(features.flatMap((feature) => [...feature.terms])).size;
@@ -964,18 +1072,18 @@ export function buildTopicCandidates(input: BuildTopicCandidatesInput): TopicCan
  * Exported because a bound is only a bound if something independent agrees with
  * what it produced. Never used by a scan: it is `n(n-1)/2` by construction.
  */
-export function buildTopicCandidatesExhaustive(
-  input: BuildTopicCandidatesInput,
-): TopicCandidate[] {
+export function buildTopicCandidatesExhaustive(input: BuildTopicCandidatesInput): TopicCandidate[] {
   const threshold = roundTopicScore(input.threshold ?? DEFAULT_TOPIC_THRESHOLD);
   const eligible = input.documents.filter((document) => document.token_count >= TOPIC_MIN_TOKENS);
   if (eligible.length < 2) return [];
   if (roundTopicScore(threshold) <= 0) {
-    return [buildTopicCandidate(
-      eligible.map((document) => ({ document, terms: new Set<string>() })),
-      threshold,
-      input.rootById,
-    )];
+    return [
+      buildTopicCandidate(
+        eligible.map((document) => ({ document, terms: new Set<string>() })),
+        threshold,
+        input.rootById,
+      ),
+    ];
   }
 
   const documentFrequency = new Map<string, number>();
@@ -1013,17 +1121,19 @@ export function buildTopicCandidatesExhaustive(
   const candidates: TopicCandidate[] = [];
   for (const bucket of components.values()) {
     if (bucket.length < 2) continue;
-    candidates.push(buildTopicCandidate(
-      bucket.map((index) => features[index]),
-      threshold,
-      input.rootById,
-    ));
+    candidates.push(
+      buildTopicCandidate(
+        bucket.map((index) => features[index]),
+        threshold,
+        input.rootById,
+      ),
+    );
   }
   return candidates.sort(
     (a, b) =>
-      b.member_count - a.member_count
-      || compareCodePoints(a.member_paths[0] ?? "", b.member_paths[0] ?? "")
-      || compareCodePoints(a.candidate_id, b.candidate_id),
+      b.member_count - a.member_count ||
+      compareCodePoints(a.member_paths[0] ?? "", b.member_paths[0] ?? "") ||
+      compareCodePoints(a.candidate_id, b.candidate_id),
   );
 }
 

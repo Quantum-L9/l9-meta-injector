@@ -1,14 +1,14 @@
-import { PipelineConfig, NormalizedMeta, InjectionRecord, VerifyResult } from "./schema";
-import type { ProductDeclaration, SemanticFoundationBinding } from "./schema";
-import { scanFiles } from "./retrieval";
-import { type CarrierInjectionStrategy } from "./mutation_policy";
+import { ArchiveRecord } from "./archives";
 import type { DiscoverySummary } from "./discovery_contracts";
-import { PlacementPlan } from "./placement_policy";
+import { type FrontMatterIssueCode } from "./frontmatter_patch";
 import { MetaV3Record } from "./meta_v3";
 import { MetricsSnapshot } from "./metrics";
-import { type FrontMatterIssueCode } from "./frontmatter_patch";
-import { ArchiveRecord } from "./archives";
+import { type CarrierInjectionStrategy } from "./mutation_policy";
 import type { AuthorityConfig } from "./operation_contracts";
+import { PlacementPlan } from "./placement_policy";
+import { scanFiles } from "./retrieval";
+import type { ProductDeclaration, SemanticFoundationBinding } from "./schema";
+import { InjectionRecord, NormalizedMeta, PipelineConfig, VerifyResult } from "./schema";
 export interface VerificationSummary {
     total: number;
     clean: number;

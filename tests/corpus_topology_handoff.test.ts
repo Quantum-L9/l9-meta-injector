@@ -23,10 +23,10 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { MAX_LISTED_SIGNALS_PER_FORMAT } from "../src/corpus_document_signals";
-import { verifyDocumentWorkSignalExport } from "../src/corpus_work_signal_export";
-import type { DocumentWorkSignalRecord } from "../src/corpus_work_signal_export";
-import { runCorpusScan } from "../src/corpus_scan";
 import type { CorpusScanResult } from "../src/corpus_scan";
+import { runCorpusScan } from "../src/corpus_scan";
+import type { DocumentWorkSignalRecord } from "../src/corpus_work_signal_export";
+import { verifyDocumentWorkSignalExport } from "../src/corpus_work_signal_export";
 import {
   writeDocx,
   writeHtml,
@@ -81,11 +81,7 @@ function handoffCorpus(): HandoffCorpus {
   writeDocx(path.join(primary, "world-model.docx"), {
     title: "World Model WIP",
     headings: ["Scope", "Milestones"],
-    paragraphs: [
-      "Status: wip",
-      "Depends on: storage-migration.md",
-      "Blocked by: vendor contract",
-    ],
+    paragraphs: ["Status: wip", "Depends on: storage-migration.md", "Blocked by: vendor contract"],
     listItems: ["[ ] Ship the ingest path", "[x] Draft the schema"],
   });
   writePdf(
@@ -219,11 +215,12 @@ describe("the fixture a Topology consumer is handed", () => {
 
     // One document saying two contradictory things about itself, both kept.
     const contradiction = records.filter(
-      (record) => record.source_path.endsWith("contradiction.docx")
-        && record.predicate === "work.status",
+      (record) =>
+        record.source_path.endsWith("contradiction.docx") && record.predicate === "work.status",
     );
-    expect(new Set(contradiction.map((record) => record.object)))
-      .toEqual(new Set(["complete", "blocked"]));
+    expect(new Set(contradiction.map((record) => record.object))).toEqual(
+      new Set(["complete", "blocked"]),
+    );
 
     // Documents one and two archives deep, at their virtual locators.
     const paths = records.map((record) => record.source_path);
@@ -233,8 +230,9 @@ describe("the fixture a Topology consumer is handed", () => {
 
   it("states more in one format than the report will list", async () => {
     const result = await handoff();
-    const xlsx = result.documentSignals.block_signals.by_format
-      .find((entry) => entry.format === "xlsx");
+    const xlsx = result.documentSignals.block_signals.by_format.find(
+      (entry) => entry.format === "xlsx",
+    );
 
     // The property that makes this fixture a proof rather than a demonstration:
     // a consumer that read the report instead of the payload gets a different,
@@ -278,8 +276,10 @@ describe("a consumer holding only the generation", () => {
     // bundles contains.
     const packetArtifactIds = new Set(
       result.rootPackets.flatMap((root) =>
-        (root.packet.payload.artifacts as { artifact_id: string }[])
-          .map((artifact) => artifact.artifact_id)),
+        (root.packet.payload.artifacts as { artifact_id: string }[]).map(
+          (artifact) => artifact.artifact_id,
+        ),
+      ),
     );
     expect(packetArtifactIds.size).toBeGreaterThan(0);
     for (const record of records) {
@@ -305,13 +305,13 @@ describe("a consumer holding only the generation", () => {
       expect(record.structured_locator.kind).not.toBe("line_span");
       expect(record.block_id.length).toBeGreaterThan(0);
     }
-    expect([...kindsByFormat.get("docx") ?? []]).toEqual(["docx_block"]);
-    expect([...kindsByFormat.get("pptx") ?? []]).toEqual(["pptx_shape"]);
-    expect([...kindsByFormat.get("xlsx") ?? []]).toEqual(["spreadsheet_cell"]);
-    expect([...kindsByFormat.get("pdf") ?? []]).toEqual(["pdf_page_block"]);
-    expect([...kindsByFormat.get("csv") ?? []]).toEqual(["csv_row"]);
-    expect([...kindsByFormat.get("html") ?? []]).toEqual(["html_node"]);
-    expect([...kindsByFormat.get("ipynb") ?? []]).toEqual(["notebook_cell"]);
+    expect([...(kindsByFormat.get("docx") ?? [])]).toEqual(["docx_block"]);
+    expect([...(kindsByFormat.get("pptx") ?? [])]).toEqual(["pptx_shape"]);
+    expect([...(kindsByFormat.get("xlsx") ?? [])]).toEqual(["spreadsheet_cell"]);
+    expect([...(kindsByFormat.get("pdf") ?? [])]).toEqual(["pdf_page_block"]);
+    expect([...(kindsByFormat.get("csv") ?? [])]).toEqual(["csv_row"]);
+    expect([...(kindsByFormat.get("html") ?? [])]).toEqual(["html_node"]);
+    expect([...(kindsByFormat.get("ipynb") ?? [])]).toEqual(["notebook_cell"]);
   });
 
   it("is handed nothing that names this machine", async () => {

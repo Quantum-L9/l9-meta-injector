@@ -19,7 +19,8 @@ const SECRET_ASSIGNMENT =
  * alphanumeric run, so Git object ids, content hashes, and pinned Action SHAs — which are
  * exactly the values an operator needs to see — are left intact.
  */
-const OPAQUE_CREDENTIAL = /\b(?=[A-Za-z0-9_\-+/]{32,})(?=[^\s]*[a-z])(?=[^\s]*[A-Z])(?=[^\s]*\d)[A-Za-z0-9_\-+/]{32,}={0,2}\b/g;
+const OPAQUE_CREDENTIAL =
+  /\b(?=[A-Za-z0-9_\-+/]{32,})(?=[^\s]*[a-z])(?=[^\s]*[A-Z])(?=[^\s]*\d)[A-Za-z0-9_\-+/]{32,}={0,2}\b/g;
 
 const REDACTED = "[redacted]";
 
@@ -53,16 +54,23 @@ function describeAuthorityFinding(item) {
 }
 
 function describeDrift(item) {
-  const hashes = item.expectedHash && item.actualHash
-    ? ` (expected ${item.expectedHash}, actual ${item.actualHash})`
-    : item.expectedHash ? ` (expected ${item.expectedHash})` : "";
+  const hashes =
+    item.expectedHash && item.actualHash
+      ? ` (expected ${item.expectedHash}, actual ${item.actualHash})`
+      : item.expectedHash
+        ? ` (expected ${item.expectedHash})`
+        : "";
   return `${item.kind}: ${item.path}: ${redact(String(item.message ?? ""))}${hashes}`;
 }
 
 /** Carrier decisions that fell back because a file could not carry its own metadata. */
 function carrierFallbacks(carrierDecisions) {
   return (carrierDecisions ?? [])
-    .filter((item) => typeof item.authorityRule === "string" && item.authorityRule.startsWith("frontmatter_unsupported:"))
+    .filter(
+      (item) =>
+        typeof item.authorityRule === "string" &&
+        item.authorityRule.startsWith("frontmatter_unsupported:"),
+    )
     .sort(compare("path", "authorityRule"));
 }
 
@@ -126,7 +134,8 @@ function renderCheck(label, check, warnings = []) {
 function renderThrow(label, error, env = process.env) {
   const message = error instanceof Error ? error.message : String(error);
   const lines = [`${label}: FAILED: ${redact(message)}`];
-  if (env.L9_DEBUG === "1" && error instanceof Error && error.stack) lines.push(redact(error.stack));
+  if (env.L9_DEBUG === "1" && error instanceof Error && error.stack)
+    lines.push(redact(error.stack));
   return lines;
 }
 

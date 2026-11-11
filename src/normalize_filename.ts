@@ -1,7 +1,8 @@
 // normalize_filename.ts — Normalize .md filenames to snake_case; write sidecar .normalize.log.yaml
 // --dry-run: write sidecar only, never rename. Live: sidecar + rename flag (rename is a separate pass).
-import * as path from "node:path";
+
 import * as fs from "node:fs";
+import * as path from "node:path";
 
 export interface NormalizeFilenameResult {
   originalPath: string;
@@ -12,8 +13,13 @@ export interface NormalizeFilenameResult {
 }
 
 export function toSnakeCase(s: string): string {
-  return s.replace(/([a-z])([A-Z])/g, "$1_$2").replace(/[-\s]+/g, "_")
-    .replace(/[^a-z0-9_.]/gi, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toLowerCase();
+  return s
+    .replace(/([a-z])([A-Z])/g, "$1_$2")
+    .replace(/[-\s]+/g, "_")
+    .replace(/[^a-z0-9_.]/gi, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_|_$/g, "")
+    .toLowerCase();
 }
 
 export function normalizeFilename(filePath: string): NormalizeFilenameResult {
@@ -35,24 +41,46 @@ export function normalizeFilename(filePath: string): NormalizeFilenameResult {
 
   const normalizedBase = normalizedStem + ext.toLowerCase();
   const normalizedPath = path.join(dir, normalizedBase);
-  return { originalPath: filePath, normalizedName: normalizedBase, normalizedPath, changed: normalizedBase !== base, sidecarPath: filePath + ".normalize.log.yaml" };
+  return {
+    originalPath: filePath,
+    normalizedName: normalizedBase,
+    normalizedPath,
+    changed: normalizedBase !== base,
+    sidecarPath: filePath + ".normalize.log.yaml",
+  };
 }
 
-export interface NormalizeFilenameOptions { dryRun: boolean; verbose: boolean; }
+export interface NormalizeFilenameOptions {
+  dryRun: boolean;
+  verbose: boolean;
+}
 
-export function normalizeFilenameWithLog(filePath: string, opts: NormalizeFilenameOptions): NormalizeFilenameResult {
+export function normalizeFilenameWithLog(
+  filePath: string,
+  opts: NormalizeFilenameOptions,
+): NormalizeFilenameResult {
   const result = normalizeFilename(filePath);
   if (!result.changed) return result;
-  const log = [
-    `# normalize.log`, `original: "${result.originalPath}"`, `normalized: "${result.normalizedPath}"`,
-    `dry_run: ${opts.dryRun}`, `timestamp: "${new Date().toISOString()}"`,
-    `status: ${opts.dryRun ? "pending_rename" : "sidecar_written"}`,
-  ].join("\n") + "\n";
+  const log =
+    [
+      `# normalize.log`,
+      `original: "${result.originalPath}"`,
+      `normalized: "${result.normalizedPath}"`,
+      `dry_run: ${opts.dryRun}`,
+      `timestamp: "${new Date().toISOString()}"`,
+      `status: ${opts.dryRun ? "pending_rename" : "sidecar_written"}`,
+    ].join("\n") + "\n";
   fs.writeFileSync(result.sidecarPath, log, "utf8");
-  if (opts.verbose) process.stderr.write(`[normalize${opts.dryRun ? "-dry-run" : ""}] ${path.basename(result.originalPath)} → ${result.normalizedName}\n`);
+  if (opts.verbose)
+    process.stderr.write(
+      `[normalize${opts.dryRun ? "-dry-run" : ""}] ${path.basename(result.originalPath)} → ${result.normalizedName}\n`,
+    );
   return result;
 }
 
-export function normalizeFilenames(filePaths: string[], opts: NormalizeFilenameOptions): NormalizeFilenameResult[] {
+export function normalizeFilenames(
+  filePaths: string[],
+  opts: NormalizeFilenameOptions,
+): NormalizeFilenameResult[] {
   return filePaths.map((fp) => normalizeFilenameWithLog(fp, opts));
 }

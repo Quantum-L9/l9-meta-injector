@@ -1,17 +1,4 @@
 "use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.StaticEmbeddingProvider = exports.EmbeddingVectorError = exports.EmbeddingConfigurationError = exports.MAX_CHUNKS_PER_DOCUMENT = exports.EMBEDDING_CHUNK_OVERLAP_CHARACTERS = exports.EMBEDDING_CHUNK_CHARACTERS = exports.EMBEDDING_CHUNK_PROFILE_VERSION = exports.EMBEDDING_CHUNK_PROFILE_ID = void 0;
-exports.embeddingChunkProfileHash = embeddingChunkProfileHash;
-exports.embeddingModelIdentityHash = embeddingModelIdentityHash;
-exports.reproducibilityClassOf = reproducibilityClassOf;
-exports.assertEmbeddingConfiguration = assertEmbeddingConfiguration;
-exports.chunkDocument = chunkDocument;
-exports.vectorDigest = vectorDigest;
-exports.cosineSimilarity = cosineSimilarity;
-exports.meanVector = meanVector;
-exports.embeddingCacheKey = embeddingCacheKey;
-exports.runEmbeddings = runEmbeddings;
-exports.disabledEmbeddingReport = disabledEmbeddingReport;
 // corpus_embeddings.ts — optional semantic recall, and the guards that keep it optional.
 //
 // Lexical analysis finds documents that share words. It cannot find the two that
@@ -41,9 +28,22 @@ exports.disabledEmbeddingReport = disabledEmbeddingReport;
 // operator supplies, and the one implementation here is a fixture that returns
 // vectors it was handed — enough to qualify the contract deterministically,
 // and deliberately not enough to be mistaken for a model.
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.StaticEmbeddingProvider = exports.EmbeddingVectorError = exports.EmbeddingConfigurationError = exports.MAX_CHUNKS_PER_DOCUMENT = exports.EMBEDDING_CHUNK_OVERLAP_CHARACTERS = exports.EMBEDDING_CHUNK_CHARACTERS = exports.EMBEDDING_CHUNK_PROFILE_VERSION = exports.EMBEDDING_CHUNK_PROFILE_ID = void 0;
+exports.embeddingChunkProfileHash = embeddingChunkProfileHash;
+exports.embeddingModelIdentityHash = embeddingModelIdentityHash;
+exports.reproducibilityClassOf = reproducibilityClassOf;
+exports.assertEmbeddingConfiguration = assertEmbeddingConfiguration;
+exports.chunkDocument = chunkDocument;
+exports.vectorDigest = vectorDigest;
+exports.cosineSimilarity = cosineSimilarity;
+exports.meanVector = meanVector;
+exports.embeddingCacheKey = embeddingCacheKey;
+exports.runEmbeddings = runEmbeddings;
+exports.disabledEmbeddingReport = disabledEmbeddingReport;
+const corpus_analysis_1 = require("./corpus_analysis");
 const ordering_1 = require("./ordering");
 const repository_model_1 = require("./repository_model");
-const corpus_analysis_1 = require("./corpus_analysis");
 exports.EMBEDDING_CHUNK_PROFILE_ID = "semantic-chunking/v1";
 exports.EMBEDDING_CHUNK_PROFILE_VERSION = "1.0.0";
 /** Characters per chunk, and the fixed overlap between consecutive chunks. */
@@ -72,9 +72,7 @@ function embeddingModelIdentityHash(identity) {
     });
 }
 function reproducibilityClassOf(configuration) {
-    return configuration.locality === "local"
-        ? "reproducible_when_runtime_pinned"
-        : "provider_bound";
+    return configuration.locality === "local" ? "reproducible_when_runtime_pinned" : "provider_bound";
 }
 // ───────────────────────────── egress guard ─────────────────────────────
 class EmbeddingConfigurationError extends Error {
@@ -92,27 +90,27 @@ function assertEmbeddingConfiguration(options) {
         return;
     const configuration = options.configuration;
     if (configuration === undefined) {
-        throw new EmbeddingConfigurationError("embeddings are enabled but no provider is configured: pass --embedding-provider and "
-            + "--embedding-model, or drop --embeddings");
+        throw new EmbeddingConfigurationError("embeddings are enabled but no provider is configured: pass --embedding-provider and " +
+            "--embedding-model, or drop --embeddings");
     }
     if (configuration.provider.trim().length === 0 || configuration.model_id.trim().length === 0) {
         const missing = [
             configuration.provider.trim().length === 0 ? "--embedding-provider" : null,
             configuration.model_id.trim().length === 0 ? "--embedding-model" : null,
         ].filter((flag) => flag !== null);
-        throw new EmbeddingConfigurationError(`embeddings are enabled but ${missing.join(" and ")} ${missing.length === 1 ? "is" : "are"} `
-            + "empty: a provider and a model must both be named explicitly, because the identity of what "
-            + "produced a vector is part of what makes the vector meaningful");
+        throw new EmbeddingConfigurationError(`embeddings are enabled but ${missing.join(" and ")} ${missing.length === 1 ? "is" : "are"} ` +
+            "empty: a provider and a model must both be named explicitly, because the identity of what " +
+            "produced a vector is part of what makes the vector meaningful");
     }
     if (configuration.locality === "remote") {
         if (!options.allowRemoteEmbeddings) {
-            throw new EmbeddingConfigurationError(`provider '${configuration.provider}' is remote, which sends bounded document text off this `
-                + "machine. That needs --allow-remote-embeddings, which enabling embeddings alone does not imply");
+            throw new EmbeddingConfigurationError(`provider '${configuration.provider}' is remote, which sends bounded document text off this ` +
+                "machine. That needs --allow-remote-embeddings, which enabling embeddings alone does not imply");
         }
         const endpoint = configuration.endpoint ?? "";
         if (!endpoint.startsWith("https://")) {
-            throw new EmbeddingConfigurationError(`remote provider '${configuration.provider}' must use an https:// endpoint; got `
-                + `'${endpoint.length === 0 ? "(none)" : endpoint}'`);
+            throw new EmbeddingConfigurationError(`remote provider '${configuration.provider}' must use an https:// endpoint; got ` +
+                `'${endpoint.length === 0 ? "(none)" : endpoint}'`);
         }
     }
 }
@@ -273,8 +271,8 @@ async function runEmbeddings(input) {
             runDimension = vector.length;
         }
         else if (vector.length !== runDimension) {
-            throw new EmbeddingVectorError(`${origin} vector for '${artifactId}' has dimension ${vector.length}; `
-                + `the run's dimension is ${runDimension}`);
+            throw new EmbeddingVectorError(`${origin} vector for '${artifactId}' has dimension ${vector.length}; ` +
+                `the run's dimension is ${runDimension}`);
         }
     };
     const ordered = [...embeddable].sort((a, b) => (0, ordering_1.compareCodePoints)(a.artifact_id, b.artifact_id));
@@ -324,8 +322,8 @@ async function runEmbeddings(input) {
             if (result.observed_model_revision !== undefined) {
                 observedRevisions.add(result.observed_model_revision);
                 if (observedRevisions.size > 1) {
-                    throw new EmbeddingVectorError(`the provider reported more than one model revision in one pass: `
-                        + `${[...observedRevisions].sort(ordering_1.compareCodePoints).join(", ")}`);
+                    throw new EmbeddingVectorError(`the provider reported more than one model revision in one pass: ` +
+                        `${[...observedRevisions].sort(ordering_1.compareCodePoints).join(", ")}`);
                 }
             }
         }
@@ -377,9 +375,7 @@ async function runEmbeddings(input) {
     // so the reported dimension is a property of the corpus and not of the
     // scheduling. Every other number here is a sum or a count and is already
     // order-free; this was the one field a wider pool could have changed.
-    const dimension = ids.length === 0
-        ? null
-        : vectors.get(ids[0]).length;
+    const dimension = ids.length === 0 ? null : vectors.get(ids[0]).length;
     const pairs = [];
     for (let i = 0; i < ids.length; i += 1) {
         for (let j = i + 1; j < ids.length; j += 1) {
@@ -390,8 +386,8 @@ async function runEmbeddings(input) {
                 pairs.push({ artifact_a_id: a, artifact_b_id: b, score });
         }
     }
-    pairs.sort((x, y) => (0, ordering_1.compareCodePoints)(x.artifact_a_id, y.artifact_a_id)
-        || (0, ordering_1.compareCodePoints)(x.artifact_b_id, y.artifact_b_id));
+    pairs.sort((x, y) => (0, ordering_1.compareCodePoints)(x.artifact_a_id, y.artifact_a_id) ||
+        (0, ordering_1.compareCodePoints)(x.artifact_b_id, y.artifact_b_id));
     return {
         pairs,
         report: {
@@ -399,9 +395,7 @@ async function runEmbeddings(input) {
             provider: configuration.provider,
             model_id: configuration.model_id,
             model_revision: configuration.model_revision ?? null,
-            reported_model_revision: observedRevisions.size === 1
-                ? [...observedRevisions][0]
-                : null,
+            reported_model_revision: observedRevisions.size === 1 ? [...observedRevisions][0] : null,
             dimension,
             chunk_profile: chunkProfile,
             reproducibility_class: reproducibilityClassOf(configuration),

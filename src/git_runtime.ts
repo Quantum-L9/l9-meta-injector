@@ -77,15 +77,20 @@ type GitControlEntry = { kind: "directory" } | { kind: "file"; text: string } | 
 // before `config --no-includes` has parsed its command-specific switches.
 function gitControlEntry(file: string): GitControlEntry {
   let fd: number;
-  try { fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK); }
-  catch (error) {
+  try {
+    fd = fs.openSync(
+      file,
+      fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK,
+    );
+  } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw new Error("Unsafe Git control file");
   }
   try {
     const before = fs.fstatSync(fd, { bigint: true });
     if (before.isDirectory()) return { kind: "directory" };
-    if (!before.isFile() || before.size > 1024n * 1024n) throw new Error("Unsupported Git control file");
+    if (!before.isFile() || before.size > 1024n * 1024n)
+      throw new Error("Unsupported Git control file");
     const buffer = Buffer.alloc(1024 * 1024 + 1);
     let count = 0;
     while (count < buffer.length) {
@@ -94,15 +99,22 @@ function gitControlEntry(file: string): GitControlEntry {
       count += read;
     }
     const after = fs.fstatSync(fd, { bigint: true });
-    if (count > 1024 * 1024 || before.size !== after.size || before.mtimeNs !== after.mtimeNs) throw new Error("Git control file changed or exceeded its cap");
+    if (count > 1024 * 1024 || before.size !== after.size || before.mtimeNs !== after.mtimeNs)
+      throw new Error("Git control file changed or exceeded its cap");
     return { kind: "file", text: strictGitUtf8(buffer.subarray(0, count)) };
-  } finally { fs.closeSync(fd); }
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
 function gitControlKind(file: string): "directory" | "file" | null {
   let fd: number;
-  try { fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK); }
-  catch (error) {
+  try {
+    fd = fs.openSync(
+      file,
+      fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK,
+    );
+  } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw new Error("Unsafe Git control marker");
   }
@@ -110,12 +122,19 @@ function gitControlKind(file: string): "directory" | "file" | null {
     const stat = fs.fstatSync(fd);
     if (stat.isDirectory()) return "directory";
     return stat.isFile() ? "file" : null;
-  } finally { fs.closeSync(fd); }
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
 function rejectGitControlIncludes(cwd: string): void {
   const dotGit = gitControlEntry(path.join(cwd, ".git"));
-  if (!dotGit && (gitControlKind(path.join(cwd, "HEAD")) !== "file" || gitControlKind(path.join(cwd, "objects")) !== "directory")) return;
+  if (
+    !dotGit &&
+    (gitControlKind(path.join(cwd, "HEAD")) !== "file" ||
+      gitControlKind(path.join(cwd, "objects")) !== "directory")
+  )
+    return;
   let gitDir = cwd;
   if (dotGit?.kind === "directory") gitDir = path.join(cwd, ".git");
   if (dotGit?.kind === "file") {
@@ -125,10 +144,19 @@ function rejectGitControlIncludes(cwd: string): void {
   }
   const common = gitControlEntry(path.join(gitDir, "commondir"));
   const commonDir = common?.kind === "file" ? path.resolve(gitDir, common.text.trim()) : gitDir;
-  for (const file of new Set([path.join(commonDir, "config"), path.join(gitDir, "config.worktree"), path.join(commonDir, "config.worktree")])) {
+  for (const file of new Set([
+    path.join(commonDir, "config"),
+    path.join(gitDir, "config.worktree"),
+    path.join(commonDir, "config.worktree"),
+  ])) {
     const entry = gitControlEntry(file);
-    if (entry?.kind === "file" && /^[\t \uFEFF]*\[[\t ]*include(?:if)?(?:[\t ."\]]|$)/im.test(entry.text)) {
-      throw new Error("Git configuration includes are unsupported by content-free observation; use an isolated bare snapshot");
+    if (
+      entry?.kind === "file" &&
+      /^[\t \uFEFF]*\[[\t ]*include(?:if)?(?:[\t ."\]]|$)/im.test(entry.text)
+    ) {
+      throw new Error(
+        "Git configuration includes are unsupported by content-free observation; use an isolated bare snapshot",
+      );
     }
   }
 }
@@ -137,7 +165,10 @@ function rejectGitControlIncludes(cwd: string): void {
  * A single observation has one cumulative output budget and deadline. This runner
  * reads Git metadata only. Callers choose a narrow command vocabulary, not a shell.
  */
-export function readOnlyGitRunner(root: string, limits: GitReadLimits = {}): (args: readonly string[]) => Buffer {
+export function readOnlyGitRunner(
+  root: string,
+  limits: GitReadLimits = {},
+): (args: readonly string[]) => Buffer {
   const maxOutput = positiveLimit(limits.maxOutputBytes, 64 * 1024 * 1024, "maxOutputBytes");
   const timeout = positiveLimit(limits.timeoutMs, 30_000, "timeoutMs");
   if (typeof root !== "string" || !root || root.includes("\0")) {
@@ -150,23 +181,37 @@ export function readOnlyGitRunner(root: string, limits: GitReadLimits = {}): (ar
   const deadline = Date.now() + timeout;
   let remainingOutput = maxOutput;
   const config = [
-    "--no-optional-locks", "--no-replace-objects", "--no-pager",
-    "-c", "core.hooksPath=" + (process.platform === "win32" ? "NUL" : "/dev/null"),
-    "-c", "core.fsmonitor=false",
-    "-c", "core.untrackedCache=false",
-    "-c", "protocol.allow=never",
-    "-c", "protocol.file.allow=never",
-    "-c", "extensions.partialClone=",
+    "--no-optional-locks",
+    "--no-replace-objects",
+    "--no-pager",
+    "-c",
+    "core.hooksPath=" + (process.platform === "win32" ? "NUL" : "/dev/null"),
+    "-c",
+    "core.fsmonitor=false",
+    "-c",
+    "core.untrackedCache=false",
+    "-c",
+    "protocol.allow=never",
+    "-c",
+    "protocol.file.allow=never",
+    "-c",
+    "extensions.partialClone=",
   ];
 
-  const run = (args: readonly string[], allowAbsent = false): { status: number; stdout: Buffer } => {
+  const run = (
+    args: readonly string[],
+    allowAbsent = false,
+  ): { status: number; stdout: Buffer } => {
     const remainingTime = deadline - Date.now();
     if (remainingTime <= 0) throw new Error("Git observation timed out");
     if (remainingOutput <= 0) throw new Error("Git observation exceeded its output cap");
     rejectGitControlIncludes(cwd);
     const result = spawnSync(git, [...config, ...args], {
-      cwd, env, shell: false,
-      timeout: remainingTime, maxBuffer: remainingOutput,
+      cwd,
+      env,
+      shell: false,
+      timeout: remainingTime,
+      maxBuffer: remainingOutput,
       windowsHide: true,
     });
     if (result.error) {
@@ -192,21 +237,28 @@ export function readOnlyGitRunner(root: string, limits: GitReadLimits = {}): (ar
   // Configuration is control metadata, but includes can redirect its loader to
   // tracked subject payloads. Inspect names without includes and hold that setup.
   const configKeys = (scope: "--local" | "--worktree"): string[] => {
-    const keys = run(["config", scope, "--no-includes", "--null", "--name-only", "--list"], true).stdout;
+    const keys = run(
+      ["config", scope, "--no-includes", "--null", "--name-only", "--list"],
+      true,
+    ).stdout;
     if (keys.length === 0) return [];
     if (keys[keys.length - 1] !== 0) throw new Error("Malformed Git configuration names");
     return strictGitUtf8(keys.subarray(0, -1)).split("\0");
   };
   const keys = configKeys("--local");
-  if (keys.some((key) => key.toLowerCase() === "extensions.worktreeconfig")) keys.push(...configKeys("--worktree"));
+  if (keys.some((key) => key.toLowerCase() === "extensions.worktreeconfig"))
+    keys.push(...configKeys("--worktree"));
   if (keys.some((key) => /^(include|includeif)\./i.test(key))) {
-    throw new Error("Git configuration includes are unsupported by content-free observation; use an isolated bare snapshot");
+    throw new Error(
+      "Git configuration includes are unsupported by content-free observation; use an isolated bare snapshot",
+    );
   }
   // Older Git lacks --no-lazy-fetch. Disable every local promisor remote before
   // object resolution; transport denial is defense in depth, not fetch permission.
   const seen = new Set<string>();
   for (const key of keys.filter((key) => /^remote\..+\.promisor$/i.test(key))) {
-    if (key.includes("\n") || key.includes("\r")) throw new Error("Malformed Git promisor configuration");
+    if (key.includes("\n") || key.includes("\r"))
+      throw new Error("Malformed Git promisor configuration");
     if (!seen.has(key)) config.push("-c", `${key}=false`);
     seen.add(key);
   }

@@ -6,14 +6,14 @@
 // content hash with two departures and one arrival.
 import { describe, expect, it } from "vitest";
 import {
+  buildCorpusDiff,
   CONTENT_KEYED_LAYERS,
   CORPUS_ANALYSIS_DIFF_CATEGORIES,
-  CROSS_ROOT_MOVE_STATEMENT,
   CORPUS_DIFF_CATEGORIES,
   CORPUS_ROOT_DIFF_CATEGORIES,
   CORPUS_SCOPED_LAYERS,
+  CROSS_ROOT_MOVE_STATEMENT,
   RENAMED_CANDIDATE_STATEMENT,
-  buildCorpusDiff,
 } from "../src/corpus_diff";
 import {
   CORPUS_SNAPSHOT_SCHEMA,
@@ -209,8 +209,16 @@ describe("categories", () => {
   });
 
   it("classifies archives by their own path and hash", () => {
-    const previous = snapshot("one", [], [archive("A::x.zip", "sha256:x1"), archive("A::y.zip", "sha256:y")]);
-    const current = snapshot("two", [], [archive("A::x.zip", "sha256:x2"), archive("A::z.zip", "sha256:z")]);
+    const previous = snapshot(
+      "one",
+      [],
+      [archive("A::x.zip", "sha256:x1"), archive("A::y.zip", "sha256:y")],
+    );
+    const current = snapshot(
+      "two",
+      [],
+      [archive("A::x.zip", "sha256:x2"), archive("A::z.zip", "sha256:z")],
+    );
     const diff = buildCorpusDiff(previous, current);
     expect(diff.counts.archive_changed).toBe(1);
     expect(diff.counts.archive_added).toBe(1);
@@ -354,18 +362,18 @@ describe("a file that appears in another root", () => {
       artifact("A::notes/monday.md", "sha256:same", { root_id: "root:a" }),
     ]);
     const current = {
-      ...snapshot("two", [
-        artifact("B::archive/monday.md", "sha256:same", { root_id: "root:b" }),
-      ]),
+      ...snapshot("two", [artifact("B::archive/monday.md", "sha256:same", { root_id: "root:b" })]),
     };
     const diff = buildCorpusDiff(previous, current);
-    expect(diff.cross_root_move_candidates).toEqual([{
-      content_hash: "sha256:same",
-      from_root_id: "root:a",
-      from_corpus_path: "A::notes/monday.md",
-      to_root_id: "root:b",
-      to_corpus_path: "B::archive/monday.md",
-    }]);
+    expect(diff.cross_root_move_candidates).toEqual([
+      {
+        content_hash: "sha256:same",
+        from_root_id: "root:a",
+        from_corpus_path: "A::notes/monday.md",
+        to_root_id: "root:b",
+        to_corpus_path: "B::archive/monday.md",
+      },
+    ]);
     // The wording is the guardrail: a copy whose original was deleted, and two
     // unrelated identical files, produce this exact evidence.
     expect(diff.cross_root_move_statement).toBe(CROSS_ROOT_MOVE_STATEMENT);

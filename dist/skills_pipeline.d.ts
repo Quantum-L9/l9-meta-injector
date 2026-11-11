@@ -1,6 +1,6 @@
-import { FieldDiff } from "./schema";
 import { MetricsSnapshot } from "./metrics";
 import type { AuthorityConflict } from "./operation_contracts";
+import { FieldDiff } from "./schema";
 export interface SkillsPipelineConfig {
     root: string;
     /** Caller-supplied writer-intent identifier (CLI/action parity with check/apply). */

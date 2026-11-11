@@ -205,9 +205,9 @@ class CorpusSessionStore {
             completed_archive_hashes: uniqueSorted(this.archiveHashes),
             completed_decoder_keys: uniqueSorted(this.decoderKeys),
             completed_analysis_keys: uniqueSorted(this.analysisKeys),
-            failure_diagnostics: [...this.session.failure_diagnostics].sort((a, b) => (0, ordering_1.compareCodePoints)(a.code, b.code)
-                || (0, ordering_1.compareCodePoints)(a.corpus_path ?? "", b.corpus_path ?? "")
-                || (0, ordering_1.compareCodePoints)(a.message, b.message)),
+            failure_diagnostics: [...this.session.failure_diagnostics].sort((a, b) => (0, ordering_1.compareCodePoints)(a.code, b.code) ||
+                (0, ordering_1.compareCodePoints)(a.corpus_path ?? "", b.corpus_path ?? "") ||
+                (0, ordering_1.compareCodePoints)(a.message, b.message)),
             updated_at: now,
         };
     }

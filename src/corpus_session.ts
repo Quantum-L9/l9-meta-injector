@@ -20,9 +20,9 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { canonicalCorpusJson } from "./corpus_analysis";
+import type { RootIdentityClass } from "./corpus_roots";
 import { commitFileDurably } from "./durable_write";
 import { compareCodePoints } from "./ordering";
-import type { RootIdentityClass } from "./corpus_roots";
 import { stableId } from "./repository_model";
 
 export const CORPUS_SESSION_SCHEMA = "l9.corpus-session/v1";
@@ -142,7 +142,11 @@ export class CorpusSessionStore {
    */
   private readonly adoptedRoots: CorpusSessionRoot[];
 
-  private constructor(file: string, session: CorpusSession, adoptedRoots: CorpusSessionRoot[] = []) {
+  private constructor(
+    file: string,
+    session: CorpusSession,
+    adoptedRoots: CorpusSessionRoot[] = [],
+  ) {
     this.file = file;
     this.session = session;
     this.adoptedRoots = adoptedRoots;
@@ -194,16 +198,20 @@ export class CorpusSessionStore {
     if (parsed.schema !== CORPUS_SESSION_SCHEMA || parsed.session_id !== sessionId) {
       return new CorpusSessionStore(file, fresh);
     }
-    return new CorpusSessionStore(file, {
-      ...fresh,
-      corpus_snapshot_target: parsed.corpus_snapshot_target ?? null,
-      completed_source_ids: parsed.completed_source_ids ?? [],
-      completed_archive_hashes: parsed.completed_archive_hashes ?? [],
-      completed_decoder_keys: parsed.completed_decoder_keys ?? [],
-      completed_analysis_keys: parsed.completed_analysis_keys ?? [],
-      failure_diagnostics: parsed.failure_diagnostics ?? [],
-      started_at: parsed.started_at ?? input.now,
-    }, parsed.roots ?? []);
+    return new CorpusSessionStore(
+      file,
+      {
+        ...fresh,
+        corpus_snapshot_target: parsed.corpus_snapshot_target ?? null,
+        completed_source_ids: parsed.completed_source_ids ?? [],
+        completed_archive_hashes: parsed.completed_archive_hashes ?? [],
+        completed_decoder_keys: parsed.completed_decoder_keys ?? [],
+        completed_analysis_keys: parsed.completed_analysis_keys ?? [],
+        failure_diagnostics: parsed.failure_diagnostics ?? [],
+        started_at: parsed.started_at ?? input.now,
+      },
+      parsed.roots ?? [],
+    );
   }
 
   get id(): string {
@@ -284,9 +292,10 @@ export class CorpusSessionStore {
       completed_decoder_keys: uniqueSorted(this.decoderKeys),
       completed_analysis_keys: uniqueSorted(this.analysisKeys),
       failure_diagnostics: [...this.session.failure_diagnostics].sort(
-        (a, b) => compareCodePoints(a.code, b.code)
-          || compareCodePoints(a.corpus_path ?? "", b.corpus_path ?? "")
-          || compareCodePoints(a.message, b.message),
+        (a, b) =>
+          compareCodePoints(a.code, b.code) ||
+          compareCodePoints(a.corpus_path ?? "", b.corpus_path ?? "") ||
+          compareCodePoints(a.message, b.message),
       ),
       updated_at: now,
     };
@@ -397,4 +406,3 @@ export class MemoryBudget {
     for (const resolve of waiting) resolve();
   }
 }
-

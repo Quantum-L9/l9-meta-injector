@@ -3,8 +3,15 @@
 import { describe, expect, it } from "vitest";
 import { defaultExtractors } from "../src/extractors";
 import { readDocumentBlockSignals } from "../src/extractors/document_blocks";
-import { documentStructureExtractor, workIntelligenceExtractor } from "../src/extractors/work_intelligence";
-import { interpretDocumentContent, type AssertionDraft, type Extractor } from "../src/interpretation";
+import {
+  documentStructureExtractor,
+  workIntelligenceExtractor,
+} from "../src/extractors/work_intelligence";
+import {
+  type AssertionDraft,
+  type Extractor,
+  interpretDocumentContent,
+} from "../src/interpretation";
 
 function extract(extractor: Extractor, sourcePath: string, lines: string[]): AssertionDraft[] {
   return extractor.extract({
@@ -25,12 +32,21 @@ function objects(drafts: AssertionDraft[], predicate: string): string[] {
 
 /** Every work.* claim, so a test can say "nothing was read" in one assertion. */
 function workClaims(drafts: AssertionDraft[]): string[] {
-  return drafts.filter((draft) => draft.predicate.startsWith("work.")).map((d) => `${d.predicate} ${d.object}`);
+  return drafts
+    .filter((draft) => draft.predicate.startsWith("work."))
+    .map((d) => `${d.predicate} ${d.object}`);
 }
 
 describe("RC-095: fenced code is excluded the way CommonMark delimits it", () => {
   it("REG-WU-021-RC-095-a: a shorter inner fence does not close a longer one", () => {
-    const drafts = work(["````markdown", "```", "- [ ] example task", "Status: blocked", "```", "````"]);
+    const drafts = work([
+      "````markdown",
+      "```",
+      "- [ ] example task",
+      "Status: blocked",
+      "```",
+      "````",
+    ]);
     expect(objects(drafts, "work.task.open")).toEqual([]);
     expect(objects(drafts, "work.status")).toEqual([]);
   });
@@ -63,28 +79,45 @@ describe("RC-095: fenced code is excluded the way CommonMark delimits it", () =>
   });
 
   it("REG-WU-021-RC-095-e: a closer-shaped line with trailing text does not close the block", () => {
-    const drafts = work(["```", "``` trailing", "- [ ] hidden", "Status: blocked", "```", "- [ ] visible"]);
+    const drafts = work([
+      "```",
+      "``` trailing",
+      "- [ ] hidden",
+      "Status: blocked",
+      "```",
+      "- [ ] visible",
+    ]);
     expect(objects(drafts, "work.task.open")).toEqual(["visible"]);
     expect(objects(drafts, "work.status")).toEqual([]);
   });
 
   it("REG-WU-021-RC-095-f: simple fences keep excluding headings and tasks", () => {
-    expect(objects(structure(["# Real", "", "```sh", "# not a heading", "```"]), "document.heading")).toEqual([
-      "H1: Real",
-    ]);
+    expect(
+      objects(structure(["# Real", "", "```sh", "# not a heading", "```"]), "document.heading"),
+    ).toEqual(["H1: Real"]);
     expect(objects(work(["```", "- [ ] example only", "```"]), "work.task.open")).toEqual([]);
   });
 
   it("REG-WU-021-RC-095-g: tasks after a correctly closed fence keep their lines", () => {
     const drafts = work(["```", "code", "```", "", "- [ ] first", "- [ ] second"]);
-    expect(drafts.filter((d) => d.predicate === "work.task.open").map((d) => d.sourceRange)).toEqual([
+    expect(
+      drafts.filter((d) => d.predicate === "work.task.open").map((d) => d.sourceRange),
+    ).toEqual([
       { start_line: 5, end_line: 5 },
       { start_line: 6, end_line: 6 },
     ]);
   });
 
   it("REG-WU-021-RC-095-h: a heading inside a four-backtick block wrapping three is not a heading", () => {
-    const drafts = structure(["# Real", "````", "```", "# Not a heading", "```", "````", "## After"]);
+    const drafts = structure([
+      "# Real",
+      "````",
+      "```",
+      "# Not a heading",
+      "```",
+      "````",
+      "## After",
+    ]);
     expect(objects(drafts, "document.heading")).toEqual(["H1: Real", "H2: After"]);
   });
 
@@ -140,7 +173,14 @@ describe("RC-099: a title's statuses are each claimed once", () => {
         decoderId: "l9.docx-decoder",
         decoderVersion: "1.0.0",
         format: "docx",
-        blocks: [{ block_id: "b1", kind: "title", text: title, locator: { kind: "docx_block", block_index: 1, part: "word/document.xml" } }],
+        blocks: [
+          {
+            block_id: "b1",
+            kind: "title",
+            text: title,
+            locator: { kind: "docx_block", block_index: 1, part: "word/document.xml" },
+          },
+        ],
       })
         .filter((signal) => signal.predicate === "work.status")
         .map((signal) => signal.object)

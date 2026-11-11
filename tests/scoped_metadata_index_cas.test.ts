@@ -14,7 +14,9 @@ vi.mock("../src/carrier_operation", async (importOriginal) => {
   const original = await importOriginal<typeof import("../src/carrier_operation")>();
   return {
     ...original,
-    planCarrierOperationAsync: async (input: Parameters<typeof original.planCarrierOperationAsync>[0]) => {
+    planCarrierOperationAsync: async (
+      input: Parameters<typeof original.planCarrierOperationAsync>[0],
+    ) => {
       const plan = await original.planCarrierOperationAsync(input);
       hook.afterPlan?.(plan.root);
       return plan;
@@ -39,16 +41,19 @@ function governedRoot(): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "l9-scoped-cas-"));
   roots.push(root);
   fs.mkdirSync(path.join(root, ".l9"));
-  fs.writeFileSync(path.join(root, ".l9", "meta-authority.yaml"), [
-    "schema: l9.meta-authority/v1",
-    "writer:",
-    "  repository: Quantum-L9/l9-meta-injector",
-    "  ref: fc335977581ff556a8d071a80fd48dfb3686a5cb",
-    "default_carrier: inline_managed",
-    "legacy_writers: forbidden",
-    "inline_allow: [\"**/*.md\"]",
-    "",
-  ].join("\n"));
+  fs.writeFileSync(
+    path.join(root, ".l9", "meta-authority.yaml"),
+    [
+      "schema: l9.meta-authority/v1",
+      "writer:",
+      "  repository: Quantum-L9/l9-meta-injector",
+      "  ref: fc335977581ff556a8d071a80fd48dfb3686a5cb",
+      "default_carrier: inline_managed",
+      "legacy_writers: forbidden",
+      'inline_allow: ["**/*.md"]',
+      "",
+    ].join("\n"),
+  );
   return root;
 }
 
@@ -95,7 +100,12 @@ describe("WU-005 scoped apply binds the merged index base into the transaction (
     expect((await runApplyAsync(config(root, "**/*"))).passed).toBe(true);
 
     const docPath = path.join(root, "docs", "a.md");
-    fs.writeFileSync(docPath, fs.readFileSync(docPath, "utf8").replace("inspect the repository", "inspect the whole repository"));
+    fs.writeFileSync(
+      docPath,
+      fs
+        .readFileSync(docPath, "utf8")
+        .replace("inspect the repository", "inspect the whole repository"),
+    );
     const docBefore = fs.readFileSync(docPath, "utf8");
     // A concurrent writer replaces the index after the scoped plan merged with it.
     const concurrentBytes = `${fs.readFileSync(path.join(root, INDEX), "utf8")}{"concurrent":true}\n`;
@@ -103,7 +113,9 @@ describe("WU-005 scoped apply binds the merged index base into the transaction (
       fs.writeFileSync(path.join(planRoot, INDEX), concurrentBytes);
     };
 
-    await expect(runApplyAsync(config(root, "docs/**/*.md"))).rejects.toThrow(/TRANSACTION_PLAN_STALE|TRANSACTION_CONCURRENT_DRIFT/);
+    await expect(runApplyAsync(config(root, "docs/**/*.md"))).rejects.toThrow(
+      /TRANSACTION_PLAN_STALE|TRANSACTION_CONCURRENT_DRIFT/,
+    );
     expect(fs.readFileSync(path.join(root, INDEX), "utf8")).toBe(concurrentBytes);
     expect(fs.readFileSync(docPath, "utf8")).toBe(docBefore);
   });

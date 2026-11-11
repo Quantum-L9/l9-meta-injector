@@ -50,7 +50,12 @@ function published(out: string): Published {
   const current = JSON.parse(fs.readFileSync(path.join(out, "CURRENT.json"), "utf8"));
   return {
     generationId: current.generation_id,
-    files: new Map(current.files.map((file: { path: string; content_hash: string }) => [file.path, file.content_hash])),
+    files: new Map(
+      current.files.map((file: { path: string; content_hash: string }) => [
+        file.path,
+        file.content_hash,
+      ]),
+    ),
     dir: path.join(out, ...String(current.generation_ref).split("/")),
   };
 }
@@ -66,7 +71,11 @@ function recordedTimes(dir: string): string[] {
     for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
       const absolute = path.join(current, entry.name);
       if (entry.isDirectory()) walk(absolute);
-      else for (const match of fs.readFileSync(absolute, "utf8").matchAll(/"[a-z_]+_at"\s*:\s*"([^"]+)"/g)) times.push(match[1] as string);
+      else
+        for (const match of fs
+          .readFileSync(absolute, "utf8")
+          .matchAll(/"[a-z_]+_at"\s*:\s*"([^"]+)"/g))
+          times.push(match[1] as string);
     }
   };
   walk(dir);
@@ -86,8 +95,13 @@ beforeAll(() => {
   );
   fs.writeFileSync(path.join(root, "notes.txt"), "Depends on: gate-sdk\n");
   const runs = [run(["--generated-at", PINNED]), run(["--generated-at", PINNED]), run([])];
-  for (const result of runs) if (result.status !== 0) throw new Error(`local-source failed: ${result.stderr}`);
-  [first, second, unpinned] = runs.map((result) => published(result.out)) as [Published, Published, Published];
+  for (const result of runs)
+    if (result.status !== 0) throw new Error(`local-source failed: ${result.stderr}`);
+  [first, second, unpinned] = runs.map((result) => published(result.out)) as [
+    Published,
+    Published,
+    Published,
+  ];
 });
 
 describe("a pinned --generated-at in corpus mode", () => {
@@ -122,7 +136,9 @@ describe("a pinned --generated-at in corpus mode", () => {
   });
 
   it("leaves an unpinned run recording the wall clock, as it always did", () => {
-    expect(json(unpinned.dir, "roots/Designs/local-source-manifest.json").observed_at).not.toBe(PINNED);
+    expect(json(unpinned.dir, "roots/Designs/local-source-manifest.json").observed_at).not.toBe(
+      PINNED,
+    );
     expect(json(unpinned.dir, "corpus-intelligence/packet.json").created_at).not.toBe(PINNED);
   });
 
@@ -152,6 +168,8 @@ describe("one instant written two ways", () => {
     for (const result of [short, tenth]) expect(result.status).toBe(0);
     expect(published(short.out).generationId).toBe(first.generationId);
     expect(published(tenth.out).generationId).toBe(first.generationId);
-    expect(json(published(short.out).dir, "corpus-intelligence/packet.json").created_at).toBe(PINNED);
+    expect(json(published(short.out).dir, "corpus-intelligence/packet.json").created_at).toBe(
+      PINNED,
+    );
   });
 });

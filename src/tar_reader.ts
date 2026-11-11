@@ -1,7 +1,7 @@
 // tar_reader.ts — bounded ustar reader for inventory harvest and rewrite admit (ADR-049).
 // Observation expansion does not use this module (ADR-036 / ADR-046).
 import { rootMetaMemberKind } from "./archive_preflight";
-import { parseOctalField, tarChecksum, TAR_BLOCK_SIZE } from "./tar_format";
+import { parseOctalField, TAR_BLOCK_SIZE, tarChecksum } from "./tar_format";
 
 export interface TarMember {
   name: string;
@@ -12,9 +12,7 @@ export interface TarMember {
   rawRecord: Buffer;
 }
 
-export type TarReadResult =
-  | { ok: true; members: TarMember[] }
-  | { ok: false; hold: string };
+export type TarReadResult = { ok: true; members: TarMember[] } | { ok: false; hold: string };
 
 const REGULAR = new Set(["0", "\0", ""]);
 const DIRECTORY = new Set(["5"]);
@@ -38,8 +36,9 @@ function readField(header: Buffer, start: number, width: number): Buffer {
  */
 function readName(header: Buffer): string {
   const name = readField(header, 0, 100);
-  const posix = header.subarray(257, 263).equals(POSIX_USTAR_MAGIC)
-    && header.subarray(263, 265).equals(POSIX_USTAR_VERSION);
+  const posix =
+    header.subarray(257, 263).equals(POSIX_USTAR_MAGIC) &&
+    header.subarray(263, 265).equals(POSIX_USTAR_VERSION);
   if (posix) {
     const prefix = readField(header, 345, 155);
     if (prefix.length > 0) return Buffer.concat([prefix, Buffer.from("/"), name]).toString("utf8");
@@ -74,13 +73,22 @@ export function readTarArchive(bytes: Buffer): TarReadResult {
     const size = parseOctalField(header.subarray(124, 136));
     if (!Number.isFinite(size) || size < 0) return { ok: false, hold: "archive.tar_size_invalid" };
     const padded = Math.ceil(size / TAR_BLOCK_SIZE) * TAR_BLOCK_SIZE;
-    if (offset + TAR_BLOCK_SIZE + padded > bytes.length) return { ok: false, hold: "archive.tar_truncated" };
+    if (offset + TAR_BLOCK_SIZE + padded > bytes.length)
+      return { ok: false, hold: "archive.tar_truncated" };
     const type = String.fromCharCode(header[156] ?? 0);
-    if (HOSTILE_TYPES.has(type)) return { ok: false, hold: `archive.tar_type_${type === "S" ? "sparse" : type}` };
-    if (!REGULAR.has(type) && !DIRECTORY.has(type)) return { ok: false, hold: "archive.entry_kind_unknown" };
+    if (HOSTILE_TYPES.has(type))
+      return { ok: false, hold: `archive.tar_type_${type === "S" ? "sparse" : type}` };
+    if (!REGULAR.has(type) && !DIRECTORY.has(type))
+      return { ok: false, hold: "archive.entry_kind_unknown" };
     const content = bytes.subarray(offset + TAR_BLOCK_SIZE, offset + TAR_BLOCK_SIZE + size);
     const rawRecord = bytes.subarray(offset, offset + TAR_BLOCK_SIZE + padded);
-    members.push({ name: readName(header), type, size, content: Buffer.from(content), rawRecord: Buffer.from(rawRecord) });
+    members.push({
+      name: readName(header),
+      type,
+      size,
+      content: Buffer.from(content),
+      rawRecord: Buffer.from(rawRecord),
+    });
     offset += TAR_BLOCK_SIZE + padded;
   }
   return { ok: false, hold: "archive.tar_truncated" };

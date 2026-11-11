@@ -28,9 +28,23 @@ export const EXPANDABLE_ARCHIVE_EXTENSIONS: ReadonlySet<string> = new Set([".zip
  * here: there is no TAR reader in v1, and no external tool is consulted.
  */
 export const KNOWN_UNEXPANDABLE_ARCHIVE_EXTENSIONS: ReadonlySet<string> = new Set([
-  ".tar", ".tgz", ".tbz", ".tbz2", ".txz", ".tzst",
-  ".gz", ".bz2", ".xz", ".zst", ".lz4",
-  ".7z", ".rar", ".jar", ".war", ".cab", ".iso",
+  ".tar",
+  ".tgz",
+  ".tbz",
+  ".tbz2",
+  ".txz",
+  ".tzst",
+  ".gz",
+  ".bz2",
+  ".xz",
+  ".zst",
+  ".lz4",
+  ".7z",
+  ".rar",
+  ".jar",
+  ".war",
+  ".cab",
+  ".iso",
 ]);
 
 /** Every extension this package classifies as an archive, expandable or not. */
@@ -73,18 +87,28 @@ const USTAR_OFFSET = 257;
  */
 export function sniffArchiveSignature(prefix: Buffer): ArchiveSignature | null {
   const at = (offset: number, bytes: number[]): boolean =>
-    prefix.length >= offset + bytes.length
-    && bytes.every((byte, index) => prefix[offset + index] === byte);
-  if (at(0, [0x50, 0x4b, 0x03, 0x04]) || at(0, [0x50, 0x4b, 0x05, 0x06]) || at(0, [0x50, 0x4b, 0x07, 0x08])) return "zip";
+    prefix.length >= offset + bytes.length &&
+    bytes.every((byte, index) => prefix[offset + index] === byte);
+  if (
+    at(0, [0x50, 0x4b, 0x03, 0x04]) ||
+    at(0, [0x50, 0x4b, 0x05, 0x06]) ||
+    at(0, [0x50, 0x4b, 0x07, 0x08])
+  )
+    return "zip";
   if (at(0, [0x1f, 0x8b])) return "gzip";
-  if (at(0, [0x42, 0x5a, 0x68]) && prefix.length > 3 && prefix[3] >= 0x31 && prefix[3] <= 0x39) return "bzip2";
+  if (at(0, [0x42, 0x5a, 0x68]) && prefix.length > 3 && prefix[3] >= 0x31 && prefix[3] <= 0x39)
+    return "bzip2";
   if (at(0, [0xfd, 0x37, 0x7a, 0x58, 0x5a, 0x00])) return "xz";
   if (at(0, [0x28, 0xb5, 0x2f, 0xfd])) return "zstd";
   if (at(0, [0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c])) return "7z";
   if (at(0, [0x52, 0x61, 0x72, 0x21, 0x1a, 0x07])) return "rar";
   // "ustar\0" (POSIX) or "ustar " (GNU) at the magic offset.
-  if (at(USTAR_OFFSET, [0x75, 0x73, 0x74, 0x61, 0x72]) && prefix.length > USTAR_OFFSET + 5
-    && (prefix[USTAR_OFFSET + 5] === 0x00 || prefix[USTAR_OFFSET + 5] === 0x20)) return "tar";
+  if (
+    at(USTAR_OFFSET, [0x75, 0x73, 0x74, 0x61, 0x72]) &&
+    prefix.length > USTAR_OFFSET + 5 &&
+    (prefix[USTAR_OFFSET + 5] === 0x00 || prefix[USTAR_OFFSET + 5] === 0x20)
+  )
+    return "tar";
   return null;
 }
 
@@ -94,7 +118,16 @@ export function sniffArchiveSignature(prefix: Buffer): ArchiveSignature | null {
  * the expected shape of the document, not a disguised archive.
  */
 export const ZIP_CONTAINER_DOCUMENT_EXTENSIONS: ReadonlySet<string> = new Set([
-  ".docx", ".xlsx", ".pptx", ".docm", ".xlsm", ".pptm", ".odt", ".ods", ".odp", ".epub",
+  ".docx",
+  ".xlsx",
+  ".pptx",
+  ".docm",
+  ".xlsm",
+  ".pptm",
+  ".odt",
+  ".ods",
+  ".odp",
+  ".epub",
 ]);
 
 /**

@@ -15,7 +15,11 @@ function resolveCliHeaderIdentity(pkg, root, label, argv) {
     }
     process.exit(2);
   }
-  if (result.authority.includes("\u0000") || result.authority.includes("\r") || result.authority.includes("\n")) {
+  if (
+    result.authority.includes("\u0000") ||
+    result.authority.includes("\r") ||
+    result.authority.includes("\n")
+  ) {
     console.error(`${label}: authority contains a forbidden control character`);
     process.exit(2);
   }

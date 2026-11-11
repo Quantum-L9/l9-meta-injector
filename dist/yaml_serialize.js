@@ -102,7 +102,11 @@ function yamlScalar(v, forbidden = []) {
     if (s === "")
         return '""';
     const marks = forbiddenStarts(s, forbidden);
-    if (marks.size > 0 || NEEDS_QUOTES.test(s) || CONTROL.test(s) || s.trim() !== s || READS_AS_NON_STRING.test(s))
+    if (marks.size > 0 ||
+        NEEDS_QUOTES.test(s) ||
+        CONTROL.test(s) ||
+        s.trim() !== s ||
+        READS_AS_NON_STRING.test(s))
         return quoted(s, marks);
     return s;
 }
@@ -126,7 +130,9 @@ function serializeYamlObject(obj, opts = {}) {
                 lines.push(`${k}: []`);
             else {
                 lines.push(`${k}:`);
-                v.forEach((i) => lines.push(`  - ${yamlScalar(i, forbidden)}`));
+                v.forEach((i) => {
+                    lines.push(`  - ${yamlScalar(i, forbidden)}`);
+                });
             }
         }
         else {

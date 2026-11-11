@@ -1,10 +1,12 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { parseCanonicalYaml, toMetaSchema, applySchema, MetaSchema } from "../src/meta_schema";
 import { inventoryTree, loadMetaSchema } from "../src/inventory";
+import { applySchema, MetaSchema, parseCanonicalYaml, toMetaSchema } from "../src/meta_schema";
 
-function tmp() { return fs.mkdtempSync(path.join(os.tmpdir(), "l9-ms-")); }
+function tmp() {
+  return fs.mkdtempSync(path.join(os.tmpdir(), "l9-ms-"));
+}
 
 describe("parseCanonicalYaml — constrained YAML subset", () => {
   const y = `
@@ -59,18 +61,24 @@ fields:
 
 describe("toMetaSchema — validation", () => {
   it("builds a schema", () => {
-    const s = toMetaSchema(parseCanonicalYaml("schema_id: x\nfields:\n  - name: id\n    source: artifact_id\n"));
+    const s = toMetaSchema(
+      parseCanonicalYaml("schema_id: x\nfields:\n  - name: id\n    source: artifact_id\n"),
+    );
     expect(s.schema_id).toBe("x");
     expect(s.fields[0].name).toBe("id");
     expect(s.target).toContain("file_header"); // default target when omitted
   });
-  it("throws without schema_id", () => expect(() => toMetaSchema(parseCanonicalYaml("fields:\n  - name: id\n"))).toThrow(/schema_id/));
-  it("throws without fields", () => expect(() => toMetaSchema(parseCanonicalYaml("schema_id: x\n"))).toThrow(/fields/));
+  it("throws without schema_id", () =>
+    expect(() => toMetaSchema(parseCanonicalYaml("fields:\n  - name: id\n"))).toThrow(/schema_id/));
+  it("throws without fields", () =>
+    expect(() => toMetaSchema(parseCanonicalYaml("schema_id: x\n"))).toThrow(/fields/));
 });
 
 describe("applySchema — source resolution, defaults, required", () => {
   const schema: MetaSchema = {
-    schema_id: "t", version: "1", target: ["file_header"],
+    schema_id: "t",
+    version: "1",
+    target: ["file_header"],
     fields: [
       { name: "id", source: "artifact_id", required: true },
       { name: "type", source: "artifact_type" },
@@ -83,8 +91,8 @@ describe("applySchema — source resolution, defaults, required", () => {
     const { fields, missingRequired } = applySchema(rec, schema);
     expect(fields.id).toBe("inv-1");
     expect(fields.type).toBe("code");
-    expect(fields.owner).toBe("Unknown");     // default filled
-    expect(fields.missing).toBeNull();         // no source, no default
+    expect(fields.owner).toBe("Unknown"); // default filled
+    expect(fields.missing).toBeNull(); // no source, no default
     expect(missingRequired).toEqual(["missing"]);
   });
 });
@@ -92,13 +100,16 @@ describe("applySchema — source resolution, defaults, required", () => {
 describe("inventory + schema + dedup integration", () => {
   it("emits schema-defined header fields and a duplicate cluster", () => {
     const root = tmp();
-    fs.mkdirSync(path.join(root, "a")); fs.mkdirSync(path.join(root, "b"));
+    fs.mkdirSync(path.join(root, "a"));
+    fs.mkdirSync(path.join(root, "b"));
     fs.writeFileSync(path.join(root, "a", "g.md"), "# D\nhello\n");
     fs.writeFileSync(path.join(root, "b", "g2.md"), "# D\nhello\n"); // duplicate content
     fs.writeFileSync(path.join(root, "app.ts"), "const x=1;\n");
     const out = tmp();
     const schema: MetaSchema = {
-      schema_id: "s", version: "1", target: ["file_header", "sidecar", "manifest"],
+      schema_id: "s",
+      version: "1",
+      target: ["file_header", "sidecar", "manifest"],
       fields: [
         { name: "id", source: "artifact_id", required: true },
         { name: "review_status", default: "unreviewed" },
@@ -120,17 +131,24 @@ describe("inventory + schema + dedup integration", () => {
   it("rejects outDir === root (would re-inventory its own manifests)", () => {
     const root = tmp();
     fs.writeFileSync(path.join(root, "a.ts"), "const x=1;\n");
-    expect(() => inventoryTree({ root, outDir: root, now: "2026-01-01T00:00:00.000Z" })).toThrow(/outDir/i);
+    expect(() => inventoryTree({ root, outDir: root, now: "2026-01-01T00:00:00.000Z" })).toThrow(
+      /outDir/i,
+    );
   });
 
   it("target=[sidecar,manifest] does NOT inject headers into files", () => {
     const root = tmp();
     fs.writeFileSync(path.join(root, "app.ts"), "const y=2;\n");
     const out = tmp();
-    const schema: MetaSchema = { schema_id: "m", version: "1", target: ["sidecar", "manifest"], fields: [{ name: "id", source: "artifact_id", required: true }] };
+    const schema: MetaSchema = {
+      schema_id: "m",
+      version: "1",
+      target: ["sidecar", "manifest"],
+      fields: [{ name: "id", source: "artifact_id", required: true }],
+    };
     inventoryTree({ root, outDir: out, schema, now: "2026-01-01T00:00:00.000Z" });
     expect(fs.readFileSync(path.join(root, "app.ts"), "utf8")).toBe("const y=2;\n"); // untouched
-    expect(fs.existsSync(path.join(root, "app.ts.l9meta.yaml"))).toBe(true);          // sidecar instead
+    expect(fs.existsSync(path.join(root, "app.ts.l9meta.yaml"))).toBe(true); // sidecar instead
   });
 
   it("loadMetaSchema reads the shipped example schema file", () => {

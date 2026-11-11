@@ -66,9 +66,13 @@ const REPO = path.resolve(__dirname, "..");
 const pkg = requireBuilt(path.join(REPO, "dist", "index.js"), "pipeline-cli");
 // loadMetaSchema lives on the "./inventory" subpath, not the root — require the subpath's
 // compiled output directly (same approach scripts/inventory.js already uses for it).
-const inventoryPkg = requireBuilt(path.join(REPO, "dist", "public", "inventory.js"), "pipeline-cli");
+const inventoryPkg = requireBuilt(
+  path.join(REPO, "dist", "public", "inventory.js"),
+  "pipeline-cli",
+);
 
-const usage = "usage: node scripts/pipeline-cli.js <root> [--glob PATTERN] [--out DIR] [--index-dir DIR] [--namespace NAME] [--namespace-glob glob=ns] [--authority ID] [--dry-run] [--fail-on-issues|--no-fail-on-issues] [--near-dup 0..1] [--hash-prefix-length N] [--normalize-filenames] [--write-inject-log] [--local-files] [--verbose] [--schema FILE] [--omit PATTERN] [--omit-file PATH] [--llm] [--llm-base-url URL] [--llm-api-key KEY] [--llm-model NAME] [--llm-allow-insecure]";
+const usage =
+  "usage: node scripts/pipeline-cli.js <root> [--glob PATTERN] [--out DIR] [--index-dir DIR] [--namespace NAME] [--namespace-glob glob=ns] [--authority ID] [--dry-run] [--fail-on-issues|--no-fail-on-issues] [--near-dup 0..1] [--hash-prefix-length N] [--normalize-filenames] [--write-inject-log] [--local-files] [--verbose] [--schema FILE] [--omit PATTERN] [--omit-file PATH] [--llm] [--llm-base-url URL] [--llm-api-key KEY] [--llm-model NAME] [--llm-allow-insecure]";
 const { root, flag, opt, optAll } = parseCli("pipeline-cli", usage);
 // Default output dir is a SIBLING of root (<root>.l9out), not nested inside it, so running the
 // pipeline never leaves diff/report/index noise in the folder being scanned. An --out inside
@@ -82,7 +86,9 @@ const schemaPath = opt("--schema", null);
 if (schemaPath) {
   try {
     metaSchema = inventoryPkg.loadMetaSchema(path.resolve(schemaPath));
-    console.error(`pipeline-cli: using meta-schema '${metaSchema.schema_id}' v${metaSchema.version} (${metaSchema.fields.length} fields, target=${metaSchema.target.join(",")})`);
+    console.error(
+      `pipeline-cli: using meta-schema '${metaSchema.schema_id}' v${metaSchema.version} (${metaSchema.fields.length} fields, target=${metaSchema.target.join(",")})`,
+    );
   } catch (e) {
     console.error(`pipeline-cli: bad --schema (${e.message})`);
     process.exit(2);
@@ -132,27 +138,42 @@ const config = {
 };
 
 if (llmEnabled && !(config.llmBaseUrl && config.llmApiKey && config.llmModel)) {
-  console.error("pipeline-cli: --llm requires --llm-base-url, --llm-model, and an API key (--llm-api-key or LLM_API_KEY env var); falling back to local (no-op) classification.");
+  console.error(
+    "pipeline-cli: --llm requires --llm-base-url, --llm-model, and an API key (--llm-api-key or LLM_API_KEY env var); falling back to local (no-op) classification.",
+  );
 }
 
-console.error(`pipeline-cli: running pipeline over ${root} (namespace=${config.namespace}${config.dryRun ? ", dry-run" : ""}${config.localFiles ? ", local-files" : ""}${llmEnabled ? ", llm-assisted" : ""}) …`);
+console.error(
+  `pipeline-cli: running pipeline over ${root} (namespace=${config.namespace}${config.dryRun ? ", dry-run" : ""}${config.localFiles ? ", local-files" : ""}${llmEnabled ? ", llm-assisted" : ""}) …`,
+);
 
-pkg.runPipelineAsync(config).then((result) => {
-  const { coverage, verification } = result;
-  console.log(`pipeline-cli: scanned=${coverage.scanned} injected=${coverage.injected} skippedBinary=${coverage.skippedBinary} skippedNonInjectable=${coverage.skippedNonInjectable} verifyFailed=${coverage.verifyFailed}`);
-  console.log(`pipeline-cli: verification total=${verification.total} clean=${verification.clean} withIssues=${verification.withIssues} passed=${verification.passed}`);
-  if (!verification.passed) {
-    console.log("pipeline-cli: verification failures:");
-    for (const f of verification.failures) console.log(`  - ${f.sourcePath}: ${f.issues.join("; ")}`);
-  }
-  console.log(`pipeline-cli: output written to ${path.relative(process.cwd(), outDir)}`);
-  if (config.dryRun) console.log("pipeline-cli: (dry-run: no files were modified; manifest/index only)");
+pkg
+  .runPipelineAsync(config)
+  .then((result) => {
+    const { coverage, verification } = result;
+    console.log(
+      `pipeline-cli: scanned=${coverage.scanned} injected=${coverage.injected} skippedBinary=${coverage.skippedBinary} skippedNonInjectable=${coverage.skippedNonInjectable} verifyFailed=${coverage.verifyFailed}`,
+    );
+    console.log(
+      `pipeline-cli: verification total=${verification.total} clean=${verification.clean} withIssues=${verification.withIssues} passed=${verification.passed}`,
+    );
+    if (!verification.passed) {
+      console.log("pipeline-cli: verification failures:");
+      for (const f of verification.failures)
+        console.log(`  - ${f.sourcePath}: ${f.issues.join("; ")}`);
+    }
+    console.log(`pipeline-cli: output written to ${path.relative(process.cwd(), outDir)}`);
+    if (config.dryRun)
+      console.log("pipeline-cli: (dry-run: no files were modified; manifest/index only)");
 
-  if (failOnIssues && !verification.passed) {
-    console.error("pipeline-cli: FAILED — verification issues found (see above). Pass --no-fail-on-issues to make this advisory only.");
-    process.exit(1);
-  }
-}).catch((e) => {
-  console.error(`pipeline-cli: pipeline threw: ${e?.stack ?? e}`);
-  process.exit(2);
-});
+    if (failOnIssues && !verification.passed) {
+      console.error(
+        "pipeline-cli: FAILED — verification issues found (see above). Pass --no-fail-on-issues to make this advisory only.",
+      );
+      process.exit(1);
+    }
+  })
+  .catch((e) => {
+    console.error(`pipeline-cli: pipeline threw: ${e?.stack ?? e}`);
+    process.exit(2);
+  });

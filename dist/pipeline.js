@@ -38,31 +38,35 @@ exports.runIndexGovernedPipelineAsync = runIndexGovernedPipelineAsync;
 // pipeline.ts — Full pipeline: scan → extract → assist → inject (async reconcile) → verify → index
 const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
-const schema_1 = require("./schema");
-const retrieval_1 = require("./retrieval");
-const mutation_policy_1 = require("./mutation_policy");
-const extract_1 = require("./extract");
-const classify_1 = require("./classify");
-const normalize_meta_1 = require("./normalize_meta");
-const inject_1 = require("./inject");
-const verify_1 = require("./verify");
-const compiler_1 = require("./compiler");
-const placement_policy_1 = require("./placement_policy");
-const meta_v3_1 = require("./meta_v3");
+const archives_1 = require("./archives");
 const assist_1 = require("./assist");
-const normalize_filename_1 = require("./normalize_filename");
+const authority_1 = require("./authority");
+const classify_1 = require("./classify");
+const comment_1 = require("./comment");
+const compiler_1 = require("./compiler");
+const extract_1 = require("./extract");
+const frontmatter_patch_1 = require("./frontmatter_patch");
+const inject_1 = require("./inject");
 const llm_1 = require("./llm");
 const meta_schema_1 = require("./meta_schema");
+const meta_v3_1 = require("./meta_v3");
 const metrics_1 = require("./metrics");
-const comment_1 = require("./comment");
-const frontmatter_patch_1 = require("./frontmatter_patch");
-const archives_1 = require("./archives");
+const mutation_policy_1 = require("./mutation_policy");
+const normalize_filename_1 = require("./normalize_filename");
+const normalize_meta_1 = require("./normalize_meta");
 const omit_1 = require("./omit");
-const authority_1 = require("./authority");
+const placement_policy_1 = require("./placement_policy");
+const retrieval_1 = require("./retrieval");
+const schema_1 = require("./schema");
+const verify_1 = require("./verify");
 // classify()'s coarse "high"/"medium"/"low" confidence, numerically scaled to line up
 // with inventoryTree's InventoryRecord.classification_confidence (a 0..1 float), so a
 // meta-schema's `source: classification_confidence` resolves consistently in both modes.
-const CONFIDENCE_NUMERIC = { high: 0.9, medium: 0.6, low: 0.3 };
+const CONFIDENCE_NUMERIC = {
+    high: 0.9,
+    medium: 0.6,
+    low: 0.3,
+};
 const UNKNOWN_EXCERPT = "Unknown";
 function relativeSourcePath(root, filePath) {
     const relative = path.relative(root, filePath);
@@ -79,10 +83,23 @@ function inlineCarrierBlockFor(raw) {
     if (inspected.safe || !inspected.issue)
         return undefined;
     const { code, message, line } = inspected.issue;
-    return { code, message, malformed: !(0, frontmatter_patch_1.isPatcherLimitation)(code), ...(line !== undefined ? { line } : {}) };
+    return {
+        code,
+        message,
+        malformed: !(0, frontmatter_patch_1.isPatcherLimitation)(code),
+        ...(line !== undefined ? { line } : {}),
+    };
 }
 function toCfg(config) {
-    return { namespace: config.namespace ?? "l9", authority: config.authority ?? "", nearDupThreshold: config.nearDupThreshold, hashPrefixLength: config.hashPrefixLength, outputDir: config.outDir, indexDir: config.indexDir, namespaceGlobs: config.namespaceGlobs };
+    return {
+        namespace: config.namespace ?? "l9",
+        authority: config.authority ?? "",
+        nearDupThreshold: config.nearDupThreshold,
+        hashPrefixLength: config.hashPrefixLength,
+        outputDir: config.outDir,
+        indexDir: config.indexDir,
+        namespaceGlobs: config.namespaceGlobs,
+    };
 }
 /** Refuse a run in which two paths normalize to one metadata id, naming every colliding path. */
 function assertUniqueMetadataIds(subjects) {
@@ -104,7 +121,9 @@ function assertTreeGovernable(discovery) {
     if (discovery.summary.blocking === 0)
         return;
     const preview = discovery.summary.entries
-        .filter((entry) => entry.disposition === "unreadable" || entry.disposition === "symlink" || entry.disposition === "unsupported_entry")
+        .filter((entry) => entry.disposition === "unreadable" ||
+        entry.disposition === "symlink" ||
+        entry.disposition === "unsupported_entry")
         .slice(0, 10)
         .map((entry) => `${entry.path}: ${entry.disposition}`)
         .join(", ");
@@ -121,8 +140,8 @@ function omitPatternsForOutputs(root, outputs) {
             continue;
         const absolute = path.resolve(output);
         if (absolute === root) {
-            throw new Error("pipeline: outDir/indexDir must not equal the root directory (generated reports would be re-scanned and injected); "
-                + "use a sibling such as <root>.l9out");
+            throw new Error("pipeline: outDir/indexDir must not equal the root directory (generated reports would be re-scanned and injected); " +
+                "use a sibling such as <root>.l9out");
         }
         const relative = path.relative(root, absolute);
         if (!relative || relative.startsWith("..") || path.isAbsolute(relative))
@@ -203,7 +222,10 @@ function summarizeVerification(verified, dryRun) {
     // header/body failures above, but governed check/apply plan in dry-run and must stay
     // quiet; their verdict comes from the carrier operation, not from this print.
     if (!verification.passed && !dryRun) {
-        const preview = failures.slice(0, 5).map((f) => `  - ${f.sourcePath}: ${f.issues.join("; ")}`).join("\n");
+        const preview = failures
+            .slice(0, 5)
+            .map((f) => `  - ${f.sourcePath}: ${f.issues.join("; ")}`)
+            .join("\n");
         const more = failures.length > 5 ? `\n  … and ${failures.length - 5} more` : "";
         process.stderr.write(`[l9-meta-injector] verification FAILED for ${verification.withIssues}/${verification.total} file(s):\n${preview}${more}\n`);
     }
@@ -213,7 +235,9 @@ function summarizeVerification(verified, dryRun) {
 function surfaceRunSignals(config, coverage, metrics) {
     // Surface coverage when anything was skipped or on verbose runs — otherwise the
     // library path emits no signal about what it processed vs. dropped (OBS-003).
-    if (config.verbose || coverage.skippedBinary + coverage.skippedNonInjectable > 0 || coverage.archivesExpanded > 0) {
+    if (config.verbose ||
+        coverage.skippedBinary + coverage.skippedNonInjectable > 0 ||
+        coverage.archivesExpanded > 0) {
         process.stderr.write(`[l9-meta-injector] coverage: scanned=${coverage.scanned} injected=${coverage.injected} ` +
             `skipped-binary=${coverage.skippedBinary} skipped-noninjectable=${coverage.skippedNonInjectable} ` +
             `archives-expanded=${coverage.archivesExpanded} ` +
@@ -263,7 +287,9 @@ async function runPipelineEntry(config, indexGoverned, authority) {
     // caller may have installed is neither read nor changed.
     const adapter = config.llmEnabled && config.llmBaseUrl && config.llmApiKey && config.llmModel
         ? (0, llm_1.makeOpenAIAdapter)({
-            baseUrl: config.llmBaseUrl, apiKey: config.llmApiKey, model: config.llmModel,
+            baseUrl: config.llmBaseUrl,
+            apiKey: config.llmApiKey,
+            model: config.llmModel,
             onDiagnostic: metrics.onLlmDiagnostic,
             allowInsecure: config.llmAllowInsecure,
         })
@@ -368,9 +394,7 @@ async function runPipelineInScope(config, metrics, indexGoverned, authority) {
             // it simply cannot carry its own metadata, so the carrier policy routes it to the
             // central manifest. Throwing here instead would abort the whole repository operation
             // over one file the injector was never going to be able to rewrite safely.
-            const inlineCarrierBlock = spec.strategy === "yaml-frontmatter"
-                ? inlineCarrierBlockFor(raw)
-                : undefined;
+            const inlineCarrierBlock = spec.strategy === "yaml-frontmatter" ? inlineCarrierBlockFor(raw) : undefined;
             if (inlineCarrierBlock)
                 inlineCarrierBlocks.set(e.sourcePath, inlineCarrierBlock);
             const ef = (0, extract_1.extract)(body);
@@ -440,8 +464,15 @@ async function runPipelineInScope(config, metrics, indexGoverned, authority) {
             });
         }
         return {
-            metas, bodies, skippedBinaryPaths, skippedNonInjectablePaths, skippedNonInjectableDetails,
-            classifications, metadataSubjects, inlineCarrierBlocks, carrierTiers,
+            metas,
+            bodies,
+            skippedBinaryPaths,
+            skippedNonInjectablePaths,
+            skippedNonInjectableDetails,
+            classifications,
+            metadataSubjects,
+            inlineCarrierBlocks,
+            carrierTiers,
         };
     };
     // Local-files mode (ADR-016): expand archives before discovery so members are
@@ -462,7 +493,8 @@ async function runPipelineInScope(config, metrics, indexGoverned, authority) {
             // Every collision among files that already exist is decidable now, so it refuses
             // before expansion materialises anything (RC-020). Collisions that only extracted
             // members introduce are caught by the check below, after extraction (ADR-073).
-            assertUniqueMetadataIds((await buildSubjects((0, retrieval_1.scanFiles)(before.files), { assist: false, reportSchemaGaps: false })).metadataSubjects);
+            assertUniqueMetadataIds((await buildSubjects((0, retrieval_1.scanFiles)(before.files), { assist: false, reportSchemaGaps: false }))
+                .metadataSubjects);
         }
         const expanded = (0, archives_1.expandArchivesUnderRoot)(root, {
             dryRun: config.dryRun,
@@ -495,7 +527,13 @@ async function runPipelineInScope(config, metrics, indexGoverned, authority) {
             .map((item) => path.join(root, ...item.path.split("/")))
         : []);
     const injected = await injectGovernedFiles(scanned, {
-        metas, classifications, inlineCarrierBlocks, carrierTiers, inlineAuthorizedPaths, skippedNonInjectablePaths, skippedNonInjectableDetails,
+        metas,
+        classifications,
+        inlineCarrierBlocks,
+        carrierTiers,
+        inlineAuthorizedPaths,
+        skippedNonInjectablePaths,
+        skippedNonInjectableDetails,
     }, config.llmEnabled, opts, metrics);
     // In dry-run nothing was written. A record whose planned bytes differ from the current
     // target (or whose plan cannot prove otherwise) is verified only by the checks that do
@@ -509,9 +547,7 @@ async function runPipelineInScope(config, metrics, indexGoverned, authority) {
     const verification = summarizeVerification(verified, config.dryRun);
     // Persist coverage even on dry-run so skipped paths are inspectable after the fact (ADR-018).
     const coverageReportDir = config.outDir || config.indexDir;
-    const coverageReportPath = config.persistOutputs === false
-        ? ""
-        : path.join(coverageReportDir, "coverage-report.json");
+    const coverageReportPath = config.persistOutputs === false ? "" : path.join(coverageReportDir, "coverage-report.json");
     if (config.persistOutputs !== false) {
         fs.mkdirSync(coverageReportDir, { recursive: true });
     }
@@ -565,13 +601,27 @@ async function runPipelineInScope(config, metrics, indexGoverned, authority) {
             sourcePath: r.sourcePath,
             semanticClass: semantic.artifactClass,
             semanticConfidence: semantic.confidence,
-            metaV3: (0, meta_v3_1.buildMetaV3)({ meta: r.meta, semantic, placement: planBySource.get(relativePath), sizeBytes: Buffer.byteLength(body, "utf8") }),
+            metaV3: (0, meta_v3_1.buildMetaV3)({
+                meta: r.meta,
+                semantic,
+                placement: planBySource.get(relativePath),
+                sizeBytes: Buffer.byteLength(body, "utf8"),
+            }),
         };
     });
     writeRunIndexes(config, { injected, dedupReport, verified, placementPlans, metaV3, archives });
     return {
-        runStartedAt, scanned, metadataSubjects, injected, verified, verification, coverage,
-        placementPlans, metaV3, metrics: metrics.snapshot(), archives,
+        runStartedAt,
+        scanned,
+        metadataSubjects,
+        injected,
+        verified,
+        verification,
+        coverage,
+        placementPlans,
+        metaV3,
+        metrics: metrics.snapshot(),
+        archives,
         ...(semanticBinding ? { semanticBinding } : {}),
     };
 }

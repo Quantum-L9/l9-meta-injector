@@ -4,14 +4,29 @@ export const UNKNOWN = "Unknown" as const;
 export type Unknown = "Unknown";
 
 export type ArtifactType =
-  | "skill" | "playbook" | "kernel" | "context" | "prompt"
-  | "doctrine" | "test" | "script" | "source" | "unknown";
+  | "skill"
+  | "playbook"
+  | "kernel"
+  | "context"
+  | "prompt"
+  | "doctrine"
+  | "test"
+  | "script"
+  | "source"
+  | "unknown";
 
 export type McpPrimitive = "tool" | "resource" | "prompt" | "none";
 
 export type ArtifactFamily =
-  | "auditor" | "compiler" | "meta_kernel_forge" | "builder"
-  | "planner" | "research" | "domain_agent" | "legal" | "Unknown";
+  | "auditor"
+  | "compiler"
+  | "meta_kernel_forge"
+  | "builder"
+  | "planner"
+  | "research"
+  | "domain_agent"
+  | "legal"
+  | "Unknown";
 
 export type SharingScope = "private" | "shared" | "agnostic";
 
@@ -24,16 +39,76 @@ export interface PrimitiveTaxonomyEntry {
 }
 
 export const PRIMITIVE_TAXONOMY: Record<string, PrimitiveTaxonomyEntry> = {
-  skill:    { type: "skill",    meaning: "atomic capability",               callable: true,  mcpPrimitive: "tool",     injectable: true  },
-  playbook: { type: "playbook", meaning: "multi-step orchestration",        callable: true,  mcpPrimitive: "tool",     injectable: true  },
-  kernel:   { type: "kernel",   meaning: "sandboxed execution or rule set", callable: true,  mcpPrimitive: "tool",     injectable: true  },
-  context:  { type: "context",  meaning: "retrievable knowledge",           callable: true,  mcpPrimitive: "resource", injectable: true  },
-  prompt:   { type: "prompt",   meaning: "parameterized prompt contract",   callable: true,  mcpPrimitive: "prompt",   injectable: true  },
-  doctrine: { type: "doctrine", meaning: "governance artifact",             callable: false, mcpPrimitive: "none",     injectable: true  },
-  test:     { type: "test",     meaning: "test artifact",                   callable: false, mcpPrimitive: "none",     injectable: false },
-  script:   { type: "script",   meaning: "script artifact",                 callable: false, mcpPrimitive: "none",     injectable: false },
-  source:   { type: "source",   meaning: "source or config file",           callable: false, mcpPrimitive: "resource", injectable: true  },
-  unknown:  { type: "unknown",  meaning: "unclassified",                    callable: false, mcpPrimitive: "none",     injectable: false },
+  skill: {
+    type: "skill",
+    meaning: "atomic capability",
+    callable: true,
+    mcpPrimitive: "tool",
+    injectable: true,
+  },
+  playbook: {
+    type: "playbook",
+    meaning: "multi-step orchestration",
+    callable: true,
+    mcpPrimitive: "tool",
+    injectable: true,
+  },
+  kernel: {
+    type: "kernel",
+    meaning: "sandboxed execution or rule set",
+    callable: true,
+    mcpPrimitive: "tool",
+    injectable: true,
+  },
+  context: {
+    type: "context",
+    meaning: "retrievable knowledge",
+    callable: true,
+    mcpPrimitive: "resource",
+    injectable: true,
+  },
+  prompt: {
+    type: "prompt",
+    meaning: "parameterized prompt contract",
+    callable: true,
+    mcpPrimitive: "prompt",
+    injectable: true,
+  },
+  doctrine: {
+    type: "doctrine",
+    meaning: "governance artifact",
+    callable: false,
+    mcpPrimitive: "none",
+    injectable: true,
+  },
+  test: {
+    type: "test",
+    meaning: "test artifact",
+    callable: false,
+    mcpPrimitive: "none",
+    injectable: false,
+  },
+  script: {
+    type: "script",
+    meaning: "script artifact",
+    callable: false,
+    mcpPrimitive: "none",
+    injectable: false,
+  },
+  source: {
+    type: "source",
+    meaning: "source or config file",
+    callable: false,
+    mcpPrimitive: "resource",
+    injectable: true,
+  },
+  unknown: {
+    type: "unknown",
+    meaning: "unclassified",
+    callable: false,
+    mcpPrimitive: "none",
+    injectable: false,
+  },
 };
 
 export interface ExtractedFields {
@@ -120,11 +195,19 @@ export type NormalizedMeta = ExecutableRetrievalMeta | PromptMeta | DoctrineMeta
 // each field must carry. Single-sourced here so coerceNormalizedMeta and the
 // interfaces above cannot drift apart.
 const BASE_HEADER_TYPES: ReadonlyArray<[keyof BaseHeader, "string" | "boolean" | "number"]> = [
-  ["id", "string"], ["title", "string"], ["artifact_type", "string"],
-  ["mcp_primitive", "string"], ["callable", "boolean"], ["retrievable", "boolean"],
-  ["injectable", "boolean"], ["namespace", "string"], ["sharing_scope", "string"],
-  ["source_path", "string"], ["content_hash", "string"],
-  ["token_cost_estimate", "number"], ["authority", "string"],
+  ["id", "string"],
+  ["title", "string"],
+  ["artifact_type", "string"],
+  ["mcp_primitive", "string"],
+  ["callable", "boolean"],
+  ["retrievable", "boolean"],
+  ["injectable", "boolean"],
+  ["namespace", "string"],
+  ["sharing_scope", "string"],
+  ["source_path", "string"],
+  ["content_hash", "string"],
+  ["token_cost_estimate", "number"],
+  ["authority", "string"],
   ["created_or_detected_at", "string"],
 ];
 
@@ -191,7 +274,7 @@ export function coerceNormalizedMeta(bag: Record<string, unknown>): NormalizedMe
     const actual = typeof bag[key];
     if (actual !== expected) {
       throw new Error(
-        `coerceNormalizedMeta: identity field '${key}' must be ${expected}, got ${bag[key] === undefined ? "undefined" : actual}`
+        `coerceNormalizedMeta: identity field '${key}' must be ${expected}, got ${bag[key] === undefined ? "undefined" : actual}`,
       );
     }
   }
@@ -429,23 +512,51 @@ export interface ArtifactClassification {
 // do NOT redefine locally in compiler.ts, pipeline.ts, or verify.ts.
 // ---------------------------------------------------------------------------
 export function isPromptMeta(m: NormalizedMeta | unknown): m is PromptMeta {
-  return typeof m === "object" && m !== null &&
-    (m as { artifact_type?: string }).artifact_type === "prompt";
+  return (
+    typeof m === "object" &&
+    m !== null &&
+    (m as { artifact_type?: string }).artifact_type === "prompt"
+  );
 }
 
-export {
-  LEGACY_OPERATION_ALIASES, META_AUTHORITY_SCHEMA, META_AUTHORITY_SCHEMA_V2, OPERATION_MODES,
-  REQUIRED_SEMANTIC_LEDGERS,
-  assertAuthorityForOperation, isAuthorityConfig, isProductDeclaration,
-  isSemanticFoundationBinding, isSupportedAuthoritySchema,
-  operationRequiresAuthority, resolveOperationMode, semanticBindingErrors,
-} from "./operation_contracts";
 export type {
-  AuthorityConfig, AuthorityConflict, AuthorityConflictCode, AuthorityLegacyPolicy,
-  AuthorityWriter, CarrierDecision, CheckDrift, CheckDriftKind, CheckResult,
-  HeaderIdentityRequest, HeaderIdentityResolution, HeaderIdentitySource,
-  LegacyOperationMode, MetaAuthoritySchema, MetadataCarrier, OperationMode,
-  OperationModeResolution, OperationResult, ApplyResult, ApplyTransactionSummary,
-  ProductDeclaration, ProductKindDeclaration, SemanticAdmissionState,
+  ApplyResult,
+  ApplyTransactionSummary,
+  AuthorityConfig,
+  AuthorityConflict,
+  AuthorityConflictCode,
+  AuthorityLegacyPolicy,
+  AuthorityWriter,
+  CarrierDecision,
+  CheckDrift,
+  CheckDriftKind,
+  CheckResult,
+  HeaderIdentityRequest,
+  HeaderIdentityResolution,
+  HeaderIdentitySource,
+  LegacyOperationMode,
+  MetaAuthoritySchema,
+  MetadataCarrier,
+  OperationMode,
+  OperationModeResolution,
+  OperationResult,
+  ProductDeclaration,
+  ProductKindDeclaration,
+  SemanticAdmissionState,
   SemanticFoundationBinding,
+} from "./operation_contracts";
+export {
+  assertAuthorityForOperation,
+  isAuthorityConfig,
+  isProductDeclaration,
+  isSemanticFoundationBinding,
+  isSupportedAuthoritySchema,
+  LEGACY_OPERATION_ALIASES,
+  META_AUTHORITY_SCHEMA,
+  META_AUTHORITY_SCHEMA_V2,
+  OPERATION_MODES,
+  operationRequiresAuthority,
+  REQUIRED_SEMANTIC_LEDGERS,
+  resolveOperationMode,
+  semanticBindingErrors,
 } from "./operation_contracts";

@@ -41,21 +41,21 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.runSkillsPipelineAsync = runSkillsPipelineAsync;
+const node_crypto_1 = require("node:crypto");
 const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
-const node_crypto_1 = require("node:crypto");
-const retrieval_1 = require("./retrieval");
-const frontmatter_patch_1 = require("./frontmatter_patch");
-const schema_1 = require("./schema");
 const assist_1 = require("./assist");
-const materiality_1 = require("./materiality");
-const llm_1 = require("./llm");
-const omit_1 = require("./omit");
-const metrics_1 = require("./metrics");
 const authority_scan_1 = require("./authority_scan");
 const carrier_operation_1 = require("./carrier_operation");
 const file_transaction_1 = require("./file_transaction");
+const frontmatter_patch_1 = require("./frontmatter_patch");
+const llm_1 = require("./llm");
+const materiality_1 = require("./materiality");
+const metrics_1 = require("./metrics");
+const omit_1 = require("./omit");
 const ordering_1 = require("./ordering");
+const retrieval_1 = require("./retrieval");
+const schema_1 = require("./schema");
 function sha256(bytes) {
     return (0, node_crypto_1.createHash)("sha256").update(bytes).digest("hex");
 }
@@ -85,7 +85,8 @@ function isMateriallyBetterSync(old, next) {
 async function isMateriallyBetter(field, old, next) {
     if (!(0, assist_1.isGoodValue)(next))
         return false;
-    if (!(0, assist_1.isGoodValue)(old) || (field === "description" && !(0, assist_1.hasUseWhenSignal)(old) && (0, assist_1.hasUseWhenSignal)(next))) {
+    if (!(0, assist_1.isGoodValue)(old) ||
+        (field === "description" && !(0, assist_1.hasUseWhenSignal)(old) && (0, assist_1.hasUseWhenSignal)(next))) {
         if (!(0, assist_1.isGoodValue)(old))
             return true;
         if (field === "description" && !(0, assist_1.hasUseWhenSignal)(old) && (0, assist_1.hasUseWhenSignal)(next))
@@ -110,15 +111,25 @@ function parseExistingFrontMatter(raw) {
         };
     }
     // Opaque values (e.g. `description: Use when: x`) are existing values, not missing ones.
-    return { meta: (0, frontmatter_patch_1.frontMatterReconciliationView)(raw, inspected), body: inspected.body, hadFrontMatter: inspected.hadFrontMatter };
+    return {
+        meta: (0, frontmatter_patch_1.frontMatterReconciliationView)(raw, inspected),
+        body: inspected.body,
+        hadFrontMatter: inspected.hadFrontMatter,
+    };
 }
 function parseSignalList(v) {
     if (v === schema_1.UNKNOWN || v === null || v === undefined)
         return [];
     if (Array.isArray(v))
-        return v.map(String).map((s) => s.trim()).filter(Boolean);
+        return v
+            .map(String)
+            .map((s) => s.trim())
+            .filter(Boolean);
     if (typeof v === "string") {
-        return v.split(/[,;\n]/).map((s) => s.trim()).filter(Boolean);
+        return v
+            .split(/[,;\n]/)
+            .map((s) => s.trim())
+            .filter(Boolean);
     }
     return [];
 }
@@ -128,20 +139,21 @@ async function improveDescription(existing, body, assistCfg, metrics) {
     const descStr = typeof proposedDesc === "string" ? proposedDesc : "";
     if (!(0, assist_1.isGoodValue)(descStr))
         return null;
-    const missingOrWeak = !("description" in existing)
-        || !(0, assist_1.isGoodValue)(existing.description)
-        || !(0, assist_1.hasUseWhenSignal)(existing.description);
+    const missingOrWeak = !("description" in existing) ||
+        !(0, assist_1.isGoodValue)(existing.description) ||
+        !(0, assist_1.hasUseWhenSignal)(existing.description);
     if (missingOrWeak) {
         const usable = (0, assist_1.hasUseWhenSignal)(descStr) || !(0, assist_1.isGoodValue)(existing.description);
         if (!usable)
             return null;
-        const better = !("description" in existing) || !(0, assist_1.isGoodValue)(existing.description)
-            || await isMateriallyBetter("description", existing.description, descStr);
+        const better = !("description" in existing) ||
+            !(0, assist_1.isGoodValue)(existing.description) ||
+            (await isMateriallyBetter("description", existing.description, descStr));
         if (!better || descStr === existing.description)
             return null;
         return {
             field: "description",
-            action: ("description" in existing) ? "revise" : "add",
+            action: "description" in existing ? "revise" : "add",
             oldValue: existing.description,
             newValue: descStr.slice(0, 1024),
             reason: "Cursor-native description material improvement",
@@ -182,7 +194,15 @@ async function processSkillFile(abs, root, config, assistCfg, metrics) {
     if (parsed.issue) {
         if (config.verbose)
             process.stderr.write(`[l9-meta-injector] skills: ${rel} skipped: ${parsed.issue}\n`);
-        return { result: { sourcePath: abs, relativePath: rel, changed: false, diffs: [], skippedReason: parsed.issue } };
+        return {
+            result: {
+                sourcePath: abs,
+                relativePath: rel,
+                changed: false,
+                diffs: [],
+                skippedReason: parsed.issue,
+            },
+        };
     }
     const { meta: existing, body, hadFrontMatter } = parsed;
     const next = { ...existing };
@@ -217,7 +237,9 @@ async function processSkillFile(abs, root, config, assistCfg, metrics) {
         const skippedReason = `${patched.issue?.code ?? "FRONTMATTER_UNSAFE"}: ${patched.issue?.message ?? "unsafe header"}`;
         if (config.verbose)
             process.stderr.write(`[l9-meta-injector] skills: ${rel} skipped: ${skippedReason}\n`);
-        return { result: { sourcePath: abs, relativePath: rel, changed: false, diffs: [], skippedReason } };
+        return {
+            result: { sourcePath: abs, relativePath: rel, changed: false, diffs: [], skippedReason },
+        };
     }
     if (config.verbose) {
         process.stderr.write(`[l9-meta-injector] skills: ${rel} → ${diffs.map((d) => d.field).join(",")}\n`);
@@ -246,7 +268,9 @@ async function runSkillsPipelineAsync(config) {
     // so the adapter the caller installed with setAdapter is the one consulted.
     if (config.llmEnabled && config.llmBaseUrl && config.llmApiKey && config.llmModel) {
         const adapter = (0, llm_1.makeOpenAIAdapter)({
-            baseUrl: config.llmBaseUrl, apiKey: config.llmApiKey, model: config.llmModel,
+            baseUrl: config.llmBaseUrl,
+            apiKey: config.llmApiKey,
+            model: config.llmModel,
             onDiagnostic: metrics.onLlmDiagnostic,
             allowInsecure: config.llmAllowInsecure,
         });

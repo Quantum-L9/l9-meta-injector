@@ -1,13 +1,21 @@
 import { buildMaterialityPrompt, parseMaterialityReply } from "../src/materiality";
-import type { FieldDiff as SchemaFieldDiff, ReconcileAction as SchemaAction } from "../src/schema";
-import type { FieldDiff as ReconcileFieldDiff, ReconcileAction as ReconcileActionAlias } from "../src/reconcile_fields";
-import type { SharingScope as SchemaScope } from "../src/schema";
 import type { SharingScope as NamespaceScope } from "../src/namespace";
+import type {
+  ReconcileAction as ReconcileActionAlias,
+  FieldDiff as ReconcileFieldDiff,
+} from "../src/reconcile_fields";
+import type {
+  ReconcileAction as SchemaAction,
+  FieldDiff as SchemaFieldDiff,
+  SharingScope as SchemaScope,
+} from "../src/schema";
 
 describe("materiality primitive (ICC-003)", () => {
   test("buildMaterialityPrompt is the single canonical prompt", () => {
     const p = buildMaterialityPrompt("description", "a", "bb");
-    expect(p).toBe('Field: description\nA: "a"\nB: "bb"\nIs B materially more informative than A? Reply only: yes or no');
+    expect(p).toBe(
+      'Field: description\nA: "a"\nB: "bb"\nIs B materially more informative than A? Reply only: yes or no',
+    );
   });
 
   test("parseMaterialityReply maps replies to booleans", () => {

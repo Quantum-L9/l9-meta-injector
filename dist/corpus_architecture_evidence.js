@@ -79,12 +79,12 @@ exports.ARCHITECTURE_SELECTION_PROFILE_ID = "architecture-development/v2";
 exports.ARCHITECTURE_SELECTION_POLICY_VERSION = "2.0.0";
 /** What every record is, epistemically. Stated on each one so no reader has to remember. */
 exports.ARCHITECTURE_EVIDENCE_EPISTEMIC_CLASS = "source-declared";
-exports.ARCHITECTURE_EVIDENCE_STATEMENT = "Every record is a statement a document explicitly declared about itself, read from a "
-    + "labelled field, a labelled list or a labelled section at the cited coordinate. None is "
-    + "verified architecture: a decision_statement is a document recording a decision, not an "
-    + "accepted ADR, an authoritative contract or an approved implementation. Contradictory "
-    + "declarations are all retained. The selection profile marks which classes a reader of "
-    + "this kind of document is looking for; it removes nothing.";
+exports.ARCHITECTURE_EVIDENCE_STATEMENT = "Every record is a statement a document explicitly declared about itself, read from a " +
+    "labelled field, a labelled list or a labelled section at the cited coordinate. None is " +
+    "verified architecture: a decision_statement is a document recording a decision, not an " +
+    "accepted ADR, an authoritative contract or an approved implementation. Contradictory " +
+    "declarations are all retained. The selection profile marks which classes a reader of " +
+    "this kind of document is looking for; it removes nothing.";
 /**
  * The roles the selection profile recognizes, each from explicit evidence only.
  *
@@ -123,13 +123,31 @@ exports.ARCHITECTURE_DOCUMENT_ROLES = [
  * prose. `superseded` read from a `Status:` label is already a `work.status`
  * assertion and is not read twice.
  */
-exports.DECISION_RECORD_STATUSES = ["accepted", "deprecated", "proposed", "rejected", "superseded"];
+exports.DECISION_RECORD_STATUSES = [
+    "accepted",
+    "deprecated",
+    "proposed",
+    "rejected",
+    "superseded",
+];
 /** Predicates of the declarations this selection reads from blocks itself. */
-exports.DOCUMENT_DECLARATION_PREDICATES = ["document.declared_status", "document.decision_record_title"];
+exports.DOCUMENT_DECLARATION_PREDICATES = [
+    "document.declared_status",
+    "document.decision_record_title",
+];
 /** Work statuses the work vocabulary already reads, so a `Status:` label holding one is not read again. */
 const WORK_READER_STATUSES = [
-    "active", "archived", "blocked", "cancelled", "complete", "done",
-    "draft", "paused", "planned", "superseded", "wip",
+    "active",
+    "archived",
+    "blocked",
+    "cancelled",
+    "complete",
+    "done",
+    "draft",
+    "paused",
+    "planned",
+    "superseded",
+    "wip",
 ];
 /** A title that opens with an architecture-decision-record identifier. */
 const DECISION_RECORD_TITLE = /^adr[-\s]?\d{1,5}\b/;
@@ -273,17 +291,17 @@ function architectureEvidenceProfileHash() {
 }
 /** Total order over records. `evidence_id` last makes it total. */
 function compareRecords(left, right) {
-    return ((0, ordering_1.compareCodePoints)(left.artifact_id, right.artifact_id)
-        || (0, ordering_1.compareCodePoints)(left.block_id, right.block_id)
-        || (left.unit_index ?? -1) - (right.unit_index ?? -1)
-        || (0, ordering_1.compareCodePoints)(left.statement_class, right.statement_class)
-        || (0, ordering_1.compareCodePoints)(left.declared_text, right.declared_text)
-        || (0, ordering_1.compareCodePoints)(left.evidence_id, right.evidence_id));
+    return ((0, ordering_1.compareCodePoints)(left.artifact_id, right.artifact_id) ||
+        (0, ordering_1.compareCodePoints)(left.block_id, right.block_id) ||
+        (left.unit_index ?? -1) - (right.unit_index ?? -1) ||
+        (0, ordering_1.compareCodePoints)(left.statement_class, right.statement_class) ||
+        (0, ordering_1.compareCodePoints)(left.declared_text, right.declared_text) ||
+        (0, ordering_1.compareCodePoints)(left.evidence_id, right.evidence_id));
 }
 function compareRefs(left, right) {
-    return ((0, ordering_1.compareCodePoints)(left.predicate, right.predicate)
-        || (0, ordering_1.compareCodePoints)(left.object, right.object)
-        || (0, ordering_1.compareCodePoints)(left.assertion_id, right.assertion_id));
+    return ((0, ordering_1.compareCodePoints)(left.predicate, right.predicate) ||
+        (0, ordering_1.compareCodePoints)(left.object, right.object) ||
+        (0, ordering_1.compareCodePoints)(left.assertion_id, right.assertion_id));
 }
 /** Assertions of one predicate, as refs, in a fixed order. */
 function refsFor(assertions, predicate) {
@@ -332,7 +350,8 @@ function readDocumentDeclarations(artifactId, blocks) {
     for (const block of blocks) {
         if (block.kind === "title" || block.kind === "heading") {
             statusSectionOpen = (0, architecture_statements_1.architectureHeadingLabel)(block.text) === "status";
-            if (block.kind === "title" && DECISION_RECORD_TITLE.test((0, work_intelligence_1.documentText)(block.text).toLowerCase())) {
+            if (block.kind === "title" &&
+                DECISION_RECORD_TITLE.test((0, work_intelligence_1.documentText)(block.text).toLowerCase())) {
                 declare("document.decision_record_title", "adr", block, null);
             }
             continue;
@@ -348,7 +367,9 @@ function readDocumentDeclarations(artifactId, blocks) {
             statusSectionOpen = false;
             const index = units.findIndex((unit) => unit.trim().length > 0);
             const word = index < 0 ? null : firstWord(units[index]);
-            if (word !== null && statuses.has(word) && (0, work_intelligence_1.readLabelledLine)(units[index]) === null) {
+            if (word !== null &&
+                statuses.has(word) &&
+                (0, work_intelligence_1.readLabelledLine)(units[index]) === null) {
                 declare("document.declared_status", word, block, index);
                 continue;
             }
@@ -363,13 +384,17 @@ function readDocumentDeclarations(artifactId, blocks) {
             }
         }
     }
-    return out.sort((a, b) => (0, ordering_1.compareCodePoints)(a.predicate, b.predicate)
-        || (0, ordering_1.compareCodePoints)(a.object, b.object)
-        || (0, ordering_1.compareCodePoints)(a.declaration_id, b.declaration_id));
+    return out.sort((a, b) => (0, ordering_1.compareCodePoints)(a.predicate, b.predicate) ||
+        (0, ordering_1.compareCodePoints)(a.object, b.object) ||
+        (0, ordering_1.compareCodePoints)(a.declaration_id, b.declaration_id));
 }
 /** A declaration in the shape a role cites. */
 function declarationAsRef(declaration) {
-    return { predicate: declaration.predicate, object: declaration.object, assertion_id: declaration.declaration_id };
+    return {
+        predicate: declaration.predicate,
+        object: declaration.object,
+        assertion_id: declaration.declaration_id,
+    };
 }
 /**
  * Decide the document's roles from its own declarations, and which classes they select.
@@ -445,7 +470,10 @@ function selectForDocument(assertions, declarations) {
             ]);
         }
     }
-    const declaredValues = [...statuses.map((ref) => ref.object), ...declaredStatuses.map((item) => item.object)];
+    const declaredValues = [
+        ...statuses.map((ref) => ref.object),
+        ...declaredStatuses.map((item) => item.object),
+    ];
     const statusFamilies = Object.keys(STATUS_FAMILIES)
         .filter((family) => (STATUS_FAMILIES[family] ?? []).some((value) => declaredValues.includes(value)))
         .sort(ordering_1.compareCodePoints);
@@ -479,7 +507,11 @@ function tallyFormats(records) {
         byFormat.set(record.format, entry);
     }
     return [...byFormat.entries()]
-        .map(([format, entry]) => ({ format, document_count: entry.documents.size, record_count: entry.records }))
+        .map(([format, entry]) => ({
+        format,
+        document_count: entry.documents.size,
+        record_count: entry.records,
+    }))
         .sort((a, b) => (0, ordering_1.compareCodePoints)(a.format, b.format));
 }
 function tallyRoles(records) {
@@ -505,10 +537,10 @@ function tallyForms(records) {
         .sort((a, b) => (0, ordering_1.compareCodePoints)(a.form, b.form));
 }
 function compareDiagnostics(left, right) {
-    return ((0, ordering_1.compareCodePoints)(left.artifact_id, right.artifact_id)
-        || (0, ordering_1.compareCodePoints)(left.block_id, right.block_id)
-        || (0, ordering_1.compareCodePoints)(left.code, right.code)
-        || (0, ordering_1.compareCodePoints)(left.message, right.message));
+    return ((0, ordering_1.compareCodePoints)(left.artifact_id, right.artifact_id) ||
+        (0, ordering_1.compareCodePoints)(left.block_id, right.block_id) ||
+        (0, ordering_1.compareCodePoints)(left.code, right.code) ||
+        (0, ordering_1.compareCodePoints)(left.message, right.message));
 }
 /**
  * Build the complete payload and its manifest from the documents a scan holds.
@@ -525,7 +557,11 @@ function buildArchitectureEvidenceExport(input) {
     for (const document of input.documents) {
         const reading = (0, architecture_statements_1.readArchitectureStatements)(document.blocks);
         for (const diagnostic of reading.diagnostics) {
-            diagnostics.push({ ...diagnostic, artifact_id: document.artifactId, source_path: document.sourcePath });
+            diagnostics.push({
+                ...diagnostic,
+                artifact_id: document.artifactId,
+                source_path: document.sourcePath,
+            });
         }
         diagnosticsOmitted += reading.diagnostics_omitted;
         if (reading.statements.length === 0)
@@ -536,12 +572,11 @@ function buildArchitectureEvidenceExport(input) {
             kinds: refsFor(document.workAssertions, "work.kind"),
             statuses: refsFor(document.workAssertions, "work.status"),
             applicability: APPLICABILITY_PREDICATES.flatMap((predicate) => refsFor(document.workAssertions, predicate)),
-            handoff: HANDOFF_PREDICATES
-                .map((predicate) => ({
+            handoff: HANDOFF_PREDICATES.map((predicate) => ({
                 predicate,
-                count: document.workAssertions.filter((assertion) => assertion.predicate === predicate).length,
-            }))
-                .filter((entry) => entry.count > 0),
+                count: document.workAssertions.filter((assertion) => assertion.predicate === predicate)
+                    .length,
+            })).filter((entry) => entry.count > 0),
             declarations: declarations.map((item) => ({ ...item })),
         };
         for (const statement of reading.statements) {
@@ -598,13 +633,15 @@ function buildArchitectureEvidenceExport(input) {
     const seen = new Set();
     for (const record of records) {
         if (seen.has(record.evidence_id)) {
-            throw new Error(`architecture-evidence: duplicate evidence_id ${record.evidence_id} `
-                + `(${record.source_path} ${record.statement_class}); the payload must carry each statement once`);
+            throw new Error(`architecture-evidence: duplicate evidence_id ${record.evidence_id} ` +
+                `(${record.source_path} ${record.statement_class}); the payload must carry each statement once`);
         }
         seen.add(record.evidence_id);
     }
     diagnostics.sort(compareDiagnostics);
-    const payloadJsonl = records.map((record) => `${renderArchitectureEvidenceRecord(record)}\n`).join("");
+    const payloadJsonl = records
+        .map((record) => `${renderArchitectureEvidenceRecord(record)}\n`)
+        .join("");
     const manifest = {
         schema: exports.ARCHITECTURE_EVIDENCE_MANIFEST_SCHEMA,
         corpus_source_snapshot_id: input.corpusSourceSnapshotId,
@@ -712,10 +749,26 @@ function verifyArchitectureEvidenceExport(input) {
             problems.push(`manifest document_count is ${manifest.document_count} and the payload records name ${documentCount} distinct artifact(s)`);
         }
         for (const [name, expected, actual] of [
-            ["by_class", (0, corpus_analysis_1.canonicalCorpusJson)(tallyClasses(records), 0), (0, corpus_analysis_1.canonicalCorpusJson)(manifest.by_class, 0)],
-            ["by_format", (0, corpus_analysis_1.canonicalCorpusJson)(tallyFormats(records), 0), (0, corpus_analysis_1.canonicalCorpusJson)(manifest.by_format, 0)],
-            ["by_role", (0, corpus_analysis_1.canonicalCorpusJson)(tallyRoles(records), 0), (0, corpus_analysis_1.canonicalCorpusJson)(manifest.by_role, 0)],
-            ["by_recognition_form", (0, corpus_analysis_1.canonicalCorpusJson)(tallyForms(records), 0), (0, corpus_analysis_1.canonicalCorpusJson)(manifest.by_recognition_form, 0)],
+            [
+                "by_class",
+                (0, corpus_analysis_1.canonicalCorpusJson)(tallyClasses(records), 0),
+                (0, corpus_analysis_1.canonicalCorpusJson)(manifest.by_class, 0),
+            ],
+            [
+                "by_format",
+                (0, corpus_analysis_1.canonicalCorpusJson)(tallyFormats(records), 0),
+                (0, corpus_analysis_1.canonicalCorpusJson)(manifest.by_format, 0),
+            ],
+            [
+                "by_role",
+                (0, corpus_analysis_1.canonicalCorpusJson)(tallyRoles(records), 0),
+                (0, corpus_analysis_1.canonicalCorpusJson)(manifest.by_role, 0),
+            ],
+            [
+                "by_recognition_form",
+                (0, corpus_analysis_1.canonicalCorpusJson)(tallyForms(records), 0),
+                (0, corpus_analysis_1.canonicalCorpusJson)(manifest.by_recognition_form, 0),
+            ],
         ]) {
             if (expected !== actual)
                 problems.push(`manifest ${name} does not match the payload records: expected ${expected}`);
@@ -729,20 +782,22 @@ function verifyArchitectureEvidenceExport(input) {
         if (!input.knownArtifactIds.has(record.artifact_id)) {
             problems.push(`record ${record.evidence_id} names artifact ${record.artifact_id}, which this corpus did not observe`);
         }
-        if (record.normalized_document_id !== null && !input.knownNormalizedDocumentIds.has(record.normalized_document_id)) {
+        if (record.normalized_document_id !== null &&
+            !input.knownNormalizedDocumentIds.has(record.normalized_document_id)) {
             problems.push(`record ${record.evidence_id} names normalized document ${record.normalized_document_id}, which this corpus did not produce`);
         }
-        if (record.epistemic_class !== exports.ARCHITECTURE_EVIDENCE_EPISTEMIC_CLASS || record.authority_verified !== false) {
+        if (record.epistemic_class !== exports.ARCHITECTURE_EVIDENCE_EPISTEMIC_CLASS ||
+            record.authority_verified !== false) {
             problems.push(`record ${record.evidence_id} is not classed ${exports.ARCHITECTURE_EVIDENCE_EPISTEMIC_CLASS} with authority_verified false`);
         }
         const selection = record.selection;
-        if (selection !== undefined && selection.selected !== ((selection.reasons?.length ?? 0) > 0)) {
+        if (selection !== undefined && selection.selected !== (selection.reasons?.length ?? 0) > 0) {
             problems.push(`record ${record.evidence_id} is marked selected=${String(selection.selected)} with ${selection.reasons?.length ?? 0} reason(s)`);
         }
-        if (selection !== undefined
-            && selection.selected
-            && !selection.roles?.includes("unknown")
-            && (selection.role_evidence?.length ?? 0) === 0) {
+        if (selection !== undefined &&
+            selection.selected &&
+            !selection.roles?.includes("unknown") &&
+            (selection.role_evidence?.length ?? 0) === 0) {
             problems.push(`record ${record.evidence_id} is selected by a declared role with no role evidence`);
         }
         if (!architecture_statements_1.ARCHITECTURE_STATEMENT_CLASSES.includes(record.statement_class)) {

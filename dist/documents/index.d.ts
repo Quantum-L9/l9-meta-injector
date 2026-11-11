@@ -1,11 +1,11 @@
 import { DecoderRegistry } from "./decoder";
 export * from "./decoder";
-export { readUtf8, splitCsvLine, textDecoder, csvDecoder } from "./text";
-export { docxDecoder, pptxDecoder, xlsxDecoder } from "./office";
 export { htmlDecoder, tokenizeHtml } from "./html";
 export { notebookDecoder } from "./notebook";
+export { docxDecoder, pptxDecoder, xlsxDecoder } from "./office";
+export { isSafePartName, OoxmlError, openOoxml } from "./ooxml";
 export { pdfDecoder, pdfInternals } from "./pdf";
-export { isSafePartName, openOoxml, OoxmlError } from "./ooxml";
+export { csvDecoder, readUtf8, splitCsvLine, textDecoder } from "./text";
 export { decodeXmlText, localName, parseXml, XmlError } from "./xml";
 /**
  * Formats whose containers this release cannot open.

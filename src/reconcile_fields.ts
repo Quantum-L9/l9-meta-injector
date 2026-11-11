@@ -7,11 +7,11 @@
 //   replace: explicit deprecation marker only (deprecated:true | superseded_by | status:deprecated).
 //   Every mutation is recorded in FieldDiff[]. No silent writes.
 
-import { UNKNOWN, FieldDiff, MetaRecord } from "./schema";
 import { isGoodValue } from "./assist";
 import { getAdapter } from "./llm";
 import { buildMaterialityPrompt, parseMaterialityReply } from "./materiality";
-import { MetricsCollector, DecisionPath, decisionPathLabel } from "./metrics";
+import { DecisionPath, decisionPathLabel, MetricsCollector } from "./metrics";
+import { FieldDiff, MetaRecord, UNKNOWN } from "./schema";
 
 // FieldDiff and ReconcileAction are single-sourced in schema.ts (finding ICC-001 /
 // ACA-004). Re-export the type so existing `import { FieldDiff } from "./reconcile_fields"`
@@ -25,8 +25,15 @@ export interface ReconcileResult {
 
 // List fields: always union + dedup, never overwrite — covers triggers, anti_triggers, entity_types
 const LIST_UNION_FIELDS = new Set([
-  "activation_signals", "triggers", "anti_triggers", "entity_types",
-  "constraints", "validation_gates", "stop_conditions", "phase_model", "input_variables",
+  "activation_signals",
+  "triggers",
+  "anti_triggers",
+  "entity_types",
+  "constraints",
+  "validation_gates",
+  "stop_conditions",
+  "phase_model",
+  "input_variables",
 ]);
 
 // Prose scalar fields where LLM boolean judgment earns its keep (~20 tokens).
@@ -48,10 +55,22 @@ function takeDerivedField(
   if (!DERIVED_FIELDS.has(field)) return false;
   if (JSON.stringify(oldVal) === JSON.stringify(newVal)) {
     merged[field] = oldVal;
-    diffs.push({ field, action: "keep", oldValue: oldVal, newValue: newVal, reason: "derived field recomputed" });
+    diffs.push({
+      field,
+      action: "keep",
+      oldValue: oldVal,
+      newValue: newVal,
+      reason: "derived field recomputed",
+    });
   } else {
     merged[field] = newVal;
-    diffs.push({ field, action: "revise", oldValue: oldVal, newValue: newVal, reason: "derived field recomputed" });
+    diffs.push({
+      field,
+      action: "revise",
+      oldValue: oldVal,
+      newValue: newVal,
+      reason: "derived field recomputed",
+    });
   }
   return true;
 }
@@ -70,7 +89,11 @@ function unionArrays(a: unknown, b: unknown): unknown {
   const toArr = (v: unknown): string[] => {
     if (v === UNKNOWN || v === null || v === undefined) return [];
     if (Array.isArray(v)) return v.map(String).filter((s) => s && s !== UNKNOWN);
-    if (typeof v === "string") return v.split(",").map((s) => s.trim()).filter(Boolean);
+    if (typeof v === "string")
+      return v
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
     return [];
   };
   const merged = [...new Set([...toArr(a), ...toArr(b)])];
@@ -89,11 +112,18 @@ function isMateriallyBetterSync(old: unknown, next: unknown): boolean {
 
 // The materiality verdict plus the path that produced it, so the caller records the
 // TRUE decision path (OBS-009) rather than re-deriving it from adapter presence.
-interface MaterialityDecision { better: boolean; path: DecisionPath; }
+interface MaterialityDecision {
+  better: boolean;
+  path: DecisionPath;
+}
 
 // Async LLM boolean: "Is B materially more informative than A?" — ~20 tokens.
 // Reports which path decided so a null/absent LLM never masquerades as an LLM call.
-async function isMateriallyBetterLlm(field: string, old: unknown, next: unknown): Promise<MaterialityDecision> {
+async function isMateriallyBetterLlm(
+  field: string,
+  old: unknown,
+  next: unknown,
+): Promise<MaterialityDecision> {
   // Trivial guards decide without consulting the LLM or the size heuristic.
   if (!isGoodValue(next)) return { better: false, path: "heuristic" };
   if (!isGoodValue(old)) return { better: true, path: "heuristic" };
@@ -111,7 +141,7 @@ async function isMateriallyBetterLlm(field: string, old: unknown, next: unknown)
 export async function reconcileFieldsAsync(
   existing: MetaRecord,
   incoming: MetaRecord,
-  metrics?: MetricsCollector
+  metrics?: MetricsCollector,
 ): Promise<ReconcileResult> {
   const merged: MetaRecord = { ...existing };
   const diffs: FieldDiff[] = [];
@@ -123,7 +153,13 @@ export async function reconcileFieldsAsync(
 
     if (!fieldExists) {
       merged[field] = newVal;
-      diffs.push({ field, action: "add", oldValue: undefined, newValue: newVal, reason: "field did not exist" });
+      diffs.push({
+        field,
+        action: "add",
+        oldValue: undefined,
+        newValue: newVal,
+        reason: "field did not exist",
+      });
       continue;
     }
 
@@ -135,17 +171,35 @@ export async function reconcileFieldsAsync(
         // Union produced no change — record as keep, not a mutation. Emitting
         // append-union here would rewrite the .inject.log on every no-op re-run.
         merged[field] = oldVal;
-        diffs.push({ field, action: "keep", oldValue: oldVal, newValue: unioned, reason: "list field — union unchanged" });
+        diffs.push({
+          field,
+          action: "keep",
+          oldValue: oldVal,
+          newValue: unioned,
+          reason: "list field — union unchanged",
+        });
       } else {
         merged[field] = unioned;
-        diffs.push({ field, action: "append-union", oldValue: oldVal, newValue: unioned, reason: "list field — union, never overwrite" });
+        diffs.push({
+          field,
+          action: "append-union",
+          oldValue: oldVal,
+          newValue: unioned,
+          reason: "list field — union, never overwrite",
+        });
       }
       continue;
     }
 
     if (deprecated) {
       merged[field] = newVal;
-      diffs.push({ field, action: "replace", oldValue: oldVal, newValue: newVal, reason: "explicit deprecation/superseded_by marker present" });
+      diffs.push({
+        field,
+        action: "replace",
+        oldValue: oldVal,
+        newValue: newVal,
+        reason: "explicit deprecation/superseded_by marker present",
+      });
       continue;
     }
 
@@ -166,9 +220,21 @@ export async function reconcileFieldsAsync(
 
     if (better) {
       merged[field] = newVal;
-      diffs.push({ field, action: "revise", oldValue: oldVal, newValue: newVal, reason: `new value materially better — ${decisionPathLabel(path)}` });
+      diffs.push({
+        field,
+        action: "revise",
+        oldValue: oldVal,
+        newValue: newVal,
+        reason: `new value materially better — ${decisionPathLabel(path)}`,
+      });
     } else {
-      diffs.push({ field, action: "keep", oldValue: oldVal, newValue: newVal, reason: `old value retained via ${decisionPathLabel(path)}; no material improvement` });
+      diffs.push({
+        field,
+        action: "keep",
+        oldValue: oldVal,
+        newValue: newVal,
+        reason: `old value retained via ${decisionPathLabel(path)}; no material improvement`,
+      });
     }
   }
 
@@ -176,10 +242,7 @@ export async function reconcileFieldsAsync(
 }
 
 // Sync reconcile: used by non-LLM paths (inject.ts default, CLI without --llm)
-export function reconcileFields(
-  existing: MetaRecord,
-  incoming: MetaRecord
-): ReconcileResult {
+export function reconcileFields(existing: MetaRecord, incoming: MetaRecord): ReconcileResult {
   const merged: MetaRecord = { ...existing };
   const diffs: FieldDiff[] = [];
   const deprecated = hasExplicitDeprecation(existing);
@@ -190,7 +253,13 @@ export function reconcileFields(
 
     if (!fieldExists) {
       merged[field] = newVal;
-      diffs.push({ field, action: "add", oldValue: undefined, newValue: newVal, reason: "field did not exist" });
+      diffs.push({
+        field,
+        action: "add",
+        oldValue: undefined,
+        newValue: newVal,
+        reason: "field did not exist",
+      });
       continue;
     }
 
@@ -202,25 +271,55 @@ export function reconcileFields(
         // Union produced no change — record as keep, not a mutation. Emitting
         // append-union here would rewrite the .inject.log on every no-op re-run.
         merged[field] = oldVal;
-        diffs.push({ field, action: "keep", oldValue: oldVal, newValue: unioned, reason: "list field — union unchanged" });
+        diffs.push({
+          field,
+          action: "keep",
+          oldValue: oldVal,
+          newValue: unioned,
+          reason: "list field — union unchanged",
+        });
       } else {
         merged[field] = unioned;
-        diffs.push({ field, action: "append-union", oldValue: oldVal, newValue: unioned, reason: "list field — union, never overwrite" });
+        diffs.push({
+          field,
+          action: "append-union",
+          oldValue: oldVal,
+          newValue: unioned,
+          reason: "list field — union, never overwrite",
+        });
       }
       continue;
     }
 
     if (deprecated) {
       merged[field] = newVal;
-      diffs.push({ field, action: "replace", oldValue: oldVal, newValue: newVal, reason: "explicit deprecation/superseded_by marker present" });
+      diffs.push({
+        field,
+        action: "replace",
+        oldValue: oldVal,
+        newValue: newVal,
+        reason: "explicit deprecation/superseded_by marker present",
+      });
       continue;
     }
 
     if (isMateriallyBetterSync(oldVal, newVal)) {
       merged[field] = newVal;
-      diffs.push({ field, action: "revise", oldValue: oldVal, newValue: newVal, reason: "new value materially more complete (>20% content)" });
+      diffs.push({
+        field,
+        action: "revise",
+        oldValue: oldVal,
+        newValue: newVal,
+        reason: "new value materially more complete (>20% content)",
+      });
     } else {
-      diffs.push({ field, action: "keep", oldValue: oldVal, newValue: newVal, reason: "old value passes 'good' predicate; no material improvement" });
+      diffs.push({
+        field,
+        action: "keep",
+        oldValue: oldVal,
+        newValue: newVal,
+        reason: "old value passes 'good' predicate; no material improvement",
+      });
     }
   }
 

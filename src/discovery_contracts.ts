@@ -111,9 +111,16 @@ export const TRACKED_COVERAGE_SCHEMA = "l9.metadata-coverage/v2" as const;
 export const TRACKED_POLICY_SCHEMA = "l9.tracked-carrier-policy/v2" as const;
 export type TrackedDisposition = "indexed" | "protected" | "unsupported";
 export type TrackedReason =
-  | "index_only" | "link_as_link" | "gitlink_as_reference" | "name_hint_inventory"
-  | "protected_self" | "protected_manifest" | "protected_git_internal" | "protected_secret"
-  | "unsupported_path" | "unsupported_git_entry";
+  | "index_only"
+  | "link_as_link"
+  | "gitlink_as_reference"
+  | "name_hint_inventory"
+  | "protected_self"
+  | "protected_manifest"
+  | "protected_git_internal"
+  | "protected_secret"
+  | "unsupported_path"
+  | "unsupported_git_entry";
 
 export interface TrackedCarrierDecision extends TrackedGitEntry {
   readonly carrier: "central_manifest" | "inventory_only" | "hard_skip";

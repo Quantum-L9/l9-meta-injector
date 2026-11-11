@@ -81,7 +81,10 @@ function inspectChunk(
  * multi-byte sequence split across a chunk boundary is not misreported, and a
  * dangling partial sequence at EOF is caught by the final flush.
  */
-export function probeFileEncoding(absolutePath: string, chunkBytes = ENCODING_CHUNK_BYTES): EncodingProbe {
+export function probeFileEncoding(
+  absolutePath: string,
+  chunkBytes = ENCODING_CHUNK_BYTES,
+): EncodingProbe {
   let fd: number | null = null;
   try {
     const stat = fs.statSync(absolutePath);
@@ -95,7 +98,8 @@ export function probeFileEncoding(absolutePath: string, chunkBytes = ENCODING_CH
       const count = fs.readSync(fd, buffer, 0, buffer.length, offset);
       if (count === 0) break;
       const chunk = buffer.subarray(0, count);
-      if (offset === 0 && count >= BOM.length && chunk.subarray(0, BOM.length).equals(BOM)) hasBom = true;
+      if (offset === 0 && count >= BOM.length && chunk.subarray(0, BOM.length).equals(BOM))
+        hasBom = true;
       const terminal = inspectChunk(chunk, offset, decoder, stat.size, hasBom);
       if (terminal !== null) return terminal;
       offset += count;
@@ -132,7 +136,12 @@ export function probeFileEncoding(absolutePath: string, chunkBytes = ENCODING_CH
 export function probeBufferEncoding(bytes: Buffer): EncodingProbe {
   const hasBom = bytes.length >= BOM.length && bytes.subarray(0, BOM.length).equals(BOM);
   if (bytes.includes(0)) {
-    return { status: "binary", reason: "NUL byte detected", sizeBytes: bytes.length, hasBom: false };
+    return {
+      status: "binary",
+      reason: "NUL byte detected",
+      sizeBytes: bytes.length,
+      hasBom: false,
+    };
   }
   try {
     new TextDecoder("utf-8", { fatal: true }).decode(bytes);

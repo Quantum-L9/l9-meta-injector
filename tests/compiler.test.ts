@@ -1,8 +1,8 @@
 import {
   buildDedupEntries,
   buildDedupReport,
-  buildPromptLibraryIndex,
   buildPrimitiveLibraryIndex,
+  buildPromptLibraryIndex,
   dedupReportToMarkdown,
 } from "../src/compiler";
 import { InjectionRecord } from "../src/schema";
@@ -22,7 +22,8 @@ function rec(sourcePath: string, hash: string, meta: Record<string, unknown>): I
 const bodyA = "the quick brown fox jumps over the lazy dog and then keeps running fast";
 // bodyB: one word changed vs bodyA → high shingle overlap (near-duplicate, not identical).
 const bodyB = "the quick brown fox jumps over the lazy dog and then keeps sprinting fast";
-const bodyC = "completely different content about database migrations and rollups entirely unrelated text";
+const bodyC =
+  "completely different content about database migrations and rollups entirely unrelated text";
 
 describe("buildDedupReport — exact twins", () => {
   test("groups byte-identical bodies as auditorTwins and reduces uniqueCount", () => {
@@ -45,7 +46,10 @@ describe("buildDedupReport — near duplicates (ACA-003 regression)", () => {
       rec("a.md", "HASH_A", { id: "a", artifact_type: "skill" }),
       rec("b.md", "HASH_B", { id: "b", artifact_type: "skill" }),
     ];
-    const bodies = new Map([["a.md", bodyA], ["b.md", bodyB]]);
+    const bodies = new Map([
+      ["a.md", bodyA],
+      ["b.md", bodyB],
+    ]);
     const report = buildDedupReport(buildDedupEntries(records, 16, bodies), 0.6, 16);
     expect(report.nearDuplicates).toHaveLength(1);
     expect(report.nearDuplicates[0].paths.sort()).toEqual(["a.md", "b.md"]);
@@ -58,7 +62,10 @@ describe("buildDedupReport — near duplicates (ACA-003 regression)", () => {
       rec("a.md", "HASH_A", { id: "a", artifact_type: "skill" }),
       rec("c.md", "HASH_C", { id: "c", artifact_type: "skill" }),
     ];
-    const bodies = new Map([["a.md", bodyA], ["c.md", bodyC]]);
+    const bodies = new Map([
+      ["a.md", bodyA],
+      ["c.md", bodyC],
+    ]);
     const report = buildDedupReport(buildDedupEntries(records, 16, bodies), 0.9, 16);
     expect(report.nearDuplicates).toHaveLength(0);
   });
@@ -68,7 +75,10 @@ describe("buildDedupReport — near duplicates (ACA-003 regression)", () => {
       rec("a.md", "HASH_A", { id: "a", artifact_type: "skill" }),
       rec("b.md", "HASH_B", { id: "b", artifact_type: "skill" }),
     ];
-    const bodies = new Map([["a.md", bodyA], ["b.md", bodyB]]);
+    const bodies = new Map([
+      ["a.md", bodyA],
+      ["b.md", bodyB],
+    ]);
     const report = buildDedupReport(buildDedupEntries(records, 16, bodies), 0.99, 16);
     expect(report.nearDuplicates).toHaveLength(0);
   });
@@ -78,7 +88,10 @@ describe("buildDedupReport — near duplicates (ACA-003 regression)", () => {
       rec("a.md", "HASH_SAME", { id: "a", artifact_type: "skill" }),
       rec("b.md", "HASH_SAME", { id: "b", artifact_type: "skill" }),
     ];
-    const bodies = new Map([["a.md", bodyA], ["b.md", bodyA]]);
+    const bodies = new Map([
+      ["a.md", bodyA],
+      ["b.md", bodyA],
+    ]);
     const report = buildDedupReport(buildDedupEntries(records, 16, bodies), 0.5, 16);
     expect(report.auditorTwins).toHaveLength(1);
     expect(report.nearDuplicates).toHaveLength(0);
@@ -122,8 +135,13 @@ describe("dedupReportToMarkdown", () => {
       rec("a.md", "HASH_A", { id: "a", artifact_type: "skill" }),
       rec("b.md", "HASH_B", { id: "b", artifact_type: "skill" }),
     ];
-    const bodies = new Map([["a.md", bodyA], ["b.md", bodyB]]);
-    const md = dedupReportToMarkdown(buildDedupReport(buildDedupEntries(records, 16, bodies), 0.6, 16));
+    const bodies = new Map([
+      ["a.md", bodyA],
+      ["b.md", bodyB],
+    ]);
+    const md = dedupReportToMarkdown(
+      buildDedupReport(buildDedupEntries(records, 16, bodies), 0.6, 16),
+    );
     expect(md).toContain("Near duplicates: 1");
     expect(md).toContain("## Near Duplicates");
     expect(md).toContain("a.md");

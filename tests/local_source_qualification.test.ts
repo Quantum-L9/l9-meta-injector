@@ -10,8 +10,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { describe, expect, test } from "vitest";
 import { withLocalSourceModel } from "../src/local_source_model";
-import { emitRepositoryModelBundle, validateRepositoryModelPacket } from "../src/repository_model";
 import type { RepositoryModelPacket } from "../src/repository_model";
+import { emitRepositoryModelBundle, validateRepositoryModelPacket } from "../src/repository_model";
 import { treeSnapshot, writeRawZip } from "./helpers/zip_fixtures";
 
 function tmp(): string {
@@ -29,11 +29,12 @@ const PACKED_README = [
   "",
 ].join("\n");
 
-const PACKAGE_JSON = JSON.stringify(
-  { name: "drive-fixture", version: "2.1.0", dependencies: { left_pad: "^1.0.0" } },
-  null,
-  2,
-) + "\n";
+const PACKAGE_JSON =
+  JSON.stringify(
+    { name: "drive-fixture", version: "2.1.0", dependencies: { left_pad: "^1.0.0" } },
+    null,
+    2,
+  ) + "\n";
 
 /**
  * A drive-shaped tree: not a repository, not tidy, and containing every entry
@@ -48,7 +49,10 @@ function buildDrive(outsideTarget: string): string {
   fs.writeFileSync(path.join(root, "src", "nested", "util.py"), "def run():\n    return 1\n");
   fs.writeFileSync(path.join(root, "package.json"), PACKAGE_JSON);
   // Deterministic "binary": fixed bytes, so the fixture hashes identically twice.
-  fs.writeFileSync(path.join(root, "docs", "photo.bin"), Buffer.from(Array.from({ length: 256 }, (_, i) => i)));
+  fs.writeFileSync(
+    path.join(root, "docs", "photo.bin"),
+    Buffer.from(Array.from({ length: 256 }, (_, i) => i)),
+  );
   fs.writeFileSync(path.join(root, ".env"), "API_KEY=sk-live-abcdefghij0123456789\n");
   fs.symlinkSync(outsideTarget, path.join(root, "docs", "link-outside"));
 
@@ -84,8 +88,9 @@ describe("qualification — a non-Git local directory", () => {
     // 1. Nothing under the source changed.
     expect(treeSnapshot(first)).toEqual(before);
     // 2. The user directory named like an extraction target survived intact.
-    expect(fs.readFileSync(path.join(first, "Bundle.l9extracted", "IMPORTANT_USER_DATA"), "utf8"))
-      .toBe("irreplaceable\n");
+    expect(
+      fs.readFileSync(path.join(first, "Bundle.l9extracted", "IMPORTANT_USER_DATA"), "utf8"),
+    ).toBe("irreplaceable\n");
 
     // 3. Every entry class is present, archives included, at machine-independent paths.
     expect(firstPacket.payload.artifacts.map((artifact) => artifact.source_path)).toEqual([
@@ -128,8 +133,9 @@ describe("qualification — a non-Git local directory", () => {
       (assertion) => assertion.source_path === "Bundle.zip!/README.md",
     );
     expect(packed.length).toBeGreaterThan(0);
-    expect(packed.map((assertion) => `${assertion.predicate}=${assertion.object}`))
-      .toContain("repository.status=deprecated");
+    expect(packed.map((assertion) => `${assertion.predicate}=${assertion.object}`)).toContain(
+      "repository.status=deprecated",
+    );
 
     for (const assertion of packed) {
       expect(assertion.source_content_hash).toMatch(/^sha256:[a-f0-9]{64}$/);
@@ -145,8 +151,8 @@ describe("qualification — a non-Git local directory", () => {
     const archive = byPath.get("Bundle.zip");
     expect(member?.content_hash).toBe(packed[0].source_content_hash);
     const edge = packet.payload.relationships.find(
-      (relationship) => relationship.source_id === member?.artifact_id
-        && relationship.edge_type === "DERIVED_FROM",
+      (relationship) =>
+        relationship.source_id === member?.artifact_id && relationship.edge_type === "DERIVED_FROM",
     );
     expect(edge?.target_id).toBe(archive?.artifact_id);
     expect(edge?.properties.archive_digest).toBe(archive?.content_hash);
@@ -181,7 +187,9 @@ describe("qualification — a non-Git local directory", () => {
     expect(fs.existsSync(emitted.packetPath)).toBe(true);
     expect(fs.existsSync(emitted.receiptPath)).toBe(true);
     expect(fs.existsSync(emitted.manifestPath)).toBe(true);
-    const written = JSON.parse(fs.readFileSync(emitted.packetPath, "utf8")) as RepositoryModelPacket;
+    const written = JSON.parse(
+      fs.readFileSync(emitted.packetPath, "utf8"),
+    ) as RepositoryModelPacket;
     expect(written.packet_id).toBe(packet.packet_id);
     expect(validateRepositoryModelPacket(written).status).toBe("passed");
   });
@@ -194,7 +202,11 @@ describe("qualification — a standalone ZIP on a drive", () => {
     writeRawZip(path.join(staging, "inner.zip"), [{ name: "guide.md", content: "# Guide\n" }]);
     writeRawZip(path.join(parent, "Bundle.zip"), [
       { name: "README.md", content: PACKED_README },
-      { name: "inner.zip", content: fs.readFileSync(path.join(staging, "inner.zip")), stored: true },
+      {
+        name: "inner.zip",
+        content: fs.readFileSync(path.join(staging, "inner.zip")),
+        stored: true,
+      },
     ]);
     fs.writeFileSync(path.join(parent, "neighbor.txt"), "untouched\n");
     const before = treeSnapshot(parent);
@@ -239,10 +251,15 @@ describe("qualification — a standalone ZIP on a drive", () => {
   test("observing the same archive twice is byte-identical", () => {
     const parent = tmp();
     writeRawZip(path.join(parent, "Bundle.zip"), [{ name: "README.md", content: PACKED_README }]);
-    const run = (): RepositoryModelPacket => withLocalSourceModel(
-      { path: path.join(parent, "Bundle.zip"), name: "Bundle", producerVersion: PRODUCER_VERSION },
-      (result) => result.packet,
-    );
+    const run = (): RepositoryModelPacket =>
+      withLocalSourceModel(
+        {
+          path: path.join(parent, "Bundle.zip"),
+          name: "Bundle",
+          producerVersion: PRODUCER_VERSION,
+        },
+        (result) => result.packet,
+      );
     expect(JSON.stringify(run())).toBe(JSON.stringify(run()));
   });
 });
@@ -266,17 +283,22 @@ describe("qualification — the committed golden local-source bundle", () => {
     const emitted = path.join(tmp(), "bundle");
     emitRepositoryModelBundle(packet, { outDir: emitted });
     for (const relative of ["packet.json", "manifest.json", "receipts/validation-receipt.json"]) {
-      expect(fs.readFileSync(path.join(emitted, relative), "utf8"))
-        .toBe(fs.readFileSync(path.join(GOLDEN, relative), "utf8"));
+      expect(fs.readFileSync(path.join(emitted, relative), "utf8")).toBe(
+        fs.readFileSync(path.join(GOLDEN, relative), "utf8"),
+      );
     }
   });
 
   test("the golden bundle carries the archive provenance the consumer was proven against", () => {
-    const packet = JSON.parse(fs.readFileSync(path.join(GOLDEN, "packet.json"), "utf8")) as RepositoryModelPacket;
+    const packet = JSON.parse(
+      fs.readFileSync(path.join(GOLDEN, "packet.json"), "utf8"),
+    ) as RepositoryModelPacket;
     expect(packet.source_snapshot.revision).toMatch(/^fs:sha256:[a-f0-9]{64}$/);
     expect(packet.profile.id).toBe("meta-injector-local-source-observation");
 
-    const byId = new Map(packet.payload.artifacts.map((artifact) => [artifact.artifact_id, artifact]));
+    const byId = new Map(
+      packet.payload.artifacts.map((artifact) => [artifact.artifact_id, artifact]),
+    );
     const chain = packet.payload.relationships
       .filter((edge) => edge.edge_type === "DERIVED_FROM")
       .map((edge) => [
@@ -291,8 +313,9 @@ describe("qualification — the committed golden local-source bundle", () => {
     ]);
 
     // The user directory named like an extraction target is observed, not excluded.
-    expect(packet.payload.artifacts.map((artifact) => artifact.source_path))
-      .toContain("Bundle.l9extracted/IMPORTANT_USER_DATA");
+    expect(packet.payload.artifacts.map((artifact) => artifact.source_path)).toContain(
+      "Bundle.l9extracted/IMPORTANT_USER_DATA",
+    );
     // No scratch or absolute path survived into the committed bundle.
     expect(JSON.stringify(packet)).not.toContain(os.tmpdir());
     expect(JSON.stringify(packet)).not.toContain(REPO);

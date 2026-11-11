@@ -5,8 +5,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { inventoryTree, type InventoryResult } from "../src/inventory";
 import { contentHash } from "../src/extract";
+import { type InventoryResult, inventoryTree } from "../src/inventory";
 import { toMetaSchema } from "../src/meta_schema";
 import { buildZipBuffer, peekZipRootMeta } from "../src/zip_writer";
 
@@ -26,7 +26,11 @@ function run(root: string, now = NOW, extra: Record<string, unknown> = {}): Inve
   return inventoryTree({ root, outDir: path.join(tmp("l9-inv-conv-out-"), "out"), now, ...extra });
 }
 
-interface Observed { bytes: string; ino: number; mtimeMs: number }
+interface Observed {
+  bytes: string;
+  ino: number;
+  mtimeMs: number;
+}
 function observe(root: string, rels: string[]): Record<string, Observed> {
   const out: Record<string, Observed> = {};
   for (const rel of rels) {
@@ -46,12 +50,21 @@ function commentHeader(text: string): Array<[string, string]> {
   const start = text.indexOf("// >>> l9:meta >>>");
   const end = text.indexOf("// <<< l9:meta <<<");
   expect(start).toBeGreaterThanOrEqual(0);
-  return text.slice(start, end).split("\n").slice(1)
+  return text
+    .slice(start, end)
+    .split("\n")
+    .slice(1)
     .filter((line) => line.startsWith("// "))
     .map((line) => {
       const body = line.slice(3);
       const colon = body.indexOf(":");
-      return [body.slice(0, colon), body.slice(colon + 1).trim().replace(/^"|"$/g, "")] as [string, string];
+      return [
+        body.slice(0, colon),
+        body
+          .slice(colon + 1)
+          .trim()
+          .replace(/^"|"$/g, ""),
+      ] as [string, string];
     });
 }
 
@@ -66,10 +79,17 @@ describe("WU-074 RC-050: annotation converges for identical inputs", () => {
     fs.mkdirSync(path.join(root, "sub"));
     fs.writeFileSync(path.join(root, "a.md"), "# A\n\nBody.\n");
     fs.writeFileSync(path.join(root, "b.ts"), "export const b = 1;\n");
-    fs.writeFileSync(path.join(root, "c.json"), "{\"c\":1}\n");
+    fs.writeFileSync(path.join(root, "c.json"), '{"c":1}\n');
     fs.writeFileSync(path.join(root, "sub", "d.py"), "print('d')\n");
-    fs.writeFileSync(path.join(root, "sub", "e.json"), "{\"e\":2}\n");
-    const carriers = ["a.md", "b.ts", "c.json.l9meta.yaml", "sub/.l9meta.yaml", "sub/d.py", "sub/e.json.l9meta.yaml"];
+    fs.writeFileSync(path.join(root, "sub", "e.json"), '{"e":2}\n');
+    const carriers = [
+      "a.md",
+      "b.ts",
+      "c.json.l9meta.yaml",
+      "sub/.l9meta.yaml",
+      "sub/d.py",
+      "sub/e.json.l9meta.yaml",
+    ];
     run(root);
     const first = observe(root, carriers);
     await sleep(1100);
@@ -89,7 +109,7 @@ describe("WU-074 RC-050: annotation converges for identical inputs", () => {
     fs.mkdirSync(path.join(root, "sub"));
     fs.writeFileSync(path.join(root, "a.md"), "# A\n");
     fs.writeFileSync(path.join(root, "b.ts"), "export const b = 1;\n");
-    fs.writeFileSync(path.join(root, "c.json"), "{\"c\":1}\n");
+    fs.writeFileSync(path.join(root, "c.json"), '{"c":1}\n');
     const schema = toMetaSchema({
       schema_id: "convergence",
       fields: [
@@ -158,23 +178,29 @@ describe("WU-074 RC-050: annotation converges for identical inputs", () => {
     const root = tmp();
     const body = "export const b = 1;\n";
     const garbled = path.join(root, "garbled.ts");
-    fs.writeFileSync(garbled, [
-      "// >>> l9:meta >>>",
-      `// content_hash: ${contentHash(body)}`,
-      "// created_at: not-a-date",
-      "// modified_at: yesterday",
-      "// <<< l9:meta <<<",
-      body,
-    ].join("\n"));
+    fs.writeFileSync(
+      garbled,
+      [
+        "// >>> l9:meta >>>",
+        `// content_hash: ${contentHash(body)}`,
+        "// created_at: not-a-date",
+        "// modified_at: yesterday",
+        "// <<< l9:meta <<<",
+        body,
+      ].join("\n"),
+    );
     const stale = path.join(root, "stale.ts");
-    fs.writeFileSync(stale, [
-      "// >>> l9:meta >>>",
-      `// content_hash: ${contentHash("something else\n")}`,
-      "// created_at: \"2001-01-01T00:00:00.000Z\"",
-      "// modified_at: \"2001-01-01T00:00:00.000Z\"",
-      "// <<< l9:meta <<<",
-      body,
-    ].join("\n"));
+    fs.writeFileSync(
+      stale,
+      [
+        "// >>> l9:meta >>>",
+        `// content_hash: ${contentHash("something else\n")}`,
+        '// created_at: "2001-01-01T00:00:00.000Z"',
+        '// modified_at: "2001-01-01T00:00:00.000Z"',
+        "// <<< l9:meta <<<",
+        body,
+      ].join("\n"),
+    );
     const result = run(root);
     for (const name of ["garbled.ts", "stale.ts"]) {
       const rec = result.records.find((r) => r.relative_path === name)!;
@@ -203,14 +229,18 @@ describe("WU-074 RC-050: annotation converges for identical inputs", () => {
     const fresh = tmp();
     fs.writeFileSync(path.join(fresh, "b.ts"), "export const b = 1;\n");
     run(fresh, "2030-01-01T00:00:00.000Z");
-    const freshKeys = commentHeader(fs.readFileSync(path.join(fresh, "b.ts"), "utf8")).map(([k]) => k);
+    const freshKeys = commentHeader(fs.readFileSync(path.join(fresh, "b.ts"), "utf8")).map(
+      ([k]) => k,
+    );
 
     const rerun = tmp();
     fs.writeFileSync(path.join(rerun, "b.ts"), "export const b = 1;\n");
     run(rerun, "2030-01-01T00:00:00.000Z");
     // A later now forces a rewrite whose input includes the harvested header.
     run(rerun, "2030-06-01T00:00:00.000Z");
-    const rerunKeys = commentHeader(fs.readFileSync(path.join(rerun, "b.ts"), "utf8")).map(([k]) => k);
+    const rerunKeys = commentHeader(fs.readFileSync(path.join(rerun, "b.ts"), "utf8")).map(
+      ([k]) => k,
+    );
 
     expect(rerunKeys).toEqual(freshKeys);
     expect(freshKeys.indexOf("title")).toBe(freshKeys.indexOf("id") + 1);
@@ -220,7 +250,10 @@ describe("WU-074 RC-050: annotation converges for identical inputs", () => {
   test("REG-WU-074-RC-050-RC050-h: archive member annotation stays idempotent for the same now", () => {
     const root = tmp();
     const zipPath = path.join(root, "pack.zip");
-    fs.writeFileSync(zipPath, buildZipBuffer([{ name: "readme.txt", data: Buffer.from("hello\n") }]));
+    fs.writeFileSync(
+      zipPath,
+      buildZipBuffer([{ name: "readme.txt", data: Buffer.from("hello\n") }]),
+    );
     run(root, NOW, { folderSidecars: false });
     run(root, NOW, { folderSidecars: false });
     const second = fs.readFileSync(zipPath);
@@ -233,7 +266,7 @@ describe("WU-074 RC-050: annotation converges for identical inputs", () => {
 describe("WU-074 RC-051: hand-authored file sidecars are never overwritten", () => {
   test("REG-WU-074-RC-051-RC051-a: an unparseable sidecar (comment + nested map) is left byte-identical and diagnosed", () => {
     const root = tmp();
-    fs.writeFileSync(path.join(root, "data.json"), "{\"a\":1}\n");
+    fs.writeFileSync(path.join(root, "data.json"), '{"a":1}\n');
     const sidecar = path.join(root, "data.json.l9meta.yaml");
     const authored = "# my notes\nprimary:\n  nested:\n    deeper: value\n";
     fs.writeFileSync(sidecar, authored);
@@ -245,7 +278,7 @@ describe("WU-074 RC-051: hand-authored file sidecars are never overwritten", () 
 
   test("REG-WU-074-RC-051-RC051-b: a parseable sidecar with a leading comment is left byte-identical and diagnosed as lossy", () => {
     const root = tmp();
-    fs.writeFileSync(path.join(root, "data.json"), "{\"a\":1}\n");
+    fs.writeFileSync(path.join(root, "data.json"), '{"a":1}\n');
     const sidecar = path.join(root, "data.json.l9meta.yaml");
     const authored = "# operator notes, keep me\ntitle: Data\n";
     fs.writeFileSync(sidecar, authored);
@@ -257,36 +290,42 @@ describe("WU-074 RC-051: hand-authored file sidecars are never overwritten", () 
 
   test("REG-WU-074-RC-051-RC051-c: a tool-written sidecar is rewritten with current fields and the operator title survives", () => {
     const root = tmp();
-    fs.writeFileSync(path.join(root, "cfg.json"), "{\"a\":1}\n");
+    fs.writeFileSync(path.join(root, "cfg.json"), '{"a":1}\n');
     const sidecar = path.join(root, "cfg.json.l9meta.yaml");
     fs.writeFileSync(sidecar, "---\ntitle: OperatorTitle\ntags:\n  - harvested\n---\n");
     run(root, "2030-01-01T00:00:00.000Z");
     const first = fs.readFileSync(sidecar, "utf8");
     expect(first).toContain("title: OperatorTitle");
-    expect(first).toContain("inspected_at: \"2030-01-01T00:00:00.000Z\"");
+    expect(first).toContain('inspected_at: "2030-01-01T00:00:00.000Z"');
     const second = run(root, "2030-06-01T00:00:00.000Z");
     const after = fs.readFileSync(sidecar, "utf8");
     expect(after).toContain("title: OperatorTitle");
-    expect(after).toContain("inspected_at: \"2030-06-01T00:00:00.000Z\"");
+    expect(after).toContain('inspected_at: "2030-06-01T00:00:00.000Z"');
     const rec = second.records.find((r) => r.relative_path === "cfg.json")!;
     expect(rec.unknowns.filter((u) => u.startsWith("sidecar_"))).toEqual([]);
   });
 
   test("REG-WU-074-RC-051-RC051-d: a prior inventory dump sidecar still round-trips and is rewritten without absolute_path", () => {
     const root = tmp();
-    fs.writeFileSync(path.join(root, "pack.zip"), buildZipBuffer([{ name: "readme.txt", data: Buffer.from("hello\n") }]));
-    fs.writeFileSync(path.join(root, "pack.zip.l9meta.yaml"), [
-      "---",
-      "title: OperatorTitle",
-      "artifact_id: inv-old",
-      "absolute_path: /Users/someone/L9 live drive/pack.zip",
-      "relative_path: pack.zip",
-      "file_name: pack.zip",
-      "unknowns: []",
-      "created_or_detected_at: \"2026-09-11T16:22:12.503Z\"",
-      "---",
-      "",
-    ].join("\n"));
+    fs.writeFileSync(
+      path.join(root, "pack.zip"),
+      buildZipBuffer([{ name: "readme.txt", data: Buffer.from("hello\n") }]),
+    );
+    fs.writeFileSync(
+      path.join(root, "pack.zip.l9meta.yaml"),
+      [
+        "---",
+        "title: OperatorTitle",
+        "artifact_id: inv-old",
+        "absolute_path: /Users/someone/L9 live drive/pack.zip",
+        "relative_path: pack.zip",
+        "file_name: pack.zip",
+        "unknowns: []",
+        'created_or_detected_at: "2026-09-11T16:22:12.503Z"',
+        "---",
+        "",
+      ].join("\n"),
+    );
     const result = run(root, NOW, { folderSidecars: false });
     const sidecar = fs.readFileSync(path.join(root, "pack.zip.l9meta.yaml"), "utf8");
     expect(sidecar).toContain("title: OperatorTitle");
@@ -299,7 +338,10 @@ describe("WU-074 RC-051: hand-authored file sidecars are never overwritten", () 
   test("REG-WU-074-RC-051-RC051-e: an unparseable archive sidecar is preserved and the archive member is still upserted", () => {
     const root = tmp();
     const zipPath = path.join(root, "pack.zip");
-    fs.writeFileSync(zipPath, buildZipBuffer([{ name: "readme.txt", data: Buffer.from("hello\n") }]));
+    fs.writeFileSync(
+      zipPath,
+      buildZipBuffer([{ name: "readme.txt", data: Buffer.from("hello\n") }]),
+    );
     const sidecar = path.join(root, "pack.zip.l9meta.yaml");
     const authored = "primary:\n  nested:\n    deeper: value\n";
     fs.writeFileSync(sidecar, authored);
@@ -315,7 +357,10 @@ describe("Audit G05: the embedded archive member excludes volatile fields by sou
   test("REG-AUDIT-G05-a: a --schema that renames content_hash and the clocks still converges the archive member", () => {
     const root = tmp();
     const zipPath = path.join(root, "pack.zip");
-    fs.writeFileSync(zipPath, buildZipBuffer([{ name: "readme.txt", data: Buffer.from("hello\n") }]));
+    fs.writeFileSync(
+      zipPath,
+      buildZipBuffer([{ name: "readme.txt", data: Buffer.from("hello\n") }]),
+    );
     const schema = toMetaSchema({
       schema_id: "renamed-volatile",
       fields: [

@@ -20,9 +20,9 @@ import * as path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { FileCorpusCache } from "../src/corpus_cache";
 import { buildCorpusDiff } from "../src/corpus_diff";
-import { commitFileDurably, syncDirectory, writeFileDurably } from "../src/durable_write";
-import type { DurableFileOps } from "../src/durable_write";
 import { runCorpusScan } from "../src/corpus_scan";
+import type { DurableFileOps } from "../src/durable_write";
+import { commitFileDurably, syncDirectory, writeFileDurably } from "../src/durable_write";
 
 const scratch: string[] = [];
 function tmp(): string {
@@ -100,8 +100,9 @@ describe("the diff's longitudinal identity guard", () => {
     // The caution this file used to assert here was the whole response. It is
     // now the second half of one: the comparison does not happen at all unless
     // the operator says these two observations are the same disk.
-    await expect(twoRuns({ path: corpusAt(tmp(), "Backup") }))
-      .rejects.toThrow(/refusing previous-snapshot diff/);
+    await expect(twoRuns({ path: corpusAt(tmp(), "Backup") })).rejects.toThrow(
+      /refusing previous-snapshot diff/,
+    );
   });
 
   it("cautions when the operator accepted a key nobody declared", async () => {
@@ -122,7 +123,8 @@ describe("the diff's longitudinal identity guard", () => {
 
   it("stays silent when the operator named the root", async () => {
     const { second } = await twoRuns({
-      path: corpusAt(tmp(), "Backup"), name: "january-backup",
+      path: corpusAt(tmp(), "Backup"),
+      name: "january-backup",
     });
     expect(second.diff?.roots[0]?.identity_basis).toBe("declared");
     expect(second.diff?.longitudinal_identity_cautions).toEqual([]);
@@ -131,10 +133,12 @@ describe("the diff's longitudinal identity guard", () => {
   it("reads a snapshot with no class as inferred, which is the cautious reading", async () => {
     const root = corpusAt(tmp(), "Backup");
     const first = await runCorpusScan({
-      roots: [{ path: root, name: "january-backup" }], producerVersion: "test",
+      roots: [{ path: root, name: "january-backup" }],
+      producerVersion: "test",
     });
     const second = await runCorpusScan({
-      roots: [{ path: root, name: "january-backup" }], producerVersion: "test",
+      roots: [{ path: root, name: "january-backup" }],
+      producerVersion: "test",
     });
 
     // A snapshot from before the class existed says nothing about how its keys
@@ -156,7 +160,8 @@ describe("the diff's longitudinal identity guard", () => {
   it("makes no claim about a root that appeared or vanished", async () => {
     const parent = tmp();
     const first = await runCorpusScan({
-      roots: [{ path: corpusAt(parent, "One") }], producerVersion: "test",
+      roots: [{ path: corpusAt(parent, "One") }],
+      producerVersion: "test",
     });
     const second = await runCorpusScan({
       roots: [{ path: corpusAt(parent, "Two") }],
@@ -165,8 +170,10 @@ describe("the diff's longitudinal identity guard", () => {
     });
     // Neither row spans two runs, so neither asserts continuity and neither is
     // cautioned. A caution on an added root would be noise.
-    expect(second.diff?.roots.map((root) => root.category).sort())
-      .toEqual(["root_added", "root_removed"]);
+    expect(second.diff?.roots.map((root) => root.category).sort()).toEqual([
+      "root_added",
+      "root_removed",
+    ]);
     expect(second.diff?.longitudinal_identity_cautions).toEqual([]);
   });
 });
@@ -177,9 +184,8 @@ describe("durability of a written file", () => {
     const directories = new Set<number>();
     return {
       openSync(target, flags, mode) {
-        const handle = mode === undefined
-          ? fs.openSync(target, flags)
-          : fs.openSync(target, flags, mode);
+        const handle =
+          mode === undefined ? fs.openSync(target, flags) : fs.openSync(target, flags, mode);
         if (fs.fstatSync(handle).isDirectory()) directories.add(handle);
         return handle;
       },

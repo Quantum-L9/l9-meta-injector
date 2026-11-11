@@ -19,7 +19,9 @@ function padToBlock(data) {
 }
 /** One 512-byte ustar header plus padded data blocks. */
 function encodeTarEntry(spec) {
-    const data = Buffer.isBuffer(spec.content) ? spec.content : Buffer.from(spec.content ?? "", "utf8");
+    const data = Buffer.isBuffer(spec.content)
+        ? spec.content
+        : Buffer.from(spec.content ?? "", "utf8");
     const header = Buffer.alloc(BLOCK);
     header.write(spec.name, 0, 100, "utf8");
     header.write(octal(spec.mode ?? 0o644, 8), 100);

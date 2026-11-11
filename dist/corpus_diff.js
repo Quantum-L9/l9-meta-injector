@@ -62,12 +62,12 @@ exports.CONTENT_KEYED_LAYERS = [
 ];
 /** Cache layers keyed on the whole corpus, so any membership change retires them. */
 exports.CORPUS_SCOPED_LAYERS = ["candidate_analysis"];
-exports.CROSS_ROOT_MOVE_STATEMENT = "A cross-root move candidate is identical bytes absent from one root and present in another. "
-    + "It is not a claim that the file was moved: a copy whose original was deleted, and two "
-    + "unrelated identical files, produce exactly the same evidence.";
-exports.RENAMED_CANDIDATE_STATEMENT = "A renamed candidate is one content hash absent at an old corpus path and present at a "
-    + "new one. It is not evidence that a file was moved, that a move was intentional, or "
-    + "that the two paths mean the same thing.";
+exports.CROSS_ROOT_MOVE_STATEMENT = "A cross-root move candidate is identical bytes absent from one root and present in another. " +
+    "It is not a claim that the file was moved: a copy whose original was deleted, and two " +
+    "unrelated identical files, produce exactly the same evidence.";
+exports.RENAMED_CANDIDATE_STATEMENT = "A renamed candidate is one content hash absent at an old corpus path and present at a " +
+    "new one. It is not evidence that a file was moved, that a move was intentional, or " +
+    "that the two paths mean the same thing.";
 function emptyCounts() {
     return {
         added: 0,
@@ -99,9 +99,9 @@ function contentHashSet(artifacts) {
     return out;
 }
 function compareEntries(a, b) {
-    return ((0, ordering_1.compareCodePoints)(a.category, b.category)
-        || (0, ordering_1.compareCodePoints)(a.corpus_path, b.corpus_path)
-        || (0, ordering_1.compareCodePoints)(a.virtual_source_id, b.virtual_source_id));
+    return ((0, ordering_1.compareCodePoints)(a.category, b.category) ||
+        (0, ordering_1.compareCodePoints)(a.corpus_path, b.corpus_path) ||
+        (0, ordering_1.compareCodePoints)(a.virtual_source_id, b.virtual_source_id));
 }
 /**
  * Pair departures against arrivals that carry the same bytes.
@@ -171,7 +171,7 @@ function analysisProfileFingerprint(snapshot) {
         const value = analysis[key];
         const rendered = Array.isArray(value)
             ? [...value].sort(ordering_1.compareCodePoints)
-            : value ?? null;
+            : (value ?? null);
         return [key, rendered];
     });
     return JSON.stringify(fields);
@@ -261,7 +261,9 @@ function buildCorpusDiff(previous, current) {
             content_hash: rename.to.content_hash,
             previous_corpus_path: rename.from.corpus_path,
             previous_virtual_source_id: rename.from.virtual_source_id,
-            ...(rename.from.content_hash !== null ? { previous_content_hash: rename.from.content_hash } : {}),
+            ...(rename.from.content_hash !== null
+                ? { previous_content_hash: rename.from.content_hash }
+                : {}),
             size_bytes: rename.to.size_bytes,
         });
     }
@@ -342,8 +344,12 @@ function buildCorpusDiff(previous, current) {
     }
     const previousHashes = contentHashSet(previous.artifacts);
     const currentHashes = contentHashSet(current.artifacts);
-    const newHashes = [...currentHashes].filter((hash) => !previousHashes.has(hash)).sort(ordering_1.compareCodePoints);
-    const retiredHashes = [...previousHashes].filter((hash) => !currentHashes.has(hash)).sort(ordering_1.compareCodePoints);
+    const newHashes = [...currentHashes]
+        .filter((hash) => !previousHashes.has(hash))
+        .sort(ordering_1.compareCodePoints);
+    const retiredHashes = [...previousHashes]
+        .filter((hash) => !currentHashes.has(hash))
+        .sort(ordering_1.compareCodePoints);
     const retained = [...currentHashes].filter((hash) => previousHashes.has(hash)).length;
     // Analysis identity, not source identity. A raised threshold or a new decoder
     // changes what was concluded and changes no byte on any disk, and a diff that
@@ -386,24 +392,22 @@ function buildCorpusDiff(previous, current) {
         }
         const previousClass = classOf(before);
         const currentClass = classOf(root);
-        const basis = previousClass === currentClass
-            ? previousClass
-            : "mixed";
+        const basis = previousClass === currentClass ? previousClass : "mixed";
         if (basis !== "declared") {
             cautions.push({
                 root_id: rootId,
                 root_key: root.root_key,
                 previous_class: previousClass,
                 current_class: currentClass,
-                message: `root '${root.root_key}' was matched across runs on a key that was not declared on `
-                    + `${basis === "mixed" ? "one of the two runs" : "either run"}; the key is a mount `
-                    + "point's final segment, so two different disks mounted at paths ending the same "
-                    + "way are one root under this rule. Declare a key with --root <key>=<path> to make "
-                    + "the comparison rest on a name rather than on a path.",
+                message: `root '${root.root_key}' was matched across runs on a key that was not declared on ` +
+                    `${basis === "mixed" ? "one of the two runs" : "either run"}; the key is a mount ` +
+                    "point's final segment, so two different disks mounted at paths ending the same " +
+                    "way are one root under this rule. Declare a key with --root <key>=<path> to make " +
+                    "the comparison rest on a name rather than on a path.",
             });
         }
-        const changed = before.source_revision !== root.source_revision
-            || before.rmp_packet_id !== root.rmp_packet_id;
+        const changed = before.source_revision !== root.source_revision ||
+            before.rmp_packet_id !== root.rmp_packet_id;
         if (changed)
             counts.root_changed += 1;
         else
@@ -464,8 +468,8 @@ function buildCorpusDiff(previous, current) {
             });
         }
     }
-    crossRootMoves.sort((a, b) => (0, ordering_1.compareCodePoints)(a.from_corpus_path, b.from_corpus_path)
-        || (0, ordering_1.compareCodePoints)(a.to_corpus_path, b.to_corpus_path));
+    crossRootMoves.sort((a, b) => (0, ordering_1.compareCodePoints)(a.from_corpus_path, b.from_corpus_path) ||
+        (0, ordering_1.compareCodePoints)(a.to_corpus_path, b.to_corpus_path));
     const previousRootIds = [...previous.roots.map((root) => root.root_id)].sort(ordering_1.compareCodePoints);
     const currentRootIds = [...current.roots.map((root) => root.root_id)].sort(ordering_1.compareCodePoints);
     const orderedEntries = [...entries].sort(compareEntries);

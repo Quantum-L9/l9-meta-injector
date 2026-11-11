@@ -1,16 +1,19 @@
 // P1.2 — versioned native-header normalization (ADR-082).
 import { describe, expect, test } from "vitest";
-import { parseNativeMetadata } from "../src/native_metadata";
+import { defaultDecoderRegistry } from "../src/documents";
 import { nativeMetadataExtractor } from "../src/extractors/native_metadata";
 import { documentStructureExtractor } from "../src/extractors/work_intelligence";
-import { defaultDecoderRegistry } from "../src/documents";
 import type { AssertionDraft, ExtractorDiagnostic } from "../src/interpretation";
+import { parseNativeMetadata } from "../src/native_metadata";
 
 function parse(sourcePath: string, content: string) {
   return parseNativeMetadata(sourcePath, content);
 }
 
-function fieldsOf(sourcePath: string, content: string): Record<string, { state: string; values: string[]; lines: number[] }> {
+function fieldsOf(
+  sourcePath: string,
+  content: string,
+): Record<string, { state: string; values: string[]; lines: number[] }> {
   const out: Record<string, { state: string; values: string[]; lines: number[] }> = {};
   for (const declaration of parse(sourcePath, content).declarations) {
     for (const field of declaration.fields) {
@@ -24,7 +27,10 @@ function fieldsOf(sourcePath: string, content: string): Record<string, { state: 
   return out;
 }
 
-function extract(sourcePath: string, content: string): { drafts: AssertionDraft[]; diagnostics: ExtractorDiagnostic[] } {
+function extract(
+  sourcePath: string,
+  content: string,
+): { drafts: AssertionDraft[]; diagnostics: ExtractorDiagnostic[] } {
   const diagnostics: ExtractorDiagnostic[] = [];
   const drafts = nativeMetadataExtractor.extract({
     subjectId: "artifact:x",
@@ -51,25 +57,40 @@ const LEGACY_V1 = [
 describe("P1.2 carriers", () => {
   test("reads a legacy v1 hash block with exact provenance", () => {
     const [declaration] = parse("src/transport.py", LEGACY_V1).declarations;
-    expect(declaration).toMatchObject({ carrier: "legacy-hash", declared_schema: "l9_schema:1", source_span: { start_line: 1, end_line: 7 } });
+    expect(declaration).toMatchObject({
+      carrier: "legacy-hash",
+      declared_schema: "l9_schema:1",
+      source_span: { start_line: 1, end_line: 7 },
+    });
     expect(fieldsOf("src/transport.py", LEGACY_V1)["legacy-hash:tags"]).toEqual({
-      state: "declared", values: ["transportpacket", "canonical-contract", "validation"], lines: [4, 4, 4],
+      state: "declared",
+      values: ["transportpacket", "canonical-contract", "validation"],
+      lines: [4, 4, 4],
     });
   });
 
   test("keeps schema 1 and schema 2 apart in every predicate", () => {
     const v2 = LEGACY_V1.replace("l9_schema: 1", "l9_schema: 2");
-    const predicates = (text: string) => extract("a.md", text).drafts.map((draft) => draft.predicate);
+    const predicates = (text: string) =>
+      extract("a.md", text).drafts.map((draft) => draft.predicate);
     expect(predicates(LEGACY_V1)).toContain("meta.l9v1.governance.owner");
     expect(predicates(v2)).toContain("meta.l9v2.governance.owner");
     expect(predicates(v2).some((predicate) => predicate.startsWith("meta.l9v1."))).toBe(false);
   });
 
   test("reads the HTML-comment, docstring and pipe-delimited legacy forms", () => {
-    const html = "<!-- L9_META\nl9_schema: 1\nlayer: [kernel, build]\nowner: platform\n/L9_META -->\n# Title\n";
-    expect(parse("k.md", html).declarations[0]).toMatchObject({ carrier: "legacy-html", source_span: { start_line: 1, end_line: 5 } });
-    const docstring = '"""\n--- L9_META ---\nl9_schema: 1\nengine: graph\n--- /L9_META ---\n\nprose\n"""\n';
-    expect(fieldsOf("e.py", docstring)["legacy-docstring:engine"]).toMatchObject({ values: ["graph"], lines: [4] });
+    const html =
+      "<!-- L9_META\nl9_schema: 1\nlayer: [kernel, build]\nowner: platform\n/L9_META -->\n# Title\n";
+    expect(parse("k.md", html).declarations[0]).toMatchObject({
+      carrier: "legacy-html",
+      source_span: { start_line: 1, end_line: 5 },
+    });
+    const docstring =
+      '"""\n--- L9_META ---\nl9_schema: 1\nengine: graph\n--- /L9_META ---\n\nprose\n"""\n';
+    expect(fieldsOf("e.py", docstring)["legacy-docstring:engine"]).toMatchObject({
+      values: ["graph"],
+      lines: [4],
+    });
     const pipes = "# L9_META\n# l9_schema: 1 | origin: harvest | layer: kernel\n# /L9_META\n";
     expect(fieldsOf("k.yaml", pipes)).toMatchObject({
       "legacy-hash-bare:origin": { values: ["harvest"], lines: [2] },
@@ -78,20 +99,40 @@ describe("P1.2 carriers", () => {
   });
 
   test("reads a managed comment header through the managed carrier rules", () => {
-    const managed = "#!/usr/bin/env python3\n# >>> l9:meta >>>\n# id: x.script\n# authority: Example/repo\n# owner: Unknown\n# <<< l9:meta <<<\nprint(1)\n";
+    const managed =
+      "#!/usr/bin/env python3\n# >>> l9:meta >>>\n# id: x.script\n# authority: Example/repo\n# owner: Unknown\n# <<< l9:meta <<<\nprint(1)\n";
     const [declaration] = parse("tool.py", managed).declarations;
-    expect(declaration).toMatchObject({ carrier: "managed-comment", declared_schema: "managed:l9-meta-injector", source_span: { start_line: 2, end_line: 6 } });
-    expect(fieldsOf("tool.py", managed)["managed-comment:owner"]).toEqual({ state: "unresolved", values: [], lines: [] });
-    expect(extract("tool.py", managed).drafts.map((d) => [d.predicate, d.object])).toContainEqual(["meta.managed.unresolved_field", "owner"]);
+    expect(declaration).toMatchObject({
+      carrier: "managed-comment",
+      declared_schema: "managed:l9-meta-injector",
+      source_span: { start_line: 2, end_line: 6 },
+    });
+    expect(fieldsOf("tool.py", managed)["managed-comment:owner"]).toEqual({
+      state: "unresolved",
+      values: [],
+      lines: [],
+    });
+    expect(extract("tool.py", managed).drafts.map((d) => [d.predicate, d.object])).toContainEqual([
+      "meta.managed.unresolved_field",
+      "owner",
+    ]);
   });
 
   test("reads L9 frontmatter, and skips frontmatter that is not L9 metadata", () => {
-    const front = "---\nl9_schema: 1\nartifact_type: documentation\ntags: [docs, mcp]\n---\n# Readme\n";
-    expect(parse("README.md", front).declarations[0]).toMatchObject({ carrier: "frontmatter", source_span: { start_line: 1, end_line: 5 } });
-    const skill = "---\nname: review\ndescription: a skill\n---\n<!-- L9_META\nid: review\n/L9_META -->\n";
+    const front =
+      "---\nl9_schema: 1\nartifact_type: documentation\ntags: [docs, mcp]\n---\n# Readme\n";
+    expect(parse("README.md", front).declarations[0]).toMatchObject({
+      carrier: "frontmatter",
+      source_span: { start_line: 1, end_line: 5 },
+    });
+    const skill =
+      "---\nname: review\ndescription: a skill\n---\n<!-- L9_META\nid: review\n/L9_META -->\n";
     const declarations = parse("SKILL.md", skill).declarations;
     expect(declarations.map((d) => d.carrier)).toEqual(["legacy-html"]);
-    expect(declarations[0]).toMatchObject({ declared_schema: "none", source_span: { start_line: 5, end_line: 7 } });
+    expect(declarations[0]).toMatchObject({
+      declared_schema: "none",
+      source_span: { start_line: 5, end_line: 7 },
+    });
   });
 });
 
@@ -107,7 +148,8 @@ describe("P1.2 versions, ambiguity and refusal", () => {
   });
 
   test("refuses a header that declares a field twice", () => {
-    const duplicate = "# --- L9_META ---\n# l9_schema: 1\n# status: active\n# status: deprecated\n# --- /L9_META ---\n";
+    const duplicate =
+      "# --- L9_META ---\n# l9_schema: 1\n# status: active\n# status: deprecated\n# --- /L9_META ---\n";
     const result = parse("d.yaml", duplicate);
     expect(result.declarations).toEqual([]);
     expect(result.diagnostics.map((d) => d.code)).toEqual(["native_metadata.duplicate_field"]);
@@ -115,54 +157,83 @@ describe("P1.2 versions, ambiguity and refusal", () => {
 
   test("refuses a body line that is not a key: value pair", () => {
     const malformed = "# --- L9_META ---\n# l9_schema: 1\n# this is prose\n# --- /L9_META ---\n";
-    expect(parse("m.yaml", malformed).diagnostics.map((d) => d.code)).toEqual(["native_metadata.malformed"]);
+    expect(parse("m.yaml", malformed).diagnostics.map((d) => d.code)).toEqual([
+      "native_metadata.malformed",
+    ]);
   });
 
   test("marks unsupported YAML one field at a time, and refuses complex frontmatter whole", () => {
-    const nested = "<!-- L9_META\nl9_schema: 1\ninputs:\n  - name: diff\n    type: text\nowner: platform\n/L9_META -->\n";
+    const nested =
+      "<!-- L9_META\nl9_schema: 1\ninputs:\n  - name: diff\n    type: text\nowner: platform\n/L9_META -->\n";
     expect(fieldsOf("s.md", nested)).toMatchObject({
       "legacy-html:inputs": { state: "unsupported" },
       "legacy-html:owner": { state: "declared", values: ["platform"] },
     });
     const complex = "---\nl9_schema: 1\nmeta:\n  nested: true\n---\n";
-    expect(parse("c.md", complex).diagnostics.map((d) => d.code)).toEqual(["native_metadata.frontmatter_unsupported"]);
+    expect(parse("c.md", complex).diagnostics.map((d) => d.code)).toEqual([
+      "native_metadata.frontmatter_unsupported",
+    ]);
   });
 
   test("detects competing declarations across carriers without resolving them", () => {
-    const competing = "---\nl9_schema: 1\nowner: platform\n---\n<!-- L9_META\nl9_schema: 1\nowner: engine-team\n/L9_META -->\n";
+    const competing =
+      "---\nl9_schema: 1\nowner: platform\n---\n<!-- L9_META\nl9_schema: 1\nowner: engine-team\n/L9_META -->\n";
     const result = parse("o.md", competing);
     expect(result.declarations.map((d) => d.conflicts)).toEqual([["owner"], ["owner"]]);
-    expect(result.diagnostics.map((d) => d.code)).toEqual(["native_metadata.competing_declarations"]);
-    const owners = extract("o.md", competing).drafts.filter((d) => d.predicate === "meta.l9v1.governance.owner");
-    expect(owners.map((d) => [d.object, d.sourceRange.start_line])).toEqual([["platform", 3], ["engine-team", 7]]);
+    expect(result.diagnostics.map((d) => d.code)).toEqual([
+      "native_metadata.competing_declarations",
+    ]);
+    const owners = extract("o.md", competing).drafts.filter(
+      (d) => d.predicate === "meta.l9v1.governance.owner",
+    );
+    expect(owners.map((d) => [d.object, d.sourceRange.start_line])).toEqual([
+      ["platform", 3],
+      ["engine-team", 7],
+    ]);
   });
 
   // ADR-084: the detector follows the governed mapping's cardinality and never
   // compares fields across declared schemas.
   test("set-valued fields that differ across carriers aggregate instead of competing", () => {
-    const sets = "---\nl9_schema: 1\ntags: [one]\nlayer: [docs]\n---\n<!-- L9_META\nl9_schema: 1\ntags: [two]\nlayer: [ci]\n/L9_META -->\n";
+    const sets =
+      "---\nl9_schema: 1\ntags: [one]\nlayer: [docs]\n---\n<!-- L9_META\nl9_schema: 1\ntags: [two]\nlayer: [ci]\n/L9_META -->\n";
     const result = parse("s.md", sets);
-    expect(result.diagnostics.map((d) => d.code)).not.toContain("native_metadata.competing_declarations");
+    expect(result.diagnostics.map((d) => d.code)).not.toContain(
+      "native_metadata.competing_declarations",
+    );
     expect(result.declarations.map((d) => d.conflicts)).toEqual([[], []]);
   });
 
   test("a single-valued field listing two values in one declaration competes", () => {
-    const result = parse("v.md", "<!-- L9_META\nl9_schema: 1\nstatus: [active, deprecated]\n/L9_META -->\n");
-    expect(result.diagnostics.map((d) => d.code)).toContain("native_metadata.competing_declarations");
+    const result = parse(
+      "v.md",
+      "<!-- L9_META\nl9_schema: 1\nstatus: [active, deprecated]\n/L9_META -->\n",
+    );
+    expect(result.diagnostics.map((d) => d.code)).toContain(
+      "native_metadata.competing_declarations",
+    );
     expect(result.declarations.map((d) => d.conflicts)).toEqual([["status"]]);
   });
 
   test("the same key under two declared schemas is two predicates, not a conflict", () => {
-    const schemas = "---\nl9_schema: 1\nowner: platform\n---\n<!-- L9_META\nl9_schema: 2\nowner: engine-team\n/L9_META -->\n";
+    const schemas =
+      "---\nl9_schema: 1\nowner: platform\n---\n<!-- L9_META\nl9_schema: 2\nowner: engine-team\n/L9_META -->\n";
     const result = parse("n.md", schemas);
-    expect(result.diagnostics.map((d) => d.code)).not.toContain("native_metadata.competing_declarations");
+    expect(result.diagnostics.map((d) => d.code)).not.toContain(
+      "native_metadata.competing_declarations",
+    );
     const predicates = extract("n.md", schemas).drafts.map((d) => d.predicate);
-    expect(predicates).toEqual(expect.arrayContaining(["meta.l9v1.governance.owner", "meta.l9v2.governance.owner"]));
+    expect(predicates).toEqual(
+      expect.arrayContaining(["meta.l9v1.governance.owner", "meta.l9v2.governance.owner"]),
+    );
   });
 
   test("agreeing single-valued declarations do not compete", () => {
-    const agree = "---\nl9_schema: 1\nstatus: active\n---\n<!-- L9_META\nl9_schema: 1\nstatus: active\n/L9_META -->\n";
-    expect(parse("a.md", agree).diagnostics.map((d) => d.code)).not.toContain("native_metadata.competing_declarations");
+    const agree =
+      "---\nl9_schema: 1\nstatus: active\n---\n<!-- L9_META\nl9_schema: 1\nstatus: active\n/L9_META -->\n";
+    expect(parse("a.md", agree).diagnostics.map((d) => d.code)).not.toContain(
+      "native_metadata.competing_declarations",
+    );
   });
 
   test("reports a single-line header instead of guessing at it", () => {
@@ -178,24 +249,35 @@ describe("P1.2 header position and line conventions", () => {
     const lf = "# --- L9_META ---\n# l9_schema: 1\n# status: active\n# --- /L9_META ---\n";
     const crlf = `﻿${lf.replace(/\n/g, "\r\n")}`;
     expect(fieldsOf("a.yaml", crlf)).toEqual(fieldsOf("a.yaml", lf));
-    expect(parse("a.yaml", crlf).declarations[0].source_span).toEqual({ start_line: 1, end_line: 4 });
+    expect(parse("a.yaml", crlf).declarations[0].source_span).toEqual({
+      start_line: 1,
+      end_line: 4,
+    });
   });
 
   test("treats a marker outside the header region as body text", () => {
-    const body = "# Doctrine\n\nTemplate:\n\n```\n# --- L9_META ---\n# l9_schema: 1\n# --- /L9_META ---\n```\n";
+    const body =
+      "# Doctrine\n\nTemplate:\n\n```\n# --- L9_META ---\n# l9_schema: 1\n# --- /L9_META ---\n```\n";
     const result = parse("doctrine.md", body);
     expect(result.declarations).toEqual([]);
-    expect(result.diagnostics.map((d) => d.code)).toEqual(["native_metadata.marker_outside_header"]);
+    expect(result.diagnostics.map((d) => d.code)).toEqual([
+      "native_metadata.marker_outside_header",
+    ]);
   });
 
   test("ignores a comment that merely mentions the format", () => {
-    const prose = "\"\"\"Notes.\"\"\"\n\n# The L9_META header format is documented elsewhere.\nVALUE = 1\n";
+    const prose =
+      '"""Notes."""\n\n# The L9_META header format is documented elsewhere.\nVALUE = 1\n';
     expect(parse("notes.py", prose).declarations).toEqual([]);
     expect(extract("notes.py", prose).drafts).toEqual([]);
   });
 
   test("returns nothing for a file with no metadata", () => {
-    expect(parse("plain.py", "import os\nprint(os.name)\n")).toEqual({ declarations: [], diagnostics: [], regions: [] });
+    expect(parse("plain.py", "import os\nprint(os.name)\n")).toEqual({
+      declarations: [],
+      diagnostics: [],
+      regions: [],
+    });
   });
 
   test("is deterministic and never modifies its input", () => {
@@ -213,44 +295,76 @@ describe("P1.2 extractor epistemics", () => {
     const { drafts } = extract("src/transport.py", LEGACY_V1);
     expect(new Set(drafts.map((d) => d.authority))).toEqual(new Set(["source"]));
     const owner = drafts.find((d) => d.predicate === "meta.l9v1.governance.owner");
-    expect(owner).toMatchObject({ object: "platform", evidenceClass: "declared", confidence: "medium" });
+    expect(owner).toMatchObject({
+      object: "platform",
+      evidenceClass: "declared",
+      confidence: "medium",
+    });
   });
 
   test("never turns references, load_when or ssot_for into dependency or authority predicates", () => {
-    const text = "<!-- L9_META\nl9_schema: 1\nssot_for: [scope-a]\nload_when: [review]\nreferences: [docs/a.md]\n/L9_META -->\n";
+    const text =
+      "<!-- L9_META\nl9_schema: 1\nssot_for: [scope-a]\nload_when: [review]\nreferences: [docs/a.md]\n/L9_META -->\n";
     const predicates = extract("k.md", text).drafts.map((d) => d.predicate);
-    expect(predicates).toEqual(expect.arrayContaining([
-      "meta.l9v1.governance.ssot_for", "meta.l9v1.retrieval.load_when", "meta.l9v1.retrieval.references",
-    ]));
-    expect(predicates.some((p) => p === "package.dependency" || p.startsWith("authority.") || p.startsWith("work."))).toBe(false);
+    expect(predicates).toEqual(
+      expect.arrayContaining([
+        "meta.l9v1.governance.ssot_for",
+        "meta.l9v1.retrieval.load_when",
+        "meta.l9v1.retrieval.references",
+      ]),
+    );
+    expect(
+      predicates.some(
+        (p) => p === "package.dependency" || p.startsWith("authority.") || p.startsWith("work."),
+      ),
+    ).toBe(false);
   });
 });
 
 describe("P1.2 rejected headers stay header syntax (PR #127 review)", () => {
-  const DUPLICATE = "# --- L9_META ---\n# l9_schema: 1\n# status: active\n# status: deprecated\n# --- /L9_META ---\n\n# Real title\n";
+  const DUPLICATE =
+    "# --- L9_META ---\n# l9_schema: 1\n# status: active\n# status: deprecated\n# --- /L9_META ---\n\n# Real title\n";
 
   test("reports the span of a rejected block as an unread region", () => {
     const result = parse("doc.md", DUPLICATE);
     expect(result.declarations).toEqual([]);
-    expect(result.regions).toEqual([{ carrier: "legacy-hash", start_line: 1, end_line: 5, read: false }]);
+    expect(result.regions).toEqual([
+      { carrier: "legacy-hash", start_line: 1, end_line: 5, read: false },
+    ]);
   });
 
   test("keeps a rejected Markdown header out of document structure", () => {
     const drafts = documentStructureExtractor.extract({
-      subjectId: "artifact:x", sourcePath: "doc.md", content: DUPLICATE, contentHash: "sha256:0", pathExists: () => false,
+      subjectId: "artifact:x",
+      sourcePath: "doc.md",
+      content: DUPLICATE,
+      contentHash: "sha256:0",
+      pathExists: () => false,
     });
-    expect(drafts.filter((d) => d.predicate === "document.title").map((d) => d.object)).toEqual(["Real title"]);
+    expect(drafts.filter((d) => d.predicate === "document.title").map((d) => d.object)).toEqual([
+      "Real title",
+    ]);
     expect(drafts.some((d) => d.sourceRange.start_line <= 5)).toBe(false);
   });
 });
 
 describe("P1.2 carrier coverage (Phase 2 acceptance finding)", () => {
   test.each([
-    ".github/CODEOWNERS", ".cursorrules", "Dockerfile.prod", "chassis/Dockerfile.chassis",
-    "infra/main.tf", "env.template", ".env.template", ".editorconfig", "packages/a/.gitignore",
+    ".github/CODEOWNERS",
+    ".cursorrules",
+    "Dockerfile.prod",
+    "chassis/Dockerfile.chassis",
+    "infra/main.tf",
+    "env.template",
+    ".env.template",
+    ".editorconfig",
+    "packages/a/.gitignore",
   ])("reads the header carrier in %s", (sourcePath) => {
     expect(nativeMetadataExtractor.matches(sourcePath)).toBe(true);
-    const { drafts } = extract(sourcePath, "# --- L9_META ---\n# l9_schema: 1\n# owner: platform\n# --- /L9_META ---\n");
+    const { drafts } = extract(
+      sourcePath,
+      "# --- L9_META ---\n# l9_schema: 1\n# owner: platform\n# --- /L9_META ---\n",
+    );
     expect(drafts.map((d) => d.predicate)).toContain("meta.l9v1.governance.owner");
   });
 
@@ -266,15 +380,58 @@ describe("P1.2 carrier coverage (Phase 2 acceptance finding)", () => {
   test("every carrier the extractor reads is claimed by a decoder", () => {
     const registry = defaultDecoderRegistry();
     const carriers = [
-      "a.md", "a.markdown", "a.mdx", "a.py", "a.pyi", "a.yaml", "a.yml", "a.toml", "a.sh", "a.bash",
-      "a.zsh", "a.ts", "a.tsx", "a.mts", "a.cts", "a.js", "a.jsx", "a.mjs", "a.cjs", "a.html", "a.htm",
-      "a.xml", "a.css", "a.scss", "a.sql", "a.rb", "a.go", "a.rs", "a.java", "a.ini", "a.cfg", "a.conf",
-      "infra/main.tf", "x.tfvars", "x.hcl", "env.template", ".env.template", "x.env.example",
-      "app.Dockerfile", "Makefile", "GNUmakefile", "Dockerfile", ".github/CODEOWNERS", ".cursorrules",
-      "Dockerfile.prod", "chassis/Dockerfile.chassis", ".editorconfig", ".gitignore",
+      "a.md",
+      "a.markdown",
+      "a.mdx",
+      "a.py",
+      "a.pyi",
+      "a.yaml",
+      "a.yml",
+      "a.toml",
+      "a.sh",
+      "a.bash",
+      "a.zsh",
+      "a.ts",
+      "a.tsx",
+      "a.mts",
+      "a.cts",
+      "a.js",
+      "a.jsx",
+      "a.mjs",
+      "a.cjs",
+      "a.html",
+      "a.htm",
+      "a.xml",
+      "a.css",
+      "a.scss",
+      "a.sql",
+      "a.rb",
+      "a.go",
+      "a.rs",
+      "a.java",
+      "a.ini",
+      "a.cfg",
+      "a.conf",
+      "infra/main.tf",
+      "x.tfvars",
+      "x.hcl",
+      "env.template",
+      ".env.template",
+      "x.env.example",
+      "app.Dockerfile",
+      "Makefile",
+      "GNUmakefile",
+      "Dockerfile",
+      ".github/CODEOWNERS",
+      ".cursorrules",
+      "Dockerfile.prod",
+      "chassis/Dockerfile.chassis",
+      ".editorconfig",
+      ".gitignore",
     ];
     const unclaimed = carriers.filter(
-      (sourcePath) => nativeMetadataExtractor.matches(sourcePath) && registry.forPath(sourcePath) === undefined,
+      (sourcePath) =>
+        nativeMetadataExtractor.matches(sourcePath) && registry.forPath(sourcePath) === undefined,
     );
     expect(unclaimed).toEqual([]);
     expect(carriers.every((sourcePath) => nativeMetadataExtractor.matches(sourcePath))).toBe(true);

@@ -10,7 +10,11 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { acquireLocalSource } from "../src/local_source";
-import { canonicalBlockReason, observeLocalSourceModel, withLocalSourceModel } from "../src/local_source_model";
+import {
+  canonicalBlockReason,
+  observeLocalSourceModel,
+  withLocalSourceModel,
+} from "../src/local_source_model";
 import { writeRawZip } from "./helpers/zip_fixtures";
 
 const seam = vi.hoisted(() => ({
@@ -25,7 +29,9 @@ const seam = vi.hoisted(() => ({
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
   const denied = (syscall: string, target: string): NodeJS.ErrnoException => {
-    const error = new Error(`EACCES: permission denied, ${syscall} '${target}'`) as NodeJS.ErrnoException;
+    const error = new Error(
+      `EACCES: permission denied, ${syscall} '${target}'`,
+    ) as NodeJS.ErrnoException;
     error.code = "EACCES";
     return error;
   };
@@ -87,8 +93,9 @@ describe("unreadable content blocks the canonical local-source packet (RC-046)",
     const reason = blockFor(root);
     expect(reason).not.toBeNull();
     expect(reason).toMatch(/content of 1 file\(s\) could not be read/);
-    expect(() => observeLocalSourceModel({ path: root, producerVersion: PRODUCER_VERSION, interpret: false }))
-      .toThrow(/could not be read/);
+    expect(() =>
+      observeLocalSourceModel({ path: root, producerVersion: PRODUCER_VERSION, interpret: false }),
+    ).toThrow(/could not be read/);
   });
 
   test("REG-WU-035-RC-046-b: a directory that cannot be listed blocks the packet", () => {
@@ -97,8 +104,9 @@ describe("unreadable content blocks the canonical local-source packet (RC-046)",
     seam.lockedDir = "locked";
     const reason = blockFor(root);
     expect(reason).toMatch(/1 director\(ies\) could not be listed/);
-    expect(() => observeLocalSourceModel({ path: root, producerVersion: PRODUCER_VERSION, interpret: false }))
-      .toThrow(/could not be listed/);
+    expect(() =>
+      observeLocalSourceModel({ path: root, producerVersion: PRODUCER_VERSION, interpret: false }),
+    ).toThrow(/could not be listed/);
   });
 
   test("REG-WU-035-RC-046-c: an entry that cannot be inspected blocks the packet", () => {
@@ -107,8 +115,9 @@ describe("unreadable content blocks the canonical local-source packet (RC-046)",
     seam.uninspectable = "secret-ish.md";
     const reason = blockFor(root);
     expect(reason).toMatch(/1 filesystem entr\(ies\) could not be inspected/);
-    expect(() => observeLocalSourceModel({ path: root, producerVersion: PRODUCER_VERSION, interpret: false }))
-      .toThrow(/could not be inspected/);
+    expect(() =>
+      observeLocalSourceModel({ path: root, producerVersion: PRODUCER_VERSION, interpret: false }),
+    ).toThrow(/could not be inspected/);
   });
 
   test("REG-WU-035-RC-046-d: an unreadable single-file source is refused, never given a manifest-digest revision", () => {
@@ -134,17 +143,21 @@ describe("unreadable content blocks the canonical local-source packet (RC-046)",
     const zip = path.join(root, "Bundle.zip");
     writeRawZip(zip, [{ name: "a.md", content: "# A\n" }]);
     seam.lockedFile = "Bundle.zip";
-    expect(() => acquireLocalSource({ path: zip, scratchParent: tmp() })).toThrow(/source bytes could not be read/);
+    expect(() => acquireLocalSource({ path: zip, scratchParent: tmp() })).toThrow(
+      /source bytes could not be read/,
+    );
   });
 
   test("REG-WU-035-RC-046-e: a missing required content hash still blocks with the budget wording", () => {
     const root = tmp();
     fs.writeFileSync(path.join(root, "big.md"), "x".repeat(4096));
-    expect(() => observeLocalSourceModel({
-      path: root,
-      producerVersion: PRODUCER_VERSION,
-      hashMaxBytes: 64,
-    })).toThrow(/required content hash is missing/);
+    expect(() =>
+      observeLocalSourceModel({
+        path: root,
+        producerVersion: PRODUCER_VERSION,
+        hashMaxBytes: 64,
+      }),
+    ).toThrow(/required content hash is missing/);
   });
 
   test("REG-WU-035-RC-046-f: symlinks and FIFOs are not missing hashes; the canonical packet is still produced", () => {

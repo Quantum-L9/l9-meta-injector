@@ -9,10 +9,10 @@ import * as fs from "node:fs";
 import {
   BlockBuilder,
   BlockLocator,
+  buildNormalizedDocument,
   DecodeInput,
   DecodeOutcome,
   DocumentDecoder,
-  buildNormalizedDocument,
   normalizedDocumentId,
 } from "./decoder";
 
@@ -129,7 +129,8 @@ function classifyListItem(line: string): string | null {
     index += 1;
   } else {
     const digits = index;
-    while (index < line.length && (line[index] as string) >= "0" && (line[index] as string) <= "9") index += 1;
+    while (index < line.length && (line[index] as string) >= "0" && (line[index] as string) <= "9")
+      index += 1;
     if (index === digits || (line[index] !== "." && line[index] !== ")")) return null;
     index += 1;
   }
@@ -276,24 +277,85 @@ export const textDecoder: DocumentDecoder = {
   version: TEXT_DECODER_VERSION,
   format: "text",
   extensions: [
-    ".md", ".markdown", ".mdx", ".txt", ".rst", ".adoc", ".org",
-    ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".xml",
-    ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".rb", ".go", ".rs",
-    ".java", ".kt", ".kts", ".c", ".h", ".cc", ".cpp", ".hpp", ".cs", ".swift",
-    ".php", ".pl", ".lua", ".sh", ".bash", ".zsh", ".sql", ".graphql", ".proto",
+    ".md",
+    ".markdown",
+    ".mdx",
+    ".txt",
+    ".rst",
+    ".adoc",
+    ".org",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".ini",
+    ".cfg",
+    ".xml",
+    ".ts",
+    ".tsx",
+    ".js",
+    ".jsx",
+    ".mjs",
+    ".cjs",
+    ".py",
+    ".rb",
+    ".go",
+    ".rs",
+    ".java",
+    ".kt",
+    ".kts",
+    ".c",
+    ".h",
+    ".cc",
+    ".cpp",
+    ".hpp",
+    ".cs",
+    ".swift",
+    ".php",
+    ".pl",
+    ".lua",
+    ".sh",
+    ".bash",
+    ".zsh",
+    ".sql",
+    ".graphql",
+    ".proto",
     // Every format the native-metadata extractor reads a header from is a text
     // format, and must be claimed here: a path an extractor is eligible for and
     // no decoder claims is neither interpreted nor cached by the corpus scan, and
     // surfaces as an `unaccounted` document on every run (PR #127). Claiming a
     // path nobody claimed before changes no existing entry, so the version holds.
-    ".pyi", ".mts", ".cts", ".css", ".scss", ".conf",
-    ".tf", ".tfvars", ".hcl", ".template", ".example", ".dockerfile",
+    ".pyi",
+    ".mts",
+    ".cts",
+    ".css",
+    ".scss",
+    ".conf",
+    ".tf",
+    ".tfvars",
+    ".hcl",
+    ".template",
+    ".example",
+    ".dockerfile",
   ],
   // Build and container manifests carry no extension and are ordinary text.
   filenames: [
-    "dockerfile", "containerfile", "gemfile", "jenkinsfile", "makefile", "procfile",
-    "readme", "license", "changelog", "notice", "authors", "codeowners",
-    "gnumakefile", ".cursorrules", ".editorconfig", ".gitignore",
+    "dockerfile",
+    "containerfile",
+    "gemfile",
+    "jenkinsfile",
+    "makefile",
+    "procfile",
+    "readme",
+    "license",
+    "changelog",
+    "notice",
+    "authors",
+    "codeowners",
+    "gnumakefile",
+    ".cursorrules",
+    ".editorconfig",
+    ".gitignore",
   ],
   // `Dockerfile.prod`, `Dockerfile.chassis`: a Dockerfile named for its variant.
   filenamePrefixes: ["dockerfile."],
@@ -322,7 +384,11 @@ export const textDecoder: DocumentDecoder = {
     return {
       decoded: true,
       document: buildNormalizedDocument({
-        decoder: { id: TEXT_DECODER_ID, version: TEXT_DECODER_VERSION, format: markdown ? "markdown" : "text" },
+        decoder: {
+          id: TEXT_DECODER_ID,
+          version: TEXT_DECODER_VERSION,
+          format: markdown ? "markdown" : "text",
+        },
         decodeInput: input,
         documentId,
         metadata: title !== undefined ? { title: title.text } : {},
@@ -478,11 +544,7 @@ function csvRecords(
  * citable at the place an operator would look for it even though blank lines are
  * skipped and a quoted cell may span several lines.
  */
-function addCsvRowBlocks(
-  builder: BlockBuilder,
-  text: string,
-  delimiter: string,
-): string[][] {
+function addCsvRowBlocks(builder: BlockBuilder, text: string, delimiter: string): string[][] {
   const rows: string[][] = [];
   let header: string[] = [];
   const { records, unterminatedAt } = csvRecords(text, delimiter);
@@ -490,8 +552,9 @@ function addCsvRowBlocks(
     builder.note({
       code: "decoder.malformed",
       severity: "info",
-      message: `a quoted field opened in the record starting on line ${unterminatedAt} is never closed; `
-        + "the rest of the file was read as that record",
+      message:
+        `a quoted field opened in the record starting on line ${unterminatedAt} is never closed; ` +
+        "the rest of the file was read as that record",
     });
   }
   for (const record of records) {

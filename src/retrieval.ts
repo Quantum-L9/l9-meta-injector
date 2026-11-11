@@ -4,20 +4,16 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { ScanEntry, HeaderConvention, BodyStructure } from "./schema";
-import { splitContent } from "./extract";
 import { FRONTMATTER_EXTS, hasCommentCarrierFamily, resolveStrategy } from "./comment";
-import { buildOmitMatcher, OmitMatcher } from "./omit";
+import { DiscoveryLedgerEntry, DiscoverySummary, summarizeDiscovery } from "./discovery_contracts";
 import { probeFileEncoding } from "./encoding";
-import {
-  DiscoveryLedgerEntry,
-  DiscoverySummary,
-  summarizeDiscovery,
-} from "./discovery_contracts";
-import { compareCodePoints } from "./ordering";
+import { splitContent } from "./extract";
 import { compileDiscoveryGlob } from "./glob";
-import { metadataIndexPathProblem } from "./metadata_index";
 import { canTraverseHiddenControl, explicitHiddenControlPattern } from "./hidden_control";
+import { metadataIndexPathProblem } from "./metadata_index";
+import { buildOmitMatcher, OmitMatcher } from "./omit";
+import { compareCodePoints } from "./ordering";
+import { BodyStructure, HeaderConvention, ScanEntry } from "./schema";
 
 /**
  * Injector-generated adjacent artifacts must never be rediscovered as inputs. That
@@ -25,7 +21,11 @@ import { canTraverseHiddenControl, explicitHiddenControlPattern } from "./hidden
  * beside the file inside the scanned tree (RC-016).
  */
 function isGeneratedArtifact(name: string): boolean {
-  return name.endsWith(".inject.log") || name.endsWith(".l9meta.yaml") || name.endsWith(".normalize.log.yaml");
+  return (
+    name.endsWith(".inject.log") ||
+    name.endsWith(".l9meta.yaml") ||
+    name.endsWith(".normalize.log.yaml")
+  );
 }
 
 function toPosix(value: string): string {
@@ -59,11 +59,23 @@ function probeTextFile(filePath: string): ProbeResult {
   const probe = probeFileEncoding(filePath);
   switch (probe.status) {
     case "utf8":
-      return { status: "text", reason: "valid UTF-8 over every byte", ...(probe.sizeBytes !== undefined ? { sizeBytes: probe.sizeBytes } : {}) };
+      return {
+        status: "text",
+        reason: "valid UTF-8 over every byte",
+        ...(probe.sizeBytes !== undefined ? { sizeBytes: probe.sizeBytes } : {}),
+      };
     case "binary":
-      return { status: "binary", reason: probe.reason, ...(probe.sizeBytes !== undefined ? { sizeBytes: probe.sizeBytes } : {}) };
+      return {
+        status: "binary",
+        reason: probe.reason,
+        ...(probe.sizeBytes !== undefined ? { sizeBytes: probe.sizeBytes } : {}),
+      };
     case "invalid":
-      return { status: "unsupported_encoding", reason: probe.reason, ...(probe.sizeBytes !== undefined ? { sizeBytes: probe.sizeBytes } : {}) };
+      return {
+        status: "unsupported_encoding",
+        reason: probe.reason,
+        ...(probe.sizeBytes !== undefined ? { sizeBytes: probe.sizeBytes } : {}),
+      };
     default:
       return { status: "unreadable", reason: probe.reason };
   }
@@ -93,7 +105,13 @@ function record(
   reason: string,
   sizeBytes?: number,
 ): void {
-  ledger.push({ path: pathName, kind, disposition, reason, ...(sizeBytes === undefined ? {} : { sizeBytes }) });
+  ledger.push({
+    path: pathName,
+    kind,
+    disposition,
+    reason,
+    ...(sizeBytes === undefined ? {} : { sizeBytes }),
+  });
 }
 
 /**
@@ -105,7 +123,13 @@ function record(
  * index cannot represent (DEC-RC-013 B). Every other caller — public `findFiles`, a
  * non-governed `runPipelineAsync` — compiles no index and keeps that file eligible.
  */
-export function discoverFiles(root: string, glob: string, opts: FindFilesOptions = {}, indexGoverned = false, inlineAllow: readonly string[] = []): DiscoveryResult {
+export function discoverFiles(
+  root: string,
+  glob: string,
+  opts: FindFilesOptions = {},
+  indexGoverned = false,
+  inlineAllow: readonly string[] = [],
+): DiscoveryResult {
   // The scope is validated and compiled before the root is opened: a pattern the dialect
   // cannot express is refused here rather than matching nothing (or everything) later.
   const scope = compileDiscoveryGlob(glob);
@@ -115,18 +139,23 @@ export function discoverFiles(root: string, glob: string, opts: FindFilesOptions
   try {
     rootStat = fs.lstatSync(absRoot);
   } catch (error) {
-    throw new Error(`discovery root cannot be inspected: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `discovery root cannot be inspected: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
-  if (rootStat.isSymbolicLink()) throw new Error(`discovery root must not be a symbolic link: ${absRoot}`);
+  if (rootStat.isSymbolicLink())
+    throw new Error(`discovery root must not be a symbolic link: ${absRoot}`);
   if (!rootStat.isDirectory()) throw new Error(`discovery root must be a directory: ${absRoot}`);
 
-  const omit = opts.omit ?? buildOmitMatcher({
-    root: absRoot,
-    patterns: opts.omitPatterns,
-    omitFile: opts.omitFile,
-    protectSkillMd: opts.protectSkillMd !== false,
-    ignoreDirNames: ["node_modules"],
-  });
+  const omit =
+    opts.omit ??
+    buildOmitMatcher({
+      root: absRoot,
+      patterns: opts.omitPatterns,
+      omitFile: opts.omitFile,
+      protectSkillMd: opts.protectSkillMd !== false,
+      ignoreDirNames: ["node_modules"],
+    });
 
   const files: string[] = [];
   const ledger: DiscoveryLedgerEntry[] = [];
@@ -137,7 +166,13 @@ export function discoverFiles(root: string, glob: string, opts: FindFilesOptions
       entries = fs.readdirSync(directory, { withFileTypes: true });
     } catch (error) {
       const rel = toPosix(path.relative(absRoot, directory)) || ".";
-      record(ledger, rel, "directory", "unreadable", `directory enumeration failed: ${error instanceof Error ? error.message : String(error)}`);
+      record(
+        ledger,
+        rel,
+        "directory",
+        "unreadable",
+        `directory enumeration failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
       return;
     }
 
@@ -149,20 +184,42 @@ export function discoverFiles(root: string, glob: string, opts: FindFilesOptions
       try {
         stat = fs.lstatSync(full);
       } catch (error) {
-        record(ledger, rel, "other", "unreadable", `lstat failed: ${error instanceof Error ? error.message : String(error)}`);
+        record(
+          ledger,
+          rel,
+          "other",
+          "unreadable",
+          `lstat failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
         continue;
       }
 
       if (stat.isSymbolicLink()) {
         let target = "unknown target";
-        try { target = fs.readlinkSync(full); } catch { /* retained as unknown */ }
-        record(ledger, rel, "symlink", "symlink", `symbolic link is not traversed or mutated: ${target}`);
+        try {
+          target = fs.readlinkSync(full);
+        } catch {
+          /* retained as unknown */
+        }
+        record(
+          ledger,
+          rel,
+          "symlink",
+          "symlink",
+          `symbolic link is not traversed or mutated: ${target}`,
+        );
         continue;
       }
 
       if (stat.isDirectory()) {
         if (isL9InternalPath(rel)) {
-          record(ledger, rel, "directory", "generated_artifact", ".l9 is reserved for authority and generated metadata state");
+          record(
+            ledger,
+            rel,
+            "directory",
+            "generated_artifact",
+            ".l9 is reserved for authority and generated metadata state",
+          );
           continue;
         }
         if (omit.shouldOmit(rel) || omit.shouldOmit(`${rel}/`)) {
@@ -170,28 +227,61 @@ export function discoverFiles(root: string, glob: string, opts: FindFilesOptions
           continue;
         }
         if (isHiddenControlPath(rel) && !canTraverseHiddenControl(rel, controlPatterns)) {
-          record(ledger, rel, "directory", "hidden_control", "hidden control directory is reserved for authority scanning");
+          record(
+            ledger,
+            rel,
+            "directory",
+            "hidden_control",
+            "hidden control directory is reserved for authority scanning",
+          );
           continue;
         }
-        record(ledger, rel, "directory", "traversed_directory", "directory traversed for candidate discovery");
+        record(
+          ledger,
+          rel,
+          "directory",
+          "traversed_directory",
+          "directory traversed for candidate discovery",
+        );
         walk(full);
         continue;
       }
 
       if (!stat.isFile()) {
-        record(ledger, rel, "other", "unsupported_entry", "filesystem entry is not a regular file, directory, or symlink", stat.size);
+        record(
+          ledger,
+          rel,
+          "other",
+          "unsupported_entry",
+          "filesystem entry is not a regular file, directory, or symlink",
+          stat.size,
+        );
         continue;
       }
 
       if (isL9InternalPath(rel)) {
-        record(ledger, rel, "file", "generated_artifact", ".l9 is reserved for authority and generated metadata state", stat.size);
+        record(
+          ledger,
+          rel,
+          "file",
+          "generated_artifact",
+          ".l9 is reserved for authority and generated metadata state",
+          stat.size,
+        );
         continue;
       }
       // Adjacent injector output is identified before omit policy so a generated
       // artifact is never reclassified as merely omitted by a noise pattern
       // (e.g. the built-in `*.log` rule matching `*.inject.log`).
       if (isGeneratedArtifact(entry.name)) {
-        record(ledger, rel, "file", "generated_artifact", "adjacent injector output is not an input", stat.size);
+        record(
+          ledger,
+          rel,
+          "file",
+          "generated_artifact",
+          "adjacent injector output is not an input",
+          stat.size,
+        );
         continue;
       }
       if (omit.shouldOmit(rel)) {
@@ -201,23 +291,51 @@ export function discoverFiles(root: string, glob: string, opts: FindFilesOptions
       // Excluded named controls remain discoverable for a central policy decision;
       // exclusion prevents mutation, not metadata visibility. Unknown dotfiles stay closed.
       if (isHiddenControlPath(rel) && !explicitHiddenControlPattern(rel, controlPatterns)) {
-        record(ledger, rel, "file", "hidden_control", "hidden control file is reserved for authority scanning", stat.size);
+        record(
+          ledger,
+          rel,
+          "file",
+          "hidden_control",
+          "hidden control file is reserved for authority scanning",
+          stat.size,
+        );
         continue;
       }
       if (!scope.matches(rel)) {
         // A `*.ext` tail that fails on the extension keeps the historical disposition so
         // existing reports stay comparable; every other mismatch is a path-scope decision.
         if (scope.extensionFilter && !entry.name.toLowerCase().endsWith(scope.extensionFilter)) {
-          record(ledger, rel, "file", "extension_filtered", `file does not match requested ${scope.extensionFilter} filter`, stat.size);
+          record(
+            ledger,
+            rel,
+            "file",
+            "extension_filtered",
+            `file does not match requested ${scope.extensionFilter} filter`,
+            stat.size,
+          );
         } else {
-          record(ledger, rel, "file", "glob_filtered", `file does not match discovery glob ${scope.pattern}`, stat.size);
+          record(
+            ledger,
+            rel,
+            "file",
+            "glob_filtered",
+            `file does not match discovery glob ${scope.pattern}`,
+            stat.size,
+          );
         }
         continue;
       }
 
       const strategy = resolveStrategy(full, "");
       if (strategy.strategy === "skip-binary") {
-        record(ledger, rel, "file", "known_binary", "file extension resolves to skip-binary", stat.size);
+        record(
+          ledger,
+          rel,
+          "file",
+          "known_binary",
+          "file extension resolves to skip-binary",
+          stat.size,
+        );
         continue;
       }
 
@@ -268,7 +386,9 @@ export function discoverFiles(root: string, glob: string, opts: FindFilesOptions
       if (probe.status === "unreadable") {
         // Surface the access error to stderr rather than silently conflating it
         // with a real binary, so a dropped input is traceable (OBS-008).
-        process.stderr.write(`[l9-meta-injector] retrieval: excluded unreadable file ${full}: ${probe.reason}\n`);
+        process.stderr.write(
+          `[l9-meta-injector] retrieval: excluded unreadable file ${full}: ${probe.reason}\n`,
+        );
         record(ledger, rel, "file", "unreadable", probe.reason);
         continue;
       }

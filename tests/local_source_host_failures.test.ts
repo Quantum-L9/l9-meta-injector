@@ -26,12 +26,14 @@ describe("local source — host failures during archive staging", () => {
     const failing: OmitMatcher = {
       patterns: [],
       shouldOmit: (relativePath: string) => {
-        if (relativePath.includes("!/")) throw new Error("simulated host failure while staging a member");
+        if (relativePath.includes("!/"))
+          throw new Error("simulated host failure while staging a member");
         return false;
       },
     };
-    expect(() => acquireLocalSource({ path: root, scratchParent, omit: failing }))
-      .toThrow(/simulated host failure/);
+    expect(() => acquireLocalSource({ path: root, scratchParent, omit: failing })).toThrow(
+      /simulated host failure/,
+    );
     expect(fs.readdirSync(scratchParent)).toEqual([]);
     expect(treeSnapshot(root)).toEqual(before);
   });

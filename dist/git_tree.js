@@ -71,7 +71,9 @@ function pathComponents(raw) {
         if (end !== raw.length && raw[end] !== 47)
             continue;
         const component = raw.subarray(start, end);
-        if (component.length === 0 || component.equals(Buffer.from(".")) || component.equals(Buffer.from(".."))) {
+        if (component.length === 0 ||
+            component.equals(Buffer.from(".")) ||
+            component.equals(Buffer.from(".."))) {
             throw new Error("Malformed Git repository-relative path");
         }
         components.push(component);
@@ -106,10 +108,16 @@ function parseLeaf(row, format, seen) {
     catch {
         decoded = null;
     }
-    return { raw, entry: Object.freeze({
-            path: decoded, path_bytes_base64: base64,
-            mode, object_type: type, object_oid: matched[3],
-        }) };
+    return {
+        raw,
+        entry: Object.freeze({
+            path: decoded,
+            path_bytes_base64: base64,
+            mode,
+            object_type: type,
+            object_oid: matched[3],
+        }),
+    };
 }
 function parseLeaves(bytes, format) {
     if (bytes.length !== 0 && bytes[bytes.length - 1] !== 0) {
@@ -137,7 +145,9 @@ function parseLeaves(bytes, format) {
  * opened or required locally, and no network, hooks, optional locks or shell run.
  */
 function readTrackedGitSnapshot(input) {
-    if (typeof input.repositoryId !== "string" || !input.repositoryId.trim() || input.repositoryId.includes("\0")) {
+    if (typeof input.repositoryId !== "string" ||
+        !input.repositoryId.trim() ||
+        input.repositoryId.includes("\0")) {
         throw new Error("Git census requires a declared repository identity");
     }
     if (typeof input.revision !== "string" || !input.revision || input.revision.includes("\0")) {
@@ -150,7 +160,10 @@ function readTrackedGitSnapshot(input) {
     const entries = parseLeaves(run(["ls-tree", "-r", "-z", "--full-tree", tree]), format);
     return Object.freeze({
         repository_id: input.repositoryId,
-        revision, tree_oid: tree, object_format: format, entries,
+        revision,
+        tree_oid: tree,
+        object_format: format,
+        entries,
     });
 }
 const INDEX_PATH = Buffer.from(".l9/metadata-index.jsonl");
@@ -268,7 +281,14 @@ function assertTrackedWorktreeCurrent(snapshot, root) {
     }
     const scope = ["--", ":(top,glob)**", ":(top,exclude,literal).l9/metadata-index.jsonl"];
     const common = ["--raw", "-z", "--no-renames", "--no-ext-diff", "--no-textconv"];
-    if (run(["diff-index", "--cached", ...common, "--ignore-submodules=none", snapshot.revision, ...scope]).length !== 0) {
+    if (run([
+        "diff-index",
+        "--cached",
+        ...common,
+        "--ignore-submodules=none",
+        snapshot.revision,
+        ...scope,
+    ]).length !== 0) {
         throw new Error("Tracked source has staged changes");
     }
     for (const row of nulRows(run(["ls-files", "-v", "--full-name", "-z"]))) {
