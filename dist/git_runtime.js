@@ -160,7 +160,9 @@ function gitControlKind(file) {
 }
 function rejectGitControlIncludes(cwd) {
     const dotGit = gitControlEntry(path.join(cwd, ".git"));
-    if (!dotGit && (gitControlKind(path.join(cwd, "HEAD")) !== "file" || gitControlKind(path.join(cwd, "objects")) !== "directory"))
+    if (!dotGit &&
+        (gitControlKind(path.join(cwd, "HEAD")) !== "file" ||
+            gitControlKind(path.join(cwd, "objects")) !== "directory"))
         return;
     let gitDir = cwd;
     if (dotGit?.kind === "directory")
@@ -173,9 +175,14 @@ function rejectGitControlIncludes(cwd) {
     }
     const common = gitControlEntry(path.join(gitDir, "commondir"));
     const commonDir = common?.kind === "file" ? path.resolve(gitDir, common.text.trim()) : gitDir;
-    for (const file of new Set([path.join(commonDir, "config"), path.join(gitDir, "config.worktree"), path.join(commonDir, "config.worktree")])) {
+    for (const file of new Set([
+        path.join(commonDir, "config"),
+        path.join(gitDir, "config.worktree"),
+        path.join(commonDir, "config.worktree"),
+    ])) {
         const entry = gitControlEntry(file);
-        if (entry?.kind === "file" && /^[\t \uFEFF]*\[[\t ]*include(?:if)?(?:[\t ."\]]|$)/im.test(entry.text)) {
+        if (entry?.kind === "file" &&
+            /^[\t \uFEFF]*\[[\t ]*include(?:if)?(?:[\t ."\]]|$)/im.test(entry.text)) {
             throw new Error("Git configuration includes are unsupported by content-free observation; use an isolated bare snapshot");
         }
     }
@@ -198,13 +205,21 @@ function readOnlyGitRunner(root, limits = {}) {
     const deadline = Date.now() + timeout;
     let remainingOutput = maxOutput;
     const config = [
-        "--no-optional-locks", "--no-replace-objects", "--no-pager",
-        "-c", "core.hooksPath=" + (process.platform === "win32" ? "NUL" : "/dev/null"),
-        "-c", "core.fsmonitor=false",
-        "-c", "core.untrackedCache=false",
-        "-c", "protocol.allow=never",
-        "-c", "protocol.file.allow=never",
-        "-c", "extensions.partialClone=",
+        "--no-optional-locks",
+        "--no-replace-objects",
+        "--no-pager",
+        "-c",
+        "core.hooksPath=" + (process.platform === "win32" ? "NUL" : "/dev/null"),
+        "-c",
+        "core.fsmonitor=false",
+        "-c",
+        "core.untrackedCache=false",
+        "-c",
+        "protocol.allow=never",
+        "-c",
+        "protocol.file.allow=never",
+        "-c",
+        "extensions.partialClone=",
     ];
     const run = (args, allowAbsent = false) => {
         const remainingTime = deadline - Date.now();
@@ -214,8 +229,11 @@ function readOnlyGitRunner(root, limits = {}) {
             throw new Error("Git observation exceeded its output cap");
         rejectGitControlIncludes(cwd);
         const result = (0, node_child_process_1.spawnSync)(git, [...config, ...args], {
-            cwd, env, shell: false,
-            timeout: remainingTime, maxBuffer: remainingOutput,
+            cwd,
+            env,
+            shell: false,
+            timeout: remainingTime,
+            maxBuffer: remainingOutput,
             windowsHide: true,
         });
         if (result.error) {

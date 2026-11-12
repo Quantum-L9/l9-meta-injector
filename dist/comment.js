@@ -67,54 +67,141 @@ const BLOCK_END = "l9:meta:end";
 exports.PROSE_EXTS = new Set([".md", ".markdown", ".mdx", ".txt", ".text", ".rst"]);
 exports.FRONTMATTER_EXTS = new Set([".md", ".markdown"]);
 const LINE_COMMENT = {
-    ".ts": "//", ".tsx": "//", ".js": "//", ".jsx": "//", ".mjs": "//", ".cjs": "//",
-    ".java": "//", ".c": "//", ".h": "//", ".cpp": "//", ".hpp": "//", ".cc": "//", ".hh": "//",
-    ".cs": "//", ".go": "//", ".rs": "//", ".swift": "//", ".kt": "//", ".kts": "//",
-    ".scala": "//", ".php": "//", ".dart": "//", ".groovy": "//", ".proto": "//",
-    ".sol": "//", ".zig": "//", ".v": "//", ".d": "//",
-    ".py": "#", ".rb": "#", ".sh": "#", ".bash": "#", ".zsh": "#", ".fish": "#",
-    ".pl": "#", ".pm": "#", ".r": "#", ".jl": "#", ".yaml": "#", ".yml": "#",
-    ".toml": "#", ".ini": "#", ".cfg": "#", ".conf": "#", ".properties": "#",
-    ".tf": "#", ".tfvars": "#", ".env": "#", ".mk": "#", ".ps1": "#", ".psm1": "#",
-    ".nim": "#", ".ex": "#", ".exs": "#", ".gd": "#", ".coffee": "#", ".dockerfile": "#",
+    ".ts": "//",
+    ".tsx": "//",
+    ".js": "//",
+    ".jsx": "//",
+    ".mjs": "//",
+    ".cjs": "//",
+    ".java": "//",
+    ".c": "//",
+    ".h": "//",
+    ".cpp": "//",
+    ".hpp": "//",
+    ".cc": "//",
+    ".hh": "//",
+    ".cs": "//",
+    ".go": "//",
+    ".rs": "//",
+    ".swift": "//",
+    ".kt": "//",
+    ".kts": "//",
+    ".scala": "//",
+    ".php": "//",
+    ".dart": "//",
+    ".groovy": "//",
+    ".proto": "//",
+    ".sol": "//",
+    ".zig": "//",
+    ".v": "//",
+    ".d": "//",
+    ".py": "#",
+    ".rb": "#",
+    ".sh": "#",
+    ".bash": "#",
+    ".zsh": "#",
+    ".fish": "#",
+    ".pl": "#",
+    ".pm": "#",
+    ".r": "#",
+    ".jl": "#",
+    ".yaml": "#",
+    ".yml": "#",
+    ".toml": "#",
+    ".ini": "#",
+    ".cfg": "#",
+    ".conf": "#",
+    ".properties": "#",
+    ".tf": "#",
+    ".tfvars": "#",
+    ".env": "#",
+    ".mk": "#",
+    ".ps1": "#",
+    ".psm1": "#",
+    ".nim": "#",
+    ".ex": "#",
+    ".exs": "#",
+    ".gd": "#",
+    ".coffee": "#",
+    ".dockerfile": "#",
     // CodeQL: .ql is QL source ('//' comments); .qls is a query suite (YAML).
-    ".ql": "//", ".qls": "#",
+    ".ql": "//",
+    ".qls": "#",
     // Sass indented syntax: '/*' comments are indentation-scoped, '//' lines are silent.
     ".sass": "//",
-    ".sql": "--", ".lua": "--", ".hs": "--", ".elm": "--", ".adb": "--", ".ads": "--",
-    ".lisp": ";", ".clj": ";", ".cljs": ";", ".cljc": ";", ".el": ";", ".scm": ";",
+    ".sql": "--",
+    ".lua": "--",
+    ".hs": "--",
+    ".elm": "--",
+    ".adb": "--",
+    ".ads": "--",
+    ".lisp": ";",
+    ".clj": ";",
+    ".cljs": ";",
+    ".cljc": ";",
+    ".el": ";",
+    ".scm": ";",
     // .s (assembler dialects) and .m (MATLAB / Objective-C) need verified dialects;
     // their filenames alone cannot authorize an inert comment carrier.
     ".asm": ";",
-    ".tex": "%", ".erl": "%",
+    ".tex": "%",
+    ".erl": "%",
 };
 // Files with no extension (or dotfiles whose whole name is the "extension").
 const BASENAME_LINE_COMMENT = {
-    "dockerfile": "#", "makefile": "#", "gnumakefile": "#", "rakefile": "#",
-    "gemfile": "#", "vagrantfile": "#", "brewfile": "#", "procfile": "#",
-    ".gitignore": "#", ".npmignore": "#", ".dockerignore": "#", ".gitattributes": "#",
-    ".env": "#", ".bashrc": "#", ".zshrc": "#", ".profile": "#", ".editorconfig": "#",
-    "codeowners": "#",
-    ".env.example": "#", ".l9metaignore": "#",
+    dockerfile: "#",
+    makefile: "#",
+    gnumakefile: "#",
+    rakefile: "#",
+    gemfile: "#",
+    vagrantfile: "#",
+    brewfile: "#",
+    procfile: "#",
+    ".gitignore": "#",
+    ".npmignore": "#",
+    ".dockerignore": "#",
+    ".gitattributes": "#",
+    ".env": "#",
+    ".bashrc": "#",
+    ".zshrc": "#",
+    ".profile": "#",
+    ".editorconfig": "#",
+    codeowners: "#",
+    ".env.example": "#",
+    ".l9metaignore": "#",
 };
 const BLOCK_COMMENT = {
-    ".html": { open: "<!--", close: "-->" }, ".htm": { open: "<!--", close: "-->" },
-    ".xml": { open: "<!--", close: "-->" }, ".xhtml": { open: "<!--", close: "-->" },
-    ".svg": { open: "<!--", close: "-->" }, ".vue": { open: "<!--", close: "-->" },
-    ".xsl": { open: "<!--", close: "-->" }, ".xslt": { open: "<!--", close: "-->" },
-    ".css": { open: "/*", close: "*/" }, ".scss": { open: "/*", close: "*/" },
+    ".html": { open: "<!--", close: "-->" },
+    ".htm": { open: "<!--", close: "-->" },
+    ".xml": { open: "<!--", close: "-->" },
+    ".xhtml": { open: "<!--", close: "-->" },
+    ".svg": { open: "<!--", close: "-->" },
+    ".vue": { open: "<!--", close: "-->" },
+    ".xsl": { open: "<!--", close: "-->" },
+    ".xslt": { open: "<!--", close: "-->" },
+    ".css": { open: "/*", close: "*/" },
+    ".scss": { open: "/*", close: "*/" },
     ".less": { open: "/*", close: "*/" },
 };
 // Mandatory prologues per extension / extension-less basename (ADR-057).
 const PROLOGUE_BY_EXT = {
-    ".xml": "xml-declaration", ".svg": "xml-declaration", ".xsl": "xml-declaration",
-    ".xslt": "xml-declaration", ".xhtml": "xml-declaration",
+    ".xml": "xml-declaration",
+    ".svg": "xml-declaration",
+    ".xsl": "xml-declaration",
+    ".xslt": "xml-declaration",
+    ".xhtml": "xml-declaration",
     ".php": "php-open-tag",
-    ".py": "encoding-cookie", ".pyw": "encoding-cookie", ".rb": "encoding-cookie",
-    ".css": "css-charset", ".scss": "css-charset", ".less": "css-charset",
+    ".py": "encoding-cookie",
+    ".pyw": "encoding-cookie",
+    ".rb": "encoding-cookie",
+    ".css": "css-charset",
+    ".scss": "css-charset",
+    ".less": "css-charset",
     ".dockerfile": "dockerfile-directives",
 };
-const PROLOGUE_BY_BASENAME = { "dockerfile": "dockerfile-directives" };
+const PROLOGUE_BY_BASENAME = {
+    dockerfile: "dockerfile-directives",
+};
 // Delimiters written before ADR-057 corrected the table; recognised for one repair.
 const LEGACY_CARRIER_BY_EXT = {
     ".ql": { strategy: "line-comment", linePrefix: "#" },
@@ -124,14 +211,48 @@ const LEGACY_CARRIER_BY_EXT = {
 const SIDECAR_EXTS = new Set([".json", ".jsonc", ".json5", ".geojson", ".csv", ".tsv", ".lock"]);
 // Known binary / media extensions → skip (never inspected as text).
 const BINARY_EXTS = new Set([
-    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".tif", ".tiff",
-    ".pdf", ".mp3", ".mp4", ".wav", ".flac", ".ogg", ".mov", ".avi", ".mkv", ".webm",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
+    ".bmp",
+    ".ico",
+    ".tif",
+    ".tiff",
+    ".pdf",
+    ".mp3",
+    ".mp4",
+    ".wav",
+    ".flac",
+    ".ogg",
+    ".mov",
+    ".avi",
+    ".mkv",
+    ".webm",
     // Every archive extension the package recognizes, expandable or not (one owner).
     ...archive_formats_1.ARCHIVE_EXTENSIONS,
-    ".woff", ".woff2", ".ttf", ".eot", ".otf",
-    ".exe", ".dll", ".so", ".dylib", ".class", ".o", ".a", ".lib", ".wasm", ".bin", ".dat",
+    ".woff",
+    ".woff2",
+    ".ttf",
+    ".eot",
+    ".otf",
+    ".exe",
+    ".dll",
+    ".so",
+    ".dylib",
+    ".class",
+    ".o",
+    ".a",
+    ".lib",
+    ".wasm",
+    ".bin",
+    ".dat",
     // Bytecode / ephemeral noise — skip entirely (no sidecar, no inventory inject).
-    ".pyc", ".pyo", ".pyd", ".log",
+    ".pyc",
+    ".pyo",
+    ".pyd",
+    ".log",
 ]);
 /** Heuristic: a NUL byte in the first 8 KB means the file is not UTF-8 text. */
 function isProbablyBinary(raw) {
@@ -178,7 +299,11 @@ function hasCommentCarrierFamily(filePath, strategy) {
         return false;
     const line = LINE_COMMENT[ext] !== undefined || BASENAME_LINE_COMMENT[base] !== undefined;
     const block = BLOCK_COMMENT[ext] !== undefined;
-    return strategy === "line-comment" ? line : strategy === "block-comment" ? block : strategy === undefined && (line || block);
+    return strategy === "line-comment"
+        ? line
+        : strategy === "block-comment"
+            ? block
+            : strategy === undefined && (line || block);
 }
 function sidecarPathFor(filePath) {
     return filePath + ".l9meta.yaml";
@@ -261,7 +386,11 @@ function carrierPosition(text, spec) {
     let pos = start;
     let lastTerminated = true;
     let consumed = 0;
-    const take = (line) => { pos = line.next; lastTerminated = line.terminated; consumed++; };
+    const take = (line) => {
+        pos = line.next;
+        lastTerminated = line.terminated;
+        consumed++;
+    };
     if (text.startsWith("#!", pos))
         take(lineAt(text, pos));
     switch (spec?.prologue) {
@@ -361,7 +490,12 @@ function blockAt(text, pos, spec) {
     while (cursor < text.length) {
         const line = lineAt(text, cursor);
         if (line.content.trimEnd() === close) {
-            return { start: pos, blockEnd: cursor + line.content.length, end: line.next, delimiters: spec };
+            return {
+                start: pos,
+                blockEnd: cursor + line.content.length,
+                end: line.next,
+                delimiters: spec,
+            };
         }
         // Every line of a line-comment block is a comment; anything else is body.
         if (spec.strategy === "line-comment" && !line.content.trimStart().startsWith(spec.linePrefix))
@@ -393,8 +527,8 @@ function findHeadBlock(text, spec) {
             // Insertion supplied the prologue's missing terminator and wrote no newline
             // after the block: remove that terminator again so strip(inject(x)) === x.
             if (span.end === text.length && span.end === span.blockEnd && offset > bomLength) {
-                const crlf = text.slice(offset - 2, offset) === "\r\n"
-                    && detectNewlineConvention(text.slice(0, offset - 2)) === "\r\n";
+                const crlf = text.slice(offset - 2, offset) === "\r\n" &&
+                    detectNewlineConvention(text.slice(0, offset - 2)) === "\r\n";
                 removeFrom = offset - (crlf ? 2 : 1);
             }
             return { ...span, removeFrom };
@@ -433,7 +567,10 @@ function extractInjectedYaml(raw, spec) {
     const inner = raw.slice(head.start, head.blockEnd).split(/\r?\n/).slice(1, -1);
     if (head.delimiters.strategy === "line-comment") {
         const p = head.delimiters.linePrefix;
-        return inner.map((l) => l.replace(new RegExp(String.raw `^\s*${esc(p)} ?`), "")).join("\n").trim();
+        return inner
+            .map((l) => l.replace(new RegExp(String.raw `^\s*${esc(p)} ?`), ""))
+            .join("\n")
+            .trim();
     }
     return inner.join("\n").trim();
 }

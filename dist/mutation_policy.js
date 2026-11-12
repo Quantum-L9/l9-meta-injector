@@ -16,11 +16,11 @@ exports.resolveTrackedCarrierDecision = resolveTrackedCarrierDecision;
 exports.assertTrackedPathSpelling = assertTrackedPathSpelling;
 exports.trackedIndexPathProblem = trackedIndexPathProblem;
 exports.resolveTrackedCarrierDecisions = resolveTrackedCarrierDecisions;
-const ordering_1 = require("./ordering");
-const glob_1 = require("./glob");
-const namespace_1 = require("./namespace");
 const comment_1 = require("./comment");
+const glob_1 = require("./glob");
 const hidden_control_1 = require("./hidden_control");
+const namespace_1 = require("./namespace");
+const ordering_1 = require("./ordering");
 exports.CARRIER_PRECEDENCE = [
     "hard_skip",
     "inventory_only",
@@ -35,12 +35,7 @@ exports.INLINE_MANAGED_ARTIFACT_TYPES = new Set([
     "context",
     "doctrine",
 ]);
-const HARD_SKIP_PREFIXES = [
-    ".git/",
-    ".l9/",
-    "node_modules/",
-    "__pycache__/",
-];
+const HARD_SKIP_PREFIXES = [".git/", ".l9/", "node_modules/", "__pycache__/"];
 const INVENTORY_ONLY_PREFIXES = [
     "dist/",
     "build/",
@@ -75,11 +70,7 @@ const CENTRAL_MANIFEST_PREFIXES = [
     "kubernetes/",
     "helm/",
 ];
-const GENERATED_SUFFIXES = [
-    ".l9meta.yaml",
-    ".inject.log",
-    ".normalize.log.yaml",
-];
+const GENERATED_SUFFIXES = [".l9meta.yaml", ".inject.log", ".normalize.log.yaml"];
 const INVENTORY_ONLY_BASENAMES = new Set([
     "package-lock.json",
     "npm-shrinkwrap.json",
@@ -119,22 +110,68 @@ const CENTRAL_MANIFEST_BASENAMES = new Set([
     "codeowners",
 ]);
 const CENTRAL_MANIFEST_EXTENSIONS = new Set([
-    ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
-    ".py", ".rb", ".php", ".java", ".kt", ".kts", ".scala",
-    ".go", ".rs", ".c", ".h", ".cc", ".cpp", ".hpp", ".cs",
-    ".swift", ".dart", ".lua", ".r", ".jl", ".pl", ".pm",
-    ".sh", ".bash", ".zsh", ".fish", ".ps1",
-    ".json", ".jsonc", ".json5", ".geojson", ".csv", ".tsv",
-    ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", ".properties",
-    ".xml", ".html", ".htm", ".css", ".scss", ".sass", ".less",
-    ".sql", ".proto", ".graphql", ".gql",
-    ".tf", ".tfvars", ".hcl",
+    ".ts",
+    ".tsx",
+    ".js",
+    ".jsx",
+    ".mjs",
+    ".cjs",
+    ".py",
+    ".rb",
+    ".php",
+    ".java",
+    ".kt",
+    ".kts",
+    ".scala",
+    ".go",
+    ".rs",
+    ".c",
+    ".h",
+    ".cc",
+    ".cpp",
+    ".hpp",
+    ".cs",
+    ".swift",
+    ".dart",
+    ".lua",
+    ".r",
+    ".jl",
+    ".pl",
+    ".pm",
+    ".sh",
+    ".bash",
+    ".zsh",
+    ".fish",
+    ".ps1",
+    ".json",
+    ".jsonc",
+    ".json5",
+    ".geojson",
+    ".csv",
+    ".tsv",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".ini",
+    ".cfg",
+    ".conf",
+    ".properties",
+    ".xml",
+    ".html",
+    ".htm",
+    ".css",
+    ".scss",
+    ".sass",
+    ".less",
+    ".sql",
+    ".proto",
+    ".graphql",
+    ".gql",
+    ".tf",
+    ".tfvars",
+    ".hcl",
 ]);
-const CENTRAL_MANIFEST_ARTIFACT_TYPES = new Set([
-    "source",
-    "test",
-    "script",
-]);
+const CENTRAL_MANIFEST_ARTIFACT_TYPES = new Set(["source", "test", "script"]);
 function normalizeRelativePath(value) {
     if (value.includes("\u0000"))
         throw new Error("carrier path contains NUL");
@@ -208,7 +245,10 @@ function inventoryOnlyDecision(relativePath, lowerPath, basename) {
     if (INVENTORY_ONLY_BASENAMES.has(basename) || basename.endsWith(".lock")) {
         return decision(relativePath, "inventory_only", "dependency lock state is inventoried but never annotated", basename);
     }
-    if (basename.endsWith(".min.js") || basename.endsWith(".min.css") || basename.endsWith(".map") || basename.includes(".generated.")) {
+    if (basename.endsWith(".min.js") ||
+        basename.endsWith(".min.css") ||
+        basename.endsWith(".map") ||
+        basename.includes(".generated.")) {
         return decision(relativePath, "inventory_only", "generated distribution artifact", "generated-distribution-suffix");
     }
     return null;
@@ -225,7 +265,9 @@ function centralManifestDecision(relativePath, lowerPath, basename, extension, s
     if (CENTRAL_MANIFEST_BASENAMES.has(basename) || CENTRAL_MANIFEST_EXTENSIONS.has(extension)) {
         return decision(relativePath, "central_manifest", "structured, executable, or configuration format", basename || extension);
     }
-    if (subject.strategy === "line-comment" || subject.strategy === "block-comment" || subject.strategy === "sidecar") {
+    if (subject.strategy === "line-comment" ||
+        subject.strategy === "block-comment" ||
+        subject.strategy === "sidecar") {
         return decision(relativePath, "central_manifest", "non-prose formats use the central manifest by default", `strategy:${subject.strategy}`);
     }
     return null;
@@ -233,9 +275,11 @@ function centralManifestDecision(relativePath, lowerPath, basename, extension, s
 /** Final tier: inline_allow eligibility, else the repository default carrier. */
 function inlineOrDefaultDecision(relativePath, basename, subject, authority, mode) {
     const inlinePattern = matchesInlineAllow(relativePath, authority.inline_allow);
-    const commentEligible = (subject.strategy === "line-comment" || subject.strategy === "block-comment")
-        && (0, comment_1.hasCommentCarrierFamily)(relativePath, subject.strategy);
-    const inlineEligible = commentEligible || (subject.strategy === "yaml-frontmatter" && exports.INLINE_MANAGED_ARTIFACT_TYPES.has(subject.artifactType));
+    const commentEligible = (subject.strategy === "line-comment" || subject.strategy === "block-comment") &&
+        (0, comment_1.hasCommentCarrierFamily)(relativePath, subject.strategy);
+    const inlineEligible = commentEligible ||
+        (subject.strategy === "yaml-frontmatter" &&
+            exports.INLINE_MANAGED_ARTIFACT_TYPES.has(subject.artifactType));
     // A file whose existing frontmatter cannot be rewritten byte-safely is never an inline
     // carrier, no matter how eligible it otherwise is. Its bytes are preserved and its
     // metadata is carried centrally. The reason travels with the decision so an operator
@@ -272,9 +316,13 @@ function authorityFreeCarrierTier(input) {
     const relativePath = normalizeRelativePath(input.path);
     const lowerPath = relativePath.toLowerCase();
     const basename = posixBasename(lowerPath);
-    const subject = { path: relativePath, artifactType: "source", strategy: input.strategy };
-    return hardSkipDecision(relativePath, lowerPath, subject)
-        ?? inventoryOnlyDecision(relativePath, lowerPath, basename);
+    const subject = {
+        path: relativePath,
+        artifactType: "source",
+        strategy: input.strategy,
+    };
+    return (hardSkipDecision(relativePath, lowerPath, subject) ??
+        inventoryOnlyDecision(relativePath, lowerPath, basename));
 }
 function resolveCarrierDecision(subject, authority, mode) {
     const relativePath = normalizeRelativePath(subject.path);
@@ -282,28 +330,31 @@ function resolveCarrierDecision(subject, authority, mode) {
     const basename = posixBasename(lowerPath);
     const extension = posixExtname(lowerPath);
     // Protected tiers always outrank both repository allow and exclude patterns.
-    const protectedDecision = hardSkipDecision(relativePath, lowerPath, subject)
-        ?? inventoryOnlyDecision(relativePath, lowerPath, basename);
+    const protectedDecision = hardSkipDecision(relativePath, lowerPath, subject) ??
+        inventoryOnlyDecision(relativePath, lowerPath, basename);
     if (protectedDecision)
         return protectedDecision;
     const excluded = matchesInlineAllow(relativePath, authority.inline_exclude ?? []);
     if (excluded)
         return decision(relativePath, "central_manifest", "explicit inline_exclude preserves source bytes", `inline_exclude:${excluded}`);
-    const byteSensitive = lowerPath.split("/").find((segment) => ["fixture", "fixtures", "__fixtures__", "golden_tests", "datasets", "__snapshots__"].includes(segment));
+    const byteSensitive = lowerPath
+        .split("/")
+        .find((segment) => ["fixture", "fixtures", "__fixtures__", "golden_tests", "datasets", "__snapshots__"].includes(segment));
     if (byteSensitive)
         return decision(relativePath, "central_manifest", "byte-sensitive fixture, golden, or dataset payload is never an inline carrier", `byte-sensitive:${byteSensitive}`);
     if (basename === "skill.md" && mode !== "skills") {
         return decision(relativePath, "central_manifest", "SKILL.md is protected outside skills mode", "protected-skill-entrypoint");
     }
-    if (relativePath.split("/").some((segment) => segment.startsWith(".")) && !(0, hidden_control_1.explicitHiddenControlPattern)(relativePath, authority.inline_allow)) {
+    if (relativePath.split("/").some((segment) => segment.startsWith(".")) &&
+        !(0, hidden_control_1.explicitHiddenControlPattern)(relativePath, authority.inline_allow)) {
         return decision(relativePath, "central_manifest", "hidden control requires an inline_allow pattern naming a supported control", "hidden-control-not-explicit");
     }
     // Explicit safe authorization precedes the unchanged central defaults, not protection.
     if (matchesInlineAllow(relativePath, authority.inline_allow) || subject.inlineCarrierBlock) {
         return inlineOrDefaultDecision(relativePath, basename, subject, authority, mode);
     }
-    return centralManifestDecision(relativePath, lowerPath, basename, extension, subject)
-        ?? inlineOrDefaultDecision(relativePath, basename, subject, authority, mode);
+    return (centralManifestDecision(relativePath, lowerPath, basename, extension, subject) ??
+        inlineOrDefaultDecision(relativePath, basename, subject, authority, mode));
 }
 function resolveCarrierDecisions(input) {
     const seen = new Set();
@@ -351,8 +402,9 @@ function resolveTrackedCarrierDecision(entry) {
         return result("hard_skip", "protected", "protected_secret");
     if (trackedIndexPathProblem(entry) !== null)
         return result("hard_skip", "unsupported", "unsupported_path");
-    if (!((entry.mode === "100644" || entry.mode === "100755" || entry.mode === "120000") && entry.object_type === "blob")
-        && !(entry.mode === "160000" && entry.object_type === "commit")) {
+    if (!((entry.mode === "100644" || entry.mode === "100755" || entry.mode === "120000") &&
+        entry.object_type === "blob") &&
+        !(entry.mode === "160000" && entry.object_type === "commit")) {
         return result("hard_skip", "unsupported", "unsupported_git_entry");
     }
     if (entry.mode === "120000")
@@ -361,25 +413,46 @@ function resolveTrackedCarrierDecision(entry) {
         return result("inventory_only", "indexed", "gitlink_as_reference");
     const basename = posixBasename(lower ?? "");
     const extension = posixExtname(lower ?? "");
-    if (startsWithAny(lower ?? "", [...INVENTORY_ONLY_PREFIXES, "node_modules/", "__pycache__/"])
-        || INVENTORY_ONLY_BASENAMES.has(basename)
-        || GENERATED_SUFFIXES.some((suffix) => lower?.endsWith(suffix))
-        || /\.(?:min\.(?:js|css)|map)$/.test(basename)
-        || TRACKED_BINARY_NAME_HINTS.has(extension)) {
+    if (startsWithAny(lower ?? "", [...INVENTORY_ONLY_PREFIXES, "node_modules/", "__pycache__/"]) ||
+        INVENTORY_ONLY_BASENAMES.has(basename) ||
+        GENERATED_SUFFIXES.some((suffix) => lower?.endsWith(suffix)) ||
+        /\.(?:min\.(?:js|css)|map)$/.test(basename) ||
+        TRACKED_BINARY_NAME_HINTS.has(extension)) {
         return result("inventory_only", "indexed", "name_hint_inventory");
     }
     return result("central_manifest", "indexed", "index_only");
 }
 const TRACKED_BINARY_NAME_HINTS = new Set([
-    ".zip", ".tar", ".gz", ".bz2", ".xz", ".7z", ".rar", ".png", ".jpg", ".jpeg", ".gif", ".webp",
-    ".pdf", ".mp3", ".mp4", ".woff", ".woff2", ".exe", ".dll", ".so", ".bin", ".wasm",
+    ".zip",
+    ".tar",
+    ".gz",
+    ".bz2",
+    ".xz",
+    ".7z",
+    ".rar",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
+    ".pdf",
+    ".mp3",
+    ".mp4",
+    ".woff",
+    ".woff2",
+    ".exe",
+    ".dll",
+    ".so",
+    ".bin",
+    ".wasm",
 ]);
 function isTrackedSecretPath(lower) {
     const parts = lower.split("/");
-    return parts.some((part) => part === ".ssh" || part === ".gnupg" || part === "secrets" || part === ".secrets")
-        || parts.some((part) => (part === ".env" || part.startsWith(".env.")) && !/\.(?:example|sample|template)$/.test(part))
-        || /(?:^|\/)(?:credentials(?:\.[^/]*)?|id_(?:rsa|dsa|ecdsa|ed25519))(?:$|\/)/.test(lower)
-        || /\.(?:pem|key|p12|pfx|keystore)$/.test(lower);
+    return (parts.some((part) => part === ".ssh" || part === ".gnupg" || part === "secrets" || part === ".secrets") ||
+        parts.some((part) => (part === ".env" || part.startsWith(".env.")) &&
+            !/\.(?:example|sample|template)$/.test(part)) ||
+        /(?:^|\/)(?:credentials(?:\.[^/]*)?|id_(?:rsa|dsa|ecdsa|ed25519))(?:$|\/)/.test(lower) ||
+        /\.(?:pem|key|p12|pfx|keystore)$/.test(lower));
 }
 /** Spelling/evidence disagreements are corruption, not justified representation exceptions. */
 function assertTrackedPathSpelling(entry) {
@@ -399,8 +472,12 @@ function trackedIndexPathProblem(entry) {
     const value = entry.path;
     if (value === null)
         return "invalid_utf8";
-    if (!value || value.includes("\\") || /[\u0000-\u001f\u007f]/u.test(value) || value.startsWith("/")
-        || /^[A-Za-z]:/.test(value) || [...value].length > 4096)
+    if (!value ||
+        value.includes("\\") ||
+        /[\u0000-\u001f\u007f]/u.test(value) ||
+        value.startsWith("/") ||
+        /^[A-Za-z]:/.test(value) ||
+        [...value].length > 4096)
         return "unsafe_portable_path";
     if (value.split("/").some((segment) => !segment || segment === "." || segment === ".."))
         return "noncanonical_path";
@@ -408,11 +485,13 @@ function trackedIndexPathProblem(entry) {
 }
 function resolveTrackedCarrierDecisions(entries) {
     const seen = new Set();
-    return entries.map((entry) => {
+    return entries
+        .map((entry) => {
         if (seen.has(entry.path_bytes_base64))
             throw new Error("duplicate tracked census path");
         seen.add(entry.path_bytes_base64);
         return resolveTrackedCarrierDecision(entry);
-    }).sort(namespace_1.compareTrackedPaths);
+    })
+        .sort(namespace_1.compareTrackedPaths);
 }
 //# sourceMappingURL=mutation_policy.js.map

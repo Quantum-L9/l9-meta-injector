@@ -61,13 +61,13 @@ exports.writeLocalSourceCorpus = writeLocalSourceCorpus;
 //     identify them.
 const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
-const interpretation_1 = require("./interpretation");
-const extractors_1 = require("./extractors");
-const local_source_1 = require("./local_source");
-const corpus_roots_1 = require("./corpus_roots");
 const corpus_analysis_1 = require("./corpus_analysis");
-const corpus_semantic_run_1 = require("./corpus_semantic_run");
 const corpus_report_1 = require("./corpus_report");
+const corpus_roots_1 = require("./corpus_roots");
+const corpus_semantic_run_1 = require("./corpus_semantic_run");
+const extractors_1 = require("./extractors");
+const interpretation_1 = require("./interpretation");
+const local_source_1 = require("./local_source");
 const repository_model_1 = require("./repository_model");
 /** Schema of the acquisition manifest written beside a bundle. */
 exports.LOCAL_SOURCE_MANIFEST_SCHEMA = "l9.local-source-manifest/v1";
@@ -108,40 +108,43 @@ function toRepositoryModelLocalSource(observation) {
 /** Reason the observation cannot become a canonical packet, or null when it can. */
 function canonicalBlockReason(observation) {
     if (!observation.stable) {
-        return "SOURCE_CHANGED_DURING_OBSERVATION: the source changed while it was being observed, "
-            + "so no deterministic snapshot exists to emit";
+        return ("SOURCE_CHANGED_DURING_OBSERVATION: the source changed while it was being observed, " +
+            "so no deterministic snapshot exists to emit");
     }
     // A snapshot is canonical only when every byte it claims to describe was read.
     // Folders carry no content hash by construction, and a symlink or a special entry
     // is observed without ever being opened; every other record must have one.
-    const unhashed = observation.inventory.records.filter((record) => record.content_hash === null
-        && record.artifact_type !== "folder"
-        && !record.unknowns.some((unknown) => UNOPENED_ENTRY_UNKNOWNS.has(unknown)));
+    const unhashed = observation.inventory.records.filter((record) => record.content_hash === null &&
+        record.artifact_type !== "folder" &&
+        !record.unknowns.some((unknown) => UNOPENED_ENTRY_UNKNOWNS.has(unknown)));
     const budgeted = unhashed.filter((record) => record.unknowns.some((unknown) => unknown.startsWith("content_hash_skipped:")));
     const reasons = [];
     if (budgeted.length > 0) {
-        reasons.push(`a required content hash is missing for ${budgeted.length} file(s); `
-            + "raise the hash budget rather than emitting a snapshot that cannot identify its bytes");
+        reasons.push(`a required content hash is missing for ${budgeted.length} file(s); ` +
+            "raise the hash budget rather than emitting a snapshot that cannot identify its bytes");
     }
     const unreadable = unhashed.length - budgeted.length;
     if (unreadable > 0) {
-        reasons.push(`the content of ${unreadable} file(s) could not be read, `
-            + "so the snapshot cannot identify every byte it describes");
+        reasons.push(`the content of ${unreadable} file(s) could not be read, ` +
+            "so the snapshot cannot identify every byte it describes");
     }
     const skippedDirs = observation.inventory.skippedDirs.length;
     if (skippedDirs > 0) {
-        reasons.push(`${skippedDirs} director(ies) could not be listed, `
-            + "so their subtrees are absent from the snapshot");
+        reasons.push(`${skippedDirs} director(ies) could not be listed, ` +
+            "so their subtrees are absent from the snapshot");
     }
     const uninspected = observation.diagnostics.filter((d) => d.code === "local-source.entry_unreadable").length;
     if (uninspected > 0) {
-        reasons.push(`${uninspected} filesystem entr(ies) could not be inspected, `
-            + "so they are absent from the snapshot");
+        reasons.push(`${uninspected} filesystem entr(ies) could not be inspected, ` +
+            "so they are absent from the snapshot");
     }
     return reasons.length > 0 ? reasons.join("; ") : null;
 }
 /** Unknowns that mark an entry observed without being opened, so it has no content hash. */
-const UNOPENED_ENTRY_UNKNOWNS = new Set(["symlink_not_traversed", "special_filesystem_entry"]);
+const UNOPENED_ENTRY_UNKNOWNS = new Set([
+    "symlink_not_traversed",
+    "special_filesystem_entry",
+]);
 /**
  * Observe a local source and build its Repository Model Packet.
  *
@@ -223,7 +226,8 @@ function buildLocalSourceCorpus(result, options = {}) {
 /** Run the semantic pass over an index and reduce it to the index's projection. */
 function semanticProjectionFor(result, index) {
     const assertions = [
-        ...(result.interpretation?.assertions ?? result.packet.payload.assertions),
+        ...(result.interpretation?.assertions ??
+            result.packet.payload.assertions),
     ];
     const bySubject = new Map();
     for (const assertion of assertions) {
@@ -373,8 +377,8 @@ function resolveOutsideSource(targetPath, sourceRoot, what) {
     const resolvedTarget = (0, corpus_roots_1.resolveForContainment)(targetPath);
     if ((0, corpus_roots_1.isInsideContainer)((0, corpus_roots_1.containmentBoundary)(sourceRoot), resolvedTarget)) {
         const lexical = path.resolve(targetPath);
-        throw new Error(`local-source: refusing to write ${what} inside the observed source tree: ${resolvedTarget}`
-            + (resolvedTarget === lexical ? "" : ` (reached through ${lexical})`));
+        throw new Error(`local-source: refusing to write ${what} inside the observed source tree: ${resolvedTarget}` +
+            (resolvedTarget === lexical ? "" : ` (reached through ${lexical})`));
     }
     return resolvedTarget;
 }
@@ -405,6 +409,9 @@ function writeLocalSourceCorpus(outputs, targets, sourceRoot) {
     fs.writeFileSync(realIndexPath, outputs.indexJson, "utf8");
     fs.mkdirSync(path.dirname(realReportPath), { recursive: true });
     fs.writeFileSync(realReportPath, outputs.report, "utf8");
-    return { indexPath: path.resolve(targets.indexPath), reportPath: path.resolve(targets.reportPath) };
+    return {
+        indexPath: path.resolve(targets.indexPath),
+        reportPath: path.resolve(targets.reportPath),
+    };
 }
 //# sourceMappingURL=local_source_model.js.map

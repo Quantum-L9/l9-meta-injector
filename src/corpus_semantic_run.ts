@@ -15,20 +15,8 @@
 // pass, embeddings included, cannot change a packet id or a semantic hash,
 // because nothing in this file writes to one.
 import { canonicalCorpusJson } from "./corpus_analysis";
-import { compareCodePoints } from "./ordering";
-import {
-  CONSOLIDATION_CANDIDATE_SCHEMA,
-  PROJECT_CANDIDATE_SCHEMA,
-  SEMANTIC_RELATIONS_SCHEMA,
-  TOPIC_CANDIDATE_SCHEMA,
-  buildConsolidationCandidates,
-  buildProjectCandidates,
-  buildTopicCandidates,
-  classifyPair,
-  fusionProfileHash,
-  FUSION_PROFILE_ID,
-  FUSION_PROFILE_VERSION,
-} from "./corpus_fusion";
+import type { EmbeddingRunReport } from "./corpus_embeddings";
+import { disabledEmbeddingReport } from "./corpus_embeddings";
 import type {
   ConsolidationCandidate,
   FusionOptions,
@@ -37,36 +25,48 @@ import type {
   TopicCandidate,
 } from "./corpus_fusion";
 import {
-  PAIR_SIGNAL_PROFILE_ID,
-  PAIR_SIGNAL_PROFILE_VERSION,
-  buildSemanticPairs,
-  pairSignalProfileHash,
-} from "./corpus_pairs";
+  buildConsolidationCandidates,
+  buildProjectCandidates,
+  buildTopicCandidates,
+  CONSOLIDATION_CANDIDATE_SCHEMA,
+  classifyPair,
+  FUSION_PROFILE_ID,
+  FUSION_PROFILE_VERSION,
+  fusionProfileHash,
+  PROJECT_CANDIDATE_SCHEMA,
+  SEMANTIC_RELATIONS_SCHEMA,
+  TOPIC_CANDIDATE_SCHEMA,
+} from "./corpus_fusion";
 import type { EmbeddingPairScore, PairGenerationDiagnostic, SemanticPair } from "./corpus_pairs";
 import {
-  KEYPHRASE_PROFILE_ID,
-  KEYPHRASE_PROFILE_VERSION,
-  buildFeatureViews,
-  keyphraseProfileHash,
-} from "./corpus_semantics";
-import type { ArtifactFeatureView, SemanticArtifactInput } from "./corpus_semantics";
-import {
-  REASONING_ROUTING_PROFILE_ID,
-  REASONING_ROUTING_PROFILE_VERSION,
-  buildReasoningEvidencePacks,
-  reasoningEligible,
-  reasoningRoutingProfileHash,
-  renderJsonl,
-  routeReasoningCandidates,
-} from "./corpus_reasoning";
+  buildSemanticPairs,
+  PAIR_SIGNAL_PROFILE_ID,
+  PAIR_SIGNAL_PROFILE_VERSION,
+  pairSignalProfileHash,
+} from "./corpus_pairs";
 import type {
   PackAssertion,
   ReasoningCandidate,
   ReasoningEvidencePack,
   ReasoningPackBudget,
 } from "./corpus_reasoning";
-import { disabledEmbeddingReport } from "./corpus_embeddings";
-import type { EmbeddingRunReport } from "./corpus_embeddings";
+import {
+  buildReasoningEvidencePacks,
+  REASONING_ROUTING_PROFILE_ID,
+  REASONING_ROUTING_PROFILE_VERSION,
+  reasoningEligible,
+  reasoningRoutingProfileHash,
+  renderJsonl,
+  routeReasoningCandidates,
+} from "./corpus_reasoning";
+import type { ArtifactFeatureView, SemanticArtifactInput } from "./corpus_semantics";
+import {
+  buildFeatureViews,
+  KEYPHRASE_PROFILE_ID,
+  KEYPHRASE_PROFILE_VERSION,
+  keyphraseProfileHash,
+} from "./corpus_semantics";
+import { compareCodePoints } from "./ordering";
 
 export const SEMANTIC_ANALYSIS_PROFILE_ID = "corpus-semantic-analysis/v1";
 export const SEMANTIC_ANALYSIS_PROFILE_VERSION = "1.0.0";
@@ -110,10 +110,10 @@ export interface SemanticRelationsDocument {
 }
 
 export const RELATION_STATEMENT =
-  "Every relation in this document is a candidate signal about a pair of artifacts. Exact "
-  + "duplication is a fact about bytes. Lexical overlap, declared-identifier matches, explicit "
-  + "references and embedding similarity are evidence, not conclusions: none of them establishes "
-  + "that two artifacts share a topic, a project, an author's intent, or a fate.";
+  "Every relation in this document is a candidate signal about a pair of artifacts. Exact " +
+  "duplication is a fact about bytes. Lexical overlap, declared-identifier matches, explicit " +
+  "references and embedding similarity are evidence, not conclusions: none of them establishes " +
+  "that two artifacts share a topic, a project, an author's intent, or a fate.";
 
 export interface TopicCandidatesDocument {
   schema: string;
@@ -143,19 +143,19 @@ export interface ConsolidationCandidatesDocument {
 }
 
 export const TOPIC_STATEMENT =
-  "A topic candidate means the members show evidence of discussing related subject matter. It "
-  + "does not mean they belong to the same project, that any of them is current, or that any of "
-  + "them should be changed.";
+  "A topic candidate means the members show evidence of discussing related subject matter. It " +
+  "does not mean they belong to the same project, that any of them is current, or that any of " +
+  "them should be changed.";
 
 export const PROJECT_STATEMENT =
-  "A project candidate means there is evidence these artifacts may belong to one body of work. "
-  + "The evidence is named per candidate. No name is synthesized for the body of work, and no "
-  + "member is identified as canonical, current, or superseded except where a source said so.";
+  "A project candidate means there is evidence these artifacts may belong to one body of work. " +
+  "The evidence is named per candidate. No name is synthesized for the body of work, and no " +
+  "member is identified as canonical, current, or superseded except where a source said so.";
 
 export const CONSOLIDATION_STATEMENT =
-  "A consolidation candidate means these artifacts are worth inspecting together. It is not an "
-  + "instruction to merge, delete, move, or keep any of them, and this document deliberately "
-  + "contains no field that could be read as one.";
+  "A consolidation candidate means these artifacts are worth inspecting together. It is not an " +
+  "instruction to merge, delete, move, or keep any of them, and this document deliberately " +
+  "contains no field that could be read as one.";
 
 export interface SemanticAnalysisSummary {
   semantic_pair_count: number;
@@ -179,12 +179,15 @@ export interface SemanticAnalysisResult {
   summary: SemanticAnalysisSummary;
   embeddingReport: EmbeddingRunReport;
   /** Per-artifact candidate ids, for the corpus index. */
-  candidateIdsByArtifact: Map<string, {
-    topic_candidate_ids: string[];
-    project_candidate_ids: string[];
-    consolidation_candidate_ids: string[];
-    reasoning_candidate_ids: string[];
-  }>;
+  candidateIdsByArtifact: Map<
+    string,
+    {
+      topic_candidate_ids: string[];
+      project_candidate_ids: string[];
+      consolidation_candidate_ids: string[];
+      reasoning_candidate_ids: string[];
+    }
+  >;
 }
 
 export interface SemanticAnalysisInput {
@@ -199,7 +202,10 @@ export interface SemanticAnalysisInput {
   fusion?: FusionOptions;
 }
 
-function profileOf(input: SemanticAnalysisInput, embedding: EmbeddingRunReport): SemanticAnalysisProfile {
+function profileOf(
+  input: SemanticAnalysisInput,
+  embedding: EmbeddingRunReport,
+): SemanticAnalysisProfile {
   return {
     semantic_analysis_profile_id: SEMANTIC_ANALYSIS_PROFILE_ID,
     semantic_analysis_profile_version: SEMANTIC_ANALYSIS_PROFILE_VERSION,
@@ -209,8 +215,7 @@ function profileOf(input: SemanticAnalysisInput, embedding: EmbeddingRunReport):
     pair_signal_profile_hash: pairSignalProfileHash(),
     semantic_fusion_profile: `${FUSION_PROFILE_ID}@${FUSION_PROFILE_VERSION}`,
     semantic_fusion_profile_hash: fusionProfileHash(input.fusion ?? {}),
-    reasoning_routing_profile:
-      `${REASONING_ROUTING_PROFILE_ID}@${REASONING_ROUTING_PROFILE_VERSION}`,
+    reasoning_routing_profile: `${REASONING_ROUTING_PROFILE_ID}@${REASONING_ROUTING_PROFILE_VERSION}`,
     reasoning_routing_profile_hash: reasoningRoutingProfileHash(),
     embedding_enabled: embedding.enabled,
     embedding_provider_when_enabled: embedding.provider,
@@ -233,7 +238,9 @@ export function runSemanticAnalysis(input: SemanticAnalysisInput): SemanticAnaly
   const views = buildFeatureViews(input.artifacts);
   const pairResult = buildSemanticPairs({
     views,
-    ...(input.nearDuplicatePairs !== undefined ? { nearDuplicatePairs: input.nearDuplicatePairs } : {}),
+    ...(input.nearDuplicatePairs !== undefined
+      ? { nearDuplicatePairs: input.nearDuplicatePairs }
+      : {}),
     ...(input.embeddingPairs !== undefined ? { embeddingPairs: input.embeddingPairs } : {}),
   });
   const fusionOptions = input.fusion ?? {};
@@ -259,33 +266,42 @@ export function runSemanticAnalysis(input: SemanticAnalysisInput): SemanticAnaly
     ...(input.packBudget !== undefined ? { budget: input.packBudget } : {}),
   });
 
-  const candidateIdsByArtifact = new Map<string, {
-    topic_candidate_ids: string[];
-    project_candidate_ids: string[];
-    consolidation_candidate_ids: string[];
-    reasoning_candidate_ids: string[];
-  }>();
+  const candidateIdsByArtifact = new Map<
+    string,
+    {
+      topic_candidate_ids: string[];
+      project_candidate_ids: string[];
+      consolidation_candidate_ids: string[];
+      reasoning_candidate_ids: string[];
+    }
+  >();
   const slot = (artifactId: string) => {
     const existing = candidateIdsByArtifact.get(artifactId) ?? {
-      topic_candidate_ids: [], project_candidate_ids: [],
-      consolidation_candidate_ids: [], reasoning_candidate_ids: [],
+      topic_candidate_ids: [],
+      project_candidate_ids: [],
+      consolidation_candidate_ids: [],
+      reasoning_candidate_ids: [],
     };
     candidateIdsByArtifact.set(artifactId, existing);
     return existing;
   };
   for (const view of views) slot(view.artifact_id);
   for (const candidate of topics) {
-    for (const id of candidate.member_artifact_ids) slot(id).topic_candidate_ids.push(candidate.candidate_id);
+    for (const id of candidate.member_artifact_ids)
+      slot(id).topic_candidate_ids.push(candidate.candidate_id);
   }
   for (const candidate of projects) {
-    for (const id of candidate.member_artifact_ids) slot(id).project_candidate_ids.push(candidate.candidate_id);
+    for (const id of candidate.member_artifact_ids)
+      slot(id).project_candidate_ids.push(candidate.candidate_id);
   }
   for (const candidate of consolidations) {
-    for (const id of candidate.member_artifact_ids) slot(id).consolidation_candidate_ids.push(candidate.candidate_id);
+    for (const id of candidate.member_artifact_ids)
+      slot(id).consolidation_candidate_ids.push(candidate.candidate_id);
   }
   for (const row of reasoningCandidates) {
     if (row.reasoning_type === "NONE") continue;
-    for (const id of row.member_artifact_ids) slot(id).reasoning_candidate_ids.push(row.reasoning_candidate_id);
+    for (const id of row.member_artifact_ids)
+      slot(id).reasoning_candidate_ids.push(row.reasoning_candidate_id);
   }
   for (const entry of candidateIdsByArtifact.values()) {
     entry.topic_candidate_ids.sort(compareCodePoints);
@@ -294,8 +310,11 @@ export function runSemanticAnalysis(input: SemanticAnalysisInput): SemanticAnaly
     entry.reasoning_candidate_ids.sort(compareCodePoints);
   }
 
-  const header = { corpus_source_snapshot_id: input.corpusSourceSnapshotId,
-    corpus_analysis_id: input.corpusAnalysisId, analysis_profile: profile };
+  const header = {
+    corpus_source_snapshot_id: input.corpusSourceSnapshotId,
+    corpus_analysis_id: input.corpusAnalysisId,
+    analysis_profile: profile,
+  };
 
   return {
     profile,
@@ -310,16 +329,22 @@ export function runSemanticAnalysis(input: SemanticAnalysisInput): SemanticAnaly
       relation_statement: RELATION_STATEMENT,
     },
     topics: {
-      schema: TOPIC_CANDIDATE_SCHEMA, ...header,
-      candidates: topics, candidate_statement: TOPIC_STATEMENT,
+      schema: TOPIC_CANDIDATE_SCHEMA,
+      ...header,
+      candidates: topics,
+      candidate_statement: TOPIC_STATEMENT,
     },
     projects: {
-      schema: PROJECT_CANDIDATE_SCHEMA, ...header,
-      candidates: projects, candidate_statement: PROJECT_STATEMENT,
+      schema: PROJECT_CANDIDATE_SCHEMA,
+      ...header,
+      candidates: projects,
+      candidate_statement: PROJECT_STATEMENT,
     },
     consolidations: {
-      schema: CONSOLIDATION_CANDIDATE_SCHEMA, ...header,
-      candidates: consolidations, candidate_statement: CONSOLIDATION_STATEMENT,
+      schema: CONSOLIDATION_CANDIDATE_SCHEMA,
+      ...header,
+      candidates: consolidations,
+      candidate_statement: CONSOLIDATION_STATEMENT,
     },
     reasoningCandidates,
     evidencePacks,

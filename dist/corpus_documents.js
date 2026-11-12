@@ -107,9 +107,7 @@ function entryFor(artifact, decoderId, decoderVersion) {
         structured_locator_type: locatorKinds.length === 1 ? locatorKinds[0] : null,
         structured_locator_types: locatorKinds,
         decoded,
-        undecoded_reason: decoded
-            ? null
-            : (normalized?.reason ?? exports.UNDECODED_REASON_NOT_ELIGIBLE),
+        undecoded_reason: decoded ? null : (normalized?.reason ?? exports.UNDECODED_REASON_NOT_ELIGIBLE),
         byte_length: normalized?.byte_length ?? artifact.sizeBytes ?? null,
         token_count: decoded ? (normalized?.token_count ?? 0) : null,
         normalized_content_hash: decoded ? (normalized?.normalized_content_hash ?? null) : null,
@@ -186,8 +184,8 @@ function summarizeDocuments(documents) {
 function buildDocumentIndex(input) {
     const documents = input.artifacts
         .map((artifact) => entryFor(artifact, input.decoderId, input.decoderVersion))
-        .sort((a, b) => (0, ordering_1.compareCodePoints)(a.corpus_path, b.corpus_path)
-        || (0, ordering_1.compareCodePoints)(a.artifact_id, b.artifact_id));
+        .sort((a, b) => (0, ordering_1.compareCodePoints)(a.corpus_path, b.corpus_path) ||
+        (0, ordering_1.compareCodePoints)(a.artifact_id, b.artifact_id));
     return {
         schema: exports.DOCUMENT_INDEX_SCHEMA,
         corpus_source_snapshot_id: input.corpusSourceSnapshotId,

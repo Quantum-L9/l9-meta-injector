@@ -205,9 +205,9 @@ class HttpJsonEmbeddingProvider {
             throw new EmbeddingProviderError(`http-json endpoint must be http:// or https://, got '${url.protocol}'`);
         }
         if (options.locality === "local" && !isLoopbackEndpoint(endpoint)) {
-            throw new EmbeddingProviderError(`--embedding-locality local requires a loopback endpoint; '${url.host}' is not one. `
-                + "A local provider that posts document text to another host is a remote provider, "
-                + "and this one is declared remote or not used");
+            throw new EmbeddingProviderError(`--embedding-locality local requires a loopback endpoint; '${url.host}' is not one. ` +
+                "A local provider that posts document text to another host is a remote provider, " +
+                "and this one is declared remote or not used");
         }
         if (options.locality === "remote" && url.protocol !== "https:") {
             throw new EmbeddingProviderError(`a remote http-json provider must use https://, got '${url.protocol}'`);
@@ -279,7 +279,9 @@ class HttpJsonEmbeddingProvider {
             let excerpt = "";
             try {
                 excerpt = (await readCapped(response, 2048, signal, timeoutMessage))
-                    .slice(0, 200).replace(/\s+/g, " ").trim();
+                    .slice(0, 200)
+                    .replace(/\s+/g, " ")
+                    .trim();
             }
             catch {
                 excerpt = "";

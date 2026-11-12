@@ -15,7 +15,12 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MetricsCollector = void 0;
 exports.decisionPathLabel = decisionPathLabel;
-const ZERO_PATHS = () => ({ llm_ok: 0, llm_failed_fallback: 0, no_adapter: 0, heuristic: 0 });
+const ZERO_PATHS = () => ({
+    llm_ok: 0,
+    llm_failed_fallback: 0,
+    no_adapter: 0,
+    heuristic: 0,
+});
 class MetricsCollector {
     constructor() {
         this.latencies = [];
@@ -33,8 +38,12 @@ class MetricsCollector {
                 this.latencies.push(d.durationMs);
         };
     }
-    recordDecision(path) { this.paths[path]++; }
-    recordInject() { this.injectedFiles++; }
+    recordDecision(path) {
+        this.paths[path]++;
+    }
+    recordInject() {
+        this.injectedFiles++;
+    }
     percentile(p) {
         if (this.latencies.length === 0)
             return null;
@@ -57,9 +66,9 @@ class MetricsCollector {
         const s = this.snapshot();
         const p = s.decisionPaths;
         const lat = s.llmLatencyP50Ms === null ? "n/a" : `p50=${s.llmLatencyP50Ms}ms p95=${s.llmLatencyP95Ms}ms`;
-        return `llm-calls=${s.llmCalls} llm-failures=${s.llmFailures} ${lat} ` +
+        return (`llm-calls=${s.llmCalls} llm-failures=${s.llmFailures} ${lat} ` +
             `paths={llm_ok:${p.llm_ok},llm_failed_fallback:${p.llm_failed_fallback},` +
-            `no_adapter:${p.no_adapter},heuristic:${p.heuristic}} injected=${s.injectedFiles}`;
+            `no_adapter:${p.no_adapter},heuristic:${p.heuristic}} injected=${s.injectedFiles}`);
     }
 }
 exports.MetricsCollector = MetricsCollector;
@@ -67,10 +76,14 @@ exports.MetricsCollector = MetricsCollector;
 // audit log itself carries the correlated signal (OBS-009).
 function decisionPathLabel(p) {
     switch (p) {
-        case "llm_ok": return "LLM boolean judgment (llm_ok)";
-        case "llm_failed_fallback": return "content-size heuristic (llm_failed_fallback)";
-        case "no_adapter": return "content-size heuristic (no_adapter)";
-        case "heuristic": return "content-size heuristic";
+        case "llm_ok":
+            return "LLM boolean judgment (llm_ok)";
+        case "llm_failed_fallback":
+            return "content-size heuristic (llm_failed_fallback)";
+        case "no_adapter":
+            return "content-size heuristic (no_adapter)";
+        case "heuristic":
+            return "content-size heuristic";
     }
 }
 //# sourceMappingURL=metrics.js.map

@@ -41,22 +41,24 @@ exports.findFiles = findFiles;
 exports.scanFiles = scanFiles;
 const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
-const extract_1 = require("./extract");
 const comment_1 = require("./comment");
-const omit_1 = require("./omit");
-const encoding_1 = require("./encoding");
 const discovery_contracts_1 = require("./discovery_contracts");
-const ordering_1 = require("./ordering");
+const encoding_1 = require("./encoding");
+const extract_1 = require("./extract");
 const glob_1 = require("./glob");
-const metadata_index_1 = require("./metadata_index");
 const hidden_control_1 = require("./hidden_control");
+const metadata_index_1 = require("./metadata_index");
+const omit_1 = require("./omit");
+const ordering_1 = require("./ordering");
 /**
  * Injector-generated adjacent artifacts must never be rediscovered as inputs. That
  * includes the `--normalize-filenames` sidecar, which normalizeFilenameWithLog writes
  * beside the file inside the scanned tree (RC-016).
  */
 function isGeneratedArtifact(name) {
-    return name.endsWith(".inject.log") || name.endsWith(".l9meta.yaml") || name.endsWith(".normalize.log.yaml");
+    return (name.endsWith(".inject.log") ||
+        name.endsWith(".l9meta.yaml") ||
+        name.endsWith(".normalize.log.yaml"));
 }
 function toPosix(value) {
     return value.split(path.sep).join("/");
@@ -80,17 +82,35 @@ function probeTextFile(filePath) {
     const probe = (0, encoding_1.probeFileEncoding)(filePath);
     switch (probe.status) {
         case "utf8":
-            return { status: "text", reason: "valid UTF-8 over every byte", ...(probe.sizeBytes !== undefined ? { sizeBytes: probe.sizeBytes } : {}) };
+            return {
+                status: "text",
+                reason: "valid UTF-8 over every byte",
+                ...(probe.sizeBytes !== undefined ? { sizeBytes: probe.sizeBytes } : {}),
+            };
         case "binary":
-            return { status: "binary", reason: probe.reason, ...(probe.sizeBytes !== undefined ? { sizeBytes: probe.sizeBytes } : {}) };
+            return {
+                status: "binary",
+                reason: probe.reason,
+                ...(probe.sizeBytes !== undefined ? { sizeBytes: probe.sizeBytes } : {}),
+            };
         case "invalid":
-            return { status: "unsupported_encoding", reason: probe.reason, ...(probe.sizeBytes !== undefined ? { sizeBytes: probe.sizeBytes } : {}) };
+            return {
+                status: "unsupported_encoding",
+                reason: probe.reason,
+                ...(probe.sizeBytes !== undefined ? { sizeBytes: probe.sizeBytes } : {}),
+            };
         default:
             return { status: "unreadable", reason: probe.reason };
     }
 }
 function record(ledger, pathName, kind, disposition, reason, sizeBytes) {
-    ledger.push({ path: pathName, kind, disposition, reason, ...(sizeBytes === undefined ? {} : { sizeBytes }) });
+    ledger.push({
+        path: pathName,
+        kind,
+        disposition,
+        reason,
+        ...(sizeBytes === undefined ? {} : { sizeBytes }),
+    });
 }
 /**
  * Deterministic discovery with one terminal disposition per entry.
@@ -118,13 +138,14 @@ function discoverFiles(root, glob, opts = {}, indexGoverned = false, inlineAllow
         throw new Error(`discovery root must not be a symbolic link: ${absRoot}`);
     if (!rootStat.isDirectory())
         throw new Error(`discovery root must be a directory: ${absRoot}`);
-    const omit = opts.omit ?? (0, omit_1.buildOmitMatcher)({
-        root: absRoot,
-        patterns: opts.omitPatterns,
-        omitFile: opts.omitFile,
-        protectSkillMd: opts.protectSkillMd !== false,
-        ignoreDirNames: ["node_modules"],
-    });
+    const omit = opts.omit ??
+        (0, omit_1.buildOmitMatcher)({
+            root: absRoot,
+            patterns: opts.omitPatterns,
+            omitFile: opts.omitFile,
+            protectSkillMd: opts.protectSkillMd !== false,
+            ignoreDirNames: ["node_modules"],
+        });
     const files = [];
     const ledger = [];
     const walk = (directory) => {
@@ -154,7 +175,9 @@ function discoverFiles(root, glob, opts = {}, indexGoverned = false, inlineAllow
                 try {
                     target = fs.readlinkSync(full);
                 }
-                catch { /* retained as unknown */ }
+                catch {
+                    /* retained as unknown */
+                }
                 record(ledger, rel, "symlink", "symlink", `symbolic link is not traversed or mutated: ${target}`);
                 continue;
             }

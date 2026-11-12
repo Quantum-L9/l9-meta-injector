@@ -140,10 +140,10 @@ exports.notebookDecoder = {
             if (builder.isFull)
                 break;
         }
-        const hasOutputs = cells.some((cell) => cell !== null
-            && typeof cell === "object"
-            && Array.isArray(cell.outputs)
-            && cell.outputs.length > 0);
+        const hasOutputs = cells.some((cell) => cell !== null &&
+            typeof cell === "object" &&
+            Array.isArray(cell.outputs) &&
+            cell.outputs.length > 0);
         if (hasOutputs) {
             builder.note({
                 code: "decoder.unsupported_feature",

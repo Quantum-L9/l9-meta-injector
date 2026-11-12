@@ -51,8 +51,8 @@ const durable_write_1 = require("./durable_write");
 const local_archive_policy_1 = require("./local_archive_policy");
 const tar_reader_1 = require("./tar_reader");
 const tar_writer_1 = require("./tar_writer");
-const zip_writer_1 = require("./zip_writer");
 const zip_reader_1 = require("./zip_reader");
+const zip_writer_1 = require("./zip_writer");
 const INFLATION_BUDGET_HOLD = "archive.inflation_budget_exceeded";
 /**
  * zlib's own output ceiling for a budget. zlib stops inflating once the output
@@ -148,7 +148,7 @@ function admitTarNames(names) {
         const holds = (0, archive_preflight_1.pathSafetyHolds)(name, local_archive_policy_1.DEFAULT_LOCAL_ARCHIVE_POLICY);
         if (holds.length)
             return holds[0].code;
-        if ((0, tar_reader_1.rootMetaKind)(name) === null && (name.includes("/") && name.split("/").includes(".."))) {
+        if ((0, tar_reader_1.rootMetaKind)(name) === null && name.includes("/") && name.split("/").includes("..")) {
             return "archive.path_traversal";
         }
     }

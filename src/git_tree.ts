@@ -1,7 +1,11 @@
 // Exact Git leaf-tree observation. No filesystem candidates, policy, or blob reads.
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { ReadTrackedGitSnapshotInput, TrackedGitEntry, TrackedGitSnapshot } from "./discovery_contracts";
+import type {
+  ReadTrackedGitSnapshotInput,
+  TrackedGitEntry,
+  TrackedGitSnapshot,
+} from "./discovery_contracts";
 import { readOnlyGitRunner, strictGitUtf8 } from "./git_runtime";
 
 function oidPattern(format: TrackedGitSnapshot["object_format"]): RegExp {
@@ -16,7 +20,9 @@ function scalar(bytes: Buffer): string {
   return strictGitUtf8(bytes.subarray(0, -1));
 }
 
-function objectFormat(run: (args: readonly string[]) => Buffer): TrackedGitSnapshot["object_format"] {
+function objectFormat(
+  run: (args: readonly string[]) => Buffer,
+): TrackedGitSnapshot["object_format"] {
   const format = scalar(run(["rev-parse", "--show-object-format=storage"]));
   if (format !== "sha1" && format !== "sha256") throw new Error("Unsupported Git object format");
   return format;
@@ -35,7 +41,11 @@ function pathComponents(raw: Buffer): Buffer[] {
   for (let end = 0; end <= raw.length; end += 1) {
     if (end !== raw.length && raw[end] !== 47) continue;
     const component = raw.subarray(start, end);
-    if (component.length === 0 || component.equals(Buffer.from(".")) || component.equals(Buffer.from(".."))) {
+    if (
+      component.length === 0 ||
+      component.equals(Buffer.from(".")) ||
+      component.equals(Buffer.from(".."))
+    ) {
       throw new Error("Malformed Git repository-relative path");
     }
     components.push(component);
@@ -53,11 +63,15 @@ function parseLeaf(
   if (tab <= 0) throw new Error("Malformed Git tree row");
   const header = row.subarray(0, tab);
   if (header.some((byte) => byte > 127)) throw new Error("Non-ASCII Git tree header");
-  const matched = /^(100644|100755|120000|160000) (blob|commit) ([0-9a-f]+)$/.exec(header.toString("ascii"));
-  if (!matched || !oidPattern(format).test(matched[3])) throw new Error("Malformed Git leaf mode/type/object identity");
+  const matched = /^(100644|100755|120000|160000) (blob|commit) ([0-9a-f]+)$/.exec(
+    header.toString("ascii"),
+  );
+  if (!matched || !oidPattern(format).test(matched[3]))
+    throw new Error("Malformed Git leaf mode/type/object identity");
   const mode = matched[1] as TrackedGitEntry["mode"];
   const type = matched[2] as TrackedGitEntry["object_type"];
-  if ((mode === "160000") !== (type === "commit")) throw new Error("Invalid Git leaf mode/type combination");
+  if ((mode === "160000") !== (type === "commit"))
+    throw new Error("Invalid Git leaf mode/type combination");
   const raw = row.subarray(tab + 1);
   pathComponents(raw);
   const base64 = raw.toString("base64");
@@ -69,13 +83,22 @@ function parseLeaf(
   } catch {
     decoded = null;
   }
-  return { raw, entry: Object.freeze({
-    path: decoded, path_bytes_base64: base64,
-    mode, object_type: type, object_oid: matched[3],
-  }) };
+  return {
+    raw,
+    entry: Object.freeze({
+      path: decoded,
+      path_bytes_base64: base64,
+      mode,
+      object_type: type,
+      object_oid: matched[3],
+    }),
+  };
 }
 
-function parseLeaves(bytes: Buffer, format: TrackedGitSnapshot["object_format"]): readonly TrackedGitEntry[] {
+function parseLeaves(
+  bytes: Buffer,
+  format: TrackedGitSnapshot["object_format"],
+): readonly TrackedGitEntry[] {
   if (bytes.length !== 0 && bytes[bytes.length - 1] !== 0) {
     throw new Error("Truncated Git tree output (missing NUL terminator)");
   }
@@ -101,7 +124,11 @@ function parseLeaves(bytes: Buffer, format: TrackedGitSnapshot["object_format"])
  * opened or required locally, and no network, hooks, optional locks or shell run.
  */
 export function readTrackedGitSnapshot(input: ReadTrackedGitSnapshotInput): TrackedGitSnapshot {
-  if (typeof input.repositoryId !== "string" || !input.repositoryId.trim() || input.repositoryId.includes("\0")) {
+  if (
+    typeof input.repositoryId !== "string" ||
+    !input.repositoryId.trim() ||
+    input.repositoryId.includes("\0")
+  ) {
     throw new Error("Git census requires a declared repository identity");
   }
   if (typeof input.revision !== "string" || !input.revision || input.revision.includes("\0")) {
@@ -109,19 +136,29 @@ export function readTrackedGitSnapshot(input: ReadTrackedGitSnapshotInput): Trac
   }
   const run = readOnlyGitRunner(input.root, input);
   const format = objectFormat(run);
-  const revision = objectOid(run(["rev-parse", "--verify", "--end-of-options", `${input.revision}^{commit}`]), format);
-  const tree = objectOid(run(["rev-parse", "--verify", "--end-of-options", `${revision}^{tree}`]), format);
+  const revision = objectOid(
+    run(["rev-parse", "--verify", "--end-of-options", `${input.revision}^{commit}`]),
+    format,
+  );
+  const tree = objectOid(
+    run(["rev-parse", "--verify", "--end-of-options", `${revision}^{tree}`]),
+    format,
+  );
   const entries = parseLeaves(run(["ls-tree", "-r", "-z", "--full-tree", tree]), format);
   return Object.freeze({
     repository_id: input.repositoryId,
-    revision, tree_oid: tree, object_format: format, entries,
+    revision,
+    tree_oid: tree,
+    object_format: format,
+    entries,
   });
 }
 
 const INDEX_PATH = Buffer.from(".l9/metadata-index.jsonl");
 
 function nulRows(bytes: Buffer): Buffer[] {
-  if (bytes.length !== 0 && bytes[bytes.length - 1] !== 0) throw new Error("Truncated Git index output");
+  if (bytes.length !== 0 && bytes[bytes.length - 1] !== 0)
+    throw new Error("Truncated Git index output");
   const rows: Buffer[] = [];
   let start = 0;
   for (let end = 0; end < bytes.length; end += 1) {
@@ -142,9 +179,14 @@ function trackedPathStat(current: Buffer, missingGitlinkAllowed: boolean): fs.St
   }
 }
 
-function assertTrackedPathMode(stat: fs.Stats, mode: TrackedGitEntry["mode"], isAncestor: boolean): void {
+function assertTrackedPathMode(
+  stat: fs.Stats,
+  mode: TrackedGitEntry["mode"],
+  isAncestor: boolean,
+): void {
   if (isAncestor) {
-    if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error("Tracked source ancestor is not a safe directory");
+    if (!stat.isDirectory() || stat.isSymbolicLink())
+      throw new Error("Tracked source ancestor is not a safe directory");
   } else if (mode === "160000") {
     // Checking a checked-out submodule HEAD would traverse another repository.
     // Fail closed rather than silently ignore a possibly changed gitlink.
@@ -156,7 +198,12 @@ function assertTrackedPathMode(stat: fs.Stats, mode: TrackedGitEntry["mode"], is
   }
 }
 
-function assertTrackedEntryAncestry(entry: TrackedGitEntry, raw: Buffer, root: string, checked: Set<string>): void {
+function assertTrackedEntryAncestry(
+  entry: TrackedGitEntry,
+  raw: Buffer,
+  root: string,
+  checked: Set<string>,
+): void {
   const components = pathComponents(raw);
   if (process.platform === "win32" && (entry.path === null || raw.includes(92))) {
     throw new Error("Tracked path cannot safely be checked on this host");
@@ -179,7 +226,8 @@ function assertTrackedAncestry(snapshot: TrackedGitSnapshot, root: string): void
   const checked = new Set<string>();
   for (const entry of snapshot.entries) {
     const raw = Buffer.from(entry.path_bytes_base64, "base64");
-    if (raw.toString("base64") !== entry.path_bytes_base64) throw new Error("Noncanonical snapshot path identity");
+    if (raw.toString("base64") !== entry.path_bytes_base64)
+      throw new Error("Noncanonical snapshot path identity");
     if (raw.equals(INDEX_PATH)) continue;
     assertTrackedEntryAncestry(entry, raw, root, checked);
   }
@@ -196,42 +244,65 @@ export function assertTrackedGitTopLevel(root: string): void {
   // The census always enumerates the whole commit tree (`ls-tree --full-tree`), so
   // the index base, authority and transaction must sit at the same top level. A
   // subdirectory root would write a nested index that claims root-level records.
-  const topLevel = scalar(readOnlyGitRunner(root)(["rev-parse", "--path-format=absolute", "--show-toplevel"]));
-  if (!path.isAbsolute(topLevel) || topLevel.includes("\0")) throw new Error("Invalid Git worktree root");
+  const topLevel = scalar(
+    readOnlyGitRunner(root)(["rev-parse", "--path-format=absolute", "--show-toplevel"]),
+  );
+  if (!path.isAbsolute(topLevel) || topLevel.includes("\0"))
+    throw new Error("Invalid Git worktree root");
   if (fs.realpathSync(path.resolve(root)) !== fs.realpathSync(topLevel)) {
     throw new Error("Tracked check/apply root must be the Git top-level directory");
   }
 }
 
 export function assertTrackedWorktreeCurrent(snapshot: TrackedGitSnapshot, root: string): void {
-  if (!oidPattern(snapshot.object_format).test(snapshot.revision)) throw new Error("Invalid snapshot revision");
+  if (!oidPattern(snapshot.object_format).test(snapshot.revision))
+    throw new Error("Invalid snapshot revision");
   const probe = readOnlyGitRunner(root);
-  if (objectFormat(probe) !== snapshot.object_format) throw new Error("Snapshot Git object format changed");
-  const head = () => objectOid(probe(["rev-parse", "--verify", "--end-of-options", "HEAD^{commit}"]), snapshot.object_format);
+  if (objectFormat(probe) !== snapshot.object_format)
+    throw new Error("Snapshot Git object format changed");
+  const head = () =>
+    objectOid(
+      probe(["rev-parse", "--verify", "--end-of-options", "HEAD^{commit}"]),
+      snapshot.object_format,
+    );
   if (head() !== snapshot.revision) throw new Error("Tracked snapshot is not current HEAD");
   const worktreeRoot = scalar(probe(["rev-parse", "--path-format=absolute", "--show-toplevel"]));
-  if (!path.isAbsolute(worktreeRoot) || worktreeRoot.includes("\0")) throw new Error("Invalid Git worktree root");
+  if (!path.isAbsolute(worktreeRoot) || worktreeRoot.includes("\0"))
+    throw new Error("Invalid Git worktree root");
   const run = readOnlyGitRunner(worktreeRoot);
   // Git checkout comparison may invoke clean/process drivers even with external
   // diff/textconv disabled. This seam never runs repository-configured programs.
   for (const key of nulRows(run(["config", "--null", "--name-only", "--list"]))) {
     if (/^filter\./i.test(strictGitUtf8(key))) {
-      throw new Error("Configured Git filters require a separately trusted source-currentness proof");
+      throw new Error(
+        "Configured Git filters require a separately trusted source-currentness proof",
+      );
     }
   }
   const scope = ["--", ":(top,glob)**", ":(top,exclude,literal).l9/metadata-index.jsonl"];
   const common = ["--raw", "-z", "--no-renames", "--no-ext-diff", "--no-textconv"];
-  if (run(["diff-index", "--cached", ...common, "--ignore-submodules=none", snapshot.revision, ...scope]).length !== 0) {
+  if (
+    run([
+      "diff-index",
+      "--cached",
+      ...common,
+      "--ignore-submodules=none",
+      snapshot.revision,
+      ...scope,
+    ]).length !== 0
+  ) {
     throw new Error("Tracked source has staged changes");
   }
   for (const row of nulRows(run(["ls-files", "-v", "--full-name", "-z"]))) {
     if (row.length < 3 || row[1] !== 32) throw new Error("Malformed Git index flags");
     if (row.subarray(2).equals(INDEX_PATH)) continue;
-    if (row[0] !== 72) throw new Error("Tracked source index flags prevent a trustworthy currentness check");
+    if (row[0] !== 72)
+      throw new Error("Tracked source index flags prevent a trustworthy currentness check");
   }
   assertTrackedAncestry(snapshot, worktreeRoot);
   if (run(["diff-files", ...common, "--ignore-submodules=all", ...scope]).length !== 0) {
     throw new Error("Tracked source has unstaged changes");
   }
-  if (head() !== snapshot.revision) throw new Error("Tracked HEAD changed during currentness check");
+  if (head() !== snapshot.revision)
+    throw new Error("Tracked HEAD changed during currentness check");
 }

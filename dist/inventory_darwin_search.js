@@ -84,7 +84,7 @@ function isInventoryFinderComment(value) {
 function escapeXml(value) {
     return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
-const XML_ENTITIES = { lt: "<", gt: ">", amp: "&", quot: "\"", apos: "'" };
+const XML_ENTITIES = { lt: "<", gt: ">", amp: "&", quot: '"', apos: "'" };
 /**
  * Decode `<string>` text read back from `plutil -convert xml1`: the predefined
  * XML entities and numeric character references, in one pass so `&amp;lt;`
@@ -101,7 +101,9 @@ function unescapeXml(value) {
     });
 }
 function safeCodePoint(code, fallback) {
-    return Number.isInteger(code) && code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : fallback;
+    return Number.isInteger(code) && code >= 0 && code <= 0x10ffff
+        ? String.fromCodePoint(code)
+        : fallback;
 }
 function stringPlistXml(value) {
     return `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><string>${escapeXml(value)}</string></plist>\n`;
@@ -124,7 +126,10 @@ function toBinaryPlist(xml) {
 }
 function readXattrHex(abs, key) {
     try {
-        const hex = (0, node_child_process_1.execFileSync)("/usr/bin/xattr", ["-px", key, abs], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+        const hex = (0, node_child_process_1.execFileSync)("/usr/bin/xattr", ["-px", key, abs], {
+            encoding: "utf8",
+            stdio: ["ignore", "pipe", "pipe"],
+        }).trim();
         if (!hex)
             return null;
         return Buffer.from(hex.replace(/\s+/g, ""), "hex");

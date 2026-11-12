@@ -53,7 +53,7 @@ function escapeXml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-const XML_ENTITIES: Record<string, string> = { lt: "<", gt: ">", amp: "&", quot: "\"", apos: "'" };
+const XML_ENTITIES: Record<string, string> = { lt: "<", gt: ">", amp: "&", quot: '"', apos: "'" };
 
 /**
  * Decode `<string>` text read back from `plutil -convert xml1`: the predefined
@@ -63,14 +63,17 @@ const XML_ENTITIES: Record<string, string> = { lt: "<", gt: ">", amp: "&", quot:
  */
 function unescapeXml(value: string): string {
   return value.replace(/&(lt|gt|amp|quot|apos|#\d+|#x[0-9a-fA-F]+);/g, (entity, name: string) => {
-    if (name.startsWith("#x") || name.startsWith("#X")) return safeCodePoint(Number.parseInt(name.slice(2), 16), entity);
+    if (name.startsWith("#x") || name.startsWith("#X"))
+      return safeCodePoint(Number.parseInt(name.slice(2), 16), entity);
     if (name.startsWith("#")) return safeCodePoint(Number.parseInt(name.slice(1), 10), entity);
     return XML_ENTITIES[name] ?? entity;
   });
 }
 
 function safeCodePoint(code: number, fallback: string): string {
-  return Number.isInteger(code) && code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : fallback;
+  return Number.isInteger(code) && code >= 0 && code <= 0x10ffff
+    ? String.fromCodePoint(code)
+    : fallback;
 }
 
 function stringPlistXml(value: string): string {
@@ -96,7 +99,10 @@ function toBinaryPlist(xml: string): Buffer {
 
 function readXattrHex(abs: string, key: string): Buffer | null {
   try {
-    const hex = execFileSync("/usr/bin/xattr", ["-px", key, abs], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+    const hex = execFileSync("/usr/bin/xattr", ["-px", key, abs], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
     if (!hex) return null;
     return Buffer.from(hex.replace(/\s+/g, ""), "hex");
   } catch {

@@ -45,14 +45,17 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.TRANSACTION_DIRECTORY = exports.FILE_TRANSACTION_SCHEMA = void 0;
 exports.executeFileTransaction = executeFileTransaction;
 exports.recoverPendingTransactions = recoverPendingTransactions;
+const node_crypto_1 = require("node:crypto");
 const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
-const node_crypto_1 = require("node:crypto");
 const ordering_1 = require("./ordering");
 exports.FILE_TRANSACTION_SCHEMA = "l9.file-transaction/v1";
 exports.TRANSACTION_DIRECTORY = ".l9/.transactions";
 /** Paths no transaction may target: the authority document and the journal root. */
-const PROTECTED_TRANSACTION_PATHS = new Set([".l9/meta-authority.yaml", exports.TRANSACTION_DIRECTORY]);
+const PROTECTED_TRANSACTION_PATHS = new Set([
+    ".l9/meta-authority.yaml",
+    exports.TRANSACTION_DIRECTORY,
+]);
 function hashBytes(bytes) {
     return (0, node_crypto_1.createHash)("sha256").update(bytes).digest("hex");
 }
@@ -62,7 +65,11 @@ function toBuffer(value) {
 function normalizeRelativePath(value) {
     if (!value || value.trim() !== value || value.length > 4096)
         throw new Error(`invalid transaction path: ${value || "<empty>"}`);
-    if (value.includes("\\") || value.includes("\u0000") || value.startsWith("/") || value.startsWith("./") || value.includes("//")) {
+    if (value.includes("\\") ||
+        value.includes("\u0000") ||
+        value.startsWith("/") ||
+        value.startsWith("./") ||
+        value.includes("//")) {
         throw new Error(`transaction path must be canonical repository-relative POSIX: ${value}`);
     }
     const parts = value.split("/");
@@ -73,7 +80,8 @@ function normalizeRelativePath(value) {
     // or its own journal directory, whatever a caller plans (ADR-047).
     if (parts.includes(".git"))
         throw new Error(`transaction path targets Git internal state: ${value}`);
-    if (PROTECTED_TRANSACTION_PATHS.has(normalized) || normalized.startsWith(`${exports.TRANSACTION_DIRECTORY}/`)) {
+    if (PROTECTED_TRANSACTION_PATHS.has(normalized) ||
+        normalized.startsWith(`${exports.TRANSACTION_DIRECTORY}/`)) {
         throw new Error(`transaction path targets protected repository state: ${value}`);
     }
     return normalized;
@@ -88,7 +96,11 @@ function ensureRoot(rootInput) {
 function absoluteTarget(root, relative) {
     const target = path.resolve(root, ...normalizeRelativePath(relative).split("/"));
     const rel = path.relative(root, target);
-    if (!rel || rel === "." || rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
+    if (!rel ||
+        rel === "." ||
+        rel === ".." ||
+        rel.startsWith(`..${path.sep}`) ||
+        path.isAbsolute(rel)) {
         throw new Error(`transaction target escapes or equals repository root: ${relative}`);
     }
     return target;
@@ -195,7 +207,7 @@ function holdsBytes(filePath, expected) {
     if (expected === undefined)
         return false;
     const stat = fs.lstatSync(filePath);
-    return !stat.isSymbolicLink() && stat.isFile() && hashBytes(fs.readFileSync(filePath)) === expected;
+    return (!stat.isSymbolicLink() && stat.isFile() && hashBytes(fs.readFileSync(filePath)) === expected);
 }
 /**
  * Move `source` to `destination` only while `destination` is absent. A hard link
@@ -224,7 +236,9 @@ function cleanupEmptyDirectories(created) {
         try {
             fs.rmdirSync(directory);
         }
-        catch { /* retained because non-empty */ }
+        catch {
+            /* retained because non-empty */
+        }
     }
 }
 function rollbackEntries(entries, journalPath, journal, createdDirectories) {
@@ -232,7 +246,9 @@ function rollbackEntries(entries, journalPath, journal, createdDirectories) {
     try {
         writeJournal(journalPath, journal);
     }
-    catch { /* continue restoring data */ }
+    catch {
+        /* continue restoring data */
+    }
     const failures = [];
     for (const entry of [...entries].reverse()) {
         try {
@@ -259,10 +275,14 @@ function rollbackEntries(entries, journalPath, journal, createdDirectories) {
                 }
             }
             removeIfExists(entry.temp);
-            const transactionOwnedState = entry.state === "backed_up" || entry.state === "committed" || entry.state === "validated" || fs.existsSync(entry.backup);
+            const transactionOwnedState = entry.state === "backed_up" ||
+                entry.state === "committed" ||
+                entry.state === "validated" ||
+                fs.existsSync(entry.backup);
             if (transactionOwnedState) {
                 const restored = readState(entry.target);
-                if (restored.exists !== entry.originalExists || (entry.originalExists && restored.hash !== entry.originalHash)) {
+                if (restored.exists !== entry.originalExists ||
+                    (entry.originalExists && restored.hash !== entry.originalHash)) {
                     throw new Error("restored state does not match journaled original");
                 }
             }
@@ -276,7 +296,9 @@ function rollbackEntries(entries, journalPath, journal, createdDirectories) {
         try {
             writeJournal(journalPath, journal);
         }
-        catch { /* preserve best available evidence */ }
+        catch {
+            /* preserve best available evidence */
+        }
         throw new Error(`TRANSACTION_ROLLBACK_FAILED: ${failures.join("; ")}`);
     }
     removeIfExists(journalPath);
@@ -318,8 +340,14 @@ function prepareEntries(root, intents, id) {
             target,
             temp: path.join(path.dirname(target), `.${basename}.l9txn-${token}.tmp`),
             backup: path.join(path.dirname(target), `.${basename}.l9txn-${token}.bak`),
-            tempPath: normalizeRelativePath(path.relative(root, path.join(path.dirname(target), `.${basename}.l9txn-${token}.tmp`)).split(path.sep).join("/")),
-            backupPath: normalizeRelativePath(path.relative(root, path.join(path.dirname(target), `.${basename}.l9txn-${token}.bak`)).split(path.sep).join("/")),
+            tempPath: normalizeRelativePath(path
+                .relative(root, path.join(path.dirname(target), `.${basename}.l9txn-${token}.tmp`))
+                .split(path.sep)
+                .join("/")),
+            backupPath: normalizeRelativePath(path
+                .relative(root, path.join(path.dirname(target), `.${basename}.l9txn-${token}.bak`))
+                .split(path.sep)
+                .join("/")),
             originalExists: state.exists,
             originalHash: state.hash,
             originalMode: state.mode,
@@ -348,7 +376,9 @@ function stageEntries(ctx, entries, intents, createdDirectories) {
         ensureDirectory(path.dirname(entry.target), createdDirectories);
         if (fs.existsSync(entry.temp) || fs.existsSync(entry.backup))
             throw new Error(`transaction staging collision for ${entry.path}`);
-        const mode = entry.originalMode ?? intents.find((item) => normalizeRelativePath(item.path) === entry.path)?.mode ?? 0o644;
+        const mode = entry.originalMode ??
+            intents.find((item) => normalizeRelativePath(item.path) === entry.path)?.mode ??
+            0o644;
         const fd = fs.openSync(entry.temp, "wx", mode);
         try {
             // `open` applies the process umask to `mode`; the recorded original mode (or the
@@ -365,7 +395,12 @@ function stageEntries(ctx, entries, intents, createdDirectories) {
         entry.state = "staged";
         ctx.journal.entries[index] = journalEntry(entry);
         writeJournal(ctx.journalPath, ctx.journal);
-        ctx.options.faultInjector?.({ stage: "target_staged", transactionId: ctx.id, path: entry.path, index });
+        ctx.options.faultInjector?.({
+            stage: "target_staged",
+            transactionId: ctx.id,
+            path: entry.path,
+            index,
+        });
     }
 }
 /** Back up originals and rename staged temps into place, journaling each commit. */
@@ -385,14 +420,24 @@ function commitEntries(ctx, entries) {
             entry.state = "backed_up";
             ctx.journal.entries[index] = journalEntry(entry);
             writeJournal(ctx.journalPath, ctx.journal);
-            ctx.options.faultInjector?.({ stage: "original_backed_up", transactionId: ctx.id, path: entry.path, index });
+            ctx.options.faultInjector?.({
+                stage: "original_backed_up",
+                transactionId: ctx.id,
+                path: entry.path,
+                index,
+            });
         }
         moveNoReplace(entry.temp, entry.target, entry.path);
         fsyncDirectory(path.dirname(entry.target));
         entry.state = "committed";
         ctx.journal.entries[index] = journalEntry(entry);
         writeJournal(ctx.journalPath, ctx.journal);
-        ctx.options.faultInjector?.({ stage: "target_committed", transactionId: ctx.id, path: entry.path, index });
+        ctx.options.faultInjector?.({
+            stage: "target_committed",
+            transactionId: ctx.id,
+            path: entry.path,
+            index,
+        });
     }
 }
 /** Confirm every committed target exists with the expected content hash. */
@@ -411,7 +456,14 @@ function executeFileTransaction(rootInput, intents, options = {}) {
     const entries = prepareEntries(root, intents, id);
     if (entries.length === 0) {
         options.validate?.();
-        return { transactionId: null, plannedWrites: 0, committedWrites: 0, changedPaths: [], rolledBack: false, journalPath: null };
+        return {
+            transactionId: null,
+            plannedWrites: 0,
+            committedWrites: 0,
+            changedPaths: [],
+            rolledBack: false,
+            journalPath: null,
+        };
     }
     const createdDirectories = [];
     const journalDirectory = path.join(root, ...exports.TRANSACTION_DIRECTORY.split("/"));
@@ -470,7 +522,12 @@ function executeFileTransaction(rootInput, intents, options = {}) {
     const cleanupErrors = [];
     for (const [index, entry] of entries.entries()) {
         try {
-            options.faultInjector?.({ stage: "backup_cleanup", transactionId: id, path: entry.path, index });
+            options.faultInjector?.({
+                stage: "backup_cleanup",
+                transactionId: id,
+                path: entry.path,
+                index,
+            });
             // A backup is deleted only while it still holds the journaled original bytes.
             if (!isPresent(entry.backup) || holdsBytes(entry.backup, entry.originalHash))
                 removeIfExists(entry.backup);
@@ -502,7 +559,15 @@ function executeFileTransaction(rootInput, intents, options = {}) {
         changedPaths: entries.map((entry) => entry.path),
         rolledBack: false,
         journalPath: relativeJournalPath,
-        ...(pending ? { cleanupPending: { journalPath: relativeJournalPath, retainedBackups, errors: cleanupErrors } } : {}),
+        ...(pending
+            ? {
+                cleanupPending: {
+                    journalPath: relativeJournalPath,
+                    retainedBackups,
+                    errors: cleanupErrors,
+                },
+            }
+            : {}),
     };
 }
 /**
@@ -523,15 +588,31 @@ function stagingToken(journaledPath, entryPath, transactionId, suffix) {
     return /^\d{4,}$/.test(token) ? token : null;
 }
 function journalToPrepared(root, journal, journalName) {
-    if (journal.schema !== exports.FILE_TRANSACTION_SCHEMA || !journal.transaction_id || !Array.isArray(journal.entries)) {
+    if (journal.schema !== exports.FILE_TRANSACTION_SCHEMA ||
+        !journal.transaction_id ||
+        !Array.isArray(journal.entries)) {
         throw new Error("invalid transaction journal");
     }
     if (!/^[a-z0-9][a-z0-9-]{7,63}$/.test(journal.transaction_id))
         throw new Error("invalid transaction journal id");
     if (journalName !== `${journal.transaction_id}.json`)
         throw new Error("transaction journal filename/id mismatch");
-    const allowedJournalStates = new Set(["preparing", "staged", "committing", "validating", "complete", "rolling_back", "rollback_failed"]);
-    const allowedEntryStates = new Set(["planned", "staged", "backed_up", "committed", "validated"]);
+    const allowedJournalStates = new Set([
+        "preparing",
+        "staged",
+        "committing",
+        "validating",
+        "complete",
+        "rolling_back",
+        "rollback_failed",
+    ]);
+    const allowedEntryStates = new Set([
+        "planned",
+        "staged",
+        "backed_up",
+        "committed",
+        "validated",
+    ]);
     if (!allowedJournalStates.has(journal.state))
         throw new Error("invalid transaction journal state");
     const tokens = new Set();
@@ -540,7 +621,8 @@ function journalToPrepared(root, journal, journalName) {
             throw new Error(`invalid transaction entry state at ${index}`);
         if (!/^[a-f0-9]{64}$/.test(entry.newHash))
             throw new Error(`invalid transaction new hash at ${index}`);
-        if (entry.originalExists && (!entry.originalHash || !/^[a-f0-9]{64}$/.test(entry.originalHash))) {
+        if (entry.originalExists &&
+            (!entry.originalHash || !/^[a-f0-9]{64}$/.test(entry.originalHash))) {
             throw new Error(`invalid transaction original hash at ${index}`);
         }
         const target = absoluteTarget(root, entry.path);
@@ -567,7 +649,10 @@ function recoverPendingTransactions(rootInput) {
         throw new Error(`transaction journal directory is unsafe: ${directory}`);
     const recovered = [];
     const finalized = [];
-    const journals = fs.readdirSync(directory).filter((name) => name.endsWith(".json")).sort(ordering_1.compareCodePoints);
+    const journals = fs
+        .readdirSync(directory)
+        .filter((name) => name.endsWith(".json"))
+        .sort(ordering_1.compareCodePoints);
     for (const name of journals) {
         const journalPath = path.join(directory, name);
         const parsed = JSON.parse(fs.readFileSync(journalPath, "utf8"));
@@ -604,11 +689,15 @@ function recoverPendingTransactions(rootInput) {
     try {
         fs.rmdirSync(directory);
     }
-    catch { /* keep non-empty directory */ }
+    catch {
+        /* keep non-empty directory */
+    }
     try {
         fs.rmdirSync(path.dirname(directory));
     }
-    catch { /* keep .l9 when used */ }
+    catch {
+        /* keep .l9 when used */
+    }
     return { recovered, finalized };
 }
 //# sourceMappingURL=file_transaction.js.map

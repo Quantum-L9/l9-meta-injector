@@ -49,12 +49,20 @@ function keyLine(line: string, index: number): KeyLine | null {
 }
 
 /** Values of a `needs:` key: scalar, flat inline list, or the block list that follows. */
-function needsValues(lines: string[], at: KeyLine): { values: { name: string; index: number }[]; unsupported?: string } {
+function needsValues(
+  lines: string[],
+  at: KeyLine,
+): { values: { name: string; index: number }[]; unsupported?: string } {
   if (at.value.startsWith("${{")) return { values: [], unsupported: "needs is an expression" };
   if (at.value.startsWith("[")) {
-    if (!at.value.endsWith("]") || /[[\]{}]/.test(at.value.slice(1, -1))) return { values: [], unsupported: "needs is not a flat inline list" };
+    if (!at.value.endsWith("]") || /[[\]{}]/.test(at.value.slice(1, -1)))
+      return { values: [], unsupported: "needs is not a flat inline list" };
     return {
-      values: at.value.slice(1, -1).split(",").map((item) => unquote(item)).filter(Boolean)
+      values: at.value
+        .slice(1, -1)
+        .split(",")
+        .map((item) => unquote(item))
+        .filter(Boolean)
         .map((name) => ({ name, index: at.index })),
     };
   }
@@ -80,7 +88,11 @@ function classifyUses(
   const reference = unquote(value);
   const range = spanRange(index, index);
   if (reference.includes("${{")) {
-    input.report?.({ code: "workflow.uses_expression", severity: "info", message: `line ${index + 1}: uses is an expression and was not classified` });
+    input.report?.({
+      code: "workflow.uses_expression",
+      severity: "info",
+      message: `line ${index + 1}: uses is an expression and was not classified`,
+    });
     return [];
   }
   if (reference.startsWith("docker://")) {
@@ -97,9 +109,20 @@ function classifyUses(
     return [observed("workflow.uses_local_unresolved", reference, range, line)];
   }
   if (REMOTE_USES.test(reference)) {
-    return [observed(jobLevel ? "workflow.uses_reusable_workflow" : "workflow.uses_action", reference, range, line)];
+    return [
+      observed(
+        jobLevel ? "workflow.uses_reusable_workflow" : "workflow.uses_action",
+        reference,
+        range,
+        line,
+      ),
+    ];
   }
-  input.report?.({ code: "workflow.uses_unrecognized", severity: "info", message: `line ${index + 1}: uses reference is not a recognized form` });
+  input.report?.({
+    code: "workflow.uses_unrecognized",
+    severity: "info",
+    message: `line ${index + 1}: uses reference is not a recognized form`,
+  });
   return [];
 }
 
@@ -113,11 +136,19 @@ function workflowAssertions(input: ExtractorFileInput): AssertionDraft[] {
   if (jobsIndex < 0) return drafts;
   const jobsKey = keyLine(lines[jobsIndex], jobsIndex);
   if (jobsKey && jobsKey.value !== "") {
-    input.report?.({ code: "workflow.jobs_unsupported", severity: "warning", message: `line ${jobsIndex + 1}: jobs is not a block mapping and was not read` });
+    input.report?.({
+      code: "workflow.jobs_unsupported",
+      severity: "warning",
+      message: `line ${jobsIndex + 1}: jobs is not a block mapping and was not read`,
+    });
     return drafts;
   }
 
-  interface Job { id: string; index: number; end: number }
+  interface Job {
+    id: string;
+    index: number;
+    end: number;
+  }
   const jobs: Job[] = [];
   let jobIndent = -1;
   let cursor = jobsIndex + 1;
@@ -137,7 +168,9 @@ function workflowAssertions(input: ExtractorFileInput): AssertionDraft[] {
   const jobIds = new Set(jobs.map((job) => job.id));
 
   for (const job of jobs) {
-    drafts.push(observed("workflow.job", job.id, spanRange(job.index, job.index), lines[job.index]));
+    drafts.push(
+      observed("workflow.job", job.id, spanRange(job.index, job.index), lines[job.index]),
+    );
     let fieldIndent = -1;
     let skipDeeperThan = -1;
     for (let index = job.index + 1; index < job.end; index++) {
@@ -156,17 +189,34 @@ function workflowAssertions(input: ExtractorFileInput): AssertionDraft[] {
         continue;
       }
       if (key.value.startsWith("{")) {
-        input.report?.({ code: "workflow.flow_mapping", severity: "info", message: `line ${index + 1}: flow mapping under job '${job.id}' was not read` });
+        input.report?.({
+          code: "workflow.flow_mapping",
+          severity: "info",
+          message: `line ${index + 1}: flow mapping under job '${job.id}' was not read`,
+        });
         continue;
       }
       if (key.key === "needs" && key.indent === fieldIndent && !key.item) {
         const needs = needsValues(lines, key);
         if (needs.unsupported) {
-          input.report?.({ code: "workflow.needs_unsupported", severity: "info", message: `line ${index + 1}: ${needs.unsupported}` });
+          input.report?.({
+            code: "workflow.needs_unsupported",
+            severity: "info",
+            message: `line ${index + 1}: ${needs.unsupported}`,
+          });
         }
         for (const need of needs.values) {
-          const predicate = jobIds.has(need.name) ? "workflow.job_needs" : "workflow.job_needs_unresolved";
-          drafts.push(observed(predicate, `${job.id} -> ${need.name}`, spanRange(need.index, need.index), lines[need.index]));
+          const predicate = jobIds.has(need.name)
+            ? "workflow.job_needs"
+            : "workflow.job_needs_unresolved";
+          drafts.push(
+            observed(
+              predicate,
+              `${job.id} -> ${need.name}`,
+              spanRange(need.index, need.index),
+              lines[need.index],
+            ),
+          );
         }
         continue;
       }

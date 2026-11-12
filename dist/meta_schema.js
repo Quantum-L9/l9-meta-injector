@@ -41,7 +41,9 @@ const SCALAR = (raw) => {
         // Windows paths ("C:\\tmp") or embedded \n/\" round-trip correctly.
         // `\xNN` / `\uXXXX` / `\UXXXXXXXX` are the standard YAML escapes the serializer
         // uses to keep carrier-forbidden sequences out of host comments (ADR-057).
-        return s.slice(1, -1).replace(/\\(?:x([0-9A-Fa-f]{2})|u([0-9A-Fa-f]{4})|U([0-9A-Fa-f]{8})|(["\\/nrt]))/g, (_m, x, u, big, c) => {
+        return s
+            .slice(1, -1)
+            .replace(/\\(?:x([0-9A-Fa-f]{2})|u([0-9A-Fa-f]{4})|U([0-9A-Fa-f]{8})|(["\\/nrt]))/g, (_m, x, u, big, c) => {
             const hex = x ?? u ?? big;
             if (hex === undefined)
                 return unescapeDoubleQuotedChar(c ?? "");
@@ -68,7 +70,12 @@ const SCALAR = (raw) => {
     if (/^-?\d*\.\d+$/.test(s))
         return Number.parseFloat(s);
     if (s.startsWith("[") && s.endsWith("]")) {
-        return s.slice(1, -1).split(",").map((x) => x.trim()).filter((x) => x !== "").map(SCALAR);
+        return s
+            .slice(1, -1)
+            .split(",")
+            .map((x) => x.trim())
+            .filter((x) => x !== "")
+            .map(SCALAR);
     }
     return s;
 };
@@ -143,7 +150,8 @@ const strip = (line) => {
  * list of scalars or a list of maps (2-space indented). Not a general YAML parser.
  */
 function parseCanonicalYaml(text) {
-    const lines = text.split("\n")
+    const lines = text
+        .split("\n")
         .map(strip)
         .filter((l) => l.trim() !== "" && !/^\s*#/.test(l));
     // Object.create(null): parsed keys come from operator-supplied YAML, so a
@@ -254,7 +262,9 @@ function toMetaSchema(obj) {
             required: fd.required === true,
         };
     });
-    const target = Array.isArray(obj.target) ? obj.target.map(String) : ["file_header", "sidecar", "manifest"];
+    const target = Array.isArray(obj.target)
+        ? obj.target.map(String)
+        : ["file_header", "sidecar", "manifest"];
     return {
         schema_id: obj.schema_id,
         version: typeof obj.version === "string" ? obj.version : "0.0.0",

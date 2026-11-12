@@ -1,5 +1,5 @@
-import { MetaV3, NormalizedMeta, ArtifactClassification } from "./schema";
 import { PlacementPlan } from "./placement_policy";
+import { ArtifactClassification, MetaV3, NormalizedMeta } from "./schema";
 export interface BuildMetaV3Input {
     meta: NormalizedMeta;
     /** 17-class semantic classification (DWL-001) — recorded on the emitted record. */

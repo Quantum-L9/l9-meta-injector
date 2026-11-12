@@ -1,9 +1,12 @@
 // tar_writer.ts — inventory-only TAR rewrite: upsert root .l9meta.yaml (ADR-049).
 import * as zlib from "node:zlib";
-import { encodeTarEntry, encodeTarArchive } from "./tar_format";
+import { encodeTarArchive, encodeTarEntry } from "./tar_format";
 import { readTarArchive, rootMetaKind, TarMember } from "./tar_reader";
 
-export function injectTarRootMeta(tarBytes: Buffer, yaml: string): { ok: true; bytes: Buffer } | { ok: false; hold: string } {
+export function injectTarRootMeta(
+  tarBytes: Buffer,
+  yaml: string,
+): { ok: true; bytes: Buffer } | { ok: false; hold: string } {
   const read = readTarArchive(tarBytes);
   if (!read.ok) return read;
   const kept: Buffer[] = [];
@@ -16,7 +19,10 @@ export function injectTarRootMeta(tarBytes: Buffer, yaml: string): { ok: true; b
   return { ok: true, bytes: out };
 }
 
-export function injectGzipTarRootMeta(gzBytes: Buffer, yaml: string): { ok: true; bytes: Buffer } | { ok: false; hold: string } {
+export function injectGzipTarRootMeta(
+  gzBytes: Buffer,
+  yaml: string,
+): { ok: true; bytes: Buffer } | { ok: false; hold: string } {
   let tar: Buffer;
   try {
     tar = zlib.gunzipSync(gzBytes);
@@ -28,7 +34,9 @@ export function injectGzipTarRootMeta(gzBytes: Buffer, yaml: string): { ok: true
   return { ok: true, bytes: zlib.gzipSync(injected.bytes) };
 }
 
-export function buildTarArchive(members: Array<{ name: string; content: string | Buffer }>): Buffer {
+export function buildTarArchive(
+  members: Array<{ name: string; content: string | Buffer }>,
+): Buffer {
   return encodeTarArchive(members.map((m) => ({ name: m.name, content: m.content })));
 }
 

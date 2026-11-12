@@ -22,12 +22,13 @@
 //     pair rejects the whole declaration with a diagnostic rather than a guess;
 //     syntax outside the narrow grammar (nested maps, block scalars, flow maps)
 //     makes that one field unsupported.
-import { inspectFrontMatterDocument } from "./frontmatter_patch";
+
 import { injectedBlockSpan, resolveStrategy } from "./comment";
 import { toLines } from "./extractors/common";
-import { UNKNOWN } from "./schema";
+import { inspectFrontMatterDocument } from "./frontmatter_patch";
 import { compareCodePoints } from "./ordering";
-import { RECOGNIZED_DECLARED_SCHEMAS, headerFieldMapping } from "./semantic_mapping";
+import { UNKNOWN } from "./schema";
+import { headerFieldMapping, RECOGNIZED_DECLARED_SCHEMAS } from "./semantic_mapping";
 
 /** Where a declaration was read from. Stable identifiers: they appear in assertions. */
 export type NativeMetadataCarrier =
@@ -150,11 +151,15 @@ function stripTrailingComment(value: string): string {
       else if (character === quote) quote = null;
       continue;
     }
-    if ((character === '"' || character === "'") && (index === 0 || /[\s[,]/.test(value[index - 1]))) {
+    if (
+      (character === '"' || character === "'") &&
+      (index === 0 || /[\s[,]/.test(value[index - 1]))
+    ) {
       quote = character;
       continue;
     }
-    if (character === "#" && index > 0 && /\s/.test(value[index - 1])) return value.slice(0, index).trimEnd();
+    if (character === "#" && index > 0 && /\s/.test(value[index - 1]))
+      return value.slice(0, index).trimEnd();
   }
   return value.trimEnd();
 }
@@ -189,19 +194,24 @@ type ScalarRead = { ok: true; text: string } | { ok: false; reason: string };
 function readScalar(raw: string): ScalarRead {
   const value = raw.trim();
   if (value.startsWith('"')) {
-    if (value.length < 2 || !value.endsWith('"')) return { ok: false, reason: "unterminated double-quoted scalar" };
+    if (value.length < 2 || !value.endsWith('"'))
+      return { ok: false, reason: "unterminated double-quoted scalar" };
     try {
       const parsed: unknown = JSON.parse(value);
-      return typeof parsed === "string" ? { ok: true, text: parsed } : { ok: false, reason: "invalid double-quoted scalar" };
+      return typeof parsed === "string"
+        ? { ok: true, text: parsed }
+        : { ok: false, reason: "invalid double-quoted scalar" };
     } catch {
       return { ok: false, reason: "invalid double-quoted scalar" };
     }
   }
   if (value.startsWith("'")) {
-    if (value.length < 2 || !value.endsWith("'")) return { ok: false, reason: "unterminated single-quoted scalar" };
+    if (value.length < 2 || !value.endsWith("'"))
+      return { ok: false, reason: "unterminated single-quoted scalar" };
     return { ok: true, text: value.slice(1, -1).replace(/''/g, "'") };
   }
-  if (/^[{&*!|>%@`]/.test(value)) return { ok: false, reason: "YAML syntax outside the supported grammar" };
+  if (/^[{&*!|>%@`]/.test(value))
+    return { ok: false, reason: "YAML syntax outside the supported grammar" };
   return { ok: true, text: value };
 }
 
@@ -272,7 +282,8 @@ function parseBody(lines: BodyLine[], pipes: boolean): ParsedBody {
   let pendingList = false;
 
   const finishPending = (): void => {
-    if (open && pendingList && open.values.length === 0 && open.state === "declared") open.state = "unresolved";
+    if (open && pendingList && open.values.length === 0 && open.state === "declared")
+      open.state = "unresolved";
     pendingList = false;
   };
 
@@ -300,7 +311,8 @@ function parseBody(lines: BodyLine[], pipes: boolean): ParsedBody {
           open.reason = scalar.reason;
           continue;
         }
-        if (!isUnresolvedText(scalar.text)) open.values.push({ text: scalar.text, line: entry.line });
+        if (!isUnresolvedText(scalar.text))
+          open.values.push({ text: scalar.text, line: entry.line });
         continue;
       }
       open.state = "unsupported";
@@ -309,7 +321,14 @@ function parseBody(lines: BodyLine[], pipes: boolean): ParsedBody {
       continue;
     }
     if (indent > 0 || isItem) {
-      return { fields: [], rejected: { code: "native_metadata.malformed", message: "indented or list content with no key to belong to", line: entry.line } };
+      return {
+        fields: [],
+        rejected: {
+          code: "native_metadata.malformed",
+          message: "indented or list content with no key to belong to",
+          line: entry.line,
+        },
+      };
     }
     finishPending();
     open = null;
@@ -318,11 +337,25 @@ function parseBody(lines: BodyLine[], pipes: boolean): ParsedBody {
     for (const segment of segments) {
       const match = KEY_VALUE.exec(segment.trim());
       if (!match) {
-        return { fields: [], rejected: { code: "native_metadata.malformed", message: "a header line is not a key: value pair", line: entry.line } };
+        return {
+          fields: [],
+          rejected: {
+            code: "native_metadata.malformed",
+            message: "a header line is not a key: value pair",
+            line: entry.line,
+          },
+        };
       }
       const key = match[1];
       if (seen.has(key)) {
-        return { fields: [], rejected: { code: "native_metadata.duplicate_field", message: `field '${key}' is declared twice in one header`, line: entry.line } };
+        return {
+          fields: [],
+          rejected: {
+            code: "native_metadata.duplicate_field",
+            message: `field '${key}' is declared twice in one header`,
+            line: entry.line,
+          },
+        };
       }
       seen.add(key);
       const field: NativeMetadataField = {
@@ -349,7 +382,9 @@ function parseBody(lines: BodyLine[], pipes: boolean): ParsedBody {
           field.state = "unsupported";
           field.reason = list.reason;
         } else {
-          field.values = list.items.filter((item) => !isUnresolvedText(item)).map((item) => ({ text: item, line: entry.line }));
+          field.values = list.items
+            .filter((item) => !isUnresolvedText(item))
+            .map((item) => ({ text: item, line: entry.line }));
           if (field.values.length === 0) field.state = "unresolved";
         }
       } else {
@@ -403,7 +438,9 @@ function declaration(
     source_span: span,
     excerpt,
     fields: body,
-    unsupported_fields: body.filter((field) => field.state === "unsupported").map((field) => field.key),
+    unsupported_fields: body
+      .filter((field) => field.state === "unsupported")
+      .map((field) => field.key),
     conflicts: [],
   };
 }
@@ -423,9 +460,27 @@ const HASH_BODY = (line: string): string | null => {
 };
 
 const DELIMITED: DelimitedCarrier[] = [
-  { carrier: "legacy-hash", open: MARKERS.hashOpen, close: MARKERS.hashClose, body: HASH_BODY, pipes: true },
-  { carrier: "legacy-hash-bare", open: MARKERS.bareOpen, close: MARKERS.bareClose, body: HASH_BODY, pipes: true },
-  { carrier: "legacy-html", open: MARKERS.htmlOpen, close: MARKERS.htmlClose, body: (line) => line, pipes: false },
+  {
+    carrier: "legacy-hash",
+    open: MARKERS.hashOpen,
+    close: MARKERS.hashClose,
+    body: HASH_BODY,
+    pipes: true,
+  },
+  {
+    carrier: "legacy-hash-bare",
+    open: MARKERS.bareOpen,
+    close: MARKERS.bareClose,
+    body: HASH_BODY,
+    pipes: true,
+  },
+  {
+    carrier: "legacy-html",
+    open: MARKERS.htmlOpen,
+    close: MARKERS.htmlClose,
+    body: (line) => line,
+    pipes: false,
+  },
 ];
 
 type HeadStep =
@@ -454,14 +509,25 @@ function readDelimited(lines: string[], index: number, sourcePath: string): Head
             kind: "rejected",
             next: cursor + 1,
             region: { carrier: form.carrier, start_line: index + 1, end_line: cursor + 1 },
-            diagnostic: { code: parsed.rejected.code, severity: "warning", message: `${form.carrier} header rejected: ${parsed.rejected.message}`, line: parsed.rejected.line },
+            diagnostic: {
+              code: parsed.rejected.code,
+              severity: "warning",
+              message: `${form.carrier} header rejected: ${parsed.rejected.message}`,
+              line: parsed.rejected.line,
+            },
           };
         }
         return {
           kind: "declaration",
           next: cursor + 1,
-          value: declaration(form.carrier, declaredSchemaOf(parsed.fields), sourcePath,
-            { start_line: index + 1, end_line: cursor + 1 }, lines[index], parsed.fields),
+          value: declaration(
+            form.carrier,
+            declaredSchemaOf(parsed.fields),
+            sourcePath,
+            { start_line: index + 1, end_line: cursor + 1 },
+            lines[index],
+            parsed.fields,
+          ),
         };
       }
       const text = form.body(lines[cursor]);
@@ -472,7 +538,12 @@ function readDelimited(lines: string[], index: number, sourcePath: string): Head
           stop: true,
           // The carrier ends where its comment lines end; the line that broke it is body.
           region: { carrier: form.carrier, start_line: index + 1, end_line: cursor },
-          diagnostic: { code: "native_metadata.malformed", severity: "warning", message: `${form.carrier} header rejected: a body line is not a comment`, line: cursor + 1 },
+          diagnostic: {
+            code: "native_metadata.malformed",
+            severity: "warning",
+            message: `${form.carrier} header rejected: a body line is not a comment`,
+            line: cursor + 1,
+          },
         };
       }
       body.push({ text, line: cursor + 1 });
@@ -483,7 +554,12 @@ function readDelimited(lines: string[], index: number, sourcePath: string): Head
       stop: true,
       // Without a close the extent is unknown; only the opening marker is claimed.
       region: { carrier: form.carrier, start_line: index + 1, end_line: index + 1 },
-      diagnostic: { code: "native_metadata.unterminated", severity: "warning", message: `${form.carrier} header has no closing '${form.close}'`, line: index + 1 },
+      diagnostic: {
+        code: "native_metadata.unterminated",
+        severity: "warning",
+        message: `${form.carrier} header has no closing '${form.close}'`,
+        line: index + 1,
+      },
     };
   }
   return { kind: "none" };
@@ -491,7 +567,11 @@ function readDelimited(lines: string[], index: number, sourcePath: string): Head
 
 /** The CEG/EIE Python form: `"""` then `--- L9_META ---` … `--- /L9_META ---`. */
 function readDocstring(lines: string[], index: number, sourcePath: string): HeadStep {
-  if (lines[index].trim() !== '"""' || index + 1 >= lines.length || lines[index + 1].trim() !== MARKERS.docOpen) {
+  if (
+    lines[index].trim() !== '"""' ||
+    index + 1 >= lines.length ||
+    lines[index + 1].trim() !== MARKERS.docOpen
+  ) {
     return { kind: "none" };
   }
   const body: BodyLine[] = [];
@@ -506,15 +586,26 @@ function readDocstring(lines: string[], index: number, sourcePath: string): Head
           next: lines.length,
           stop: true,
           region: { carrier: "legacy-docstring", start_line: index + 2, end_line: cursor + 1 },
-          diagnostic: { code: parsed.rejected.code, severity: "warning", message: `legacy-docstring header rejected: ${parsed.rejected.message}`, line: parsed.rejected.line },
+          diagnostic: {
+            code: parsed.rejected.code,
+            severity: "warning",
+            message: `legacy-docstring header rejected: ${parsed.rejected.message}`,
+            line: parsed.rejected.line,
+          },
         };
       }
       return {
         kind: "declaration",
         next: lines.length,
         stop: true,
-        value: declaration("legacy-docstring", declaredSchemaOf(parsed.fields), sourcePath,
-          { start_line: index + 2, end_line: cursor + 1 }, lines[index + 1], parsed.fields),
+        value: declaration(
+          "legacy-docstring",
+          declaredSchemaOf(parsed.fields),
+          sourcePath,
+          { start_line: index + 2, end_line: cursor + 1 },
+          lines[index + 1],
+          parsed.fields,
+        ),
       };
     }
     if (text.includes('"""')) break;
@@ -525,13 +616,24 @@ function readDocstring(lines: string[], index: number, sourcePath: string): Head
     next: lines.length,
     stop: true,
     region: { carrier: "legacy-docstring", start_line: index + 2, end_line: index + 2 },
-    diagnostic: { code: "native_metadata.unterminated", severity: "warning", message: `legacy-docstring header has no closing '${MARKERS.docClose}' inside its docstring`, line: index + 2 },
+    diagnostic: {
+      code: "native_metadata.unterminated",
+      severity: "warning",
+      message: `legacy-docstring header has no closing '${MARKERS.docClose}' inside its docstring`,
+      line: index + 2,
+    },
   };
 }
 
-function readManagedComment(content: string, lines: string[], index: number, sourcePath: string): HeadStep {
+function readManagedComment(
+  content: string,
+  lines: string[],
+  index: number,
+  sourcePath: string,
+): HeadStep {
   const spec = resolveStrategy(sourcePath, content);
-  if (spec.strategy !== "line-comment" && spec.strategy !== "block-comment") return { kind: "none" };
+  if (spec.strategy !== "line-comment" && spec.strategy !== "block-comment")
+    return { kind: "none" };
   const span = injectedBlockSpan(content, spec);
   if (!span) return { kind: "none" };
   const startLine = lineOfOffset(content, span.start);
@@ -543,7 +645,9 @@ function readManagedComment(content: string, lines: string[], index: number, sou
     if (span.delimiters.strategy === "line-comment") {
       const prefix = span.delimiters.linePrefix ?? "#";
       const trimmed = line.trimStart();
-      const text = trimmed.startsWith(`${prefix} `) ? trimmed.slice(prefix.length + 1) : trimmed.slice(prefix.length);
+      const text = trimmed.startsWith(`${prefix} `)
+        ? trimmed.slice(prefix.length + 1)
+        : trimmed.slice(prefix.length);
       body.push({ text, line: cursor + 1 });
     } else {
       body.push({ text: line, line: cursor + 1 });
@@ -555,14 +659,25 @@ function readManagedComment(content: string, lines: string[], index: number, sou
       kind: "rejected",
       next: endLine,
       region: { carrier: "managed-comment", start_line: startLine, end_line: endLine },
-      diagnostic: { code: parsed.rejected.code, severity: "warning", message: `managed-comment header rejected: ${parsed.rejected.message}`, line: parsed.rejected.line },
+      diagnostic: {
+        code: parsed.rejected.code,
+        severity: "warning",
+        message: `managed-comment header rejected: ${parsed.rejected.message}`,
+        line: parsed.rejected.line,
+      },
     };
   }
   return {
     kind: "declaration",
     next: endLine,
-    value: declaration("managed-comment", MANAGED_DECLARED_SCHEMA, sourcePath,
-      { start_line: startLine, end_line: endLine }, lines[index], parsed.fields),
+    value: declaration(
+      "managed-comment",
+      MANAGED_DECLARED_SCHEMA,
+      sourcePath,
+      { start_line: startLine, end_line: endLine },
+      lines[index],
+      parsed.fields,
+    ),
   };
 }
 
@@ -585,7 +700,9 @@ function readFrontMatter(content: string, lines: string[], sourcePath: string): 
   if (close < 0) return { kind: "none" };
   const region = lines.slice(1, close);
   const native = region.some((line) => /^l9_schema[ \t]*:/.test(line));
-  const managed = MANAGED_FRONTMATTER_KEYS.every((key) => region.some((line) => line.startsWith(`${key}:`)));
+  const managed = MANAGED_FRONTMATTER_KEYS.every((key) =>
+    region.some((line) => line.startsWith(`${key}:`)),
+  );
   if (!native && !managed) return { kind: "skip", next: close + 1 };
   const carrier: NativeMetadataCarrier = native ? "frontmatter" : "managed-frontmatter";
 
@@ -606,10 +723,18 @@ function readFrontMatter(content: string, lines: string[], sourcePath: string): 
   const fields: NativeMetadataField[] = [];
   for (const field of inspection.fields) {
     const startLine = lineOfOffset(content, field.start);
-    const endLine = Math.max(startLine, lineOfOffset(content, Math.max(field.start, field.end - 1)));
+    const endLine = Math.max(
+      startLine,
+      lineOfOffset(content, Math.max(field.start, field.end - 1)),
+    );
     const excerpt = lines[startLine - 1] ?? "";
     const entry: NativeMetadataField = {
-      key: field.key, state: "declared", values: [], start_line: startLine, end_line: endLine, excerpt,
+      key: field.key,
+      state: "declared",
+      values: [],
+      start_line: startLine,
+      end_line: endLine,
+      excerpt,
     };
     if (field.kind === "opaque") {
       const text = content.slice(field.valueStart ?? field.start, field.valueEnd ?? field.end);
@@ -619,10 +744,14 @@ function readFrontMatter(content: string, lines: string[], sourcePath: string): 
       const value = inspection.meta[field.key];
       const items = Array.isArray(value) ? value : [value];
       // Sequence items sit one per line after the key; cite each where it is.
-      const itemLines = field.kind === "sequence"
-        ? lines.slice(startLine, endLine).map((line, offset) => ({ line, number: startLine + 1 + offset }))
-          .filter((item) => /^\s*-(?:\s|$)/.test(item.line)).map((item) => item.number)
-        : [];
+      const itemLines =
+        field.kind === "sequence"
+          ? lines
+              .slice(startLine, endLine)
+              .map((line, offset) => ({ line, number: startLine + 1 + offset }))
+              .filter((item) => /^\s*-(?:\s|$)/.test(item.line))
+              .map((item) => item.number)
+          : [];
       items.forEach((item, position) => {
         const text = item === null || item === undefined ? "" : String(item);
         if (isUnresolvedText(text)) return;
@@ -635,16 +764,18 @@ function readFrontMatter(content: string, lines: string[], sourcePath: string): 
   return {
     kind: "declaration",
     next: close + 1,
-    value: declaration(carrier, native ? declaredSchemaOf(fields) : MANAGED_DECLARED_SCHEMA, sourcePath,
-      { start_line: 1, end_line: close + 1 }, lines[0], fields),
+    value: declaration(
+      carrier,
+      native ? declaredSchemaOf(fields) : MANAGED_DECLARED_SCHEMA,
+      sourcePath,
+      { start_line: 1, end_line: close + 1 },
+      lines[0],
+      fields,
+    ),
   };
 }
 
-const PROLOGUE_LINE = [
-  /^#!/,
-  /^#\s*yaml-language-server:/,
-  /^[ \t\f]*#.*?coding[:=][ \t]*[-\w.]+/,
-];
+const PROLOGUE_LINE = [/^#!/, /^#\s*yaml-language-server:/, /^[ \t\f]*#.*?coding[:=][ \t]*[-\w.]+/];
 
 /**
  * Read every native metadata declaration at the head of a file.
@@ -652,7 +783,10 @@ const PROLOGUE_LINE = [
  * Pure and deterministic: the same path and text always yield the same result,
  * and the text is never modified.
  */
-export function parseNativeMetadata(sourcePath: string, content: string): NativeMetadataParseResult {
+export function parseNativeMetadata(
+  sourcePath: string,
+  content: string,
+): NativeMetadataParseResult {
   const lines = toLines(content);
   const declarations: NativeMetadataDeclaration[] = [];
   const diagnostics: NativeMetadataDiagnostic[] = [];
@@ -739,7 +873,11 @@ export function parseNativeMetadata(sourcePath: string, content: string): Native
       const mapping = governed ? headerFieldMapping(field.key) : undefined;
       if (mapping?.cardinality === "set") continue;
       const group = `${item.declared_schema}\u0000${field.key}`;
-      const entry = groups.get(group) ?? { schema: item.declared_schema, key: field.key, values: new Set<string>() };
+      const entry = groups.get(group) ?? {
+        schema: item.declared_schema,
+        key: field.key,
+        values: new Set<string>(),
+      };
       if (mapping?.cardinality === "single") {
         for (const value of field.values) entry.values.add(value.text);
       } else {
@@ -752,9 +890,11 @@ export function parseNativeMetadata(sourcePath: string, content: string): Native
   const conflicting = [...new Set(competing.map((entry) => entry.key))].sort(compareCodePoints);
   if (conflicting.length > 0) {
     for (const item of declarations) {
-      item.conflicts = conflicting.filter((key) =>
-        competing.some((entry) => entry.key === key && entry.schema === item.declared_schema)
-        && item.fields.some((field) => field.key === key && field.state === "declared"));
+      item.conflicts = conflicting.filter(
+        (key) =>
+          competing.some((entry) => entry.key === key && entry.schema === item.declared_schema) &&
+          item.fields.some((field) => field.key === key && field.state === "declared"),
+      );
     }
     diagnostics.push({
       code: "native_metadata.competing_declarations",

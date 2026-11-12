@@ -87,11 +87,16 @@ function validateLocalArchivePolicy(policy) {
     }
     for (const field of POSITIVE_INTEGER_FIELDS) {
         const value = policy[field];
-        if (typeof value !== "number" || !Number.isFinite(value) || !Number.isInteger(value) || value <= 0) {
+        if (typeof value !== "number" ||
+            !Number.isFinite(value) ||
+            !Number.isInteger(value) ||
+            value <= 0) {
             throw new Error(`local archive policy ${String(field)} must be a positive finite integer`);
         }
     }
-    if (!Number.isFinite(policy.maxNestedDepth) || !Number.isInteger(policy.maxNestedDepth) || policy.maxNestedDepth < 0) {
+    if (!Number.isFinite(policy.maxNestedDepth) ||
+        !Number.isInteger(policy.maxNestedDepth) ||
+        policy.maxNestedDepth < 0) {
         throw new Error("local archive policy maxNestedDepth must be a non-negative finite integer");
     }
     if (!Number.isFinite(policy.maxCompressionRatio) || policy.maxCompressionRatio <= 0) {
@@ -137,8 +142,12 @@ class ArchiveSessionBudget {
         this.expandedBytes = 0;
         this.expandedArchives = 0;
     }
-    get totalExpandedBytes() { return this.expandedBytes; }
-    get totalExpandedArchives() { return this.expandedArchives; }
+    get totalExpandedBytes() {
+        return this.expandedBytes;
+    }
+    get totalExpandedArchives() {
+        return this.expandedArchives;
+    }
     /** Remaining session byte allowance; never negative. */
     remainingBytes() {
         return Math.max(0, this.policy.maxTotalUncompressedBytesPerSession - this.expandedBytes);
@@ -158,7 +167,8 @@ class ArchiveSessionBudget {
         const processing = this.processingRefusalReason();
         if (processing !== null)
             return processing;
-        if (this.expandedBytes + declaredUncompressedBytes > this.policy.maxTotalUncompressedBytesPerSession) {
+        if (this.expandedBytes + declaredUncompressedBytes >
+            this.policy.maxTotalUncompressedBytesPerSession) {
             return `session expansion budget of ${this.policy.maxTotalUncompressedBytesPerSession} bytes would be exceeded`;
         }
         return null;

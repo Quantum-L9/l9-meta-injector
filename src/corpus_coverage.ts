@@ -24,9 +24,9 @@
 import { canonicalCorpusJson } from "./corpus_analysis";
 import {
   DecoderRegistry,
+  defaultDecoderRegistry,
   OCR_CANDIDATE_EXTENSIONS,
   UNSUPPORTED_LEGACY_EXTENSIONS,
-  defaultDecoderRegistry,
 } from "./documents";
 import { compareCodePoints } from "./ordering";
 
@@ -123,8 +123,8 @@ export interface ReasoningHandoff {
 }
 
 export const NO_PRIORITY_STATEMENT =
-  "This handoff carries evidence and counts. It contains no priority, no ranking and "
-  + "no recommendation, and none can be read out of the order of any list in it.";
+  "This handoff carries evidence and counts. It contains no priority, no ranking and " +
+  "no recommendation, and none can be read out of the order of any list in it.";
 
 /**
  * The corpus's own denominators.

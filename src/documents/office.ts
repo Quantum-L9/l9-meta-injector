@@ -15,14 +15,20 @@
 import {
   BlockBuilder,
   BlockKind,
+  buildNormalizedDocument,
   DecodeInput,
   DecodeOutcome,
   DocumentDecoder,
-  buildNormalizedDocument,
   normalizedDocumentId,
 } from "./decoder";
-import { OoxmlContainer, OoxmlError, noteExternalRelationships, openOoxml, readRelationships } from "./ooxml";
-import { XmlError, localName, parseXml } from "./xml";
+import {
+  noteExternalRelationships,
+  OoxmlContainer,
+  OoxmlError,
+  openOoxml,
+  readRelationships,
+} from "./ooxml";
+import { localName, parseXml, XmlError } from "./xml";
 
 export const DOCX_DECODER_ID = "l9.docx-decoder";
 // 1.1.0: text is collected only inside the text-bearing element (w:t, a:t,
@@ -49,11 +55,12 @@ function relationshipTypeIs(type: string, name: string): boolean {
 /** Turn an OOXML failure into the decode outcome it deserves. */
 function ooxmlFailure(error: unknown): DecodeOutcome {
   if (error instanceof OoxmlError) {
-    const reason = error.code === "encrypted"
-      ? "decoder.encrypted"
-      : error.code === "budget"
-        ? "decoder.budget_exceeded"
-        : "decoder.malformed";
+    const reason =
+      error.code === "encrypted"
+        ? "decoder.encrypted"
+        : error.code === "budget"
+          ? "decoder.budget_exceeded"
+          : "decoder.malformed";
     return {
       decoded: false,
       reason,
@@ -76,7 +83,12 @@ function ooxmlFailure(error: unknown): DecodeOutcome {
 function coreProperties(container: OoxmlContainer, maxDepth: number): Record<string, string> {
   const xml = container.readPart("docProps/core.xml");
   if (xml === null) return {};
-  const wanted = new Map([["title", "title"], ["subject", "subject"], ["keywords", "keywords"], ["category", "category"]]);
+  const wanted = new Map([
+    ["title", "title"],
+    ["subject", "subject"],
+    ["keywords", "keywords"],
+    ["category", "category"],
+  ]);
   const metadata: Record<string, string> = {};
   let current: string | null = null;
   try {
@@ -151,7 +163,10 @@ export const docxDecoder: DocumentDecoder = {
         decoded: false,
         reason: "decoder.malformed",
         message,
-        diagnostics: [...container.diagnostics, { code: "decoder.malformed", severity: "warning", message }],
+        diagnostics: [
+          ...container.diagnostics,
+          { code: "decoder.malformed", severity: "warning", message },
+        ],
       };
     }
 
@@ -218,7 +233,10 @@ export const docxDecoder: DocumentDecoder = {
               style = event.attributes["w:val"] ?? event.attributes.val ?? null;
               return;
             case "ilvl":
-              listLevel = Number.parseInt(event.attributes["w:val"] ?? event.attributes.val ?? "", 10);
+              listLevel = Number.parseInt(
+                event.attributes["w:val"] ?? event.attributes.val ?? "",
+                10,
+              );
               if (!Number.isFinite(listLevel)) listLevel = null;
               return;
             case "tbl":
@@ -307,7 +325,8 @@ export const docxDecoder: DocumentDecoder = {
     }
 
     for (const diagnostic of container.diagnostics) builder.note(diagnostic);
-    for (const diagnostic of noteExternalRelationships(container, input.budget)) builder.note(diagnostic);
+    for (const diagnostic of noteExternalRelationships(container, input.budget))
+      builder.note(diagnostic);
 
     return {
       decoded: true,
@@ -369,7 +388,10 @@ export const pptxDecoder: DocumentDecoder = {
         decoded: false,
         reason: "decoder.malformed",
         message,
-        diagnostics: [...container.diagnostics, { code: "decoder.malformed", severity: "warning", message }],
+        diagnostics: [
+          ...container.diagnostics,
+          { code: "decoder.malformed", severity: "warning", message },
+        ],
       };
     }
 
@@ -492,7 +514,9 @@ export const pptxDecoder: DocumentDecoder = {
         notesBySlide.set(slide, null);
         continue;
       }
-      const notes = [...relationships.values()].find((relationship) => relationshipTypeIs(relationship.type, "notesSlide"));
+      const notes = [...relationships.values()].find((relationship) =>
+        relationshipTypeIs(relationship.type, "notesSlide"),
+      );
       notesBySlide.set(slide, notes?.part ?? "");
       if (notes !== undefined) claimedNotes.add(notes.part);
     }
@@ -516,13 +540,14 @@ export const pptxDecoder: DocumentDecoder = {
         code: "decoder.malformed",
         severity: "warning",
         message:
-          `slide${inferredNotes.length === 1 ? "" : "s"} ${inferredNotes.join(", ")} declare no relationship part; `
-          + "their speaker notes were inferred from matching part numbers",
+          `slide${inferredNotes.length === 1 ? "" : "s"} ${inferredNotes.join(", ")} declare no relationship part; ` +
+          "their speaker notes were inferred from matching part numbers",
       });
     }
 
     for (const diagnostic of container.diagnostics) builder.note(diagnostic);
-    for (const diagnostic of noteExternalRelationships(container, input.budget)) builder.note(diagnostic);
+    for (const diagnostic of noteExternalRelationships(container, input.budget))
+      builder.note(diagnostic);
 
     return {
       decoded: true,
@@ -600,11 +625,12 @@ function readSheets(container: OoxmlContainer, maxDepth: number): { name: string
         if (event.type === "open" && event.name === "sheet") {
           // The relationship id is the attribute whose local name is `id` under
           // a namespace prefix (`r:id`); prefix bindings are not resolved.
-          const idAttribute = Object.keys(event.attributes)
-            .find((attribute) => attribute.includes(":") && localName(attribute) === "id");
+          const idAttribute = Object.keys(event.attributes).find(
+            (attribute) => attribute.includes(":") && localName(attribute) === "id",
+          );
           declared.push({
             name: event.attributes.name ?? `Sheet${declared.length + 1}`,
-            id: idAttribute === undefined ? null : event.attributes[idAttribute] ?? null,
+            id: idAttribute === undefined ? null : (event.attributes[idAttribute] ?? null),
           });
         }
       });
@@ -641,11 +667,14 @@ function readSheets(container: OoxmlContainer, maxDepth: number): { name: string
     const relationship = relationships.get(sheet.id);
     if (relationship === undefined) return null;
     // A chartsheet or dialogsheet is a sheet without cells to read.
-    if (relationship.type.length > 0 && !relationshipTypeIs(relationship.type, "worksheet")) return "other";
+    if (relationship.type.length > 0 && !relationshipTypeIs(relationship.type, "worksheet"))
+      return "other";
     return { name: sheet.name, part: relationship.part };
   });
 
-  const claimed = new Set(resolved.flatMap((entry) => (entry !== null && entry !== "other" ? [entry.part] : [])));
+  const claimed = new Set(
+    resolved.flatMap((entry) => (entry !== null && entry !== "other" ? [entry.part] : [])),
+  );
   const unclaimed = parts.filter((part) => !claimed.has(part));
   const inferred: string[] = [];
   const sheets: { name: string; part: string }[] = [];
@@ -666,8 +695,8 @@ function readSheets(container: OoxmlContainer, maxDepth: number): { name: string
       code: "decoder.malformed",
       severity: "warning",
       message:
-        `sheet${inferred.length === 1 ? "" : "s"} ${inferred.map((name) => `'${name}'`).join(", ")} could not be `
-        + "resolved through xl/_rels/workbook.xml.rels; their worksheet parts were inferred by position",
+        `sheet${inferred.length === 1 ? "" : "s"} ${inferred.map((name) => `'${name}'`).join(", ")} could not be ` +
+        "resolved through xl/_rels/workbook.xml.rels; their worksheet parts were inferred by position",
       part: workbookPart,
     });
   }
@@ -691,7 +720,8 @@ function columnIndex(reference: string): number | null {
   const match = /^\$?([A-Za-z]{1,3})\$?\d+$/.exec(reference);
   if (match === null) return null;
   let index = 0;
-  for (const letter of (match[1] as string).toUpperCase()) index = index * 26 + (letter.charCodeAt(0) - 64);
+  for (const letter of (match[1] as string).toUpperCase())
+    index = index * 26 + (letter.charCodeAt(0) - 64);
   return index;
 }
 
@@ -731,7 +761,10 @@ export const xlsxDecoder: DocumentDecoder = {
         decoded: false,
         reason: "decoder.malformed",
         message,
-        diagnostics: [...container.diagnostics, { code: "decoder.malformed", severity: "warning", message }],
+        diagnostics: [
+          ...container.diagnostics,
+          { code: "decoder.malformed", severity: "warning", message },
+        ],
       };
     }
 
@@ -761,7 +794,8 @@ export const xlsxDecoder: DocumentDecoder = {
             switch (event.name) {
               case "row": {
                 const declaredRow = Number.parseInt(event.attributes.r ?? "", 10);
-                rowNumber = Number.isFinite(declaredRow) && declaredRow > 0 ? declaredRow : rowNumber + 1;
+                rowNumber =
+                  Number.isFinite(declaredRow) && declaredRow > 0 ? declaredRow : rowNumber + 1;
                 lastColumn = 0;
                 return;
               }
@@ -819,9 +853,7 @@ export const xlsxDecoder: DocumentDecoder = {
             case "c": {
               const raw = value.join("");
               // `t="s"` means the value is an index into the shared-string table.
-              const text = cellType === "s"
-                ? shared[Number.parseInt(raw, 10)] ?? ""
-                : raw;
+              const text = cellType === "s" ? (shared[Number.parseInt(raw, 10)] ?? "") : raw;
               const declared = formula.join("");
               // A formula is carried as the text it declares. Evaluating it would
               // produce a number the operator never wrote down.
@@ -888,7 +920,8 @@ export const xlsxDecoder: DocumentDecoder = {
       });
     }
     for (const diagnostic of container.diagnostics) builder.note(diagnostic);
-    for (const diagnostic of noteExternalRelationships(container, input.budget)) builder.note(diagnostic);
+    for (const diagnostic of noteExternalRelationships(container, input.budget))
+      builder.note(diagnostic);
 
     return {
       decoded: true,

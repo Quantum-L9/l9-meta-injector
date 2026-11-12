@@ -41,7 +41,6 @@
 // where the run does not carry something the packet wants, this refuses rather
 // than defaulting.
 
-import type { BlockLocator } from "./documents/decoder";
 import type {
   BuildCorpusIntelligenceInput,
   CandidateCluster,
@@ -62,11 +61,12 @@ import type {
   UpstreamReasoningType,
 } from "./corpus_intelligence";
 import { CorpusIntelligenceError } from "./corpus_intelligence";
-import { canonicalFloat } from "./repository_model";
-import type { CorpusScanResult } from "./corpus_scan";
 import type { BodyOfWorkMetrics } from "./corpus_readiness";
+import type { CorpusScanResult } from "./corpus_scan";
 import type { DocumentWorkSignalRecord } from "./corpus_work_signal_export";
+import type { BlockLocator } from "./documents/decoder";
 import { compareCodePoints } from "./ordering";
+import { canonicalFloat } from "./repository_model";
 
 /**
  * Formats whose decoded text has lines an operator can open the file and find.
@@ -480,30 +480,34 @@ function lexicalProjectClusters(
     profile_hash: analysis.candidate_profile_hash,
   };
   return result.candidates.project_candidates
-    .map((candidate): CandidateCluster => ({
-      candidate_id: candidate.candidate_id,
-      candidate_type: "PROJECT_CANDIDATE",
-      member_artifact_ids: sortedUnique(
-        candidate.member_ids.map((member) => translate(member, identities)),
-      ),
-      supporting_relation_ids: [],
-      evidence_refs: [],
-      // Container grouping is deterministic and states no similarity, so it
-      // carries no graded confidence. `weak` is the vocabulary's floor, not a
-      // judgement that the grouping is doubtful.
-      confidence_class: "weak",
-      // A key taken from a directory name was not declared by anything, and a
-      // reader has to be able to see that.
-      ambiguity_flags: candidate.identifier_is_declared ? [] : ["identifier_inferred_from_container"],
-      cross_root: candidate.spans_roots,
-      // A container's ancestry is that of the markers that define it.
-      cross_archive: spansArchiveAncestries(
-        candidate.containers.map((container) => container.marker_ids),
-        ancestryOf,
-      ),
-      analysis_profile: profile,
-      upstream_candidate_id: candidate.candidate_id,
-    }))
+    .map(
+      (candidate): CandidateCluster => ({
+        candidate_id: candidate.candidate_id,
+        candidate_type: "PROJECT_CANDIDATE",
+        member_artifact_ids: sortedUnique(
+          candidate.member_ids.map((member) => translate(member, identities)),
+        ),
+        supporting_relation_ids: [],
+        evidence_refs: [],
+        // Container grouping is deterministic and states no similarity, so it
+        // carries no graded confidence. `weak` is the vocabulary's floor, not a
+        // judgement that the grouping is doubtful.
+        confidence_class: "weak",
+        // A key taken from a directory name was not declared by anything, and a
+        // reader has to be able to see that.
+        ambiguity_flags: candidate.identifier_is_declared
+          ? []
+          : ["identifier_inferred_from_container"],
+        cross_root: candidate.spans_roots,
+        // A container's ancestry is that of the markers that define it.
+        cross_archive: spansArchiveAncestries(
+          candidate.containers.map((container) => container.marker_ids),
+          ancestryOf,
+        ),
+        analysis_profile: profile,
+        upstream_candidate_id: candidate.candidate_id,
+      }),
+    )
     .sort((a, b) => compareCodePoints(a.candidate_id, b.candidate_id));
 }
 
@@ -529,24 +533,29 @@ function lexicalTopicClusters(
     profile_hash: analysis.candidate_profile_hash,
   };
   return result.candidates.topic_candidates
-    .map((candidate): CandidateCluster => ({
-      candidate_id: candidate.candidate_id,
-      candidate_type: "TOPIC_CANDIDATE",
-      member_artifact_ids: sortedUnique(
-        candidate.member_ids.map((member) => translate(member, identities)),
-      ),
-      supporting_relation_ids: [],
-      evidence_refs: [],
-      // Shared vocabulary over a threshold is a grouping rule, not a graded
-      // similarity judgement. `weak` is the vocabulary's floor, as for the
-      // lexical project candidates.
-      confidence_class: "weak",
-      ambiguity_flags: [],
-      cross_root: candidate.spans_roots,
-      cross_archive: spansArchiveAncestries(candidate.member_ids.map((member) => [member]), ancestryOf),
-      analysis_profile: profile,
-      upstream_candidate_id: candidate.candidate_id,
-    }))
+    .map(
+      (candidate): CandidateCluster => ({
+        candidate_id: candidate.candidate_id,
+        candidate_type: "TOPIC_CANDIDATE",
+        member_artifact_ids: sortedUnique(
+          candidate.member_ids.map((member) => translate(member, identities)),
+        ),
+        supporting_relation_ids: [],
+        evidence_refs: [],
+        // Shared vocabulary over a threshold is a grouping rule, not a graded
+        // similarity judgement. `weak` is the vocabulary's floor, as for the
+        // lexical project candidates.
+        confidence_class: "weak",
+        ambiguity_flags: [],
+        cross_root: candidate.spans_roots,
+        cross_archive: spansArchiveAncestries(
+          candidate.member_ids.map((member) => [member]),
+          ancestryOf,
+        ),
+        analysis_profile: profile,
+        upstream_candidate_id: candidate.candidate_id,
+      }),
+    )
     .sort((a, b) => compareCodePoints(a.candidate_id, b.candidate_id));
 }
 
@@ -562,9 +571,7 @@ function lexicalTopicClusters(
 function domainsNotRun(result: CorpusScanResult): CorpusDomainNotRun[] {
   if (result.semantic !== null) return [];
   const reason = "semantic analysis was not run for this corpus run";
-  const statements: CorpusDomainNotRun[] = [
-    { domain: "semantic_pair_relations", reason },
-  ];
+  const statements: CorpusDomainNotRun[] = [{ domain: "semantic_pair_relations", reason }];
   if (!result.candidates.analysis_profile.topic_candidates_enabled) {
     statements.push({
       domain: "topic_candidates",
@@ -842,7 +849,12 @@ export function corpusIntelligenceInput(
       ...lexicalProjectClusters(result, identities, ancestryOf),
       ...(semantic === null
         ? []
-        : candidateClusters(semantic.projects.candidates, "PROJECT_CANDIDATE", identities, profile)),
+        : candidateClusters(
+            semantic.projects.candidates,
+            "PROJECT_CANDIDATE",
+            identities,
+            profile,
+          )),
     ].sort((a, b) => compareCodePoints(a.candidate_id, b.candidate_id)),
     consolidation_candidates:
       semantic === null

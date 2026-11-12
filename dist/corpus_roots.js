@@ -323,8 +323,8 @@ function readCorpusManifest(manifestPath) {
         return { corpus_id: exports.DEFAULT_CORPUS_ID, roots: readRootManifest(manifestPath) };
     }
     if (parsed.schema !== exports.CORPUS_MANIFEST_SCHEMA) {
-        throw new Error(`corpus: ${absolute} declares schema '${String(parsed.schema)}'; expected `
-            + `'${exports.CORPUS_MANIFEST_SCHEMA}' or '${exports.CORPUS_ROOTS_SCHEMA}'`);
+        throw new Error(`corpus: ${absolute} declares schema '${String(parsed.schema)}'; expected ` +
+            `'${exports.CORPUS_MANIFEST_SCHEMA}' or '${exports.CORPUS_ROOTS_SCHEMA}'`);
     }
     if (typeof parsed.corpus_id !== "string" || parsed.corpus_id.trim().length === 0) {
         throw new Error(`corpus: ${absolute} has no 'corpus_id'`);
@@ -343,8 +343,8 @@ function readCorpusManifest(manifestPath) {
             throw new Error(`corpus: ${absolute} root #${index} has no 'path'`);
         }
         if (typeof record.root_id !== "string" || record.root_id.trim().length === 0) {
-            throw new Error(`corpus: ${absolute} root #${index} (${record.path}) has no 'root_id'; `
-                + "a corpus manifest names every root explicitly so the name survives a remount");
+            throw new Error(`corpus: ${absolute} root #${index} (${record.path}) has no 'root_id'; ` +
+                "a corpus manifest names every root explicitly so the name survives a remount");
         }
         const rootId = record.root_id;
         // Two roots under one name would be folded into one root, or refused for
@@ -368,7 +368,8 @@ function readCorpusManifest(manifestPath) {
  * refused rather than silently merged into a corpus that describes neither.
  */
 function bindCorpusRoots(bindings) {
-    const ordered = [...bindings].sort((a, b) => (0, ordering_1.compareCodePoints)(a.root_id, b.root_id) || (0, ordering_1.compareCodePoints)(a.absolute_path, b.absolute_path));
+    const ordered = [...bindings].sort((a, b) => (0, ordering_1.compareCodePoints)(a.root_id, b.root_id) ||
+        (0, ordering_1.compareCodePoints)(a.absolute_path, b.absolute_path));
     const roots = [];
     const folded = [];
     const seen = new Map();
@@ -380,9 +381,9 @@ function bindCorpusRoots(bindings) {
             continue;
         }
         if (existing.physical_snapshot_hash !== binding.physical_snapshot_hash) {
-            throw new Error(`corpus: two roots declare the key '${binding.root_key}' but hold different content `
-                + `(${existing.absolute_path} and ${binding.absolute_path}); `
-                + "give each one a distinct key with --root PATH=NAME");
+            throw new Error(`corpus: two roots declare the key '${binding.root_key}' but hold different content ` +
+                `(${existing.absolute_path} and ${binding.absolute_path}); ` +
+                "give each one a distinct key with --root PATH=NAME");
         }
         folded.push({
             root_id: binding.root_id,
@@ -493,8 +494,10 @@ function assertOutsideRoots(target, rootPaths, what) {
     const resolvedTarget = resolveForContainment(target);
     for (const rootPath of rootPaths) {
         if (isInsideContainer(containmentBoundary(rootPath), resolvedTarget)) {
-            throw new Error(`corpus: refusing to write ${what} inside an observed root: ${resolvedTarget}`
-                + (resolvedTarget === path.resolve(target) ? "" : ` (reached through ${path.resolve(target)})`));
+            throw new Error(`corpus: refusing to write ${what} inside an observed root: ${resolvedTarget}` +
+                (resolvedTarget === path.resolve(target)
+                    ? ""
+                    : ` (reached through ${path.resolve(target)})`));
         }
     }
     return resolvedTarget;

@@ -93,8 +93,8 @@ function buildAnalysisManifest(input) {
             }),
         });
     }
-    entries.sort((a, b) => (0, ordering_1.compareCodePoints)(a.candidate_kind, b.candidate_kind)
-        || (0, ordering_1.compareCodePoints)(a.candidate_id, b.candidate_id));
+    entries.sort((a, b) => (0, ordering_1.compareCodePoints)(a.candidate_kind, b.candidate_kind) ||
+        (0, ordering_1.compareCodePoints)(a.candidate_id, b.candidate_id));
     const counts = Object.fromEntries(exports.CANDIDATE_KINDS.map((kind) => [kind, entries.filter((e) => e.candidate_kind === kind).length]));
     return { manifest_version: exports.ANALYSIS_MANIFEST_VERSION, entries, counts };
 }
@@ -125,8 +125,8 @@ function diffAnalysisManifests(previous, current) {
         // Two payload definitions are two different questions. Comparing hashes
         // across them would report every candidate as changed, which is worse than
         // saying the comparison is not available.
-        return absent(`manifest versions differ (${previous.manifest_version} vs ${current.manifest_version}); `
-            + "payload hashes from different definitions are not comparable");
+        return absent(`manifest versions differ (${previous.manifest_version} vs ${current.manifest_version}); ` +
+            "payload hashes from different definitions are not comparable");
     }
     const before = new Map(previous.entries.map((entry) => [entry.candidate_id, entry]));
     const after = new Map(current.entries.map((entry) => [entry.candidate_id, entry]));

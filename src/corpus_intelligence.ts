@@ -33,8 +33,8 @@ import * as path from "node:path";
 
 import { compareCodePoints } from "./ordering";
 import {
-  type CanonicalValue,
   CanonicalFloat,
+  type CanonicalValue,
   canonicalJson,
   semanticHash,
   sha256TextPrefixed,
@@ -622,9 +622,10 @@ export function validateCorpusIntelligencePacket(
 // ───────────────────────────── packet construction ─────────────────────────────
 
 /** Build the canonical packet from one corpus run's own analysis output. */
-export function buildCorpusIntelligencePacket(
-  input: BuildCorpusIntelligenceInput,
-): { packet: CorpusIntelligencePacket; payload: CorpusIntelligencePayload } {
+export function buildCorpusIntelligencePacket(input: BuildCorpusIntelligenceInput): {
+  packet: CorpusIntelligencePacket;
+  payload: CorpusIntelligencePayload;
+} {
   requireText(input.corpusId, "corpus_id");
   requireText(input.corpusSourceSnapshotId, "corpus_source_snapshot_id");
   requireText(input.corpusAnalysisId, "corpus_analysis_id");
@@ -664,12 +665,17 @@ export function buildCorpusIntelligencePacket(
 
   // In contract order, so the statement is canonical whatever order the caller
   // listed it in. Validation below refuses an unknown or repeated domain.
-  const fieldOrder = new Map<string, number>(CORPUS_PAYLOAD_FIELDS.map((field, index) => [field, index]));
+  const fieldOrder = new Map<string, number>(
+    CORPUS_PAYLOAD_FIELDS.map((field, index) => [field, index]),
+  );
   const domainsNotRun: CorpusDomainNotRun[] = input.domainsNotRun
     .map((entry) => ({ domain: entry.domain, reason: entry.reason }))
-    .sort((a, b) =>
-      (fieldOrder.get(a.domain) ?? Number.MAX_SAFE_INTEGER) - (fieldOrder.get(b.domain) ?? Number.MAX_SAFE_INTEGER)
-      || compareCodePoints(a.domain, b.domain));
+    .sort(
+      (a, b) =>
+        (fieldOrder.get(a.domain) ?? Number.MAX_SAFE_INTEGER) -
+          (fieldOrder.get(b.domain) ?? Number.MAX_SAFE_INTEGER) ||
+        compareCodePoints(a.domain, b.domain),
+    );
 
   const payload_refs: Record<string, string> = {};
   const payload_hashes: Record<string, string> = {};

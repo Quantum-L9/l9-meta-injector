@@ -7,8 +7,8 @@ exports.isMilestoneSectionHeading = isMilestoneSectionHeading;
 exports.documentText = documentText;
 exports.readLabelledLine = readLabelledLine;
 exports.readFrontmatterLine = readFrontmatterLine;
-const common_1 = require("./common");
 const native_metadata_1 = require("../native_metadata");
+const common_1 = require("./common");
 // ───────────────────────────── file eligibility ─────────────────────────────
 /** Extensions this profile reads. v1 adds no document-format extraction. */
 const SUPPORTED_EXTENSIONS = new Set([".md", ".markdown", ".txt", ".rst"]);
@@ -62,7 +62,13 @@ function readDocument(sourcePath, content) {
         for (let line = region.start_line; line <= region.end_line; line++)
             header[line - 1] = true;
     }
-    return { lines, frontmatterStart, frontmatterEnd, fenced: markFencedCode(lines, frontmatterEnd), header };
+    return {
+        lines,
+        frontmatterStart,
+        frontmatterEnd,
+        fenced: markFencedCode(lines, frontmatterEnd),
+        header,
+    };
 }
 /** The frontmatter body's line span, or `[-1, -1]` when the document has none. */
 function findFrontmatter(lines) {
@@ -146,7 +152,7 @@ function markFencedCode(lines, frontmatterEnd) {
     return fenced;
 }
 function inFrontmatter(view, index) {
-    return view.frontmatterStart >= 0 && index >= view.frontmatterStart && index <= view.frontmatterEnd;
+    return (view.frontmatterStart >= 0 && index >= view.frontmatterStart && index <= view.frontmatterEnd);
 }
 /** True for a line that carries no readable body content: frontmatter or code. */
 function isProseLine(view, index) {
@@ -336,18 +342,38 @@ function labelledLine(rawLine) {
     const label = plain(body.slice(0, colon)).toLowerCase();
     if (!LABEL_SHAPE.test(label))
         return null;
-    const value = body.slice(colon + 1).trim().replace(/^[*_]+/, "").trim();
+    const value = body
+        .slice(colon + 1)
+        .trim()
+        .replace(/^[*_]+/, "")
+        .trim();
     return { label, value };
 }
 // ───────────────────────────── vocabulary ─────────────────────────────
 const WORK_STATUS_VALUES = [
-    "active", "archived", "blocked", "cancelled", "complete", "done",
-    "draft", "paused", "planned", "superseded", "wip",
+    "active",
+    "archived",
+    "blocked",
+    "cancelled",
+    "complete",
+    "done",
+    "draft",
+    "paused",
+    "planned",
+    "superseded",
+    "wip",
 ];
 const WORK_STATUS = new Set(WORK_STATUS_VALUES);
 const WORK_KIND_VALUES = [
-    "checklist", "decision", "design", "notes", "plan", "proposal",
-    "research", "roadmap", "specification",
+    "checklist",
+    "decision",
+    "design",
+    "notes",
+    "plan",
+    "proposal",
+    "research",
+    "roadmap",
+    "specification",
 ];
 const WORK_KIND = new Set(WORK_KIND_VALUES);
 /**
@@ -361,14 +387,14 @@ const BARE_TITLE_STATUS = new Set(["draft", "wip"]);
 const RELATION_PREDICATE_BY_LABEL = {
     "depends on": "work.depends_on",
     "depends upon": "work.depends_on",
-    "requires": "work.depends_on",
+    requires: "work.depends_on",
     "blocked by": "work.blocked_by",
-    "reference": "work.references",
-    "references": "work.references",
+    reference: "work.references",
+    references: "work.references",
     "see also": "work.references",
-    "related": "work.references",
-    "supersedes": "work.supersedes",
-    "replaces": "work.supersedes",
+    related: "work.references",
+    supersedes: "work.supersedes",
+    replaces: "work.supersedes",
     "superseded by": "work.superseded_by",
     "replaced by": "work.superseded_by",
 };
@@ -652,7 +678,10 @@ function titleKinds(text) {
     // are literal. Matching ` +[—–|] +` against a title carrying a long whitespace
     // run costs a quadratic number of steps for every split position it fails at.
     const segment = plain(text).split(TITLE_SEGMENT)[0];
-    const words = segment.toLowerCase().split(/[^\p{L}]+/u).filter((word) => word.length > 0);
+    const words = segment
+        .toLowerCase()
+        .split(/[^\p{L}]+/u)
+        .filter((word) => word.length > 0);
     if (words.length === 0)
         return [];
     const found = [];
@@ -835,11 +864,7 @@ function labelSignal(line) {
  * exclusive: a line that opens with a list marker cannot be a blockquote
  * admonition, and a checkbox with no text has nothing after it to be a label.
  */
-const UNIT_READERS = [
-    taskSignal,
-    admonitionSignal,
-    labelSignal,
-];
+const UNIT_READERS = [taskSignal, admonitionSignal, labelSignal];
 /**
  * Read one unit of text with the whole vocabulary, in precedence order.
  *

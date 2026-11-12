@@ -184,7 +184,12 @@ const AUTHORITY_FILE_NAME = "meta-authority.yaml";
  * exception is VCS internals and dependency install trees, which a repository does not
  * author and whose walk cost is unbounded.
  */
-const NESTED_AUTHORITY_SKIPPED_DIRECTORIES = new Set([".git", "node_modules", ".venv", "__pycache__"]);
+const NESTED_AUTHORITY_SKIPPED_DIRECTORIES = new Set([
+    ".git",
+    "node_modules",
+    ".venv",
+    "__pycache__",
+]);
 function nestedAuthorityConflict(relativePath) {
     return {
         code: "META_AUTHORITY_CONFLICT",
@@ -326,20 +331,32 @@ function readControlSurface(filePath, repositoryRoot, maxFileBytes) {
         stat = fs.statSync(filePath);
     }
     catch (error) {
-        return { relative, gap: scanGap(relative, `unable to stat control surface: ${describeError(error)}`) };
+        return {
+            relative,
+            gap: scanGap(relative, `unable to stat control surface: ${describeError(error)}`),
+        };
     }
     if (stat.size > maxFileBytes) {
-        return { relative, gap: scanGap(relative, `control surface exceeds authority-scan limit of ${maxFileBytes} bytes`) };
+        return {
+            relative,
+            gap: scanGap(relative, `control surface exceeds authority-scan limit of ${maxFileBytes} bytes`),
+        };
     }
     let content;
     try {
         content = fs.readFileSync(filePath, "utf8");
     }
     catch (error) {
-        return { relative, gap: scanGap(relative, `unable to read control surface: ${describeError(error)}`) };
+        return {
+            relative,
+            gap: scanGap(relative, `unable to read control surface: ${describeError(error)}`),
+        };
     }
     if (content.includes("\u0000") || content.includes("\uFFFD")) {
-        return { relative, gap: scanGap(relative, "control surface is binary or not valid UTF-8 text") };
+        return {
+            relative,
+            gap: scanGap(relative, "control surface is binary or not valid UTF-8 text"),
+        };
     }
     return { relative, content };
 }
@@ -510,13 +527,16 @@ function scanRepositoryAuthority(root, options = {}) {
         scannedPaths.push(surface.relative);
         found.push(...collectSurfaceEvidence(surface.relative, surface.content));
     }
-    const deduped = [...new Map(found.map((item) => [`${item.path}:${item.kind}:${item.rule}`, item])).values()]
-        .sort((a, b) => (0, ordering_1.compareCodePoints)(`${a.path}:${a.kind}:${a.rule}`, `${b.path}:${b.kind}:${b.rule}`));
+    const deduped = [
+        ...new Map(found.map((item) => [`${item.path}:${item.kind}:${item.rule}`, item])).values(),
+    ].sort((a, b) => (0, ordering_1.compareCodePoints)(`${a.path}:${a.kind}:${a.rule}`, `${b.path}:${b.kind}:${b.rule}`));
     const policy = options.legacyPolicy;
     const conflicts = [
         ...scanGaps,
         ...walked.nestedAuthorities.map(nestedAuthorityConflict),
-        ...deduped.map((item) => conflictFor(item, policy)).filter((item) => item !== null),
+        ...deduped
+            .map((item) => conflictFor(item, policy))
+            .filter((item) => item !== null),
     ];
     const notices = deduped
         .map((item) => noticeFor(item, policy))
@@ -531,7 +551,10 @@ function inspectRepositoryAuthority(root, options = {}) {
     // the repository's own contract rather than by a second, independent rule set. An
     // unresolved authority leaves the policy undefined and the scan fails closed.
     const legacyPolicy = loaded.authority?.legacy_writers ?? options.legacyPolicy;
-    const scanned = scanRepositoryAuthority(repositoryRoot, { ...options, ...(legacyPolicy !== undefined ? { legacyPolicy } : {}) });
+    const scanned = scanRepositoryAuthority(repositoryRoot, {
+        ...options,
+        ...(legacyPolicy !== undefined ? { legacyPolicy } : {}),
+    });
     const conflicts = [...loaded.conflicts, ...scanned.conflicts];
     return {
         root: repositoryRoot,
@@ -554,7 +577,9 @@ function assertRepositoryAuthorityForOperation(mode, inspection) {
         throw new Error(`operation mode '${mode}' requires resolved repository authority (${codes})`);
     }
     if (inspection.conflicts.length > 0) {
-        const summary = inspection.conflicts.map((item) => `${item.code}:${item.path ?? "<repository>"}`).join(", ");
+        const summary = inspection.conflicts
+            .map((item) => `${item.code}:${item.path ?? "<repository>"}`)
+            .join(", ");
         throw new Error(`operation mode '${mode}' blocked by repository metadata authority conflict: ${summary}`);
     }
     return inspection.authority;

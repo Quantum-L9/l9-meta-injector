@@ -1,9 +1,10 @@
 // assist.ts — LLM assist for prose-origin fields only.
 // Rule: if a field has structured grammar (YAML frontmatter, heading list), parse it.
 // If it lives in prose, seed with regex, let LLM finish — but only when seed fails "good" predicate.
-import { UNKNOWN } from "./schema";
+
 import { getAdapter } from "./llm";
 import { MetricsCollector } from "./metrics";
+import { UNKNOWN } from "./schema";
 
 export interface AssistConfig {
   enabled: boolean;
@@ -24,7 +25,8 @@ export function isGoodValue(v: unknown): boolean {
     const t = v.trim();
     return t !== "" && t !== UNKNOWN && t.split(/\s+/).length >= 8;
   }
-  if (Array.isArray(v)) return v.length > 0 && v.every((i) => i !== UNKNOWN && String(i).trim() !== "");
+  if (Array.isArray(v))
+    return v.length > 0 && v.every((i) => i !== UNKNOWN && String(i).trim() !== "");
   return false;
 }
 
@@ -37,18 +39,38 @@ export function hasUseWhenSignal(description: unknown): boolean {
 // Fields that live in prose → seed with regex, LLM finishes.
 // "intent" dropped (DWL-007): not a schema field, so it was never reachable here.
 export const PROSE_ORIGIN_FIELDS = new Set([
-  "description", "activation_signals", "input_contract", "output_contract",
+  "description",
+  "activation_signals",
+  "input_contract",
+  "output_contract",
 ]);
 
 // Fields that live in structured grammar → parse only, never LLM
 export const GRAMMAR_ORIGIN_FIELDS = new Set([
-  "role", "objective", "constraints", "validation_gates", "stop_conditions",
-  "phase_model", "input_variables", "output_format", "model_target",
-  "id", "title", "artifact_type", "mcp_primitive", "callable", "namespace", "sharing_scope",
+  "role",
+  "objective",
+  "constraints",
+  "validation_gates",
+  "stop_conditions",
+  "phase_model",
+  "input_variables",
+  "output_format",
+  "model_target",
+  "id",
+  "title",
+  "artifact_type",
+  "mcp_primitive",
+  "callable",
+  "namespace",
+  "sharing_scope",
 ]);
 
 export async function assistField(
-  fieldName: string, seedValue: unknown, body: string, config: AssistConfig, metrics?: MetricsCollector
+  fieldName: string,
+  seedValue: unknown,
+  body: string,
+  config: AssistConfig,
+  metrics?: MetricsCollector,
 ): Promise<unknown> {
   if (!config.enabled) return seedValue;
   // Seed already good → no LLM needed; record the non-LLM path (OBS-009).
@@ -63,7 +85,10 @@ export async function assistField(
     return seedValue;
   }
   const adapter = getAdapter();
-  if (!adapter.classify) { metrics?.recordDecision("no_adapter"); return seedValue; }
+  if (!adapter.classify) {
+    metrics?.recordDecision("no_adapter");
+    return seedValue;
+  }
   const result = await adapter.classify(buildFieldPrompt(fieldName, body, config));
   if (!result || result.trim() === "" || result.trim() === UNKNOWN) {
     metrics?.recordDecision("llm_failed_fallback"); // LLM consulted, no usable answer → keep seed
@@ -92,7 +117,10 @@ const LIST_ORIGIN_FIELDS = new Set(["activation_signals"]);
  * newline): trimmed, non-empty, non-Unknown items, de-duplicated in first-seen order.
  */
 function toItemList(reply: string): string[] {
-  const items = reply.split(/[,;\n]/).map((item) => item.trim()).filter((item) => item !== "" && item !== UNKNOWN);
+  const items = reply
+    .split(/[,;\n]/)
+    .map((item) => item.trim())
+    .filter((item) => item !== "" && item !== UNKNOWN);
   return [...new Set(items)];
 }
 
@@ -103,16 +131,20 @@ function buildFieldPrompt(fieldName: string, body: string, config: AssistConfig)
       if (config.cursorSkillDescription) {
         return [
           "Write a Cursor Agent Skill description in third person (≤1024 characters).",
-          "First say what the skill does, then include explicit \"Use when …\" trigger terms",
+          'First say what the skill does, then include explicit "Use when …" trigger terms',
           "so an agent can decide when to apply it. Body:",
           b,
           "Description:",
         ].join("\n");
       }
       return `Write a single sentence (≤20 words) describing what this artifact does. Body:\n${b}\nDescription:`;
-    case "activation_signals": return `List 3-6 short trigger phrases (comma-separated) for this artifact. Body:\n${b}\nSignals:`;
-    case "input_contract": return `Describe inputs this artifact expects in ≤15 words. Body:\n${b}\nInput contract:`;
-    case "output_contract": return `Describe outputs this artifact produces in ≤15 words. Body:\n${b}\nOutput contract:`;
-    default: return `Extract the ${fieldName} from this text in ≤20 words:\n${b}\n${fieldName}:`;
+    case "activation_signals":
+      return `List 3-6 short trigger phrases (comma-separated) for this artifact. Body:\n${b}\nSignals:`;
+    case "input_contract":
+      return `Describe inputs this artifact expects in ≤15 words. Body:\n${b}\nInput contract:`;
+    case "output_contract":
+      return `Describe outputs this artifact produces in ≤15 words. Body:\n${b}\nOutput contract:`;
+    default:
+      return `Extract the ${fieldName} from this text in ≤20 words:\n${b}\n${fieldName}:`;
   }
 }

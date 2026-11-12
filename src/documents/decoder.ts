@@ -68,7 +68,13 @@ export type BlockKind = (typeof BLOCK_KINDS)[number];
  */
 export type BlockLocator =
   | { kind: "line_span"; line_start: number; line_end: number }
-  | { kind: "notebook_cell"; cell_index: number; cell_type: string; line_start: number; line_end: number }
+  | {
+      kind: "notebook_cell";
+      cell_index: number;
+      cell_type: string;
+      line_start: number;
+      line_end: number;
+    }
   | { kind: "pdf_page_block"; page_number: number; block_index: number }
   | { kind: "docx_block"; block_index: number; part: string }
   | { kind: "pptx_shape"; slide_number: number; shape_index: number; part: string }
@@ -164,7 +170,12 @@ export const NORMALIZED_DOCUMENT_SCHEMA = "l9.normalized-document/v1";
  */
 export type DecodeOutcome =
   | { decoded: true; document: NormalizedDocument }
-  | { decoded: false; reason: DecoderDiagnosticCode; message: string; diagnostics: DecoderDiagnostic[] };
+  | {
+      decoded: false;
+      reason: DecoderDiagnosticCode;
+      message: string;
+      diagnostics: DecoderDiagnostic[];
+    };
 
 export interface DecodeInput {
   artifactId: string;
@@ -467,7 +478,8 @@ export class DecoderRegistry {
     };
     for (const extension of decoder.extensions) claim(this.byExtension, extension, "extension");
     for (const filename of decoder.filenames ?? []) claim(this.byFilename, filename, "filename");
-    for (const prefix of decoder.filenamePrefixes ?? []) claim(this.byFilenamePrefix, prefix, "filename prefix");
+    for (const prefix of decoder.filenamePrefixes ?? [])
+      claim(this.byFilenamePrefix, prefix, "filename prefix");
     this.decoders.push(decoder);
   }
 
@@ -477,9 +489,12 @@ export class DecoderRegistry {
     const named = this.byFilename.get(basename);
     if (named !== undefined) return named;
     // Longest prefix first, so the answer never depends on registration order.
-    const prefixes = [...this.byFilenamePrefix.keys()].sort((a, b) => b.length - a.length || compareCodePoints(a, b));
+    const prefixes = [...this.byFilenamePrefix.keys()].sort(
+      (a, b) => b.length - a.length || compareCodePoints(a, b),
+    );
     for (const prefix of prefixes) {
-      if (basename.length > prefix.length && basename.startsWith(prefix)) return this.byFilenamePrefix.get(prefix);
+      if (basename.length > prefix.length && basename.startsWith(prefix))
+        return this.byFilenamePrefix.get(prefix);
     }
     const dot = basename.lastIndexOf(".");
     if (dot <= 0) return undefined;

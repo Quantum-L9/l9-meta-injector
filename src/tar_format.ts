@@ -4,7 +4,21 @@
 // hostile-shape factory; this module is the production writer grammar.
 const BLOCK = 512;
 
-export type TarTypeFlag = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "L" | "K" | "x" | "g" | "S" | "\0";
+export type TarTypeFlag =
+  | "0"
+  | "1"
+  | "2"
+  | "3"
+  | "4"
+  | "5"
+  | "6"
+  | "7"
+  | "L"
+  | "K"
+  | "x"
+  | "g"
+  | "S"
+  | "\0";
 
 export interface TarHeaderFields {
   name: string;
@@ -29,7 +43,9 @@ function padToBlock(data: Buffer): Buffer {
 
 /** One 512-byte ustar header plus padded data blocks. */
 export function encodeTarEntry(spec: TarHeaderFields): Buffer {
-  const data = Buffer.isBuffer(spec.content) ? spec.content : Buffer.from(spec.content ?? "", "utf8");
+  const data = Buffer.isBuffer(spec.content)
+    ? spec.content
+    : Buffer.from(spec.content ?? "", "utf8");
   const header = Buffer.alloc(BLOCK);
   header.write(spec.name, 0, 100, "utf8");
   header.write(octal(spec.mode ?? 0o644, 8), 100);

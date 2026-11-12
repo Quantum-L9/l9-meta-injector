@@ -17,31 +17,31 @@
 //     identify them.
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { InterpretationResult, interpretRepository, looksSecret } from "./interpretation";
-import { defaultExtractors } from "./extractors";
+import type { CorpusSemanticProjection } from "./corpus_analysis";
 import {
-  LocalSourceAcquireInput,
-  LocalSourceObservation,
-  acquireLocalSource,
-  memberArchiveAncestry,
-} from "./local_source";
-import { LocalArchivePolicy } from "./local_archive_policy";
-import { containmentBoundary, isInsideContainer, resolveForContainment } from "./corpus_roots";
-import {
+  buildCorpusIndex,
   CorpusIndex,
   NearDuplicateOptions,
-  buildCorpusIndex,
-  withSemanticProjection,
   renderCorpusIndex,
+  withSemanticProjection,
 } from "./corpus_analysis";
-import type { CorpusSemanticProjection } from "./corpus_analysis";
-import type { InterpretedAssertion } from "./interpretation";
-import { runSemanticAnalysis } from "./corpus_semantic_run";
 import { renderCorpusReport } from "./corpus_report";
+import { containmentBoundary, isInsideContainer, resolveForContainment } from "./corpus_roots";
+import { runSemanticAnalysis } from "./corpus_semantic_run";
+import { defaultExtractors } from "./extractors";
+import type { InterpretedAssertion } from "./interpretation";
+import { InterpretationResult, interpretRepository, looksSecret } from "./interpretation";
+import { LocalArchivePolicy } from "./local_archive_policy";
 import {
+  acquireLocalSource,
+  LocalSourceAcquireInput,
+  LocalSourceObservation,
+  memberArchiveAncestry,
+} from "./local_source";
+import {
+  buildRepositoryModelPacket,
   RepositoryModelLocalSourceInput,
   RepositoryModelPacket,
-  buildRepositoryModelPacket,
 } from "./repository_model";
 
 /** Schema of the acquisition manifest written beside a bundle. */
@@ -102,46 +102,61 @@ export function toRepositoryModelLocalSource(
 /** Reason the observation cannot become a canonical packet, or null when it can. */
 export function canonicalBlockReason(observation: LocalSourceObservation): string | null {
   if (!observation.stable) {
-    return "SOURCE_CHANGED_DURING_OBSERVATION: the source changed while it was being observed, "
-      + "so no deterministic snapshot exists to emit";
+    return (
+      "SOURCE_CHANGED_DURING_OBSERVATION: the source changed while it was being observed, " +
+      "so no deterministic snapshot exists to emit"
+    );
   }
   // A snapshot is canonical only when every byte it claims to describe was read.
   // Folders carry no content hash by construction, and a symlink or a special entry
   // is observed without ever being opened; every other record must have one.
   const unhashed = observation.inventory.records.filter(
     (record) =>
-      record.content_hash === null
-      && record.artifact_type !== "folder"
-      && !record.unknowns.some((unknown) => UNOPENED_ENTRY_UNKNOWNS.has(unknown)),
+      record.content_hash === null &&
+      record.artifact_type !== "folder" &&
+      !record.unknowns.some((unknown) => UNOPENED_ENTRY_UNKNOWNS.has(unknown)),
   );
-  const budgeted = unhashed.filter(
-    (record) => record.unknowns.some((unknown) => unknown.startsWith("content_hash_skipped:")),
+  const budgeted = unhashed.filter((record) =>
+    record.unknowns.some((unknown) => unknown.startsWith("content_hash_skipped:")),
   );
   const reasons: string[] = [];
   if (budgeted.length > 0) {
-    reasons.push(`a required content hash is missing for ${budgeted.length} file(s); `
-      + "raise the hash budget rather than emitting a snapshot that cannot identify its bytes");
+    reasons.push(
+      `a required content hash is missing for ${budgeted.length} file(s); ` +
+        "raise the hash budget rather than emitting a snapshot that cannot identify its bytes",
+    );
   }
   const unreadable = unhashed.length - budgeted.length;
   if (unreadable > 0) {
-    reasons.push(`the content of ${unreadable} file(s) could not be read, `
-      + "so the snapshot cannot identify every byte it describes");
+    reasons.push(
+      `the content of ${unreadable} file(s) could not be read, ` +
+        "so the snapshot cannot identify every byte it describes",
+    );
   }
   const skippedDirs = observation.inventory.skippedDirs.length;
   if (skippedDirs > 0) {
-    reasons.push(`${skippedDirs} director(ies) could not be listed, `
-      + "so their subtrees are absent from the snapshot");
+    reasons.push(
+      `${skippedDirs} director(ies) could not be listed, ` +
+        "so their subtrees are absent from the snapshot",
+    );
   }
-  const uninspected = observation.diagnostics.filter((d) => d.code === "local-source.entry_unreadable").length;
+  const uninspected = observation.diagnostics.filter(
+    (d) => d.code === "local-source.entry_unreadable",
+  ).length;
   if (uninspected > 0) {
-    reasons.push(`${uninspected} filesystem entr(ies) could not be inspected, `
-      + "so they are absent from the snapshot");
+    reasons.push(
+      `${uninspected} filesystem entr(ies) could not be inspected, ` +
+        "so they are absent from the snapshot",
+    );
   }
   return reasons.length > 0 ? reasons.join("; ") : null;
 }
 
 /** Unknowns that mark an entry observed without being opened, so it has no content hash. */
-const UNOPENED_ENTRY_UNKNOWNS: ReadonlySet<string> = new Set(["symlink_not_traversed", "special_filesystem_entry"]);
+const UNOPENED_ENTRY_UNKNOWNS: ReadonlySet<string> = new Set([
+  "symlink_not_traversed",
+  "special_filesystem_entry",
+]);
 
 /**
  * Observe a local source and build its Repository Model Packet.
@@ -241,9 +256,10 @@ export function buildLocalSourceCorpus(
   // keyphrases here are drawn from titles, headings and declared identifiers
   // rather than from document bodies. Corpus mode, which does have them, sees
   // more. That is a real difference in recall and is documented as one.
-  const index = options.semanticAnalysis === false
-    ? base
-    : withSemanticProjection(base, semanticProjectionFor(result, base));
+  const index =
+    options.semanticAnalysis === false
+      ? base
+      : withSemanticProjection(base, semanticProjectionFor(result, base));
 
   return { index, indexJson: renderCorpusIndex(index), report: renderCorpusReport(index) };
 }
@@ -254,7 +270,8 @@ function semanticProjectionFor(
   index: CorpusIndex,
 ): CorpusSemanticProjection {
   const assertions: InterpretedAssertion[] = [
-    ...(result.interpretation?.assertions ?? (result.packet.payload.assertions as InterpretedAssertion[])),
+    ...(result.interpretation?.assertions ??
+      (result.packet.payload.assertions as InterpretedAssertion[])),
   ];
   const bySubject = new Map<string, InterpretedAssertion[]>();
   for (const assertion of assertions) {
@@ -373,13 +390,17 @@ export interface LocalSourceManifest {
  * should never fire. It exists because "should never" is not a guarantee, and a
  * pathological filename is a cheaper thing to lose than a leaked secret.
  */
-function scrubSecretValues(
-  manifest: LocalSourceManifest,
-): { manifest: LocalSourceManifest; redactions: number } {
+function scrubSecretValues(manifest: LocalSourceManifest): {
+  manifest: LocalSourceManifest;
+  redactions: number;
+} {
   let redactions = 0;
   const scrub = (value: unknown): unknown => {
     if (typeof value === "string") {
-      if (looksSecret(value)) { redactions++; return "[redacted]"; }
+      if (looksSecret(value)) {
+        redactions++;
+        return "[redacted]";
+      }
       return value;
     }
     if (Array.isArray(value)) return value.map(scrub);
@@ -452,8 +473,8 @@ function resolveOutsideSource(targetPath: string, sourceRoot: string, what: stri
   if (isInsideContainer(containmentBoundary(sourceRoot), resolvedTarget)) {
     const lexical = path.resolve(targetPath);
     throw new Error(
-      `local-source: refusing to write ${what} inside the observed source tree: ${resolvedTarget}`
-      + (resolvedTarget === lexical ? "" : ` (reached through ${lexical})`),
+      `local-source: refusing to write ${what} inside the observed source tree: ${resolvedTarget}` +
+        (resolvedTarget === lexical ? "" : ` (reached through ${lexical})`),
     );
   }
   return resolvedTarget;
@@ -495,5 +516,8 @@ export function writeLocalSourceCorpus(
   fs.writeFileSync(realIndexPath, outputs.indexJson, "utf8");
   fs.mkdirSync(path.dirname(realReportPath), { recursive: true });
   fs.writeFileSync(realReportPath, outputs.report, "utf8");
-  return { indexPath: path.resolve(targets.indexPath), reportPath: path.resolve(targets.reportPath) };
+  return {
+    indexPath: path.resolve(targets.indexPath),
+    reportPath: path.resolve(targets.reportPath),
+  };
 }

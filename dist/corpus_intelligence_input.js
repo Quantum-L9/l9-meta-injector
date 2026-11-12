@@ -44,8 +44,8 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.corpusIntelligenceInput = corpusIntelligenceInput;
 const corpus_intelligence_1 = require("./corpus_intelligence");
-const repository_model_1 = require("./repository_model");
 const ordering_1 = require("./ordering");
+const repository_model_1 = require("./repository_model");
 /**
  * Formats whose decoded text has lines an operator can open the file and find.
  *
@@ -374,7 +374,9 @@ function lexicalProjectClusters(result, identities, ancestryOf) {
         confidence_class: "weak",
         // A key taken from a directory name was not declared by anything, and a
         // reader has to be able to see that.
-        ambiguity_flags: candidate.identifier_is_declared ? [] : ["identifier_inferred_from_container"],
+        ambiguity_flags: candidate.identifier_is_declared
+            ? []
+            : ["identifier_inferred_from_container"],
         cross_root: candidate.spans_roots,
         // A container's ancestry is that of the markers that define it.
         cross_archive: spansArchiveAncestries(candidate.containers.map((container) => container.marker_ids), ancestryOf),
@@ -432,9 +434,7 @@ function domainsNotRun(result) {
     if (result.semantic !== null)
         return [];
     const reason = "semantic analysis was not run for this corpus run";
-    const statements = [
-        { domain: "semantic_pair_relations", reason },
-    ];
+    const statements = [{ domain: "semantic_pair_relations", reason }];
     if (!result.candidates.analysis_profile.topic_candidates_enabled) {
         statements.push({
             domain: "topic_candidates",

@@ -96,7 +96,7 @@ const RULES = [
     {
         artifactClass: "changelog",
         confidence: "high",
-        test: ({ base }) => (/^changelog/i.test(base) || base.includes("changelog") ? "changelog" : null),
+        test: ({ base }) => /^changelog/i.test(base) || base.includes("changelog") ? "changelog" : null,
     },
     {
         artifactClass: "contract",
@@ -172,7 +172,9 @@ const RULES = [
         test: ({ base, norm }) => 
         // Jest's `__fixtures__/` and `__mocks__/` are the same test-support
         // directories as their bare spellings and classify the same way.
-        /\/(fixtures?|__fixtures__|examples?|mocks?|__mocks__)\//.test(norm) || base.includes("fixture") || base.includes("mock")
+        /\/(fixtures?|__fixtures__|examples?|mocks?|__mocks__)\//.test(norm) ||
+            base.includes("fixture") ||
+            base.includes("mock")
             ? "fixture"
             : null,
     },
@@ -191,7 +193,9 @@ const RULES = [
         artifactClass: "configuration",
         confidence: "high",
         test: ({ base, ext }) => {
-            if (/\.config\.[cm]?[jt]s$/.test(base) || /^tsconfig.*\.json$/.test(base) || /^\..*rc(\..+)?$/.test(base)) {
+            if (/\.config\.[cm]?[jt]s$/.test(base) ||
+                /^tsconfig.*\.json$/.test(base) ||
+                /^\..*rc(\..+)?$/.test(base)) {
                 return "config";
             }
             if ([".json", ".yaml", ".yml", ".toml", ".ini"].includes(ext))
@@ -213,7 +217,7 @@ const RULES = [
     {
         artifactClass: "source_module",
         confidence: "medium",
-        test: ({ ext }) => [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"].includes(ext) ? ext : null,
+        test: ({ ext }) => ([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"].includes(ext) ? ext : null),
     },
 ];
 /**

@@ -20,16 +20,17 @@
 //     allowance shared by every part of the document — a declared size is a
 //     claim, not a bound;
 //   - macro parts are noted and never executed.
+
+import { compareCodePoints } from "../ordering";
 import {
+  readZipCentralDirectory,
+  streamZipMember,
   ZipBudgetExceededError,
   ZipCentralEntry,
   ZipFormatError,
-  readZipCentralDirectory,
-  streamZipMember,
 } from "../zip_reader";
 import { DecoderBudget, DecoderDiagnostic } from "./decoder";
-import { XmlError, parseXml } from "./xml";
-import { compareCodePoints } from "../ordering";
+import { parseXml, XmlError } from "./xml";
 
 /** An OOXML container, opened and bounded, with its parts addressable by name. */
 export interface OoxmlContainer {
@@ -177,8 +178,8 @@ export function openOoxml(archivePath: string, budget: DecoderBudget): OoxmlCont
         code: "decoder.budget_exceeded",
         severity: "warning",
         message:
-          `part '${name}' declares a compression ratio of ${Math.round(ratio)}:1, above the `
-          + `${budget.maxCompressionRatio}:1 ceiling, and was not expanded`,
+          `part '${name}' declares a compression ratio of ${Math.round(ratio)}:1, above the ` +
+          `${budget.maxCompressionRatio}:1 ceiling, and was not expanded`,
         part: name,
       });
       return null;
@@ -189,7 +190,9 @@ export function openOoxml(archivePath: string, budget: DecoderBudget): OoxmlCont
     let partBytes = 0;
     try {
       if (ceiling <= 0) {
-        throw new ZipBudgetExceededError(`member ${name} has no extraction ceiling left to expand into`);
+        throw new ZipBudgetExceededError(
+          `member ${name} has no extraction ceiling left to expand into`,
+        );
       }
       streamZipMember(archivePath, entry, { maxUncompressedBytes: ceiling }, (chunk) => {
         partBytes += chunk.length;
@@ -203,9 +206,9 @@ export function openOoxml(archivePath: string, budget: DecoderBudget): OoxmlCont
         code: budgeted ? "decoder.budget_exceeded" : "decoder.malformed",
         severity: "warning",
         message: budgeted
-          ? `part '${name}' would expand past ${ceiling} bytes — the least of the ${budget.maxPartBytes}-byte part `
-            + `ceiling, ${budget.maxCompressionRatio}x its ${entry.compressedSize} compressed bytes, and what this `
-            + "container may still expand — and was not read"
+          ? `part '${name}' would expand past ${ceiling} bytes — the least of the ${budget.maxPartBytes}-byte part ` +
+            `ceiling, ${budget.maxCompressionRatio}x its ${entry.compressedSize} compressed bytes, and what this ` +
+            "container may still expand — and was not read"
           : `part '${name}' could not be read: ${error instanceof Error ? error.message : String(error)}`,
         part: name,
       });
@@ -249,7 +252,8 @@ export function relationshipPartName(sourcePart: string): string {
  * part name.
  */
 export function resolveRelationshipTarget(sourcePart: string, target: string): string | null {
-  if (target.length === 0 || target.includes("\\") || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(target)) return null;
+  if (target.length === 0 || target.includes("\\") || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(target))
+    return null;
   const slash = sourcePart.lastIndexOf("/");
   const base = target.startsWith("/") || slash < 0 ? [] : sourcePart.slice(0, slash).split("/");
   const segments = [...base];
@@ -303,9 +307,10 @@ export function readRelationships(
         container.diagnostics.push({
           code: "decoder.malformed",
           severity: "warning",
-          message: resolved === null
-            ? `relationship '${id}' targets '${target}', which is not a part inside this container; it was not read`
-            : `relationship '${id}' targets '${target}', a part this container does not hold`,
+          message:
+            resolved === null
+              ? `relationship '${id}' targets '${target}', which is not a part inside this container; it was not read`
+              : `relationship '${id}' targets '${target}', a part this container does not hold`,
           part: relsPart,
         });
         return;
@@ -382,8 +387,8 @@ export function noteExternalRelationships(
       code: "decoder.budget_exceeded",
       severity: "warning",
       message:
-        `${skipped.length} part${skipped.length === 1 ? " was" : "s were"} not read: the container's `
-        + `${budget.maxContainerUncompressedBytes}-byte decompression allowance was spent`,
+        `${skipped.length} part${skipped.length === 1 ? " was" : "s were"} not read: the container's ` +
+        `${budget.maxContainerUncompressedBytes}-byte decompression allowance was spent`,
     });
   }
   return notes;

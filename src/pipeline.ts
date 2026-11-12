@@ -1,36 +1,62 @@
 // pipeline.ts — Full pipeline: scan → extract → assist → inject (async reconcile) → verify → index
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { PipelineConfig, NormalizedMeta, InjectionRecord, VerifyResult, UNKNOWN, asRecord, coerceNormalizedMeta } from "./schema";
-import type { ProductDeclaration, SemanticFoundationBinding } from "./schema";
-import { discoverFiles, scanFiles } from "./retrieval";
-import { authorityFreeCarrierTier, resolveCarrierDecisions, type CarrierInjectionStrategy } from "./mutation_policy";
+import { ArchiveRecord, expandArchivesUnderRoot } from "./archives";
+import { assistField, DEFAULT_ASSIST_CONFIG, PROSE_ORIGIN_FIELDS } from "./assist";
+import { assertHeaderIdentity, resolveHeaderIdentity } from "./authority";
+import { classify, classifyWithSemantics } from "./classify";
+import { resolveStrategy, stripInjectedBlock } from "./comment";
+import {
+  buildDedupEntries,
+  buildDedupReport,
+  buildPrimitiveLibraryIndex,
+  buildPromptLibraryIndex,
+  dedupReportToMarkdown,
+} from "./compiler";
 import type { DiscoverySummary } from "./discovery_contracts";
 import { extract } from "./extract";
-import { classify, classifyWithSemantics } from "./classify";
-import { buildMeta } from "./normalize_meta";
-import { injectFileAsync, injectFile, managedCarrierFreeBody } from "./inject";
-import { verify } from "./verify";
-import { buildDedupEntries, buildDedupReport, buildPromptLibraryIndex, buildPrimitiveLibraryIndex, dedupReportToMarkdown } from "./compiler";
-import { compilePlacementPlan, PlacementPlan } from "./placement_policy";
-import { buildMetaV3, MetaV3Record } from "./meta_v3";
-import { assistField, DEFAULT_ASSIST_CONFIG, PROSE_ORIGIN_FIELDS } from "./assist";
-import { normalizeFilenames } from "./normalize_filename";
+import {
+  type FrontMatterIssueCode,
+  inspectFrontMatterDocument,
+  isPatcherLimitation,
+} from "./frontmatter_patch";
+import { injectFile, injectFileAsync, managedCarrierFreeBody } from "./inject";
 import { localAdapter, makeOpenAIAdapter, runWithAdapter } from "./llm";
 import { applySchema, targetIncludes } from "./meta_schema";
+import { buildMetaV3, MetaV3Record } from "./meta_v3";
 import { MetricsCollector, MetricsSnapshot } from "./metrics";
+import {
+  authorityFreeCarrierTier,
+  type CarrierInjectionStrategy,
+  resolveCarrierDecisions,
+} from "./mutation_policy";
 import { NamespaceConfig } from "./namespace";
-import { resolveStrategy, stripInjectedBlock } from "./comment";
-import { inspectFrontMatterDocument, isPatcherLimitation, type FrontMatterIssueCode } from "./frontmatter_patch";
-import { expandArchivesUnderRoot, ArchiveRecord } from "./archives";
+import { normalizeFilenames } from "./normalize_filename";
+import { buildMeta } from "./normalize_meta";
 import { buildOmitMatcher } from "./omit";
-import { assertHeaderIdentity, resolveHeaderIdentity } from "./authority";
 import type { AuthorityConfig } from "./operation_contracts";
+import { compilePlacementPlan, PlacementPlan } from "./placement_policy";
+import { discoverFiles, scanFiles } from "./retrieval";
+import type { ProductDeclaration, SemanticFoundationBinding } from "./schema";
+import {
+  asRecord,
+  coerceNormalizedMeta,
+  InjectionRecord,
+  NormalizedMeta,
+  PipelineConfig,
+  UNKNOWN,
+  VerifyResult,
+} from "./schema";
+import { verify } from "./verify";
 
 // classify()'s coarse "high"/"medium"/"low" confidence, numerically scaled to line up
 // with inventoryTree's InventoryRecord.classification_confidence (a 0..1 float), so a
 // meta-schema's `source: classification_confidence` resolves consistently in both modes.
-const CONFIDENCE_NUMERIC: Record<"high" | "medium" | "low", number> = { high: 0.9, medium: 0.6, low: 0.3 };
+const CONFIDENCE_NUMERIC: Record<"high" | "medium" | "low", number> = {
+  high: 0.9,
+  medium: 0.6,
+  low: 0.3,
+};
 const UNKNOWN_EXCERPT = "Unknown";
 
 function relativeSourcePath(root: string, filePath: string): string {
@@ -47,11 +73,24 @@ function inlineCarrierBlockFor(raw: string): InlineCarrierBlock | undefined {
   const inspected = inspectFrontMatterDocument(raw);
   if (inspected.safe || !inspected.issue) return undefined;
   const { code, message, line } = inspected.issue;
-  return { code, message, malformed: !isPatcherLimitation(code), ...(line !== undefined ? { line } : {}) };
+  return {
+    code,
+    message,
+    malformed: !isPatcherLimitation(code),
+    ...(line !== undefined ? { line } : {}),
+  };
 }
 
 function toCfg(config: PipelineConfig): NamespaceConfig {
-  return { namespace: config.namespace ?? "l9", authority: config.authority ?? "", nearDupThreshold: config.nearDupThreshold, hashPrefixLength: config.hashPrefixLength, outputDir: config.outDir, indexDir: config.indexDir, namespaceGlobs: config.namespaceGlobs };
+  return {
+    namespace: config.namespace ?? "l9",
+    authority: config.authority ?? "",
+    nearDupThreshold: config.nearDupThreshold,
+    hashPrefixLength: config.hashPrefixLength,
+    outputDir: config.outDir,
+    indexDir: config.indexDir,
+    namespaceGlobs: config.namespaceGlobs,
+  };
 }
 
 export interface VerificationSummary {
@@ -81,7 +120,11 @@ export interface InlineCarrierBlock {
 /** Per-path detail for a non-injectable skip (OBS-003 / ADR-018). */
 export interface NonInjectableSkipDetail {
   path: string;
-  reason: "taxonomy_non_injectable" | "carrier_inventory_only" | "carrier_hard_skip" | "carrier_inline_blocked";
+  reason:
+    | "taxonomy_non_injectable"
+    | "carrier_inventory_only"
+    | "carrier_hard_skip"
+    | "carrier_inline_blocked";
   artifactType: string;
   confidence: "high" | "medium" | "low";
   /** Present for `carrier_inline_blocked`: why the existing frontmatter cannot be patched. */
@@ -158,18 +201,27 @@ function assertUniqueMetadataIds(subjects: readonly PipelineMetadataSubject[]): 
   const duplicates = [...byId.entries()].filter(([, paths]) => paths.length > 1);
   if (duplicates.length === 0) return;
   const detail = duplicates.map(([id, paths]) => `${id}: ${paths.join(", ")}`).join("; ");
-  throw new Error(`DUPLICATE_METADATA_ID: ${duplicates.length} id(s) map to more than one path: ${detail}`);
+  throw new Error(
+    `DUPLICATE_METADATA_ID: ${duplicates.length} id(s) map to more than one path: ${detail}`,
+  );
 }
 
 /** Refuse a real run over a tree with a blocking discovery disposition, naming the paths. */
 function assertTreeGovernable(discovery: ReturnType<typeof discoverFiles>): void {
   if (discovery.summary.blocking === 0) return;
   const preview = discovery.summary.entries
-    .filter((entry) => entry.disposition === "unreadable" || entry.disposition === "symlink" || entry.disposition === "unsupported_entry")
+    .filter(
+      (entry) =>
+        entry.disposition === "unreadable" ||
+        entry.disposition === "symlink" ||
+        entry.disposition === "unsupported_entry",
+    )
     .slice(0, 10)
     .map((entry) => `${entry.path}: ${entry.disposition}`)
     .join(", ");
-  throw new Error(`DISCOVERY_INCOMPLETE: apply refused because ${discovery.summary.blocking} path(s) could not be safely governed: ${preview}`);
+  throw new Error(
+    `DISCOVERY_INCOMPLETE: apply refused because ${discovery.summary.blocking} path(s) could not be safely governed: ${preview}`,
+  );
 }
 
 /**
@@ -183,8 +235,8 @@ function omitPatternsForOutputs(root: string, outputs: string[]): string[] {
     const absolute = path.resolve(output);
     if (absolute === root) {
       throw new Error(
-        "pipeline: outDir/indexDir must not equal the root directory (generated reports would be re-scanned and injected); "
-        + "use a sibling such as <root>.l9out",
+        "pipeline: outDir/indexDir must not equal the root directory (generated reports would be re-scanned and injected); " +
+          "use a sibling such as <root>.l9out",
       );
     }
     const relative = path.relative(root, absolute);
@@ -275,7 +327,10 @@ async function injectGovernedFiles(
  * that nothing inspects is indistinguishable from no verification at all. Aggregate
  * failures, surface them (independent of dryRun), and expose a gate flag to callers/CI.
  */
-function summarizeVerification(verified: readonly VerifyResult[], dryRun: boolean): VerificationSummary {
+function summarizeVerification(
+  verified: readonly VerifyResult[],
+  dryRun: boolean,
+): VerificationSummary {
   const failures = verified
     .filter((v) => v.issues.length > 0)
     .map((v) => ({ sourcePath: v.sourcePath, issues: v.issues }));
@@ -290,7 +345,10 @@ function summarizeVerification(verified: readonly VerifyResult[], dryRun: boolea
   // header/body failures above, but governed check/apply plan in dry-run and must stay
   // quiet; their verdict comes from the carrier operation, not from this print.
   if (!verification.passed && !dryRun) {
-    const preview = failures.slice(0, 5).map((f) => `  - ${f.sourcePath}: ${f.issues.join("; ")}`).join("\n");
+    const preview = failures
+      .slice(0, 5)
+      .map((f) => `  - ${f.sourcePath}: ${f.issues.join("; ")}`)
+      .join("\n");
     const more = failures.length > 5 ? `\n  … and ${failures.length - 5} more` : "";
     process.stderr.write(
       `[l9-meta-injector] verification FAILED for ${verification.withIssues}/${verification.total} file(s):\n${preview}${more}\n`,
@@ -300,15 +358,23 @@ function summarizeVerification(verified: readonly VerifyResult[], dryRun: boolea
 }
 
 /** Write the run's coverage and LLM/IO metrics lines to stderr when they carry signal. */
-function surfaceRunSignals(config: PipelineConfig, coverage: CoverageSummary, metrics: MetricsCollector): void {
+function surfaceRunSignals(
+  config: PipelineConfig,
+  coverage: CoverageSummary,
+  metrics: MetricsCollector,
+): void {
   // Surface coverage when anything was skipped or on verbose runs — otherwise the
   // library path emits no signal about what it processed vs. dropped (OBS-003).
-  if (config.verbose || coverage.skippedBinary + coverage.skippedNonInjectable > 0 || coverage.archivesExpanded > 0) {
+  if (
+    config.verbose ||
+    coverage.skippedBinary + coverage.skippedNonInjectable > 0 ||
+    coverage.archivesExpanded > 0
+  ) {
     process.stderr.write(
       `[l9-meta-injector] coverage: scanned=${coverage.scanned} injected=${coverage.injected} ` +
-      `skipped-binary=${coverage.skippedBinary} skipped-noninjectable=${coverage.skippedNonInjectable} ` +
-      `archives-expanded=${coverage.archivesExpanded} ` +
-      `verify-failed=${coverage.verifyFailed} report=${coverage.reportPath}\n`,
+        `skipped-binary=${coverage.skippedBinary} skipped-noninjectable=${coverage.skippedNonInjectable} ` +
+        `archives-expanded=${coverage.archivesExpanded} ` +
+        `verify-failed=${coverage.verifyFailed} report=${coverage.reportPath}\n`,
     );
   }
   // Surface the LLM/IO hotpath metrics whenever the LLM path ran or on verbose runs,
@@ -319,23 +385,35 @@ function surfaceRunSignals(config: PipelineConfig, coverage: CoverageSummary, me
 }
 
 /** Write the run's index files into `indexDir` — a real run that persists outputs only. */
-function writeRunIndexes(config: PipelineConfig, run: {
-  injected: InjectionRecord[];
-  dedupReport: ReturnType<typeof buildDedupReport>;
-  verified: VerifyResult[];
-  placementPlans: PlacementPlan[];
-  metaV3: MetaV3Record[];
-  archives: ArchiveRecord[];
-}): void {
+function writeRunIndexes(
+  config: PipelineConfig,
+  run: {
+    injected: InjectionRecord[];
+    dedupReport: ReturnType<typeof buildDedupReport>;
+    verified: VerifyResult[];
+    placementPlans: PlacementPlan[];
+    metaV3: MetaV3Record[];
+    archives: ArchiveRecord[];
+  },
+): void {
   if (config.dryRun || config.persistOutputs === false) return;
   const d = config.indexDir;
   fs.mkdirSync(d, { recursive: true });
-  fs.writeFileSync(path.join(d, "primitive-library-index.json"), JSON.stringify(buildPrimitiveLibraryIndex(run.injected), null, 2));
-  fs.writeFileSync(path.join(d, "prompt-library-index.json"), JSON.stringify(buildPromptLibraryIndex(run.injected), null, 2));
+  fs.writeFileSync(
+    path.join(d, "primitive-library-index.json"),
+    JSON.stringify(buildPrimitiveLibraryIndex(run.injected), null, 2),
+  );
+  fs.writeFileSync(
+    path.join(d, "prompt-library-index.json"),
+    JSON.stringify(buildPromptLibraryIndex(run.injected), null, 2),
+  );
   fs.writeFileSync(path.join(d, "dedup-report.json"), JSON.stringify(run.dedupReport, null, 2));
   fs.writeFileSync(path.join(d, "dedup-report.md"), dedupReportToMarkdown(run.dedupReport));
   fs.writeFileSync(path.join(d, "verification-report.json"), JSON.stringify(run.verified, null, 2));
-  fs.writeFileSync(path.join(d, "placement-plan.json"), JSON.stringify(run.placementPlans, null, 2));
+  fs.writeFileSync(
+    path.join(d, "placement-plan.json"),
+    JSON.stringify(run.placementPlans, null, 2),
+  );
   fs.writeFileSync(path.join(d, "meta-v3-index.json"), JSON.stringify(run.metaV3, null, 2));
   fs.writeFileSync(path.join(d, "archives-expanded.json"), JSON.stringify(run.archives, null, 2));
 }
@@ -352,38 +430,57 @@ export async function runPipelineAsync(config: PipelineConfig): Promise<Pipeline
  * Deliberately not re-exported from `src/index.ts` or `src/public`, and no field on
  * the public `PipelineConfig` carries the flag.
  */
-export async function runIndexGovernedPipelineAsync(config: PipelineConfig, authority?: AuthorityConfig): Promise<PipelineResult> {
+export async function runIndexGovernedPipelineAsync(
+  config: PipelineConfig,
+  authority?: AuthorityConfig,
+): Promise<PipelineResult> {
   return runPipelineEntry(config, true, authority);
 }
 
-async function runPipelineEntry(config: PipelineConfig, indexGoverned: boolean, authority?: AuthorityConfig): Promise<PipelineResult> {
+async function runPipelineEntry(
+  config: PipelineConfig,
+  indexGoverned: boolean,
+  authority?: AuthorityConfig,
+): Promise<PipelineResult> {
   // One collector per run aggregates the LLM/IO hotpath signal (OBS-009/OBS-010):
   // decision paths, call counts, failure counts, and p50/p95 latency.
   const metrics = new MetricsCollector();
   // The run's adapter is scoped to this run (ADR-064, RC-018): the OpenAI adapter when
   // credentials are complete, otherwise the local adapter. The process-global adapter a
   // caller may have installed is neither read nor changed.
-  const adapter = config.llmEnabled && config.llmBaseUrl && config.llmApiKey && config.llmModel
-    ? makeOpenAIAdapter({
-      baseUrl: config.llmBaseUrl, apiKey: config.llmApiKey, model: config.llmModel,
-      onDiagnostic: metrics.onLlmDiagnostic,
-      allowInsecure: config.llmAllowInsecure,
-    })
-    : localAdapter;
-  return runWithAdapter(adapter, () => runPipelineInScope(config, metrics, indexGoverned, authority));
+  const adapter =
+    config.llmEnabled && config.llmBaseUrl && config.llmApiKey && config.llmModel
+      ? makeOpenAIAdapter({
+          baseUrl: config.llmBaseUrl,
+          apiKey: config.llmApiKey,
+          model: config.llmModel,
+          onDiagnostic: metrics.onLlmDiagnostic,
+          allowInsecure: config.llmAllowInsecure,
+        })
+      : localAdapter;
+  return runWithAdapter(adapter, () =>
+    runPipelineInScope(config, metrics, indexGoverned, authority),
+  );
 }
 
-async function runPipelineInScope(config: PipelineConfig, metrics: MetricsCollector, indexGoverned: boolean, authority?: AuthorityConfig): Promise<PipelineResult> {
+async function runPipelineInScope(
+  config: PipelineConfig,
+  metrics: MetricsCollector,
+  indexGoverned: boolean,
+  authority?: AuthorityConfig,
+): Promise<PipelineResult> {
   const runStartedAt = new Date().toISOString();
   const root = path.resolve(config.root);
   const inlineAllow = authority?.inline_allow ?? [];
   const metadataTimestamp = config.metadataTimestamp?.trim() || UNKNOWN;
-  const identity = assertHeaderIdentity(resolveHeaderIdentity(root, {
-    authority: config.authority,
-    namespace: config.namespace,
-    unboundNamespaceDefault: path.basename(root),
-    namespaceGlobs: config.namespaceGlobs,
-  }));
+  const identity = assertHeaderIdentity(
+    resolveHeaderIdentity(root, {
+      authority: config.authority,
+      namespace: config.namespace,
+      unboundNamespaceDefault: path.basename(root),
+      namespaceGlobs: config.namespaceGlobs,
+    }),
+  );
   const nsCfg = toCfg({
     ...config,
     authority: identity.authority,
@@ -438,12 +535,16 @@ async function runPipelineInScope(config: PipelineConfig, metrics: MetricsCollec
     for (const e of scanned) {
       const raw = fs.readFileSync(e.sourcePath, "utf8");
       const spec = resolveStrategy(e.sourcePath, raw);
-      if (spec.strategy === "skip-binary") { skippedBinaryPaths.push(e.sourcePath); continue; } // never annotate binary/media
+      if (spec.strategy === "skip-binary") {
+        skippedBinaryPaths.push(e.sourcePath);
+        continue;
+      } // never annotate binary/media
       // Strip any previously-injected block so re-runs classify/hash the true body only
       // (keeps content_hash stable and prevents the injected metadata from skewing classification).
-      const cleanRaw = spec.strategy === "line-comment" || spec.strategy === "block-comment"
-        ? stripInjectedBlock(raw, spec)
-        : raw;
+      const cleanRaw =
+        spec.strategy === "line-comment" || spec.strategy === "block-comment"
+          ? stripInjectedBlock(raw, spec)
+          : raw;
       // Only frontmatter files carry a `--- … ---` header; for other strategies the
       // whole cleanRaw is the body. Running splitContent unconditionally would let a
       // leading `---` in non-markdown (e.g. YAML document separators) be mistaken for
@@ -454,7 +555,8 @@ async function runPipelineInScope(config: PipelineConfig, metrics: MetricsCollec
       // body after a safe header, or the whole document when the leading `---` block is not
       // patchable frontmatter. The looser splitContent fence would drop that block, so edits
       // inside it would never change content_hash (RC-022).
-      const body = spec.strategy === "yaml-frontmatter" ? managedCarrierFreeBody(e.sourcePath, raw) : cleanRaw;
+      const body =
+        spec.strategy === "yaml-frontmatter" ? managedCarrierFreeBody(e.sourcePath, raw) : cleanRaw;
       const relativePath = relativeSourcePath(root, e.sourcePath);
       const cls = classify(relativePath, body, e.headerConvention);
       classifications.set(e.sourcePath, cls);
@@ -476,12 +578,21 @@ async function runPipelineInScope(config: PipelineConfig, metrics: MetricsCollec
       // it simply cannot carry its own metadata, so the carrier policy routes it to the
       // central manifest. Throwing here instead would abort the whole repository operation
       // over one file the injector was never going to be able to rewrite safely.
-      const inlineCarrierBlock = spec.strategy === "yaml-frontmatter"
-        ? inlineCarrierBlockFor(raw)
-        : undefined;
+      const inlineCarrierBlock =
+        spec.strategy === "yaml-frontmatter" ? inlineCarrierBlockFor(raw) : undefined;
       if (inlineCarrierBlock) inlineCarrierBlocks.set(e.sourcePath, inlineCarrierBlock);
       const ef = extract(body);
-      let meta = buildMeta(e.sourcePath, body, ef, cls, nsCfg, identity.authority, metadataTimestamp, root, identity);
+      let meta = buildMeta(
+        e.sourcePath,
+        body,
+        ef,
+        cls,
+        nsCfg,
+        identity.authority,
+        metadataTimestamp,
+        root,
+        identity,
+      );
 
       // assist: LLM fills prose-origin fields only when seed fails "good" predicate
       if (pass.assist) {
@@ -551,8 +662,15 @@ async function runPipelineInScope(config: PipelineConfig, metrics: MetricsCollec
     }
 
     return {
-      metas, bodies, skippedBinaryPaths, skippedNonInjectablePaths, skippedNonInjectableDetails,
-      classifications, metadataSubjects, inlineCarrierBlocks, carrierTiers,
+      metas,
+      bodies,
+      skippedBinaryPaths,
+      skippedNonInjectablePaths,
+      skippedNonInjectableDetails,
+      classifications,
+      metadataSubjects,
+      inlineCarrierBlocks,
+      carrierTiers,
     };
   };
 
@@ -569,12 +687,21 @@ async function runPipelineInScope(config: PipelineConfig, metrics: MetricsCollec
   let archives: ArchiveRecord[] = [];
   if (config.localFiles) {
     if (!config.dryRun) {
-      const before = discoverFiles(root, config.glob, { omit, protectSkillMd: true }, indexGoverned, inlineAllow);
+      const before = discoverFiles(
+        root,
+        config.glob,
+        { omit, protectSkillMd: true },
+        indexGoverned,
+        inlineAllow,
+      );
       assertTreeGovernable(before);
       // Every collision among files that already exist is decidable now, so it refuses
       // before expansion materialises anything (RC-020). Collisions that only extracted
       // members introduce are caught by the check below, after extraction (ADR-073).
-      assertUniqueMetadataIds((await buildSubjects(scanFiles(before.files), { assist: false, reportSchemaGaps: false })).metadataSubjects);
+      assertUniqueMetadataIds(
+        (await buildSubjects(scanFiles(before.files), { assist: false, reportSchemaGaps: false }))
+          .metadataSubjects,
+      );
     }
     const expanded = expandArchivesUnderRoot(root, {
       dryRun: config.dryRun,
@@ -584,21 +711,35 @@ async function runPipelineInScope(config: PipelineConfig, metrics: MetricsCollec
     archives = expanded.archives;
   }
 
-  const discovery = discoverFiles(root, config.glob, { omit, protectSkillMd: true }, indexGoverned, inlineAllow);
+  const discovery = discoverFiles(
+    root,
+    config.glob,
+    { omit, protectSkillMd: true },
+    indexGoverned,
+    inlineAllow,
+  );
   if (!config.dryRun) assertTreeGovernable(discovery);
   const filePaths = discovery.files;
 
   const scanned = scanFiles(filePaths);
   const {
-    metas, bodies, skippedBinaryPaths, skippedNonInjectablePaths, skippedNonInjectableDetails,
-    classifications, metadataSubjects, inlineCarrierBlocks, carrierTiers,
+    metas,
+    bodies,
+    skippedBinaryPaths,
+    skippedNonInjectablePaths,
+    skippedNonInjectableDetails,
+    classifications,
+    metadataSubjects,
+    inlineCarrierBlocks,
+    carrierTiers,
   } = await buildSubjects(scanned, { assist: config.llmEnabled, reportSchemaGaps: true });
 
   assertUniqueMetadataIds(metadataSubjects);
 
   // Normalization writes sidecars into the tree (also in dry-run) and changes no path or
   // id, so it runs only once the run is known not to be refused (RC-020).
-  if (config.normalizeFilenames) normalizeFilenames(filePaths, { dryRun: config.dryRun, verbose: config.verbose });
+  if (config.normalizeFilenames)
+    normalizeFilenames(filePaths, { dryRun: config.dryRun, verbose: config.verbose });
 
   const opts = {
     dryRun: config.dryRun,
@@ -607,31 +748,46 @@ async function runPipelineInScope(config: PipelineConfig, metrics: MetricsCollec
     writeInjectLog: config.writeInjectLog ?? false,
     writeDryRunDiff: config.persistOutputs !== false,
   };
-  const inlineAuthorizedPaths = new Set(authority
-    ? resolveCarrierDecisions({ authority, mode: "apply", subjects: metadataSubjects })
-      .filter((item) => item.carrier === "inline_managed")
-      .map((item) => path.join(root, ...item.path.split("/")))
-    : []);
-  const injected = await injectGovernedFiles(scanned, {
-    metas, classifications, inlineCarrierBlocks, carrierTiers, inlineAuthorizedPaths, skippedNonInjectablePaths, skippedNonInjectableDetails,
-  }, config.llmEnabled, opts, metrics);
+  const inlineAuthorizedPaths = new Set(
+    authority
+      ? resolveCarrierDecisions({ authority, mode: "apply", subjects: metadataSubjects })
+          .filter((item) => item.carrier === "inline_managed")
+          .map((item) => path.join(root, ...item.path.split("/")))
+      : [],
+  );
+  const injected = await injectGovernedFiles(
+    scanned,
+    {
+      metas,
+      classifications,
+      inlineCarrierBlocks,
+      carrierTiers,
+      inlineAuthorizedPaths,
+      skippedNonInjectablePaths,
+      skippedNonInjectableDetails,
+    },
+    config.llmEnabled,
+    opts,
+    metrics,
+  );
 
   // In dry-run nothing was written. A record whose planned bytes differ from the current
   // target (or whose plan cannot prove otherwise) is verified only by the checks that do
   // not read written bytes; reading the pre-injection file would report the header it is
   // about to receive as missing (RC-015). A record already holding its planned bytes is
   // verified in full from disk, exactly as a real run would.
-  const verified = injected.map((r) => verify(r.sourcePath, r.originalBodyHash, r.meta, {
-    semanticallyBound: identity.source === "semantic_binding",
-    skipWrittenBytesChecks: config.dryRun && r.wouldChange !== false,
-  }));
+  const verified = injected.map((r) =>
+    verify(r.sourcePath, r.originalBodyHash, r.meta, {
+      semanticallyBound: identity.source === "semantic_binding",
+      skipWrittenBytesChecks: config.dryRun && r.wouldChange !== false,
+    }),
+  );
   const verification = summarizeVerification(verified, config.dryRun);
 
   // Persist coverage even on dry-run so skipped paths are inspectable after the fact (ADR-018).
   const coverageReportDir = config.outDir || config.indexDir;
-  const coverageReportPath = config.persistOutputs === false
-    ? ""
-    : path.join(coverageReportDir, "coverage-report.json");
+  const coverageReportPath =
+    config.persistOutputs === false ? "" : path.join(coverageReportDir, "coverage-report.json");
   if (config.persistOutputs !== false) {
     fs.mkdirSync(coverageReportDir, { recursive: true });
   }
@@ -651,9 +807,10 @@ async function runPipelineInScope(config: PipelineConfig, metrics: MetricsCollec
     reportPath: coverageReportPath,
     discovery: discovery.summary,
   };
-  const semanticBinding = identity.source === "semantic_binding" && identity.semanticFoundation && identity.product
-    ? { semantic_foundation: identity.semanticFoundation, product: identity.product }
-    : undefined;
+  const semanticBinding =
+    identity.source === "semantic_binding" && identity.semanticFoundation && identity.product
+      ? { semantic_foundation: identity.semanticFoundation, product: identity.product }
+      : undefined;
   if (config.persistOutputs !== false) {
     const persistedCoverage = {
       ...coverage,
@@ -666,7 +823,11 @@ async function runPipelineInScope(config: PipelineConfig, metrics: MetricsCollec
   surfaceRunSignals(config, coverage, metrics);
 
   const dedupEntries = buildDedupEntries(injected, config.hashPrefixLength, bodies);
-  const dedupReport = buildDedupReport(dedupEntries, config.nearDupThreshold, config.hashPrefixLength);
+  const dedupReport = buildDedupReport(
+    dedupEntries,
+    config.nearDupThreshold,
+    config.hashPrefixLength,
+  );
 
   // Compile advisory placement plans for the injected artifacts (placement compiler
   // was previously unreachable outside tests — finding DWL-002). Segment rules see the
@@ -674,12 +835,16 @@ async function runPipelineInScope(config: PipelineConfig, metrics: MetricsCollec
   // RC-017), so plan.sourcePath is repo-relative like metadataSubjects.path. Each plan
   // carries its record's resolved header namespace, so identity defaults, bound
   // product ids and namespace globs agree with the header (RC-026).
-  const relativeBySource = new Map(injected.map((r) => [r.sourcePath, relativeSourcePath(root, r.sourcePath)]));
-  const placementPlans = injected.map((r) => compilePlacementPlan(
-    relativeBySource.get(r.sourcePath) ?? relativeSourcePath(root, r.sourcePath),
-    bodies.get(r.sourcePath) ?? "",
-    { namespace: r.meta.namespace },
-  ));
+  const relativeBySource = new Map(
+    injected.map((r) => [r.sourcePath, relativeSourcePath(root, r.sourcePath)]),
+  );
+  const placementPlans = injected.map((r) =>
+    compilePlacementPlan(
+      relativeBySource.get(r.sourcePath) ?? relativeSourcePath(root, r.sourcePath),
+      bodies.get(r.sourcePath) ?? "",
+      { namespace: r.meta.namespace },
+    ),
+  );
   const planBySource = new Map(placementPlans.map((p) => [p.sourcePath, p]));
 
   // Build a v3 nine-plane record per artifact, driven by the 17-class semantic
@@ -688,21 +853,40 @@ async function runPipelineInScope(config: PipelineConfig, metrics: MetricsCollec
   const hcBySource = new Map(scanned.map((e) => [e.sourcePath, e.headerConvention]));
   const metaV3: MetaV3Record[] = injected.map((r) => {
     const body = bodies.get(r.sourcePath) ?? "";
-    const relativePath = relativeBySource.get(r.sourcePath) ?? relativeSourcePath(root, r.sourcePath);
-    const semantic = classifyWithSemantics(relativePath, body, hcBySource.get(r.sourcePath) ?? "none").semantic;
+    const relativePath =
+      relativeBySource.get(r.sourcePath) ?? relativeSourcePath(root, r.sourcePath);
+    const semantic = classifyWithSemantics(
+      relativePath,
+      body,
+      hcBySource.get(r.sourcePath) ?? "none",
+    ).semantic;
     return {
       sourcePath: r.sourcePath,
       semanticClass: semantic.artifactClass,
       semanticConfidence: semantic.confidence,
-      metaV3: buildMetaV3({ meta: r.meta, semantic, placement: planBySource.get(relativePath), sizeBytes: Buffer.byteLength(body, "utf8") }),
+      metaV3: buildMetaV3({
+        meta: r.meta,
+        semantic,
+        placement: planBySource.get(relativePath),
+        sizeBytes: Buffer.byteLength(body, "utf8"),
+      }),
     };
   });
 
   writeRunIndexes(config, { injected, dedupReport, verified, placementPlans, metaV3, archives });
 
   return {
-    runStartedAt, scanned, metadataSubjects, injected, verified, verification, coverage,
-    placementPlans, metaV3, metrics: metrics.snapshot(), archives,
+    runStartedAt,
+    scanned,
+    metadataSubjects,
+    injected,
+    verified,
+    verification,
+    coverage,
+    placementPlans,
+    metaV3,
+    metrics: metrics.snapshot(),
+    archives,
     ...(semanticBinding ? { semanticBinding } : {}),
   };
 }

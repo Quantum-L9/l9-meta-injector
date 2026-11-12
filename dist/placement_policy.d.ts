@@ -1,4 +1,4 @@
-import { SemanticArtifactClass, ClassConfidence } from "./schema";
+import { ClassConfidence, SemanticArtifactClass } from "./schema";
 export interface PlacementOptions {
     /** Namespace stamped onto the plan. Default: "l9". */
     namespace?: string;

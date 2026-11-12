@@ -1,11 +1,4 @@
 "use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.PACK_SELECTION_PRIORITY = exports.DEFAULT_REASONING_PACK_BUDGET = exports.REASONING_GROUNDING_REFS = exports.REASONING_TYPES = exports.REASONING_EVIDENCE_PACK_SCHEMA = exports.REASONING_CANDIDATE_SCHEMA = exports.REASONING_ROUTING_PROFILE_VERSION = exports.REASONING_ROUTING_PROFILE_ID = void 0;
-exports.reasoningRoutingProfileHash = reasoningRoutingProfileHash;
-exports.routeReasoningCandidates = routeReasoningCandidates;
-exports.reasoningEligible = reasoningEligible;
-exports.buildReasoningEvidencePacks = buildReasoningEvidencePacks;
-exports.renderJsonl = renderJsonl;
 // corpus_reasoning.ts — which candidates would repay an LLM's attention, and with what.
 //
 // This module routes future reasoning. It does not reason, and it never calls a
@@ -33,10 +26,17 @@ exports.renderJsonl = renderJsonl;
 // "Reasoning eligible" is therefore not a compliment. It does not mean a candidate
 // is important, correct, or worth building. It means the evidence is ambiguous in
 // a way that reading might resolve.
-const ordering_1 = require("./ordering");
-const repository_model_1 = require("./repository_model");
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.PACK_SELECTION_PRIORITY = exports.DEFAULT_REASONING_PACK_BUDGET = exports.REASONING_GROUNDING_REFS = exports.REASONING_TYPES = exports.REASONING_EVIDENCE_PACK_SCHEMA = exports.REASONING_CANDIDATE_SCHEMA = exports.REASONING_ROUTING_PROFILE_VERSION = exports.REASONING_ROUTING_PROFILE_ID = void 0;
+exports.reasoningRoutingProfileHash = reasoningRoutingProfileHash;
+exports.routeReasoningCandidates = routeReasoningCandidates;
+exports.reasoningEligible = reasoningEligible;
+exports.buildReasoningEvidencePacks = buildReasoningEvidencePacks;
+exports.renderJsonl = renderJsonl;
 const corpus_analysis_1 = require("./corpus_analysis");
 const corpus_fusion_1 = require("./corpus_fusion");
+const ordering_1 = require("./ordering");
+const repository_model_1 = require("./repository_model");
 exports.REASONING_ROUTING_PROFILE_ID = "reasoning-routing/v1";
 exports.REASONING_ROUTING_PROFILE_VERSION = "1.0.0";
 exports.REASONING_CANDIDATE_SCHEMA = "l9.reasoning-candidate/v1";
@@ -92,13 +92,12 @@ function routeTopic(candidate) {
             reason: "weak topic candidate: no corroborated evidence to adjudicate",
         };
     }
-    const independentFamilies = ["lexical", "declared_identity", "graph", "semantic_model"]
-        .filter((family) => candidate.evidence_family_counts[family] > 0).length;
+    const independentFamilies = ["lexical", "declared_identity", "graph", "semantic_model"].filter((family) => candidate.evidence_family_counts[family] > 0).length;
     if (candidate.confidence_class === "strong" && independentFamilies >= 2) {
         return {
             type: "SAME_BODY_OF_WORK_ADJUDICATION",
-            reason: `strong topic candidate with ${independentFamilies} independent evidence families: `
-                + "whether these documents describe one body of work is not decidable from overlap alone",
+            reason: `strong topic candidate with ${independentFamilies} independent evidence families: ` +
+                "whether these documents describe one body of work is not decidable from overlap alone",
         };
     }
     return {
@@ -111,12 +110,12 @@ function routeProject(candidate) {
     if (candidate.ambiguity_class.includes(corpus_fusion_1.AMBIGUITY_CONFLICTING_STATUS)) {
         return {
             type: "CONFLICT_RESOLUTION_ANALYSIS",
-            reason: `members declare conflicting statuses (${candidate.work_statuses.join(", ")}); `
-                + "the source says two things and does not say which is current",
+            reason: `members declare conflicting statuses (${candidate.work_statuses.join(", ")}); ` +
+                "the source says two things and does not say which is current",
         };
     }
-    if (candidate.ambiguity_class.includes(corpus_fusion_1.AMBIGUITY_AMBIGUOUS_SUPERSESSION)
-        && candidate.ambiguity_class.includes(corpus_fusion_1.AMBIGUITY_MIXED_VERSION_LINEAGE)) {
+    if (candidate.ambiguity_class.includes(corpus_fusion_1.AMBIGUITY_AMBIGUOUS_SUPERSESSION) &&
+        candidate.ambiguity_class.includes(corpus_fusion_1.AMBIGUITY_MIXED_VERSION_LINEAGE)) {
         return {
             type: "SUPERSESSION_ANALYSIS",
             reason: "several supersession declarations over a mixed version lineage: direction is ambiguous",
@@ -125,15 +124,15 @@ function routeProject(candidate) {
     if (candidate.cross_archive && candidate.duplicate_cluster_count > 0) {
         return {
             type: "VERSION_EVOLUTION_ANALYSIS",
-            reason: "the same body of work appears in more than one archive with duplicate clusters: "
-                + "which copy is the later one is not decidable from content alone",
+            reason: "the same body of work appears in more than one archive with duplicate clusters: " +
+                "which copy is the later one is not decidable from content alone",
         };
     }
     if (candidate.ambiguity_class.includes(corpus_fusion_1.AMBIGUITY_MULTIPLE_PROJECT_NAMES)) {
         return {
             type: "PROJECT_IDENTITY_ADJUDICATION",
-            reason: `members declare ${candidate.declared_identifiers.length} different project identifiers: `
-                + "whether that is one project renamed or two projects is a question about intent",
+            reason: `members declare ${candidate.declared_identifiers.length} different project identifiers: ` +
+                "whether that is one project renamed or two projects is a question about intent",
         };
     }
     if (candidate.confidence_class === "weak") {
@@ -161,14 +160,14 @@ function routeConsolidation(candidate) {
     if (candidate.supersession_assertion_ids.length > 0) {
         return {
             type: "SUPERSESSION_ANALYSIS",
-            reason: `${candidate.supersession_assertion_ids.length} supersession declaration(s) across `
-                + `${candidate.unique_content_variant_count} content variants`,
+            reason: `${candidate.supersession_assertion_ids.length} supersession declaration(s) across ` +
+                `${candidate.unique_content_variant_count} content variants`,
         };
     }
     return {
         type: "CONSOLIDATION_ANALYSIS",
-        reason: `${candidate.unique_content_variant_count} unique content variants: what each copy holds `
-            + "that the others do not is not decidable from hashes",
+        reason: `${candidate.unique_content_variant_count} unique content variants: what each copy holds ` +
+            "that the others do not is not decidable from hashes",
     };
 }
 /**
@@ -209,8 +208,8 @@ function routeReasoningCandidates(input) {
         push(candidate, routeProject(candidate));
     for (const candidate of input.consolidationCandidates)
         push(candidate, routeConsolidation(candidate));
-    return rows.sort((a, b) => (0, ordering_1.compareCodePoints)(a.candidate_type, b.candidate_type)
-        || (0, ordering_1.compareCodePoints)(a.candidate_id, b.candidate_id));
+    return rows.sort((a, b) => (0, ordering_1.compareCodePoints)(a.candidate_type, b.candidate_type) ||
+        (0, ordering_1.compareCodePoints)(a.candidate_id, b.candidate_id));
 }
 /** Candidates worth a reasoner's attention: everything not routed to NONE. */
 function reasoningEligible(rows) {
@@ -296,9 +295,9 @@ function buildReasoningEvidencePacks(input) {
                 continue;
             }
             const artifactIndex = builders.length;
-            const all = [...(input.assertionsByArtifact.get(artifactId) ?? [])].sort((a, b) => assertionPriority(a.predicate) - assertionPriority(b.predicate)
-                || (0, ordering_1.compareCodePoints)(a.predicate, b.predicate)
-                || (0, ordering_1.compareCodePoints)(a.assertion_id, b.assertion_id));
+            const all = [...(input.assertionsByArtifact.get(artifactId) ?? [])].sort((a, b) => assertionPriority(a.predicate) - assertionPriority(b.predicate) ||
+                (0, ordering_1.compareCodePoints)(a.predicate, b.predicate) ||
+                (0, ordering_1.compareCodePoints)(a.assertion_id, b.assertion_id));
             if (all.length === 0)
                 coverageGaps.push(`no assertions recorded for ${artifactId}`);
             const assertionLength = (assertion) => assertion.object.length + assertion.source_path.length + assertion.evidence_excerpt.length;
@@ -380,10 +379,7 @@ function buildReasoningEvidencePacks(input) {
                 excerpts: keptExcerpts.filter((entry) => entry !== null),
             }));
         }
-        items.sort((a, b) => a.band - b.band
-            || a.artifact - b.artifact
-            || a.kind - b.kind
-            || a.index - b.index);
+        items.sort((a, b) => a.band - b.band || a.artifact - b.artifact || a.kind - b.kind || a.index - b.index);
         for (const item of items) {
             if (usedCharacters + item.charge > budget.maxTotalPackCharacters) {
                 charactersOmitted += item.original;
@@ -408,7 +404,9 @@ function buildReasoningEvidencePacks(input) {
                     nearScores.push({ pair_id: pair.pair_id, score: signal.score });
                 else if (signal.kind === "embedding_similarity")
                     embeddingScores.push({ pair_id: pair.pair_id, score: signal.score });
-                else if (signal.kind === "title_overlap" || signal.kind === "heading_overlap" || signal.kind === "keyphrase_overlap") {
+                else if (signal.kind === "title_overlap" ||
+                    signal.kind === "heading_overlap" ||
+                    signal.kind === "keyphrase_overlap") {
                     lexicalSignals.push({ pair_id: pair.pair_id, kind: signal.kind, score: signal.score });
                 }
             }
@@ -465,6 +463,7 @@ function buildReasoningEvidencePacks(input) {
 }
 /** Canonical JSONL: one record per line, in the order given. */
 function renderJsonl(records) {
-    return records.map((record) => (0, corpus_analysis_1.canonicalCorpusJson)(record, 0)).join("\n") + (records.length > 0 ? "\n" : "");
+    return (records.map((record) => (0, corpus_analysis_1.canonicalCorpusJson)(record, 0)).join("\n") +
+        (records.length > 0 ? "\n" : ""));
 }
 //# sourceMappingURL=corpus_reasoning.js.map

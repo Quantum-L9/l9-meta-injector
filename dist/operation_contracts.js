@@ -91,10 +91,14 @@ function isSemanticFoundationBinding(value) {
         return false;
     if (typeof candidate.release !== "string" || candidate.release.trim().length === 0)
         return false;
-    if (candidate.admission !== "candidate" && candidate.admission !== "admitted" && candidate.admission !== "Unknown") {
+    if (candidate.admission !== "candidate" &&
+        candidate.admission !== "admitted" &&
+        candidate.admission !== "Unknown") {
         return false;
     }
-    if (typeof candidate.ledgers !== "object" || candidate.ledgers === null || Array.isArray(candidate.ledgers)) {
+    if (typeof candidate.ledgers !== "object" ||
+        candidate.ledgers === null ||
+        Array.isArray(candidate.ledgers)) {
         return false;
     }
     const ledgers = candidate.ledgers;
@@ -155,9 +159,9 @@ function semanticBindingErrors(config) {
     return errors;
 }
 function isStringArray(value) {
-    return Array.isArray(value)
-        && value.every((item) => typeof item === "string" && item.trim().length > 0)
-        && new Set(value).size === value.length;
+    return (Array.isArray(value) &&
+        value.every((item) => typeof item === "string" && item.trim().length > 0) &&
+        new Set(value).size === value.length);
 }
 /**
  * Authority globs are security-sensitive repository-relative POSIX patterns.
@@ -185,7 +189,13 @@ function isAuthorityConfig(value) {
         return false;
     const candidate = value;
     const v1Keys = [
-        "schema", "writer", "default_carrier", "legacy_writers", "inline_allow", "inline_exclude", "validation_commands",
+        "schema",
+        "writer",
+        "default_carrier",
+        "legacy_writers",
+        "inline_allow",
+        "inline_exclude",
+        "validation_commands",
     ];
     const v2Keys = [...v1Keys, "semantic_foundation", "product"];
     if (!isSupportedAuthoritySchema(candidate.schema))
@@ -193,7 +203,9 @@ function isAuthorityConfig(value) {
     const allowed = candidate.schema === exports.META_AUTHORITY_SCHEMA_V2 ? v2Keys : v1Keys;
     if (!hasOnlyKeys(candidate, allowed))
         return false;
-    if (typeof candidate.writer !== "object" || candidate.writer === null || Array.isArray(candidate.writer))
+    if (typeof candidate.writer !== "object" ||
+        candidate.writer === null ||
+        Array.isArray(candidate.writer))
         return false;
     const writer = candidate.writer;
     if (!hasOnlyKeys(writer, ["repository", "ref"]))
@@ -202,13 +214,17 @@ function isAuthorityConfig(value) {
         return false;
     if (typeof writer.ref !== "string" || writer.ref.trim().length === 0)
         return false;
-    if (candidate.default_carrier !== "central_manifest" && candidate.default_carrier !== "inline_managed")
+    if (candidate.default_carrier !== "central_manifest" &&
+        candidate.default_carrier !== "inline_managed")
         return false;
     if (candidate.legacy_writers !== "forbidden" && candidate.legacy_writers !== "migration_only")
         return false;
-    if (!isStringArray(candidate.inline_allow) || !candidate.inline_allow.every(isSafeAuthorityPathPattern))
+    if (!isStringArray(candidate.inline_allow) ||
+        !candidate.inline_allow.every(isSafeAuthorityPathPattern))
         return false;
-    if (candidate.inline_exclude !== undefined && (!isStringArray(candidate.inline_exclude) || !candidate.inline_exclude.every(isSafeAuthorityPathPattern)))
+    if (candidate.inline_exclude !== undefined &&
+        (!isStringArray(candidate.inline_exclude) ||
+            !candidate.inline_exclude.every(isSafeAuthorityPathPattern)))
         return false;
     if (candidate.validation_commands !== undefined && !isStringArray(candidate.validation_commands))
         return false;
