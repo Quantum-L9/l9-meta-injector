@@ -6,7 +6,10 @@ Accepted. Superseded in part by
 [ADR-093](093-retire-committed-per-pr-generated-artifacts.md): the report and the
 architecture manifest are no longer committed, so a dependency update has nothing
 to rebind; `npm run deps:rebind` now runs `npm ci`, `build`, `lint` and `validate`.
-The Dependabot grouping and the major-version amendment stand.
+The rest is superseded by
+[ADR-094](094-dependency-updates-follow-the-organization-render.md): the Dependabot
+grouping and the major-version amendment gave way to the organization's rendered
+`.github/dependabot.yml`, which ignores every semver-major.
 
 ## Date
 
