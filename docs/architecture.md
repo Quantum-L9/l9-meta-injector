@@ -7,7 +7,7 @@
 
 The TypeScript pipeline under `src/` is the sole active engine. `runPipelineAsync` owns the complete classify, extract, assist, inject, verify, report, placement, MetaV3, and indexing sequence. The Python consolidation engine under `tools/consolidation/` is historical reference material and is neither shipped nor CI-gated.
 
-`docs/architecture-authority.json` is the machine-readable authority index. Authority-critical file identities are recorded in `docs/architecture-manifest.json`.
+`docs/architecture-authority.json` is the machine-readable authority index. Authority-critical file identities are computed by `npm run check:manifest` from the tree under test and never committed (ADR-093).
 
 ## Semantic authority
 
@@ -274,8 +274,9 @@ and from nothing else. It reuses the work reader's `Label: value` grammar, skips
 unit the work vocabulary claims, and cites the exact line for a `line_span` block and the
 block locator verbatim for every other kind. `src/corpus_architecture_evidence.ts` emits
 the complete payload (`l9.architecture-evidence/v1`) with a manifest built like the
-work-signal export's, applies the static `architecture-development/v1` selection table,
-and binds its profile into `corpus_analysis_id` only when selected (ADR-087, Proposed).
+work-signal export's, applies the static `architecture-development/v2` selection table (ADR-090: decision-record,
+research and historical roles, block-read status declarations, contradictions kept), and
+binds its profile into `corpus_analysis_id` only when selected (ADR-087, Proposed).
 
 Exact duplicates are content-hash equality over the unified record set, so a physical
 file and a member of a nested archive can share a cluster. `DUPLICATE_OF` is rendered
@@ -366,7 +367,7 @@ The repository owns three active pull-request workflows, two release workflows, 
 | `Release prep` | `prepare` | Push to `release/v*.*.*` | Release-candidate preparation and report binding |
 | `Release` | `release` | Push to `main` touching `package.json` | Exact tag, GitHub Release and major-tag move (ADR-050) |
 
-Dependency updates arrive grouped through `.github/dependabot.yml` and are landed by a maintainer with `npm run deps:rebind`, because the validation report is bound to the whole tree (ADR-056).
+Dependency updates arrive through `.github/dependabot.yml`, which is the organization's render for this root (`Quantum-L9/.github` ADR-0019): minor and patch updates only, grouped per ecosystem, with every semver-major ignored. Nothing generated is committed per pull request (ADR-093), so a Dependabot branch passes the same required checks as any other head (ADR-094). The one exception is a `typescript` update that changes emitted output: `check:dist` fails until a maintainer rebuilds and commits `dist/`.
 
 Organization L9 CI is not a workflow in this tree. The GitHub organization required-workflow ruleset runs `Quantum-L9/l9-ci-core` `main` `.github/workflows/org-ci.yml` (`Organization CI (Core)` / `Analyze (central Core)`) on pull requests, pushes, and merge groups. Core owns Semgrep analysis, SDK admission, governance defaults, enforcement, and publication; this repository declares only `.l9/ci.json` and selects no Core or SDK revision (ADR-048). A Core change propagates with no consumer edit.
 
@@ -397,12 +398,11 @@ npm run validate
 git status --porcelain --untracked-files=all
 ```
 
-The canonical aggregate command checks source types, Vitest, the exact API contract, architecture authority, deterministic architecture manifest, committed distribution parity, selfpack, and installed-tarball consumption. ESLint is an additive independent gate. Validation must leave the checkout clean.
+The canonical aggregate command checks source types, Vitest, the exact API contract, architecture authority, computed architecture manifest, committed distribution parity, selfpack, and installed-tarball consumption. ESLint is an additive independent gate. Validation must leave the checkout clean.
 
 Any change to this document requires:
 
 ```bash
-npm run manifest:update
 npm run validate
 ```
 

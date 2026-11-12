@@ -236,22 +236,29 @@ describe("the verdict is read structurally (RC-110)", () => {
   });
 });
 
-const generating = process.env.L9_VALIDATION_REPORT_RUN === "1";
+// ADR-093: the report is local or CI-artifact evidence, never repository content. A
+// committed copy had to be regenerated on every pull request and conflicted with every
+// other open one; the CI run on a head is the authority for that head. These tests keep
+// the retirement from drifting back.
+describe("the report is not repository content (ADR-093)", () => {
+  const { spawnSync } = require("node:child_process");
+  const { gitBinary } = require("../scripts/lib/git-binary");
+  const git = gitBinary(() => { throw new Error("git missing"); });
+  const gitRun = (args: string[]) => spawnSync(git, args, { cwd: REPO, encoding: "utf8" });
 
-describe.skipIf(generating)("the report in this repository", () => {
-  it("exists, is bound to this tree, and records a green verdict", () => {
-    expect(fs.existsSync(REPORT), "CURRENT_VALIDATION_REPORT.md is missing").toBe(true);
-    const contents = fs.readFileSync(REPORT, "utf8");
-    const digest = /\*\*Bound to tree:\*\* `(sha256:[0-9a-f]{64})`/.exec(contents);
-    expect(digest, "the report does not name a tree digest").not.toBeNull();
-    const state = reporter.treeState();
-    expect(state.clean, "the report cannot validate a dirty non-report tree").toBe(true);
-    expect(digest?.[1], "the report describes a different tree; re-run npm run validate:report")
-      .toBe(state.digest);
-    // WU-072 (RC-110): the verdict is read structurally, as --check reads it: the final
-    // Verdict section says green AND every command row exited zero. A document-wide
-    // "**green**" substring could be supplied by a quoted failure tail.
-    expect(reporter.reportVerdict(contents)).toEqual({ green: true, reason: null });
+  it("is not tracked", () => {
+    const listed = gitRun(["ls-files", "--", "CURRENT_VALIDATION_REPORT.md", "VALIDATION_REPORT.md"]);
+    expect(listed.status, listed.stderr).toBe(0);
+    expect(listed.stdout).toBe("");
+  });
+
+  it("is ignored where validate:report writes it", () => {
+    // -v names the rule that matched, so a global excludesfile or .git/info/exclude
+    // on one machine cannot stand in for the repository's own .gitignore entry.
+    const ignored = gitRun(["check-ignore", "-v", "--no-index", "--", "CURRENT_VALIDATION_REPORT.md"]);
+    expect(ignored.status, "CURRENT_VALIDATION_REPORT.md must be gitignored").toBe(0);
+    expect(ignored.stdout, "the ignore rule must come from the repository's .gitignore").toMatch(/^\.gitignore:\d+:/);
+    expect(path.relative(REPO, REPORT)).toBe("CURRENT_VALIDATION_REPORT.md");
   });
 
   it("replaced the unbound report rather than sitting beside it", () => {

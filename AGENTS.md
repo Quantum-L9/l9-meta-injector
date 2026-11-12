@@ -44,15 +44,11 @@ npm run validate
 git status --porcelain --untracked-files=all
 ```
 
-The final command must produce no output. `npm run validate` covers type checking, Vitest, public API, architecture authority, deterministic architecture manifest, committed distribution parity, selfpack, and installed-tarball consumption. ESLint is a separate required command and separate CI context.
+The final command must produce no output. `npm run validate` covers type checking, Vitest, public API, architecture authority, computed architecture manifest, committed distribution parity, selfpack, and installed-tarball consumption. ESLint is a separate required command and separate CI context.
 
 Core Repository Execution V2 uses the exact `.l9/repo-workflow.json` declaration and generated `make-v1` `Makefile`. The repository-owned `Repo.mk` maps `make setup` to `npm ci --ignore-scripts`, `make validate` to the authority and manifest checks, `make check` to ESLint, and `make test` to the complete `npm run validate` gate. The existing `make pr` and `make pr-check` publication targets remain in `Repo.mk` (ADR-083). Run all four Core phases in order; no individual phase replaces the required local gate.
 
-When `docs/architecture.md` or another authority-critical file changes, run this before validation:
-
-```bash
-npm run manifest:update
-```
+No generated evidence is committed per pull request (ADR-093). The architecture manifest is computed by `npm run check:manifest` and never written to the repository; `CURRENT_VALIDATION_REPORT.md` is a gitignored local or release-artifact report. Neither file may be reintroduced.
 
 ## CI pipeline
 
@@ -71,7 +67,7 @@ Workflow-level blocking means the job has no `continue-on-error`. Whether a cont
 | `Release` | `release` | Push to `main` touching `package.json` | Lint and validate, then create the exact tag and GitHub Release and move the major tag (ADR-050); a version whose tag already exists is a no-op |
 | `Organization CI (Core)` | `Analyze (central Core)` | Pull requests; push; merge group | Organization-required workflow from `Quantum-L9/l9-ci-core` `main` `.github/workflows/org-ci.yml`: Semgrep analysis, SDK admission, governance, enforcement, publication. Not a file in this repository. |
 
-`L9 Meta Injector — LLM self-test` is manual only. Dependency updates are grouped by `.github/dependabot.yml` and landed with `npm run deps:rebind` (ADR-056).
+`L9 Meta Injector — LLM self-test` is manual only. `.github/dependabot.yml` is the organization's render for this root (minor and patch only, majors ignored). Never hand-edit it; change `Quantum-L9/.github` `policies/dependabot/` instead (ADR-094). A Dependabot branch is validated like any other head; `npm run deps:rebind` is the local equivalent of that gate.
 
 ### Organization-managed L9 CI (2026-09-05)
 
@@ -116,7 +112,7 @@ The flat config ignores:
 
 - Rebuild committed `dist/` after changing `src/`.
 - Keep runtime exports, declarations, `package.json#exports`, and `docs/public-api-contract.json` aligned.
-- Run `npm run manifest:update` after changing an authority-critical file.
+- Never commit `docs/architecture-manifest.json` or `CURRENT_VALIDATION_REPORT.md` (ADR-093).
 - Use `npm run selfpack:update` only when a fixture-output change is intentional and reviewed.
 - Preserve body content, idempotency, taxonomy validity, and deterministic outputs.
 - Keep external actions and reusable workflows pinned to immutable commits.

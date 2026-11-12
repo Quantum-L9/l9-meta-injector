@@ -296,6 +296,14 @@ receipt. Every record is source-declared and none is authority-verified. Selecti
 pass moves `corpus_analysis_id` and nothing else. See
 [architecture-evidence.md](architecture-evidence.md) (ADR-087, Proposed).
 
+## Asking a completed generation a question
+
+`scripts/corpus-query-cli.js` is the read-only view over a published generation: it pins
+`CURRENT.json`, verifies what it reads with the scan's own verifiers, and returns the
+generation's records — architecture evidence, work signals, packet assertions — by literal
+filter, with identities, native coordinates and bounded excerpts intact. See
+[corpus-evidence-query.md](corpus-evidence-query.md) (ADR-088, Proposed).
+
 ## A root nobody named cannot carry history
 
 A root has a key, and the key has a class. It is **declared** when an operator supplied

@@ -385,7 +385,7 @@ describe("repository model producer validation", () => {
 /** JSON.parse preserves source order for non-numeric keys, so this reads the file's real key order. */
 function expectSortedKeys(value: unknown, label: string): void {
   if (Array.isArray(value)) {
-    value.forEach((item) => expectSortedKeys(item, label));
+    value.forEach((item) => { expectSortedKeys(item, label); });
     return;
   }
   if (value === null || typeof value !== "object") return;

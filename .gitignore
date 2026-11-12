@@ -50,3 +50,10 @@ pnpm-lock.yaml
 .claude/rules
 .claude/skills/
 .mcp.json
+
+# ADR-093: `npm run validate:report` writes this locally (and release-prep.yml
+# uploads it as a workflow artifact). It is evidence about one tree, never
+# repository content: a committed copy conflicted across every open pull request.
+# `docs/architecture-manifest.json` is not listed because nothing writes it any
+# more; `npm run check:manifest` refuses it if it reappears.
+/CURRENT_VALIDATION_REPORT.md

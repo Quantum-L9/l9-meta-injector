@@ -1133,7 +1133,7 @@ function writeManifests(outDir, root, records, dist, duplicates, now, _dryRun) {
     const md = [`# Inventory — ${root}`, ``, `Generated: ${now}  |  Total entries: ${records.length}  |  Duplicate clusters: ${duplicates.length}  |  Repeated content: ${totalWasted} bytes`, ``, `## Type distribution`, ``, ...Object.entries(dist).sort((a, b) => b[1] - a[1]).map(([k, v]) => `- **${k}**: ${v}`)];
     if (duplicates.length) {
         md.push(``, `## Duplicate clusters (same carrier-free content)`, ``, `Files sharing a content_hash across the tree. For text files the hash excludes the metadata carrier — the L9 header and any YAML front matter (ADR-051, ADR-065) — so members have the same carrier-free content, while their headers or front matter may differ. Compare that metadata before removing a copy. Read-only — nothing is deleted.`, ``, `| # | count | repeated bytes | keeper | other paths |`, `|---|---|---|---|---|`);
-        duplicates.slice(0, 100).forEach((d, i) => md.push(`| ${i + 1} | ${d.count} | ${d.wasted_bytes} | \`${d.keeper}\` | ${d.paths.filter((p) => p !== d.keeper).join("<br>")} |`));
+        duplicates.slice(0, 100).forEach((d, i) => { md.push(`| ${i + 1} | ${d.count} | ${d.wasted_bytes} | \`${d.keeper}\` | ${d.paths.filter((p) => p !== d.keeper).join("<br>")} |`); });
     }
     md.push(``, `## Entries`, ``, `| path | type | conf | size | evidence |`, `|---|---|---|---|---|`, ...records.slice(0, 500).map((r) => `| ${r.relative_path} | ${r.artifact_type} | ${r.classification_confidence} | ${r.size_bytes ?? ""} | ${r.evidence_excerpt ?? ""} |`));
     if (records.length > 500)

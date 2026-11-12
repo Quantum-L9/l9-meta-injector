@@ -1267,10 +1267,10 @@ function validateRepositoryModelPacket(packet) {
             if (!evidenceIds.has(ref))
                 danglingEvidence.push(ref);
     };
-    payload.artifacts.forEach((a) => collect(a.evidence_refs));
-    payload.repositories.forEach((r) => collect(r.evidence_refs));
-    payload.capabilities.forEach((c) => collect(c.evidence_refs));
-    payload.relationships.forEach((e) => collect(e.evidence_refs));
+    payload.artifacts.forEach((a) => { collect(a.evidence_refs); });
+    payload.repositories.forEach((r) => { collect(r.evidence_refs); });
+    payload.capabilities.forEach((c) => { collect(c.evidence_refs); });
+    payload.relationships.forEach((e) => { collect(e.evidence_refs); });
     checks.push(check("evidence-resolves", "evidence", "evidence_refs_resolve", danglingEvidence.length === 0, "every evidence reference resolves to an emitted evidence record", { dangling_count: danglingEvidence.length }));
     const preservedUnknowns = payload.artifacts.filter((a) => a.content_hash === schema_1.UNKNOWN).length;
     const declaredUnknowns = payload.diagnostics

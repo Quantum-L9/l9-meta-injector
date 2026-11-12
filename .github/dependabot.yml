@@ -1,56 +1,52 @@
-# Dependabot groups npm updates so that one maintainer-run report rebind lands a
-# whole group (ADR-056). Every branch Dependabot opens changes package-lock.json,
-# which moves the tree digest CURRENT_VALIDATION_REPORT.md is bound to; a bot
-# cannot regenerate that report, so fewer, larger branches cost fewer rebinds.
+# Rendered by Quantum-L9/.github ops/render-dependabot.js; managed — local edits
+# are restored; opt out with .l9/no-sync. ADR: docs/adr/0019-dependabot-managed-rendered.md
+#
+# Ecosystems follow this repository's root: github-actions always; uv when
+# uv.lock exists, else pip when a root requirements*.txt or a PEP 621
+# pyproject.toml exists; npm when package.json exists; pre-commit when
+# .pre-commit-config.yaml exists.
+# Tools Core selects (Quantum-L9/l9-ci-core core-owned-tools.json) and the
+# Core, SDK and .github action pins are ignored: they are not bumped here.
+# Safe-only: no semver-major bump is proposed in any ecosystem; a fix that
+# exists only in a new major arrives as a Dependabot alert, not a PR.
+# ADVISORY POSTURE: this opens PRs only. No auto-merge, no major groups.
 version: 2
 updates:
-  - package-ecosystem: "npm"
+  - package-ecosystem: github-actions
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "monday"
-    open-pull-requests-limit: 3
-    # @types/node tracks the development Node line (devEngines >=22.13, CI on 22),
-    # not the newest Node: a types major ahead of it admits APIs the declared
-    # runtime floor (engines >=18, proven by consumer-node-floor, ADR-079) does not
-    # have. Move it deliberately with the dev Node line, never by bot (e.g. #115).
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: "chore(deps)"
+    cooldown:
+      default-days: 7
     ignore:
-      - dependency-name: "@types/node"
+      - dependency-name: "Quantum-L9/.github*"
+      - dependency-name: "Quantum-L9/l9-ci-core*"
+      - dependency-name: "Quantum-L9/l9-ci-sdk*"
+      - dependency-name: "*"
         update-types: ["version-update:semver-major"]
-    # Both version-update groups take minor and patch updates only, so a major
-    # version of anything arrives as its own individual pull request and is
-    # decided on its own (ADR-056 amendment). The first grouped branch (#108)
-    # showed why: it put typescript 7 beside typescript-eslint 8, whose peer
-    # range stops at 5.x, so `npm ci` failed on ERESOLVE before any check ran,
-    # and the minor and patch updates sharing that branch could not land either.
     groups:
-      # The test and build toolchain moves together: vitest pins vite, and the
-      # TypeScript/ESLint pair is validated as one gate.
-      dev-tooling:
-        applies-to: version-updates
-        update-types:
-          - "minor"
-          - "patch"
-        patterns:
-          - "vitest"
-          - "@vitest/*"
-          - "vite"
-          - "typescript"
-          - "eslint"
-          - "typescript-eslint"
-          - "@types/node"
-      # Everything else is transitive to the toolchain above; this package
-      # declares no runtime dependencies. Minor and patch only as well, so the
-      # wildcard does not recapture a major the group above left out.
-      transitive:
-        applies-to: version-updates
-        update-types:
-          - "minor"
-          - "patch"
-        patterns:
-          - "*"
-      # Security updates arrive as one branch too, so one rebind closes them.
-      security:
-        applies-to: security-updates
-        patterns:
-          - "*"
+      actions-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: "chore(deps)"
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: "@biomejs/biome"
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      npm-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]

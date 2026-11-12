@@ -18,6 +18,7 @@ import { CorpusRootIdentity } from "./corpus_roots";
 import type { CorpusAnalysisManifest } from "./corpus_analysis_manifest";
 import type { DocumentWorkSignalsRef } from "./corpus_work_signal_export";
 import type { ArchitectureEvidenceRef } from "./corpus_architecture_evidence";
+import type { FieldSelectionRef } from "./corpus_field_selection";
 import type { InferredRootHistoryOverride } from "./corpus_root_history";
 
 export const CORPUS_SNAPSHOT_SCHEMA = "l9.corpus-snapshot/v1";
@@ -129,6 +130,8 @@ export interface CorpusAnalysisIdentity {
    * projection was selected; a run without it carries the identity it always did.
    */
   architecture_evidence_profile?: string;
+  /** Policy, intent and budget of the opt-in field-selection view. Present only when asked for. */
+  field_selection_profile?: string;
 }
 
 export interface CorpusSnapshot {
@@ -167,6 +170,8 @@ export interface CorpusSnapshot {
    * the snapshot can tell whether the payload beside it is the one this run wrote.
    */
   architecture_evidence?: ArchitectureEvidenceRef;
+  /** Where the opt-in field-selection view is, and what it should be. Present only when asked for. */
+  field_selection?: FieldSelectionRef;
   /**
    * What the operator authorized about this run, as distinct from what was seen.
    *

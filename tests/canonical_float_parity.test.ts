@@ -30,7 +30,7 @@ import { canonicalFloat, canonicalJson, semanticHash } from "../src/repository_m
  */
 function pythonCanonical(values: readonly number[], asInt = false): string[] {
   const buffer = Buffer.alloc(8 * values.length);
-  values.forEach((value, index) => buffer.writeDoubleLE(value, index * 8));
+  values.forEach((value, index) => { buffer.writeDoubleLE(value, index * 8); });
   const program = [
     "import json,struct,sys",
     "raw=sys.stdin.buffer.read()",

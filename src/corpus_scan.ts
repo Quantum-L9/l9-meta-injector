@@ -159,11 +159,28 @@ import {
 } from "./corpus_work_signal_export";
 import {
   ArchitectureEvidenceExport,
+  ArchitectureEvidenceRecord,
   architectureEvidenceProfileHash,
   architectureEvidenceRef,
   buildArchitectureEvidenceExport,
   verifyArchitectureEvidenceExport,
 } from "./corpus_architecture_evidence";
+import {
+  DEFAULT_FIELD_SELECTION_BUDGET,
+  FIELD_SELECTION_INTENTS,
+  buildFieldSelectionExport,
+  fieldSelectionProfileHash,
+  fieldSelectionRef,
+  isFieldSelectionIntent,
+  validateFieldSelectionBudget,
+  verifyFieldSelectionExport,
+} from "./corpus_field_selection";
+import type {
+  FieldSelectionBudget,
+  FieldSelectionDocumentInput,
+  FieldSelectionExport,
+  FieldSelectionIntent,
+} from "./corpus_field_selection";
 import { defaultExtractors } from "./extractors";
 import {
   DOCUMENT_BLOCK_EXTRACTOR_ID,
@@ -334,7 +351,7 @@ export interface CorpusScanInput {
   /** Overrides for the bounded reasoning evidence packs. */
   packBudget?: { maxArtifactsPerPack?: number; maxTotalPackCharacters?: number };
   /**
-   * Select the architecture-evidence projection (`architecture-development/v1`).
+   * Select the architecture-evidence projection (`architecture-development/v2`).
    *
    * Off by default. When on, every decoded document's blocks are read for the
    * explicit intent, constraint, assumption, open-question and decision
@@ -345,6 +362,14 @@ export interface CorpusScanInput {
    * cache layer are the same with or without it.
    */
   architectureEvidence?: boolean;
+  /**
+   * Select the field-selection view (`local-source-field-selection/v1`, ADR-091)
+   * for one run intent. Off by default; requires `architectureEvidence`, whose
+   * roles it reads. Writes `field-selection.jsonl` with a manifest: per document,
+   * which existing evidence fields the intent surfaces and why, within the
+   * budget. Binds its profile into `corpus_analysis_id` and into nothing else.
+   */
+  fieldSelection?: { intent: FieldSelectionIntent; budget?: Partial<FieldSelectionBudget> };
 }
 
 export interface CorpusScanDiagnostic {
@@ -495,6 +520,8 @@ export interface CorpusScanResult {
    * mistake "not asked for" for "found nothing" (ADR-068).
    */
   architectureEvidence: ArchitectureEvidenceExport | null;
+  /** The field-selection view. Null when it was not asked for (ADR-068). */
+  fieldSelection: FieldSelectionExport | null;
   /** Candidate discovery over recorded evidence. Null when it was switched off. */
   semantic: SemanticAnalysisResult | null;
 }
@@ -1287,6 +1314,26 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
   const architectureProfile: string | null = input.architectureEvidence === true
     ? architectureEvidenceProfileHash()
     : null;
+  // The field-selection view reads the roles the architecture-evidence selection
+  // assigned, so it is refused without that projection rather than run with every
+  // document's role silently unknown (ADR-068).
+  let fieldSelectionPlan: { intent: FieldSelectionIntent; budget: FieldSelectionBudget; profile: string } | null = null;
+  if (input.fieldSelection !== undefined) {
+    if (architectureProfile === null) {
+      throw new Error(
+        "corpus: --field-selection reads the document roles the architecture-evidence selection "
+        + "assigns; pass --architecture-evidence with it.",
+      );
+    }
+    const intent = input.fieldSelection.intent;
+    if (!isFieldSelectionIntent(intent)) {
+      throw new Error(`corpus: '${intent}' is not a field-selection intent; the intents are ${FIELD_SELECTION_INTENTS.join(", ")}`);
+    }
+    const budget: FieldSelectionBudget = { ...DEFAULT_FIELD_SELECTION_BUDGET, ...input.fieldSelection.budget };
+    const budgetProblems = validateFieldSelectionBudget(budget);
+    if (budgetProblems.length > 0) throw new Error(`corpus: field-selection budget: ${budgetProblems.join("; ")}`);
+    fieldSelectionPlan = { intent, budget, profile: fieldSelectionProfileHash(intent, budget) };
+  }
   const interpretEnabled = input.interpret !== false;
   // The selection profile reads the work.kind and work.status a text document
   // declares, and those are read by the interpretation pass. Without it every
@@ -1825,6 +1872,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
           ...(embeddingProfile !== null ? { embedding_profile: embeddingProfile } : {}),
           readiness_profile: readinessProfileHash(),
           ...(architectureProfile !== null ? { architecture_evidence_profile: architectureProfile } : {}),
+          ...(fieldSelectionPlan !== null ? { field_selection_profile: fieldSelectionPlan.profile } : {}),
         },
       }),
       corpus_profile: corpusProfileHash,
@@ -1835,6 +1883,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       embedding_profile: embeddingProfile,
       readiness_profile: readinessProfileHash(),
       ...(architectureProfile !== null ? { architecture_evidence_profile: architectureProfile } : {}),
+      ...(fieldSelectionPlan !== null ? { field_selection_profile: fieldSelectionPlan.profile } : {}),
     };
     // Both projections of the work signals are built from this one array. The
     // report samples it and the machine payload carries all of it, so the two can
@@ -2183,6 +2232,74 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       });
     }
     snapshotRoots.sort((a, b) => compareCodePoints(a.root_id, b.root_id));
+    // ── 6b. the field-selection view ─────────────────────────────────────
+    //
+    // Opt-in. Built here because it cites the exact-duplicate clusters and the
+    // near-duplicate candidates step 6 produced, beside the architecture
+    // evidence and the work assertions. It selects among records those layers
+    // already hold and removes nothing from any of them.
+    let fieldSelection: FieldSelectionExport | null = null;
+    if (fieldSelectionPlan !== null && architectureEvidence !== null) {
+      const recordsByArtifact = new Map<string, ArchitectureEvidenceRecord[]>();
+      for (const record of architectureEvidence.records) {
+        const list = recordsByArtifact.get(record.artifact_id) ?? [];
+        list.push(record);
+        recordsByArtifact.set(record.artifact_id, list);
+      }
+      const clusterByArtifact = new Map<string, { clusterId: string; representativeArtifactId: string }>();
+      for (const cluster of clusters) {
+        for (const artifactId of cluster.artifact_ids) {
+          clusterByArtifact.set(artifactId, {
+            clusterId: cluster.cluster_id,
+            representativeArtifactId: cluster.representative_artifact_id,
+          });
+        }
+      }
+      const nearByArtifactId = new Map<string, string[]>();
+      for (const candidate of nearCandidates) {
+        for (const artifactId of [candidate.artifact_a_id, candidate.artifact_b_id]) {
+          const list = nearByArtifactId.get(artifactId) ?? [];
+          list.push(candidate.candidate_id);
+          nearByArtifactId.set(artifactId, list);
+        }
+      }
+      const fieldDocuments: FieldSelectionDocumentInput[] = decodable.flatMap((artifact) => {
+        const record = normalized.get(artifact.virtualSourceId);
+        if (record?.decodes !== true) return [];
+        const rootKey = rootKeyById.get(artifact.rootId) ?? artifact.rootId;
+        return [{
+          artifactId: artifact.virtualSourceId,
+          rmpArtifactId: repositoryModelArtifactId(`repo:${rootKey}`, artifact.rootRelativePath),
+          sourcePath: artifact.rootRelativePath,
+          format: record.format ?? null,
+          architectureRecords: recordsByArtifact.get(artifact.virtualSourceId) ?? [],
+          workValues: [
+            ...(interpreted.get(artifact.virtualSourceId)?.assertions ?? []).map((assertion) => ({
+              record_id: assertion.assertion_id,
+              source: "repository_model_packet" as const,
+              predicate: assertion.predicate,
+              object: assertion.object,
+            })),
+            ...(blockSignals.get(artifact.virtualSourceId) ?? []).map((signal) => ({
+              record_id: signal.assertion_id,
+              source: "document_work_signals" as const,
+              predicate: signal.predicate,
+              object: signal.object,
+            })),
+          ],
+          exactDuplicate: clusterByArtifact.get(artifact.virtualSourceId) ?? null,
+          nearDuplicateCandidateIds: nearByArtifactId.get(artifact.virtualSourceId) ?? [],
+        }];
+      });
+      fieldSelection = buildFieldSelectionExport({
+        corpusSourceSnapshotId: sourceSnapshotId,
+        corpusAnalysisId: analysisIdentity.corpus_analysis_id,
+        intent: fieldSelectionPlan.intent,
+        budget: fieldSelectionPlan.budget,
+        documents: fieldDocuments,
+      });
+    }
+
     const corpusStatus: CorpusStatus = snapshotRoots.every(
       (root) => root.observation_status === "observed",
     )
@@ -2197,6 +2314,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       ...(architectureEvidence !== null
         ? { architecture_evidence: architectureEvidenceRef(architectureEvidence.manifest) }
         : {}),
+      ...(fieldSelection !== null ? { field_selection: fieldSelectionRef(fieldSelection.manifest) } : {}),
       ...(historyOverride !== null
         ? { operational_provenance: { inferred_root_history_override: historyOverride } }
         : {}),
@@ -2991,6 +3109,28 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
         );
       }
     }
+    if (fieldSelection !== null) {
+      // The view may cite only records this generation carries.
+      const knownRecordIds = new Set<string>();
+      for (const record of architectureEvidence?.records ?? []) {
+        knownRecordIds.add(record.evidence_id);
+        for (const declaration of record.work_context.declarations) knownRecordIds.add(declaration.declaration_id);
+      }
+      for (const record of interpreted.values()) for (const assertion of record.assertions) knownRecordIds.add(assertion.assertion_id);
+      for (const signals of blockSignals.values()) for (const signal of signals) knownRecordIds.add(signal.assertion_id);
+      const viewProblems = verifyFieldSelectionExport({
+        manifest: fieldSelection.manifest,
+        payloadJsonl: fieldSelection.payloadJsonl,
+        knownRecordIds,
+        knownArtifactIds: new Set(artifacts.map((artifact) => artifact.virtualSourceId)),
+      });
+      if (viewProblems.length > 0) {
+        throw new Error(
+          "corpus: the field-selection view failed its own check and was not published:\n  - "
+          + viewProblems.join("\n  - "),
+        );
+      }
+    }
 
     // Built only after the guard above allowed the comparison: an unauthorized
     // inferred continuity never reaches this call, so a diff exists exactly when
@@ -3013,6 +3153,7 @@ export async function runCorpusScan(input: CorpusScanInput): Promise<CorpusScanR
       snapshot,
       documentWorkSignals,
       architectureEvidence,
+      fieldSelection,
       rootPackets,
       candidates: candidatesDocument,
       readiness,

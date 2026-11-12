@@ -36,7 +36,6 @@ jobs:
           # The branch name is asserted against package.json#version, never read
           # as one. prepare-release fails closed before writing on a mismatch.
           node scripts/prepare-release.js --branch "$GITHUB_REF_NAME"
-          npm run manifest:update
           VERSION="$(node scripts/release-identity-cli.js emit --field version)"
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
@@ -50,23 +49,31 @@ jobs:
           else
             git commit -m "release: prepare ${VERSION}"
           fi
-      - name: Regenerate revision-bound validation evidence
-        run: |
-          npm run validate:report
-          git add CURRENT_VALIDATION_REPORT.md
-          git commit -m "release: bind validation report" || true
+      # ADR-093: the validation report is release evidence, not repository
+      # content. validate:report runs lint and validate on the prepared tree,
+      # exits non-zero when either fails, and writes the gitignored report that
+      # the next step uploads; nothing is committed for it.
       - name: Prove clean release candidate
         shell: bash
         run: |
           set -euo pipefail
-          npm run lint
-          npm run validate
+          npm run validate:report
+          npm run validate:report -- --check
           status="$(git status --porcelain --untracked-files=all)"
           if [[ -n "$status" ]]; then
             printf '%s\n' "$status"
             echo "release preparation left the checkout dirty" >&2
             exit 1
           fi
+      - name: Upload validation report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          # The report names the commit and tree digest it describes; the
+          # artifact name only has to be unique (a ref name holds a slash).
+          name: validation-report-${{ github.run_id }}-${{ github.run_attempt }}
+          path: CURRENT_VALIDATION_REPORT.md
+          if-no-files-found: warn
       - name: Push validated release state
         env:
           GITHUB_TOKEN: ${{ github.token }}

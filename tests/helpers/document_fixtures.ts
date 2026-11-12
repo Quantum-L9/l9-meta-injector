@@ -35,13 +35,21 @@ export interface DocxSpec {
 
 /** A real .docx: styles carry the heading levels, as Word writes them. */
 export function writeDocx(target: string, spec: DocxSpec): string {
+  // A "\n" in fixture text is a Word soft line break (`<w:br/>`) inside one
+  // paragraph, which is how Word writes Shift+Enter.
+  const runText = (text: string): string =>
+    text
+      .split("\n")
+      .map((part) => `<w:t xml:space="preserve">${escapeXml(part)}</w:t>`)
+      .join("<w:br/>");
+
   const paragraph = (text: string, style?: string): string =>
     `<w:p>${style ? `<w:pPr><w:pStyle w:val="${style}"/></w:pPr>` : ""}`
-    + `<w:r><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`;
+    + `<w:r>${runText(text)}</w:r></w:p>`;
 
   const listItem = (text: string): string =>
     `<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>`
-    + `<w:r><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`;
+    + `<w:r>${runText(text)}</w:r></w:p>`;
 
   const tableXml = spec.table === undefined
     ? ""

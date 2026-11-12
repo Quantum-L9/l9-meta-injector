@@ -255,7 +255,7 @@ describe("the emitted document", () => {
   it("contains no forbidden metric under any key, at any depth", () => {
     const keys: string[] = [];
     const walk = (node: unknown): void => {
-      if (Array.isArray(node)) return node.forEach(walk);
+      if (Array.isArray(node)) { node.forEach(walk); return; }
       if (node !== null && typeof node === "object") {
         for (const [key, value] of Object.entries(node)) {
           keys.push(key);
