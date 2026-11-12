@@ -1,4 +1,4 @@
-# ADR-094: Adopt the Core-locked Biome contract alongside ESLint
+# ADR-095: Adopt the Core-locked Biome contract alongside ESLint
 
 ## Status
 

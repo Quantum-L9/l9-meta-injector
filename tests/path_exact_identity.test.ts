@@ -7,7 +7,7 @@ describe("v2 exact reversible tracked identities", () => {
   test("G03-G04 preserves case, combining forms, segments, punctuation and invalid UTF-8 bytes", () => {
     const ids = paths.map((path) => trackedPathIdentity("Owner/Repo", encoded(path)));
     expect(new Set(ids).size).toBe(paths.length);
-    ids.forEach((id, index) => expect(decodeTrackedPathIdentity(id)).toEqual({ repositoryId: "Owner/Repo", pathBytesBase64: encoded(paths[index]) }));
+    ids.forEach((id, index) => { expect(decodeTrackedPathIdentity(id)).toEqual({ repositoryId: "Owner/Repo", pathBytesBase64: encoded(paths[index]) }); });
     expect(trackedPathIdentity("Owner/Repo", encoded("a.md"))).not.toBe(trackedPathIdentity("owner/repo", encoded("a.md")));
     expect(trackedPathIdentity("é", encoded("a.md"))).not.toBe(trackedPathIdentity("e\u0301", encoded("a.md")));
   });

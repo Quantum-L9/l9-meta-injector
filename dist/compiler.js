@@ -87,14 +87,14 @@ function dedupReportToMarkdown(report) {
         lines.push("## Exact Duplicates");
         for (const t of report.auditorTwins) {
             lines.push(`- \`${t.contentHash.slice(0, 16)}\``);
-            t.paths.forEach((p) => lines.push(`  - ${p}`));
+            t.paths.forEach((p) => { lines.push(`  - ${p}`); });
         }
     }
     if (report.nearDuplicates.length > 0) {
         lines.push("", "## Near Duplicates");
         for (const n of report.nearDuplicates) {
             lines.push(`- similarity ${n.similarity}`);
-            n.paths.forEach((p) => lines.push(`  - ${p}`));
+            n.paths.forEach((p) => { lines.push(`  - ${p}`); });
         }
     }
     return lines.join("\n") + "\n";
