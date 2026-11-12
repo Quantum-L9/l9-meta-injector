@@ -367,7 +367,7 @@ The repository owns three active pull-request workflows, two release workflows, 
 | `Release prep` | `prepare` | Push to `release/v*.*.*` | Release-candidate preparation and report binding |
 | `Release` | `release` | Push to `main` touching `package.json` | Exact tag, GitHub Release and major-tag move (ADR-050) |
 
-Dependency updates arrive grouped through `.github/dependabot.yml` and are landed by a maintainer with `npm run deps:rebind`, because the validation report is bound to the whole tree (ADR-056).
+Dependency updates arrive through `.github/dependabot.yml`, which is the organization's render for this root (`Quantum-L9/.github` ADR-0019): minor and patch updates only, grouped per ecosystem, with every semver-major ignored. Nothing generated is committed per pull request (ADR-093), so a Dependabot branch passes the same required checks as any other head (ADR-094). The one exception is a `typescript` update that changes emitted output: `check:dist` fails until a maintainer rebuilds and commits `dist/`.
 
 Organization L9 CI is not a workflow in this tree. The GitHub organization required-workflow ruleset runs `Quantum-L9/l9-ci-core` `main` `.github/workflows/org-ci.yml` (`Organization CI (Core)` / `Analyze (central Core)`) on pull requests, pushes, and merge groups. Core owns Semgrep analysis, SDK admission, governance defaults, enforcement, and publication; this repository declares only `.l9/ci.json` and selects no Core or SDK revision (ADR-048). A Core change propagates with no consumer edit.
 
