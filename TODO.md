@@ -1,5 +1,16 @@
 # TODO
 
+## Issue unblock (session reference)
+
+**Cluster:** Quantum-L9/l9-meta-injector#134 (+ closed Dependabot #129)
+**Owning fix:** none: EXTERNAL. Every `typescript-eslint` release through `8.72.2-alpha.11` still declares
+`typescript >=4.8.4 <6.1.0`, and `typescript@latest` is `7.0.2` (re-verified 2026-11-08).
+**Next:** when an upstream `typescript-eslint` release accepts TypeScript 7, bump `typescript` and
+`typescript-eslint` together in one change, rebuild `dist/`, then run `npm run lint` and `npm run validate`.
+Do not force the peer with npm `overrides` or `--legacy-peer-deps`.
+**Pickup:** PICKUP not written on 2026-11-08 (the memory write was denied in the session); the issue comment
+on #134 is the breadcrumb.
+
 ## LLM routing
 
 - **Wire LLM calls through `Quantum-L9/LLM-Router`** instead of pointing `llm-base-url`
