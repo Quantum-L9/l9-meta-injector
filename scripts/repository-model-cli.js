@@ -47,7 +47,10 @@ function main() {
     process.exit(2);
   }
 
-  const repositoryModel = requireBuilt(path.join(__dirname, "..", "dist", "public", "repository_model.js"), LABEL);
+  const repositoryModel = requireBuilt(
+    path.join(__dirname, "..", "dist", "public", "repository_model.js"),
+    LABEL,
+  );
   const { version } = require(path.join(__dirname, "..", "package.json"));
 
   let result, packet;

@@ -51,10 +51,14 @@ function evidenceErrors(evidence) {
     }
     if (!known.has(item.id)) errors.push(`unknown evidence id '${item.id}' at evidence[${i}]`);
     seen.set(item.id, (seen.get(item.id) ?? 0) + 1);
-    if (!RESOLVED_STATUSES.includes(item.status)) errors.push(`evidence '${item.id}' is unresolved (status ${JSON.stringify(item.status)})`);
-    if (typeof item.result !== "string" || item.result.trim() === "") errors.push(`evidence '${item.id}'.result is missing`);
+    if (!RESOLVED_STATUSES.includes(item.status))
+      errors.push(`evidence '${item.id}' is unresolved (status ${JSON.stringify(item.status)})`);
+    if (typeof item.result !== "string" || item.result.trim() === "")
+      errors.push(`evidence '${item.id}'.result is missing`);
     if (NON_WAIVABLE_EVIDENCE_IDS.includes(item.id) && item.status !== "verified") {
-      errors.push(`${item.id} must be verified; it cannot be waived (status ${JSON.stringify(item.status)})`);
+      errors.push(
+        `${item.id} must be verified; it cannot be waived (status ${JSON.stringify(item.status)})`,
+      );
     }
   }
   for (const [id, count] of seen) {
@@ -67,14 +71,22 @@ function evidenceErrors(evidence) {
 }
 
 function decisionErrors(doc, pkg) {
-  if (!doc || typeof doc !== "object" || Array.isArray(doc)) return ["publication decision is not an object"];
+  if (!doc || typeof doc !== "object" || Array.isArray(doc))
+    return ["publication decision is not an object"];
   const errors = [];
-  if (doc.schema !== SCHEMA) errors.push(`invalid schema ${JSON.stringify(doc.schema)}; expected ${SCHEMA}`);
-  if (doc.package_name !== pkg.name || doc.package_version !== pkg.version) errors.push("package identity mismatch");
-  if (doc.status !== "approved") errors.push(`publication status is ${doc.status}; resolve every required evidence item before publishing`);
+  if (doc.schema !== SCHEMA)
+    errors.push(`invalid schema ${JSON.stringify(doc.schema)}; expected ${SCHEMA}`);
+  if (doc.package_name !== pkg.name || doc.package_version !== pkg.version)
+    errors.push("package identity mismatch");
+  if (doc.status !== "approved")
+    errors.push(
+      `publication status is ${doc.status}; resolve every required evidence item before publishing`,
+    );
   errors.push(...evidenceErrors(doc.evidence));
   if (doc.approved_version !== pkg.version) {
-    errors.push(`approved_version is ${JSON.stringify(doc.approved_version ?? null)}; an approval must name package.json#version ${pkg.version}`);
+    errors.push(
+      `approved_version is ${JSON.stringify(doc.approved_version ?? null)}; an approval must name package.json#version ${pkg.version}`,
+    );
   }
   return errors;
 }
@@ -86,7 +98,9 @@ function main() {
   try {
     errors = decisionErrors(JSON.parse(fs.readFileSync(file, "utf8")), pkg);
   } catch (error) {
-    errors = [`publication decision cannot be read: ${error instanceof Error ? error.message : String(error)}`];
+    errors = [
+      `publication decision cannot be read: ${error instanceof Error ? error.message : String(error)}`,
+    ];
   }
   if (errors.length) {
     console.error("publication-readiness: BLOCKED");

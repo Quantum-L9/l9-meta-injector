@@ -36,7 +36,8 @@ if (lock.version !== pkg.version || lock.packages?.[""]?.version !== pkg.version
   errors.push("package-lock version mismatch");
 }
 if (lock.packages?.[""]?.license !== pkg.license) errors.push("package-lock license mismatch");
-if (pkg.bin?.["l9-meta-injector"] !== "scripts/operation-cli.js") errors.push("package executable is missing");
+if (pkg.bin?.["l9-meta-injector"] !== "scripts/operation-cli.js")
+  errors.push("package executable is missing");
 // ADR-079: `files` lists runtime scripts individually. The bin and every child script
 // it dispatches must be packed (or the whole scripts/ tree, as before ADR-079).
 const DISPATCHED_RUNTIME_SCRIPTS = [
@@ -47,7 +48,8 @@ const DISPATCHED_RUNTIME_SCRIPTS = [
   "scripts/skills-cli.js",
   "scripts/lib/operation-dispatch.js",
 ];
-const packsScripts = (rel) => Array.isArray(pkg.files) && (pkg.files.includes("scripts") || pkg.files.includes(rel));
+const packsScripts = (rel) =>
+  Array.isArray(pkg.files) && (pkg.files.includes("scripts") || pkg.files.includes(rel));
 for (const rel of DISPATCHED_RUNTIME_SCRIPTS) {
   if (!packsScripts(rel)) errors.push(`runtime script is not packed: ${rel}`);
 }
@@ -69,7 +71,9 @@ if (plan) {
       errors.push(`release plan record_kind must be "preparation"`);
     }
     if (Object.hasOwn(plan, "release_commit")) {
-      errors.push("release plan must not record a release commit; the exact tag and its GitHub Release are the released evidence");
+      errors.push(
+        "release plan must not record a release commit; the exact tag and its GitHub Release are the released evidence",
+      );
     }
     if (plan.github_release?.status !== "candidate") {
       errors.push(`release plan github_release.status must be "candidate"`);
@@ -100,9 +104,7 @@ for (const [relative, pick] of JSON_AUTHORITIES) {
 
 // A regex that stops matching is itself a failure: a reworded document must not
 // drop silently out of enforcement.
-const TEXT_AUTHORITIES = [
-  ["docs/architecture.md", /^\*\*Package version:\*\* (\d+\.\d+\.\d+)$/m],
-];
+const TEXT_AUTHORITIES = [["docs/architecture.md", /^\*\*Package version:\*\* (\d+\.\d+\.\d+)$/m]];
 for (const [relative, pattern] of TEXT_AUTHORITIES) {
   const found = pattern.exec(fs.readFileSync(path.join(REPO, relative), "utf8"));
   if (!found) errors.push(`${relative} no longer states a package version where one is enforced`);
@@ -130,7 +132,8 @@ if (readmeRefs.length === 0) {
 // since nothing derives it there.
 const agents = fs.readFileSync(path.join(REPO, "AGENTS.md"), "utf8");
 const pinned = /l9-meta-injector@(\d+\.\d+\.\d+)/.exec(agents);
-if (pinned) errors.push(`AGENTS.md pins package version ${pinned[1]}; identity belongs to package.json`);
+if (pinned)
+  errors.push(`AGENTS.md pins package version ${pinned[1]}; identity belongs to package.json`);
 
 if (!dispatch.includes('actionPath: path.resolve(__dirname, "..", ".."),')) {
   errors.push("packed CLI action root is incorrect");

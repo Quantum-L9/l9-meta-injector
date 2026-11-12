@@ -52,9 +52,8 @@ function isNamespaceGlobPair(pair) {
 const VALUE_VALIDATORS = Object.freeze({
   "--near-dup": (value) => boundedNumberMessage("--near-dup", value),
   "--hash-prefix-length": (value) => boundedNumberMessage("--hash-prefix-length", value),
-  "--namespace-glob": (value) => (isNamespaceGlobPair(value)
-    ? null
-    : `bad --namespace-glob "${value}" (expected glob=namespace)`),
+  "--namespace-glob": (value) =>
+    isNamespaceGlobPair(value) ? null : `bad --namespace-glob "${value}" (expected glob=namespace)`,
 });
 
 function boundedNumberMessage(option, raw) {
@@ -84,28 +83,55 @@ const CLI_OPTION_SPECS = Object.freeze({
   }),
   "pipeline-cli": Object.freeze({
     boolean: [
-      "--dry-run", "--fail-on-issues", "--no-fail-on-issues", "--normalize-filenames",
-      "--write-inject-log", "--local-files", "--verbose", ...LLM_BOOLEANS,
+      "--dry-run",
+      "--fail-on-issues",
+      "--no-fail-on-issues",
+      "--normalize-filenames",
+      "--write-inject-log",
+      "--local-files",
+      "--verbose",
+      ...LLM_BOOLEANS,
     ],
     value: [
-      "--glob", "--out", "--index-dir", "--namespace", "--authority", "--near-dup",
-      "--hash-prefix-length", "--schema", "--omit-file", ...LLM_VALUES,
+      "--glob",
+      "--out",
+      "--index-dir",
+      "--namespace",
+      "--authority",
+      "--near-dup",
+      "--hash-prefix-length",
+      "--schema",
+      "--omit-file",
+      ...LLM_VALUES,
     ],
     repeatable: ["--namespace-glob", "--omit"],
   }),
   "check-cli": Object.freeze({
     boolean: ["--local-files", "--verbose"],
     value: [
-      "--glob", "--report", "--namespace", "--authority", "--near-dup",
-      "--hash-prefix-length", "--schema", "--omit-file",
+      "--glob",
+      "--report",
+      "--namespace",
+      "--authority",
+      "--near-dup",
+      "--hash-prefix-length",
+      "--schema",
+      "--omit-file",
     ],
     repeatable: ["--namespace-glob", "--omit"],
   }),
   "apply-cli": Object.freeze({
     boolean: ["--verbose", ...LLM_BOOLEANS],
     value: [
-      "--glob", "--out", "--namespace", "--authority", "--near-dup",
-      "--hash-prefix-length", "--schema", "--omit-file", ...LLM_VALUES,
+      "--glob",
+      "--out",
+      "--namespace",
+      "--authority",
+      "--near-dup",
+      "--hash-prefix-length",
+      "--schema",
+      "--omit-file",
+      ...LLM_VALUES,
     ],
     repeatable: ["--namespace-glob", "--omit"],
   }),
@@ -144,7 +170,8 @@ function parseOptionArgv(args, spec, fail = defaultFail) {
   const negated = new Map(
     spec.negatable ? spec.boolean.map((option) => [`--no-${option.slice(2)}`, option]) : [],
   );
-  const isKnown = (token) => booleans.has(token) || singles.has(token) || repeatables.has(token) || negated.has(token);
+  const isKnown = (token) =>
+    booleans.has(token) || singles.has(token) || repeatables.has(token) || negated.has(token);
 
   const values = new Map();
   const repeated = new Map();
@@ -234,7 +261,8 @@ function parseCli(label, usage, spec = CLI_OPTION_SPECS[label]) {
   }
   const { values, repeated } = parsed;
   const declared = (kind, name) => {
-    if (!spec[kind].includes(name)) throw new Error(`${label}: '${name}' is not a declared ${kind} option`);
+    if (!spec[kind].includes(name))
+      throw new Error(`${label}: '${name}' is not a declared ${kind} option`);
   };
   return {
     argv,

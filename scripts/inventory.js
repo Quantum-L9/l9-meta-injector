@@ -40,7 +40,8 @@ const { requireBuilt, parseCli } = require("./lib/cli-args");
 const REPO = path.resolve(__dirname, "..");
 const pkg = requireBuilt(path.join(REPO, "dist", "public", "inventory.js"), "inventory");
 
-const usage = "usage: node scripts/inventory.js <root> [--out DIR] [--source NAME] [--dry-run] [--no-inject] [--no-folder-sidecars] [--ignore a,b] [--omit PATTERN] [--omit-file PATH] [--schema FILE]";
+const usage =
+  "usage: node scripts/inventory.js <root> [--out DIR] [--source NAME] [--dry-run] [--no-inject] [--no-folder-sidecars] [--ignore a,b] [--omit PATTERN] [--omit-file PATH] [--schema FILE]";
 const { root, flag, opt, optAll } = parseCli("inventory", usage);
 const outDir = path.resolve(opt("--out", `${root}.l9inventory`));
 const now = new Date().toISOString();
@@ -48,8 +49,15 @@ const now = new Date().toISOString();
 let schema;
 const schemaPath = opt("--schema", null);
 if (schemaPath) {
-  try { schema = pkg.loadMetaSchema(path.resolve(schemaPath)); console.error(`inventory: using meta-schema '${schema.schema_id}' v${schema.version} (${schema.fields.length} fields)`); }
-  catch (e) { console.error(`inventory: bad --schema (${e.message})`); process.exit(2); }
+  try {
+    schema = pkg.loadMetaSchema(path.resolve(schemaPath));
+    console.error(
+      `inventory: using meta-schema '${schema.schema_id}' v${schema.version} (${schema.fields.length} fields)`,
+    );
+  } catch (e) {
+    console.error(`inventory: bad --schema (${e.message})`);
+    process.exit(2);
+  }
 }
 
 const config = {
@@ -59,7 +67,11 @@ const config = {
   dryRun: flag("--dry-run"),
   injectHeaders: !flag("--no-inject"),
   folderSidecars: !flag("--no-folder-sidecars"),
-  ignore: (opt("--ignore", "node_modules,.git")).split(",").map((s) => s.trim()).filter(Boolean).concat([".l9inventory"]),
+  ignore: opt("--ignore", "node_modules,.git")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .concat([".l9inventory"]),
   omitPatterns: optAll("--omit"),
   omitFile: opt("--omit-file", undefined),
   now,
@@ -68,7 +80,9 @@ const config = {
 
 console.error(`inventory: scanning ${root}${config.dryRun ? " (dry-run)" : ""} …`);
 if (!config.dryRun && (config.injectHeaders || config.folderSidecars)) {
-  console.error("inventory: WRITING metadata into the source tree (headers and/or sidecars). Use --dry-run to observe only.");
+  console.error(
+    "inventory: WRITING metadata into the source tree (headers and/or sidecars). Use --dry-run to observe only.",
+  );
 }
 const r = pkg.inventoryTree(config);
 console.log(`inventory: ${r.total} entries (${r.files} files, ${r.folders} folders)`);
@@ -79,5 +93,7 @@ console.log(`  manifest: ${path.relative(process.cwd(), r.manifestPaths.json)}`)
 console.log(`           ${path.relative(process.cwd(), r.manifestPaths.csv)}`);
 console.log(`           ${path.relative(process.cwd(), r.manifestPaths.md)}`);
 console.log(`           ${path.relative(process.cwd(), r.manifestPaths.duplicates)}`);
-if (config.dryRun) console.log("  (dry-run: no file or folder under the root was modified; manifest only)");
-else console.log("  (source annotated: metadata headers and/or sidecars were written under the root)");
+if (config.dryRun)
+  console.log("  (dry-run: no file or folder under the root was modified; manifest only)");
+else
+  console.log("  (source annotated: metadata headers and/or sidecars were written under the root)");

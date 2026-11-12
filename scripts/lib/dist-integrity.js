@@ -24,8 +24,12 @@ function authorityVersion() {
   }
   return packageVersion;
 }
-function posix(value) { return value.split(path.sep).join("/"); }
-function isPlainObject(value) { return typeof value === "object" && value !== null && !Array.isArray(value); }
+function posix(value) {
+  return value.split(path.sep).join("/");
+}
+function isPlainObject(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 function sha256File(file) {
   return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
 }
@@ -34,7 +38,9 @@ function listRegularFiles(root) {
   if (!fs.existsSync(base) || !fs.statSync(base).isDirectory()) fail(`directory missing: ${base}`);
   const files = [];
   function walk(dir) {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    for (const entry of fs
+      .readdirSync(dir, { withFileTypes: true })
+      .sort((a, b) => a.name.localeCompare(b.name))) {
       const abs = path.join(dir, entry.name);
       const stat = fs.lstatSync(abs);
       const rel = posix(path.relative(base, abs));
@@ -58,7 +64,8 @@ function compareDirectories(committedDir, generatedDir) {
   for (const rel of committed.filter((p) => generatedSet.has(p))) {
     const committedSha256 = sha256File(path.join(committedDir, rel));
     const generatedSha256 = sha256File(path.join(generatedDir, rel));
-    if (committedSha256 !== generatedSha256) changed.push({ path: rel, committedSha256, generatedSha256 });
+    if (committedSha256 !== generatedSha256)
+      changed.push({ path: rel, committedSha256, generatedSha256 });
   }
   return {
     ok: missingFromCommitted.length === 0 && staleInCommitted.length === 0 && changed.length === 0,
@@ -78,7 +85,9 @@ function run(command, args, options = {}) {
   });
 }
 function gitStatusUnder(repo, rel) {
-  const result = run("git", ["status", "--porcelain=v1", "--untracked-files=all", "--", rel], { cwd: repo });
+  const result = run("git", ["status", "--porcelain=v1", "--untracked-files=all", "--", rel], {
+    cwd: repo,
+  });
   if (result.status !== 0) fail(`git status failed: ${result.stderr || result.stdout}`);
   return result.stdout.split(/\r?\n/).filter(Boolean);
 }
@@ -86,16 +95,26 @@ function resolveTsc(repo) {
   if (process.env.L9_TSC) return path.resolve(process.env.L9_TSC);
   const name = process.platform === "win32" ? "tsc.cmd" : "tsc";
   const local = path.join(repo, "node_modules", ".bin", name);
-  if (!fs.existsSync(local)) fail(`repository-pinned TypeScript compiler missing: ${local}; run npm ci`);
+  if (!fs.existsSync(local))
+    fail(`repository-pinned TypeScript compiler missing: ${local}; run npm ci`);
   return local;
 }
 function copyBuildInputs(repo, sandbox) {
-  fs.cpSync(path.join(repo, "src"), path.join(sandbox, "src"), { recursive: true, dereference: false });
+  fs.cpSync(path.join(repo, "src"), path.join(sandbox, "src"), {
+    recursive: true,
+    dereference: false,
+  });
   fs.copyFileSync(path.join(repo, "tsconfig.json"), path.join(sandbox, "tsconfig.json"));
-  if (fs.existsSync(path.join(repo, "package.json"))) fs.copyFileSync(path.join(repo, "package.json"), path.join(sandbox, "package.json"));
+  if (fs.existsSync(path.join(repo, "package.json")))
+    fs.copyFileSync(path.join(repo, "package.json"), path.join(sandbox, "package.json"));
   const sourceModules = path.join(repo, "node_modules");
-  if (!fs.existsSync(sourceModules)) fail("node_modules missing; run npm ci before distribution validation");
-  fs.symlinkSync(sourceModules, path.join(sandbox, "node_modules"), process.platform === "win32" ? "junction" : "dir");
+  if (!fs.existsSync(sourceModules))
+    fail("node_modules missing; run npm ci before distribution validation");
+  fs.symlinkSync(
+    sourceModules,
+    path.join(sandbox, "node_modules"),
+    process.platform === "win32" ? "junction" : "dir",
+  );
 }
 function checkDistSync(repoRoot) {
   const repo = path.resolve(repoRoot);
@@ -114,21 +133,41 @@ function checkDistSync(repoRoot) {
     return report;
   }
   for (const rel of ["src", "dist", "tsconfig.json"]) {
-    if (!fs.existsSync(path.join(repo, rel))) { report.reason = `required build input missing: ${rel}`; return report; }
+    if (!fs.existsSync(path.join(repo, rel))) {
+      report.reason = `required build input missing: ${rel}`;
+      return report;
+    }
   }
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "l9-dist-integrity-"));
   try {
     copyBuildInputs(repo, temp);
     const tsc = resolveTsc(repo);
     const build = run(tsc, ["-p", "tsconfig.json"], { cwd: temp, env: { CI: "true" } });
-    report.build = { command: `${tsc} -p tsconfig.json`, exitCode: build.status, stdout: build.stdout, stderr: build.stderr };
-    if (build.status !== 0) { report.reason = "isolated TypeScript build failed"; return report; }
+    report.build = {
+      command: `${tsc} -p tsconfig.json`,
+      exitCode: build.status,
+      stdout: build.stdout,
+      stderr: build.stderr,
+    };
+    if (build.status !== 0) {
+      report.reason = "isolated TypeScript build failed";
+      return report;
+    }
     const generated = path.join(temp, "dist");
-    if (!fs.existsSync(generated)) { report.reason = "isolated build produced no dist directory"; return report; }
+    if (!fs.existsSync(generated)) {
+      report.reason = "isolated build produced no dist directory";
+      return report;
+    }
     report.comparison = compareDirectories(path.join(repo, "dist"), generated);
     report.postBuildDistStatus = gitStatusUnder(repo, "dist");
-    if (report.postBuildDistStatus.length) { report.reason = "isolated validation changed repository dist"; return report; }
-    if (!report.comparison.ok) { report.reason = "committed dist differs from isolated source build"; return report; }
+    if (report.postBuildDistStatus.length) {
+      report.reason = "isolated validation changed repository dist";
+      return report;
+    }
+    if (!report.comparison.ok) {
+      report.reason = "committed dist differs from isolated source build";
+      return report;
+    }
     report.status = "passed";
     report.reason = null;
     return report;
@@ -137,42 +176,96 @@ function checkDistSync(repoRoot) {
   }
 }
 function exactKeys(value, keys, label, errors) {
-  if (!isPlainObject(value)) { errors.push(`${label} must be an object`); return; }
+  if (!isPlainObject(value)) {
+    errors.push(`${label} must be an object`);
+    return;
+  }
   const expected = new Set(keys);
   for (const key of keys) if (!(key in value)) errors.push(`${label}.${key} is required`);
-  for (const key of Object.keys(value)) if (!expected.has(key)) errors.push(`${label}.${key} is not allowed`);
+  for (const key of Object.keys(value))
+    if (!expected.has(key)) errors.push(`${label}.${key} is not allowed`);
 }
 function stringArray(value, label, errors, allowEmpty = false) {
-  if (!Array.isArray(value) || (!allowEmpty && value.length === 0) || value.some((x) => typeof x !== "string" || !x)) {
+  if (
+    !Array.isArray(value) ||
+    (!allowEmpty && value.length === 0) ||
+    value.some((x) => typeof x !== "string" || !x)
+  ) {
     errors.push(`${label} must be ${allowEmpty ? "a" : "a non-empty"} string array`);
   } else if (new Set(value).size !== value.length) errors.push(`${label} contains duplicates`);
 }
 const ALLOWED_ENTRYPOINT_STABILITY = new Set(["stable", "experimental"]);
 function validatePackageContract(contract) {
   const errors = [];
-  exactKeys(contract, ["schema","repository","package_name","package_version","api_contract","entrypoints","required_files","allowed_top_level","forbidden_paths","forbidden_prefixes","dist_policy","public_schema_policy","consumer_tests"], "packageContract", errors);
+  exactKeys(
+    contract,
+    [
+      "schema",
+      "repository",
+      "package_name",
+      "package_version",
+      "api_contract",
+      "entrypoints",
+      "required_files",
+      "allowed_top_level",
+      "forbidden_paths",
+      "forbidden_prefixes",
+      "dist_policy",
+      "public_schema_policy",
+      "consumer_tests",
+    ],
+    "packageContract",
+    errors,
+  );
   if (!isPlainObject(contract)) return errors;
-  if (contract.schema !== "l9.package-contract/v2") errors.push("packageContract.schema is invalid");
-  if (contract.repository !== "Quantum-L9/l9-meta-injector") errors.push("packageContract.repository is invalid");
-  if (contract.package_name !== "l9-meta-injector") errors.push("packageContract.package_name is invalid");
-  if (contract.package_version !== authorityVersion()) errors.push("packageContract.package_version is invalid");
-  if (contract.api_contract !== "docs/public-api-contract.json") errors.push("packageContract.api_contract is invalid");
+  if (contract.schema !== "l9.package-contract/v2")
+    errors.push("packageContract.schema is invalid");
+  if (contract.repository !== "Quantum-L9/l9-meta-injector")
+    errors.push("packageContract.repository is invalid");
+  if (contract.package_name !== "l9-meta-injector")
+    errors.push("packageContract.package_name is invalid");
+  if (contract.package_version !== authorityVersion())
+    errors.push("packageContract.package_version is invalid");
+  if (contract.api_contract !== "docs/public-api-contract.json")
+    errors.push("packageContract.api_contract is invalid");
   if (!isPlainObject(contract.entrypoints) || Object.keys(contract.entrypoints).length === 0) {
     errors.push("packageContract.entrypoints must be a non-empty object");
   } else {
     for (const [subpath, entry] of Object.entries(contract.entrypoints)) {
-      if (!isPlainObject(entry) || typeof entry.runtime !== "string" || !entry.runtime || typeof entry.types !== "string" || !entry.types || !ALLOWED_ENTRYPOINT_STABILITY.has(entry.stability)) {
+      if (
+        !isPlainObject(entry) ||
+        typeof entry.runtime !== "string" ||
+        !entry.runtime ||
+        typeof entry.types !== "string" ||
+        !entry.types ||
+        !ALLOWED_ENTRYPOINT_STABILITY.has(entry.stability)
+      ) {
         errors.push(`packageContract.entrypoints.${subpath} is invalid`);
       }
     }
   }
-  for (const key of ["required_files","allowed_top_level"]) stringArray(contract[key], `packageContract.${key}`, errors);
-  for (const key of ["forbidden_paths","forbidden_prefixes"]) stringArray(contract[key], `packageContract.${key}`, errors, true);
-  for (const key of ["dist_policy","public_schema_policy"]) if (typeof contract[key] !== "string" || !contract[key]) errors.push(`packageContract.${key} must be a non-empty string`);
-  if (Array.isArray(contract.forbidden_prefixes) && contract.forbidden_prefixes.some((p) => !p.endsWith("/"))) errors.push("packageContract.forbidden_prefixes entries must end with /");
-  exactKeys(contract.consumer_tests, ["runtime","types","tsconfig","deep_imports"], "packageContract.consumer_tests", errors);
+  for (const key of ["required_files", "allowed_top_level"])
+    stringArray(contract[key], `packageContract.${key}`, errors);
+  for (const key of ["forbidden_paths", "forbidden_prefixes"])
+    stringArray(contract[key], `packageContract.${key}`, errors, true);
+  for (const key of ["dist_policy", "public_schema_policy"])
+    if (typeof contract[key] !== "string" || !contract[key])
+      errors.push(`packageContract.${key} must be a non-empty string`);
+  if (
+    Array.isArray(contract.forbidden_prefixes) &&
+    contract.forbidden_prefixes.some((p) => !p.endsWith("/"))
+  )
+    errors.push("packageContract.forbidden_prefixes entries must end with /");
+  exactKeys(
+    contract.consumer_tests,
+    ["runtime", "types", "tsconfig", "deep_imports"],
+    "packageContract.consumer_tests",
+    errors,
+  );
   if (isPlainObject(contract.consumer_tests)) {
-    for (const [key, value] of Object.entries(contract.consumer_tests)) if (typeof value !== "string" || !value) errors.push(`packageContract.consumer_tests.${key} must be a non-empty string`);
+    for (const [key, value] of Object.entries(contract.consumer_tests))
+      if (typeof value !== "string" || !value)
+        errors.push(`packageContract.consumer_tests.${key} must be a non-empty string`);
   }
   return errors;
 }
@@ -181,23 +274,35 @@ function validatePackedFiles(packedPaths, contract, repositoryDistPaths) {
   const paths = packedPaths.map((p) => p.replaceAll("\\", "/"));
   if (new Set(paths).size !== paths.length) errors.push("packed file list contains duplicates");
   const set = new Set(paths);
-  for (const rel of contract.required_files || []) if (!set.has(rel)) errors.push(`required packed file missing: ${rel}`);
-  for (const rel of contract.forbidden_paths || []) if (set.has(rel)) errors.push(`forbidden packed file present: ${rel}`);
-  for (const prefix of contract.forbidden_prefixes || []) for (const rel of paths) if (rel.startsWith(prefix)) errors.push(`forbidden packed prefix present: ${rel}`);
+  for (const rel of contract.required_files || [])
+    if (!set.has(rel)) errors.push(`required packed file missing: ${rel}`);
+  for (const rel of contract.forbidden_paths || [])
+    if (set.has(rel)) errors.push(`forbidden packed file present: ${rel}`);
+  for (const prefix of contract.forbidden_prefixes || [])
+    for (const rel of paths)
+      if (rel.startsWith(prefix)) errors.push(`forbidden packed prefix present: ${rel}`);
   const allowed = new Set(contract.allowed_top_level || []);
   for (const rel of paths) {
     const top = rel.includes("/") ? rel.split("/", 1)[0] : rel;
-    if (!allowed.has(top) && !allowed.has(rel)) errors.push(`packed top-level path is not allowed: ${rel}`);
+    if (!allowed.has(top) && !allowed.has(rel))
+      errors.push(`packed top-level path is not allowed: ${rel}`);
   }
-  const expectedDist = repositoryDistPaths.map((p) => p.startsWith("dist/") ? p : `dist/${p}`).sort((a, b) => a.localeCompare(b));
+  const expectedDist = repositoryDistPaths
+    .map((p) => (p.startsWith("dist/") ? p : `dist/${p}`))
+    .sort((a, b) => a.localeCompare(b));
   const actualDist = paths.filter((p) => p.startsWith("dist/")).sort((a, b) => a.localeCompare(b));
-  const expectedSet = new Set(expectedDist), actualSet = new Set(actualDist);
-  for (const rel of expectedDist) if (!actualSet.has(rel)) errors.push(`packed dist file missing: ${rel}`);
-  for (const rel of actualDist) if (!expectedSet.has(rel)) errors.push(`packed dist contains unexpected file: ${rel}`);
+  const expectedSet = new Set(expectedDist),
+    actualSet = new Set(actualDist);
+  for (const rel of expectedDist)
+    if (!actualSet.has(rel)) errors.push(`packed dist file missing: ${rel}`);
+  for (const rel of actualDist)
+    if (!expectedSet.has(rel)) errors.push(`packed dist contains unexpected file: ${rel}`);
   for (const [subpath, entry] of Object.entries(contract.entrypoints || {})) {
     if (isPlainObject(entry)) {
-      if (!set.has(entry.runtime)) errors.push(`entrypoint runtime missing for ${subpath}: ${entry.runtime}`);
-      if (!set.has(entry.types)) errors.push(`entrypoint declarations missing for ${subpath}: ${entry.types}`);
+      if (!set.has(entry.runtime))
+        errors.push(`entrypoint runtime missing for ${subpath}: ${entry.runtime}`);
+      if (!set.has(entry.types))
+        errors.push(`entrypoint declarations missing for ${subpath}: ${entry.types}`);
     }
   }
   return [...new Set(errors)];
@@ -210,13 +315,27 @@ function parseNpmPackJson(output) {
     try {
       const value = JSON.parse(text.slice(starts[i]));
       if (Array.isArray(value) && value[0] && typeof value[0].filename === "string") return value;
-    } catch { /* keep scanning */ }
+    } catch {
+      /* keep scanning */
+    }
   }
   fail("could not parse npm pack --json output");
 }
-function stableJson(value) { return JSON.stringify(value, null, 2) + "\n"; }
+function stableJson(value) {
+  return JSON.stringify(value, null, 2) + "\n";
+}
 module.exports = {
-  fail, posix, sha256File, listRegularFiles, compareDirectories, run, gitStatusUnder,
-  resolveTsc, checkDistSync, validatePackageContract, validatePackedFiles,
-  parseNpmPackJson, stableJson,
+  fail,
+  posix,
+  sha256File,
+  listRegularFiles,
+  compareDirectories,
+  run,
+  gitStatusUnder,
+  resolveTsc,
+  checkDistSync,
+  validatePackageContract,
+  validatePackedFiles,
+  parseNpmPackJson,
+  stableJson,
 };

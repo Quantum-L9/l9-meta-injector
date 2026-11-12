@@ -46,8 +46,18 @@ const USAGE = [
 ].join("\n");
 
 const VALUE_FLAGS = new Set([
-  "--out", "--root", "--artifact", "--predicate", "--class", "--text", "--kind",
-  "--status", "--source", "--role", "--limit", "--max-excerpt-bytes",
+  "--out",
+  "--root",
+  "--artifact",
+  "--predicate",
+  "--class",
+  "--text",
+  "--kind",
+  "--status",
+  "--source",
+  "--role",
+  "--limit",
+  "--max-excerpt-bytes",
 ]);
 /** Flags that take no value. */
 const BOOLEAN_FLAGS = new Set(["--selected-only"]);
