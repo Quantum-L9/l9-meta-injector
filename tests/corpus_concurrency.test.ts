@@ -15,16 +15,15 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
+import { runCorpusScan } from "../src/corpus_scan";
 import {
+  boundedMap,
   CorpusSessionStore,
   DEFAULT_CORPUS_BUDGETS,
   MemoryBudget,
-  boundedMap,
 } from "../src/corpus_session";
-import { DecoderRegistry } from "../src/documents";
 import type { DecodeInput, DecodeOutcome, DocumentDecoder } from "../src/documents";
-import { defaultDecoderRegistry } from "../src/documents";
-import { runCorpusScan } from "../src/corpus_scan";
+import { DecoderRegistry, defaultDecoderRegistry } from "../src/documents";
 
 const scratch: string[] = [];
 function tmp(): string {
@@ -139,8 +138,12 @@ describe("the budgets that are still there", () => {
     });
     session.save("2026-01-01T00:00:01.000Z");
     const written = JSON.parse(fs.readFileSync(sessionPath, "utf8"));
-    expect(Object.keys(written.budgets).sort())
-      .toEqual(["archive", "max_memory_bytes", "max_parallel_decoders", "max_parallel_embedding_requests"]);
+    expect(Object.keys(written.budgets).sort()).toEqual([
+      "archive",
+      "max_memory_bytes",
+      "max_parallel_decoders",
+      "max_parallel_embedding_requests",
+    ]);
     expect(written.budgets.max_parallel_decoders).toBe(3);
   });
 });
@@ -148,12 +151,14 @@ describe("the budgets that are still there", () => {
 describe("max_parallel_decoders", () => {
   it("puts more than one document read in flight when it is allowed to", async () => {
     const seen = { value: 0 };
-    const { peak } = await withReadWatch(() => runCorpusScan({
-      roots: [{ path: corpusOf(24) }],
-      producerVersion: "test",
-      decoderRegistry: countingRegistry(seen),
-      budgets: { max_parallel_decoders: 6 },
-    }));
+    const { peak } = await withReadWatch(() =>
+      runCorpusScan({
+        roots: [{ path: corpusOf(24) }],
+        producerVersion: "test",
+        decoderRegistry: countingRegistry(seen),
+        budgets: { max_parallel_decoders: 6 },
+      }),
+    );
     // Measured, not assumed: reads were genuinely open together, and never more
     // than the bound the operator set.
     expect(peak).toBeGreaterThan(1);
@@ -163,12 +168,14 @@ describe("max_parallel_decoders", () => {
 
   it("holds to one when one is what was asked for", async () => {
     const seen = { value: 0 };
-    const { peak } = await withReadWatch(() => runCorpusScan({
-      roots: [{ path: corpusOf(12) }],
-      producerVersion: "test",
-      decoderRegistry: countingRegistry(seen),
-      budgets: { max_parallel_decoders: 1 },
-    }));
+    const { peak } = await withReadWatch(() =>
+      runCorpusScan({
+        roots: [{ path: corpusOf(12) }],
+        producerVersion: "test",
+        decoderRegistry: countingRegistry(seen),
+        budgets: { max_parallel_decoders: 1 },
+      }),
+    );
     expect(peak).toBe(1);
     expect(seen.value).toBe(12);
   });
@@ -176,14 +183,17 @@ describe("max_parallel_decoders", () => {
   it("says the same thing at one worker as at eight", async () => {
     const root = corpusOf(16);
     const narrow = await runCorpusScan({
-      roots: [{ path: root }], producerVersion: "test", budgets: { max_parallel_decoders: 1 },
+      roots: [{ path: root }],
+      producerVersion: "test",
+      budgets: { max_parallel_decoders: 1 },
     });
     const wide = await runCorpusScan({
-      roots: [{ path: root }], producerVersion: "test", budgets: { max_parallel_decoders: 8 },
+      roots: [{ path: root }],
+      producerVersion: "test",
+      budgets: { max_parallel_decoders: 8 },
     });
     // The bound changes when work is issued and nothing about what is concluded.
-    expect(wide.snapshot.corpus_source_snapshot_id)
-      .toBe(narrow.snapshot.corpus_source_snapshot_id);
+    expect(wide.snapshot.corpus_source_snapshot_id).toBe(narrow.snapshot.corpus_source_snapshot_id);
     expect(wide.snapshot.analysis_manifest).toEqual(narrow.snapshot.analysis_manifest);
     expect(wide.coverage.documents).toEqual(narrow.coverage.documents);
   });
@@ -229,14 +239,16 @@ describe("max_memory_bytes", () => {
     const budget = new MemoryBudget(1_000);
     let held = 0;
     let peak = 0;
-    await Promise.all(Array.from({ length: 12 }, async () => {
-      await budget.reserve(300);
-      held += 300;
-      peak = Math.max(peak, held);
-      await new Promise((resolve) => setTimeout(resolve, 2));
-      held -= 300;
-      budget.release(300);
-    }));
+    await Promise.all(
+      Array.from({ length: 12 }, async () => {
+        await budget.reserve(300);
+        held += 300;
+        peak = Math.max(peak, held);
+        await new Promise((resolve) => setTimeout(resolve, 2));
+        held -= 300;
+        budget.release(300);
+      }),
+    );
     expect(peak).toBeLessThanOrEqual(1_000);
     expect(peak).toBeGreaterThanOrEqual(300);
   });

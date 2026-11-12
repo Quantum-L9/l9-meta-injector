@@ -14,12 +14,12 @@ import * as path from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { extractionRefusalReason } from "../src/archives";
 import {
+  acquireLocalSource,
   EXTRACTION_OWNER_ID,
+  hashFileStreaming,
+  hasLegacyExtractionOwnership,
   LEGACY_EXTRACTION_OWNER_FILE,
   LOCAL_FILES_EXTRACTION_SCHEMA,
-  acquireLocalSource,
-  hasLegacyExtractionOwnership,
-  hashFileStreaming,
 } from "../src/local_source";
 import { treeSnapshot, writeRawZip } from "./helpers/zip_fixtures";
 
@@ -74,9 +74,13 @@ function mkfifo(target: string): boolean {
 
 /** Keep writing `content` into a FIFO, so a blocking reader would get bytes rather than hang. */
 function feed(fifo: string, content: string): void {
-  const child = spawn("sh", ["-c", 'while true; do printf "%s" "$2" > "$1" 2>/dev/null; done', "feeder", fifo, content], {
-    stdio: "ignore",
-  });
+  const child = spawn(
+    "sh",
+    ["-c", 'while true; do printf "%s" "$2" > "$1" 2>/dev/null; done', "feeder", fifo, content],
+    {
+      stdio: "ignore",
+    },
+  );
   feeders.push(child);
 }
 
@@ -109,25 +113,30 @@ function validV2Marker(archive: string): Record<string, string> {
 }
 
 describe("ownership markers are read only from verified regular files (RC-043)", () => {
-  posixOnly("REG-WU-033-RC-043-a: a FIFO marker is not ownership and acquisition does not block", () => {
-    const root = tmp();
-    const generated = ownedExtraction(root);
-    const marker = path.join(generated, LEGACY_EXTRACTION_OWNER_FILE);
-    if (!mkfifo(marker)) return;
-    feed(marker, JSON.stringify({ owner: EXTRACTION_OWNER_ID, archive: "X.zip" }));
+  posixOnly(
+    "REG-WU-033-RC-043-a: a FIFO marker is not ownership and acquisition does not block",
+    () => {
+      const root = tmp();
+      const generated = ownedExtraction(root);
+      const marker = path.join(generated, LEGACY_EXTRACTION_OWNER_FILE);
+      if (!mkfifo(marker)) return;
+      feed(marker, JSON.stringify({ owner: EXTRACTION_OWNER_ID, archive: "X.zip" }));
 
-    const started = Date.now();
-    const observation = acquireLocalSource({ path: root, scratchParent: tmp() });
-    try {
-      expect(Date.now() - started).toBeLessThan(10_000);
-      const paths = observation.inventory.records.map((record) => record.relative_path);
-      expect(paths).toContain("X.l9extracted/user-data.txt");
-      expect(paths).toContain(`X.l9extracted/${LEGACY_EXTRACTION_OWNER_FILE}`);
-      expect(observation.diagnostics.map((d) => d.code)).not.toContain("local-source.legacy_extraction_excluded");
-    } finally {
-      observation.dispose();
-    }
-  });
+      const started = Date.now();
+      const observation = acquireLocalSource({ path: root, scratchParent: tmp() });
+      try {
+        expect(Date.now() - started).toBeLessThan(10_000);
+        const paths = observation.inventory.records.map((record) => record.relative_path);
+        expect(paths).toContain("X.l9extracted/user-data.txt");
+        expect(paths).toContain(`X.l9extracted/${LEGACY_EXTRACTION_OWNER_FILE}`);
+        expect(observation.diagnostics.map((d) => d.code)).not.toContain(
+          "local-source.legacy_extraction_excluded",
+        );
+      } finally {
+        observation.dispose();
+      }
+    },
+  );
 
   posixOnly("REG-WU-033-RC-043-b: a symlinked marker is never followed", () => {
     const root = tmp();
@@ -140,7 +149,9 @@ describe("ownership markers are read only from verified regular files (RC-043)",
     try {
       const paths = observation.inventory.records.map((record) => record.relative_path);
       expect(paths).toContain("X.l9extracted/user-data.txt");
-      expect(observation.diagnostics.map((d) => d.code)).not.toContain("local-source.legacy_extraction_excluded");
+      expect(observation.diagnostics.map((d) => d.code)).not.toContain(
+        "local-source.legacy_extraction_excluded",
+      );
     } finally {
       observation.dispose();
     }
@@ -162,7 +173,9 @@ describe("ownership markers are read only from verified regular files (RC-043)",
     try {
       const paths = observation.inventory.records.map((record) => record.relative_path);
       expect(paths.some((value) => value.startsWith("X.l9extracted"))).toBe(false);
-      expect(observation.diagnostics.map((d) => d.code)).toContain("local-source.legacy_extraction_excluded");
+      expect(observation.diagnostics.map((d) => d.code)).toContain(
+        "local-source.legacy_extraction_excluded",
+      );
     } finally {
       observation.dispose();
     }
@@ -176,7 +189,9 @@ describe("ownership markers are read only from verified regular files (RC-043)",
     // Valid JSON naming the exact owner, padded far past any sane marker size.
     fs.writeFileSync(marker, `{"owner":"${EXTRACTION_OWNER_ID}"${" ".repeat(4 * 1024 * 1024)}}`);
     expect(hasLegacyExtractionOwnership(generated)).toBe(false);
-    expect(seam.opened.filter((opened) => opened === fs.realpathSync(marker)).length).toBeLessThanOrEqual(1);
+    expect(
+      seam.opened.filter((opened) => opened === fs.realpathSync(marker)).length,
+    ).toBeLessThanOrEqual(1);
   });
 
   posixOnly("REG-WU-033-RC-043-e: a symlinked v2 marker grants no destructive authority", () => {
@@ -203,23 +218,31 @@ describe("ownership markers are read only from verified regular files (RC-043)",
     writeRawZip(zip, [{ name: "a.md", content: "# A\n" }]);
     const target = path.join(root, "X");
     fs.mkdirSync(target);
-    fs.writeFileSync(path.join(target, LEGACY_EXTRACTION_OWNER_FILE), JSON.stringify(validV2Marker("X.zip")));
+    fs.writeFileSync(
+      path.join(target, LEGACY_EXTRACTION_OWNER_FILE),
+      JSON.stringify(validV2Marker("X.zip")),
+    );
     expect(extractionRefusalReason(target, zip)).toBeNull();
   });
 });
 
 describe("hashing opens only verified regular files (RC-044)", () => {
-  posixOnly("REG-WU-033-RC-044-a: a FIFO source path is refused promptly and writes nothing", () => {
-    const root = tmp();
-    const scratchParent = tmp();
-    const fifo = path.join(root, "notes.md");
-    if (!mkfifo(fifo)) return;
-    feed(fifo, "# notes\n");
-    const started = Date.now();
-    expect(() => acquireLocalSource({ path: fifo, scratchParent })).toThrow(/local-source: .*not a regular file/);
-    expect(Date.now() - started).toBeLessThan(10_000);
-    expect(fs.readdirSync(scratchParent)).toEqual([]);
-  });
+  posixOnly(
+    "REG-WU-033-RC-044-a: a FIFO source path is refused promptly and writes nothing",
+    () => {
+      const root = tmp();
+      const scratchParent = tmp();
+      const fifo = path.join(root, "notes.md");
+      if (!mkfifo(fifo)) return;
+      feed(fifo, "# notes\n");
+      const started = Date.now();
+      expect(() => acquireLocalSource({ path: fifo, scratchParent })).toThrow(
+        /local-source: .*not a regular file/,
+      );
+      expect(Date.now() - started).toBeLessThan(10_000);
+      expect(fs.readdirSync(scratchParent)).toEqual([]);
+    },
+  );
 
   posixOnly("REG-WU-033-RC-044-b: hashFileStreaming refuses a FIFO promptly", () => {
     const root = tmp();
@@ -236,48 +259,54 @@ describe("hashing opens only verified regular files (RC-044)", () => {
     expect(Date.now() - started).toBeLessThan(10_000);
   });
 
-  posixOnly("REG-WU-033-RC-044-c: a file replaced by a FIFO before hashing makes the observation unstable", () => {
-    const root = tmp();
-    fs.writeFileSync(path.join(root, "a.md"), "# A\n");
-    fs.writeFileSync(path.join(root, "z.md"), "# Z\n");
-    if (!mkfifo(path.join(root, "probe"))) return;
-    fs.rmSync(path.join(root, "probe"));
-    let swapped = false;
-    const omit = {
-      patterns: [],
-      shouldOmit: (relativePath: string) => {
-        // `a.md` is already enumerated as a regular file when `z.md` is consulted.
-        if (relativePath === "z.md" && !swapped) {
-          swapped = true;
-          fs.rmSync(path.join(root, "a.md"));
-          execFileSync("mkfifo", [path.join(root, "a.md")]);
-        }
-        return false;
-      },
-    };
-    const started = Date.now();
-    const observation = acquireLocalSource({ path: root, scratchParent: tmp(), omit });
-    try {
-      expect(Date.now() - started).toBeLessThan(10_000);
-      expect(observation.stable).toBe(false);
-    } finally {
-      observation.dispose();
-    }
-  });
+  posixOnly(
+    "REG-WU-033-RC-044-c: a file replaced by a FIFO before hashing makes the observation unstable",
+    () => {
+      const root = tmp();
+      fs.writeFileSync(path.join(root, "a.md"), "# A\n");
+      fs.writeFileSync(path.join(root, "z.md"), "# Z\n");
+      if (!mkfifo(path.join(root, "probe"))) return;
+      fs.rmSync(path.join(root, "probe"));
+      let swapped = false;
+      const omit = {
+        patterns: [],
+        shouldOmit: (relativePath: string) => {
+          // `a.md` is already enumerated as a regular file when `z.md` is consulted.
+          if (relativePath === "z.md" && !swapped) {
+            swapped = true;
+            fs.rmSync(path.join(root, "a.md"));
+            execFileSync("mkfifo", [path.join(root, "a.md")]);
+          }
+          return false;
+        },
+      };
+      const started = Date.now();
+      const observation = acquireLocalSource({ path: root, scratchParent: tmp(), omit });
+      try {
+        expect(Date.now() - started).toBeLessThan(10_000);
+        expect(observation.stable).toBe(false);
+      } finally {
+        observation.dispose();
+      }
+    },
+  );
 
-  posixOnly("REG-WU-033-RC-044-d: a FIFO inside a directory source is still recorded as a special entry", () => {
-    const root = tmp();
-    fs.writeFileSync(path.join(root, "README.md"), "# Fixture\n");
-    if (!mkfifo(path.join(root, "pipe"))) return;
-    const observation = acquireLocalSource({ path: root, scratchParent: tmp() });
-    try {
-      const record = observation.inventory.records.find((r) => r.relative_path === "pipe");
-      expect(record?.unknowns).toContain("special_filesystem_entry");
-      expect(observation.stable).toBe(true);
-    } finally {
-      observation.dispose();
-    }
-  });
+  posixOnly(
+    "REG-WU-033-RC-044-d: a FIFO inside a directory source is still recorded as a special entry",
+    () => {
+      const root = tmp();
+      fs.writeFileSync(path.join(root, "README.md"), "# Fixture\n");
+      if (!mkfifo(path.join(root, "pipe"))) return;
+      const observation = acquireLocalSource({ path: root, scratchParent: tmp() });
+      try {
+        const record = observation.inventory.records.find((r) => r.relative_path === "pipe");
+        expect(record?.unknowns).toContain("special_filesystem_entry");
+        expect(observation.stable).toBe(true);
+      } finally {
+        observation.dispose();
+      }
+    },
+  );
 
   test("REG-WU-033-RC-044-e: regular single-file and archive sources keep their content revisions", () => {
     const root = tmp();

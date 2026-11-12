@@ -1,16 +1,24 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { readTrackedGitSnapshot, assertTrackedWorktreeCurrent } from "../src/git_tree";
-import { listGitIgnoredUntracked, isGitIgnored } from "../src/git_ignored";
+import { isGitIgnored, listGitIgnoredUntracked } from "../src/git_ignored";
+import { assertTrackedWorktreeCurrent, readTrackedGitSnapshot } from "../src/git_tree";
 import {
-  cleanupGitFixtures, fixtureRepository, fixtureTree, fixtureCommit, setFixtureHead,
-  fixtureGit, scratchDirectory, supportsSha256, writeFixtureFile,
+  cleanupGitFixtures,
+  fixtureCommit,
+  fixtureGit,
+  fixtureRepository,
+  fixtureTree,
+  scratchDirectory,
+  setFixtureHead,
+  supportsSha256,
+  writeFixtureFile,
 } from "./helpers/git_tree_fixtures";
 
 afterEach(cleanupGitFixtures);
 const repositoryId = "fixture:exact-tree";
-const census = (root: string, revision = "HEAD") => readTrackedGitSnapshot({ root, revision, repositoryId });
+const census = (root: string, revision = "HEAD") =>
+  readTrackedGitSnapshot({ root, revision, repositoryId });
 
 function cleanFixture() {
   const root = fixtureRepository();
@@ -59,10 +67,25 @@ describe("immutable Git leaf census", () => {
 
   it("never filters hidden, generated, dependencies, protected state or archives", () => {
     const root = fixtureRepository();
-    const paths = [".env", ".hidden/deep.txt", ".github/workflows/a.yml", ".claude/secret", ".cursor/a",
-      ".l9/meta-authority.yaml", ".l9/metadata-index.jsonl", "GIT_TREE_MANIFEST.json",
-      "dist/bundle.js", "node_modules/vendor/lib.bin", "out/generated.lock", "archive.zip", "unknown"];
-    const tree = fixtureTree(root, paths.map((p) => ({ path: p, contents: Buffer.from([0, 255, 1]) })));
+    const paths = [
+      ".env",
+      ".hidden/deep.txt",
+      ".github/workflows/a.yml",
+      ".claude/secret",
+      ".cursor/a",
+      ".l9/meta-authority.yaml",
+      ".l9/metadata-index.jsonl",
+      "GIT_TREE_MANIFEST.json",
+      "dist/bundle.js",
+      "node_modules/vendor/lib.bin",
+      "out/generated.lock",
+      "archive.zip",
+      "unknown",
+    ];
+    const tree = fixtureTree(
+      root,
+      paths.map((p) => ({ path: p, contents: Buffer.from([0, 255, 1]) })),
+    );
     const revision = fixtureCommit(root, tree);
     setFixtureHead(root, revision);
     expect(new Set(census(root).entries.map((e) => e.path))).toEqual(new Set(paths));
@@ -72,16 +95,32 @@ describe("immutable Git leaf census", () => {
 
   it("preserves tabs/newlines, spelling, BOM, and invalid UTF-8 losslessly in raw byte order", () => {
     const root = fixtureRepository();
-    const names = ["a-b.md", "a_b.md", "a/b.md", "A.md", "a.md", "é.md", "e\u0301.md", "u00e9.md",
-      "tab\tname\n.md", "literal\\name.md", "\ufeffname", "nul-looking%00.md"];
+    const names = [
+      "a-b.md",
+      "a_b.md",
+      "a/b.md",
+      "A.md",
+      "a.md",
+      "é.md",
+      "e\u0301.md",
+      "u00e9.md",
+      "tab\tname\n.md",
+      "literal\\name.md",
+      "\ufeffname",
+      "nul-looking%00.md",
+    ];
     const invalid = Buffer.from([0x62, 0xff, 0x2e, 0x6d, 0x64]);
     const tree = fixtureTree(root, [...names.map((p) => ({ path: p })), { path: invalid }]);
     const revision = fixtureCommit(root, tree);
     const snapshot = census(root, revision);
     const bytes = [...names.map((n) => Buffer.from(n)), invalid].sort(Buffer.compare);
-    expect(snapshot.entries.map((e) => e.path_bytes_base64)).toEqual(bytes.map((b) => b.toString("base64")));
+    expect(snapshot.entries.map((e) => e.path_bytes_base64)).toEqual(
+      bytes.map((b) => b.toString("base64")),
+    );
     for (const name of names) expect(snapshot.entries.find((e) => e.path === name)).toBeDefined();
-    const undecodable = snapshot.entries.find((e) => e.path_bytes_base64 === invalid.toString("base64"))!;
+    const undecodable = snapshot.entries.find(
+      (e) => e.path_bytes_base64 === invalid.toString("base64"),
+    )!;
     expect(undecodable.path).toBeNull();
     expect(Buffer.from(undecodable.path_bytes_base64, "base64")).toEqual(invalid);
     expect(Object.isFrozen(snapshot)).toBe(true);
@@ -104,7 +143,11 @@ describe("immutable Git leaf census", () => {
     const entries = census(root, revision).entries;
     expect(entries.find((e) => e.path === "run")?.mode).toBe("100755");
     expect(entries.filter((e) => e.mode === "120000")).toHaveLength(3);
-    expect(entries.find((e) => e.path === "submodule")).toMatchObject({ mode: "160000", object_type: "commit", object_oid: absent });
+    expect(entries.find((e) => e.path === "submodule")).toMatchObject({
+      mode: "160000",
+      object_type: "commit",
+      object_oid: absent,
+    });
     expect(entries).toHaveLength(6);
   });
 
@@ -136,20 +179,35 @@ describe("immutable Git leaf census", () => {
     const replacement = fixtureCommit(root, replacementTree);
     fixtureGit(root, ["replace", revision, replacement]);
     const variables = {
-      GIT_DIR: path.join(other, ".git"), GIT_WORK_TREE: other, GIT_COMMON_DIR: path.join(other, ".git"),
-      GIT_OBJECT_DIRECTORY: path.join(other, ".git/objects"), GIT_ALTERNATE_OBJECT_DIRECTORIES: path.join(other, ".git/objects"),
-      GIT_INDEX_FILE: path.join(other, ".git/index"), GIT_NAMESPACE: "redirect", GIT_REPLACE_REF_BASE: "refs/replace/",
-      GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "core.bare", GIT_CONFIG_VALUE_0: "true",
-      GIT_CONFIG_PARAMETERS: "'core.bare'='true'", GIT_CONFIG_SYSTEM: "/not/config", GIT_CONFIG_GLOBAL: "/not/config",
-      GIT_NO_REPLACE_OBJECTS: "0", GIT_NO_LAZY_FETCH: "0", GIT_ALLOW_PROTOCOL: "all", GIT_TRACE: "/not/trace",
+      GIT_DIR: path.join(other, ".git"),
+      GIT_WORK_TREE: other,
+      GIT_COMMON_DIR: path.join(other, ".git"),
+      GIT_OBJECT_DIRECTORY: path.join(other, ".git/objects"),
+      GIT_ALTERNATE_OBJECT_DIRECTORIES: path.join(other, ".git/objects"),
+      GIT_INDEX_FILE: path.join(other, ".git/index"),
+      GIT_NAMESPACE: "redirect",
+      GIT_REPLACE_REF_BASE: "refs/replace/",
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: "core.bare",
+      GIT_CONFIG_VALUE_0: "true",
+      GIT_CONFIG_PARAMETERS: "'core.bare'='true'",
+      GIT_CONFIG_SYSTEM: "/not/config",
+      GIT_CONFIG_GLOBAL: "/not/config",
+      GIT_NO_REPLACE_OBJECTS: "0",
+      GIT_NO_LAZY_FETCH: "0",
+      GIT_ALLOW_PROTOCOL: "all",
+      GIT_TRACE: "/not/trace",
     };
-    const previous = Object.fromEntries(Object.keys(variables).map((key) => [key, process.env[key]]));
+    const previous = Object.fromEntries(
+      Object.keys(variables).map((key) => [key, process.env[key]]),
+    );
     try {
       Object.assign(process.env, variables);
       expect(census(root)).toEqual(snapshot);
     } finally {
       for (const [key, value] of Object.entries(previous)) {
-        if (value === undefined) delete process.env[key]; else process.env[key] = value;
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
       }
     }
   });
@@ -161,13 +219,21 @@ describe("immutable Git leaf census", () => {
     const { root } = cleanFixture();
     expect(() => census(root, "does-not-exist")).toThrow();
     expect(() => census(root, "--output=/tmp/unsafe")).toThrow();
-    expect(() => readTrackedGitSnapshot({ root, revision: "HEAD", repositoryId, maxOutputBytes: 2 })).toThrow(/cap/);
+    expect(() =>
+      readTrackedGitSnapshot({ root, revision: "HEAD", repositoryId, maxOutputBytes: 2 }),
+    ).toThrow(/cap/);
     for (const maxOutputBytes of [0, -1, NaN, Infinity, 1.5]) {
-      expect(() => readTrackedGitSnapshot({ root, revision: "HEAD", repositoryId, maxOutputBytes })).toThrow(/integer/);
+      expect(() =>
+        readTrackedGitSnapshot({ root, revision: "HEAD", repositoryId, maxOutputBytes }),
+      ).toThrow(/integer/);
     }
-    expect(() => readTrackedGitSnapshot({ root, revision: "HEAD", repositoryId, timeoutMs: 0 })).toThrow(/integer/);
+    expect(() =>
+      readTrackedGitSnapshot({ root, revision: "HEAD", repositoryId, timeoutMs: 0 }),
+    ).toThrow(/integer/);
     expect(() => readTrackedGitSnapshot({ root, revision: "", repositoryId })).toThrow(/selector/);
-    expect(() => readTrackedGitSnapshot({ root, revision: "HEAD", repositoryId: "" })).toThrow(/identity/);
+    expect(() => readTrackedGitSnapshot({ root, revision: "HEAD", repositoryId: "" })).toThrow(
+      /identity/,
+    );
   });
 
   it("fails a missing recursive tree, with lazy fetching and protocols disabled", () => {
@@ -186,10 +252,18 @@ describe("immutable Git leaf census", () => {
 
   it.skipIf(!supportsSha256())("validates SHA-256 identities rather than assuming SHA-1", () => {
     const root = fixtureRepository("sha256");
-    const tree = fixtureTree(root, [{ path: "sha256.bin" }, { path: "sub", mode: "160000", oid: "d".repeat(64) }]);
+    const tree = fixtureTree(root, [
+      { path: "sha256.bin" },
+      { path: "sub", mode: "160000", oid: "d".repeat(64) },
+    ]);
     const revision = fixtureCommit(root, tree);
-    expect(census(root, revision)).toMatchObject({ object_format: "sha256", revision, tree_oid: tree });
-    for (const entry of census(root, revision).entries) expect(entry.object_oid).toMatch(/^[0-9a-f]{64}$/);
+    expect(census(root, revision)).toMatchObject({
+      object_format: "sha256",
+      revision,
+      tree_oid: tree,
+    });
+    for (const entry of census(root, revision).entries)
+      expect(entry.object_oid).toMatch(/^[0-9a-f]{64}$/);
   });
 
   it("treats an empty committed tree as complete and preserves ignored non-Git fallback", () => {
@@ -215,8 +289,13 @@ describe("apply-only tracked currentness guard", () => {
     for (const change of ["unstaged", "staged", "deleted", "added"]) {
       const { root, snapshot } = cleanFixture();
       if (change === "deleted") fs.unlinkSync(path.join(root, "source.txt"));
-      else if (change === "added") { writeFixtureFile(root, "added.txt", "new\n"); fixtureGit(root, ["add", "added.txt"]); }
-      else { writeFixtureFile(root, "source.txt", "changed\n"); if (change === "staged") fixtureGit(root, ["add", "source.txt"]); }
+      else if (change === "added") {
+        writeFixtureFile(root, "added.txt", "new\n");
+        fixtureGit(root, ["add", "added.txt"]);
+      } else {
+        writeFixtureFile(root, "source.txt", "changed\n");
+        if (change === "staged") fixtureGit(root, ["add", "source.txt"]);
+      }
       expect(() => assertTrackedWorktreeCurrent(snapshot, root)).toThrow(/Tracked source/);
     }
   });
@@ -247,25 +326,33 @@ describe("apply-only tracked currentness guard", () => {
     }
   });
 
-  it.skipIf(process.platform === "win32")("holds changed directory symlinks before diff can read external files", () => {
-    const { root, snapshot } = cleanFixture();
-    const external = scratchDirectory();
-    writeFixtureFile(external, "other.txt", "external should never be read\n");
-    fs.rmSync(path.join(root, "nested"), { recursive: true });
-    fs.symlinkSync(external, path.join(root, "nested"));
-    expect(() => assertTrackedWorktreeCurrent(snapshot, root)).toThrow(/ancestor/);
-  });
+  it.skipIf(process.platform === "win32")(
+    "holds changed directory symlinks before diff can read external files",
+    () => {
+      const { root, snapshot } = cleanFixture();
+      const external = scratchDirectory();
+      writeFixtureFile(external, "other.txt", "external should never be read\n");
+      fs.rmSync(path.join(root, "nested"), { recursive: true });
+      fs.symlinkSync(external, path.join(root, "nested"));
+      expect(() => assertTrackedWorktreeCurrent(snapshot, root)).toThrow(/ancestor/);
+    },
+  );
 
-  it.skipIf(process.platform === "win32")("checks symlink-as-link changes without dereferencing external or missing targets", () => {
-    const root = fixtureRepository();
-    const tree = fixtureTree(root, [{ path: "link", mode: "120000", contents: "/missing/target" }]);
-    setFixtureHead(root, fixtureCommit(root, tree), true);
-    const snapshot = census(root);
-    expect(() => assertTrackedWorktreeCurrent(snapshot, root)).not.toThrow();
-    fs.unlinkSync(path.join(root, "link"));
-    fs.symlinkSync("/another/missing/target", path.join(root, "link"));
-    expect(() => assertTrackedWorktreeCurrent(snapshot, root)).toThrow(/unstaged/);
-  });
+  it.skipIf(process.platform === "win32")(
+    "checks symlink-as-link changes without dereferencing external or missing targets",
+    () => {
+      const root = fixtureRepository();
+      const tree = fixtureTree(root, [
+        { path: "link", mode: "120000", contents: "/missing/target" },
+      ]);
+      setFixtureHead(root, fixtureCommit(root, tree), true);
+      const snapshot = census(root);
+      expect(() => assertTrackedWorktreeCurrent(snapshot, root)).not.toThrow();
+      fs.unlinkSync(path.join(root, "link"));
+      fs.symlinkSync("/another/missing/target", path.join(root, "link"));
+      expect(() => assertTrackedWorktreeCurrent(snapshot, root)).toThrow(/unstaged/);
+    },
+  );
 
   it("never traverses a gitlink checkout; initialized paths hold rather than asserting false currency", () => {
     const root = fixtureRepository();

@@ -10,7 +10,7 @@ import type { AddressInfo } from "node:net";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { getAdapter, localAdapter, resetAdapter, setAdapter, type LlmAdapter } from "../src/llm";
+import { getAdapter, type LlmAdapter, localAdapter, resetAdapter, setAdapter } from "../src/llm";
 import { runPipelineAsync } from "../src/pipeline";
 import type { PipelineConfig } from "../src/schema";
 import { runSkillsPipelineAsync } from "../src/skills_pipeline";
@@ -28,7 +28,11 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 
-interface FakeServer { baseUrl: string; authorizations: string[]; close: () => Promise<void> }
+interface FakeServer {
+  baseUrl: string;
+  authorizations: string[];
+  close: () => Promise<void>;
+}
 
 /** OpenAI-compatible endpoint on loopback that records every Authorization header. */
 async function fakeChatServer(delayMs = 5): Promise<FakeServer> {
@@ -36,13 +40,16 @@ async function fakeChatServer(delayMs = 5): Promise<FakeServer> {
   const server = http.createServer((req, res) => {
     authorizations.push(String(req.headers.authorization ?? ""));
     let raw = "";
-    req.on("data", (chunk) => { raw += String(chunk); });
+    req.on("data", (chunk) => {
+      raw += String(chunk);
+    });
     req.on("end", () => {
       const body = JSON.parse(raw) as { messages?: Array<{ content?: string }> };
       const prompt = (body.messages ?? []).map((m) => m.content ?? "").join("\n");
       let content = "no";
       if (prompt.includes("trigger phrases")) content = "alpha phrase, beta phrase";
-      else if (prompt.includes("describing what this artifact does")) content = "Summarises release notes into a short changelog digest for maintainers.";
+      else if (prompt.includes("describing what this artifact does"))
+        content = "Summarises release notes into a short changelog digest for maintainers.";
       setTimeout(() => {
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ choices: [{ message: { content } }] }));
@@ -61,7 +68,8 @@ async function fakeChatServer(delayMs = 5): Promise<FakeServer> {
 /** A tree of weak prose files: every file asks the adapter for description and signals. */
 function proseTree(count: number): string {
   const root = tmpDir();
-  for (let i = 0; i < count; i++) fs.writeFileSync(path.join(root, `note_${i}.md`), `# Note ${i}\n\nPlain notes.\n`);
+  for (let i = 0; i < count; i++)
+    fs.writeFileSync(path.join(root, `note_${i}.md`), `# Note ${i}\n\nPlain notes.\n`);
   return root;
 }
 
@@ -69,22 +77,41 @@ function pipelineConfig(root: string, overrides: Partial<PipelineConfig> = {}): 
   const out = `${root}.out`;
   dirs.push(out);
   return {
-    root, glob: "**/*.md", dryRun: true, outDir: out, indexDir: out, namespace: "l9",
-    authority: "l9.doctrine.platform", nearDupThreshold: 0.9, hashPrefixLength: 16,
-    verbose: false, llmEnabled: false, normalizeFilenames: false, persistOutputs: false,
+    root,
+    glob: "**/*.md",
+    dryRun: true,
+    outDir: out,
+    indexDir: out,
+    namespace: "l9",
+    authority: "l9.doctrine.platform",
+    nearDupThreshold: 0.9,
+    hashPrefixLength: 16,
+    verbose: false,
+    llmEnabled: false,
+    normalizeFilenames: false,
+    persistOutputs: false,
     ...overrides,
   };
 }
 
 function credentialed(server: FakeServer, key: string): Partial<PipelineConfig> {
-  return { llmEnabled: true, llmBaseUrl: server.baseUrl, llmApiKey: key, llmModel: "fake", llmAllowInsecure: true };
+  return {
+    llmEnabled: true,
+    llmBaseUrl: server.baseUrl,
+    llmApiKey: key,
+    llmModel: "fake",
+    llmAllowInsecure: true,
+  };
 }
 
 function weakSkillTree(): string {
   const root = tmpDir();
   const dir = path.join(root, "skills", "review");
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, "SKILL.md"), "---\nname: review\ndescription: Reviews stuff\n---\n\n# Review\n\nCheck PRs carefully.\n");
+  fs.writeFileSync(
+    path.join(dir, "SKILL.md"),
+    "---\nname: review\ndescription: Reviews stuff\n---\n\n# Review\n\nCheck PRs carefully.\n",
+  );
   return root;
 }
 
@@ -151,9 +178,13 @@ describe("WU-014: per-run LLM adapter scope", () => {
       const colliding = tmpDir();
       fs.writeFileSync(path.join(colliding, "a-b.md"), "## A\nbody\n");
       fs.writeFileSync(path.join(colliding, "a_b.md"), "## B\nbody\n");
-      await expect(runPipelineAsync(pipelineConfig(colliding, credentialed(x, "KEY-X")))).rejects.toThrow(/DUPLICATE_METADATA_ID/);
+      await expect(
+        runPipelineAsync(pipelineConfig(colliding, credentialed(x, "KEY-X"))),
+      ).rejects.toThrow(/DUPLICATE_METADATA_ID/);
       expect(getAdapter()).toBe(callerAdapter);
-      await expect(runPipelineAsync(pipelineConfig(colliding))).rejects.toThrow(/DUPLICATE_METADATA_ID/);
+      await expect(runPipelineAsync(pipelineConfig(colliding))).rejects.toThrow(
+        /DUPLICATE_METADATA_ID/,
+      );
       expect(getAdapter()).toBe(callerAdapter);
     } finally {
       await x.close();
@@ -170,7 +201,12 @@ describe("WU-014: per-run LLM adapter scope", () => {
       const root = weakSkillTree();
       const out = tmpDir();
       const result = await runSkillsPipelineAsync({
-        root, authority: "l9.doctrine.platform", outDir: out, dryRun: true, verbose: false, llmEnabled: true,
+        root,
+        authority: "l9.doctrine.platform",
+        outDir: out,
+        dryRun: true,
+        verbose: false,
+        llmEnabled: true,
       });
       expect(x.authorizations.length).toBe(before);
       expect(result.metrics.llmCalls).toBe(0);
@@ -186,7 +222,12 @@ describe("WU-014: per-run LLM adapter scope", () => {
     const root = weakSkillTree();
     const out = tmpDir();
     const result = await runSkillsPipelineAsync({
-      root, authority: "l9.doctrine.platform", outDir: out, dryRun: true, verbose: false, llmEnabled: true,
+      root,
+      authority: "l9.doctrine.platform",
+      outDir: out,
+      dryRun: true,
+      verbose: false,
+      llmEnabled: true,
     });
     expect(result.considered).toBe(1);
     expect(result.changed).toBe(1);

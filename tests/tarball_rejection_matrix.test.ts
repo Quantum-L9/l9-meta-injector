@@ -10,13 +10,16 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, expect, test } from "vitest";
-import { acquireLocalSource } from "../src/local_source";
+import {
+  KNOWN_UNEXPANDABLE_ARCHIVE_EXTENSIONS,
+  sniffArchiveSignature,
+} from "../src/archive_formats";
 import { expandArchivesUnderRoot } from "../src/archives";
-import { discoverFiles } from "../src/retrieval";
 import { inventoryTree } from "../src/inventory";
-import { sniffArchiveSignature, KNOWN_UNEXPANDABLE_ARCHIVE_EXTENSIONS } from "../src/archive_formats";
-import { treeSnapshot, writeRawZip } from "./helpers/zip_fixtures";
+import { acquireLocalSource } from "../src/local_source";
+import { discoverFiles } from "../src/retrieval";
 import { benignTar, gzipTar, hostileTarCorpus, signedBody, tarBytes } from "./helpers/tar_fixtures";
+import { treeSnapshot, writeRawZip } from "./helpers/zip_fixtures";
 
 function tmp(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "l9-tarball-"));
@@ -61,7 +64,9 @@ describe("tarball rejection matrix — every spelling has the same explicit disp
       const outcome = observe(root);
       expect(treeSnapshot(root)).toEqual(before);
       expect(fs.readdirSync(outside)).toEqual([]);
-      expect(outcome.records.map((r) => [r.relative_path, r.artifact_type])).toEqual([[spelling.name, "archive"]]);
+      expect(outcome.records.map((r) => [r.relative_path, r.artifact_type])).toEqual([
+        [spelling.name, "archive"],
+      ]);
       expect(outcome.records[0].content_hash).toMatch(/^[0-9a-f]{64}$/);
       expect(outcome.archives).toEqual([]);
       expect(outcome.members).toEqual([]);
@@ -120,7 +125,9 @@ describe("tarball rejection matrix — disguises", () => {
     const byPath = new Map(outcome.records.map((r) => [r.relative_path, r]));
     expect(byPath.get("bundle")?.unknowns).toContain("archive_signature:tar");
     expect(byPath.get("notes.txt")?.unknowns).toContain("archive_signature:gzip");
-    const signatures = outcome.diagnostics.filter((d) => d.code === "local-source.archive_signature_detected");
+    const signatures = outcome.diagnostics.filter(
+      (d) => d.code === "local-source.archive_signature_detected",
+    );
     expect(signatures.map((d) => d.sourcePath).sort()).toEqual(["bundle", "notes.txt"]);
     expect(outcome.archives).toEqual([]);
     expect(outcome.members).toEqual([]);
@@ -128,9 +135,13 @@ describe("tarball rejection matrix — disguises", () => {
 
   test("a ZIP container that is a document by format is not reported as a disguised archive", () => {
     const root = tmp();
-    writeRawZip(path.join(root, "report.docx"), [{ name: "word/document.xml", content: "<w:document/>" }]);
+    writeRawZip(path.join(root, "report.docx"), [
+      { name: "word/document.xml", content: "<w:document/>" },
+    ]);
     const outcome = observe(root);
-    expect(outcome.diagnostics.map((d) => d.code)).not.toContain("local-source.archive_signature_detected");
+    expect(outcome.diagnostics.map((d) => d.code)).not.toContain(
+      "local-source.archive_signature_detected",
+    );
   });
 
   test("a tarball nested inside a ZIP is a virtual archive member that is not opened", () => {
@@ -143,11 +154,18 @@ describe("tarball rejection matrix — disguises", () => {
     const outcome = observe(root);
     expect(outcome.archives).toHaveLength(1);
     expect(outcome.archives[0].expanded).toBe(true);
-    const members = new Map(outcome.records.filter((r) => r.relative_path.includes("!/")).map((r) => [r.relative_path, r]));
+    const members = new Map(
+      outcome.records
+        .filter((r) => r.relative_path.includes("!/"))
+        .map((r) => [r.relative_path, r]),
+    );
     expect(members.get("outer.zip!/inner.tar")?.artifact_type).toBe("archive");
     expect(members.get("outer.zip!/inner.tgz")?.artifact_type).toBe("archive");
     expect(members.get("outer.zip!/disguised.bin")?.unknowns).toContain("archive_signature:tar");
-    const notExpanded = outcome.diagnostics.filter((d) => d.code === "archive.format_not_expanded").map((d) => d.sourcePath).sort();
+    const notExpanded = outcome.diagnostics
+      .filter((d) => d.code === "archive.format_not_expanded")
+      .map((d) => d.sourcePath)
+      .sort();
     expect(notExpanded).toEqual(["outer.zip!/inner.tar", "outer.zip!/inner.tgz"]);
     // The nested tarballs are exactly one level deep: nothing beneath them exists.
     expect(outcome.records.some((r) => r.relative_path.includes("inner.tar!/"))).toBe(false);
@@ -181,16 +199,20 @@ describe("tarball rejection matrix — the other ingestion surfaces agree", () =
 
   test("pipeline discovery records every tarball spelling as a known binary", () => {
     const root = tmp();
-    for (const spelling of SPELLINGS) fs.writeFileSync(path.join(root, spelling.name), spelling.body());
+    for (const spelling of SPELLINGS)
+      fs.writeFileSync(path.join(root, spelling.name), spelling.body());
     const discovery = discoverFiles(root, "**/*");
     expect(discovery.files).toEqual([]);
-    const dispositions = discovery.summary.entries.filter((e) => e.kind === "file").map((e) => e.disposition);
+    const dispositions = discovery.summary.entries
+      .filter((e) => e.kind === "file")
+      .map((e) => e.disposition);
     expect(new Set(dispositions)).toEqual(new Set(["known_binary"]));
   });
 
   test("inventory classifies every tarball spelling as an archive and hashes it", () => {
     const root = tmp();
-    for (const spelling of SPELLINGS) fs.writeFileSync(path.join(root, spelling.name), spelling.body());
+    for (const spelling of SPELLINGS)
+      fs.writeFileSync(path.join(root, spelling.name), spelling.body());
     const result = inventoryTree({ root, outDir: path.join(tmp(), "out"), dryRun: true });
     for (const record of result.records) {
       expect(record.artifact_type).toBe("archive");

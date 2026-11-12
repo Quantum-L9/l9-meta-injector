@@ -3,20 +3,21 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { inspectRepositoryAuthority, scanRepositoryAuthority } from "../src/authority_scan";
-import { runCheckAsync, type CheckConfig } from "../src/check";
+import { type CheckConfig, runCheckAsync } from "../src/check";
 
 const roots: string[] = [];
 
-const AUTHORITY = (policy: string) => [
-  "schema: l9.meta-authority/v1",
-  "writer:",
-  "  repository: Quantum-L9/l9-meta-injector",
-  "  ref: fc335977581ff556a8d071a80fd48dfb3686a5cb",
-  "default_carrier: inline_managed",
-  `legacy_writers: ${policy}`,
-  "inline_allow: [\"**/*.md\"]",
-  "",
-].join("\n");
+const AUTHORITY = (policy: string) =>
+  [
+    "schema: l9.meta-authority/v1",
+    "writer:",
+    "  repository: Quantum-L9/l9-meta-injector",
+    "  ref: fc335977581ff556a8d071a80fd48dfb3686a5cb",
+    "default_carrier: inline_managed",
+    `legacy_writers: ${policy}`,
+    'inline_allow: ["**/*.md"]',
+    "",
+  ].join("\n");
 
 function tempRoot(): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "l9-nested-authority-"));
@@ -71,18 +72,26 @@ describe("one repository has one authority", () => {
     ]);
     const inspection = inspectRepositoryAuthority(root);
     expect(inspection.authorityResolved).toBe(false);
-    expect(inspection.conflicts.some((item) => item.path === "vendor/.l9/meta-authority.yaml")).toBe(true);
+    expect(
+      inspection.conflicts.some((item) => item.path === "vendor/.l9/meta-authority.yaml"),
+    ).toBe(true);
   });
 
   test("a governed check fails closed on a nested declaration without touching the tree", async () => {
     const root = tempRoot();
     write(root, ".l9/meta-authority.yaml", AUTHORITY("forbidden"));
     write(root, "sub/.l9/meta-authority.yaml", AUTHORITY("allowed"));
-    write(root, "sub/p.md", "# Build prompt\n\nRole: auditor\nObjective: inspect.\nOutput format: markdown.\n");
+    write(
+      root,
+      "sub/p.md",
+      "# Build prompt\n\nRole: auditor\nObjective: inspect.\nOutput format: markdown.\n",
+    );
     const result = await runCheckAsync(config(root));
     expect(result.passed).toBe(false);
     expect(result.authorityResolved).toBe(false);
-    expect(result.check?.authorityConflicts.map((item) => item.path)).toContain("sub/.l9/meta-authority.yaml");
+    expect(result.check?.authorityConflicts.map((item) => item.path)).toContain(
+      "sub/.l9/meta-authority.yaml",
+    );
     expect(result.check?.carrierDecisions).toEqual([]);
   });
 
@@ -98,8 +107,8 @@ describe("one repository has one authority", () => {
 
 describe("nested authority discovery ignores writer-evidence exclusions (RC-030, ADR-072)", () => {
   function nestedConflicts(root: string): string[] {
-    return inspectRepositoryAuthority(root).conflicts
-      .filter((item) => item.code === "META_AUTHORITY_CONFLICT")
+    return inspectRepositoryAuthority(root)
+      .conflicts.filter((item) => item.code === "META_AUTHORITY_CONFLICT")
       .map((item) => item.path ?? "");
   }
 
@@ -119,7 +128,8 @@ describe("nested authority discovery ignores writer-evidence exclusions (RC-030,
     write(root, ".l9/meta-authority.yaml", AUTHORITY("forbidden"));
     write(root, "tests/e2e/.l9/meta-authority.yaml", AUTHORITY("allowed"));
     write(root, "src/build/.l9/meta-authority.yaml", AUTHORITY("allowed"));
-    for (const name of ["dist", "coverage", "fixtures", "reports"]) write(root, `${name}/.l9/meta-authority.yaml`, AUTHORITY("allowed"));
+    for (const name of ["dist", "coverage", "fixtures", "reports"])
+      write(root, `${name}/.l9/meta-authority.yaml`, AUTHORITY("allowed"));
     expect(nestedConflicts(root)).toEqual([
       "coverage/.l9/meta-authority.yaml",
       "dist/.l9/meta-authority.yaml",
@@ -191,8 +201,12 @@ describe("nested authority discovery ignores writer-evidence exclusions (RC-030,
     write(root, ".l9/meta-authority.yaml", AUTHORITY("forbidden"));
     write(root, "docs/migration.md", "Example: python scripts/inject-l9-meta.py and x-l9-meta");
     write(root, "docs/scripts/inject-l9-meta.py", "Path('x').write_text('x-l9-meta')\n");
-    write(root, "tests/legacy_writer.test.ts", "const marker = 'L9_META'; writeFileSync('x', marker)");
-    write(root, "tests/package.json", "{\"scripts\": {\"x\": \"python scripts/verify-l9-meta.py\"}}\n");
+    write(
+      root,
+      "tests/legacy_writer.test.ts",
+      "const marker = 'L9_META'; writeFileSync('x', marker)",
+    );
+    write(root, "tests/package.json", '{"scripts": {"x": "python scripts/verify-l9-meta.py"}}\n');
     fs.symlinkSync("../docs", path.join(root, "tests/package-link.json"));
     const scan = scanRepositoryAuthority(root);
     expect(scan.conflicts).toEqual([]);

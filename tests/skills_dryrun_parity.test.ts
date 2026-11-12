@@ -12,7 +12,11 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { resetAdapter, setAdapter } from "../src/llm";
-import { runSkillsPipelineAsync, type SkillsFileResult, type SkillsPipelineConfig } from "../src/skills_pipeline";
+import {
+  runSkillsPipelineAsync,
+  type SkillsFileResult,
+  type SkillsPipelineConfig,
+} from "../src/skills_pipeline";
 
 const dirs: string[] = [];
 
@@ -29,16 +33,19 @@ afterEach(() => {
 
 function writeAuthority(root: string): void {
   fs.mkdirSync(path.join(root, ".l9"), { recursive: true });
-  fs.writeFileSync(path.join(root, ".l9", "meta-authority.yaml"), [
-    "schema: l9.meta-authority/v1",
-    "writer:",
-    "  repository: Quantum-L9/l9-meta-injector",
-    "  ref: v4.0.0",
-    "default_carrier: central_manifest",
-    "legacy_writers: forbidden",
-    "inline_allow: [\"**/*.md\"]",
-    "",
-  ].join("\n"));
+  fs.writeFileSync(
+    path.join(root, ".l9", "meta-authority.yaml"),
+    [
+      "schema: l9.meta-authority/v1",
+      "writer:",
+      "  repository: Quantum-L9/l9-meta-injector",
+      "  ref: v4.0.0",
+      "default_carrier: central_manifest",
+      "legacy_writers: forbidden",
+      'inline_allow: ["**/*.md"]',
+      "",
+    ].join("\n"),
+  );
 }
 
 function writeSkill(root: string, name: string, content: string): string {
@@ -49,7 +56,8 @@ function writeSkill(root: string, name: string, content: string): string {
   return skillPath;
 }
 
-const USABLE_DESCRIPTION = "Reviews pull requests for quality. Use when reviewing PRs, code changes, or when the user asks for a code review.";
+const USABLE_DESCRIPTION =
+  "Reviews pull requests for quality. Use when reviewing PRs, code changes, or when the user asks for a code review.";
 
 /** Deterministic adapter: description reply is usable or not; trigger phrases always usable. */
 function useAdapter(description: string): void {
@@ -65,12 +73,24 @@ function useAdapter(description: string): void {
 }
 
 function config(root: string, dryRun: boolean): SkillsPipelineConfig {
-  return { root, authority: "l9.auto", dryRun, outDir: `${root}-out-${dryRun ? "dry" : "real"}`, verbose: false, llmEnabled: true };
+  return {
+    root,
+    authority: "l9.auto",
+    dryRun,
+    outDir: `${root}-out-${dryRun ? "dry" : "real"}`,
+    verbose: false,
+    llmEnabled: true,
+  };
 }
 
 function view(files: SkillsFileResult[]) {
   return files
-    .map((f) => ({ relativePath: f.relativePath, changed: f.changed, diffs: f.diffs, skippedReason: f.skippedReason }))
+    .map((f) => ({
+      relativePath: f.relativePath,
+      changed: f.changed,
+      diffs: f.diffs,
+      skippedReason: f.skippedReason,
+    }))
     .sort((a, b) => (a.relativePath < b.relativePath ? -1 : 1));
 }
 
@@ -83,8 +103,10 @@ async function dryThenReal(root: string) {
 }
 
 const NO_FRONTMATTER = "# reviewer\n\nCheck things carefully.\n";
-const SEQUENCE_DESCRIPTION = "---\nname: lister\ndescription:\n  - reviews stuff\n---\n\n# lister\n\nCheck lists.\n";
-const WEAK = "---\nname: weak\ndescription: Reviews stuff\n---\n\n# weak\n\nCheck things carefully.\n";
+const SEQUENCE_DESCRIPTION =
+  "---\nname: lister\ndescription:\n  - reviews stuff\n---\n\n# lister\n\nCheck lists.\n";
+const WEAK =
+  "---\nname: weak\ndescription: Reviews stuff\n---\n\n# weak\n\nCheck things carefully.\n";
 
 describe("WU-018 skills dry-run matches the real run", () => {
   test("REG-WU-018-RC-025-a: no frontmatter and an unusable description: neither mode reports a change", async () => {

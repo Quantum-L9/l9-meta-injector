@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { runCheckAsync, type CheckConfig } from "../src/check";
+import { type CheckConfig, runCheckAsync } from "../src/check";
 import { writeRawZip } from "./helpers/zip_fixtures";
 
 const roots: string[] = [];
@@ -12,17 +12,23 @@ function tempRoot(): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "l9-check-archive-"));
   roots.push(root);
   fs.mkdirSync(path.join(root, ".l9"));
-  fs.writeFileSync(path.join(root, ".l9", "meta-authority.yaml"), [
-    "schema: l9.meta-authority/v1",
-    "writer:",
-    "  repository: Quantum-L9/l9-meta-injector",
-    "  ref: fc335977581ff556a8d071a80fd48dfb3686a5cb",
-    "default_carrier: inline_managed",
-    "legacy_writers: forbidden",
-    "inline_allow: [\"**/*.md\"]",
-    "",
-  ].join("\n"));
-  fs.writeFileSync(path.join(root, "prompt.md"), "# Build prompt\n\nRole: auditor\nObjective: inspect.\nOutput format: markdown.\n");
+  fs.writeFileSync(
+    path.join(root, ".l9", "meta-authority.yaml"),
+    [
+      "schema: l9.meta-authority/v1",
+      "writer:",
+      "  repository: Quantum-L9/l9-meta-injector",
+      "  ref: fc335977581ff556a8d071a80fd48dfb3686a5cb",
+      "default_carrier: inline_managed",
+      "legacy_writers: forbidden",
+      'inline_allow: ["**/*.md"]',
+      "",
+    ].join("\n"),
+  );
+  fs.writeFileSync(
+    path.join(root, "prompt.md"),
+    "# Build prompt\n\nRole: auditor\nObjective: inspect.\nOutput format: markdown.\n",
+  );
   return root;
 }
 
@@ -93,21 +99,30 @@ describe("governed check reports every archive read-only instead of throwing", (
   test("a tarball is reported by name and never opened", async () => {
     const root = tempRoot();
     fs.mkdirSync(path.join(root, "vendor"));
-    fs.writeFileSync(path.join(root, "vendor", "bundle.tar.gz"), Buffer.from([0x1f, 0x8b, 0x08, 0x00, 0, 0, 0, 0]));
+    fs.writeFileSync(
+      path.join(root, "vendor", "bundle.tar.gz"),
+      Buffer.from([0x1f, 0x8b, 0x08, 0x00, 0, 0, 0, 0]),
+    );
     fs.writeFileSync(path.join(root, "plain.tar"), Buffer.alloc(1024));
     const before = treeDigest(root);
     const result = await runCheckAsync(config(root));
-    const paths = result.check?.drift.filter((item) => item.kind === "unsupported").map((item) => item.path);
+    const paths = result.check?.drift
+      .filter((item) => item.kind === "unsupported")
+      .map((item) => item.path);
     expect(paths).toEqual(expect.arrayContaining(["plain.tar", "vendor/bundle.tar.gz"]));
     for (const item of result.check?.drift ?? []) {
-      if (item.path.endsWith(".tar") || item.path.endsWith(".tar.gz")) expect(item.message).toMatch(/never expanded/);
+      if (item.path.endsWith(".tar") || item.path.endsWith(".tar.gz"))
+        expect(item.message).toMatch(/never expanded/);
     }
     expect(treeDigest(root)).toBe(before);
   });
 
   test("a well-formed ZIP is still listed read-only", async () => {
     const root = tempRoot();
-    writeRawZip(path.join(root, "fine.zip"), [{ name: "a.txt", content: "a" }, { name: "b.txt", content: "b" }]);
+    writeRawZip(path.join(root, "fine.zip"), [
+      { name: "a.txt", content: "a" },
+      { name: "b.txt", content: "b" },
+    ]);
     const result = await runCheckAsync(config(root));
     const drift = result.check?.drift.find((item) => item.path === "fine.zip");
     expect(drift?.message).toMatch(/inspected read-only \(2 member\(s\)\)/);

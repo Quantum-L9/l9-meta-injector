@@ -1,9 +1,9 @@
+import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { createHash } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { TRANSACTION_DIRECTORY, executeFileTransaction } from "../src/file_transaction";
+import { executeFileTransaction, TRANSACTION_DIRECTORY } from "../src/file_transaction";
 
 const sha = (value: string) => createHash("sha256").update(value).digest("hex");
 const modeOf = (file: string) => fs.statSync(file).mode & 0o777;
@@ -19,14 +19,20 @@ function withUmask<T>(mask: number, run: () => T): T {
 
 describe("transaction file modes survive the process umask", () => {
   let root: string;
-  beforeEach(() => { root = fs.mkdtempSync(path.join(os.tmpdir(), "l9-txn-mode-")); });
-  afterEach(() => { fs.rmSync(root, { recursive: true, force: true }); });
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "l9-txn-mode-"));
+  });
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
 
   test("an existing target keeps its exact mode under a restrictive umask", () => {
     fs.writeFileSync(path.join(root, "x.md"), "old\n");
     fs.chmodSync(path.join(root, "x.md"), 0o775);
     const result = withUmask(0o077, () =>
-      executeFileTransaction(root, [{ path: "x.md", expectedExists: true, expectedHash: sha("old\n"), bytes: "new\n" }]),
+      executeFileTransaction(root, [
+        { path: "x.md", expectedExists: true, expectedHash: sha("old\n"), bytes: "new\n" },
+      ]),
     );
     expect(result.committedWrites).toBe(1);
     expect(fs.readFileSync(path.join(root, "x.md"), "utf8")).toBe("new\n");
@@ -49,7 +55,14 @@ describe("transaction file modes survive the process umask", () => {
     try {
       fs.writeFileSync(path.join(outside, "shared.md"), "shared\n");
       fs.linkSync(path.join(outside, "shared.md"), path.join(root, "linked.md"));
-      executeFileTransaction(root, [{ path: "linked.md", expectedExists: true, expectedHash: sha("shared\n"), bytes: "changed\n" }]);
+      executeFileTransaction(root, [
+        {
+          path: "linked.md",
+          expectedExists: true,
+          expectedHash: sha("shared\n"),
+          bytes: "changed\n",
+        },
+      ]);
       expect(fs.readFileSync(path.join(root, "linked.md"), "utf8")).toBe("changed\n");
       expect(fs.readFileSync(path.join(outside, "shared.md"), "utf8")).toBe("shared\n");
     } finally {
@@ -60,8 +73,12 @@ describe("transaction file modes survive the process umask", () => {
 
 describe("transaction targets exclude protected repository state", () => {
   let root: string;
-  beforeEach(() => { root = fs.mkdtempSync(path.join(os.tmpdir(), "l9-txn-protected-")); });
-  afterEach(() => { fs.rmSync(root, { recursive: true, force: true }); });
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "l9-txn-protected-"));
+  });
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
 
   test.each([
     [".git/config", /Git internal state/],
@@ -71,12 +88,16 @@ describe("transaction targets exclude protected repository state", () => {
     [TRANSACTION_DIRECTORY, /protected repository state/],
   ])("refuses %s", (target, expected) => {
     fs.mkdirSync(path.join(root, ".l9"));
-    expect(() => executeFileTransaction(root, [{ path: target, expectedExists: false, bytes: "x" }])).toThrow(expected);
+    expect(() =>
+      executeFileTransaction(root, [{ path: target, expectedExists: false, bytes: "x" }]),
+    ).toThrow(expected);
     expect(fs.existsSync(path.join(root, target))).toBe(false);
   });
 
   test("still accepts the canonical metadata index beside the authority", () => {
-    const result = executeFileTransaction(root, [{ path: ".l9/metadata-index.jsonl", expectedExists: false, bytes: "{}\n" }]);
+    const result = executeFileTransaction(root, [
+      { path: ".l9/metadata-index.jsonl", expectedExists: false, bytes: "{}\n" },
+    ]);
     expect(result.committedWrites).toBe(1);
     expect(fs.readFileSync(path.join(root, ".l9", "metadata-index.jsonl"), "utf8")).toBe("{}\n");
   });

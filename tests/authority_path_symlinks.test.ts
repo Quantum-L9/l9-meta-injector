@@ -8,9 +8,9 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import {
-  META_AUTHORITY_RELATIVE_PATH,
   assertHeaderIdentity,
   loadRepositoryAuthority,
+  META_AUTHORITY_RELATIVE_PATH,
   resolveHeaderIdentity,
 } from "../src/authority";
 import { inspectRepositoryAuthority } from "../src/authority_scan";
@@ -33,7 +33,9 @@ function tempDir(prefix = "l9-authority-symlink-"): string {
   made.push(dir);
   return dir;
 }
-afterEach(() => { for (const dir of made.splice(0)) fs.rmSync(dir, { recursive: true, force: true }); });
+afterEach(() => {
+  for (const dir of made.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+});
 
 function write(root: string, relative: string, content: string): void {
   const target = path.join(root, relative);
@@ -41,12 +43,16 @@ function write(root: string, relative: string, content: string): void {
   fs.writeFileSync(target, content, "utf8");
 }
 
-const codes = (result: { conflicts: Array<{ code: string }> }) => result.conflicts.map((item) => item.code);
+const codes = (result: { conflicts: Array<{ code: string }> }) =>
+  result.conflicts.map((item) => item.code);
 
 function danglingAuthority(): string {
   const root = tempDir();
   fs.mkdirSync(path.join(root, ".l9"));
-  fs.symlinkSync(path.join(root, "does-not-exist.yaml"), path.join(root, META_AUTHORITY_RELATIVE_PATH));
+  fs.symlinkSync(
+    path.join(root, "does-not-exist.yaml"),
+    path.join(root, META_AUTHORITY_RELATIVE_PATH),
+  );
   return root;
 }
 
@@ -63,7 +69,9 @@ describe("RC-031: authority path components", () => {
     expect(loaded.authority).toBeUndefined();
     const inspection = inspectRepositoryAuthority(root);
     expect(inspection.authorityResolved).toBe(false);
-    expect(inspection.conflicts.some((item) => item.code === "META_AUTHORITY_CONFIG_INVALID")).toBe(true);
+    expect(inspection.conflicts.some((item) => item.code === "META_AUTHORITY_CONFIG_INVALID")).toBe(
+      true,
+    );
   });
 
   test("REG-WU-026-RC-031-b: a .l9 symlink to a directory inside the root is refused", () => {
@@ -114,20 +122,24 @@ describe("RC-031: authority path components", () => {
   test("REG-WU-026-RC-031-g: pipeline and inventory refuse to stamp through a dangling authority link", async () => {
     const root = danglingAuthority();
     write(root, "notes.md", "# Notes\n\nbody\n");
-    await expect(runPipelineAsync({
-      root,
-      glob: "**/*.md",
-      dryRun: true,
-      outDir: path.join(root, ".out"),
-      indexDir: path.join(root, ".out"),
-      nearDupThreshold: 0.9,
-      hashPrefixLength: 16,
-      verbose: false,
-      llmEnabled: false,
-      normalizeFilenames: false,
-      authority: "Some/Owner",
-      namespace: "ns",
-    })).rejects.toThrow("META_AUTHORITY_CONFIG_INVALID");
-    expect(() => inventoryTree({ root, outDir: path.join(root, ".l9inventory"), dryRun: true })).toThrow("META_AUTHORITY_CONFIG_INVALID");
+    await expect(
+      runPipelineAsync({
+        root,
+        glob: "**/*.md",
+        dryRun: true,
+        outDir: path.join(root, ".out"),
+        indexDir: path.join(root, ".out"),
+        nearDupThreshold: 0.9,
+        hashPrefixLength: 16,
+        verbose: false,
+        llmEnabled: false,
+        normalizeFilenames: false,
+        authority: "Some/Owner",
+        namespace: "ns",
+      }),
+    ).rejects.toThrow("META_AUTHORITY_CONFIG_INVALID");
+    expect(() =>
+      inventoryTree({ root, outDir: path.join(root, ".l9inventory"), dryRun: true }),
+    ).toThrow("META_AUTHORITY_CONFIG_INVALID");
   });
 });

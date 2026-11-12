@@ -10,9 +10,14 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, expect, test } from "vitest";
-import { ENCODING_CHUNK_BYTES, probeBufferEncoding, probeFileEncoding, readUtf8Strict } from "../src/encoding";
+import {
+  ENCODING_CHUNK_BYTES,
+  probeBufferEncoding,
+  probeFileEncoding,
+  readUtf8Strict,
+} from "../src/encoding";
 import { injectFile } from "../src/inject";
-import { findFiles, discoverFiles } from "../src/retrieval";
+import { discoverFiles, findFiles } from "../src/retrieval";
 import { coerceNormalizedMeta } from "../src/schema";
 
 function tmp(): string {
@@ -28,10 +33,20 @@ function lateInvalidUtf8(padBytes: number): Buffer {
 }
 
 const META = coerceNormalizedMeta({
-  id: "enc-1", title: "Encoding", artifact_type: "source", mcp_primitive: "resource",
-  callable: false, retrievable: true, injectable: true, namespace: "test",
-  sharing_scope: "agnostic", source_path: "x.md", content_hash: "Unknown",
-  token_cost_estimate: 0, authority: "test", created_or_detected_at: "Unknown",
+  id: "enc-1",
+  title: "Encoding",
+  artifact_type: "source",
+  mcp_primitive: "resource",
+  callable: false,
+  retrievable: true,
+  injectable: true,
+  namespace: "test",
+  sharing_scope: "agnostic",
+  source_path: "x.md",
+  content_hash: "Unknown",
+  token_cost_estimate: 0,
+  authority: "test",
+  created_or_detected_at: "Unknown",
 });
 
 describe("probeFileEncoding", () => {
@@ -76,7 +91,10 @@ describe("probeFileEncoding", () => {
   test("a UTF-8 BOM is valid and reported", () => {
     const root = tmp();
     const file = path.join(root, "bom.md");
-    fs.writeFileSync(file, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from("# T\n", "utf8")]));
+    fs.writeFileSync(
+      file,
+      Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from("# T\n", "utf8")]),
+    );
     const probe = probeFileEncoding(file);
     expect(probe.status).toBe("utf8");
     expect(probe.hasBom).toBe(true);
@@ -114,9 +132,14 @@ describe("mutation paths refuse a lossy decode", () => {
     const original = lateInvalidUtf8(9000);
     fs.writeFileSync(file, original);
 
-    expect(() => injectFile(file, META, {
-      dryRun: false, outDir: tmp(), verbose: false, writeInjectLog: false,
-    })).toThrow(/UNSUPPORTED_ENCODING/);
+    expect(() =>
+      injectFile(file, META, {
+        dryRun: false,
+        outDir: tmp(),
+        verbose: false,
+        writeInjectLog: false,
+      }),
+    ).toThrow(/UNSUPPORTED_ENCODING/);
 
     expect(fs.readFileSync(file).equals(original)).toBe(true);
   });
@@ -126,7 +149,10 @@ describe("mutation paths refuse a lossy decode", () => {
     const file = path.join(root, "good.md");
     fs.writeFileSync(file, `${"# Heading\n\n".repeat(900)}clean tail\n`);
     const result = injectFile(file, META, {
-      dryRun: false, outDir: tmp(), verbose: false, writeInjectLog: false,
+      dryRun: false,
+      outDir: tmp(),
+      verbose: false,
+      writeInjectLog: false,
     });
     expect(result.headerInjected).toBe(true);
     expect(result.bodyPreserved).toBe(true);

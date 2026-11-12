@@ -2,13 +2,21 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { LEGACY_OPERATION_ALIASES as TS_ALIASES, OPERATION_MODES as TS_MODES } from "../src/operation_contracts";
+import {
+  LEGACY_OPERATION_ALIASES as TS_ALIASES,
+  OPERATION_MODES as TS_MODES,
+} from "../src/operation_contracts";
 
 const dispatch = require("../scripts/lib/operation-dispatch") as {
   OPERATION_MODES: readonly string[];
   LEGACY_OPERATION_ALIASES: Readonly<Record<string, string>>;
   normalizeEnvironment: (env: NodeJS.ProcessEnv) => Record<string, unknown>;
-  buildInvocation: (config: Record<string, unknown>) => { args: string[]; shell: boolean; artifactPath: string; env: Record<string, string | undefined> };
+  buildInvocation: (config: Record<string, unknown>) => {
+    args: string[];
+    shell: boolean;
+    artifactPath: string;
+    env: Record<string, string | undefined>;
+  };
   resolveMode: (mode: string) => { mode: string; warnings: string[] };
 };
 
@@ -32,7 +40,11 @@ function canonical(target: string): string {
   return fs.realpathSync(target);
 }
 
-function actionEnv(workspace: string, actionPath: string, overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+function actionEnv(
+  workspace: string,
+  actionPath: string,
+  overrides: NodeJS.ProcessEnv = {},
+): NodeJS.ProcessEnv {
   return {
     GITHUB_WORKSPACE: workspace,
     GITHUB_ACTION_PATH: actionPath,
@@ -77,8 +89,16 @@ describe("workspace containment", () => {
   test("rejects traversal and absolute root inputs", () => {
     const workspace = tempDir("l9-workspace-");
     const actionPath = tempDir("l9-action-");
-    expect(() => dispatch.normalizeEnvironment(actionEnv(workspace, actionPath, { L9_INPUT_ROOT: "../outside" }))).toThrow(/escapes/);
-    expect(() => dispatch.normalizeEnvironment(actionEnv(workspace, actionPath, { L9_INPUT_ROOT: path.parse(workspace).root }))).toThrow(/must be relative/);
+    expect(() =>
+      dispatch.normalizeEnvironment(
+        actionEnv(workspace, actionPath, { L9_INPUT_ROOT: "../outside" }),
+      ),
+    ).toThrow(/escapes/);
+    expect(() =>
+      dispatch.normalizeEnvironment(
+        actionEnv(workspace, actionPath, { L9_INPUT_ROOT: path.parse(workspace).root }),
+      ),
+    ).toThrow(/must be relative/);
   });
 
   test("rejects a root symlink that resolves outside the workspace", () => {
@@ -86,16 +106,26 @@ describe("workspace containment", () => {
     const actionPath = tempDir("l9-action-");
     const outside = tempDir("l9-outside-");
     fs.symlinkSync(outside, path.join(workspace, "escape"), "dir");
-    expect(() => dispatch.normalizeEnvironment(actionEnv(workspace, actionPath, { L9_INPUT_ROOT: "escape" }))).toThrow(/resolves outside/);
+    expect(() =>
+      dispatch.normalizeEnvironment(actionEnv(workspace, actionPath, { L9_INPUT_ROOT: "escape" })),
+    ).toThrow(/resolves outside/);
   });
 
   test("rejects outputs at the repository root or inside Git internals", () => {
     const workspace = tempDir("l9-workspace-");
     const actionPath = tempDir("l9-action-");
     fs.mkdirSync(path.join(workspace, ".git"), { recursive: true });
-    expect(() => dispatch.normalizeEnvironment(actionEnv(workspace, actionPath, { L9_INPUT_OUT: "." }))).toThrow(/child path/);
-    expect(() => dispatch.normalizeEnvironment(actionEnv(workspace, actionPath, { L9_INPUT_OUT: ".git/reports" }))).toThrow(/Git internal/);
-    expect(() => dispatch.normalizeEnvironment(actionEnv(workspace, actionPath, { L9_INPUT_ROOT: ".git" }))).toThrow(/Git internal/);
+    expect(() =>
+      dispatch.normalizeEnvironment(actionEnv(workspace, actionPath, { L9_INPUT_OUT: "." })),
+    ).toThrow(/child path/);
+    expect(() =>
+      dispatch.normalizeEnvironment(
+        actionEnv(workspace, actionPath, { L9_INPUT_OUT: ".git/reports" }),
+      ),
+    ).toThrow(/Git internal/);
+    expect(() =>
+      dispatch.normalizeEnvironment(actionEnv(workspace, actionPath, { L9_INPUT_ROOT: ".git" })),
+    ).toThrow(/Git internal/);
   });
 
   test("rejects output traversal through an existing symlink ancestor", () => {
@@ -103,7 +133,11 @@ describe("workspace containment", () => {
     const actionPath = tempDir("l9-action-");
     const outside = tempDir("l9-outside-");
     fs.symlinkSync(outside, path.join(workspace, "out-link"), "dir");
-    expect(() => dispatch.normalizeEnvironment(actionEnv(workspace, actionPath, { L9_INPUT_OUT: "out-link/reports" }))).toThrow(/symlink outside/);
+    expect(() =>
+      dispatch.normalizeEnvironment(
+        actionEnv(workspace, actionPath, { L9_INPUT_OUT: "out-link/reports" }),
+      ),
+    ).toThrow(/symlink outside/);
   });
 
   test("places check reports beneath RUNNER_TEMP and outside the target repository", () => {
@@ -148,17 +182,26 @@ describe("input semantics", () => {
   test("requires explicit authority for check, apply, and skills", () => {
     const workspace = tempDir("l9-workspace-");
     const actionPath = tempDir("l9-action-");
-    expect(() => dispatch.normalizeEnvironment(actionEnv(workspace, actionPath, { L9_INPUT_MODE: "check" }))).toThrow(/META_AUTHORITY_FILE_MISSING|explicit authority/);
-    expect(() => dispatch.normalizeEnvironment(actionEnv(workspace, actionPath, { L9_INPUT_MODE: "apply" }))).toThrow(/META_AUTHORITY_FILE_MISSING|explicit authority/);
-    expect(() => dispatch.normalizeEnvironment(actionEnv(workspace, actionPath, { L9_INPUT_MODE: "skills" }))).toThrow(/META_AUTHORITY_FILE_MISSING|explicit authority/);
+    expect(() =>
+      dispatch.normalizeEnvironment(actionEnv(workspace, actionPath, { L9_INPUT_MODE: "check" })),
+    ).toThrow(/META_AUTHORITY_FILE_MISSING|explicit authority/);
+    expect(() =>
+      dispatch.normalizeEnvironment(actionEnv(workspace, actionPath, { L9_INPUT_MODE: "apply" })),
+    ).toThrow(/META_AUTHORITY_FILE_MISSING|explicit authority/);
+    expect(() =>
+      dispatch.normalizeEnvironment(actionEnv(workspace, actionPath, { L9_INPUT_MODE: "skills" })),
+    ).toThrow(/META_AUTHORITY_FILE_MISSING|explicit authority/);
   });
 
   test("forwards --authority into the skills invocation", () => {
     const workspace = tempDir("l9-workspace-");
     const actionPath = tempDir("l9-action-");
-    const config = dispatch.normalizeEnvironment(actionEnv(workspace, actionPath, {
-      L9_INPUT_MODE: "skills", L9_INPUT_AUTHORITY: "repo.owner",
-    }));
+    const config = dispatch.normalizeEnvironment(
+      actionEnv(workspace, actionPath, {
+        L9_INPUT_MODE: "skills",
+        L9_INPUT_AUTHORITY: "repo.owner",
+      }),
+    );
     const invocation = dispatch.buildInvocation(config);
     const authorityIndex = invocation.args.indexOf("--authority");
     expect(authorityIndex).toBeGreaterThanOrEqual(0);
@@ -168,25 +211,50 @@ describe("input semantics", () => {
   test("rejects ambiguous booleans and unsafe mode combinations", () => {
     const workspace = tempDir("l9-workspace-");
     const actionPath = tempDir("l9-action-");
-    expect(() => dispatch.normalizeEnvironment(actionEnv(workspace, actionPath, { L9_INPUT_DRY_RUN: "yes" }))).toThrow(/exactly 'true' or 'false'/);
-    expect(() => dispatch.normalizeEnvironment(actionEnv(workspace, actionPath, { L9_INPUT_UPLOAD_ARTIFACT: "sometimes" }))).toThrow(/exactly 'true' or 'false'/);
-    expect(() => dispatch.normalizeEnvironment(actionEnv(workspace, actionPath, {
-      L9_INPUT_MODE: "apply", L9_INPUT_AUTHORITY: "repo.owner", L9_INPUT_DRY_RUN: "true",
-    }))).toThrow(/use check/);
-    expect(() => dispatch.normalizeEnvironment(actionEnv(workspace, actionPath, {
-      L9_INPUT_MODE: "check", L9_INPUT_AUTHORITY: "repo.owner", L9_INPUT_LLM: "true",
-      L9_INPUT_LLM_BASE_URL: "https://example.invalid", L9_INPUT_LLM_MODEL: "x", L9_INPUT_LLM_API_KEY: "secret",
-    }))).toThrow(/forbids LLM/);
+    expect(() =>
+      dispatch.normalizeEnvironment(actionEnv(workspace, actionPath, { L9_INPUT_DRY_RUN: "yes" })),
+    ).toThrow(/exactly 'true' or 'false'/);
+    expect(() =>
+      dispatch.normalizeEnvironment(
+        actionEnv(workspace, actionPath, { L9_INPUT_UPLOAD_ARTIFACT: "sometimes" }),
+      ),
+    ).toThrow(/exactly 'true' or 'false'/);
+    expect(() =>
+      dispatch.normalizeEnvironment(
+        actionEnv(workspace, actionPath, {
+          L9_INPUT_MODE: "apply",
+          L9_INPUT_AUTHORITY: "repo.owner",
+          L9_INPUT_DRY_RUN: "true",
+        }),
+      ),
+    ).toThrow(/use check/);
+    expect(() =>
+      dispatch.normalizeEnvironment(
+        actionEnv(workspace, actionPath, {
+          L9_INPUT_MODE: "check",
+          L9_INPUT_AUTHORITY: "repo.owner",
+          L9_INPUT_LLM: "true",
+          L9_INPUT_LLM_BASE_URL: "https://example.invalid",
+          L9_INPUT_LLM_MODEL: "x",
+          L9_INPUT_LLM_API_KEY: "secret",
+        }),
+      ),
+    ).toThrow(/forbids LLM/);
   });
 
   test("passes hostile shell metacharacters as one argv element with shell disabled", () => {
     const workspace = tempDir("l9-workspace-");
     const actionPath = tempDir("l9-action-");
     const pattern = "$(touch /tmp/should-not-exist)";
-    const config = dispatch.normalizeEnvironment(actionEnv(workspace, actionPath, { L9_INPUT_OMIT: pattern }));
+    const config = dispatch.normalizeEnvironment(
+      actionEnv(workspace, actionPath, { L9_INPUT_OMIT: pattern }),
+    );
     const invocation = dispatch.buildInvocation(config);
     expect(invocation.shell).toBe(false);
-    expect((invocation as unknown as { env: Record<string, string | undefined> }).env.L9_INPUT_LLM_API_KEY).toBe(undefined);
+    expect(
+      (invocation as unknown as { env: Record<string, string | undefined> }).env
+        .L9_INPUT_LLM_API_KEY,
+    ).toBe(undefined);
     const index = invocation.args.indexOf("--omit");
     expect(invocation.args[index + 1]).toBe(pattern);
   });

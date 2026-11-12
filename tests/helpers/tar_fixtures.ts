@@ -9,7 +9,20 @@
 // kept small: a fixture is a shape, not a payload.
 import * as zlib from "node:zlib";
 
-export type TarTypeFlag = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "L" | "K" | "x" | "g" | "S";
+export type TarTypeFlag =
+  | "0"
+  | "1"
+  | "2"
+  | "3"
+  | "4"
+  | "5"
+  | "6"
+  | "7"
+  | "L"
+  | "K"
+  | "x"
+  | "g"
+  | "S";
 
 export interface TarEntrySpec {
   /** Name written verbatim into the 100-byte field (truncated if longer). */
@@ -38,7 +51,9 @@ function octal(value: number, width: number): string {
 
 /** One 512-byte ustar header plus data blocks. */
 export function tarEntry(spec: TarEntrySpec): Buffer {
-  const data = Buffer.isBuffer(spec.content) ? spec.content : Buffer.from(spec.content ?? "", "utf8");
+  const data = Buffer.isBuffer(spec.content)
+    ? spec.content
+    : Buffer.from(spec.content ?? "", "utf8");
   const header = Buffer.alloc(512);
   header.write(spec.name, 0, 100, "utf8");
   header.write(octal(spec.mode ?? 0o644, 8), 100);
@@ -119,7 +134,9 @@ export function hostileTarCorpus(): Record<string, Buffer> {
     ]),
     "device.tar": tarBytes([{ name: "dev/null", type: "3", mode: 0o666 }]),
     "fifo.tar": tarBytes([{ name: "pipe", type: "6" }]),
-    "setuid.tar": tarBytes([{ name: "root-shell", type: "0", mode: 0o4755, content: "#!/bin/sh\n" }]),
+    "setuid.tar": tarBytes([
+      { name: "root-shell", type: "0", mode: 0o4755, content: "#!/bin/sh\n" },
+    ]),
     "gnu-longname.tar": tarBytes([
       { name: "././@LongLink", type: "L", content: `${long}/${long}/../../escape.txt\0` },
       { name: "placeholder", content: "x" },
@@ -128,17 +145,30 @@ export function hostileTarCorpus(): Record<string, Buffer> {
       { name: "PaxHeaders/x", type: "x", content: "30 path=../../pax-escape.txt\n" },
       { name: "x", content: "x" },
     ]),
-    "sparse.tar": tarBytes([{ name: "sparse.bin", type: "S", content: Buffer.alloc(512), declaredSize: 1 << 30 }]),
+    "sparse.tar": tarBytes([
+      { name: "sparse.bin", type: "S", content: Buffer.alloc(512), declaredSize: 1 << 30 },
+    ]),
     "size-lie.tar": tarBytes([{ name: "lie.txt", content: "short", declaredSize: 4096 }]),
-    "duplicate.tar": tarBytes([{ name: "same.txt", content: "one" }, { name: "same.txt", content: "two" }]),
-    "case-collision.tar": tarBytes([{ name: "Readme.md", content: "a" }, { name: "readme.md", content: "b" }]),
-    "unicode-collision.tar": tarBytes([{ name: "caf\u00e9.md", content: "a" }, { name: "cafe\u0301.md", content: "b" }]),
+    "duplicate.tar": tarBytes([
+      { name: "same.txt", content: "one" },
+      { name: "same.txt", content: "two" },
+    ]),
+    "case-collision.tar": tarBytes([
+      { name: "Readme.md", content: "a" },
+      { name: "readme.md", content: "b" },
+    ]),
+    "unicode-collision.tar": tarBytes([
+      { name: "caf\u00e9.md", content: "a" },
+      { name: "cafe\u0301.md", content: "b" },
+    ]),
     "bad-checksum.tar": tarBytes([{ name: "a.txt", content: "x", badChecksum: true }]),
     "truncated.tar": benignTar().subarray(0, 700),
     "empty.tar": Buffer.alloc(1024),
     "trailing-bytes.tar": Buffer.concat([benignTar(), Buffer.from("trailing garbage")]),
     "concatenated.tar": Buffer.concat([benignTar(), benignTar()]),
-    "many-members.tar": tarBytes(Array.from({ length: 200 }, (_, i) => ({ name: `m/${i}.txt`, content: String(i) }))),
+    "many-members.tar": tarBytes(
+      Array.from({ length: 200 }, (_, i) => ({ name: `m/${i}.txt`, content: String(i) })),
+    ),
     "nested.tar": tarBytes([{ name: "inner.tar", content: benignTar() }]),
     "nested.tar.gz": gzipTar(tarBytes([{ name: "inner.tgz", content: gzipTar(benignTar()) }])),
   };

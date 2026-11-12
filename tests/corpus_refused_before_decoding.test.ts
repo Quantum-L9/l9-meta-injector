@@ -12,7 +12,7 @@ import {
   UNDECODED_REASON_OVERSIZED,
   UNDECODED_REASON_SECRET_PATH,
 } from "../src/corpus_documents";
-import { runCorpusScan, type CorpusScanResult } from "../src/corpus_scan";
+import { type CorpusScanResult, runCorpusScan } from "../src/corpus_scan";
 import { defaultDecoderRegistry } from "../src/documents";
 import { writeDocx } from "./helpers/document_fixtures";
 
@@ -30,7 +30,9 @@ const TEXT = defaultDecoderRegistry().forPath("a.md");
 const DOCX = defaultDecoderRegistry().forPath("a.docx");
 
 function entry(result: CorpusScanResult, relative: string) {
-  const found = result.documentIndex.documents.find((document) => document.root_relative_path === relative);
+  const found = result.documentIndex.documents.find(
+    (document) => document.root_relative_path === relative,
+  );
   expect(found, relative).toBeDefined();
   return found as NonNullable<typeof found>;
 }
@@ -45,12 +47,21 @@ function fixtureRoot(): string {
   fs.writeFileSync(path.join(root, "big.md"), `# Big\n\n${"word ".repeat(400)}\n`);
   fs.writeFileSync(path.join(root, "normal.md"), "# Normal\n\nA short note.\n");
   fs.writeFileSync(path.join(root, "blob.xyz"), "opaque\n");
-  writeDocx(path.join(root, "passwords.docx"), { title: "Passwords", headings: [], paragraphs: ["x"] });
+  writeDocx(path.join(root, "passwords.docx"), {
+    title: "Passwords",
+    headings: [],
+    paragraphs: ["x"],
+  });
   return root;
 }
 
 async function scan(root: string, extra: Partial<Parameters<typeof runCorpusScan>[0]> = {}) {
-  return runCorpusScan({ roots: [{ path: root, name: "R" }], producerVersion: "t", maxFileBytes: 1000, ...extra });
+  return runCorpusScan({
+    roots: [{ path: root, name: "R" }],
+    producerVersion: "t",
+    maxFileBytes: 1000,
+    ...extra,
+  });
 }
 
 describe("WU-050 RC-087: refused before decoding is not 'no decoder claims this'", () => {
@@ -102,8 +113,10 @@ describe("WU-050 RC-087: refused before decoding is not 'no decoder claims this'
     expect(docx.decoder_id).toBe(DOCX?.id);
     expect(docx.decoder_version).toBe(DOCX?.version);
     expect(docx.decoder_id).not.toBe(TEXT?.id);
-    expect(formatSignal(result, DOCX?.format ?? "docx")?.refusals)
-      .toContainEqual({ name: UNDECODED_REASON_SECRET_PATH, count: 1 });
+    expect(formatSignal(result, DOCX?.format ?? "docx")?.refusals).toContainEqual({
+      name: UNDECODED_REASON_SECRET_PATH,
+      count: 1,
+    });
   });
 
   it("REG-WU-050-RC-087-d: document index, document signals and coverage reconcile", async () => {
@@ -112,11 +125,16 @@ describe("WU-050 RC-087: refused before decoding is not 'no decoder claims this'
       result.documentIndex.summary.undecoded_by_reason.map((row) => [row.reason, row.count]),
     );
     const gap = result.coverage.documents.decode_gap;
-    expect((byReason.get(UNDECODED_REASON_SECRET_PATH) ?? 0) + (byReason.get(UNDECODED_REASON_OVERSIZED) ?? 0))
-      .toBe(gap.secret_skipped + gap.oversized);
+    expect(
+      (byReason.get(UNDECODED_REASON_SECRET_PATH) ?? 0) +
+        (byReason.get(UNDECODED_REASON_OVERSIZED) ?? 0),
+    ).toBe(gap.secret_skipped + gap.oversized);
     expect(byReason.get(UNDECODED_REASON_SECRET_PATH)).toBe(gap.secret_skipped);
     expect(byReason.get(UNDECODED_REASON_OVERSIZED)).toBe(gap.oversized);
-    const eligible = result.documentSignals.formats.reduce((sum, signal) => sum + signal.eligible_count, 0);
+    const eligible = result.documentSignals.formats.reduce(
+      (sum, signal) => sum + signal.eligible_count,
+      0,
+    );
     expect(eligible).toBe(result.coverage.documents.decoder_eligible_count);
   });
 

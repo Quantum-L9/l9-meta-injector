@@ -13,9 +13,12 @@ import {
   manifestExtractor,
   serviceSpecExtractor,
 } from "../src/extractors/structured";
-import { documentStructureExtractor, workIntelligenceExtractor } from "../src/extractors/work_intelligence";
+import {
+  documentStructureExtractor,
+  workIntelligenceExtractor,
+} from "../src/extractors/work_intelligence";
+import { type AssertionDraft, type Extractor, interpretRepository } from "../src/interpretation";
 import { inventoryTree } from "../src/inventory";
-import { interpretRepository, type AssertionDraft, type Extractor } from "../src/interpretation";
 import { sha256TextPrefixed } from "../src/repository_model";
 
 const BUDGET_MS = 2000;
@@ -99,7 +102,9 @@ describe("RC-094: extractor patterns stay linear on hostile lines", () => {
       "Lineage is reconstructable from receipts.",
       "",
     ].join("\n");
-    expect(claims(run(contractInvariantsExtractor, "contracts/a.md", content), "contract.invariant")).toEqual([
+    expect(
+      claims(run(contractInvariantsExtractor, "contracts/a.md", content), "contract.invariant"),
+    ).toEqual([
       "contract.invariant tenant-context-immutable @1",
       "contract.invariant packets-derived-not-mutated @2",
       "contract.invariant replay-is-explicit @3",
@@ -155,10 +160,37 @@ describe("RC-094: extractor patterns stay linear on hostile lines", () => {
       },
     ];
     const words = [
-      "tenant", "context", "tenant_context", "immutable", "derivation", "derive", "derived", "not", "never",
-      "mutated", "mutation", "rather", "than", "replay", "explicit", "lineage", "reconstruct",
-      "reconstructable", "traceable", "gate", "gate-compatible", "through", "the", "ingress", "enters",
-      "x", ".", ",", "immutableness", "nevermore", "derivations",
+      "tenant",
+      "context",
+      "tenant_context",
+      "immutable",
+      "derivation",
+      "derive",
+      "derived",
+      "not",
+      "never",
+      "mutated",
+      "mutation",
+      "rather",
+      "than",
+      "replay",
+      "explicit",
+      "lineage",
+      "reconstruct",
+      "reconstructable",
+      "traceable",
+      "gate",
+      "gate-compatible",
+      "through",
+      "the",
+      "ingress",
+      "enters",
+      "x",
+      ".",
+      ",",
+      "immutableness",
+      "nevermore",
+      "derivations",
     ];
     // Deterministic pseudo-random sentences over the trigger vocabulary.
     let seed = 7;
@@ -174,7 +206,9 @@ describe("RC-094: extractor patterns stay linear on hostile lines", () => {
       lines.push(parts.join(next() % 5 === 0 ? "" : " "));
     }
     for (const line of lines) {
-      const expected = ORIGINAL.filter((rule) => rule.patterns.some((pattern) => pattern.test(line)))
+      const expected = ORIGINAL.filter((rule) =>
+        rule.patterns.some((pattern) => pattern.test(line)),
+      )
         .map((rule) => rule.object)
         .sort();
       const actual = run(contractInvariantsExtractor, "contracts/a.md", `${line}\n`)
@@ -187,14 +221,17 @@ describe("RC-094: extractor patterns stay linear on hostile lines", () => {
 
   it("REG-WU-020-RC-094-g: ordinary bullets, spec keys, TOML pairs and replacement lines read as before", () => {
     expect(
-      claims(run(workIntelligenceExtractor, "plan.md", "## Milestones\n- Beta\n1. [x] GA launch\n- \n"), "work.milestone"),
+      claims(
+        run(workIntelligenceExtractor, "plan.md", "## Milestones\n- Beta\n1. [x] GA launch\n- \n"),
+        "work.milestone",
+      ),
     ).toEqual(["work.milestone Beta @2", "work.milestone GA launch @3"]);
     expect(
       claims(
         run(
           serviceSpecExtractor,
           "spec.yaml",
-          "service:\n  name: \"svc\"  # comment\n  version: 1.2.3\nactions:\n  - name: match\n  - name:   sync  \n",
+          'service:\n  name: "svc"  # comment\n  version: 1.2.3\nactions:\n  - name: match\n  - name:   sync  \n',
         ),
       ),
     ).toEqual([
@@ -203,7 +240,15 @@ describe("RC-094: extractor patterns stay linear on hostile lines", () => {
       "service.action match @5",
       "service.action sync @6",
     ]);
-    expect(claims(run(manifestExtractor, "Cargo.toml", '[package]\nname   =   "c"\n[dependencies]\naxum="0.7"\n'))).toEqual([
+    expect(
+      claims(
+        run(
+          manifestExtractor,
+          "Cargo.toml",
+          '[package]\nname   =   "c"\n[dependencies]\naxum="0.7"\n',
+        ),
+      ),
+    ).toEqual([
       "package.name c @2",
       "package.packaging_system cargo @2",
       "package.dependency axum @4",
@@ -237,29 +282,42 @@ describe("RC-096: BOM and lone CR at the interpretation boundary", () => {
     const content = "﻿# Deployment Roadmap\n\nbody\n";
     const structure = run(documentStructureExtractor, "b.md", content);
     expect(claims(structure, "document.title")).toEqual(["document.title Deployment Roadmap @1"]);
-    expect(claims(structure, "document.heading")).toEqual(["document.heading H1: Deployment Roadmap @1"]);
+    expect(claims(structure, "document.heading")).toEqual([
+      "document.heading H1: Deployment Roadmap @1",
+    ]);
     const work = run(workIntelligenceExtractor, "b.md", content);
     expect(claims(work, "work.kind")).toEqual(["work.kind roadmap @1"]);
     for (const draft of [...structure, ...work]) expect(draft.evidenceExcerpt).not.toContain("﻿");
   });
 
   it("REG-WU-020-RC-096-b: BOM frontmatter still reads", () => {
-    expect(claims(run(workIntelligenceExtractor, "a.md", "﻿---\nstatus: wip\n---\n"), "work.status")).toEqual([
-      "work.status wip @2",
-    ]);
+    expect(
+      claims(run(workIntelligenceExtractor, "a.md", "﻿---\nstatus: wip\n---\n"), "work.status"),
+    ).toEqual(["work.status wip @2"]);
   });
 
   it("REG-WU-020-RC-096-c: a CR-only document reads like its LF twin", () => {
-    const lf = run(workIntelligenceExtractor, "old.txt", "Status: blocked\nDepends on: infra.txt\n- [ ] order servers\n");
-    const cr = run(workIntelligenceExtractor, "old.txt", "Status: blocked\rDepends on: infra.txt\r- [ ] order servers\r");
+    const lf = run(
+      workIntelligenceExtractor,
+      "old.txt",
+      "Status: blocked\nDepends on: infra.txt\n- [ ] order servers\n",
+    );
+    const cr = run(
+      workIntelligenceExtractor,
+      "old.txt",
+      "Status: blocked\rDepends on: infra.txt\r- [ ] order servers\r",
+    );
     expect(claims(cr)).toEqual(claims(lf));
     expect(claims(cr).map((claim) => claim.split(" @")[1])).toEqual(["1", "2", "3"]);
   });
 
   it("REG-WU-020-RC-096-d: mixed line endings cite the editor-visible line", () => {
-    expect(claims(run(workIntelligenceExtractor, "m.md", "# Title\r\rintro\nStatus: blocked\n"), "work.status")).toEqual([
-      "work.status blocked @4",
-    ]);
+    expect(
+      claims(
+        run(workIntelligenceExtractor, "m.md", "# Title\r\rintro\nStatus: blocked\n"),
+        "work.status",
+      ),
+    ).toEqual(["work.status blocked @4"]);
   });
 
   it("REG-WU-020-RC-096-e: toLines treats CRLF, LF and lone CR as one terminator and drops a BOM", () => {
@@ -283,12 +341,25 @@ describe("RC-096: BOM and lone CR at the interpretation boundary", () => {
       decoderVersion: "1.0.0",
       format: "docx",
       blocks: [
-        { block_id: "b1", kind: "heading", text: "Milestones", locator: { kind: "docx_block", block_index: 1, part: "word/document.xml" } },
-        { block_id: "b2", kind: "list_item", text: "Ship v1\rShip v2", locator: { kind: "docx_block", block_index: 2, part: "word/document.xml" } },
+        {
+          block_id: "b1",
+          kind: "heading",
+          text: "Milestones",
+          locator: { kind: "docx_block", block_index: 1, part: "word/document.xml" },
+        },
+        {
+          block_id: "b2",
+          kind: "list_item",
+          text: "Ship v1\rShip v2",
+          locator: { kind: "docx_block", block_index: 2, part: "word/document.xml" },
+        },
       ],
     });
     expect(
-      signals.filter((signal) => signal.predicate === "work.milestone").map((signal) => signal.object).sort(),
+      signals
+        .filter((signal) => signal.predicate === "work.milestone")
+        .map((signal) => signal.object)
+        .sort(),
     ).toEqual(["Ship v1", "Ship v2"]);
   });
 
@@ -313,12 +384,21 @@ describe("RC-096: BOM and lone CR at the interpretation boundary", () => {
         folderSidecars: false,
         writeSidecars: false,
       });
-      const result = interpretRepository({ root, subjectId: "repo:fixture", inventory, extractors: defaultExtractors() });
-      const title = result.assertions.find((a) => a.source_path === "README.md" && a.predicate === "document.title");
+      const result = interpretRepository({
+        root,
+        subjectId: "repo:fixture",
+        inventory,
+        extractors: defaultExtractors(),
+      });
+      const title = result.assertions.find(
+        (a) => a.source_path === "README.md" && a.predicate === "document.title",
+      );
       expect(title?.object).toBe("Fixture Readme");
       expect(title?.source_range.start_line).toBe(1);
       expect(title?.source_content_hash).toBe(sha256TextPrefixed(readme));
-      const name = result.assertions.find((a) => a.source_path === "package.json" && a.predicate === "package.name");
+      const name = result.assertions.find(
+        (a) => a.source_path === "package.json" && a.predicate === "package.name",
+      );
       expect(name?.object).toBe("bom-pkg");
       expect(name?.source_content_hash).toBe(sha256TextPrefixed(manifest));
     });
@@ -326,17 +406,35 @@ describe("RC-096: BOM and lone CR at the interpretation boundary", () => {
 
   it("REG-WU-020-RC-096-h: LF and CRLF documents produce identical drafts", () => {
     const documents: [Extractor, string, string][] = [
-      [workIntelligenceExtractor, "plan.md", "# Roadmap\n\nStatus: wip\n\n## Milestones\n- Beta\n- GA\n\n- [ ] task\nTODO: more\n"],
+      [
+        workIntelligenceExtractor,
+        "plan.md",
+        "# Roadmap\n\nStatus: wip\n\n## Milestones\n- Beta\n- GA\n\n- [ ] task\nTODO: more\n",
+      ],
       [documentStructureExtractor, "doc.md", "---\ntitle: x\n---\n# Title\n## Section\n"],
       [serviceSpecExtractor, "spec.yaml", "service:\n  name: svc\nactions:\n  - name: match\n"],
-      [manifestExtractor, "pyproject.toml", '[project]\nname = "a"\ndependencies = [\n  "fastapi",\n]\n'],
-      [contractInvariantsExtractor, "contracts/a.md", "Replay is explicit.\nLineage is traceable.\n"],
+      [
+        manifestExtractor,
+        "pyproject.toml",
+        '[project]\nname = "a"\ndependencies = [\n  "fastapi",\n]\n',
+      ],
+      [
+        contractInvariantsExtractor,
+        "contracts/a.md",
+        "Replay is explicit.\nLineage is traceable.\n",
+      ],
       [repositoryStatusExtractor, "README.md", "# R\n\n> **Deprecated**: replaced by x/y\n"],
-      [declaredAuthorityExtractor, "README.md", "# R\n\nThis repository is the source of truth for x.\n"],
+      [
+        declaredAuthorityExtractor,
+        "README.md",
+        "# R\n\nThis repository is the source of truth for x.\n",
+      ],
     ];
     for (const [extractor, sourcePath, lf] of documents) {
       const crlf = lf.replace(/\n/g, "\r\n");
-      expect(run(extractor, sourcePath, crlf), `${extractor.id} ${sourcePath}`).toEqual(run(extractor, sourcePath, lf));
+      expect(run(extractor, sourcePath, crlf), `${extractor.id} ${sourcePath}`).toEqual(
+        run(extractor, sourcePath, lf),
+      );
     }
   });
 });

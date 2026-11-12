@@ -35,11 +35,17 @@ describe("Case A: protected but readable", () => {
     const skill = `${HEADER}# Skill\n\nBody.\n`;
     const root = repoWith({ "skills/demo/SKILL.md": skill, "README.md": "# Readme\n" });
     const packet = observeRepositoryModel({
-      root, repositoryName: "repo", sourceRevision: REVISION, producerVersion: "4.0.0",
+      root,
+      repositoryName: "repo",
+      sourceRevision: REVISION,
+      producerVersion: "4.0.0",
     });
-    expect(packet.payload.artifacts.some((a) => a.source_path === "skills/demo/SKILL.md")).toBe(true);
+    expect(packet.payload.artifacts.some((a) => a.source_path === "skills/demo/SKILL.md")).toBe(
+      true,
+    );
     const owner = packet.payload.assertions.find(
-      (a) => a.source_path === "skills/demo/SKILL.md" && a.predicate === "meta.l9v1.governance.owner",
+      (a) =>
+        a.source_path === "skills/demo/SKILL.md" && a.predicate === "meta.l9v1.governance.owner",
     );
     expect(owner?.object).toBe("platform");
     expect(fs.readFileSync(path.join(root, "skills/demo/SKILL.md"), "utf8")).toBe(skill);
@@ -49,8 +55,15 @@ describe("Case A: protected but readable", () => {
   // Mutation eligibility itself (SKILL.md is central_manifest outside skills mode)
   // is mutation_policy.ts's decision and is covered in mutation_policy.test.ts.
   it("keeps SKILL.md out of an annotating walk", () => {
-    const root = repoWith({ "skills/demo/SKILL.md": `${HEADER}# Skill\n`, "notes.md": "# Notes\n" });
-    const annotate = inventoryTree({ root, outDir: path.join(scratch("annotate"), "out"), dryRun: true });
+    const root = repoWith({
+      "skills/demo/SKILL.md": `${HEADER}# Skill\n`,
+      "notes.md": "# Notes\n",
+    });
+    const annotate = inventoryTree({
+      root,
+      outDir: path.join(scratch("annotate"), "out"),
+      dryRun: true,
+    });
     expect(annotate.records.some((r) => r.relative_path === "skills/demo/SKILL.md")).toBe(false);
     expect(annotate.omittedPaths).toContain("skills/demo/SKILL.md");
   });
@@ -59,14 +72,18 @@ describe("Case A: protected but readable", () => {
     const root = repoWith({ "notes.md": "# Notes\n" });
     const outDir = path.join(scratch("refuse"), "out");
     expect(() => inventoryTree({ root, outDir, purpose: "observe" })).toThrow(/write-free/);
-    expect(() => inventoryTree({ root, outDir, purpose: "observe", dryRun: true })).toThrow(/write-free/);
+    expect(() => inventoryTree({ root, outDir, purpose: "observe", dryRun: true })).toThrow(
+      /write-free/,
+    );
   });
 
   it("refuses an unknown purpose instead of dropping protection", () => {
     const root = repoWith({ "skills/demo/SKILL.md": `${HEADER}# Skill\n` });
     const skill = fs.readFileSync(path.join(root, "skills/demo/SKILL.md"), "utf8");
     const outDir = path.join(scratch("unknown-purpose"), "out");
-    const config = { root, outDir, purpose: "observ" } as unknown as Parameters<typeof inventoryTree>[0];
+    const config = { root, outDir, purpose: "observ" } as unknown as Parameters<
+      typeof inventoryTree
+    >[0];
     expect(() => inventoryTree(config)).toThrow(/unknown purpose/);
     expect(fs.readFileSync(path.join(root, "skills/demo/SKILL.md"), "utf8")).toBe(skill);
   });
@@ -81,7 +98,10 @@ describe("Case A: protected but readable", () => {
       fs.symlinkSync(outside, path.join(root, "skills/linked/SKILL.md"));
       fs.symlinkSync(outside, path.join(root, "linked.md"));
       const packet = observeRepositoryModel({
-        root, repositoryName: "repo", sourceRevision: REVISION, producerVersion: "4.0.0",
+        root,
+        repositoryName: "repo",
+        sourceRevision: REVISION,
+        producerVersion: "4.0.0",
       });
       for (const linked of ["skills/linked/SKILL.md", "linked.md"]) {
         expect(packet.payload.assertions.some((a) => a.source_path === linked)).toBe(false);
@@ -97,13 +117,18 @@ describe("Case A: protected but readable", () => {
       "secrets/README.md": `${HEADER}# Secret\n`,
     });
     const packet = observeRepositoryModel({
-      root, repositoryName: "repo", sourceRevision: REVISION, producerVersion: "4.0.0",
+      root,
+      repositoryName: "repo",
+      sourceRevision: REVISION,
+      producerVersion: "4.0.0",
       omitPatterns: ["skills/hidden/"],
     });
     const paths = packet.payload.artifacts.map((a) => a.source_path);
     expect(paths).toContain("skills/demo/SKILL.md");
     expect(paths).not.toContain("skills/hidden/SKILL.md");
-    expect(packet.payload.assertions.some((a) => a.source_path === "secrets/README.md")).toBe(false);
+    expect(packet.payload.assertions.some((a) => a.source_path === "secrets/README.md")).toBe(
+      false,
+    );
   });
 });
 
@@ -111,7 +136,10 @@ describe("dotfile header carriers", () => {
   it.each([".editorconfig", ".gitignore"])("reads the native header declared in %s", (name) => {
     const root = repoWith({ [name]: `${HASH_HEADER}root = true\n` });
     const packet = observeRepositoryModel({
-      root, repositoryName: "repo", sourceRevision: REVISION, producerVersion: "4.0.0",
+      root,
+      repositoryName: "repo",
+      sourceRevision: REVISION,
+      producerVersion: "4.0.0",
     });
     const owner = packet.payload.assertions.find(
       (a) => a.source_path === name && a.predicate === "meta.l9v1.governance.owner",

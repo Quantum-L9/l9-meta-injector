@@ -11,7 +11,11 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { acquireLocalSource, type LocalSourceObservation } from "../src/local_source";
-import { canonicalBlockReason, toRepositoryModelLocalSource, withLocalSourceModel } from "../src/local_source_model";
+import {
+  canonicalBlockReason,
+  toRepositoryModelLocalSource,
+  withLocalSourceModel,
+} from "../src/local_source_model";
 import { buildRepositoryModelPacket, type RepositoryModelPacket } from "../src/repository_model";
 import { treeSnapshot, writeRawZip } from "./helpers/zip_fixtures";
 
@@ -31,7 +35,9 @@ const seam = vi.hoisted(() => ({
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
   const failure = (code: string, syscall: string, target: string): NodeJS.ErrnoException => {
-    const error = new Error(`${code}: simulated failure, ${syscall} '${target}'`) as NodeJS.ErrnoException;
+    const error = new Error(
+      `${code}: simulated failure, ${syscall} '${target}'`,
+    ) as NodeJS.ErrnoException;
     error.code = code;
     return error;
   };
@@ -100,7 +106,10 @@ function twoCheckouts(): { first: string; second: string } {
 }
 
 /** Acquire, build the packet the corpus path builds, and release the scratch. */
-function acquireAndBuild(root: string, scratchParent: string): {
+function acquireAndBuild(
+  root: string,
+  scratchParent: string,
+): {
   observation: LocalSourceObservation;
   packet: RepositoryModelPacket;
   scratchRoot: string;
@@ -139,7 +148,9 @@ describe("local-source failures are recorded without host paths (RC-032)", () =>
 
     expect(b.packet.source_snapshot.semantic_hash).toBe(a.packet.source_snapshot.semantic_hash);
     expect(b.packet.semantic_hash).toBe(a.packet.semantic_hash);
-    const record = a.observation.inventory.records.find((r) => r.relative_path === "docs/secret-ish.md");
+    const record = a.observation.inventory.records.find(
+      (r) => r.relative_path === "docs/secret-ish.md",
+    );
     expect(record?.unknowns).toContain("content_hash_unavailable:EACCES");
     for (const { observation } of [a, b]) {
       const text = semanticText(observation);
@@ -162,7 +173,9 @@ describe("local-source failures are recorded without host paths (RC-032)", () =>
     expect(a.observation.inventory.skippedDirs).toEqual(["locked: EACCES"]);
     expect(b.packet.source_snapshot.semantic_hash).toBe(a.packet.source_snapshot.semantic_hash);
     expect(b.packet.semantic_hash).toBe(a.packet.semantic_hash);
-    const unreadable = a.packet.payload.diagnostics.filter((d) => d.code === "directory-unreadable");
+    const unreadable = a.packet.payload.diagnostics.filter(
+      (d) => d.code === "directory-unreadable",
+    );
     expect(unreadable.map((d) => d.details)).toEqual([{ directory: "locked", reason: "EACCES" }]);
     for (const { observation, packet } of [a, b]) {
       for (const text of [semanticText(observation), JSON.stringify(packet)]) {
@@ -226,10 +239,16 @@ describe("host failures while staging an archive are not archive verdicts (RC-04
     const root = tmp();
     writeRawZip(path.join(root, "Case.zip"), [{ name: "docs/a.md", content: "# A\n" }]);
     seam.lockedFile = "Case.zip";
-    const observation = acquireLocalSource({ path: root, scratchParent: tmp("l9-portable-scratch-") });
+    const observation = acquireLocalSource({
+      path: root,
+      scratchParent: tmp("l9-portable-scratch-"),
+    });
     try {
-      expect(observation.archives.filter((a) => a.holds.some((h) => h.code === "archive.format_unreadable")))
-        .toEqual([]);
+      expect(
+        observation.archives.filter((a) =>
+          a.holds.some((h) => h.code === "archive.format_unreadable"),
+        ),
+      ).toEqual([]);
       const record = observation.inventory.records.find((r) => r.relative_path === "Case.zip");
       expect(record?.content_hash).toBeNull();
       expect(record?.unknowns).toContain("content_hash_unavailable:EACCES");
@@ -245,13 +264,23 @@ describe("host failures while staging an archive are not archive verdicts (RC-04
     writeRawZip(path.join(root, "Case.zip"), [{ name: "docs/a.md", content: "# A\n" }]);
     seam.lockedFile = "Case.zip";
     seam.lockedOnlyWhileStaging = true;
-    const observation = acquireLocalSource({ path: root, scratchParent: tmp("l9-portable-scratch-") });
+    const observation = acquireLocalSource({
+      path: root,
+      scratchParent: tmp("l9-portable-scratch-"),
+    });
     try {
-      expect(observation.inventory.records.find((r) => r.relative_path === "Case.zip")?.content_hash).not.toBeNull();
+      expect(
+        observation.inventory.records.find((r) => r.relative_path === "Case.zip")?.content_hash,
+      ).not.toBeNull();
       expect(observation.stable).toBe(false);
-      expect(observation.archives.filter((a) => a.holds.some((h) => h.code === "archive.format_unreadable")))
-        .toEqual([]);
-      expect(observation.diagnostics.map((d) => d.code)).toContain("local-source.source_changed_during_observation");
+      expect(
+        observation.archives.filter((a) =>
+          a.holds.some((h) => h.code === "archive.format_unreadable"),
+        ),
+      ).toEqual([]);
+      expect(observation.diagnostics.map((d) => d.code)).toContain(
+        "local-source.source_changed_during_observation",
+      );
       expect(semanticText(observation)).not.toContain(root);
     } finally {
       observation.dispose();
@@ -264,7 +293,10 @@ describe("host failures while staging an archive are not archive verdicts (RC-04
     writeRawZip(zip, [{ name: "a.md", content: "# A\n" }]);
     const bytes = fs.readFileSync(zip);
     fs.writeFileSync(zip, bytes.subarray(0, Math.floor(bytes.length / 2)));
-    const observation = acquireLocalSource({ path: root, scratchParent: tmp("l9-portable-scratch-") });
+    const observation = acquireLocalSource({
+      path: root,
+      scratchParent: tmp("l9-portable-scratch-"),
+    });
     try {
       const archive = observation.archives.find((a) => a.sourcePath === "Broken.zip");
       expect(archive?.holds.map((h) => h.code)).toContain("archive.format_unreadable");
@@ -282,11 +314,14 @@ describe("host failures while staging an archive are not archive verdicts (RC-04
     const failing = {
       patterns: [],
       shouldOmit: (relativePath: string) => {
-        if (relativePath.includes("!/")) throw new Error("simulated host failure while staging a member");
+        if (relativePath.includes("!/"))
+          throw new Error("simulated host failure while staging a member");
         return false;
       },
     };
-    expect(() => acquireLocalSource({ path: root, scratchParent, omit: failing })).toThrow(/simulated host failure/);
+    expect(() => acquireLocalSource({ path: root, scratchParent, omit: failing })).toThrow(
+      /simulated host failure/,
+    );
     expect(fs.readdirSync(scratchParent)).toEqual([]);
     expect(treeSnapshot(root)).toEqual(before);
     expect([...seam.openDescriptors]).toEqual([]);

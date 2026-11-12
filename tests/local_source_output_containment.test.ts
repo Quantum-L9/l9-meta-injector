@@ -10,10 +10,10 @@ import { acquireLocalSource } from "../src/local_source";
 import {
   buildLocalSourceCorpus,
   buildLocalSourceManifest,
+  type LocalSourceManifest,
   observeLocalSourceModel,
   writeLocalSourceCorpus,
   writeLocalSourceManifest,
-  type LocalSourceManifest,
 } from "../src/local_source_model";
 import { treeSnapshot } from "./helpers/zip_fixtures";
 
@@ -54,8 +54,9 @@ describe("library output containment resolves symlinks (RC-047)", () => {
     const out = path.join(tmp(), "out");
     fs.symlinkSync(src, out);
     const before = treeSnapshot(src);
-    expect(() => writeLocalSourceManifest(manifest, path.join(out, "manifest.json"), src))
-      .toThrow(/refusing to write the acquisition manifest inside the observed source tree/);
+    expect(() => writeLocalSourceManifest(manifest, path.join(out, "manifest.json"), src)).toThrow(
+      /refusing to write the acquisition manifest inside the observed source tree/,
+    );
     expect(treeSnapshot(src)).toEqual(before);
   });
 
@@ -64,8 +65,9 @@ describe("library output containment resolves symlinks (RC-047)", () => {
     const manifest = manifestOf(src);
     const out = tmp();
     fs.symlinkSync(path.join(src, "manifest.json"), path.join(out, "manifest.json"));
-    expect(() => writeLocalSourceManifest(manifest, path.join(out, "manifest.json"), src))
-      .toThrow(/refusing to write the acquisition manifest inside the observed source tree/);
+    expect(() => writeLocalSourceManifest(manifest, path.join(out, "manifest.json"), src)).toThrow(
+      /refusing to write the acquisition manifest inside the observed source tree/,
+    );
     expect(fs.existsSync(path.join(src, "manifest.json"))).toBe(false);
   });
 
@@ -76,18 +78,24 @@ describe("library output containment resolves symlinks (RC-047)", () => {
     const link = path.join(tmp(), "link");
     fs.symlinkSync(real, link);
     const sourceViaLink = path.join(link, "src");
-    const result = observeLocalSourceModel({ path: sourceViaLink, producerVersion: "4.0.0", interpret: false });
+    const result = observeLocalSourceModel({
+      path: sourceViaLink,
+      producerVersion: "4.0.0",
+      interpret: false,
+    });
     try {
       const corpus = buildLocalSourceCorpus(result);
       const before = treeSnapshot(path.join(real, "src"));
-      expect(() => writeLocalSourceCorpus(
-        corpus,
-        {
-          indexPath: path.join(real, "src", "corpus-index.json"),
-          reportPath: path.join(real, "src", "corpus-report.md"),
-        },
-        sourceViaLink,
-      )).toThrow(/refusing to write the corpus index inside the observed source tree/);
+      expect(() =>
+        writeLocalSourceCorpus(
+          corpus,
+          {
+            indexPath: path.join(real, "src", "corpus-index.json"),
+            reportPath: path.join(real, "src", "corpus-report.md"),
+          },
+          sourceViaLink,
+        ),
+      ).toThrow(/refusing to write the corpus index inside the observed source tree/);
       expect(treeSnapshot(path.join(real, "src"))).toEqual(before);
     } finally {
       result.observation.dispose();
@@ -98,9 +106,15 @@ describe("library output containment resolves symlinks (RC-047)", () => {
     const src = sourceTree();
     const manifest = manifestOf(src);
     const out = tmp();
-    const written = writeLocalSourceManifest(manifest, path.join(out, "local-source-manifest.json"), src);
+    const written = writeLocalSourceManifest(
+      manifest,
+      path.join(out, "local-source-manifest.json"),
+      src,
+    );
     expect(fs.existsSync(written)).toBe(true);
-    expect(fs.realpathSync(written)).toBe(fs.realpathSync(path.join(out, "local-source-manifest.json")));
+    expect(fs.realpathSync(written)).toBe(
+      fs.realpathSync(path.join(out, "local-source-manifest.json")),
+    );
     expect(fs.readdirSync(src)).toEqual(["a.md"]);
   });
 
@@ -115,13 +129,19 @@ describe("library output containment resolves symlinks (RC-047)", () => {
     expect(written).toBe(path.resolve(target));
     // Containment and the write still use the resolved real path.
     expect(fs.existsSync(path.join(real, "local-source-manifest.json"))).toBe(true);
-    expect(fs.realpathSync(written)).toBe(fs.realpathSync(path.join(real, "local-source-manifest.json")));
+    expect(fs.realpathSync(written)).toBe(
+      fs.realpathSync(path.join(real, "local-source-manifest.json")),
+    );
     expect(fs.readdirSync(src)).toEqual(["a.md"]);
   });
 
   test("REG-AUDIT-F13-b: through a symlinked output directory the corpus writer returns path.resolve(target)", () => {
     const src = sourceTree();
-    const result = observeLocalSourceModel({ path: src, producerVersion: "4.0.0", interpret: false });
+    const result = observeLocalSourceModel({
+      path: src,
+      producerVersion: "4.0.0",
+      interpret: false,
+    });
     try {
       const corpus = buildLocalSourceCorpus(result);
       const real = tmp();
@@ -147,7 +167,9 @@ describe("library output containment resolves symlinks (RC-047)", () => {
 
 describe("the CLI writes nothing before output containment (RC-047)", () => {
   const runCli = (source: string, outDir: string): cp.SpawnSyncReturns<string> =>
-    cp.spawnSync(process.execPath, [CLI, source, "--name", "fixture", "--out", outDir], { encoding: "utf8" });
+    cp.spawnSync(process.execPath, [CLI, source, "--name", "fixture", "--out", outDir], {
+      encoding: "utf8",
+    });
 
   test("REG-WU-036-RC-047-e: --out inside the source exits non-zero and writes no bundle", () => {
     const src = sourceTree();

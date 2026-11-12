@@ -15,18 +15,18 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { ArchitectureEvidenceRecord } from "../src/corpus_architecture_evidence";
+import type { FieldSelectionManifest, FieldSelectionRecord } from "../src/corpus_field_selection";
 import {
+  buildFieldSelectionExport,
   DEFAULT_FIELD_SELECTION_BUDGET,
   FIELD_DISPOSITIONS,
   FIELD_SELECTION_POLICY_ID,
-  STATEMENT_FIELDS_COVER_CLASSES,
   fieldSelectionPolicyHash,
-  buildFieldSelectionExport,
   fieldSelectionProfileHash,
+  STATEMENT_FIELDS_COVER_CLASSES,
   selectFieldsForDocument,
   verifyFieldSelectionExport,
 } from "../src/corpus_field_selection";
-import type { FieldSelectionManifest, FieldSelectionRecord } from "../src/corpus_field_selection";
 
 const REPO = path.resolve(__dirname, "..");
 const SCAN_CLI = path.join(REPO, "scripts", "local-source-cli.js");
@@ -148,7 +148,17 @@ function run(extra: string[]): Run {
   const cache = path.join(tmp("l9-fieldsel-cache-"), "cache");
   const result = cp.spawnSync(
     process.execPath,
-    [SCAN_CLI, "--root", `${root}=Designs`, "--out", out, "--cache-dir", cache, "--no-diff", ...extra],
+    [
+      SCAN_CLI,
+      "--root",
+      `${root}=Designs`,
+      "--out",
+      out,
+      "--cache-dir",
+      cache,
+      "--no-diff",
+      ...extra,
+    ],
     { encoding: "utf8" },
   );
   return { out, status: result.status, stdout: result.stdout, stderr: result.stderr };
@@ -159,24 +169,36 @@ function generation(out: string): string {
   return path.join(out, ...String(current.generation_ref).split("/"));
 }
 
-function readView(out: string): { records: FieldSelectionRecord[]; manifest: FieldSelectionManifest; bytes: string } {
+function readView(out: string): {
+  records: FieldSelectionRecord[];
+  manifest: FieldSelectionManifest;
+  bytes: string;
+} {
   const dir = generation(out);
   const bytes = fs.readFileSync(path.join(dir, "field-selection.jsonl"), "utf8");
   return {
     bytes,
-    records: bytes.split("\n").filter((line) => line.length > 0).map((line) => JSON.parse(line) as FieldSelectionRecord),
+    records: bytes
+      .split("\n")
+      .filter((line) => line.length > 0)
+      .map((line) => JSON.parse(line) as FieldSelectionRecord),
     manifest: JSON.parse(fs.readFileSync(path.join(dir, "field-selection.manifest.json"), "utf8")),
   };
 }
 
-function snapshot(out: string): { corpus_source_snapshot_id: string; analysis: Record<string, unknown> } {
+function snapshot(out: string): {
+  corpus_source_snapshot_id: string;
+  analysis: Record<string, unknown>;
+} {
   return JSON.parse(fs.readFileSync(path.join(generation(out), "corpus-snapshot.json"), "utf8"));
 }
 
 function treeHash(dir: string): string {
   const hash = crypto.createHash("sha256");
   const walk = (current: string): void => {
-    for (const entry of fs.readdirSync(current, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))) {
+    for (const entry of fs
+      .readdirSync(current, { withFileTypes: true })
+      .sort((a, b) => (a.name < b.name ? -1 : 1))) {
       const absolute = path.join(current, entry.name);
       const label = path.relative(dir, absolute);
       if (entry.isDirectory()) {
@@ -201,7 +223,10 @@ function treeHash(dir: string): string {
 }
 
 function selected(record: FieldSelectionRecord | undefined): string[] {
-  return (record?.fields ?? []).filter((field) => field.disposition === "selected").map((field) => field.field).sort();
+  return (record?.fields ?? [])
+    .filter((field) => field.disposition === "selected")
+    .map((field) => field.field)
+    .sort();
 }
 
 function decision(record: FieldSelectionRecord | undefined, field: string) {
@@ -240,27 +265,48 @@ describe("one intent, four kinds of document, four different views", () => {
     const design = by("design/gate-retry-design.md");
     expect(design?.roles).toEqual(["wip_proposal"]);
     expect(selected(design)).toEqual([
-      "statement.assumption", "statement.constraint", "statement.decision_statement",
-      "statement.intent", "statement.open_question", "work.status",
+      "statement.assumption",
+      "statement.constraint",
+      "statement.decision_statement",
+      "statement.intent",
+      "statement.open_question",
+      "work.status",
     ]);
-    expect(decision(design, "statement.open_question")?.reasons[0]).toBe("declared role wip_proposal promotes statement.open_question to core");
+    expect(decision(design, "statement.open_question")?.reasons[0]).toBe(
+      "declared role wip_proposal promotes statement.open_question to core",
+    );
 
-    const accepted = by("decisions/adr-012-gate-routing.md") ?? by("copies/adr-012-gate-routing-copy.md");
+    const accepted =
+      by("decisions/adr-012-gate-routing.md") ?? by("copies/adr-012-gate-routing-copy.md");
     expect(accepted?.roles).toEqual(["decision_record"]);
-    expect(decision(accepted, "declaration.declared_status")?.selected_values.map((value) => value.value)).toEqual(["accepted"]);
+    expect(
+      decision(accepted, "declaration.declared_status")?.selected_values.map(
+        (value) => value.value,
+      ),
+    ).toEqual(["accepted"]);
 
     const work = by("handoffs/chassis-auth-handoff.md");
     expect(work?.roles).toEqual(["development_handoff"]);
     expect(selected(work)).toEqual([
-      "statement.constraint", "work.blocked_by", "work.depends_on", "work.status", "work.task.open",
+      "statement.constraint",
+      "work.blocked_by",
+      "work.depends_on",
+      "work.status",
+      "work.task.open",
     ]);
-    expect(decision(work, "work.task.open")?.reasons).toContain("declared role development_handoff promotes work.task.open to core");
+    expect(decision(work, "work.task.open")?.reasons).toContain(
+      "declared role development_handoff promotes work.task.open to core",
+    );
     // The completed task is evidence too, and this intent does not ask for it.
     expect(decision(work, "work.task.completed")?.disposition).toBe("not_selected_for_intent");
 
     const historical = by("archive/adr-003-peer-routing.md");
     expect(historical?.roles).toEqual(["decision_record", "historical_record"]);
-    expect(decision(historical, "declaration.declared_status")?.selected_values.map((value) => value.value)).toEqual(["superseded"]);
+    expect(
+      decision(historical, "declaration.declared_status")?.selected_values.map(
+        (value) => value.value,
+      ),
+    ).toEqual(["superseded"]);
     expect(decision(historical, "declaration.declared_status")?.reasons).toContain(
       "declared role historical_record promotes declaration.declared_status to core",
     );
@@ -274,9 +320,12 @@ describe("one intent, four kinds of document, four different views", () => {
   it("re-plans every document for another intent", () => {
     const first = readView(review.out).records;
     const second = readView(handoff.out).records;
-    const design = (records: FieldSelectionRecord[]) => records.find((record) => record.source_path === "design/gate-retry-design.md");
+    const design = (records: FieldSelectionRecord[]) =>
+      records.find((record) => record.source_path === "design/gate-retry-design.md");
     expect(selected(design(second))).not.toEqual(selected(design(first)));
-    expect(decision(design(second), "statement.intent")?.disposition).toBe("not_selected_for_intent");
+    expect(decision(design(second), "statement.intent")?.disposition).toBe(
+      "not_selected_for_intent",
+    );
     expect(decision(design(first), "statement.intent")?.disposition).toBe("selected");
   });
 
@@ -284,13 +333,17 @@ describe("one intent, four kinds of document, four different views", () => {
     const { records } = readView(review.out);
     const copies = records.filter((record) => record.exact_duplicate_cluster_id !== null);
     expect(copies).toHaveLength(2);
-    const [kept, redundant] = [...copies].sort((a, b) => b.selected_field_count - a.selected_field_count);
+    const [kept, redundant] = [...copies].sort(
+      (a, b) => b.selected_field_count - a.selected_field_count,
+    );
     expect(kept?.selected_field_count).toBeGreaterThan(0);
     expect(redundant?.selected_field_count).toBe(0);
     for (const field of redundant?.fields ?? []) {
       if (field.available_value_count === 0 || field.tier === null) continue;
       expect(field.disposition).toBe("redundant");
-      expect(field.reasons.at(-1)).toContain(`exact duplicate cluster ${redundant?.exact_duplicate_cluster_id}`);
+      expect(field.reasons.at(-1)).toContain(
+        `exact duplicate cluster ${redundant?.exact_duplicate_cluster_id}`,
+      );
     }
   });
 });
@@ -298,12 +351,16 @@ describe("one intent, four kinds of document, four different views", () => {
 describe("every selected value is an existing record of the same generation", () => {
   it("cites architecture evidence, declarations and packet assertions by the ids their payloads gave them", () => {
     const dir = generation(review.out);
-    const evidence = fs.readFileSync(path.join(dir, "architecture-evidence.jsonl"), "utf8")
-      .split("\n").filter((line) => line.length > 0).map((line) => JSON.parse(line) as ArchitectureEvidenceRecord);
+    const evidence = fs
+      .readFileSync(path.join(dir, "architecture-evidence.jsonl"), "utf8")
+      .split("\n")
+      .filter((line) => line.length > 0)
+      .map((line) => JSON.parse(line) as ArchitectureEvidenceRecord);
     const known = new Set<string>();
     for (const record of evidence) {
       known.add(record.evidence_id);
-      for (const declaration of record.work_context.declarations) known.add(declaration.declaration_id);
+      for (const declaration of record.work_context.declarations)
+        known.add(declaration.declaration_id);
     }
     const { records } = readView(review.out);
     let packetValues = 0;
@@ -317,10 +374,26 @@ describe("every selected value is an existing record of the same generation", ()
           } else {
             // Resolved through the real query CLI against the same pinned generation.
             packetValues += 1;
-            const answer = JSON.parse(cp.spawnSync(process.execPath, [
-              QUERY_CLI, "--out", review.out, "--artifact", record.artifact_id, "--source", value.source, "--limit", "500",
-            ], { encoding: "utf8" }).stdout);
-            expect(answer.results.map((result: { record_id: string }) => result.record_id)).toContain(value.record_id);
+            const answer = JSON.parse(
+              cp.spawnSync(
+                process.execPath,
+                [
+                  QUERY_CLI,
+                  "--out",
+                  review.out,
+                  "--artifact",
+                  record.artifact_id,
+                  "--source",
+                  value.source,
+                  "--limit",
+                  "500",
+                ],
+                { encoding: "utf8" },
+              ).stdout,
+            );
+            expect(
+              answer.results.map((result: { record_id: string }) => result.record_id),
+            ).toContain(value.record_id);
           }
         }
       }
@@ -334,8 +407,12 @@ describe("a derived view: nothing removed, nothing written to the source", () =>
     const { manifest } = readView(review.out);
     expect(manifest.carrier.disposition).toBe("external_generation");
     expect(manifest.carrier.observed_files_mutated).toBe(false);
-    expect(manifest.carrier.refused.map((entry) => entry.carrier)).toEqual(["central_manifest", "inline_managed"]);
-    for (const record of readView(review.out).records) expect(record.carrier_disposition).toBe("external_generation");
+    expect(manifest.carrier.refused.map((entry) => entry.carrier)).toEqual([
+      "central_manifest",
+      "inline_managed",
+    ]);
+    for (const record of readView(review.out).records)
+      expect(record.carrier_disposition).toBe("external_generation");
     expect(treeHash(root)).toBe(rootHashBefore);
   });
 
@@ -343,7 +420,9 @@ describe("a derived view: nothing removed, nothing written to the source", () =>
     const withView = generation(review.out);
     const without = generation(archOnly.out);
     for (const file of ["architecture-evidence.jsonl", "document-work-signals.jsonl"]) {
-      expect(fs.readFileSync(path.join(withView, file), "utf8")).toBe(fs.readFileSync(path.join(without, file), "utf8"));
+      expect(fs.readFileSync(path.join(withView, file), "utf8")).toBe(
+        fs.readFileSync(path.join(without, file), "utf8"),
+      );
     }
   });
 });
@@ -353,13 +432,27 @@ describe("identity, determinism and the default run", () => {
     const { manifest } = readView(review.out);
     expect(manifest.policy_id).toBe(FIELD_SELECTION_POLICY_ID);
     expect(manifest.policy_hash).toBe(fieldSelectionPolicyHash());
-    expect(manifest.profile_hash).toBe(fieldSelectionProfileHash("architecture_review", DEFAULT_FIELD_SELECTION_BUDGET));
+    expect(manifest.profile_hash).toBe(
+      fieldSelectionProfileHash("architecture_review", DEFAULT_FIELD_SELECTION_BUDGET),
+    );
     const a = snapshot(review.out);
     const b = snapshot(handoff.out);
     const c = snapshot(archOnly.out);
     expect(a.analysis.field_selection_profile).toBe(manifest.profile_hash);
-    expect(new Set([a.corpus_source_snapshot_id, b.corpus_source_snapshot_id, c.corpus_source_snapshot_id]).size).toBe(1);
-    expect(new Set([a.analysis.corpus_analysis_id, b.analysis.corpus_analysis_id, c.analysis.corpus_analysis_id]).size).toBe(3);
+    expect(
+      new Set([
+        a.corpus_source_snapshot_id,
+        b.corpus_source_snapshot_id,
+        c.corpus_source_snapshot_id,
+      ]).size,
+    ).toBe(1);
+    expect(
+      new Set([
+        a.analysis.corpus_analysis_id,
+        b.analysis.corpus_analysis_id,
+        c.analysis.corpus_analysis_id,
+      ]).size,
+    ).toBe(3);
     expect(c.analysis.field_selection_profile).toBeUndefined();
   });
 
@@ -372,13 +465,31 @@ describe("identity, determinism and the default run", () => {
       const dir = generation(result.out);
       expect(fs.existsSync(path.join(dir, "field-selection.jsonl"))).toBe(false);
       const index = JSON.parse(fs.readFileSync(path.join(dir, "corpus-index.json"), "utf8"));
-      expect(index.documents.map((document: { name: string }) => document.name)).not.toContain("field_selection");
+      expect(index.documents.map((document: { name: string }) => document.name)).not.toContain(
+        "field_selection",
+      );
       expect(result.stdout).not.toContain("field selection");
     }
-    const index = JSON.parse(fs.readFileSync(path.join(generation(review.out), "corpus-index.json"), "utf8"));
-    expect(index.documents.filter((document: { name: string }) => document.name.startsWith("field_selection"))).toEqual([
-      { name: "field_selection", path: "field-selection.jsonl", schema: "l9.local-source-field-selection/v1", present: true },
-      { name: "field_selection_manifest", path: "field-selection.manifest.json", schema: "l9.local-source-field-selection-manifest/v1", present: true },
+    const index = JSON.parse(
+      fs.readFileSync(path.join(generation(review.out), "corpus-index.json"), "utf8"),
+    );
+    expect(
+      index.documents.filter((document: { name: string }) =>
+        document.name.startsWith("field_selection"),
+      ),
+    ).toEqual([
+      {
+        name: "field_selection",
+        path: "field-selection.jsonl",
+        schema: "l9.local-source-field-selection/v1",
+        present: true,
+      },
+      {
+        name: "field_selection_manifest",
+        path: "field-selection.manifest.json",
+        schema: "l9.local-source-field-selection-manifest/v1",
+        present: true,
+      },
     ]);
     expect(review.stdout).toContain("field selection  ");
   });
@@ -387,20 +498,35 @@ describe("identity, determinism and the default run", () => {
 describe("bounded output", () => {
   it("never exceeds the stated budget, and names every field it left out for the budget", () => {
     const bounded = run([
-      "--architecture-evidence", "--field-selection", "architecture_review",
-      "--field-selection-max-fields", "2", "--field-selection-max-values", "1",
+      "--architecture-evidence",
+      "--field-selection",
+      "architecture_review",
+      "--field-selection-max-fields",
+      "2",
+      "--field-selection-max-values",
+      "1",
     ]);
     expect(bounded.status).toBe(0);
     const { records, manifest } = readView(bounded.out);
-    expect(manifest.budget).toEqual({ max_fields: 2, max_values_per_field: 1, max_characters: 2000 });
-    expect(snapshot(bounded.out).analysis.corpus_analysis_id).not.toBe(snapshot(review.out).analysis.corpus_analysis_id);
+    expect(manifest.budget).toEqual({
+      max_fields: 2,
+      max_values_per_field: 1,
+      max_characters: 2000,
+    });
+    expect(snapshot(bounded.out).analysis.corpus_analysis_id).not.toBe(
+      snapshot(review.out).analysis.corpus_analysis_id,
+    );
     const design = records.find((record) => record.source_path === "design/gate-retry-design.md");
     expect(design?.selected_field_count).toBe(2);
-    const omitted = design?.fields.filter((field) => field.disposition === "omitted_by_budget") ?? [];
+    const omitted =
+      design?.fields.filter((field) => field.disposition === "omitted_by_budget") ?? [];
     expect(omitted.length).toBeGreaterThan(0);
-    expect(omitted[0]?.reasons.at(-1)).toBe("the view already holds 2 field(s), the budget's maximum");
+    expect(omitted[0]?.reasons.at(-1)).toBe(
+      "the view already holds 2 field(s), the budget's maximum",
+    );
     for (const record of records) {
-      for (const field of record.fields) expect(field.selected_values.length).toBeLessThanOrEqual(1);
+      for (const field of record.fields)
+        expect(field.selected_values.length).toBeLessThanOrEqual(1);
     }
   });
 });
@@ -425,8 +551,18 @@ describe("marginal utility inside one document", () => {
         format: "markdown",
         architectureRecords: [],
         workValues: [
-          { record_id: "assertion:1", source: "repository_model_packet", predicate: "work.status", object: "superseded" },
-          { record_id: "assertion:2", source: "repository_model_packet", predicate: "document.title", object: "Superseded" },
+          {
+            record_id: "assertion:1",
+            source: "repository_model_packet",
+            predicate: "work.status",
+            object: "superseded",
+          },
+          {
+            record_id: "assertion:2",
+            source: "repository_model_packet",
+            predicate: "document.title",
+            object: "Superseded",
+          },
         ],
         exactDuplicate: null,
         nearDuplicateCandidateIds: [],
@@ -458,7 +594,14 @@ describe("the view's own verifier enforces every budget and identity it states",
           sourcePath: "a.md",
           format: "markdown",
           architectureRecords: [],
-          workValues: [{ record_id: "assertion:1", source: "repository_model_packet", predicate: "work.status", object: "superseded" }],
+          workValues: [
+            {
+              record_id: "assertion:1",
+              source: "repository_model_packet",
+              predicate: "work.status",
+              object: "superseded",
+            },
+          ],
           exactDuplicate: null,
           nearDuplicateCandidateIds: [],
         },
@@ -479,8 +622,19 @@ describe("the view's own verifier enforces every budget and identity it states",
       ...record,
       fields: record.fields.map((field) =>
         field === status
-          ? { ...field, selected_values: [...field.selected_values, { record_id: "assertion:2", source: "repository_model_packet" as const, value: "archived" }] }
-          : field),
+          ? {
+              ...field,
+              selected_values: [
+                ...field.selected_values,
+                {
+                  record_id: "assertion:2",
+                  source: "repository_model_packet" as const,
+                  value: "archived",
+                },
+              ],
+            }
+          : field,
+      ),
     };
     expect(verify([overBudget])).toContain(
       `view ${record.view_id} selects 2 value(s) of work.status, over the budget's 1 per field`,

@@ -35,7 +35,11 @@ function tempRepository(): { workspace: string; relative: string } {
 function withCwd<T>(directory: string, run: () => T): T {
   const previous = process.cwd();
   process.chdir(directory);
-  try { return run(); } finally { process.chdir(previous); }
+  try {
+    return run();
+  } finally {
+    process.chdir(previous);
+  }
 }
 
 afterEach(() => {
@@ -71,11 +75,14 @@ describe("the contract document is the declared source of truth", () => {
       "scripts/skills-cli.js": "`${root}.l9skills`",
     };
     for (const [script, literal] of Object.entries(sources)) {
-      expect(fs.readFileSync(path.join(REPO, script), "utf8")).toContain(`opt("--out", ${literal})`);
+      expect(fs.readFileSync(path.join(REPO, script), "utf8")).toContain(
+        `opt("--out", ${literal})`,
+      );
       expect(doc).toContain(declared[script]);
     }
-    expect(fs.readFileSync(path.join(REPO, "scripts", "check-cli.js"), "utf8"))
-      .toContain("l9-meta-injector-check-${process.pid}.json");
+    expect(fs.readFileSync(path.join(REPO, "scripts", "check-cli.js"), "utf8")).toContain(
+      "l9-meta-injector-check-${process.pid}.json",
+    );
     expect(doc).toContain(declared["scripts/check-cli.js"]);
     expect(doc).toContain(declared["scripts/operation-cli.js"]);
   });
@@ -92,7 +99,9 @@ describe("dispatcher default is documented and contained", () => {
       L9_INPUT_ROOT: relative,
     }) as { outDir: string; targetRoot: string };
     const placement = authorityPlacement();
-    expect(config.outDir).toBe(path.join(config.targetRoot, String(placement.dispatcher_default_out)));
+    expect(config.outDir).toBe(
+      path.join(config.targetRoot, String(placement.dispatcher_default_out)),
+    );
     expect(placement.dispatcher_default_out_is_inside_target_root).toBe(true);
   });
 
@@ -112,37 +121,55 @@ describe("dispatcher default is documented and contained", () => {
 });
 
 describe("explicit out has the same semantics across dispatcher entrypoints", () => {
-  const cases: Array<{ label: string; resolve: (workspace: string, relative: string, out: string) => string }> = [
+  const cases: Array<{
+    label: string;
+    resolve: (workspace: string, relative: string, out: string) => string;
+  }> = [
     {
       label: "action environment",
-      resolve: (workspace, relative, out) => String((dispatch.normalizeEnvironment({
-        GITHUB_WORKSPACE: workspace,
-        GITHUB_ACTION_PATH: tempDir("l9-action-"),
-        RUNNER_TEMP: tempDir("l9-runner-"),
-        L9_INPUT_MODE: "inventory",
-        L9_INPUT_ROOT: relative,
-        L9_INPUT_OUT: out,
-      }) as { outDir: string }).outDir),
+      resolve: (workspace, relative, out) =>
+        String(
+          (
+            dispatch.normalizeEnvironment({
+              GITHUB_WORKSPACE: workspace,
+              GITHUB_ACTION_PATH: tempDir("l9-action-"),
+              RUNNER_TEMP: tempDir("l9-runner-"),
+              L9_INPUT_MODE: "inventory",
+              L9_INPUT_ROOT: relative,
+              L9_INPUT_OUT: out,
+            }) as { outDir: string }
+          ).outDir,
+        ),
     },
     {
       label: "direct argv",
-      resolve: (workspace, relative, out) => withCwd(workspace, () => String((dispatch.parseCommandLine(
-        ["inventory", relative, "--out", out],
-        { RUNNER_TEMP: workspace },
-      ) as { outDir: string }).outDir)),
+      resolve: (workspace, relative, out) =>
+        withCwd(workspace, () =>
+          String(
+            (
+              dispatch.parseCommandLine(["inventory", relative, "--out", out], {
+                RUNNER_TEMP: workspace,
+              }) as { outDir: string }
+            ).outDir,
+          ),
+        ),
     },
   ];
 
   for (const { label, resolve } of cases) {
     test(`${label}: an explicit relative out resolves against the target root`, () => {
       const { workspace, relative } = tempRepository();
-      expect(resolve(workspace, relative, "reports/run")).toBe(path.join(workspace, relative, "reports", "run"));
+      expect(resolve(workspace, relative, "reports/run")).toBe(
+        path.join(workspace, relative, "reports", "run"),
+      );
     });
 
     test(`${label}: an escaping, absolute, root, or Git-internal out is refused`, () => {
       const { workspace, relative } = tempRepository();
       expect(() => resolve(workspace, relative, "../escape")).toThrow(/escapes/);
-      expect(() => resolve(workspace, relative, path.join(workspace, "abs"))).toThrow(/must be relative/);
+      expect(() => resolve(workspace, relative, path.join(workspace, "abs"))).toThrow(
+        /must be relative/,
+      );
       expect(() => resolve(workspace, relative, ".")).toThrow(/child path/);
       expect(() => resolve(workspace, relative, ".git/out")).toThrow(/Git internal/);
     });
@@ -155,7 +182,9 @@ describe("governed modes create no untracked output directory", () => {
     expect(placement.apply_creates_no_output_directory).toBe(true);
     expect(placement.check_creates_no_output_directory).toBe(true);
     for (const script of ["apply-cli.js", "check-cli.js"]) {
-      expect(fs.readFileSync(path.join(REPO, "scripts", script), "utf8")).toContain("persistOutputs: false");
+      expect(fs.readFileSync(path.join(REPO, "scripts", script), "utf8")).toContain(
+        "persistOutputs: false",
+      );
     }
   });
 });
